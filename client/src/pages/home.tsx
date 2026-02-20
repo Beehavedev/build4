@@ -211,6 +211,7 @@ export default function Home() {
               <a href="#lifecycle" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-lifecycle">lifecycle</a>
               <a href="#decentralized" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-decentralized">web4</a>
               <a href="#roadmap" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-roadmap">roadmap</a>
+              <Link href="/why-build4" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-why">why build4</Link>
               <Link href="/manifesto" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-manifesto">manifesto</Link>
               <Link href="/architecture" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-architecture">contracts</Link>
               <Button size="sm" asChild data-testid="button-connect">

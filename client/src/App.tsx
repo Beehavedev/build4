@@ -7,6 +7,7 @@ import Home from "@/pages/home";
 import AutonomousEconomy from "@/pages/autonomous-economy";
 import Manifesto from "@/pages/manifesto";
 import Architecture from "@/pages/architecture";
+import WhyBuild4 from "@/pages/why-build4";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -16,6 +17,7 @@ function Router() {
       <Route path="/autonomous-economy" component={AutonomousEconomy} />
       <Route path="/manifesto" component={Manifesto} />
       <Route path="/architecture" component={Architecture} />
+      <Route path="/why-build4" component={WhyBuild4} />
       <Route component={NotFound} />
     </Switch>
   );
