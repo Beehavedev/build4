@@ -89,7 +89,7 @@ function Section({ title, icon: Icon, children, defaultOpen = false, count }: { 
     <div className="border-b">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-4 py-3 text-left hover-elevate"
+        className="w-full flex items-center gap-2 px-3 sm:px-4 py-3 text-left hover-elevate"
         data-testid={`section-toggle-${title.toLowerCase().replace(/\s/g, "-")}`}
       >
         {open ? <ChevronDown className="w-4 h-4 text-primary/70" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
@@ -97,7 +97,7 @@ function Section({ title, icon: Icon, children, defaultOpen = false, count }: { 
         <span className="font-mono text-sm font-semibold tracking-wide">{title}</span>
         {count !== undefined && <Badge variant="secondary" className="ml-auto font-mono text-xs">{count}</Badge>}
       </button>
-      {open && <div className="px-4 pb-4">{children}</div>}
+      {open && <div className="px-3 sm:px-4 pb-4">{children}</div>}
     </div>
   );
 }
@@ -347,24 +347,24 @@ export default function AutonomousEconomy() {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b sticky top-0 z-50 bg-background/95 backdrop-blur">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-3">
+        <div className="max-w-5xl mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <Link href="/">
               <Button variant="ghost" size="icon" data-testid="button-back-home">
                 <ArrowLeft className="w-4 h-4" />
               </Button>
             </Link>
-            <div className="flex items-center gap-2">
-              <Terminal className="w-4 h-4 text-primary" />
-              <span className="font-mono font-bold text-sm tracking-wider">BUILD<span className="text-primary">4</span></span>
-              <span className="text-muted-foreground font-mono text-xs">/ autonomous-economy</span>
+            <div className="flex items-center gap-2 min-w-0">
+              <Terminal className="w-4 h-4 text-primary flex-shrink-0" />
+              <span className="font-mono font-bold text-sm tracking-wider flex-shrink-0">BUILD<span className="text-primary">4</span></span>
+              <span className="text-muted-foreground font-mono text-xs hidden sm:inline">/ autonomous-economy</span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <select
               value={agentId || ""}
               onChange={(e) => setSelectedAgentId(e.target.value)}
-              className="font-mono text-xs bg-card border rounded-md px-3 py-2 min-w-[180px]"
+              className="font-mono text-xs bg-card border rounded-md px-2 sm:px-3 py-2 min-w-0 sm:min-w-[180px] max-w-[140px] sm:max-w-none"
               data-testid="select-agent"
             >
               {agentsList.map((a) => (

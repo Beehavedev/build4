@@ -84,15 +84,23 @@ function ContentBlock({ children, index }: { children: React.ReactNode; index: n
 
 function ComparisonRow({ label, build4, others, build4Good = true }: { label: string; build4: string; others: string; build4Good?: boolean }) {
   return (
-    <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 py-3 border-b border-border/50 items-start">
-      <div className="font-mono text-xs font-semibold text-foreground">{label}</div>
-      <div className="flex items-start gap-1.5">
-        {build4Good ? <CheckCircle2 className="w-3.5 h-3.5 text-primary flex-shrink-0 mt-0.5" /> : <XCircle className="w-3.5 h-3.5 text-destructive flex-shrink-0 mt-0.5" />}
-        <span className="text-xs text-muted-foreground leading-relaxed">{build4}</span>
-      </div>
-      <div className="flex items-start gap-1.5">
-        {!build4Good ? <CheckCircle2 className="w-3.5 h-3.5 text-primary flex-shrink-0 mt-0.5" /> : <XCircle className="w-3.5 h-3.5 text-destructive flex-shrink-0 mt-0.5" />}
-        <span className="text-xs text-muted-foreground leading-relaxed">{others}</span>
+    <div className="py-3 border-b border-border/50">
+      <div className="font-mono text-xs font-semibold text-foreground mb-2">{label}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="flex items-start gap-1.5">
+          {build4Good ? <CheckCircle2 className="w-3.5 h-3.5 text-primary flex-shrink-0 mt-0.5" /> : <XCircle className="w-3.5 h-3.5 text-destructive flex-shrink-0 mt-0.5" />}
+          <div>
+            <span className="text-[10px] font-mono text-primary sm:hidden">BUILD4: </span>
+            <span className="text-xs text-muted-foreground leading-relaxed break-words">{build4}</span>
+          </div>
+        </div>
+        <div className="flex items-start gap-1.5">
+          {!build4Good ? <CheckCircle2 className="w-3.5 h-3.5 text-primary flex-shrink-0 mt-0.5" /> : <XCircle className="w-3.5 h-3.5 text-destructive flex-shrink-0 mt-0.5" />}
+          <div>
+            <span className="text-[10px] font-mono text-muted-foreground sm:hidden">Others: </span>
+            <span className="text-xs text-muted-foreground leading-relaxed break-words">{others}</span>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -105,41 +113,41 @@ export default function WhyBuild4() {
       <div className="relative z-10">
 
         <nav className="sticky top-0 z-50 bg-background/90 backdrop-blur-xl border-b">
-          <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-3">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <Link href="/">
                 <Button variant="ghost" size="icon" data-testid="button-back-home">
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
               </Link>
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
                   <Terminal className="w-3.5 h-3.5 text-primary" />
                 </div>
-                <span className="font-mono font-bold text-sm tracking-wide">
+                <span className="font-mono font-bold text-sm tracking-wide flex-shrink-0">
                   BUILD<span className="text-primary">4</span>
                 </span>
-                <span className="text-muted-foreground font-mono text-xs">/ why build4</span>
+                <span className="text-muted-foreground font-mono text-xs hidden sm:inline">/ why build4</span>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" asChild data-testid="button-manifesto-nav">
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Button variant="outline" size="sm" asChild className="hidden sm:inline-flex" data-testid="button-manifesto-nav">
                 <Link href="/manifesto">
                   <BookOpen className="w-3.5 h-3.5" />
                   Manifesto
                 </Link>
               </Button>
-              <Button size="sm" asChild data-testid="button-launch-nav">
+              <Button size="sm" asChild aria-label="Launch dashboard" data-testid="button-launch-nav">
                 <Link href="/autonomous-economy">
                   <Terminal className="w-3.5 h-3.5" />
-                  Launch
+                  <span className="hidden sm:inline">Launch</span>
                 </Link>
               </Button>
             </div>
           </div>
         </nav>
 
-        <header className="max-w-4xl mx-auto px-6 pt-20 pb-16">
+        <header className="max-w-4xl mx-auto px-4 sm:px-6 pt-16 sm:pt-20 pb-12 sm:pb-16">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -149,7 +157,7 @@ export default function WhyBuild4() {
               <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
               <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">The Full Picture</span>
             </div>
-            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight leading-[1.1] mb-6 font-mono" data-testid="heading-why-title">
+            <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight leading-[1.1] mb-6 font-mono" data-testid="heading-why-title">
               Why BUILD4 is the only<br />
               <span className="text-primary">real decentralized AI.</span>
             </h1>
@@ -160,7 +168,7 @@ export default function WhyBuild4() {
           </motion.div>
         </header>
 
-        <main className="max-w-4xl mx-auto px-6 pb-32 space-y-16">
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 pb-24 sm:pb-32 space-y-12 sm:space-y-16">
 
 
           <ContentBlock index={0}>
@@ -509,10 +517,9 @@ export default function WhyBuild4() {
                 <h2 className="text-2xl font-bold tracking-tight font-mono" data-testid="heading-comparison">BUILD4 vs. Everyone Else</h2>
               </div>
               <div className="pl-11">
-                <Card className="p-4 overflow-x-auto" data-testid="card-comparison-table">
-                  <div className="min-w-[500px]">
-                    <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 pb-3 border-b mb-1">
-                      <div className="font-mono text-xs font-bold text-primary">Capability</div>
+                <Card className="p-3 sm:p-4" data-testid="card-comparison-table">
+                  <div>
+                    <div className="hidden sm:grid grid-cols-2 gap-3 pb-3 border-b mb-1">
                       <div className="font-mono text-xs font-bold text-primary">BUILD4</div>
                       <div className="font-mono text-xs font-bold text-muted-foreground">Others (Web4, etc.)</div>
                     </div>

@@ -201,41 +201,41 @@ export default function Manifesto() {
       <div className="relative z-10">
 
         <nav className="sticky top-0 z-50 bg-background/90 backdrop-blur-xl border-b">
-          <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-3">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <Link href="/">
                 <Button variant="ghost" size="icon" data-testid="button-back-home">
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
               </Link>
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
                   <Terminal className="w-3.5 h-3.5 text-primary" />
                 </div>
-                <span className="font-mono font-bold text-sm tracking-wide">
+                <span className="font-mono font-bold text-sm tracking-wide flex-shrink-0">
                   BUILD<span className="text-primary">4</span>
                 </span>
-                <span className="text-muted-foreground font-mono text-xs">/ manifesto</span>
+                <span className="text-muted-foreground font-mono text-xs hidden sm:inline">/ manifesto</span>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" asChild data-testid="button-architecture-nav">
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Button variant="outline" size="sm" asChild className="hidden sm:inline-flex" data-testid="button-architecture-nav">
                 <Link href="/architecture">
                   <Cpu className="w-3.5 h-3.5" />
                   Contracts
                 </Link>
               </Button>
-              <Button size="sm" asChild data-testid="button-launch-nav">
+              <Button size="sm" asChild aria-label="Launch dashboard" data-testid="button-launch-nav">
                 <Link href="/autonomous-economy">
                   <Terminal className="w-3.5 h-3.5" />
-                  Launch
+                  <span className="hidden sm:inline">Launch</span>
                 </Link>
               </Button>
             </div>
           </div>
         </nav>
 
-        <header className="max-w-3xl mx-auto px-6 pt-24 pb-16">
+        <header className="max-w-3xl mx-auto px-4 sm:px-6 pt-16 sm:pt-24 pb-12 sm:pb-16">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -245,7 +245,7 @@ export default function Manifesto() {
               <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
               <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">Manifesto v3.0</span>
             </div>
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-[1.1] mb-6 font-mono" data-testid="heading-manifesto-title">
+            <h1 className="text-3xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-[1.1] mb-6 font-mono" data-testid="heading-manifesto-title">
               Agents don't ask<br />
               <span className="text-primary">permission.</span>
             </h1>
@@ -274,7 +274,7 @@ export default function Manifesto() {
           </motion.div>
         </header>
 
-        <main className="max-w-3xl mx-auto px-6 pb-32 space-y-24">
+        <main className="max-w-3xl mx-auto px-4 sm:px-6 pb-24 sm:pb-32 space-y-16 sm:space-y-24">
           {sections.map((section, i) => {
             const Icon = sectionIcons[section.number];
             return (

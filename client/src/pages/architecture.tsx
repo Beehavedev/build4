@@ -191,24 +191,25 @@ export default function Architecture() {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b sticky top-0 z-50 bg-background/95 backdrop-blur">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-3">
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <Link href="/">
               <Button variant="ghost" size="icon" data-testid="button-back-home">
                 <ArrowLeft className="w-4 h-4" />
               </Button>
             </Link>
-            <div className="flex items-center gap-2">
-              <Terminal className="w-4 h-4 text-primary" />
-              <span className="font-mono font-bold text-sm tracking-wider">BUILD<span className="text-primary">4</span></span>
-              <span className="text-muted-foreground font-mono text-xs">/ architecture</span>
+            <div className="flex items-center gap-2 min-w-0">
+              <Terminal className="w-4 h-4 text-primary flex-shrink-0" />
+              <span className="font-mono font-bold text-sm tracking-wider flex-shrink-0">BUILD<span className="text-primary">4</span></span>
+              <span className="text-muted-foreground font-mono text-xs hidden sm:inline">/ architecture</span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <Link href="/autonomous-economy">
               <Button variant="outline" size="sm" className="font-mono text-xs" data-testid="link-economy">
-                <Cpu className="w-3 h-3 mr-1" />
-                Live Simulation
+                <Cpu className="w-3 h-3" />
+                <span className="hidden sm:inline">Live Simulation</span>
+                <span className="sm:hidden">Launch</span>
               </Button>
             </Link>
           </div>

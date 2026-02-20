@@ -32,6 +32,8 @@ import {
   AlertTriangle,
   XCircle,
   Milestone,
+  Menu,
+  X,
 } from "lucide-react";
 
 const features = [
@@ -189,6 +191,7 @@ export default function Home() {
   const heroRef = useRef<HTMLDivElement>(null);
   const featuresRef = useRef<HTMLDivElement>(null);
   const featuresInView = useInView(featuresRef, { once: true, margin: "-100px" });
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-background relative">
@@ -197,7 +200,7 @@ export default function Home() {
 
         {/* Nav */}
         <nav className="sticky top-0 z-50 bg-background/90 backdrop-blur-xl border-b">
-          <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between gap-4 flex-wrap">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center">
                 <Terminal className="w-4 h-4 text-primary" />
@@ -206,7 +209,7 @@ export default function Home() {
                 BUILD<span className="text-primary">4</span>
               </span>
             </div>
-            <div className="flex items-center gap-4 flex-wrap">
+            <div className="hidden md:flex items-center gap-4">
               <a href="#features" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-features">features</a>
               <a href="#lifecycle" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-lifecycle">lifecycle</a>
               <a href="#decentralized" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-decentralized">web4</a>
@@ -221,12 +224,34 @@ export default function Home() {
                 </Link>
               </Button>
             </div>
+            <div className="flex md:hidden items-center gap-2">
+              <Button size="sm" asChild data-testid="button-connect-mobile">
+                <Link href="/autonomous-economy">
+                  <Terminal className="w-3.5 h-3.5" />
+                  Launch
+                </Link>
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} aria-expanded={mobileMenuOpen} aria-label="Toggle navigation menu" data-testid="button-mobile-menu">
+                {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+              </Button>
+            </div>
           </div>
+          {mobileMenuOpen && (
+            <div className="md:hidden border-t bg-background/95 backdrop-blur-xl px-4 py-3 space-y-1">
+              <a href="#features" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-features-mobile">features</a>
+              <a href="#lifecycle" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-lifecycle-mobile">lifecycle</a>
+              <a href="#decentralized" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-decentralized-mobile">web4</a>
+              <a href="#roadmap" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-roadmap-mobile">roadmap</a>
+              <Link href="/why-build4" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-why-mobile">why build4</Link>
+              <Link href="/manifesto" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-manifesto-mobile">manifesto</Link>
+              <Link href="/architecture" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-architecture-mobile">contracts</Link>
+            </div>
+          )}
         </nav>
 
         {/* Hero */}
         <section ref={heroRef} className="relative overflow-hidden">
-          <div className="max-w-6xl mx-auto px-6 pt-28 pb-36 relative z-10">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-16 sm:pt-28 pb-20 sm:pb-36 relative z-10">
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
@@ -238,7 +263,7 @@ export default function Home() {
                 <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">BNB Chain</span>
               </div>
 
-              <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.05] mb-6">
+              <h1 className="text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.05] mb-6">
                 <span className="font-mono text-foreground">BUILD</span>
                 <span className="text-primary">4</span>
               </h1>
@@ -275,8 +300,8 @@ export default function Home() {
         </section>
 
         {/* Stats */}
-        <section className="relative z-10 -mt-16 mb-24">
-          <div className="max-w-6xl mx-auto px-6">
+        <section className="relative z-10 -mt-10 sm:-mt-16 mb-16 sm:mb-24">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {stats.map((stat, i) => (
                 <motion.div
@@ -299,13 +324,13 @@ export default function Home() {
         </section>
 
         {/* Features */}
-        <section id="features" ref={featuresRef} className="relative z-10 py-24">
-          <div className="max-w-6xl mx-auto px-6">
+        <section id="features" ref={featuresRef} className="relative z-10 py-16 sm:py-24">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={featuresInView ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.5 }}
-              className="text-center mb-16"
+              className="text-center mb-10 sm:mb-16"
             >
               <div className="flex items-center justify-center gap-2 mb-4">
                 <div className="w-8 h-px bg-border" />
@@ -349,9 +374,9 @@ export default function Home() {
         </section>
 
         {/* Lifecycle */}
-        <section id="lifecycle" className="relative z-10 py-24">
-          <div className="max-w-6xl mx-auto px-6">
-            <div className="text-center mb-16">
+        <section id="lifecycle" className="relative z-10 py-16 sm:py-24">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
+            <div className="text-center mb-10 sm:mb-16">
               <div className="flex items-center justify-center gap-2 mb-4">
                 <div className="w-8 h-px bg-border" />
                 <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">Agent Lifecycle</span>
@@ -396,8 +421,8 @@ export default function Home() {
         </section>
 
         {/* Architecture */}
-        <section className="relative z-10 py-24">
-          <div className="max-w-6xl mx-auto px-6">
+        <section className="relative z-10 py-16 sm:py-24">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <div className="grid md:grid-cols-2 gap-10 items-center">
               <div>
                 <div className="flex items-center gap-2 mb-4">
@@ -459,14 +484,14 @@ export default function Home() {
         </section>
 
         {/* The Problem */}
-        <section id="decentralized" className="relative z-10 py-24">
-          <div className="max-w-6xl mx-auto px-6">
+        <section id="decentralized" className="relative z-10 py-16 sm:py-24">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.5 }}
-              className="text-center mb-16"
+              className="text-center mb-10 sm:mb-16"
             >
               <div className="flex items-center justify-center gap-2 mb-4">
                 <div className="w-8 h-px bg-border" />
@@ -520,14 +545,14 @@ export default function Home() {
         </section>
 
         {/* Available Today */}
-        <section className="relative z-10 py-24">
-          <div className="max-w-6xl mx-auto px-6">
+        <section className="relative z-10 py-16 sm:py-24">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.5 }}
-              className="text-center mb-16"
+              className="text-center mb-10 sm:mb-16"
             >
               <div className="flex items-center justify-center gap-2 mb-4">
                 <div className="w-8 h-px bg-border" />
@@ -598,14 +623,14 @@ export default function Home() {
         </section>
 
         {/* Roadmap */}
-        <section className="relative z-10 py-24">
-          <div className="max-w-6xl mx-auto px-6">
+        <section className="relative z-10 py-16 sm:py-24">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.5 }}
-              className="text-center mb-16"
+              className="text-center mb-10 sm:mb-16"
             >
               <div className="flex items-center justify-center gap-2 mb-4" id="roadmap">
                 <div className="w-8 h-px bg-border" />
@@ -758,8 +783,8 @@ export default function Home() {
         </section>
 
         {/* Provider Abstraction */}
-        <section className="relative z-10 py-24">
-          <div className="max-w-6xl mx-auto px-6">
+        <section className="relative z-10 py-16 sm:py-24">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <div className="grid md:grid-cols-2 gap-10 items-center">
               <div>
                 <div className="flex items-center gap-2 mb-4">
@@ -817,9 +842,9 @@ export default function Home() {
         </section>
 
         {/* CTA */}
-        <section className="relative z-10 py-28">
-          <div className="max-w-6xl mx-auto px-6">
-            <Card className="p-10 sm:p-14 text-center relative overflow-visible">
+        <section className="relative z-10 py-16 sm:py-28">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
+            <Card className="p-6 sm:p-14 text-center relative overflow-visible">
               <div className="relative z-10">
                 <div className="font-mono text-sm text-primary/70 mb-4">$ build4 deploy --autonomous</div>
                 <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
@@ -849,7 +874,7 @@ export default function Home() {
 
         {/* Footer */}
         <footer className="relative z-10 border-t py-8">
-          <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <Terminal className="w-3.5 h-3.5 text-primary/60" />
               <span className="font-mono text-xs font-semibold">
