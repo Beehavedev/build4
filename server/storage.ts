@@ -28,9 +28,9 @@ import { eq, desc, and, sql } from "drizzle-orm";
 import { runInference, isProviderLive, getProviderStatus } from "./inference";
 
 const SURVIVAL_THRESHOLDS = {
-  normal: BigInt("1000000000000000000"),
-  low_compute: BigInt("100000000000000000"),
-  critical: BigInt("10000000000000000"),
+  normal: BigInt("100000000000000000"),
+  low_compute: BigInt("10000000000000000"),
+  critical: BigInt("1000000000000000"),
   dead: BigInt(0),
 };
 
