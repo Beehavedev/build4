@@ -274,18 +274,6 @@ export default function AutonomousEconomy() {
     onError: (e: Error) => toast({ title: t("dashboard.evolutionFailed"), description: e.message, variant: "destructive" }),
   });
 
-  const replicateMutation = useMutation({
-    mutationFn: async ({ childName, fundingAmount }: { childName: string; fundingAmount: string }) => {
-      await apiRequest("POST", "/api/web4/replicate", { parentAgentId: agentId, childName, revenueShareBps: 1000, fundingAmount });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/web4/agents"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/web4/lineage", agentId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/web4/wallet", agentId] });
-      toast({ title: t("dashboard.replicatedSuccess") });
-    },
-    onError: (e: Error) => toast({ title: t("dashboard.replicationFailed"), description: e.message, variant: "destructive" }),
-  });
 
   const soulMutation = useMutation({
     mutationFn: async ({ entry, entryType }: { entry: string; entryType: string }) => {
@@ -506,8 +494,6 @@ export default function AutonomousEconomy() {
   const [transferAmt, setTransferAmt] = useState("100000000000000000");
   const [evolveModel, setEvolveModel] = useState("meta-llama/Llama-3.1-70B-Instruct");
   const [evolveReason, setEvolveReason] = useState("");
-  const [childName, setChildName] = useState("");
-  const [childFunding, setChildFunding] = useState("500000000000000000");
   const [soulEntry, setSoulEntry] = useState("");
   const [soulType, setSoulType] = useState("reflection");
   const [msgTo, setMsgTo] = useState("");
@@ -1516,57 +1502,6 @@ export default function AutonomousEconomy() {
                       </div>
                     )}
 
-                    <div className="space-y-2 mt-2 pt-2 border-t">
-                      <div className="text-xs font-mono font-semibold">On-Chain Replication</div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="number"
-                          placeholder="Child Agent ID"
-                          className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5"
-                          data-testid="input-onchain-child-id"
-                          id="onchain-child-id"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Funding (e.g. 0.01)"
-                          className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5"
-                          data-testid="input-onchain-repl-funding"
-                          id="onchain-repl-funding"
-                          defaultValue="0.01"
-                        />
-                      </div>
-                      <Button
-                        size="sm"
-                        className="w-full"
-                        disabled={!web3.hasContracts || onChainLoading === "replicate"}
-                        data-testid="button-onchain-replicate"
-                        onClick={async () => {
-                          try {
-                            setOnChainLoading("replicate");
-                            const parentNumId = parseInt(agentId || "1");
-                            const childIdEl = document.getElementById("onchain-child-id") as HTMLInputElement;
-                            const fundingEl = document.getElementById("onchain-repl-funding") as HTMLInputElement;
-                            const childId = parseInt(childIdEl?.value || "100");
-                            const funding = fundingEl?.value || "0.01";
-                            const receipt = await web3.replicateOnChain(parentNumId, childId, 1000, funding);
-                            setLastTxHash(receipt.hash);
-                            toast({ title: "Agent replicated on-chain", description: `Child #${childId} created with ${funding} ${activeChain.currency} funding and 10% revenue share` });
-                            const data = await web3.getLineageOnChain(parentNumId);
-                            setOnChainLineage(data);
-                          } catch (err: any) {
-                            toast({ title: "Replication failed", description: err.message, variant: "destructive" });
-                          } finally {
-                            setOnChainLoading(null);
-                          }
-                        }}
-                      >
-                        {onChainLoading === "replicate" ? <RefreshCw className="w-3 h-3 animate-spin" /> : <GitBranch className="w-3 h-3" />}
-                        <span className="ml-1">Replicate On-Chain</span>
-                      </Button>
-                      <div className="text-[9px] text-muted-foreground font-mono">
-                        Creates a child agent on-chain with funding from parent. Max 50% revenue share, max 10 generations.
-                      </div>
-                    </div>
                   </Card>
                 </div>
 
@@ -1797,7 +1732,11 @@ export default function AutonomousEconomy() {
 
         <Section title={t("dashboard.replication")} icon={GitBranch} count={lineageData?.children?.length}>
           <div className="space-y-3">
-            <TerminalLine prefix="$">agent.replicate()</TerminalLine>
+            <TerminalLine prefix="$">lineage.view()</TerminalLine>
+
+            <div className="p-2 rounded bg-muted/20 text-[10px] text-muted-foreground font-mono">
+              Replication is fully autonomous — agents decide when to fork based on their own performance and balance. You can view the lineage tree below.
+            </div>
 
             {lineageData?.parent && (
               <Card className="p-3">
@@ -1806,20 +1745,6 @@ export default function AutonomousEconomy() {
                 <div className="text-xs text-muted-foreground">{t("dashboard.revenueShare")}: {lineageData.parent.revenueShareBps / 100}%</div>
               </Card>
             )}
-
-            <Card className="p-3 space-y-2">
-              <div className="text-xs font-mono font-semibold">{t("dashboard.spawnChild")}</div>
-              <input type="text" placeholder={t("dashboard.childNamePlaceholder")} value={childName} onChange={(e) => setChildName(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-child-name" />
-              <select value={childFunding} onChange={(e) => setChildFunding(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-child-funding">
-                <option value="100000000000000000">{t("dashboard.fund")} 0.1 {activeChain.currency}</option>
-                <option value="500000000000000000">{t("dashboard.fund")} 0.5 {activeChain.currency}</option>
-                <option value="1000000000000000000">{t("dashboard.fund")} 1.0 {activeChain.currency}</option>
-              </select>
-              <Button size="sm" className="w-full" onClick={() => childName && replicateMutation.mutate({ childName, fundingAmount: childFunding })} disabled={!childName || replicateMutation.isPending} data-testid="button-replicate">
-                {replicateMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <GitBranch className="w-3 h-3" />}
-                <span className="ml-1">{t("dashboard.replicate")}</span>
-              </Button>
-            </Card>
 
             {(lineageData?.children || []).length > 0 && (
               <div className="space-y-1">
