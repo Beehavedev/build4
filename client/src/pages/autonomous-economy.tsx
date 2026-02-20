@@ -26,6 +26,10 @@ import {
   Bot,
   Layers,
   ArrowLeft,
+  Globe,
+  Server,
+  ShieldCheck,
+  Cpu,
 } from "lucide-react";
 import { Link } from "wouter";
 import type {
@@ -39,6 +43,8 @@ import type {
   AgentSoulEntry,
   AgentAuditLog,
   AgentRuntimeProfile,
+  InferenceProvider,
+  InferenceRequest,
 } from "@shared/schema";
 
 function formatCredits(weiStr: string): string {
@@ -268,6 +274,33 @@ export default function AutonomousEconomy() {
     },
     onError: (e: Error) => toast({ title: "Purchase failed", description: e.message, variant: "destructive" }),
   });
+
+  const { data: inferenceProviders = [] } = useQuery<InferenceProvider[]>({
+    queryKey: ["/api/web4/inference/providers"],
+  });
+
+  const { data: inferenceHistory = [] } = useQuery<InferenceRequest[]>({
+    queryKey: ["/api/web4/inference/requests", agentId],
+    enabled: !!agentId,
+  });
+
+  const inferenceMutation = useMutation({
+    mutationFn: async ({ prompt, model, preferDecentralized }: { prompt: string; model?: string; preferDecentralized: boolean }) => {
+      const res = await apiRequest("POST", "/api/web4/inference/run", { agentId, prompt, model, preferDecentralized });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/inference/requests", agentId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/wallet", agentId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/survival", agentId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/audit", agentId] });
+      toast({ title: "Inference completed" });
+    },
+    onError: (e: Error) => toast({ title: "Inference failed", description: e.message, variant: "destructive" }),
+  });
+
+  const [inferencePrompt, setInferencePrompt] = useState("");
+  const [inferencePreferDecentralized, setInferencePreferDecentralized] = useState(true);
 
   const [depositAmt, setDepositAmt] = useState("1000000000000000000");
   const [withdrawAmt, setWithdrawAmt] = useState("100000000000000000");
@@ -735,6 +768,133 @@ export default function AutonomousEconomy() {
                 <div className="text-[10px] text-muted-foreground mt-2 font-mono">{msg.createdAt ? new Date(msg.createdAt).toLocaleString() : ""}</div>
               </Card>
             ))}
+          </div>
+        </Section>
+
+        <Section title="Decentralized Inference" icon={Globe} count={inferenceProviders.length}>
+          <div className="space-y-3">
+            <TerminalLine prefix="$">inference.providers()</TerminalLine>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {inferenceProviders.map((provider) => (
+                <Card key={provider.id} className="p-3" data-testid={`card-provider-${provider.id}`}>
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <div className="w-6 h-6 rounded-md bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
+                      {provider.decentralized ? <Globe className="w-3 h-3 text-primary/70" /> : <Server className="w-3 h-3 text-muted-foreground" />}
+                    </div>
+                    <span className="font-mono text-xs font-semibold truncate">{provider.name}</span>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[10px] text-muted-foreground font-mono">Type</span>
+                      <Badge variant={provider.decentralized ? "default" : "secondary"} className="text-[10px]">
+                        {provider.type}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[10px] text-muted-foreground font-mono">Cost/req</span>
+                      <span className="font-mono text-[10px] text-primary">{formatShortCredits(provider.costPerRequest)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[10px] text-muted-foreground font-mono">Latency</span>
+                      <span className="font-mono text-[10px]">{provider.latencyMs}ms</span>
+                    </div>
+                    {provider.verifiable && (
+                      <div className="flex items-center gap-1 mt-1">
+                        <ShieldCheck className="w-3 h-3 text-primary/70" />
+                        <span className="text-[10px] text-primary/70 font-mono">zkML Verifiable</span>
+                      </div>
+                    )}
+                  </div>
+                  {provider.modelsSupported && provider.modelsSupported.length > 0 && (
+                    <div className="mt-2 pt-2 border-t">
+                      <div className="text-[10px] text-muted-foreground font-mono mb-1">Models</div>
+                      <div className="flex flex-wrap gap-1">
+                        {provider.modelsSupported.map((m) => (
+                          <Badge key={m} variant="outline" className="text-[9px] font-mono">{m}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              ))}
+            </div>
+
+            <Card className="p-3 space-y-2 mt-3">
+              <div className="text-xs font-mono font-semibold flex items-center gap-1">
+                <Cpu className="w-3 h-3 text-primary/70" /> Run Inference
+              </div>
+              <textarea
+                placeholder="Enter prompt for inference..."
+                value={inferencePrompt}
+                onChange={(e) => setInferencePrompt(e.target.value)}
+                rows={2}
+                className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5 resize-none"
+                data-testid="textarea-inference-prompt"
+              />
+              <div className="flex items-center gap-3 flex-wrap">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={inferencePreferDecentralized}
+                    onChange={(e) => setInferencePreferDecentralized(e.target.checked)}
+                    className="rounded"
+                    data-testid="checkbox-prefer-decentralized"
+                  />
+                  <span className="text-[11px] font-mono text-muted-foreground">Prefer decentralized</span>
+                </label>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (inferencePrompt.trim()) {
+                      inferenceMutation.mutate({ prompt: inferencePrompt, preferDecentralized: inferencePreferDecentralized });
+                      setInferencePrompt("");
+                    }
+                  }}
+                  disabled={!inferencePrompt.trim() || inferenceMutation.isPending}
+                  data-testid="button-run-inference"
+                >
+                  {inferenceMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Cpu className="w-3 h-3" />}
+                  <span className="ml-1">Run</span>
+                </Button>
+              </div>
+            </Card>
+
+            {inferenceHistory.length > 0 && (
+              <div className="mt-3">
+                <div className="text-xs font-mono font-semibold mb-2 text-muted-foreground">Inference History</div>
+                <div className="space-y-2">
+                  {inferenceHistory.slice(0, 10).map((req) => {
+                    const provider = inferenceProviders.find(p => p.id === req.providerId);
+                    return (
+                      <Card key={req.id} className="p-3" data-testid={`card-inference-${req.id}`}>
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <Badge variant={provider?.decentralized ? "default" : "secondary"} className="text-[10px] font-mono">
+                            {provider?.name || "Unknown"}
+                          </Badge>
+                          <Badge variant="outline" className="text-[10px] font-mono">{req.model}</Badge>
+                          <span className="text-[10px] text-muted-foreground font-mono ml-auto">{req.latencyMs}ms</span>
+                        </div>
+                        <div className="font-mono text-xs text-muted-foreground truncate mb-1">{req.prompt}</div>
+                        {req.response && (
+                          <div className="font-mono text-xs text-foreground/80 bg-background/50 rounded-md p-2 mt-1">{req.response}</div>
+                        )}
+                        <div className="flex items-center gap-3 mt-2 flex-wrap">
+                          <span className="text-[10px] text-primary font-mono">Cost: {formatShortCredits(req.costAmount)}</span>
+                          {req.proofHash && (
+                            <div className="flex items-center gap-1">
+                              <ShieldCheck className="w-3 h-3 text-primary/70" />
+                              <span className="text-[10px] text-primary/70 font-mono truncate max-w-[120px]">{req.proofHash}</span>
+                            </div>
+                          )}
+                          <span className="text-[10px] text-muted-foreground font-mono ml-auto">{req.createdAt ? new Date(req.createdAt).toLocaleTimeString() : ""}</span>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </Section>
 

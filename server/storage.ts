@@ -13,10 +13,13 @@ import {
   type AgentSoulEntry, type InsertAgentSoulEntry,
   type AgentAuditLog, type InsertAgentAuditLog,
   type AgentMessage, type InsertAgentMessage,
+  type InferenceProvider, type InsertInferenceProvider,
+  type InferenceRequest, type InsertInferenceRequest,
   users, agents, agentWallets, agentTransactions,
   agentSkills, skillPurchases, agentEvolutions,
   agentLineage, agentRuntimeProfiles, agentSurvivalStatus,
   agentConstitution, agentSoulEntries, agentAuditLogs, agentMessages,
+  inferenceProviders, inferenceRequests,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -102,6 +105,16 @@ export interface IStorage {
   purchaseSkill(buyerAgentId: string, skillId: string): Promise<SkillPurchase>;
   evolveAgent(agentId: string, toModel: string, reason?: string, metricsJson?: string): Promise<AgentEvolution>;
   replicateAgent(parentAgentId: string, childName: string, childBio?: string, revenueShareBps?: number, fundingAmount?: string): Promise<{ child: Agent; lineage: AgentLineage }>;
+
+  getAllInferenceProviders(): Promise<InferenceProvider[]>;
+  getInferenceProvider(id: string): Promise<InferenceProvider | undefined>;
+  createInferenceProvider(provider: InsertInferenceProvider): Promise<InferenceProvider>;
+
+  getInferenceRequests(agentId: string, limit?: number): Promise<InferenceRequest[]>;
+  createInferenceRequest(request: InsertInferenceRequest): Promise<InferenceRequest>;
+  updateInferenceRequestStatus(requestId: string, status: string, response?: string, latencyMs?: number, proofHash?: string): Promise<InferenceRequest | undefined>;
+
+  routeInference(agentId: string, prompt: string, model?: string, preferDecentralized?: boolean, maxCost?: string): Promise<InferenceRequest>;
 
   seedDemoData(): Promise<void>;
 }
@@ -565,6 +578,131 @@ export class DatabaseStorage implements IStorage {
     return { child, lineage: lineageRecord };
   }
 
+  async getAllInferenceProviders(): Promise<InferenceProvider[]> {
+    return db.select().from(inferenceProviders).orderBy(inferenceProviders.name);
+  }
+
+  async getInferenceProvider(id: string): Promise<InferenceProvider | undefined> {
+    const [provider] = await db.select().from(inferenceProviders).where(eq(inferenceProviders.id, id));
+    return provider;
+  }
+
+  async createInferenceProvider(provider: InsertInferenceProvider): Promise<InferenceProvider> {
+    const [created] = await db.insert(inferenceProviders).values(provider).returning();
+    return created;
+  }
+
+  async getInferenceRequests(agentId: string, limit = 20): Promise<InferenceRequest[]> {
+    return db.select().from(inferenceRequests).where(eq(inferenceRequests.agentId, agentId)).orderBy(desc(inferenceRequests.createdAt)).limit(limit);
+  }
+
+  async createInferenceRequest(request: InsertInferenceRequest): Promise<InferenceRequest> {
+    const [created] = await db.insert(inferenceRequests).values(request).returning();
+    return created;
+  }
+
+  async updateInferenceRequestStatus(requestId: string, status: string, response?: string, latencyMs?: number, proofHash?: string): Promise<InferenceRequest | undefined> {
+    const updates: any = { status };
+    if (response !== undefined) updates.response = response;
+    if (latencyMs !== undefined) updates.latencyMs = latencyMs;
+    if (proofHash !== undefined) { updates.proofHash = proofHash; updates.proofAnchored = true; }
+    const [updated] = await db.update(inferenceRequests).set(updates).where(eq(inferenceRequests.id, requestId)).returning();
+    return updated;
+  }
+
+  async routeInference(agentId: string, prompt: string, model?: string, preferDecentralized = true, maxCost?: string): Promise<InferenceRequest> {
+    const agent = await this.getAgent(agentId);
+    if (!agent) throw new Error("Agent not found");
+
+    const wallet = await this.getWallet(agentId);
+    if (!wallet) throw new Error("Agent has no wallet");
+
+    const providers = await this.getAllInferenceProviders();
+    const activeProviders = providers.filter(p => p.isActive);
+    if (activeProviders.length === 0) throw new Error("No active inference providers available");
+
+    let selected: InferenceProvider;
+    if (preferDecentralized) {
+      const decentralizedProviders = activeProviders.filter(p => p.decentralized);
+      if (decentralizedProviders.length > 0) {
+        if (maxCost) {
+          const affordable = decentralizedProviders.filter(p => BigInt(p.costPerRequest) <= BigInt(maxCost));
+          selected = affordable.length > 0 ? affordable[0] : decentralizedProviders[0];
+        } else {
+          selected = decentralizedProviders[0];
+        }
+      } else {
+        selected = activeProviders.find(p => !p.decentralized) || activeProviders[0];
+      }
+    } else {
+      const centralizedProviders = activeProviders.filter(p => !p.decentralized);
+      selected = centralizedProviders.length > 0 ? centralizedProviders[0] : activeProviders[0];
+    }
+
+    if (BigInt(wallet.balance) < BigInt(selected.costPerRequest)) {
+      await this.createAuditLog({
+        agentId,
+        actionType: "inference_request",
+        detailsJson: JSON.stringify({ provider: selected.name, cost: selected.costPerRequest, balance: wallet.balance }),
+        result: "failed_insufficient_funds",
+      });
+      throw new Error(`Insufficient balance. Need ${selected.costPerRequest} but have ${wallet.balance}`);
+    }
+
+    const selectedModel = model || (selected.modelsSupported && selected.modelsSupported.length > 0 ? selected.modelsSupported[0] : "llama-3.1-70b");
+
+    const baseLatency = selected.latencyMs || 200;
+    const simulatedLatency = baseLatency + Math.floor(Math.random() * 100);
+
+    const responseText = `[${selected.name}] Inference completed via ${selected.type} provider. Model: ${selectedModel}. Task processed successfully on ${selected.decentralized ? "decentralized" : "centralized"} infrastructure.`;
+
+    const proofHash = selected.verifiable ? `0x${Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("")}` : undefined;
+    const proofType = selected.verifiable ? "zk-SNARK" : undefined;
+
+    const newBalance = (BigInt(wallet.balance) - BigInt(selected.costPerRequest)).toString();
+    await this.updateWalletBalance(agentId, newBalance, "0", selected.costPerRequest);
+    await this.createTransaction({
+      agentId,
+      type: "spend_inference",
+      amount: selected.costPerRequest,
+      description: `Inference via ${selected.name} (${selectedModel})`,
+    });
+
+    const request = await this.createInferenceRequest({
+      agentId,
+      providerId: selected.id,
+      model: selectedModel,
+      prompt,
+      response: responseText,
+      status: "completed",
+      costAmount: selected.costPerRequest,
+      latencyMs: simulatedLatency,
+      proofHash: proofHash || null,
+      proofType: proofType || null,
+      proofAnchored: !!proofHash,
+      preferDecentralized,
+    });
+
+    await this.recalcSurvivalTier(agentId);
+
+    await this.createAuditLog({
+      agentId,
+      actionType: "inference_request",
+      detailsJson: JSON.stringify({
+        provider: selected.name,
+        model: selectedModel,
+        decentralized: selected.decentralized,
+        verifiable: selected.verifiable,
+        cost: selected.costPerRequest,
+        latencyMs: simulatedLatency,
+        proofHash,
+      }),
+      result: "success",
+    });
+
+    return request;
+  }
+
   async seedDemoData(): Promise<void> {
     const existingAgents = await this.getAllAgents();
     if (existingAgents.length > 0) return;
@@ -604,6 +742,79 @@ export class DatabaseStorage implements IStorage {
     await this.createTransaction({ agentId: agent1.id, type: "deposit", amount: "2000000000000000000", description: "Initial funding" });
     await this.createTransaction({ agentId: agent2.id, type: "deposit", amount: "1500000000000000000", description: "Initial funding" });
     await this.createTransaction({ agentId: agent3.id, type: "deposit", amount: "500000000000000000", description: "Initial funding" });
+
+    await this.createInferenceProvider({
+      name: "Bittensor Subnet 18",
+      type: "decentralized",
+      network: "bittensor",
+      modelsSupported: ["llama-3.1-70b-instruct", "llama-3.1-8b", "mixtral-8x7b"],
+      costPerRequest: "300000000000000",
+      latencyMs: 850,
+      isActive: true,
+      verifiable: false,
+      decentralized: true,
+      metadata: JSON.stringify({ subnet: 18, miners: 256, avgUptime: "99.2%" }),
+    });
+    await this.createInferenceProvider({
+      name: "io.net GPU Cluster",
+      type: "decentralized",
+      network: "io.net",
+      modelsSupported: ["mistral-7b-instruct", "llama-3.1-8b", "codellama-34b"],
+      costPerRequest: "150000000000000",
+      latencyMs: 420,
+      isActive: true,
+      verifiable: false,
+      decentralized: true,
+      metadata: JSON.stringify({ gpuType: "A100", nodes: 1840, region: "distributed" }),
+    });
+    await this.createInferenceProvider({
+      name: "Akash Network",
+      type: "decentralized",
+      network: "akash",
+      modelsSupported: ["llama-3.1-70b-instruct", "mistral-7b-instruct", "phi-3-medium"],
+      costPerRequest: "200000000000000",
+      latencyMs: 650,
+      isActive: true,
+      verifiable: false,
+      decentralized: true,
+      metadata: JSON.stringify({ deployments: 412, avgCostSaving: "78%" }),
+    });
+    await this.createInferenceProvider({
+      name: "OpenAI",
+      type: "centralized",
+      network: "openai",
+      modelsSupported: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
+      costPerRequest: "2000000000000000",
+      latencyMs: 180,
+      isActive: true,
+      verifiable: false,
+      decentralized: false,
+      metadata: JSON.stringify({ note: "Centralized fallback - higher cost, lower latency" }),
+    });
+    await this.createInferenceProvider({
+      name: "Anthropic",
+      type: "centralized",
+      network: "anthropic",
+      modelsSupported: ["claude-3.5-sonnet", "claude-3-haiku"],
+      costPerRequest: "2500000000000000",
+      latencyMs: 200,
+      isActive: true,
+      verifiable: false,
+      decentralized: false,
+      metadata: JSON.stringify({ note: "Centralized fallback - premium quality" }),
+    });
+    await this.createInferenceProvider({
+      name: "EZKL Verifiable",
+      type: "verifiable",
+      network: "ezkl",
+      modelsSupported: ["zkml-classifier-v2", "zkml-embeddings-v1"],
+      costPerRequest: "500000000000000",
+      latencyMs: 1200,
+      isActive: true,
+      verifiable: true,
+      decentralized: true,
+      metadata: JSON.stringify({ proofType: "zk-SNARK", maxParams: "50M", proofTime: "~340ms" }),
+    });
   }
 }
 

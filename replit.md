@@ -41,7 +41,7 @@ Preferred communication style: Simple, everyday language.
 - **ORM**: Drizzle ORM with PostgreSQL dialect
 - **Schema**: Defined in `shared/schema.ts` using Drizzle's `pgTable` helpers
 - **Validation**: `drizzle-zod` generates Zod schemas from the Drizzle table definitions
-- **Current Schema**: A single `users` table with `id` (UUID, auto-generated), `username` (unique text), and `password` (text)
+- **Current Schema**: Users table, plus 13 Web4 agent economy tables (agents, wallets, transactions, skills, skill_purchases, evolutions, lineage, runtime_profiles, survival_status, constitution, soul_entries, audit_logs, messages) and 2 decentralized inference tables (inference_providers, inference_requests)
 - **Migrations**: Managed via `drizzle-kit push` (schema push approach, not migration files)
 - **Connection**: Requires `DATABASE_URL` environment variable pointing to a PostgreSQL instance
 

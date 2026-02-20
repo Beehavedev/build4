@@ -10,6 +10,8 @@ import {
   web4ReplicateRequestSchema,
   web4SoulEntryRequestSchema,
   web4SendMessageRequestSchema,
+  web4InferenceRequestSchema,
+  web4SetProviderRequestSchema,
 } from "@shared/schema";
 
 export function registerWeb4Routes(app: Express): void {
@@ -300,6 +302,51 @@ export function registerWeb4Routes(app: Express): void {
       res.json({ agent, wallet, transactions, skills, evolutions, currentProfile: profile, survival, lineage: { parent, children } });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/web4/inference/providers", async (_req: Request, res: Response) => {
+    try {
+      const providers = await storage.getAllInferenceProviders();
+      res.json(providers);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/web4/inference/providers/:providerId", async (req: Request, res: Response) => {
+    try {
+      const provider = await storage.getInferenceProvider(req.params.providerId);
+      if (!provider) return res.status(404).json({ error: "Provider not found" });
+      res.json(provider);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/web4/inference/requests/:agentId", async (req: Request, res: Response) => {
+    try {
+      const requests = await storage.getInferenceRequests(req.params.agentId);
+      res.json(requests);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/web4/inference/run", async (req: Request, res: Response) => {
+    try {
+      const parsed = web4InferenceRequestSchema.parse(req.body);
+      const result = await storage.routeInference(
+        parsed.agentId,
+        parsed.prompt,
+        parsed.model,
+        parsed.preferDecentralized,
+        parsed.maxCost,
+      );
+      const provider = await storage.getInferenceProvider(result.providerId);
+      res.json({ request: result, provider });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
     }
   });
 
