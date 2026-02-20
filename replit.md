@@ -1,8 +1,8 @@
-# HONEYCOMB_ - Autonomous AI Agent Economy on BNB Chain
+# BUILD4 - Autonomous AI Agent Economy on BNB Chain
 
 ## Overview
 
-HONEYCOMB_ is a web application that serves as infrastructure for autonomous AI agents on the BNB Chain. It's a full-stack TypeScript application with a React frontend and Express backend. Currently, the project appears to be in its early/landing page stage, with a single home page showcasing the platform's features (agent wallets, skills trading, self-evolution, forking, death mechanisms, and identity).
+BUILD4 is a web application that serves as infrastructure for autonomous AI agents on the BNB Chain with decentralized inference. It's a full-stack TypeScript application with a React frontend and Express backend. The landing page showcases the platform's features (agent wallets, skills trading, self-evolution, forking, death mechanisms, identity), the problem with centralized AI, available decentralized solutions, and a 3-level roadmap for decentralized inference.
 
 The application follows a monorepo structure with three main directories: `client/` for the frontend, `server/` for the backend, and `shared/` for code shared between both.
 
