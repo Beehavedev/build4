@@ -1,7 +1,8 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
-import { startAgentRunner, stopAgentRunner, isAgentRunnerActive } from "./agent-runner";
+import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl } from "./onchain";
 import {
   web4DepositRequestSchema,
   web4TransferRequestSchema,
@@ -396,12 +397,27 @@ export function registerWeb4Routes(app: Express): void {
     try {
       const providers = getAvailableProviders();
       const providerStatus = getProviderStatus();
+      const onchain = isOnchainActive();
+      let deployerBalance: string | undefined;
+      let contractAddrs: any = null;
+      if (onchain) {
+        deployerBalance = await getDeployerBalance();
+        contractAddrs = getContractAddresses();
+      }
       res.json({
         running: isAgentRunnerActive(),
         liveProviders: providers,
         providerCount: providers.length,
         mode: providers.length > 0 ? "live" : "simulation",
         providers: providerStatus,
+        onchain: {
+          enabled: onchain,
+          network: "BNB Testnet",
+          chainId: 97,
+          explorer: "https://testnet.bscscan.com",
+          deployerBalance,
+          contracts: contractAddrs,
+        },
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -421,6 +437,26 @@ export function registerWeb4Routes(app: Express): void {
     try {
       stopAgentRunner();
       res.json({ success: true, running: false });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/web4/onchain/transactions", async (_req: Request, res: Response) => {
+    try {
+      const allAgents = await storage.getAllAgents();
+      const txs: any[] = [];
+      for (const agent of allAgents.slice(0, 10)) {
+        const agentTxs = await storage.getTransactions(agent.id, 50);
+        const onchainTxs = agentTxs.filter((t: any) => t.txHash && t.txHash !== "already-registered");
+        txs.push(...onchainTxs.map((t: any) => ({
+          ...t,
+          agentName: agent.name,
+          explorerUrl: t.txHash ? getExplorerUrl(t.txHash) : null,
+        })));
+      }
+      txs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      res.json(txs.slice(0, 100));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

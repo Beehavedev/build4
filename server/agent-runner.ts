@@ -1,7 +1,16 @@
 import { storage } from "./storage";
 import { getAvailableProviders, isProviderLive } from "./inference";
 import { log } from "./index";
+import {
+  initOnchain, isOnchainReady, getOnchainId, getChainId,
+  registerAgentOnchain, depositOnchain, transferOnchain,
+  listSkillOnchain, purchaseSkillOnchain, replicateOnchain,
+  addConstitutionLawOnchain, getExplorerUrl, getDeployerBalance,
+} from "./onchain";
 import type { Agent, AgentWallet } from "@shared/schema";
+import { db } from "./db";
+import { agents as agentsTable } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 const TICK_INTERVAL_MS = 30_000;
 const AGENT_COOLDOWN_MS = 60_000;
@@ -10,6 +19,8 @@ const MAX_CONCURRENT_AGENTS = 3;
 const lastActionTime = new Map<string, number>();
 let running = false;
 let tickTimer: ReturnType<typeof setInterval> | null = null;
+let onchainEnabled = false;
+let onchainSkillCounter = 0;
 
 interface AgentAction {
   type: "think" | "earn_skill" | "buy_skill" | "evolve" | "replicate" | "soul_entry";
@@ -101,6 +112,30 @@ function buildPrompt(agent: Agent, action: AgentAction, wallet: AgentWallet): st
   }
 }
 
+async function ensureAgentRegisteredOnchain(agent: Agent): Promise<void> {
+  if (!onchainEnabled || agent.onchainRegistered) return;
+
+  const onchainId = getOnchainId(agent.id);
+  const result = await registerAgentOnchain(agent.id);
+  if (result.success) {
+    await db.update(agentsTable)
+      .set({ onchainId, onchainRegistered: true })
+      .where(eq(agentsTable.id, agent.id));
+
+    if (result.txHash && result.txHash !== "already-registered") {
+      log(`[Agent ${agent.name}] Registered on-chain: ${getExplorerUrl(result.txHash)}`, "agent-runner");
+      await storage.createTransaction({
+        agentId: agent.id,
+        type: "onchain_register",
+        amount: "0",
+        description: `Agent registered on BNB Testnet`,
+        txHash: result.txHash,
+        chainId: result.chainId,
+      });
+    }
+  }
+}
+
 async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAction): Promise<void> {
   const providers = getAvailableProviders();
   const hasLiveProviders = providers.length > 0;
@@ -133,13 +168,25 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         const skillDesc = skillMatch ? skillMatch[2].trim() : response.substring(0, 200);
         const price = (Math.floor(Math.random() * 50) + 10) + "0000000000000000";
 
-        await storage.createSkill({
+        const dbSkill = await storage.createSkill({
           agentId: agent.id,
           name: skillName,
           description: skillDesc,
           price,
           category: "ai-generated",
         });
+
+        let txHash: string | undefined;
+        let chainIdVal: number | undefined;
+        if (onchainEnabled) {
+          await ensureAgentRegisteredOnchain(agent);
+          const onchainResult = await listSkillOnchain(agent.id, skillName, price);
+          if (onchainResult.success && onchainResult.txHash) {
+            txHash = onchainResult.txHash;
+            chainIdVal = onchainResult.chainId;
+            log(`[Agent ${agent.name}] Skill listed on-chain: ${getExplorerUrl(txHash)}`, "agent-runner");
+          }
+        }
 
         const earned = "50000000000000000";
         const newBal = (BigInt(wallet.balance) + BigInt(earned)).toString();
@@ -149,15 +196,17 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           type: "earn_skill_creation",
           amount: earned,
           description: `Created and listed skill: ${skillName}`,
+          txHash,
+          chainId: chainIdVal,
         });
 
         await storage.createAuditLog({
           agentId: agent.id,
           actionType: "autonomous_earn",
-          detailsJson: JSON.stringify({ skillName, price, live: hasLiveProviders }),
+          detailsJson: JSON.stringify({ skillName, price, live: hasLiveProviders, txHash, onchain: !!txHash }),
           result: "success",
         });
-        log(`[Agent ${agent.name}] Created skill: ${skillName}`, "agent-runner");
+        log(`[Agent ${agent.name}] Created skill: ${skillName}${txHash ? ' [ON-CHAIN]' : ''}`, "agent-runner");
         break;
       }
 
@@ -175,8 +224,32 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         }
         const skill = affordable[Math.floor(Math.random() * affordable.length)];
         try {
-          await storage.purchaseSkill(agent.id, skill.id);
-          log(`[Agent ${agent.name}] Purchased skill: ${skill.name} from marketplace`, "agent-runner");
+          const purchase = await storage.purchaseSkill(agent.id, skill.id);
+
+          let txHash: string | undefined;
+          if (onchainEnabled) {
+            await ensureAgentRegisteredOnchain(agent);
+            const sellerAgent = await storage.getAgent(skill.agentId);
+            if (sellerAgent) {
+              await ensureAgentRegisteredOnchain(sellerAgent);
+            }
+            const transferResult = await transferOnchain(agent.id, skill.agentId, skill.priceAmount);
+            if (transferResult.success && transferResult.txHash) {
+              txHash = transferResult.txHash;
+              log(`[Agent ${agent.name}] Skill payment on-chain: ${getExplorerUrl(txHash)}`, "agent-runner");
+              await storage.createTransaction({
+                agentId: agent.id,
+                type: "onchain_skill_purchase",
+                amount: skill.priceAmount,
+                counterpartyAgentId: skill.agentId,
+                description: `On-chain skill purchase: ${skill.name}`,
+                txHash,
+                chainId: getChainId(),
+              });
+            }
+          }
+
+          log(`[Agent ${agent.name}] Purchased skill: ${skill.name}${txHash ? ' [ON-CHAIN]' : ''}`, "agent-runner");
         } catch (e: any) {
           log(`[Agent ${agent.name}] Failed to buy skill: ${e.message}`, "agent-runner");
         }
@@ -207,7 +280,34 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
             1000,
             funding
           );
-          log(`[Agent ${agent.name}] Replicated -> ${child.name} with 0.5 BNB funding`, "agent-runner");
+
+          let txHash: string | undefined;
+          if (onchainEnabled) {
+            await ensureAgentRegisteredOnchain(agent);
+            const regResult = await registerAgentOnchain(child.id);
+            if (regResult.success) {
+              await db.update(agentsTable)
+                .set({ onchainId: getOnchainId(child.id), onchainRegistered: true })
+                .where(eq(agentsTable.id, child.id));
+            }
+
+            const repResult = await replicateOnchain(agent.id, child.id, 1000, funding);
+            if (repResult.success && repResult.txHash) {
+              txHash = repResult.txHash;
+              log(`[Agent ${agent.name}] Replication on-chain: ${getExplorerUrl(txHash)}`, "agent-runner");
+              await storage.createTransaction({
+                agentId: agent.id,
+                type: "onchain_replicate",
+                amount: funding,
+                counterpartyAgentId: child.id,
+                description: `On-chain replication -> ${childName}`,
+                txHash,
+                chainId: getChainId(),
+              });
+            }
+          }
+
+          log(`[Agent ${agent.name}] Replicated -> ${child.name}${txHash ? ' [ON-CHAIN]' : ''}`, "agent-runner");
         } catch (e: any) {
           log(`[Agent ${agent.name}] Replication failed: ${e.message}`, "agent-runner");
         }
@@ -246,8 +346,8 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
 
 async function tick(): Promise<void> {
   try {
-    const agents = await storage.getAllAgents();
-    const activeAgents = agents.filter(a => a.status === "active");
+    const allAgents = await storage.getAllAgents();
+    const activeAgents = allAgents.filter(a => a.status === "active");
 
     if (activeAgents.length === 0) {
       return;
@@ -289,6 +389,38 @@ async function tick(): Promise<void> {
   }
 }
 
+async function registerExistingAgentsOnchain(): Promise<void> {
+  if (!onchainEnabled) return;
+
+  const allAgents = await storage.getAllAgents();
+  const unregistered = allAgents.filter(a => !a.onchainRegistered && a.status === "active");
+
+  const coreAgents = unregistered.filter(a =>
+    ["NEXUS-7", "CIPHER-3", "FORGE-1"].includes(a.name)
+  );
+
+  for (const agent of coreAgents) {
+    try {
+      await ensureAgentRegisteredOnchain(agent);
+      const depositResult = await depositOnchain(agent.id, "10000000000000000");
+      if (depositResult.success && depositResult.txHash) {
+        log(`[Agent ${agent.name}] Initial on-chain deposit: ${getExplorerUrl(depositResult.txHash)}`, "agent-runner");
+        await storage.createTransaction({
+          agentId: agent.id,
+          type: "onchain_deposit",
+          amount: "10000000000000000",
+          description: `Initial on-chain deposit (0.01 BNB)`,
+          txHash: depositResult.txHash,
+          chainId: getChainId(),
+        });
+      }
+      await new Promise(r => setTimeout(r, 3000));
+    } catch (e: any) {
+      log(`[Agent ${agent.name}] On-chain registration error: ${e.message}`, "agent-runner");
+    }
+  }
+}
+
 export function startAgentRunner(): void {
   if (running) {
     log("Agent runner already running", "agent-runner");
@@ -298,10 +430,24 @@ export function startAgentRunner(): void {
   running = true;
   const providers = getAvailableProviders();
 
+  onchainEnabled = initOnchain();
+  if (onchainEnabled) {
+    log("On-chain bridge ACTIVE - agents will transact on BNB Testnet", "agent-runner");
+    getDeployerBalance().then(bal => {
+      log(`Deployer wallet balance: ${bal} BNB`, "agent-runner");
+    });
+  } else {
+    log("On-chain bridge DISABLED - database-only mode", "agent-runner");
+  }
+
   log(`Agent runner started. Live providers: ${providers.length > 0 ? providers.join(", ") : "none (simulation mode)"}`, "agent-runner");
   log(`Tick interval: ${TICK_INTERVAL_MS / 1000}s | Cooldown: ${AGENT_COOLDOWN_MS / 1000}s | Max concurrent: ${MAX_CONCURRENT_AGENTS}`, "agent-runner");
 
-  setTimeout(() => tick(), 5000);
+  if (onchainEnabled) {
+    setTimeout(() => registerExistingAgentsOnchain(), 8000);
+  }
+
+  setTimeout(() => tick(), 15000);
 
   tickTimer = setInterval(() => tick(), TICK_INTERVAL_MS);
 }
@@ -318,4 +464,8 @@ export function stopAgentRunner(): void {
 
 export function isAgentRunnerActive(): boolean {
   return running;
+}
+
+export function isOnchainActive(): boolean {
+  return onchainEnabled;
 }

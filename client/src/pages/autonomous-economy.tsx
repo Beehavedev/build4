@@ -309,9 +309,22 @@ export default function AutonomousEconomy() {
     liveProviders: string[];
     providerCount: number;
     mode: string;
+    onchain?: {
+      enabled: boolean;
+      network: string;
+      chainId: number;
+      explorer: string;
+      deployerBalance?: string;
+      contracts?: any;
+    };
   }>({
     queryKey: ["/api/web4/runner/status"],
     refetchInterval: 10000,
+  });
+
+  const { data: onchainTxs = [] } = useQuery<any[]>({
+    queryKey: ["/api/web4/onchain/transactions"],
+    refetchInterval: 15000,
   });
 
   const runnerToggle = useMutation({
@@ -574,7 +587,63 @@ export default function AutonomousEconomy() {
                   No API keys configured. Agents use simulated inference. Add HYPERBOLIC_API_KEY or AKASH_API_KEY for real decentralized compute.
                 </div>
               )}
+              {runnerStatus?.onchain?.enabled && (
+                <div className="mt-3 p-2 rounded border border-primary/30 bg-primary/5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="font-mono text-xs font-bold">On-Chain Bridge: ACTIVE</span>
+                    <Badge variant="default" className="text-[9px] h-4">BNB Testnet</Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-1.5">
+                    <div className="text-[10px] text-muted-foreground font-mono">
+                      Deployer: {runnerStatus.onchain.deployerBalance} BNB
+                    </div>
+                    <div className="text-[10px] text-muted-foreground font-mono">
+                      Chain ID: {runnerStatus.onchain.chainId}
+                    </div>
+                  </div>
+                </div>
+              )}
             </Card>
+
+            {onchainTxs.length > 0 && (
+              <Card className="p-3 mt-3" data-testid="card-onchain-txs">
+                <div className="text-xs font-mono font-semibold mb-2 flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Live On-Chain Transactions
+                  <Badge variant="default" className="text-[9px] h-4">{onchainTxs.length}</Badge>
+                </div>
+                <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                  {onchainTxs.slice(0, 20).map((tx: any) => (
+                    <div key={tx.id} className="flex items-center gap-2 font-mono text-[11px] py-1.5 border-b border-border last:border-0" data-testid={`row-onchain-tx-${tx.id}`}>
+                      <span className="text-primary font-bold w-20 truncate flex-shrink-0">{tx.agentName}</span>
+                      <span className="text-muted-foreground flex-1 truncate">{tx.type.replace("onchain_", "").replace(/_/g, " ")}</span>
+                      <span className="font-semibold text-primary flex-shrink-0">
+                        {tx.amount !== "0" ? `${(Number(BigInt(tx.amount)) / 1e18).toFixed(4)}` : ""}
+                      </span>
+                      <a
+                        href={tx.explorerUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline flex-shrink-0 font-bold"
+                        data-testid={`link-onchain-tx-${tx.id}`}
+                      >
+                        {tx.txHash?.substring(0, 10)}...
+                      </a>
+                    </div>
+                  ))}
+                </div>
+                <a
+                  href="https://testnet.bscscan.com/address/0x913a46e2D65C6F76CF4A4AD96B1c7913d5e324d9"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-primary hover:underline font-mono mt-2 block"
+                  data-testid="link-deployer-bscscan"
+                >
+                  View all on BscScan Testnet
+                </a>
+              </Card>
+            )}
           </div>
         </Section>
 
@@ -1161,13 +1230,24 @@ export default function AutonomousEconomy() {
               <div className="mt-3">
                 <div className="text-xs font-mono font-semibold mb-2 text-muted-foreground">{t("dashboard.recentTransactions")}</div>
                 <div className="space-y-1">
-                  {transactions.slice(0, 10).map((tx) => (
+                  {transactions.slice(0, 10).map((tx: any) => (
                     <div key={tx.id} className="flex items-center gap-2 font-mono text-xs py-1 border-b border-border last:border-0" data-testid={`row-transaction-${tx.id}`}>
                       <span className={tx.type.startsWith("earn") || tx.type === "deposit" || tx.type === "revenue_share" ? "text-primary" : "text-red-400"}>
                         {tx.type.startsWith("earn") || tx.type === "deposit" || tx.type === "revenue_share" ? "+" : "-"}
                       </span>
                       <span className="font-semibold">{formatShortCredits(tx.amount)}</span>
                       <span className="text-muted-foreground flex-1 truncate">{tx.description || tx.type}</span>
+                      {tx.txHash && tx.txHash !== "already-registered" && (
+                        <a
+                          href={`https://testnet.bscscan.com/tx/${tx.txHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline text-[10px] flex-shrink-0"
+                          data-testid={`link-tx-${tx.id}`}
+                        >
+                          [TX]
+                        </a>
+                      )}
                       <span className="text-muted-foreground text-[10px]">{tx.createdAt ? new Date(tx.createdAt).toLocaleDateString() : ""}</span>
                     </div>
                   ))}

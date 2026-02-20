@@ -23,6 +23,8 @@ export const agents = pgTable("agents", {
   bio: text("bio"),
   modelType: text("model_type").notNull().default("gpt-4o"),
   status: text("status").notNull().default("active"),
+  onchainId: text("onchain_id"),
+  onchainRegistered: boolean("onchain_registered").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -54,6 +56,8 @@ export const agentTransactions = pgTable("agent_transactions", {
   referenceType: text("reference_type"),
   referenceId: varchar("reference_id"),
   description: text("description"),
+  txHash: text("tx_hash"),
+  chainId: integer("chain_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
