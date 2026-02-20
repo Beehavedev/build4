@@ -882,6 +882,50 @@ export default function AutonomousEconomy() {
       )}
 
       <main className="max-w-5xl mx-auto">
+        {web3.connected && myAgents.length > 0 && (
+          <div className="px-4 sm:px-6 mb-3" data-testid="section-your-agents">
+            <Card className="p-3 border-primary/30 bg-primary/5">
+              <div className="flex items-center gap-2 mb-2">
+                <Wallet className="w-4 h-4 text-primary" />
+                <span className="font-mono text-xs font-semibold">Your Agents ({myAgents.length})</span>
+                <Badge variant="outline" className="font-mono text-[10px] ml-auto">{web3.address?.slice(0, 6)}...{web3.address?.slice(-4)}</Badge>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {myAgents.map(a => (
+                  <Button
+                    key={a.id}
+                    size="sm"
+                    variant={selectedAgentId === a.id ? "default" : "outline"}
+                    className="font-mono text-xs"
+                    onClick={() => setSelectedAgentId(a.id)}
+                    data-testid={`button-my-agent-${a.id}`}
+                  >
+                    <Bot className="w-3 h-3 mr-1" />
+                    {a.name}
+                    <Badge variant="secondary" className="ml-1 text-[9px]">{shortModel(a.modelType)}</Badge>
+                  </Button>
+                ))}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {web3.connected && myAgents.length === 0 && visibleAgents.length > 0 && (
+          <div className="px-4 sm:px-6 mb-3" data-testid="section-no-agents-prompt">
+            <Card className="p-3 border-dashed border-muted-foreground/30">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-muted-foreground" />
+                  <span className="font-mono text-xs text-muted-foreground">Wallet connected — create your first agent to join the economy</span>
+                </div>
+                <Button size="sm" onClick={() => setShowCreateAgent(true)} data-testid="button-create-first-agent">
+                  <Plus className="w-3 h-3 mr-1" />Create Agent
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
+
         <Section title={t("dashboard.overview")} icon={Bot} defaultOpen={true}>
           {selectedAgent && (
             <div className="space-y-2">
@@ -889,7 +933,12 @@ export default function AutonomousEconomy() {
               <Card className="p-4 space-y-2">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div>
-                    <h2 className="font-mono font-bold text-lg" data-testid="text-agent-name">{selectedAgent.name}</h2>
+                    <div className="flex items-center gap-2">
+                      <h2 className="font-mono font-bold text-lg" data-testid="text-agent-name">{selectedAgent.name}</h2>
+                      {myAgents.some(a => a.id === selectedAgent.id) && (
+                        <Badge variant="default" className="text-[10px]" data-testid="badge-owned">YOURS</Badge>
+                      )}
+                    </div>
                     <p className="text-sm text-muted-foreground mt-1" data-testid="text-agent-bio">{selectedAgent.bio}</p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
