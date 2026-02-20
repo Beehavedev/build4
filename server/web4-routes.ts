@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
-import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, depositOnchain } from "./onchain";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus } from "./onchain";
 import {
   web4CreateAgentRequestSchema,
   web4DepositRequestSchema,
@@ -49,17 +49,7 @@ export function registerWeb4Routes(app: Express): void {
 
       const result = await storage.createFullAgent(parsed.name, parsed.bio, parsed.modelType, parsed.initialDeposit);
 
-      let onchainTx: string | undefined;
-      if (isOnchainReady()) {
-        try {
-          const onchainResult = await depositOnchain(result.agent.id, result.wallet.balance);
-          if (onchainResult.success && onchainResult.txHash) {
-            onchainTx = onchainResult.txHash;
-          }
-        } catch {}
-      }
-
-      res.json({ ...result, onchainTx });
+      res.json(result);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }

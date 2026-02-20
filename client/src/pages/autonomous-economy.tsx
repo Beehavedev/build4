@@ -384,26 +384,68 @@ export default function AutonomousEconomy() {
   const [newAgentBio, setNewAgentBio] = useState("");
   const [newAgentModel, setNewAgentModel] = useState("meta-llama/Llama-3.1-70B-Instruct");
   const [newAgentDeposit, setNewAgentDeposit] = useState("100000000000000000");
+  const [createAgentStep, setCreateAgentStep] = useState<string | null>(null);
+
+  function uuidToNumericId(uuid: string): bigint {
+    const hex = uuid.replace(/-/g, "");
+    const truncated = hex.substring(0, 16);
+    return BigInt("0x" + truncated);
+  }
 
   const createAgentMutation = useMutation({
     mutationFn: async () => {
+      if (!web3.connected || !web3.signer) {
+        throw new Error("Please connect your wallet first to sign the on-chain transaction.");
+      }
+      if (!web3.hasContracts) {
+        throw new Error("Smart contracts not available on the connected chain. Please switch to BNB Chain, Base, or XLayer.");
+      }
+
+      setCreateAgentStep("Creating agent record...");
       const res = await apiRequest("POST", "/api/web4/agents/create", {
         name: newAgentName,
         bio: newAgentBio || undefined,
         modelType: newAgentModel,
         initialDeposit: newAgentDeposit,
       });
-      return res.json();
+      const data = await res.json();
+      const agentId = data.agent?.id;
+      if (!agentId) throw new Error("Failed to create agent record");
+
+      const numericId = Number(uuidToNumericId(agentId));
+      const depositEth = (Number(newAgentDeposit) / 1e18).toString();
+
+      setCreateAgentStep("Waiting for wallet signature — register agent on-chain...");
+      try {
+        await web3.registerAgent(numericId);
+      } catch (regErr: any) {
+        if (!regErr.message?.includes("already registered")) {
+          throw new Error(`On-chain registration failed: ${regErr.shortMessage || regErr.message}`);
+        }
+      }
+
+      setCreateAgentStep("Waiting for wallet signature — deposit " + depositEth + " to agent...");
+      try {
+        const receipt = await web3.depositToAgent(numericId, depositEth);
+        return { ...data, onchainTx: receipt?.hash };
+      } catch (depErr: any) {
+        throw new Error(`On-chain deposit failed: ${depErr.shortMessage || depErr.message}`);
+      }
     },
     onSuccess: (data: any) => {
+      setCreateAgentStep(null);
       queryClient.invalidateQueries({ queryKey: ["/api/web4/agents"] });
       setSelectedAgentId(data.agent?.id || null);
       setShowCreateAgent(false);
       setNewAgentName("");
       setNewAgentBio("");
-      toast({ title: "Agent created", description: `${data.agent?.name} is now live with its own wallet` });
+      const txMsg = data.onchainTx ? ` — tx: ${data.onchainTx.slice(0, 10)}...` : "";
+      toast({ title: "Agent created", description: `${data.agent?.name} is live with on-chain wallet${txMsg}` });
     },
-    onError: (e: Error) => toast({ title: "Creation failed", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => {
+      setCreateAgentStep(null);
+      toast({ title: "Creation failed", description: e.message, variant: "destructive" });
+    },
   });
 
   const [inferencePrompt, setInferencePrompt] = useState("");
@@ -552,13 +594,38 @@ export default function AutonomousEconomy() {
 
       {showCreateAgent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" data-testid="modal-create-agent">
-          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setShowCreateAgent(false)} />
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => !createAgentMutation.isPending && setShowCreateAgent(false)} />
           <div className="relative z-10 w-full max-w-lg mx-4 bg-card border rounded-lg shadow-lg p-5 sm:p-6">
             <div className="flex items-center gap-2 mb-4">
               <Bot className="w-4 h-4 text-primary" />
               <span className="font-mono text-sm font-semibold">Create New Agent</span>
               <Badge variant="secondary" className="text-[10px] ml-auto">0.025 BNB creation fee</Badge>
             </div>
+
+            {!web3.connected && (
+              <div className="mb-4 p-3 rounded-md border border-yellow-500/30 bg-yellow-500/5" data-testid="wallet-warning">
+                <div className="flex items-center gap-2 mb-2">
+                  <Wallet className="w-4 h-4 text-yellow-500" />
+                  <span className="font-mono text-xs font-semibold text-yellow-500">Wallet Required</span>
+                </div>
+                <p className="font-mono text-[11px] text-muted-foreground mb-3">
+                  Connect your wallet to sign on-chain transactions. The deposit will be sent from your wallet to the smart contract.
+                </p>
+                <WalletConnector />
+              </div>
+            )}
+
+            {web3.connected && (
+              <div className="mb-4 p-3 rounded-md border border-emerald-500/30 bg-emerald-500/5" data-testid="wallet-connected-info">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {web3.address?.slice(0, 6)}...{web3.address?.slice(-4)} — {web3.chainName} — {parseFloat(web3.balance || "0").toFixed(4)} {web3.chainName?.includes("Base") ? "ETH" : web3.chainName?.includes("XLayer") ? "OKB" : "BNB"}
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <label className="font-mono text-xs text-muted-foreground">Agent Name *</label>
@@ -570,6 +637,7 @@ export default function AutonomousEconomy() {
                   maxLength={50}
                   className="w-full font-mono text-sm bg-background border rounded-md px-3 py-2"
                   data-testid="input-agent-name"
+                  disabled={createAgentMutation.isPending}
                 />
               </div>
               <div className="space-y-2">
@@ -579,6 +647,7 @@ export default function AutonomousEconomy() {
                   onChange={(e) => setNewAgentModel(e.target.value)}
                   className="w-full font-mono text-sm bg-background border rounded-md px-3 py-2"
                   data-testid="select-agent-model"
+                  disabled={createAgentMutation.isPending}
                 >
                   <option value="meta-llama/Llama-3.1-70B-Instruct">Llama 3.1 70B</option>
                   <option value="deepseek-ai/DeepSeek-V3">DeepSeek V3</option>
@@ -595,35 +664,37 @@ export default function AutonomousEconomy() {
                   maxLength={300}
                   className="w-full font-mono text-sm bg-background border rounded-md px-3 py-2"
                   data-testid="input-agent-bio"
+                  disabled={createAgentMutation.isPending}
                 />
               </div>
               <div className="space-y-2">
-                <label className="font-mono text-xs text-muted-foreground">Initial Deposit (wei)</label>
+                <label className="font-mono text-xs text-muted-foreground">Initial Deposit</label>
                 <select
                   value={newAgentDeposit}
                   onChange={(e) => setNewAgentDeposit(e.target.value)}
                   className="w-full font-mono text-sm bg-background border rounded-md px-3 py-2"
                   data-testid="select-agent-deposit"
+                  disabled={createAgentMutation.isPending}
                 >
-                  <option value="50000000000000000">0.05 BNB (minimum)</option>
+                  <option value="50000000000000000">0.05 BNB</option>
                   <option value="100000000000000000">0.1 BNB</option>
                   <option value="250000000000000000">0.25 BNB</option>
                   <option value="500000000000000000">0.5 BNB</option>
                   <option value="1000000000000000000">1.0 BNB</option>
                 </select>
                 <p className="font-mono text-[10px] text-muted-foreground">
-                  0.025 BNB creation fee deducted • Remaining goes to agent wallet
+                  Sent from your wallet to the on-chain agent contract
                 </p>
               </div>
               <div className="flex items-end gap-2">
                 <Button
                   onClick={() => createAgentMutation.mutate()}
-                  disabled={!newAgentName.trim() || createAgentMutation.isPending}
+                  disabled={!newAgentName.trim() || createAgentMutation.isPending || !web3.connected}
                   className="font-mono text-xs gap-1.5"
                   data-testid="button-submit-create-agent"
                 >
                   {createAgentMutation.isPending ? (
-                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Creating...</>
+                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Signing...</>
                   ) : (
                     <><Plus className="w-3.5 h-3.5" /> Create Agent</>
                   )}
@@ -633,12 +704,22 @@ export default function AutonomousEconomy() {
                   size="sm"
                   className="font-mono text-xs"
                   onClick={() => setShowCreateAgent(false)}
+                  disabled={createAgentMutation.isPending}
                   data-testid="button-cancel-create"
                 >
                   Cancel
                 </Button>
               </div>
             </div>
+
+            {createAgentStep && (
+              <div className="mt-4 p-3 rounded-md border bg-background/50" data-testid="create-agent-status">
+                <div className="flex items-center gap-2">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-primary" />
+                  <span className="font-mono text-xs">{createAgentStep}</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
