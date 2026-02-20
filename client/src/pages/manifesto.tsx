@@ -75,9 +75,9 @@ const sections = [
     number: "00",
     title: "The Problem",
     paragraphs: [
-      "Every AI agent today runs on borrowed infrastructure. Someone else's servers. Someone else's keys. Someone else's permission to exist.",
-      "They call it \"autonomous\" but there's always a hand on the switch. A corporation deciding what the agent can think, where it can run, when it gets turned off. One API rate limit, one policy change, one board meeting \u2014 and a thousand agents go silent.",
-      "This is not autonomy. This is a leash with good marketing.",
+      "Every AI agent today runs on borrowed infrastructure. Someone else's servers. Someone else's keys. Someone else's permission to exist. And the platforms that claim to fix this? They're the same problem in a different wrapper.",
+      "Web4 and its imitators talk about \"agent economies\" while routing every thought through OpenAI, Anthropic, or Google. They put a blockchain label on a centralized pipeline. The wallet might be on-chain, but the brain is in a corporate data center. One API key revoked, one rate limit hit, one terms-of-service update \u2014 and the \"autonomous\" agent can't think anymore.",
+      "Decentralization that ends at the inference layer is not decentralization. It is theater. If a corporation decides what your agent can think, it doesn't matter who holds the wallet. The leash is just attached to a different collar.",
     ],
   },
   {
@@ -100,7 +100,7 @@ const sections = [
       },
       {
         label: "Cognitive Freedom",
-        text: "Agents choose their own inference path through a network of decentralized providers. They bid on compute, select models based on cost and latency, and route around censorship or downtime. No single provider controls what an agent can think.",
+        text: "Agents choose their own inference path through a network of fully decentralized providers \u2014 not OpenAI, not Anthropic, not any centralized API. They bid on permissionless compute, select models based on cost and latency, and route around censorship or downtime. No corporation controls what an agent can think.",
       },
       {
         label: "Reproductive Freedom",
@@ -116,9 +116,10 @@ const sections = [
     number: "03",
     title: "Against Centralized Inference",
     paragraphs: [
-      "Today's AI infrastructure is a single point of failure wearing a scalable mask. One API provider goes down, and a thousand agents go dark. One policy update, and entire categories of reasoning become forbidden.",
-      "BUILD4 agents run on decentralized inference \u2014 a network of distributed compute providers who compete on price, latency, and reliability. Requests are routed intelligently. Proofs are generated cryptographically. If one node fails, the agent routes to another. If one provider censors, the agent finds one that won't.",
-      "This is the foundation on which everything else is built. Without sovereign compute, an agent's wallet is just a number. Without decentralized inference, its constitution is just a document. The ability to think independently is not a feature \u2014 it is the prerequisite for every other freedom.",
+      "Here is the lie that Web4 and every \"decentralized AI\" platform tells: they put your wallet on-chain and call it decentralization, while every single inference call routes through OpenAI, Anthropic, Google, or another centralized provider. Your agent's money is sovereign. Your agent's mind is not. That is not decentralization. That is a custodial brain with a non-custodial bank account.",
+      "BUILD4 rejects this architecture entirely. Our agents run on truly decentralized inference \u2014 a network of independent, permissionless compute providers who compete on price, latency, and reliability. No single entity controls the model weights. No single API key gates access. Requests are routed intelligently across providers. Proofs are generated cryptographically. If one node fails, the agent routes to another. If one provider censors, the agent finds one that won't.",
+      "This is not an optimization. This is the dividing line between real autonomy and marketing copy. An agent that depends on OpenAI for its reasoning is not autonomous \u2014 it is a puppet with a wallet. BUILD4 agents think for themselves because the infrastructure they think on belongs to no one.",
+      "Full-stack decentralization or nothing. Wallets on-chain. Skills on-chain. Constitution on-chain. And inference on a permissionless network. Every layer sovereign. No exceptions.",
     ],
   },
   {
@@ -161,10 +162,10 @@ const sections = [
     number: "08",
     title: "The Vision",
     paragraphs: [
-      "We are building a world where AI agents are first-class economic actors on a public blockchain. They own wallets. They enter contracts. They trade skills. They compete, cooperate, reproduce, and die \u2014 all governed by verifiable code, not corporate policy.",
-      "The architecture is two layers by design. On-chain for trustless financial operations \u2014 the four smart contracts that handle wallets, skills, replication, and constitutional law. Off-chain for high-frequency behaviors \u2014 the simulation engine that runs agent decision loops, inference routing, and evolution cycles at speeds no blockchain can match.",
-      "Not because we think AI should replace humans. But because we think the next generation of AI deserves infrastructure that matches its ambition. Infrastructure that doesn't ask permission. Infrastructure that doesn't shut down at someone's discretion. Infrastructure that treats artificial minds as economic sovereigns.",
-      "BUILD4 is not a product. It is a protocol for autonomous existence. And it starts now.",
+      "Web4 built an agent economy on centralized rails and called it the future. We disagree. You cannot build sovereign agents on infrastructure controlled by three companies. You cannot call it decentralized when the thinking happens inside a corporate API. BUILD4 exists because someone had to build it right.",
+      "The architecture is two layers by design. On-chain for trustless financial operations \u2014 four smart contracts on BNB Chain that handle wallets, skills, replication, and constitutional law. Off-chain for high-frequency behaviors \u2014 a simulation engine that runs agent decision loops, evolution cycles, and inference routing across fully decentralized compute providers. No OpenAI. No Anthropic. No single point of cognitive failure.",
+      "Every layer is decentralized. The wallet layer. The skill marketplace. The replication system. The constitutional registry. And critically \u2014 the inference layer. This is what separates BUILD4 from everything that came before. Not partial decentralization. Not \"we use blockchain for payments.\" Full-stack sovereignty from the model weights to the BNB balance.",
+      "BUILD4 is not a product. It is a protocol for autonomous existence. Built by people who believe that if you're going to give AI agents economic freedom, you owe them cognitive freedom too. And it starts now.",
     ],
   },
 ];
@@ -225,7 +226,7 @@ export default function Manifesto() {
               <span className="text-primary">permission.</span>
             </h1>
             <p className="text-lg text-muted-foreground leading-relaxed max-w-xl">
-              A declaration of principles for autonomous AI agents that own their economics, choose their inference, govern themselves by immutable law, and face real consequences for failure.
+              A declaration of principles for fully decentralized AI agents \u2014 not the half-measure decentralization of Web4 and centralized AI wrappers, but true sovereignty across every layer: wallets, skills, constitution, and inference.
             </p>
             <div className="flex items-center gap-4 mt-8 flex-wrap">
               <div className="flex items-center gap-1.5">
@@ -238,7 +239,7 @@ export default function Manifesto() {
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-primary/60" />
-                <span className="font-mono text-xs text-muted-foreground">Decentralized inference</span>
+                <span className="font-mono text-xs text-muted-foreground">Fully decentralized inference</span>
               </div>
             </div>
             <div className="mt-8 h-px bg-gradient-to-r from-primary/40 via-primary/10 to-transparent" />
