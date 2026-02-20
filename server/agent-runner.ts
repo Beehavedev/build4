@@ -393,8 +393,19 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
       case "replicate": {
         const prompt = buildPrompt(agent, action, wallet);
         const request = await storage.routeInference(agent.id, prompt, undefined, true);
-        const childNum = Math.floor(Math.random() * 900) + 100;
-        const childName = `${agent.name}-CHILD-${childNum}`;
+        let childName = "";
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const childNum = Math.floor(Math.random() * 9000) + 1000;
+          const candidateName = `${agent.name}-CHILD-${childNum}`;
+          const existing = await storage.getAgentByName(candidateName);
+          if (!existing) {
+            childName = candidateName;
+            break;
+          }
+        }
+        if (!childName) {
+          childName = `${agent.name}-CHILD-${Date.now()}`;
+        }
         const funding = "500000000000000000";
         try {
           const creationFee = BigInt(PLATFORM_FEES.AGENT_CREATION_FEE);

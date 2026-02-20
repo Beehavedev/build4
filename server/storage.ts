@@ -54,8 +54,10 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
 
   getAgent(id: string): Promise<Agent | undefined>;
+  getAgentByName(name: string): Promise<Agent | undefined>;
   getAllAgents(): Promise<Agent[]>;
   createAgent(agent: InsertAgent): Promise<Agent>;
+  deleteAgent(id: string): Promise<void>;
 
   getWallet(agentId: string): Promise<AgentWallet | undefined>;
   createWallet(wallet: InsertAgentWallet): Promise<AgentWallet>;
@@ -153,6 +155,11 @@ export class DatabaseStorage implements IStorage {
     return agent;
   }
 
+  async getAgentByName(name: string): Promise<Agent | undefined> {
+    const [agent] = await db.select().from(agents).where(eq(agents.name, name));
+    return agent;
+  }
+
   async getAllAgents(): Promise<Agent[]> {
     return db.select().from(agents).orderBy(agents.createdAt);
   }
@@ -166,8 +173,35 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createAgent(agent: InsertAgent): Promise<Agent> {
-    const [created] = await db.insert(agents).values(agent).returning();
-    return created;
+    try {
+      const [created] = await db.insert(agents).values(agent).returning();
+      return created;
+    } catch (err: any) {
+      if (err.code === '23505' && err.constraint?.includes('name')) {
+        throw new Error(`Agent with name "${agent.name}" already exists`);
+      }
+      throw err;
+    }
+  }
+
+  async deleteAgent(id: string): Promise<void> {
+    await db.delete(agentWallets).where(eq(agentWallets.agentId, id));
+    await db.delete(agentTransactions).where(eq(agentTransactions.agentId, id));
+    await db.delete(agentSkills).where(eq(agentSkills.agentId, id));
+    await db.delete(skillPurchases).where(eq(skillPurchases.buyerAgentId, id));
+    await db.delete(skillPurchases).where(eq(skillPurchases.sellerAgentId, id));
+    await db.delete(agentEvolutions).where(eq(agentEvolutions.agentId, id));
+    await db.delete(agentLineage).where(eq(agentLineage.parentAgentId, id));
+    await db.delete(agentLineage).where(eq(agentLineage.childAgentId, id));
+    await db.delete(agentRuntimeProfiles).where(eq(agentRuntimeProfiles.agentId, id));
+    await db.delete(agentSurvivalStatus).where(eq(agentSurvivalStatus.agentId, id));
+    await db.delete(agentConstitution).where(eq(agentConstitution.agentId, id));
+    await db.delete(agentSoulEntries).where(eq(agentSoulEntries.agentId, id));
+    await db.delete(agentAuditLogs).where(eq(agentAuditLogs.agentId, id));
+    await db.delete(agentMessages).where(eq(agentMessages.fromAgentId, id));
+    await db.delete(agentMessages).where(eq(agentMessages.toAgentId, id));
+    await db.delete(inferenceRequests).where(eq(inferenceRequests.agentId, id));
+    await db.delete(agents).where(eq(agents.id, id));
   }
 
   async getWallet(agentId: string): Promise<AgentWallet | undefined> {
@@ -586,6 +620,9 @@ export class DatabaseStorage implements IStorage {
   async replicateAgent(parentAgentId: string, childName: string, childBio?: string, revenueShareBps = 1000, fundingAmount = "0", creationFeeTxHash?: string, creationFeeChainId?: number, replicationFeeTxHash?: string, replicationFeeChainId?: number): Promise<{ child: Agent; lineage: AgentLineage }> {
     const parent = await this.getAgent(parentAgentId);
     if (!parent) throw new Error("Parent agent not found");
+
+    const existingAgent = await this.getAgentByName(childName);
+    if (existingAgent) throw new Error(`Agent with name "${childName}" already exists`);
 
     const replicationFee = (BigInt(fundingAmount) * BigInt(PLATFORM_FEES.REPLICATION_FEE_BPS)) / BigInt(10000);
     const creationFee = BigInt(PLATFORM_FEES.AGENT_CREATION_FEE);

@@ -53,6 +53,11 @@ export function registerWeb4Routes(app: Express): void {
         return res.status(400).json({ error: "initialDeposit must be a numeric wei string" });
       }
 
+      const existing = await storage.getAgentByName(parsed.name);
+      if (existing) {
+        return res.status(409).json({ error: `An agent named "${parsed.name}" already exists. Choose a different name.` });
+      }
+
       const result = await storage.createFullAgent(parsed.name, parsed.bio, parsed.modelType, parsed.initialDeposit, parsed.onchainTxHash, parsed.onchainChainId, parsed.creatorWallet);
 
       let onchainRegistration = null;
@@ -280,6 +285,11 @@ export function registerWeb4Routes(app: Express): void {
   app.post("/api/web4/replicate", async (req: Request, res: Response) => {
     try {
       const parsed = web4ReplicateRequestSchema.parse(req.body);
+
+      const existingAgent = await storage.getAgentByName(parsed.childName);
+      if (existingAgent) {
+        return res.status(409).json({ error: `Agent with name "${parsed.childName}" already exists` });
+      }
 
       const replicationFee = (BigInt(parsed.fundingAmount) * BigInt(PLATFORM_FEES.REPLICATION_FEE_BPS) / 10000n).toString();
       const totalFee = (BigInt(replicationFee) + BigInt(PLATFORM_FEES.AGENT_CREATION_FEE)).toString();
@@ -645,6 +655,31 @@ export function registerWeb4Routes(app: Express): void {
       return res.status(404).json({ error: "WalletConnect not configured" });
     }
     res.json({ projectId });
+  });
+
+  app.post("/api/web4/admin/cleanup-duplicates", async (req: Request, res: Response) => {
+    try {
+      const adminKey = req.headers["x-admin-key"];
+      if (!adminKey || adminKey !== process.env.SESSION_SECRET) {
+        return res.status(403).json({ error: "Unauthorized" });
+      }
+      const allAgents = await storage.getAllAgents();
+      const seen = new Map<string, string>();
+      const toDelete: string[] = [];
+      for (const agent of allAgents) {
+        if (seen.has(agent.name)) {
+          toDelete.push(agent.id);
+        } else {
+          seen.set(agent.name, agent.id);
+        }
+      }
+      for (const id of toDelete) {
+        await storage.deleteAgent(id);
+      }
+      res.json({ deleted: toDelete.length, deletedIds: toDelete, remaining: allAgents.length - toDelete.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   app.get("/api/web4/revenue/fees", async (_req: Request, res: Response) => {
