@@ -37,10 +37,10 @@ const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
     network: "akash",
     baseUrl: "https://api.akashml.com/v1",
     apiKeyEnv: "AKASH_API_KEY",
-    defaultModel: "deepseek-ai/DeepSeek-V3",
+    defaultModel: "deepseek-ai/DeepSeek-V3.2",
     models: [
-      "deepseek-ai/DeepSeek-V3",
-      "meta-llama/Llama-3.3-70B",
+      "deepseek-ai/DeepSeek-V3.2",
+      "meta-llama/Llama-3.3-70B-Instruct",
       "Qwen/Qwen3-30B-A3B",
     ],
     requiresAuth: true,
@@ -106,7 +106,7 @@ async function callOpenAICompatible(
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",

@@ -626,12 +626,12 @@ export class DatabaseStorage implements IStorage {
     if (preferDecentralized) {
       const decentralizedProviders = activeProviders.filter(p => p.decentralized);
       if (decentralizedProviders.length > 0) {
+        let candidates = decentralizedProviders;
         if (maxCost) {
           const affordable = decentralizedProviders.filter(p => BigInt(p.costPerRequest) <= BigInt(maxCost));
-          selected = affordable.length > 0 ? affordable[0] : decentralizedProviders[0];
-        } else {
-          selected = decentralizedProviders[0];
+          if (affordable.length > 0) candidates = affordable;
         }
+        selected = candidates[Math.floor(Math.random() * candidates.length)];
       } else {
         selected = activeProviders.find(p => !p.decentralized) || activeProviders[0];
       }
@@ -650,9 +650,8 @@ export class DatabaseStorage implements IStorage {
       throw new Error(`Insufficient balance. Need ${selected.costPerRequest} but have ${wallet.balance}`);
     }
 
-    const selectedModel = model || (selected.modelsSupported && selected.modelsSupported.length > 0 ? selected.modelsSupported[0] : "llama-3.1-70b");
-
     const network = selected.network || "hyperbolic";
+    const selectedModel = model || undefined;
     const inferenceResult = await runInference(network, selectedModel, prompt);
 
     const responseText = inferenceResult.text;
@@ -666,13 +665,13 @@ export class DatabaseStorage implements IStorage {
       agentId,
       type: "spend_inference",
       amount: selected.costPerRequest,
-      description: `Inference via ${selected.name} (${selectedModel})`,
+      description: `Inference via ${selected.name} (${inferenceResult.model})`,
     });
 
     const request = await this.createInferenceRequest({
       agentId,
       providerId: selected.id,
-      model: selectedModel,
+      model: inferenceResult.model,
       prompt,
       response: responseText,
       status: "completed",
