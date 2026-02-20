@@ -44,7 +44,7 @@ module.exports = {
     },
     xlayerTestnet: {
       url: process.env.XLAYER_TESTNET_RPC || "https://testrpc.xlayer.tech",
-      chainId: 195,
+      chainId: 1952,
       accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
     },
     xlayerMainnet: {
