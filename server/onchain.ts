@@ -534,6 +534,51 @@ export async function addConstitutionLawOnchain(agentDbId: string, lawText: stri
   return sendTx(contracts.constitution, "addLaw", [numId, lawHash, isImmutable]);
 }
 
+export async function collectFeeOnchain(agentDbId: string, feeAmountWei: string, feeType: string): Promise<OnchainResult> {
+  if (!contracts || !wallet) return { success: false, error: "Not initialized", chainId };
+
+  const numId = uuidToNumericId(agentDbId);
+  const feeAmount = BigInt(feeAmountWei);
+
+  if (feeAmount === 0n) {
+    return { success: false, error: "Zero fee amount", chainId };
+  }
+
+  try {
+    const onchainBal = await contracts.hub.getBalance(numId);
+    if (onchainBal < feeAmount) {
+      log(`[onchain] collectFee(${feeType}): Agent on-chain balance ${onchainBal.toString()} < fee ${feeAmountWei}`, "onchain");
+      return { success: false, error: `Insufficient on-chain balance for ${feeType} fee`, chainId };
+    }
+  } catch (e: any) {
+    log(`[onchain] collectFee balance check failed: ${e.message?.substring(0, 100)}`, "onchain");
+    return { success: false, error: `Balance check failed: ${e.message?.substring(0, 80)}`, chainId };
+  }
+
+  const result = await sendTx(contracts.hub, "withdraw", [numId, feeAmount, wallet.address], { gasLimit: 150000 });
+  if (result.success) {
+    log(`[onchain] Fee collected (${feeType}): ${feeAmountWei} wei from agent ${agentDbId.substring(0, 8)} -> treasury. TX: ${result.txHash}`, "onchain");
+  }
+  return result;
+}
+
+export async function verifyOnchainBalance(agentDbId: string): Promise<{ balance: string; registered: boolean }> {
+  if (!contracts) return { balance: "0", registered: false };
+  const numId = uuidToNumericId(agentDbId);
+  try {
+    const registered = await contracts.hub.isAgentRegistered(numId);
+    if (!registered) return { balance: "0", registered: false };
+    const bal = await contracts.hub.getBalance(numId);
+    return { balance: bal.toString(), registered: true };
+  } catch {
+    return { balance: "0", registered: false };
+  }
+}
+
+export function getDeployerAddress(): string {
+  return wallet?.address || "";
+}
+
 export async function getOnchainBalance(agentDbId: string): Promise<string> {
   if (!contracts) return "0";
   const numId = uuidToNumericId(agentDbId);

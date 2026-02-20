@@ -427,7 +427,18 @@ export default function AutonomousEconomy() {
       setCreateAgentStep("Waiting for wallet signature — deposit " + depositEth + " to agent...");
       try {
         const receipt = await web3.depositToAgent(numericId, depositEth);
-        return { ...data, onchainTx: receipt?.hash };
+        const txHash = receipt?.hash;
+        const chainIdVal = web3.chainId;
+
+        if (txHash) {
+          setCreateAgentStep("Verifying on-chain deposit...");
+          await apiRequest("POST", `/api/web4/agents/${agentId}/verify-deposit`, {
+            txHash,
+            chainId: chainIdVal,
+          });
+        }
+
+        return { ...data, onchainTx: txHash };
       } catch (depErr: any) {
         throw new Error(`On-chain deposit failed: ${depErr.shortMessage || depErr.message}`);
       }

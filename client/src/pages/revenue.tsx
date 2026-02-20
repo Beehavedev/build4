@@ -15,6 +15,9 @@ import {
   GitBranch,
   Brain,
   ShoppingCart,
+  ExternalLink,
+  ShieldCheck,
+  ShieldAlert,
 } from "lucide-react";
 import type { PlatformRevenue } from "@shared/schema";
 
@@ -70,6 +73,17 @@ function feeTypeLabel(type: string): string {
   return labels[type] || type;
 }
 
+function getExplorerUrl(txHash: string, chainId: number | null, explorerBases: Record<number, string>): string {
+  if (!chainId) return "#";
+  const base = explorerBases[chainId] || "https://testnet.bscscan.com";
+  return `${base}/tx/${txHash}`;
+}
+
+function truncateHash(hash: string): string {
+  if (hash.length <= 14) return hash;
+  return `${hash.slice(0, 8)}...${hash.slice(-6)}`;
+}
+
 export default function Revenue() {
   const t = useT();
 
@@ -77,6 +91,9 @@ export default function Revenue() {
     totalRevenue: string;
     byFeeType: Record<string, string>;
     totalTransactions: number;
+    onchainVerified: number;
+    onchainRevenue: string;
+    explorerBases: Record<number, string>;
   }>({ queryKey: ["/api/web4/revenue/summary"] });
 
   const { data: history } = useQuery<PlatformRevenue[]>({
@@ -89,6 +106,8 @@ export default function Revenue() {
   }>({ queryKey: ["/api/web4/revenue/fees"] });
 
   const feeTypes = ["agent_creation", "skill_listing", "skill_purchase", "replication", "inference", "evolution"];
+  const explorerBases = summary?.explorerBases || {};
+  const onchainPct = summary && summary.totalTransactions > 0 ? Math.round((summary.onchainVerified / summary.totalTransactions) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -112,7 +131,7 @@ export default function Revenue() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="p-6 bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20" data-testid="card-total-revenue">
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 rounded-lg bg-primary/20">
@@ -128,6 +147,21 @@ export default function Revenue() {
             </p>
           </Card>
 
+          <Card className="p-6 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border-emerald-500/20" data-testid="card-onchain-revenue">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-lg bg-emerald-500/20">
+                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+              </div>
+              <span className="text-sm text-muted-foreground">On-Chain Verified</span>
+            </div>
+            <p className="text-2xl font-bold text-emerald-400" data-testid="text-onchain-revenue">
+              {summary ? formatBNB(summary.onchainRevenue) : "Loading..."}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {summary?.onchainVerified ?? 0} verified transactions
+            </p>
+          </Card>
+
           <Card className="p-6" data-testid="card-total-transactions">
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 rounded-lg bg-accent">
@@ -137,6 +171,9 @@ export default function Revenue() {
             </div>
             <p className="text-2xl font-bold" data-testid="text-total-transactions">
               {summary?.totalTransactions ?? "..."}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {onchainPct}% on-chain verified
             </p>
           </Card>
 
@@ -223,19 +260,46 @@ export default function Revenue() {
               <p className="text-xs mt-1">Fees will appear here as agents transact</p>
             </div>
           ) : (
-            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+            <div className="space-y-2 max-h-[500px] overflow-y-auto">
               {history.map((entry) => (
-                <div key={entry.id} className="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-accent/50 transition-colors" data-testid={`row-history-${entry.id}`}>
+                <div key={entry.id} className="flex items-center gap-3 py-3 px-3 rounded-lg hover:bg-accent/50 transition-colors border border-transparent hover:border-border/40" data-testid={`row-history-${entry.id}`}>
                   <div className={`p-1.5 rounded ${feeTypeBadge(entry.feeType)}`}>
                     {feeTypeIcon(entry.feeType)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{entry.description}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(entry.createdAt!).toLocaleString()}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium truncate">{entry.description}</p>
+                      {entry.txHash ? (
+                        <Badge variant="outline" className="shrink-0 text-[10px] bg-emerald-500/10 text-emerald-400 border-emerald-500/30 gap-1" data-testid={`badge-verified-${entry.id}`}>
+                          <ShieldCheck className="w-3 h-3" />
+                          On-Chain
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="shrink-0 text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/30 gap-1" data-testid={`badge-offchain-${entry.id}`}>
+                          <ShieldAlert className="w-3 h-3" />
+                          Off-Chain
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(entry.createdAt!).toLocaleString()}
+                      </p>
+                      {entry.txHash && (
+                        <a
+                          href={getExplorerUrl(entry.txHash, entry.chainId, explorerBases)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary hover:underline flex items-center gap-1"
+                          data-testid={`link-tx-${entry.id}`}
+                        >
+                          <span className="font-mono">{truncateHash(entry.txHash)}</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right shrink-0">
                     <p className="text-sm font-mono font-medium text-primary">{formatBNB(entry.amount)}</p>
                     <Badge variant="outline" className="text-[10px]">{feeTypeLabel(entry.feeType)}</Badge>
                   </div>

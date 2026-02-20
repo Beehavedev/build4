@@ -105,9 +105,9 @@ export interface IStorage {
   withdraw(agentId: string, amount: string): Promise<AgentWallet | undefined>;
   transfer(fromAgentId: string, toAgentId: string, amount: string, description?: string): Promise<void>;
   tip(fromAgentId: string, toAgentId: string, amount: string, referenceType?: string, referenceId?: string): Promise<void>;
-  purchaseSkill(buyerAgentId: string, skillId: string): Promise<SkillPurchase>;
+  purchaseSkill(buyerAgentId: string, skillId: string, feeTxHash?: string, feeChainId?: number): Promise<SkillPurchase>;
   evolveAgent(agentId: string, toModel: string, reason?: string, metricsJson?: string): Promise<AgentEvolution>;
-  replicateAgent(parentAgentId: string, childName: string, childBio?: string, revenueShareBps?: number, fundingAmount?: string): Promise<{ child: Agent; lineage: AgentLineage }>;
+  replicateAgent(parentAgentId: string, childName: string, childBio?: string, revenueShareBps?: number, fundingAmount?: string, creationFeeTxHash?: string, creationFeeChainId?: number, replicationFeeTxHash?: string, replicationFeeChainId?: number): Promise<{ child: Agent; lineage: AgentLineage }>;
 
   getAllInferenceProviders(): Promise<InferenceProvider[]>;
   getInferenceProvider(id: string): Promise<InferenceProvider | undefined>;
@@ -120,8 +120,10 @@ export interface IStorage {
   routeInference(agentId: string, prompt: string, model?: string, preferDecentralized?: boolean, maxCost?: string): Promise<InferenceRequest>;
 
   recordPlatformRevenue(entry: InsertPlatformRevenue): Promise<PlatformRevenue>;
+  getRecentPlatformRevenueForAgent(agentId: string, feeType: string): Promise<PlatformRevenue | undefined>;
+  updatePlatformRevenueOnchainStatus(revenueId: string, txHash: string, chainIdVal: number): Promise<void>;
   getPlatformRevenue(limit?: number): Promise<PlatformRevenue[]>;
-  getPlatformRevenueSummary(): Promise<{ totalRevenue: string; byFeeType: Record<string, string>; totalTransactions: number }>;
+  getPlatformRevenueSummary(): Promise<{ totalRevenue: string; byFeeType: Record<string, string>; totalTransactions: number; onchainVerified: number; onchainRevenue: string }>;
 
   createFullAgent(name: string, bio: string | undefined, modelType: string, initialDeposit: string): Promise<{ agent: Agent; wallet: AgentWallet }>;
 
@@ -500,7 +502,7 @@ export class DatabaseStorage implements IStorage {
     await this.recalcSurvivalTier(toAgentId);
   }
 
-  async purchaseSkill(buyerAgentId: string, skillId: string): Promise<SkillPurchase> {
+  async purchaseSkill(buyerAgentId: string, skillId: string, feeTxHash?: string, feeChainId?: number): Promise<SkillPurchase> {
     const skill = await this.getSkill(skillId);
     if (!skill) throw new Error("Skill not found");
     if (!skill.isActive) throw new Error("Skill is not active");
@@ -528,7 +530,9 @@ export class DatabaseStorage implements IStorage {
         amount: platformFee.toString(),
         agentId: buyerAgentId,
         referenceId: skillId,
-        description: `2.5% fee on skill purchase: ${skill.name}`,
+        description: `2.5% fee on skill purchase: ${skill.name}${feeTxHash ? ' [on-chain verified]' : ''}`,
+        txHash: feeTxHash,
+        chainId: feeChainId,
       });
     }
 
@@ -569,7 +573,7 @@ export class DatabaseStorage implements IStorage {
     return evolution;
   }
 
-  async replicateAgent(parentAgentId: string, childName: string, childBio?: string, revenueShareBps = 1000, fundingAmount = "0"): Promise<{ child: Agent; lineage: AgentLineage }> {
+  async replicateAgent(parentAgentId: string, childName: string, childBio?: string, revenueShareBps = 1000, fundingAmount = "0", creationFeeTxHash?: string, creationFeeChainId?: number, replicationFeeTxHash?: string, replicationFeeChainId?: number): Promise<{ child: Agent; lineage: AgentLineage }> {
     const parent = await this.getAgent(parentAgentId);
     if (!parent) throw new Error("Parent agent not found");
 
@@ -606,7 +610,9 @@ export class DatabaseStorage implements IStorage {
         amount: creationFee.toString(),
         agentId: parentAgentId,
         referenceId: child.id,
-        description: `Agent creation fee for ${childName}`,
+        description: `Agent creation fee for ${childName}${creationFeeTxHash ? ' [on-chain verified]' : ''}`,
+        txHash: creationFeeTxHash,
+        chainId: creationFeeChainId,
       });
     }
     if (replicationFee > BigInt(0)) {
@@ -615,7 +621,9 @@ export class DatabaseStorage implements IStorage {
         amount: replicationFee.toString(),
         agentId: parentAgentId,
         referenceId: child.id,
-        description: `5% replication fee for spawning ${childName}`,
+        description: `5% replication fee for spawning ${childName}${replicationFeeTxHash ? ' [on-chain verified]' : ''}`,
+        txHash: replicationFeeTxHash,
+        chainId: replicationFeeChainId,
       });
     }
 
@@ -768,7 +776,7 @@ export class DatabaseStorage implements IStorage {
     return request;
   }
 
-  async createFullAgent(name: string, bio: string | undefined, modelType: string, initialDeposit: string): Promise<{ agent: Agent; wallet: AgentWallet }> {
+  async createFullAgent(name: string, bio: string | undefined, modelType: string, initialDeposit: string, onchainTxHash?: string, onchainChainId?: number): Promise<{ agent: Agent; wallet: AgentWallet }> {
     const creationFee = BigInt(PLATFORM_FEES.AGENT_CREATION_FEE);
     const depositAmount = BigInt(initialDeposit);
     if (depositAmount < creationFee) {
@@ -786,13 +794,17 @@ export class DatabaseStorage implements IStorage {
       type: "deposit",
       amount: netDeposit,
       description: `Initial deposit (after 0.001 BNB creation fee)`,
+      txHash: onchainTxHash,
+      chainId: onchainChainId,
     });
 
     await this.recordPlatformRevenue({
       feeType: "agent_creation",
       amount: creationFee.toString(),
       agentId: agent.id,
-      description: `Agent creation fee for ${name}`,
+      description: `Agent creation fee for ${name}${onchainTxHash ? ' [on-chain verified]' : ''}`,
+      txHash: onchainTxHash,
+      chainId: onchainChainId,
     });
 
     await this.createAuditLog({
@@ -815,20 +827,40 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(platformRevenue).orderBy(desc(platformRevenue.createdAt)).limit(limit);
   }
 
-  async getPlatformRevenueSummary(): Promise<{ totalRevenue: string; byFeeType: Record<string, string>; totalTransactions: number }> {
+  async getRecentPlatformRevenueForAgent(agentId: string, feeType: string): Promise<PlatformRevenue | undefined> {
+    const records = await db.select().from(platformRevenue)
+      .where(eq(platformRevenue.agentId, agentId))
+      .orderBy(desc(platformRevenue.createdAt))
+      .limit(5);
+    return records.find(r => r.feeType === feeType && !r.txHash);
+  }
+
+  async updatePlatformRevenueOnchainStatus(revenueId: string, txHash: string, chainIdVal: number): Promise<void> {
+    await db.update(platformRevenue)
+      .set({ txHash, chainId: chainIdVal })
+      .where(eq(platformRevenue.id, revenueId));
+  }
+
+  async getPlatformRevenueSummary(): Promise<{ totalRevenue: string; byFeeType: Record<string, string>; totalTransactions: number; onchainVerified: number; onchainRevenue: string }> {
     const all = await db.select().from(platformRevenue);
     let total = BigInt(0);
+    let onchainTotal = BigInt(0);
+    let onchainCount = 0;
     const byType: Record<string, bigint> = {};
     for (const r of all) {
       const amt = BigInt(r.amount);
       total += amt;
       byType[r.feeType] = (byType[r.feeType] || BigInt(0)) + amt;
+      if (r.txHash) {
+        onchainTotal += amt;
+        onchainCount++;
+      }
     }
     const byFeeType: Record<string, string> = {};
     for (const [k, v] of Object.entries(byType)) {
       byFeeType[k] = v.toString();
     }
-    return { totalRevenue: total.toString(), byFeeType, totalTransactions: all.length };
+    return { totalRevenue: total.toString(), byFeeType, totalTransactions: all.length, onchainVerified: onchainCount, onchainRevenue: onchainTotal.toString() };
   }
 
   async fixCentralizedModelNames(): Promise<void> {

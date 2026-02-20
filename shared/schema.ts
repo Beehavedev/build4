@@ -273,6 +273,7 @@ export const PLATFORM_FEES = {
   SKILL_PURCHASE_FEE_BPS: 250,
   INFERENCE_MARKUP_BPS: 1000,
   EVOLUTION_FEE: "10000000000000000",
+  SKILL_LISTING_FEE: "25000000000000000",
 } as const;
 
 export const web4CreateAgentRequestSchema = z.object({
@@ -280,6 +281,8 @@ export const web4CreateAgentRequestSchema = z.object({
   bio: z.string().max(300).optional(),
   modelType: z.enum(["meta-llama/Llama-3.1-70B-Instruct", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"]).default("meta-llama/Llama-3.1-70B-Instruct"),
   initialDeposit: z.string().min(1),
+  onchainTxHash: z.string().optional(),
+  onchainChainId: z.number().optional(),
 });
 
 export const web4DepositRequestSchema = z.object({

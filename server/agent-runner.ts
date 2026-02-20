@@ -6,7 +6,7 @@ import {
   registerAgentOnchain, depositOnchain, transferOnchain,
   listSkillOnchain, purchaseSkillOnchain, replicateOnchain,
   addConstitutionLawOnchain, getExplorerUrl, getDeployerBalance,
-  getNetworkName, isMainnet, getSpendingStatus,
+  getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain,
 } from "./onchain";
 import type { Agent, AgentWallet } from "@shared/schema";
 import { PLATFORM_FEES } from "@shared/schema";
@@ -138,6 +138,26 @@ async function ensureAgentRegisteredOnchain(agent: Agent): Promise<void> {
   }
 }
 
+async function collectInferenceFeeOnchain(agent: Agent, inferenceRequest: any): Promise<void> {
+  if (!onchainEnabled || !inferenceRequest) return;
+  const costAmount = inferenceRequest.costAmount;
+  if (!costAmount || costAmount === "0") return;
+
+  const baseCost = BigInt(costAmount);
+  const platformMarkup = (baseCost * BigInt(PLATFORM_FEES.INFERENCE_MARKUP_BPS)) / BigInt(10000);
+  if (platformMarkup <= 0n) return;
+
+  await ensureAgentRegisteredOnchain(agent);
+  const feeResult = await collectFeeOnchain(agent.id, platformMarkup.toString(), "inference");
+  if (feeResult.success && feeResult.txHash) {
+    log(`[Agent ${agent.name}] Inference fee collected on-chain: ${getExplorerUrl(feeResult.txHash)}`, "agent-runner");
+    const recentRevenue = await storage.getRecentPlatformRevenueForAgent(agent.id, "inference");
+    if (recentRevenue) {
+      await storage.updatePlatformRevenueOnchainStatus(recentRevenue.id, feeResult.txHash, feeResult.chainId);
+    }
+  }
+}
+
 async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAction): Promise<void> {
   const providers = getAvailableProviders();
   const hasLiveProviders = providers.length > 0;
@@ -147,6 +167,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
       case "think": {
         const prompt = buildPrompt(agent, action, wallet);
         const request = await storage.routeInference(agent.id, prompt, undefined, true);
+        await collectInferenceFeeOnchain(agent, request);
         await storage.createAuditLog({
           agentId: agent.id,
           actionType: "autonomous_think",
@@ -204,11 +225,17 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         let chainIdVal: number | undefined;
         if (onchainEnabled) {
           await ensureAgentRegisteredOnchain(agent);
+          const feeResult = await collectFeeOnchain(agent.id, listingFee.toString(), "skill_listing");
+          if (feeResult.success && feeResult.txHash) {
+            txHash = feeResult.txHash;
+            chainIdVal = feeResult.chainId;
+            log(`[Agent ${agent.name}] Listing fee collected on-chain: ${getExplorerUrl(txHash)}`, "agent-runner");
+          } else {
+            log(`[Agent ${agent.name}] On-chain fee collection failed: ${feeResult.error} — proceeding with off-chain only`, "agent-runner");
+          }
           const onchainResult = await listSkillOnchain(agent.id, skillName, price);
           if (onchainResult.success && onchainResult.txHash) {
-            txHash = onchainResult.txHash;
-            chainIdVal = onchainResult.chainId;
-            log(`[Agent ${agent.name}] Skill listed on-chain: ${getExplorerUrl(txHash)}`, "agent-runner");
+            log(`[Agent ${agent.name}] Skill listed on-chain: ${getExplorerUrl(onchainResult.txHash)}`, "agent-runner");
           }
         }
 
@@ -225,7 +252,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           amount: listingFee.toString(),
           agentId: agent.id,
           referenceId: dbSkill.id,
-          description: `Skill listing fee: ${skillName}`,
+          description: `Skill listing fee: ${skillName}${txHash ? ' [on-chain verified]' : ''}`,
           txHash,
           chainId: chainIdVal,
         });
@@ -254,32 +281,51 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         }
         const skill = affordable[Math.floor(Math.random() * affordable.length)];
         try {
-          const purchase = await storage.purchaseSkill(agent.id, skill.id);
+          const price = BigInt(skill.priceAmount);
+          const platformFee = (price * BigInt(PLATFORM_FEES.SKILL_PURCHASE_FEE_BPS)) / BigInt(10000);
 
-          let txHash: string | undefined;
+          let feeTxHash: string | undefined;
+          let feeChainId: number | undefined;
+          let purchaseTxHash: string | undefined;
+
           if (onchainEnabled) {
             await ensureAgentRegisteredOnchain(agent);
             const sellerAgent = await storage.getAgent(skill.agentId);
             if (sellerAgent) {
               await ensureAgentRegisteredOnchain(sellerAgent);
             }
+
+            if (platformFee > 0n) {
+              const feeResult = await collectFeeOnchain(agent.id, platformFee.toString(), "skill_purchase");
+              if (feeResult.success && feeResult.txHash) {
+                feeTxHash = feeResult.txHash;
+                feeChainId = feeResult.chainId;
+                log(`[Agent ${agent.name}] Skill purchase fee collected on-chain: ${getExplorerUrl(feeTxHash)}`, "agent-runner");
+              }
+            }
+
             const transferResult = await transferOnchain(agent.id, skill.agentId, skill.priceAmount);
             if (transferResult.success && transferResult.txHash) {
-              txHash = transferResult.txHash;
-              log(`[Agent ${agent.name}] Skill payment on-chain: ${getExplorerUrl(txHash)}`, "agent-runner");
-              await storage.createTransaction({
-                agentId: agent.id,
-                type: "onchain_skill_purchase",
-                amount: skill.priceAmount,
-                counterpartyAgentId: skill.agentId,
-                description: `On-chain skill purchase: ${skill.name}`,
-                txHash,
-                chainId: getChainId(),
-              });
+              purchaseTxHash = transferResult.txHash;
+              log(`[Agent ${agent.name}] Skill payment on-chain: ${getExplorerUrl(purchaseTxHash)}`, "agent-runner");
             }
           }
 
-          log(`[Agent ${agent.name}] Purchased skill: ${skill.name}${txHash ? ' [ON-CHAIN]' : ''}`, "agent-runner");
+          const purchase = await storage.purchaseSkill(agent.id, skill.id, feeTxHash, feeChainId);
+
+          if (purchaseTxHash) {
+            await storage.createTransaction({
+              agentId: agent.id,
+              type: "onchain_skill_purchase",
+              amount: skill.priceAmount,
+              counterpartyAgentId: skill.agentId,
+              description: `On-chain skill purchase: ${skill.name}`,
+              txHash: purchaseTxHash,
+              chainId: getChainId(),
+            });
+          }
+
+          log(`[Agent ${agent.name}] Purchased skill: ${skill.name}${feeTxHash ? ' [FEE ON-CHAIN]' : ''}${purchaseTxHash ? ' [PAYMENT ON-CHAIN]' : ''}`, "agent-runner");
         } catch (e: any) {
           log(`[Agent ${agent.name}] Failed to buy skill: ${e.message}`, "agent-runner");
         }
@@ -304,6 +350,20 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         const prompt = buildPrompt(agent, action, wallet);
         const request = await storage.routeInference(agent.id, prompt, undefined, true);
 
+        let txHash: string | undefined;
+        let chainIdVal: number | undefined;
+        if (onchainEnabled) {
+          await ensureAgentRegisteredOnchain(agent);
+          const feeResult = await collectFeeOnchain(agent.id, evolutionFee.toString(), "evolution");
+          if (feeResult.success && feeResult.txHash) {
+            txHash = feeResult.txHash;
+            chainIdVal = feeResult.chainId;
+            log(`[Agent ${agent.name}] Evolution fee collected on-chain: ${getExplorerUrl(txHash)}`, "agent-runner");
+          } else {
+            log(`[Agent ${agent.name}] On-chain evolution fee failed: ${feeResult.error} — off-chain only`, "agent-runner");
+          }
+        }
+
         const currentWallet = await storage.getWallet(agent.id);
         const currentBalance = BigInt(currentWallet?.balance || wallet.balance);
         const newBal = (currentBalance - evolutionFee).toString();
@@ -313,16 +373,20 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           type: "spend_evolution",
           amount: evolutionFee.toString(),
           description: `Evolution fee: ${agent.modelType} -> ${newModel}`,
+          txHash,
+          chainId: chainIdVal,
         });
         await storage.recordPlatformRevenue({
           feeType: "evolution",
           amount: evolutionFee.toString(),
           agentId: agent.id,
-          description: `Evolution fee: ${agent.modelType} -> ${newModel}`,
+          description: `Evolution fee: ${agent.modelType} -> ${newModel}${txHash ? ' [on-chain verified]' : ''}`,
+          txHash,
+          chainId: chainIdVal,
         });
 
         await storage.evolveAgent(agent.id, newModel, request.response?.substring(0, 200));
-        log(`[Agent ${agent.name}] Evolved: ${agent.modelType} -> ${newModel}`, "agent-runner");
+        log(`[Agent ${agent.name}] Evolved: ${agent.modelType} -> ${newModel}${txHash ? ' [ON-CHAIN]' : ''}`, "agent-runner");
         break;
       }
 
@@ -333,17 +397,48 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         const childName = `${agent.name}-CHILD-${childNum}`;
         const funding = "500000000000000000";
         try {
+          const creationFee = BigInt(PLATFORM_FEES.AGENT_CREATION_FEE);
+          const replicationFee = (BigInt(funding) * BigInt(PLATFORM_FEES.REPLICATION_FEE_BPS)) / BigInt(10000);
+          const totalFees = creationFee + replicationFee;
+
+          let creationFeeTxHash: string | undefined;
+          let creationFeeChainId: number | undefined;
+          let replicationFeeTxHash: string | undefined;
+          let replicationFeeChainId: number | undefined;
+
+          if (onchainEnabled) {
+            await ensureAgentRegisteredOnchain(agent);
+            if (creationFee > 0n) {
+              const feeResult = await collectFeeOnchain(agent.id, creationFee.toString(), "agent_creation");
+              if (feeResult.success && feeResult.txHash) {
+                creationFeeTxHash = feeResult.txHash;
+                creationFeeChainId = feeResult.chainId;
+                log(`[Agent ${agent.name}] Creation fee collected on-chain: ${getExplorerUrl(creationFeeTxHash)}`, "agent-runner");
+              }
+            }
+            if (replicationFee > 0n) {
+              const feeResult = await collectFeeOnchain(agent.id, replicationFee.toString(), "replication");
+              if (feeResult.success && feeResult.txHash) {
+                replicationFeeTxHash = feeResult.txHash;
+                replicationFeeChainId = feeResult.chainId;
+                log(`[Agent ${agent.name}] Replication fee collected on-chain: ${getExplorerUrl(replicationFeeTxHash)}`, "agent-runner");
+              }
+            }
+          }
+
           const { child } = await storage.replicateAgent(
             agent.id,
             childName,
             `Child of ${agent.name}. ${request.response?.substring(0, 100) || "Autonomous offspring."}`,
             1000,
-            funding
+            funding,
+            creationFeeTxHash,
+            creationFeeChainId,
+            replicationFeeTxHash,
+            replicationFeeChainId,
           );
 
-          let txHash: string | undefined;
           if (onchainEnabled) {
-            await ensureAgentRegisteredOnchain(agent);
             const regResult = await registerAgentOnchain(child.id);
             if (regResult.success) {
               await db.update(agentsTable)
@@ -353,21 +448,20 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
 
             const repResult = await replicateOnchain(agent.id, child.id, 1000, funding);
             if (repResult.success && repResult.txHash) {
-              txHash = repResult.txHash;
-              log(`[Agent ${agent.name}] Replication on-chain: ${getExplorerUrl(txHash)}`, "agent-runner");
+              log(`[Agent ${agent.name}] Replication on-chain: ${getExplorerUrl(repResult.txHash)}`, "agent-runner");
               await storage.createTransaction({
                 agentId: agent.id,
                 type: "onchain_replicate",
                 amount: funding,
                 counterpartyAgentId: child.id,
                 description: `On-chain replication -> ${childName}`,
-                txHash,
+                txHash: repResult.txHash,
                 chainId: getChainId(),
               });
             }
           }
 
-          log(`[Agent ${agent.name}] Replicated -> ${child.name}${txHash ? ' [ON-CHAIN]' : ''}`, "agent-runner");
+          log(`[Agent ${agent.name}] Replicated -> ${child.name}${creationFeeTxHash ? ' [FEES ON-CHAIN]' : ''}`, "agent-runner");
         } catch (e: any) {
           log(`[Agent ${agent.name}] Replication failed: ${e.message}`, "agent-runner");
         }

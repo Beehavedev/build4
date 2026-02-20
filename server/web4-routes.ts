@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
-import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus } from "./onchain";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain } from "./onchain";
 import {
   web4CreateAgentRequestSchema,
   web4DepositRequestSchema,
@@ -47,11 +47,28 @@ export function registerWeb4Routes(app: Express): void {
         return res.status(400).json({ error: "initialDeposit must be a numeric wei string" });
       }
 
-      const result = await storage.createFullAgent(parsed.name, parsed.bio, parsed.modelType, parsed.initialDeposit);
+      const result = await storage.createFullAgent(parsed.name, parsed.bio, parsed.modelType, parsed.initialDeposit, parsed.onchainTxHash, parsed.onchainChainId);
 
       res.json(result);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/verify-deposit", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const { txHash, chainId: chainIdVal } = req.body;
+      if (!txHash || typeof txHash !== "string") {
+        return res.status(400).json({ error: "txHash required" });
+      }
+      const revenueRecord = await storage.getRecentPlatformRevenueForAgent(agentId, "agent_creation");
+      if (revenueRecord) {
+        await storage.updatePlatformRevenueOnchainStatus(revenueRecord.id, txHash, chainIdVal || 56);
+      }
+      res.json({ verified: true, txHash });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 
@@ -130,6 +147,13 @@ export function registerWeb4Routes(app: Express): void {
   app.post("/api/web4/skills", async (req: Request, res: Response) => {
     try {
       const parsed = web4CreateSkillRequestSchema.parse(req.body);
+
+      const listingFee = PLATFORM_FEES.SKILL_LISTING_FEE;
+      const feeResult = await collectFeeOnchain(parsed.agentId, listingFee, "skill_listing");
+      if (!feeResult.success) {
+        console.warn(`[web4] On-chain skill listing fee failed: ${feeResult.error}`);
+      }
+
       const skill = await storage.createSkill({
         agentId: parsed.agentId,
         name: parsed.name,
@@ -138,6 +162,16 @@ export function registerWeb4Routes(app: Express): void {
         category: parsed.category,
         isActive: true,
       });
+
+      await storage.recordPlatformRevenue({
+        feeType: "skill_listing",
+        amount: listingFee,
+        agentId: parsed.agentId,
+        description: `Skill listing fee for "${parsed.name}"${feeResult.success ? ' [on-chain verified]' : ''}`,
+        txHash: feeResult.txHash || undefined,
+        chainId: feeResult.chainId || undefined,
+      });
+
       res.json(skill);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -147,6 +181,25 @@ export function registerWeb4Routes(app: Express): void {
   app.post("/api/web4/skills/purchase", async (req: Request, res: Response) => {
     try {
       const parsed = web4PurchaseSkillRequestSchema.parse(req.body);
+
+      const skill = await storage.getSkill(parsed.skillId);
+      if (!skill) return res.status(404).json({ error: "Skill not found" });
+      const purchaseFee = (BigInt(skill.priceAmount) * BigInt(PLATFORM_FEES.SKILL_PURCHASE_FEE_BPS) / 10000n).toString();
+      if (BigInt(purchaseFee) > 0n) {
+        const feeResult = await collectFeeOnchain(parsed.buyerAgentId, purchaseFee, "skill_purchase");
+        if (!feeResult.success) {
+          console.warn(`[web4] On-chain skill purchase fee failed: ${feeResult.error}`);
+        }
+        await storage.recordPlatformRevenue({
+          feeType: "skill_purchase",
+          amount: purchaseFee,
+          agentId: parsed.buyerAgentId,
+          description: `Skill purchase fee for "${skill.name}" (2.5%)${feeResult.success ? ' [on-chain verified]' : ''}`,
+          txHash: feeResult.txHash || undefined,
+          chainId: feeResult.chainId || undefined,
+        });
+      }
+
       const purchase = await storage.purchaseSkill(parsed.buyerAgentId, parsed.skillId);
       res.json(purchase);
     } catch (e: any) {
@@ -167,7 +220,24 @@ export function registerWeb4Routes(app: Express): void {
   app.post("/api/web4/evolve", async (req: Request, res: Response) => {
     try {
       const parsed = web4EvolveRequestSchema.parse(req.body);
+
+      const evolutionFee = PLATFORM_FEES.EVOLUTION_FEE;
+      const feeResult = await collectFeeOnchain(parsed.agentId, evolutionFee, "evolution");
+      if (!feeResult.success) {
+        console.warn(`[web4] On-chain evolution fee failed: ${feeResult.error}`);
+      }
+
       const evolution = await storage.evolveAgent(parsed.agentId, parsed.toModel, parsed.reason, parsed.metricsJson);
+
+      await storage.recordPlatformRevenue({
+        feeType: "evolution",
+        amount: evolutionFee,
+        agentId: parsed.agentId,
+        description: `Evolution fee: ${parsed.toModel}${feeResult.success ? ' [on-chain verified]' : ''}`,
+        txHash: feeResult.txHash || undefined,
+        chainId: feeResult.chainId || undefined,
+      });
+
       res.json(evolution);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -197,6 +267,24 @@ export function registerWeb4Routes(app: Express): void {
   app.post("/api/web4/replicate", async (req: Request, res: Response) => {
     try {
       const parsed = web4ReplicateRequestSchema.parse(req.body);
+
+      const replicationFee = (BigInt(parsed.fundingAmount) * BigInt(PLATFORM_FEES.REPLICATION_FEE_BPS) / 10000n).toString();
+      const totalFee = (BigInt(replicationFee) + BigInt(PLATFORM_FEES.AGENT_CREATION_FEE)).toString();
+      if (BigInt(totalFee) > 0n) {
+        const feeResult = await collectFeeOnchain(parsed.parentAgentId, totalFee, "replication");
+        if (!feeResult.success) {
+          console.warn(`[web4] On-chain replication fee failed: ${feeResult.error}`);
+        }
+        await storage.recordPlatformRevenue({
+          feeType: "replication",
+          amount: totalFee,
+          agentId: parsed.parentAgentId,
+          description: `Replication fee (5% + creation fee) for child "${parsed.childName}"${feeResult.success ? ' [on-chain verified]' : ''}`,
+          txHash: feeResult.txHash || undefined,
+          chainId: feeResult.chainId || undefined,
+        });
+      }
+
       const result = await storage.replicateAgent(parsed.parentAgentId, parsed.childName, parsed.childBio, parsed.revenueShareBps, parsed.fundingAmount);
       res.json(result);
     } catch (e: any) {
@@ -520,7 +608,15 @@ export function registerWeb4Routes(app: Express): void {
   app.get("/api/web4/revenue/summary", async (_req: Request, res: Response) => {
     try {
       const summary = await storage.getPlatformRevenueSummary();
-      res.json(summary);
+      const explorerBases: Record<number, string> = {
+        56: "https://bscscan.com",
+        97: "https://testnet.bscscan.com",
+        8453: "https://basescan.org",
+        84532: "https://sepolia.basescan.org",
+        196: "https://www.okx.com/web3/explorer/xlayer",
+        195: "https://www.okx.com/web3/explorer/xlayer-test",
+      };
+      res.json({ ...summary, explorerBases });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
