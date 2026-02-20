@@ -89,6 +89,22 @@ const CHAIN_CONFIGS: Record<string, ChainConfig> = {
     deploymentFile: "contracts/deployments/baseTestnet.json",
     isMainnet: false,
   },
+  xlayerMainnet: {
+    name: "XLayer",
+    chainId: 196,
+    rpcUrl: "https://rpc.xlayer.tech",
+    explorerBase: "https://www.okx.com/web3/explorer/xlayer",
+    deploymentFile: "contracts/deployments/xlayerMainnet.json",
+    isMainnet: true,
+  },
+  xlayerTestnet: {
+    name: "XLayer Testnet",
+    chainId: 195,
+    rpcUrl: "https://testrpc.xlayer.tech",
+    explorerBase: "https://www.okx.com/web3/explorer/xlayer-test",
+    deploymentFile: "contracts/deployments/xlayerTestnet.json",
+    isMainnet: false,
+  },
 };
 
 const MAINNET_SAFETY = {
