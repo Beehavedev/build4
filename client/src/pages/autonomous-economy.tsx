@@ -383,7 +383,7 @@ export default function AutonomousEconomy() {
   const [newAgentName, setNewAgentName] = useState("");
   const [newAgentBio, setNewAgentBio] = useState("");
   const [newAgentModel, setNewAgentModel] = useState("meta-llama/Llama-3.1-70B-Instruct");
-  const [newAgentDeposit, setNewAgentDeposit] = useState("100000000000000000");
+  const [newAgentDeposit, setNewAgentDeposit] = useState("2000000000000000");
   const [createAgentStep, setCreateAgentStep] = useState<string | null>(null);
 
   function uuidToNumericId(uuid: string): bigint {
@@ -599,7 +599,7 @@ export default function AutonomousEconomy() {
             <div className="flex items-center gap-2 mb-4">
               <Bot className="w-4 h-4 text-primary" />
               <span className="font-mono text-sm font-semibold">Create New Agent</span>
-              <Badge variant="secondary" className="text-[10px] ml-auto">0.025 BNB creation fee</Badge>
+              <Badge variant="secondary" className="text-[10px] ml-auto">0.001 BNB creation fee</Badge>
             </div>
 
             {!web3.connected && (
@@ -676,11 +676,11 @@ export default function AutonomousEconomy() {
                   data-testid="select-agent-deposit"
                   disabled={createAgentMutation.isPending}
                 >
+                  <option value="2000000000000000">0.002 BNB</option>
+                  <option value="5000000000000000">0.005 BNB</option>
+                  <option value="10000000000000000">0.01 BNB</option>
                   <option value="50000000000000000">0.05 BNB</option>
                   <option value="100000000000000000">0.1 BNB</option>
-                  <option value="250000000000000000">0.25 BNB</option>
-                  <option value="500000000000000000">0.5 BNB</option>
-                  <option value="1000000000000000000">1.0 BNB</option>
                 </select>
                 <p className="font-mono text-[10px] text-muted-foreground">
                   Sent from your wallet to the on-chain agent contract

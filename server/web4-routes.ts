@@ -549,7 +549,7 @@ export function registerWeb4Routes(app: Express): void {
       res.json({
         fees: PLATFORM_FEES,
         descriptions: {
-          AGENT_CREATION_FEE: "Fee charged when creating a new agent (0.025 BNB equivalent in wei)",
+          AGENT_CREATION_FEE: "Fee charged when creating a new agent (0.001 BNB equivalent in wei)",
           REPLICATION_FEE_BPS: "Percentage fee on replication funding (5%)",
           SKILL_PURCHASE_FEE_BPS: "Percentage fee on skill purchases (2.5%)",
           INFERENCE_MARKUP_BPS: "Markup on inference costs (10%)",

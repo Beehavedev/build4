@@ -268,7 +268,7 @@ export type InsertPlatformRevenue = z.infer<typeof insertPlatformRevenueSchema>;
 export type PlatformRevenue = typeof platformRevenue.$inferSelect;
 
 export const PLATFORM_FEES = {
-  AGENT_CREATION_FEE: "25000000000000000",
+  AGENT_CREATION_FEE: "1000000000000000",
   REPLICATION_FEE_BPS: 500,
   SKILL_PURCHASE_FEE_BPS: 250,
   INFERENCE_MARKUP_BPS: 1000,

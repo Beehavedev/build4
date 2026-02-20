@@ -74,7 +74,7 @@ Always update both development AND production databases when making data fixes â
 ### Platform Monetization
 - **Schema**: `platform_revenue` table tracks all fee revenue with type, amount, agent, and chain references
 - **Fee Constants** (in `PLATFORM_FEES` from `shared/schema.ts`):
-  - Agent Creation Fee: 0.025 BNB (charged at replication time)
+  - Agent Creation Fee: 0.001 BNB (charged at replication time)
   - Replication Fee: 5% of funding amount
   - Skill Purchase Fee: 2.5% of purchase price (deducted from seller)
   - Inference Markup: 10% on top of base inference cost

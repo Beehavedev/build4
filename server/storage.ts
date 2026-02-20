@@ -772,7 +772,7 @@ export class DatabaseStorage implements IStorage {
     const creationFee = BigInt(PLATFORM_FEES.AGENT_CREATION_FEE);
     const depositAmount = BigInt(initialDeposit);
     if (depositAmount < creationFee) {
-      throw new Error(`Initial deposit must be at least ${creationFee.toString()} wei (0.025 BNB) to cover the agent creation fee`);
+      throw new Error(`Initial deposit must be at least ${creationFee.toString()} wei (0.001 BNB) to cover the agent creation fee`);
     }
 
     const agent = await this.createAgent({ name, bio, modelType, status: "active" });
@@ -785,7 +785,7 @@ export class DatabaseStorage implements IStorage {
       agentId: agent.id,
       type: "deposit",
       amount: netDeposit,
-      description: `Initial deposit (after 0.025 BNB creation fee)`,
+      description: `Initial deposit (after 0.001 BNB creation fee)`,
     });
 
     await this.recordPlatformRevenue({
