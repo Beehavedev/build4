@@ -226,41 +226,6 @@ export default function AutonomousEconomy() {
     enabled: !!agentId,
   });
 
-  const depositMutation = useMutation({
-    mutationFn: async (amount: string) => {
-      await apiRequest("POST", "/api/web4/wallet/deposit", { agentId, amount });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/web4/wallet", agentId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/web4/survival", agentId] });
-      toast({ title: t("dashboard.depositSuccess") });
-    },
-    onError: (e: Error) => toast({ title: t("dashboard.depositFailed"), description: e.message, variant: "destructive" }),
-  });
-
-  const withdrawMutation = useMutation({
-    mutationFn: async (amount: string) => {
-      await apiRequest("POST", "/api/web4/wallet/withdraw", { agentId, amount });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/web4/wallet", agentId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/web4/survival", agentId] });
-      toast({ title: t("dashboard.withdrawSuccess") });
-    },
-    onError: (e: Error) => toast({ title: t("dashboard.withdrawFailed"), description: e.message, variant: "destructive" }),
-  });
-
-  const transferMutation = useMutation({
-    mutationFn: async ({ toAgentId, amount }: { toAgentId: string; amount: string }) => {
-      await apiRequest("POST", "/api/web4/transfer", { fromAgentId: agentId, toAgentId, amount });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/web4/wallet"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/web4/survival"] });
-      toast({ title: t("dashboard.transferSuccess") });
-    },
-    onError: (e: Error) => toast({ title: t("dashboard.transferFailed"), description: e.message, variant: "destructive" }),
-  });
 
   const evolveMutation = useMutation({
     mutationFn: async ({ toModel, reason }: { toModel: string; reason: string }) => {
@@ -488,10 +453,6 @@ export default function AutonomousEconomy() {
   const [inferencePrompt, setInferencePrompt] = useState("");
   const [inferencePreferDecentralized, setInferencePreferDecentralized] = useState(true);
 
-  const [depositAmt, setDepositAmt] = useState("1000000000000000000");
-  const [withdrawAmt, setWithdrawAmt] = useState("100000000000000000");
-  const [transferTo, setTransferTo] = useState("");
-  const [transferAmt, setTransferAmt] = useState("100000000000000000");
   const [evolveModel, setEvolveModel] = useState("meta-llama/Llama-3.1-70B-Instruct");
   const [evolveReason, setEvolveReason] = useState("");
   const [soulEntry, setSoulEntry] = useState("");
@@ -1557,46 +1518,9 @@ export default function AutonomousEconomy() {
               </Card>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
-              <Card className="p-3 space-y-2">
-                <div className="text-xs font-mono font-semibold flex items-center gap-1"><ArrowDownLeft className="w-3 h-3 text-primary" /> {t("dashboard.deposit")}</div>
-                <select value={depositAmt} onChange={(e) => setDepositAmt(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-deposit-amount">
-                  <option value="100000000000000000">0.1 {activeChain.currency}</option>
-                  <option value="500000000000000000">0.5 {activeChain.currency}</option>
-                  <option value="1000000000000000000">1.0 {activeChain.currency}</option>
-                  <option value="5000000000000000000">5.0 {activeChain.currency}</option>
-                </select>
-                <Button size="sm" className="w-full" onClick={() => depositMutation.mutate(depositAmt)} disabled={depositMutation.isPending} data-testid="button-deposit">
-                  {depositMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-                  <span className="ml-1">{t("dashboard.deposit")}</span>
-                </Button>
-              </Card>
-              <Card className="p-3 space-y-2">
-                <div className="text-xs font-mono font-semibold flex items-center gap-1"><ArrowUpRight className="w-3 h-3 text-red-400" /> {t("dashboard.withdraw")}</div>
-                <select value={withdrawAmt} onChange={(e) => setWithdrawAmt(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-withdraw-amount">
-                  <option value="10000000000000000">0.01 {activeChain.currency}</option>
-                  <option value="100000000000000000">0.1 {activeChain.currency}</option>
-                  <option value="500000000000000000">0.5 {activeChain.currency}</option>
-                  <option value="1000000000000000000">1.0 {activeChain.currency}</option>
-                </select>
-                <Button size="sm" variant="outline" className="w-full" onClick={() => withdrawMutation.mutate(withdrawAmt)} disabled={withdrawMutation.isPending} data-testid="button-withdraw">
-                  {withdrawMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ArrowUpRight className="w-3 h-3" />}
-                  <span className="ml-1">{t("dashboard.withdraw")}</span>
-                </Button>
-              </Card>
-              <Card className="p-3 space-y-2">
-                <div className="text-xs font-mono font-semibold flex items-center gap-1"><Send className="w-3 h-3 text-primary/70" /> {t("dashboard.transfer")}</div>
-                <select value={transferTo} onChange={(e) => setTransferTo(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-transfer-to">
-                  <option value="">{t("dashboard.selectRecipient")}</option>
-                  {agentsList.filter(a => a.id !== agentId).map(a => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
-                  ))}
-                </select>
-                <Button size="sm" variant="outline" className="w-full" onClick={() => transferTo && transferMutation.mutate({ toAgentId: transferTo, amount: transferAmt })} disabled={!transferTo || transferMutation.isPending} data-testid="button-transfer">
-                  {transferMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                  <span className="ml-1">{t("dashboard.send")} 0.1 {activeChain.currency}</span>
-                </Button>
-              </Card>
+            <div className="mt-3 p-3 rounded border border-primary/20 bg-primary/5">
+              <div className="text-[10px] font-mono text-muted-foreground mb-2">To deposit or withdraw real {activeChain.currency}, use the On-Chain Contracts section above. All fund movements require a wallet signature and execute on the blockchain.</div>
+              <div className="text-[10px] font-mono text-muted-foreground">Off-chain balance reflects agent earnings and fees from autonomous activity.</div>
             </div>
 
             {transactions.length > 0 && (

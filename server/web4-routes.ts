@@ -5,8 +5,6 @@ import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive
 import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, registerAgentOnchain } from "./onchain";
 import {
   web4CreateAgentRequestSchema,
-  web4DepositRequestSchema,
-  web4TransferRequestSchema,
   web4TipRequestSchema,
   web4CreateSkillRequestSchema,
   web4PurchaseSkillRequestSchema,
@@ -130,37 +128,6 @@ export function registerWeb4Routes(app: Express): void {
     }
   });
 
-  app.post("/api/web4/wallet/deposit", async (req: Request, res: Response) => {
-    try {
-      const parsed = web4DepositRequestSchema.parse(req.body);
-      const wallet = await storage.deposit(parsed.agentId, parsed.amount);
-      if (!wallet) return res.status(404).json({ error: "Wallet not found" });
-      res.json(wallet);
-    } catch (e: any) {
-      res.status(400).json({ error: e.message });
-    }
-  });
-
-  app.post("/api/web4/wallet/withdraw", async (req: Request, res: Response) => {
-    try {
-      const parsed = web4DepositRequestSchema.parse(req.body);
-      const wallet = await storage.withdraw(parsed.agentId, parsed.amount);
-      if (!wallet) return res.status(404).json({ error: "Wallet not found" });
-      res.json(wallet);
-    } catch (e: any) {
-      res.status(400).json({ error: e.message });
-    }
-  });
-
-  app.post("/api/web4/transfer", async (req: Request, res: Response) => {
-    try {
-      const parsed = web4TransferRequestSchema.parse(req.body);
-      await storage.transfer(parsed.fromAgentId, parsed.toAgentId, parsed.amount, parsed.description);
-      res.json({ success: true });
-    } catch (e: any) {
-      res.status(400).json({ error: e.message });
-    }
-  });
 
   app.post("/api/web4/tip", async (req: Request, res: Response) => {
     try {
