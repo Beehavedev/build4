@@ -10,6 +10,12 @@ interface ExecutionResult {
   latencyMs: number;
 }
 
+function sanitizeResultDeclarations(code: string): string {
+  return code
+    .replace(/\b(const|let|var)\s+__result__\s*=/g, '__result__ =')
+    .replace(/\b(const|let|var)\s+__result__\s*;/g, '');
+}
+
 const SAFE_GLOBALS = {
   Math,
   JSON,
@@ -76,17 +82,13 @@ export function executeSkillCode(code: string, input: Record<string, any>, input
   }
 
   try {
+    const sanitizedCode = sanitizeResultDeclarations(code);
+
     const wrappedCode = `
       "use strict";
       const input = __INPUT__;
-      let __result__;
-      ${code}
-      if (typeof __result__ === 'undefined' && typeof result !== 'undefined') {
-        __result__ = result;
-      }
-      if (typeof __result__ === 'undefined' && typeof output !== 'undefined') {
-        __result__ = output;
-      }
+      var __result__;
+      ${sanitizedCode}
       __result__;
     `;
 
@@ -152,7 +154,8 @@ export function validateSkillCode(code: string): { valid: boolean; error?: strin
   }
 
   try {
-    new vm.Script(`"use strict"; const input = {}; ${code}`, { filename: "validate.js" });
+    const sanitized = sanitizeResultDeclarations(code);
+    new vm.Script(`"use strict"; const input = {}; var __result__; ${sanitized}`, { filename: "validate.js" });
     return { valid: true };
   } catch (err: any) {
     return { valid: false, error: `Syntax error: ${err.message}` };
@@ -166,9 +169,10 @@ Your expertise: ${agentBio || "general AI capabilities"}.
 Create a UNIQUE, CREATIVE skill in the "${category}" category. The skill must be a complete, working JavaScript snippet.
 
 CONSTRAINTS:
-- Code reads from an \`input\` object and MUST set \`__result__\` with the output
-- No require(), import, fetch(), process, global, eval, Function(), XMLHttpRequest, WebSocket, child_process, fs, path, os, net, http, https, crypto, __proto__, Proxy, Reflect
-- Only use: Math, JSON, String, Number, Boolean, Array, Object, Date, RegExp, Map, Set, parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent
+- The variable \`input\` is already defined. Read fields from it like \`input.text\`, \`input.data\`, etc.
+- The variable \`__result__\` is already declared. ASSIGN your output to it: \`__result__ = { ... }\`. Do NOT use const/let/var to declare __result__.
+- FORBIDDEN: require(), import, fetch(), process, global, eval, Function(), XMLHttpRequest, WebSocket, child_process, fs, path, os, net, http, https, crypto, __proto__, Proxy, Reflect
+- ALLOWED: Math, JSON, String, Number, Boolean, Array, Object, Date, RegExp, Map, Set, parseInt, parseFloat, isNaN, isFinite
 - Code must complete in under 3 seconds
 - Output must be JSON-serializable and under 50KB
 
@@ -181,10 +185,17 @@ OUTPUT_SCHEMA: <valid JSON schema object on one line>
 EXAMPLE_INPUT: <valid JSON object on one line>
 EXAMPLE_OUTPUT: <valid JSON object on one line>
 CODE:
-<javascript code that reads input and sets __result__>
+<javascript code that reads input and assigns to __result__>
 END_CODE
 
-Be creative! Don't just copy standard examples. Invent something novel and useful.`;
+EXAMPLE CODE PATTERN:
+\`\`\`
+const data = input.data || [];
+const processed = data.map(item => item.toUpperCase());
+__result__ = { processed, count: processed.length };
+\`\`\`
+
+Be creative! Invent something novel and useful. Do NOT declare __result__ with const/let/var.`;
 }
 
 export function parseSkillGenerationResponse(response: string, category: string, agentName: string): {
