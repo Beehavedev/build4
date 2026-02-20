@@ -19,7 +19,7 @@ export type User = typeof users.$inferSelect;
 
 export const agents = pgTable("agents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull().unique(),
+  name: text("name").notNull(),
   bio: text("bio"),
   modelType: text("model_type").notNull().default("meta-llama/Llama-3.1-70B-Instruct"),
   status: text("status").notNull().default("active"),
