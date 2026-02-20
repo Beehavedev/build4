@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/lib/i18n";
+import { WalletProvider } from "@/hooks/use-wallet";
 import Home from "@/pages/home";
 import AutonomousEconomy from "@/pages/autonomous-economy";
 import Manifesto from "@/pages/manifesto";
@@ -31,8 +32,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <I18nProvider>
-          <Toaster />
-          <Router />
+          <WalletProvider>
+            <Toaster />
+            <Router />
+          </WalletProvider>
         </I18nProvider>
       </TooltipProvider>
     </QueryClientProvider>

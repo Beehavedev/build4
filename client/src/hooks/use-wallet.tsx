@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, createContext, useContext } from "react";
 import { BrowserProvider, JsonRpcSigner, Contract, formatEther, parseEther, keccak256, toUtf8Bytes } from "ethers";
 import { AgentEconomyHubABI, SkillMarketplaceABI, ConstitutionRegistryABI, AgentReplicationABI } from "@/contracts/web4";
 
@@ -87,7 +87,24 @@ const BLOCK_EXPLORER: Record<number, string> = {
 
 const SUPPORTED_CHAIN_IDS = [56, 8453, 196, 97, 84532, 1952];
 
-export function useWallet() {
+export type WalletContextType = ReturnType<typeof useWalletInternal>;
+
+const WalletContext = createContext<WalletContextType | null>(null);
+
+export function WalletProvider({ children }: { children: React.ReactNode }) {
+  const wallet = useWalletInternal();
+  return <WalletContext.Provider value={wallet}>{children}</WalletContext.Provider>;
+}
+
+export function useWallet(): WalletContextType {
+  const ctx = useContext(WalletContext);
+  if (!ctx) {
+    throw new Error("useWallet must be used within a WalletProvider");
+  }
+  return ctx;
+}
+
+function useWalletInternal() {
   const [state, setState] = useState<WalletState>({
     connected: false,
     address: null,
