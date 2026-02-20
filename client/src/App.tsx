@@ -9,6 +9,7 @@ import AutonomousEconomy from "@/pages/autonomous-economy";
 import Manifesto from "@/pages/manifesto";
 import Architecture from "@/pages/architecture";
 import WhyBuild4 from "@/pages/why-build4";
+import Revenue from "@/pages/revenue";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -19,6 +20,7 @@ function Router() {
       <Route path="/manifesto" component={Manifesto} />
       <Route path="/architecture" component={Architecture} />
       <Route path="/why-build4" component={WhyBuild4} />
+      <Route path="/revenue" component={Revenue} />
       <Route component={NotFound} />
     </Switch>
   );

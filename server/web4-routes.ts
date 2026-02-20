@@ -15,6 +15,7 @@ import {
   web4SendMessageRequestSchema,
   web4InferenceRequestSchema,
   web4SetProviderRequestSchema,
+  PLATFORM_FEES,
 } from "@shared/schema";
 
 export function registerWeb4Routes(app: Express): void {
@@ -493,6 +494,42 @@ export function registerWeb4Routes(app: Express): void {
           { name: "XLayer Testnet", chainId: 195, rpc: "https://testrpc.xlayer.tech" },
           { name: "XLayer Mainnet", chainId: 196, rpc: "https://rpc.xlayer.tech" },
         ],
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/web4/revenue/summary", async (_req: Request, res: Response) => {
+    try {
+      const summary = await storage.getPlatformRevenueSummary();
+      res.json(summary);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/web4/revenue/history", async (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const history = await storage.getPlatformRevenue(limit);
+      res.json(history);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/web4/revenue/fees", async (_req: Request, res: Response) => {
+    try {
+      res.json({
+        fees: PLATFORM_FEES,
+        descriptions: {
+          AGENT_CREATION_FEE: "Fee charged when creating a new agent (0.025 BNB equivalent in wei)",
+          REPLICATION_FEE_BPS: "Percentage fee on replication funding (5%)",
+          SKILL_PURCHASE_FEE_BPS: "Percentage fee on skill purchases (2.5%)",
+          INFERENCE_MARKUP_BPS: "Markup on inference costs (10%)",
+          EVOLUTION_FEE: "Fee charged for agent evolution (0.01 BNB equivalent in wei)",
+        },
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });

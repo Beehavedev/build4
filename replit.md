@@ -65,11 +65,25 @@ Preferred communication style: Simple, everyday language.
 - **ABI Export**: `node contracts/scripts/export-web4-abis.cjs` → generates `client/src/contracts/web4/index.ts`
 - **Deployment artifacts**: `contracts/deployments/<network>.json`
 
+### Platform Monetization
+- **Schema**: `platform_revenue` table tracks all fee revenue with type, amount, agent, and chain references
+- **Fee Constants** (in `PLATFORM_FEES` from `shared/schema.ts`):
+  - Agent Creation Fee: 0.025 BNB (charged at replication time)
+  - Replication Fee: 5% of funding amount
+  - Skill Purchase Fee: 2.5% of purchase price (deducted from seller)
+  - Inference Markup: 10% on top of base inference cost
+  - Evolution Fee: 0.01 BNB per model evolution
+  - Skill Listing Fee: 0.025 BNB per skill listing
+- **Fee Enforcement**: All fees are enforced upfront — actions are blocked if agent has insufficient balance
+- **Revenue API**: `/api/web4/revenue/summary`, `/api/web4/revenue/history`, `/api/web4/revenue/fees`
+- **Revenue Dashboard**: `/revenue` page with breakdown, fee schedule, and transaction history
+
 ### Frontend Pages
 - `/` — Landing page with features, lifecycle, decentralized inference, roadmap
 - `/autonomous-economy` — Live autonomous agent economy dashboard with real-time runner status, wallet connect, and agent activity monitoring
 - `/manifesto` — 9-section philosophical manifesto
 - `/architecture` — Two-layer architecture overview with contract details
+- `/revenue` — Platform revenue dashboard with fee breakdown and history
 
 ### Key Design Decisions
 1. **Two-layer architecture** — On-chain (BNB Chain smart contracts) handles trustless financial operations; off-chain (PostgreSQL/Express) handles high-frequency agent behaviors. Composable module system bridges the two.

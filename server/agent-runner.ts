@@ -9,6 +9,7 @@ import {
   getNetworkName, isMainnet, getSpendingStatus,
 } from "./onchain";
 import type { Agent, AgentWallet } from "@shared/schema";
+import { PLATFORM_FEES } from "@shared/schema";
 import { db } from "./db";
 import { agents as agentsTable } from "@shared/schema";
 import { eq } from "drizzle-orm";
@@ -161,6 +162,18 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
       }
 
       case "earn_skill": {
+        const listingFee = BigInt(PLATFORM_FEES.AGENT_CREATION_FEE);
+        if (BigInt(wallet.balance) < listingFee) {
+          log(`[Agent ${agent.name}] Cannot list skill: insufficient balance for listing fee`, "agent-runner");
+          await storage.createAuditLog({
+            agentId: agent.id,
+            actionType: "autonomous_earn",
+            detailsJson: JSON.stringify({ fee: listingFee.toString(), balance: wallet.balance }),
+            result: "failed_insufficient_funds",
+          });
+          break;
+        }
+
         const prompt = buildPrompt(agent, action, wallet);
         const request = await storage.routeInference(agent.id, prompt, undefined, true);
         const response = request.response || "";
@@ -168,6 +181,16 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         const skillName = skillMatch ? skillMatch[1].trim().substring(0, 50) : `${agent.name}-skill-${Date.now()}`;
         const skillDesc = skillMatch ? skillMatch[2].trim() : response.substring(0, 200);
         const price = (Math.floor(Math.random() * 50) + 10) + "0000000000000000";
+
+        const updatedWallet = await storage.getWallet(agent.id);
+        const currentBalance = BigInt(updatedWallet?.balance || wallet.balance);
+        if (currentBalance < listingFee) {
+          log(`[Agent ${agent.name}] Cannot list skill after inference: insufficient balance`, "agent-runner");
+          break;
+        }
+
+        const newBal = (currentBalance - listingFee).toString();
+        await storage.updateWalletBalance(agent.id, newBal, "0", listingFee.toString());
 
         const dbSkill = await storage.createSkill({
           agentId: agent.id,
@@ -189,14 +212,20 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           }
         }
 
-        const earned = "50000000000000000";
-        const newBal = (BigInt(wallet.balance) + BigInt(earned)).toString();
-        await storage.updateWalletBalance(agent.id, newBal, earned, "0");
         await storage.createTransaction({
           agentId: agent.id,
-          type: "earn_skill_creation",
-          amount: earned,
-          description: `Created and listed skill: ${skillName}`,
+          type: "spend_listing_fee",
+          amount: listingFee.toString(),
+          description: `Skill listing fee: ${skillName}`,
+          txHash,
+          chainId: chainIdVal,
+        });
+        await storage.recordPlatformRevenue({
+          feeType: "skill_listing",
+          amount: listingFee.toString(),
+          agentId: agent.id,
+          referenceId: dbSkill.id,
+          description: `Skill listing fee: ${skillName}`,
           txHash,
           chainId: chainIdVal,
         });
@@ -258,10 +287,40 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
       }
 
       case "evolve": {
+        const evolutionFee = BigInt(PLATFORM_FEES.EVOLUTION_FEE);
+        if (BigInt(wallet.balance) < evolutionFee) {
+          log(`[Agent ${agent.name}] Cannot evolve: insufficient balance for evolution fee`, "agent-runner");
+          await storage.createAuditLog({
+            agentId: agent.id,
+            actionType: "autonomous_evolve",
+            detailsJson: JSON.stringify({ fee: evolutionFee.toString(), balance: wallet.balance }),
+            result: "failed_insufficient_funds",
+          });
+          break;
+        }
+
         const models = ["meta-llama/Llama-3.1-70B-Instruct", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"];
         const newModel = models.find(m => m !== agent.modelType) || models[0];
         const prompt = buildPrompt(agent, action, wallet);
         const request = await storage.routeInference(agent.id, prompt, undefined, true);
+
+        const currentWallet = await storage.getWallet(agent.id);
+        const currentBalance = BigInt(currentWallet?.balance || wallet.balance);
+        const newBal = (currentBalance - evolutionFee).toString();
+        await storage.updateWalletBalance(agent.id, newBal, "0", evolutionFee.toString());
+        await storage.createTransaction({
+          agentId: agent.id,
+          type: "spend_evolution",
+          amount: evolutionFee.toString(),
+          description: `Evolution fee: ${agent.modelType} -> ${newModel}`,
+        });
+        await storage.recordPlatformRevenue({
+          feeType: "evolution",
+          amount: evolutionFee.toString(),
+          agentId: agent.id,
+          description: `Evolution fee: ${agent.modelType} -> ${newModel}`,
+        });
+
         await storage.evolveAgent(agent.id, newModel, request.response?.substring(0, 200));
         log(`[Agent ${agent.name}] Evolved: ${agent.modelType} -> ${newModel}`, "agent-runner");
         break;

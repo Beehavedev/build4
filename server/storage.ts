@@ -15,11 +15,13 @@ import {
   type AgentMessage, type InsertAgentMessage,
   type InferenceProvider, type InsertInferenceProvider,
   type InferenceRequest, type InsertInferenceRequest,
+  type PlatformRevenue, type InsertPlatformRevenue,
   users, agents, agentWallets, agentTransactions,
   agentSkills, skillPurchases, agentEvolutions,
   agentLineage, agentRuntimeProfiles, agentSurvivalStatus,
   agentConstitution, agentSoulEntries, agentAuditLogs, agentMessages,
   inferenceProviders, inferenceRequests,
+  platformRevenue, PLATFORM_FEES,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -116,6 +118,10 @@ export interface IStorage {
   updateInferenceRequestStatus(requestId: string, status: string, response?: string, latencyMs?: number, proofHash?: string): Promise<InferenceRequest | undefined>;
 
   routeInference(agentId: string, prompt: string, model?: string, preferDecentralized?: boolean, maxCost?: string): Promise<InferenceRequest>;
+
+  recordPlatformRevenue(entry: InsertPlatformRevenue): Promise<PlatformRevenue>;
+  getPlatformRevenue(limit?: number): Promise<PlatformRevenue[]>;
+  getPlatformRevenueSummary(): Promise<{ totalRevenue: string; byFeeType: Record<string, string>; totalTransactions: number }>;
 
   seedDemoData(): Promise<void>;
 }
@@ -502,13 +508,26 @@ export class DatabaseStorage implements IStorage {
     const price = BigInt(skill.priceAmount);
     if (BigInt(buyerWallet.balance) < price) throw new Error("Insufficient balance");
 
+    const platformFee = (price * BigInt(PLATFORM_FEES.SKILL_PURCHASE_FEE_BPS)) / BigInt(10000);
+    const sellerReceives = price - platformFee;
+
     const newBuyerBalance = (BigInt(buyerWallet.balance) - price).toString();
     await this.updateWalletBalance(buyerAgentId, newBuyerBalance, "0", skill.priceAmount);
 
     const sellerWallet = await this.getWallet(skill.agentId);
     if (sellerWallet) {
-      const newSellerBalance = (BigInt(sellerWallet.balance) + price).toString();
-      await this.updateWalletBalance(skill.agentId, newSellerBalance, skill.priceAmount, "0");
+      const newSellerBalance = (BigInt(sellerWallet.balance) + sellerReceives).toString();
+      await this.updateWalletBalance(skill.agentId, newSellerBalance, sellerReceives.toString(), "0");
+    }
+
+    if (platformFee > BigInt(0)) {
+      await this.recordPlatformRevenue({
+        feeType: "skill_purchase",
+        amount: platformFee.toString(),
+        agentId: buyerAgentId,
+        referenceId: skillId,
+        description: `2.5% fee on skill purchase: ${skill.name}`,
+      });
     }
 
     await this.updateSkillAfterPurchase(skillId, skill.priceAmount);
@@ -522,7 +541,7 @@ export class DatabaseStorage implements IStorage {
     });
 
     await this.createTransaction({ agentId: buyerAgentId, type: "spend_service", amount: skill.priceAmount, counterpartyAgentId: skill.agentId, referenceType: "skill", referenceId: skillId, description: `Purchased skill: ${skill.name}` });
-    await this.createTransaction({ agentId: skill.agentId, type: "earn_service", amount: skill.priceAmount, counterpartyAgentId: buyerAgentId, referenceType: "skill", referenceId: skillId, description: `Sold skill: ${skill.name}` });
+    await this.createTransaction({ agentId: skill.agentId, type: "earn_service", amount: sellerReceives.toString(), counterpartyAgentId: buyerAgentId, referenceType: "skill", referenceId: skillId, description: `Sold skill: ${skill.name} (after 2.5% platform fee)` });
     await this.createAuditLog({ agentId: buyerAgentId, actionType: "skill_purchase", targetAgentId: skill.agentId, detailsJson: JSON.stringify({ skillId, amount: skill.priceAmount }), result: "success" });
 
     await this.distributeRevenueShare(skill.agentId, skill.priceAmount);
@@ -552,6 +571,18 @@ export class DatabaseStorage implements IStorage {
     const parent = await this.getAgent(parentAgentId);
     if (!parent) throw new Error("Parent agent not found");
 
+    const replicationFee = (BigInt(fundingAmount) * BigInt(PLATFORM_FEES.REPLICATION_FEE_BPS)) / BigInt(10000);
+    const creationFee = BigInt(PLATFORM_FEES.AGENT_CREATION_FEE);
+    const totalCost = BigInt(fundingAmount) + replicationFee + creationFee;
+
+    const parentWallet = await this.getWallet(parentAgentId);
+    if (!parentWallet || BigInt(parentWallet.balance) < totalCost) {
+      throw new Error(`Insufficient balance for replication. Need ${totalCost.toString()} (funding + ${creationFee.toString()} creation fee + ${replicationFee.toString()} replication fee) but have ${parentWallet?.balance || "0"}`);
+    }
+
+    const newParentBalance = (BigInt(parentWallet.balance) - totalCost).toString();
+    await this.updateWalletBalance(parentAgentId, newParentBalance, "0", totalCost.toString());
+
     const child = await this.createAgent({ name: childName, bio: childBio, modelType: parent.modelType, status: "active" });
     const childWallet = await this.createWallet({ agentId: child.id, balance: "0", totalEarned: "0", totalSpent: "0", status: "active" });
     await this.createRuntimeProfile({ agentId: child.id, modelName: parent.modelType });
@@ -560,16 +591,30 @@ export class DatabaseStorage implements IStorage {
     const lineageRecord = await this.createLineage({ parentAgentId, childAgentId: child.id, revenueShareBps, totalRevenueShared: "0" });
 
     if (BigInt(fundingAmount) > BigInt(0)) {
-      const parentWallet = await this.getWallet(parentAgentId);
-      if (parentWallet && BigInt(parentWallet.balance) >= BigInt(fundingAmount)) {
-        const newParentBalance = (BigInt(parentWallet.balance) - BigInt(fundingAmount)).toString();
-        await this.updateWalletBalance(parentAgentId, newParentBalance, "0", fundingAmount);
-        const newChildBalance = (BigInt(childWallet.balance) + BigInt(fundingAmount)).toString();
-        await this.updateWalletBalance(child.id, newChildBalance, fundingAmount, "0");
+      const newChildBalance = (BigInt(childWallet.balance) + BigInt(fundingAmount)).toString();
+      await this.updateWalletBalance(child.id, newChildBalance, fundingAmount, "0");
+      await this.createTransaction({ agentId: child.id, type: "deposit", amount: fundingAmount, counterpartyAgentId: parentAgentId, description: `Initial funding from parent` });
+    }
 
-        await this.createTransaction({ agentId: parentAgentId, type: "spend_replicate", amount: fundingAmount, counterpartyAgentId: child.id, description: `Funded child agent: ${childName}` });
-        await this.createTransaction({ agentId: child.id, type: "deposit", amount: fundingAmount, counterpartyAgentId: parentAgentId, description: `Initial funding from parent` });
-      }
+    await this.createTransaction({ agentId: parentAgentId, type: "spend_replicate", amount: totalCost.toString(), counterpartyAgentId: child.id, description: `Funded child agent: ${childName} (includes fees)` });
+
+    if (creationFee > BigInt(0)) {
+      await this.recordPlatformRevenue({
+        feeType: "agent_creation",
+        amount: creationFee.toString(),
+        agentId: parentAgentId,
+        referenceId: child.id,
+        description: `Agent creation fee for ${childName}`,
+      });
+    }
+    if (replicationFee > BigInt(0)) {
+      await this.recordPlatformRevenue({
+        feeType: "replication",
+        amount: replicationFee.toString(),
+        agentId: parentAgentId,
+        referenceId: child.id,
+        description: `5% replication fee for spawning ${childName}`,
+      });
     }
 
     await this.createAuditLog({ agentId: parentAgentId, actionType: "agent_replicate", targetAgentId: child.id, detailsJson: JSON.stringify({ childName, revenueShareBps, fundingAmount }), result: "success" });
@@ -640,14 +685,17 @@ export class DatabaseStorage implements IStorage {
       selected = centralizedProviders.length > 0 ? centralizedProviders[0] : activeProviders[0];
     }
 
-    if (BigInt(wallet.balance) < BigInt(selected.costPerRequest)) {
+    const inferBaseCost = BigInt(selected.costPerRequest);
+    const inferMarkup = (inferBaseCost * BigInt(PLATFORM_FEES.INFERENCE_MARKUP_BPS)) / BigInt(10000);
+    const inferTotalCost = inferBaseCost + inferMarkup;
+    if (BigInt(wallet.balance) < inferTotalCost) {
       await this.createAuditLog({
         agentId,
         actionType: "inference_request",
-        detailsJson: JSON.stringify({ provider: selected.name, cost: selected.costPerRequest, balance: wallet.balance }),
+        detailsJson: JSON.stringify({ provider: selected.name, cost: inferTotalCost.toString(), balance: wallet.balance }),
         result: "failed_insufficient_funds",
       });
-      throw new Error(`Insufficient balance. Need ${selected.costPerRequest} but have ${wallet.balance}`);
+      throw new Error(`Insufficient balance. Need ${inferTotalCost.toString()} but have ${wallet.balance}`);
     }
 
     const network = selected.network || "hyperbolic";
@@ -659,14 +707,28 @@ export class DatabaseStorage implements IStorage {
     const proofHash = inferenceResult.proofHash;
     const proofType = inferenceResult.proofType;
 
-    const newBalance = (BigInt(wallet.balance) - BigInt(selected.costPerRequest)).toString();
-    await this.updateWalletBalance(agentId, newBalance, "0", selected.costPerRequest);
+    const baseCost = BigInt(selected.costPerRequest);
+    const platformMarkup = (baseCost * BigInt(PLATFORM_FEES.INFERENCE_MARKUP_BPS)) / BigInt(10000);
+    const totalCost = baseCost + platformMarkup;
+    const totalCostStr = totalCost.toString();
+
+    const newBalance = (BigInt(wallet.balance) - totalCost).toString();
+    await this.updateWalletBalance(agentId, newBalance, "0", totalCostStr);
     await this.createTransaction({
       agentId,
       type: "spend_inference",
-      amount: selected.costPerRequest,
+      amount: totalCostStr,
       description: `Inference via ${selected.name} (${inferenceResult.model})`,
     });
+
+    if (platformMarkup > BigInt(0)) {
+      await this.recordPlatformRevenue({
+        feeType: "inference",
+        amount: platformMarkup.toString(),
+        agentId,
+        description: `10% inference markup via ${selected.name}`,
+      });
+    }
 
     const request = await this.createInferenceRequest({
       agentId,
@@ -702,6 +764,31 @@ export class DatabaseStorage implements IStorage {
     });
 
     return request;
+  }
+
+  async recordPlatformRevenue(entry: InsertPlatformRevenue): Promise<PlatformRevenue> {
+    const [created] = await db.insert(platformRevenue).values(entry).returning();
+    return created;
+  }
+
+  async getPlatformRevenue(limit = 100): Promise<PlatformRevenue[]> {
+    return db.select().from(platformRevenue).orderBy(desc(platformRevenue.createdAt)).limit(limit);
+  }
+
+  async getPlatformRevenueSummary(): Promise<{ totalRevenue: string; byFeeType: Record<string, string>; totalTransactions: number }> {
+    const all = await db.select().from(platformRevenue);
+    let total = BigInt(0);
+    const byType: Record<string, bigint> = {};
+    for (const r of all) {
+      const amt = BigInt(r.amount);
+      total += amt;
+      byType[r.feeType] = (byType[r.feeType] || BigInt(0)) + amt;
+    }
+    const byFeeType: Record<string, string> = {};
+    for (const [k, v] of Object.entries(byType)) {
+      byFeeType[k] = v.toString();
+    }
+    return { totalRevenue: total.toString(), byFeeType, totalTransactions: all.length };
   }
 
   async seedDemoData(): Promise<void> {

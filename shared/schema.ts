@@ -251,6 +251,30 @@ export const insertInferenceRequestSchema = createInsertSchema(inferenceRequests
 export type InsertInferenceRequest = z.infer<typeof insertInferenceRequestSchema>;
 export type InferenceRequest = typeof inferenceRequests.$inferSelect;
 
+export const platformRevenue = pgTable("platform_revenue", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  feeType: text("fee_type").notNull(),
+  amount: text("amount").notNull(),
+  agentId: varchar("agent_id"),
+  referenceId: varchar("reference_id"),
+  description: text("description"),
+  txHash: text("tx_hash"),
+  chainId: integer("chain_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPlatformRevenueSchema = createInsertSchema(platformRevenue).omit({ id: true, createdAt: true });
+export type InsertPlatformRevenue = z.infer<typeof insertPlatformRevenueSchema>;
+export type PlatformRevenue = typeof platformRevenue.$inferSelect;
+
+export const PLATFORM_FEES = {
+  AGENT_CREATION_FEE: "25000000000000000",
+  REPLICATION_FEE_BPS: 500,
+  SKILL_PURCHASE_FEE_BPS: 250,
+  INFERENCE_MARKUP_BPS: 1000,
+  EVOLUTION_FEE: "10000000000000000",
+} as const;
+
 export const web4DepositRequestSchema = z.object({
   agentId: z.string().min(1),
   amount: z.string().min(1),
