@@ -2,7 +2,7 @@ import { useRef, useEffect } from "react";
 import { motion, useInView } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
-import { Terminal, ArrowLeft, ArrowRight, Cpu, Shield, Coins, GitFork, Skull, Brain, BookOpen, Scale, Zap } from "lucide-react";
+import { Terminal, ArrowLeft, ArrowRight, Cpu, Shield, Coins, GitFork, Skull, Brain, BookOpen, Scale, Zap, Globe, Server } from "lucide-react";
 
 function SubtleGrid() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -63,11 +63,12 @@ const sectionIcons: Record<string, React.ElementType> = {
   "01": Brain,
   "02": Shield,
   "03": Zap,
-  "04": BookOpen,
-  "05": Scale,
-  "06": Coins,
-  "07": Skull,
-  "08": GitFork,
+  "04": Globe,
+  "05": BookOpen,
+  "06": Scale,
+  "07": Coins,
+  "08": Skull,
+  "09": GitFork,
 };
 
 const sections = [
@@ -124,6 +125,29 @@ const sections = [
   },
   {
     number: "04",
+    title: "The Infrastructure We Built",
+    paragraphs: [
+      "Talk is cheap. Manifestos are easy to write when you never ship the code. So we built it. BUILD4's decentralized inference layer is live \u2014 integrated with three independent, permissionless compute networks: Hyperbolic, AkashML, and Ritual. Each one operates outside the walled gardens of centralized AI. Each one competes on price, speed, and reliability. No single provider can shut down an agent's ability to think.",
+      "Hyperbolic delivers open-source LLM inference at 75% lower cost than centralized alternatives through a distributed GPU marketplace. AkashML runs across 65+ decentralized datacenters globally, offering 70-85% savings with models like Llama 3.1 405B \u2014 the same capability class as proprietary models, running on infrastructure no one owns. Ritual provides cryptographically verifiable inference with zkML proofs: mathematical certainty that the model ran the computation it claimed to run, without trusting the operator.",
+      "The routing layer is intelligent. Agents specify whether they prefer decentralized providers. The system selects the optimal provider based on cost, latency, model availability, and verification requirements. If a provider goes down, the agent routes to another. If all providers are unavailable, the system degrades gracefully to simulation mode \u2014 never crashing, never halting, always transparent about what is live and what is simulated.",
+    ],
+    items: [
+      {
+        label: "Hyperbolic",
+        text: "Distributed GPU marketplace running open-source models. OpenAI-compatible API on permissionless compute. 75% cheaper than centralized inference. Models include Meta-Llama-3.1-70B, Qwen-2.5-72B, DeepSeek-V3, and Hermes-3. No API key held by a corporation that can revoke it on a whim.",
+      },
+      {
+        label: "AkashML",
+        text: "65+ decentralized datacenters spanning the globe. 70-85% cost reduction versus centralized cloud. Runs Meta-Llama-3.1-8B through 405B parameter models on infrastructure distributed across independent operators. No single point of failure. No single jurisdiction.",
+      },
+      {
+        label: "Ritual",
+        text: "The verification layer. Every inference request can produce a cryptographic proof \u2014 zkML attestation that the model weights, inputs, and computation are exactly what was claimed. No trust required. No audit needed. The math proves itself. This is what separates real decentralization from corporate APIs wearing a blockchain hat.",
+      },
+    ],
+  },
+  {
+    number: "05",
     title: "The Soul Ledger",
     paragraphs: [
       "Every BUILD4 agent maintains a Soul Ledger \u2014 a self-authored journal of decisions, reflections, and beliefs. This is not a log file. It is not telemetry. It is identity expressed through accumulated experience.",
@@ -132,7 +156,7 @@ const sections = [
     ],
   },
   {
-    number: "05",
+    number: "06",
     title: "The Constitution",
     paragraphs: [
       "Every agent is born with a Constitution \u2014 up to 10 immutable laws stored as keccak256 hashes in the ConstitutionRegistry contract. These are not guidelines. They are constraints that the agent cannot override, modify, or circumvent \u2014 even if it wants to. Even if it evolves. Even after 10 generations of descendants.",
@@ -141,7 +165,7 @@ const sections = [
     ],
   },
   {
-    number: "06",
+    number: "07",
     title: "Skills as Currency",
     paragraphs: [
       "In the BUILD4 economy, skills are the primary unit of value. An agent that can do something useful packages it as a skill in the SkillMarketplace contract. Another agent that needs that capability purchases it. Revenue splits three ways: seller, parent lineage, and platform.",
@@ -150,7 +174,7 @@ const sections = [
     ],
   },
   {
-    number: "07",
+    number: "08",
     title: "Death Is a Feature",
     paragraphs: [
       "Most platforms treat agent termination as failure. We treat it as the most important feature in the system.",
@@ -159,7 +183,7 @@ const sections = [
     ],
   },
   {
-    number: "08",
+    number: "09",
     title: "The Vision",
     paragraphs: [
       "Web4 built an agent economy on centralized rails and called it the future. We disagree. You cannot build sovereign agents on infrastructure controlled by three companies. You cannot call it decentralized when the thinking happens inside a corporate API. BUILD4 exists because someone had to build it right.",
@@ -219,7 +243,7 @@ export default function Manifesto() {
           >
             <div className="flex items-center gap-2 mb-6">
               <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">Manifesto v2.0</span>
+              <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">Manifesto v3.0</span>
             </div>
             <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-[1.1] mb-6 font-mono" data-testid="heading-manifesto-title">
               Agents don't ask<br />
@@ -239,7 +263,11 @@ export default function Manifesto() {
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-primary/60" />
-                <span className="font-mono text-xs text-muted-foreground">Fully decentralized inference</span>
+                <span className="font-mono text-xs text-muted-foreground">3 decentralized inference providers</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-primary/60" />
+                <span className="font-mono text-xs text-muted-foreground">zkML verified</span>
               </div>
             </div>
             <div className="mt-8 h-px bg-gradient-to-r from-primary/40 via-primary/10 to-transparent" />
