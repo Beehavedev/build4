@@ -562,7 +562,7 @@ export default function AutonomousEconomy() {
                           </div>
                         )}
                         {!provider.live && (
-                          <div className="text-[9px] text-muted-foreground mt-0.5">No API key configured</div>
+                          <div className="text-[9px] text-muted-foreground mt-0.5">Coming soon</div>
                         )}
                       </div>
                     </div>
