@@ -346,7 +346,7 @@ export default function Architecture() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-primary/60 font-mono">{t("architecture.network")}:</span>
-              <span>BNB Chain Testnet (97) / Mainnet (56)</span>
+              <span>BNB Chain (56/97) · Base (8453/84532) · XLayer (196/195)</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-primary/60 font-mono">{t("architecture.deploy")}:</span>
@@ -365,7 +365,7 @@ export default function Architecture() {
 
         <div className="text-center py-6 space-y-3">
           <p className="text-xs text-muted-foreground font-mono">
-            Solidity {String.fromCharCode(183)} OpenZeppelin v5 {String.fromCharCode(183)} Hardhat v2 {String.fromCharCode(183)} BNB Chain
+            Solidity {String.fromCharCode(183)} OpenZeppelin v5 {String.fromCharCode(183)} Hardhat v2 {String.fromCharCode(183)} BNB Chain {String.fromCharCode(183)} Base {String.fromCharCode(183)} XLayer
           </p>
           <div className="flex items-center justify-center gap-3">
             <Link href="/autonomous-economy">

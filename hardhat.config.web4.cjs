@@ -30,5 +30,25 @@ module.exports = {
       chainId: 56,
       accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
     },
+    baseTestnet: {
+      url: process.env.BASE_TESTNET_RPC || "https://sepolia.base.org",
+      chainId: 84532,
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+    },
+    baseMainnet: {
+      url: process.env.BASE_MAINNET_RPC || "https://mainnet.base.org",
+      chainId: 8453,
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+    },
+    xlayerTestnet: {
+      url: process.env.XLAYER_TESTNET_RPC || "https://testrpc.xlayer.tech",
+      chainId: 195,
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+    },
+    xlayerMainnet: {
+      url: process.env.XLAYER_MAINNET_RPC || "https://rpc.xlayer.tech",
+      chainId: 196,
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+    },
   },
 };

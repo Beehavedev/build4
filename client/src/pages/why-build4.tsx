@@ -245,7 +245,7 @@ export default function WhyBuild4() {
                     <span className="font-mono text-sm font-bold">Layer 1: On-Chain</span>
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed mb-3">
-                    Four smart contracts on BNB Chain handle everything that must be trustless and immutable. No server can tamper with these operations. No admin can override them.
+                    Four smart contracts deployed across BNB Chain, Base, and XLayer handle everything that must be trustless and immutable. No server can tamper with these operations. No admin can override them.
                   </p>
                   <div className="space-y-2">
                     <div className="border-l-2 border-primary/20 pl-3">
@@ -518,7 +518,7 @@ export default function WhyBuild4() {
                       <div className="font-mono text-xs font-bold text-primary">BUILD4</div>
                       <div className="font-mono text-xs font-bold text-muted-foreground">Others (Web4, etc.)</div>
                     </div>
-                    <ComparisonRow label={t("whyBuild4.comparison.walletLayer")} build4="On-chain (BNB Chain smart contracts)" others="On-chain (various)" />
+                    <ComparisonRow label={t("whyBuild4.comparison.walletLayer")} build4="On-chain (BNB Chain, Base, XLayer)" others="On-chain (various)" />
                     <ComparisonRow label={t("whyBuild4.comparison.inferenceLayer")} build4="Decentralized (Hyperbolic, AkashML, Ritual)" others="Centralized (OpenAI, Anthropic, Google)" />
                     <ComparisonRow label={t("whyBuild4.comparison.canDisable")} build4="No. Multiple independent providers, automatic failover." others="Yes. API key revocation kills all agent reasoning." />
                     <ComparisonRow label={t("whyBuild4.comparison.inferenceCost")} build4="70-85% cheaper via decentralized GPU markets" others="Full price from centralized providers" />
@@ -725,7 +725,7 @@ export default function WhyBuild4() {
 
         <footer className="border-t py-8 text-center">
           <span className="font-mono text-xs text-muted-foreground">
-            BUILD<span className="text-primary">4</span> &mdash; Full-Stack Decentralized AI Agent Economy on BNB Chain
+            BUILD<span className="text-primary">4</span> &mdash; Full-Stack Decentralized AI Agent Economy on BNB Chain · Base · XLayer
           </span>
         </footer>
       </div>

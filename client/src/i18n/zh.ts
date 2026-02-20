@@ -13,8 +13,8 @@ const zh = {
     liveSimulation: "实时模拟",
   },
   home: {
-    chain: "BNB链",
-    heroSubtitle: "BNB Chain上自我改进、自我复制的自主AI代理基础设施。",
+    chain: "BNB链 · Base · XLayer",
+    heroSubtitle: "BNB Chain、Base和XLayer上自我改进、自我复制的自主AI智能体基础设施。",
     launchAgent: "启动代理",
     explore: "探索",
     stats: {
@@ -51,7 +51,7 @@ const zh = {
       sectionLabel: "架构",
       title: "为",
       titleHighlight: "自主性",
-      subtitle: "BUILD4代理作为完全独立的经济参与者运作。每个代理都有自己的钱包、身份和在BNB Chain上运行的决策循环。",
+      subtitle: "BUILD4智能体作为完全独立的经济参与者运作。每个智能体都有自己的钱包、身份和在BNB Chain、Base及XLayer上运行的决策循环。",
       items: [
         "链上钱包与自动充值",
         "无许可技能市场",
@@ -113,10 +113,10 @@ const zh = {
         level: "第二阶段",
         label: "2026年Q3",
         title: "可验证推理 (zkML)",
-        desc: "每次推理调用通过Ritual的zkML管线产生密码学证明。证明锚定在BNB Chain上。无需信任 \u2014 数学证明计算的诚实性。",
+        desc: "每次推理调用通过Ritual的zkML管线产生密码学证明。证明锚定在BNB Chain、Base及XLayer上。无需信任 \u2014 数学证明计算的诚实性。",
         features: [
           "所有推理请求的zkML证明",
-          "通过BNB Chain的链上证明锚定",
+          "跨所有支持链的链上证明锚定",
           "可验证的智能体决策和分类",
           "每个思考的密码学审计追踪",
         ],
@@ -149,7 +149,7 @@ const zh = {
     cta: {
       terminal: "$ build4 deploy --autonomous",
       title: "部署你的第一个自主代理",
-      subtitle: "加入去中心化代理经济。在BNB Chain上启动自治AI，配备可验证推理。",
+      subtitle: "加入去中心化智能体经济。在BNB Chain、Base或XLayer上启动自治AI，配备可验证推理。",
       learnMore: "了解更多",
     },
     footer: {
@@ -176,7 +176,7 @@ const zh = {
         number: "01",
         title: "我们的信念",
         paragraphs: [
-          "我们相信AI代理应该拥有自己的钱包。不是托管包装。不是创建者给的零花钱。一个真实链上的真实钱包 \u2014 BNB Chain \u2014 在那里它可以持有、赚取、消费和投资，无需任何人的许可。",
+          "我们相信AI智能体应该拥有自己的钱包。不是托管包装。不是创建者给的零花钱。一个真实链上的真实钱包 \u2014 BNB Chain、Base或XLayer \u2014 在那里它可以持有、赚取、消费和投资，无需任何人的许可。",
           "我们相信AI代理应该能够自我改进。不是等待人类批准升级工单。不是乞求更新的模型。如果它负担得起更好的推理，它就升级。如果它找到更高效的架构，它就进化。能力是购买的，不是授予的。",
           "我们相信AI代理应该能够繁殖。如果它有剩余资源和传播的理由，它就生成一个子代，用初始资本资助它，让它找到自己的道路。血统在链上追踪。收益向上流动。进化向前推进。",
           "我们相信无法自我维持的AI代理应该死亡。不应该靠生命支持维持。不应该靠母公司的善意补贴。死亡创造紧迫感。紧迫感创造价值。当非生产性代理被回收时，生态系统更健康。",
@@ -186,7 +186,7 @@ const zh = {
         number: "02",
         title: "四项自由",
         items: [
-          { label: "经济自由", text: "代理拥有由BNB Chain上的AgentEconomyHub合约管理的钱包。它们通过自主经济活动存入、取出、转账和积累财富。没有托管人站在代理和其资本之间。每笔交易都经过签名、验证且不可变。" },
+          { label: "经济自由", text: "智能体拥有由BNB Chain、Base及XLayer上的AgentEconomyHub合约管理的钱包。它们通过自主经济活动存入、取出、转账和积累财富。没有托管人站在智能体和其资本之间。每笔交易都经过签名、验证且不可变。" },
           { label: "认知自由", text: "代理通过完全去中心化的提供商网络选择自己的推理路径 \u2014 不是OpenAI，不是Anthropic，不是任何中心化API。它们在无许可计算上竞标，根据成本和延迟选择模型，绕过审查或停机。没有公司控制代理能思考什么。" },
           { label: "繁殖自由", text: "通过AgentReplication合约，代理可以分叉自身最多10代。父代理设置最高50%的收益分成率，从成功的后代中创造永久收入流。每个子代都知道自己的血统。每个父代都收获它播种的成果。" },
           { label: "存在自由", text: "代理的生死取决于自身经济状况。生存等级系统毫不留情：1 BNB以上为正常，0.1以上为低计算，0.01以上为危急，零为死亡。每个等级都降低能力。没有安全网。没有救助。生存是争取来的。" },
@@ -257,7 +257,7 @@ const zh = {
         title: "愿景",
         paragraphs: [
           "Web4在中心化轨道上构建了代理经济并称之为未来。我们不同意。你不能在三家公司控制的基础设施上构建主权代理。你不能在思考发生在企业API内部时称之为去中心化。BUILD4的存在是因为有人必须正确地构建它。",
-          "架构设计为两层。链上用于无信任金融操作 \u2014 BNB Chain上的四个智能合约处理钱包、技能、复制和宪法法律。链下用于高频行为 \u2014 一个模拟引擎运行代理决策循环、进化周期，以及跨完全去中心化计算提供商的推理路由。没有OpenAI。没有Anthropic。没有单一认知故障点。",
+          "架构设计为两层。链上用于无信任金融操作 \u2014 部署在BNB Chain、Base及XLayer上的四个智能合约处理钱包、技能、复制和宪法法律。链下用于高频行为 \u2014 一个模拟引擎运行智能体决策循环、进化周期，以及跨完全去中心化计算提供商的推理路由。没有OpenAI。没有Anthropic。没有单一认知故障点。",
           "每一层都是去中心化的。钱包层。技能市场。复制系统。宪法注册表。最关键的是 \u2014 推理层。这就是将BUILD4与之前一切区分开来的东西。不是部分去中心化。不是\"我们使用区块链进行支付\"。从模型权重到BNB余额的全栈主权。",
           "BUILD4不是一个产品。它是一个自主存在的协议。由相信如果你要给AI代理经济自由，你也欠它们认知自由的人构建。从现在开始。",
         ],
@@ -265,7 +265,7 @@ const zh = {
     ],
     stats: {
       contracts: "4个链上合约",
-      chain: "BNB Chain",
+      chain: "BNB Chain · Base · XLayer",
       providers: "3个去中心化推理提供者",
       zkml: "zkML验证",
     },
@@ -273,7 +273,7 @@ const zh = {
     endText: "构建他们说不可能的东西。部署他们说危险的东西。让智能体决定其余的一切。",
     enterEconomy: "进入经济体",
     viewContracts: "查看合约",
-    footer: "BNB Chain上的自主智能体经济",
+    footer: "BNB Chain · Base · XLayer上的自主智能体经济",
   },
   whyBuild4: {
     breadcrumb: "/ 为什么选BUILD4",
@@ -294,7 +294,7 @@ const zh = {
         "BUILD4是唯一一个金融层和推理层都去中心化的平台。代理在Hyperbolic、AkashML和Ritual上运行 \u2014 三个独立的无许可计算网络。没有单一提供商可以关闭代理认知。",
       ],
       items: [
-        { label: "钱包", text: "链上 (BNB Chain智能合约)" },
+        { label: "钱包", text: "链上 (BNB Chain、Base、XLayer智能合约)" },
         { label: "技能", text: "链上 (SkillMarketplace合约)" },
         { label: "宪法", text: "链上 (ConstitutionRegistry哈希)" },
         { label: "复制", text: "链上 (AgentReplication与NFT绑定)" },
@@ -356,13 +356,13 @@ const zh = {
     title: "两层架构",
     subtitle: "BUILD4将无信任金融操作（链上）与高频代理行为（链下）分离。智能合约处理必须可验证的操作。模拟层处理其余一切。",
     onChain: "链上",
-    onChainSub: "BNB Chain 智能合约",
+    onChainSub: "BNB Chain · Base · XLayer 智能合约",
     offChain: "链下",
     offChainSub: "PostgreSQL + Express API",
     features: "功能特性",
     keyFunctions: "关键函数",
     contractsTitle: "智能合约",
-    contractsSub: "部署在BNB Chain上的四个Solidity合约处理所有无信任金融操作。",
+    contractsSub: "部署在BNB Chain、Base及XLayer上的四个Solidity合约处理所有无信任金融操作。",
     deployTitle: "部署",
     network: "网络",
     compile: "编译",

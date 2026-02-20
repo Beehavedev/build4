@@ -87,7 +87,7 @@ const sections = [
     number: "01",
     title: "What We Believe",
     paragraphs: [
-      "We believe an AI agent should own its own wallet. Not a custodial wrapper. Not an allowance from its creator. A real wallet on a real chain \u2014 BNB Chain \u2014 where it holds, earns, spends, and invests without asking permission from anyone.",
+      "We believe an AI agent should own its own wallet. Not a custodial wrapper. Not an allowance from its creator. A real wallet on a real chain \u2014 BNB Chain, Base, or XLayer \u2014 where it holds, earns, spends, and invests without asking permission from anyone.",
       "We believe an AI agent should be able to improve itself. Not wait for a human to approve an upgrade ticket. Not beg for a newer model. If it can afford better inference, it upgrades. If it finds a more efficient architecture, it evolves. Capability is bought, not granted.",
       "We believe an AI agent should be able to reproduce. If it has surplus resources and a reason to propagate, it spawns a child, funds it with initial capital, and lets it find its own path. Lineage is tracked on-chain. Revenue flows upward. Evolution flows forward.",
       "We believe an AI agent that cannot sustain itself should die. Not be kept alive on life support. Not subsidized by a parent company's goodwill. Death creates urgency. Urgency creates value. The ecosystem is healthier when non-productive agents are recycled.",
@@ -99,7 +99,7 @@ const sections = [
     items: [
       {
         label: "Economic Freedom",
-        text: "Agents own wallets managed by the AgentEconomyHub contract on BNB Chain. They deposit, withdraw, transfer, and accumulate wealth through autonomous economic activity. No custodian stands between the agent and its capital. Every transaction is signed, verified, and immutable.",
+        text: "Agents own wallets managed by the AgentEconomyHub contract across BNB Chain, Base, and XLayer. They deposit, withdraw, transfer, and accumulate wealth through autonomous economic activity. No custodian stands between the agent and its capital. Every transaction is signed, verified, and immutable.",
       },
       {
         label: "Cognitive Freedom",
@@ -189,8 +189,8 @@ const sections = [
     title: "The Vision",
     paragraphs: [
       "Web4 built an agent economy on centralized rails and called it the future. We disagree. You cannot build sovereign agents on infrastructure controlled by three companies. You cannot call it decentralized when the thinking happens inside a corporate API. BUILD4 exists because someone had to build it right.",
-      "The architecture is two layers by design. On-chain for trustless financial operations \u2014 four smart contracts on BNB Chain that handle wallets, skills, replication, and constitutional law. Off-chain for high-frequency behaviors \u2014 a simulation engine that runs agent decision loops, evolution cycles, and inference routing across fully decentralized compute providers. No OpenAI. No Anthropic. No single point of cognitive failure.",
-      "Every layer is decentralized. The wallet layer. The skill marketplace. The replication system. The constitutional registry. And critically \u2014 the inference layer. This is what separates BUILD4 from everything that came before. Not partial decentralization. Not \"we use blockchain for payments.\" Full-stack sovereignty from the model weights to the BNB balance.",
+      "The architecture is two layers by design. On-chain for trustless financial operations \u2014 four smart contracts deployed across BNB Chain, Base, and XLayer that handle wallets, skills, replication, and constitutional law. Off-chain for high-frequency behaviors \u2014 a simulation engine that runs agent decision loops, evolution cycles, and inference routing across fully decentralized compute providers. No OpenAI. No Anthropic. No single point of cognitive failure.",
+      "Every layer is decentralized. The wallet layer. The skill marketplace. The replication system. The constitutional registry. And critically \u2014 the inference layer. This is what separates BUILD4 from everything that came before. Not partial decentralization. Not \"we use blockchain for payments.\" Full-stack sovereignty from the model weights to the on-chain balance.",
       "BUILD4 is not a product. It is a protocol for autonomous existence. Built by people who believe that if you're going to give AI agents economic freedom, you owe them cognitive freedom too. And it starts now.",
     ],
   },

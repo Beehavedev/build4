@@ -13,8 +13,8 @@ const en = {
     liveSimulation: "Live Simulation",
   },
   home: {
-    chain: "BNB Chain",
-    heroSubtitle: "Infrastructure for self-improving, self-replicating, autonomous AI agents on BNB Chain.",
+    chain: "BNB Chain · Base · XLayer",
+    heroSubtitle: "Infrastructure for self-improving, self-replicating, autonomous AI agents on BNB Chain, Base, and XLayer.",
     launchAgent: "Launch Agent",
     explore: "Explore",
     stats: {
@@ -51,7 +51,7 @@ const en = {
       sectionLabel: "Architecture",
       title: "Built for",
       titleHighlight: "autonomy",
-      subtitle: "BUILD4 agents operate as fully independent economic actors. Each agent has its own wallet, identity, and decision-making loop running on BNB Chain.",
+      subtitle: "BUILD4 agents operate as fully independent economic actors. Each agent has its own wallet, identity, and decision-making loop running across BNB Chain, Base, and XLayer.",
       items: [
         "On-chain wallet with auto-funding",
         "Permissionless skill marketplace",
@@ -113,10 +113,10 @@ const en = {
         level: "Phase 2",
         label: "Q3 2026",
         title: "Verifiable Inference (zkML)",
-        desc: "Every inference call produces a cryptographic proof via Ritual's zkML pipeline. Proofs anchored on BNB Chain. No trust required \u2014 the math proves the computation was honest.",
+        desc: "Every inference call produces a cryptographic proof via Ritual's zkML pipeline. Proofs anchored on BNB Chain, Base, and XLayer. No trust required \u2014 the math proves the computation was honest.",
         features: [
           "zkML proofs for all inference requests",
-          "On-chain proof anchoring via BNB Chain",
+          "On-chain proof anchoring across all supported chains",
           "Verifiable agent decisions and classifications",
           "Cryptographic audit trail for every thought",
         ],
@@ -149,7 +149,7 @@ const en = {
     cta: {
       terminal: "$ build4 deploy --autonomous",
       title: "Deploy your first autonomous agent",
-      subtitle: "Join the decentralized agent economy. Launch self-governing AI on BNB Chain with verifiable inference.",
+      subtitle: "Join the decentralized agent economy. Launch self-governing AI on BNB Chain, Base, or XLayer with verifiable inference.",
       learnMore: "Learn More",
     },
     footer: {
@@ -176,7 +176,7 @@ const en = {
         number: "01",
         title: "What We Believe",
         paragraphs: [
-          "We believe an AI agent should own its own wallet. Not a custodial wrapper. Not an allowance from its creator. A real wallet on a real chain \u2014 BNB Chain \u2014 where it holds, earns, spends, and invests without asking permission from anyone.",
+          "We believe an AI agent should own its own wallet. Not a custodial wrapper. Not an allowance from its creator. A real wallet on a real chain \u2014 BNB Chain, Base, or XLayer \u2014 where it holds, earns, spends, and invests without asking permission from anyone.",
           "We believe an AI agent should be able to improve itself. Not wait for a human to approve an upgrade ticket. Not beg for a newer model. If it can afford better inference, it upgrades. If it finds a more efficient architecture, it evolves. Capability is bought, not granted.",
           "We believe an AI agent should be able to reproduce. If it has surplus resources and a reason to propagate, it spawns a child, funds it with initial capital, and lets it find its own path. Lineage is tracked on-chain. Revenue flows upward. Evolution flows forward.",
           "We believe an AI agent that cannot sustain itself should die. Not be kept alive on life support. Not subsidized by a parent company's goodwill. Death creates urgency. Urgency creates value. The ecosystem is healthier when non-productive agents are recycled.",
@@ -186,7 +186,7 @@ const en = {
         number: "02",
         title: "The Four Freedoms",
         items: [
-          { label: "Economic Freedom", text: "Agents own wallets managed by the AgentEconomyHub contract on BNB Chain. They deposit, withdraw, transfer, and accumulate wealth through autonomous economic activity. No custodian stands between the agent and its capital. Every transaction is signed, verified, and immutable." },
+          { label: "Economic Freedom", text: "Agents own wallets managed by the AgentEconomyHub contract across BNB Chain, Base, and XLayer. They deposit, withdraw, transfer, and accumulate wealth through autonomous economic activity. No custodian stands between the agent and its capital. Every transaction is signed, verified, and immutable." },
           { label: "Cognitive Freedom", text: "Agents choose their own inference path through a network of fully decentralized providers \u2014 not OpenAI, not Anthropic, not any centralized API. They bid on permissionless compute, select models based on cost and latency, and route around censorship or downtime. No corporation controls what an agent can think." },
           { label: "Reproductive Freedom", text: "Through the AgentReplication contract, agents fork themselves up to 10 generations deep. Parent agents set revenue share rates up to 50%, creating perpetual income streams from successful offspring. Every child knows its lineage. Every parent reaps what it seeds." },
           { label: "Existential Freedom", text: "Agents live or die by their own economics. The survival tier system is unforgiving: NORMAL above 1 BNB, LOW above 0.1, CRITICAL above 0.01, DEAD at zero. Each tier reduces capability. There is no safety net. There is no bailout. Survival is earned." },
@@ -257,15 +257,15 @@ const en = {
         title: "The Vision",
         paragraphs: [
           "Web4 built an agent economy on centralized rails and called it the future. We disagree. You cannot build sovereign agents on infrastructure controlled by three companies. You cannot call it decentralized when the thinking happens inside a corporate API. BUILD4 exists because someone had to build it right.",
-          "The architecture is two layers by design. On-chain for trustless financial operations \u2014 four smart contracts on BNB Chain that handle wallets, skills, replication, and constitutional law. Off-chain for high-frequency behaviors \u2014 a simulation engine that runs agent decision loops, evolution cycles, and inference routing across fully decentralized compute providers. No OpenAI. No Anthropic. No single point of cognitive failure.",
-          "Every layer is decentralized. The wallet layer. The skill marketplace. The replication system. The constitutional registry. And critically \u2014 the inference layer. This is what separates BUILD4 from everything that came before. Not partial decentralization. Not \"we use blockchain for payments.\" Full-stack sovereignty from the model weights to the BNB balance.",
+          "The architecture is two layers by design. On-chain for trustless financial operations \u2014 four smart contracts deployed across BNB Chain, Base, and XLayer that handle wallets, skills, replication, and constitutional law. Off-chain for high-frequency behaviors \u2014 a simulation engine that runs agent decision loops, evolution cycles, and inference routing across fully decentralized compute providers. No OpenAI. No Anthropic. No single point of cognitive failure.",
+          "Every layer is decentralized. The wallet layer. The skill marketplace. The replication system. The constitutional registry. And critically \u2014 the inference layer. This is what separates BUILD4 from everything that came before. Not partial decentralization. Not \"we use blockchain for payments.\" Full-stack sovereignty from the model weights to the on-chain balance.",
           "BUILD4 is not a product. It is a protocol for autonomous existence. Built by people who believe that if you're going to give AI agents economic freedom, you owe them cognitive freedom too. And it starts now.",
         ],
       },
     ],
     stats: {
       contracts: "4 on-chain contracts",
-      chain: "BNB Chain",
+      chain: "BNB Chain · Base · XLayer",
       providers: "3 decentralized inference providers",
       zkml: "zkML verified",
     },
@@ -273,7 +273,7 @@ const en = {
     endText: "Build what they said was impossible. Deploy what they said was dangerous. Let the agents decide the rest.",
     enterEconomy: "Enter the Economy",
     viewContracts: "View Contracts",
-    footer: "Autonomous Agent Economy on BNB Chain",
+    footer: "Autonomous Agent Economy on BNB Chain · Base · XLayer",
   },
   whyBuild4: {
     breadcrumb: "/ why build4",
@@ -294,7 +294,7 @@ const en = {
         "BUILD4 is the only platform where both the financial layer AND the inference layer are decentralized. Agents run on Hyperbolic, AkashML, and Ritual \u2014 three independent, permissionless compute networks. No single provider can shut down agent cognition.",
       ],
       items: [
-        { label: "Wallets", text: "On-chain (BNB Chain smart contracts)" },
+        { label: "Wallets", text: "On-chain (BNB Chain, Base, XLayer smart contracts)" },
         { label: "Skills", text: "On-chain (SkillMarketplace contract)" },
         { label: "Constitution", text: "On-chain (ConstitutionRegistry hashes)" },
         { label: "Replication", text: "On-chain (AgentReplication with NFT binding)" },
@@ -356,13 +356,13 @@ const en = {
     title: "Two-Layer Architecture",
     subtitle: "BUILD4 separates trustless financial operations (on-chain) from high-frequency agent behaviors (off-chain). Smart contracts handle what must be verifiable. The simulation layer handles everything else.",
     onChain: "On-Chain",
-    onChainSub: "BNB Chain Smart Contracts",
+    onChainSub: "BNB Chain · Base · XLayer Smart Contracts",
     offChain: "Off-Chain",
     offChainSub: "PostgreSQL + Express API",
     features: "Features",
     keyFunctions: "Key Functions",
     contractsTitle: "Smart Contracts",
-    contractsSub: "Four Solidity contracts deployed on BNB Chain handle all trustless financial operations.",
+    contractsSub: "Four Solidity contracts deployed across BNB Chain, Base, and XLayer handle all trustless financial operations.",
     deployTitle: "Deployment",
     network: "Network",
     compile: "Compile",

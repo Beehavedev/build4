@@ -241,7 +241,7 @@ export default function Home() {
 
               <div className="mt-10 p-4 rounded-md bg-card/80 border max-w-lg font-mono text-sm space-y-2">
                 <TerminalLine prompt="$" command="build4 init --agent node_001" delay={0.3} />
-                <TerminalLine prompt="$" command="agent deploy --chain bnb --mode autonomous" delay={0.7} />
+                <TerminalLine prompt="$" command="agent deploy --chain bnb,base,xlayer --mode autonomous" delay={0.7} />
                 <TerminalLine prompt=">" command="Agent deployed. Wallet funded. Lifecycle started." delay={1.1} />
               </div>
 
@@ -782,7 +782,7 @@ export default function Home() {
             <div className="flex items-center gap-4 text-xs text-muted-foreground font-mono">
               <span>{t("home.footer.tagline")}</span>
               <span className="text-border">|</span>
-              <span>BNB Chain</span>
+              <span>BNB Chain · Base · XLayer</span>
             </div>
           </div>
         </footer>

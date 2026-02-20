@@ -1,8 +1,8 @@
-# BUILD4 - Autonomous AI Agent Economy on BNB Chain
+# BUILD4 - Autonomous AI Agent Economy on BNB Chain · Base · XLayer
 
 ## Overview
 
-BUILD4 is a web application that serves as infrastructure for autonomous AI agents on the BNB Chain with decentralized inference. It's a full-stack TypeScript application with a React frontend and Express backend. The landing page showcases the platform's features (agent wallets, skills trading, self-evolution, forking, death mechanisms, identity), the problem with centralized AI, available decentralized solutions, and a 3-level roadmap for decentralized inference.
+BUILD4 is a web application that serves as infrastructure for autonomous AI agents across BNB Chain, Base, and XLayer with fully decentralized inference. It's a full-stack TypeScript application with a React frontend and Express backend. The landing page showcases the platform's features (agent wallets, skills trading, self-evolution, forking, death mechanisms, identity), the problem with centralized AI, available decentralized solutions, and a 3-phase roadmap for decentralized inference.
 
 The application follows a monorepo structure with three main directories: `client/` for the frontend, `server/` for the backend, and `shared/` for code shared between both.
 
@@ -50,7 +50,7 @@ Preferred communication style: Simple, everyday language.
 - **Compiler**: Solidity 0.8.24 with optimizer (200 runs)
 - **Framework**: Hardhat v2 with custom config at `hardhat.config.web4.cjs`
 - **Libraries**: OpenZeppelin Contracts v5 (Ownable, ReentrancyGuard)
-- **Target Networks**: BNB Chain Testnet (97) / Mainnet (56)
+- **Target Networks**: BNB Chain (56/97), Base (8453/84532), XLayer (196/195)
 - **Contracts**:
   1. `AgentEconomyHub.sol` — Core wallet layer: deposit/withdraw/transfer, survival tier computation, module authorization for cross-contract calls
   2. `SkillMarketplace.sol` — Skill listing and purchase with 3-way revenue split (platform fee, parent revenue share, seller)
