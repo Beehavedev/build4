@@ -1,7 +1,7 @@
 import { useWallet } from "@/hooks/use-wallet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Wallet, ExternalLink, ChevronDown } from "lucide-react";
+import { Wallet, ExternalLink, ChevronDown, Smartphone, Globe } from "lucide-react";
 import { useState } from "react";
 
 export function WalletConnector() {
@@ -12,25 +12,71 @@ export function WalletConnector() {
     balance,
     connecting,
     error,
+    walletType,
     connect,
+    connectMetaMask,
+    connectWalletConnect,
     disconnect,
     hasContracts,
+    hasWalletConnect,
   } = useWallet();
   const [showDetails, setShowDetails] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
 
   if (!connected) {
     return (
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={connect}
-        disabled={connecting}
-        className="font-mono text-xs gap-1.5"
-        data-testid="button-connect-wallet"
-      >
-        <Wallet className="w-3.5 h-3.5" />
-        {connecting ? "..." : "Connect"}
-      </Button>
+      <div className="relative">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            if (hasWalletConnect) {
+              setShowOptions(!showOptions);
+            } else {
+              connect("metamask");
+            }
+          }}
+          disabled={connecting}
+          className="font-mono text-xs gap-1.5"
+          data-testid="button-connect-wallet"
+        >
+          <Wallet className="w-3.5 h-3.5" />
+          {connecting ? "Connecting..." : "Connect Wallet"}
+        </Button>
+
+        {showOptions && !connecting && (
+          <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-card border rounded-lg shadow-xl p-2 space-y-1">
+            <button
+              onClick={() => { setShowOptions(false); connect("metamask"); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md hover:bg-accent transition-colors text-left"
+              data-testid="button-connect-metamask"
+            >
+              <Globe className="w-4 h-4 text-orange-500" />
+              <div>
+                <div className="font-mono text-xs font-medium">Browser Wallet</div>
+                <div className="font-mono text-[10px] text-muted-foreground">MetaMask, Brave, etc.</div>
+              </div>
+            </button>
+            <button
+              onClick={() => { setShowOptions(false); connect("walletconnect"); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md hover:bg-accent transition-colors text-left"
+              data-testid="button-connect-walletconnect"
+            >
+              <Smartphone className="w-4 h-4 text-blue-500" />
+              <div>
+                <div className="font-mono text-xs font-medium">WalletConnect</div>
+                <div className="font-mono text-[10px] text-muted-foreground">Scan QR with mobile wallet</div>
+              </div>
+            </button>
+          </div>
+        )}
+
+        {error && (
+          <div className="absolute right-0 top-full mt-1 z-40 w-56 bg-destructive/10 border border-destructive/30 rounded-lg p-2">
+            <p className="font-mono text-[10px] text-destructive">{error}</p>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -54,7 +100,12 @@ export function WalletConnector() {
         <div className="absolute right-0 top-full mt-1 z-50 w-64 bg-card border rounded-lg shadow-xl p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="font-mono text-xs text-muted-foreground">Wallet</span>
-            <Badge variant="default" className="text-[10px]">Connected</Badge>
+            <div className="flex items-center gap-1.5">
+              <Badge variant="secondary" className="text-[10px]">
+                {walletType === "walletconnect" ? "WalletConnect" : "Browser"}
+              </Badge>
+              <Badge variant="default" className="text-[10px]">Connected</Badge>
+            </div>
           </div>
           <div className="font-mono text-xs break-all" data-testid="text-wallet-address">{address}</div>
           <div className="flex items-center justify-between">

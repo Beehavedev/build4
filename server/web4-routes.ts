@@ -546,6 +546,14 @@ export function registerWeb4Routes(app: Express): void {
     }
   });
 
+  app.get("/api/web4/walletconnect-config", async (_req: Request, res: Response) => {
+    const projectId = process.env.WALLETCONNECT_PROJECT_ID;
+    if (!projectId) {
+      return res.status(404).json({ error: "WalletConnect not configured" });
+    }
+    res.json({ projectId });
+  });
+
   app.get("/api/web4/revenue/fees", async (_req: Request, res: Response) => {
     try {
       res.json({

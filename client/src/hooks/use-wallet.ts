@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { BrowserProvider, JsonRpcSigner, Contract, formatEther, parseEther, keccak256, toUtf8Bytes } from "ethers";
 import { AgentEconomyHubABI, SkillMarketplaceABI, ConstitutionRegistryABI, AgentReplicationABI } from "@/contracts/web4";
 
@@ -11,6 +11,7 @@ interface WalletState {
   provider: BrowserProvider | null;
   error: string | null;
   connecting: boolean;
+  walletType: "metamask" | "walletconnect" | null;
 }
 
 interface ContractAddresses {
@@ -31,6 +32,13 @@ const CHAIN_NAMES: Record<number, string> = {
 };
 
 const CHAIN_CONFIGS: Record<number, { chainId: string; chainName: string; rpcUrls: string[]; nativeCurrency: { name: string; symbol: string; decimals: number }; blockExplorerUrls: string[] }> = {
+  56: {
+    chainId: "0x38",
+    chainName: "BNB Smart Chain",
+    rpcUrls: ["https://bsc-dataseed1.binance.org"],
+    nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+    blockExplorerUrls: ["https://bscscan.com"],
+  },
   97: {
     chainId: "0x61",
     chainName: "BNB Smart Chain Testnet",
@@ -38,12 +46,26 @@ const CHAIN_CONFIGS: Record<number, { chainId: string; chainName: string; rpcUrl
     nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
     blockExplorerUrls: ["https://testnet.bscscan.com"],
   },
+  8453: {
+    chainId: "0x2105",
+    chainName: "Base",
+    rpcUrls: ["https://mainnet.base.org"],
+    nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+    blockExplorerUrls: ["https://basescan.org"],
+  },
   84532: {
     chainId: "0x14a34",
     chainName: "Base Sepolia",
     rpcUrls: ["https://sepolia.base.org"],
     nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
     blockExplorerUrls: ["https://sepolia.basescan.org"],
+  },
+  196: {
+    chainId: "0xc4",
+    chainName: "XLayer",
+    rpcUrls: ["https://rpc.xlayer.tech"],
+    nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
+    blockExplorerUrls: ["https://www.oklink.com/xlayer"],
   },
   1952: {
     chainId: "0x7a0",
@@ -63,6 +85,8 @@ const BLOCK_EXPLORER: Record<number, string> = {
   196: "https://www.oklink.com/xlayer",
 };
 
+const SUPPORTED_CHAIN_IDS = [56, 8453, 196, 97, 84532, 1952];
+
 export function useWallet() {
   const [state, setState] = useState<WalletState>({
     connected: false,
@@ -73,10 +97,13 @@ export function useWallet() {
     provider: null,
     error: null,
     connecting: false,
+    walletType: null,
   });
 
   const [contractAddresses, setContractAddresses] = useState<ContractAddresses>({});
   const [allDeployments, setAllDeployments] = useState<Record<string, any>>({});
+  const [wcProjectId, setWcProjectId] = useState<string | null>(null);
+  const wcProviderRef = useRef<any>(null);
 
   useEffect(() => {
     fetch("/api/web4/contracts")
@@ -84,6 +111,13 @@ export function useWallet() {
       .then(data => {
         const deployments = data.deployments || {};
         setAllDeployments(deployments);
+      })
+      .catch(() => {});
+
+    fetch("/api/web4/walletconnect-config")
+      .then(r => r.json())
+      .then(data => {
+        if (data.projectId) setWcProjectId(data.projectId);
       })
       .catch(() => {});
   }, []);
@@ -101,44 +135,142 @@ export function useWallet() {
     }
   }, [state.chainId, allDeployments]);
 
-  const connect = useCallback(async () => {
+  const setupFromProvider = useCallback(async (rawProvider: any, walletType: "metamask" | "walletconnect") => {
+    const provider = new BrowserProvider(rawProvider);
+    const signer = await provider.getSigner();
+    const address = await signer.getAddress();
+    const network = await provider.getNetwork();
+    const chainId = Number(network.chainId);
+    const balanceWei = await provider.getBalance(address);
+    const balance = formatEther(balanceWei);
+
+    setState({
+      connected: true,
+      address,
+      chainId,
+      balance,
+      signer,
+      provider,
+      error: null,
+      connecting: false,
+      walletType,
+    });
+  }, []);
+
+  const connectMetaMask = useCallback(async () => {
     if (typeof window === "undefined" || !(window as any).ethereum) {
-      setState(s => ({ ...s, error: "No wallet detected. Install MetaMask or a compatible wallet." }));
+      setState(s => ({ ...s, error: "No browser wallet detected. Install MetaMask or use WalletConnect." }));
       return;
     }
 
     setState(s => ({ ...s, connecting: true, error: null }));
 
     try {
-      const provider = new BrowserProvider((window as any).ethereum);
-      await provider.send("eth_requestAccounts", []);
-      const signer = await provider.getSigner();
-      const address = await signer.getAddress();
-      const network = await provider.getNetwork();
-      const chainId = Number(network.chainId);
-      const balanceWei = await provider.getBalance(address);
-      const balance = formatEther(balanceWei);
-
-      setState({
-        connected: true,
-        address,
-        chainId,
-        balance,
-        signer,
-        provider,
-        error: null,
-        connecting: false,
-      });
+      const ethereum = (window as any).ethereum;
+      await ethereum.request({ method: "eth_requestAccounts" });
+      await setupFromProvider(ethereum, "metamask");
     } catch (err: any) {
       setState(s => ({
         ...s,
-        error: err.message || "Failed to connect wallet",
+        error: err.message || "Failed to connect MetaMask",
         connecting: false,
       }));
     }
-  }, []);
+  }, [setupFromProvider]);
 
-  const disconnect = useCallback(() => {
+  const connectWalletConnect = useCallback(async () => {
+    if (!wcProjectId) {
+      setState(s => ({ ...s, error: "WalletConnect not configured" }));
+      return;
+    }
+
+    setState(s => ({ ...s, connecting: true, error: null }));
+
+    try {
+      const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
+
+      const wcProvider = await EthereumProvider.init({
+        projectId: wcProjectId,
+        chains: [56],
+        optionalChains: [8453, 196, 97, 84532, 1952],
+        showQrModal: true,
+        metadata: {
+          name: "BUILD4",
+          description: "Autonomous AI Agent Economy on BNB Chain, Base & XLayer",
+          url: window.location.origin,
+          icons: [`${window.location.origin}/favicon.ico`],
+        },
+        rpcMap: {
+          56: "https://bsc-dataseed1.binance.org",
+          97: "https://data-seed-prebsc-1-s1.binance.org:8545",
+          8453: "https://mainnet.base.org",
+          84532: "https://sepolia.base.org",
+          196: "https://rpc.xlayer.tech",
+          1952: "https://testrpc.xlayer.tech",
+        },
+      });
+
+      wcProviderRef.current = wcProvider;
+
+      wcProvider.on("disconnect", () => {
+        setState({
+          connected: false,
+          address: null,
+          chainId: null,
+          balance: null,
+          signer: null,
+          provider: null,
+          error: null,
+          connecting: false,
+          walletType: null,
+        });
+        wcProviderRef.current = null;
+      });
+
+      wcProvider.on("chainChanged", async () => {
+        try {
+          await setupFromProvider(wcProvider, "walletconnect");
+        } catch {}
+      });
+
+      wcProvider.on("accountsChanged", async (accounts: string[]) => {
+        if (accounts.length === 0) {
+          setState(s => ({ ...s, connected: false, address: null, walletType: null }));
+        } else {
+          try {
+            await setupFromProvider(wcProvider, "walletconnect");
+          } catch {}
+        }
+      });
+
+      await wcProvider.enable();
+      await setupFromProvider(wcProvider, "walletconnect");
+    } catch (err: any) {
+      setState(s => ({
+        ...s,
+        error: err.message || "Failed to connect via WalletConnect",
+        connecting: false,
+      }));
+    }
+  }, [wcProjectId, setupFromProvider]);
+
+  const connect = useCallback(async (type?: "metamask" | "walletconnect") => {
+    if (type === "walletconnect") {
+      return connectWalletConnect();
+    }
+    if (type === "metamask") {
+      return connectMetaMask();
+    }
+    return connectMetaMask();
+  }, [connectMetaMask, connectWalletConnect]);
+
+  const disconnect = useCallback(async () => {
+    if (wcProviderRef.current) {
+      try {
+        await wcProviderRef.current.disconnect();
+      } catch {}
+      wcProviderRef.current = null;
+    }
     setState({
       connected: false,
       address: null,
@@ -148,16 +280,29 @@ export function useWallet() {
       provider: null,
       error: null,
       connecting: false,
+      walletType: null,
     });
   }, []);
 
   const switchChain = useCallback(async (targetChainId: number) => {
+    const hexChainId = "0x" + targetChainId.toString(16);
+
+    if (state.walletType === "walletconnect" && wcProviderRef.current) {
+      try {
+        await wcProviderRef.current.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: hexChainId }],
+        });
+      } catch {}
+      return;
+    }
+
     if (!(window as any).ethereum) return;
 
     try {
       await (window as any).ethereum.request({
         method: "wallet_switchEthereumChain",
-        params: [{ chainId: "0x" + targetChainId.toString(16) }],
+        params: [{ chainId: hexChainId }],
       });
     } catch (switchError: any) {
       if (switchError.code === 4902 && CHAIN_CONFIGS[targetChainId]) {
@@ -169,7 +314,7 @@ export function useWallet() {
         } catch {}
       }
     }
-  }, []);
+  }, [state.walletType]);
 
   const getHubContract = useCallback(() => {
     if (!state.signer || !contractAddresses.AgentEconomyHub) return null;
@@ -325,17 +470,18 @@ export function useWallet() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !(window as any).ethereum) return;
+    if (state.walletType === "walletconnect") return;
 
     const handleAccountsChanged = (accounts: string[]) => {
       if (accounts.length === 0) {
         disconnect();
       } else if (state.connected) {
-        connect();
+        connectMetaMask();
       }
     };
 
     const handleChainChanged = () => {
-      if (state.connected) connect();
+      if (state.connected) connectMetaMask();
     };
 
     (window as any).ethereum.on("accountsChanged", handleAccountsChanged);
@@ -345,13 +491,15 @@ export function useWallet() {
       (window as any).ethereum?.removeListener("accountsChanged", handleAccountsChanged);
       (window as any).ethereum?.removeListener("chainChanged", handleChainChanged);
     };
-  }, [state.connected, connect, disconnect]);
+  }, [state.connected, state.walletType, connectMetaMask, disconnect]);
 
   return {
     ...state,
     chainName: state.chainId ? (CHAIN_NAMES[state.chainId] || `Chain ${state.chainId}`) : null,
     contractAddresses,
     connect,
+    connectMetaMask,
+    connectWalletConnect,
     disconnect,
     switchChain,
     getHubContract,
@@ -371,5 +519,7 @@ export function useWallet() {
     replicateOnChain,
     getExplorerUrl,
     hasContracts: !!contractAddresses.AgentEconomyHub,
+    hasWalletConnect: !!wcProjectId,
+    supportedChains: SUPPORTED_CHAIN_IDS,
   };
 }
