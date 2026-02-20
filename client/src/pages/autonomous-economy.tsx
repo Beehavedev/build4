@@ -412,13 +412,18 @@ export default function AutonomousEconomy() {
       const agentId = data.agent?.id;
       if (!agentId) throw new Error("Failed to create agent record");
 
+      if (!data.onchainRegistration?.success) {
+        console.warn("On-chain registration issue:", data.onchainRegistration?.error);
+      }
+
       const numericId = uuidToNumericId(agentId);
       const depositEth = (Number(newAgentDeposit) / 1e18).toString();
 
       setCreateAgentStep("Waiting for wallet signature — deposit " + depositEth + " BNB to agent...");
       let depositAttempts = 0;
       let lastDepErr: any = null;
-      while (depositAttempts < 3) {
+      const maxAttempts = 5;
+      while (depositAttempts < maxAttempts) {
         try {
           const receipt = await web3.depositToAgent(numericId, depositEth);
           const txHash = receipt?.hash;
@@ -436,13 +441,17 @@ export default function AutonomousEconomy() {
         } catch (depErr: any) {
           lastDepErr = depErr;
           depositAttempts++;
-          if (depositAttempts < 3) {
-            setCreateAgentStep(`Waiting for on-chain registration to confirm (attempt ${depositAttempts + 1}/3)...`);
-            await new Promise(r => setTimeout(r, 4000));
+          const errMsg = depErr?.shortMessage || depErr?.message || "";
+          if (errMsg.includes("user rejected") || errMsg.includes("denied")) {
+            throw new Error("Transaction rejected by user");
+          }
+          if (depositAttempts < maxAttempts) {
+            setCreateAgentStep(`On-chain registration confirming... retrying deposit (${depositAttempts + 1}/${maxAttempts})...`);
+            await new Promise(r => setTimeout(r, 5000));
           }
         }
       }
-      throw new Error(`On-chain deposit failed after ${depositAttempts} attempts: ${lastDepErr?.shortMessage || lastDepErr?.message}`);
+      return { ...data, onchainTx: null, depositPending: true };
     },
     onSuccess: (data: any) => {
       setCreateAgentStep(null);
@@ -452,7 +461,8 @@ export default function AutonomousEconomy() {
       setNewAgentName("");
       setNewAgentBio("");
       const txMsg = data.onchainTx ? ` — tx: ${data.onchainTx.slice(0, 10)}...` : "";
-      toast({ title: "Agent created", description: `${data.agent?.name} is live with on-chain wallet${txMsg}` });
+      const depositMsg = data.depositPending ? " (deposit pending — you can deposit later from wallet panel)" : "";
+      toast({ title: "Agent created", description: `${data.agent?.name} is live${txMsg}${depositMsg}` });
     },
     onError: (e: Error) => {
       setCreateAgentStep(null);

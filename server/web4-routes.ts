@@ -50,16 +50,26 @@ export function registerWeb4Routes(app: Express): void {
       const result = await storage.createFullAgent(parsed.name, parsed.bio, parsed.modelType, parsed.initialDeposit, parsed.onchainTxHash, parsed.onchainChainId);
 
       let onchainRegistration = null;
-      try {
-        const regResult = await registerAgentOnchain(result.agent.id);
-        onchainRegistration = regResult;
-        if (!regResult.success) {
-          console.warn(`[web4] On-chain registration warning: ${regResult.error}`);
-        } else if (regResult.txHash && regResult.txHash !== "already-registered") {
-          await new Promise(r => setTimeout(r, 3000));
+      const maxRegAttempts = 3;
+      for (let attempt = 1; attempt <= maxRegAttempts; attempt++) {
+        try {
+          const regResult = await registerAgentOnchain(result.agent.id);
+          onchainRegistration = regResult;
+          if (regResult.success) {
+            console.log(`[web4] Agent ${result.agent.id} registered on-chain (attempt ${attempt}): ${regResult.txHash}`);
+            break;
+          } else {
+            console.warn(`[web4] On-chain registration attempt ${attempt}/${maxRegAttempts} failed: ${regResult.error}`);
+            if (attempt < maxRegAttempts) {
+              await new Promise(r => setTimeout(r, 3000));
+            }
+          }
+        } catch (regErr: any) {
+          console.warn(`[web4] On-chain registration attempt ${attempt}/${maxRegAttempts} error: ${regErr.message}`);
+          if (attempt < maxRegAttempts) {
+            await new Promise(r => setTimeout(r, 3000));
+          }
         }
-      } catch (regErr: any) {
-        console.warn(`[web4] On-chain registration error: ${regErr.message}`);
       }
 
       res.json({ ...result, onchainRegistration });
