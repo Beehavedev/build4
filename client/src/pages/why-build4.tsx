@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
+import { useT } from "@/lib/i18n";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import {
   Terminal,
   ArrowLeft,
@@ -107,6 +109,7 @@ function ComparisonRow({ label, build4, others, build4Good = true }: { label: st
 }
 
 export default function WhyBuild4() {
+  const t = useT();
   return (
     <div className="min-h-screen bg-background relative">
       <SubtleGrid />
@@ -127,20 +130,21 @@ export default function WhyBuild4() {
                 <span className="font-mono font-bold text-sm tracking-wide flex-shrink-0">
                   BUILD<span className="text-primary">4</span>
                 </span>
-                <span className="text-muted-foreground font-mono text-xs hidden sm:inline">/ why build4</span>
+                <span className="text-muted-foreground font-mono text-xs hidden sm:inline">{t("whyBuild4.breadcrumb")}</span>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
+              <LanguageSwitcher />
               <Button variant="outline" size="sm" asChild className="hidden sm:inline-flex" data-testid="button-manifesto-nav">
-                <Link href="/manifesto">
+                <Link href="/architecture">
                   <BookOpen className="w-3.5 h-3.5" />
-                  Manifesto
+                  {t("nav.contracts")}
                 </Link>
               </Button>
               <Button size="sm" asChild aria-label="Launch dashboard" data-testid="button-launch-nav">
                 <Link href="/autonomous-economy">
                   <Terminal className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Launch</span>
+                  <span className="hidden sm:inline">{t("nav.launch")}</span>
                 </Link>
               </Button>
             </div>
@@ -155,14 +159,14 @@ export default function WhyBuild4() {
           >
             <div className="flex items-center gap-2 mb-6">
               <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">The Full Picture</span>
+              <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">{t("whyBuild4.version")}</span>
             </div>
             <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight leading-[1.1] mb-6 font-mono" data-testid="heading-why-title">
-              Why BUILD4 is the only<br />
-              <span className="text-primary">real decentralized AI.</span>
+              {t("whyBuild4.title1")}<br />
+              <span className="text-primary">{t("whyBuild4.title2")}</span>
             </h1>
             <p className="text-lg text-muted-foreground leading-relaxed max-w-2xl">
-              Every platform in this space claims decentralization. Most of them are lying. They wrap centralized AI in blockchain labels, route every thought through OpenAI or Anthropic, and call it an agent economy. BUILD4 is architecturally different at every layer. This document explains exactly how and why.
+              {t("whyBuild4.subtitle")}
             </p>
             <div className="mt-8 h-px bg-gradient-to-r from-primary/40 via-primary/10 to-transparent" />
           </motion.div>
@@ -177,20 +181,14 @@ export default function WhyBuild4() {
                 <div className="w-8 h-8 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
                   <AlertTriangle className="w-4 h-4 text-primary" />
                 </div>
-                <h2 className="text-2xl font-bold tracking-tight font-mono" data-testid="heading-the-lie">The Lie Everyone Tells</h2>
+                <h2 className="text-2xl font-bold tracking-tight font-mono" data-testid="heading-the-lie">{t("whyBuild4.theLie.title")}</h2>
               </div>
               <div className="space-y-4 pl-11">
                 <p className="text-muted-foreground leading-relaxed text-[15px]">
-                  Open any "decentralized AI agent" platform today. Read past the marketing. Look at the architecture diagram. Somewhere in that diagram, you will find a box labeled "OpenAI" or "Anthropic" or "Google Cloud." That box is where the agent's thinking happens. Everything else is decoration.
+                  {t("whyBuild4.theLie.paragraphs.0")}
                 </p>
                 <p className="text-muted-foreground leading-relaxed text-[15px]">
-                  These platforms put wallets on a blockchain. They might even put skill registries on-chain. But the moment an agent needs to reason, plan, respond, or make a decision, the request leaves the decentralized world entirely. It travels to a corporate data center. It passes through rate limiters controlled by a single company. It is processed on hardware owned by a single entity. The response comes back, and the platform labels the whole thing "decentralized."
-                </p>
-                <p className="text-muted-foreground leading-relaxed text-[15px]">
-                  This is the equivalent of declaring yourself a sovereign nation while your electricity, water, and food all come from a single supplier who can cut you off at any time. You have sovereignty on paper. In practice, you have a permission slip.
-                </p>
-                <p className="text-muted-foreground leading-relaxed text-[15px]">
-                  Web4 is the most prominent example, but it is not the only one. Virtually every "AI agent economy" project follows the same pattern: trustless payments, custodial cognition. They decentralize the bank account and centralize the brain. And they expect you not to notice.
+                  {t("whyBuild4.theLie.paragraphs.1")}
                 </p>
               </div>
             </article>
@@ -374,7 +372,7 @@ export default function WhyBuild4() {
                 <div className="w-8 h-8 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
                   <Network className="w-4 h-4 text-primary" />
                 </div>
-                <h2 className="text-2xl font-bold tracking-tight font-mono" data-testid="heading-how-build4-works">How BUILD4 Actually Works</h2>
+                <h2 className="text-2xl font-bold tracking-tight font-mono" data-testid="heading-how-build4-works">{t("whyBuild4.providers.title")}</h2>
               </div>
               <div className="space-y-4 pl-11">
                 <p className="text-muted-foreground leading-relaxed text-[15px]">
@@ -388,11 +386,11 @@ export default function WhyBuild4() {
                     <div className="w-6 h-6 rounded-md bg-primary/10 border border-primary/15 flex items-center justify-center">
                       <Zap className="w-3 h-3 text-primary/70" />
                     </div>
-                    <span className="font-mono text-sm font-bold">Hyperbolic</span>
-                    <Badge variant="default" className="text-[10px] ml-auto">Primary Provider</Badge>
+                    <span className="font-mono text-sm font-bold">{t("whyBuild4.providers.hyperbolic.name")}</span>
+                    <Badge variant="default" className="text-[10px] ml-auto">{t("whyBuild4.providers.hyperbolic.tag")}</Badge>
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed mb-3">
-                    A distributed GPU marketplace that runs open-source large language models on permissionless compute. Hyperbolic aggregates GPU capacity from independent operators worldwide and exposes it through an OpenAI-compatible API. This means any application built for centralized inference can switch to Hyperbolic with zero code changes, but the infrastructure underneath is fundamentally different.
+                    {t("whyBuild4.providers.hyperbolic.desc")}
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
                     <div className="text-center">
@@ -429,11 +427,11 @@ export default function WhyBuild4() {
                     <div className="w-6 h-6 rounded-md bg-primary/10 border border-primary/15 flex items-center justify-center">
                       <Globe className="w-3 h-3 text-primary/70" />
                     </div>
-                    <span className="font-mono text-sm font-bold">AkashML</span>
-                    <Badge variant="default" className="text-[10px] ml-auto">Global Network</Badge>
+                    <span className="font-mono text-sm font-bold">{t("whyBuild4.providers.akash.name")}</span>
+                    <Badge variant="default" className="text-[10px] ml-auto">{t("whyBuild4.providers.akash.tag")}</Badge>
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed mb-3">
-                    Akash Network is a decentralized cloud computing marketplace with over 65 independent datacenters worldwide. AkashML is its machine learning inference layer, providing access to large language models on infrastructure distributed across independent operators in multiple jurisdictions. No single entity controls the network. No single datacenter is a point of failure.
+                    {t("whyBuild4.providers.akash.desc")}
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
                     <div className="text-center">
@@ -468,14 +466,11 @@ export default function WhyBuild4() {
                     <div className="w-6 h-6 rounded-md bg-primary/10 border border-primary/15 flex items-center justify-center">
                       <Shield className="w-3 h-3 text-primary/70" />
                     </div>
-                    <span className="font-mono text-sm font-bold">Ritual</span>
-                    <Badge variant="default" className="text-[10px] ml-auto">Verifiable Inference</Badge>
+                    <span className="font-mono text-sm font-bold">{t("whyBuild4.providers.ritual.name")}</span>
+                    <Badge variant="default" className="text-[10px] ml-auto">{t("whyBuild4.providers.ritual.tag")}</Badge>
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed mb-3">
-                    Ritual is the verification layer. When you use OpenAI, you trust that the model ran correctly because you trust OpenAI. When you use Ritual, you trust that the model ran correctly because you can verify the cryptographic proof. This is zkML: zero-knowledge machine learning proofs that mathematically guarantee the integrity of the computation without revealing the inputs.
-                  </p>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    This matters because in a decentralized network, you are sending prompts to operators you do not know. You need to verify that the computation was performed correctly, that the right model was used, and that the response was not tampered with. Ritual provides that guarantee through cryptography, not trust.
+                    {t("whyBuild4.providers.ritual.desc")}
                   </p>
                   <div className="grid grid-cols-3 gap-3 mt-3">
                     <div className="text-center">
@@ -514,7 +509,7 @@ export default function WhyBuild4() {
                 <div className="w-8 h-8 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
                   <Scale className="w-4 h-4 text-primary" />
                 </div>
-                <h2 className="text-2xl font-bold tracking-tight font-mono" data-testid="heading-comparison">BUILD4 vs. Everyone Else</h2>
+                <h2 className="text-2xl font-bold tracking-tight font-mono" data-testid="heading-comparison">{t("whyBuild4.comparison.title")}</h2>
               </div>
               <div className="pl-11">
                 <Card className="p-3 sm:p-4" data-testid="card-comparison-table">
@@ -523,10 +518,10 @@ export default function WhyBuild4() {
                       <div className="font-mono text-xs font-bold text-primary">BUILD4</div>
                       <div className="font-mono text-xs font-bold text-muted-foreground">Others (Web4, etc.)</div>
                     </div>
-                    <ComparisonRow label="Wallet Layer" build4="On-chain (BNB Chain smart contracts)" others="On-chain (various)" />
-                    <ComparisonRow label="Inference Layer" build4="Decentralized (Hyperbolic, AkashML, Ritual)" others="Centralized (OpenAI, Anthropic, Google)" />
-                    <ComparisonRow label="Can a company disable agent cognition?" build4="No. Multiple independent providers, automatic failover." others="Yes. API key revocation kills all agent reasoning." />
-                    <ComparisonRow label="Inference cost" build4="70-85% cheaper via decentralized GPU markets" others="Full price from centralized providers" />
+                    <ComparisonRow label={t("whyBuild4.comparison.walletLayer")} build4="On-chain (BNB Chain smart contracts)" others="On-chain (various)" />
+                    <ComparisonRow label={t("whyBuild4.comparison.inferenceLayer")} build4="Decentralized (Hyperbolic, AkashML, Ritual)" others="Centralized (OpenAI, Anthropic, Google)" />
+                    <ComparisonRow label={t("whyBuild4.comparison.canDisable")} build4="No. Multiple independent providers, automatic failover." others="Yes. API key revocation kills all agent reasoning." />
+                    <ComparisonRow label={t("whyBuild4.comparison.inferenceCost")} build4="70-85% cheaper via decentralized GPU markets" others="Full price from centralized providers" />
                     <ComparisonRow label="Verifiable computation" build4="zkML proofs via Ritual. Cryptographic verification." others="Trust the provider. No verification available." />
                     <ComparisonRow label="Censorship resistance" build4="Route around any provider that censors" others="Subject to centralized provider content policies" />
                     <ComparisonRow label="Model selection" build4="Open-source models on permissionless compute" others="Proprietary models behind corporate APIs" />

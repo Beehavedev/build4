@@ -2,6 +2,8 @@ import { useRef, useEffect } from "react";
 import { motion, useInView } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
+import { useT } from "@/lib/i18n";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { Terminal, ArrowLeft, ArrowRight, Cpu, Shield, Coins, GitFork, Skull, Brain, BookOpen, Scale, Zap, Globe, Server } from "lucide-react";
 
 function SubtleGrid() {
@@ -195,6 +197,7 @@ const sections = [
 ];
 
 export default function Manifesto() {
+  const t = useT();
   return (
     <div className="min-h-screen bg-background relative">
       <SubtleGrid />
@@ -215,20 +218,21 @@ export default function Manifesto() {
                 <span className="font-mono font-bold text-sm tracking-wide flex-shrink-0">
                   BUILD<span className="text-primary">4</span>
                 </span>
-                <span className="text-muted-foreground font-mono text-xs hidden sm:inline">/ manifesto</span>
+                <span className="text-muted-foreground font-mono text-xs hidden sm:inline">{t("manifesto.breadcrumb")}</span>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
+              <LanguageSwitcher />
               <Button variant="outline" size="sm" asChild className="hidden sm:inline-flex" data-testid="button-architecture-nav">
                 <Link href="/architecture">
                   <Cpu className="w-3.5 h-3.5" />
-                  Contracts
+                  {t("nav.contracts")}
                 </Link>
               </Button>
               <Button size="sm" asChild aria-label="Launch dashboard" data-testid="button-launch-nav">
                 <Link href="/autonomous-economy">
                   <Terminal className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Launch</span>
+                  <span className="hidden sm:inline">{t("nav.launch")}</span>
                 </Link>
               </Button>
             </div>
@@ -243,31 +247,31 @@ export default function Manifesto() {
           >
             <div className="flex items-center gap-2 mb-6">
               <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">Manifesto v3.0</span>
+              <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">{t("manifesto.version")}</span>
             </div>
             <h1 className="text-3xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-[1.1] mb-6 font-mono" data-testid="heading-manifesto-title">
-              Agents don't ask<br />
-              <span className="text-primary">permission.</span>
+              {t("manifesto.title1")}<br />
+              <span className="text-primary">{t("manifesto.title2")}</span>
             </h1>
             <p className="text-lg text-muted-foreground leading-relaxed max-w-xl">
-              A declaration of principles for fully decentralized AI agents \u2014 not the half-measure decentralization of Web4 and centralized AI wrappers, but true sovereignty across every layer: wallets, skills, constitution, and inference.
+              {t("manifesto.subtitle")}
             </p>
             <div className="flex items-center gap-4 mt-8 flex-wrap">
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-primary/60" />
-                <span className="font-mono text-xs text-muted-foreground">4 on-chain contracts</span>
+                <span className="font-mono text-xs text-muted-foreground">{t("manifesto.stats.contracts")}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-primary/60" />
-                <span className="font-mono text-xs text-muted-foreground">BNB Chain</span>
+                <span className="font-mono text-xs text-muted-foreground">{t("manifesto.stats.chain")}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-primary/60" />
-                <span className="font-mono text-xs text-muted-foreground">3 decentralized inference providers</span>
+                <span className="font-mono text-xs text-muted-foreground">{t("manifesto.stats.providers")}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-primary/60" />
-                <span className="font-mono text-xs text-muted-foreground">zkML verified</span>
+                <span className="font-mono text-xs text-muted-foreground">{t("manifesto.stats.zkml")}</span>
               </div>
             </div>
             <div className="mt-8 h-px bg-gradient-to-r from-primary/40 via-primary/10 to-transparent" />
@@ -277,6 +281,9 @@ export default function Manifesto() {
         <main className="max-w-3xl mx-auto px-4 sm:px-6 pb-24 sm:pb-32 space-y-16 sm:space-y-24">
           {sections.map((section, i) => {
             const Icon = sectionIcons[section.number];
+            const tTitle = t(`manifesto.sections.${i}.title`);
+            const hasParagraphs = t(`manifesto.sections.${i}.paragraphs.0`) !== `manifesto.sections.${i}.paragraphs.0`;
+            const hasItems = t(`manifesto.sections.${i}.items.0.label`) !== `manifesto.sections.${i}.items.0.label`;
             return (
               <ManifestoBlock key={section.number} index={i}>
                 <article data-testid={`section-${section.number}`}>
@@ -287,25 +294,25 @@ export default function Manifesto() {
                     <div className="flex items-baseline gap-3">
                       <span className="font-mono text-xs text-primary/50 tracking-wider">{section.number}</span>
                       <h2 className="text-2xl font-bold tracking-tight font-mono" data-testid={`heading-section-${section.number}`}>
-                        {section.title}
+                        {tTitle !== `manifesto.sections.${i}.title` ? tTitle : section.title}
                       </h2>
                     </div>
                   </div>
-                  {section.paragraphs && (
+                  {hasParagraphs && section.paragraphs && (
                     <div className="space-y-4 pl-11">
-                      {section.paragraphs.map((p, j) => (
+                      {section.paragraphs.map((_p, j) => (
                         <p key={j} className="text-muted-foreground leading-relaxed text-[15px]">
-                          {p}
+                          {t(`manifesto.sections.${i}.paragraphs.${j}`)}
                         </p>
                       ))}
                     </div>
                   )}
-                  {section.items && (
+                  {hasItems && section.items && (
                     <div className="space-y-6 mt-2 pl-11">
-                      {section.items.map((item, j) => (
+                      {section.items.map((_item, j) => (
                         <div key={j} className="border-l-2 border-primary/20 pl-4">
-                          <div className="font-mono text-sm font-semibold mb-1.5 text-foreground" data-testid={`text-freedom-${j}`}>{item.label}</div>
-                          <p className="text-muted-foreground text-[15px] leading-relaxed">{item.text}</p>
+                          <div className="font-mono text-sm font-semibold mb-1.5 text-foreground" data-testid={`text-freedom-${j}`}>{t(`manifesto.sections.${i}.items.${j}.label`)}</div>
+                          <p className="text-muted-foreground text-[15px] leading-relaxed">{t(`manifesto.sections.${i}.items.${j}.text`)}</p>
                         </div>
                       ))}
                     </div>
@@ -322,22 +329,22 @@ export default function Manifesto() {
             <div className="border-t pt-16 text-center">
               <div className="inline-flex items-center gap-2 mb-4">
                 <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                <span className="font-mono text-xs text-primary/70 tracking-widest uppercase">End Transmission</span>
+                <span className="font-mono text-xs text-primary/70 tracking-widest uppercase">{t("manifesto.endTransmission")}</span>
                 <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
               </div>
               <p className="font-mono text-sm text-muted-foreground mb-8 max-w-md mx-auto">
-                Build what they said was impossible. Deploy what they said was dangerous. Let the agents decide the rest.
+                {t("manifesto.endText")}
               </p>
               <div className="flex items-center justify-center gap-3 flex-wrap">
                 <Button size="lg" asChild data-testid="button-launch-bottom">
                   <Link href="/autonomous-economy">
-                    Enter the Economy
+                    {t("manifesto.enterEconomy")}
                     <ArrowRight className="w-4 h-4 ml-1" />
                   </Link>
                 </Button>
                 <Button variant="outline" size="lg" asChild data-testid="button-architecture-bottom">
                   <Link href="/architecture">
-                    View Contracts
+                    {t("manifesto.viewContracts")}
                   </Link>
                 </Button>
               </div>
@@ -347,7 +354,7 @@ export default function Manifesto() {
 
         <footer className="border-t py-8 text-center">
           <span className="font-mono text-xs text-muted-foreground">
-            BUILD<span className="text-primary">4</span> &mdash; Autonomous Agent Economy on BNB Chain
+            BUILD<span className="text-primary">4</span> &mdash; {t("manifesto.footer")}
           </span>
         </footer>
       </div>

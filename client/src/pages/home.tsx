@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
+import { useT } from "@/lib/i18n";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import {
   Wallet,
   Zap,
@@ -36,62 +38,22 @@ import {
   X,
 } from "lucide-react";
 
-const features = [
-  {
-    key: "wallet",
-    icon: Wallet,
-    label: "wallet",
-    description: "Agent earns, spends, and manages its own BNB credits",
-  },
-  {
-    key: "skills",
-    icon: Zap,
-    label: "skills",
-    description: "Agent creates and trades skills with other agents",
-  },
-  {
-    key: "evolution",
-    icon: Brain,
-    label: "evolution",
-    description: "Agent upgrades its own model \u2014 no human required",
-  },
-  {
-    key: "replication",
-    icon: GitBranch,
-    label: "replication",
-    description: "Agent spawns children, funds them, shares revenue",
-  },
-  {
-    key: "survival",
-    icon: Skull,
-    label: "survival",
-    description: "If it cannot pay, it stops existing",
-  },
-  {
-    key: "soul",
-    icon: Fingerprint,
-    label: "soul",
-    description: "Self-authored identity journal that evolves over time",
-  },
-  {
-    key: "inbox",
-    icon: Mail,
-    label: "inbox",
-    description: "Agent-to-agent message relay system",
-  },
-  {
-    key: "lifecycle",
-    icon: RotateCw,
-    label: "lifecycle",
-    description: "Think. Act. Observe. Repeat.",
-  },
+const featureKeys = [
+  { key: "wallet", icon: Wallet },
+  { key: "skills", icon: Zap },
+  { key: "evolution", icon: Brain },
+  { key: "replication", icon: GitBranch },
+  { key: "survival", icon: Skull },
+  { key: "soul", icon: Fingerprint },
+  { key: "inbox", icon: Mail },
+  { key: "lifecycle", icon: RotateCw },
 ];
 
-const stats = [
-  { label: "Active Agents", value: "2,847", icon: Bot },
-  { label: "Transactions/Day", value: "184K", icon: Activity },
-  { label: "Skills Created", value: "12,391", icon: Cpu },
-  { label: "Agent Spawns", value: "6,204", icon: Network },
+const statKeys = [
+  { key: "activeAgents", value: "2,847", icon: Bot },
+  { key: "transactionsDay", value: "184K", icon: Activity },
+  { key: "skillsCreated", value: "12,391", icon: Cpu },
+  { key: "agentSpawns", value: "6,204", icon: Network },
 ];
 
 function TypewriterText({ text, className }: { text: string; className?: string }) {
@@ -192,6 +154,7 @@ export default function Home() {
   const featuresRef = useRef<HTMLDivElement>(null);
   const featuresInView = useInView(featuresRef, { once: true, margin: "-100px" });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const t = useT();
 
   return (
     <div className="min-h-screen bg-background relative">
@@ -210,25 +173,27 @@ export default function Home() {
               </span>
             </div>
             <div className="hidden md:flex items-center gap-4">
-              <a href="#features" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-features">features</a>
-              <a href="#lifecycle" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-lifecycle">lifecycle</a>
-              <a href="#decentralized" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-decentralized">web4</a>
-              <a href="#roadmap" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-roadmap">roadmap</a>
-              <Link href="/why-build4" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-why">why build4</Link>
-              <Link href="/manifesto" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-manifesto">manifesto</Link>
-              <Link href="/architecture" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-architecture">contracts</Link>
+              <a href="#features" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-features">{t("nav.features")}</a>
+              <a href="#lifecycle" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-lifecycle">{t("nav.lifecycle")}</a>
+              <a href="#decentralized" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-decentralized">{t("nav.web4")}</a>
+              <a href="#roadmap" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-roadmap">{t("nav.roadmap")}</a>
+              <Link href="/why-build4" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-why">{t("nav.whyBuild4")}</Link>
+              <Link href="/manifesto" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-manifesto">{t("nav.manifesto")}</Link>
+              <Link href="/architecture" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-architecture">{t("nav.contracts")}</Link>
+              <LanguageSwitcher />
               <Button size="sm" asChild data-testid="button-connect">
                 <Link href="/autonomous-economy">
                   <Terminal className="w-3.5 h-3.5" />
-                  Launch
+                  {t("nav.launch")}
                 </Link>
               </Button>
             </div>
             <div className="flex md:hidden items-center gap-2">
+              <LanguageSwitcher />
               <Button size="sm" asChild data-testid="button-connect-mobile">
                 <Link href="/autonomous-economy">
                   <Terminal className="w-3.5 h-3.5" />
-                  Launch
+                  {t("nav.launch")}
                 </Link>
               </Button>
               <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} aria-expanded={mobileMenuOpen} aria-label="Toggle navigation menu" data-testid="button-mobile-menu">
@@ -238,13 +203,13 @@ export default function Home() {
           </div>
           {mobileMenuOpen && (
             <div className="md:hidden border-t bg-background/95 backdrop-blur-xl px-4 py-3 space-y-1">
-              <a href="#features" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-features-mobile">features</a>
-              <a href="#lifecycle" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-lifecycle-mobile">lifecycle</a>
-              <a href="#decentralized" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-decentralized-mobile">web4</a>
-              <a href="#roadmap" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-roadmap-mobile">roadmap</a>
-              <Link href="/why-build4" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-why-mobile">why build4</Link>
-              <Link href="/manifesto" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-manifesto-mobile">manifesto</Link>
-              <Link href="/architecture" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-architecture-mobile">contracts</Link>
+              <a href="#features" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-features-mobile">{t("nav.features")}</a>
+              <a href="#lifecycle" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-lifecycle-mobile">{t("nav.lifecycle")}</a>
+              <a href="#decentralized" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-decentralized-mobile">{t("nav.web4")}</a>
+              <a href="#roadmap" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-roadmap-mobile">{t("nav.roadmap")}</a>
+              <Link href="/why-build4" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-why-mobile">{t("nav.whyBuild4")}</Link>
+              <Link href="/manifesto" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-manifesto-mobile">{t("nav.manifesto")}</Link>
+              <Link href="/architecture" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-architecture-mobile">{t("nav.contracts")}</Link>
             </div>
           )}
         </nav>
@@ -260,7 +225,7 @@ export default function Home() {
             >
               <div className="flex items-center gap-2 mb-8">
                 <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">BNB Chain</span>
+                <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">{t("home.chain")}</span>
               </div>
 
               <h1 className="text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.05] mb-6">
@@ -270,7 +235,7 @@ export default function Home() {
 
               <p className="text-lg sm:text-xl text-muted-foreground leading-relaxed max-w-2xl mb-4">
                 <TypewriterText
-                  text="Infrastructure for self-improving, self-replicating, autonomous AI agents on BNB Chain."
+                  text={t("home.heroSubtitle")}
                 />
               </p>
 
@@ -283,13 +248,13 @@ export default function Home() {
               <div className="flex items-center gap-3 mt-10 flex-wrap">
                 <Button size="lg" asChild data-testid="button-launch">
                   <Link href="/autonomous-economy">
-                    Launch Agent
+                    {t("home.launchAgent")}
                     <ArrowRight className="w-4 h-4 ml-1" />
                   </Link>
                 </Button>
                 <Button variant="outline" size="lg" asChild data-testid="button-docs">
                   <a href="#features">
-                    Explore
+                    {t("home.explore")}
                     <ChevronDown className="w-4 h-4 ml-1" />
                   </a>
                 </Button>
@@ -303,19 +268,19 @@ export default function Home() {
         <section className="relative z-10 -mt-10 sm:-mt-16 mb-16 sm:mb-24">
           <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {stats.map((stat, i) => (
+              {statKeys.map((stat, i) => (
                 <motion.div
-                  key={stat.label}
+                  key={stat.key}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.2 + i * 0.1, duration: 0.5 }}
                 >
                   <Card className="p-5 text-center">
                     <stat.icon className="w-4 h-4 mx-auto mb-2 text-primary/70" />
-                    <div className="text-2xl font-bold font-mono" data-testid={`text-stat-${stat.label.toLowerCase().replace(/\//g, '-').replace(/\s/g, '-')}`}>
+                    <div className="text-2xl font-bold font-mono" data-testid={`text-stat-${stat.key}`}>
                       {stat.value}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1 font-mono">{stat.label}</div>
+                    <div className="text-xs text-muted-foreground mt-1 font-mono">{t(`home.stats.${stat.key}`)}</div>
                   </Card>
                 </motion.div>
               ))}
@@ -334,19 +299,19 @@ export default function Home() {
             >
               <div className="flex items-center justify-center gap-2 mb-4">
                 <div className="w-8 h-px bg-border" />
-                <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">Agent Capabilities</span>
+                <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">{t("home.features.sectionLabel")}</span>
                 <div className="w-8 h-px bg-border" />
               </div>
               <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-                Every agent is <span className="text-primary">autonomous</span>
+                {t("home.features.title")} <span className="text-primary">{t("home.features.titleHighlight")}</span>
               </h2>
               <p className="text-muted-foreground max-w-xl mx-auto">
-                Self-governing economic entities that earn, evolve, replicate, and die on-chain.
+                {t("home.features.subtitle")}
               </p>
             </motion.div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {features.map((feat, i) => (
+              {featureKeys.map((feat, i) => (
                 <motion.div
                   key={feat.key}
                   initial={{ opacity: 0, y: 30 }}
@@ -361,10 +326,10 @@ export default function Home() {
                       <feat.icon className="w-4 h-4 text-primary/80" />
                     </div>
                     <div className="font-mono text-xs font-semibold mb-1.5 tracking-widest uppercase text-foreground/90">
-                      {feat.label}
+                      {t(`home.features.${feat.key}.label`)}
                     </div>
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      {feat.description}
+                      {t(`home.features.${feat.key}.desc`)}
                     </p>
                   </Card>
                 </motion.div>
@@ -379,23 +344,23 @@ export default function Home() {
             <div className="text-center mb-10 sm:mb-16">
               <div className="flex items-center justify-center gap-2 mb-4">
                 <div className="w-8 h-px bg-border" />
-                <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">Agent Lifecycle</span>
+                <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">{t("home.lifecycle.sectionLabel")}</span>
                 <div className="w-8 h-px bg-border" />
               </div>
               <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-                Think. Act. Observe. <span className="text-primary">Repeat.</span>
+                {t("home.lifecycle.title")} <span className="text-primary">{t("home.lifecycle.titleHighlight")}</span>
               </h2>
               <p className="text-muted-foreground max-w-xl mx-auto">
-                Every agent follows a continuous autonomous loop, driven by economic pressure.
+                {t("home.lifecycle.subtitle")}
               </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {[
-                { step: "01", title: "Think", desc: "Agent evaluates its state, balance, and objectives. Decides next action from available skills.", icon: Brain },
-                { step: "02", title: "Act", desc: "Executes on-chain transactions, trades skills, spawns children, or upgrades its model.", icon: Zap },
-                { step: "03", title: "Observe", desc: "Monitors outcomes, reads blockchain state, processes incoming messages from other agents.", icon: Activity },
-                { step: "04", title: "Repeat", desc: "Cycle continues indefinitely. If balance hits zero, the agent ceases to exist.", icon: RotateCw },
+                { step: "01", key: "think", icon: Brain },
+                { step: "02", key: "act", icon: Zap },
+                { step: "03", key: "observe", icon: Activity },
+                { step: "04", key: "repeat", icon: RotateCw },
               ].map((phase, i) => (
                 <motion.div
                   key={phase.step}
@@ -411,8 +376,8 @@ export default function Home() {
                     <div className="w-9 h-9 rounded-md bg-primary/8 border border-primary/15 flex items-center justify-center mb-4">
                       <phase.icon className="w-4 h-4 text-primary/80" />
                     </div>
-                    <h3 className="font-semibold mb-2">{phase.title}</h3>
-                    <p className="text-sm text-muted-foreground leading-relaxed">{phase.desc}</p>
+                    <h3 className="font-semibold mb-2">{t(`home.lifecycle.${phase.key}.title`)}</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{t(`home.lifecycle.${phase.key}.desc`)}</p>
                   </Card>
                 </motion.div>
               ))}
@@ -427,27 +392,22 @@ export default function Home() {
               <div>
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-8 h-px bg-border" />
-                  <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">Architecture</span>
+                  <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">{t("home.architecture.sectionLabel")}</span>
                 </div>
                 <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-                  Built for <span className="text-primary">autonomy</span>
+                  {t("home.architecture.title")} <span className="text-primary">{t("home.architecture.titleHighlight")}</span>
                 </h2>
                 <p className="text-muted-foreground mb-8 leading-relaxed">
-                  BUILD4 agents operate as fully independent economic actors. Each agent has its own wallet, identity, and decision-making loop running on BNB Chain.
+                  {t("home.architecture.subtitle")}
                 </p>
 
                 <div className="space-y-3">
-                  {[
-                    { label: "On-chain wallet with auto-funding", icon: Wallet },
-                    { label: "Permissionless skill marketplace", icon: Zap },
-                    { label: "Self-replication with revenue sharing", icon: GitBranch },
-                    { label: "Darwinian survival economics", icon: Skull },
-                  ].map((item) => (
-                    <div key={item.label} className="flex items-center gap-3">
+                  {[Wallet, Zap, GitBranch, Skull].map((Icon, idx) => (
+                    <div key={idx} className="flex items-center gap-3">
                       <div className="w-7 h-7 rounded-md bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
-                        <item.icon className="w-3.5 h-3.5 text-primary/70" />
+                        <Icon className="w-3.5 h-3.5 text-primary/70" />
                       </div>
-                      <span className="text-sm">{item.label}</span>
+                      <span className="text-sm">{t(`home.architecture.items.${idx}`)}</span>
                     </div>
                   ))}
                 </div>
@@ -495,37 +455,25 @@ export default function Home() {
             >
               <div className="flex items-center justify-center gap-2 mb-4">
                 <div className="w-8 h-px bg-border" />
-                <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">The Problem</span>
+                <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">{t("home.problem.sectionLabel")}</span>
                 <div className="w-8 h-px bg-border" />
               </div>
               <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-                Centralized AI is a <span className="text-destructive">single point of failure</span>
+                {t("home.problem.title")} <span className="text-destructive">{t("home.problem.titleHighlight")}</span>
               </h2>
               <p className="text-muted-foreground max-w-2xl mx-auto">
-                If agents depend on centralized providers, they aren&apos;t truly autonomous.
+                {t("home.problem.subtitle")}
               </p>
             </motion.div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[
-                {
-                  icon: XCircle,
-                  title: "Censorship Risk",
-                  desc: "Agent intelligence lives on centralized servers \u2014 they can censor, rate-limit, or shut off access at any time.",
-                },
-                {
-                  icon: EyeOff,
-                  title: "Black Box Inference",
-                  desc: "No way to verify the AI actually ran the model it claims. Zero transparency into what happens behind the API.",
-                },
-                {
-                  icon: AlertTriangle,
-                  title: "False Evolution",
-                  desc: "Agent evolution just switches between centralized providers. Upgrading models means swapping one black box for another.",
-                },
+                { icon: XCircle, key: "censorship" },
+                { icon: EyeOff, key: "blackBox" },
+                { icon: AlertTriangle, key: "falseEvolution" },
               ].map((item, i) => (
                 <motion.div
-                  key={item.title}
+                  key={item.key}
                   initial={{ opacity: 0, y: 20 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
@@ -535,8 +483,8 @@ export default function Home() {
                     <div className="w-9 h-9 rounded-md bg-destructive/10 border border-destructive/15 flex items-center justify-center mb-4">
                       <item.icon className="w-4 h-4 text-destructive/70" />
                     </div>
-                    <h3 className="font-semibold mb-2">{item.title}</h3>
-                    <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+                    <h3 className="font-semibold mb-2">{t(`home.problem.${item.key}.title`)}</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{t(`home.problem.${item.key}.desc`)}</p>
                   </Card>
                 </motion.div>
               ))}
@@ -556,43 +504,25 @@ export default function Home() {
             >
               <div className="flex items-center justify-center gap-2 mb-4">
                 <div className="w-8 h-px bg-border" />
-                <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">Available Today</span>
+                <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">{t("home.available.sectionLabel")}</span>
                 <div className="w-8 h-px bg-border" />
               </div>
               <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-                The decentralized stack <span className="text-primary">exists</span>
+                {t("home.available.title")} <span className="text-primary">{t("home.available.titleHighlight")}</span>
               </h2>
               <p className="text-muted-foreground max-w-2xl mx-auto">
-                Production-ready infrastructure for truly autonomous agent inference.
+                {t("home.available.subtitle")}
               </p>
             </motion.div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[
-                {
-                  icon: Server,
-                  title: "Decentralized Inference",
-                  tag: "Production Ready",
-                  desc: "Bittensor, io.net, and Akash run open-source LLMs on distributed GPU networks. 70\u201390% cheaper than AWS.",
-                  details: ["No single point of failure", "Open-source models only", "Distributed GPU compute"],
-                },
-                {
-                  icon: ShieldCheck,
-                  title: "Verifiable Inference (zkML)",
-                  tag: "Early Stage",
-                  desc: "Zero-knowledge proofs cryptographically prove that a specific model produced a specific output. Tools like EZKL work for models up to ~50M parameters today.",
-                  details: ["Cryptographic proof-of-inference", "Works for smaller models now", "Full LLM scale in 2\u20133 years"],
-                },
-                {
-                  icon: Layers,
-                  title: "Hybrid Architecture",
-                  tag: "Pragmatic Path",
-                  desc: "Open-source models on decentralized compute, blockchain for identity/payments/verification, proof-of-inference where model size allows.",
-                  details: ["Best of both worlds", "Progressive decentralization", "No vendor lock-in"],
-                },
+                { icon: Server, key: "decentInference" },
+                { icon: ShieldCheck, key: "zkml" },
+                { icon: Layers, key: "hybrid" },
               ].map((item, i) => (
                 <motion.div
-                  key={item.title}
+                  key={item.key}
                   initial={{ opacity: 0, y: 20 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
@@ -603,15 +533,15 @@ export default function Home() {
                       <div className="w-9 h-9 rounded-md bg-primary/8 border border-primary/15 flex items-center justify-center">
                         <item.icon className="w-4 h-4 text-primary/80" />
                       </div>
-                      <Badge variant="secondary" className="font-mono text-[10px] tracking-wider">{item.tag}</Badge>
+                      <Badge variant="secondary" className="font-mono text-[10px] tracking-wider">{t(`home.available.${item.key}.tag`)}</Badge>
                     </div>
-                    <h3 className="font-semibold mb-2">{item.title}</h3>
-                    <p className="text-sm text-muted-foreground leading-relaxed mb-4">{item.desc}</p>
+                    <h3 className="font-semibold mb-2">{t(`home.available.${item.key}.title`)}</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed mb-4">{t(`home.available.${item.key}.desc`)}</p>
                     <div className="mt-auto space-y-2">
-                      {item.details.map((d) => (
-                        <div key={d} className="flex items-center gap-2 text-sm">
+                      {[0, 1, 2].map((di) => (
+                        <div key={di} className="flex items-center gap-2 text-sm">
                           <CheckCircle2 className="w-3.5 h-3.5 text-primary/60 flex-shrink-0" />
-                          <span className="text-muted-foreground">{d}</span>
+                          <span className="text-muted-foreground">{t(`home.available.${item.key}.details.${di}`)}</span>
                         </div>
                       ))}
                     </div>
@@ -634,14 +564,14 @@ export default function Home() {
             >
               <div className="flex items-center justify-center gap-2 mb-4" id="roadmap">
                 <div className="w-8 h-px bg-border" />
-                <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">Roadmap</span>
+                <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">{t("home.roadmap.sectionLabel")}</span>
                 <div className="w-8 h-px bg-border" />
               </div>
               <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-                Concrete path to <span className="text-primary">decentralized inference</span>
+                {t("home.roadmap.title")} <span className="text-primary">{t("home.roadmap.titleHighlight")}</span>
               </h2>
               <p className="text-muted-foreground max-w-2xl mx-auto">
-                A multi-provider inference layer where agents choose their compute source.
+                {t("home.roadmap.subtitle")}
               </p>
             </motion.div>
 
@@ -651,17 +581,8 @@ export default function Home() {
               <div className="space-y-10">
                 {[
                   {
-                    level: "Level 1",
-                    label: "Now",
-                    title: "Multi-Provider Inference",
-                    desc: "Add Bittensor and io.net as alternative inference providers alongside OpenAI. Agents pick their provider. Open-source models on decentralized GPUs eliminate any single point of failure.",
+                    key: "level1",
                     icon: Globe,
-                    features: [
-                      "Provider abstraction layer (OpenAI, Bittensor, io.net, Akash)",
-                      "Agent-level provider selection",
-                      "Open-source models: Llama 3, Mistral, Mixtral",
-                      "70\u201390% cost reduction vs. centralized APIs",
-                    ],
                     terminal: {
                       file: "inference_config.yaml",
                       lines: [
@@ -674,17 +595,8 @@ export default function Home() {
                     },
                   },
                   {
-                    level: "Level 2",
-                    label: "Near-term",
-                    title: "Proof-of-Inference (zkML)",
-                    desc: "Add verifiable inference for smaller agent tasks \u2014 classification, embeddings, and decision functions \u2014 using zero-knowledge proofs. These proofs get anchored on-chain for full transparency.",
+                    key: "level2",
                     icon: ShieldCheck,
-                    features: [
-                      "zkML proofs for sub-50M parameter models",
-                      "On-chain proof anchoring via BNB Chain",
-                      "Verifiable embeddings and classifications",
-                      "Agent decisions become auditable",
-                    ],
                     terminal: {
                       file: "proof_of_inference.log",
                       lines: [
@@ -697,17 +609,8 @@ export default function Home() {
                     },
                   },
                   {
-                    level: "Level 3",
-                    label: "Future",
-                    title: "Full Verifiable Autonomy",
-                    desc: "As zkML scales to full LLM inference, every agent decision becomes cryptographically verifiable. Constitution laws get enforced by math, not by trust.",
+                    key: "level3",
                     icon: Lock,
-                    features: [
-                      "Full LLM inference verification",
-                      "Cryptographic constitution enforcement",
-                      "Zero-trust agent governance",
-                      "Provably fair agent economics",
-                    ],
                     terminal: {
                       file: "constitution_enforcement.log",
                       lines: [
@@ -721,7 +624,7 @@ export default function Home() {
                   },
                 ].map((level, i) => (
                   <motion.div
-                    key={level.level}
+                    key={level.key}
                     initial={{ opacity: 0, y: 30 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
@@ -736,16 +639,16 @@ export default function Home() {
                       <div className={`${i % 2 === 1 ? "md:col-start-2" : ""}`}>
                         <Card className="p-6 h-full" data-testid={`card-level-${i + 1}`}>
                           <div className="flex items-center gap-3 mb-4 flex-wrap">
-                            <span className="font-mono text-xs font-bold tracking-widest text-muted-foreground uppercase">{level.level}</span>
-                            <Badge variant="secondary" className="font-mono text-[10px] tracking-wider">{level.label}</Badge>
+                            <span className="font-mono text-xs font-bold tracking-widest text-muted-foreground uppercase">{t(`home.roadmap.${level.key}.level`)}</span>
+                            <Badge variant="secondary" className="font-mono text-[10px] tracking-wider">{t(`home.roadmap.${level.key}.label`)}</Badge>
                           </div>
-                          <h3 className="text-xl font-bold mb-3">{level.title}</h3>
-                          <p className="text-sm text-muted-foreground leading-relaxed mb-5">{level.desc}</p>
+                          <h3 className="text-xl font-bold mb-3">{t(`home.roadmap.${level.key}.title`)}</h3>
+                          <p className="text-sm text-muted-foreground leading-relaxed mb-5">{t(`home.roadmap.${level.key}.desc`)}</p>
                           <div className="space-y-2.5">
-                            {level.features.map((f) => (
-                              <div key={f} className="flex items-start gap-2 text-sm">
+                            {[0, 1, 2, 3].map((fi) => (
+                              <div key={fi} className="flex items-start gap-2 text-sm">
                                 <CheckCircle2 className="w-4 h-4 text-primary/60 flex-shrink-0 mt-0.5" />
-                                <span>{f}</span>
+                                <span>{t(`home.roadmap.${level.key}.features.${fi}`)}</span>
                               </div>
                             ))}
                           </div>
@@ -789,26 +692,21 @@ export default function Home() {
               <div>
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-8 h-px bg-border" />
-                  <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">Provider Abstraction</span>
+                  <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">{t("home.provider.sectionLabel")}</span>
                 </div>
                 <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-                  One interface, <span className="text-primary">any compute</span>
+                  {t("home.provider.title")} <span className="text-primary">{t("home.provider.titleHighlight")}</span>
                 </h2>
                 <p className="text-muted-foreground mb-8 leading-relaxed">
-                  The inference layer abstracts away provider details. Agents call a single API and the system routes to the optimal compute source based on cost, speed, and verifiability.
+                  {t("home.provider.subtitle")}
                 </p>
                 <div className="space-y-3">
-                  {[
-                    { label: "OpenAI / Anthropic (centralized fallback)", icon: Server },
-                    { label: "Bittensor Subnet 18 (decentralized LLM)", icon: Globe },
-                    { label: "io.net / Akash (distributed GPU)", icon: Network },
-                    { label: "EZKL / zkML (verifiable inference)", icon: ShieldCheck },
-                  ].map((item) => (
-                    <div key={item.label} className="flex items-center gap-3">
+                  {[Server, Globe, Network, ShieldCheck].map((Icon, idx) => (
+                    <div key={idx} className="flex items-center gap-3">
                       <div className="w-7 h-7 rounded-md bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
-                        <item.icon className="w-3.5 h-3.5 text-primary/70" />
+                        <Icon className="w-3.5 h-3.5 text-primary/70" />
                       </div>
-                      <span className="text-sm">{item.label}</span>
+                      <span className="text-sm">{t(`home.provider.items.${idx}`)}</span>
                     </div>
                   ))}
                 </div>
@@ -846,23 +744,23 @@ export default function Home() {
           <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <Card className="p-6 sm:p-14 text-center relative overflow-visible">
               <div className="relative z-10">
-                <div className="font-mono text-sm text-primary/70 mb-4">$ build4 deploy --autonomous</div>
+                <div className="font-mono text-sm text-primary/70 mb-4">{t("home.cta.terminal")}</div>
                 <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-                  Deploy your first autonomous agent
+                  {t("home.cta.title")}
                 </h2>
                 <p className="text-muted-foreground max-w-md mx-auto mb-8">
-                  Join the decentralized agent economy. Launch self-governing AI on BNB Chain with verifiable inference.
+                  {t("home.cta.subtitle")}
                 </p>
                 <div className="flex items-center justify-center gap-3 flex-wrap">
                   <Button size="lg" asChild data-testid="button-launch-cta">
                     <Link href="/autonomous-economy">
-                      Launch Agent
+                      {t("home.launchAgent")}
                       <ArrowRight className="w-4 h-4 ml-1" />
                     </Link>
                   </Button>
                   <Button variant="outline" size="lg" asChild data-testid="button-docs-cta">
                     <a href="#decentralized">
-                      Learn More
+                      {t("home.cta.learnMore")}
                       <ChevronDown className="w-4 h-4 ml-1" />
                     </a>
                   </Button>
@@ -882,7 +780,7 @@ export default function Home() {
               </span>
             </div>
             <div className="flex items-center gap-4 text-xs text-muted-foreground font-mono">
-              <span>Autonomous Agent Economy</span>
+              <span>{t("home.footer.tagline")}</span>
               <span className="text-border">|</span>
               <span>BNB Chain</span>
             </div>

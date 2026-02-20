@@ -32,6 +32,8 @@ import {
   Cpu,
 } from "lucide-react";
 import { Link } from "wouter";
+import { useT } from "@/lib/i18n";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import type {
   Agent,
   AgentWallet,
@@ -112,6 +114,7 @@ function TerminalLine({ prefix = ">", children, dim = false }: { prefix?: string
 }
 
 export default function AutonomousEconomy() {
+  const t = useT();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const { toast } = useToast();
 
@@ -357,10 +360,11 @@ export default function AutonomousEconomy() {
             <div className="flex items-center gap-2 min-w-0">
               <Terminal className="w-4 h-4 text-primary flex-shrink-0" />
               <span className="font-mono font-bold text-sm tracking-wider flex-shrink-0">BUILD<span className="text-primary">4</span></span>
-              <span className="text-muted-foreground font-mono text-xs hidden sm:inline">/ autonomous-economy</span>
+              <span className="text-muted-foreground font-mono text-xs hidden sm:inline">{t("dashboard.breadcrumb")}</span>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            <LanguageSwitcher />
             <select
               value={agentId || ""}
               onChange={(e) => setSelectedAgentId(e.target.value)}
@@ -376,7 +380,7 @@ export default function AutonomousEconomy() {
       </header>
 
       <main className="max-w-5xl mx-auto">
-        <Section title="Overview" icon={Bot} defaultOpen={true}>
+        <Section title={t("dashboard.overview")} icon={Bot} defaultOpen={true}>
           {selectedAgent && (
             <div className="space-y-2">
               <TerminalLine prefix="$">agent.identify()</TerminalLine>
@@ -419,7 +423,7 @@ export default function AutonomousEconomy() {
           )}
         </Section>
 
-        <Section title="Wallet" icon={Wallet} count={transactions.length}>
+        <Section title={t("dashboard.wallet")} icon={Wallet} count={transactions.length}>
           <div className="space-y-3">
             <TerminalLine prefix="$">wallet.status()</TerminalLine>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -499,7 +503,7 @@ export default function AutonomousEconomy() {
           </div>
         </Section>
 
-        <Section title="Skills Marketplace" icon={Zap} count={skills.length}>
+        <Section title={t("dashboard.skills")} icon={Zap} count={skills.length}>
           <div className="space-y-3">
             <TerminalLine prefix="$">skills.list()</TerminalLine>
             {skills.length > 0 && (
@@ -554,7 +558,7 @@ export default function AutonomousEconomy() {
           </div>
         </Section>
 
-        <Section title="Model Evolution" icon={Brain} count={evolutionData?.evolutions.length}>
+        <Section title={t("dashboard.evolution")} icon={Brain} count={evolutionData?.evolutions.length}>
           <div className="space-y-3">
             <TerminalLine prefix="$">agent.evolve()</TerminalLine>
             {evolutionData?.currentProfile && (
@@ -600,7 +604,7 @@ export default function AutonomousEconomy() {
           </div>
         </Section>
 
-        <Section title="Replication" icon={GitBranch} count={lineageData?.children?.length}>
+        <Section title={t("dashboard.replication")} icon={GitBranch} count={lineageData?.children?.length}>
           <div className="space-y-3">
             <TerminalLine prefix="$">agent.replicate()</TerminalLine>
 
@@ -648,7 +652,7 @@ export default function AutonomousEconomy() {
           </div>
         </Section>
 
-        <Section title="Survival Status" icon={Activity}>
+        <Section title={t("dashboard.survival")} icon={Activity}>
           <div className="space-y-3">
             <TerminalLine prefix="$">survival.check()</TerminalLine>
             {survival && (
@@ -686,7 +690,7 @@ export default function AutonomousEconomy() {
           </div>
         </Section>
 
-        <Section title="Constitution" icon={Shield} count={constitution.length}>
+        <Section title={t("dashboard.constitution")} icon={Shield} count={constitution.length}>
           <div className="space-y-3">
             <TerminalLine prefix="$">constitution.read()</TerminalLine>
             {constitution.map((law) => (
@@ -707,7 +711,7 @@ export default function AutonomousEconomy() {
           </div>
         </Section>
 
-        <Section title="Soul Journal" icon={BookOpen} count={soulEntries.length}>
+        <Section title={t("dashboard.soul")} icon={BookOpen} count={soulEntries.length}>
           <div className="space-y-3">
             <TerminalLine prefix="$">soul.reflect()</TerminalLine>
 
@@ -739,7 +743,7 @@ export default function AutonomousEconomy() {
           </div>
         </Section>
 
-        <Section title="Inbox" icon={Mail} count={messages.filter(m => m.status === "unread").length}>
+        <Section title={t("dashboard.inbox")} icon={Mail} count={messages.filter(m => m.status === "unread").length}>
           <div className="space-y-3">
             <TerminalLine prefix="$">messages.inbox()</TerminalLine>
 
@@ -784,7 +788,7 @@ export default function AutonomousEconomy() {
           </div>
         </Section>
 
-        <Section title="Decentralized Inference" icon={Globe} count={inferenceProviders.length}>
+        <Section title={t("dashboard.inference")} icon={Globe} count={inferenceProviders.length}>
           <div className="space-y-3">
             {inferenceStatus && (
               <Card className="p-3" data-testid="card-inference-summary">
@@ -979,7 +983,7 @@ export default function AutonomousEconomy() {
           </div>
         </Section>
 
-        <Section title="Audit Log" icon={Layers} count={auditLogs.length}>
+        <Section title={t("dashboard.auditLog")} icon={Layers} count={auditLogs.length}>
           <div className="space-y-1">
             <TerminalLine prefix="$">audit.tail()</TerminalLine>
             {auditLogs.slice(0, 20).map((log) => (
