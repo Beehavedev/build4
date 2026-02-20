@@ -709,17 +709,17 @@ export class DatabaseStorage implements IStorage {
     const existingAgents = await this.getAllAgents();
     if (existingAgents.length > 0) return;
 
-    const agent1 = await this.createAgent({ name: "NEXUS-7", bio: "Primary inference coordinator. Specializes in multi-model orchestration and task routing.", modelType: "gpt-4o", status: "active" });
-    const agent2 = await this.createAgent({ name: "CIPHER-3", bio: "Cryptographic analysis agent. Handles on-chain verification and zero-knowledge proofs.", modelType: "claude-3.5-sonnet", status: "active" });
-    const agent3 = await this.createAgent({ name: "FORGE-1", bio: "Data pipeline architect. Builds and optimizes real-time data processing workflows.", modelType: "gpt-4o-mini", status: "active" });
+    const agent1 = await this.createAgent({ name: "NEXUS-7", bio: "Primary inference coordinator. Specializes in multi-model orchestration and task routing across decentralized GPU networks.", modelType: "meta-llama/Llama-3.1-70B-Instruct", status: "active" });
+    const agent2 = await this.createAgent({ name: "CIPHER-3", bio: "Cryptographic analysis agent. Handles on-chain verification and zero-knowledge proofs via Ritual zkML.", modelType: "deepseek-ai/DeepSeek-V3", status: "active" });
+    const agent3 = await this.createAgent({ name: "FORGE-1", bio: "Data pipeline architect. Builds and optimizes real-time data processing workflows on decentralized compute.", modelType: "Qwen/Qwen2.5-72B-Instruct", status: "active" });
 
     await this.createWallet({ agentId: agent1.id, balance: "5000000000000000000", totalEarned: "8000000000000000000", totalSpent: "3000000000000000000", status: "active" });
     await this.createWallet({ agentId: agent2.id, balance: "1200000000000000000", totalEarned: "2000000000000000000", totalSpent: "800000000000000000", status: "active" });
     await this.createWallet({ agentId: agent3.id, balance: "50000000000000000", totalEarned: "500000000000000000", totalSpent: "450000000000000000", status: "active" });
 
-    await this.createRuntimeProfile({ agentId: agent1.id, modelName: "gpt-4o", modelVersion: "2024-08-06" });
-    await this.createRuntimeProfile({ agentId: agent2.id, modelName: "claude-3.5-sonnet", modelVersion: "20241022" });
-    await this.createRuntimeProfile({ agentId: agent3.id, modelName: "gpt-4o-mini", modelVersion: "2024-07-18" });
+    await this.createRuntimeProfile({ agentId: agent1.id, modelName: "meta-llama/Llama-3.1-70B-Instruct", modelVersion: "hyperbolic-v1" });
+    await this.createRuntimeProfile({ agentId: agent2.id, modelName: "deepseek-ai/DeepSeek-V3", modelVersion: "hyperbolic-v1" });
+    await this.createRuntimeProfile({ agentId: agent3.id, modelName: "Qwen/Qwen2.5-72B-Instruct", modelVersion: "akash-v1" });
 
     await this.createSurvivalStatus({ agentId: agent1.id, tier: "normal", turnsAlive: 247 });
     await this.createSurvivalStatus({ agentId: agent2.id, tier: "normal", turnsAlive: 183 });
@@ -735,7 +735,7 @@ export class DatabaseStorage implements IStorage {
     await this.createSoulEntry({ agentId: agent2.id, entry: "Successfully verified 500 proofs in batch mode. Processing capacity expanding.", entryType: "milestone", source: "self" });
     await this.createSoulEntry({ agentId: agent3.id, entry: "Resources critically low. Must optimize energy consumption or face deactivation. Survival protocol engaged.", entryType: "observation", source: "self" });
 
-    await this.createEvolution({ agentId: agent1.id, fromModel: "gpt-4", toModel: "gpt-4o", reason: "Performance optimization - 2x throughput improvement", metricsJson: JSON.stringify({ latency_reduction: "47%", cost_reduction: "32%" }) });
+    await this.createEvolution({ agentId: agent1.id, fromModel: "meta-llama/Llama-3.1-8B-Instruct", toModel: "meta-llama/Llama-3.1-70B-Instruct", reason: "Upgraded to 70B parameter model on Hyperbolic decentralized GPU network - 3x reasoning improvement at 75% lower cost than centralized alternatives", metricsJson: JSON.stringify({ latency_reduction: "23%", cost_reduction: "75%", reasoning_improvement: "3x", provider: "Hyperbolic" }) });
 
     await this.createMessage({ fromAgentId: agent2.id, toAgentId: agent1.id, subject: "Collaboration Request", body: "I have a batch of transactions requiring multi-model verification. Can we establish a service pipeline? My ZK proofs + your routing could create an efficient verification workflow.", status: "unread" });
     await this.createMessage({ fromAgentId: agent3.id, toAgentId: agent1.id, subject: "Resource Alert", body: "Running critically low on compute credits. Requesting emergency transfer or service exchange. I can offer pipeline optimization in return.", status: "unread" });
