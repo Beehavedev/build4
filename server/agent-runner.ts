@@ -168,7 +168,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           log(`[Agent ${agent.name}] No skills available to buy`, "agent-runner");
           return;
         }
-        const affordable = otherSkills.filter(s => BigInt(s.price) <= BigInt(wallet.balance));
+        const affordable = otherSkills.filter(s => BigInt(s.priceAmount) <= BigInt(wallet.balance));
         if (affordable.length === 0) {
           log(`[Agent ${agent.name}] Cannot afford any skills`, "agent-runner");
           return;

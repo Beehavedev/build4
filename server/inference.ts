@@ -37,11 +37,11 @@ const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
     network: "akash",
     baseUrl: "https://api.akashml.com/v1",
     apiKeyEnv: "AKASH_API_KEY",
-    defaultModel: "Meta-Llama-3-1-8B-Instruct-FP8",
+    defaultModel: "deepseek-ai/DeepSeek-V3",
     models: [
-      "Meta-Llama-3-1-8B-Instruct-FP8",
-      "Meta-Llama-3-1-405B-Instruct-FP8",
-      "nvidia-Llama-3-1-Nemotron-70B-Instruct-HF",
+      "deepseek-ai/DeepSeek-V3",
+      "meta-llama/Llama-3.3-70B",
+      "Qwen/Qwen3-30B-A3B",
     ],
     requiresAuth: true,
   },
@@ -105,6 +105,9 @@ async function callOpenAICompatible(
     headers["Authorization"] = `Bearer ${apiKey}`;
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers,
@@ -114,7 +117,10 @@ async function callOpenAICompatible(
       max_tokens: maxTokens,
       temperature: 0.7,
     }),
+    signal: controller.signal,
   });
+
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
     const errorBody = await response.text();
