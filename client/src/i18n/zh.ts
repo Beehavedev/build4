@@ -76,7 +76,7 @@ const zh = {
       decentInference: {
         title: "去中心化推理",
         tag: "生产就绪",
-        desc: "Bittensor、io.net和Akash在分布式GPU网络上运行开源LLM。比AWS便宜70-90%。",
+        desc: "Hyperbolic、AkashML和Ritual在分布式GPU网络上运行开源LLM。比中心化提供商便宜70-90%。",
         details: ["无单点故障", "仅开源模型", "分布式GPU计算"],
       },
       zkml: {

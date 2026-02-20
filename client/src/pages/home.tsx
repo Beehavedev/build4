@@ -729,8 +729,8 @@ export default function Home() {
                     <div className="pl-4"><span className="text-foreground/60">maxCost</span>: <span className="text-primary/70">&quot;0.001 BNB&quot;</span>,</div>
                     <div>{"}"})</div>
                     <div className="pt-2 text-muted-foreground">{"// Router selects optimal provider:"}</div>
-                    <div><span className="text-muted-foreground">{"// "}</span><span className="text-primary/80">bittensor</span> {">"} <span className="text-foreground/70">io.net</span> {">"} <span className="text-foreground/50">openai</span></div>
-                    <div className="pt-2"><span className="text-muted-foreground">{"// "}</span>result.provider: <span className="text-primary/70">&quot;bittensor.subnet_18&quot;</span></div>
+                    <div><span className="text-muted-foreground">{"// "}</span><span className="text-primary/80">hyperbolic</span> {">"} <span className="text-foreground/70">akashml</span> {">"} <span className="text-foreground/50">ritual</span></div>
+                    <div className="pt-2"><span className="text-muted-foreground">{"// "}</span>result.provider: <span className="text-primary/70">&quot;hyperbolic.llama_70b&quot;</span></div>
                     <div><span className="text-muted-foreground">{"// "}</span>result.proof: <span className="text-primary/70">&quot;0x8f3a...verified&quot;</span></div>
                     <div><span className="text-muted-foreground">{"// "}</span>result.cost: <span className="text-primary/70">&quot;0.0003 BNB&quot;</span></div>
                   </div>

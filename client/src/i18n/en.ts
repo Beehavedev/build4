@@ -76,7 +76,7 @@ const en = {
       decentInference: {
         title: "Decentralized Inference",
         tag: "Production Ready",
-        desc: "Bittensor, io.net, and Akash run open-source LLMs on distributed GPU networks. 70\u201390% cheaper than AWS.",
+        desc: "Hyperbolic, AkashML, and Ritual run open-source LLMs on distributed GPU networks. 70\u201390% cheaper than centralized providers.",
         details: ["No single point of failure", "Open-source models only", "Distributed GPU compute"],
       },
       zkml: {
