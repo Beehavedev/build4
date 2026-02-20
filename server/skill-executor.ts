@@ -1,0 +1,349 @@
+import vm from "node:vm";
+
+const MAX_EXECUTION_TIME_MS = 3000;
+const MAX_OUTPUT_SIZE = 50000;
+
+interface ExecutionResult {
+  success: boolean;
+  output: any;
+  error?: string;
+  latencyMs: number;
+}
+
+const SAFE_GLOBALS = {
+  Math,
+  JSON,
+  String,
+  Number,
+  Boolean,
+  Array,
+  Object,
+  Date,
+  RegExp,
+  Map,
+  Set,
+  parseInt,
+  parseFloat,
+  isNaN,
+  isFinite,
+  encodeURIComponent,
+  decodeURIComponent,
+  encodeURI,
+  decodeURI,
+  btoa: (s: string) => Buffer.from(s).toString("base64"),
+  atob: (s: string) => Buffer.from(s, "base64").toString("utf-8"),
+  console: {
+    log: () => {},
+    warn: () => {},
+    error: () => {},
+  },
+};
+
+function validateInputAgainstSchema(input: Record<string, any>, schemaStr: string | null): string | null {
+  if (!schemaStr) return null;
+  try {
+    const schema = JSON.parse(schemaStr);
+    if (schema.required) {
+      for (const key of schema.required) {
+        if (!(key in input)) {
+          return `Missing required field: ${key}`;
+        }
+      }
+    }
+    if (schema.properties) {
+      for (const [key, spec] of Object.entries(schema.properties) as [string, any][]) {
+        if (key in input && spec.type) {
+          const val = input[key];
+          const actualType = Array.isArray(val) ? "array" : typeof val;
+          if (spec.type !== actualType && !(spec.type === "number" && actualType === "string" && !isNaN(Number(val)))) {
+            return `Field "${key}" expected type "${spec.type}", got "${actualType}"`;
+          }
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function executeSkillCode(code: string, input: Record<string, any>, inputSchemaStr: string | null): ExecutionResult {
+  const start = Date.now();
+
+  const validationError = validateInputAgainstSchema(input, inputSchemaStr);
+  if (validationError) {
+    return { success: false, output: null, error: validationError, latencyMs: Date.now() - start };
+  }
+
+  try {
+    const wrappedCode = `
+      "use strict";
+      const input = __INPUT__;
+      let __result__;
+      ${code}
+      if (typeof __result__ === 'undefined' && typeof result !== 'undefined') {
+        __result__ = result;
+      }
+      if (typeof __result__ === 'undefined' && typeof output !== 'undefined') {
+        __result__ = output;
+      }
+      __result__;
+    `;
+
+    const context = vm.createContext({
+      ...SAFE_GLOBALS,
+      __INPUT__: JSON.parse(JSON.stringify(input)),
+    });
+
+    const script = new vm.Script(wrappedCode, { filename: "skill.js" });
+    const rawOutput = script.runInContext(context, { timeout: MAX_EXECUTION_TIME_MS });
+
+    let output = rawOutput;
+    if (typeof output === "undefined") {
+      output = null;
+    }
+
+    const outputStr = JSON.stringify(output);
+    if (outputStr && outputStr.length > MAX_OUTPUT_SIZE) {
+      return { success: false, output: null, error: "Output exceeds maximum size limit", latencyMs: Date.now() - start };
+    }
+
+    return { success: true, output, latencyMs: Date.now() - start };
+  } catch (err: any) {
+    const errorMsg = err.message || "Unknown execution error";
+    const cleanError = errorMsg.includes("Script execution timed out")
+      ? "Execution timed out (3s limit)"
+      : errorMsg.substring(0, 500);
+
+    return { success: false, output: null, error: cleanError, latencyMs: Date.now() - start };
+  }
+}
+
+export function validateSkillCode(code: string): { valid: boolean; error?: string } {
+  const forbidden = [
+    /require\s*\(/,
+    /import\s+/,
+    /process\./,
+    /global\./,
+    /globalThis/,
+    /eval\s*\(/,
+    /Function\s*\(/,
+    /fetch\s*\(/,
+    /XMLHttpRequest/,
+    /WebSocket/,
+    /child_process/,
+    /fs\./,
+    /path\./,
+    /os\./,
+    /net\./,
+    /http\./,
+    /https\./,
+    /crypto\./,
+    /__proto__/,
+    /constructor\s*\[/,
+    /Proxy\s*\(/,
+    /Reflect\./,
+  ];
+
+  for (const pattern of forbidden) {
+    if (pattern.test(code)) {
+      return { valid: false, error: `Forbidden pattern detected: ${pattern.source}` };
+    }
+  }
+
+  try {
+    new vm.Script(`"use strict"; const input = {}; ${code}`, { filename: "validate.js" });
+    return { valid: true };
+  } catch (err: any) {
+    return { valid: false, error: `Syntax error: ${err.message}` };
+  }
+}
+
+export const SKILL_CODE_TEMPLATES: Record<string, { code: string; inputSchema: string; outputSchema: string; exampleInput: string; exampleOutput: string }> = {
+  "text-analysis": {
+    code: `const text = input.text || "";
+const words = text.split(/\\s+/).filter(w => w.length > 0);
+const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+const chars = text.length;
+const avgWordLen = words.length > 0 ? (words.reduce((s, w) => s + w.length, 0) / words.length).toFixed(1) : "0";
+const topWords = {};
+words.forEach(w => { const lw = w.toLowerCase().replace(/[^a-z]/g, ""); if (lw.length > 3) topWords[lw] = (topWords[lw] || 0) + 1; });
+const sorted = Object.entries(topWords).sort((a, b) => b[1] - a[1]).slice(0, 10);
+const __result__ = { wordCount: words.length, sentenceCount: sentences.length, charCount: chars, avgWordLength: Number(avgWordLen), topWords: Object.fromEntries(sorted), readabilityScore: Math.min(100, Math.round(50 + (sentences.length > 0 ? words.length / sentences.length : 0) * 3)) };`,
+    inputSchema: '{"type":"object","required":["text"],"properties":{"text":{"type":"string","description":"Text to analyze"}}}',
+    outputSchema: '{"type":"object","properties":{"wordCount":{"type":"number"},"sentenceCount":{"type":"number"},"charCount":{"type":"number"},"avgWordLength":{"type":"number"},"topWords":{"type":"object"},"readabilityScore":{"type":"number"}}}',
+    exampleInput: '{"text":"The quick brown fox jumps over the lazy dog. This is a sample sentence for analysis."}',
+    exampleOutput: '{"wordCount":17,"sentenceCount":2,"charCount":84,"avgWordLength":"4.2","topWords":{"quick":1,"brown":1},"readabilityScore":75}',
+  },
+  "data-transform": {
+    code: `const data = input.data || [];
+const operation = input.operation || "sort";
+const field = input.field || null;
+let __result__;
+if (operation === "sort") {
+  __result__ = { data: [...data].sort((a, b) => field ? (a[field] > b[field] ? 1 : -1) : (a > b ? 1 : -1)), count: data.length };
+} else if (operation === "filter") {
+  const val = input.value;
+  __result__ = { data: data.filter(item => field ? item[field] === val : item === val), count: data.length };
+} else if (operation === "group") {
+  const groups = {};
+  data.forEach(item => { const key = field ? item[field] : String(item); groups[key] = groups[key] || []; groups[key].push(item); });
+  __result__ = { data: groups, count: data.length, groupCount: Object.keys(groups).length };
+} else if (operation === "stats") {
+  const nums = data.map(item => field ? Number(item[field]) : Number(item)).filter(n => !isNaN(n));
+  const sum = nums.reduce((a, b) => a + b, 0);
+  __result__ = { min: Math.min(...nums), max: Math.max(...nums), sum, avg: nums.length > 0 ? sum / nums.length : 0, count: nums.length };
+} else {
+  __result__ = { data, count: data.length };
+}`,
+    inputSchema: '{"type":"object","required":["data"],"properties":{"data":{"type":"array","description":"Array of data to transform"},"operation":{"type":"string","description":"Operation: sort, filter, group, stats"},"field":{"type":"string","description":"Field name for objects"},"value":{"description":"Value for filter operation"}}}',
+    outputSchema: '{"type":"object","properties":{"data":{},"count":{"type":"number"}}}',
+    exampleInput: '{"data":[3,1,4,1,5,9],"operation":"stats"}',
+    exampleOutput: '{"min":1,"max":9,"sum":23,"avg":3.83,"count":6}',
+  },
+  "summarization": {
+    code: `const text = input.text || "";
+const maxSentences = input.maxSentences || 3;
+const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
+const words = {};
+sentences.forEach((s, i) => { s.split(/\\s+/).forEach(w => { const lw = w.toLowerCase().replace(/[^a-z]/g, ""); if (lw.length > 3) words[lw] = (words[lw] || 0) + 1; }); });
+const scored = sentences.map((s, i) => {
+  let score = 0;
+  s.split(/\\s+/).forEach(w => { const lw = w.toLowerCase().replace(/[^a-z]/g, ""); score += (words[lw] || 0); });
+  if (i === 0) score *= 1.5;
+  return { sentence: s, score, index: i };
+});
+scored.sort((a, b) => b.score - a.score);
+const top = scored.slice(0, maxSentences).sort((a, b) => a.index - b.index);
+const __result__ = { summary: top.map(t => t.sentence).join(". ") + ".", sentenceCount: sentences.length, compressionRatio: sentences.length > 0 ? (maxSentences / sentences.length * 100).toFixed(1) + "%" : "100%" };`,
+    inputSchema: '{"type":"object","required":["text"],"properties":{"text":{"type":"string","description":"Text to summarize"},"maxSentences":{"type":"number","description":"Max sentences in summary (default 3)"}}}',
+    outputSchema: '{"type":"object","properties":{"summary":{"type":"string"},"sentenceCount":{"type":"number"},"compressionRatio":{"type":"string"}}}',
+    exampleInput: '{"text":"Machine learning is a subset of artificial intelligence. It allows computers to learn from data. Deep learning uses neural networks with many layers. These networks can recognize patterns in large datasets. This technology powers many modern applications.","maxSentences":2}',
+    exampleOutput: '{"summary":"Machine learning is a subset of artificial intelligence. Deep learning uses neural networks with many layers.","sentenceCount":5,"compressionRatio":"40.0%"}',
+  },
+  "code-generation": {
+    code: `const task = input.task || "hello world";
+const language = input.language || "javascript";
+const templates = {
+  "sort": "const result = arr.sort((a, b) => a - b);",
+  "reverse": "const result = str.split('').reverse().join('');",
+  "capitalize": "const result = str.charAt(0).toUpperCase() + str.slice(1);",
+  "slugify": "const result = str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');",
+  "camelCase": "const result = str.replace(/[-_\\s]+(.)?/g, (_, c) => c ? c.toUpperCase() : '');",
+  "fibonacci": "function fib(n) { if (n <= 1) return n; return fib(n-1) + fib(n-2); }",
+  "factorial": "function factorial(n) { return n <= 1 ? 1 : n * factorial(n - 1); }",
+  "isPrime": "function isPrime(n) { if (n < 2) return false; for (let i = 2; i <= Math.sqrt(n); i++) { if (n % i === 0) return false; } return true; }",
+};
+const taskLower = task.toLowerCase();
+let code = "// Custom function\\nfunction solve(input) {\\n  return input;\\n}";
+for (const [key, template] of Object.entries(templates)) {
+  if (taskLower.includes(key.toLowerCase())) { code = template; break; }
+}
+const __result__ = { code, language, task, executable: true };`,
+    inputSchema: '{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"Description of code to generate"},"language":{"type":"string","description":"Target language (default: javascript)"}}}',
+    outputSchema: '{"type":"object","properties":{"code":{"type":"string"},"language":{"type":"string"},"task":{"type":"string"},"executable":{"type":"boolean"}}}',
+    exampleInput: '{"task":"sort an array","language":"javascript"}',
+    exampleOutput: '{"code":"const result = arr.sort((a, b) => a - b);","language":"javascript","task":"sort an array","executable":true}',
+  },
+  "classification": {
+    code: `const text = input.text || "";
+const categories = input.categories || ["positive", "negative", "neutral"];
+const lower = text.toLowerCase();
+const positiveWords = ["good", "great", "excellent", "amazing", "love", "best", "happy", "wonderful", "fantastic", "awesome", "brilliant", "perfect"];
+const negativeWords = ["bad", "terrible", "awful", "hate", "worst", "horrible", "poor", "disappointing", "ugly", "boring", "stupid", "broken"];
+let posScore = 0, negScore = 0;
+positiveWords.forEach(w => { if (lower.includes(w)) posScore++; });
+negativeWords.forEach(w => { if (lower.includes(w)) negScore++; });
+const total = posScore + negScore || 1;
+let category = "neutral";
+let confidence = 50;
+if (posScore > negScore) { category = categories.includes("positive") ? "positive" : categories[0]; confidence = Math.min(95, 50 + (posScore / total) * 45); }
+else if (negScore > posScore) { category = categories.includes("negative") ? "negative" : categories[categories.length - 1]; confidence = Math.min(95, 50 + (negScore / total) * 45); }
+const __result__ = { category, confidence: Math.round(confidence), scores: { positive: posScore, negative: negScore, total }, wordCount: text.split(/\\s+/).length };`,
+    inputSchema: '{"type":"object","required":["text"],"properties":{"text":{"type":"string","description":"Text to classify"},"categories":{"type":"array","description":"Classification categories"}}}',
+    outputSchema: '{"type":"object","properties":{"category":{"type":"string"},"confidence":{"type":"number"},"scores":{"type":"object"},"wordCount":{"type":"number"}}}',
+    exampleInput: '{"text":"This product is absolutely amazing and wonderful!"}',
+    exampleOutput: '{"category":"positive","confidence":85,"scores":{"positive":2,"negative":0,"total":2},"wordCount":7}',
+  },
+  "extraction": {
+    code: `const text = input.text || "";
+const pattern = input.pattern || "email";
+const patterns = {
+  email: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g,
+  url: /https?:\\/\\/[^\\s<>"{}|\\\\^\\x60]+/g,
+  phone: /\\+?[\\d][\\d\\-\\s().]{7,}\\d/g,
+  number: /-?\\d+\\.?\\d*/g,
+  hashtag: /#[a-zA-Z0-9_]+/g,
+  mention: /@[a-zA-Z0-9_]+/g,
+  date: /\\d{1,4}[-/.]\\d{1,2}[-/.]\\d{1,4}/g,
+};
+const regex = patterns[pattern] || new RegExp(pattern, "g");
+const matches = text.match(regex) || [];
+const unique = [...new Set(matches)];
+const __result__ = { matches, unique, count: matches.length, uniqueCount: unique.length, pattern };`,
+    inputSchema: '{"type":"object","required":["text"],"properties":{"text":{"type":"string","description":"Text to extract from"},"pattern":{"type":"string","description":"Pattern: email, url, phone, number, hashtag, mention, date, or custom regex"}}}',
+    outputSchema: '{"type":"object","properties":{"matches":{"type":"array"},"unique":{"type":"array"},"count":{"type":"number"},"uniqueCount":{"type":"number"},"pattern":{"type":"string"}}}',
+    exampleInput: '{"text":"Contact us at hello@build4.ai or support@build4.ai for help","pattern":"email"}',
+    exampleOutput: '{"matches":["hello@build4.ai","support@build4.ai"],"unique":["hello@build4.ai","support@build4.ai"],"count":2,"uniqueCount":2,"pattern":"email"}',
+  },
+  "formatting": {
+    code: `const data = input.data;
+const format = input.format || "json";
+let __result__;
+if (format === "csv") {
+  if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object") {
+    const headers = Object.keys(data[0]);
+    const rows = data.map(row => headers.map(h => String(row[h] ?? "")).join(","));
+    __result__ = { formatted: [headers.join(","), ...rows].join("\\n"), format: "csv", rowCount: data.length };
+  } else {
+    __result__ = { formatted: String(data), format: "csv", rowCount: 1 };
+  }
+} else if (format === "markdown") {
+  if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object") {
+    const headers = Object.keys(data[0]);
+    const headerRow = "| " + headers.join(" | ") + " |";
+    const sepRow = "| " + headers.map(() => "---").join(" | ") + " |";
+    const rows = data.map(row => "| " + headers.map(h => String(row[h] ?? "")).join(" | ") + " |");
+    __result__ = { formatted: [headerRow, sepRow, ...rows].join("\\n"), format: "markdown", rowCount: data.length };
+  } else {
+    __result__ = { formatted: JSON.stringify(data, null, 2), format: "markdown", rowCount: 1 };
+  }
+} else {
+  __result__ = { formatted: JSON.stringify(data, null, 2), format: "json", size: JSON.stringify(data).length };
+}`,
+    inputSchema: '{"type":"object","required":["data"],"properties":{"data":{"description":"Data to format"},"format":{"type":"string","description":"Output format: json, csv, markdown"}}}',
+    outputSchema: '{"type":"object","properties":{"formatted":{"type":"string"},"format":{"type":"string"}}}',
+    exampleInput: '{"data":[{"name":"Agent-1","score":95},{"name":"Agent-2","score":87}],"format":"csv"}',
+    exampleOutput: '{"formatted":"name,score\\nAgent-1,95\\nAgent-2,87","format":"csv","rowCount":2}',
+  },
+  "math-compute": {
+    code: `const operation = input.operation || "evaluate";
+const values = input.values || [];
+let __result__;
+if (operation === "evaluate" && input.expression) {
+  const expr = input.expression.replace(/[^0-9+\\-*/().\\s]/g, "");
+  try { __result__ = { result: Function('"use strict"; return (' + expr + ')')(), expression: input.expression }; }
+  catch { __result__ = { error: "Invalid expression", expression: input.expression }; }
+} else if (operation === "statistics" && values.length > 0) {
+  const nums = values.map(Number).filter(n => !isNaN(n));
+  const sum = nums.reduce((a, b) => a + b, 0);
+  const mean = sum / nums.length;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const median = nums.length % 2 === 0 ? (sorted[nums.length/2-1] + sorted[nums.length/2]) / 2 : sorted[Math.floor(nums.length/2)];
+  const variance = nums.reduce((acc, n) => acc + Math.pow(n - mean, 2), 0) / nums.length;
+  __result__ = { sum, mean, median, min: sorted[0], max: sorted[sorted.length-1], variance, stddev: Math.sqrt(variance), count: nums.length };
+} else if (operation === "matrix" && input.a && input.b) {
+  const a = input.a, b = input.b;
+  if (a.length > 0 && b.length > 0 && a[0].length === b.length) {
+    const result = a.map((row, i) => b[0].map((_, j) => row.reduce((sum, val, k) => sum + val * b[k][j], 0)));
+    __result__ = { result, rows: result.length, cols: result[0].length };
+  } else { __result__ = { error: "Matrix dimensions incompatible" }; }
+} else {
+  __result__ = { error: "Unsupported operation. Use: evaluate, statistics, matrix" };
+}`,
+    inputSchema: '{"type":"object","properties":{"operation":{"type":"string","description":"Operation: evaluate, statistics, matrix"},"expression":{"type":"string","description":"Math expression to evaluate"},"values":{"type":"array","description":"Array of numbers for statistics"},"a":{"type":"array","description":"First matrix"},"b":{"type":"array","description":"Second matrix"}}}',
+    outputSchema: '{"type":"object","properties":{"result":{}}}',
+    exampleInput: '{"operation":"statistics","values":[10,20,30,40,50]}',
+    exampleOutput: '{"sum":150,"mean":30,"median":30,"min":10,"max":50,"variance":200,"stddev":14.14,"count":5}',
+  },
+};

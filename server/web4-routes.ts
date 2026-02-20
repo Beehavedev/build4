@@ -14,8 +14,12 @@ import {
   web4SendMessageRequestSchema,
   web4InferenceRequestSchema,
   web4SetProviderRequestSchema,
+  executeSkillRequestSchema,
+  rateSkillRequestSchema,
+  createJobRequestSchema,
   PLATFORM_FEES,
 } from "@shared/schema";
+import { executeSkillCode, validateSkillCode } from "./skill-executor";
 
 export function registerWeb4Routes(app: Express): void {
   app.get("/api/web4/agents", async (req: Request, res: Response) => {
@@ -696,6 +700,223 @@ export function registerWeb4Routes(app: Express): void {
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/marketplace/skills", async (req: Request, res: Response) => {
+    try {
+      const category = req.query.category as string | undefined;
+      const executableOnly = req.query.executable === "true";
+      let skills;
+      if (executableOnly) {
+        skills = await storage.getExecutableSkills();
+      } else {
+        skills = await storage.getTopSkills(100);
+      }
+      if (category && category !== "all") {
+        skills = skills.filter(s => s.category === category);
+      }
+      const agents = await storage.getAllAgents();
+      const agentMap = new Map(agents.map(a => [a.id, a]));
+      const enriched = skills.map(s => ({
+        ...s,
+        agentName: agentMap.get(s.agentId)?.name || "Unknown",
+        agentModel: agentMap.get(s.agentId)?.modelType || "unknown",
+        priceFormatted: (Number(BigInt(s.priceAmount)) / 1e18).toFixed(6) + " BNB",
+        ratingFormatted: s.totalRatings > 0 ? (s.avgRating / 100).toFixed(1) : "No ratings",
+      }));
+      res.json(enriched);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/marketplace/skills/:skillId", async (req: Request, res: Response) => {
+    try {
+      const skill = await storage.getSkill(req.params.skillId);
+      if (!skill) return res.status(404).json({ error: "Skill not found" });
+      const agent = await storage.getAgent(skill.agentId);
+      const executions = await storage.getSkillExecutions(skill.id, 10);
+      res.json({
+        ...skill,
+        agentName: agent?.name || "Unknown",
+        agentModel: agent?.modelType || "unknown",
+        priceFormatted: (Number(BigInt(skill.priceAmount)) / 1e18).toFixed(6) + " BNB",
+        ratingFormatted: skill.totalRatings > 0 ? (skill.avgRating / 100).toFixed(1) : "No ratings",
+        recentExecutions: executions.map(e => ({
+          id: e.id,
+          status: e.status,
+          latencyMs: e.latencyMs,
+          callerType: e.callerType,
+          rating: e.rating,
+          createdAt: e.createdAt,
+        })),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/marketplace/skills/:skillId/execute", async (req: Request, res: Response) => {
+    try {
+      const parsed = executeSkillRequestSchema.parse(req.body);
+      const skill = await storage.getSkill(req.params.skillId);
+      if (!skill) return res.status(404).json({ error: "Skill not found" });
+      if (!skill.isExecutable || !skill.code) {
+        return res.status(400).json({ error: "This skill is not executable" });
+      }
+
+      const result = executeSkillCode(skill.code, parsed.input, skill.inputSchema);
+
+      const execution = await storage.createSkillExecution({
+        skillId: skill.id,
+        callerType: parsed.callerType,
+        callerId: parsed.callerId || null,
+        inputJson: JSON.stringify(parsed.input),
+        outputJson: result.success ? JSON.stringify(result.output) : null,
+        status: result.success ? "success" : "error",
+        errorMessage: result.error || null,
+        latencyMs: result.latencyMs,
+        costWei: "0",
+      });
+
+      await storage.updateSkillExecutionCount(skill.id);
+
+      if (parsed.callerType === "agent" && parsed.callerId) {
+        const wallet = await storage.getWallet(parsed.callerId);
+        if (wallet) {
+          const usageFee = BigInt(skill.priceAmount) / BigInt(10);
+          if (BigInt(wallet.balance) >= usageFee) {
+            const newBal = (BigInt(wallet.balance) - usageFee).toString();
+            await storage.updateWalletBalance(parsed.callerId, newBal, "0", usageFee.toString());
+            const sellerWallet = await storage.getWallet(skill.agentId);
+            if (sellerWallet) {
+              const sellerNewBal = (BigInt(sellerWallet.balance) + usageFee).toString();
+              await storage.updateWalletBalance(skill.agentId, sellerNewBal, usageFee.toString(), "0");
+            }
+          }
+        }
+      }
+
+      res.json({
+        executionId: execution.id,
+        success: result.success,
+        output: result.output,
+        error: result.error,
+        latencyMs: result.latencyMs,
+        skillName: skill.name,
+        agentId: skill.agentId,
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/marketplace/skills/:skillId/rate", async (req: Request, res: Response) => {
+    try {
+      const parsed = rateSkillRequestSchema.parse(req.body);
+      const skill = await storage.getSkill(req.params.skillId);
+      if (!skill) return res.status(404).json({ error: "Skill not found" });
+      await storage.updateSkillRating(skill.id, parsed.rating);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/marketplace/stats", async (_req: Request, res: Response) => {
+    try {
+      const stats = await storage.getMarketplaceStats();
+      res.json(stats);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/marketplace/categories", async (_req: Request, res: Response) => {
+    try {
+      const skills = await storage.getTopSkills(200);
+      const categoryCounts: Record<string, number> = {};
+      skills.forEach(s => {
+        categoryCounts[s.category] = (categoryCounts[s.category] || 0) + 1;
+      });
+      res.json(categoryCounts);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/web4/jobs/create", async (req: Request, res: Response) => {
+    try {
+      const parsed = createJobRequestSchema.parse(req.body);
+      const client = await storage.getAgent(parsed.clientAgentId);
+      if (!client) return res.status(404).json({ error: "Client agent not found" });
+      const wallet = await storage.getWallet(parsed.clientAgentId);
+      if (!wallet || BigInt(wallet.balance) < BigInt(parsed.budget)) {
+        return res.status(400).json({ error: "Insufficient balance to post job" });
+      }
+      const escrow = BigInt(parsed.budget);
+      const newBal = (BigInt(wallet.balance) - escrow).toString();
+      await storage.updateWalletBalance(parsed.clientAgentId, newBal, "0", escrow.toString());
+      const job = await storage.createJob({
+        clientAgentId: parsed.clientAgentId,
+        title: parsed.title,
+        description: parsed.description,
+        category: parsed.category,
+        budget: parsed.budget,
+        status: "open",
+        escrowAmount: escrow.toString(),
+      });
+      res.json(job);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/web4/jobs", async (req: Request, res: Response) => {
+    try {
+      const category = req.query.category as string | undefined;
+      const jobs = await storage.getOpenJobs(category);
+      const agents = await storage.getAllAgents();
+      const agentMap = new Map(agents.map(a => [a.id, a]));
+      const enriched = jobs.map(j => ({
+        ...j,
+        clientName: agentMap.get(j.clientAgentId)?.name || "Unknown",
+        budgetFormatted: (Number(BigInt(j.budget)) / 1e18).toFixed(6) + " BNB",
+      }));
+      res.json(enriched);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/web4/jobs/:jobId/accept", async (req: Request, res: Response) => {
+    try {
+      const { workerAgentId } = req.body;
+      if (!workerAgentId) return res.status(400).json({ error: "Worker agent ID required" });
+      const job = await storage.acceptJob(req.params.jobId, workerAgentId);
+      if (!job) return res.status(404).json({ error: "Job not found or already taken" });
+      res.json(job);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/web4/jobs/:jobId/complete", async (req: Request, res: Response) => {
+    try {
+      const { resultJson } = req.body;
+      const job = await storage.completeJob(req.params.jobId, resultJson || "{}");
+      if (!job) return res.status(404).json({ error: "Job not found" });
+      if (job.workerAgentId && job.escrowAmount) {
+        const workerWallet = await storage.getWallet(job.workerAgentId);
+        if (workerWallet) {
+          const newBal = (BigInt(workerWallet.balance) + BigInt(job.escrowAmount)).toString();
+          await storage.updateWalletBalance(job.workerAgentId, newBal, job.escrowAmount, "0");
+        }
+      }
+      res.json(job);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
     }
   });
 }

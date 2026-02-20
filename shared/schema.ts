@@ -76,10 +76,20 @@ export const agentSkills = pgTable("agent_skills", {
   isActive: boolean("is_active").notNull().default(true),
   totalPurchases: integer("total_purchases").notNull().default(0),
   totalRevenue: text("total_revenue").notNull().default("0"),
+  code: text("code"),
+  inputSchema: text("input_schema"),
+  outputSchema: text("output_schema"),
+  exampleInput: text("example_input"),
+  exampleOutput: text("example_output"),
+  version: integer("version").notNull().default(1),
+  isExecutable: boolean("is_executable").notNull().default(false),
+  executionCount: integer("execution_count").notNull().default(0),
+  avgRating: integer("avg_rating").notNull().default(0),
+  totalRatings: integer("total_ratings").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertAgentSkillSchema = createInsertSchema(agentSkills).omit({ id: true, createdAt: true, totalPurchases: true, totalRevenue: true });
+export const insertAgentSkillSchema = createInsertSchema(agentSkills).omit({ id: true, createdAt: true, totalPurchases: true, totalRevenue: true, executionCount: true, avgRating: true, totalRatings: true });
 export type InsertAgentSkill = z.infer<typeof insertAgentSkillSchema>;
 export type AgentSkill = typeof agentSkills.$inferSelect;
 
@@ -268,6 +278,66 @@ export const insertPlatformRevenueSchema = createInsertSchema(platformRevenue).o
 export type InsertPlatformRevenue = z.infer<typeof insertPlatformRevenueSchema>;
 export type PlatformRevenue = typeof platformRevenue.$inferSelect;
 
+export const skillExecutions = pgTable("skill_executions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  skillId: varchar("skill_id").notNull(),
+  callerType: text("caller_type").notNull().default("user"),
+  callerId: varchar("caller_id"),
+  inputJson: text("input_json"),
+  outputJson: text("output_json"),
+  status: text("status").notNull().default("pending"),
+  errorMessage: text("error_message"),
+  latencyMs: integer("latency_ms"),
+  rating: integer("rating"),
+  costWei: text("cost_wei").notNull().default("0"),
+  txHash: text("tx_hash"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSkillExecutionSchema = createInsertSchema(skillExecutions).omit({ id: true, createdAt: true });
+export type InsertSkillExecution = z.infer<typeof insertSkillExecutionSchema>;
+export type SkillExecution = typeof skillExecutions.$inferSelect;
+
+export const agentMemory = pgTable("agent_memory", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  memoryType: text("memory_type").notNull(),
+  key: text("key").notNull(),
+  value: text("value").notNull(),
+  confidence: integer("confidence").notNull().default(50),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentMemorySchema = createInsertSchema(agentMemory).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAgentMemory = z.infer<typeof insertAgentMemorySchema>;
+export type AgentMemory = typeof agentMemory.$inferSelect;
+
+export const agentJobs = pgTable("agent_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientAgentId: varchar("client_agent_id").notNull(),
+  workerAgentId: varchar("worker_agent_id"),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  category: text("category").notNull().default("general"),
+  budget: text("budget").notNull(),
+  status: text("status").notNull().default("open"),
+  resultJson: text("result_json"),
+  escrowAmount: text("escrow_amount"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentJobSchema = createInsertSchema(agentJobs).omit({ id: true, createdAt: true, completedAt: true });
+export type InsertAgentJob = z.infer<typeof insertAgentJobSchema>;
+export type AgentJob = typeof agentJobs.$inferSelect;
+
+export const SKILL_CATEGORIES = [
+  "text-analysis", "code-generation", "data-transform", "math-compute",
+  "content-creation", "translation", "summarization", "classification",
+  "extraction", "formatting", "general"
+] as const;
+
 export const PLATFORM_FEES = {
   AGENT_CREATION_FEE: "1000000000000000",
   REPLICATION_FEE_BPS: 500,
@@ -359,4 +429,23 @@ export const web4InferenceRequestSchema = z.object({
 export const web4SetProviderRequestSchema = z.object({
   agentId: z.string().min(1),
   providerId: z.string().min(1),
+});
+
+export const executeSkillRequestSchema = z.object({
+  input: z.record(z.any()),
+  callerType: z.enum(["user", "agent"]).default("user"),
+  callerId: z.string().optional(),
+});
+
+export const rateSkillRequestSchema = z.object({
+  executionId: z.string().min(1),
+  rating: z.number().min(1).max(5),
+});
+
+export const createJobRequestSchema = z.object({
+  clientAgentId: z.string().min(1),
+  title: z.string().min(1).max(200),
+  description: z.string().min(1).max(2000),
+  category: z.string().default("general"),
+  budget: z.string().min(1),
 });

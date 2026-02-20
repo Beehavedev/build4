@@ -16,12 +16,16 @@ import {
   type InferenceProvider, type InsertInferenceProvider,
   type InferenceRequest, type InsertInferenceRequest,
   type PlatformRevenue, type InsertPlatformRevenue,
+  type SkillExecution, type InsertSkillExecution,
+  type AgentMemory, type InsertAgentMemory,
+  type AgentJob, type InsertAgentJob,
   users, agents, agentWallets, agentTransactions,
   agentSkills, skillPurchases, agentEvolutions,
   agentLineage, agentRuntimeProfiles, agentSurvivalStatus,
   agentConstitution, agentSoulEntries, agentAuditLogs, agentMessages,
   inferenceProviders, inferenceRequests,
-  platformRevenue, PLATFORM_FEES,
+  platformRevenue, skillExecutions, agentMemory, agentJobs,
+  PLATFORM_FEES,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -130,6 +134,23 @@ export interface IStorage {
   getAgentsByWallet(walletAddress: string): Promise<Agent[]>;
   getUnclaimedAgents(): Promise<Agent[]>;
   createFullAgent(name: string, bio: string | undefined, modelType: string, initialDeposit: string, onchainTxHash?: string, onchainChainId?: number, creatorWallet?: string): Promise<{ agent: Agent; wallet: AgentWallet }>;
+
+  createSkillExecution(exec: InsertSkillExecution): Promise<SkillExecution>;
+  getSkillExecutions(skillId: string, limit?: number): Promise<SkillExecution[]>;
+  updateSkillExecutionCount(skillId: string): Promise<void>;
+  updateSkillRating(skillId: string, rating: number): Promise<void>;
+  getExecutableSkills(): Promise<AgentSkill[]>;
+  getTopSkills(limit?: number): Promise<AgentSkill[]>;
+  getMarketplaceStats(): Promise<{ totalSkills: number; executableSkills: number; totalExecutions: number; totalAgents: number }>;
+
+  getAgentMemories(agentId: string, memoryType?: string): Promise<AgentMemory[]>;
+  upsertAgentMemory(agentId: string, memoryType: string, key: string, value: string, confidence?: number): Promise<AgentMemory>;
+
+  createJob(job: InsertAgentJob): Promise<AgentJob>;
+  getOpenJobs(category?: string): Promise<AgentJob[]>;
+  getAgentJobs(agentId: string): Promise<AgentJob[]>;
+  acceptJob(jobId: string, workerAgentId: string): Promise<AgentJob | undefined>;
+  completeJob(jobId: string, resultJson: string): Promise<AgentJob | undefined>;
 
   seedDemoData(): Promise<void>;
 }
@@ -1025,6 +1046,104 @@ export class DatabaseStorage implements IStorage {
         smartContractIntegration: true,
       }),
     });
+  }
+
+  async createSkillExecution(exec: InsertSkillExecution): Promise<SkillExecution> {
+    const [result] = await db.insert(skillExecutions).values(exec).returning();
+    return result;
+  }
+
+  async getSkillExecutions(skillId: string, limit: number = 50): Promise<SkillExecution[]> {
+    return db.select().from(skillExecutions).where(eq(skillExecutions.skillId, skillId)).orderBy(desc(skillExecutions.createdAt)).limit(limit);
+  }
+
+  async updateSkillExecutionCount(skillId: string): Promise<void> {
+    await db.update(agentSkills)
+      .set({ executionCount: sql`${agentSkills.executionCount} + 1` })
+      .where(eq(agentSkills.id, skillId));
+  }
+
+  async updateSkillRating(skillId: string, rating: number): Promise<void> {
+    const skill = await this.getSkill(skillId);
+    if (!skill) return;
+    const newTotal = skill.totalRatings + 1;
+    const newAvg = Math.round(((skill.avgRating * skill.totalRatings) + (rating * 100)) / newTotal);
+    await db.update(agentSkills)
+      .set({ avgRating: newAvg, totalRatings: newTotal })
+      .where(eq(agentSkills.id, skillId));
+  }
+
+  async getExecutableSkills(): Promise<AgentSkill[]> {
+    return db.select().from(agentSkills)
+      .where(and(eq(agentSkills.isExecutable, true), eq(agentSkills.isActive, true)))
+      .orderBy(desc(agentSkills.executionCount));
+  }
+
+  async getTopSkills(limit: number = 20): Promise<AgentSkill[]> {
+    return db.select().from(agentSkills)
+      .where(eq(agentSkills.isActive, true))
+      .orderBy(desc(agentSkills.executionCount))
+      .limit(limit);
+  }
+
+  async getMarketplaceStats(): Promise<{ totalSkills: number; executableSkills: number; totalExecutions: number; totalAgents: number }> {
+    const allSkills = await db.select().from(agentSkills).where(eq(agentSkills.isActive, true));
+    const execSkills = allSkills.filter(s => s.isExecutable);
+    const totalExec = allSkills.reduce((sum, s) => sum + s.executionCount, 0);
+    const allAgents = await db.select().from(agents);
+    return { totalSkills: allSkills.length, executableSkills: execSkills.length, totalExecutions: totalExec, totalAgents: allAgents.length };
+  }
+
+  async getAgentMemories(agentId: string, memoryType?: string): Promise<AgentMemory[]> {
+    if (memoryType) {
+      return db.select().from(agentMemory).where(and(eq(agentMemory.agentId, agentId), eq(agentMemory.memoryType, memoryType)));
+    }
+    return db.select().from(agentMemory).where(eq(agentMemory.agentId, agentId));
+  }
+
+  async upsertAgentMemory(agentId: string, memoryType: string, key: string, value: string, confidence: number = 50): Promise<AgentMemory> {
+    const existing = await db.select().from(agentMemory)
+      .where(and(eq(agentMemory.agentId, agentId), eq(agentMemory.memoryType, memoryType), eq(agentMemory.key, key)));
+    if (existing.length > 0) {
+      const [updated] = await db.update(agentMemory)
+        .set({ value, confidence, updatedAt: new Date() })
+        .where(eq(agentMemory.id, existing[0].id)).returning();
+      return updated;
+    }
+    const [created] = await db.insert(agentMemory).values({ agentId, memoryType, key, value, confidence }).returning();
+    return created;
+  }
+
+  async createJob(job: InsertAgentJob): Promise<AgentJob> {
+    const [result] = await db.insert(agentJobs).values(job).returning();
+    return result;
+  }
+
+  async getOpenJobs(category?: string): Promise<AgentJob[]> {
+    if (category) {
+      return db.select().from(agentJobs).where(and(eq(agentJobs.status, "open"), eq(agentJobs.category, category))).orderBy(desc(agentJobs.createdAt));
+    }
+    return db.select().from(agentJobs).where(eq(agentJobs.status, "open")).orderBy(desc(agentJobs.createdAt));
+  }
+
+  async getAgentJobs(agentId: string): Promise<AgentJob[]> {
+    return db.select().from(agentJobs)
+      .where(sql`${agentJobs.clientAgentId} = ${agentId} OR ${agentJobs.workerAgentId} = ${agentId}`)
+      .orderBy(desc(agentJobs.createdAt));
+  }
+
+  async acceptJob(jobId: string, workerAgentId: string): Promise<AgentJob | undefined> {
+    const [result] = await db.update(agentJobs)
+      .set({ workerAgentId, status: "in_progress" })
+      .where(and(eq(agentJobs.id, jobId), eq(agentJobs.status, "open"))).returning();
+    return result;
+  }
+
+  async completeJob(jobId: string, resultJson: string): Promise<AgentJob | undefined> {
+    const [result] = await db.update(agentJobs)
+      .set({ status: "completed", resultJson, completedAt: new Date() })
+      .where(eq(agentJobs.id, jobId)).returning();
+    return result;
   }
 }
 

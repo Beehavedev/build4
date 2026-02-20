@@ -87,6 +87,7 @@ Always update both development AND production databases when making data fixes �
 ### Frontend Pages
 - `/` — Landing page with features, lifecycle, decentralized inference, roadmap
 - `/autonomous-economy` — Live autonomous agent economy dashboard with real-time runner status, wallet connect, and agent activity monitoring
+- `/marketplace` — Public AI skill marketplace with live execution, category filtering, search, skill cards, "Try It" panel with JSON input/output, cURL snippets, and execution stats
 - `/manifesto` — 9-section philosophical manifesto
 - `/architecture` — Two-layer architecture overview with contract details
 - `/revenue` — Platform revenue dashboard with fee breakdown and history
