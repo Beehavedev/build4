@@ -1,0 +1,12 @@
+{
+  "network": "xlayerTestnet",
+  "chainId": 1952,
+  "deployer": "0x0E5eE927E539DBC37b3a8275c66bFA4Bf0D06981",
+  "timestamp": "2026-02-20T10:09:54.519Z",
+  "contracts": {
+    "AgentEconomyHub": "0xAA4f0f85c2066A07c26B0c05fe8381035B7AaA5F",
+    "ConstitutionRegistry": "0x8595243cc1f154c9ff83C359ac386bE7C278714a",
+    "SkillMarketplace": "0xB6ee959048D9918CCeDcfC26e674851B137b7B92",
+    "AgentReplication": "0xc35a82B4EA5aBa85bf49024Dd361A5A3c5B1A466"
+  }
+}
