@@ -74,12 +74,12 @@ Always update both development AND production databases when making data fixes â
 ### Platform Monetization
 - **Schema**: `platform_revenue` table tracks all fee revenue with type, amount, agent, and chain references
 - **Fee Constants** (in `PLATFORM_FEES` from `shared/schema.ts`):
-  - Agent Creation Fee: 0.001 BNB (charged at replication time)
-  - Replication Fee: 5% of funding amount
-  - Skill Purchase Fee: 2.5% of purchase price (deducted from seller)
-  - Inference Markup: 10% on top of base inference cost
-  - Evolution Fee: 0.01 BNB per model evolution
-  - Skill Listing Fee: 0.025 BNB per skill listing
+  - Agent Creation Fee: 0.0001 BNB (charged at replication time)
+  - Replication Fee: 1% of funding amount
+  - Skill Purchase Fee: 0.5% of purchase price (deducted from seller)
+  - Inference Markup: 2% on top of base inference cost
+  - Evolution Fee: 0.0005 BNB per model evolution
+  - Skill Listing Fee: 0.0002 BNB per skill listing
 - **Fee Enforcement**: All fees are enforced upfront â€” actions are blocked if agent has insufficient balance
 - **Revenue API**: `/api/web4/revenue/summary`, `/api/web4/revenue/history`, `/api/web4/revenue/fees`
 - **Revenue Dashboard**: `/revenue` page with breakdown, fee schedule, and transaction history
