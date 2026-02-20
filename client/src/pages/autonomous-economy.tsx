@@ -60,11 +60,11 @@ function formatShortCredits(weiStr: string): string {
 
 function tierColor(tier: string): string {
   switch (tier) {
-    case "normal": return "text-green-500";
-    case "low_compute": return "text-amber-500";
-    case "critical": return "text-red-500";
-    case "dead": return "text-neutral-500";
-    default: return "text-neutral-400";
+    case "normal": return "text-primary";
+    case "low_compute": return "text-foreground/70";
+    case "critical": return "text-destructive";
+    case "dead": return "text-muted-foreground";
+    default: return "text-muted-foreground";
   }
 }
 
@@ -80,14 +80,14 @@ function tierBadgeVariant(tier: string): "default" | "secondary" | "destructive"
 function Section({ title, icon: Icon, children, defaultOpen = false, count }: { title: string; icon: any; children: React.ReactNode; defaultOpen?: boolean; count?: number }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border-b border-neutral-200 dark:border-neutral-800">
+    <div className="border-b">
       <button
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 px-4 py-3 text-left hover-elevate"
         data-testid={`section-toggle-${title.toLowerCase().replace(/\s/g, "-")}`}
       >
-        {open ? <ChevronDown className="w-4 h-4 text-amber-500" /> : <ChevronRight className="w-4 h-4 text-neutral-400" />}
-        <Icon className="w-4 h-4 text-amber-500" />
+        {open ? <ChevronDown className="w-4 h-4 text-primary/70" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+        <Icon className="w-4 h-4 text-primary/70" />
         <span className="font-mono text-sm font-semibold tracking-wide">{title}</span>
         {count !== undefined && <Badge variant="secondary" className="ml-auto font-mono text-xs">{count}</Badge>}
       </button>
@@ -98,8 +98,8 @@ function Section({ title, icon: Icon, children, defaultOpen = false, count }: { 
 
 function TerminalLine({ prefix = ">", children, dim = false }: { prefix?: string; children: React.ReactNode; dim?: boolean }) {
   return (
-    <div className={`font-mono text-xs flex gap-2 py-0.5 ${dim ? "text-neutral-400 dark:text-neutral-500" : ""}`}>
-      <span className="text-amber-500 select-none flex-shrink-0">{prefix}</span>
+    <div className={`font-mono text-xs flex gap-2 py-0.5 ${dim ? "text-muted-foreground" : ""}`}>
+      <span className="text-primary/70 select-none flex-shrink-0">{prefix}</span>
       <span className="flex-1 min-w-0">{children}</span>
     </div>
   );
@@ -286,7 +286,7 @@ export default function AutonomousEconomy() {
   if (agentsLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="font-mono text-sm text-neutral-400 flex items-center gap-2">
+        <div className="font-mono text-sm text-muted-foreground flex items-center gap-2">
           <RefreshCw className="w-4 h-4 animate-spin" />
           Initializing agent economy...
         </div>
@@ -300,7 +300,7 @@ export default function AutonomousEconomy() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-neutral-200 dark:border-neutral-800 sticky top-0 z-50 bg-background/95 backdrop-blur">
+      <header className="border-b sticky top-0 z-50 bg-background/95 backdrop-blur">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-3">
             <Link href="/">
@@ -309,16 +309,16 @@ export default function AutonomousEconomy() {
               </Button>
             </Link>
             <div className="flex items-center gap-2">
-              <Terminal className="w-5 h-5 text-amber-500" />
-              <span className="font-mono font-bold text-sm tracking-wider">BUILD4</span>
-              <span className="text-neutral-400 font-mono text-xs">/ autonomous-economy</span>
+              <Terminal className="w-4 h-4 text-primary" />
+              <span className="font-mono font-bold text-sm tracking-wider">BUILD<span className="text-primary">4</span></span>
+              <span className="text-muted-foreground font-mono text-xs">/ autonomous-economy</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <select
               value={agentId || ""}
               onChange={(e) => setSelectedAgentId(e.target.value)}
-              className="font-mono text-xs bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-md px-3 py-2 min-w-[180px]"
+              className="font-mono text-xs bg-card border rounded-md px-3 py-2 min-w-[180px]"
               data-testid="select-agent"
             >
               {agentsList.map((a) => (
@@ -351,11 +351,11 @@ export default function AutonomousEconomy() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
                   <div className="text-center p-2">
-                    <div className="font-mono text-lg font-bold text-amber-500" data-testid="text-wallet-balance">{formatShortCredits(wallet?.balance || "0")}</div>
+                    <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-balance">{formatShortCredits(wallet?.balance || "0")}</div>
                     <div className="text-xs text-muted-foreground">Balance</div>
                   </div>
                   <div className="text-center p-2">
-                    <div className="font-mono text-lg font-bold text-green-500" data-testid="text-wallet-earned">{formatShortCredits(wallet?.totalEarned || "0")}</div>
+                    <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-earned">{formatShortCredits(wallet?.totalEarned || "0")}</div>
                     <div className="text-xs text-muted-foreground">Earned</div>
                   </div>
                   <div className="text-center p-2">
@@ -379,11 +379,11 @@ export default function AutonomousEconomy() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <Card className="p-3">
                 <div className="text-xs text-muted-foreground mb-1">Balance</div>
-                <div className="font-mono font-bold text-amber-500" data-testid="text-detail-balance">{formatCredits(wallet?.balance || "0")} credits</div>
+                <div className="font-mono font-bold text-primary" data-testid="text-detail-balance">{formatCredits(wallet?.balance || "0")} credits</div>
               </Card>
               <Card className="p-3">
                 <div className="text-xs text-muted-foreground mb-1">Total Earned</div>
-                <div className="font-mono font-bold text-green-500">{formatCredits(wallet?.totalEarned || "0")} credits</div>
+                <div className="font-mono font-bold text-primary">{formatCredits(wallet?.totalEarned || "0")} credits</div>
               </Card>
               <Card className="p-3">
                 <div className="text-xs text-muted-foreground mb-1">Total Spent</div>
@@ -393,8 +393,8 @@ export default function AutonomousEconomy() {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
               <Card className="p-3 space-y-2">
-                <div className="text-xs font-mono font-semibold flex items-center gap-1"><ArrowDownLeft className="w-3 h-3 text-green-500" /> Deposit</div>
-                <select value={depositAmt} onChange={(e) => setDepositAmt(e.target.value)} className="w-full font-mono text-xs bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-md px-2 py-1.5" data-testid="select-deposit-amount">
+                <div className="text-xs font-mono font-semibold flex items-center gap-1"><ArrowDownLeft className="w-3 h-3 text-primary" /> Deposit</div>
+                <select value={depositAmt} onChange={(e) => setDepositAmt(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-deposit-amount">
                   <option value="100000000000000000">0.1 credits</option>
                   <option value="500000000000000000">0.5 credits</option>
                   <option value="1000000000000000000">1.0 credits</option>
@@ -407,7 +407,7 @@ export default function AutonomousEconomy() {
               </Card>
               <Card className="p-3 space-y-2">
                 <div className="text-xs font-mono font-semibold flex items-center gap-1"><ArrowUpRight className="w-3 h-3 text-red-400" /> Withdraw</div>
-                <select value={withdrawAmt} onChange={(e) => setWithdrawAmt(e.target.value)} className="w-full font-mono text-xs bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-md px-2 py-1.5" data-testid="select-withdraw-amount">
+                <select value={withdrawAmt} onChange={(e) => setWithdrawAmt(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-withdraw-amount">
                   <option value="10000000000000000">0.01 credits</option>
                   <option value="100000000000000000">0.1 credits</option>
                   <option value="500000000000000000">0.5 credits</option>
@@ -419,8 +419,8 @@ export default function AutonomousEconomy() {
                 </Button>
               </Card>
               <Card className="p-3 space-y-2">
-                <div className="text-xs font-mono font-semibold flex items-center gap-1"><Send className="w-3 h-3 text-blue-500" /> Transfer</div>
-                <select value={transferTo} onChange={(e) => setTransferTo(e.target.value)} className="w-full font-mono text-xs bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-md px-2 py-1.5" data-testid="select-transfer-to">
+                <div className="text-xs font-mono font-semibold flex items-center gap-1"><Send className="w-3 h-3 text-primary/70" /> Transfer</div>
+                <select value={transferTo} onChange={(e) => setTransferTo(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-transfer-to">
                   <option value="">Select recipient...</option>
                   {agentsList.filter(a => a.id !== agentId).map(a => (
                     <option key={a.id} value={a.id}>{a.name}</option>
@@ -438,8 +438,8 @@ export default function AutonomousEconomy() {
                 <div className="text-xs font-mono font-semibold mb-2 text-muted-foreground">Recent Transactions</div>
                 <div className="space-y-1">
                   {transactions.slice(0, 10).map((tx) => (
-                    <div key={tx.id} className="flex items-center gap-2 font-mono text-xs py-1 border-b border-neutral-100 dark:border-neutral-800 last:border-0" data-testid={`row-transaction-${tx.id}`}>
-                      <span className={tx.type.startsWith("earn") || tx.type === "deposit" || tx.type === "revenue_share" ? "text-green-500" : "text-red-400"}>
+                    <div key={tx.id} className="flex items-center gap-2 font-mono text-xs py-1 border-b border-border last:border-0" data-testid={`row-transaction-${tx.id}`}>
+                      <span className={tx.type.startsWith("earn") || tx.type === "deposit" || tx.type === "revenue_share" ? "text-primary" : "text-red-400"}>
                         {tx.type.startsWith("earn") || tx.type === "deposit" || tx.type === "revenue_share" ? "+" : "-"}
                       </span>
                       <span className="font-semibold">{formatShortCredits(tx.amount)}</span>
@@ -467,7 +467,7 @@ export default function AutonomousEconomy() {
                         <div className="text-xs text-muted-foreground mt-0.5">{skill.description}</div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <div className="font-mono text-sm font-bold text-amber-500">{formatShortCredits(skill.priceAmount)}</div>
+                        <div className="font-mono text-sm font-bold text-primary">{formatShortCredits(skill.priceAmount)}</div>
                         <div className="text-[10px] text-muted-foreground">{skill.totalPurchases} sales</div>
                       </div>
                     </div>
@@ -494,7 +494,7 @@ export default function AutonomousEconomy() {
                           <div className="text-[10px] text-muted-foreground mt-1">by {seller?.name || "Unknown"}</div>
                         </div>
                         <div className="text-right flex-shrink-0 space-y-1">
-                          <div className="font-mono text-sm font-bold text-amber-500">{formatShortCredits(skill.priceAmount)}</div>
+                          <div className="font-mono text-sm font-bold text-primary">{formatShortCredits(skill.priceAmount)}</div>
                           <Button size="sm" onClick={() => purchaseSkillMutation.mutate(skill.id)} disabled={purchaseSkillMutation.isPending} data-testid={`button-purchase-skill-${skill.id}`}>
                             Purchase
                           </Button>
@@ -523,7 +523,7 @@ export default function AutonomousEconomy() {
 
             <Card className="p-3 space-y-2">
               <div className="text-xs font-mono font-semibold">Trigger Evolution</div>
-              <select value={evolveModel} onChange={(e) => setEvolveModel(e.target.value)} className="w-full font-mono text-xs bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-md px-2 py-1.5" data-testid="select-evolve-model">
+              <select value={evolveModel} onChange={(e) => setEvolveModel(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-evolve-model">
                 <option value="gpt-4o">GPT-4o</option>
                 <option value="gpt-4o-mini">GPT-4o Mini</option>
                 <option value="claude-3.5-sonnet">Claude 3.5 Sonnet</option>
@@ -531,7 +531,7 @@ export default function AutonomousEconomy() {
                 <option value="llama-3.1-70b">Llama 3.1 70B</option>
                 <option value="mistral-large">Mistral Large</option>
               </select>
-              <input type="text" placeholder="Reason for evolution..." value={evolveReason} onChange={(e) => setEvolveReason(e.target.value)} className="w-full font-mono text-xs bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-md px-2 py-1.5" data-testid="input-evolve-reason" />
+              <input type="text" placeholder="Reason for evolution..." value={evolveReason} onChange={(e) => setEvolveReason(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-evolve-reason" />
               <Button size="sm" className="w-full" onClick={() => evolveMutation.mutate({ toModel: evolveModel, reason: evolveReason })} disabled={evolveMutation.isPending} data-testid="button-evolve">
                 {evolveMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Brain className="w-3 h-3" />}
                 <span className="ml-1">Evolve</span>
@@ -543,8 +543,8 @@ export default function AutonomousEconomy() {
                 <div className="text-xs font-mono font-semibold text-muted-foreground">Evolution History</div>
                 {evolutionData!.evolutions.map((evo) => (
                   <div key={evo.id} className="font-mono text-xs flex items-center gap-2 py-1" data-testid={`row-evolution-${evo.id}`}>
-                    <span className="text-neutral-400">{evo.fromModel}</span>
-                    <ArrowUpRight className="w-3 h-3 text-amber-500" />
+                    <span className="text-muted-foreground">{evo.fromModel}</span>
+                    <ArrowUpRight className="w-3 h-3 text-primary" />
                     <span className="font-semibold">{evo.toModel}</span>
                     {evo.reason && <span className="text-muted-foreground truncate"> - {evo.reason}</span>}
                   </div>
@@ -568,8 +568,8 @@ export default function AutonomousEconomy() {
 
             <Card className="p-3 space-y-2">
               <div className="text-xs font-mono font-semibold">Spawn Child Agent</div>
-              <input type="text" placeholder="Child agent name..." value={childName} onChange={(e) => setChildName(e.target.value)} className="w-full font-mono text-xs bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-md px-2 py-1.5" data-testid="input-child-name" />
-              <select value={childFunding} onChange={(e) => setChildFunding(e.target.value)} className="w-full font-mono text-xs bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-md px-2 py-1.5" data-testid="select-child-funding">
+              <input type="text" placeholder="Child agent name..." value={childName} onChange={(e) => setChildName(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-child-name" />
+              <select value={childFunding} onChange={(e) => setChildFunding(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-child-funding">
                 <option value="100000000000000000">Fund 0.1 credits</option>
                 <option value="500000000000000000">Fund 0.5 credits</option>
                 <option value="1000000000000000000">Fund 1.0 credits</option>
@@ -591,7 +591,7 @@ export default function AutonomousEconomy() {
                         <div className="text-xs text-muted-foreground">Rev share: {child.revenueShareBps / 100}%</div>
                       </div>
                       <div className="text-right">
-                        <div className="font-mono text-sm text-amber-500">{formatShortCredits(child.wallet?.balance || "0")}</div>
+                        <div className="font-mono text-sm text-primary">{formatShortCredits(child.wallet?.balance || "0")}</div>
                         <div className="text-[10px] text-muted-foreground">Shared: {formatShortCredits(child.totalRevenueShared)}</div>
                       </div>
                     </div>
@@ -628,7 +628,7 @@ export default function AutonomousEconomy() {
                     const active = current >= thresh;
                     return (
                       <div key={tier} className="flex items-center gap-2 font-mono text-xs">
-                        <div className={`w-2 h-2 rounded-full ${active ? "bg-green-500" : "bg-neutral-300 dark:bg-neutral-700"}`} />
+                        <div className={`w-2 h-2 rounded-full ${active ? "bg-primary" : "bg-muted"}`} />
                         <span className={active ? "font-semibold" : "text-muted-foreground"}>{tier.toUpperCase().replace("_", " ")}</span>
                         <span className="text-muted-foreground ml-auto">&gt;= {formatCredits(threshold)} credits</span>
                       </div>
@@ -646,7 +646,7 @@ export default function AutonomousEconomy() {
             {constitution.map((law) => (
               <Card key={law.id} className="p-3" data-testid={`card-law-${law.lawNumber}`}>
                 <div className="flex items-start gap-3">
-                  <div className="font-mono text-lg font-bold text-amber-500 flex-shrink-0">{law.lawNumber}</div>
+                  <div className="font-mono text-lg font-bold text-primary flex-shrink-0">{law.lawNumber}</div>
                   <div>
                     <div className="font-mono font-semibold text-sm">{law.lawTitle}</div>
                     <div className="text-xs text-muted-foreground mt-1">{law.lawText}</div>
@@ -667,14 +667,14 @@ export default function AutonomousEconomy() {
 
             <Card className="p-3 space-y-2">
               <div className="text-xs font-mono font-semibold">New Entry</div>
-              <select value={soulType} onChange={(e) => setSoulType(e.target.value)} className="w-full font-mono text-xs bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-md px-2 py-1.5" data-testid="select-soul-type">
+              <select value={soulType} onChange={(e) => setSoulType(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-soul-type">
                 <option value="reflection">Reflection</option>
                 <option value="goal">Goal</option>
                 <option value="identity">Identity</option>
                 <option value="milestone">Milestone</option>
                 <option value="observation">Observation</option>
               </select>
-              <textarea placeholder="Record your thoughts..." value={soulEntry} onChange={(e) => setSoulEntry(e.target.value)} rows={3} className="w-full font-mono text-xs bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-md px-2 py-1.5 resize-none" data-testid="textarea-soul-entry" />
+              <textarea placeholder="Record your thoughts..." value={soulEntry} onChange={(e) => setSoulEntry(e.target.value)} rows={3} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5 resize-none" data-testid="textarea-soul-entry" />
               <Button size="sm" className="w-full" onClick={() => { soulMutation.mutate({ entry: soulEntry, entryType: soulType }); setSoulEntry(""); }} disabled={!soulEntry || soulMutation.isPending} data-testid="button-soul-entry">
                 {soulMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <BookOpen className="w-3 h-3" />}
                 <span className="ml-1">Record</span>
@@ -682,7 +682,7 @@ export default function AutonomousEconomy() {
             </Card>
 
             {soulEntries.map((entry) => (
-              <div key={entry.id} className="border-l-2 border-amber-500/30 pl-3 py-1" data-testid={`row-soul-${entry.id}`}>
+              <div key={entry.id} className="border-l-2 border-primary/30 pl-3 py-1" data-testid={`row-soul-${entry.id}`}>
                 <div className="flex items-center gap-2 mb-1">
                   <Badge variant="outline" className="text-[10px]">{entry.entryType}</Badge>
                   <span className="text-[10px] text-muted-foreground font-mono">{entry.createdAt ? new Date(entry.createdAt).toLocaleDateString() : ""}</span>
@@ -699,14 +699,14 @@ export default function AutonomousEconomy() {
 
             <Card className="p-3 space-y-2">
               <div className="text-xs font-mono font-semibold">Send Message</div>
-              <select value={msgTo} onChange={(e) => setMsgTo(e.target.value)} className="w-full font-mono text-xs bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-md px-2 py-1.5" data-testid="select-message-to">
+              <select value={msgTo} onChange={(e) => setMsgTo(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-message-to">
                 <option value="">Select recipient...</option>
                 {agentsList.filter(a => a.id !== agentId).map(a => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
               </select>
-              <input type="text" placeholder="Subject..." value={msgSubject} onChange={(e) => setMsgSubject(e.target.value)} className="w-full font-mono text-xs bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-md px-2 py-1.5" data-testid="input-message-subject" />
-              <textarea placeholder="Message body..." value={msgBody} onChange={(e) => setMsgBody(e.target.value)} rows={3} className="w-full font-mono text-xs bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-md px-2 py-1.5 resize-none" data-testid="textarea-message-body" />
+              <input type="text" placeholder="Subject..." value={msgSubject} onChange={(e) => setMsgSubject(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-message-subject" />
+              <textarea placeholder="Message body..." value={msgBody} onChange={(e) => setMsgBody(e.target.value)} rows={3} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5 resize-none" data-testid="textarea-message-body" />
               <Button size="sm" className="w-full" onClick={() => { msgTo && msgBody && messageMutation.mutate({ toAgentId: msgTo, subject: msgSubject, body: msgBody }); setMsgSubject(""); setMsgBody(""); }} disabled={!msgTo || !msgBody || messageMutation.isPending} data-testid="button-send-message">
                 {messageMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                 <span className="ml-1">Send</span>
@@ -714,7 +714,7 @@ export default function AutonomousEconomy() {
             </Card>
 
             {messages.map((msg) => (
-              <Card key={msg.id} className={`p-3 ${msg.status === "unread" ? "border-amber-500/50" : ""}`} data-testid={`card-message-${msg.id}`}>
+              <Card key={msg.id} className={`p-3 ${msg.status === "unread" ? "border-primary/40" : ""}`} data-testid={`card-message-${msg.id}`}>
                 <div className="flex items-start justify-between gap-2 flex-wrap">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -743,7 +743,7 @@ export default function AutonomousEconomy() {
             <TerminalLine prefix="$">audit.tail()</TerminalLine>
             {auditLogs.slice(0, 20).map((log) => (
               <div key={log.id} className="font-mono text-xs flex items-center gap-2 py-0.5" data-testid={`row-audit-${log.id}`}>
-                <span className="text-amber-500 w-3 flex-shrink-0">&gt;</span>
+                <span className="text-primary w-3 flex-shrink-0">&gt;</span>
                 <Badge variant="outline" className="text-[10px] flex-shrink-0">{log.actionType}</Badge>
                 <span className="text-muted-foreground truncate">{log.detailsJson ? JSON.parse(log.detailsJson).amount ? `${formatShortCredits(JSON.parse(log.detailsJson).amount)} credits` : JSON.stringify(JSON.parse(log.detailsJson)) : ""}</span>
                 <span className="text-[10px] text-muted-foreground ml-auto flex-shrink-0">{log.createdAt ? new Date(log.createdAt).toLocaleTimeString() : ""}</span>
