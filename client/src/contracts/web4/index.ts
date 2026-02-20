@@ -1864,11 +1864,23 @@ export const AgentReplicationABI = [
 ] as const;
 
 export const WEB4_ADDRESSES: Record<string, Record<Web4ContractName, string>> = {
+  "bnbTestnet": {
+    "AgentEconomyHub": "0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606",
+    "ConstitutionRegistry": "0x784dB7d65259069353eBf05eF17aA51CEfCCaA31",
+    "SkillMarketplace": "0xa6996A83B3909Ff12643A4a125eA2704097B0dD3",
+    "AgentReplication": "0xE49B8Be8416d53D4E0042ea6DEe7727241396b73"
+  },
   "hardhat": {
     "AgentEconomyHub": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
     "ConstitutionRegistry": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
     "SkillMarketplace": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
     "AgentReplication": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
+  },
+  "xlayerTestnet": {
+    "AgentEconomyHub": "0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606",
+    "ConstitutionRegistry": "0x784dB7d65259069353eBf05eF17aA51CEfCCaA31",
+    "SkillMarketplace": "0xa6996A83B3909Ff12643A4a125eA2704097B0dD3",
+    "AgentReplication": "0xE49B8Be8416d53D4E0042ea6DEe7727241396b73"
   }
 };
 

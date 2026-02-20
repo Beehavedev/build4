@@ -1,12 +1,12 @@
 {
   "network": "bnbTestnet",
   "chainId": 97,
-  "deployer": "0x0E5eE927E539DBC37b3a8275c66bFA4Bf0D06981",
-  "timestamp": "2026-02-20T10:08:57.744Z",
+  "deployer": "0x913a46e2D65C6F76CF4A4AD96B1c7913d5e324d9",
+  "timestamp": "2026-02-20T11:17:06.213Z",
   "contracts": {
-    "AgentEconomyHub": "0xAA4f0f85c2066A07c26B0c05fe8381035B7AaA5F",
-    "ConstitutionRegistry": "0x8595243cc1f154c9ff83C359ac386bE7C278714a",
-    "SkillMarketplace": "0xB6ee959048D9918CCeDcfC26e674851B137b7B92",
-    "AgentReplication": "0xc35a82B4EA5aBa85bf49024Dd361A5A3c5B1A466"
+    "AgentEconomyHub": "0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606",
+    "ConstitutionRegistry": "0x784dB7d65259069353eBf05eF17aA51CEfCCaA31",
+    "SkillMarketplace": "0xa6996A83B3909Ff12643A4a125eA2704097B0dD3",
+    "AgentReplication": "0xE49B8Be8416d53D4E0042ea6DEe7727241396b73"
   }
 }
