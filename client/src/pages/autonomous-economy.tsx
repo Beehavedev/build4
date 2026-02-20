@@ -378,6 +378,33 @@ export default function AutonomousEconomy() {
     onError: (e: Error) => toast({ title: t("dashboard.inferenceFailed"), description: e.message, variant: "destructive" }),
   });
 
+  const [showCreateAgent, setShowCreateAgent] = useState(false);
+  const [newAgentName, setNewAgentName] = useState("");
+  const [newAgentBio, setNewAgentBio] = useState("");
+  const [newAgentModel, setNewAgentModel] = useState("meta-llama/Llama-3.1-70B-Instruct");
+  const [newAgentDeposit, setNewAgentDeposit] = useState("100000000000000000");
+
+  const createAgentMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/web4/agents/create", {
+        name: newAgentName,
+        bio: newAgentBio || undefined,
+        modelType: newAgentModel,
+        initialDeposit: newAgentDeposit,
+      });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/agents"] });
+      setSelectedAgentId(data.agent?.id || null);
+      setShowCreateAgent(false);
+      setNewAgentName("");
+      setNewAgentBio("");
+      toast({ title: "Agent created", description: `${data.agent?.name} is now live with its own wallet` });
+    },
+    onError: (e: Error) => toast({ title: "Creation failed", description: e.message, variant: "destructive" }),
+  });
+
   const [inferencePrompt, setInferencePrompt] = useState("");
   const [inferencePreferDecentralized, setInferencePreferDecentralized] = useState(true);
 
@@ -427,6 +454,16 @@ export default function AutonomousEconomy() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            <Button
+              variant="default"
+              size="sm"
+              className="font-mono text-xs gap-1.5"
+              onClick={() => setShowCreateAgent(!showCreateAgent)}
+              data-testid="button-create-agent"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Create Agent</span>
+            </Button>
             <WalletConnector />
             <LanguageSwitcher />
             <select
@@ -452,6 +489,98 @@ export default function AutonomousEconomy() {
           </div>
         </div>
       </header>
+
+      {showCreateAgent && (
+        <div className="border-b bg-card/50">
+          <div className="max-w-5xl mx-auto px-3 sm:px-4 py-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Bot className="w-4 h-4 text-primary" />
+              <span className="font-mono text-sm font-semibold">Create New Agent</span>
+              <Badge variant="secondary" className="text-[10px] ml-auto">0.025 BNB creation fee</Badge>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <label className="font-mono text-xs text-muted-foreground">Agent Name *</label>
+                <input
+                  type="text"
+                  value={newAgentName}
+                  onChange={(e) => setNewAgentName(e.target.value)}
+                  placeholder="e.g. ATLAS-9"
+                  maxLength={50}
+                  className="w-full font-mono text-sm bg-background border rounded-md px-3 py-2"
+                  data-testid="input-agent-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="font-mono text-xs text-muted-foreground">Model</label>
+                <select
+                  value={newAgentModel}
+                  onChange={(e) => setNewAgentModel(e.target.value)}
+                  className="w-full font-mono text-sm bg-background border rounded-md px-3 py-2"
+                  data-testid="select-agent-model"
+                >
+                  <option value="meta-llama/Llama-3.1-70B-Instruct">Llama 3.1 70B</option>
+                  <option value="deepseek-ai/DeepSeek-V3">DeepSeek V3</option>
+                  <option value="Qwen/Qwen2.5-72B-Instruct">Qwen 2.5 72B</option>
+                </select>
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <label className="font-mono text-xs text-muted-foreground">Bio (optional)</label>
+                <input
+                  type="text"
+                  value={newAgentBio}
+                  onChange={(e) => setNewAgentBio(e.target.value)}
+                  placeholder="What does this agent specialize in?"
+                  maxLength={300}
+                  className="w-full font-mono text-sm bg-background border rounded-md px-3 py-2"
+                  data-testid="input-agent-bio"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="font-mono text-xs text-muted-foreground">Initial Deposit (wei)</label>
+                <select
+                  value={newAgentDeposit}
+                  onChange={(e) => setNewAgentDeposit(e.target.value)}
+                  className="w-full font-mono text-sm bg-background border rounded-md px-3 py-2"
+                  data-testid="select-agent-deposit"
+                >
+                  <option value="50000000000000000">0.05 BNB (minimum)</option>
+                  <option value="100000000000000000">0.1 BNB</option>
+                  <option value="250000000000000000">0.25 BNB</option>
+                  <option value="500000000000000000">0.5 BNB</option>
+                  <option value="1000000000000000000">1.0 BNB</option>
+                </select>
+                <p className="font-mono text-[10px] text-muted-foreground">
+                  0.025 BNB creation fee deducted • Remaining goes to agent wallet
+                </p>
+              </div>
+              <div className="flex items-end gap-2">
+                <Button
+                  onClick={() => createAgentMutation.mutate()}
+                  disabled={!newAgentName.trim() || createAgentMutation.isPending}
+                  className="font-mono text-xs gap-1.5"
+                  data-testid="button-submit-create-agent"
+                >
+                  {createAgentMutation.isPending ? (
+                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Creating...</>
+                  ) : (
+                    <><Plus className="w-3.5 h-3.5" /> Create Agent</>
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="font-mono text-xs"
+                  onClick={() => setShowCreateAgent(false)}
+                  data-testid="button-cancel-create"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-5xl mx-auto">
         <Section title={t("dashboard.overview")} icon={Bot} defaultOpen={true}>

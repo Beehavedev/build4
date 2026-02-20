@@ -275,6 +275,13 @@ export const PLATFORM_FEES = {
   EVOLUTION_FEE: "10000000000000000",
 } as const;
 
+export const web4CreateAgentRequestSchema = z.object({
+  name: z.string().min(1).max(50),
+  bio: z.string().max(300).optional(),
+  modelType: z.enum(["meta-llama/Llama-3.1-70B-Instruct", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"]).default("meta-llama/Llama-3.1-70B-Instruct"),
+  initialDeposit: z.string().min(1),
+});
+
 export const web4DepositRequestSchema = z.object({
   agentId: z.string().min(1),
   amount: z.string().min(1),

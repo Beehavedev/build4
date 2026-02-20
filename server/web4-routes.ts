@@ -2,8 +2,9 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
-import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus } from "./onchain";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, depositOnchain } from "./onchain";
 import {
+  web4CreateAgentRequestSchema,
   web4DepositRequestSchema,
   web4TransferRequestSchema,
   web4TipRequestSchema,
@@ -35,6 +36,32 @@ export function registerWeb4Routes(app: Express): void {
       res.json(agent);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/web4/agents/create", async (req: Request, res: Response) => {
+    try {
+      const parsed = web4CreateAgentRequestSchema.parse(req.body);
+
+      if (!/^\d+$/.test(parsed.initialDeposit)) {
+        return res.status(400).json({ error: "initialDeposit must be a numeric wei string" });
+      }
+
+      const result = await storage.createFullAgent(parsed.name, parsed.bio, parsed.modelType, parsed.initialDeposit);
+
+      let onchainTx: string | undefined;
+      if (isOnchainReady()) {
+        try {
+          const onchainResult = await depositOnchain(result.agent.id, result.wallet.balance);
+          if (onchainResult.success && onchainResult.txHash) {
+            onchainTx = onchainResult.txHash;
+          }
+        } catch {}
+      }
+
+      res.json({ ...result, onchainTx });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
     }
   });
 

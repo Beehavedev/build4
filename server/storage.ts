@@ -123,6 +123,8 @@ export interface IStorage {
   getPlatformRevenue(limit?: number): Promise<PlatformRevenue[]>;
   getPlatformRevenueSummary(): Promise<{ totalRevenue: string; byFeeType: Record<string, string>; totalTransactions: number }>;
 
+  createFullAgent(name: string, bio: string | undefined, modelType: string, initialDeposit: string): Promise<{ agent: Agent; wallet: AgentWallet }>;
+
   seedDemoData(): Promise<void>;
 }
 
@@ -764,6 +766,44 @@ export class DatabaseStorage implements IStorage {
     });
 
     return request;
+  }
+
+  async createFullAgent(name: string, bio: string | undefined, modelType: string, initialDeposit: string): Promise<{ agent: Agent; wallet: AgentWallet }> {
+    const creationFee = BigInt(PLATFORM_FEES.AGENT_CREATION_FEE);
+    const depositAmount = BigInt(initialDeposit);
+    if (depositAmount < creationFee) {
+      throw new Error(`Initial deposit must be at least ${creationFee.toString()} wei (0.025 BNB) to cover the agent creation fee`);
+    }
+
+    const agent = await this.createAgent({ name, bio, modelType, status: "active" });
+    const netDeposit = (depositAmount - creationFee).toString();
+    const wallet = await this.createWallet({ agentId: agent.id, balance: netDeposit, totalEarned: netDeposit, totalSpent: "0", status: "active" });
+    await this.createRuntimeProfile({ agentId: agent.id, modelName: modelType });
+    await this.createSurvivalStatus({ agentId: agent.id, tier: "dead", turnsAlive: 0 });
+
+    await this.createTransaction({
+      agentId: agent.id,
+      type: "deposit",
+      amount: netDeposit,
+      description: `Initial deposit (after 0.025 BNB creation fee)`,
+    });
+
+    await this.recordPlatformRevenue({
+      feeType: "agent_creation",
+      amount: creationFee.toString(),
+      agentId: agent.id,
+      description: `Agent creation fee for ${name}`,
+    });
+
+    await this.createAuditLog({
+      agentId: agent.id,
+      actionType: "agent_created",
+      detailsJson: JSON.stringify({ name, modelType, initialDeposit, creationFee: creationFee.toString() }),
+      result: "success",
+    });
+
+    await this.recalcSurvivalTier(agent.id);
+    return { agent, wallet };
   }
 
   async recordPlatformRevenue(entry: InsertPlatformRevenue): Promise<PlatformRevenue> {
