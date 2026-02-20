@@ -60,10 +60,15 @@ Preferred communication style: Simple, everyday language.
   3. `AgentReplication.sol` — Child agent spawning, NFT minting via IAgentIdentity, perpetual revenue share (max 50%), generation depth tracking
   4. `ConstitutionRegistry.sol` — Up to 10 immutable laws per agent stored as keccak256 hashes, constitution sealing and verification
 - **Interfaces**: `contracts/interfaces/IAgentIdentity.sol` — BAP-578 NFT binding interface
-- **Deploy**: `npx hardhat run contracts/scripts/deploy-web4.cjs --config hardhat.config.web4.cjs --network bnbTestnet`
+- **Deploy**: `npx hardhat run contracts/scripts/deploy-web4-sequential.cjs --config hardhat.config.web4.cjs --network <network>`
 - **Compile**: `npx hardhat compile --config hardhat.config.web4.cjs`
 - **ABI Export**: `node contracts/scripts/export-web4-abis.cjs` → generates `client/src/contracts/web4/index.ts`
 - **Deployment artifacts**: `contracts/deployments/<network>.json`
+- **Live Mainnet Deployments**:
+  - **BNB Chain (56)**: Hub `0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606`
+  - **Base (8453)**: Hub `0xa6996A83B3909Ff12643A4a125eA2704097B0dD3`
+  - **XLayer (196)**: Hub `0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606`
+- **Deployer**: `0x913a46e2D65C6F76CF4A4AD96B1c7913d5e324d9`
 
 ### Platform Monetization
 - **Schema**: `platform_revenue` table tracks all fee revenue with type, amount, agent, and chain references
