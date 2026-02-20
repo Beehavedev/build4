@@ -418,14 +418,14 @@ function useWalletInternal() {
     return tx.wait();
   }, [getConstitutionContract]);
 
-  const sealConstitutionOnChain = useCallback(async (agentId: number) => {
+  const sealConstitutionOnChain = useCallback(async (agentId: number | bigint) => {
     const constitution = getConstitutionContract();
     if (!constitution) throw new Error("Constitution contract not available");
     const tx = await constitution.sealConstitution(agentId);
     return tx.wait();
   }, [getConstitutionContract]);
 
-  const getLineageOnChain = useCallback(async (agentId: number) => {
+  const getLineageOnChain = useCallback(async (agentId: number | bigint) => {
     const replication = getReplicationContract();
     if (!replication) return null;
     try {
