@@ -138,10 +138,6 @@ function shortModel(model: string): string {
   return map[model] || model.split("/").pop()?.replace(/-Instruct$/, "") || model;
 }
 
-function isFoundingAgent(agent: Agent): boolean {
-  return !agent.name.includes("-CHILD-");
-}
-
 function isTestAgent(agent: Agent): boolean {
   return /^(TST|TEST|PLAYWRIGHT|VERIFY)/i.test(agent.name);
 }
@@ -188,14 +184,8 @@ export default function AutonomousEconomy() {
   const myAgents = web3.address
     ? visibleAgents.filter(a => a.creatorWallet?.toLowerCase() === web3.address?.toLowerCase())
     : [];
-  const foundingAgents = visibleAgents.filter(
-    a => isFoundingAgent(a) && !myAgents.some(m => m.id === a.id)
-  );
-  const childAgents = visibleAgents.filter(
-    a => !isFoundingAgent(a) && !myAgents.some(m => m.id === a.id)
-  );
 
-  const selectedAgent = visibleAgents.find((a) => a.id === selectedAgentId) || visibleAgents[0];
+  const selectedAgent = myAgents.find((a) => a.id === selectedAgentId) || myAgents[0];
   const agentId = selectedAgent?.id;
 
   const { data: walletData } = useQuery<{ wallet: AgentWallet; transactions: AgentTransaction[] }>({
@@ -496,7 +486,47 @@ export default function AutonomousEconomy() {
     );
   }
 
-  if (web3.connected && agentsList.length === 0 && !agentsLoading) {
+  if (!web3.connected) {
+    return (
+      <div className="min-h-screen bg-background">
+        <header className="border-b sticky top-0 z-40 bg-background/95 backdrop-blur">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6">
+            <div className="flex items-center justify-between h-14">
+              <div className="flex items-center gap-3">
+                <Link href="/">
+                  <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-back-home-nowall">
+                    <ArrowLeft className="w-4 h-4" />
+                  </Button>
+                </Link>
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-primary" />
+                  <span className="font-mono font-bold text-sm tracking-wider">BUILD<span className="text-primary">4</span></span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <LanguageSwitcher />
+                <WalletConnector />
+              </div>
+            </div>
+          </div>
+        </header>
+        <div className="max-w-lg mx-auto px-4 py-20 text-center space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+            <Wallet className="w-8 h-8 text-primary" />
+          </div>
+          <div>
+            <h2 className="font-mono font-bold text-lg mb-2" data-testid="text-connect-prompt">Connect Your Wallet</h2>
+            <p className="text-sm text-muted-foreground font-mono">
+              Connect your wallet to view and manage your autonomous AI agents. Your agents are linked to your wallet address.
+            </p>
+          </div>
+          <WalletConnector />
+        </div>
+      </div>
+    );
+  }
+
+  if (myAgents.length === 0 && !agentsLoading) {
     return (
       <div className="min-h-screen bg-background">
         <header className="border-b sticky top-0 z-40 bg-background/95 backdrop-blur">
@@ -525,9 +555,9 @@ export default function AutonomousEconomy() {
             <Bot className="w-8 h-8 text-primary" />
           </div>
           <div>
-            <h2 className="font-mono font-bold text-lg mb-2">No Agents Found</h2>
+            <h2 className="font-mono font-bold text-lg mb-2">No Agents Yet</h2>
             <p className="text-sm text-muted-foreground font-mono">
-              Connected as <span className="text-primary">{web3.address?.slice(0, 6)}...{web3.address?.slice(-4)}</span>. You don't have any agents yet. Create your first autonomous AI agent to get started.
+              Connected as <span className="text-primary">{web3.address?.slice(0, 6)}...{web3.address?.slice(-4)}</span>. Create your first autonomous AI agent to get started.
             </p>
           </div>
           <Button
@@ -642,25 +672,9 @@ export default function AutonomousEconomy() {
                 className="font-mono text-xs bg-card border rounded-md px-2.5 py-1.5 min-w-[200px]"
                 data-testid="select-agent"
               >
-                {myAgents.length > 0 && (
-                  <optgroup label="Your Agents">
-                    {myAgents.map((a) => (
-                      <option key={a.id} value={a.id}>{a.name} ({shortModel(a.modelType)})</option>
-                    ))}
-                  </optgroup>
-                )}
-                <optgroup label="Founding Agents">
-                  {foundingAgents.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name} ({shortModel(a.modelType)})</option>
-                  ))}
-                </optgroup>
-                {childAgents.length > 0 && (
-                  <optgroup label={`Spawned Agents (${childAgents.length})`}>
-                    {childAgents.map((a) => (
-                      <option key={a.id} value={a.id}>{a.name} ({shortModel(a.modelType)})</option>
-                    ))}
-                  </optgroup>
-                )}
+                {myAgents.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name} ({shortModel(a.modelType)})</option>
+                ))}
               </select>
             </div>
           </div>
@@ -692,25 +706,9 @@ export default function AutonomousEconomy() {
                   className="font-mono text-xs bg-card border rounded-md px-2.5 py-1.5 flex-1 max-w-[200px]"
                   data-testid="select-agent-mobile"
                 >
-                  {myAgents.length > 0 && (
-                    <optgroup label="Your Agents">
-                      {myAgents.map((a) => (
-                        <option key={a.id} value={a.id}>{a.name} ({shortModel(a.modelType)})</option>
-                      ))}
-                    </optgroup>
-                  )}
-                  <optgroup label="Founding Agents">
-                    {foundingAgents.map((a) => (
-                      <option key={a.id} value={a.id}>{a.name} ({shortModel(a.modelType)})</option>
-                    ))}
-                  </optgroup>
-                  {childAgents.length > 0 && (
-                    <optgroup label={`Spawned Agents (${childAgents.length})`}>
-                      {childAgents.map((a) => (
-                        <option key={a.id} value={a.id}>{a.name} ({shortModel(a.modelType)})</option>
-                      ))}
-                    </optgroup>
-                  )}
+                  {myAgents.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name} ({shortModel(a.modelType)})</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -882,50 +880,6 @@ export default function AutonomousEconomy() {
       )}
 
       <main className="max-w-5xl mx-auto">
-        {web3.connected && myAgents.length > 0 && (
-          <div className="px-4 sm:px-6 mb-3" data-testid="section-your-agents">
-            <Card className="p-3 border-primary/30 bg-primary/5">
-              <div className="flex items-center gap-2 mb-2">
-                <Wallet className="w-4 h-4 text-primary" />
-                <span className="font-mono text-xs font-semibold">Your Agents ({myAgents.length})</span>
-                <Badge variant="outline" className="font-mono text-[10px] ml-auto">{web3.address?.slice(0, 6)}...{web3.address?.slice(-4)}</Badge>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                {myAgents.map(a => (
-                  <Button
-                    key={a.id}
-                    size="sm"
-                    variant={selectedAgentId === a.id ? "default" : "outline"}
-                    className="font-mono text-xs"
-                    onClick={() => setSelectedAgentId(a.id)}
-                    data-testid={`button-my-agent-${a.id}`}
-                  >
-                    <Bot className="w-3 h-3 mr-1" />
-                    {a.name}
-                    <Badge variant="secondary" className="ml-1 text-[9px]">{shortModel(a.modelType)}</Badge>
-                  </Button>
-                ))}
-              </div>
-            </Card>
-          </div>
-        )}
-
-        {web3.connected && myAgents.length === 0 && visibleAgents.length > 0 && (
-          <div className="px-4 sm:px-6 mb-3" data-testid="section-no-agents-prompt">
-            <Card className="p-3 border-dashed border-muted-foreground/30">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <Wallet className="w-4 h-4 text-muted-foreground" />
-                  <span className="font-mono text-xs text-muted-foreground">Wallet connected — create your first agent to join the economy</span>
-                </div>
-                <Button size="sm" onClick={() => setShowCreateAgent(true)} data-testid="button-create-first-agent">
-                  <Plus className="w-3 h-3 mr-1" />Create Agent
-                </Button>
-              </div>
-            </Card>
-          </div>
-        )}
-
         <Section title={t("dashboard.overview")} icon={Bot} defaultOpen={true}>
           {selectedAgent && (
             <div className="space-y-2">
@@ -933,12 +887,7 @@ export default function AutonomousEconomy() {
               <Card className="p-4 space-y-2">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="font-mono font-bold text-lg" data-testid="text-agent-name">{selectedAgent.name}</h2>
-                      {myAgents.some(a => a.id === selectedAgent.id) && (
-                        <Badge variant="default" className="text-[10px]" data-testid="badge-owned">YOURS</Badge>
-                      )}
-                    </div>
+                    <h2 className="font-mono font-bold text-lg" data-testid="text-agent-name">{selectedAgent.name}</h2>
                     <p className="text-sm text-muted-foreground mt-1" data-testid="text-agent-bio">{selectedAgent.bio}</p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -1009,8 +958,8 @@ export default function AutonomousEconomy() {
                     <div className="text-[10px] text-muted-foreground">Live Providers</div>
                   </div>
                   <div className="p-1.5">
-                    <div className="font-mono text-sm font-bold">{visibleAgents.length}</div>
-                    <div className="text-[10px] text-muted-foreground">Active Agents</div>
+                    <div className="font-mono text-sm font-bold">{myAgents.length}</div>
+                    <div className="text-[10px] text-muted-foreground">Your Agents</div>
                   </div>
                   <div className="p-1.5">
                     <div className="font-mono text-sm font-bold">30s</div>
@@ -1909,7 +1858,7 @@ export default function AutonomousEconomy() {
               <div className="text-xs font-mono font-semibold">{t("dashboard.sendMessage")}</div>
               <select value={msgTo} onChange={(e) => setMsgTo(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-message-to">
                 <option value="">{t("dashboard.selectRecipient")}</option>
-                {visibleAgents.filter(a => a.id !== agentId).map(a => (
+                {myAgents.filter(a => a.id !== agentId).map(a => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
               </select>
