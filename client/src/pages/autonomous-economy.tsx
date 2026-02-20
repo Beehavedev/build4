@@ -379,6 +379,7 @@ export default function AutonomousEconomy() {
   });
 
   const [showCreateAgent, setShowCreateAgent] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [newAgentName, setNewAgentName] = useState("");
   const [newAgentBio, setNewAgentBio] = useState("");
   const [newAgentModel, setNewAgentModel] = useState("meta-llama/Llama-3.1-70B-Instruct");
@@ -439,54 +440,113 @@ export default function AutonomousEconomy() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b sticky top-0 z-50 bg-background/95 backdrop-blur">
-        <div className="max-w-5xl mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <Link href="/">
-              <Button variant="ghost" size="icon" data-testid="button-back-home">
-                <ArrowLeft className="w-4 h-4" />
+      <header className="border-b sticky top-0 z-40 bg-background/95 backdrop-blur">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
+          <div className="flex items-center justify-between h-14">
+            <div className="flex items-center gap-3">
+              <Link href="/">
+                <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-back-home">
+                  <ArrowLeft className="w-4 h-4" />
+                </Button>
+              </Link>
+              <div className="flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-primary" />
+                <span className="font-mono font-bold text-sm tracking-wider">BUILD<span className="text-primary">4</span></span>
+                <span className="text-muted-foreground font-mono text-xs hidden md:inline ml-1">{t("dashboard.breadcrumb")}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="default"
+                size="sm"
+                className="font-mono text-xs gap-1.5 h-8 px-3"
+                onClick={() => setShowCreateAgent(!showCreateAgent)}
+                data-testid="button-create-agent"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Create Agent</span>
               </Button>
-            </Link>
-            <div className="flex items-center gap-2 min-w-0">
-              <Terminal className="w-4 h-4 text-primary flex-shrink-0" />
-              <span className="font-mono font-bold text-sm tracking-wider flex-shrink-0">BUILD<span className="text-primary">4</span></span>
-              <span className="text-muted-foreground font-mono text-xs hidden sm:inline">{t("dashboard.breadcrumb")}</span>
+              <WalletConnector />
+              <button
+                onClick={() => setShowMobileMenu(!showMobileMenu)}
+                className="md:hidden flex items-center justify-center w-8 h-8 rounded-md border hover:bg-accent transition-colors"
+                data-testid="button-mobile-menu"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <line x1="2" y1="4" x2="14" y2="4"/>
+                  <line x1="2" y1="8" x2="14" y2="8"/>
+                  <line x1="2" y1="12" x2="14" y2="12"/>
+                </svg>
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <Button
-              variant="default"
-              size="sm"
-              className="font-mono text-xs gap-1.5"
-              onClick={() => setShowCreateAgent(!showCreateAgent)}
-              data-testid="button-create-agent"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Create Agent</span>
-            </Button>
-            <WalletConnector />
+
+          <div className="hidden md:flex items-center gap-3 pb-3 -mt-1">
             <LanguageSwitcher />
-            <select
-              value={selectedChain}
-              onChange={(e) => setSelectedChain(e.target.value)}
-              className="font-mono text-xs bg-card border rounded-md px-2 py-2 max-w-[120px] sm:max-w-none"
-              data-testid="select-chain"
-            >
-              {CHAINS.map((c) => (
-                <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>
-              ))}
-            </select>
-            <select
-              value={agentId || ""}
-              onChange={(e) => setSelectedAgentId(e.target.value)}
-              className="font-mono text-xs bg-card border rounded-md px-2 sm:px-3 py-2 min-w-0 sm:min-w-[180px] max-w-[140px] sm:max-w-none"
-              data-testid="select-agent"
-            >
-              {agentsList.map((a) => (
-                <option key={a.id} value={a.id}>{a.name} ({a.modelType})</option>
-              ))}
-            </select>
+            <div className="w-px h-4 bg-border" />
+            <div className="flex items-center gap-2">
+              <label className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Chain</label>
+              <select
+                value={selectedChain}
+                onChange={(e) => setSelectedChain(e.target.value)}
+                className="font-mono text-xs bg-card border rounded-md px-2.5 py-1.5"
+                data-testid="select-chain"
+              >
+                {CHAINS.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>
+                ))}
+              </select>
+            </div>
+            <div className="w-px h-4 bg-border" />
+            <div className="flex items-center gap-2">
+              <label className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Agent</label>
+              <select
+                value={agentId || ""}
+                onChange={(e) => setSelectedAgentId(e.target.value)}
+                className="font-mono text-xs bg-card border rounded-md px-2.5 py-1.5 min-w-[200px]"
+                data-testid="select-agent"
+              >
+                {agentsList.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name} ({a.modelType})</option>
+                ))}
+              </select>
+            </div>
           </div>
+
+          {showMobileMenu && (
+            <div className="md:hidden border-t py-3 space-y-3" data-testid="mobile-menu">
+              <div className="flex items-center justify-between">
+                <label className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Language</label>
+                <LanguageSwitcher />
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <label className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Chain</label>
+                <select
+                  value={selectedChain}
+                  onChange={(e) => setSelectedChain(e.target.value)}
+                  className="font-mono text-xs bg-card border rounded-md px-2.5 py-1.5 flex-1 max-w-[200px]"
+                  data-testid="select-chain-mobile"
+                >
+                  {CHAINS.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <label className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Agent</label>
+                <select
+                  value={agentId || ""}
+                  onChange={(e) => setSelectedAgentId(e.target.value)}
+                  className="font-mono text-xs bg-card border rounded-md px-2.5 py-1.5 flex-1 max-w-[200px]"
+                  data-testid="select-agent-mobile"
+                >
+                  {agentsList.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name} ({a.modelType})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
