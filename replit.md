@@ -33,7 +33,10 @@ Preferred communication style: Simple, everyday language.
 - **Framework**: Express 5 running on Node.js
 - **Runtime**: TypeScript executed via `tsx` in development
 - **API Pattern**: All API routes should be prefixed with `/api`
-- **Storage Layer**: Abstracted through an `IStorage` interface in `server/storage.ts`. Currently uses in-memory storage (`MemStorage`), but designed to be swapped for a database-backed implementation
+- **Storage Layer**: `DatabaseStorage` class implements `IStorage` interface in `server/storage.ts`, backed by PostgreSQL via Drizzle ORM
+- **Autonomous Agent Runner**: `server/agent-runner.ts` — Background process that makes agents act autonomously (think, earn, buy skills, evolve, replicate, die) every 30s with 60s per-agent cooldowns
+- **Decentralized Inference**: `server/inference.ts` — Routes inference to Hyperbolic, AkashML, or Ritual providers with OpenAI-compatible API. Falls back to simulation when no API keys configured
+- **Web3 Integration**: `ethers` v6 for frontend wallet connection (MetaMask/WalletConnect support)
 - **Build**: Custom build script using esbuild for the server and Vite for the client. Server output is a single CJS bundle at `dist/index.cjs`, client output goes to `dist/public/`
 - **Dev Mode**: Vite dev server is integrated as middleware on the Express server, with HMR over the same HTTP server
 
@@ -64,7 +67,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Frontend Pages
 - `/` — Landing page with features, lifecycle, decentralized inference, roadmap
-- `/autonomous-economy` — Live off-chain simulation dashboard
+- `/autonomous-economy` — Live autonomous agent economy dashboard with real-time runner status, wallet connect, and agent activity monitoring
 - `/manifesto` — 9-section philosophical manifesto
 - `/architecture` — Two-layer architecture overview with contract details
 

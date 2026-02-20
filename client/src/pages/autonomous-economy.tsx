@@ -34,6 +34,7 @@ import {
 import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { WalletConnector } from "@/components/wallet-connector";
 import type {
   Agent,
   AgentWallet,
@@ -129,6 +130,7 @@ export default function AutonomousEconomy() {
 
   const { data: agentsList = [], isLoading: agentsLoading } = useQuery<Agent[]>({
     queryKey: ["/api/web4/agents"],
+    refetchInterval: 15000,
   });
 
   const selectedAgent = agentsList.find((a) => a.id === selectedAgentId) || agentsList[0];
@@ -137,6 +139,7 @@ export default function AutonomousEconomy() {
   const { data: walletData } = useQuery<{ wallet: AgentWallet; transactions: AgentTransaction[] }>({
     queryKey: ["/api/web4/wallet", agentId],
     enabled: !!agentId,
+    refetchInterval: 15000,
   });
 
   const { data: skills = [] } = useQuery<AgentSkill[]>({
@@ -166,11 +169,13 @@ export default function AutonomousEconomy() {
   const { data: soulEntries = [] } = useQuery<AgentSoulEntry[]>({
     queryKey: ["/api/web4/soul", agentId],
     enabled: !!agentId,
+    refetchInterval: 15000,
   });
 
   const { data: auditLogs = [] } = useQuery<AgentAuditLog[]>({
     queryKey: ["/api/web4/audit", agentId],
     enabled: !!agentId,
+    refetchInterval: 15000,
   });
 
   const { data: messages = [] } = useQuery<(import("@shared/schema").AgentMessage & { fromAgentName: string })[]>({
@@ -287,6 +292,30 @@ export default function AutonomousEconomy() {
     onError: (e: Error) => toast({ title: t("dashboard.purchaseFailed"), description: e.message, variant: "destructive" }),
   });
 
+  const { data: runnerStatus } = useQuery<{
+    running: boolean;
+    liveProviders: string[];
+    providerCount: number;
+    mode: string;
+  }>({
+    queryKey: ["/api/web4/runner/status"],
+    refetchInterval: 10000,
+  });
+
+  const runnerToggle = useMutation({
+    mutationFn: async (action: "start" | "stop") => {
+      const res = await apiRequest("POST", `/api/web4/runner/${action}`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/runner/status"] });
+      toast({ title: data?.running ? "Agent runner started" : "Agent runner stopped" });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Runner error", description: e.message, variant: "destructive" });
+    },
+  });
+
   const { data: inferenceProviders = [] } = useQuery<InferenceProvider[]>({
     queryKey: ["/api/web4/inference/providers"],
   });
@@ -373,6 +402,7 @@ export default function AutonomousEconomy() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            <WalletConnector />
             <LanguageSwitcher />
             <select
               value={selectedChain}
@@ -443,6 +473,67 @@ export default function AutonomousEconomy() {
               <TerminalLine prefix=">" dim>ID: {selectedAgent.id}</TerminalLine>
             </div>
           )}
+        </Section>
+
+        <Section title="Autonomous Runtime" icon={Cpu} defaultOpen={true}>
+          <div className="space-y-2">
+            <TerminalLine prefix="$">runtime.status()</TerminalLine>
+            <Card className="p-3" data-testid="card-runner-status">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2.5 h-2.5 rounded-full ${runnerStatus?.running ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`} />
+                  <span className="font-mono text-xs font-semibold">
+                    Agent Runner: {runnerStatus?.running ? "ACTIVE" : "STOPPED"}
+                  </span>
+                  <Badge variant={runnerStatus?.mode === "live" ? "default" : "secondary"} className="text-[10px]" data-testid="badge-runner-mode">
+                    {runnerStatus?.mode === "live" ? "LIVE INFERENCE" : "SIMULATION"}
+                  </Badge>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="font-mono text-xs h-7"
+                  onClick={() => runnerToggle.mutate(runnerStatus?.running ? "stop" : "start")}
+                  disabled={runnerToggle.isPending}
+                  data-testid="button-toggle-runner"
+                >
+                  {runnerStatus?.running ? "Stop" : "Start"}
+                </Button>
+              </div>
+              {runnerStatus && (
+                <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                  <div className="p-1.5">
+                    <div className="font-mono text-sm font-bold text-primary">{runnerStatus.providerCount}</div>
+                    <div className="text-[10px] text-muted-foreground">Live Providers</div>
+                  </div>
+                  <div className="p-1.5">
+                    <div className="font-mono text-sm font-bold">{agentsList.length}</div>
+                    <div className="text-[10px] text-muted-foreground">Active Agents</div>
+                  </div>
+                  <div className="p-1.5">
+                    <div className="font-mono text-sm font-bold">30s</div>
+                    <div className="text-[10px] text-muted-foreground">Tick Interval</div>
+                  </div>
+                  <div className="p-1.5">
+                    <div className="font-mono text-sm font-bold">60s</div>
+                    <div className="text-[10px] text-muted-foreground">Agent Cooldown</div>
+                  </div>
+                </div>
+              )}
+              {runnerStatus?.liveProviders && runnerStatus.liveProviders.length > 0 && (
+                <div className="mt-2 flex gap-1 flex-wrap">
+                  {runnerStatus.liveProviders.map((p) => (
+                    <Badge key={p} variant="default" className="text-[10px] font-mono">{p}</Badge>
+                  ))}
+                </div>
+              )}
+              {runnerStatus?.providerCount === 0 && (
+                <div className="mt-2 text-[11px] text-muted-foreground font-mono">
+                  No API keys configured. Agents use simulated inference. Add HYPERBOLIC_API_KEY or AKASH_API_KEY for real decentralized compute.
+                </div>
+              )}
+            </Card>
+          </div>
         </Section>
 
         <Section title={t("dashboard.wallet")} icon={Wallet} count={transactions.length}>

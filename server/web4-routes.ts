@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
-import { getProviderStatus, isProviderLive } from "./inference";
+import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
+import { startAgentRunner, stopAgentRunner, isAgentRunnerActive } from "./agent-runner";
 import {
   web4DepositRequestSchema,
   web4TransferRequestSchema,
@@ -386,6 +387,74 @@ export function registerWeb4Routes(app: Express): void {
     try {
       await storage.seedDemoData();
       res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/web4/runner/status", async (_req: Request, res: Response) => {
+    try {
+      const providers = getAvailableProviders();
+      const providerStatus = getProviderStatus();
+      res.json({
+        running: isAgentRunnerActive(),
+        liveProviders: providers,
+        providerCount: providers.length,
+        mode: providers.length > 0 ? "live" : "simulation",
+        providers: providerStatus,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/web4/runner/start", async (_req: Request, res: Response) => {
+    try {
+      startAgentRunner();
+      res.json({ success: true, running: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/web4/runner/stop", async (_req: Request, res: Response) => {
+    try {
+      stopAgentRunner();
+      res.json({ success: true, running: false });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/web4/contracts", async (_req: Request, res: Response) => {
+    try {
+      const fs = await import("fs");
+      const path = await import("path");
+      const deploymentsDir = path.resolve("contracts/deployments");
+      const networks: Record<string, any> = {};
+
+      if (fs.existsSync(deploymentsDir)) {
+        const files = fs.readdirSync(deploymentsDir).filter((f: string) => f.endsWith(".json"));
+        for (const file of files) {
+          try {
+            const data = JSON.parse(fs.readFileSync(path.join(deploymentsDir, file), "utf-8"));
+            const networkName = file.replace(".json", "");
+            networks[networkName] = data;
+          } catch {}
+        }
+      }
+
+      res.json({
+        deployments: networks,
+        supportedNetworks: [
+          { name: "BNB Chain Testnet", chainId: 97, rpc: "https://data-seed-prebsc-1-s1.binance.org:8545" },
+          { name: "BNB Chain Mainnet", chainId: 56, rpc: "https://bsc-dataseed1.binance.org" },
+          { name: "Base Sepolia", chainId: 84532, rpc: "https://sepolia.base.org" },
+          { name: "Base Mainnet", chainId: 8453, rpc: "https://mainnet.base.org" },
+          { name: "XLayer Testnet", chainId: 195, rpc: "https://testrpc.xlayer.tech" },
+          { name: "XLayer Mainnet", chainId: 196, rpc: "https://rpc.xlayer.tech" },
+        ],
+      });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
