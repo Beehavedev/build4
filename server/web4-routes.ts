@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
-import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain } from "./onchain";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, registerAgentOnchain } from "./onchain";
 import {
   web4CreateAgentRequestSchema,
   web4DepositRequestSchema,
@@ -49,7 +49,18 @@ export function registerWeb4Routes(app: Express): void {
 
       const result = await storage.createFullAgent(parsed.name, parsed.bio, parsed.modelType, parsed.initialDeposit, parsed.onchainTxHash, parsed.onchainChainId);
 
-      res.json(result);
+      let onchainRegistration = null;
+      try {
+        const regResult = await registerAgentOnchain(result.agent.id);
+        onchainRegistration = regResult;
+        if (!regResult.success) {
+          console.warn(`[web4] On-chain registration warning: ${regResult.error}`);
+        }
+      } catch (regErr: any) {
+        console.warn(`[web4] On-chain registration error: ${regErr.message}`);
+      }
+
+      res.json({ ...result, onchainRegistration });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }

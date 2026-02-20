@@ -401,7 +401,7 @@ export default function AutonomousEconomy() {
         throw new Error("Smart contracts not available on the connected chain. Please switch to BNB Chain, Base, or XLayer.");
       }
 
-      setCreateAgentStep("Creating agent record...");
+      setCreateAgentStep("Creating agent and registering on-chain...");
       const res = await apiRequest("POST", "/api/web4/agents/create", {
         name: newAgentName,
         bio: newAgentBio || undefined,
@@ -415,16 +415,7 @@ export default function AutonomousEconomy() {
       const numericId = uuidToNumericId(agentId);
       const depositEth = (Number(newAgentDeposit) / 1e18).toString();
 
-      setCreateAgentStep("Waiting for wallet signature — register agent on-chain...");
-      try {
-        await web3.registerAgent(numericId);
-      } catch (regErr: any) {
-        if (!regErr.message?.includes("already registered")) {
-          throw new Error(`On-chain registration failed: ${regErr.shortMessage || regErr.message}`);
-        }
-      }
-
-      setCreateAgentStep("Waiting for wallet signature — deposit " + depositEth + " to agent...");
+      setCreateAgentStep("Waiting for wallet signature — deposit " + depositEth + " BNB to agent...");
       try {
         const receipt = await web3.depositToAgent(numericId, depositEth);
         const txHash = receipt?.hash;
