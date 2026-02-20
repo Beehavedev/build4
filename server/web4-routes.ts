@@ -55,6 +55,8 @@ export function registerWeb4Routes(app: Express): void {
         onchainRegistration = regResult;
         if (!regResult.success) {
           console.warn(`[web4] On-chain registration warning: ${regResult.error}`);
+        } else if (regResult.txHash && regResult.txHash !== "already-registered") {
+          await new Promise(r => setTimeout(r, 3000));
         }
       } catch (regErr: any) {
         console.warn(`[web4] On-chain registration error: ${regErr.message}`);
@@ -63,6 +65,21 @@ export function registerWeb4Routes(app: Express): void {
       res.json({ ...result, onchainRegistration });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/register-onchain", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const regResult = await registerAgentOnchain(agentId);
+      if (!regResult.success) {
+        return res.status(400).json({ error: regResult.error });
+      }
+      res.json({ success: true, txHash: regResult.txHash, chainId: regResult.chainId });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 

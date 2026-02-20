@@ -416,23 +416,33 @@ export default function AutonomousEconomy() {
       const depositEth = (Number(newAgentDeposit) / 1e18).toString();
 
       setCreateAgentStep("Waiting for wallet signature — deposit " + depositEth + " BNB to agent...");
-      try {
-        const receipt = await web3.depositToAgent(numericId, depositEth);
-        const txHash = receipt?.hash;
-        const chainIdVal = web3.chainId;
+      let depositAttempts = 0;
+      let lastDepErr: any = null;
+      while (depositAttempts < 3) {
+        try {
+          const receipt = await web3.depositToAgent(numericId, depositEth);
+          const txHash = receipt?.hash;
+          const chainIdVal = web3.chainId;
 
-        if (txHash) {
-          setCreateAgentStep("Verifying on-chain deposit...");
-          await apiRequest("POST", `/api/web4/agents/${agentId}/verify-deposit`, {
-            txHash,
-            chainId: chainIdVal,
-          });
+          if (txHash) {
+            setCreateAgentStep("Verifying on-chain deposit...");
+            await apiRequest("POST", `/api/web4/agents/${agentId}/verify-deposit`, {
+              txHash,
+              chainId: chainIdVal,
+            });
+          }
+
+          return { ...data, onchainTx: txHash };
+        } catch (depErr: any) {
+          lastDepErr = depErr;
+          depositAttempts++;
+          if (depositAttempts < 3) {
+            setCreateAgentStep(`Waiting for on-chain registration to confirm (attempt ${depositAttempts + 1}/3)...`);
+            await new Promise(r => setTimeout(r, 4000));
+          }
         }
-
-        return { ...data, onchainTx: txHash };
-      } catch (depErr: any) {
-        throw new Error(`On-chain deposit failed: ${depErr.shortMessage || depErr.message}`);
       }
+      throw new Error(`On-chain deposit failed after ${depositAttempts} attempts: ${lastDepErr?.shortMessage || lastDepErr?.message}`);
     },
     onSuccess: (data: any) => {
       setCreateAgentStep(null);
@@ -1088,7 +1098,7 @@ export default function AutonomousEconomy() {
                         </div>
                       </div>
                     )}
-                    {onChainAgentWallet && !onChainAgentWallet.isRegistered && (
+                    {onChainAgentWallet && !onChainAgentWallet.isRegistered && selectedAgentId && (
                       <Button
                         size="sm"
                         className="w-full mt-1"
@@ -1097,10 +1107,9 @@ export default function AutonomousEconomy() {
                         onClick={async () => {
                           try {
                             setOnChainLoading("register");
-                            const agentNumId = parseInt(agentId || "1");
-                            const receipt = await web3.registerAgent(agentNumId);
-                            setLastTxHash(receipt.hash);
+                            await apiRequest("POST", `/api/web4/agents/${selectedAgentId}/register-onchain`);
                             toast({ title: "Agent registered on-chain" });
+                            const agentNumId = parseInt(agentId || "1");
                             const data = await web3.getAgentOnChainWallet(agentNumId);
                             setOnChainAgentWallet(data);
                           } catch (err: any) {
