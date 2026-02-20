@@ -9,6 +9,7 @@ The application follows a monorepo structure with three main directories: `clien
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
+Always update both development AND production databases when making data fixes — never leave production with stale data that requires a redeploy to fix.
 
 ## System Architecture
 
