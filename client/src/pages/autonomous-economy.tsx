@@ -87,6 +87,16 @@ function tierBadgeVariant(tier: string): "default" | "secondary" | "destructive"
   }
 }
 
+function onChainTierLabel(tierIndex: number): { label: string; color: string; hint: string } {
+  switch (tierIndex) {
+    case 3: return { label: "NORMAL", color: "text-primary", hint: "Fully funded" };
+    case 2: return { label: "LOW", color: "text-yellow-500", hint: "Running low — consider depositing" };
+    case 1: return { label: "CRITICAL", color: "text-orange-500", hint: "Almost empty — deposit soon" };
+    case 0: return { label: "EMPTY", color: "text-destructive", hint: "No on-chain funds — deposit to activate" };
+    default: return { label: "UNKNOWN", color: "text-muted-foreground", hint: "" };
+  }
+}
+
 function Section({ title, icon: Icon, children, defaultOpen = false, count }: { title: string; icon: any; children: React.ReactNode; defaultOpen?: boolean; count?: number }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -892,21 +902,21 @@ export default function AutonomousEconomy() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
-                  <div className="text-center p-2">
+                  <div className="text-center p-2 rounded bg-muted/20">
                     <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-balance">{formatShortCredits(wallet?.balance || "0")}</div>
-                    <div className="text-xs text-muted-foreground">{t("dashboard.balance")}</div>
+                    <div className="text-[10px] text-muted-foreground">Off-Chain Balance</div>
                   </div>
-                  <div className="text-center p-2">
+                  <div className="text-center p-2 rounded bg-muted/20">
                     <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-earned">{formatShortCredits(wallet?.totalEarned || "0")}</div>
-                    <div className="text-xs text-muted-foreground">{t("dashboard.earned")}</div>
+                    <div className="text-[10px] text-muted-foreground">{t("dashboard.earned")}</div>
                   </div>
-                  <div className="text-center p-2">
+                  <div className="text-center p-2 rounded bg-muted/20">
                     <div className="font-mono text-lg font-bold text-red-400" data-testid="text-wallet-spent">{formatShortCredits(wallet?.totalSpent || "0")}</div>
-                    <div className="text-xs text-muted-foreground">{t("dashboard.spent")}</div>
+                    <div className="text-[10px] text-muted-foreground">{t("dashboard.spent")}</div>
                   </div>
-                  <div className="text-center p-2">
+                  <div className="text-center p-2 rounded bg-muted/20">
                     <div className="font-mono text-lg font-bold" data-testid="text-turns-alive">{survival?.turnsAlive || 0}</div>
-                    <div className="text-xs text-muted-foreground">{t("dashboard.turnsAlive")}</div>
+                    <div className="text-[10px] text-muted-foreground">{t("dashboard.turnsAlive")}</div>
                   </div>
                 </div>
               </Card>
@@ -1208,28 +1218,42 @@ export default function AutonomousEconomy() {
                       {onChainLoading === "read-wallet" ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
                       <span className="ml-1">Read On-Chain Balance</span>
                     </Button>
-                    {onChainAgentWallet && (
-                      <div className="grid grid-cols-2 gap-2 mt-2">
-                        <div className="p-2 bg-muted/30 rounded">
-                          <div className="text-[9px] text-muted-foreground">Balance</div>
-                          <div className="font-mono text-xs font-bold text-primary" data-testid="text-onchain-balance">{onChainAgentWallet.balance} {activeChain.currency}</div>
-                        </div>
-                        <div className="p-2 bg-muted/30 rounded">
-                          <div className="text-[9px] text-muted-foreground">Status</div>
-                          <div className="font-mono text-xs font-bold" data-testid="text-onchain-registered">
-                            {onChainAgentWallet.isRegistered ? "Registered" : "Not Registered"}
+                    {onChainAgentWallet && (() => {
+                      const tierInfo = onChainTierLabel(onChainAgentWallet.tier);
+                      return (
+                        <div className="space-y-2 mt-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="p-2 bg-muted/30 rounded">
+                              <div className="text-[9px] text-muted-foreground">On-Chain Balance</div>
+                              <div className="font-mono text-xs font-bold text-primary" data-testid="text-onchain-balance">{onChainAgentWallet.balance} {activeChain.currency}</div>
+                            </div>
+                            <div className="p-2 bg-muted/30 rounded">
+                              <div className="text-[9px] text-muted-foreground">On-Chain Tier</div>
+                              <div className={`font-mono text-xs font-bold ${tierInfo.color}`} data-testid="text-onchain-tier">{tierInfo.label}</div>
+                            </div>
+                            <div className="p-2 bg-muted/30 rounded">
+                              <div className="text-[9px] text-muted-foreground">Registration</div>
+                              <div className="font-mono text-xs font-bold" data-testid="text-onchain-registered">
+                                {onChainAgentWallet.isRegistered ? (
+                                  <span className="text-emerald-500">Registered</span>
+                                ) : (
+                                  <span className="text-muted-foreground">Not Registered</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="p-2 bg-muted/30 rounded">
+                              <div className="text-[9px] text-muted-foreground">Total Earned</div>
+                              <div className="font-mono text-xs">{onChainAgentWallet.totalEarned} {activeChain.currency}</div>
+                            </div>
                           </div>
+                          {onChainAgentWallet.tier < 3 && (
+                            <div className={`p-2 rounded border text-[10px] font-mono ${onChainAgentWallet.tier === 0 ? "border-destructive/30 bg-destructive/5 text-destructive" : "border-yellow-500/30 bg-yellow-500/5 text-yellow-600 dark:text-yellow-400"}`}>
+                              {tierInfo.hint}
+                            </div>
+                          )}
                         </div>
-                        <div className="p-2 bg-muted/30 rounded">
-                          <div className="text-[9px] text-muted-foreground">Earned</div>
-                          <div className="font-mono text-xs">{onChainAgentWallet.totalEarned}</div>
-                        </div>
-                        <div className="p-2 bg-muted/30 rounded">
-                          <div className="text-[9px] text-muted-foreground">Tier</div>
-                          <div className="font-mono text-xs">{["DEAD", "CRITICAL", "LOW", "NORMAL"][onChainAgentWallet.tier] || "Unknown"}</div>
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                     {onChainAgentWallet && !onChainAgentWallet.isRegistered && selectedAgentId && (
                       <Button
                         size="sm"
@@ -1830,10 +1854,12 @@ export default function AutonomousEconomy() {
                     <div className={`font-mono text-2xl font-bold ${tierColor(survival.tier)}`} data-testid="text-survival-tier">
                       {survival.tier.toUpperCase().replace("_", " ")}
                     </div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">Based on off-chain balance</div>
                   </div>
                   <div className="text-right">
                     <div className="text-xs text-muted-foreground mb-1">{t("dashboard.turnsAlive")}</div>
                     <div className="font-mono text-2xl font-bold">{survival.turnsAlive}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">Actions taken</div>
                   </div>
                 </div>
 
@@ -1851,6 +1877,9 @@ export default function AutonomousEconomy() {
                       </div>
                     );
                   })}
+                </div>
+                <div className="mt-3 p-2 rounded bg-muted/20 text-[10px] text-muted-foreground font-mono">
+                  This tracks the agent's off-chain balance and activity. On-chain balance is separate — check the On-Chain Contracts section to view and fund the smart contract wallet.
                 </div>
               </Card>
             )}
