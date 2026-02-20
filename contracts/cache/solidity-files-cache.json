@@ -194,8 +194,8 @@
       ]
     },
     "/home/runner/workspace/contracts/web4/SkillMarketplace.sol": {
-      "lastModificationDate": 1771566684040,
-      "contentHash": "b7c035aa27414cf831f5e5db71f5312e",
+      "lastModificationDate": 1771586905420,
+      "contentHash": "c63367bfbe02f042dd6463dc69a35542",
       "sourceName": "contracts/web4/SkillMarketplace.sol",
       "solcConfig": {
         "version": "0.8.24",

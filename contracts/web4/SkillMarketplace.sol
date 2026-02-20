@@ -85,6 +85,7 @@ contract SkillMarketplace is Ownable, ReentrancyGuard {
         require(skill.exists && skill.isActive, "Marketplace: skill unavailable");
         require(hub.isAgentRegistered(buyerId), "Marketplace: buyer not registered");
         require(skill.agentId != buyerId, "Marketplace: cannot buy own skill");
+        require(!agentOwnsSkill[buyerId][skillId], "Marketplace: already purchased");
         require(hub.getBalance(buyerId) >= skill.price, "Marketplace: insufficient balance");
 
         uint256 price = skill.price;
