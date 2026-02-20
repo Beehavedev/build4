@@ -567,7 +567,7 @@ export function registerWeb4Routes(app: Express): void {
           enabled: onchain,
           network: getNetworkName(),
           chainId: getChainId(),
-          explorer: onchain ? getExplorerUrl("").replace("/tx/", "") : "https://testnet.bscscan.com",
+          explorer: onchain ? getExplorerUrl("").replace("/tx/", "") : "https://bscscan.com",
           isMainnet: isMainnet(),
           deployerBalance,
           contracts: contractAddrs,

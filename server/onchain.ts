@@ -605,7 +605,7 @@ export function getContractAddresses(): ContractAddresses | null {
 }
 
 export function getExplorerUrl(txHash: string): string {
-  const base = activeChainConfig?.explorerBase || "https://testnet.bscscan.com";
+  const base = activeChainConfig?.explorerBase || "https://bscscan.com";
   return `${base}/tx/${txHash}`;
 }
 

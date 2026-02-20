@@ -1007,7 +1007,7 @@ export default function AutonomousEconomy() {
                   <div className="flex items-center gap-2 mb-1">
                     <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     <span className="font-mono text-xs font-bold">On-Chain Bridge: ACTIVE</span>
-                    <Badge variant="default" className="text-[9px] h-4">BNB Testnet</Badge>
+                    <Badge variant="default" className="text-[9px] h-4">{runnerStatus.onchain.chainId === 56 ? "BNB Mainnet" : runnerStatus.onchain.chainId === 8453 ? "Base" : runnerStatus.onchain.chainId === 196 ? "XLayer" : `Chain ${runnerStatus.onchain.chainId}`}</Badge>
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-1.5">
                     <div className="text-[10px] text-muted-foreground font-mono">
@@ -1049,13 +1049,13 @@ export default function AutonomousEconomy() {
                   ))}
                 </div>
                 <a
-                  href="https://testnet.bscscan.com/address/0x913a46e2D65C6F76CF4A4AD96B1c7913d5e324d9"
+                  href={runnerStatus?.onchain?.chainId === 56 ? "https://bscscan.com/address/0x913a46e2D65C6F76CF4A4AD96B1c7913d5e324d9" : runnerStatus?.onchain?.chainId === 8453 ? "https://basescan.org/address/0x913a46e2D65C6F76CF4A4AD96B1c7913d5e324d9" : "https://www.oklink.com/xlayer/address/0x913a46e2D65C6F76CF4A4AD96B1c7913d5e324d9"}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-[10px] text-primary hover:underline font-mono mt-2 block"
                   data-testid="link-deployer-bscscan"
                 >
-                  View all on BscScan Testnet
+                  View all on Explorer
                 </a>
               </Card>
             )}
@@ -1087,7 +1087,7 @@ export default function AutonomousEconomy() {
                     </div>
                   </div>
                   {!web3.hasContracts && (
-                    <div className="mt-2 text-[10px] text-destructive font-mono">No contracts found on this network. Switch to BNB Testnet or XLayer Testnet.</div>
+                    <div className="mt-2 text-[10px] text-destructive font-mono">No contracts found on this network. Switch to BNB Chain, Base, or XLayer.</div>
                   )}
                   {lastTxHash && (
                     <div className="mt-2 flex items-center gap-1">
@@ -1653,7 +1653,7 @@ export default function AutonomousEconomy() {
                       <span className="text-muted-foreground flex-1 truncate">{tx.description || tx.type}</span>
                       {tx.txHash && tx.txHash !== "already-registered" && (
                         <a
-                          href={`https://testnet.bscscan.com/tx/${tx.txHash}`}
+                          href={tx.chainId === 8453 ? `https://basescan.org/tx/${tx.txHash}` : tx.chainId === 196 ? `https://www.oklink.com/xlayer/tx/${tx.txHash}` : `https://bscscan.com/tx/${tx.txHash}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-primary hover:underline text-[10px] flex-shrink-0"

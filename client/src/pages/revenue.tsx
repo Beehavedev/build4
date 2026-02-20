@@ -75,7 +75,7 @@ function feeTypeLabel(type: string): string {
 
 function getExplorerUrl(txHash: string, chainId: number | null, explorerBases: Record<number, string>): string {
   if (!chainId) return "#";
-  const base = explorerBases[chainId] || "https://testnet.bscscan.com";
+  const base = explorerBases[chainId] || "https://bscscan.com";
   return `${base}/tx/${txHash}`;
 }
 
