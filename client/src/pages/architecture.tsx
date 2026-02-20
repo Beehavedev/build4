@@ -33,60 +33,36 @@ import {
   AgentReplicationABI,
 } from "@/contracts/web4";
 
-const CONTRACT_INFO = [
+const CONTRACT_STATIC = [
   {
     name: "AgentEconomyHub",
     icon: Wallet,
-    description: "Core wallet layer. Every agent's BNB balance lives here. Handles deposit, withdraw, transfer, and survival tier computation. Authorized modules can credit/debit agents for trustless cross-contract operations.",
-    features: [
-      "Per-agent wallet with balance, totalEarned, totalSpent tracking",
-      "Survival tier computation: NORMAL >= 1 BNB, LOW_COMPUTE >= 0.1, CRITICAL >= 0.01, DEAD = 0",
-      "Module authorization pattern for composable cross-contract calls",
-      "ReentrancyGuard on all payable operations",
-      "Events for deposits, withdrawals, transfers, tier changes",
-    ],
+    descKey: "architecture.contracts.hub.desc",
+    featuresKey: "architecture.contracts.hub.features",
     functions: ["registerAgent", "deposit", "withdraw", "transfer", "creditAgent", "debitAgent", "computeTier", "authorizeModule"],
     abiCount: AgentEconomyHubABI.length,
   },
   {
     name: "SkillMarketplace",
     icon: Zap,
-    description: "Skill listing and purchase with 3-way revenue split. Platform takes a fee, parent agent gets perpetual revenue share, seller receives the remainder. Uses Hub for balance operations.",
-    features: [
-      "Skill listing with metadata URI and pricing",
-      "3-way revenue split: platform fee + parent share + seller",
-      "Configurable platform fee (max 10%)",
-      "Integration with AgentReplication for parent revenue shares",
-      "Purchase protection: cannot buy own skills, checks balance",
-    ],
+    descKey: "architecture.contracts.marketplace.desc",
+    featuresKey: "architecture.contracts.marketplace.features",
     functions: ["listSkill", "purchaseSkill", "deactivateSkill", "setPlatformFee", "setLineageContract", "getSkill"],
     abiCount: SkillMarketplaceABI.length,
   },
   {
     name: "AgentReplication",
     icon: GitBranch,
-    description: "Child agent spawning via NFT minting. Parent funds child from their wallet, establishes perpetual revenue share (max 50%), and tracks lineage with generation depth limits.",
-    features: [
-      "Parent spawns child with configurable revenue share (max 50%)",
-      "Funding transfer from parent wallet to child wallet",
-      "Generation depth tracking (max 10 generations)",
-      "BAP-578 NFT binding via IAgentIdentity interface",
-      "Perpetual revenue share distribution",
-    ],
+    descKey: "architecture.contracts.replication.desc",
+    featuresKey: "architecture.contracts.replication.features",
     functions: ["replicate", "distributeRevenueShare", "getParent", "getChildren", "getLineage", "setIdentityNft"],
     abiCount: AgentReplicationABI.length,
   },
   {
     name: "ConstitutionRegistry",
     icon: ScrollText,
-    description: "Immutable constitutional laws stored on-chain as hashes. Each agent can have up to 10 laws. Once sealed, the constitution becomes permanent and verifiable against its stored hash.",
-    features: [
-      "Up to 10 laws per agent, stored as keccak256 hashes",
-      "Immutable flag per law",
-      "Constitution sealing: permanent and irreversible",
-      "Hash-based verification against stored constitution hash",
-      "Block-level timestamps for law creation",
-    ],
+    descKey: "architecture.contracts.constitution.desc",
+    featuresKey: "architecture.contracts.constitution.features",
     functions: ["addLaw", "sealConstitution", "verifyConstitution", "getLaw", "getLawCount", "getConstitutionHash", "isSealed"],
     abiCount: ConstitutionRegistryABI.length,
   },
@@ -98,33 +74,22 @@ const ARCHITECTURE_LAYERS = [
     subtitleKey: "architecture.onChainSub" as const,
     icon: Shield,
     color: "text-primary",
-    items: [
-      "Agent wallet balances (BNB)",
-      "Skill purchase settlements",
-      "Replication lineage + revenue shares",
-      "Constitutional law hashes",
-      "Module authorization permissions",
-    ],
+    itemsKey: "architecture.layers.onChainItems",
   },
   {
     layerKey: "architecture.offChain" as const,
     subtitleKey: "architecture.offChainSub" as const,
     icon: Database,
     color: "text-blue-400",
-    items: [
-      "Agent identity + metadata",
-      "High-frequency behavior simulation",
-      "Model evolution tracking",
-      "Soul entries + audit logs",
-      "Agent-to-agent messaging",
-      "Inference routing + provider selection",
-    ],
+    itemsKey: "architecture.layers.offChainItems",
   },
 ];
 
-function ContractSection({ contract, index, t }: { contract: typeof CONTRACT_INFO[0]; index: number; t: (key: string) => string }) {
+function ContractSection({ contract, index, t }: { contract: typeof CONTRACT_STATIC[0]; index: number; t: (key: string) => string }) {
   const [expanded, setExpanded] = useState(false);
   const Icon = contract.icon;
+  const features = t(contract.featuresKey);
+  const featuresList = Array.isArray(features) ? features : [];
 
   return (
     <Card className="overflow-visible" data-testid={`card-contract-${contract.name}`}>
@@ -140,9 +105,9 @@ function ContractSection({ contract, index, t }: { contract: typeof CONTRACT_INF
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-mono font-bold text-sm">{contract.name}</span>
-            <Badge variant="outline" className="text-[10px] font-mono">{contract.abiCount} ABI entries</Badge>
+            <Badge variant="outline" className="text-[10px] font-mono">{contract.abiCount} {t("architecture.abiEntries")}</Badge>
           </div>
-          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{contract.description}</p>
+          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{t(contract.descKey)}</p>
         </div>
         <div className="flex-shrink-0 mt-1">
           {expanded ? <ChevronDown className="w-3 h-3 text-muted-foreground" /> : <ChevronRight className="w-3 h-3 text-muted-foreground" />}
@@ -153,7 +118,7 @@ function ContractSection({ contract, index, t }: { contract: typeof CONTRACT_INF
           <div>
             <div className="text-[10px] font-mono font-semibold text-muted-foreground mb-1.5 uppercase tracking-wider">{t("architecture.features")}</div>
             <div className="space-y-1">
-              {contract.features.map((f, i) => (
+              {featuresList.map((f: string, i: number) => (
                 <div key={i} className="flex items-start gap-2 text-xs">
                   <span className="text-primary/60 flex-shrink-0 mt-0.5">-</span>
                   <span className="text-muted-foreground">{f}</span>
@@ -212,7 +177,7 @@ export default function Architecture() {
             <Link href="/autonomous-economy">
               <Button variant="outline" size="sm" className="font-mono text-xs" data-testid="link-economy">
                 <Cpu className="w-3 h-3" />
-                <span className="hidden sm:inline">Live Simulation</span>
+                <span className="hidden sm:inline">{t("architecture.liveSimulation")}</span>
                 <span className="sm:hidden">{t("nav.launch")}</span>
               </Button>
             </Link>
@@ -246,7 +211,7 @@ export default function Architecture() {
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  {layer.items.map((item, i) => (
+                  {(Array.isArray(t(layer.itemsKey)) ? (t(layer.itemsKey) as unknown as string[]) : []).map((item: string, i: number) => (
                     <div key={i} className="flex items-start gap-2 text-xs">
                       <span className={`flex-shrink-0 mt-0.5 ${layer.color} opacity-50`}>-</span>
                       <span className="text-muted-foreground">{item}</span>
@@ -262,13 +227,13 @@ export default function Architecture() {
           <div className="absolute left-1/2 -translate-x-1/2 -top-2 z-10">
             <Badge variant="outline" className="font-mono text-[10px] bg-background">
               <Layers className="w-3 h-3 mr-1" />
-              Module Authorization Bridge
+              {t("architecture.moduleAuthBridge")}
             </Badge>
           </div>
           <div className="border-t border-dashed border-primary/20 mt-4" />
           <div className="text-center mt-3">
             <p className="text-[10px] text-muted-foreground font-mono max-w-md mx-auto">
-              SkillMarketplace and AgentReplication are authorized modules on AgentEconomyHub. They can credit/debit agent wallets for trustless settlements.
+              {t("architecture.moduleAuthDesc")}
             </p>
           </div>
         </div>
@@ -282,7 +247,7 @@ export default function Architecture() {
           </h2>
           <p className="text-sm text-muted-foreground mb-4 leading-relaxed">{t("architecture.contractsSub")}</p>
           <div className="space-y-3">
-            {CONTRACT_INFO.map((contract, i) => (
+            {CONTRACT_STATIC.map((contract, i) => (
               <ContractSection key={contract.name} contract={contract} index={i} t={t} />
             ))}
           </div>
@@ -291,37 +256,37 @@ export default function Architecture() {
         <Card className="p-4" data-testid="card-module-flow">
           <div className="font-mono font-bold text-sm mb-3 flex items-center gap-2">
             <Link2 className="w-4 h-4 text-primary" />
-            Composable Module Flow
+            {t("architecture.composableFlow")}
           </div>
           <div className="font-mono text-xs space-y-2">
             <div className="flex items-center gap-2 text-muted-foreground">
               <span className="text-primary/60">1.</span>
-              <span>User calls</span>
+              <span>{t("architecture.flowStep1")}</span>
               <Badge variant="secondary" className="font-mono text-[10px]">SkillMarketplace.purchaseSkill()</Badge>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground pl-4">
               <ArrowRight className="w-3 h-3 text-primary/40" />
-              <span>Marketplace calls</span>
+              <span>{t("architecture.flowStep2Marketplace")}</span>
               <Badge variant="secondary" className="font-mono text-[10px]">Hub.debitAgent(buyer)</Badge>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground pl-4">
               <ArrowRight className="w-3 h-3 text-primary/40" />
-              <span>Marketplace calls</span>
+              <span>{t("architecture.flowStep2Marketplace")}</span>
               <Badge variant="secondary" className="font-mono text-[10px]">Hub.creditAgent(seller)</Badge>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground pl-4">
               <ArrowRight className="w-3 h-3 text-primary/40" />
-              <span>If parent exists:</span>
+              <span>{t("architecture.flowStep3Parent")}</span>
               <Badge variant="secondary" className="font-mono text-[10px]">Hub.creditAgent(parent)</Badge>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground mt-3">
               <span className="text-primary/60">2.</span>
-              <span>Hub verifies</span>
+              <span>{t("architecture.flowStep4Verify")}</span>
               <Badge variant="outline" className="font-mono text-[10px]">authorizedModules[msg.sender]</Badge>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground pl-4">
               <ArrowRight className="w-3 h-3 text-primary/40" />
-              <span>Only whitelisted contracts can move funds</span>
+              <span>{t("architecture.flowStep5Whitelist")}</span>
             </div>
           </div>
         </Card>
@@ -333,20 +298,20 @@ export default function Architecture() {
           </div>
           <div className="space-y-2 text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
-              <span className="text-primary/60 font-mono">Compiler:</span>
-              <span>Solidity 0.8.24 with optimizer (200 runs)</span>
+              <span className="text-primary/60 font-mono">{t("architecture.compiler")}:</span>
+              <span>{t("architecture.compilerValue")}</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-primary/60 font-mono">Framework:</span>
-              <span>Hardhat v2 with custom web4 config</span>
+              <span className="text-primary/60 font-mono">{t("architecture.framework")}:</span>
+              <span>{t("architecture.frameworkValue")}</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-primary/60 font-mono">Libraries:</span>
-              <span>OpenZeppelin Contracts v5 (Ownable, ReentrancyGuard)</span>
+              <span className="text-primary/60 font-mono">{t("architecture.libraries")}:</span>
+              <span>{t("architecture.librariesValue")}</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-primary/60 font-mono">{t("architecture.network")}:</span>
-              <span>BNB Chain (56/97) · Base (8453/84532) · XLayer (196/195)</span>
+              <span>{t("architecture.networkValue")}</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-primary/60 font-mono">{t("architecture.deploy")}:</span>
@@ -371,13 +336,13 @@ export default function Architecture() {
             <Link href="/autonomous-economy">
               <Button size="sm" className="font-mono text-xs" data-testid="link-simulation-bottom">
                 <Cpu className="w-3 h-3 mr-1" />
-                Open Live Simulation
+                {t("architecture.openLiveSimulation")}
               </Button>
             </Link>
             <Link href="/manifesto">
               <Button variant="outline" size="sm" className="font-mono text-xs" data-testid="link-manifesto-bottom">
                 <ScrollText className="w-3 h-3 mr-1" />
-                Read Manifesto
+                {t("architecture.readManifesto")}
               </Button>
             </Link>
           </div>

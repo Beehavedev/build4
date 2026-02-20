@@ -5,7 +5,7 @@ export type Language = "en" | "zh" | "es";
 interface I18nContextType {
   lang: Language;
   setLang: (lang: Language) => void;
-  t: (key: string) => string;
+  t: (key: string) => any;
 }
 
 const I18nContext = createContext<I18nContextType>({
@@ -28,14 +28,15 @@ export function useT() {
   return t;
 }
 
-function getNestedValue(obj: Record<string, any>, path: string): string {
+function getNestedValue(obj: Record<string, any>, path: string): any {
   const keys = path.split(".");
   let current: any = obj;
   for (const key of keys) {
     if (current === undefined || current === null) return path;
     current = current[key];
   }
-  return typeof current === "string" ? current : path;
+  if (typeof current === "string" || Array.isArray(current)) return current;
+  return path;
 }
 
 export const LANGUAGE_LABELS: Record<Language, string> = {
@@ -70,7 +71,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     setLangState(newLang);
   };
 
-  const t = (key: string): string => {
+  const t = (key: string): any => {
     return getNestedValue(translations, key);
   };
 

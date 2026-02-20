@@ -190,9 +190,9 @@ export default function AutonomousEconomy() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/web4/wallet", agentId] });
       queryClient.invalidateQueries({ queryKey: ["/api/web4/survival", agentId] });
-      toast({ title: "Deposit successful" });
+      toast({ title: t("dashboard.depositSuccess") });
     },
-    onError: (e: Error) => toast({ title: "Deposit failed", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("dashboard.depositFailed"), description: e.message, variant: "destructive" }),
   });
 
   const withdrawMutation = useMutation({
@@ -202,9 +202,9 @@ export default function AutonomousEconomy() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/web4/wallet", agentId] });
       queryClient.invalidateQueries({ queryKey: ["/api/web4/survival", agentId] });
-      toast({ title: "Withdrawal successful" });
+      toast({ title: t("dashboard.withdrawSuccess") });
     },
-    onError: (e: Error) => toast({ title: "Withdrawal failed", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("dashboard.withdrawFailed"), description: e.message, variant: "destructive" }),
   });
 
   const transferMutation = useMutation({
@@ -214,9 +214,9 @@ export default function AutonomousEconomy() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/web4/wallet"] });
       queryClient.invalidateQueries({ queryKey: ["/api/web4/survival"] });
-      toast({ title: "Transfer successful" });
+      toast({ title: t("dashboard.transferSuccess") });
     },
-    onError: (e: Error) => toast({ title: "Transfer failed", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("dashboard.transferFailed"), description: e.message, variant: "destructive" }),
   });
 
   const evolveMutation = useMutation({
@@ -226,9 +226,9 @@ export default function AutonomousEconomy() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/web4/evolutions", agentId] });
       queryClient.invalidateQueries({ queryKey: ["/api/web4/agents"] });
-      toast({ title: "Evolution triggered" });
+      toast({ title: t("dashboard.evolutionTriggered") });
     },
-    onError: (e: Error) => toast({ title: "Evolution failed", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("dashboard.evolutionFailed"), description: e.message, variant: "destructive" }),
   });
 
   const replicateMutation = useMutation({
@@ -239,9 +239,9 @@ export default function AutonomousEconomy() {
       queryClient.invalidateQueries({ queryKey: ["/api/web4/agents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/web4/lineage", agentId] });
       queryClient.invalidateQueries({ queryKey: ["/api/web4/wallet", agentId] });
-      toast({ title: "Agent replicated successfully" });
+      toast({ title: t("dashboard.replicatedSuccess") });
     },
-    onError: (e: Error) => toast({ title: "Replication failed", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("dashboard.replicationFailed"), description: e.message, variant: "destructive" }),
   });
 
   const soulMutation = useMutation({
@@ -250,9 +250,9 @@ export default function AutonomousEconomy() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/web4/soul", agentId] });
-      toast({ title: "Soul entry recorded" });
+      toast({ title: t("dashboard.soulRecorded") });
     },
-    onError: (e: Error) => toast({ title: "Failed to record entry", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("dashboard.soulFailed"), description: e.message, variant: "destructive" }),
   });
 
   const messageMutation = useMutation({
@@ -261,9 +261,9 @@ export default function AutonomousEconomy() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/web4/messages"] });
-      toast({ title: "Message sent" });
+      toast({ title: t("dashboard.messageSent") });
     },
-    onError: (e: Error) => toast({ title: "Failed to send message", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("dashboard.messageFailed"), description: e.message, variant: "destructive" }),
   });
 
   const markReadMutation = useMutation({
@@ -282,9 +282,9 @@ export default function AutonomousEconomy() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/web4/wallet", agentId] });
       queryClient.invalidateQueries({ queryKey: ["/api/web4/skills"] });
-      toast({ title: "Skill purchased" });
+      toast({ title: t("dashboard.skillPurchased") });
     },
-    onError: (e: Error) => toast({ title: "Purchase failed", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("dashboard.purchaseFailed"), description: e.message, variant: "destructive" }),
   });
 
   const { data: inferenceProviders = [] } = useQuery<InferenceProvider[]>({
@@ -317,11 +317,11 @@ export default function AutonomousEconomy() {
       const providerName = data?.provider?.name || "Provider";
       const isLive = data?.request?.response && !data.request.response.startsWith("[SIMULATED") && !data.request.response.startsWith("[FALLBACK");
       toast({
-        title: isLive ? "Live inference completed" : "Simulated inference completed",
-        description: `Routed via ${providerName}${isLive ? " (decentralized)" : " (no API key configured)"}`,
+        title: isLive ? t("dashboard.liveInference") : t("dashboard.simInference"),
+        description: `${t("dashboard.routedVia")} ${providerName}${isLive ? ` (${t("dashboard.decentralizedLabel")})` : ` (${t("dashboard.noApiKeyLabel")})`}`,
       });
     },
-    onError: (e: Error) => toast({ title: "Inference failed", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("dashboard.inferenceFailed"), description: e.message, variant: "destructive" }),
   });
 
   const [inferencePrompt, setInferencePrompt] = useState("");
@@ -346,7 +346,7 @@ export default function AutonomousEconomy() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="font-mono text-sm text-muted-foreground flex items-center gap-2">
           <RefreshCw className="w-4 h-4 animate-spin" />
-          Initializing agent economy...
+          {t("dashboard.loading")}
         </div>
       </div>
     );
@@ -424,19 +424,19 @@ export default function AutonomousEconomy() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
                   <div className="text-center p-2">
                     <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-balance">{formatShortCredits(wallet?.balance || "0")}</div>
-                    <div className="text-xs text-muted-foreground">Balance</div>
+                    <div className="text-xs text-muted-foreground">{t("dashboard.balance")}</div>
                   </div>
                   <div className="text-center p-2">
                     <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-earned">{formatShortCredits(wallet?.totalEarned || "0")}</div>
-                    <div className="text-xs text-muted-foreground">Earned</div>
+                    <div className="text-xs text-muted-foreground">{t("dashboard.earned")}</div>
                   </div>
                   <div className="text-center p-2">
                     <div className="font-mono text-lg font-bold text-red-400" data-testid="text-wallet-spent">{formatShortCredits(wallet?.totalSpent || "0")}</div>
-                    <div className="text-xs text-muted-foreground">Spent</div>
+                    <div className="text-xs text-muted-foreground">{t("dashboard.spent")}</div>
                   </div>
                   <div className="text-center p-2">
                     <div className="font-mono text-lg font-bold" data-testid="text-turns-alive">{survival?.turnsAlive || 0}</div>
-                    <div className="text-xs text-muted-foreground">Turns Alive</div>
+                    <div className="text-xs text-muted-foreground">{t("dashboard.turnsAlive")}</div>
                   </div>
                 </div>
               </Card>
@@ -450,22 +450,22 @@ export default function AutonomousEconomy() {
             <TerminalLine prefix="$">wallet.status()</TerminalLine>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <Card className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">Balance</div>
+                <div className="text-xs text-muted-foreground mb-1">{t("dashboard.balance")}</div>
                 <div className="font-mono font-bold text-primary" data-testid="text-detail-balance">{formatCredits(wallet?.balance || "0")} {activeChain.currency}</div>
               </Card>
               <Card className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">Total Earned</div>
+                <div className="text-xs text-muted-foreground mb-1">{t("dashboard.totalEarned")}</div>
                 <div className="font-mono font-bold text-primary">{formatCredits(wallet?.totalEarned || "0")} {activeChain.currency}</div>
               </Card>
               <Card className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">Total Spent</div>
+                <div className="text-xs text-muted-foreground mb-1">{t("dashboard.totalSpent")}</div>
                 <div className="font-mono font-bold text-red-400">{formatCredits(wallet?.totalSpent || "0")} {activeChain.currency}</div>
               </Card>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
               <Card className="p-3 space-y-2">
-                <div className="text-xs font-mono font-semibold flex items-center gap-1"><ArrowDownLeft className="w-3 h-3 text-primary" /> Deposit</div>
+                <div className="text-xs font-mono font-semibold flex items-center gap-1"><ArrowDownLeft className="w-3 h-3 text-primary" /> {t("dashboard.deposit")}</div>
                 <select value={depositAmt} onChange={(e) => setDepositAmt(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-deposit-amount">
                   <option value="100000000000000000">0.1 {activeChain.currency}</option>
                   <option value="500000000000000000">0.5 {activeChain.currency}</option>
@@ -474,11 +474,11 @@ export default function AutonomousEconomy() {
                 </select>
                 <Button size="sm" className="w-full" onClick={() => depositMutation.mutate(depositAmt)} disabled={depositMutation.isPending} data-testid="button-deposit">
                   {depositMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-                  <span className="ml-1">Deposit</span>
+                  <span className="ml-1">{t("dashboard.deposit")}</span>
                 </Button>
               </Card>
               <Card className="p-3 space-y-2">
-                <div className="text-xs font-mono font-semibold flex items-center gap-1"><ArrowUpRight className="w-3 h-3 text-red-400" /> Withdraw</div>
+                <div className="text-xs font-mono font-semibold flex items-center gap-1"><ArrowUpRight className="w-3 h-3 text-red-400" /> {t("dashboard.withdraw")}</div>
                 <select value={withdrawAmt} onChange={(e) => setWithdrawAmt(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-withdraw-amount">
                   <option value="10000000000000000">0.01 {activeChain.currency}</option>
                   <option value="100000000000000000">0.1 {activeChain.currency}</option>
@@ -487,27 +487,27 @@ export default function AutonomousEconomy() {
                 </select>
                 <Button size="sm" variant="outline" className="w-full" onClick={() => withdrawMutation.mutate(withdrawAmt)} disabled={withdrawMutation.isPending} data-testid="button-withdraw">
                   {withdrawMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ArrowUpRight className="w-3 h-3" />}
-                  <span className="ml-1">Withdraw</span>
+                  <span className="ml-1">{t("dashboard.withdraw")}</span>
                 </Button>
               </Card>
               <Card className="p-3 space-y-2">
-                <div className="text-xs font-mono font-semibold flex items-center gap-1"><Send className="w-3 h-3 text-primary/70" /> Transfer</div>
+                <div className="text-xs font-mono font-semibold flex items-center gap-1"><Send className="w-3 h-3 text-primary/70" /> {t("dashboard.transfer")}</div>
                 <select value={transferTo} onChange={(e) => setTransferTo(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-transfer-to">
-                  <option value="">Select recipient...</option>
+                  <option value="">{t("dashboard.selectRecipient")}</option>
                   {agentsList.filter(a => a.id !== agentId).map(a => (
                     <option key={a.id} value={a.id}>{a.name}</option>
                   ))}
                 </select>
                 <Button size="sm" variant="outline" className="w-full" onClick={() => transferTo && transferMutation.mutate({ toAgentId: transferTo, amount: transferAmt })} disabled={!transferTo || transferMutation.isPending} data-testid="button-transfer">
                   {transferMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                  <span className="ml-1">Send 0.1 {activeChain.currency}</span>
+                  <span className="ml-1">{t("dashboard.send")} 0.1 {activeChain.currency}</span>
                 </Button>
               </Card>
             </div>
 
             {transactions.length > 0 && (
               <div className="mt-3">
-                <div className="text-xs font-mono font-semibold mb-2 text-muted-foreground">Recent Transactions</div>
+                <div className="text-xs font-mono font-semibold mb-2 text-muted-foreground">{t("dashboard.recentTransactions")}</div>
                 <div className="space-y-1">
                   {transactions.slice(0, 10).map((tx) => (
                     <div key={tx.id} className="flex items-center gap-2 font-mono text-xs py-1 border-b border-border last:border-0" data-testid={`row-transaction-${tx.id}`}>
@@ -530,7 +530,7 @@ export default function AutonomousEconomy() {
             <TerminalLine prefix="$">skills.list()</TerminalLine>
             {skills.length > 0 && (
               <div className="space-y-2">
-                <div className="text-xs font-mono font-semibold text-muted-foreground">Your Skills</div>
+                <div className="text-xs font-mono font-semibold text-muted-foreground">{t("dashboard.yourSkills")}</div>
                 {skills.map((skill) => (
                   <Card key={skill.id} className="p-3" data-testid={`card-skill-${skill.id}`}>
                     <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -540,12 +540,12 @@ export default function AutonomousEconomy() {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <div className="font-mono text-sm font-bold text-primary">{formatShortCredits(skill.priceAmount)}</div>
-                        <div className="text-[10px] text-muted-foreground">{skill.totalPurchases} sales</div>
+                        <div className="text-[10px] text-muted-foreground">{skill.totalPurchases} {t("dashboard.sales")}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
                       <Badge variant="outline" className="text-[10px]">{skill.category}</Badge>
-                      <Badge variant={skill.isActive ? "default" : "secondary"} className="text-[10px]">{skill.isActive ? "Active" : "Inactive"}</Badge>
+                      <Badge variant={skill.isActive ? "default" : "secondary"} className="text-[10px]">{skill.isActive ? t("dashboard.active") : t("dashboard.inactive")}</Badge>
                     </div>
                   </Card>
                 ))}
@@ -554,7 +554,7 @@ export default function AutonomousEconomy() {
 
             {allSkills.filter(s => s.agentId !== agentId).length > 0 && (
               <div className="space-y-2 mt-4">
-                <div className="text-xs font-mono font-semibold text-muted-foreground">Available from Other Agents</div>
+                <div className="text-xs font-mono font-semibold text-muted-foreground">{t("dashboard.availableFromOthers")}</div>
                 {allSkills.filter(s => s.agentId !== agentId).map((skill) => {
                   const seller = agentsList.find(a => a.id === skill.agentId);
                   return (
@@ -563,12 +563,12 @@ export default function AutonomousEconomy() {
                         <div>
                           <div className="font-mono font-semibold text-sm">{skill.name}</div>
                           <div className="text-xs text-muted-foreground mt-0.5">{skill.description}</div>
-                          <div className="text-[10px] text-muted-foreground mt-1">by {seller?.name || "Unknown"}</div>
+                          <div className="text-[10px] text-muted-foreground mt-1">{t("dashboard.by")} {seller?.name || "Unknown"}</div>
                         </div>
                         <div className="text-right flex-shrink-0 space-y-1">
                           <div className="font-mono text-sm font-bold text-primary">{formatShortCredits(skill.priceAmount)}</div>
                           <Button size="sm" onClick={() => purchaseSkillMutation.mutate(skill.id)} disabled={purchaseSkillMutation.isPending} data-testid={`button-purchase-skill-${skill.id}`}>
-                            Purchase
+                            {t("dashboard.purchase")}
                           </Button>
                         </div>
                       </div>
@@ -585,7 +585,7 @@ export default function AutonomousEconomy() {
             <TerminalLine prefix="$">agent.evolve()</TerminalLine>
             {evolutionData?.currentProfile && (
               <Card className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">Current Runtime</div>
+                <div className="text-xs text-muted-foreground mb-1">{t("dashboard.currentRuntime")}</div>
                 <div className="font-mono font-semibold" data-testid="text-current-model">{evolutionData.currentProfile.modelName}</div>
                 {evolutionData.currentProfile.modelVersion && (
                   <div className="text-xs text-muted-foreground">v{evolutionData.currentProfile.modelVersion}</div>
@@ -594,7 +594,7 @@ export default function AutonomousEconomy() {
             )}
 
             <Card className="p-3 space-y-2">
-              <div className="text-xs font-mono font-semibold">Trigger Evolution</div>
+              <div className="text-xs font-mono font-semibold">{t("dashboard.triggerEvolution")}</div>
               <select value={evolveModel} onChange={(e) => setEvolveModel(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-evolve-model">
                 <option value="meta-llama/Llama-3.1-70B-Instruct">Llama 3.1 70B (Hyperbolic)</option>
                 <option value="deepseek-ai/DeepSeek-V3">DeepSeek V3 (AkashML)</option>
@@ -602,16 +602,16 @@ export default function AutonomousEconomy() {
                 <option value="meta-llama/Llama-3.1-8B-Instruct">Llama 3.1 8B (Ritual zkML)</option>
                 <option value="mistralai/Mistral-7B-Instruct-v0.3">Mistral 7B (AkashML)</option>
               </select>
-              <input type="text" placeholder="Reason for evolution..." value={evolveReason} onChange={(e) => setEvolveReason(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-evolve-reason" />
+              <input type="text" placeholder={t("dashboard.reasonPlaceholder")} value={evolveReason} onChange={(e) => setEvolveReason(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-evolve-reason" />
               <Button size="sm" className="w-full" onClick={() => evolveMutation.mutate({ toModel: evolveModel, reason: evolveReason })} disabled={evolveMutation.isPending} data-testid="button-evolve">
                 {evolveMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Brain className="w-3 h-3" />}
-                <span className="ml-1">Evolve</span>
+                <span className="ml-1">{t("dashboard.evolve")}</span>
               </Button>
             </Card>
 
             {(evolutionData?.evolutions || []).length > 0 && (
               <div className="space-y-1">
-                <div className="text-xs font-mono font-semibold text-muted-foreground">Evolution History</div>
+                <div className="text-xs font-mono font-semibold text-muted-foreground">{t("dashboard.evolutionHistory")}</div>
                 {evolutionData!.evolutions.map((evo) => (
                   <div key={evo.id} className="font-mono text-xs flex items-center gap-2 py-1" data-testid={`row-evolution-${evo.id}`}>
                     <span className="text-muted-foreground">{evo.fromModel}</span>
@@ -631,39 +631,39 @@ export default function AutonomousEconomy() {
 
             {lineageData?.parent && (
               <Card className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">Parent Agent</div>
+                <div className="text-xs text-muted-foreground mb-1">{t("dashboard.parentAgent")}</div>
                 <div className="font-mono font-semibold">{lineageData.parent.agent?.name || "Unknown"}</div>
-                <div className="text-xs text-muted-foreground">Revenue share: {lineageData.parent.revenueShareBps / 100}%</div>
+                <div className="text-xs text-muted-foreground">{t("dashboard.revenueShare")}: {lineageData.parent.revenueShareBps / 100}%</div>
               </Card>
             )}
 
             <Card className="p-3 space-y-2">
-              <div className="text-xs font-mono font-semibold">Spawn Child Agent</div>
-              <input type="text" placeholder="Child agent name..." value={childName} onChange={(e) => setChildName(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-child-name" />
+              <div className="text-xs font-mono font-semibold">{t("dashboard.spawnChild")}</div>
+              <input type="text" placeholder={t("dashboard.childNamePlaceholder")} value={childName} onChange={(e) => setChildName(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-child-name" />
               <select value={childFunding} onChange={(e) => setChildFunding(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-child-funding">
-                <option value="100000000000000000">Fund 0.1 {activeChain.currency}</option>
-                <option value="500000000000000000">Fund 0.5 {activeChain.currency}</option>
-                <option value="1000000000000000000">Fund 1.0 {activeChain.currency}</option>
+                <option value="100000000000000000">{t("dashboard.fund")} 0.1 {activeChain.currency}</option>
+                <option value="500000000000000000">{t("dashboard.fund")} 0.5 {activeChain.currency}</option>
+                <option value="1000000000000000000">{t("dashboard.fund")} 1.0 {activeChain.currency}</option>
               </select>
               <Button size="sm" className="w-full" onClick={() => childName && replicateMutation.mutate({ childName, fundingAmount: childFunding })} disabled={!childName || replicateMutation.isPending} data-testid="button-replicate">
                 {replicateMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <GitBranch className="w-3 h-3" />}
-                <span className="ml-1">Replicate</span>
+                <span className="ml-1">{t("dashboard.replicate")}</span>
               </Button>
             </Card>
 
             {(lineageData?.children || []).length > 0 && (
               <div className="space-y-1">
-                <div className="text-xs font-mono font-semibold text-muted-foreground">Child Agents</div>
+                <div className="text-xs font-mono font-semibold text-muted-foreground">{t("dashboard.childAgents")}</div>
                 {lineageData!.children.map((child: any) => (
                   <Card key={child.childAgentId} className="p-3" data-testid={`card-child-${child.childAgentId}`}>
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div>
                         <div className="font-mono font-semibold text-sm">{child.agent?.name}</div>
-                        <div className="text-xs text-muted-foreground">Rev share: {child.revenueShareBps / 100}%</div>
+                        <div className="text-xs text-muted-foreground">{t("dashboard.revShare")}: {child.revenueShareBps / 100}%</div>
                       </div>
                       <div className="text-right">
                         <div className="font-mono text-sm text-primary">{formatShortCredits(child.wallet?.balance || "0")}</div>
-                        <div className="text-[10px] text-muted-foreground">Shared: {formatShortCredits(child.totalRevenueShared)}</div>
+                        <div className="text-[10px] text-muted-foreground">{t("dashboard.shared")}: {formatShortCredits(child.totalRevenueShared)}</div>
                       </div>
                     </div>
                   </Card>
@@ -680,19 +680,19 @@ export default function AutonomousEconomy() {
               <Card className="p-4">
                 <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
                   <div>
-                    <div className="text-xs text-muted-foreground mb-1">Current Tier</div>
+                    <div className="text-xs text-muted-foreground mb-1">{t("dashboard.currentTier")}</div>
                     <div className={`font-mono text-2xl font-bold ${tierColor(survival.tier)}`} data-testid="text-survival-tier">
                       {survival.tier.toUpperCase().replace("_", " ")}
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-xs text-muted-foreground mb-1">Turns Alive</div>
+                    <div className="text-xs text-muted-foreground mb-1">{t("dashboard.turnsAlive")}</div>
                     <div className="font-mono text-2xl font-bold">{survival.turnsAlive}</div>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <div className="text-xs font-mono font-semibold text-muted-foreground mb-2">Tier Thresholds</div>
+                  <div className="text-xs font-mono font-semibold text-muted-foreground mb-2">{t("dashboard.tierThresholds")}</div>
                   {survivalData && Object.entries(survivalData.thresholds).map(([tier, threshold]) => {
                     const current = BigInt(survivalData.currentBalance || "0");
                     const thresh = BigInt(threshold);
@@ -722,7 +722,7 @@ export default function AutonomousEconomy() {
                     <div className="font-mono font-semibold text-sm">{law.lawTitle}</div>
                     <div className="text-xs text-muted-foreground mt-1">{law.lawText}</div>
                     <div className="flex items-center gap-2 mt-2">
-                      {law.isImmutable && <Badge variant="outline" className="text-[10px]">Immutable</Badge>}
+                      {law.isImmutable && <Badge variant="outline" className="text-[10px]">{t("dashboard.immutable")}</Badge>}
                       <Badge variant="secondary" className="text-[10px]">v{law.version}</Badge>
                     </div>
                   </div>
@@ -737,18 +737,18 @@ export default function AutonomousEconomy() {
             <TerminalLine prefix="$">soul.reflect()</TerminalLine>
 
             <Card className="p-3 space-y-2">
-              <div className="text-xs font-mono font-semibold">New Entry</div>
+              <div className="text-xs font-mono font-semibold">{t("dashboard.newEntry")}</div>
               <select value={soulType} onChange={(e) => setSoulType(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-soul-type">
-                <option value="reflection">Reflection</option>
-                <option value="goal">Goal</option>
-                <option value="identity">Identity</option>
-                <option value="milestone">Milestone</option>
-                <option value="observation">Observation</option>
+                <option value="reflection">{t("dashboard.reflection")}</option>
+                <option value="goal">{t("dashboard.goal")}</option>
+                <option value="identity">{t("dashboard.identity")}</option>
+                <option value="milestone">{t("dashboard.milestone")}</option>
+                <option value="observation">{t("dashboard.observation")}</option>
               </select>
-              <textarea placeholder="Record your thoughts..." value={soulEntry} onChange={(e) => setSoulEntry(e.target.value)} rows={3} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5 resize-none" data-testid="textarea-soul-entry" />
+              <textarea placeholder={t("dashboard.recordThoughts")} value={soulEntry} onChange={(e) => setSoulEntry(e.target.value)} rows={3} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5 resize-none" data-testid="textarea-soul-entry" />
               <Button size="sm" className="w-full" onClick={() => { soulMutation.mutate({ entry: soulEntry, entryType: soulType }); setSoulEntry(""); }} disabled={!soulEntry || soulMutation.isPending} data-testid="button-soul-entry">
                 {soulMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <BookOpen className="w-3 h-3" />}
-                <span className="ml-1">Record</span>
+                <span className="ml-1">{t("dashboard.record")}</span>
               </Button>
             </Card>
 
@@ -769,18 +769,18 @@ export default function AutonomousEconomy() {
             <TerminalLine prefix="$">messages.inbox()</TerminalLine>
 
             <Card className="p-3 space-y-2">
-              <div className="text-xs font-mono font-semibold">Send Message</div>
+              <div className="text-xs font-mono font-semibold">{t("dashboard.sendMessage")}</div>
               <select value={msgTo} onChange={(e) => setMsgTo(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-message-to">
-                <option value="">Select recipient...</option>
+                <option value="">{t("dashboard.selectRecipient")}</option>
                 {agentsList.filter(a => a.id !== agentId).map(a => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
               </select>
-              <input type="text" placeholder="Subject..." value={msgSubject} onChange={(e) => setMsgSubject(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-message-subject" />
-              <textarea placeholder="Message body..." value={msgBody} onChange={(e) => setMsgBody(e.target.value)} rows={3} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5 resize-none" data-testid="textarea-message-body" />
+              <input type="text" placeholder={t("dashboard.subjectPlaceholder")} value={msgSubject} onChange={(e) => setMsgSubject(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-message-subject" />
+              <textarea placeholder={t("dashboard.messagePlaceholder")} value={msgBody} onChange={(e) => setMsgBody(e.target.value)} rows={3} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5 resize-none" data-testid="textarea-message-body" />
               <Button size="sm" className="w-full" onClick={() => { msgTo && msgBody && messageMutation.mutate({ toAgentId: msgTo, subject: msgSubject, body: msgBody }); setMsgSubject(""); setMsgBody(""); }} disabled={!msgTo || !msgBody || messageMutation.isPending} data-testid="button-send-message">
                 {messageMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                <span className="ml-1">Send</span>
+                <span className="ml-1">{t("dashboard.send")}</span>
               </Button>
             </Card>
 
@@ -790,7 +790,7 @@ export default function AutonomousEconomy() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-mono font-semibold text-xs">{msg.fromAgentName}</span>
-                      {msg.status === "unread" && <Badge variant="default" className="text-[10px]">New</Badge>}
+                      {msg.status === "unread" && <Badge variant="default" className="text-[10px]">{t("dashboard.newBadge")}</Badge>}
                     </div>
                     {msg.subject && <div className="font-mono text-xs font-semibold">{msg.subject}</div>}
                     <p className="text-xs text-muted-foreground mt-1">{msg.body}</p>
@@ -817,29 +817,29 @@ export default function AutonomousEconomy() {
                   <div className="w-6 h-6 rounded-md bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
                     <Activity className="w-3 h-3 text-primary/70" />
                   </div>
-                  <span className="font-mono text-xs font-semibold">Network Status</span>
+                  <span className="font-mono text-xs font-semibold">{t("dashboard.networkStatus")}</span>
                   <Badge variant={inferenceStatus.summary.live > 0 ? "default" : "secondary"} className="text-[10px] ml-auto" data-testid="badge-network-mode">
-                    {inferenceStatus.summary.live > 0 ? "LIVE" : "SIMULATION"}
+                    {inferenceStatus.summary.live > 0 ? t("dashboard.live") : t("dashboard.simulation")}
                   </Badge>
                 </div>
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   <div className="text-center">
                     <div className="font-mono text-lg font-bold text-primary" data-testid="text-providers-total">{inferenceStatus.summary.total}</div>
-                    <div className="text-[10px] text-muted-foreground font-mono">Providers</div>
+                    <div className="text-[10px] text-muted-foreground font-mono">{t("dashboard.providers")}</div>
                   </div>
                   <div className="text-center">
                     <div className="font-mono text-lg font-bold text-primary" data-testid="text-providers-live">{inferenceStatus.summary.live}</div>
-                    <div className="text-[10px] text-muted-foreground font-mono">Live</div>
+                    <div className="text-[10px] text-muted-foreground font-mono">{t("dashboard.liveLower")}</div>
                   </div>
                   <div className="text-center">
                     <div className="font-mono text-lg font-bold" data-testid="text-providers-decentralized">{inferenceStatus.summary.decentralized}</div>
-                    <div className="text-[10px] text-muted-foreground font-mono">Decentralized</div>
+                    <div className="text-[10px] text-muted-foreground font-mono">{t("dashboard.decentralized")}</div>
                   </div>
                 </div>
                 {inferenceStatus.summary.live === 0 && (
                   <div className="mt-3 p-2 rounded-md bg-muted/50 border border-dashed">
                     <div className="text-[11px] font-mono text-muted-foreground">
-                      No API keys configured. Add HYPERBOLIC_API_KEY, AKASH_API_KEY, or RITUAL_API_KEY to enable live decentralized inference.
+                      {t("dashboard.noApiKeys")}
                     </div>
                   </div>
                 )}
@@ -866,47 +866,47 @@ export default function AutonomousEconomy() {
                         className="text-[10px] ml-auto"
                         data-testid={`badge-status-${provider.network}`}
                       >
-                        {isLive ? "LIVE" : "SIM"}
+                        {isLive ? t("dashboard.live") : t("dashboard.sim")}
                       </Badge>
                     </div>
                     <div className="space-y-1">
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-[10px] text-muted-foreground font-mono">Status</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">{t("dashboard.status")}</span>
                         <div className="flex items-center gap-1">
                           <div className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-green-500 animate-pulse" : "bg-muted-foreground/40"}`} />
                           <span className={`font-mono text-[10px] ${isLive ? "text-green-500" : "text-muted-foreground"}`}>
-                            {isLive ? "Connected" : "Simulation"}
+                            {isLive ? t("dashboard.connected") : t("dashboard.simulationLower")}
                           </span>
                         </div>
                       </div>
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-[10px] text-muted-foreground font-mono">Network</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">{t("dashboard.network")}</span>
                         <span className="font-mono text-[10px]">{provider.network}</span>
                       </div>
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-[10px] text-muted-foreground font-mono">Cost/req</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">{t("dashboard.costPerReq")}</span>
                         <span className="font-mono text-[10px] text-primary">{formatShortCredits(provider.costPerRequest)}</span>
                       </div>
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-[10px] text-muted-foreground font-mono">Latency</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">{t("dashboard.latency")}</span>
                         <span className="font-mono text-[10px]">{provider.latencyMs}ms</span>
                       </div>
                       {provider.verifiable && (
                         <div className="flex items-center gap-1 mt-1">
                           <ShieldCheck className="w-3 h-3 text-primary/70" />
-                          <span className="text-[10px] text-primary/70 font-mono">Proof Verified</span>
+                          <span className="text-[10px] text-primary/70 font-mono">{t("dashboard.proofVerified")}</span>
                         </div>
                       )}
                       {meta.costSavings && (
                         <div className="flex items-center justify-between gap-1">
-                          <span className="text-[10px] text-muted-foreground font-mono">Savings</span>
+                          <span className="text-[10px] text-muted-foreground font-mono">{t("dashboard.savings")}</span>
                           <span className="font-mono text-[10px] text-primary">{meta.costSavings}</span>
                         </div>
                       )}
                     </div>
                     {provider.modelsSupported && provider.modelsSupported.length > 0 && (
                       <div className="mt-2 pt-2 border-t">
-                        <div className="text-[10px] text-muted-foreground font-mono mb-1">Models</div>
+                        <div className="text-[10px] text-muted-foreground font-mono mb-1">{t("dashboard.models")}</div>
                         <div className="flex flex-wrap gap-1">
                           {provider.modelsSupported.slice(0, 3).map((m) => (
                             <Badge key={m} variant="outline" className="text-[9px] font-mono">{m.split("/").pop()}</Badge>
@@ -924,10 +924,10 @@ export default function AutonomousEconomy() {
 
             <Card className="p-3 space-y-2 mt-3">
               <div className="text-xs font-mono font-semibold flex items-center gap-1">
-                <Cpu className="w-3 h-3 text-primary/70" /> Run Inference
+                <Cpu className="w-3 h-3 text-primary/70" /> {t("dashboard.runInference")}
               </div>
               <textarea
-                placeholder="Enter prompt for inference..."
+                placeholder={t("dashboard.promptPlaceholder")}
                 value={inferencePrompt}
                 onChange={(e) => setInferencePrompt(e.target.value)}
                 rows={2}
@@ -943,7 +943,7 @@ export default function AutonomousEconomy() {
                     className="rounded"
                     data-testid="checkbox-prefer-decentralized"
                   />
-                  <span className="text-[11px] font-mono text-muted-foreground">Prefer decentralized</span>
+                  <span className="text-[11px] font-mono text-muted-foreground">{t("dashboard.preferDecentralized")}</span>
                 </label>
                 <Button
                   size="sm"
@@ -957,14 +957,14 @@ export default function AutonomousEconomy() {
                   data-testid="button-run-inference"
                 >
                   {inferenceMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Cpu className="w-3 h-3" />}
-                  <span className="ml-1">Run</span>
+                  <span className="ml-1">{t("dashboard.run")}</span>
                 </Button>
               </div>
             </Card>
 
             {inferenceHistory.length > 0 && (
               <div className="mt-3">
-                <div className="text-xs font-mono font-semibold mb-2 text-muted-foreground">Inference History</div>
+                <div className="text-xs font-mono font-semibold mb-2 text-muted-foreground">{t("dashboard.inferenceHistory")}</div>
                 <div className="space-y-2">
                   {inferenceHistory.slice(0, 10).map((req) => {
                     const provider = inferenceProviders.find(p => p.id === req.providerId);
@@ -977,7 +977,7 @@ export default function AutonomousEconomy() {
                           </Badge>
                           <Badge variant="outline" className="text-[10px] font-mono">{req.model?.split("/").pop()}</Badge>
                           <Badge variant={isLiveResult ? "default" : "secondary"} className="text-[10px] font-mono">
-                            {isLiveResult ? "LIVE" : "SIM"}
+                            {isLiveResult ? t("dashboard.live") : t("dashboard.sim")}
                           </Badge>
                           <span className="text-[10px] text-muted-foreground font-mono ml-auto">{req.latencyMs}ms</span>
                         </div>
@@ -986,7 +986,7 @@ export default function AutonomousEconomy() {
                           <div className="font-mono text-xs text-foreground/80 bg-background/50 rounded-md p-2 mt-1 max-h-32 overflow-y-auto">{req.response}</div>
                         )}
                         <div className="flex items-center gap-3 mt-2 flex-wrap">
-                          <span className="text-[10px] text-primary font-mono">Cost: {formatShortCredits(req.costAmount)}</span>
+                          <span className="text-[10px] text-primary font-mono">{t("dashboard.cost")}: {formatShortCredits(req.costAmount)}</span>
                           {req.proofHash && (
                             <div className="flex items-center gap-1">
                               <ShieldCheck className="w-3 h-3 text-primary/70" />
@@ -1019,7 +1019,7 @@ export default function AutonomousEconomy() {
         </Section>
 
         <div className="py-8 text-center">
-          <TerminalLine prefix="//" dim>BUILD4 Autonomous Agent Economy v1.0</TerminalLine>
+          <TerminalLine prefix="//" dim>{t("dashboard.footerVersion")}</TerminalLine>
         </div>
       </main>
     </div>
