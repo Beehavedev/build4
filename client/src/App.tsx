@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/home";
 import AutonomousEconomy from "@/pages/autonomous-economy";
 import Manifesto from "@/pages/manifesto";
+import Architecture from "@/pages/architecture";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -14,6 +15,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/autonomous-economy" component={AutonomousEconomy} />
       <Route path="/manifesto" component={Manifesto} />
+      <Route path="/architecture" component={Architecture} />
       <Route component={NotFound} />
     </Switch>
   );

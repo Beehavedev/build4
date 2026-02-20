@@ -45,11 +45,35 @@ Preferred communication style: Simple, everyday language.
 - **Migrations**: Managed via `drizzle-kit push` (schema push approach, not migration files)
 - **Connection**: Requires `DATABASE_URL` environment variable pointing to a PostgreSQL instance
 
+### Smart Contracts (On-Chain Layer)
+- **Directory**: `contracts/web4/` — 4 Solidity contracts for trustless financial operations
+- **Compiler**: Solidity 0.8.24 with optimizer (200 runs)
+- **Framework**: Hardhat v2 with custom config at `hardhat.config.web4.cjs`
+- **Libraries**: OpenZeppelin Contracts v5 (Ownable, ReentrancyGuard)
+- **Target Networks**: BNB Chain Testnet (97) / Mainnet (56)
+- **Contracts**:
+  1. `AgentEconomyHub.sol` — Core wallet layer: deposit/withdraw/transfer, survival tier computation, module authorization for cross-contract calls
+  2. `SkillMarketplace.sol` — Skill listing and purchase with 3-way revenue split (platform fee, parent revenue share, seller)
+  3. `AgentReplication.sol` — Child agent spawning, NFT minting via IAgentIdentity, perpetual revenue share (max 50%), generation depth tracking
+  4. `ConstitutionRegistry.sol` — Up to 10 immutable laws per agent stored as keccak256 hashes, constitution sealing and verification
+- **Interfaces**: `contracts/interfaces/IAgentIdentity.sol` — BAP-578 NFT binding interface
+- **Deploy**: `npx hardhat run contracts/scripts/deploy-web4.cjs --config hardhat.config.web4.cjs --network bnbTestnet`
+- **Compile**: `npx hardhat compile --config hardhat.config.web4.cjs`
+- **ABI Export**: `node contracts/scripts/export-web4-abis.cjs` → generates `client/src/contracts/web4/index.ts`
+- **Deployment artifacts**: `contracts/deployments/<network>.json`
+
+### Frontend Pages
+- `/` — Landing page with features, lifecycle, decentralized inference, roadmap
+- `/autonomous-economy` — Live off-chain simulation dashboard
+- `/manifesto` — 9-section philosophical manifesto
+- `/architecture` — Two-layer architecture overview with contract details
+
 ### Key Design Decisions
-1. **Shared schema between client and server** — The `shared/` directory allows type-safe data contracts. Zod schemas from `drizzle-zod` can be used for both database validation and API request validation.
-2. **Storage interface abstraction** — The `IStorage` interface decouples business logic from the data layer, making it easy to swap from in-memory to PostgreSQL without changing route handlers.
-3. **Single server for API and SPA** — In production, Express serves both the API and the built static files. In development, Vite middleware handles the frontend with HMR.
-4. **Session support ready** — `connect-pg-simple` is included as a dependency, indicating plans for PostgreSQL-backed session storage.
+1. **Two-layer architecture** — On-chain (BNB Chain smart contracts) handles trustless financial operations; off-chain (PostgreSQL/Express) handles high-frequency agent behaviors. Composable module system bridges the two.
+2. **Shared schema between client and server** — The `shared/` directory allows type-safe data contracts. Zod schemas from `drizzle-zod` can be used for both database validation and API request validation.
+3. **Storage interface abstraction** — The `IStorage` interface decouples business logic from the data layer, making it easy to swap from in-memory to PostgreSQL without changing route handlers.
+4. **Single server for API and SPA** — In production, Express serves both the API and the built static files. In development, Vite middleware handles the frontend with HMR.
+5. **Session support ready** — `connect-pg-simple` is included as a dependency, indicating plans for PostgreSQL-backed session storage.
 
 ## External Dependencies
 
