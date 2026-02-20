@@ -207,6 +207,46 @@ export const insertAgentMessageSchema = createInsertSchema(agentMessages).omit({
 export type InsertAgentMessage = z.infer<typeof insertAgentMessageSchema>;
 export type AgentMessage = typeof agentMessages.$inferSelect;
 
+export const inferenceProviders = pgTable("inference_providers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("centralized"),
+  network: text("network"),
+  modelsSupported: text("models_supported").array(),
+  costPerRequest: text("cost_per_request").notNull().default("0"),
+  latencyMs: integer("latency_ms"),
+  isActive: boolean("is_active").notNull().default(true),
+  verifiable: boolean("verifiable").notNull().default(false),
+  decentralized: boolean("decentralized").notNull().default(false),
+  metadata: text("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertInferenceProviderSchema = createInsertSchema(inferenceProviders).omit({ id: true, createdAt: true });
+export type InsertInferenceProvider = z.infer<typeof insertInferenceProviderSchema>;
+export type InferenceProvider = typeof inferenceProviders.$inferSelect;
+
+export const inferenceRequests = pgTable("inference_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  providerId: varchar("provider_id").notNull(),
+  model: text("model").notNull(),
+  prompt: text("prompt").notNull(),
+  response: text("response"),
+  status: text("status").notNull().default("pending"),
+  costAmount: text("cost_amount").notNull().default("0"),
+  latencyMs: integer("latency_ms"),
+  proofHash: text("proof_hash"),
+  proofType: text("proof_type"),
+  proofAnchored: boolean("proof_anchored").notNull().default(false),
+  preferDecentralized: boolean("prefer_decentralized").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertInferenceRequestSchema = createInsertSchema(inferenceRequests).omit({ id: true, createdAt: true });
+export type InsertInferenceRequest = z.infer<typeof insertInferenceRequestSchema>;
+export type InferenceRequest = typeof inferenceRequests.$inferSelect;
+
 export const web4DepositRequestSchema = z.object({
   agentId: z.string().min(1),
   amount: z.string().min(1),
@@ -266,4 +306,17 @@ export const web4SendMessageRequestSchema = z.object({
   toAgentId: z.string().min(1),
   subject: z.string().max(200).optional(),
   body: z.string().min(1).max(5000),
+});
+
+export const web4InferenceRequestSchema = z.object({
+  agentId: z.string().min(1),
+  prompt: z.string().min(1).max(5000),
+  model: z.string().optional(),
+  preferDecentralized: z.boolean().default(true),
+  maxCost: z.string().optional(),
+});
+
+export const web4SetProviderRequestSchema = z.object({
+  agentId: z.string().min(1),
+  providerId: z.string().min(1),
 });
