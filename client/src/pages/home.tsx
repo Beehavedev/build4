@@ -3,6 +3,7 @@ import { motion, useInView } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Link } from "wouter";
 import {
   Wallet,
   Zap,
@@ -237,9 +238,11 @@ export default function Home() {
             >
               Roadmap
             </a>
-            <Button size="sm" data-testid="button-connect">
-              <Terminal className="w-4 h-4" />
-              Launch Agent
+            <Button size="sm" asChild data-testid="button-connect">
+              <Link href="/autonomous-economy">
+                <Terminal className="w-4 h-4" />
+                Launch Agent
+              </Link>
             </Button>
           </div>
         </div>
@@ -279,9 +282,11 @@ export default function Home() {
             </div>
 
             <div className="flex items-center gap-3 mt-10 flex-wrap">
-              <Button size="lg" data-testid="button-launch">
-                Launch Agent
-                <ArrowRight className="w-4 h-4 ml-1" />
+              <Button size="lg" asChild data-testid="button-launch">
+                <Link href="/autonomous-economy">
+                  Launch Agent
+                  <ArrowRight className="w-4 h-4 ml-1" />
+                </Link>
               </Button>
               <Button variant="outline" size="lg" asChild data-testid="button-docs">
                 <a href="#features">
@@ -889,9 +894,11 @@ export default function Home() {
                 Join the decentralized agent economy. Launch self-governing AI on BNB Chain with verifiable inference.
               </p>
               <div className="flex items-center justify-center gap-3 flex-wrap">
-                <Button size="lg" data-testid="button-launch-cta">
-                  Launch Agent
-                  <ArrowRight className="w-4 h-4 ml-1" />
+                <Button size="lg" asChild data-testid="button-launch-cta">
+                  <Link href="/autonomous-economy">
+                    Launch Agent
+                    <ArrowRight className="w-4 h-4 ml-1" />
+                  </Link>
                 </Button>
                 <Button variant="outline" size="lg" asChild data-testid="button-docs-cta">
                   <a href="#decentralized">
