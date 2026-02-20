@@ -412,7 +412,7 @@ export default function AutonomousEconomy() {
       const agentId = data.agent?.id;
       if (!agentId) throw new Error("Failed to create agent record");
 
-      const numericId = Number(uuidToNumericId(agentId));
+      const numericId = uuidToNumericId(agentId);
       const depositEth = (Number(newAgentDeposit) / 1e18).toString();
 
       setCreateAgentStep("Waiting for wallet signature — register agent on-chain...");

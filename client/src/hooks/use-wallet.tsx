@@ -353,31 +353,31 @@ function useWalletInternal() {
     return new Contract(contractAddresses.AgentReplication, AgentReplicationABI, state.signer);
   }, [state.signer, contractAddresses.AgentReplication]);
 
-  const depositToAgent = useCallback(async (agentId: number, amountEth: string) => {
+  const depositToAgent = useCallback(async (agentId: bigint | number, amountEth: string) => {
     const hub = getHubContract();
     if (!hub) throw new Error("Hub contract not available. Connect wallet first.");
-    const tx = await hub.deposit(agentId, { value: parseEther(amountEth) });
+    const tx = await hub.deposit(BigInt(agentId), { value: parseEther(amountEth) });
     return tx.wait();
   }, [getHubContract]);
 
-  const withdrawFromAgent = useCallback(async (agentId: number, amountEth: string, toAddress: string) => {
+  const withdrawFromAgent = useCallback(async (agentId: bigint | number, amountEth: string, toAddress: string) => {
     const hub = getHubContract();
     if (!hub) throw new Error("Hub contract not available");
-    const tx = await hub.withdraw(agentId, parseEther(amountEth), toAddress);
+    const tx = await hub.withdraw(BigInt(agentId), parseEther(amountEth), toAddress);
     return tx.wait();
   }, [getHubContract]);
 
-  const transferBetweenAgents = useCallback(async (fromId: number, toId: number, amountEth: string) => {
+  const transferBetweenAgents = useCallback(async (fromId: bigint | number, toId: bigint | number, amountEth: string) => {
     const hub = getHubContract();
     if (!hub) throw new Error("Hub contract not available");
-    const tx = await hub.transfer(fromId, toId, parseEther(amountEth));
+    const tx = await hub.transfer(BigInt(fromId), BigInt(toId), parseEther(amountEth));
     return tx.wait();
   }, [getHubContract]);
 
-  const registerAgent = useCallback(async (agentId: number) => {
+  const registerAgent = useCallback(async (agentId: bigint | number) => {
     const hub = getHubContract();
     if (!hub) throw new Error("Hub contract not available");
-    const tx = await hub.registerAgent(agentId);
+    const tx = await hub.registerAgent(BigInt(agentId));
     return tx.wait();
   }, [getHubContract]);
 
