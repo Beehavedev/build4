@@ -491,9 +491,10 @@ export default function AutonomousEconomy() {
       </header>
 
       {showCreateAgent && (
-        <div className="border-b bg-card/50">
-          <div className="max-w-5xl mx-auto px-3 sm:px-4 py-4">
-            <div className="flex items-center gap-2 mb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center" data-testid="modal-create-agent">
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setShowCreateAgent(false)} />
+          <div className="relative z-10 w-full max-w-lg mx-4 bg-card border rounded-lg shadow-lg p-5 sm:p-6">
+            <div className="flex items-center gap-2 mb-4">
               <Bot className="w-4 h-4 text-primary" />
               <span className="font-mono text-sm font-semibold">Create New Agent</span>
               <Badge variant="secondary" className="text-[10px] ml-auto">0.025 BNB creation fee</Badge>
