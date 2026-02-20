@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
+import { getProviderStatus, isProviderLive } from "./inference";
 import {
   web4DepositRequestSchema,
   web4TransferRequestSchema,
@@ -309,6 +310,37 @@ export function registerWeb4Routes(app: Express): void {
     try {
       const providers = await storage.getAllInferenceProviders();
       res.json(providers);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/web4/inference/status", async (_req: Request, res: Response) => {
+    try {
+      const providers = await storage.getAllInferenceProviders();
+      const liveStatus = getProviderStatus();
+      const enriched = providers.map(p => {
+        const network = p.network || "";
+        const live = isProviderLive(network);
+        let meta: any = {};
+        try { meta = JSON.parse(p.metadata || "{}"); } catch {}
+        return {
+          ...p,
+          live,
+          liveStatus: live ? "connected" : "simulation",
+          metadata: JSON.stringify({ ...meta, live }),
+        };
+      });
+      res.json({
+        providers: enriched,
+        summary: {
+          total: providers.length,
+          live: enriched.filter(p => p.live).length,
+          simulated: enriched.filter(p => !p.live).length,
+          decentralized: enriched.filter(p => p.decentralized).length,
+        },
+        configuredKeys: liveStatus,
+      });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

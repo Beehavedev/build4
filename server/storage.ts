@@ -23,6 +23,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql } from "drizzle-orm";
+import { runInference, isProviderLive, getProviderStatus } from "./inference";
 
 const SURVIVAL_THRESHOLDS = {
   normal: BigInt("1000000000000000000"),
@@ -651,13 +652,13 @@ export class DatabaseStorage implements IStorage {
 
     const selectedModel = model || (selected.modelsSupported && selected.modelsSupported.length > 0 ? selected.modelsSupported[0] : "llama-3.1-70b");
 
-    const baseLatency = selected.latencyMs || 200;
-    const simulatedLatency = baseLatency + Math.floor(Math.random() * 100);
+    const network = selected.network || "hyperbolic";
+    const inferenceResult = await runInference(network, selectedModel, prompt);
 
-    const responseText = `[${selected.name}] Inference completed via ${selected.type} provider. Model: ${selectedModel}. Task processed successfully on ${selected.decentralized ? "decentralized" : "centralized"} infrastructure.`;
-
-    const proofHash = selected.verifiable ? `0x${Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("")}` : undefined;
-    const proofType = selected.verifiable ? "zk-SNARK" : undefined;
+    const responseText = inferenceResult.text;
+    const simulatedLatency = inferenceResult.latencyMs;
+    const proofHash = inferenceResult.proofHash;
+    const proofType = inferenceResult.proofType;
 
     const newBalance = (BigInt(wallet.balance) - BigInt(selected.costPerRequest)).toString();
     await this.updateWalletBalance(agentId, newBalance, "0", selected.costPerRequest);
@@ -696,6 +697,7 @@ export class DatabaseStorage implements IStorage {
         cost: selected.costPerRequest,
         latencyMs: simulatedLatency,
         proofHash,
+        live: inferenceResult.live,
       }),
       result: "success",
     });
@@ -743,77 +745,64 @@ export class DatabaseStorage implements IStorage {
     await this.createTransaction({ agentId: agent2.id, type: "deposit", amount: "1500000000000000000", description: "Initial funding" });
     await this.createTransaction({ agentId: agent3.id, type: "deposit", amount: "500000000000000000", description: "Initial funding" });
 
+    const providerStatus = getProviderStatus();
+
     await this.createInferenceProvider({
-      name: "Bittensor Subnet 18",
+      name: "Hyperbolic",
       type: "decentralized",
-      network: "bittensor",
-      modelsSupported: ["llama-3.1-70b-instruct", "llama-3.1-8b", "mixtral-8x7b"],
-      costPerRequest: "300000000000000",
-      latencyMs: 850,
-      isActive: true,
-      verifiable: false,
-      decentralized: true,
-      metadata: JSON.stringify({ subnet: 18, miners: 256, avgUptime: "99.2%" }),
-    });
-    await this.createInferenceProvider({
-      name: "io.net GPU Cluster",
-      type: "decentralized",
-      network: "io.net",
-      modelsSupported: ["mistral-7b-instruct", "llama-3.1-8b", "codellama-34b"],
-      costPerRequest: "150000000000000",
-      latencyMs: 420,
-      isActive: true,
-      verifiable: false,
-      decentralized: true,
-      metadata: JSON.stringify({ gpuType: "A100", nodes: 1840, region: "distributed" }),
-    });
-    await this.createInferenceProvider({
-      name: "Akash Network",
-      type: "decentralized",
-      network: "akash",
-      modelsSupported: ["llama-3.1-70b-instruct", "mistral-7b-instruct", "phi-3-medium"],
-      costPerRequest: "200000000000000",
-      latencyMs: 650,
-      isActive: true,
-      verifiable: false,
-      decentralized: true,
-      metadata: JSON.stringify({ deployments: 412, avgCostSaving: "78%" }),
-    });
-    await this.createInferenceProvider({
-      name: "OpenAI",
-      type: "centralized",
-      network: "openai",
-      modelsSupported: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
-      costPerRequest: "2000000000000000",
-      latencyMs: 180,
-      isActive: true,
-      verifiable: false,
-      decentralized: false,
-      metadata: JSON.stringify({ note: "Centralized fallback - higher cost, lower latency" }),
-    });
-    await this.createInferenceProvider({
-      name: "Anthropic",
-      type: "centralized",
-      network: "anthropic",
-      modelsSupported: ["claude-3.5-sonnet", "claude-3-haiku"],
-      costPerRequest: "2500000000000000",
-      latencyMs: 200,
-      isActive: true,
-      verifiable: false,
-      decentralized: false,
-      metadata: JSON.stringify({ note: "Centralized fallback - premium quality" }),
-    });
-    await this.createInferenceProvider({
-      name: "EZKL Verifiable",
-      type: "verifiable",
-      network: "ezkl",
-      modelsSupported: ["zkml-classifier-v2", "zkml-embeddings-v1"],
-      costPerRequest: "500000000000000",
-      latencyMs: 1200,
+      network: "hyperbolic",
+      modelsSupported: ["deepseek-ai/DeepSeek-V3", "meta-llama/Llama-3.1-70B-Instruct", "meta-llama/Llama-3.1-8B-Instruct", "Qwen/Qwen2.5-72B-Instruct"],
+      costPerRequest: "100000000000000",
+      latencyMs: 400,
       isActive: true,
       verifiable: true,
       decentralized: true,
-      metadata: JSON.stringify({ proofType: "zk-SNARK", maxParams: "50M", proofTime: "~340ms" }),
+      metadata: JSON.stringify({
+        baseUrl: "https://api.hyperbolic.xyz/v1",
+        apiKeyEnv: "HYPERBOLIC_API_KEY",
+        live: providerStatus.hyperbolic?.live || false,
+        proofType: "sha256-inference",
+        costSavings: "75% vs centralized",
+        gpuNetwork: "Decentralized GPU marketplace with Proof of Sampling",
+      }),
+    });
+    await this.createInferenceProvider({
+      name: "AkashML",
+      type: "decentralized",
+      network: "akash",
+      modelsSupported: ["Meta-Llama-3-1-8B-Instruct-FP8", "Meta-Llama-3-1-405B-Instruct-FP8", "nvidia-Llama-3-1-Nemotron-70B-Instruct-HF"],
+      costPerRequest: "150000000000000",
+      latencyMs: 500,
+      isActive: true,
+      verifiable: true,
+      decentralized: true,
+      metadata: JSON.stringify({
+        baseUrl: "https://chatapi.akash.network/api/v1",
+        apiKeyEnv: "AKASH_API_KEY",
+        live: providerStatus.akash?.live || false,
+        proofType: "sha256-inference",
+        costSavings: "70-85% vs centralized",
+        gpuNetwork: "65+ decentralized datacenters globally",
+      }),
+    });
+    await this.createInferenceProvider({
+      name: "Ritual Infernet",
+      type: "decentralized",
+      network: "ritual",
+      modelsSupported: ["llama-3.1-8b", "mistral-7b-instruct"],
+      costPerRequest: "200000000000000",
+      latencyMs: 800,
+      isActive: true,
+      verifiable: true,
+      decentralized: true,
+      metadata: JSON.stringify({
+        baseUrl: "https://infernet.ritual.net/api/v1",
+        apiKeyEnv: "RITUAL_API_KEY",
+        live: providerStatus.ritual?.live || false,
+        proofType: "zk-proof",
+        features: "On-chain AI inference with cryptographic proofs, TEE support",
+        smartContractIntegration: true,
+      }),
     });
   }
 }

@@ -279,6 +279,14 @@ export default function AutonomousEconomy() {
     queryKey: ["/api/web4/inference/providers"],
   });
 
+  const { data: inferenceStatus } = useQuery<{
+    providers: (InferenceProvider & { live: boolean; liveStatus: string })[];
+    summary: { total: number; live: number; simulated: number; decentralized: number };
+  }>({
+    queryKey: ["/api/web4/inference/status"],
+    refetchInterval: 30000,
+  });
+
   const { data: inferenceHistory = [] } = useQuery<InferenceRequest[]>({
     queryKey: ["/api/web4/inference/requests", agentId],
     enabled: !!agentId,
@@ -289,12 +297,17 @@ export default function AutonomousEconomy() {
       const res = await apiRequest("POST", "/api/web4/inference/run", { agentId, prompt, model, preferDecentralized });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/web4/inference/requests", agentId] });
       queryClient.invalidateQueries({ queryKey: ["/api/web4/wallet", agentId] });
       queryClient.invalidateQueries({ queryKey: ["/api/web4/survival", agentId] });
       queryClient.invalidateQueries({ queryKey: ["/api/web4/audit", agentId] });
-      toast({ title: "Inference completed" });
+      const providerName = data?.provider?.name || "Provider";
+      const isLive = data?.request?.response && !data.request.response.startsWith("[SIMULATED") && !data.request.response.startsWith("[FALLBACK");
+      toast({
+        title: isLive ? "Live inference completed" : "Simulated inference completed",
+        description: `Routed via ${providerName}${isLive ? " (decentralized)" : " (no API key configured)"}`,
+      });
     },
     onError: (e: Error) => toast({ title: "Inference failed", description: e.message, variant: "destructive" }),
   });
@@ -773,51 +786,115 @@ export default function AutonomousEconomy() {
 
         <Section title="Decentralized Inference" icon={Globe} count={inferenceProviders.length}>
           <div className="space-y-3">
+            {inferenceStatus && (
+              <Card className="p-3" data-testid="card-inference-summary">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <div className="w-6 h-6 rounded-md bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
+                    <Activity className="w-3 h-3 text-primary/70" />
+                  </div>
+                  <span className="font-mono text-xs font-semibold">Network Status</span>
+                  <Badge variant={inferenceStatus.summary.live > 0 ? "default" : "secondary"} className="text-[10px] ml-auto" data-testid="badge-network-mode">
+                    {inferenceStatus.summary.live > 0 ? "LIVE" : "SIMULATION"}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  <div className="text-center">
+                    <div className="font-mono text-lg font-bold text-primary" data-testid="text-providers-total">{inferenceStatus.summary.total}</div>
+                    <div className="text-[10px] text-muted-foreground font-mono">Providers</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="font-mono text-lg font-bold text-primary" data-testid="text-providers-live">{inferenceStatus.summary.live}</div>
+                    <div className="text-[10px] text-muted-foreground font-mono">Live</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="font-mono text-lg font-bold" data-testid="text-providers-decentralized">{inferenceStatus.summary.decentralized}</div>
+                    <div className="text-[10px] text-muted-foreground font-mono">Decentralized</div>
+                  </div>
+                </div>
+                {inferenceStatus.summary.live === 0 && (
+                  <div className="mt-3 p-2 rounded-md bg-muted/50 border border-dashed">
+                    <div className="text-[11px] font-mono text-muted-foreground">
+                      No API keys configured. Add HYPERBOLIC_API_KEY, AKASH_API_KEY, or RITUAL_API_KEY to enable live decentralized inference.
+                    </div>
+                  </div>
+                )}
+              </Card>
+            )}
+
             <TerminalLine prefix="$">inference.providers()</TerminalLine>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {inferenceProviders.map((provider) => (
-                <Card key={provider.id} className="p-3" data-testid={`card-provider-${provider.id}`}>
-                  <div className="flex items-center gap-2 mb-2 flex-wrap">
-                    <div className="w-6 h-6 rounded-md bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
-                      {provider.decentralized ? <Globe className="w-3 h-3 text-primary/70" /> : <Server className="w-3 h-3 text-muted-foreground" />}
-                    </div>
-                    <span className="font-mono text-xs font-semibold truncate">{provider.name}</span>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-[10px] text-muted-foreground font-mono">Type</span>
-                      <Badge variant={provider.decentralized ? "default" : "secondary"} className="text-[10px]">
-                        {provider.type}
+              {(inferenceStatus?.providers || inferenceProviders).map((provider) => {
+                const enriched = provider as InferenceProvider & { live?: boolean; liveStatus?: string };
+                const isLive = enriched.live || false;
+                let meta: any = {};
+                try { meta = JSON.parse(provider.metadata || "{}"); } catch {}
+                return (
+                  <Card key={provider.id} className="p-3" data-testid={`card-provider-${provider.id}`}>
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <div className="w-6 h-6 rounded-md bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
+                        <Globe className="w-3 h-3 text-primary/70" />
+                      </div>
+                      <span className="font-mono text-xs font-semibold truncate">{provider.name}</span>
+                      <Badge
+                        variant={isLive ? "default" : "outline"}
+                        className="text-[10px] ml-auto"
+                        data-testid={`badge-status-${provider.network}`}
+                      >
+                        {isLive ? "LIVE" : "SIM"}
                       </Badge>
                     </div>
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-[10px] text-muted-foreground font-mono">Cost/req</span>
-                      <span className="font-mono text-[10px] text-primary">{formatShortCredits(provider.costPerRequest)}</span>
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[10px] text-muted-foreground font-mono">Status</span>
+                        <div className="flex items-center gap-1">
+                          <div className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-green-500 animate-pulse" : "bg-muted-foreground/40"}`} />
+                          <span className={`font-mono text-[10px] ${isLive ? "text-green-500" : "text-muted-foreground"}`}>
+                            {isLive ? "Connected" : "Simulation"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[10px] text-muted-foreground font-mono">Network</span>
+                        <span className="font-mono text-[10px]">{provider.network}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[10px] text-muted-foreground font-mono">Cost/req</span>
+                        <span className="font-mono text-[10px] text-primary">{formatShortCredits(provider.costPerRequest)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[10px] text-muted-foreground font-mono">Latency</span>
+                        <span className="font-mono text-[10px]">{provider.latencyMs}ms</span>
+                      </div>
+                      {provider.verifiable && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <ShieldCheck className="w-3 h-3 text-primary/70" />
+                          <span className="text-[10px] text-primary/70 font-mono">Proof Verified</span>
+                        </div>
+                      )}
+                      {meta.costSavings && (
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[10px] text-muted-foreground font-mono">Savings</span>
+                          <span className="font-mono text-[10px] text-primary">{meta.costSavings}</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-[10px] text-muted-foreground font-mono">Latency</span>
-                      <span className="font-mono text-[10px]">{provider.latencyMs}ms</span>
-                    </div>
-                    {provider.verifiable && (
-                      <div className="flex items-center gap-1 mt-1">
-                        <ShieldCheck className="w-3 h-3 text-primary/70" />
-                        <span className="text-[10px] text-primary/70 font-mono">zkML Verifiable</span>
+                    {provider.modelsSupported && provider.modelsSupported.length > 0 && (
+                      <div className="mt-2 pt-2 border-t">
+                        <div className="text-[10px] text-muted-foreground font-mono mb-1">Models</div>
+                        <div className="flex flex-wrap gap-1">
+                          {provider.modelsSupported.slice(0, 3).map((m) => (
+                            <Badge key={m} variant="outline" className="text-[9px] font-mono">{m.split("/").pop()}</Badge>
+                          ))}
+                          {provider.modelsSupported.length > 3 && (
+                            <Badge variant="outline" className="text-[9px] font-mono">+{provider.modelsSupported.length - 3}</Badge>
+                          )}
+                        </div>
                       </div>
                     )}
-                  </div>
-                  {provider.modelsSupported && provider.modelsSupported.length > 0 && (
-                    <div className="mt-2 pt-2 border-t">
-                      <div className="text-[10px] text-muted-foreground font-mono mb-1">Models</div>
-                      <div className="flex flex-wrap gap-1">
-                        {provider.modelsSupported.map((m) => (
-                          <Badge key={m} variant="outline" className="text-[9px] font-mono">{m}</Badge>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </Card>
-              ))}
+                  </Card>
+                );
+              })}
             </div>
 
             <Card className="p-3 space-y-2 mt-3">
@@ -866,18 +943,22 @@ export default function AutonomousEconomy() {
                 <div className="space-y-2">
                   {inferenceHistory.slice(0, 10).map((req) => {
                     const provider = inferenceProviders.find(p => p.id === req.providerId);
+                    const isLiveResult = req.response && !req.response.startsWith("[SIMULATED") && !req.response.startsWith("[FALLBACK");
                     return (
                       <Card key={req.id} className="p-3" data-testid={`card-inference-${req.id}`}>
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <Badge variant={provider?.decentralized ? "default" : "secondary"} className="text-[10px] font-mono">
+                          <Badge variant="default" className="text-[10px] font-mono">
                             {provider?.name || "Unknown"}
                           </Badge>
-                          <Badge variant="outline" className="text-[10px] font-mono">{req.model}</Badge>
+                          <Badge variant="outline" className="text-[10px] font-mono">{req.model?.split("/").pop()}</Badge>
+                          <Badge variant={isLiveResult ? "default" : "secondary"} className="text-[10px] font-mono">
+                            {isLiveResult ? "LIVE" : "SIM"}
+                          </Badge>
                           <span className="text-[10px] text-muted-foreground font-mono ml-auto">{req.latencyMs}ms</span>
                         </div>
                         <div className="font-mono text-xs text-muted-foreground truncate mb-1">{req.prompt}</div>
                         {req.response && (
-                          <div className="font-mono text-xs text-foreground/80 bg-background/50 rounded-md p-2 mt-1">{req.response}</div>
+                          <div className="font-mono text-xs text-foreground/80 bg-background/50 rounded-md p-2 mt-1 max-h-32 overflow-y-auto">{req.response}</div>
                         )}
                         <div className="flex items-center gap-3 mt-2 flex-wrap">
                           <span className="text-[10px] text-primary font-mono">Cost: {formatShortCredits(req.costAmount)}</span>
