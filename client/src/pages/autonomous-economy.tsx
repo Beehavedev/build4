@@ -520,10 +520,40 @@ export default function AutonomousEconomy() {
                   </div>
                 </div>
               )}
-              {runnerStatus?.liveProviders && runnerStatus.liveProviders.length > 0 && (
-                <div className="mt-2 flex gap-1 flex-wrap">
-                  {runnerStatus.liveProviders.map((p) => (
-                    <Badge key={p} variant="default" className="text-[10px] font-mono">{p}</Badge>
+              {runnerStatus?.providers && (
+                <div className="mt-3 space-y-1.5">
+                  <div className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">Decentralized Inference Providers</div>
+                  {Object.entries(runnerStatus.providers).map(([key, provider]: [string, any]) => (
+                    <div key={key} className={`flex items-start gap-2 p-2 rounded border ${provider.live ? "border-primary/30 bg-primary/5" : "border-muted bg-muted/30"}`}>
+                      <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${provider.live ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground/40"}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono text-xs font-bold" data-testid={`text-provider-name-${key}`}>
+                            {key === "hyperbolic" ? "Hyperbolic" : key === "akash" ? "AkashML" : key === "ritual" ? "Ritual" : key}
+                          </span>
+                          <Badge variant={provider.live ? "default" : "outline"} className="text-[9px] h-4" data-testid={`badge-provider-status-${key}`}>
+                            {provider.live ? "CONNECTED" : "OFFLINE"}
+                          </Badge>
+                          {provider.live && (
+                            <Badge variant="secondary" className="text-[9px] h-4">
+                              Decentralized AI
+                            </Badge>
+                          )}
+                        </div>
+                        {provider.live && provider.models && (
+                          <div className="mt-1 flex gap-1 flex-wrap">
+                            {provider.models.map((m: string) => (
+                              <span key={m} className="text-[9px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded" data-testid={`text-model-${key}-${m}`}>
+                                {m}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {!provider.live && (
+                          <div className="text-[9px] text-muted-foreground mt-0.5">No API key configured</div>
+                        )}
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
