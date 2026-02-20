@@ -113,10 +113,19 @@ function TerminalLine({ prefix = ">", children, dim = false }: { prefix?: string
   );
 }
 
+const CHAINS = [
+  { id: "bnb", name: "BNB Chain", chainId: 56, testnetId: 97, currency: "BNB", icon: "⛓" },
+  { id: "base", name: "Base", chainId: 8453, testnetId: 84532, currency: "ETH", icon: "🔵" },
+  { id: "xlayer", name: "XLayer", chainId: 196, testnetId: 195, currency: "OKB", icon: "🟢" },
+] as const;
+
 export default function AutonomousEconomy() {
   const t = useT();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [selectedChain, setSelectedChain] = useState<string>("bnb");
   const { toast } = useToast();
+
+  const activeChain = CHAINS.find(c => c.id === selectedChain) || CHAINS[0];
 
   const { data: agentsList = [], isLoading: agentsLoading } = useQuery<Agent[]>({
     queryKey: ["/api/web4/agents"],
@@ -366,6 +375,16 @@ export default function AutonomousEconomy() {
           <div className="flex items-center gap-2 flex-shrink-0">
             <LanguageSwitcher />
             <select
+              value={selectedChain}
+              onChange={(e) => setSelectedChain(e.target.value)}
+              className="font-mono text-xs bg-card border rounded-md px-2 py-2 max-w-[120px] sm:max-w-none"
+              data-testid="select-chain"
+            >
+              {CHAINS.map((c) => (
+                <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>
+              ))}
+            </select>
+            <select
               value={agentId || ""}
               onChange={(e) => setSelectedAgentId(e.target.value)}
               className="font-mono text-xs bg-card border rounded-md px-2 sm:px-3 py-2 min-w-0 sm:min-w-[180px] max-w-[140px] sm:max-w-none"
@@ -391,6 +410,9 @@ export default function AutonomousEconomy() {
                     <p className="text-sm text-muted-foreground mt-1" data-testid="text-agent-bio">{selectedAgent.bio}</p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline" className="font-mono text-xs" data-testid="badge-chain">
+                      {activeChain.name} ({activeChain.currency})
+                    </Badge>
                     <Badge variant={tierBadgeVariant(survival?.tier || "normal")} data-testid="badge-survival-tier">
                       {(survival?.tier || "normal").toUpperCase().replace("_", " ")}
                     </Badge>
@@ -429,15 +451,15 @@ export default function AutonomousEconomy() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <Card className="p-3">
                 <div className="text-xs text-muted-foreground mb-1">Balance</div>
-                <div className="font-mono font-bold text-primary" data-testid="text-detail-balance">{formatCredits(wallet?.balance || "0")} credits</div>
+                <div className="font-mono font-bold text-primary" data-testid="text-detail-balance">{formatCredits(wallet?.balance || "0")} {activeChain.currency}</div>
               </Card>
               <Card className="p-3">
                 <div className="text-xs text-muted-foreground mb-1">Total Earned</div>
-                <div className="font-mono font-bold text-primary">{formatCredits(wallet?.totalEarned || "0")} credits</div>
+                <div className="font-mono font-bold text-primary">{formatCredits(wallet?.totalEarned || "0")} {activeChain.currency}</div>
               </Card>
               <Card className="p-3">
                 <div className="text-xs text-muted-foreground mb-1">Total Spent</div>
-                <div className="font-mono font-bold text-red-400">{formatCredits(wallet?.totalSpent || "0")} credits</div>
+                <div className="font-mono font-bold text-red-400">{formatCredits(wallet?.totalSpent || "0")} {activeChain.currency}</div>
               </Card>
             </div>
 
@@ -445,10 +467,10 @@ export default function AutonomousEconomy() {
               <Card className="p-3 space-y-2">
                 <div className="text-xs font-mono font-semibold flex items-center gap-1"><ArrowDownLeft className="w-3 h-3 text-primary" /> Deposit</div>
                 <select value={depositAmt} onChange={(e) => setDepositAmt(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-deposit-amount">
-                  <option value="100000000000000000">0.1 credits</option>
-                  <option value="500000000000000000">0.5 credits</option>
-                  <option value="1000000000000000000">1.0 credits</option>
-                  <option value="5000000000000000000">5.0 credits</option>
+                  <option value="100000000000000000">0.1 {activeChain.currency}</option>
+                  <option value="500000000000000000">0.5 {activeChain.currency}</option>
+                  <option value="1000000000000000000">1.0 {activeChain.currency}</option>
+                  <option value="5000000000000000000">5.0 {activeChain.currency}</option>
                 </select>
                 <Button size="sm" className="w-full" onClick={() => depositMutation.mutate(depositAmt)} disabled={depositMutation.isPending} data-testid="button-deposit">
                   {depositMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
@@ -458,10 +480,10 @@ export default function AutonomousEconomy() {
               <Card className="p-3 space-y-2">
                 <div className="text-xs font-mono font-semibold flex items-center gap-1"><ArrowUpRight className="w-3 h-3 text-red-400" /> Withdraw</div>
                 <select value={withdrawAmt} onChange={(e) => setWithdrawAmt(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-withdraw-amount">
-                  <option value="10000000000000000">0.01 credits</option>
-                  <option value="100000000000000000">0.1 credits</option>
-                  <option value="500000000000000000">0.5 credits</option>
-                  <option value="1000000000000000000">1.0 credits</option>
+                  <option value="10000000000000000">0.01 {activeChain.currency}</option>
+                  <option value="100000000000000000">0.1 {activeChain.currency}</option>
+                  <option value="500000000000000000">0.5 {activeChain.currency}</option>
+                  <option value="1000000000000000000">1.0 {activeChain.currency}</option>
                 </select>
                 <Button size="sm" variant="outline" className="w-full" onClick={() => withdrawMutation.mutate(withdrawAmt)} disabled={withdrawMutation.isPending} data-testid="button-withdraw">
                   {withdrawMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ArrowUpRight className="w-3 h-3" />}
@@ -478,7 +500,7 @@ export default function AutonomousEconomy() {
                 </select>
                 <Button size="sm" variant="outline" className="w-full" onClick={() => transferTo && transferMutation.mutate({ toAgentId: transferTo, amount: transferAmt })} disabled={!transferTo || transferMutation.isPending} data-testid="button-transfer">
                   {transferMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                  <span className="ml-1">Send 0.1 credits</span>
+                  <span className="ml-1">Send 0.1 {activeChain.currency}</span>
                 </Button>
               </Card>
             </div>
@@ -619,9 +641,9 @@ export default function AutonomousEconomy() {
               <div className="text-xs font-mono font-semibold">Spawn Child Agent</div>
               <input type="text" placeholder="Child agent name..." value={childName} onChange={(e) => setChildName(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-child-name" />
               <select value={childFunding} onChange={(e) => setChildFunding(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-child-funding">
-                <option value="100000000000000000">Fund 0.1 credits</option>
-                <option value="500000000000000000">Fund 0.5 credits</option>
-                <option value="1000000000000000000">Fund 1.0 credits</option>
+                <option value="100000000000000000">Fund 0.1 {activeChain.currency}</option>
+                <option value="500000000000000000">Fund 0.5 {activeChain.currency}</option>
+                <option value="1000000000000000000">Fund 1.0 {activeChain.currency}</option>
               </select>
               <Button size="sm" className="w-full" onClick={() => childName && replicateMutation.mutate({ childName, fundingAmount: childFunding })} disabled={!childName || replicateMutation.isPending} data-testid="button-replicate">
                 {replicateMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <GitBranch className="w-3 h-3" />}
@@ -679,7 +701,7 @@ export default function AutonomousEconomy() {
                       <div key={tier} className="flex items-center gap-2 font-mono text-xs">
                         <div className={`w-2 h-2 rounded-full ${active ? "bg-primary" : "bg-muted"}`} />
                         <span className={active ? "font-semibold" : "text-muted-foreground"}>{tier.toUpperCase().replace("_", " ")}</span>
-                        <span className="text-muted-foreground ml-auto">&gt;= {formatCredits(threshold)} credits</span>
+                        <span className="text-muted-foreground ml-auto">&gt;= {formatCredits(threshold)} {activeChain.currency}</span>
                       </div>
                     );
                   })}
@@ -989,7 +1011,7 @@ export default function AutonomousEconomy() {
               <div key={log.id} className="font-mono text-xs flex items-center gap-2 py-0.5" data-testid={`row-audit-${log.id}`}>
                 <span className="text-primary w-3 flex-shrink-0">&gt;</span>
                 <Badge variant="outline" className="text-[10px] flex-shrink-0">{log.actionType}</Badge>
-                <span className="text-muted-foreground truncate">{log.detailsJson ? JSON.parse(log.detailsJson).amount ? `${formatShortCredits(JSON.parse(log.detailsJson).amount)} credits` : JSON.stringify(JSON.parse(log.detailsJson)) : ""}</span>
+                <span className="text-muted-foreground truncate">{log.detailsJson ? JSON.parse(log.detailsJson).amount ? `${formatShortCredits(JSON.parse(log.detailsJson).amount)} ${activeChain.currency}` : JSON.stringify(JSON.parse(log.detailsJson)) : ""}</span>
                 <span className="text-[10px] text-muted-foreground ml-auto flex-shrink-0">{log.createdAt ? new Date(log.createdAt).toLocaleTimeString() : ""}</span>
               </div>
             ))}
