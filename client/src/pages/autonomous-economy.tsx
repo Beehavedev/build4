@@ -125,6 +125,27 @@ function TerminalLine({ prefix = ">", children, dim = false }: { prefix?: string
   );
 }
 
+function shortModel(model: string): string {
+  const map: Record<string, string> = {
+    "meta-llama/Llama-3.1-70B-Instruct": "Llama-70B",
+    "meta-llama/Llama-3.3-70B-Instruct": "Llama-70B",
+    "meta-llama/Meta-Llama-3.1-8B-Instruct": "Llama-8B",
+    "deepseek-ai/DeepSeek-V3": "DeepSeek-V3",
+    "deepseek-ai/DeepSeek-V3.2": "DeepSeek-V3",
+    "Qwen/Qwen2.5-72B-Instruct": "Qwen-72B",
+    "Qwen/Qwen3-30B-A3B": "Qwen-30B",
+  };
+  return map[model] || model.split("/").pop()?.replace(/-Instruct$/, "") || model;
+}
+
+function isFoundingAgent(agent: Agent): boolean {
+  return !agent.name.includes("-CHILD-");
+}
+
+function isTestAgent(agent: Agent): boolean {
+  return /^(TST|TEST|PLAYWRIGHT|VERIFY)/i.test(agent.name);
+}
+
 const CHAINS = [
   { id: "bnb", name: "BNB Chain", chainId: 56, currency: "BNB" },
   { id: "base", name: "Base", chainId: 8453, currency: "ETH" },
@@ -159,15 +180,22 @@ export default function AutonomousEconomy() {
 
   const { data: agentsList = [], isLoading: agentsLoading } = useQuery<Agent[]>({
     queryKey: ["/api/web4/agents"],
-    queryFn: async () => {
-      const res = await fetch("/api/web4/agents");
-      if (!res.ok) throw new Error("Failed to fetch agents");
-      return res.json();
-    },
     refetchInterval: 15000,
   });
 
-  const selectedAgent = agentsList.find((a) => a.id === selectedAgentId) || agentsList[0];
+  const visibleAgents = agentsList.filter(a => !isTestAgent(a));
+
+  const myAgents = web3.address
+    ? visibleAgents.filter(a => a.creatorWallet?.toLowerCase() === web3.address?.toLowerCase())
+    : [];
+  const foundingAgents = visibleAgents.filter(
+    a => isFoundingAgent(a) && !myAgents.some(m => m.id === a.id)
+  );
+  const childAgents = visibleAgents.filter(
+    a => !isFoundingAgent(a) && !myAgents.some(m => m.id === a.id)
+  );
+
+  const selectedAgent = visibleAgents.find((a) => a.id === selectedAgentId) || visibleAgents[0];
   const agentId = selectedAgent?.id;
 
   const { data: walletData } = useQuery<{ wallet: AgentWallet; transactions: AgentTransaction[] }>({
@@ -614,9 +642,25 @@ export default function AutonomousEconomy() {
                 className="font-mono text-xs bg-card border rounded-md px-2.5 py-1.5 min-w-[200px]"
                 data-testid="select-agent"
               >
-                {agentsList.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name} ({a.modelType})</option>
-                ))}
+                {myAgents.length > 0 && (
+                  <optgroup label="Your Agents">
+                    {myAgents.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name} ({shortModel(a.modelType)})</option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="Founding Agents">
+                  {foundingAgents.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name} ({shortModel(a.modelType)})</option>
+                  ))}
+                </optgroup>
+                {childAgents.length > 0 && (
+                  <optgroup label={`Spawned Agents (${childAgents.length})`}>
+                    {childAgents.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name} ({shortModel(a.modelType)})</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
           </div>
@@ -648,9 +692,25 @@ export default function AutonomousEconomy() {
                   className="font-mono text-xs bg-card border rounded-md px-2.5 py-1.5 flex-1 max-w-[200px]"
                   data-testid="select-agent-mobile"
                 >
-                  {agentsList.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name} ({a.modelType})</option>
-                  ))}
+                  {myAgents.length > 0 && (
+                    <optgroup label="Your Agents">
+                      {myAgents.map((a) => (
+                        <option key={a.id} value={a.id}>{a.name} ({shortModel(a.modelType)})</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Founding Agents">
+                    {foundingAgents.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name} ({shortModel(a.modelType)})</option>
+                    ))}
+                  </optgroup>
+                  {childAgents.length > 0 && (
+                    <optgroup label={`Spawned Agents (${childAgents.length})`}>
+                      {childAgents.map((a) => (
+                        <option key={a.id} value={a.id}>{a.name} ({shortModel(a.modelType)})</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
             </div>
@@ -840,7 +900,7 @@ export default function AutonomousEconomy() {
                       {(survival?.tier || "normal").toUpperCase().replace("_", " ")}
                     </Badge>
                     <Badge variant="outline" className="font-mono text-xs" data-testid="badge-model-type">
-                      {evolutionData?.currentProfile?.modelName || selectedAgent.modelType}
+                      {shortModel(evolutionData?.currentProfile?.modelName || selectedAgent.modelType)}
                     </Badge>
                   </div>
                 </div>
@@ -900,7 +960,7 @@ export default function AutonomousEconomy() {
                     <div className="text-[10px] text-muted-foreground">Live Providers</div>
                   </div>
                   <div className="p-1.5">
-                    <div className="font-mono text-sm font-bold">{agentsList.length}</div>
+                    <div className="font-mono text-sm font-bold">{visibleAgents.length}</div>
                     <div className="text-[10px] text-muted-foreground">Active Agents</div>
                   </div>
                   <div className="p-1.5">
@@ -1800,7 +1860,7 @@ export default function AutonomousEconomy() {
               <div className="text-xs font-mono font-semibold">{t("dashboard.sendMessage")}</div>
               <select value={msgTo} onChange={(e) => setMsgTo(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-message-to">
                 <option value="">{t("dashboard.selectRecipient")}</option>
-                {agentsList.filter(a => a.id !== agentId).map(a => (
+                {visibleAgents.filter(a => a.id !== agentId).map(a => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
               </select>
