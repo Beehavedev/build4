@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -137,6 +137,13 @@ export default function AutonomousEconomy() {
   const [newLawImmutable, setNewLawImmutable] = useState(true);
   const [onChainLineage, setOnChainLineage] = useState<any>(null);
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (web3.chainId) {
+      const match = CHAINS.find(c => c.chainId === web3.chainId);
+      if (match) setSelectedChain(match.id);
+    }
+  }, [web3.chainId]);
 
   const activeChain = CHAINS.find(c => c.id === selectedChain) || CHAINS[0];
 
@@ -429,7 +436,7 @@ export default function AutonomousEconomy() {
       const numericId = uuidToNumericId(agentId);
       const depositEth = (Number(newAgentDeposit) / 1e18).toString();
 
-      setCreateAgentStep("Waiting for wallet signature — deposit " + depositEth + " BNB to agent...");
+      setCreateAgentStep("Waiting for wallet signature — deposit " + depositEth + " " + activeChain.currency + " to agent...");
       let depositAttempts = 0;
       let lastDepErr: any = null;
       const maxAttempts = 5;
@@ -705,7 +712,7 @@ export default function AutonomousEconomy() {
             <div className="flex items-center gap-2 mb-4">
               <Bot className="w-4 h-4 text-primary" />
               <span className="font-mono text-sm font-semibold">Create New Agent</span>
-              <Badge variant="secondary" className="text-[10px] ml-auto">0.001 BNB creation fee</Badge>
+              <Badge variant="secondary" className="text-[10px] ml-auto">0.001 {activeChain.currency} creation fee</Badge>
             </div>
 
             {!web3.connected && (
@@ -747,6 +754,37 @@ export default function AutonomousEconomy() {
                 />
               </div>
               <div className="space-y-2">
+                <label className="font-mono text-xs text-muted-foreground">Deploy Chain</label>
+                <select
+                  value={selectedChain}
+                  onChange={async (e) => {
+                    const chain = CHAINS.find(c => c.id === e.target.value);
+                    setSelectedChain(e.target.value);
+                    if (chain && web3.connected && web3.chainId !== chain.chainId) {
+                      try {
+                        await web3.switchChain(chain.chainId);
+                      } catch {}
+                    }
+                  }}
+                  className="w-full font-mono text-sm bg-background border rounded-md px-3 py-2"
+                  data-testid="select-create-chain"
+                  disabled={createAgentMutation.isPending}
+                >
+                  {CHAINS.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>
+                  ))}
+                </select>
+                {web3.connected && web3.chainId !== activeChain.chainId && (
+                  <button
+                    onClick={() => web3.switchChain(activeChain.chainId)}
+                    className="w-full font-mono text-[10px] text-yellow-500 bg-yellow-500/10 border border-yellow-500/30 rounded-md px-2 py-1.5 hover:bg-yellow-500/20 transition-colors"
+                    data-testid="button-switch-chain"
+                  >
+                    Switch wallet to {activeChain.name}
+                  </button>
+                )}
+              </div>
+              <div className="space-y-2">
                 <label className="font-mono text-xs text-muted-foreground">Model</label>
                 <select
                   value={newAgentModel}
@@ -782,20 +820,20 @@ export default function AutonomousEconomy() {
                   data-testid="select-agent-deposit"
                   disabled={createAgentMutation.isPending}
                 >
-                  <option value="2000000000000000">0.002 BNB</option>
-                  <option value="5000000000000000">0.005 BNB</option>
-                  <option value="10000000000000000">0.01 BNB</option>
-                  <option value="50000000000000000">0.05 BNB</option>
-                  <option value="100000000000000000">0.1 BNB</option>
+                  <option value="2000000000000000">0.002 {activeChain.currency}</option>
+                  <option value="5000000000000000">0.005 {activeChain.currency}</option>
+                  <option value="10000000000000000">0.01 {activeChain.currency}</option>
+                  <option value="50000000000000000">0.05 {activeChain.currency}</option>
+                  <option value="100000000000000000">0.1 {activeChain.currency}</option>
                 </select>
                 <p className="font-mono text-[10px] text-muted-foreground">
-                  Sent from your wallet to the on-chain agent contract
+                  Sent from your wallet to the on-chain agent contract on {activeChain.name}
                 </p>
               </div>
               <div className="flex items-end gap-2">
                 <Button
                   onClick={() => createAgentMutation.mutate()}
-                  disabled={!newAgentName.trim() || createAgentMutation.isPending || !web3.connected}
+                  disabled={!newAgentName.trim() || createAgentMutation.isPending || !web3.connected || (web3.chainId !== activeChain.chainId)}
                   className="font-mono text-xs gap-1.5"
                   data-testid="button-submit-create-agent"
                 >
