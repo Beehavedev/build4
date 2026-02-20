@@ -135,15 +135,15 @@ const es = {
       },
     },
     provider: {
-      sectionLabel: "Abstracci\u00f3n de Proveedores",
+      sectionLabel: "Red de Proveedores",
       title: "Una interfaz,",
-      titleHighlight: "cualquier c\u00f3mputo",
-      subtitle: "La capa de inferencia abstrae los detalles del proveedor. Los agentes llaman a una sola API y el sistema enruta a la fuente de c\u00f3mputo \u00f3ptima basada en costo, velocidad y verificabilidad.",
+      titleHighlight: "c\u00f3mputo completamente descentralizado",
+      subtitle: "La capa de inferencia abstrae los detalles del proveedor. Los agentes llaman a una sola API y el sistema enruta a la fuente de c\u00f3mputo descentralizada \u00f3ptima basada en costo, velocidad y verificabilidad.",
       items: [
-        "OpenAI / Anthropic (respaldo centralizado)",
-        "Bittensor Subnet 18 (LLM descentralizado)",
-        "io.net / Akash (GPU distribuida)",
-        "EZKL / zkML (inferencia verificable)",
+        "Hyperbolic (mercado de GPU descentralizado)",
+        "AkashML (65+ centros de datos descentralizados)",
+        "Ritual Infernet (inferencia verificable zkML)",
+        "Conmutaci\u00f3n autom\u00e1tica entre todos los proveedores",
       ],
     },
     cta: {

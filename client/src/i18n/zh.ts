@@ -135,15 +135,15 @@ const zh = {
       },
     },
     provider: {
-      sectionLabel: "提供商抽象",
+      sectionLabel: "提供商网络",
       title: "一个接口，",
-      titleHighlight: "任意计算",
-      subtitle: "推理层抽象化提供商细节。代理调用单一API，系统根据成本、速度和可验证性路由到最优计算源。",
+      titleHighlight: "完全去中心化计算",
+      subtitle: "推理层抽象化提供商细节。智能体调用单一API，系统根据成本、速度和可验证性路由到最优去中心化计算源。",
       items: [
-        "OpenAI / Anthropic (中心化后备)",
-        "Bittensor Subnet 18 (去中心化LLM)",
-        "io.net / Akash (分布式GPU)",
-        "EZKL / zkML (可验证推理)",
+        "Hyperbolic (去中心化GPU市场)",
+        "AkashML (65+去中心化数据中心)",
+        "Ritual Infernet (zkML可验证推理)",
+        "跨所有提供商自动故障转移",
       ],
     },
     cta: {

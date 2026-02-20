@@ -322,7 +322,7 @@ export default function AutonomousEconomy() {
   const [withdrawAmt, setWithdrawAmt] = useState("100000000000000000");
   const [transferTo, setTransferTo] = useState("");
   const [transferAmt, setTransferAmt] = useState("100000000000000000");
-  const [evolveModel, setEvolveModel] = useState("gpt-4o");
+  const [evolveModel, setEvolveModel] = useState("meta-llama/Llama-3.1-70B-Instruct");
   const [evolveReason, setEvolveReason] = useState("");
   const [childName, setChildName] = useState("");
   const [childFunding, setChildFunding] = useState("500000000000000000");
@@ -574,12 +574,11 @@ export default function AutonomousEconomy() {
             <Card className="p-3 space-y-2">
               <div className="text-xs font-mono font-semibold">Trigger Evolution</div>
               <select value={evolveModel} onChange={(e) => setEvolveModel(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-evolve-model">
-                <option value="gpt-4o">GPT-4o</option>
-                <option value="gpt-4o-mini">GPT-4o Mini</option>
-                <option value="claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                <option value="claude-3-opus">Claude 3 Opus</option>
-                <option value="llama-3.1-70b">Llama 3.1 70B</option>
-                <option value="mistral-large">Mistral Large</option>
+                <option value="meta-llama/Llama-3.1-70B-Instruct">Llama 3.1 70B (Hyperbolic)</option>
+                <option value="deepseek-ai/DeepSeek-V3">DeepSeek V3 (AkashML)</option>
+                <option value="Qwen/Qwen2.5-72B-Instruct">Qwen 2.5 72B (Hyperbolic)</option>
+                <option value="meta-llama/Llama-3.1-8B-Instruct">Llama 3.1 8B (Ritual zkML)</option>
+                <option value="mistralai/Mistral-7B-Instruct-v0.3">Mistral 7B (AkashML)</option>
               </select>
               <input type="text" placeholder="Reason for evolution..." value={evolveReason} onChange={(e) => setEvolveReason(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-evolve-reason" />
               <Button size="sm" className="w-full" onClick={() => evolveMutation.mutate({ toModel: evolveModel, reason: evolveReason })} disabled={evolveMutation.isPending} data-testid="button-evolve">
