@@ -35,7 +35,7 @@ const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
   },
   akash: {
     network: "akash",
-    baseUrl: "https://chatapi.akash.network/api/v1",
+    baseUrl: "https://api.akashml.com/v1",
     apiKeyEnv: "AKASH_API_KEY",
     defaultModel: "Meta-Llama-3-1-8B-Instruct-FP8",
     models: [

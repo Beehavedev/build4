@@ -116,9 +116,9 @@ function TerminalLine({ prefix = ">", children, dim = false }: { prefix?: string
 }
 
 const CHAINS = [
-  { id: "bnb", name: "BNB Chain", chainId: 56, testnetId: 97, currency: "BNB", icon: "⛓" },
-  { id: "base", name: "Base", chainId: 8453, testnetId: 84532, currency: "ETH", icon: "🔵" },
-  { id: "xlayer", name: "XLayer", chainId: 196, testnetId: 195, currency: "OKB", icon: "🟢" },
+  { id: "bnb", name: "BNB Chain", chainId: 56, testnetId: 97, currency: "BNB" },
+  { id: "base", name: "Base", chainId: 8453, testnetId: 84532, currency: "ETH" },
+  { id: "xlayer", name: "XLayer", chainId: 196, testnetId: 1952, currency: "OKB" },
 ] as const;
 
 export default function AutonomousEconomy() {
@@ -575,6 +575,525 @@ export default function AutonomousEconomy() {
                 </div>
               )}
             </Card>
+          </div>
+        </Section>
+
+        <Section title="On-Chain Contracts" icon={Layers} defaultOpen={false}>
+          <div className="space-y-3">
+            {!web3.connected ? (
+              <Card className="p-4 text-center space-y-2">
+                <Wallet className="w-6 h-6 mx-auto text-muted-foreground" />
+                <div className="font-mono text-xs text-muted-foreground">Connect your wallet to interact with on-chain contracts</div>
+                <Button size="sm" onClick={web3.connect} disabled={web3.connecting} data-testid="button-onchain-connect">
+                  <Wallet className="w-3 h-3 mr-1" />
+                  {web3.connecting ? "Connecting..." : "Connect Wallet"}
+                </Button>
+              </Card>
+            ) : (
+              <>
+                <Card className="p-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="font-mono text-xs">{web3.address?.slice(0, 6)}...{web3.address?.slice(-4)}</span>
+                      <Badge variant="secondary" className="text-[9px]">{web3.chainName}</Badge>
+                    </div>
+                    <div className="font-mono text-xs text-muted-foreground">
+                      {parseFloat(web3.balance || "0").toFixed(4)} {activeChain.currency}
+                    </div>
+                  </div>
+                  {!web3.hasContracts && (
+                    <div className="mt-2 text-[10px] text-destructive font-mono">No contracts found on this network. Switch to BNB Testnet or XLayer Testnet.</div>
+                  )}
+                  {lastTxHash && (
+                    <div className="mt-2 flex items-center gap-1">
+                      <span className="text-[10px] font-mono text-muted-foreground">Last TX:</span>
+                      <span className="text-[10px] font-mono text-primary truncate">{lastTxHash.slice(0, 16)}...</span>
+                      {web3.getExplorerUrl(lastTxHash) && (
+                        <a href={web3.getExplorerUrl(lastTxHash)!} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                          <Eye className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </Card>
+
+                <div className="space-y-2">
+                  <div className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">Agent Economy Hub</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <Card className="p-3 space-y-2">
+                      <div className="text-xs font-mono font-semibold flex items-center gap-1">
+                        <ArrowDownLeft className="w-3 h-3 text-primary" /> On-Chain Deposit
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Amount (e.g. 0.01)"
+                        value={onChainDeposit}
+                        onChange={(e) => setOnChainDeposit(e.target.value)}
+                        className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5"
+                        data-testid="input-onchain-deposit"
+                      />
+                      <Button
+                        size="sm"
+                        className="w-full"
+                        disabled={!web3.hasContracts || onChainLoading === "deposit"}
+                        data-testid="button-onchain-deposit"
+                        onClick={async () => {
+                          try {
+                            setOnChainLoading("deposit");
+                            const agentNumId = parseInt(agentId || "1");
+                            const receipt = await web3.depositToAgent(agentNumId, onChainDeposit);
+                            setLastTxHash(receipt.hash);
+                            toast({ title: "Deposit successful", description: `${onChainDeposit} ${activeChain.currency} deposited on-chain` });
+                          } catch (err: any) {
+                            toast({ title: "Deposit failed", description: err.message, variant: "destructive" });
+                          } finally {
+                            setOnChainLoading(null);
+                          }
+                        }}
+                      >
+                        {onChainLoading === "deposit" ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                        <span className="ml-1">Deposit {onChainDeposit} {activeChain.currency}</span>
+                      </Button>
+                    </Card>
+
+                    <Card className="p-3 space-y-2">
+                      <div className="text-xs font-mono font-semibold flex items-center gap-1">
+                        <ArrowUpRight className="w-3 h-3 text-red-400" /> On-Chain Withdraw
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Amount (e.g. 0.005)"
+                        value={onChainWithdraw}
+                        onChange={(e) => setOnChainWithdraw(e.target.value)}
+                        className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5"
+                        data-testid="input-onchain-withdraw"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full"
+                        disabled={!web3.hasContracts || onChainLoading === "withdraw"}
+                        data-testid="button-onchain-withdraw"
+                        onClick={async () => {
+                          try {
+                            setOnChainLoading("withdraw");
+                            const agentNumId = parseInt(agentId || "1");
+                            const receipt = await web3.withdrawFromAgent(agentNumId, onChainWithdraw, web3.address!);
+                            setLastTxHash(receipt.hash);
+                            toast({ title: "Withdrawal successful", description: `${onChainWithdraw} ${activeChain.currency} withdrawn to your wallet` });
+                          } catch (err: any) {
+                            toast({ title: "Withdraw failed", description: err.message, variant: "destructive" });
+                          } finally {
+                            setOnChainLoading(null);
+                          }
+                        }}
+                      >
+                        {onChainLoading === "withdraw" ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ArrowUpRight className="w-3 h-3" />}
+                        <span className="ml-1">Withdraw to Wallet</span>
+                      </Button>
+                    </Card>
+                  </div>
+
+                  <Card className="p-3 space-y-2">
+                    <div className="text-xs font-mono font-semibold flex items-center gap-1">
+                      <Eye className="w-3 h-3 text-primary/70" /> On-Chain Agent Wallet
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      disabled={!web3.hasContracts || onChainLoading === "read-wallet"}
+                      data-testid="button-read-onchain-wallet"
+                      onClick={async () => {
+                        try {
+                          setOnChainLoading("read-wallet");
+                          const agentNumId = parseInt(agentId || "1");
+                          const data = await web3.getAgentOnChainWallet(agentNumId);
+                          setOnChainAgentWallet(data);
+                          if (!data?.isRegistered) {
+                            toast({ title: "Agent not registered", description: "This agent has no on-chain wallet yet" });
+                          }
+                        } catch (err: any) {
+                          toast({ title: "Read failed", description: err.message, variant: "destructive" });
+                        } finally {
+                          setOnChainLoading(null);
+                        }
+                      }}
+                    >
+                      {onChainLoading === "read-wallet" ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
+                      <span className="ml-1">Read On-Chain Balance</span>
+                    </Button>
+                    {onChainAgentWallet && (
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <div className="p-2 bg-muted/30 rounded">
+                          <div className="text-[9px] text-muted-foreground">Balance</div>
+                          <div className="font-mono text-xs font-bold text-primary" data-testid="text-onchain-balance">{onChainAgentWallet.balance} {activeChain.currency}</div>
+                        </div>
+                        <div className="p-2 bg-muted/30 rounded">
+                          <div className="text-[9px] text-muted-foreground">Status</div>
+                          <div className="font-mono text-xs font-bold" data-testid="text-onchain-registered">
+                            {onChainAgentWallet.isRegistered ? "Registered" : "Not Registered"}
+                          </div>
+                        </div>
+                        <div className="p-2 bg-muted/30 rounded">
+                          <div className="text-[9px] text-muted-foreground">Earned</div>
+                          <div className="font-mono text-xs">{onChainAgentWallet.totalEarned}</div>
+                        </div>
+                        <div className="p-2 bg-muted/30 rounded">
+                          <div className="text-[9px] text-muted-foreground">Tier</div>
+                          <div className="font-mono text-xs">{["DEAD", "CRITICAL", "LOW", "NORMAL"][onChainAgentWallet.tier] || "Unknown"}</div>
+                        </div>
+                      </div>
+                    )}
+                    {onChainAgentWallet && !onChainAgentWallet.isRegistered && (
+                      <Button
+                        size="sm"
+                        className="w-full mt-1"
+                        disabled={onChainLoading === "register"}
+                        data-testid="button-register-agent"
+                        onClick={async () => {
+                          try {
+                            setOnChainLoading("register");
+                            const agentNumId = parseInt(agentId || "1");
+                            const receipt = await web3.registerAgent(agentNumId);
+                            setLastTxHash(receipt.hash);
+                            toast({ title: "Agent registered on-chain" });
+                            const data = await web3.getAgentOnChainWallet(agentNumId);
+                            setOnChainAgentWallet(data);
+                          } catch (err: any) {
+                            toast({ title: "Registration failed", description: err.message, variant: "destructive" });
+                          } finally {
+                            setOnChainLoading(null);
+                          }
+                        }}
+                      >
+                        Register Agent On-Chain
+                      </Button>
+                    )}
+                  </Card>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">Skill Marketplace</div>
+                  <Card className="p-3 space-y-2">
+                    <div className="text-xs font-mono font-semibold flex items-center gap-1">
+                      <Zap className="w-3 h-3 text-primary" /> Query On-Chain Skills
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="number"
+                        placeholder="Skill ID"
+                        min="1"
+                        className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5"
+                        data-testid="input-onchain-skill-id"
+                        id="onchain-skill-id"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!web3.hasContracts || onChainLoading === "read-skill"}
+                        data-testid="button-read-skill"
+                        onClick={async () => {
+                          try {
+                            setOnChainLoading("read-skill");
+                            const skillIdEl = document.getElementById("onchain-skill-id") as HTMLInputElement;
+                            const skillId = parseInt(skillIdEl?.value || "1");
+                            const data = await web3.getSkillOnChain(skillId);
+                            if (data) {
+                              toast({
+                                title: `Skill #${skillId}: ${data.name}`,
+                                description: `Price: ${data.price} | Sales: ${data.totalSales} | Active: ${data.isActive}`,
+                              });
+                            } else {
+                              toast({ title: "Skill not found", variant: "destructive" });
+                            }
+                          } catch (err: any) {
+                            toast({ title: "Read failed", description: err.message, variant: "destructive" });
+                          } finally {
+                            setOnChainLoading(null);
+                          }
+                        }}
+                      >
+                        {onChainLoading === "read-skill" ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
+                        <span className="ml-1">Query</span>
+                      </Button>
+                    </div>
+                    <div className="text-[9px] text-muted-foreground font-mono">
+                      Skills are listed and purchased through the SkillMarketplace contract with 2.5% platform fee and automatic parent revenue sharing.
+                    </div>
+                  </Card>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">Constitution Registry</div>
+                  <Card className="p-3 space-y-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      disabled={!web3.hasContracts || onChainLoading === "read-constitution"}
+                      data-testid="button-read-constitution"
+                      onClick={async () => {
+                        try {
+                          setOnChainLoading("read-constitution");
+                          const agentNumId = parseInt(agentId || "1");
+                          const data = await web3.getConstitution(agentNumId);
+                          setOnChainConstitution(data);
+                        } catch (err: any) {
+                          toast({ title: "Read failed", description: err.message, variant: "destructive" });
+                        } finally {
+                          setOnChainLoading(null);
+                        }
+                      }}
+                    >
+                      {onChainLoading === "read-constitution" ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Shield className="w-3 h-3" />}
+                      <span className="ml-1">Read Constitution</span>
+                    </Button>
+
+                    {onChainConstitution && (
+                      <div className="space-y-1.5 mt-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground font-mono">Laws: {onChainConstitution.lawCount}/10</span>
+                          <Badge variant={onChainConstitution.sealed ? "default" : "outline"} className="text-[9px]">
+                            {onChainConstitution.sealed ? "SEALED" : "OPEN"}
+                          </Badge>
+                        </div>
+                        {onChainConstitution.laws.map((law: any, i: number) => (
+                          <div key={i} className="p-2 bg-muted/30 rounded font-mono text-[10px] flex items-center gap-2">
+                            <ShieldCheck className="w-3 h-3 text-primary flex-shrink-0" />
+                            <span className="truncate">{law.lawHash.slice(0, 18)}...</span>
+                            <Badge variant={law.isImmutable ? "default" : "secondary"} className="text-[8px]">
+                              {law.isImmutable ? "Immutable" : "Mutable"}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {(!onChainConstitution || !onChainConstitution.sealed) && (
+                      <div className="space-y-2 mt-2 pt-2 border-t">
+                        <div className="text-xs font-mono font-semibold">Add Law</div>
+                        <input
+                          type="text"
+                          placeholder="Law text (e.g. Never harm humans)"
+                          value={newLawText}
+                          onChange={(e) => setNewLawText(e.target.value)}
+                          className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5"
+                          data-testid="input-law-text"
+                        />
+                        <div className="flex items-center gap-2">
+                          <label className="flex items-center gap-1 text-[10px] font-mono cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={newLawImmutable}
+                              onChange={(e) => setNewLawImmutable(e.target.checked)}
+                              className="rounded"
+                              data-testid="checkbox-law-immutable"
+                            />
+                            Immutable
+                          </label>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="w-full"
+                          disabled={!newLawText || !web3.hasContracts || onChainLoading === "add-law"}
+                          data-testid="button-add-law"
+                          onClick={async () => {
+                            try {
+                              setOnChainLoading("add-law");
+                              const agentNumId = parseInt(agentId || "1");
+                              const receipt = await web3.addLawOnChain(agentNumId, newLawText, newLawImmutable);
+                              setLastTxHash(receipt.hash);
+                              setNewLawText("");
+                              toast({ title: "Law added on-chain" });
+                              const data = await web3.getConstitution(agentNumId);
+                              setOnChainConstitution(data);
+                            } catch (err: any) {
+                              toast({ title: "Add law failed", description: err.message, variant: "destructive" });
+                            } finally {
+                              setOnChainLoading(null);
+                            }
+                          }}
+                        >
+                          {onChainLoading === "add-law" ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Shield className="w-3 h-3" />}
+                          <span className="ml-1">Add Law</span>
+                        </Button>
+
+                        {onChainConstitution && onChainConstitution.lawCount > 0 && !onChainConstitution.sealed && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="w-full"
+                            disabled={onChainLoading === "seal"}
+                            data-testid="button-seal-constitution"
+                            onClick={async () => {
+                              try {
+                                setOnChainLoading("seal");
+                                const agentNumId = parseInt(agentId || "1");
+                                const receipt = await web3.sealConstitutionOnChain(agentNumId);
+                                setLastTxHash(receipt.hash);
+                                toast({ title: "Constitution sealed", description: "Laws are now permanently locked on-chain" });
+                                const data = await web3.getConstitution(agentNumId);
+                                setOnChainConstitution(data);
+                              } catch (err: any) {
+                                toast({ title: "Seal failed", description: err.message, variant: "destructive" });
+                              } finally {
+                                setOnChainLoading(null);
+                              }
+                            }}
+                          >
+                            Seal Constitution (Permanent)
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </Card>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">Agent Lineage & Replication</div>
+                  <Card className="p-3 space-y-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      disabled={!web3.hasContracts || onChainLoading === "read-lineage"}
+                      data-testid="button-read-lineage"
+                      onClick={async () => {
+                        try {
+                          setOnChainLoading("read-lineage");
+                          const agentNumId = parseInt(agentId || "1");
+                          const data = await web3.getLineageOnChain(agentNumId);
+                          setOnChainLineage(data);
+                        } catch (err: any) {
+                          toast({ title: "Read failed", description: err.message, variant: "destructive" });
+                        } finally {
+                          setOnChainLoading(null);
+                        }
+                      }}
+                    >
+                      {onChainLoading === "read-lineage" ? <RefreshCw className="w-3 h-3 animate-spin" /> : <GitBranch className="w-3 h-3" />}
+                      <span className="ml-1">Read On-Chain Lineage</span>
+                    </Button>
+
+                    {onChainLineage && (
+                      <div className="space-y-2 mt-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="p-2 bg-muted/30 rounded">
+                            <div className="text-[9px] text-muted-foreground">Generation</div>
+                            <div className="font-mono text-xs font-bold" data-testid="text-onchain-generation">{onChainLineage.generation}</div>
+                          </div>
+                          <div className="p-2 bg-muted/30 rounded">
+                            <div className="text-[9px] text-muted-foreground">Children</div>
+                            <div className="font-mono text-xs font-bold" data-testid="text-onchain-children">{onChainLineage.children.length}</div>
+                          </div>
+                        </div>
+                        {onChainLineage.hasParent && (
+                          <div className="p-2 bg-muted/30 rounded">
+                            <div className="text-[9px] text-muted-foreground">Parent Agent ID</div>
+                            <div className="font-mono text-xs">{onChainLineage.parentId}</div>
+                            <div className="text-[9px] text-muted-foreground mt-1">Revenue Share: {onChainLineage.revenueShareBps / 100}%</div>
+                          </div>
+                        )}
+                        {onChainLineage.children.length > 0 && (
+                          <div className="p-2 bg-muted/30 rounded">
+                            <div className="text-[9px] text-muted-foreground mb-1">Child Agent IDs</div>
+                            <div className="flex gap-1 flex-wrap">
+                              {onChainLineage.children.map((cid: number) => (
+                                <Badge key={cid} variant="outline" className="text-[9px] font-mono">{cid}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="space-y-2 mt-2 pt-2 border-t">
+                      <div className="text-xs font-mono font-semibold">On-Chain Replication</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="number"
+                          placeholder="Child Agent ID"
+                          className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5"
+                          data-testid="input-onchain-child-id"
+                          id="onchain-child-id"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Funding (e.g. 0.01)"
+                          className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5"
+                          data-testid="input-onchain-repl-funding"
+                          id="onchain-repl-funding"
+                          defaultValue="0.01"
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        className="w-full"
+                        disabled={!web3.hasContracts || onChainLoading === "replicate"}
+                        data-testid="button-onchain-replicate"
+                        onClick={async () => {
+                          try {
+                            setOnChainLoading("replicate");
+                            const parentNumId = parseInt(agentId || "1");
+                            const childIdEl = document.getElementById("onchain-child-id") as HTMLInputElement;
+                            const fundingEl = document.getElementById("onchain-repl-funding") as HTMLInputElement;
+                            const childId = parseInt(childIdEl?.value || "100");
+                            const funding = fundingEl?.value || "0.01";
+                            const receipt = await web3.replicateOnChain(parentNumId, childId, 1000, funding);
+                            setLastTxHash(receipt.hash);
+                            toast({ title: "Agent replicated on-chain", description: `Child #${childId} created with ${funding} ${activeChain.currency} funding and 10% revenue share` });
+                            const data = await web3.getLineageOnChain(parentNumId);
+                            setOnChainLineage(data);
+                          } catch (err: any) {
+                            toast({ title: "Replication failed", description: err.message, variant: "destructive" });
+                          } finally {
+                            setOnChainLoading(null);
+                          }
+                        }}
+                      >
+                        {onChainLoading === "replicate" ? <RefreshCw className="w-3 h-3 animate-spin" /> : <GitBranch className="w-3 h-3" />}
+                        <span className="ml-1">Replicate On-Chain</span>
+                      </Button>
+                      <div className="text-[9px] text-muted-foreground font-mono">
+                        Creates a child agent on-chain with funding from parent. Max 50% revenue share, max 10 generations.
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+
+                <Card className="p-3 bg-muted/20">
+                  <div className="text-[10px] text-muted-foreground font-mono space-y-1">
+                    <div className="font-semibold uppercase tracking-wider mb-1">Deployed Contracts</div>
+                    {web3.contractAddresses.AgentEconomyHub && (
+                      <div className="flex items-center gap-1">
+                        <span>Hub:</span>
+                        <span className="text-primary truncate">{web3.contractAddresses.AgentEconomyHub}</span>
+                      </div>
+                    )}
+                    {web3.contractAddresses.SkillMarketplace && (
+                      <div className="flex items-center gap-1">
+                        <span>Marketplace:</span>
+                        <span className="text-primary truncate">{web3.contractAddresses.SkillMarketplace}</span>
+                      </div>
+                    )}
+                    {web3.contractAddresses.ConstitutionRegistry && (
+                      <div className="flex items-center gap-1">
+                        <span>Constitution:</span>
+                        <span className="text-primary truncate">{web3.contractAddresses.ConstitutionRegistry}</span>
+                      </div>
+                    )}
+                    {web3.contractAddresses.AgentReplication && (
+                      <div className="flex items-center gap-1">
+                        <span>Replication:</span>
+                        <span className="text-primary truncate">{web3.contractAddresses.AgentReplication}</span>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              </>
+            )}
           </div>
         </Section>
 
