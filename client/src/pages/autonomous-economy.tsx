@@ -157,14 +157,10 @@ export default function AutonomousEconomy() {
 
   const activeChain = CHAINS.find(c => c.id === selectedChain) || CHAINS[0];
 
-  const agentsQueryKey = web3.connected && web3.address
-    ? `/api/web4/agents?wallet=${web3.address}`
-    : "/api/web4/agents";
-
   const { data: agentsList = [], isLoading: agentsLoading } = useQuery<Agent[]>({
-    queryKey: ["/api/web4/agents", web3.address || "all"],
+    queryKey: ["/api/web4/agents"],
     queryFn: async () => {
-      const res = await fetch(agentsQueryKey);
+      const res = await fetch("/api/web4/agents");
       if (!res.ok) throw new Error("Failed to fetch agents");
       return res.json();
     },
