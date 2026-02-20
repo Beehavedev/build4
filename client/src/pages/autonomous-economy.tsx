@@ -1118,7 +1118,7 @@ export default function AutonomousEconomy() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <Card className="p-3 space-y-2">
                       <div className="text-xs font-mono font-semibold flex items-center gap-1">
-                        <ArrowDownLeft className="w-3 h-3 text-primary" /> On-Chain Deposit
+                        <ArrowDownLeft className="w-3 h-3 text-primary" /> Fund Agent
                       </div>
                       <input
                         type="text"
@@ -1131,16 +1131,30 @@ export default function AutonomousEconomy() {
                       <Button
                         size="sm"
                         className="w-full"
-                        disabled={!web3.hasContracts || onChainLoading === "deposit"}
+                        disabled={onChainLoading === "deposit" || !onChainDeposit || parseFloat(onChainDeposit) <= 0}
                         data-testid="button-onchain-deposit"
                         onClick={async () => {
                           try {
                             setOnChainLoading("deposit");
+                            const depositWei = (parseFloat(onChainDeposit) * 1e18).toFixed(0);
+                            let txHash: string | undefined;
+
                             const agentNumId = selectedAgent?.onchainId ? BigInt(selectedAgent.onchainId) : null;
-                            if (!agentNumId) { toast({ title: "Not registered", description: "This agent has no on-chain ID yet", variant: "destructive" }); return; }
-                            const receipt = await web3.depositToAgent(agentNumId, onChainDeposit);
-                            setLastTxHash(receipt.hash);
-                            toast({ title: "Deposit successful", description: `${onChainDeposit} ${activeChain.currency} deposited on-chain` });
+                            if (agentNumId && web3.hasContracts) {
+                              const receipt = await web3.depositToAgent(agentNumId, onChainDeposit);
+                              txHash = receipt.hash;
+                              setLastTxHash(receipt.hash);
+                            }
+
+                            await apiRequest("POST", `/api/web4/agents/${agentId}/fund`, {
+                              amount: depositWei,
+                              txHash,
+                              chainId: web3.chainId,
+                              senderWallet: web3.address,
+                            });
+
+                            queryClient.invalidateQueries({ queryKey: ["/api/web4/wallet", agentId] });
+                            toast({ title: "Deposit successful", description: `${onChainDeposit} ${activeChain.currency} deposited${txHash ? ' on-chain' : ''}` });
                           } catch (err: any) {
                             toast({ title: "Deposit failed", description: err.message, variant: "destructive" });
                           } finally {

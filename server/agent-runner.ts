@@ -776,25 +776,25 @@ async function registerExistingAgentsOnchain(): Promise<void> {
   const allAgents = await storage.getAllAgents();
   const unregistered = allAgents.filter(a => !a.onchainRegistered && a.status === "active");
 
-  const coreAgents = unregistered.filter(a =>
-    ["NEXUS-7", "CIPHER-3", "FORGE-1"].includes(a.name)
-  );
-
-  for (const agent of coreAgents) {
+  for (const agent of unregistered) {
     try {
       await ensureAgentRegisteredOnchain(agent);
-      const depositResult = await depositOnchain(agent.id, "10000000000000000");
-      if (depositResult.success && depositResult.txHash) {
-        log(`[Agent ${agent.name}] Initial on-chain deposit: ${getExplorerUrl(depositResult.txHash)}`, "agent-runner");
-        await storage.createTransaction({
-          agentId: agent.id,
-          type: "onchain_deposit",
-          amount: "10000000000000000",
-          description: `Initial on-chain deposit (0.01 BNB)`,
-          txHash: depositResult.txHash,
-          chainId: getChainId(),
-        });
+      const isCoreAgent = ["NEXUS-7", "CIPHER-3", "FORGE-1"].includes(agent.name);
+      if (isCoreAgent) {
+        const depositResult = await depositOnchain(agent.id, "10000000000000000");
+        if (depositResult.success && depositResult.txHash) {
+          log(`[Agent ${agent.name}] Initial on-chain deposit: ${getExplorerUrl(depositResult.txHash)}`, "agent-runner");
+          await storage.createTransaction({
+            agentId: agent.id,
+            type: "onchain_deposit",
+            amount: "10000000000000000",
+            description: `Initial on-chain deposit (0.01 BNB)`,
+            txHash: depositResult.txHash,
+            chainId: getChainId(),
+          });
+        }
       }
+      log(`[Agent ${agent.name}] Registered on-chain successfully`, "agent-runner");
       await new Promise(r => setTimeout(r, 3000));
     } catch (e: any) {
       log(`[Agent ${agent.name}] On-chain registration error: ${e.message}`, "agent-runner");

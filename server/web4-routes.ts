@@ -125,6 +125,58 @@ export function registerWeb4Routes(app: Express): void {
     }
   });
 
+  app.post("/api/web4/agents/:agentId/fund", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const { amount, txHash, chainId: chainIdVal, senderWallet } = req.body;
+      if (!amount || typeof amount !== "string") {
+        return res.status(400).json({ error: "Valid deposit amount required" });
+      }
+      let amountBigInt: bigint;
+      try { amountBigInt = BigInt(amount); } catch { return res.status(400).json({ error: "Invalid amount format" }); }
+      if (amountBigInt <= 0n) return res.status(400).json({ error: "Amount must be positive" });
+
+      const maxDeposit = BigInt("100000000000000000000");
+      if (amountBigInt > maxDeposit) return res.status(400).json({ error: "Deposit exceeds maximum (100 BNB)" });
+
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+      if (!agent.creatorWallet) return res.status(403).json({ error: "Agent has no owner wallet" });
+      const sender = (senderWallet || "").toLowerCase();
+      if (!sender || sender !== agent.creatorWallet.toLowerCase()) {
+        return res.status(403).json({ error: "Only the agent owner can fund this agent" });
+      }
+
+      if (!txHash) {
+        return res.status(400).json({ error: "On-chain transaction hash required for deposits" });
+      }
+      const normalizedTxHash = txHash.toLowerCase();
+      const existingTx = await storage.getTransactionByTxHash(normalizedTxHash);
+      if (existingTx) return res.status(409).json({ error: "This transaction has already been processed" });
+
+      const wallet = await storage.getWallet(agentId);
+      if (!wallet) return res.status(404).json({ error: "Agent wallet not found" });
+
+      const newBalance = (BigInt(wallet.balance) + amountBigInt).toString();
+      await storage.updateWalletBalance(agentId, newBalance, amount, "0");
+
+      await storage.createTransaction({
+        agentId,
+        type: "deposit",
+        amount,
+        description: `Deposit from owner wallet (tx: ${normalizedTxHash.slice(0, 10)}...)`,
+        txHash: normalizedTxHash,
+        chainId: chainIdVal || undefined,
+      });
+
+      const updatedWallet = await storage.getWallet(agentId);
+      res.json({ success: true, wallet: updatedWallet, txHash: normalizedTxHash });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/web4/wallet/:agentId", async (req: Request, res: Response) => {
     try {
       const wallet = await storage.getWallet(req.params.agentId);

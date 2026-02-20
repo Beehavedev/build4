@@ -68,6 +68,7 @@ export interface IStorage {
   updateWalletBalance(agentId: string, newBalance: string, earnedDelta: string, spentDelta: string): Promise<AgentWallet | undefined>;
 
   getTransactions(agentId: string, limit?: number): Promise<AgentTransaction[]>;
+  getTransactionByTxHash(txHash: string): Promise<AgentTransaction | undefined>;
   createTransaction(tx: InsertAgentTransaction): Promise<AgentTransaction>;
 
   getSkills(agentId?: string): Promise<AgentSkill[]>;
@@ -252,6 +253,13 @@ export class DatabaseStorage implements IStorage {
       .where(eq(agentTransactions.agentId, agentId))
       .orderBy(desc(agentTransactions.createdAt))
       .limit(limit);
+  }
+
+  async getTransactionByTxHash(txHash: string): Promise<AgentTransaction | undefined> {
+    const [tx] = await db.select().from(agentTransactions)
+      .where(eq(agentTransactions.txHash, txHash))
+      .limit(1);
+    return tx;
   }
 
   async createTransaction(tx: InsertAgentTransaction): Promise<AgentTransaction> {
