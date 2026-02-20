@@ -20,10 +20,16 @@ import {
 } from "@shared/schema";
 
 export function registerWeb4Routes(app: Express): void {
-  app.get("/api/web4/agents", async (_req: Request, res: Response) => {
+  app.get("/api/web4/agents", async (req: Request, res: Response) => {
     try {
-      const agents = await storage.getAllAgents();
-      res.json(agents);
+      const wallet = req.query.wallet as string | undefined;
+      if (wallet) {
+        const agents = await storage.getAgentsByWallet(wallet);
+        res.json(agents);
+      } else {
+        const agents = await storage.getAllAgents();
+        res.json(agents);
+      }
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -47,7 +53,7 @@ export function registerWeb4Routes(app: Express): void {
         return res.status(400).json({ error: "initialDeposit must be a numeric wei string" });
       }
 
-      const result = await storage.createFullAgent(parsed.name, parsed.bio, parsed.modelType, parsed.initialDeposit, parsed.onchainTxHash, parsed.onchainChainId);
+      const result = await storage.createFullAgent(parsed.name, parsed.bio, parsed.modelType, parsed.initialDeposit, parsed.onchainTxHash, parsed.onchainChainId, parsed.creatorWallet);
 
       let onchainRegistration = null;
       const maxRegAttempts = 3;

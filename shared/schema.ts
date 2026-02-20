@@ -25,6 +25,7 @@ export const agents = pgTable("agents", {
   status: text("status").notNull().default("active"),
   onchainId: text("onchain_id"),
   onchainRegistered: boolean("onchain_registered").notNull().default(false),
+  creatorWallet: text("creator_wallet"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -281,6 +282,7 @@ export const web4CreateAgentRequestSchema = z.object({
   bio: z.string().max(300).optional(),
   modelType: z.enum(["meta-llama/Llama-3.1-70B-Instruct", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"]).default("meta-llama/Llama-3.1-70B-Instruct"),
   initialDeposit: z.string().min(1),
+  creatorWallet: z.string().optional(),
   onchainTxHash: z.string().optional(),
   onchainChainId: z.number().optional(),
 });

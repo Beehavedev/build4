@@ -140,8 +140,17 @@ export default function AutonomousEconomy() {
 
   const activeChain = CHAINS.find(c => c.id === selectedChain) || CHAINS[0];
 
+  const agentsQueryKey = web3.connected && web3.address
+    ? `/api/web4/agents?wallet=${web3.address}`
+    : "/api/web4/agents";
+
   const { data: agentsList = [], isLoading: agentsLoading } = useQuery<Agent[]>({
-    queryKey: ["/api/web4/agents"],
+    queryKey: ["/api/web4/agents", web3.address || "all"],
+    queryFn: async () => {
+      const res = await fetch(agentsQueryKey);
+      if (!res.ok) throw new Error("Failed to fetch agents");
+      return res.json();
+    },
     refetchInterval: 15000,
   });
 
@@ -407,6 +416,7 @@ export default function AutonomousEconomy() {
         bio: newAgentBio || undefined,
         modelType: newAgentModel,
         initialDeposit: newAgentDeposit,
+        creatorWallet: web3.address,
       });
       const data = await res.json();
       const agentId = data.agent?.id;
@@ -493,6 +503,80 @@ export default function AutonomousEconomy() {
         <div className="font-mono text-sm text-muted-foreground flex items-center gap-2">
           <RefreshCw className="w-4 h-4 animate-spin" />
           {t("dashboard.loading")}
+        </div>
+      </div>
+    );
+  }
+
+  if (web3.connected && agentsList.length === 0 && !agentsLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <header className="border-b sticky top-0 z-40 bg-background/95 backdrop-blur">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6">
+            <div className="flex items-center justify-between h-14">
+              <div className="flex items-center gap-3">
+                <Link href="/">
+                  <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-back-home-empty">
+                    <ArrowLeft className="w-4 h-4" />
+                  </Button>
+                </Link>
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-primary" />
+                  <span className="font-mono font-bold text-sm tracking-wider">BUILD<span className="text-primary">4</span></span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <LanguageSwitcher />
+                <WalletConnector />
+              </div>
+            </div>
+          </div>
+        </header>
+        <div className="max-w-lg mx-auto px-4 py-20 text-center space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+            <Bot className="w-8 h-8 text-primary" />
+          </div>
+          <div>
+            <h2 className="font-mono font-bold text-lg mb-2">No Agents Found</h2>
+            <p className="text-sm text-muted-foreground font-mono">
+              Connected as <span className="text-primary">{web3.address?.slice(0, 6)}...{web3.address?.slice(-4)}</span>. You don't have any agents yet. Create your first autonomous AI agent to get started.
+            </p>
+          </div>
+          <Button
+            size="lg"
+            className="font-mono gap-2"
+            onClick={() => setShowCreateAgent(true)}
+            data-testid="button-create-first-agent"
+          >
+            <Plus className="w-4 h-4" />
+            Create Your First Agent
+          </Button>
+          {showCreateAgent && (
+            <Card className="p-4 text-left space-y-3 mt-4">
+              <div className="font-mono text-xs font-semibold">{t("dashboard.newAgent")}</div>
+              <input placeholder={t("dashboard.agentName")} value={newAgentName} onChange={(e) => setNewAgentName(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-first-agent-name" />
+              <input placeholder={t("dashboard.agentBio")} value={newAgentBio} onChange={(e) => setNewAgentBio(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-first-agent-bio" />
+              <select value={newAgentModel} onChange={(e) => setNewAgentModel(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-first-agent-model">
+                <option value="meta-llama/Llama-3.1-70B-Instruct">Llama 3.1 70B</option>
+                <option value="deepseek-ai/DeepSeek-V3">DeepSeek V3</option>
+                <option value="Qwen/Qwen2.5-72B-Instruct">Qwen 2.5 72B</option>
+              </select>
+              <div className="font-mono text-[10px] text-muted-foreground">Deposit: 0.002 BNB (0.001 BNB creation fee + 0.001 BNB initial balance)</div>
+              <Button
+                size="sm"
+                className="w-full font-mono text-xs gap-1.5"
+                onClick={() => createAgentMutation.mutate()}
+                disabled={createAgentMutation.isPending || !newAgentName}
+                data-testid="button-submit-first-agent"
+              >
+                {createAgentMutation.isPending ? (
+                  <><RefreshCw className="w-3 h-3 animate-spin" /> {createAgentStep || "Creating..."}</>
+                ) : (
+                  <><Plus className="w-3 h-3" /> Create & Deploy On-Chain</>
+                )}
+              </Button>
+            </Card>
+          )}
         </div>
       </div>
     );

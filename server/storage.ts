@@ -125,7 +125,8 @@ export interface IStorage {
   getPlatformRevenue(limit?: number): Promise<PlatformRevenue[]>;
   getPlatformRevenueSummary(): Promise<{ totalRevenue: string; byFeeType: Record<string, string>; totalTransactions: number; onchainVerified: number; onchainRevenue: string }>;
 
-  createFullAgent(name: string, bio: string | undefined, modelType: string, initialDeposit: string): Promise<{ agent: Agent; wallet: AgentWallet }>;
+  getAgentsByWallet(walletAddress: string): Promise<Agent[]>;
+  createFullAgent(name: string, bio: string | undefined, modelType: string, initialDeposit: string, onchainTxHash?: string, onchainChainId?: number, creatorWallet?: string): Promise<{ agent: Agent; wallet: AgentWallet }>;
 
   seedDemoData(): Promise<void>;
 }
@@ -153,6 +154,10 @@ export class DatabaseStorage implements IStorage {
 
   async getAllAgents(): Promise<Agent[]> {
     return db.select().from(agents).orderBy(agents.createdAt);
+  }
+
+  async getAgentsByWallet(walletAddress: string): Promise<Agent[]> {
+    return db.select().from(agents).where(eq(agents.creatorWallet, walletAddress.toLowerCase())).orderBy(agents.createdAt);
   }
 
   async createAgent(agent: InsertAgent): Promise<Agent> {
@@ -776,14 +781,14 @@ export class DatabaseStorage implements IStorage {
     return request;
   }
 
-  async createFullAgent(name: string, bio: string | undefined, modelType: string, initialDeposit: string, onchainTxHash?: string, onchainChainId?: number): Promise<{ agent: Agent; wallet: AgentWallet }> {
+  async createFullAgent(name: string, bio: string | undefined, modelType: string, initialDeposit: string, onchainTxHash?: string, onchainChainId?: number, creatorWallet?: string): Promise<{ agent: Agent; wallet: AgentWallet }> {
     const creationFee = BigInt(PLATFORM_FEES.AGENT_CREATION_FEE);
     const depositAmount = BigInt(initialDeposit);
     if (depositAmount < creationFee) {
       throw new Error(`Initial deposit must be at least ${creationFee.toString()} wei (0.001 BNB) to cover the agent creation fee`);
     }
 
-    const agent = await this.createAgent({ name, bio, modelType, status: "active" });
+    const agent = await this.createAgent({ name, bio, modelType, status: "active", creatorWallet: creatorWallet?.toLowerCase() });
     const netDeposit = (depositAmount - creationFee).toString();
     const wallet = await this.createWallet({ agentId: agent.id, balance: netDeposit, totalEarned: netDeposit, totalSpent: "0", status: "active" });
     await this.createRuntimeProfile({ agentId: agent.id, modelName: modelType });
