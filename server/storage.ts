@@ -831,7 +831,23 @@ export class DatabaseStorage implements IStorage {
     return { totalRevenue: total.toString(), byFeeType, totalTransactions: all.length };
   }
 
+  async fixCentralizedModelNames(): Promise<void> {
+    const centralizedToDecentralized: Record<string, string> = {
+      "gpt-4o": "meta-llama/Llama-3.1-70B-Instruct",
+      "gpt-4o-mini": "Qwen/Qwen2.5-72B-Instruct",
+      "gpt-4": "meta-llama/Llama-3.1-70B-Instruct",
+      "gpt-3.5-turbo": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+      "claude-3.5-sonnet": "deepseek-ai/DeepSeek-V3",
+      "claude-3-opus": "meta-llama/Llama-3.1-70B-Instruct",
+    };
+    for (const [oldModel, newModel] of Object.entries(centralizedToDecentralized)) {
+      await db.update(agents).set({ modelType: newModel }).where(eq(agents.modelType, oldModel));
+      await db.update(agentRuntimeProfiles).set({ modelName: newModel }).where(eq(agentRuntimeProfiles.modelName, oldModel));
+    }
+  }
+
   async seedDemoData(): Promise<void> {
+    await this.fixCentralizedModelNames();
     const existingAgents = await this.getAllAgents();
     if (existingAgents.length > 0) return;
 

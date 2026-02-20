@@ -21,7 +21,7 @@ export const agents = pgTable("agents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   bio: text("bio"),
-  modelType: text("model_type").notNull().default("gpt-4o"),
+  modelType: text("model_type").notNull().default("meta-llama/Llama-3.1-70B-Instruct"),
   status: text("status").notNull().default("active"),
   onchainId: text("onchain_id"),
   onchainRegistered: boolean("onchain_registered").notNull().default(false),
@@ -127,7 +127,7 @@ export type AgentLineage = typeof agentLineage.$inferSelect;
 export const agentRuntimeProfiles = pgTable("agent_runtime_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   agentId: varchar("agent_id").notNull(),
-  modelName: text("model_name").notNull().default("gpt-4o"),
+  modelName: text("model_name").notNull().default("meta-llama/Llama-3.1-70B-Instruct"),
   modelVersion: text("model_version"),
   configJson: text("config_json"),
   createdAt: timestamp("created_at").defaultNow(),
