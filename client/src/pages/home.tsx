@@ -171,6 +171,7 @@ export default function Home() {
               <span className="font-mono font-bold text-sm tracking-wide" data-testid="text-logo">
                 BUILD<span className="text-primary">4</span>
               </span>
+              <span className="text-[10px] font-mono font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary" data-testid="badge-beta">beta</span>
             </div>
             <div className="hidden md:flex items-center gap-4">
               <a href="#features" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-features">{t("nav.features")}</a>
