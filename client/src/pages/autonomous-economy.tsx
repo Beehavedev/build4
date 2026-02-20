@@ -35,6 +35,7 @@ import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { WalletConnector } from "@/components/wallet-connector";
+import { useWallet } from "@/hooks/use-wallet";
 import type {
   Agent,
   AgentWallet,
@@ -125,6 +126,17 @@ export default function AutonomousEconomy() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedChain, setSelectedChain] = useState<string>("bnb");
   const { toast } = useToast();
+  const web3 = useWallet();
+
+  const [onChainDeposit, setOnChainDeposit] = useState("0.01");
+  const [onChainWithdraw, setOnChainWithdraw] = useState("0.005");
+  const [onChainAgentWallet, setOnChainAgentWallet] = useState<any>(null);
+  const [onChainLoading, setOnChainLoading] = useState<string | null>(null);
+  const [onChainConstitution, setOnChainConstitution] = useState<any>(null);
+  const [newLawText, setNewLawText] = useState("");
+  const [newLawImmutable, setNewLawImmutable] = useState(true);
+  const [onChainLineage, setOnChainLineage] = useState<any>(null);
+  const [lastTxHash, setLastTxHash] = useState<string | null>(null);
 
   const activeChain = CHAINS.find(c => c.id === selectedChain) || CHAINS[0];
 
