@@ -126,6 +126,7 @@ export interface IStorage {
   getPlatformRevenueSummary(): Promise<{ totalRevenue: string; byFeeType: Record<string, string>; totalTransactions: number; onchainVerified: number; onchainRevenue: string }>;
 
   getAgentsByWallet(walletAddress: string): Promise<Agent[]>;
+  getUnclaimedAgents(): Promise<Agent[]>;
   createFullAgent(name: string, bio: string | undefined, modelType: string, initialDeposit: string, onchainTxHash?: string, onchainChainId?: number, creatorWallet?: string): Promise<{ agent: Agent; wallet: AgentWallet }>;
 
   seedDemoData(): Promise<void>;
@@ -158,6 +159,10 @@ export class DatabaseStorage implements IStorage {
 
   async getAgentsByWallet(walletAddress: string): Promise<Agent[]> {
     return db.select().from(agents).where(eq(agents.creatorWallet, walletAddress.toLowerCase())).orderBy(agents.createdAt);
+  }
+
+  async getUnclaimedAgents(): Promise<Agent[]> {
+    return db.select().from(agents).where(sql`${agents.creatorWallet} IS NULL`).orderBy(agents.createdAt);
   }
 
   async createAgent(agent: InsertAgent): Promise<Agent> {

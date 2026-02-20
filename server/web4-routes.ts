@@ -24,8 +24,10 @@ export function registerWeb4Routes(app: Express): void {
     try {
       const wallet = req.query.wallet as string | undefined;
       if (wallet) {
-        const agents = await storage.getAgentsByWallet(wallet);
-        res.json(agents);
+        const ownedAgents = await storage.getAgentsByWallet(wallet);
+        const unclaimedAgents = await storage.getUnclaimedAgents();
+        const combined = [...ownedAgents, ...unclaimedAgents.filter(u => !ownedAgents.some(o => o.id === u.id))];
+        res.json(combined);
       } else {
         const agents = await storage.getAllAgents();
         res.json(agents);
