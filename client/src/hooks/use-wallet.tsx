@@ -353,7 +353,7 @@ function useWalletInternal() {
     return tx.wait();
   }, [getHubContract]);
 
-  const getAgentOnChainWallet = useCallback(async (agentId: number) => {
+  const getAgentOnChainWallet = useCallback(async (agentId: number | bigint) => {
     const hub = getHubContract();
     if (!hub) return null;
     try {
@@ -392,7 +392,7 @@ function useWalletInternal() {
     }
   }, [getMarketplaceContract]);
 
-  const getConstitution = useCallback(async (agentId: number) => {
+  const getConstitution = useCallback(async (agentId: number | bigint) => {
     const constitution = getConstitutionContract();
     if (!constitution) return null;
     try {
@@ -410,7 +410,7 @@ function useWalletInternal() {
     }
   }, [getConstitutionContract]);
 
-  const addLawOnChain = useCallback(async (agentId: number, lawText: string, isImmutable: boolean) => {
+  const addLawOnChain = useCallback(async (agentId: number | bigint, lawText: string, isImmutable: boolean) => {
     const constitution = getConstitutionContract();
     if (!constitution) throw new Error("Constitution contract not available");
     const lawHash = keccak256(toUtf8Bytes(lawText));

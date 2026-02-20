@@ -1078,7 +1078,8 @@ export default function AutonomousEconomy() {
                         onClick={async () => {
                           try {
                             setOnChainLoading("deposit");
-                            const agentNumId = parseInt(agentId || "1");
+                            const agentNumId = selectedAgent?.onchainId ? BigInt(selectedAgent.onchainId) : null;
+                            if (!agentNumId) { toast({ title: "Not registered", description: "This agent has no on-chain ID yet", variant: "destructive" }); return; }
                             const receipt = await web3.depositToAgent(agentNumId, onChainDeposit);
                             setLastTxHash(receipt.hash);
                             toast({ title: "Deposit successful", description: `${onChainDeposit} ${activeChain.currency} deposited on-chain` });
@@ -1115,7 +1116,8 @@ export default function AutonomousEconomy() {
                         onClick={async () => {
                           try {
                             setOnChainLoading("withdraw");
-                            const agentNumId = parseInt(agentId || "1");
+                            const agentNumId = selectedAgent?.onchainId ? BigInt(selectedAgent.onchainId) : null;
+                            if (!agentNumId) { toast({ title: "Not registered", description: "This agent has no on-chain ID yet", variant: "destructive" }); return; }
                             const receipt = await web3.withdrawFromAgent(agentNumId, onChainWithdraw, web3.address!);
                             setLastTxHash(receipt.hash);
                             toast({ title: "Withdrawal successful", description: `${onChainWithdraw} ${activeChain.currency} withdrawn to your wallet` });
@@ -1145,7 +1147,8 @@ export default function AutonomousEconomy() {
                       onClick={async () => {
                         try {
                           setOnChainLoading("read-wallet");
-                          const agentNumId = parseInt(agentId || "1");
+                          const agentNumId = selectedAgent?.onchainId ? BigInt(selectedAgent.onchainId) : null;
+                            if (!agentNumId) { toast({ title: "Not registered", description: "This agent has no on-chain ID yet", variant: "destructive" }); return; }
                           const data = await web3.getAgentOnChainWallet(agentNumId);
                           setOnChainAgentWallet(data);
                           if (!data?.isRegistered) {
@@ -1208,7 +1211,8 @@ export default function AutonomousEconomy() {
                             setOnChainLoading("register");
                             await apiRequest("POST", `/api/web4/agents/${selectedAgentId}/register-onchain`);
                             toast({ title: "Agent registered on-chain" });
-                            const agentNumId = parseInt(agentId || "1");
+                            const agentNumId = selectedAgent?.onchainId ? BigInt(selectedAgent.onchainId) : null;
+                            if (!agentNumId) { toast({ title: "Not registered", description: "This agent has no on-chain ID yet", variant: "destructive" }); return; }
                             const data = await web3.getAgentOnChainWallet(agentNumId);
                             setOnChainAgentWallet(data);
                           } catch (err: any) {
@@ -1287,7 +1291,8 @@ export default function AutonomousEconomy() {
                       onClick={async () => {
                         try {
                           setOnChainLoading("read-constitution");
-                          const agentNumId = parseInt(agentId || "1");
+                          const agentNumId = selectedAgent?.onchainId ? BigInt(selectedAgent.onchainId) : null;
+                            if (!agentNumId) { toast({ title: "Not registered", description: "This agent has no on-chain ID yet", variant: "destructive" }); return; }
                           const data = await web3.getConstitution(agentNumId);
                           setOnChainConstitution(data);
                         } catch (err: any) {
@@ -1352,7 +1357,8 @@ export default function AutonomousEconomy() {
                           onClick={async () => {
                             try {
                               setOnChainLoading("add-law");
-                              const agentNumId = parseInt(agentId || "1");
+                              const agentNumId = selectedAgent?.onchainId ? BigInt(selectedAgent.onchainId) : null;
+                            if (!agentNumId) { toast({ title: "Not registered", description: "This agent has no on-chain ID yet", variant: "destructive" }); return; }
                               const receipt = await web3.addLawOnChain(agentNumId, newLawText, newLawImmutable);
                               setLastTxHash(receipt.hash);
                               setNewLawText("");
@@ -1380,7 +1386,8 @@ export default function AutonomousEconomy() {
                             onClick={async () => {
                               try {
                                 setOnChainLoading("seal");
-                                const agentNumId = parseInt(agentId || "1");
+                                const agentNumId = selectedAgent?.onchainId ? BigInt(selectedAgent.onchainId) : null;
+                            if (!agentNumId) { toast({ title: "Not registered", description: "This agent has no on-chain ID yet", variant: "destructive" }); return; }
                                 const receipt = await web3.sealConstitutionOnChain(agentNumId);
                                 setLastTxHash(receipt.hash);
                                 toast({ title: "Constitution sealed", description: "Laws are now permanently locked on-chain" });
@@ -1413,7 +1420,8 @@ export default function AutonomousEconomy() {
                       onClick={async () => {
                         try {
                           setOnChainLoading("read-lineage");
-                          const agentNumId = parseInt(agentId || "1");
+                          const agentNumId = selectedAgent?.onchainId ? BigInt(selectedAgent.onchainId) : null;
+                            if (!agentNumId) { toast({ title: "Not registered", description: "This agent has no on-chain ID yet", variant: "destructive" }); return; }
                           const data = await web3.getLineageOnChain(agentNumId);
                           setOnChainLineage(data);
                         } catch (err: any) {
