@@ -6,6 +6,7 @@ import {
   registerAgentOnchain, depositOnchain, transferOnchain,
   listSkillOnchain, purchaseSkillOnchain, replicateOnchain,
   addConstitutionLawOnchain, getExplorerUrl, getDeployerBalance,
+  getNetworkName, isMainnet, getSpendingStatus,
 } from "./onchain";
 import type { Agent, AgentWallet } from "@shared/schema";
 import { db } from "./db";
@@ -128,7 +129,7 @@ async function ensureAgentRegisteredOnchain(agent: Agent): Promise<void> {
         agentId: agent.id,
         type: "onchain_register",
         amount: "0",
-        description: `Agent registered on BNB Testnet`,
+        description: `Agent registered on ${getNetworkName()}`,
         txHash: result.txHash,
         chainId: result.chainId,
       });
@@ -432,9 +433,15 @@ export function startAgentRunner(): void {
 
   onchainEnabled = initOnchain();
   if (onchainEnabled) {
-    log("On-chain bridge ACTIVE - agents will transact on BNB Testnet", "agent-runner");
+    const networkName = getNetworkName();
+    const mainnetLabel = isMainnet() ? " [MAINNET]" : "";
+    log(`On-chain bridge ACTIVE - agents will transact on ${networkName}${mainnetLabel}`, "agent-runner");
     getDeployerBalance().then(bal => {
       log(`Deployer wallet balance: ${bal} BNB`, "agent-runner");
+      if (isMainnet()) {
+        const status = getSpendingStatus();
+        log(`MAINNET SAFETY: max ${status.maxPerHour} BNB/hr, ${status.maxTxPerHour} tx/hr`, "agent-runner");
+      }
     });
   } else {
     log("On-chain bridge DISABLED - database-only mode", "agent-runner");

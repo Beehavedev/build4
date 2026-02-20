@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
-import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl } from "./onchain";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus } from "./onchain";
 import {
   web4DepositRequestSchema,
   web4TransferRequestSchema,
@@ -404,6 +404,7 @@ export function registerWeb4Routes(app: Express): void {
         deployerBalance = await getDeployerBalance();
         contractAddrs = getContractAddresses();
       }
+      const spending = onchain ? getSpendingStatus() : null;
       res.json({
         running: isAgentRunnerActive(),
         liveProviders: providers,
@@ -412,11 +413,13 @@ export function registerWeb4Routes(app: Express): void {
         providers: providerStatus,
         onchain: {
           enabled: onchain,
-          network: "BNB Testnet",
-          chainId: 97,
-          explorer: "https://testnet.bscscan.com",
+          network: getNetworkName(),
+          chainId: getChainId(),
+          explorer: onchain ? getExplorerUrl("").replace("/tx/", "") : "https://testnet.bscscan.com",
+          isMainnet: isMainnet(),
           deployerBalance,
           contracts: contractAddrs,
+          spending,
         },
       });
     } catch (e: any) {

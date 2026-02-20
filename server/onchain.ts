@@ -47,6 +47,66 @@ interface OnchainResult {
   chainId: number;
 }
 
+interface ChainConfig {
+  name: string;
+  chainId: number;
+  rpcUrl: string;
+  explorerBase: string;
+  deploymentFile: string;
+  isMainnet: boolean;
+}
+
+const CHAIN_CONFIGS: Record<string, ChainConfig> = {
+  bnbTestnet: {
+    name: "BNB Testnet",
+    chainId: 97,
+    rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545",
+    explorerBase: "https://testnet.bscscan.com",
+    deploymentFile: "contracts/deployments/bnbTestnet.json",
+    isMainnet: false,
+  },
+  bnbMainnet: {
+    name: "BNB Chain",
+    chainId: 56,
+    rpcUrl: "https://bsc-dataseed1.binance.org",
+    explorerBase: "https://bscscan.com",
+    deploymentFile: "contracts/deployments/bnbMainnet.json",
+    isMainnet: true,
+  },
+  baseMainnet: {
+    name: "Base",
+    chainId: 8453,
+    rpcUrl: "https://mainnet.base.org",
+    explorerBase: "https://basescan.org",
+    deploymentFile: "contracts/deployments/baseMainnet.json",
+    isMainnet: true,
+  },
+  baseTestnet: {
+    name: "Base Sepolia",
+    chainId: 84532,
+    rpcUrl: "https://sepolia.base.org",
+    explorerBase: "https://sepolia.basescan.org",
+    deploymentFile: "contracts/deployments/baseTestnet.json",
+    isMainnet: false,
+  },
+};
+
+const MAINNET_SAFETY = {
+  maxSpendPerHourWei: BigInt("50000000000000000"),
+  maxDepositPerAgentWei: BigInt("5000000000000000"),
+  minDeployerBalanceWei: BigInt("10000000000000000"),
+  maxTxPerHour: 60,
+  maxConcurrentPending: 3,
+};
+
+const TESTNET_SAFETY = {
+  maxSpendPerHourWei: BigInt("500000000000000000"),
+  maxDepositPerAgentWei: BigInt("10000000000000000"),
+  minDeployerBalanceWei: BigInt("1000000000000000"),
+  maxTxPerHour: 200,
+  maxConcurrentPending: 5,
+};
+
 let provider: ethers.JsonRpcProvider | null = null;
 let wallet: ethers.Wallet | null = null;
 let contracts: {
@@ -58,6 +118,64 @@ let contracts: {
 let addresses: ContractAddresses | null = null;
 let initialized = false;
 let chainId = 97;
+let activeChainConfig: ChainConfig | null = null;
+
+let spendThisHour = BigInt(0);
+let txCountThisHour = 0;
+let hourResetTime = Date.now() + 3600_000;
+let circuitBreakerTripped = false;
+let pendingTxCount = 0;
+
+let nonceLock = false;
+let managedNonce = -1;
+
+function getSafetyLimits() {
+  return activeChainConfig?.isMainnet ? MAINNET_SAFETY : TESTNET_SAFETY;
+}
+
+function resetHourlyCounters() {
+  if (Date.now() > hourResetTime) {
+    spendThisHour = BigInt(0);
+    txCountThisHour = 0;
+    hourResetTime = Date.now() + 3600_000;
+    if (circuitBreakerTripped) {
+      log("[onchain] Circuit breaker reset after hourly window", "onchain");
+      circuitBreakerTripped = false;
+    }
+  }
+}
+
+function checkSpendingLimits(additionalSpendWei: bigint): string | null {
+  resetHourlyCounters();
+  const limits = getSafetyLimits();
+
+  if (circuitBreakerTripped) {
+    return "Circuit breaker tripped - spending paused until next hour";
+  }
+
+  if (txCountThisHour >= limits.maxTxPerHour) {
+    return `Hourly tx limit reached (${limits.maxTxPerHour})`;
+  }
+
+  if (spendThisHour + additionalSpendWei > limits.maxSpendPerHourWei) {
+    circuitBreakerTripped = true;
+    const spentStr = ethers.formatEther(spendThisHour);
+    const limitStr = ethers.formatEther(limits.maxSpendPerHourWei);
+    log(`[onchain] CIRCUIT BREAKER: Hourly spend ${spentStr} would exceed limit ${limitStr}`, "onchain");
+    return `Hourly spending limit would be exceeded (${spentStr}/${limitStr})`;
+  }
+
+  if (pendingTxCount >= limits.maxConcurrentPending) {
+    return `Too many pending transactions (${pendingTxCount})`;
+  }
+
+  return null;
+}
+
+function recordSpend(weiAmount: bigint) {
+  spendThisHour += weiAmount;
+  txCountThisHour++;
+}
 
 export function initOnchain(): boolean {
   const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
@@ -66,18 +184,26 @@ export function initOnchain(): boolean {
     return false;
   }
 
+  const targetChain = process.env.ONCHAIN_NETWORK || "bnbTestnet";
+  const config = CHAIN_CONFIGS[targetChain];
+  if (!config) {
+    log(`[onchain] Unknown network: ${targetChain}`, "onchain");
+    return false;
+  }
+
   try {
-    const deploymentPath = path.resolve("contracts/deployments/bnbTestnet.json");
+    const deploymentPath = path.resolve(config.deploymentFile);
     if (!fs.existsSync(deploymentPath)) {
-      log("[onchain] No BNB Testnet deployment found", "onchain");
+      log(`[onchain] No deployment found at ${config.deploymentFile}`, "onchain");
       return false;
     }
 
     const deployment = JSON.parse(fs.readFileSync(deploymentPath, "utf-8"));
     addresses = deployment.contracts as ContractAddresses;
-    chainId = deployment.chainId || 97;
+    chainId = deployment.chainId || config.chainId;
+    activeChainConfig = config;
 
-    provider = new ethers.JsonRpcProvider("https://data-seed-prebsc-1-s1.binance.org:8545");
+    provider = new ethers.JsonRpcProvider(config.rpcUrl);
     wallet = new ethers.Wallet(privateKey, provider);
 
     contracts = {
@@ -88,7 +214,14 @@ export function initOnchain(): boolean {
     };
 
     initialized = true;
-    log(`[onchain] Connected to BNB Testnet (chain ${chainId}). Hub: ${addresses.AgentEconomyHub}`, "onchain");
+    const modeLabel = config.isMainnet ? "MAINNET" : "TESTNET";
+    log(`[onchain] Connected to ${config.name} (chain ${chainId}) [${modeLabel}]. Hub: ${addresses.AgentEconomyHub}`, "onchain");
+
+    if (config.isMainnet) {
+      const limits = MAINNET_SAFETY;
+      log(`[onchain] MAINNET SAFETY: max ${ethers.formatEther(limits.maxSpendPerHourWei)} BNB/hr, ${limits.maxTxPerHour} tx/hr, min deployer balance ${ethers.formatEther(limits.minDeployerBalanceWei)} BNB`, "onchain");
+    }
+
     return true;
   } catch (e: any) {
     log(`[onchain] Init failed: ${e.message}`, "onchain");
@@ -104,6 +237,14 @@ export function getChainId(): number {
   return chainId;
 }
 
+export function getNetworkName(): string {
+  return activeChainConfig?.name || "Unknown";
+}
+
+export function isMainnet(): boolean {
+  return activeChainConfig?.isMainnet || false;
+}
+
 function uuidToNumericId(uuid: string): bigint {
   const hex = uuid.replace(/-/g, "");
   const truncated = hex.substring(0, 16);
@@ -114,28 +255,124 @@ export function getOnchainId(agentDbId: string): string {
   return uuidToNumericId(agentDbId).toString();
 }
 
+async function acquireNonce(): Promise<number> {
+  while (nonceLock) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+  nonceLock = true;
+  try {
+    if (managedNonce === -1) {
+      managedNonce = await provider!.getTransactionCount(wallet!.address, "pending");
+    }
+    const nonce = managedNonce;
+    managedNonce++;
+    return nonce;
+  } finally {
+    nonceLock = false;
+  }
+}
+
+function resetNonce() {
+  managedNonce = -1;
+}
+
+async function checkDeployerBalance(): Promise<boolean> {
+  if (!provider || !wallet) return false;
+  try {
+    const bal = await provider.getBalance(wallet.address);
+    const limits = getSafetyLimits();
+    if (bal < limits.minDeployerBalanceWei) {
+      const balStr = ethers.formatEther(bal);
+      const minStr = ethers.formatEther(limits.minDeployerBalanceWei);
+      log(`[onchain] DEPLOYER BALANCE LOW: ${balStr} BNB (minimum: ${minStr} BNB)`, "onchain");
+      if (activeChainConfig?.isMainnet) {
+        circuitBreakerTripped = true;
+        log("[onchain] CIRCUIT BREAKER TRIPPED: Deployer balance below minimum on mainnet", "onchain");
+        return false;
+      }
+    }
+    return true;
+  } catch (e: any) {
+    log(`[onchain] Balance check RPC error: ${e.message?.substring(0, 100)}`, "onchain");
+    if (activeChainConfig?.isMainnet) {
+      log("[onchain] Failing safe on mainnet - blocking tx due to RPC error", "onchain");
+      return false;
+    }
+    return true;
+  }
+}
+
+async function estimateRealGasCost(gasLimit: number): Promise<bigint> {
+  if (!provider) return BigInt(gasLimit) * BigInt("100000000");
+  try {
+    const feeData = await provider.getFeeData();
+    const gasPrice = feeData.gasPrice || BigInt("100000000");
+    return BigInt(gasLimit) * gasPrice;
+  } catch {
+    return BigInt(gasLimit) * BigInt("5000000000");
+  }
+}
+
 async function sendTx(contract: ethers.Contract, method: string, args: any[], overrides: any = {}): Promise<OnchainResult> {
-  if (!initialized || !contracts) {
+  if (!initialized || !contracts || !provider || !wallet) {
     return { success: false, error: "On-chain not initialized", chainId };
   }
 
+  const gasLimit = overrides.gasLimit || 300000;
+  const valueWei = overrides.value ? BigInt(overrides.value.toString()) : BigInt(0);
+  const estimatedGas = await estimateRealGasCost(gasLimit);
+  const totalCost = valueWei + estimatedGas;
+
+  recordSpend(totalCost);
+
+  const limitError = checkSpendingLimits(BigInt(0));
+  if (limitError) {
+    spendThisHour -= totalCost;
+    txCountThisHour--;
+    log(`[onchain] ${method} blocked: ${limitError}`, "onchain");
+    return { success: false, error: limitError, chainId };
+  }
+
+  const balanceOk = await checkDeployerBalance();
+  if (!balanceOk) {
+    spendThisHour -= totalCost;
+    txCountThisHour--;
+    return { success: false, error: "Deployer balance too low", chainId };
+  }
+
+  pendingTxCount++;
   try {
-    const gasLimit = overrides.gasLimit || 300000;
-    const txOverrides = { ...overrides, gasLimit };
+    const nonce = await acquireNonce();
+    const txOverrides = { ...overrides, gasLimit, nonce };
 
     const tx = await contract[method](...args, txOverrides);
-    const receipt = await tx.wait();
 
-    if (receipt.status !== 1) {
-      return { success: false, error: "Transaction reverted", chainId, txHash: receipt.hash };
+    const receiptPromise = tx.wait();
+    const timeoutPromise = new Promise<null>((_, reject) =>
+      setTimeout(() => reject(new Error("Transaction confirmation timeout (90s)")), 90_000)
+    );
+
+    const receipt = await Promise.race([receiptPromise, timeoutPromise]);
+
+    if (!receipt || receipt.status !== 1) {
+      resetNonce();
+      return { success: false, error: "Transaction reverted", chainId, txHash: receipt?.hash };
     }
 
     log(`[onchain] ${method} tx: ${receipt.hash}`, "onchain");
     return { success: true, txHash: receipt.hash, chainId };
   } catch (e: any) {
+    resetNonce();
     const msg = e.message?.substring(0, 200) || "Unknown error";
     log(`[onchain] ${method} failed: ${msg}`, "onchain");
+
+    if (msg.includes("nonce") || msg.includes("replacement")) {
+      log("[onchain] Nonce conflict detected, resetting managed nonce", "onchain");
+    }
+
     return { success: false, error: msg, chainId };
+  } finally {
+    pendingTxCount--;
   }
 }
 
@@ -149,7 +386,9 @@ export async function registerAgentOnchain(agentDbId: string): Promise<OnchainRe
     if (isRegistered) {
       return { success: true, txHash: "already-registered", chainId };
     }
-  } catch {}
+  } catch (e: any) {
+    log(`[onchain] isAgentRegistered check failed: ${e.message?.substring(0, 100)}`, "onchain");
+  }
 
   return sendTx(contracts.hub, "registerAgent", [numId]);
 }
@@ -158,6 +397,7 @@ export async function depositOnchain(agentDbId: string, amountWei: string): Prom
   if (!contracts) return { success: false, error: "Not initialized", chainId };
 
   const numId = uuidToNumericId(agentDbId);
+  const limits = getSafetyLimits();
 
   try {
     const isRegistered = await contracts.hub.isAgentRegistered(numId);
@@ -166,11 +406,14 @@ export async function depositOnchain(agentDbId: string, amountWei: string): Prom
       if (!regResult.success) return regResult;
       await new Promise(r => setTimeout(r, 2000));
     }
-  } catch {}
+  } catch (e: any) {
+    log(`[onchain] deposit registration check failed: ${e.message?.substring(0, 100)}`, "onchain");
+  }
 
-  const depositAmount = BigInt(amountWei) > BigInt("10000000000000000")
-    ? BigInt("10000000000000000")
-    : BigInt(amountWei);
+  let depositAmount = BigInt(amountWei);
+  if (depositAmount > limits.maxDepositPerAgentWei) {
+    depositAmount = limits.maxDepositPerAgentWei;
+  }
 
   return sendTx(contracts.hub, "deposit", [numId], { value: depositAmount });
 }
@@ -239,16 +482,20 @@ export async function replicateOnchain(parentAgentId: string, childAgentId: stri
   const parentNum = uuidToNumericId(parentAgentId);
   const childNum = uuidToNumericId(childAgentId);
 
-  const fundingAmt = BigInt(fundingWei) > BigInt("10000000000000000")
-    ? BigInt("5000000000000000")
-    : BigInt(fundingWei);
+  const limits = getSafetyLimits();
+  let fundingAmt = BigInt(fundingWei);
+  if (fundingAmt > limits.maxDepositPerAgentWei) {
+    fundingAmt = limits.maxDepositPerAgentWei;
+  }
 
   try {
     const parentBal = await contracts.hub.getBalance(parentNum);
     if (parentBal < fundingAmt) {
       return { success: false, error: "Insufficient on-chain balance for replication", chainId };
     }
-  } catch {}
+  } catch (e: any) {
+    log(`[onchain] replicate balance check failed: ${e.message?.substring(0, 100)}`, "onchain");
+  }
 
   return sendTx(contracts.replication, "replicate", [parentNum, childNum, revenueShareBps, fundingAmt]);
 }
@@ -260,11 +507,13 @@ export async function addConstitutionLawOnchain(agentDbId: string, lawText: stri
   const lawHash = ethers.keccak256(ethers.toUtf8Bytes(lawText));
 
   try {
-    const isSealed = await contracts.constitution.isSealed(numId);
-    if (isSealed) {
+    const sealed = await contracts.constitution.isSealed(numId);
+    if (sealed) {
       return { success: false, error: "Constitution already sealed", chainId };
     }
-  } catch {}
+  } catch (e: any) {
+    log(`[onchain] constitution seal check failed: ${e.message?.substring(0, 100)}`, "onchain");
+  }
 
   return sendTx(contracts.constitution, "addLaw", [numId, lawHash, isImmutable]);
 }
@@ -295,5 +544,20 @@ export function getContractAddresses(): ContractAddresses | null {
 }
 
 export function getExplorerUrl(txHash: string): string {
-  return `https://testnet.bscscan.com/tx/${txHash}`;
+  const base = activeChainConfig?.explorerBase || "https://testnet.bscscan.com";
+  return `${base}/tx/${txHash}`;
+}
+
+export function getSpendingStatus() {
+  resetHourlyCounters();
+  const limits = getSafetyLimits();
+  return {
+    spentThisHour: ethers.formatEther(spendThisHour),
+    maxPerHour: ethers.formatEther(limits.maxSpendPerHourWei),
+    txThisHour: txCountThisHour,
+    maxTxPerHour: limits.maxTxPerHour,
+    circuitBreakerTripped,
+    isMainnet: activeChainConfig?.isMainnet || false,
+    pendingTxCount,
+  };
 }
