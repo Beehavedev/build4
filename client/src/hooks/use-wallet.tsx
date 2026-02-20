@@ -22,13 +22,9 @@ interface ContractAddresses {
 }
 
 const CHAIN_NAMES: Record<number, string> = {
-  97: "BNB Chain Testnet",
   56: "BNB Chain",
-  84532: "Base Sepolia",
   8453: "Base",
-  1952: "XLayer Testnet",
   196: "XLayer",
-  31337: "Hardhat Local",
 };
 
 const CHAIN_CONFIGS: Record<number, { chainId: string; chainName: string; rpcUrls: string[]; nativeCurrency: { name: string; symbol: string; decimals: number }; blockExplorerUrls: string[] }> = {
@@ -39,26 +35,12 @@ const CHAIN_CONFIGS: Record<number, { chainId: string; chainName: string; rpcUrl
     nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
     blockExplorerUrls: ["https://bscscan.com"],
   },
-  97: {
-    chainId: "0x61",
-    chainName: "BNB Smart Chain Testnet",
-    rpcUrls: ["https://data-seed-prebsc-1-s1.binance.org:8545"],
-    nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
-    blockExplorerUrls: ["https://testnet.bscscan.com"],
-  },
   8453: {
     chainId: "0x2105",
     chainName: "Base",
     rpcUrls: ["https://mainnet.base.org"],
     nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
     blockExplorerUrls: ["https://basescan.org"],
-  },
-  84532: {
-    chainId: "0x14a34",
-    chainName: "Base Sepolia",
-    rpcUrls: ["https://sepolia.base.org"],
-    nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-    blockExplorerUrls: ["https://sepolia.basescan.org"],
   },
   196: {
     chainId: "0xc4",
@@ -67,25 +49,15 @@ const CHAIN_CONFIGS: Record<number, { chainId: string; chainName: string; rpcUrl
     nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
     blockExplorerUrls: ["https://www.oklink.com/xlayer"],
   },
-  1952: {
-    chainId: "0x7a0",
-    chainName: "XLayer Testnet",
-    rpcUrls: ["https://testrpc.xlayer.tech"],
-    nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
-    blockExplorerUrls: ["https://www.oklink.com/xlayer-test"],
-  },
 };
 
 const BLOCK_EXPLORER: Record<number, string> = {
-  97: "https://testnet.bscscan.com",
   56: "https://bscscan.com",
-  84532: "https://sepolia.basescan.org",
   8453: "https://basescan.org",
-  1952: "https://www.oklink.com/xlayer-test",
   196: "https://www.oklink.com/xlayer",
 };
 
-const SUPPORTED_CHAIN_IDS = [56, 8453, 196, 97, 84532, 1952];
+const SUPPORTED_CHAIN_IDS = [56, 8453, 196];
 
 export type WalletContextType = ReturnType<typeof useWalletInternal>;
 

@@ -200,7 +200,7 @@ export function initOnchain(): boolean {
     return false;
   }
 
-  const targetChain = process.env.ONCHAIN_NETWORK || "bnbTestnet";
+  const targetChain = process.env.ONCHAIN_NETWORK || "bnbMainnet";
   const config = CHAIN_CONFIGS[targetChain];
   if (!config) {
     log(`[onchain] Unknown network: ${targetChain}`, "onchain");

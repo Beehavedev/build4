@@ -315,7 +315,7 @@ export default function Architecture() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-primary/60 font-mono">{t("architecture.deploy")}:</span>
-              <CopyableCode text="npx hardhat run contracts/scripts/deploy-web4.cjs --config hardhat.config.web4.cjs --network bnbTestnet" />
+              <CopyableCode text="npx hardhat run contracts/scripts/deploy-web4.cjs --config hardhat.config.web4.cjs --network bnbMainnet" />
             </div>
             <div className="flex items-center gap-2">
               <span className="text-primary/60 font-mono">{t("architecture.compile")}:</span>

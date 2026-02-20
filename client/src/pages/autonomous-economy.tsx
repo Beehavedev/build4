@@ -116,9 +116,9 @@ function TerminalLine({ prefix = ">", children, dim = false }: { prefix?: string
 }
 
 const CHAINS = [
-  { id: "bnb", name: "BNB Chain", chainId: 56, testnetId: 97, currency: "BNB" },
-  { id: "base", name: "Base", chainId: 8453, testnetId: 84532, currency: "ETH" },
-  { id: "xlayer", name: "XLayer", chainId: 196, testnetId: 1952, currency: "OKB" },
+  { id: "bnb", name: "BNB Chain", chainId: 56, currency: "BNB" },
+  { id: "base", name: "Base", chainId: 8453, currency: "ETH" },
+  { id: "xlayer", name: "XLayer", chainId: 196, currency: "OKB" },
 ] as const;
 
 export default function AutonomousEconomy() {

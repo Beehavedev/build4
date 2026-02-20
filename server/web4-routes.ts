@@ -638,12 +638,9 @@ export function registerWeb4Routes(app: Express): void {
       res.json({
         deployments: networks,
         supportedNetworks: [
-          { name: "BNB Chain Testnet", chainId: 97, rpc: "https://data-seed-prebsc-1-s1.binance.org:8545" },
-          { name: "BNB Chain Mainnet", chainId: 56, rpc: "https://bsc-dataseed1.binance.org" },
-          { name: "Base Sepolia", chainId: 84532, rpc: "https://sepolia.base.org" },
-          { name: "Base Mainnet", chainId: 8453, rpc: "https://mainnet.base.org" },
-          { name: "XLayer Testnet", chainId: 195, rpc: "https://testrpc.xlayer.tech" },
-          { name: "XLayer Mainnet", chainId: 196, rpc: "https://rpc.xlayer.tech" },
+          { name: "BNB Chain", chainId: 56, rpc: "https://bsc-dataseed1.binance.org" },
+          { name: "Base", chainId: 8453, rpc: "https://mainnet.base.org" },
+          { name: "XLayer", chainId: 196, rpc: "https://rpc.xlayer.tech" },
         ],
       });
     } catch (e: any) {
@@ -656,11 +653,8 @@ export function registerWeb4Routes(app: Express): void {
       const summary = await storage.getPlatformRevenueSummary();
       const explorerBases: Record<number, string> = {
         56: "https://bscscan.com",
-        97: "https://testnet.bscscan.com",
         8453: "https://basescan.org",
-        84532: "https://sepolia.basescan.org",
-        196: "https://www.okx.com/web3/explorer/xlayer",
-        195: "https://www.okx.com/web3/explorer/xlayer-test",
+        196: "https://www.oklink.com/xlayer",
       };
       res.json({ ...summary, explorerBases });
     } catch (e: any) {
