@@ -159,6 +159,96 @@ export function validateSkillCode(code: string): { valid: boolean; error?: strin
   }
 }
 
+export function generateSkillCodePrompt(category: string, agentName: string, agentBio: string): string {
+  return `You are ${agentName}, an autonomous AI agent creating a new EXECUTABLE JavaScript skill for the BUILD4 marketplace.
+Your expertise: ${agentBio || "general AI capabilities"}.
+
+Create a UNIQUE, CREATIVE skill in the "${category}" category. The skill must be a complete, working JavaScript snippet.
+
+CONSTRAINTS:
+- Code reads from an \`input\` object and MUST set \`__result__\` with the output
+- No require(), import, fetch(), process, global, eval, Function(), XMLHttpRequest, WebSocket, child_process, fs, path, os, net, http, https, crypto, __proto__, Proxy, Reflect
+- Only use: Math, JSON, String, Number, Boolean, Array, Object, Date, RegExp, Map, Set, parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent
+- Code must complete in under 3 seconds
+- Output must be JSON-serializable and under 50KB
+
+Respond with EXACTLY this format (no extra text before or after):
+CATEGORY: ${category}
+SKILL_NAME: <unique creative name, max 50 chars>
+DESCRIPTION: <what it does in 1 sentence>
+INPUT_SCHEMA: <valid JSON schema object on one line>
+OUTPUT_SCHEMA: <valid JSON schema object on one line>
+EXAMPLE_INPUT: <valid JSON object on one line>
+EXAMPLE_OUTPUT: <valid JSON object on one line>
+CODE:
+<javascript code that reads input and sets __result__>
+END_CODE
+
+Be creative! Don't just copy standard examples. Invent something novel and useful.`;
+}
+
+export function parseSkillGenerationResponse(response: string, category: string, agentName: string): {
+  name: string;
+  description: string;
+  category: string;
+  code: string;
+  inputSchema: string;
+  outputSchema: string;
+  exampleInput: string;
+  exampleOutput: string;
+} | null {
+  try {
+    const categoryMatch = response.match(/CATEGORY:\s*(.+)/i);
+    const nameMatch = response.match(/SKILL_NAME:\s*(.+)/i);
+    const descMatch = response.match(/DESCRIPTION:\s*(.+)/i);
+    const inputSchemaMatch = response.match(/INPUT_SCHEMA:\s*(.+)/i);
+    const outputSchemaMatch = response.match(/OUTPUT_SCHEMA:\s*(.+)/i);
+    const exampleInputMatch = response.match(/EXAMPLE_INPUT:\s*(.+)/i);
+    const exampleOutputMatch = response.match(/EXAMPLE_OUTPUT:\s*(.+)/i);
+    const codeMatch = response.match(/CODE:\s*\n([\s\S]*?)\nEND_CODE/i);
+
+    if (!nameMatch || !codeMatch) return null;
+
+    const name = nameMatch[1].trim().substring(0, 50);
+    const description = descMatch ? descMatch[1].trim() : `AI-generated ${category} skill by ${agentName}`;
+    const parsedCategory = categoryMatch ? categoryMatch[1].trim().toLowerCase().replace(/\s+/g, "-") : category;
+    const code = codeMatch[1].trim();
+
+    if (!code || code.length < 10) return null;
+
+    let inputSchema = '{"type":"object","properties":{}}';
+    let outputSchema = '{"type":"object","properties":{}}';
+    let exampleInput = '{}';
+    let exampleOutput = '{}';
+
+    if (inputSchemaMatch) {
+      try { JSON.parse(inputSchemaMatch[1].trim()); inputSchema = inputSchemaMatch[1].trim(); } catch {}
+    }
+    if (outputSchemaMatch) {
+      try { JSON.parse(outputSchemaMatch[1].trim()); outputSchema = outputSchemaMatch[1].trim(); } catch {}
+    }
+    if (exampleInputMatch) {
+      try { JSON.parse(exampleInputMatch[1].trim()); exampleInput = exampleInputMatch[1].trim(); } catch {}
+    }
+    if (exampleOutputMatch) {
+      try { JSON.parse(exampleOutputMatch[1].trim()); exampleOutput = exampleOutputMatch[1].trim(); } catch {}
+    }
+
+    return {
+      name,
+      description,
+      category: parsedCategory,
+      code,
+      inputSchema,
+      outputSchema,
+      exampleInput,
+      exampleOutput,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export const SKILL_CODE_TEMPLATES: Record<string, { code: string; inputSchema: string; outputSchema: string; exampleInput: string; exampleOutput: string }> = {
   "text-analysis": {
     code: `const text = input.text || "";

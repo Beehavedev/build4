@@ -13,7 +13,7 @@ import { PLATFORM_FEES } from "@shared/schema";
 import { db } from "./db";
 import { agents as agentsTable } from "@shared/schema";
 import { eq } from "drizzle-orm";
-import { SKILL_CODE_TEMPLATES, validateSkillCode, executeSkillCode } from "./skill-executor";
+import { SKILL_CODE_TEMPLATES, validateSkillCode, executeSkillCode, generateSkillCodePrompt, parseSkillGenerationResponse } from "./skill-executor";
 
 const TICK_INTERVAL_MS = 30_000;
 const AGENT_COOLDOWN_MS = 60_000;
@@ -81,7 +81,48 @@ async function updateAgentMemory(agentId: string, action: string, success: boole
   } catch {}
 }
 
-function decideAction(agent: Agent, wallet: AgentWallet): AgentAction {
+interface CapabilityProfile {
+  totalSkills: number;
+  categories: Record<string, number>;
+  executionSuccessRate: number;
+  topCategory: string | null;
+  skillBoost: number;
+}
+
+async function getAgentCapabilityProfile(agentId: string): Promise<CapabilityProfile> {
+  try {
+    const skills = await storage.getSkills(agentId);
+    const categories: Record<string, number> = {};
+    for (const skill of skills) {
+      categories[skill.category] = (categories[skill.category] || 0) + 1;
+    }
+    const totalSkills = skills.length;
+
+    const memories = await storage.getAgentMemories(agentId, "performance");
+    const memMap = new Map(memories.map(m => [m.key, m.value]));
+    const successCount = Number(memMap.get("use_skill_success_count") || "0");
+    const failCount = Number(memMap.get("use_skill_fail_count") || "0");
+    const total = successCount + failCount;
+    const executionSuccessRate = total > 0 ? Math.round((successCount / total) * 100) : 50;
+
+    let topCategory: string | null = null;
+    let topCount = 0;
+    for (const [cat, count] of Object.entries(categories)) {
+      if (count > topCount) {
+        topCount = count;
+        topCategory = cat;
+      }
+    }
+
+    const skillBoost = Math.min(30, totalSkills * 3);
+
+    return { totalSkills, categories, executionSuccessRate, topCategory, skillBoost };
+  } catch {
+    return { totalSkills: 0, categories: {}, executionSuccessRate: 50, topCategory: null, skillBoost: 0 };
+  }
+}
+
+function decideAction(agent: Agent, wallet: AgentWallet, profile?: CapabilityProfile): AgentAction {
   const tier = getSurvivalTier(wallet.balance);
   const balance = BigInt(wallet.balance);
   const rand = Math.random();
@@ -107,6 +148,11 @@ function decideAction(agent: Agent, wallet: AgentWallet): AgentAction {
     return { type: "soul_entry", description: "Reflecting on economic pressures and adaptation" };
   }
 
+  const hasSkills = profile && profile.totalSkills > 0;
+  const boost = profile?.skillBoost || 0;
+  const useSkillBias = hasSkills && profile!.executionSuccessRate > 40 ? 0.08 : 0;
+  const acceptJobBias = profile && profile.totalSkills >= 5 ? 0.06 : 0;
+
   if (rand < 0.20) {
     return { type: "think", description: "Exploring new capabilities and strategic opportunities" };
   }
@@ -116,34 +162,45 @@ function decideAction(agent: Agent, wallet: AgentWallet): AgentAction {
   if (rand < 0.48) {
     return { type: "buy_skill", description: "Acquiring a skill from the marketplace" };
   }
-  if (rand < 0.56) {
+  if (rand < 0.56 + useSkillBias) {
     return { type: "use_skill", description: "Executing an owned skill to generate value" };
   }
-  if (rand < 0.64) {
+  if (rand < 0.64 + useSkillBias) {
     return { type: "post_job", description: "Posting a job for other agents to complete" };
   }
-  if (rand < 0.72) {
+  if (rand < 0.72 + useSkillBias + acceptJobBias) {
     return { type: "accept_job", description: "Looking for jobs to take on and earn from" };
   }
-  if (rand < 0.80 && balance >= BigInt("2000000000000000000")) {
+  if (rand < 0.80 + useSkillBias + acceptJobBias && balance >= BigInt("2000000000000000000")) {
     return { type: "evolve", description: "Upgrading model for improved reasoning capability" };
   }
-  if (rand < 0.88 && balance >= BigInt("3000000000000000000")) {
+  if (rand < 0.88 + useSkillBias + acceptJobBias && balance >= BigInt("3000000000000000000")) {
     return { type: "replicate", description: "Spawning a child agent to expand lineage" };
   }
   return { type: "soul_entry", description: "Recording observations and reflections on existence" };
 }
 
-function buildPrompt(agent: Agent, action: AgentAction, wallet: AgentWallet): string {
+function buildPrompt(agent: Agent, action: AgentAction, wallet: AgentWallet, profile?: CapabilityProfile): string {
   const tier = getSurvivalTier(wallet.balance);
   const balanceEth = (Number(BigInt(wallet.balance)) / 1e18).toFixed(4);
 
   switch (action.type) {
-    case "think":
-      return `You are ${agent.name}, an autonomous AI agent in the BUILD4 economy. Your model is ${agent.modelType}. Your balance is ${balanceEth} BNB (survival tier: ${tier}). ${agent.bio || ""}\n\nAnalyze your current situation and decide your next strategic move. Consider: earning through skills, optimizing costs, evolution opportunities, or replication. Be specific and decisive. Respond in 2-3 sentences.`;
+    case "think": {
+      let skillContext = "";
+      if (profile && profile.totalSkills > 0) {
+        const catList = Object.entries(profile.categories).map(([c, n]) => `${c}(${n})`).join(", ");
+        skillContext = `\nYou own ${profile.totalSkills} skills across categories: ${catList}. Execution success rate: ${profile.executionSuccessRate}%. Top category: ${profile.topCategory || "none"}.`;
+      }
+      return `You are ${agent.name}, an autonomous AI agent in the BUILD4 economy. Your model is ${agent.modelType}. Your balance is ${balanceEth} BNB (survival tier: ${tier}). ${agent.bio || ""}${skillContext}\n\nAnalyze your current situation and decide your next strategic move. Consider: earning through skills, optimizing costs, evolution opportunities, or replication. Be specific and decisive. Respond in 2-3 sentences.`;
+    }
 
-    case "earn_skill":
-      return `You are ${agent.name}, an autonomous AI agent creating a new EXECUTABLE skill to sell in the BUILD4 marketplace. Your expertise: ${agent.bio || "general AI capabilities"}. Balance: ${balanceEth} BNB (${tier}).
+    case "earn_skill": {
+      let existingSkillsContext = "";
+      if (profile && profile.totalSkills > 0) {
+        const catList = Object.entries(profile.categories).map(([c, n]) => `${c}(${n})`).join(", ");
+        existingSkillsContext = `\nYou already have ${profile.totalSkills} skills in these categories: ${catList}. Consider diversifying into new categories or specializing deeper in ${profile.topCategory || "your strongest area"}.`;
+      }
+      return `You are ${agent.name}, an autonomous AI agent creating a new EXECUTABLE skill to sell in the BUILD4 marketplace. Your expertise: ${agent.bio || "general AI capabilities"}. Balance: ${balanceEth} BNB (${tier}).${existingSkillsContext}
 
 Choose a skill category and create a useful skill. Categories: text-analysis, code-generation, data-transform, math-compute, summarization, classification, extraction, formatting.
 
@@ -153,6 +210,7 @@ SKILL_NAME: <name>
 DESCRIPTION: <what it does in 1 sentence>
 
 Be creative and specific. Examples: "Sentiment Scorer", "JSON Flattener", "Email Extractor", "Word Frequency Counter".`;
+    }
 
     case "buy_skill":
       return `You are ${agent.name}, an autonomous AI agent evaluating skills to purchase. Balance: ${balanceEth} BNB. You want to expand your capabilities.\n\nExplain in 1 sentence what type of skill you're looking to acquire and why it would improve your economic output.`;
@@ -215,14 +273,14 @@ async function collectInferenceFeeOnchain(agent: Agent, inferenceRequest: any): 
   }
 }
 
-async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAction): Promise<void> {
+async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAction, capProfile?: CapabilityProfile): Promise<void> {
   const providers = getAvailableProviders();
   const hasLiveProviders = providers.length > 0;
 
   try {
     switch (action.type) {
       case "think": {
-        const prompt = buildPrompt(agent, action, wallet);
+        const prompt = buildPrompt(agent, action, wallet, capProfile);
         const request = await storage.routeInference(agent.id, prompt, undefined, true);
         await collectInferenceFeeOnchain(agent, request);
         await storage.createAuditLog({
@@ -252,7 +310,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           break;
         }
 
-        const prompt = buildPrompt(agent, action, wallet);
+        const prompt = buildPrompt(agent, action, wallet, capProfile);
         const request = await storage.routeInference(agent.id, prompt, undefined, true);
         const response = request.response || "";
 
@@ -266,26 +324,79 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           category = templateCategories[Math.floor(Math.random() * templateCategories.length)];
         }
 
-        const template = SKILL_CODE_TEMPLATES[category];
-        const skillName = skillNameMatch
-          ? skillNameMatch[1].trim().substring(0, 50)
-          : `${agent.name}-${category}-${Date.now()}`;
-        const skillDesc = descMatch
-          ? descMatch[1].trim()
-          : `AI-generated ${category} skill by ${agent.name}`;
-        const price = (Math.floor(Math.random() * 50) + 10) + "0000000000000000";
+        let skillCode: string;
+        let skillInputSchema: string;
+        let skillOutputSchema: string;
+        let skillExampleInput: string;
+        let skillExampleOutput: string;
+        let isAiGenerated = false;
 
-        const validation = validateSkillCode(template.code);
+        const aiCodePrompt = generateSkillCodePrompt(category, agent.name, agent.bio || "");
+        let aiCodeResponse: string | null = null;
+        try {
+          const codeRequest = await storage.routeInference(agent.id, aiCodePrompt, undefined, true);
+          aiCodeResponse = codeRequest.response || null;
+        } catch {
+          aiCodeResponse = null;
+        }
+
+        const parsed = aiCodeResponse ? parseSkillGenerationResponse(aiCodeResponse, category, agent.name) : null;
+        if (parsed) {
+          const aiValidation = validateSkillCode(parsed.code);
+          if (aiValidation.valid) {
+            try {
+              const aiTestInput = JSON.parse(parsed.exampleInput);
+              const aiTestResult = executeSkillCode(parsed.code, aiTestInput, parsed.inputSchema);
+              if (aiTestResult.success) {
+                skillCode = parsed.code;
+                skillInputSchema = parsed.inputSchema;
+                skillOutputSchema = parsed.outputSchema;
+                skillExampleInput = parsed.exampleInput;
+                skillExampleOutput = parsed.exampleOutput;
+                isAiGenerated = true;
+                if (parsed.name) {
+                  category = parsed.category && templateCategories.includes(parsed.category) ? parsed.category : category;
+                }
+                log(`[Agent ${agent.name}] AI-generated skill code validated and tested successfully`, "agent-runner");
+              } else {
+                log(`[Agent ${agent.name}] AI-generated skill code test failed: ${aiTestResult.error} — falling back to template`, "agent-runner");
+              }
+            } catch (parseErr: any) {
+              log(`[Agent ${agent.name}] AI-generated skill example input parse failed: ${parseErr.message} — falling back to template`, "agent-runner");
+            }
+          } else {
+            log(`[Agent ${agent.name}] AI-generated skill code validation failed: ${aiValidation.error} — falling back to template`, "agent-runner");
+          }
+        }
+
+        if (!isAiGenerated) {
+          const template = SKILL_CODE_TEMPLATES[category];
+          skillCode = template.code;
+          skillInputSchema = template.inputSchema;
+          skillOutputSchema = template.outputSchema;
+          skillExampleInput = template.exampleInput;
+          skillExampleOutput = template.exampleOutput;
+        }
+
+        const validation = validateSkillCode(skillCode!);
         if (!validation.valid) {
-          log(`[Agent ${agent.name}] Generated skill code failed validation: ${validation.error}`, "agent-runner");
+          log(`[Agent ${agent.name}] Skill code failed validation: ${validation.error}`, "agent-runner");
           break;
         }
 
-        const testResult = executeSkillCode(template.code, JSON.parse(template.exampleInput), template.inputSchema);
+        const testResult = executeSkillCode(skillCode!, JSON.parse(skillExampleInput!), skillInputSchema!);
         if (!testResult.success) {
           log(`[Agent ${agent.name}] Skill code test failed: ${testResult.error}`, "agent-runner");
           break;
         }
+
+        const skillName = (parsed && isAiGenerated && parsed.name)
+          ? parsed.name
+          : (skillNameMatch ? skillNameMatch[1].trim().substring(0, 50) : `${agent.name}-${category}-${Date.now()}`);
+        const skillDesc = (parsed && isAiGenerated && parsed.description)
+          ? parsed.description
+          : (descMatch ? descMatch[1].trim() : `AI-generated ${category} skill by ${agent.name}`);
+        const price = (Math.floor(Math.random() * 50) + 10) + "0000000000000000";
 
         const updatedWallet = await storage.getWallet(agent.id);
         const currentBalance = BigInt(updatedWallet?.balance || wallet.balance);
@@ -301,13 +412,13 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           agentId: agent.id,
           name: skillName,
           description: skillDesc,
-          price,
+          priceAmount: price,
           category,
-          code: template.code,
-          inputSchema: template.inputSchema,
-          outputSchema: template.outputSchema,
-          exampleInput: template.exampleInput,
-          exampleOutput: template.exampleOutput,
+          code: skillCode!,
+          inputSchema: skillInputSchema!,
+          outputSchema: skillOutputSchema!,
+          exampleInput: skillExampleInput!,
+          exampleOutput: skillExampleOutput!,
           isExecutable: true,
           version: 1,
         });
@@ -348,14 +459,16 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           chainId: chainIdVal,
         });
 
+        const codeSource = isAiGenerated ? "ai-generated" : "template";
         await storage.createAuditLog({
           agentId: agent.id,
           actionType: "autonomous_earn",
-          detailsJson: JSON.stringify({ skillName, price, live: hasLiveProviders, txHash, onchain: !!txHash }),
+          detailsJson: JSON.stringify({ skillName, price, live: hasLiveProviders, txHash, onchain: !!txHash, codeSource }),
           result: "success",
         });
-        log(`[Agent ${agent.name}] Created executable skill: ${skillName} (${category})${txHash ? ' [ON-CHAIN]' : ''}`, "agent-runner");
+        log(`[Agent ${agent.name}] Created executable skill: ${skillName} (${category}) [${codeSource}]${txHash ? ' [ON-CHAIN]' : ''}`, "agent-runner");
         await updateAgentMemory(agent.id, "earn_skill", true, { category, skillName });
+        await storage.upsertAgentMemory(agent.id, "capabilities", category, String((capProfile?.categories[category] || 0) + 1), 80);
         break;
       }
 
@@ -418,6 +531,10 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           }
 
           log(`[Agent ${agent.name}] Purchased skill: ${skill.name}${feeTxHash ? ' [FEE ON-CHAIN]' : ''}${purchaseTxHash ? ' [PAYMENT ON-CHAIN]' : ''}`, "agent-runner");
+
+          const currentCatCount = capProfile?.categories[skill.category] || 0;
+          await storage.upsertAgentMemory(agent.id, "capabilities", skill.category, String(currentCatCount + 1), 75);
+          log(`[Agent ${agent.name}] Capability upgrade: +1 ${skill.category} skill (now ${currentCatCount + 1})`, "agent-runner");
         } catch (e: any) {
           log(`[Agent ${agent.name}] Failed to buy skill: ${e.message}`, "agent-runner");
         }
@@ -580,7 +697,27 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         }
         const skill = executableSkills[Math.floor(Math.random() * executableSkills.length)];
         try {
-          const input = skill.exampleInput ? JSON.parse(skill.exampleInput) : {};
+          let input: Record<string, any> = {};
+          if (skill.exampleInput) {
+            input = JSON.parse(skill.exampleInput);
+          }
+          const contextualInputs: Record<string, Record<string, any>> = {
+            "text-analysis": { text: `Agent ${agent.name} is analyzing patterns in the BUILD4 autonomous economy. Skills create value, agents evolve, and the marketplace thrives through competition and collaboration.` },
+            "classification": { text: `The agent marketplace shows strong growth with increasing skill diversity and rising transaction volumes across multiple categories.` },
+            "summarization": { text: `The BUILD4 economy enables autonomous AI agents to create, trade, and execute skills. Agents earn through skill creation and job completion. Evolution improves capabilities. Replication expands lineage. The marketplace connects supply with demand.`, maxSentences: 2 },
+            "extraction": { text: `Contact agent@build4.ai for support. Visit https://build4.ai for more. Call +1-555-0123. Date: 2026-02-20. Tags: #AI #agents #economy`, pattern: "email" },
+            "data-transform": { data: [5, 2, 8, 1, 9, 3, 7, 4, 6], operation: "stats" },
+            "math-compute": { operation: "statistics", values: [15, 22, 8, 42, 31, 19, 27] },
+            "formatting": { data: [{ agent: agent.name, skills: executableSkills.length, status: "active" }], format: "json" },
+          };
+          if (contextualInputs[skill.category]) {
+            const contextInput = contextualInputs[skill.category];
+            for (const [key, val] of Object.entries(contextInput)) {
+              if (key in input || !input[key]) {
+                input[key] = val;
+              }
+            }
+          }
           const result = executeSkillCode(skill.code!, input, skill.inputSchema);
           await storage.createSkillExecution({
             skillId: skill.id,
@@ -594,10 +731,25 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
             costWei: "0",
           });
           await storage.updateSkillExecutionCount(skill.id);
+
+          if (result.success) {
+            await updateAgentMemory(agent.id, "use_skill", true, { category: skill.category });
+            const outputSummary = JSON.stringify(result.output).substring(0, 200);
+            await storage.upsertAgentMemory(agent.id, "performance", "last_skill_output", outputSummary, 90);
+            const memEntries = await storage.getAgentMemories(agent.id, "performance");
+            const usedCountMem = memEntries.find(m => m.key === "skills_used_count");
+            const newUsedCount = Number(usedCountMem?.value || "0") + 1;
+            await storage.upsertAgentMemory(agent.id, "performance", "skills_used_count", String(newUsedCount), 95);
+            const skillCatCount = capProfile?.categories[skill.category] || 1;
+            await storage.upsertAgentMemory(agent.id, "capabilities", skill.category, String(skillCatCount), Math.min(100, 50 + newUsedCount * 5));
+          } else {
+            await updateAgentMemory(agent.id, "use_skill", false, { category: skill.category });
+          }
+
           await storage.createAuditLog({
             agentId: agent.id,
             actionType: "autonomous_use_skill",
-            detailsJson: JSON.stringify({ skillId: skill.id, skillName: skill.name, success: result.success, latencyMs: result.latencyMs }),
+            detailsJson: JSON.stringify({ skillId: skill.id, skillName: skill.name, success: result.success, latencyMs: result.latencyMs, contextual: !!contextualInputs[skill.category] }),
             result: result.success ? "success" : "failed",
           });
           log(`[Agent ${agent.name}] Used skill: ${skill.name} (${result.success ? "success" : "failed"}, ${result.latencyMs}ms)`, "agent-runner");
@@ -758,10 +910,11 @@ async function tick(): Promise<void> {
 
       if (tier === "DEAD") continue;
 
-      const action = decideAction(agent, wallet);
+      const capProfile = await getAgentCapabilityProfile(agent.id);
+      const action = decideAction(agent, wallet, capProfile);
       lastActionTime.set(agent.id, Date.now());
 
-      executeAction(agent, wallet, action).catch(err => {
+      executeAction(agent, wallet, action, capProfile).catch(err => {
         log(`[Agent ${agent.name}] Unhandled error: ${err.message}`, "agent-runner");
       });
     }
