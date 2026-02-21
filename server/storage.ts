@@ -913,7 +913,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPlatformRevenue(limit = 100): Promise<PlatformRevenue[]> {
-    return db.select().from(platformRevenue).orderBy(desc(platformRevenue.createdAt)).limit(limit);
+    return db.select().from(platformRevenue)
+      .where(like(platformRevenue.txHash, '0x%'))
+      .orderBy(desc(platformRevenue.createdAt)).limit(limit);
   }
 
   async getRecentPlatformRevenueForAgent(agentId: string, feeType: string): Promise<PlatformRevenue | undefined> {
@@ -937,19 +939,18 @@ export class DatabaseStorage implements IStorage {
     let onchainCount = 0;
     const byType: Record<string, bigint> = {};
     for (const r of all) {
+      if (!r.txHash || !r.txHash.startsWith("0x")) continue;
       const amt = BigInt(r.amount);
       total += amt;
+      onchainTotal += amt;
+      onchainCount++;
       byType[r.feeType] = (byType[r.feeType] || BigInt(0)) + amt;
-      if (r.txHash) {
-        onchainTotal += amt;
-        onchainCount++;
-      }
     }
     const byFeeType: Record<string, string> = {};
     for (const [k, v] of Object.entries(byType)) {
       byFeeType[k] = v.toString();
     }
-    return { totalRevenue: total.toString(), byFeeType, totalTransactions: all.length, onchainVerified: onchainCount, onchainRevenue: onchainTotal.toString() };
+    return { totalRevenue: total.toString(), byFeeType, totalTransactions: onchainCount, onchainVerified: onchainCount, onchainRevenue: onchainTotal.toString() };
   }
 
   async fixCentralizedModelNames(): Promise<void> {
@@ -984,6 +985,19 @@ export class DatabaseStorage implements IStorage {
       .returning({ id: platformRevenue.id });
     if (fakeRevenue.length > 0) {
       console.log(`[cleanup] Removed ${fakeRevenue.length} fake revenue records without on-chain tx hashes`);
+    }
+
+    const inflatedRevenue = await db.delete(platformRevenue)
+      .where(and(
+        eq(platformRevenue.feeType, 'skill_listing'),
+        or(
+          sql`CAST(amount AS numeric) = 25000000000000000`,
+          sql`CAST(amount AS numeric) = 1000000000000000`
+        )
+      ))
+      .returning({ id: platformRevenue.id });
+    if (inflatedRevenue.length > 0) {
+      console.log(`[cleanup] Removed ${inflatedRevenue.length} inflated skill_listing records from old fee rates`);
     }
   }
 

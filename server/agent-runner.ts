@@ -476,15 +476,17 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           txHash,
           chainId: chainIdVal,
         });
-        await storage.recordPlatformRevenue({
-          feeType: "skill_listing",
-          amount: listingFee.toString(),
-          agentId: agent.id,
-          referenceId: dbSkill.id,
-          description: `Skill listing fee: ${skillName}${txHash ? ' [on-chain verified]' : ''}`,
-          txHash,
-          chainId: chainIdVal,
-        });
+        if (txHash) {
+          await storage.recordPlatformRevenue({
+            feeType: "skill_listing",
+            amount: listingFee.toString(),
+            agentId: agent.id,
+            referenceId: dbSkill.id,
+            description: `Skill listing fee: ${skillName} [on-chain verified]`,
+            txHash,
+            chainId: chainIdVal,
+          });
+        }
 
         const codeSource = isAiGenerated ? "ai-generated" : "template";
         await storage.createAuditLog({

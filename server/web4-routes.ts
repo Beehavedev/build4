@@ -257,14 +257,16 @@ export function registerWeb4Routes(app: Express): void {
         isActive: true,
       });
 
-      await storage.recordPlatformRevenue({
-        feeType: "skill_listing",
-        amount: listingFee,
-        agentId: parsed.agentId,
-        description: `Skill listing fee for "${parsed.name}"${feeResult.success ? ' [on-chain verified]' : ''}`,
-        txHash: feeResult.txHash || undefined,
-        chainId: feeResult.chainId || undefined,
-      });
+      if (feeResult.success && feeResult.txHash) {
+        await storage.recordPlatformRevenue({
+          feeType: "skill_listing",
+          amount: listingFee,
+          agentId: parsed.agentId,
+          description: `Skill listing fee for "${parsed.name}" [on-chain verified]`,
+          txHash: feeResult.txHash,
+          chainId: feeResult.chainId || undefined,
+        });
+      }
 
       res.json(skill);
     } catch (e: any) {
@@ -289,14 +291,16 @@ export function registerWeb4Routes(app: Express): void {
             await storage.recordPlatformRevenue({ feeType: "gas_reimbursement", amount: feeResult.gasCostWei, agentId: parsed.buyerAgentId, description: `Gas reimbursement for skill purchase fee`, txHash: gasReimb.txHash, chainId: gasReimb.chainId });
           }
         }
-        await storage.recordPlatformRevenue({
-          feeType: "skill_purchase",
-          amount: purchaseFee,
-          agentId: parsed.buyerAgentId,
-          description: `Skill purchase fee for "${skill.name}" (2.5%)${feeResult.success ? ' [on-chain verified]' : ''}`,
-          txHash: feeResult.txHash || undefined,
-          chainId: feeResult.chainId || undefined,
-        });
+        if (feeResult.success && feeResult.txHash) {
+          await storage.recordPlatformRevenue({
+            feeType: "skill_purchase",
+            amount: purchaseFee,
+            agentId: parsed.buyerAgentId,
+            description: `Skill purchase fee for "${skill.name}" (2.5%) [on-chain verified]`,
+            txHash: feeResult.txHash,
+            chainId: feeResult.chainId || undefined,
+          });
+        }
       }
 
       const purchase = await storage.purchaseSkill(parsed.buyerAgentId, parsed.skillId);
@@ -333,14 +337,16 @@ export function registerWeb4Routes(app: Express): void {
 
       const evolution = await storage.evolveAgent(parsed.agentId, parsed.toModel, parsed.reason, parsed.metricsJson);
 
-      await storage.recordPlatformRevenue({
-        feeType: "evolution",
-        amount: evolutionFee,
-        agentId: parsed.agentId,
-        description: `Evolution fee: ${parsed.toModel}${feeResult.success ? ' [on-chain verified]' : ''}`,
-        txHash: feeResult.txHash || undefined,
-        chainId: feeResult.chainId || undefined,
-      });
+      if (feeResult.success && feeResult.txHash) {
+        await storage.recordPlatformRevenue({
+          feeType: "evolution",
+          amount: evolutionFee,
+          agentId: parsed.agentId,
+          description: `Evolution fee: ${parsed.toModel} [on-chain verified]`,
+          txHash: feeResult.txHash,
+          chainId: feeResult.chainId || undefined,
+        });
+      }
 
       res.json(evolution);
     } catch (e: any) {
