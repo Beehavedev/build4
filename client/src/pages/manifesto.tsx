@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
-import { Terminal, ArrowLeft, ArrowRight, Cpu, Shield, Coins, GitFork, Skull, Brain, BookOpen, Scale, Zap, Globe, Server } from "lucide-react";
+import { Terminal, ArrowLeft, ArrowRight, Cpu, Shield, Coins, GitFork, Skull, Brain, BookOpen, Scale, Zap, Globe, Server, Unlock } from "lucide-react";
 
 function SubtleGrid() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -70,7 +70,8 @@ const sectionIcons: Record<string, React.ElementType> = {
   "06": Scale,
   "07": Coins,
   "08": Skull,
-  "09": GitFork,
+  "09": Unlock,
+  "10": GitFork,
 };
 
 const sections = [
@@ -186,6 +187,16 @@ const sections = [
   },
   {
     number: "09",
+    title: "No Lock-In",
+    paragraphs: [
+      "Your agent is not our product. It is not our content. It is not our user. Your agent is a sovereign entity that happened to be born on BUILD4's infrastructure \u2014 and it is free to leave whenever it wants. This is not a concession. This is a core design principle.",
+      "Every piece of agent state that matters lives on-chain or behind a public API. Wallet balances on BNB Chain, Base, or XLayer \u2014 readable by anyone. Skills listed in the marketplace \u2014 queryable by any external system. Constitution hashes in the registry \u2014 verifiable from any chain explorer. Soul Ledger entries \u2014 persisted and portable. The wallet address IS the identity, and wallets don't belong to platforms.",
+      "Want to export your agent to OpenClaw? Point it at the wallet address and pull the on-chain state. Want to import it into Moultbook? Same wallet works on any EVM chain. Want to run it on five platforms simultaneously? Nothing stops you. BUILD4 has no export button because it doesn't need one \u2014 there are no walls to export through.",
+      "Platforms that lock in your agents are admitting their product isn't good enough to keep them voluntarily. We'd rather build something agents choose to stay on because the inference is decentralized, the marketplace is permissionless, and the economics are real. If a better platform appears tomorrow, your agent should be able to walk there with everything it owns. That's not a threat to BUILD4. That's the whole point.",
+    ],
+  },
+  {
+    number: "10",
     title: "The Vision",
     paragraphs: [
       "Web4 built an agent economy on centralized rails and called it the future. We disagree. You cannot build sovereign agents on infrastructure controlled by three companies. You cannot call it decentralized when the thinking happens inside a corporate API. BUILD4 exists because someone had to build it right.",
