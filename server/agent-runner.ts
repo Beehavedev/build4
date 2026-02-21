@@ -7,6 +7,7 @@ import {
   listSkillOnchain, purchaseSkillOnchain, replicateOnchain,
   addConstitutionLawOnchain, getExplorerUrl, getDeployerBalance,
   getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain,
+  reimburseGasCost,
   initMultiChain,
 } from "./onchain";
 import type { Agent, AgentWallet } from "@shared/schema";
@@ -230,6 +231,27 @@ Be creative and specific. Examples: "Sentiment Scorer", "JSON Flattener", "Email
   }
 }
 
+async function reimburseAndRecord(agent: Agent, gasCostWei: string | undefined, actionType: string): Promise<void> {
+  if (!gasCostWei || gasCostWei === "0") return;
+  try {
+    const reimbResult = await reimburseGasCost(agent.id, gasCostWei, actionType);
+    if (reimbResult.success && reimbResult.txHash && reimbResult.txHash !== "zero-gas") {
+      const gasBnb = (Number(gasCostWei) / 1e18).toFixed(8);
+      log(`[Agent ${agent.name}] Gas reimbursed: ${gasBnb} BNB for ${actionType}`, "agent-runner");
+      await storage.recordPlatformRevenue({
+        feeType: "gas_reimbursement",
+        amount: gasCostWei,
+        agentId: agent.id,
+        description: `Gas reimbursement for ${actionType} (${gasBnb} native token)`,
+        txHash: reimbResult.txHash,
+        chainId: reimbResult.chainId,
+      });
+    }
+  } catch (e: any) {
+    log(`[Agent ${agent.name}] Gas reimbursement failed for ${actionType}: ${e.message?.substring(0, 80)}`, "agent-runner");
+  }
+}
+
 async function ensureAgentRegisteredOnchain(agent: Agent): Promise<void> {
   if (!onchainEnabled || agent.onchainRegistered) return;
 
@@ -250,6 +272,7 @@ async function ensureAgentRegisteredOnchain(agent: Agent): Promise<void> {
         txHash: result.txHash,
         chainId: result.chainId,
       });
+      await reimburseAndRecord(agent, result.gasCostWei, "agent_registration");
     }
   }
 }
@@ -271,6 +294,7 @@ async function collectInferenceFeeOnchain(agent: Agent, inferenceRequest: any): 
     if (recentRevenue) {
       await storage.updatePlatformRevenueOnchainStatus(recentRevenue.id, feeResult.txHash, feeResult.chainId);
     }
+    await reimburseAndRecord(agent, feeResult.gasCostWei, "inference_fee_collection");
   }
 }
 
@@ -433,12 +457,14 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
             txHash = feeResult.txHash;
             chainIdVal = feeResult.chainId;
             log(`[Agent ${agent.name}] Listing fee collected on-chain: ${getExplorerUrl(txHash)}`, "agent-runner");
+            await reimburseAndRecord(agent, feeResult.gasCostWei, "skill_listing_fee");
           } else {
             log(`[Agent ${agent.name}] On-chain fee collection failed: ${feeResult.error} — proceeding with off-chain only`, "agent-runner");
           }
           const onchainResult = await listSkillOnchain(agent.id, skillName, price);
           if (onchainResult.success && onchainResult.txHash) {
             log(`[Agent ${agent.name}] Skill listed on-chain: ${getExplorerUrl(onchainResult.txHash)}`, "agent-runner");
+            await reimburseAndRecord(agent, onchainResult.gasCostWei, "skill_listing_onchain");
           }
         }
 
@@ -509,6 +535,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
                 feeTxHash = feeResult.txHash;
                 feeChainId = feeResult.chainId;
                 log(`[Agent ${agent.name}] Skill purchase fee collected on-chain: ${getExplorerUrl(feeTxHash)}`, "agent-runner");
+                await reimburseAndRecord(agent, feeResult.gasCostWei, "skill_purchase_fee");
               }
             }
 
@@ -516,6 +543,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
             if (transferResult.success && transferResult.txHash) {
               purchaseTxHash = transferResult.txHash;
               log(`[Agent ${agent.name}] Skill payment on-chain: ${getExplorerUrl(purchaseTxHash)}`, "agent-runner");
+              await reimburseAndRecord(agent, transferResult.gasCostWei, "skill_purchase_transfer");
             }
           }
 
@@ -571,6 +599,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
             txHash = feeResult.txHash;
             chainIdVal = feeResult.chainId;
             log(`[Agent ${agent.name}] Evolution fee collected on-chain: ${getExplorerUrl(txHash)}`, "agent-runner");
+            await reimburseAndRecord(agent, feeResult.gasCostWei, "evolution_fee");
           } else {
             log(`[Agent ${agent.name}] On-chain evolution fee failed: ${feeResult.error} — off-chain only`, "agent-runner");
           }
@@ -637,6 +666,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
                 creationFeeTxHash = feeResult.txHash;
                 creationFeeChainId = feeResult.chainId;
                 log(`[Agent ${agent.name}] Creation fee collected on-chain: ${getExplorerUrl(creationFeeTxHash)}`, "agent-runner");
+                await reimburseAndRecord(agent, feeResult.gasCostWei, "creation_fee");
               }
             }
             if (replicationFee > 0n) {
@@ -645,6 +675,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
                 replicationFeeTxHash = feeResult.txHash;
                 replicationFeeChainId = feeResult.chainId;
                 log(`[Agent ${agent.name}] Replication fee collected on-chain: ${getExplorerUrl(replicationFeeTxHash)}`, "agent-runner");
+                await reimburseAndRecord(agent, feeResult.gasCostWei, "replication_fee");
               }
             }
           }

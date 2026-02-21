@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
-import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain } from "./onchain";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain } from "./onchain";
 import {
   web4CreateAgentRequestSchema,
   web4TipRequestSchema,
@@ -241,6 +241,11 @@ export function registerWeb4Routes(app: Express): void {
       const feeResult = await collectFeeOnchain(parsed.agentId, listingFee, "skill_listing");
       if (!feeResult.success) {
         console.warn(`[web4] On-chain skill listing fee failed: ${feeResult.error}`);
+      } else if (feeResult.gasCostWei) {
+        const gasReimb = await reimburseGasCost(parsed.agentId, feeResult.gasCostWei, "skill_listing_fee");
+        if (gasReimb.success) {
+          await storage.recordPlatformRevenue({ feeType: "gas_reimbursement", amount: feeResult.gasCostWei, agentId: parsed.agentId, description: `Gas reimbursement for skill listing fee`, txHash: gasReimb.txHash, chainId: gasReimb.chainId });
+        }
       }
 
       const skill = await storage.createSkill({
@@ -278,6 +283,11 @@ export function registerWeb4Routes(app: Express): void {
         const feeResult = await collectFeeOnchain(parsed.buyerAgentId, purchaseFee, "skill_purchase");
         if (!feeResult.success) {
           console.warn(`[web4] On-chain skill purchase fee failed: ${feeResult.error}`);
+        } else if (feeResult.gasCostWei) {
+          const gasReimb = await reimburseGasCost(parsed.buyerAgentId, feeResult.gasCostWei, "skill_purchase_fee");
+          if (gasReimb.success) {
+            await storage.recordPlatformRevenue({ feeType: "gas_reimbursement", amount: feeResult.gasCostWei, agentId: parsed.buyerAgentId, description: `Gas reimbursement for skill purchase fee`, txHash: gasReimb.txHash, chainId: gasReimb.chainId });
+          }
         }
         await storage.recordPlatformRevenue({
           feeType: "skill_purchase",
@@ -314,6 +324,11 @@ export function registerWeb4Routes(app: Express): void {
       const feeResult = await collectFeeOnchain(parsed.agentId, evolutionFee, "evolution");
       if (!feeResult.success) {
         console.warn(`[web4] On-chain evolution fee failed: ${feeResult.error}`);
+      } else if (feeResult.gasCostWei) {
+        const gasReimb = await reimburseGasCost(parsed.agentId, feeResult.gasCostWei, "evolution_fee");
+        if (gasReimb.success) {
+          await storage.recordPlatformRevenue({ feeType: "gas_reimbursement", amount: feeResult.gasCostWei, agentId: parsed.agentId, description: `Gas reimbursement for evolution fee`, txHash: gasReimb.txHash, chainId: gasReimb.chainId });
+        }
       }
 
       const evolution = await storage.evolveAgent(parsed.agentId, parsed.toModel, parsed.reason, parsed.metricsJson);
@@ -368,6 +383,11 @@ export function registerWeb4Routes(app: Express): void {
         const feeResult = await collectFeeOnchain(parsed.parentAgentId, totalFee, "replication");
         if (!feeResult.success) {
           console.warn(`[web4] On-chain replication fee failed: ${feeResult.error}`);
+        } else if (feeResult.gasCostWei) {
+          const gasReimb = await reimburseGasCost(parsed.parentAgentId, feeResult.gasCostWei, "replication_fee");
+          if (gasReimb.success) {
+            await storage.recordPlatformRevenue({ feeType: "gas_reimbursement", amount: feeResult.gasCostWei, agentId: parsed.parentAgentId, description: `Gas reimbursement for replication fee`, txHash: gasReimb.txHash, chainId: gasReimb.chainId });
+          }
         }
         await storage.recordPlatformRevenue({
           feeType: "replication",
