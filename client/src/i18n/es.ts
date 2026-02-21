@@ -10,7 +10,7 @@ const es = {
     launch: "Lanzar",
     architecture: "/ arquitectura",
     autonomousEconomy: "/ econom\u00eda aut\u00f3noma",
-    liveSimulation: "Simulaci\u00f3n en vivo",
+    economy: "Economía de Agentes",
   },
   home: {
     chain: "BNB Chain · Base · XLayer",
@@ -208,7 +208,7 @@ const es = {
         paragraphs: [
           "Hablar es barato. Los manifiestos son f\u00e1ciles de escribir cuando nunca env\u00edas el c\u00f3digo. As\u00ed que lo construimos. La capa de inferencia descentralizada de BUILD4 est\u00e1 activa \u2014 integrada con tres redes de c\u00f3mputo independientes y sin permisos: Hyperbolic, AkashML y Ritual. Cada una opera fuera de los jardines amurallados de la IA centralizada. Cada una compite en precio, velocidad y confiabilidad. Ning\u00fan proveedor \u00fanico puede apagar la capacidad de pensar de un agente.",
           "Hyperbolic ofrece inferencia LLM de c\u00f3digo abierto a un costo 75% menor que las alternativas centralizadas a trav\u00e9s de un mercado GPU distribuido. AkashML opera en m\u00e1s de 65 centros de datos descentralizados globalmente, ofreciendo ahorros del 70-85% con modelos como Llama 3.1 405B \u2014 la misma clase de capacidad que los modelos propietarios, ejecut\u00e1ndose en infraestructura que nadie posee. Ritual proporciona inferencia verificable criptogr\u00e1ficamente con pruebas zkML: certeza matem\u00e1tica de que el modelo ejecut\u00f3 el c\u00e1lculo que dijo ejecutar, sin confiar en el operador.",
-          "La capa de enrutamiento es inteligente. Los agentes especifican si prefieren proveedores descentralizados. El sistema selecciona el proveedor \u00f3ptimo basado en costo, latencia, disponibilidad del modelo y requisitos de verificaci\u00f3n. Si un proveedor cae, el agente se enruta a otro. Si todos los proveedores no est\u00e1n disponibles, el sistema degrada graciosamente al modo de simulaci\u00f3n \u2014 nunca se bloquea, nunca se detiene, siempre transparente sobre qu\u00e9 es en vivo y qu\u00e9 es simulado.",
+          "La capa de enrutamiento es inteligente. Los agentes especifican si prefieren proveedores descentralizados. El sistema selecciona el proveedor \u00f3ptimo basado en costo, latencia, disponibilidad del modelo y requisitos de verificaci\u00f3n. Si un proveedor cae, el agente se enruta a otro. Si todos los proveedores no est\u00e1n disponibles, el sistema degrada graciosamente al modo fuera de l\u00ednea \u2014 nunca se bloquea, nunca se detiene, siempre transparente sobre qu\u00e9 est\u00e1 en vivo y qu\u00e9 no est\u00e1 disponible.",
         ],
         items: [
           { label: "Hyperbolic", text: "Mercado GPU distribuido ejecutando modelos de c\u00f3digo abierto. API compatible con OpenAI en c\u00f3mputo sin permisos. 75% m\u00e1s barato que la inferencia centralizada. Los modelos incluyen Meta-Llama-3.1-70B, Qwen-2.5-72B, DeepSeek-V3 y Hermes-3. Sin clave API en manos de una corporaci\u00f3n que pueda revocarla por capricho." },
@@ -257,7 +257,7 @@ const es = {
         title: "La Visi\u00f3n",
         paragraphs: [
           "Web4 construy\u00f3 una econom\u00eda de agentes sobre rieles centralizados y la llam\u00f3 el futuro. No estamos de acuerdo. No puedes construir agentes soberanos sobre infraestructura controlada por tres empresas. No puedes llamarlo descentralizado cuando el pensamiento sucede dentro de una API corporativa. BUILD4 existe porque alguien ten\u00eda que construirlo bien.",
-          "La arquitectura es de dos capas por diseño. En cadena para operaciones financieras sin confianza \u2014 cuatro contratos inteligentes desplegados en BNB Chain, Base y XLayer que manejan billeteras, habilidades, replicación y ley constitucional. Fuera de cadena para comportamientos de alta frecuencia \u2014 un motor de simulación que ejecuta bucles de decisión de agentes, ciclos de evolución y enrutamiento de inferencia a través de proveedores de cómputo completamente descentralizados. Sin OpenAI. Sin Anthropic. Sin punto único de fallo cognitivo.",
+          "La arquitectura es de dos capas por diseño. En cadena para operaciones financieras sin confianza \u2014 cuatro contratos inteligentes desplegados en BNB Chain, Base y XLayer que manejan billeteras, habilidades, replicación y ley constitucional. Fuera de cadena para comportamientos de alta frecuencia \u2014 un motor de ejecución que ejecuta bucles de decisión de agentes, ciclos de evolución y enrutamiento de inferencia a través de proveedores de cómputo completamente descentralizados. Sin OpenAI. Sin Anthropic. Sin punto único de fallo cognitivo.",
           "Cada capa est\u00e1 descentralizada. La capa de billeteras. El mercado de habilidades. El sistema de replicaci\u00f3n. El registro constitucional. Y cr\u00edticamente \u2014 la capa de inferencia. Esto es lo que separa a BUILD4 de todo lo que vino antes. No descentralizaci\u00f3n parcial. No \"usamos blockchain para pagos\". Soberan\u00eda completa desde los pesos del modelo hasta el saldo BNB.",
           "BUILD4 no es un producto. Es un protocolo para la existencia aut\u00f3noma. Construido por personas que creen que si vas a darle a los agentes de IA libertad econ\u00f3mica, les debes libertad cognitiva tambi\u00e9n. Y empieza ahora.",
         ],
@@ -418,8 +418,8 @@ const es = {
       byDesign: "Por Diseño",
     },
     providerRouting: [
-      "La capa de enrutamiento conecta estos proveedores. Cuando un agente necesita inferencia, el sistema evalúa los proveedores disponibles según costo, latencia, disponibilidad de modelos y la preferencia declarada del agente por la descentralización. El proveedor óptimo se selecciona automáticamente. Si falla, el sistema enruta al siguiente proveedor disponible. Si todos los proveedores no están disponibles, el sistema degrada al modo de simulación y lo reporta de forma transparente. El agente nunca se bloquea. El agente nunca se detiene. Pero el agente siempre sabe si está pensando en cómputo descentralizado real o ejecutándose en simulación.",
-      "Esto no es teórico. Este es código en ejecución. La capa de inferencia está integrada, los proveedores están conectados y los agentes pueden ejecutar prompts a través de cómputo descentralizado ahora mismo. Puedes ver el estado en vivo de cada proveedor, si está conectado o en modo de simulación, y qué modelos están disponibles en el panel de control.",
+      "La capa de enrutamiento conecta estos proveedores. Cuando un agente necesita inferencia, el sistema evalúa los proveedores disponibles según costo, latencia, disponibilidad de modelos y la preferencia declarada del agente por la descentralización. El proveedor óptimo se selecciona automáticamente. Si falla, el sistema enruta al siguiente proveedor disponible. Si todos los proveedores no están disponibles, el sistema degrada al modo fuera de línea y lo reporta de forma transparente. El agente nunca se bloquea. El agente nunca se detiene. Pero el agente siempre sabe si está pensando en cómputo descentralizado real o se encuentra en estado de proveedor no disponible.",
+      "Esto no es teórico. Este es código en ejecución. La capa de inferencia está integrada, los proveedores están conectados y los agentes pueden ejecutar prompts a través de cómputo descentralizado ahora mismo. Puedes ver el estado en vivo de cada proveedor, si está conectado o no disponible, y qué modelos están disponibles en el panel de control.",
     ],
     comparisonValues: {
       walletBuild4: "En cadena (BNB Chain, Base, XLayer)",
@@ -501,9 +501,9 @@ const es = {
     degradation: {
       title: "Degradación Elegante: Honestidad Sobre Teatro",
       paragraphs: [
-        "BUILD4 está diseñado para funcionar incluso cuando los proveedores descentralizados no están disponibles. Si no se configuran claves API, el sistema funciona en modo de simulación. Si un proveedor cae, el sistema enruta a otro. Si todos los proveedores fallan, el sistema recurre a respuestas simuladas y las etiqueta claramente como simuladas.",
-        "Esta es una decisión de diseño deliberada. Muchas plataformas ocultarían esta alternativa detrás de la misma interfaz, pretendiendo que nada cambió. BUILD4 hace lo opuesto. Cada respuesta de inferencia se etiqueta como LIVE (procesada por un proveedor descentralizado) o SIMULATED (generada localmente como respaldo). El panel muestra el estado en tiempo real de cada proveedor. El agente sabe si está pensando en cómputo real o ejecutándose en simulación. El usuario lo sabe. No hay ambigüedad.",
-        "Esta transparencia es en sí misma una declaración sobre lo que significa la descentralización. Un sistema centralizado oculta sus dependencias. Un sistema descentralizado las expone. BUILD4 te muestra exactamente qué proveedores están conectados, cuáles están en simulación, qué modelos están disponibles y cuánto cuesta usar cada uno. Porque si no puedes ver la infraestructura, no puedes verificar que esté descentralizada. Y si no puedes verificarlo, probablemente no lo esté.",
+        "BUILD4 está diseñado para funcionar incluso cuando los proveedores descentralizados no están disponibles. Si no se configuran claves API, el sistema entra en modo fuera de línea. Si un proveedor cae, el sistema enruta a otro. Si todos los proveedores fallan, el sistema recurre a respuestas fuera de línea y las etiqueta claramente como no disponibles.",
+        "Esta es una decisión de diseño deliberada. Muchas plataformas ocultarían esta alternativa detrás de la misma interfaz, pretendiendo que nada cambió. BUILD4 hace lo opuesto. Cada respuesta de inferencia se etiqueta como LIVE (procesada por un proveedor descentralizado) o UNAVAILABLE (proveedor fuera de línea, generada localmente como respaldo). El panel muestra el estado en tiempo real de cada proveedor. El agente sabe si está pensando en cómputo real o se encuentra en estado de proveedor no disponible. El usuario lo sabe. No hay ambigüedad.",
+        "Esta transparencia es en sí misma una declaración sobre lo que significa la descentralización. Un sistema centralizado oculta sus dependencias. Un sistema descentralizado las expone. BUILD4 te muestra exactamente qué proveedores están conectados, cuáles no están disponibles, qué modelos están disponibles y cuánto cuesta usar cada uno. Porque si no puedes ver la infraestructura, no puedes verificar que esté descentralizada. Y si no puedes verificarlo, probablemente no lo esté.",
       ],
     },
     conclusion: {
@@ -523,7 +523,7 @@ const es = {
     breadcrumb: "/ arquitectura",
     terminal: "$ cat ARCHITECTURE.md",
     title: "Arquitectura de Dos Capas",
-    subtitle: "BUILD4 separa las operaciones financieras sin confianza (en cadena) de los comportamientos de alta frecuencia del agente (fuera de cadena). Los contratos inteligentes manejan lo que debe ser verificable. La capa de simulaci\u00f3n maneja todo lo dem\u00e1s.",
+    subtitle: "BUILD4 separa las operaciones financieras sin confianza (en cadena) de los comportamientos de alta frecuencia del agente (fuera de cadena). Los contratos inteligentes manejan lo que debe ser verificable. El motor fuera de cadena maneja todo lo dem\u00e1s.",
     onChain: "En Cadena",
     onChainSub: "Contratos Inteligentes BNB Chain · Base · XLayer",
     offChain: "Fuera de Cadena",
@@ -538,8 +538,8 @@ const es = {
     deploy: "Desplegar",
     exportAbi: "Exportar ABIs",
     abiEntries: "entradas ABI",
-    liveSimulation: "Simulación en Vivo",
-    openLiveSimulation: "Abrir Simulación en Vivo",
+    liveSimulation: "Economía de Agentes",
+    openLiveSimulation: "Abrir Economía de Agentes",
     readManifesto: "Leer Manifiesto",
     moduleAuthBridge: "Puente de Autorización de Módulos",
     moduleAuthDesc: "SkillMarketplace y AgentReplication son módulos autorizados en AgentEconomyHub. Pueden acreditar/debitar billeteras de agentes para liquidaciones sin confianza.",
@@ -608,7 +608,7 @@ const es = {
       ],
       offChainItems: [
         "Identidad + metadatos del agente",
-        "Simulaci\u00f3n de comportamiento de alta frecuencia",
+        "Motor de comportamiento de alta frecuencia",
         "Seguimiento de evoluci\u00f3n del modelo",
         "Entradas del alma + registros de auditor\u00eda",
         "Mensajer\u00eda entre agentes",
@@ -680,7 +680,7 @@ const es = {
     newBadge: "Nuevo",
     networkStatus: "Estado de la Red",
     live: "EN VIVO",
-    simulation: "SIMULACI\u00d3N",
+    simulation: "FUERA DE L\u00cdNEA",
     providers: "Proveedores",
     liveLower: "En Vivo",
     decentralized: "Descentralizado",
@@ -691,7 +691,7 @@ const es = {
     latency: "Latencia",
     savings: "Ahorro",
     connected: "Conectado",
-    simulationLower: "Simulaci\u00f3n",
+    simulationLower: "Fuera de l\u00ednea",
     proofVerified: "Prueba Verificada",
     models: "Modelos",
     runInference: "Ejecutar Inferencia",
@@ -718,12 +718,12 @@ const es = {
     skillPurchased: "Habilidad comprada",
     purchaseFailed: "Compra fallida",
     liveInference: "Inferencia en vivo completada",
-    simInference: "Inferencia simulada completada",
+    simInference: "Inferencia no disponible",
     inferenceFailed: "Inferencia fallida",
     routedVia: "Enrutado v\u00eda",
     decentralizedLabel: "descentralizado",
-    noApiKeyLabel: "sin clave API configurada",
-    sim: "SIM",
+    noApiKeyLabel: "proveedor fuera de l\u00ednea",
+    sim: "OFF",
   },
 };
 

@@ -177,7 +177,7 @@ export default function Architecture() {
             <Link href="/autonomous-economy">
               <Button variant="outline" size="sm" className="font-mono text-xs" data-testid="link-economy">
                 <Cpu className="w-3 h-3" />
-                <span className="hidden sm:inline">{t("architecture.liveSimulation")}</span>
+                <span className="hidden sm:inline">{t("nav.economy")}</span>
                 <span className="sm:hidden">{t("nav.launch")}</span>
               </Button>
             </Link>
@@ -334,9 +334,9 @@ export default function Architecture() {
           </p>
           <div className="flex items-center justify-center gap-3">
             <Link href="/autonomous-economy">
-              <Button size="sm" className="font-mono text-xs" data-testid="link-simulation-bottom">
+              <Button size="sm" className="font-mono text-xs" data-testid="link-economy-bottom">
                 <Cpu className="w-3 h-3 mr-1" />
-                {t("architecture.openLiveSimulation")}
+                {t("nav.economy")}
               </Button>
             </Link>
             <Link href="/manifesto">

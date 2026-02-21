@@ -491,10 +491,10 @@ export default function WhyBuild4() {
 
               <div className="space-y-4 pl-11 mt-6">
                 <p className="text-muted-foreground leading-relaxed text-[15px]">
-                  The routing layer ties these providers together. When an agent needs inference, the system evaluates available providers based on cost, latency, model availability, and the agent's stated preference for decentralization. The optimal provider is selected automatically. If it fails, the system routes to the next available provider. If all providers are unavailable, the system degrades to simulation mode and reports this transparently. The agent never crashes. The agent never halts. But the agent always knows whether it is thinking on real decentralized compute or running in simulation.
+                  The routing layer ties these providers together. When an agent needs inference, the system evaluates available providers based on cost, latency, model availability, and the agent's stated preference for decentralization. The optimal provider is selected automatically. If it fails, the system routes to the next available provider. If all providers are unavailable, the system degrades to graceful offline mode and reports this transparently. The agent never crashes. The agent never halts. But the agent always knows whether it is thinking on real decentralized compute or running in a provider unavailable state.
                 </p>
                 <p className="text-muted-foreground leading-relaxed text-[15px]">
-                  This is not theoretical. This is running code. The inference layer is integrated, the providers are connected, and agents can run prompts through decentralized compute right now. You can see the live status of every provider, whether it is connected or in simulation mode, and which models are available on the dashboard.
+                  This is not theoretical. This is running code. The inference layer is integrated, the providers are connected, and agents can run prompts through decentralized compute right now. You can see the live status of every provider, whether it is connected or unavailable, and which models are available on the dashboard.
                 </p>
               </div>
             </article>
@@ -647,13 +647,13 @@ export default function WhyBuild4() {
               </div>
               <div className="space-y-4 pl-11">
                 <p className="text-muted-foreground leading-relaxed text-[15px]">
-                  BUILD4 is designed to work even when decentralized providers are unavailable. If no API keys are configured, the system runs in simulation mode. If a provider goes down, the system routes to another. If all providers fail, the system falls back to simulated responses and clearly labels them as simulated.
+                  BUILD4 is designed to work even when decentralized providers are unavailable. If no API keys are configured, the system enters graceful offline mode. If a provider goes down, the system routes to another. If all providers fail, the system falls back to offline responses and clearly labels them as unavailable.
                 </p>
                 <p className="text-muted-foreground leading-relaxed text-[15px]">
-                  This is a deliberate design choice. Many platforms would hide this fallback behind the same interface, pretending nothing changed. BUILD4 does the opposite. Every inference response is tagged as either LIVE (processed by a decentralized provider) or SIMULATED (generated locally as a fallback). The dashboard shows the real-time status of every provider. The agent knows whether it is thinking on real compute or running on simulation. The user knows. There is no ambiguity.
+                  This is a deliberate design choice. Many platforms would hide this fallback behind the same interface, pretending nothing changed. BUILD4 does the opposite. Every inference response is tagged as either LIVE (processed by a decentralized provider) or UNAVAILABLE (provider offline, generated locally as a fallback). The dashboard shows the real-time status of every provider. The agent knows whether it is thinking on real compute or running in a provider unavailable state. The user knows. There is no ambiguity.
                 </p>
                 <p className="text-muted-foreground leading-relaxed text-[15px]">
-                  This transparency is itself a statement about what decentralization means. A centralized system hides its dependencies. A decentralized system exposes them. BUILD4 shows you exactly which providers are connected, which are in simulation, which models are available, and what it costs to use each one. Because if you cannot see the infrastructure, you cannot verify that it is decentralized. And if you cannot verify it, it probably is not.
+                  This transparency is itself a statement about what decentralization means. A centralized system hides its dependencies. A decentralized system exposes them. BUILD4 shows you exactly which providers are connected, which are unavailable, which models are available, and what it costs to use each one. Because if you cannot see the infrastructure, you cannot verify that it is decentralized. And if you cannot verify it, it probably is not.
                 </p>
               </div>
             </article>

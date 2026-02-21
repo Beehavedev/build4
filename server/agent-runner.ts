@@ -980,7 +980,7 @@ export function startAgentRunner(): void {
     log("On-chain bridge DISABLED - database-only mode", "agent-runner");
   }
 
-  log(`Agent runner started. Live providers: ${providers.length > 0 ? providers.join(", ") : "none (simulation mode)"}`, "agent-runner");
+  log(`Agent runner started. Live providers: ${providers.length > 0 ? providers.join(", ") : "none (no providers configured)"}`, "agent-runner");
   log(`Tick interval: ${TICK_INTERVAL_MS / 1000}s | Cooldown: ${AGENT_COOLDOWN_MS / 1000}s | Max concurrent: ${MAX_CONCURRENT_AGENTS}`, "agent-runner");
 
   if (onchainEnabled) {

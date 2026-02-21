@@ -789,7 +789,7 @@ export class DatabaseStorage implements IStorage {
     const inferenceResult = await runInference(network, selectedModel, prompt);
 
     const responseText = inferenceResult.text;
-    const simulatedLatency = inferenceResult.latencyMs;
+    const latencyMs = inferenceResult.latencyMs;
     const proofHash = inferenceResult.proofHash;
     const proofType = inferenceResult.proofType;
 
@@ -824,7 +824,7 @@ export class DatabaseStorage implements IStorage {
       response: responseText,
       status: "completed",
       costAmount: selected.costPerRequest,
-      latencyMs: simulatedLatency,
+      latencyMs,
       proofHash: proofHash || null,
       proofType: proofType || null,
       proofAnchored: !!proofHash,
@@ -842,7 +842,7 @@ export class DatabaseStorage implements IStorage {
         decentralized: selected.decentralized,
         verifiable: selected.verifiable,
         cost: selected.costPerRequest,
-        latencyMs: simulatedLatency,
+        latencyMs,
         proofHash,
         live: inferenceResult.live,
       }),

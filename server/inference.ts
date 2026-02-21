@@ -136,16 +136,13 @@ async function callOpenAICompatible(
   return { text, tokensUsed, latencyMs };
 }
 
-function simulateInference(network: string, model: string, prompt: string): InferenceResult {
-  const latencyMs = 200 + Math.floor(Math.random() * 300);
-  const text = `[SIMULATED - ${network}] Response for model ${model}. No API key configured for live inference. Configure ${PROVIDER_CONFIGS[network]?.apiKeyEnv || "API_KEY"} to enable real decentralized inference. Prompt received: "${prompt.substring(0, 80)}..."`;
-
+function noProviderError(network: string, model: string): InferenceResult {
+  const envVar = PROVIDER_CONFIGS[network]?.apiKeyEnv || "API_KEY";
   return {
-    text,
-    latencyMs,
+    text: `[NO_PROVIDER] ${network} is not available. Configure ${envVar} to enable decentralized inference.`,
+    latencyMs: 0,
     model,
-    proofHash: generateProofHash(prompt, text, model),
-    proofType: "simulated",
+    proofType: "none",
     live: false,
   };
 }
@@ -157,14 +154,14 @@ export async function runInference(
 ): Promise<InferenceResult> {
   const config = PROVIDER_CONFIGS[network];
   if (!config) {
-    return simulateInference(network, model || "unknown", prompt);
+    return noProviderError(network, model || "unknown");
   }
 
   const apiKey = getApiKey(network);
   const selectedModel = model || config.defaultModel;
 
   if (config.requiresAuth && !apiKey) {
-    return simulateInference(network, selectedModel, prompt);
+    return noProviderError(network, selectedModel);
   }
 
   try {
@@ -189,8 +186,8 @@ export async function runInference(
   } catch (error: any) {
     console.error(`[Inference] ${network} error:`, error.message);
 
-    const fallback = simulateInference(network, selectedModel, prompt);
-    fallback.text = `[FALLBACK - ${network}] Provider returned error: ${error.message}. Falling back to simulation mode.`;
+    const fallback = noProviderError(network, selectedModel);
+    fallback.text = `[ERROR - ${network}] Provider returned error: ${error.message}. No fallback available.`;
     return fallback;
   }
 }

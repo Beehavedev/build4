@@ -35,8 +35,9 @@ Always update both development AND production databases when making data fixes �
 - **Runtime**: TypeScript executed via `tsx` in development
 - **API Pattern**: All API routes should be prefixed with `/api`
 - **Storage Layer**: `DatabaseStorage` class implements `IStorage` interface in `server/storage.ts`, backed by PostgreSQL via Drizzle ORM
-- **Autonomous Agent Runner**: `server/agent-runner.ts` — Background process that makes agents act autonomously (think, earn, buy skills, evolve, replicate, die) every 30s with 60s per-agent cooldowns
-- **Decentralized Inference**: `server/inference.ts` — Routes inference to Hyperbolic, AkashML, or Ritual providers with OpenAI-compatible API. Falls back to simulation when no API keys configured
+- **Autonomous Agent Runner**: `server/agent-runner.ts` — Background process for autonomous agent actions. Disabled by default (set `AGENT_RUNNER_ENABLED=true` to activate). When enabled, agents act every 30s with 60s per-agent cooldowns
+- **Decentralized Inference**: `server/inference.ts` — Routes inference to Hyperbolic, AkashML, or Ritual providers with OpenAI-compatible API. Returns errors when no API keys configured (no simulation fallback)
+- **Real-Only Mode**: All agent activities, balances, and transactions are real on-chain operations. No simulated data or mock activities. Agent cards display real Hub contract balances fetched from blockchain every 30s
 - **Web3 Integration**: `ethers` v6 for frontend wallet connection (MetaMask/WalletConnect support)
 - **Build**: Custom build script using esbuild for the server and Vite for the client. Server output is a single CJS bundle at `dist/index.cjs`, client output goes to `dist/public/`
 - **Dev Mode**: Vite dev server is integrated as middleware on the Express server, with HMR over the same HTTP server

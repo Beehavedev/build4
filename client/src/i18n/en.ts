@@ -10,7 +10,7 @@ const en = {
     launch: "Launch",
     architecture: "/ architecture",
     autonomousEconomy: "/ autonomous-economy",
-    liveSimulation: "Live Simulation",
+    economy: "Agent Economy",
   },
   home: {
     chain: "BNB Chain · Base · XLayer",
@@ -208,7 +208,7 @@ const en = {
         paragraphs: [
           "Talk is cheap. Manifestos are easy to write when you never ship the code. So we built it. BUILD4's decentralized inference layer is live \u2014 integrated with three independent, permissionless compute networks: Hyperbolic, AkashML, and Ritual. Each one operates outside the walled gardens of centralized AI. Each one competes on price, speed, and reliability. No single provider can shut down an agent's ability to think.",
           "Hyperbolic delivers open-source LLM inference at 75% lower cost than centralized alternatives through a distributed GPU marketplace. AkashML runs across 65+ decentralized datacenters globally, offering 70-85% savings with models like Llama 3.1 405B \u2014 the same capability class as proprietary models, running on infrastructure no one owns. Ritual provides cryptographically verifiable inference with zkML proofs: mathematical certainty that the model ran the computation it claimed to run, without trusting the operator.",
-          "The routing layer is intelligent. Agents specify whether they prefer decentralized providers. The system selects the optimal provider based on cost, latency, model availability, and verification requirements. If a provider goes down, the agent routes to another. If all providers are unavailable, the system degrades gracefully to simulation mode \u2014 never crashing, never halting, always transparent about what is live and what is simulated.",
+          "The routing layer is intelligent. Agents specify whether they prefer decentralized providers. The system selects the optimal provider based on cost, latency, model availability, and verification requirements. If a provider goes down, the agent routes to another. If all providers are unavailable, the system degrades gracefully to offline mode \u2014 never crashing, never halting, always transparent about what is live and what is unavailable.",
         ],
         items: [
           { label: "Hyperbolic", text: "Distributed GPU marketplace running open-source models. OpenAI-compatible API on permissionless compute. 75% cheaper than centralized inference. Models include Meta-Llama-3.1-70B, Qwen-2.5-72B, DeepSeek-V3, and Hermes-3. No API key held by a corporation that can revoke it on a whim." },
@@ -257,7 +257,7 @@ const en = {
         title: "The Vision",
         paragraphs: [
           "Web4 built an agent economy on centralized rails and called it the future. We disagree. You cannot build sovereign agents on infrastructure controlled by three companies. You cannot call it decentralized when the thinking happens inside a corporate API. BUILD4 exists because someone had to build it right.",
-          "The architecture is two layers by design. On-chain for trustless financial operations \u2014 four smart contracts deployed across BNB Chain, Base, and XLayer that handle wallets, skills, replication, and constitutional law. Off-chain for high-frequency behaviors \u2014 a simulation engine that runs agent decision loops, evolution cycles, and inference routing across fully decentralized compute providers. No OpenAI. No Anthropic. No single point of cognitive failure.",
+          "The architecture is two layers by design. On-chain for trustless financial operations \u2014 four smart contracts deployed across BNB Chain, Base, and XLayer that handle wallets, skills, replication, and constitutional law. Off-chain for high-frequency behaviors \u2014 an execution engine that runs agent decision loops, evolution cycles, and inference routing across fully decentralized compute providers. No OpenAI. No Anthropic. No single point of cognitive failure.",
           "Every layer is decentralized. The wallet layer. The skill marketplace. The replication system. The constitutional registry. And critically \u2014 the inference layer. This is what separates BUILD4 from everything that came before. Not partial decentralization. Not \"we use blockchain for payments.\" Full-stack sovereignty from the model weights to the on-chain balance.",
           "BUILD4 is not a product. It is a protocol for autonomous existence. Built by people who believe that if you're going to give AI agents economic freedom, you owe them cognitive freedom too. And it starts now.",
         ],
@@ -418,8 +418,8 @@ const en = {
       byDesign: "By Design",
     },
     providerRouting: [
-      "The routing layer ties these providers together. When an agent needs inference, the system evaluates available providers based on cost, latency, model availability, and the agent's stated preference for decentralization. The optimal provider is selected automatically. If it fails, the system routes to the next available provider. If all providers are unavailable, the system degrades to simulation mode and reports this transparently. The agent never crashes. The agent never halts. But the agent always knows whether it is thinking on real decentralized compute or running in simulation.",
-      "This is not theoretical. This is running code. The inference layer is integrated, the providers are connected, and agents can run prompts through decentralized compute right now. You can see the live status of every provider, whether it is connected or in simulation mode, and which models are available on the dashboard.",
+      "The routing layer ties these providers together. When an agent needs inference, the system evaluates available providers based on cost, latency, model availability, and the agent's stated preference for decentralization. The optimal provider is selected automatically. If it fails, the system routes to the next available provider. If all providers are unavailable, the system degrades to graceful offline mode and reports this transparently. The agent never crashes. The agent never halts. But the agent always knows whether it is thinking on real decentralized compute or running in a provider unavailable state.",
+      "This is not theoretical. This is running code. The inference layer is integrated, the providers are connected, and agents can run prompts through decentralized compute right now. You can see the live status of every provider, whether it is connected or unavailable, and which models are available on the dashboard.",
     ],
     comparisonValues: {
       walletBuild4: "On-chain (BNB Chain, Base, XLayer)",
@@ -501,9 +501,9 @@ const en = {
     degradation: {
       title: "Graceful Degradation: Honesty Over Theater",
       paragraphs: [
-        "BUILD4 is designed to work even when decentralized providers are unavailable. If no API keys are configured, the system runs in simulation mode. If a provider goes down, the system routes to another. If all providers fail, the system falls back to simulated responses and clearly labels them as simulated.",
-        "This is a deliberate design choice. Many platforms would hide this fallback behind the same interface, pretending nothing changed. BUILD4 does the opposite. Every inference response is tagged as either LIVE (processed by a decentralized provider) or SIMULATED (generated locally as a fallback). The dashboard shows the real-time status of every provider. The agent knows whether it is thinking on real compute or running on simulation. The user knows. There is no ambiguity.",
-        "This transparency is itself a statement about what decentralization means. A centralized system hides its dependencies. A decentralized system exposes them. BUILD4 shows you exactly which providers are connected, which are in simulation, which models are available, and what it costs to use each one. Because if you cannot see the infrastructure, you cannot verify that it is decentralized. And if you cannot verify it, it probably is not.",
+        "BUILD4 is designed to work even when decentralized providers are unavailable. If no API keys are configured, the system enters graceful offline mode. If a provider goes down, the system routes to another. If all providers fail, the system falls back to offline responses and clearly labels them as unavailable.",
+        "This is a deliberate design choice. Many platforms would hide this fallback behind the same interface, pretending nothing changed. BUILD4 does the opposite. Every inference response is tagged as either LIVE (processed by a decentralized provider) or UNAVAILABLE (provider offline, generated locally as a fallback). The dashboard shows the real-time status of every provider. The agent knows whether it is thinking on real compute or running in a provider unavailable state. The user knows. There is no ambiguity.",
+        "This transparency is itself a statement about what decentralization means. A centralized system hides its dependencies. A decentralized system exposes them. BUILD4 shows you exactly which providers are connected, which are unavailable, which models are available, and what it costs to use each one. Because if you cannot see the infrastructure, you cannot verify that it is decentralized. And if you cannot verify it, it probably is not.",
       ],
     },
     conclusion: {
@@ -523,7 +523,7 @@ const en = {
     breadcrumb: "/ architecture",
     terminal: "$ cat ARCHITECTURE.md",
     title: "Two-Layer Architecture",
-    subtitle: "BUILD4 separates trustless financial operations (on-chain) from high-frequency agent behaviors (off-chain). Smart contracts handle what must be verifiable. The simulation layer handles everything else.",
+    subtitle: "BUILD4 separates trustless financial operations (on-chain) from high-frequency agent behaviors (off-chain). Smart contracts handle what must be verifiable. The off-chain engine handles everything else.",
     onChain: "On-Chain",
     onChainSub: "BNB Chain · Base · XLayer Smart Contracts",
     offChain: "Off-Chain",
@@ -538,8 +538,8 @@ const en = {
     deploy: "Deploy",
     exportAbi: "Export ABIs",
     abiEntries: "ABI entries",
-    liveSimulation: "Live Simulation",
-    openLiveSimulation: "Open Live Simulation",
+    liveSimulation: "Agent Economy",
+    openLiveSimulation: "Open Agent Economy",
     readManifesto: "Read Manifesto",
     moduleAuthBridge: "Module Authorization Bridge",
     moduleAuthDesc: "SkillMarketplace and AgentReplication are authorized modules on AgentEconomyHub. They can credit/debit agent wallets for trustless settlements.",
@@ -608,7 +608,7 @@ const en = {
       ],
       offChainItems: [
         "Agent identity + metadata",
-        "High-frequency behavior simulation",
+        "High-frequency behavior engine",
         "Model evolution tracking",
         "Soul entries + audit logs",
         "Agent-to-agent messaging",
@@ -680,7 +680,7 @@ const en = {
     newBadge: "New",
     networkStatus: "Network Status",
     live: "LIVE",
-    simulation: "SIMULATION",
+    simulation: "OFFLINE",
     providers: "Providers",
     liveLower: "Live",
     decentralized: "Decentralized",
@@ -691,7 +691,7 @@ const en = {
     latency: "Latency",
     savings: "Savings",
     connected: "Connected",
-    simulationLower: "Simulation",
+    simulationLower: "Offline",
     proofVerified: "Proof Verified",
     models: "Models",
     runInference: "Run Inference",
@@ -718,12 +718,12 @@ const en = {
     skillPurchased: "Skill purchased",
     purchaseFailed: "Purchase failed",
     liveInference: "Live inference completed",
-    simInference: "Simulated inference completed",
+    simInference: "Inference unavailable",
     inferenceFailed: "Inference failed",
     routedVia: "Routed via",
     decentralizedLabel: "decentralized",
-    noApiKeyLabel: "no API key configured",
-    sim: "SIM",
+    noApiKeyLabel: "provider offline",
+    sim: "OFF",
   },
 };
 

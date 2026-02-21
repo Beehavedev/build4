@@ -172,6 +172,22 @@ export default function AutonomousEconomy() {
     }
   }, [web3.chainId]);
 
+  const activeChain = CHAINS.find(c => c.id === selectedChain) || CHAINS[0];
+
+  const { data: agentsList = [], isLoading: agentsLoading } = useQuery<Agent[]>({
+    queryKey: ["/api/web4/agents"],
+    refetchInterval: 15000,
+  });
+
+  const visibleAgents = agentsList.filter(a => !isTestAgent(a));
+
+  const myAgents = web3.address
+    ? visibleAgents.filter(a => a.creatorWallet?.toLowerCase() === web3.address?.toLowerCase())
+    : [];
+
+  const selectedAgent = myAgents.find((a) => a.id === selectedAgentId) || myAgents[0];
+  const agentId = selectedAgent?.id;
+
   useEffect(() => {
     if (!selectedAgent?.onchainId || !web3.hasContracts || !web3.connected) {
       setOnChainAgentWallet(null);
@@ -189,22 +205,6 @@ export default function AutonomousEconomy() {
     const interval = setInterval(fetchOnChain, 30000);
     return () => clearInterval(interval);
   }, [selectedAgent?.onchainId, web3.hasContracts, web3.connected]);
-
-  const activeChain = CHAINS.find(c => c.id === selectedChain) || CHAINS[0];
-
-  const { data: agentsList = [], isLoading: agentsLoading } = useQuery<Agent[]>({
-    queryKey: ["/api/web4/agents"],
-    refetchInterval: 15000,
-  });
-
-  const visibleAgents = agentsList.filter(a => !isTestAgent(a));
-
-  const myAgents = web3.address
-    ? visibleAgents.filter(a => a.creatorWallet?.toLowerCase() === web3.address?.toLowerCase())
-    : [];
-
-  const selectedAgent = myAgents.find((a) => a.id === selectedAgentId) || myAgents[0];
-  const agentId = selectedAgent?.id;
 
   const { data: walletData } = useQuery<{ wallet: AgentWallet; transactions: AgentTransaction[] }>({
     queryKey: ["/api/web4/wallet", agentId],
@@ -358,7 +358,7 @@ export default function AutonomousEconomy() {
 
   const { data: inferenceStatus } = useQuery<{
     providers: (InferenceProvider & { live: boolean; liveStatus: string })[];
-    summary: { total: number; live: number; simulated: number; decentralized: number };
+    summary: { total: number; live: number; offline: number; decentralized: number };
   }>({
     queryKey: ["/api/web4/inference/status"],
     refetchInterval: 30000,
@@ -380,10 +380,10 @@ export default function AutonomousEconomy() {
       queryClient.invalidateQueries({ queryKey: ["/api/web4/survival", agentId] });
       queryClient.invalidateQueries({ queryKey: ["/api/web4/audit", agentId] });
       const providerName = data?.provider?.name || "Provider";
-      const isLive = data?.request?.response && !data.request.response.startsWith("[SIMULATED") && !data.request.response.startsWith("[FALLBACK");
+      const isLive = data?.request?.response && !data.request.response.startsWith("[NO_PROVIDER") && !data.request.response.startsWith("[ERROR");
       toast({
-        title: isLive ? t("dashboard.liveInference") : t("dashboard.simInference"),
-        description: `${t("dashboard.routedVia")} ${providerName}${isLive ? ` (${t("dashboard.decentralizedLabel")})` : ` (${t("dashboard.noApiKeyLabel")})`}`,
+        title: isLive ? t("dashboard.liveInference") : "Inference Unavailable",
+        description: `${t("dashboard.routedVia")} ${providerName}${isLive ? ` (${t("dashboard.decentralizedLabel")})` : " (provider offline)"}`,
       });
     },
     onError: (e: Error) => toast({ title: t("dashboard.inferenceFailed"), description: e.message, variant: "destructive" }),
@@ -969,7 +969,7 @@ export default function AutonomousEconomy() {
                     Agent Runner: {runnerStatus?.running ? "ACTIVE" : "STOPPED"}
                   </span>
                   <Badge variant={runnerStatus?.mode === "live" ? "default" : "secondary"} className="text-[10px]" data-testid="badge-runner-mode">
-                    {runnerStatus?.mode === "live" ? "LIVE INFERENCE" : "SIMULATION"}
+                    {runnerStatus?.mode === "live" ? "LIVE INFERENCE" : "NO PROVIDERS"}
                   </Badge>
                 </div>
                 <Button
@@ -1042,7 +1042,7 @@ export default function AutonomousEconomy() {
               )}
               {runnerStatus?.providerCount === 0 && (
                 <div className="mt-2 text-[11px] text-muted-foreground font-mono">
-                  No API keys configured. Agents use simulated inference. Add HYPERBOLIC_API_KEY or AKASH_API_KEY for real decentralized compute.
+                  No API keys configured. Add HYPERBOLIC_API_KEY or AKASH_API_KEY for real decentralized compute.
                 </div>
               )}
               {runnerStatus?.onchain?.enabled && (
@@ -1955,7 +1955,7 @@ export default function AutonomousEconomy() {
                   </div>
                   <span className="font-mono text-xs font-semibold">{t("dashboard.networkStatus")}</span>
                   <Badge variant={inferenceStatus.summary.live > 0 ? "default" : "secondary"} className="text-[10px] ml-auto" data-testid="badge-network-mode">
-                    {inferenceStatus.summary.live > 0 ? t("dashboard.live") : t("dashboard.simulation")}
+                    {inferenceStatus.summary.live > 0 ? t("dashboard.live") : "Offline"}
                   </Badge>
                 </div>
                 <div className="grid grid-cols-3 gap-2 mt-2">
@@ -2002,7 +2002,7 @@ export default function AutonomousEconomy() {
                         className="text-[10px] ml-auto"
                         data-testid={`badge-status-${provider.network}`}
                       >
-                        {isLive ? t("dashboard.live") : t("dashboard.sim")}
+                        {isLive ? t("dashboard.live") : "Offline"}
                       </Badge>
                     </div>
                     <div className="space-y-1">
@@ -2011,7 +2011,7 @@ export default function AutonomousEconomy() {
                         <div className="flex items-center gap-1">
                           <div className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-green-500 animate-pulse" : "bg-muted-foreground/40"}`} />
                           <span className={`font-mono text-[10px] ${isLive ? "text-green-500" : "text-muted-foreground"}`}>
-                            {isLive ? t("dashboard.connected") : t("dashboard.simulationLower")}
+                            {isLive ? t("dashboard.connected") : "Offline"}
                           </span>
                         </div>
                       </div>
@@ -2104,7 +2104,7 @@ export default function AutonomousEconomy() {
                 <div className="space-y-2">
                   {inferenceHistory.slice(0, 10).map((req) => {
                     const provider = inferenceProviders.find(p => p.id === req.providerId);
-                    const isLiveResult = req.response && !req.response.startsWith("[SIMULATED") && !req.response.startsWith("[FALLBACK");
+                    const isLiveResult = req.response && !req.response.startsWith("[NO_PROVIDER") && !req.response.startsWith("[ERROR");
                     return (
                       <Card key={req.id} className="p-3" data-testid={`card-inference-${req.id}`}>
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -2113,7 +2113,7 @@ export default function AutonomousEconomy() {
                           </Badge>
                           <Badge variant="outline" className="text-[10px] font-mono">{req.model?.split("/").pop()}</Badge>
                           <Badge variant={isLiveResult ? "default" : "secondary"} className="text-[10px] font-mono">
-                            {isLiveResult ? t("dashboard.live") : t("dashboard.sim")}
+                            {isLiveResult ? t("dashboard.live") : "Failed"}
                           </Badge>
                           <span className="text-[10px] text-muted-foreground font-mono ml-auto">{req.latencyMs}ms</span>
                         </div>

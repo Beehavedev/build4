@@ -514,7 +514,7 @@ export function registerWeb4Routes(app: Express): void {
         return {
           ...p,
           live,
-          liveStatus: live ? "connected" : "simulation",
+          liveStatus: live ? "connected" : "offline",
           metadata: JSON.stringify({ ...meta, live }),
         };
       });
@@ -523,7 +523,7 @@ export function registerWeb4Routes(app: Express): void {
         summary: {
           total: providers.length,
           live: enriched.filter(p => p.live).length,
-          simulated: enriched.filter(p => !p.live).length,
+          offline: enriched.filter(p => !p.live).length,
           decentralized: enriched.filter(p => p.decentralized).length,
         },
         configuredKeys: liveStatus,
@@ -594,7 +594,7 @@ export function registerWeb4Routes(app: Express): void {
         running: isAgentRunnerActive(),
         liveProviders: providers,
         providerCount: providers.length,
-        mode: providers.length > 0 ? "live" : "simulation",
+        mode: providers.length > 0 ? "live" : "no_providers",
         providers: providerStatus,
         onchain: {
           enabled: onchain,

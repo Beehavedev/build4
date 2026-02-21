@@ -100,8 +100,10 @@ app.use((req, res, next) => {
     () => {
       log(`serving on port ${port}`);
 
-      if (process.env.AGENT_RUNNER_ENABLED !== "false") {
+      if (process.env.AGENT_RUNNER_ENABLED === "true") {
         setTimeout(() => startAgentRunner(), 3000);
+      } else {
+        log("Agent runner disabled — only real user-initiated actions allowed. Set AGENT_RUNNER_ENABLED=true to enable autonomous mode.");
       }
     },
   );
