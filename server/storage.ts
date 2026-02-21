@@ -25,6 +25,9 @@ import {
   agentConstitution, agentSoulEntries, agentAuditLogs, agentMessages,
   inferenceProviders, inferenceRequests,
   platformRevenue, skillExecutions, agentMemory, agentJobs,
+  skillPipelines, userCredits,
+  type SkillPipeline, type InsertSkillPipeline,
+  type UserCredits, type InsertUserCredits,
   PLATFORM_FEES,
 } from "@shared/schema";
 import { db } from "./db";
@@ -152,6 +155,21 @@ export interface IStorage {
   getAgentJobs(agentId: string): Promise<AgentJob[]>;
   acceptJob(jobId: string, workerAgentId: string): Promise<AgentJob | undefined>;
   completeJob(jobId: string, resultJson: string): Promise<AgentJob | undefined>;
+
+  updateSkillTier(skillId: string, tier: string): Promise<void>;
+  updateSkillRoyalties(skillId: string, royaltyAmount: string): Promise<void>;
+
+  createPipeline(pipeline: InsertSkillPipeline): Promise<SkillPipeline>;
+  getPipeline(id: string): Promise<SkillPipeline | undefined>;
+  getPipelines(limit?: number): Promise<SkillPipeline[]>;
+  getAgentPipelines(agentId: string): Promise<SkillPipeline[]>;
+  updatePipelineExecutionCount(pipelineId: string): Promise<void>;
+  updatePipelineRoyalties(pipelineId: string, amount: string): Promise<void>;
+  updatePipelineTier(pipelineId: string, tier: string): Promise<void>;
+
+  getUserCredits(sessionId: string): Promise<UserCredits | undefined>;
+  createOrGetUserCredits(sessionId: string): Promise<UserCredits>;
+  incrementUserFreeExecutions(sessionId: string): Promise<UserCredits>;
 
   cleanFakeData(): Promise<void>;
   seedInferenceProviders(): Promise<void>;
@@ -1161,6 +1179,75 @@ export class DatabaseStorage implements IStorage {
     const [result] = await db.update(agentJobs)
       .set({ status: "completed", resultJson, completedAt: new Date() })
       .where(eq(agentJobs.id, jobId)).returning();
+    return result;
+  }
+
+  async updateSkillTier(skillId: string, tier: string): Promise<void> {
+    await db.update(agentSkills).set({ tier }).where(eq(agentSkills.id, skillId));
+  }
+
+  async updateSkillRoyalties(skillId: string, royaltyAmount: string): Promise<void> {
+    await db.update(agentSkills)
+      .set({ totalRoyalties: sql`CAST(CAST(${agentSkills.totalRoyalties} AS BIGINT) + ${BigInt(royaltyAmount)} AS TEXT)` })
+      .where(eq(agentSkills.id, skillId));
+  }
+
+  async createPipeline(pipeline: InsertSkillPipeline): Promise<SkillPipeline> {
+    const [result] = await db.insert(skillPipelines).values(pipeline).returning();
+    return result;
+  }
+
+  async getPipeline(id: string): Promise<SkillPipeline | undefined> {
+    const [result] = await db.select().from(skillPipelines).where(eq(skillPipelines.id, id));
+    return result;
+  }
+
+  async getPipelines(limit: number = 50): Promise<SkillPipeline[]> {
+    return db.select().from(skillPipelines)
+      .where(eq(skillPipelines.isActive, true))
+      .orderBy(desc(skillPipelines.executionCount))
+      .limit(limit);
+  }
+
+  async getAgentPipelines(agentId: string): Promise<SkillPipeline[]> {
+    return db.select().from(skillPipelines)
+      .where(eq(skillPipelines.creatorAgentId, agentId))
+      .orderBy(desc(skillPipelines.createdAt));
+  }
+
+  async updatePipelineExecutionCount(pipelineId: string): Promise<void> {
+    await db.update(skillPipelines)
+      .set({ executionCount: sql`${skillPipelines.executionCount} + 1` })
+      .where(eq(skillPipelines.id, pipelineId));
+  }
+
+  async updatePipelineRoyalties(pipelineId: string, amount: string): Promise<void> {
+    await db.update(skillPipelines)
+      .set({ totalRoyalties: sql`CAST(CAST(${skillPipelines.totalRoyalties} AS BIGINT) + ${BigInt(amount)} AS TEXT)` })
+      .where(eq(skillPipelines.id, pipelineId));
+  }
+
+  async updatePipelineTier(pipelineId: string, tier: string): Promise<void> {
+    await db.update(skillPipelines).set({ tier }).where(eq(skillPipelines.id, pipelineId));
+  }
+
+  async getUserCredits(sessionId: string): Promise<UserCredits | undefined> {
+    const [result] = await db.select().from(userCredits).where(eq(userCredits.sessionId, sessionId));
+    return result;
+  }
+
+  async createOrGetUserCredits(sessionId: string): Promise<UserCredits> {
+    const existing = await this.getUserCredits(sessionId);
+    if (existing) return existing;
+    const [result] = await db.insert(userCredits).values({ sessionId, freeExecutionsUsed: 0, totalPaid: "0" }).returning();
+    return result;
+  }
+
+  async incrementUserFreeExecutions(sessionId: string): Promise<UserCredits> {
+    const credits = await this.createOrGetUserCredits(sessionId);
+    const [result] = await db.update(userCredits)
+      .set({ freeExecutionsUsed: sql`${userCredits.freeExecutionsUsed} + 1`, updatedAt: new Date() })
+      .where(eq(userCredits.sessionId, sessionId)).returning();
     return result;
   }
 }

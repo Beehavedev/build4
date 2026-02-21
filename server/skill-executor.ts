@@ -73,7 +73,7 @@ function validateInputAgainstSchema(input: Record<string, any>, schemaStr: strin
   }
 }
 
-export function executeSkillCode(code: string, input: Record<string, any>, inputSchemaStr: string | null): ExecutionResult {
+export function executeSkillCode(code: string, input: Record<string, any>, inputSchemaStr: string | null, externalData?: Record<string, any>): ExecutionResult {
   const start = Date.now();
 
   const validationError = validateInputAgainstSchema(input, inputSchemaStr);
@@ -87,15 +87,21 @@ export function executeSkillCode(code: string, input: Record<string, any>, input
     const wrappedCode = `
       "use strict";
       const input = __INPUT__;
+      ${externalData ? 'const __EXTERNAL_DATA__ = __EXT_DATA__;' : 'const __EXTERNAL_DATA__ = {};'}
       var __result__;
       ${sanitizedCode}
       __result__;
     `;
 
-    const context = vm.createContext({
+    const contextVars: Record<string, any> = {
       ...SAFE_GLOBALS,
       __INPUT__: JSON.parse(JSON.stringify(input)),
-    });
+    };
+    if (externalData) {
+      contextVars.__EXT_DATA__ = JSON.parse(JSON.stringify(externalData));
+    }
+
+    const context = vm.createContext(contextVars);
 
     const script = new vm.Script(wrappedCode, { filename: "skill.js" });
     const rawOutput = script.runInContext(context, { timeout: MAX_EXECUTION_TIME_MS });
@@ -119,6 +125,60 @@ export function executeSkillCode(code: string, input: Record<string, any>, input
 
     return { success: false, output: null, error: cleanError, latencyMs: Date.now() - start };
   }
+}
+
+let cachedExternalData: { data: Record<string, any>; fetchedAt: number } | null = null;
+const EXTERNAL_DATA_CACHE_MS = 60_000;
+
+export async function fetchExternalData(): Promise<Record<string, any>> {
+  if (cachedExternalData && Date.now() - cachedExternalData.fetchedAt < EXTERNAL_DATA_CACHE_MS) {
+    return cachedExternalData.data;
+  }
+
+  const data: Record<string, any> = {
+    timestamp: Date.now(),
+    timestampISO: new Date().toISOString(),
+    blockHeights: {},
+    cryptoPrices: {},
+  };
+
+  try {
+    const priceRes = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=binancecoin,ethereum,bitcoin,solana&vs_currencies=usd&include_24hr_change=true");
+    if (priceRes.ok) {
+      const prices = await priceRes.json();
+      data.cryptoPrices = {
+        BNB: { usd: prices.binancecoin?.usd || 0, change24h: prices.binancecoin?.usd_24h_change || 0 },
+        ETH: { usd: prices.ethereum?.usd || 0, change24h: prices.ethereum?.usd_24h_change || 0 },
+        BTC: { usd: prices.bitcoin?.usd || 0, change24h: prices.bitcoin?.usd_24h_change || 0 },
+        SOL: { usd: prices.solana?.usd || 0, change24h: prices.solana?.usd_24h_change || 0 },
+      };
+    }
+  } catch {}
+
+  try {
+    const gasRes = await fetch("https://api.bscscan.com/api?module=gastracker&action=gasoracle");
+    if (gasRes.ok) {
+      const gasData = await gasRes.json();
+      if (gasData.result) {
+        data.gasPrice = {
+          bnbChain: { low: gasData.result.SafeGasPrice, standard: gasData.result.ProposeGasPrice, fast: gasData.result.FastGasPrice },
+        };
+      }
+    }
+  } catch {}
+
+  data.blockHeights = {
+    bnbChain: "latest",
+    base: "latest",
+    xlayer: "latest",
+  };
+
+  cachedExternalData = { data, fetchedAt: Date.now() };
+  return data;
+}
+
+export function executeSkillWithExternalData(code: string, input: Record<string, any>, inputSchemaStr: string | null, externalData: Record<string, any>): ExecutionResult {
+  return executeSkillCode(code, input, inputSchemaStr, externalData);
 }
 
 export function validateSkillCode(code: string): { valid: boolean; error?: string } {
@@ -446,5 +506,55 @@ if (operation === "evaluate" && input.expression) {
     outputSchema: '{"type":"object","properties":{"result":{}}}',
     exampleInput: '{"operation":"statistics","values":[10,20,30,40,50]}',
     exampleOutput: '{"sum":150,"mean":30,"median":30,"min":10,"max":50,"variance":200,"stddev":14.14,"count":5}',
+  },
+  "crypto-data": {
+    code: `const prices = __EXTERNAL_DATA__.cryptoPrices || {};
+const token = (input.token || "BNB").toUpperCase();
+const tokenData = prices[token];
+if (!tokenData) {
+  __result__ = { error: "Token not found", available: Object.keys(prices), timestamp: __EXTERNAL_DATA__.timestamp };
+} else {
+  const action = input.action || "price";
+  if (action === "compare") {
+    const tokens = (input.tokens || Object.keys(prices));
+    const comparison = {};
+    tokens.forEach(t => { if (prices[t]) comparison[t] = prices[t]; });
+    __result__ = { comparison, timestamp: __EXTERNAL_DATA__.timestampISO, count: Object.keys(comparison).length };
+  } else if (action === "alert") {
+    const threshold = input.threshold || 0;
+    const direction = input.direction || "above";
+    const triggered = direction === "above" ? tokenData.usd > threshold : tokenData.usd < threshold;
+    __result__ = { token, price: tokenData.usd, threshold, direction, triggered, change24h: tokenData.change24h, timestamp: __EXTERNAL_DATA__.timestampISO };
+  } else {
+    __result__ = { token, price: tokenData.usd, change24h: tokenData.change24h, timestamp: __EXTERNAL_DATA__.timestampISO, gasPrice: __EXTERNAL_DATA__.gasPrice || null };
+  }
+}`,
+    inputSchema: '{"type":"object","properties":{"token":{"type":"string","description":"Token symbol: BNB, ETH, BTC, SOL"},"action":{"type":"string","description":"Action: price, compare, alert"},"tokens":{"type":"array","description":"Tokens to compare (for compare action)"},"threshold":{"type":"number","description":"Price threshold (for alert action)"},"direction":{"type":"string","description":"above or below (for alert action)"}}}',
+    outputSchema: '{"type":"object","properties":{"token":{"type":"string"},"price":{"type":"number"},"change24h":{"type":"number"},"timestamp":{"type":"string"}}}',
+    exampleInput: '{"token":"BNB","action":"price"}',
+    exampleOutput: '{"token":"BNB","price":600.5,"change24h":2.3,"timestamp":"2025-01-01T00:00:00.000Z"}',
+  },
+  "web-data": {
+    code: `const dataType = input.type || "timestamp";
+let __result__;
+if (dataType === "timestamp") {
+  const ts = __EXTERNAL_DATA__.timestamp;
+  const d = new Date(ts);
+  __result__ = { unix: ts, iso: __EXTERNAL_DATA__.timestampISO, dayOfWeek: ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][d.getUTCDay()], hour: d.getUTCHours(), minute: d.getUTCMinutes() };
+} else if (dataType === "market_summary") {
+  const prices = __EXTERNAL_DATA__.cryptoPrices || {};
+  const tokens = Object.entries(prices);
+  const gainers = tokens.filter(([,v]) => v.change24h > 0).sort((a,b) => b[1].change24h - a[1].change24h);
+  const losers = tokens.filter(([,v]) => v.change24h <= 0).sort((a,b) => a[1].change24h - b[1].change24h);
+  __result__ = { totalTokens: tokens.length, gainers: gainers.map(([k,v]) => ({ token: k, price: v.usd, change: v.change24h })), losers: losers.map(([k,v]) => ({ token: k, price: v.usd, change: v.change24h })), timestamp: __EXTERNAL_DATA__.timestampISO };
+} else if (dataType === "gas") {
+  __result__ = { gasPrice: __EXTERNAL_DATA__.gasPrice || { info: "Gas data not available" }, timestamp: __EXTERNAL_DATA__.timestampISO };
+} else {
+  __result__ = { available: ["timestamp", "market_summary", "gas"], timestamp: __EXTERNAL_DATA__.timestampISO };
+}`,
+    inputSchema: '{"type":"object","properties":{"type":{"type":"string","description":"Data type: timestamp, market_summary, gas"}}}',
+    outputSchema: '{"type":"object","properties":{"timestamp":{"type":"string"}}}',
+    exampleInput: '{"type":"market_summary"}',
+    exampleOutput: '{"totalTokens":4,"gainers":[],"losers":[],"timestamp":"2025-01-01T00:00:00.000Z"}',
   },
 };

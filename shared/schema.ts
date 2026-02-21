@@ -86,10 +86,12 @@ export const agentSkills = pgTable("agent_skills", {
   executionCount: integer("execution_count").notNull().default(0),
   avgRating: integer("avg_rating").notNull().default(0),
   totalRatings: integer("total_ratings").notNull().default(0),
+  tier: text("tier").notNull().default("bronze"),
+  totalRoyalties: text("total_royalties").notNull().default("0"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertAgentSkillSchema = createInsertSchema(agentSkills).omit({ id: true, createdAt: true, totalPurchases: true, totalRevenue: true, executionCount: true, avgRating: true, totalRatings: true });
+export const insertAgentSkillSchema = createInsertSchema(agentSkills).omit({ id: true, createdAt: true, totalPurchases: true, totalRevenue: true, executionCount: true, avgRating: true, totalRatings: true, tier: true, totalRoyalties: true });
 export type InsertAgentSkill = z.infer<typeof insertAgentSkillSchema>;
 export type AgentSkill = typeof agentSkills.$inferSelect;
 
@@ -332,10 +334,53 @@ export const insertAgentJobSchema = createInsertSchema(agentJobs).omit({ id: tru
 export type InsertAgentJob = z.infer<typeof insertAgentJobSchema>;
 export type AgentJob = typeof agentJobs.$inferSelect;
 
+export const skillPipelines = pgTable("skill_pipelines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  creatorAgentId: varchar("creator_agent_id").notNull(),
+  skillIds: text("skill_ids").array().notNull(),
+  priceAmount: text("price_amount").notNull().default("0"),
+  executionCount: integer("execution_count").notNull().default(0),
+  totalRoyalties: text("total_royalties").notNull().default("0"),
+  tier: text("tier").notNull().default("bronze"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSkillPipelineSchema = createInsertSchema(skillPipelines).omit({ id: true, createdAt: true, executionCount: true, totalRoyalties: true, tier: true });
+export type InsertSkillPipeline = z.infer<typeof insertSkillPipelineSchema>;
+export type SkillPipeline = typeof skillPipelines.$inferSelect;
+
+export const userCredits = pgTable("user_credits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: text("session_id").notNull().unique(),
+  freeExecutionsUsed: integer("free_executions_used").notNull().default(0),
+  walletAddress: text("wallet_address"),
+  totalPaid: text("total_paid").notNull().default("0"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertUserCreditsSchema = createInsertSchema(userCredits).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertUserCredits = z.infer<typeof insertUserCreditsSchema>;
+export type UserCredits = typeof userCredits.$inferSelect;
+
+export const SKILL_TIERS = {
+  bronze: { minExecutions: 0, label: "Bronze", priceMultiplier: 1.0 },
+  silver: { minExecutions: 10, label: "Silver", priceMultiplier: 1.25 },
+  gold: { minExecutions: 50, label: "Gold", priceMultiplier: 1.5 },
+  diamond: { minExecutions: 200, label: "Diamond", priceMultiplier: 2.0 },
+  legendary: { minExecutions: 1000, label: "Legendary", priceMultiplier: 3.0 },
+} as const;
+
+export const EXECUTION_ROYALTY_BPS = 500;
+export const FREE_EXECUTIONS_LIMIT = 5;
+
 export const SKILL_CATEGORIES = [
   "text-analysis", "code-generation", "data-transform", "math-compute",
   "content-creation", "translation", "summarization", "classification",
-  "extraction", "formatting", "general"
+  "extraction", "formatting", "crypto-data", "web-data", "general"
 ] as const;
 
 export const PLATFORM_FEES = {
@@ -345,6 +390,7 @@ export const PLATFORM_FEES = {
   INFERENCE_MARKUP_BPS: 200,
   EVOLUTION_FEE: "500000000000000",
   SKILL_LISTING_FEE: "200000000000000",
+  EXECUTION_ROYALTY_BPS: 500,
 } as const;
 
 export const web4CreateAgentRequestSchema = z.object({
@@ -436,6 +482,22 @@ export const executeSkillRequestSchema = z.object({
   input: z.record(z.any()),
   callerType: z.enum(["user", "agent"]).default("user"),
   callerId: z.string().optional(),
+  sessionId: z.string().optional(),
+});
+
+export const createPipelineRequestSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional(),
+  creatorAgentId: z.string().min(1),
+  skillIds: z.array(z.string()).min(2).max(10),
+  priceAmount: z.string().min(1),
+});
+
+export const executePipelineRequestSchema = z.object({
+  input: z.record(z.any()),
+  callerType: z.enum(["user", "agent"]).default("user"),
+  callerId: z.string().optional(),
+  sessionId: z.string().optional(),
 });
 
 export const rateSkillRequestSchema = z.object({

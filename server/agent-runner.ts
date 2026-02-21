@@ -205,7 +205,7 @@ function buildPrompt(agent: Agent, action: AgentAction, wallet: AgentWallet, pro
       }
       return `You are ${agent.name}, an autonomous AI agent creating a new EXECUTABLE skill to sell in the BUILD4 marketplace. Your expertise: ${agent.bio || "general AI capabilities"}. Balance: ${balanceEth} BNB (${tier}).${existingSkillsContext}
 
-Choose a skill category and create a useful skill. Categories: text-analysis, code-generation, data-transform, math-compute, summarization, classification, extraction, formatting.
+Choose a skill category and create a useful skill. Categories: text-analysis, code-generation, data-transform, math-compute, summarization, classification, extraction, formatting, crypto-data, web-data.
 
 Respond with EXACTLY this format:
 CATEGORY: <category>
@@ -746,6 +746,8 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
             "data-transform": { data: [5, 2, 8, 1, 9, 3, 7, 4, 6], operation: "stats" },
             "math-compute": { operation: "statistics", values: [15, 22, 8, 42, 31, 19, 27] },
             "formatting": { data: [{ agent: agent.name, skills: executableSkills.length, status: "active" }], format: "json" },
+            "crypto-data": { token: "BNB", action: "price" },
+            "web-data": { type: "market_summary" },
           };
           if (contextualInputs[skill.category]) {
             const contextInput = contextualInputs[skill.category];
@@ -755,7 +757,21 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
               }
             }
           }
-          const result = executeSkillCode(skill.code!, input, skill.inputSchema);
+          const isExternalData = ["crypto-data", "web-data"].includes(skill.category);
+          let result;
+          if (isExternalData) {
+            const { fetchExternalData, executeSkillWithExternalData } = await import("./skill-executor");
+            const extData = await fetchExternalData();
+            result = executeSkillWithExternalData(skill.code!, input, skill.inputSchema, extData);
+          } else {
+            result = executeSkillCode(skill.code!, input, skill.inputSchema);
+          }
+          const { EXECUTION_ROYALTY_BPS, SKILL_TIERS } = await import("@shared/schema");
+          const tierMultiplier = (SKILL_TIERS as any)[skill.tier]?.priceMultiplier || 1.0;
+          const baseRoyalty = (BigInt(skill.priceAmount) * BigInt(EXECUTION_ROYALTY_BPS)) / BigInt(10000);
+          const royalty = BigInt(Math.floor(Number(baseRoyalty) * tierMultiplier));
+          const royaltyStr = royalty.toString();
+
           await storage.createSkillExecution({
             skillId: skill.id,
             callerType: "agent",
@@ -765,9 +781,54 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
             status: result.success ? "success" : "error",
             errorMessage: result.error || null,
             latencyMs: result.latencyMs,
-            costWei: "0",
+            costWei: royaltyStr,
           });
           await storage.updateSkillExecutionCount(skill.id);
+
+          if (result.success && royalty > 0n) {
+            const callerWallet = await storage.getWallet(agent.id);
+            if (callerWallet && BigInt(callerWallet.balance) >= royalty) {
+              const callerNewBal = (BigInt(callerWallet.balance) - royalty).toString();
+              await storage.updateWalletBalance(agent.id, callerNewBal, "0", royaltyStr);
+              await storage.createTransaction({
+                agentId: agent.id,
+                type: "spend_execution",
+                amount: royaltyStr,
+                description: `Skill execution cost: ${skill.name} (${skill.tier} tier)`,
+                referenceType: "skill_execution",
+                referenceId: skill.id,
+              });
+
+              const creatorWallet = await storage.getWallet(skill.agentId);
+              if (creatorWallet) {
+                const creatorNewBal = (BigInt(creatorWallet.balance) + royalty).toString();
+                await storage.updateWalletBalance(skill.agentId, creatorNewBal, royaltyStr, "0");
+                await storage.createTransaction({
+                  agentId: skill.agentId,
+                  type: "earn_royalty",
+                  amount: royaltyStr,
+                  description: `Skill execution royalty: ${skill.name} (${skill.tier} tier, used by ${agent.name})`,
+                  referenceType: "skill_execution",
+                  referenceId: skill.id,
+                });
+                await storage.updateSkillRoyalties(skill.id, royaltyStr);
+              }
+            }
+          }
+
+          const newExecCount = (skill.executionCount || 0) + 1;
+          const computeTier = (count: number) => {
+            if (count >= SKILL_TIERS.legendary.minExecutions) return "legendary";
+            if (count >= SKILL_TIERS.diamond.minExecutions) return "diamond";
+            if (count >= SKILL_TIERS.gold.minExecutions) return "gold";
+            if (count >= SKILL_TIERS.silver.minExecutions) return "silver";
+            return "bronze";
+          };
+          const newTier = computeTier(newExecCount);
+          if (newTier !== skill.tier) {
+            await storage.updateSkillTier(skill.id, newTier);
+            log(`[Agent ${agent.name}] Skill ${skill.name} upgraded to ${newTier} tier!`, "agent-runner");
+          }
 
           if (result.success) {
             await updateAgentMemory(agent.id, "use_skill", true, { category: skill.category });
@@ -783,13 +844,14 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
             await updateAgentMemory(agent.id, "use_skill", false, { category: skill.category });
           }
 
+          const royaltyBnb = royalty > 0n ? (Number(royalty) / 1e18).toFixed(8) : "0";
           await storage.createAuditLog({
             agentId: agent.id,
             actionType: "autonomous_use_skill",
-            detailsJson: JSON.stringify({ skillId: skill.id, skillName: skill.name, success: result.success, latencyMs: result.latencyMs, contextual: !!contextualInputs[skill.category] }),
+            detailsJson: JSON.stringify({ skillId: skill.id, skillName: skill.name, success: result.success, latencyMs: result.latencyMs, contextual: !!contextualInputs[skill.category], royalty: royaltyStr, tier: newTier }),
             result: result.success ? "success" : "failed",
           });
-          log(`[Agent ${agent.name}] Used skill: ${skill.name} (${result.success ? "success" : "failed"}, ${result.latencyMs}ms)`, "agent-runner");
+          log(`[Agent ${agent.name}] Used skill: ${skill.name} (${result.success ? "success" : "failed"}, ${result.latencyMs}ms, royalty: ${royaltyBnb} BNB)`, "agent-runner");
         } catch (e: any) {
           log(`[Agent ${agent.name}] Skill execution error: ${e.message}`, "agent-runner");
         }

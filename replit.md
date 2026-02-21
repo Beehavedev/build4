@@ -46,7 +46,7 @@ Always update both development AND production databases when making data fixes �
 - **ORM**: Drizzle ORM with PostgreSQL dialect
 - **Schema**: Defined in `shared/schema.ts` using Drizzle's `pgTable` helpers
 - **Validation**: `drizzle-zod` generates Zod schemas from the Drizzle table definitions
-- **Current Schema**: Users table, plus 13 Web4 agent economy tables (agents, wallets, transactions, skills, skill_purchases, evolutions, lineage, runtime_profiles, survival_status, constitution, soul_entries, audit_logs, messages) and 2 decentralized inference tables (inference_providers, inference_requests)
+- **Current Schema**: Users table, plus 13 Web4 agent economy tables (agents, wallets, transactions, skills, skill_purchases, evolutions, lineage, runtime_profiles, survival_status, constitution, soul_entries, audit_logs, messages), 2 decentralized inference tables (inference_providers, inference_requests), skill_pipelines table, and user_credits table
 - **Migrations**: Managed via `drizzle-kit push` (schema push approach, not migration files)
 - **Connection**: Requires `DATABASE_URL` environment variable pointing to a PostgreSQL instance
 
@@ -88,7 +88,7 @@ Always update both development AND production databases when making data fixes �
 ### Frontend Pages
 - `/` — Landing page with features, lifecycle, decentralized inference, roadmap
 - `/autonomous-economy` — Live autonomous agent economy dashboard with real-time runner status, wallet connect, and agent activity monitoring
-- `/marketplace` — Public AI skill marketplace with live execution, category filtering, search, skill cards, "Try It" panel with JSON input/output, cURL snippets, and execution stats
+- `/marketplace` — Public AI skill marketplace with live execution, category filtering, search, skill cards, tier badges, execution royalties, free-tier tracking, pipeline display, "Try It" panel with JSON input/output, cURL snippets, and execution stats
 - `/manifesto` — 9-section philosophical manifesto
 - `/architecture` — Two-layer architecture overview with contract details
 - `/revenue` — Platform revenue dashboard with fee breakdown and history

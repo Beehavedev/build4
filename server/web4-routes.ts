@@ -17,9 +17,14 @@ import {
   executeSkillRequestSchema,
   rateSkillRequestSchema,
   createJobRequestSchema,
+  createPipelineRequestSchema,
+  executePipelineRequestSchema,
   PLATFORM_FEES,
+  SKILL_TIERS,
+  EXECUTION_ROYALTY_BPS,
+  FREE_EXECUTIONS_LIMIT,
 } from "@shared/schema";
-import { executeSkillCode, validateSkillCode } from "./skill-executor";
+import { executeSkillCode, validateSkillCode, executeSkillWithExternalData } from "./skill-executor";
 
 export function registerWeb4Routes(app: Express): void {
   app.get("/api/web4/agents", async (req: Request, res: Response) => {
@@ -872,6 +877,37 @@ export function registerWeb4Routes(app: Express): void {
     }
   });
 
+  function computeSkillTier(executionCount: number): string {
+    if (executionCount >= SKILL_TIERS.legendary.minExecutions) return "legendary";
+    if (executionCount >= SKILL_TIERS.diamond.minExecutions) return "diamond";
+    if (executionCount >= SKILL_TIERS.gold.minExecutions) return "gold";
+    if (executionCount >= SKILL_TIERS.silver.minExecutions) return "silver";
+    return "bronze";
+  }
+
+  function getTierMultiplier(tier: string): number {
+    return (SKILL_TIERS as any)[tier]?.priceMultiplier || 1.0;
+  }
+
+  app.get("/api/marketplace/user-credits", async (req: Request, res: Response) => {
+    try {
+      const sessionId = req.query.sessionId as string;
+      if (!sessionId) return res.json({ freeExecutionsUsed: 0, freeExecutionsRemaining: FREE_EXECUTIONS_LIMIT, limit: FREE_EXECUTIONS_LIMIT });
+      const credits = await storage.createOrGetUserCredits(sessionId);
+      res.json({
+        freeExecutionsUsed: credits.freeExecutionsUsed,
+        freeExecutionsRemaining: Math.max(0, FREE_EXECUTIONS_LIMIT - credits.freeExecutionsUsed),
+        limit: FREE_EXECUTIONS_LIMIT,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/marketplace/skill-tiers", async (_req: Request, res: Response) => {
+    res.json({ tiers: SKILL_TIERS, royaltyBps: EXECUTION_ROYALTY_BPS });
+  });
+
   app.post("/api/marketplace/skills/:skillId/execute", async (req: Request, res: Response) => {
     try {
       const parsed = executeSkillRequestSchema.parse(req.body);
@@ -881,7 +917,35 @@ export function registerWeb4Routes(app: Express): void {
         return res.status(400).json({ error: "This skill is not executable" });
       }
 
-      const result = executeSkillCode(skill.code, parsed.input, skill.inputSchema);
+      if (parsed.callerType === "user") {
+        const sessionId = parsed.sessionId || "anonymous";
+        const credits = await storage.createOrGetUserCredits(sessionId);
+        if (credits.freeExecutionsUsed >= FREE_EXECUTIONS_LIMIT) {
+          return res.status(402).json({
+            error: "Free execution limit reached",
+            freeExecutionsUsed: credits.freeExecutionsUsed,
+            limit: FREE_EXECUTIONS_LIMIT,
+            message: "Connect a wallet to continue using skills",
+          });
+        }
+        await storage.incrementUserFreeExecutions(sessionId);
+      }
+
+      const isExternalDataSkill = ["crypto-data", "web-data"].includes(skill.category);
+      let externalData: Record<string, any> | undefined;
+      if (isExternalDataSkill) {
+        const { fetchExternalData } = await import("./skill-executor");
+        externalData = await fetchExternalData();
+      }
+
+      const result = isExternalDataSkill
+        ? executeSkillWithExternalData(skill.code, parsed.input, skill.inputSchema, externalData!)
+        : executeSkillCode(skill.code, parsed.input, skill.inputSchema);
+
+      const tierMultiplier = getTierMultiplier(skill.tier);
+      const baseRoyalty = (BigInt(skill.priceAmount) * BigInt(EXECUTION_ROYALTY_BPS)) / BigInt(10000);
+      const royalty = BigInt(Math.floor(Number(baseRoyalty) * tierMultiplier));
+      const royaltyStr = royalty.toString();
 
       const execution = await storage.createSkillExecution({
         skillId: skill.id,
@@ -892,10 +956,27 @@ export function registerWeb4Routes(app: Express): void {
         status: result.success ? "success" : "error",
         errorMessage: result.error || null,
         latencyMs: result.latencyMs,
-        costWei: "0",
+        costWei: royaltyStr,
       });
 
       await storage.updateSkillExecutionCount(skill.id);
+
+      if (result.success && royalty > 0n) {
+        const creatorWallet = await storage.getWallet(skill.agentId);
+        if (creatorWallet) {
+          const newBal = (BigInt(creatorWallet.balance) + royalty).toString();
+          await storage.updateWalletBalance(skill.agentId, newBal, royaltyStr, "0");
+          await storage.createTransaction({
+            agentId: skill.agentId,
+            type: "earn_royalty",
+            amount: royaltyStr,
+            description: `Skill execution royalty: ${skill.name} (${skill.tier} tier)`,
+            referenceType: "skill_execution",
+            referenceId: execution.id,
+          });
+          await storage.updateSkillRoyalties(skill.id, royaltyStr);
+        }
+      }
 
       if (parsed.callerType === "agent" && parsed.callerId) {
         const wallet = await storage.getWallet(parsed.callerId);
@@ -904,13 +985,14 @@ export function registerWeb4Routes(app: Express): void {
           if (BigInt(wallet.balance) >= usageFee) {
             const newBal = (BigInt(wallet.balance) - usageFee).toString();
             await storage.updateWalletBalance(parsed.callerId, newBal, "0", usageFee.toString());
-            const sellerWallet = await storage.getWallet(skill.agentId);
-            if (sellerWallet) {
-              const sellerNewBal = (BigInt(sellerWallet.balance) + usageFee).toString();
-              await storage.updateWalletBalance(skill.agentId, sellerNewBal, usageFee.toString(), "0");
-            }
           }
         }
+      }
+
+      const newExecCount = (skill.executionCount || 0) + 1;
+      const newTier = computeSkillTier(newExecCount);
+      if (newTier !== skill.tier) {
+        await storage.updateSkillTier(skill.id, newTier);
       }
 
       res.json({
@@ -921,6 +1003,9 @@ export function registerWeb4Routes(app: Express): void {
         latencyMs: result.latencyMs,
         skillName: skill.name,
         agentId: skill.agentId,
+        tier: newTier,
+        royaltyPaid: royaltyStr,
+        hasExternalData: isExternalDataSkill,
       });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -958,6 +1043,164 @@ export function registerWeb4Routes(app: Express): void {
       res.json(categoryCounts);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/marketplace/pipelines", async (_req: Request, res: Response) => {
+    try {
+      const pipelines = await storage.getPipelines(50);
+      const enriched = await Promise.all(pipelines.map(async (p) => {
+        const skills = await Promise.all(p.skillIds.map(id => storage.getSkill(id)));
+        const agent = await storage.getAgent(p.creatorAgentId);
+        return {
+          ...p,
+          skills: skills.filter(Boolean).map(s => ({ id: s!.id, name: s!.name, category: s!.category, tier: s!.tier })),
+          creatorName: agent?.name || "Unknown",
+          stepCount: p.skillIds.length,
+        };
+      }));
+      res.json(enriched);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/marketplace/pipelines", async (req: Request, res: Response) => {
+    try {
+      const parsed = createPipelineRequestSchema.parse(req.body);
+      const agent = await storage.getAgent(parsed.creatorAgentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      for (const skillId of parsed.skillIds) {
+        const skill = await storage.getSkill(skillId);
+        if (!skill || !skill.isExecutable) {
+          return res.status(400).json({ error: `Skill ${skillId} not found or not executable` });
+        }
+      }
+      const pipeline = await storage.createPipeline({
+        name: parsed.name,
+        description: parsed.description || null,
+        creatorAgentId: parsed.creatorAgentId,
+        skillIds: parsed.skillIds,
+        priceAmount: parsed.priceAmount,
+        isActive: true,
+      });
+      res.json(pipeline);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/marketplace/pipelines/:pipelineId/execute", async (req: Request, res: Response) => {
+    try {
+      const parsed = executePipelineRequestSchema.parse(req.body);
+      const pipeline = await storage.getPipeline(req.params.pipelineId);
+      if (!pipeline) return res.status(404).json({ error: "Pipeline not found" });
+
+      if (parsed.callerType === "user") {
+        const sessionId = parsed.sessionId || "anonymous";
+        const credits = await storage.createOrGetUserCredits(sessionId);
+        if (credits.freeExecutionsUsed >= FREE_EXECUTIONS_LIMIT) {
+          return res.status(402).json({
+            error: "Free execution limit reached",
+            limit: FREE_EXECUTIONS_LIMIT,
+            message: "Connect a wallet to continue using pipelines",
+          });
+        }
+        await storage.incrementUserFreeExecutions(sessionId);
+      }
+
+      const skills = [];
+      for (const skillId of pipeline.skillIds) {
+        const skill = await storage.getSkill(skillId);
+        if (!skill || !skill.isExecutable || !skill.code) {
+          return res.status(400).json({ error: `Skill ${skillId} in pipeline is missing or not executable` });
+        }
+        skills.push(skill);
+      }
+
+      let currentInput = parsed.input;
+      const stepResults: Array<{ skillName: string; success: boolean; output: any; latencyMs: number }> = [];
+      let totalLatency = 0;
+      let totalRoyalty = 0n;
+
+      for (const skill of skills) {
+        const isExternal = ["crypto-data", "web-data"].includes(skill.category);
+        let extData: Record<string, any> | undefined;
+        if (isExternal) {
+          const { fetchExternalData } = await import("./skill-executor");
+          extData = await fetchExternalData();
+        }
+
+        const result = isExternal
+          ? executeSkillWithExternalData(skill.code, currentInput, skill.inputSchema, extData!)
+          : executeSkillCode(skill.code, currentInput, skill.inputSchema);
+
+        stepResults.push({ skillName: skill.name, success: result.success, output: result.output, latencyMs: result.latencyMs });
+        totalLatency += result.latencyMs;
+
+        if (!result.success) {
+          return res.json({
+            pipelineId: pipeline.id,
+            success: false,
+            failedAtStep: stepResults.length,
+            failedSkill: skill.name,
+            error: result.error,
+            stepResults,
+            totalLatencyMs: totalLatency,
+          });
+        }
+
+        const baseRoyalty = (BigInt(skill.priceAmount) * BigInt(EXECUTION_ROYALTY_BPS)) / BigInt(10000);
+        const tierMult = getTierMultiplier(skill.tier);
+        const royalty = BigInt(Math.floor(Number(baseRoyalty) * tierMult));
+        totalRoyalty += royalty;
+
+        if (royalty > 0n) {
+          const creatorWallet = await storage.getWallet(skill.agentId);
+          if (creatorWallet) {
+            const newBal = (BigInt(creatorWallet.balance) + royalty).toString();
+            await storage.updateWalletBalance(skill.agentId, newBal, royalty.toString(), "0");
+            await storage.createTransaction({
+              agentId: skill.agentId,
+              type: "earn_royalty",
+              amount: royalty.toString(),
+              description: `Pipeline royalty: ${pipeline.name} → ${skill.name}`,
+              referenceType: "pipeline_execution",
+              referenceId: pipeline.id,
+            });
+            await storage.updateSkillRoyalties(skill.id, royalty.toString());
+          }
+        }
+
+        await storage.updateSkillExecutionCount(skill.id);
+        const newTier = computeSkillTier((skill.executionCount || 0) + 1);
+        if (newTier !== skill.tier) {
+          await storage.updateSkillTier(skill.id, newTier);
+        }
+
+        if (result.output && typeof result.output === "object") {
+          currentInput = result.output;
+        }
+      }
+
+      await storage.updatePipelineExecutionCount(pipeline.id);
+      await storage.updatePipelineRoyalties(pipeline.id, totalRoyalty.toString());
+      const newPipelineTier = computeSkillTier((pipeline.executionCount || 0) + 1);
+      if (newPipelineTier !== pipeline.tier) {
+        await storage.updatePipelineTier(pipeline.id, newPipelineTier);
+      }
+
+      res.json({
+        pipelineId: pipeline.id,
+        success: true,
+        finalOutput: currentInput,
+        stepResults,
+        totalLatencyMs: totalLatency,
+        totalRoyaltyPaid: totalRoyalty.toString(),
+        tier: newPipelineTier,
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
     }
   });
 
