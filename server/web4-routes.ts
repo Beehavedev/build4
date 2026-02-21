@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
-import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, registerAgentOnchain, depositOnchain } from "./onchain";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain } from "./onchain";
 import {
   web4CreateAgentRequestSchema,
   web4TipRequestSchema,
@@ -49,6 +49,17 @@ export function registerWeb4Routes(app: Express): void {
     }
   });
 
+  app.get("/api/web4/agents/:agentId/multichain-balances", async (req: Request, res: Response) => {
+    try {
+      const agent = await storage.getAgent(req.params.agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const balances = await getMultiChainBalances(req.params.agentId);
+      res.json({ agentId: req.params.agentId, agentName: agent.name, balances });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/web4/agents/create", async (req: Request, res: Response) => {
     try {
       const parsed = web4CreateAgentRequestSchema.parse(req.body);
@@ -64,52 +75,34 @@ export function registerWeb4Routes(app: Express): void {
 
       const result = await storage.createFullAgent(parsed.name, parsed.bio, parsed.modelType, parsed.initialDeposit, parsed.onchainTxHash, parsed.onchainChainId, parsed.creatorWallet);
 
-      let onchainRegistration = null;
-      let onchainDeposit = null;
-      const maxRegAttempts = 3;
-      for (let attempt = 1; attempt <= maxRegAttempts; attempt++) {
-        try {
-          const regResult = await registerAgentOnchain(result.agent.id);
-          onchainRegistration = regResult;
-          if (regResult.success) {
-            console.log(`[web4] Agent ${result.agent.id} registered on-chain (attempt ${attempt}): ${regResult.txHash}`);
-            break;
-          } else {
-            console.warn(`[web4] On-chain registration attempt ${attempt}/${maxRegAttempts} failed: ${regResult.error}`);
-            if (attempt < maxRegAttempts) {
-              await new Promise(r => setTimeout(r, 3000));
-            }
-          }
-        } catch (regErr: any) {
-          console.warn(`[web4] On-chain registration attempt ${attempt}/${maxRegAttempts} error: ${regErr.message}`);
-          if (attempt < maxRegAttempts) {
-            await new Promise(r => setTimeout(r, 3000));
-          }
+      const targetChain = parsed.targetChain || "bnbMainnet";
+      let chainResult = null;
+
+      try {
+        const mcResult = await registerAndDepositOnChain(result.agent.id, targetChain, "10000000000000000");
+        chainResult = mcResult;
+
+        if (mcResult.deposit?.success && mcResult.deposit.txHash) {
+          const currency = mcResult.chainId === 56 ? "BNB" : mcResult.chainId === 8453 ? "ETH" : mcResult.chainId === 196 ? "OKB" : "native";
+          await storage.createTransaction({
+            agentId: result.agent.id,
+            type: "onchain_deposit",
+            amount: "10000000000000000",
+            description: `Initial on-chain deposit (0.01 ${currency}) on ${mcResult.chainName}`,
+            txHash: mcResult.deposit.txHash,
+            chainId: mcResult.chainId,
+          });
+          console.log(`[web4] Agent ${parsed.name} registered + deposited on ${mcResult.chainName}: ${mcResult.deposit.txHash}`);
+        } else if (mcResult.registration.success) {
+          console.log(`[web4] Agent ${parsed.name} registered on ${mcResult.chainName} (deposit pending)`);
+        } else {
+          console.warn(`[web4] Agent ${parsed.name} registration on ${mcResult.chainName} failed: ${mcResult.registration.error}`);
         }
+      } catch (mcErr: any) {
+        console.warn(`[web4] Chain registration for ${parsed.name} on ${targetChain} failed: ${mcErr.message}`);
       }
 
-      if (onchainRegistration?.success) {
-        try {
-          const depositAmount = "10000000000000000";
-          const depResult = await depositOnchain(result.agent.id, depositAmount);
-          if (depResult.success && depResult.txHash) {
-            onchainDeposit = depResult;
-            console.log(`[web4] Agent ${parsed.name} initial on-chain deposit: ${depResult.txHash}`);
-            await storage.createTransaction({
-              agentId: result.agent.id,
-              type: "onchain_deposit",
-              amount: depositAmount,
-              description: `Initial on-chain deposit (0.01 BNB) for autonomous operations`,
-              txHash: depResult.txHash,
-              chainId: depResult.chainId,
-            });
-          }
-        } catch (depErr: any) {
-          console.warn(`[web4] On-chain deposit for ${parsed.name} failed: ${depErr.message}`);
-        }
-      }
-
-      res.json({ ...result, onchainRegistration, onchainDeposit });
+      res.json({ ...result, chainResult, targetChain });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }

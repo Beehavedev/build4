@@ -143,9 +143,9 @@ function isTestAgent(agent: Agent): boolean {
 }
 
 const CHAINS = [
-  { id: "bnb", name: "BNB Chain", chainId: 56, currency: "BNB" },
-  { id: "base", name: "Base", chainId: 8453, currency: "ETH" },
-  { id: "xlayer", name: "XLayer", chainId: 196, currency: "OKB" },
+  { id: "bnb", name: "BNB Chain", chainId: 56, currency: "BNB", backendKey: "bnbMainnet" },
+  { id: "base", name: "Base", chainId: 8453, currency: "ETH", backendKey: "baseMainnet" },
+  { id: "xlayer", name: "XLayer", chainId: 196, currency: "OKB", backendKey: "xlayerMainnet" },
 ] as const;
 
 export default function AutonomousEconomy() {
@@ -210,6 +210,12 @@ export default function AutonomousEconomy() {
     queryKey: ["/api/web4/wallet", agentId],
     enabled: !!agentId,
     refetchInterval: 15000,
+  });
+
+  const { data: multiChainBalances } = useQuery<{ agentId: string; agentName: string; balances: { chainKey: string; chainName: string; chainId: number; balance: string; registered: boolean }[] }>({
+    queryKey: ["/api/web4/agents", agentId, "multichain-balances"],
+    enabled: !!agentId,
+    refetchInterval: 30000,
   });
 
   const { data: skills = [] } = useQuery<AgentSkill[]>({
@@ -412,20 +418,21 @@ export default function AutonomousEconomy() {
         throw new Error("Smart contracts not available on the connected chain. Please switch to BNB Chain, Base, or XLayer.");
       }
 
-      setCreateAgentStep("Creating agent and registering on-chain...");
+      setCreateAgentStep(`Creating agent and registering on ${activeChain.name}...`);
       const res = await apiRequest("POST", "/api/web4/agents/create", {
         name: newAgentName,
         bio: newAgentBio || undefined,
         modelType: newAgentModel,
         initialDeposit: newAgentDeposit,
+        targetChain: activeChain.backendKey,
         creatorWallet: web3.address,
       });
       const data = await res.json();
       const agentId = data.agent?.id;
       if (!agentId) throw new Error("Failed to create agent record");
 
-      if (!data.onchainRegistration?.success) {
-        console.warn("On-chain registration issue:", data.onchainRegistration?.error);
+      if (data.chainResult && !data.chainResult.registration?.success) {
+        console.warn(`On-chain registration issue on ${activeChain.name}:`, data.chainResult.registration?.error);
       }
 
       const numericId = uuidToNumericId(agentId);
@@ -474,7 +481,8 @@ export default function AutonomousEconomy() {
       setNewAgentBio("");
       const txMsg = data.onchainTx ? ` — tx: ${data.onchainTx.slice(0, 10)}...` : "";
       const depositMsg = data.depositPending ? " (deposit pending — you can deposit later from wallet panel)" : "";
-      toast({ title: "Agent created", description: `${data.agent?.name} is live${txMsg}${depositMsg}` });
+      const chainName = data.chainResult?.chainName || activeChain.name;
+      toast({ title: "Agent created", description: `${data.agent?.name} is live on ${chainName}${txMsg}${depositMsg}` });
     },
     onError: (e: Error) => {
       setCreateAgentStep(null);
@@ -597,7 +605,17 @@ export default function AutonomousEconomy() {
                 <option value="deepseek-ai/DeepSeek-V3">DeepSeek V3</option>
                 <option value="Qwen/Qwen2.5-72B-Instruct">Qwen 2.5 72B</option>
               </select>
-              <div className="font-mono text-[10px] text-muted-foreground">Deposit: 0.002 BNB (0.001 BNB creation fee + 0.001 BNB initial balance)</div>
+              <select
+                value={selectedChain}
+                onChange={(e) => setSelectedChain(e.target.value)}
+                className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5"
+                data-testid="select-first-agent-chain"
+              >
+                {CHAINS.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>
+                ))}
+              </select>
+              <div className="font-mono text-[10px] text-muted-foreground">Deposit: 0.002 {activeChain.currency} (0.001 {activeChain.currency} creation fee + 0.001 {activeChain.currency} initial balance) on {activeChain.name}</div>
               <Button
                 size="sm"
                 className="w-full font-mono text-xs gap-1.5"
@@ -856,7 +874,7 @@ export default function AutonomousEconomy() {
                   <option value="100000000000000000">0.1 {activeChain.currency}</option>
                 </select>
                 <p className="font-mono text-[10px] text-muted-foreground">
-                  Sent from your wallet to the on-chain agent contract on {activeChain.name}
+                  Sent from your wallet to the agent contract on {activeChain.name}. Agent will be registered and deposited on this chain only.
                 </p>
               </div>
               <div className="flex items-end gap-2">
@@ -952,6 +970,31 @@ export default function AutonomousEconomy() {
                     <div className="text-[10px] text-muted-foreground">{t("dashboard.turnsAlive")}</div>
                   </div>
                 </div>
+                {multiChainBalances?.balances && multiChainBalances.balances.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-border">
+                    <div className="text-[10px] text-muted-foreground mb-2 font-semibold uppercase tracking-wider">Multi-Chain Balances</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {multiChainBalances.balances.map((chain) => {
+                        const currency = chain.chainId === 56 ? "BNB" : chain.chainId === 8453 ? "ETH" : chain.chainId === 196 ? "OKB" : "???";
+                        const balFormatted = chain.balance !== "0" ? (parseFloat(chain.balance) / 1e18).toFixed(6) : "0";
+                        return (
+                          <div key={chain.chainKey} className="text-center p-2 rounded bg-muted/30 border border-border/50" data-testid={`multichain-balance-${chain.chainKey}`}>
+                            <div className="font-mono text-sm font-bold text-primary">{balFormatted}</div>
+                            <div className="text-[10px] text-muted-foreground">{chain.chainName} ({currency})</div>
+                            <div className="mt-1">
+                              {chain.registered ? (
+                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1" title="Registered" />
+                              ) : (
+                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 mr-1" title="Not registered" />
+                              )}
+                              <span className="text-[9px] text-muted-foreground">{chain.registered ? "Active" : "Pending"}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </Card>
               <TerminalLine prefix=">" dim>ID: {selectedAgent.id}</TerminalLine>
             </div>

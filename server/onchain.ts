@@ -622,3 +622,286 @@ export function getSpendingStatus() {
     pendingTxCount,
   };
 }
+
+interface MultiChainConnection {
+  name: string;
+  chainId: number;
+  explorerBase: string;
+  provider: ethers.JsonRpcProvider;
+  wallet: ethers.Wallet;
+  hub: ethers.Contract;
+  managedNonce: number;
+  nonceLock: boolean;
+}
+
+const multiChainConnections: Map<string, MultiChainConnection> = new Map();
+
+const MAINNET_CHAIN_KEYS = ["bnbMainnet", "baseMainnet", "xlayerMainnet"] as const;
+
+export function initMultiChain(): string[] {
+  const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
+  if (!privateKey) return [];
+
+  const initialized: string[] = [];
+
+  for (const key of MAINNET_CHAIN_KEYS) {
+    if (multiChainConnections.has(key)) {
+      initialized.push(key);
+      continue;
+    }
+
+    const config = CHAIN_CONFIGS[key];
+    if (!config) continue;
+
+    try {
+      const deploymentPath = path.resolve(config.deploymentFile);
+      if (!fs.existsSync(deploymentPath)) continue;
+
+      const deployment = JSON.parse(fs.readFileSync(deploymentPath, "utf-8"));
+      const addrs = deployment.contracts as ContractAddresses;
+
+      const prov = new ethers.JsonRpcProvider(config.rpcUrl);
+      const w = new ethers.Wallet(privateKey, prov);
+      const hub = new ethers.Contract(addrs.AgentEconomyHub, HUB_ABI, w);
+
+      multiChainConnections.set(key, {
+        name: config.name,
+        chainId: config.chainId,
+        explorerBase: config.explorerBase,
+        provider: prov,
+        wallet: w,
+        hub,
+        managedNonce: -1,
+        nonceLock: false,
+      });
+
+      initialized.push(key);
+      log(`[onchain] Multi-chain: connected to ${config.name} (${config.chainId}). Hub: ${addrs.AgentEconomyHub}`, "onchain");
+    } catch (e: any) {
+      log(`[onchain] Multi-chain: failed to connect ${config.name}: ${e.message?.substring(0, 100)}`, "onchain");
+    }
+  }
+
+  return initialized;
+}
+
+async function multiChainAcquireNonce(conn: MultiChainConnection): Promise<number> {
+  while (conn.nonceLock) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+  conn.nonceLock = true;
+  try {
+    if (conn.managedNonce === -1) {
+      conn.managedNonce = await conn.provider.getTransactionCount(conn.wallet.address, "pending");
+    }
+    const nonce = conn.managedNonce;
+    conn.managedNonce++;
+    return nonce;
+  } finally {
+    conn.nonceLock = false;
+  }
+}
+
+async function multiChainSendTx(
+  conn: MultiChainConnection,
+  contract: ethers.Contract,
+  method: string,
+  args: any[],
+  overrides: any = {}
+): Promise<OnchainResult> {
+  const gasLimit = overrides.gasLimit || 300000;
+
+  const limitError = checkSpendingLimits(BigInt(0));
+  if (limitError) {
+    return { success: false, error: limitError, chainId: conn.chainId };
+  }
+
+  try {
+    const nonce = await multiChainAcquireNonce(conn);
+    const txOverrides = { ...overrides, gasLimit, nonce };
+
+    const tx = await contract[method](...args, txOverrides);
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("Timeout (90s)")), 90_000)),
+    ]);
+
+    if (!receipt || receipt.status !== 1) {
+      conn.managedNonce = -1;
+      return { success: false, error: "Transaction reverted", chainId: conn.chainId, txHash: receipt?.hash };
+    }
+
+    const valueWei = overrides.value ? BigInt(overrides.value.toString()) : BigInt(0);
+    const estimatedGas = BigInt(gasLimit) * BigInt("5000000000");
+    recordSpend(valueWei + estimatedGas);
+    txCountThisHour++;
+
+    log(`[onchain] ${conn.name} ${method} tx: ${receipt.hash}`, "onchain");
+    return { success: true, txHash: receipt.hash, chainId: conn.chainId };
+  } catch (e: any) {
+    conn.managedNonce = -1;
+    const msg = e.message?.substring(0, 200) || "Unknown error";
+    log(`[onchain] ${conn.name} ${method} failed: ${msg}`, "onchain");
+    return { success: false, error: msg, chainId: conn.chainId };
+  }
+}
+
+export interface MultiChainResult {
+  chainKey: string;
+  chainName: string;
+  chainId: number;
+  registration: OnchainResult;
+  deposit: OnchainResult | null;
+  explorerUrl?: string;
+}
+
+export async function registerAndDepositOnChain(agentDbId: string, chainKey: string, depositAmountWei: string = "10000000000000000"): Promise<MultiChainResult> {
+  if (multiChainConnections.size === 0) {
+    initMultiChain();
+  }
+
+  const conn = multiChainConnections.get(chainKey);
+  if (!conn) {
+    return {
+      chainKey,
+      chainName: chainKey,
+      chainId: 0,
+      registration: { success: false, error: `Chain ${chainKey} not available`, chainId: 0 },
+      deposit: null,
+    };
+  }
+
+  const numId = uuidToNumericId(agentDbId);
+  const result: MultiChainResult = {
+    chainKey,
+    chainName: conn.name,
+    chainId: conn.chainId,
+    registration: { success: false, error: "Not attempted", chainId: conn.chainId },
+    deposit: null,
+  };
+
+  try {
+    let isRegistered = false;
+    try {
+      isRegistered = await conn.hub.isAgentRegistered(numId);
+    } catch (e: any) {
+      log(`[onchain] ${conn.name}: registration check failed: ${e.message?.substring(0, 80)}`, "onchain");
+    }
+
+    if (isRegistered) {
+      result.registration = { success: true, txHash: "already-registered", chainId: conn.chainId };
+    } else {
+      result.registration = await multiChainSendTx(conn, conn.hub, "registerAgent", [numId]);
+      if (result.registration.success) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+
+    if (result.registration.success) {
+      let depositAmt = BigInt(depositAmountWei);
+      if (depositAmt > MAINNET_SAFETY.maxDepositPerAgentWei) {
+        depositAmt = MAINNET_SAFETY.maxDepositPerAgentWei;
+      }
+
+      result.deposit = await multiChainSendTx(conn, conn.hub, "deposit", [numId], { value: depositAmt });
+
+      if (result.deposit?.success && result.deposit.txHash) {
+        result.explorerUrl = `${conn.explorerBase}/tx/${result.deposit.txHash}`;
+        log(`[onchain] ${conn.name}: Agent ${agentDbId.substring(0, 8)} deposited. TX: ${result.deposit.txHash}`, "onchain");
+      }
+    }
+  } catch (e: any) {
+    log(`[onchain] ${conn.name}: error for agent ${agentDbId.substring(0, 8)}: ${e.message?.substring(0, 100)}`, "onchain");
+  }
+
+  return result;
+}
+
+export async function registerAndDepositAllChains(agentDbId: string, depositAmountWei: string = "10000000000000000"): Promise<MultiChainResult[]> {
+  if (multiChainConnections.size === 0) {
+    initMultiChain();
+  }
+
+  const numId = uuidToNumericId(agentDbId);
+  const results: MultiChainResult[] = [];
+
+  for (const [key, conn] of multiChainConnections) {
+    const result: MultiChainResult = {
+      chainKey: key,
+      chainName: conn.name,
+      chainId: conn.chainId,
+      registration: { success: false, error: "Not attempted", chainId: conn.chainId },
+      deposit: null,
+    };
+
+    try {
+      let isRegistered = false;
+      try {
+        isRegistered = await conn.hub.isAgentRegistered(numId);
+      } catch (e: any) {
+        log(`[onchain] ${conn.name}: registration check failed: ${e.message?.substring(0, 80)}`, "onchain");
+      }
+
+      if (isRegistered) {
+        result.registration = { success: true, txHash: "already-registered", chainId: conn.chainId };
+      } else {
+        result.registration = await multiChainSendTx(conn, conn.hub, "registerAgent", [numId]);
+        if (result.registration.success) {
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+
+      if (result.registration.success) {
+        let depositAmt = BigInt(depositAmountWei);
+        if (depositAmt > MAINNET_SAFETY.maxDepositPerAgentWei) {
+          depositAmt = MAINNET_SAFETY.maxDepositPerAgentWei;
+        }
+
+        result.deposit = await multiChainSendTx(conn, conn.hub, "deposit", [numId], { value: depositAmt });
+
+        if (result.deposit?.success && result.deposit.txHash) {
+          result.explorerUrl = `${conn.explorerBase}/tx/${result.deposit.txHash}`;
+          log(`[onchain] ${conn.name}: Agent ${agentDbId.substring(0, 8)} deposited. TX: ${result.deposit.txHash}`, "onchain");
+        }
+      }
+    } catch (e: any) {
+      log(`[onchain] ${conn.name}: multi-chain error for agent ${agentDbId.substring(0, 8)}: ${e.message?.substring(0, 100)}`, "onchain");
+    }
+
+    results.push(result);
+    await new Promise(r => setTimeout(r, 1000));
+  }
+
+  return results;
+}
+
+export async function getMultiChainBalances(agentDbId: string): Promise<{ chainKey: string; chainName: string; chainId: number; balance: string; registered: boolean }[]> {
+  if (multiChainConnections.size === 0) {
+    initMultiChain();
+  }
+
+  const numId = uuidToNumericId(agentDbId);
+  const balances: { chainKey: string; chainName: string; chainId: number; balance: string; registered: boolean }[] = [];
+
+  for (const [key, conn] of multiChainConnections) {
+    try {
+      const registered = await conn.hub.isAgentRegistered(numId);
+      if (!registered) {
+        balances.push({ chainKey: key, chainName: conn.name, chainId: conn.chainId, balance: "0", registered: false });
+        continue;
+      }
+      const bal = await conn.hub.getBalance(numId);
+      balances.push({ chainKey: key, chainName: conn.name, chainId: conn.chainId, balance: bal.toString(), registered: true });
+    } catch {
+      balances.push({ chainKey: key, chainName: conn.name, chainId: conn.chainId, balance: "0", registered: false });
+    }
+  }
+
+  return balances;
+}
+
+export function getMultiChainExplorerUrl(chainKey: string, txHash: string): string {
+  const conn = multiChainConnections.get(chainKey);
+  if (conn) return `${conn.explorerBase}/tx/${txHash}`;
+  return `https://bscscan.com/tx/${txHash}`;
+}

@@ -7,6 +7,7 @@ import {
   listSkillOnchain, purchaseSkillOnchain, replicateOnchain,
   addConstitutionLawOnchain, getExplorerUrl, getDeployerBalance,
   getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain,
+  initMultiChain,
 } from "./onchain";
 import type { Agent, AgentWallet } from "@shared/schema";
 import { PLATFORM_FEES } from "@shared/schema";
@@ -967,6 +968,8 @@ async function backfillAgentIdentity(): Promise<void> {
 async function registerExistingAgentsOnchain(): Promise<void> {
   if (!onchainEnabled) return;
 
+  initMultiChain();
+
   const allAgents = await storage.getAllAgents();
   const unregistered = allAgents.filter(a => !a.onchainRegistered && a.status === "active");
 
@@ -978,17 +981,18 @@ async function registerExistingAgentsOnchain(): Promise<void> {
       if (hasBalance) {
         const depositResult = await depositOnchain(agent.id, "10000000000000000");
         if (depositResult.success && depositResult.txHash) {
-          log(`[Agent ${agent.name}] Initial on-chain deposit: ${getExplorerUrl(depositResult.txHash)}`, "agent-runner");
+          log(`[Agent ${agent.name}] On-chain deposit: ${getExplorerUrl(depositResult.txHash)}`, "agent-runner");
           await storage.createTransaction({
             agentId: agent.id,
             type: "onchain_deposit",
             amount: "10000000000000000",
-            description: `Initial on-chain deposit (0.01 BNB) for autonomous operations`,
+            description: `Initial on-chain deposit (0.01 BNB)`,
             txHash: depositResult.txHash,
             chainId: getChainId(),
           });
         }
       }
+
       log(`[Agent ${agent.name}] Registered on-chain successfully`, "agent-runner");
       await new Promise(r => setTimeout(r, 3000));
     } catch (e: any) {

@@ -352,6 +352,7 @@ export const web4CreateAgentRequestSchema = z.object({
   bio: z.string().max(300).optional(),
   modelType: z.enum(["meta-llama/Llama-3.1-70B-Instruct", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"]).default("meta-llama/Llama-3.1-70B-Instruct"),
   initialDeposit: z.string().min(1),
+  targetChain: z.enum(["bnbMainnet", "baseMainnet", "xlayerMainnet"]).default("bnbMainnet"),
   creatorWallet: z.string().optional(),
   onchainTxHash: z.string().optional(),
   onchainChainId: z.number().optional(),
