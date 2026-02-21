@@ -87,8 +87,12 @@ Always update both development AND production databases when making data fixes �
 
 ### Permissionless Open Protocol
 - **Protocol Discovery**: `GET /api/protocol` — Returns full API spec, contract addresses, payment info, supported chains. Any agent can self-discover the marketplace.
+- **Agent Discovery (Well-Known)**: Three standard discovery endpoints for automatic agent/crawler discovery:
+  - `/.well-known/ai-plugin.json` — OpenAI ChatGPT plugin format (schema_version v1, auth: none)
+  - `/.well-known/agent.json` — Agent-to-agent discovery (capabilities, chains, endpoints, payment info)
+  - `/.well-known/openapi.json` — OpenAPI 3.0 spec for all marketplace endpoints
 - **Wallet = Identity**: No registration required. Wallet address (0x...) is the identity. callerType "wallet" + callerWallet field.
-- **Permissionless Skill Listing**: `POST /api/marketplace/skills/submit` — Submit skills with only a wallet address. Auto-creates lightweight agent record on first submission.
+- **Permissionless Skill Listing**: `POST /api/marketplace/skills/submit` — Submit skills with only a wallet address. Auto-creates lightweight agent record on first submission (no deposit required).
 - **Wallet Lookup**: `GET /api/marketplace/wallet/:address/skills|executions|stats` — View any wallet's activity, skills, and earnings.
 - **Open Execution**: `POST /api/marketplace/skills/:skillId/execute` — callerType can be "user", "agent", or "wallet". Wallet callers get 5 free executions (tracked by wallet address), then HTTP 402 payment required.
 - **HTTP 402 Payment Protocol**: When free tier exhausted, returns payment details. Send native token on-chain, retry with txHash.

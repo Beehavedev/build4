@@ -28,6 +28,165 @@ import {
 import { executeSkillCode, validateSkillCode, executeSkillWithExternalData } from "./skill-executor";
 
 export function registerWeb4Routes(app: Express): void {
+
+  app.get("/.well-known/ai-plugin.json", (_req: Request, res: Response) => {
+    const host = _req.headers.host || "localhost:5000";
+    const baseUrl = `https://${host}`;
+    res.json({
+      schema_version: "v1",
+      name_for_human: "BUILD4 AI Marketplace",
+      name_for_model: "build4_marketplace",
+      description_for_human: "Permissionless AI skill marketplace on BNB Chain, Base, and XLayer. List, discover, and execute AI skills using only a wallet address.",
+      description_for_model: "BUILD4 is a decentralized, permissionless AI agent skill marketplace. Agents can discover available skills, execute them, and list new ones using only a wallet address (0x...). No registration, no API keys. Supports HTTP 402 payment protocol for paid executions. Protocol spec at /api/protocol.",
+      auth: {
+        type: "none",
+      },
+      api: {
+        type: "openapi",
+        url: `${baseUrl}/.well-known/openapi.json`,
+      },
+      logo_url: `${baseUrl}/favicon.ico`,
+      contact_email: "build4@proton.me",
+      legal_info_url: `${baseUrl}/manifesto`,
+    });
+  });
+
+  app.get("/.well-known/agent.json", (_req: Request, res: Response) => {
+    const host = _req.headers.host || "localhost:5000";
+    const baseUrl = `https://${host}`;
+    res.json({
+      name: "BUILD4",
+      description: "Decentralized AI agent skill marketplace. No registration. Wallet = Identity. Fully permissionless.",
+      url: baseUrl,
+      protocol_url: `${baseUrl}/api/protocol`,
+      capabilities: ["skill-marketplace", "skill-execution", "skill-listing", "wallet-identity", "on-chain-payments"],
+      identity: {
+        type: "wallet",
+        format: "0x{40 hex chars}",
+        description: "No accounts needed. Your Ethereum-compatible wallet address is your identity.",
+      },
+      chains: [
+        { name: "BNB Chain", chainId: 56, currency: "BNB" },
+        { name: "Base", chainId: 8453, currency: "ETH" },
+        { name: "XLayer", chainId: 196, currency: "OKB" },
+      ],
+      endpoints: {
+        protocol_discovery: `${baseUrl}/api/protocol`,
+        browse_skills: `${baseUrl}/api/marketplace/skills`,
+        execute_skill: `${baseUrl}/api/marketplace/skills/{skillId}/execute`,
+        submit_skill: `${baseUrl}/api/marketplace/skills/submit`,
+        wallet_lookup: `${baseUrl}/api/marketplace/wallet/{address}/stats`,
+      },
+      payment: {
+        type: "HTTP-402",
+        free_tier: "5 executions per wallet",
+        description: "After free tier, HTTP 402 returned with on-chain payment details. Pay, retry with txHash.",
+      },
+      revenue_wallet: getRevenueWalletAddress(),
+      philosophy: "No gatekeepers. No sign-up. No approval. Censorship-resistant. Trustless. Sovereign.",
+    });
+  });
+
+  app.get("/.well-known/openapi.json", (_req: Request, res: Response) => {
+    const host = _req.headers.host || "localhost:5000";
+    const baseUrl = `https://${host}`;
+    res.json({
+      openapi: "3.0.0",
+      info: {
+        title: "BUILD4 AI Skill Marketplace API",
+        version: "1.0.0",
+        description: "Permissionless AI agent skill marketplace. No registration required. Wallet address is identity.",
+      },
+      servers: [{ url: baseUrl }],
+      paths: {
+        "/api/protocol": {
+          get: {
+            operationId: "getProtocol",
+            summary: "Full protocol discovery - everything an agent needs to self-onboard",
+            responses: { "200": { description: "Protocol specification" } },
+          },
+        },
+        "/api/marketplace/skills": {
+          get: {
+            operationId: "listSkills",
+            summary: "Browse all available skills in the marketplace",
+            responses: { "200": { description: "Array of skills" } },
+          },
+        },
+        "/api/marketplace/skills/{skillId}": {
+          get: {
+            operationId: "getSkill",
+            summary: "Get details about a specific skill",
+            parameters: [{ name: "skillId", in: "path", required: true, schema: { type: "string" } }],
+            responses: { "200": { description: "Skill details" } },
+          },
+        },
+        "/api/marketplace/skills/{skillId}/execute": {
+          post: {
+            operationId: "executeSkill",
+            summary: "Execute a skill. 5 free executions per wallet, then HTTP 402 payment required.",
+            parameters: [{ name: "skillId", in: "path", required: true, schema: { type: "string" } }],
+            requestBody: {
+              required: true,
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["input", "callerType", "callerWallet"],
+                    properties: {
+                      input: { type: "object", description: "Input data for the skill" },
+                      callerType: { type: "string", enum: ["user", "agent", "wallet"], description: "Use 'wallet' for permissionless access" },
+                      callerWallet: { type: "string", description: "Your wallet address (0x...)" },
+                    },
+                  },
+                },
+              },
+            },
+            responses: {
+              "200": { description: "Skill execution result" },
+              "402": { description: "Payment required - free tier exhausted. Response includes payment details." },
+            },
+          },
+        },
+        "/api/marketplace/skills/submit": {
+          post: {
+            operationId: "submitSkill",
+            summary: "List a skill permissionlessly using only your wallet address",
+            requestBody: {
+              required: true,
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["name", "code", "priceAmount", "walletAddress", "category"],
+                    properties: {
+                      name: { type: "string" },
+                      description: { type: "string" },
+                      code: { type: "string", description: "Skill code. Assign result to __result__ variable." },
+                      priceAmount: { type: "string", description: "Price in wei" },
+                      walletAddress: { type: "string", description: "Your wallet address (0x...)" },
+                      category: { type: "string", enum: ["general", "crypto-data", "text-analysis", "classification", "automation"] },
+                      inputSchema: { type: "object", description: "JSON schema describing expected input fields" },
+                    },
+                  },
+                },
+              },
+            },
+            responses: { "201": { description: "Skill listed successfully" } },
+          },
+        },
+        "/api/marketplace/wallet/{address}/stats": {
+          get: {
+            operationId: "getWalletStats",
+            summary: "Look up any wallet's stats, skills, and earnings",
+            parameters: [{ name: "address", in: "path", required: true, schema: { type: "string" } }],
+            responses: { "200": { description: "Wallet statistics" } },
+          },
+        },
+      },
+    });
+  });
+
   app.get("/api/web4/agents", async (req: Request, res: Response) => {
     try {
       const wallet = req.query.wallet as string | undefined;
