@@ -569,3 +569,23 @@ export const outreachCampaigns = pgTable("outreach_campaigns", {
 export const insertOutreachCampaignSchema = createInsertSchema(outreachCampaigns).omit({ id: true, createdAt: true });
 export type InsertOutreachCampaign = z.infer<typeof insertOutreachCampaignSchema>;
 export type OutreachCampaign = typeof outreachCampaigns.$inferSelect;
+
+export const visitorLogs = pgTable("visitor_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  visitorType: text("visitor_type").notNull().default("unknown"),
+  path: text("path").notNull(),
+  method: text("method").notNull().default("GET"),
+  userAgent: text("user_agent"),
+  ip: text("ip"),
+  referer: text("referer"),
+  country: text("country"),
+  fingerprint: text("fingerprint"),
+  walletAddress: text("wallet_address"),
+  sessionId: text("session_id"),
+  statusCode: integer("status_code"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertVisitorLogSchema = createInsertSchema(visitorLogs).omit({ id: true, createdAt: true });
+export type InsertVisitorLog = z.infer<typeof insertVisitorLogSchema>;
+export type VisitorLog = typeof visitorLogs.$inferSelect;

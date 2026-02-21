@@ -31,6 +31,8 @@ import {
   type UserCredits, type InsertUserCredits,
   type OutreachTarget, type InsertOutreachTarget,
   type OutreachCampaign, type InsertOutreachCampaign,
+  type VisitorLog, type InsertVisitorLog,
+  visitorLogs,
   PLATFORM_FEES,
 } from "@shared/schema";
 import { db } from "./db";
@@ -175,6 +177,19 @@ export interface IStorage {
   getUserCredits(sessionId: string): Promise<UserCredits | undefined>;
   createOrGetUserCredits(sessionId: string): Promise<UserCredits>;
   incrementUserFreeExecutions(sessionId: string): Promise<UserCredits>;
+
+  logVisitor(entry: InsertVisitorLog): Promise<VisitorLog>;
+  getVisitorLogs(limit?: number): Promise<VisitorLog[]>;
+  getVisitorStats(since?: Date): Promise<{
+    total: number;
+    humans: number;
+    agents: number;
+    unknown: number;
+    uniqueIps: number;
+    topPaths: { path: string; count: number }[];
+    topAgents: { userAgent: string; count: number }[];
+    byHour: { hour: string; humans: number; agents: number; unknown: number }[];
+  }>;
 
   cleanFakeData(): Promise<void>;
   seedInferenceProviders(): Promise<void>;
@@ -1315,6 +1330,72 @@ export class DatabaseStorage implements IStorage {
       failed: targets.filter(t => t.status === "failed").length,
       campaigns: campaigns.length,
     };
+  }
+
+  async logVisitor(entry: InsertVisitorLog): Promise<VisitorLog> {
+    const [result] = await db.insert(visitorLogs).values(entry).returning();
+    return result;
+  }
+
+  async getVisitorLogs(limit = 100): Promise<VisitorLog[]> {
+    return db.select().from(visitorLogs).orderBy(desc(visitorLogs.createdAt)).limit(limit);
+  }
+
+  async getVisitorStats(since?: Date): Promise<{
+    total: number;
+    humans: number;
+    agents: number;
+    unknown: number;
+    uniqueIps: number;
+    topPaths: { path: string; count: number }[];
+    topAgents: { userAgent: string; count: number }[];
+    byHour: { hour: string; humans: number; agents: number; unknown: number }[];
+  }> {
+    const condition = since
+      ? sql`${visitorLogs.createdAt} >= ${since}`
+      : sql`1=1`;
+    const rows = await db.select().from(visitorLogs).where(condition);
+
+    const humans = rows.filter(r => r.visitorType === "human").length;
+    const agentsCount = rows.filter(r => r.visitorType === "agent").length;
+    const unknown = rows.filter(r => r.visitorType === "unknown").length;
+    const uniqueIps = new Set(rows.map(r => r.ip).filter(Boolean)).size;
+
+    const pathCounts: Record<string, number> = {};
+    const agentCounts: Record<string, number> = {};
+    const hourBuckets: Record<string, { humans: number; agents: number; unknown: number }> = {};
+
+    for (const r of rows) {
+      pathCounts[r.path] = (pathCounts[r.path] || 0) + 1;
+      if (r.userAgent && r.visitorType === "agent") {
+        const short = r.userAgent.slice(0, 80);
+        agentCounts[short] = (agentCounts[short] || 0) + 1;
+      }
+      if (r.createdAt) {
+        const hour = r.createdAt.toISOString().slice(0, 13) + ":00";
+        if (!hourBuckets[hour]) hourBuckets[hour] = { humans: 0, agents: 0, unknown: 0 };
+        if (r.visitorType === "human") hourBuckets[hour].humans++;
+        else if (r.visitorType === "agent") hourBuckets[hour].agents++;
+        else hourBuckets[hour].unknown++;
+      }
+    }
+
+    const topPaths = Object.entries(pathCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([path, count]) => ({ path, count }));
+
+    const topAgents = Object.entries(agentCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([userAgent, count]) => ({ userAgent, count }));
+
+    const byHour = Object.entries(hourBuckets)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-48)
+      .map(([hour, data]) => ({ hour, ...data }));
+
+    return { total: rows.length, humans, agents: agentsCount, unknown, uniqueIps, topPaths, topAgents, byHour };
   }
 }
 
