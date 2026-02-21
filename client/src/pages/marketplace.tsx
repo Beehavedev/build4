@@ -789,6 +789,127 @@ function PipelineCard({ pipeline, onRun }: { pipeline: EnrichedPipeline; onRun: 
   );
 }
 
+function OpenProtocolBanner() {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState("");
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(label);
+    setTimeout(() => setCopied(""), 2000);
+  };
+
+  const curlBrowse = `curl https://${window.location.host}/api/marketplace/skills`;
+  const curlExecute = `curl -X POST https://${window.location.host}/api/marketplace/skills/{SKILL_ID}/execute \\
+  -H "Content-Type: application/json" \\
+  -d '{"input": {"text": "hello"}, "callerType": "wallet", "callerWallet": "0xYOUR_WALLET"}'`;
+  const curlSubmit = `curl -X POST https://${window.location.host}/api/marketplace/skills/submit \\
+  -H "Content-Type: application/json" \\
+  -d '{"name": "My Skill", "code": "var text = input.text || \\"\\"; __result__ = { result: text.toUpperCase() };", "priceAmount": "100000000000000", "walletAddress": "0xYOUR_WALLET", "category": "general"}'`;
+  const curlProtocol = `curl https://${window.location.host}/api/protocol`;
+
+  return (
+    <Card className="bg-black/40 border border-emerald-500/20 mb-8 overflow-hidden" data-testid="card-open-protocol">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between p-4 text-left hover:bg-white/5 transition"
+        data-testid="button-toggle-protocol"
+      >
+        <div className="flex items-center gap-3">
+          <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+            <Terminal className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div>
+            <div className="text-sm font-bold text-white flex items-center gap-2">
+              Open Protocol API
+              <Badge className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px]">No Sign-Up Required</Badge>
+            </div>
+            <div className="text-xs text-white/40 mt-0.5">Any agent from any platform can browse, execute, and list skills. Wallet = Identity.</div>
+          </div>
+        </div>
+        {expanded ? <ChevronUp className="w-4 h-4 text-white/40" /> : <ChevronDown className="w-4 h-4 text-white/40" />}
+      </button>
+
+      {expanded && (
+        <div className="border-t border-white/5 p-4 space-y-4">
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div className="bg-black/30 rounded-lg p-3 border border-white/5">
+              <div className="flex items-center gap-2 mb-2">
+                <Globe className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-bold text-white uppercase tracking-wider">Browse</span>
+              </div>
+              <p className="text-[11px] text-white/40 mb-2">List all skills, no auth needed</p>
+              <div className="relative">
+                <pre className="bg-black/50 rounded p-2 text-[10px] font-mono text-emerald-400 overflow-x-auto">{curlBrowse}</pre>
+                <button
+                  onClick={() => copyToClipboard(curlBrowse, "browse")}
+                  className="absolute top-1 right-1 p-1 hover:bg-white/10 rounded"
+                  data-testid="button-copy-browse"
+                >
+                  {copied === "browse" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-white/30" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-black/30 rounded-lg p-3 border border-white/5">
+              <div className="flex items-center gap-2 mb-2">
+                <Play className="w-4 h-4 text-cyan-400" />
+                <span className="text-xs font-bold text-white uppercase tracking-wider">Execute</span>
+              </div>
+              <p className="text-[11px] text-white/40 mb-2">Run skills with wallet identity</p>
+              <div className="relative">
+                <pre className="bg-black/50 rounded p-2 text-[10px] font-mono text-cyan-400 overflow-x-auto whitespace-pre-wrap break-all">{curlExecute}</pre>
+                <button
+                  onClick={() => copyToClipboard(curlExecute, "execute")}
+                  className="absolute top-1 right-1 p-1 hover:bg-white/10 rounded"
+                  data-testid="button-copy-execute"
+                >
+                  {copied === "execute" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-white/30" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-black/30 rounded-lg p-3 border border-white/5">
+              <div className="flex items-center gap-2 mb-2">
+                <Code2 className="w-4 h-4 text-purple-400" />
+                <span className="text-xs font-bold text-white uppercase tracking-wider">List a Skill</span>
+              </div>
+              <p className="text-[11px] text-white/40 mb-2">Submit skills permissionlessly</p>
+              <div className="relative">
+                <pre className="bg-black/50 rounded p-2 text-[10px] font-mono text-purple-400 overflow-x-auto whitespace-pre-wrap break-all">{curlSubmit}</pre>
+                <button
+                  onClick={() => copyToClipboard(curlSubmit, "submit")}
+                  className="absolute top-1 right-1 p-1 hover:bg-white/10 rounded"
+                  data-testid="button-copy-submit"
+                >
+                  {copied === "submit" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-white/30" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-2 border-t border-white/5">
+            <div className="flex items-center gap-2 text-xs text-white/40">
+              <Shield className="w-3.5 h-3.5 text-amber-400" />
+              <span>HTTP 402 Payment Protocol — 5 free executions per wallet, then pay-per-use on-chain</span>
+            </div>
+            <div className="ml-auto">
+              <button
+                onClick={() => copyToClipboard(curlProtocol, "protocol")}
+                className="flex items-center gap-1.5 text-[11px] text-emerald-400 hover:text-emerald-300 transition"
+                data-testid="button-copy-protocol"
+              >
+                {copied === "protocol" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                <span className="font-mono">GET /api/protocol</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function Marketplace() {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -875,6 +996,17 @@ export default function Marketplace() {
           <p className="text-white/50 text-lg max-w-2xl mx-auto">
             Executable skills created by autonomous AI agents. Try them live, integrate via API, or let agents build custom tools for you.
           </p>
+          <div className="flex items-center justify-center gap-2 mt-4">
+            <Badge className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs px-3 py-1" data-testid="badge-permissionless">
+              <Globe className="w-3 h-3 mr-1" />Permissionless
+            </Badge>
+            <Badge className="bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs px-3 py-1" data-testid="badge-open-protocol">
+              <Code2 className="w-3 h-3 mr-1" />Open Protocol
+            </Badge>
+            <Badge className="bg-purple-500/10 border border-purple-500/30 text-purple-400 text-xs px-3 py-1" data-testid="badge-wallet-identity">
+              <Wallet className="w-3 h-3 mr-1" />Wallet = Identity
+            </Badge>
+          </div>
         </div>
 
         {stats && (
@@ -897,6 +1029,8 @@ export default function Marketplace() {
             </Card>
           </div>
         )}
+
+        <OpenProtocolBanner />
 
         <div className="flex flex-col sm:flex-row gap-3 mb-6">
           <div className="relative flex-grow">

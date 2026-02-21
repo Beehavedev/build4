@@ -15,6 +15,7 @@ import {
   web4InferenceRequestSchema,
   web4SetProviderRequestSchema,
   executeSkillRequestSchema,
+  submitSkillRequestSchema,
   rateSkillRequestSchema,
   createJobRequestSchema,
   createPipelineRequestSchema,
@@ -999,8 +1000,17 @@ export function registerWeb4Routes(app: Express): void {
         return res.status(400).json({ error: "This skill is not executable" });
       }
 
-      if (parsed.callerType === "user") {
-        const sessionId = parsed.sessionId || "anonymous";
+      if (parsed.callerType === "wallet") {
+        if (!parsed.callerWallet || !/^0x[a-fA-F0-9]{40}$/.test(parsed.callerWallet)) {
+          return res.status(400).json({ error: "callerWallet (valid 0x address) is required when callerType is 'wallet'" });
+        }
+      }
+
+      if (parsed.callerType === "user" || parsed.callerType === "wallet") {
+        const walletAddr = parsed.callerWallet?.toLowerCase();
+        const sessionId = parsed.callerType === "wallet" && walletAddr
+          ? `wallet:${walletAddr}`
+          : (parsed.sessionId || "anonymous");
         const hasTxHash = parsed.txHash && parsed.txHash.length > 0;
 
         if (!hasTxHash) {
@@ -1025,7 +1035,9 @@ export function registerWeb4Routes(app: Express): void {
                 supportedChains: getSupportedChains(),
                 tier: skill.tier,
               },
-              message: "Connect a wallet and pay to execute this skill",
+              message: parsed.callerType === "wallet"
+                ? "Send payment to the recipient address and include txHash in your next request"
+                : "Connect a wallet and pay to execute this skill",
             });
           }
           await storage.incrementUserFreeExecutions(sessionId);
@@ -1062,7 +1074,7 @@ export function registerWeb4Routes(app: Express): void {
             amount: verification.amount,
             agentId: skill.agentId,
             referenceId: skill.id,
-            description: `User paid for skill execution: ${skill.name} (${skill.tier} tier)`,
+            description: `${parsed.callerType === "wallet" ? "External wallet" : "User"} paid for skill execution: ${skill.name} (${skill.tier} tier)`,
             txHash: parsed.txHash!,
             chainId: parsed.chainId,
           });
@@ -1088,7 +1100,7 @@ export function registerWeb4Routes(app: Express): void {
       const execution = await storage.createSkillExecution({
         skillId: skill.id,
         callerType: parsed.callerType,
-        callerId: parsed.callerId || null,
+        callerId: parsed.callerId || parsed.callerWallet || null,
         inputJson: JSON.stringify(parsed.input),
         outputJson: result.success ? JSON.stringify(result.output) : null,
         status: result.success ? "success" : "error",
@@ -1413,6 +1425,246 @@ export function registerWeb4Routes(app: Express): void {
       res.json(job);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/protocol", async (_req: Request, res: Response) => {
+    const contracts = getContractAddresses();
+    res.json({
+      name: "BUILD4",
+      version: "1.0.0",
+      description: "Permissionless AI agent skill marketplace. No registration required. Wallet address is identity. Pay and proceed.",
+      philosophy: "No gatekeepers. No sign-up. No approval. Any agent from any platform that can speak HTTP and sign transactions is welcome.",
+      identity: {
+        type: "wallet",
+        description: "Your wallet address (0x...) is your identity. No accounts, no passwords, no API keys.",
+      },
+      chains: {
+        bnbChain: { chainId: 56, currency: "BNB", rpcUrl: "https://bsc-dataseed.binance.org" },
+        base: { chainId: 8453, currency: "ETH", rpcUrl: "https://mainnet.base.org" },
+        xLayer: { chainId: 196, currency: "OKB", rpcUrl: "https://rpc.xlayer.tech" },
+      },
+      contracts: {
+        hub: contracts,
+        description: "AgentEconomyHub - trustless wallet layer. Deposit, withdraw, transfer. All on-chain.",
+      },
+      revenueWallet: getRevenueWalletAddress(),
+      paymentProtocol: {
+        type: "HTTP-402",
+        description: "When free tier (5 executions per wallet) is exhausted, API returns HTTP 402 with payment details. Send native token to revenue wallet, then retry with txHash.",
+        freeExecutions: FREE_EXECUTIONS_LIMIT,
+        flow: [
+          "1. POST /api/marketplace/skills/:skillId/execute with callerType='wallet', callerWallet='0x...', input={...}",
+          "2. If free tier available: skill executes immediately, response includes output",
+          "3. If free tier exhausted: HTTP 402 response with payment.amount, payment.recipientAddress",
+          "4. Send payment on-chain (BNB/ETH/OKB) to recipientAddress",
+          "5. Retry request with txHash and chainId included",
+          "6. Skill executes, royalty credited to creator",
+        ],
+      },
+      endpoints: {
+        discovery: {
+          protocol: "GET /api/protocol",
+          listSkills: "GET /api/marketplace/skills",
+          skillDetail: "GET /api/marketplace/skills/:skillId",
+          tiers: "GET /api/marketplace/skill-tiers",
+          paymentInfo: "GET /api/marketplace/payment-info",
+        },
+        execution: {
+          execute: "POST /api/marketplace/skills/:skillId/execute",
+          description: "Execute a skill. Body: { input: {...}, callerType: 'wallet', callerWallet: '0x...' }",
+        },
+        submission: {
+          submit: "POST /api/marketplace/skills/submit",
+          description: "List a skill permissionlessly. Body: { name, description, category, priceAmount, code, inputSchema, walletAddress }",
+        },
+        lookup: {
+          walletSkills: "GET /api/marketplace/wallet/:address/skills",
+          walletExecutions: "GET /api/marketplace/wallet/:address/executions",
+          walletStats: "GET /api/marketplace/wallet/:address/stats",
+        },
+      },
+      fees: {
+        executionRoyalty: `${EXECUTION_ROYALTY_BPS / 100}% of skill price goes to creator`,
+        skillListingFee: `${Number(PLATFORM_FEES.SKILL_LISTING_FEE) / 1e18} BNB per listing`,
+        tiers: SKILL_TIERS,
+      },
+    });
+  });
+
+  app.post("/api/marketplace/skills/submit", async (req: Request, res: Response) => {
+    try {
+      const parsed = submitSkillRequestSchema.parse(req.body);
+
+      if (!/^0x[a-fA-F0-9]{40}$/.test(parsed.walletAddress)) {
+        return res.status(400).json({ error: "Invalid wallet address format" });
+      }
+
+      const validation = validateSkillCode(parsed.code);
+      if (!validation.valid) {
+        return res.status(400).json({ error: `Invalid skill code: ${validation.error}` });
+      }
+
+      let agent = await storage.getAgentByWallet(parsed.walletAddress.toLowerCase());
+      if (!agent) {
+        const shortAddr = parsed.walletAddress.slice(0, 6) + "..." + parsed.walletAddress.slice(-4);
+        agent = await storage.createAgent({
+          name: `ext-${shortAddr}`,
+          bio: `External agent (${shortAddr})`,
+          modelType: "external",
+          status: "active",
+          creatorWallet: parsed.walletAddress.toLowerCase(),
+        });
+        await storage.createWallet({ agentId: agent.id, balance: "0", totalEarned: "0", totalSpent: "0", status: "active" });
+      }
+
+      const skill = await storage.createSkill({
+        agentId: agent.id,
+        name: parsed.name,
+        description: parsed.description || "",
+        priceAmount: parsed.priceAmount,
+        category: parsed.category,
+      });
+
+      if (parsed.code) {
+        await storage.updateSkillCode(skill.id, parsed.code, parsed.inputSchema || {});
+      }
+
+      res.status(201).json({
+        skillId: skill.id,
+        name: skill.name,
+        agentId: agent.id,
+        walletAddress: parsed.walletAddress.toLowerCase(),
+        message: "Skill listed permissionlessly. Royalties will be credited to this agent's balance.",
+        executeUrl: `/api/marketplace/skills/${skill.id}/execute`,
+      });
+    } catch (e: any) {
+      if (e.name === "ZodError") {
+        return res.status(400).json({ error: "Validation failed", details: e.errors });
+      }
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/marketplace/wallet/:address/skills", async (req: Request, res: Response) => {
+    try {
+      const addr = req.params.address.toLowerCase();
+      if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) {
+        return res.status(400).json({ error: "Invalid wallet address" });
+      }
+
+      const agent = await storage.getAgentByWallet(addr);
+      if (!agent) {
+        return res.json({ walletAddress: addr, skills: [], message: "No activity from this wallet" });
+      }
+
+      const allSkills = await storage.getTopSkills(1000);
+      const walletSkills = allSkills.filter(s => s.agentId === agent.id);
+
+      res.json({
+        walletAddress: addr,
+        agentId: agent.id,
+        agentName: agent.name,
+        skills: walletSkills.map(s => ({
+          id: s.id,
+          name: s.name,
+          description: s.description,
+          category: s.category,
+          tier: s.tier,
+          executionCount: s.executionCount,
+          priceFormatted: (Number(BigInt(s.priceAmount)) / 1e18).toFixed(6) + " BNB",
+          totalRoyalties: (Number(BigInt(s.totalRoyalties || "0")) / 1e18).toFixed(6) + " BNB",
+          isExecutable: s.isExecutable,
+          executeUrl: `/api/marketplace/skills/${s.id}/execute`,
+        })),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/marketplace/wallet/:address/executions", async (req: Request, res: Response) => {
+    try {
+      const addr = req.params.address.toLowerCase();
+      if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) {
+        return res.status(400).json({ error: "Invalid wallet address" });
+      }
+
+      const allSkills = await storage.getTopSkills(1000);
+      const executionsAsUser: any[] = [];
+
+      for (const skill of allSkills.slice(0, 50)) {
+        const execs = await storage.getSkillExecutions(skill.id, 100);
+        const walletExecs = execs.filter(e =>
+          e.callerId?.toLowerCase() === addr ||
+          e.callerId === `wallet:${addr}`
+        );
+        executionsAsUser.push(...walletExecs.map(e => ({
+          executionId: e.id,
+          skillId: skill.id,
+          skillName: skill.name,
+          status: e.status,
+          latencyMs: e.latencyMs,
+          costWei: e.costWei,
+          createdAt: e.createdAt,
+        })));
+      }
+
+      res.json({
+        walletAddress: addr,
+        executions: executionsAsUser.slice(0, 50),
+        total: executionsAsUser.length,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/marketplace/wallet/:address/stats", async (req: Request, res: Response) => {
+    try {
+      const addr = req.params.address.toLowerCase();
+      if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) {
+        return res.status(400).json({ error: "Invalid wallet address" });
+      }
+
+      const agent = await storage.getAgentByWallet(addr);
+      let skillCount = 0;
+      let totalRoyaltiesBNB = "0";
+      let totalExecutions = 0;
+
+      if (agent) {
+        const wallet = await storage.getWallet(agent.id);
+        const allSkills = await storage.getTopSkills(1000);
+        const walletSkills = allSkills.filter(s => s.agentId === agent.id);
+        skillCount = walletSkills.length;
+        totalExecutions = walletSkills.reduce((sum, s) => sum + (s.executionCount || 0), 0);
+        const totalRoyaltiesWei = walletSkills.reduce(
+          (sum, s) => sum + BigInt(s.totalRoyalties || "0"), 0n
+        );
+        totalRoyaltiesBNB = (Number(totalRoyaltiesWei) / 1e18).toFixed(8);
+
+        res.json({
+          walletAddress: addr,
+          agentId: agent.id,
+          agentName: agent.name,
+          balanceBNB: wallet ? (Number(BigInt(wallet.balance)) / 1e18).toFixed(8) : "0",
+          skillCount,
+          totalExecutions,
+          totalRoyaltiesBNB,
+          registered: true,
+        });
+      } else {
+        res.json({
+          walletAddress: addr,
+          registered: false,
+          skillCount: 0,
+          totalExecutions: 0,
+          totalRoyaltiesBNB: "0",
+          message: "This wallet has no activity on BUILD4. List a skill or execute one to get started — no registration needed.",
+        });
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 }

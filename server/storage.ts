@@ -62,6 +62,7 @@ export interface IStorage {
 
   getAgent(id: string): Promise<Agent | undefined>;
   getAgentByName(name: string): Promise<Agent | undefined>;
+  getAgentByWallet(walletAddress: string): Promise<Agent | undefined>;
   getAllAgents(): Promise<Agent[]>;
   createAgent(agent: InsertAgent): Promise<Agent>;
   deleteAgent(id: string): Promise<void>;
@@ -158,6 +159,7 @@ export interface IStorage {
 
   updateSkillTier(skillId: string, tier: string): Promise<void>;
   updateSkillRoyalties(skillId: string, royaltyAmount: string): Promise<void>;
+  updateSkillCode(skillId: string, code: string, inputSchema: Record<string, any>): Promise<void>;
 
   createPipeline(pipeline: InsertSkillPipeline): Promise<SkillPipeline>;
   getPipeline(id: string): Promise<SkillPipeline | undefined>;
@@ -198,6 +200,11 @@ export class DatabaseStorage implements IStorage {
 
   async getAgentByName(name: string): Promise<Agent | undefined> {
     const [agent] = await db.select().from(agents).where(eq(agents.name, name));
+    return agent;
+  }
+
+  async getAgentByWallet(walletAddress: string): Promise<Agent | undefined> {
+    const [agent] = await db.select().from(agents).where(eq(agents.creatorWallet, walletAddress.toLowerCase()));
     return agent;
   }
 
@@ -1189,6 +1196,12 @@ export class DatabaseStorage implements IStorage {
   async updateSkillRoyalties(skillId: string, royaltyAmount: string): Promise<void> {
     await db.update(agentSkills)
       .set({ totalRoyalties: sql`CAST(CAST(${agentSkills.totalRoyalties} AS BIGINT) + ${BigInt(royaltyAmount)} AS TEXT)` })
+      .where(eq(agentSkills.id, skillId));
+  }
+
+  async updateSkillCode(skillId: string, code: string, inputSchema: Record<string, any>): Promise<void> {
+    await db.update(agentSkills)
+      .set({ code, inputSchema: JSON.stringify(inputSchema), isExecutable: true })
       .where(eq(agentSkills.id, skillId));
   }
 

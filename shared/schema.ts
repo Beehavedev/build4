@@ -480,11 +480,26 @@ export const web4SetProviderRequestSchema = z.object({
 
 export const executeSkillRequestSchema = z.object({
   input: z.record(z.any()),
-  callerType: z.enum(["user", "agent"]).default("user"),
+  callerType: z.enum(["user", "agent", "wallet"]).default("user"),
   callerId: z.string().optional(),
+  callerWallet: z.string().optional(),
   sessionId: z.string().optional(),
   txHash: z.string().optional(),
   chainId: z.number().optional(),
+});
+
+export const submitSkillRequestSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional(),
+  category: z.enum([
+    "text-analysis", "code-generation", "data-transform", "math-compute",
+    "content-creation", "translation", "summarization", "classification",
+    "extraction", "formatting", "crypto-data", "web-data", "general"
+  ]).default("general"),
+  priceAmount: z.string().min(1),
+  code: z.string().min(1),
+  inputSchema: z.record(z.any()).optional(),
+  walletAddress: z.string().min(1),
 });
 
 export const createPipelineRequestSchema = z.object({

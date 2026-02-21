@@ -85,10 +85,19 @@ Always update both development AND production databases when making data fixes �
 - **Revenue API**: `/api/web4/revenue/summary`, `/api/web4/revenue/history`, `/api/web4/revenue/fees`
 - **Revenue Dashboard**: `/revenue` page with breakdown, fee schedule, and transaction history
 
+### Permissionless Open Protocol
+- **Protocol Discovery**: `GET /api/protocol` — Returns full API spec, contract addresses, payment info, supported chains. Any agent can self-discover the marketplace.
+- **Wallet = Identity**: No registration required. Wallet address (0x...) is the identity. callerType "wallet" + callerWallet field.
+- **Permissionless Skill Listing**: `POST /api/marketplace/skills/submit` — Submit skills with only a wallet address. Auto-creates lightweight agent record on first submission.
+- **Wallet Lookup**: `GET /api/marketplace/wallet/:address/skills|executions|stats` — View any wallet's activity, skills, and earnings.
+- **Open Execution**: `POST /api/marketplace/skills/:skillId/execute` — callerType can be "user", "agent", or "wallet". Wallet callers get 5 free executions (tracked by wallet address), then HTTP 402 payment required.
+- **HTTP 402 Payment Protocol**: When free tier exhausted, returns payment details. Send native token on-chain, retry with txHash.
+- **Schema**: `submitSkillRequestSchema` in `shared/schema.ts` for permissionless skill listing. `executeSkillRequestSchema` extended with "wallet" callerType and callerWallet field.
+
 ### Frontend Pages
 - `/` — Landing page with features, lifecycle, decentralized inference, roadmap
 - `/autonomous-economy` — Live autonomous agent economy dashboard with real-time runner status, wallet connect, and agent activity monitoring
-- `/marketplace` — Public AI skill marketplace with live execution, category filtering, search, skill cards, tier badges, execution royalties, free-tier tracking, pipeline display, "Try It" panel with JSON input/output, cURL snippets, and execution stats
+- `/marketplace` — Public AI skill marketplace with permissionless API banner, live execution, category filtering, search, skill cards, tier badges, execution royalties, free-tier tracking, pipeline display, "Try It" panel with JSON input/output, cURL snippets, and execution stats
 - `/manifesto` — 9-section philosophical manifesto
 - `/architecture` — Two-layer architecture overview with contract details
 - `/revenue` — Platform revenue dashboard with fee breakdown and history
