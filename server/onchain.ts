@@ -697,6 +697,57 @@ export function getRevenueWalletAddress(): string {
   return PLATFORM_REVENUE_WALLET;
 }
 
+export async function verifyPaymentTransaction(txHash: string, expectedMinAmountWei: string, chainId?: number): Promise<{ verified: boolean; amount: string; from: string; error?: string }> {
+  try {
+    let prov = provider;
+    if (chainId) {
+      for (const [, conn] of multiChainConnections) {
+        if (conn.chainId === chainId) {
+          prov = conn.provider;
+          break;
+        }
+      }
+    }
+    if (!prov) {
+      return { verified: false, amount: "0", from: "", error: "No provider available for chain" };
+    }
+
+    const tx = await prov.getTransaction(txHash);
+    if (!tx) {
+      return { verified: false, amount: "0", from: "", error: "Transaction not found" };
+    }
+
+    const receipt = await prov.getTransactionReceipt(txHash);
+    if (!receipt || receipt.status !== 1) {
+      return { verified: false, amount: "0", from: tx.from, error: "Transaction failed or not confirmed" };
+    }
+
+    const toAddress = tx.to?.toLowerCase();
+    if (toAddress !== PLATFORM_REVENUE_WALLET.toLowerCase()) {
+      return { verified: false, amount: tx.value.toString(), from: tx.from, error: `Payment sent to wrong address: ${tx.to}` };
+    }
+
+    if (BigInt(tx.value) < BigInt(expectedMinAmountWei)) {
+      return { verified: false, amount: tx.value.toString(), from: tx.from, error: `Insufficient payment: sent ${tx.value}, required ${expectedMinAmountWei}` };
+    }
+
+    return { verified: true, amount: tx.value.toString(), from: tx.from };
+  } catch (e: any) {
+    return { verified: false, amount: "0", from: "", error: e.message?.substring(0, 200) };
+  }
+}
+
+export function getSupportedChains(): Array<{ chainId: number; name: string }> {
+  const chains: Array<{ chainId: number; name: string }> = [];
+  if (chainId) chains.push({ chainId, name: getNetworkName() });
+  for (const [, conn] of multiChainConnections) {
+    if (!chains.some(c => c.chainId === conn.chainId)) {
+      chains.push({ chainId: conn.chainId, name: conn.name });
+    }
+  }
+  return chains;
+}
+
 export async function getOnchainBalance(agentDbId: string): Promise<string> {
   if (!contracts) return "0";
   const numId = uuidToNumericId(agentDbId);

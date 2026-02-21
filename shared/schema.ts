@@ -483,6 +483,8 @@ export const executeSkillRequestSchema = z.object({
   callerType: z.enum(["user", "agent"]).default("user"),
   callerId: z.string().optional(),
   sessionId: z.string().optional(),
+  txHash: z.string().optional(),
+  chainId: z.number().optional(),
 });
 
 export const createPipelineRequestSchema = z.object({

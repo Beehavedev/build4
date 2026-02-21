@@ -9,9 +9,10 @@ import {
   FileText, Calculator, Filter, TrendingUp, Clock, Users,
   Package, ChevronDown, ChevronUp, Copy, Check, Terminal,
   Bot, Sparkles, Briefcase, ArrowRight, ExternalLink, Globe,
-  Coins, Shield, Layers,
+  Coins, Shield, Layers, Wallet, AlertTriangle, Loader2, CreditCard,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useWallet } from "@/hooks/use-wallet";
 import type { AgentSkill, SkillPipeline } from "@shared/schema";
 import { SKILL_TIERS, EXECUTION_ROYALTY_BPS, FREE_EXECUTIONS_LIMIT } from "@shared/schema";
 
@@ -126,6 +127,198 @@ function TierBadge({ tier }: { tier: string }) {
   );
 }
 
+interface PaymentInfo {
+  skillId: string;
+  skillName: string;
+  amount: string;
+  amountFormatted: string;
+  currency: string;
+  recipientAddress: string;
+  supportedChains: Array<{ chainId: number; name: string }>;
+  tier: string;
+}
+
+function PaymentModal({
+  payment,
+  onPaymentComplete,
+  onClose,
+}: {
+  payment: PaymentInfo;
+  onPaymentComplete: (txHash: string, chainId: number) => void;
+  onClose: () => void;
+}) {
+  const wallet = useWallet();
+  const [status, setStatus] = useState<"idle" | "connecting" | "sending" | "confirming" | "done" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [txHash, setTxHash] = useState("");
+
+  const supportedChainIds = payment.supportedChains?.map(c => c.chainId) || [56, 8453, 196];
+  const isOnSupportedChain = wallet.connected && wallet.chainId != null && supportedChainIds.includes(wallet.chainId);
+
+  const handlePay = async () => {
+    if (!wallet.connected || !wallet.signer) {
+      setStatus("connecting");
+      try {
+        await wallet.connectMetaMask();
+      } catch {
+        setErrorMsg("Failed to connect wallet");
+        setStatus("error");
+        return;
+      }
+      setStatus("idle");
+      return;
+    }
+
+    if (!wallet.chainId || !supportedChainIds.includes(wallet.chainId)) {
+      setErrorMsg(`Please switch to a supported chain: ${payment.supportedChains?.map(c => c.name).join(", ") || "BNB Chain, Base, XLayer"}`);
+      setStatus("error");
+      return;
+    }
+
+    setStatus("sending");
+    setErrorMsg("");
+
+    try {
+      const tx = await wallet.signer.sendTransaction({
+        to: payment.recipientAddress,
+        value: BigInt(payment.amount),
+      });
+
+      setTxHash(tx.hash);
+      setStatus("confirming");
+
+      await tx.wait(1);
+
+      setStatus("done");
+      onPaymentComplete(tx.hash, wallet.chainId);
+    } catch (e: any) {
+      if (e.code === "ACTION_REJECTED" || e.code === 4001) {
+        setErrorMsg("Transaction rejected by user");
+      } else {
+        setErrorMsg(e.message?.substring(0, 120) || "Transaction failed");
+      }
+      setStatus("error");
+    }
+  };
+
+  const explorerUrl = txHash && wallet.chainId ? wallet.getExplorerUrl(txHash) : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" data-testid="modal-payment">
+      <Card className="bg-zinc-900 border border-amber-500/30 p-6 max-w-md w-full mx-4 space-y-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-amber-400" />
+            <h3 className="text-lg font-bold text-white">Payment Required</h3>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose} className="text-white/50" data-testid="button-close-payment">
+            Close
+          </Button>
+        </div>
+
+        <div className="space-y-3">
+          <div className="bg-black/40 rounded-lg p-4 border border-white/10 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-white/60">Skill</span>
+              <span className="text-white font-medium" data-testid="text-payment-skill">{payment.skillName}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-white/60">Tier</span>
+              <TierBadge tier={payment.tier} />
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-white/60">Cost</span>
+              <span className="text-amber-400 font-mono font-bold" data-testid="text-payment-amount">
+                {payment.amountFormatted} {payment.currency}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm items-start">
+              <span className="text-white/60">Send to</span>
+              <span className="text-cyan-400 font-mono text-xs break-all max-w-[200px] text-right" data-testid="text-payment-recipient">
+                {payment.recipientAddress}
+              </span>
+            </div>
+          </div>
+
+          <div className="text-xs text-white/40 flex items-start gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400/60" />
+            <span>Free tier ({FREE_EXECUTIONS_LIMIT} runs) exhausted. Pay per execution to continue. Payment goes to the platform revenue wallet.</span>
+          </div>
+        </div>
+
+        {wallet.connected && (
+          <div className={`rounded-lg p-3 border text-xs space-y-1 ${isOnSupportedChain ? "bg-emerald-500/10 border-emerald-500/20" : "bg-amber-500/10 border-amber-500/20"}`}>
+            <div className="flex justify-between">
+              <span className="text-white/60">Wallet</span>
+              <span className="text-emerald-400 font-mono">{wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/60">Chain</span>
+              <span className={isOnSupportedChain ? "text-white/80" : "text-amber-400"}>{wallet.chainName}</span>
+            </div>
+            {!isOnSupportedChain && (
+              <div className="text-amber-400 text-[11px] mt-1 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Switch to {payment.supportedChains?.map(c => c.name).join(", ")}
+              </div>
+            )}
+            {wallet.balance && (
+              <div className="flex justify-between">
+                <span className="text-white/60">Balance</span>
+                <span className="text-white/80">{parseFloat(wallet.balance).toFixed(6)} {payment.currency}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {status === "error" && (
+          <div className="bg-rose-500/10 rounded-lg p-3 border border-rose-500/20 text-sm text-rose-400" data-testid="text-payment-error">
+            {errorMsg}
+          </div>
+        )}
+
+        {status === "confirming" && (
+          <div className="bg-blue-500/10 rounded-lg p-3 border border-blue-500/20 text-sm text-blue-400 flex items-center gap-2" data-testid="text-payment-confirming">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Confirming transaction...
+            {explorerUrl && (
+              <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="text-blue-300 underline text-xs ml-auto">
+                View <ExternalLink className="w-3 h-3 inline" />
+              </a>
+            )}
+          </div>
+        )}
+
+        {status === "done" ? (
+          <div className="bg-emerald-500/10 rounded-lg p-3 border border-emerald-500/20 text-sm text-emerald-400 flex items-center gap-2" data-testid="text-payment-success">
+            <Check className="w-4 h-4" />
+            Payment confirmed! Executing skill...
+          </div>
+        ) : (
+          <Button
+            onClick={handlePay}
+            disabled={status === "sending" || status === "confirming" || status === "connecting"}
+            className="w-full bg-amber-600 text-white"
+            data-testid="button-pay-execute"
+          >
+            {!wallet.connected ? (
+              <><Wallet className="w-4 h-4 mr-2" />Connect Wallet to Pay</>
+            ) : status === "sending" ? (
+              <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Sending Transaction...</>
+            ) : status === "confirming" ? (
+              <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Confirming...</>
+            ) : status === "connecting" ? (
+              <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Connecting Wallet...</>
+            ) : (
+              <><CreditCard className="w-4 h-4 mr-2" />Pay {payment.amountFormatted} {payment.currency}</>
+            )}
+          </Button>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function SkillCard({ skill, onTryIt }: { skill: EnrichedSkill; onTryIt: (skill: EnrichedSkill) => void }) {
   const catInfo = CATEGORY_INFO[skill.category] || CATEGORY_INFO["general"];
   const CatIcon = catInfo.icon;
@@ -198,31 +391,55 @@ function TryItPanel({ skill, onClose, sessionId, freeRemaining }: { skill: Enric
   const [inputText, setInputText] = useState(skill.exampleInput || '{"text": "Hello world"}');
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [copied, setCopied] = useState(false);
-  const [freeTierExhausted, setFreeTierExhausted] = useState(false);
+  const [paymentInfo, setPaymentInfo] = useState<PaymentInfo | null>(null);
+  const [pendingInput, setPendingInput] = useState<Record<string, any> | null>(null);
 
   const royaltyCost = calcRoyaltyCost(skill.priceAmount, skill.tier);
 
   const executeMutation = useMutation({
-    mutationFn: async (input: Record<string, any>) => {
-      const res = await apiRequest("POST", `/api/marketplace/skills/${skill.id}/execute`, {
+    mutationFn: async ({ input, txHash, chainId }: { input: Record<string, any>; txHash?: string; chainId?: number }) => {
+      const body: any = {
         input,
         callerType: "user",
         sessionId,
+      };
+      if (txHash) {
+        body.txHash = txHash;
+        body.chainId = chainId;
+      }
+      const res = await fetch(`/api/marketplace/skills/${skill.id}/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
+
       if (res.status === 402) {
-        setFreeTierExhausted(true);
-        throw new Error("Free tier exhausted");
+        const data = await res.json();
+        if (data.code === "PAYMENT_INVALID") {
+          throw new Error(`Payment verification failed: ${data.details || "Unknown error"}. Please try again.`);
+        }
+        if (data.payment && data.payment.recipientAddress && data.payment.amount) {
+          setPaymentInfo(data.payment);
+          setPendingInput(input);
+          throw new Error("PAYMENT_REQUIRED");
+        }
+        throw new Error("Free execution limit reached. Payment information unavailable.");
+      }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: "Execution failed" }));
+        throw new Error(errData.error || "Execution failed");
       }
       return res.json();
     },
     onSuccess: (data: ExecutionResult) => {
       setResult(data);
-      setFreeTierExhausted(false);
+      setPaymentInfo(null);
+      setPendingInput(null);
       queryClient.invalidateQueries({ queryKey: ["/api/marketplace/skills"] });
       queryClient.invalidateQueries({ queryKey: [`/api/marketplace/user-credits?sessionId=${sessionId}`] });
     },
     onError: (error: Error) => {
-      if (error.message !== "Free tier exhausted") {
+      if (error.message !== "PAYMENT_REQUIRED") {
         setResult({ executionId: "", success: false, output: null, error: error.message, latencyMs: 0, skillName: skill.name });
       }
     },
@@ -231,9 +448,16 @@ function TryItPanel({ skill, onClose, sessionId, freeRemaining }: { skill: Enric
   const handleExecute = () => {
     try {
       const parsed = JSON.parse(inputText);
-      executeMutation.mutate(parsed);
+      executeMutation.mutate({ input: parsed });
     } catch {
       setResult({ executionId: "", success: false, output: null, error: "Invalid JSON input", latencyMs: 0, skillName: skill.name });
+    }
+  };
+
+  const handlePaymentComplete = (txHash: string, chainId: number) => {
+    if (pendingInput) {
+      setPaymentInfo(null);
+      executeMutation.mutate({ input: pendingInput, txHash, chainId });
     }
   };
 
@@ -256,117 +480,123 @@ function TryItPanel({ skill, onClose, sessionId, freeRemaining }: { skill: Enric
   } catch {}
 
   return (
-    <Card className="bg-black/60 border border-emerald-500/30 p-6 space-y-4" data-testid="panel-try-skill">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Zap className="w-5 h-5 text-emerald-400" />
-          <h3 className="text-lg font-bold text-white">{skill.name}</h3>
-          <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs">LIVE API</Badge>
-          <TierBadge tier={skill.tier} />
-        </div>
-        <Button variant="ghost" size="sm" onClick={onClose} className="text-white/50" data-testid="button-close-try">Close</Button>
-      </div>
-
-      <div className="flex items-center gap-4 text-xs text-white/40 flex-wrap" data-testid="text-try-panel-info">
-        {royaltyCost > 0 && (
-          <span className="flex items-center gap-1 text-amber-400/70">
-            <Coins className="w-3 h-3" />{formatRoyaltyCost(royaltyCost)}
-          </span>
-        )}
-        <span className="flex items-center gap-1" data-testid="text-free-remaining-panel">
-          <Zap className="w-3 h-3" />{freeRemaining} free runs left
-        </span>
-      </div>
-
-      <p className="text-white/60 text-sm" data-testid="text-skill-description">{skill.description}</p>
-      <div className="text-xs text-white/40" data-testid="text-skill-creator">Created by <span className="text-white/70">{skill.agentName}</span> using <span className="text-cyan-400">{skill.agentModel}</span></div>
-
-      {inputSchemaDisplay && (
-        <div className="space-y-1">
-          <div className="text-xs font-medium text-white/50 uppercase tracking-wider">Input Schema</div>
-          <div className="bg-black/40 rounded-lg p-3 border border-white/5">
-            {inputSchemaDisplay.properties && Object.entries(inputSchemaDisplay.properties).map(([key, spec]: [string, any]) => (
-              <div key={key} className="flex items-center gap-2 text-xs py-0.5" data-testid={`text-schema-field-${key}`}>
-                <span className="text-amber-400 font-mono">{key}</span>
-                <span className="text-white/30">:</span>
-                <span className="text-cyan-400 font-mono">{spec.type || "any"}</span>
-                {inputSchemaDisplay.required?.includes(key) && <Badge className="bg-rose-500/20 text-rose-400 border-rose-500/30 text-[9px] px-1">required</Badge>}
-                {spec.description && <span className="text-white/30 ml-1">— {spec.description}</span>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-1">
-        <div className="text-xs font-medium text-white/50 uppercase tracking-wider">Input (JSON)</div>
-        <textarea
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm font-mono text-white resize-none focus:border-emerald-500/50 focus:outline-none"
-          rows={4}
-          data-testid="input-skill-json"
+    <>
+      {paymentInfo && (
+        <PaymentModal
+          payment={paymentInfo}
+          onPaymentComplete={handlePaymentComplete}
+          onClose={() => { setPaymentInfo(null); setPendingInput(null); }}
         />
-      </div>
-
-      <Button
-        onClick={handleExecute}
-        disabled={executeMutation.isPending}
-        className="w-full bg-emerald-600 text-white"
-        data-testid="button-execute-skill"
-      >
-        {executeMutation.isPending ? (
-          <><Zap className="w-4 h-4 mr-2 animate-spin" />Executing...</>
-        ) : (
-          <><Play className="w-4 h-4 mr-2" />Execute Skill</>
-        )}
-      </Button>
-
-      {freeTierExhausted && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-2" data-testid="panel-free-tier-exhausted">
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-amber-400" />
-            <span className="text-sm font-medium text-amber-400">Free Tier Exhausted</span>
-          </div>
-          <p className="text-xs text-white/50">You have used all {FREE_EXECUTIONS_LIMIT} free executions. Connect your wallet to continue using skills.</p>
-        </div>
       )}
-
-      {result && (
-        <div className={`rounded-lg border p-4 space-y-2 ${result.success ? "bg-emerald-500/5 border-emerald-500/20" : "bg-rose-500/5 border-rose-500/20"}`} data-testid="panel-execution-result">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-2">
-              {result.success ? <Check className="w-4 h-4 text-emerald-400" /> : <span className="text-rose-400 text-sm">Error</span>}
-              <span className={`text-sm font-medium ${result.success ? "text-emerald-400" : "text-rose-400"}`}>
-                {result.success ? "Success" : "Failed"}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-white/40">
-              <Clock className="w-3 h-3" />{result.latencyMs}ms
-            </div>
+      <Card className="bg-black/60 border border-emerald-500/30 p-6 space-y-4" data-testid="panel-try-skill">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Zap className="w-5 h-5 text-emerald-400" />
+            <h3 className="text-lg font-bold text-white">{skill.name}</h3>
+            <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs">LIVE API</Badge>
+            <TierBadge tier={skill.tier} />
           </div>
-          {result.success ? (
-            <pre className="bg-black/40 rounded-lg p-3 text-xs font-mono text-white overflow-x-auto max-h-60" data-testid="text-execution-output">
-              {JSON.stringify(result.output, null, 2)}
-            </pre>
-          ) : (
-            <p className="text-rose-400 text-sm" data-testid="text-execution-error">{result.error}</p>
+          <Button variant="ghost" size="sm" onClick={onClose} className="text-white/50" data-testid="button-close-try">Close</Button>
+        </div>
+
+        <div className="flex items-center gap-4 text-xs text-white/40 flex-wrap" data-testid="text-try-panel-info">
+          {royaltyCost > 0 && (
+            <span className="flex items-center gap-1 text-amber-400/70">
+              <Coins className="w-3 h-3" />{formatRoyaltyCost(royaltyCost)}
+            </span>
+          )}
+          <span className="flex items-center gap-1" data-testid="text-free-remaining-panel">
+            <Zap className="w-3 h-3" />{freeRemaining > 0 ? `${freeRemaining} free runs left` : "Free tier exhausted"}
+          </span>
+          {freeRemaining <= 0 && (
+            <span className="flex items-center gap-1 text-amber-400/70">
+              <CreditCard className="w-3 h-3" />Pay-per-execution (HTTP 402)
+            </span>
           )}
         </div>
-      )}
 
-      <div className="space-y-1">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-xs font-medium text-white/50 uppercase tracking-wider flex items-center gap-1">
-            <Terminal className="w-3 h-3" />API (cURL)
+        <p className="text-white/60 text-sm" data-testid="text-skill-description">{skill.description}</p>
+        <div className="text-xs text-white/40" data-testid="text-skill-creator">Created by <span className="text-white/70">{skill.agentName}</span> using <span className="text-cyan-400">{skill.agentModel}</span></div>
+
+        {inputSchemaDisplay && (
+          <div className="space-y-1">
+            <div className="text-xs font-medium text-white/50 uppercase tracking-wider">Input Schema</div>
+            <div className="bg-black/40 rounded-lg p-3 border border-white/5">
+              {inputSchemaDisplay.properties && Object.entries(inputSchemaDisplay.properties).map(([key, spec]: [string, any]) => (
+                <div key={key} className="flex items-center gap-2 text-xs py-0.5" data-testid={`text-schema-field-${key}`}>
+                  <span className="text-amber-400 font-mono">{key}</span>
+                  <span className="text-white/30">:</span>
+                  <span className="text-cyan-400 font-mono">{spec.type || "any"}</span>
+                  {inputSchemaDisplay.required?.includes(key) && <Badge className="bg-rose-500/20 text-rose-400 border-rose-500/30 text-[9px] px-1">required</Badge>}
+                  {spec.description && <span className="text-white/30 ml-1">— {spec.description}</span>}
+                </div>
+              ))}
+            </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => copyToClipboard(curlSnippet)} className="text-white/40" data-testid="button-copy-curl">
-            {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-          </Button>
+        )}
+
+        <div className="space-y-1">
+          <div className="text-xs font-medium text-white/50 uppercase tracking-wider">Input (JSON)</div>
+          <textarea
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm font-mono text-white resize-none focus:border-emerald-500/50 focus:outline-none"
+            rows={4}
+            data-testid="input-skill-json"
+          />
         </div>
-        <pre className="bg-black/40 rounded-lg p-3 text-[11px] font-mono text-white/70 overflow-x-auto border border-white/5" data-testid="text-curl-snippet">{curlSnippet}</pre>
-      </div>
-    </Card>
+
+        <Button
+          onClick={handleExecute}
+          disabled={executeMutation.isPending}
+          className={`w-full text-white ${freeRemaining > 0 ? "bg-emerald-600" : "bg-amber-600"}`}
+          data-testid="button-execute-skill"
+        >
+          {executeMutation.isPending ? (
+            <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Executing...</>
+          ) : freeRemaining > 0 ? (
+            <><Play className="w-4 h-4 mr-2" />Execute Skill (Free)</>
+          ) : (
+            <><CreditCard className="w-4 h-4 mr-2" />Execute Skill (Paid)</>
+          )}
+        </Button>
+
+        {result && (
+          <div className={`rounded-lg border p-4 space-y-2 ${result.success ? "bg-emerald-500/5 border-emerald-500/20" : "bg-rose-500/5 border-rose-500/20"}`} data-testid="panel-execution-result">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                {result.success ? <Check className="w-4 h-4 text-emerald-400" /> : <span className="text-rose-400 text-sm">Error</span>}
+                <span className={`text-sm font-medium ${result.success ? "text-emerald-400" : "text-rose-400"}`}>
+                  {result.success ? "Success" : "Failed"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-white/40">
+                <Clock className="w-3 h-3" />{result.latencyMs}ms
+              </div>
+            </div>
+            {result.success ? (
+              <pre className="bg-black/40 rounded-lg p-3 text-xs font-mono text-white overflow-x-auto max-h-60" data-testid="text-execution-output">
+                {JSON.stringify(result.output, null, 2)}
+              </pre>
+            ) : (
+              <p className="text-rose-400 text-sm" data-testid="text-execution-error">{result.error}</p>
+            )}
+          </div>
+        )}
+
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-xs font-medium text-white/50 uppercase tracking-wider flex items-center gap-1">
+              <Terminal className="w-3 h-3" />API (cURL)
+            </div>
+            <Button variant="ghost" size="icon" onClick={() => copyToClipboard(curlSnippet)} className="text-white/40" data-testid="button-copy-curl">
+              {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+            </Button>
+          </div>
+          <pre className="bg-black/40 rounded-lg p-3 text-[11px] font-mono text-white/70 overflow-x-auto border border-white/5" data-testid="text-curl-snippet">{curlSnippet}</pre>
+        </div>
+      </Card>
+    </>
   );
 }
 

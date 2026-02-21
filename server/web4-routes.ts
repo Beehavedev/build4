@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
-import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, collectFeeAcrossAllChains, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain, getRevenueWalletAddress } from "./onchain";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, collectFeeAcrossAllChains, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain, getRevenueWalletAddress, verifyPaymentTransaction, getSupportedChains } from "./onchain";
 import {
   web4CreateAgentRequestSchema,
   web4TipRequestSchema,
@@ -908,6 +908,18 @@ export function registerWeb4Routes(app: Express): void {
     res.json({ tiers: SKILL_TIERS, royaltyBps: EXECUTION_ROYALTY_BPS });
   });
 
+  app.get("/api/marketplace/payment-info", async (_req: Request, res: Response) => {
+    res.json({
+      recipientAddress: getRevenueWalletAddress(),
+      supportedChains: getSupportedChains(),
+      freeExecutionsLimit: FREE_EXECUTIONS_LIMIT,
+      royaltyBps: EXECUTION_ROYALTY_BPS,
+      tiers: SKILL_TIERS,
+      protocol: "HTTP-402",
+      description: "Send native token (BNB/ETH/OKB) to the recipient address to pay for skill execution. Include the transaction hash in your execution request.",
+    });
+  });
+
   app.post("/api/marketplace/skills/:skillId/execute", async (req: Request, res: Response) => {
     try {
       const parsed = executeSkillRequestSchema.parse(req.body);
@@ -919,16 +931,72 @@ export function registerWeb4Routes(app: Express): void {
 
       if (parsed.callerType === "user") {
         const sessionId = parsed.sessionId || "anonymous";
-        const credits = await storage.createOrGetUserCredits(sessionId);
-        if (credits.freeExecutionsUsed >= FREE_EXECUTIONS_LIMIT) {
-          return res.status(402).json({
-            error: "Free execution limit reached",
-            freeExecutionsUsed: credits.freeExecutionsUsed,
-            limit: FREE_EXECUTIONS_LIMIT,
-            message: "Connect a wallet to continue using skills",
+        const hasTxHash = parsed.txHash && parsed.txHash.length > 0;
+
+        if (!hasTxHash) {
+          const credits = await storage.createOrGetUserCredits(sessionId);
+          if (credits.freeExecutionsUsed >= FREE_EXECUTIONS_LIMIT) {
+            const tierMult = getTierMultiplier(skill.tier);
+            const baseRoyalty = (BigInt(skill.priceAmount) * BigInt(EXECUTION_ROYALTY_BPS)) / BigInt(10000);
+            const executionCost = BigInt(Math.floor(Number(baseRoyalty) * tierMult));
+
+            return res.status(402).json({
+              error: "Payment required",
+              code: "PAYMENT_REQUIRED",
+              freeExecutionsUsed: credits.freeExecutionsUsed,
+              limit: FREE_EXECUTIONS_LIMIT,
+              payment: {
+                skillId: skill.id,
+                skillName: skill.name,
+                amount: executionCost.toString(),
+                amountFormatted: (Number(executionCost) / 1e18).toFixed(8),
+                currency: "BNB",
+                recipientAddress: getRevenueWalletAddress(),
+                supportedChains: getSupportedChains(),
+                tier: skill.tier,
+              },
+              message: "Connect a wallet and pay to execute this skill",
+            });
+          }
+          await storage.incrementUserFreeExecutions(sessionId);
+        } else {
+          const tierMult = getTierMultiplier(skill.tier);
+          const baseRoyalty = (BigInt(skill.priceAmount) * BigInt(EXECUTION_ROYALTY_BPS)) / BigInt(10000);
+          const executionCost = BigInt(Math.floor(Number(baseRoyalty) * tierMult));
+
+          const verification = await verifyPaymentTransaction(
+            parsed.txHash!,
+            executionCost.toString(),
+            parsed.chainId
+          );
+
+          if (!verification.verified) {
+            return res.status(402).json({
+              error: "Payment verification failed",
+              code: "PAYMENT_INVALID",
+              details: verification.error,
+              payment: {
+                skillId: skill.id,
+                skillName: skill.name,
+                amount: executionCost.toString(),
+                amountFormatted: (Number(executionCost) / 1e18).toFixed(8),
+                currency: "BNB",
+                recipientAddress: getRevenueWalletAddress(),
+                supportedChains: getSupportedChains(),
+              },
+            });
+          }
+
+          await storage.recordPlatformRevenue({
+            feeType: "skill_execution_payment",
+            amount: verification.amount,
+            agentId: skill.agentId,
+            referenceId: skill.id,
+            description: `User paid for skill execution: ${skill.name} (${skill.tier} tier)`,
+            txHash: parsed.txHash!,
+            chainId: parsed.chainId,
           });
         }
-        await storage.incrementUserFreeExecutions(sessionId);
       }
 
       const isExternalDataSkill = ["crypto-data", "web-data"].includes(skill.category);
