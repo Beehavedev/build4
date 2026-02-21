@@ -566,6 +566,48 @@ export async function collectFeeOnchain(agentDbId: string, feeAmountWei: string,
   return result;
 }
 
+export async function collectFeeOnchainMultiChain(agentDbId: string, chainKey: string, feeAmountWei: string, feeType: string): Promise<OnchainResult> {
+  if (multiChainConnections.size === 0) initMultiChain();
+  const conn = multiChainConnections.get(chainKey);
+  if (!conn) return { success: false, error: `Chain ${chainKey} not available`, chainId: 0 };
+
+  const numId = uuidToNumericId(agentDbId);
+  const feeAmount = BigInt(feeAmountWei);
+
+  if (feeAmount === 0n) {
+    return { success: false, error: "Zero fee amount", chainId: conn.chainId };
+  }
+
+  try {
+    const onchainBal = await conn.hub.getBalance(numId);
+    if (onchainBal < feeAmount) {
+      return { success: false, error: `Insufficient balance on ${conn.name}`, chainId: conn.chainId };
+    }
+  } catch (e: any) {
+    return { success: false, error: `Balance check failed on ${conn.name}`, chainId: conn.chainId };
+  }
+
+  const result = await multiChainSendTx(conn, conn.hub, "withdraw", [numId, feeAmount, PLATFORM_REVENUE_WALLET], { gasLimit: 150000 });
+  if (result.success) {
+    log(`[onchain] ${conn.name} fee collected (${feeType}): ${feeAmountWei} wei from agent ${agentDbId.substring(0, 8)} -> revenue wallet. TX: ${result.txHash}`, "onchain");
+  }
+  return result;
+}
+
+export async function collectFeeAcrossAllChains(agentDbId: string, feeAmountWei: string, feeType: string): Promise<OnchainResult> {
+  const primaryResult = await collectFeeOnchain(agentDbId, feeAmountWei, feeType);
+  if (primaryResult.success) return primaryResult;
+
+  if (multiChainConnections.size === 0) initMultiChain();
+
+  for (const [chainKey] of multiChainConnections) {
+    const result = await collectFeeOnchainMultiChain(agentDbId, chainKey, feeAmountWei, feeType);
+    if (result.success) return result;
+  }
+
+  return primaryResult;
+}
+
 export async function reimburseGasCost(agentDbId: string, gasCostWei: string, actionType: string): Promise<OnchainResult> {
   if (!contracts || !wallet) return { success: false, error: "Not initialized", chainId };
 

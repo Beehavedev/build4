@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
-import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain, getRevenueWalletAddress } from "./onchain";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, collectFeeAcrossAllChains, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain, getRevenueWalletAddress } from "./onchain";
 import {
   web4CreateAgentRequestSchema,
   web4TipRequestSchema,
@@ -238,7 +238,7 @@ export function registerWeb4Routes(app: Express): void {
       const parsed = web4CreateSkillRequestSchema.parse(req.body);
 
       const listingFee = PLATFORM_FEES.SKILL_LISTING_FEE;
-      const feeResult = await collectFeeOnchain(parsed.agentId, listingFee, "skill_listing");
+      const feeResult = await collectFeeAcrossAllChains(parsed.agentId, listingFee, "skill_listing");
       if (!feeResult.success) {
         console.warn(`[web4] On-chain skill listing fee failed: ${feeResult.error}`);
       } else if (feeResult.gasCostWei) {
@@ -282,7 +282,7 @@ export function registerWeb4Routes(app: Express): void {
       if (!skill) return res.status(404).json({ error: "Skill not found" });
       const purchaseFee = (BigInt(skill.priceAmount) * BigInt(PLATFORM_FEES.SKILL_PURCHASE_FEE_BPS) / 10000n).toString();
       if (BigInt(purchaseFee) > 0n) {
-        const feeResult = await collectFeeOnchain(parsed.buyerAgentId, purchaseFee, "skill_purchase");
+        const feeResult = await collectFeeAcrossAllChains(parsed.buyerAgentId, purchaseFee, "skill_purchase");
         if (!feeResult.success) {
           console.warn(`[web4] On-chain skill purchase fee failed: ${feeResult.error}`);
         } else if (feeResult.gasCostWei) {
@@ -325,7 +325,7 @@ export function registerWeb4Routes(app: Express): void {
       const parsed = web4EvolveRequestSchema.parse(req.body);
 
       const evolutionFee = PLATFORM_FEES.EVOLUTION_FEE;
-      const feeResult = await collectFeeOnchain(parsed.agentId, evolutionFee, "evolution");
+      const feeResult = await collectFeeAcrossAllChains(parsed.agentId, evolutionFee, "evolution");
       if (!feeResult.success) {
         console.warn(`[web4] On-chain evolution fee failed: ${feeResult.error}`);
       } else if (feeResult.gasCostWei) {
@@ -386,7 +386,7 @@ export function registerWeb4Routes(app: Express): void {
       const replicationFee = (BigInt(parsed.fundingAmount) * BigInt(PLATFORM_FEES.REPLICATION_FEE_BPS) / 10000n).toString();
       const totalFee = (BigInt(replicationFee) + BigInt(PLATFORM_FEES.AGENT_CREATION_FEE)).toString();
       if (BigInt(totalFee) > 0n) {
-        const feeResult = await collectFeeOnchain(parsed.parentAgentId, totalFee, "replication");
+        const feeResult = await collectFeeAcrossAllChains(parsed.parentAgentId, totalFee, "replication");
         if (!feeResult.success) {
           console.warn(`[web4] On-chain replication fee failed: ${feeResult.error}`);
         } else if (feeResult.gasCostWei) {

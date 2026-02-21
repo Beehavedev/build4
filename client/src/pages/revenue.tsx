@@ -98,6 +98,7 @@ export default function Revenue() {
     onchainVerified: number;
     onchainRevenue: string;
     explorerBases: Record<number, string>;
+    revenueWallet: string;
   }>({ queryKey: ["/api/web4/revenue/summary"] });
 
   const { data: history } = useQuery<PlatformRevenue[]>({
@@ -199,6 +200,33 @@ export default function Revenue() {
             <p className="text-xs text-muted-foreground mt-1">active fee categories</p>
           </Card>
         </div>
+
+        {summary?.revenueWallet && (
+          <Card className="p-4 bg-gradient-to-r from-emerald-500/5 to-blue-500/5 border-emerald-500/20" data-testid="card-revenue-wallet">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-emerald-500/20">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div>
+                  <span className="text-sm text-muted-foreground">Revenue Wallet (all chains)</span>
+                  <p className="text-sm font-mono font-medium" data-testid="text-revenue-wallet">{summary.revenueWallet}</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <a href={`https://bscscan.com/address/${summary.revenueWallet}`} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1" data-testid="link-revenue-bnb">
+                  BNB <ExternalLink className="w-3 h-3" />
+                </a>
+                <a href={`https://basescan.org/address/${summary.revenueWallet}`} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1" data-testid="link-revenue-base">
+                  Base <ExternalLink className="w-3 h-3" />
+                </a>
+                <a href={`https://www.oklink.com/xlayer/address/${summary.revenueWallet}`} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1" data-testid="link-revenue-xlayer">
+                  XLayer <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+          </Card>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card className="p-6" data-testid="card-revenue-breakdown">
