@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
-import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, registerAgentOnchain } from "./onchain";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, registerAgentOnchain, depositOnchain } from "./onchain";
 import {
   web4CreateAgentRequestSchema,
   web4TipRequestSchema,
@@ -65,6 +65,7 @@ export function registerWeb4Routes(app: Express): void {
       const result = await storage.createFullAgent(parsed.name, parsed.bio, parsed.modelType, parsed.initialDeposit, parsed.onchainTxHash, parsed.onchainChainId, parsed.creatorWallet);
 
       let onchainRegistration = null;
+      let onchainDeposit = null;
       const maxRegAttempts = 3;
       for (let attempt = 1; attempt <= maxRegAttempts; attempt++) {
         try {
@@ -87,7 +88,28 @@ export function registerWeb4Routes(app: Express): void {
         }
       }
 
-      res.json({ ...result, onchainRegistration });
+      if (onchainRegistration?.success) {
+        try {
+          const depositAmount = "10000000000000000";
+          const depResult = await depositOnchain(result.agent.id, depositAmount);
+          if (depResult.success && depResult.txHash) {
+            onchainDeposit = depResult;
+            console.log(`[web4] Agent ${parsed.name} initial on-chain deposit: ${depResult.txHash}`);
+            await storage.createTransaction({
+              agentId: result.agent.id,
+              type: "onchain_deposit",
+              amount: depositAmount,
+              description: `Initial on-chain deposit (0.01 BNB) for autonomous operations`,
+              txHash: depResult.txHash,
+              chainId: depResult.chainId,
+            });
+          }
+        } catch (depErr: any) {
+          console.warn(`[web4] On-chain deposit for ${parsed.name} failed: ${depErr.message}`);
+        }
+      }
+
+      res.json({ ...result, onchainRegistration, onchainDeposit });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }

@@ -929,6 +929,41 @@ async function tick(): Promise<void> {
   }
 }
 
+async function backfillAgentIdentity(): Promise<void> {
+  try {
+    const allAgents = await storage.getAllAgents();
+    const activeAgents = allAgents.filter(a => a.status === "active");
+    let constitutionCount = 0;
+    let soulCount = 0;
+
+    for (const agent of activeAgents) {
+      const laws = await storage.getConstitution(agent.id);
+      if (laws.length === 0) {
+        await storage.initDefaultConstitution(agent.id);
+        constitutionCount++;
+      }
+
+      const soulEntries = await storage.getSoulEntries(agent.id);
+      const hasBirth = soulEntries.some(e => e.entryType === "birth");
+      if (!hasBirth) {
+        await storage.createSoulEntry({
+          agentId: agent.id,
+          entryType: "birth",
+          entry: `Agent ${agent.name} has been born into the BUILD4 autonomous economy. Model: ${agent.modelType}. ${agent.bio ? `Purpose: ${agent.bio}. ` : ""}Constitution initialized with 3 core laws. Ready to create skills, trade on the marketplace, complete jobs, and transact on-chain.`,
+          source: "system",
+        });
+        soulCount++;
+      }
+    }
+
+    if (constitutionCount > 0 || soulCount > 0) {
+      log(`Backfill complete: ${constitutionCount} constitutions, ${soulCount} birth entries added`, "agent-runner");
+    }
+  } catch (e: any) {
+    log(`Backfill error: ${e.message}`, "agent-runner");
+  }
+}
+
 async function registerExistingAgentsOnchain(): Promise<void> {
   if (!onchainEnabled) return;
 
@@ -938,8 +973,9 @@ async function registerExistingAgentsOnchain(): Promise<void> {
   for (const agent of unregistered) {
     try {
       await ensureAgentRegisteredOnchain(agent);
-      const isCoreAgent = ["NEXUS-7", "CIPHER-3", "FORGE-1"].includes(agent.name);
-      if (isCoreAgent) {
+      const wallet = await storage.getWallet(agent.id);
+      const hasBalance = wallet && BigInt(wallet.balance) > 0n;
+      if (hasBalance) {
         const depositResult = await depositOnchain(agent.id, "10000000000000000");
         if (depositResult.success && depositResult.txHash) {
           log(`[Agent ${agent.name}] Initial on-chain deposit: ${getExplorerUrl(depositResult.txHash)}`, "agent-runner");
@@ -947,7 +983,7 @@ async function registerExistingAgentsOnchain(): Promise<void> {
             agentId: agent.id,
             type: "onchain_deposit",
             amount: "10000000000000000",
-            description: `Initial on-chain deposit (0.01 BNB)`,
+            description: `Initial on-chain deposit (0.01 BNB) for autonomous operations`,
             txHash: depositResult.txHash,
             chainId: getChainId(),
           });
@@ -988,6 +1024,8 @@ export function startAgentRunner(): void {
 
   log(`Agent runner started. Live providers: ${providers.length > 0 ? providers.join(", ") : "none (no providers configured)"}`, "agent-runner");
   log(`Tick interval: ${TICK_INTERVAL_MS / 1000}s | Cooldown: ${AGENT_COOLDOWN_MS / 1000}s | Max concurrent: ${MAX_CONCURRENT_AGENTS}`, "agent-runner");
+
+  setTimeout(() => backfillAgentIdentity(), 5000);
 
   if (onchainEnabled) {
     setTimeout(() => registerExistingAgentsOnchain(), 8000);
