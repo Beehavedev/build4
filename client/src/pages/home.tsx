@@ -205,10 +205,8 @@ export default function Home() {
           </div>
           {mobileMenuOpen && (
             <div className="md:hidden border-t bg-background/95 backdrop-blur-xl px-4 py-3 space-y-1">
-              <a href="#features" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-features-mobile">{t("nav.features")}</a>
               <a href="#lifecycle" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-lifecycle-mobile">{t("nav.lifecycle")}</a>
               <a href="#decentralized" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-decentralized-mobile">{t("nav.web4")}</a>
-              <a href="#roadmap" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-roadmap-mobile">{t("nav.roadmap")}</a>
               <Link href="/why-build4" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-why-mobile">{t("nav.whyBuild4")}</Link>
               <Link href="/manifesto" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-manifesto-mobile">{t("nav.manifesto")}</Link>
               <Link href="/architecture" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-architecture-mobile">{t("nav.contracts")}</Link>
