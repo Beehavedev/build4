@@ -887,6 +887,10 @@ async function tick(): Promise<void> {
     }
 
     const eligible = activeAgents.filter(a => canAct(a.id));
+    for (let i = eligible.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [eligible[i], eligible[j]] = [eligible[j], eligible[i]];
+    }
     const batch = eligible.slice(0, MAX_CONCURRENT_AGENTS);
 
     for (const agent of batch) {

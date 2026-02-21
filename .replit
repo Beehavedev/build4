@@ -43,3 +43,4 @@ waitForPort = 5000
 
 [userenv.shared]
 ONCHAIN_NETWORK = "bnbMainnet"
+AGENT_RUNNER_ENABLED = "true"
