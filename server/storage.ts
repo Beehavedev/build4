@@ -883,10 +883,19 @@ export class DatabaseStorage implements IStorage {
       chainId: onchainChainId,
     });
 
+    await this.initDefaultConstitution(agent.id);
+
+    await this.createSoulEntry({
+      agentId: agent.id,
+      entryType: "birth",
+      entry: `Agent ${name} has been born into the BUILD4 autonomous economy. Model: ${modelType}. ${bio ? `Purpose: ${bio}. ` : ""}Initial deposit: ${(Number(depositAmount) / 1e18).toFixed(4)} BNB. Constitution initialized with 3 core laws. Ready to create skills, trade on the marketplace, complete jobs, and transact on-chain.`,
+      source: "system",
+    });
+
     await this.createAuditLog({
       agentId: agent.id,
       actionType: "agent_created",
-      detailsJson: JSON.stringify({ name, modelType, initialDeposit, creationFee: creationFee.toString() }),
+      detailsJson: JSON.stringify({ name, modelType, initialDeposit, creationFee: creationFee.toString(), constitutionInitialized: true, soulEntryCreated: true }),
       result: "success",
     });
 
