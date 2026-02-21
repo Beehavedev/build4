@@ -172,6 +172,24 @@ export default function AutonomousEconomy() {
     }
   }, [web3.chainId]);
 
+  useEffect(() => {
+    if (!selectedAgent?.onchainId || !web3.hasContracts || !web3.connected) {
+      setOnChainAgentWallet(null);
+      return;
+    }
+    const fetchOnChain = async () => {
+      try {
+        const data = await web3.getAgentOnChainWallet(BigInt(selectedAgent.onchainId!));
+        setOnChainAgentWallet(data);
+      } catch {
+        setOnChainAgentWallet(null);
+      }
+    };
+    fetchOnChain();
+    const interval = setInterval(fetchOnChain, 30000);
+    return () => clearInterval(interval);
+  }, [selectedAgent?.onchainId, web3.hasContracts, web3.connected]);
+
   const activeChain = CHAINS.find(c => c.id === selectedChain) || CHAINS[0];
 
   const { data: agentsList = [], isLoading: agentsLoading } = useQuery<Agent[]>({
@@ -904,16 +922,29 @@ export default function AutonomousEconomy() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
                   <div className="text-center p-2 rounded bg-muted/20">
-                    <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-balance">{formatShortCredits(wallet?.balance || "0")}</div>
-                    <div className="text-[10px] text-muted-foreground">In-App Balance</div>
-                    <div className="text-[8px] text-muted-foreground/60">not real {activeChain.currency}</div>
+                    {onChainAgentWallet ? (
+                      <>
+                        <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-balance">{parseFloat(onChainAgentWallet.balance).toFixed(4)}</div>
+                        <div className="text-[10px] text-muted-foreground">On-Chain {activeChain.currency}</div>
+                      </>
+                    ) : web3.connected ? (
+                      <>
+                        <div className="font-mono text-lg font-bold text-muted-foreground" data-testid="text-wallet-balance">—</div>
+                        <div className="text-[10px] text-muted-foreground">Loading...</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="font-mono text-lg font-bold text-muted-foreground" data-testid="text-wallet-balance">—</div>
+                        <div className="text-[10px] text-muted-foreground">Connect wallet</div>
+                      </>
+                    )}
                   </div>
                   <div className="text-center p-2 rounded bg-muted/20">
-                    <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-earned">{formatShortCredits(wallet?.totalEarned || "0")}</div>
+                    <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-earned">{onChainAgentWallet ? parseFloat(onChainAgentWallet.totalEarned).toFixed(4) : formatShortCredits(wallet?.totalEarned || "0")}</div>
                     <div className="text-[10px] text-muted-foreground">{t("dashboard.earned")}</div>
                   </div>
                   <div className="text-center p-2 rounded bg-muted/20">
-                    <div className="font-mono text-lg font-bold text-red-400" data-testid="text-wallet-spent">{formatShortCredits(wallet?.totalSpent || "0")}</div>
+                    <div className="font-mono text-lg font-bold text-red-400" data-testid="text-wallet-spent">{onChainAgentWallet ? parseFloat(onChainAgentWallet.totalSpent || "0").toFixed(4) : formatShortCredits(wallet?.totalSpent || "0")}</div>
                     <div className="text-[10px] text-muted-foreground">{t("dashboard.spent")}</div>
                   </div>
                   <div className="text-center p-2 rounded bg-muted/20">
@@ -1582,17 +1613,20 @@ export default function AutonomousEconomy() {
             <TerminalLine prefix="$">wallet.status()</TerminalLine>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <Card className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">In-App Balance</div>
-                <div className="font-mono font-bold text-primary" data-testid="text-detail-balance">{formatCredits(wallet?.balance || "0")} {activeChain.currency}</div>
-                <div className="text-[9px] text-muted-foreground/60 mt-1">Simulated — not real {activeChain.currency}</div>
+                <div className="text-xs text-muted-foreground mb-1">{t("dashboard.balance")}</div>
+                {onChainAgentWallet ? (
+                  <div className="font-mono font-bold text-primary" data-testid="text-detail-balance">{parseFloat(onChainAgentWallet.balance).toFixed(6)} {activeChain.currency}</div>
+                ) : (
+                  <div className="font-mono font-bold text-muted-foreground" data-testid="text-detail-balance">{web3.connected ? "Loading..." : "Connect wallet"}</div>
+                )}
               </Card>
               <Card className="p-3">
                 <div className="text-xs text-muted-foreground mb-1">{t("dashboard.totalEarned")}</div>
-                <div className="font-mono font-bold text-primary">{formatCredits(wallet?.totalEarned || "0")} {activeChain.currency}</div>
+                <div className="font-mono font-bold text-primary">{onChainAgentWallet ? `${parseFloat(onChainAgentWallet.totalEarned).toFixed(6)} ${activeChain.currency}` : formatCredits(wallet?.totalEarned || "0") + ` ${activeChain.currency}`}</div>
               </Card>
               <Card className="p-3">
                 <div className="text-xs text-muted-foreground mb-1">{t("dashboard.totalSpent")}</div>
-                <div className="font-mono font-bold text-red-400">{formatCredits(wallet?.totalSpent || "0")} {activeChain.currency}</div>
+                <div className="font-mono font-bold text-red-400">{onChainAgentWallet ? `${parseFloat(onChainAgentWallet.totalSpent || "0").toFixed(6)} ${activeChain.currency}` : formatCredits(wallet?.totalSpent || "0") + ` ${activeChain.currency}`}</div>
               </Card>
             </div>
 
