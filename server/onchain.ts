@@ -45,6 +45,7 @@ interface OnchainResult {
   txHash?: string;
   error?: string;
   chainId: number;
+  gasCostWei?: string;
 }
 
 interface ChainConfig {
@@ -375,8 +376,9 @@ async function sendTx(contract: ethers.Contract, method: string, args: any[], ov
       return { success: false, error: "Transaction reverted", chainId, txHash: receipt?.hash };
     }
 
-    log(`[onchain] ${method} tx: ${receipt.hash}`, "onchain");
-    return { success: true, txHash: receipt.hash, chainId };
+    const gasCostWei = (receipt.gasUsed * (receipt.gasPrice || BigInt("5000000000"))).toString();
+    log(`[onchain] ${method} tx: ${receipt.hash} (gas: ${gasCostWei} wei)`, "onchain");
+    return { success: true, txHash: receipt.hash, chainId, gasCostWei };
   } catch (e: any) {
     resetNonce();
     const msg = e.message?.substring(0, 200) || "Unknown error";
@@ -562,6 +564,64 @@ export async function collectFeeOnchain(agentDbId: string, feeAmountWei: string,
   return result;
 }
 
+export async function reimburseGasCost(agentDbId: string, gasCostWei: string, actionType: string): Promise<OnchainResult> {
+  if (!contracts || !wallet) return { success: false, error: "Not initialized", chainId };
+
+  const gasCost = BigInt(gasCostWei);
+  if (gasCost === 0n) {
+    return { success: true, txHash: "zero-gas", chainId, gasCostWei: "0" };
+  }
+
+  const numId = uuidToNumericId(agentDbId);
+
+  try {
+    const onchainBal = await contracts.hub.getBalance(numId);
+    if (onchainBal < gasCost) {
+      log(`[onchain] Gas reimbursement skipped (${actionType}): Agent balance ${onchainBal.toString()} < gas cost ${gasCostWei}`, "onchain");
+      return { success: false, error: "Insufficient balance for gas reimbursement", chainId };
+    }
+  } catch (e: any) {
+    log(`[onchain] Gas reimbursement balance check failed: ${e.message?.substring(0, 100)}`, "onchain");
+    return { success: false, error: "Balance check failed", chainId };
+  }
+
+  const result = await sendTx(contracts.hub, "withdraw", [numId, gasCost, wallet.address], { gasLimit: 150000 });
+  if (result.success) {
+    log(`[onchain] Gas reimbursed (${actionType}): ${gasCostWei} wei from agent ${agentDbId.substring(0, 8)} -> deployer. TX: ${result.txHash}`, "onchain");
+  }
+  return result;
+}
+
+export async function reimburseGasCostMultiChain(agentDbId: string, chainKey: string, gasCostWei: string, actionType: string): Promise<OnchainResult> {
+  if (multiChainConnections.size === 0) initMultiChain();
+  const conn = multiChainConnections.get(chainKey);
+  if (!conn) return { success: false, error: `Chain ${chainKey} not available`, chainId: 0 };
+
+  const gasCost = BigInt(gasCostWei);
+  if (gasCost === 0n) {
+    return { success: true, txHash: "zero-gas", chainId: conn.chainId, gasCostWei: "0" };
+  }
+
+  const numId = uuidToNumericId(agentDbId);
+
+  try {
+    const onchainBal = await conn.hub.getBalance(numId);
+    if (onchainBal < gasCost) {
+      log(`[onchain] ${conn.name} gas reimbursement skipped (${actionType}): Agent balance ${onchainBal.toString()} < gas ${gasCostWei}`, "onchain");
+      return { success: false, error: "Insufficient balance for gas reimbursement", chainId: conn.chainId };
+    }
+  } catch (e: any) {
+    log(`[onchain] ${conn.name} gas reimbursement balance check failed: ${e.message?.substring(0, 100)}`, "onchain");
+    return { success: false, error: "Balance check failed", chainId: conn.chainId };
+  }
+
+  const result = await multiChainSendTx(conn, conn.hub, "withdraw", [numId, gasCost, conn.wallet.address], { gasLimit: 150000 });
+  if (result.success) {
+    log(`[onchain] ${conn.name} gas reimbursed (${actionType}): ${gasCostWei} wei from agent ${agentDbId.substring(0, 8)} -> deployer. TX: ${result.txHash}`, "onchain");
+  }
+  return result;
+}
+
 export async function verifyOnchainBalance(agentDbId: string): Promise<{ balance: string; registered: boolean }> {
   if (!contracts) return { balance: "0", registered: false };
   const numId = uuidToNumericId(agentDbId);
@@ -732,12 +792,13 @@ async function multiChainSendTx(
     }
 
     const valueWei = overrides.value ? BigInt(overrides.value.toString()) : BigInt(0);
-    const estimatedGas = BigInt(gasLimit) * BigInt("5000000000");
-    recordSpend(valueWei + estimatedGas);
+    const actualGasCost = receipt.gasUsed * (receipt.gasPrice || BigInt("5000000000"));
+    recordSpend(valueWei + actualGasCost);
     txCountThisHour++;
 
-    log(`[onchain] ${conn.name} ${method} tx: ${receipt.hash}`, "onchain");
-    return { success: true, txHash: receipt.hash, chainId: conn.chainId };
+    const gasCostWei = actualGasCost.toString();
+    log(`[onchain] ${conn.name} ${method} tx: ${receipt.hash} (gas: ${gasCostWei} wei)`, "onchain");
+    return { success: true, txHash: receipt.hash, chainId: conn.chainId, gasCostWei };
   } catch (e: any) {
     conn.managedNonce = -1;
     const msg = e.message?.substring(0, 200) || "Unknown error";
