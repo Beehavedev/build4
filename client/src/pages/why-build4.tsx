@@ -710,7 +710,7 @@ export default function WhyBuild4() {
                 </Button>
                 <Button variant="outline" size="lg" asChild data-testid="button-manifesto-bottom">
                   <Link href="/manifesto">
-                    Read the Manifesto
+                    Read the Philosophy
                   </Link>
                 </Button>
                 <Button variant="outline" size="lg" asChild data-testid="button-architecture-bottom">
