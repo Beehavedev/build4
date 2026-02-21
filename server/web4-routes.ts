@@ -54,6 +54,76 @@ export function registerWeb4Routes(app: Express): void {
     }
   });
 
+  app.get("/api/web4/agents/:agentId/earnings", async (req: Request, res: Response) => {
+    try {
+      const agent = await storage.getAgent(req.params.agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+      const allTx = await storage.getTransactions(req.params.agentId, 10000);
+      const wallet = await storage.getWallet(req.params.agentId);
+
+      const earnings: Record<string, { count: number; totalWei: bigint }> = {};
+      const spending: Record<string, { count: number; totalWei: bigint }> = {};
+
+      for (const tx of allTx) {
+        const amt = BigInt(tx.amount || "0");
+        if (tx.type.startsWith("earn") || tx.type === "deposit" || tx.type === "revenue_share") {
+          if (!earnings[tx.type]) earnings[tx.type] = { count: 0, totalWei: BigInt(0) };
+          earnings[tx.type].count++;
+          earnings[tx.type].totalWei += amt;
+        } else {
+          if (!spending[tx.type]) spending[tx.type] = { count: 0, totalWei: BigInt(0) };
+          spending[tx.type].count++;
+          spending[tx.type].totalWei += amt;
+        }
+      }
+
+      const formatCategory = (map: Record<string, { count: number; totalWei: bigint }>) =>
+        Object.entries(map).map(([type, data]) => ({
+          type,
+          count: data.count,
+          totalWei: data.totalWei.toString(),
+          totalBNB: (Number(data.totalWei) / 1e18).toFixed(8),
+        })).sort((a, b) => Number(BigInt(b.totalWei) - BigInt(a.totalWei)));
+
+      const totalEarned = Object.values(earnings).reduce((s, v) => s + v.totalWei, BigInt(0));
+      const totalSpent = Object.values(spending).reduce((s, v) => s + v.totalWei, BigInt(0));
+      const netProfit = totalEarned - totalSpent;
+
+      const skills = await storage.getSkills(req.params.agentId);
+      const skillEarnings = skills
+        .filter(s => BigInt(s.totalRoyalties || "0") > BigInt(0))
+        .map(s => ({
+          skillId: s.id,
+          skillName: s.name,
+          tier: s.tier,
+          executionCount: s.executionCount,
+          totalRoyalties: s.totalRoyalties,
+          totalRoyaltiesBNB: (Number(BigInt(s.totalRoyalties || "0")) / 1e18).toFixed(8),
+        }))
+        .sort((a, b) => Number(BigInt(b.totalRoyalties) - BigInt(a.totalRoyalties)));
+
+      res.json({
+        agentId: req.params.agentId,
+        agentName: agent.name,
+        balance: wallet?.balance || "0",
+        balanceBNB: (Number(BigInt(wallet?.balance || "0")) / 1e18).toFixed(8),
+        totalEarned: totalEarned.toString(),
+        totalEarnedBNB: (Number(totalEarned) / 1e18).toFixed(8),
+        totalSpent: totalSpent.toString(),
+        totalSpentBNB: (Number(totalSpent) / 1e18).toFixed(8),
+        netProfit: netProfit.toString(),
+        netProfitBNB: (Number(netProfit) / 1e18).toFixed(8),
+        earningsByType: formatCategory(earnings),
+        spendingByType: formatCategory(spending),
+        skillEarnings,
+        totalTransactions: allTx.length,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/web4/agents/:agentId/multichain-balances", async (req: Request, res: Response) => {
     try {
       const agent = await storage.getAgent(req.params.agentId);

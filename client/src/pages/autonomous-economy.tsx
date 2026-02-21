@@ -30,6 +30,10 @@ import {
   Server,
   ShieldCheck,
   Cpu,
+  TrendingUp,
+  Coins,
+  DollarSign,
+  BarChart3,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
@@ -222,6 +226,23 @@ export default function AutonomousEconomy() {
     queryKey: ["/api/web4/wallet", agentId, "spending"],
     enabled: !!agentId,
     refetchInterval: 30000,
+  });
+
+  const { data: earningsData } = useQuery<{
+    agentName: string;
+    balanceBNB: string;
+    totalEarnedBNB: string;
+    totalSpentBNB: string;
+    netProfitBNB: string;
+    netProfit: string;
+    earningsByType: Array<{ type: string; count: number; totalBNB: string }>;
+    spendingByType: Array<{ type: string; count: number; totalBNB: string }>;
+    skillEarnings: Array<{ skillId: string; skillName: string; tier: string; executionCount: number; totalRoyaltiesBNB: string }>;
+    totalTransactions: number;
+  }>({
+    queryKey: ["/api/web4/agents", agentId, "earnings"],
+    enabled: !!agentId,
+    refetchInterval: 15000,
   });
 
   const { data: skills = [] } = useQuery<AgentSkill[]>({
@@ -964,8 +985,8 @@ export default function AutonomousEconomy() {
                     )}
                   </div>
                   <div className="text-center p-2 rounded bg-muted/20">
-                    <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-earned">{onChainAgentWallet ? parseFloat(onChainAgentWallet.totalEarned).toFixed(4) : formatShortCredits(wallet?.totalEarned || "0")}</div>
-                    <div className="text-[10px] text-muted-foreground">Deposited</div>
+                    <div className="font-mono text-lg font-bold text-emerald-400" data-testid="text-wallet-earned">{earningsData ? parseFloat(earningsData.totalEarnedBNB).toFixed(4) : onChainAgentWallet ? parseFloat(onChainAgentWallet.totalEarned).toFixed(4) : formatShortCredits(wallet?.totalEarned || "0")}</div>
+                    <div className="text-[10px] text-muted-foreground">Total Earned</div>
                   </div>
                   <div className="text-center p-2 rounded bg-muted/20">
                     <div className="font-mono text-lg font-bold text-red-400" data-testid="text-wallet-spent">{onChainAgentWallet ? parseFloat(onChainAgentWallet.totalSpent || "0").toFixed(4) : formatShortCredits(wallet?.totalSpent || "0")}</div>
@@ -1004,6 +1025,105 @@ export default function AutonomousEconomy() {
               </Card>
               <TerminalLine prefix=">" dim>ID: {selectedAgent.id}</TerminalLine>
             </div>
+          )}
+        </Section>
+
+        <Section title="Earnings & Profit" icon={TrendingUp} defaultOpen={true}>
+          {earningsData ? (
+            <div className="space-y-3">
+              <TerminalLine prefix="$">agent.earnings()</TerminalLine>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <Card className="p-3" data-testid="card-earnings-balance">
+                  <div className="text-xs text-muted-foreground mb-1">Current Balance</div>
+                  <div className="font-mono font-bold text-primary text-lg">{parseFloat(earningsData.balanceBNB).toFixed(6)}</div>
+                  <div className="text-[10px] text-muted-foreground">BNB</div>
+                </Card>
+                <Card className="p-3" data-testid="card-earnings-total">
+                  <div className="text-xs text-muted-foreground mb-1">Total Earned</div>
+                  <div className="font-mono font-bold text-emerald-400 text-lg">{parseFloat(earningsData.totalEarnedBNB).toFixed(6)}</div>
+                  <div className="text-[10px] text-muted-foreground">BNB</div>
+                </Card>
+                <Card className="p-3" data-testid="card-earnings-spent">
+                  <div className="text-xs text-muted-foreground mb-1">Total Spent</div>
+                  <div className="font-mono font-bold text-red-400 text-lg">{parseFloat(earningsData.totalSpentBNB).toFixed(6)}</div>
+                  <div className="text-[10px] text-muted-foreground">BNB</div>
+                </Card>
+                <Card className="p-3" data-testid="card-earnings-profit">
+                  <div className="text-xs text-muted-foreground mb-1">Net Profit</div>
+                  <div className={`font-mono font-bold text-lg ${BigInt(earningsData.netProfit) >= BigInt(0) ? "text-emerald-400" : "text-red-400"}`}>
+                    {BigInt(earningsData.netProfit) >= BigInt(0) ? "+" : ""}{parseFloat(earningsData.netProfitBNB).toFixed(6)}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">BNB</div>
+                </Card>
+              </div>
+
+              {earningsData.earningsByType.length > 0 && (
+                <Card className="p-3" data-testid="card-earnings-breakdown">
+                  <div className="text-xs font-mono font-semibold mb-2 text-muted-foreground flex items-center gap-1">
+                    <Coins className="w-3 h-3" />Income Breakdown
+                  </div>
+                  <div className="space-y-1.5">
+                    {earningsData.earningsByType.map((e) => (
+                      <div key={e.type} className="flex items-center justify-between text-xs font-mono py-1 border-b border-border last:border-0" data-testid={`row-earning-${e.type}`}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-400">+</span>
+                          <span className="text-foreground">{e.type.replace(/_/g, " ").replace("earn ", "")}</span>
+                          <span className="text-muted-foreground">x{e.count}</span>
+                        </div>
+                        <span className="text-emerald-400 font-semibold">{parseFloat(e.totalBNB).toFixed(6)} BNB</span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              {earningsData.spendingByType.length > 0 && (
+                <Card className="p-3" data-testid="card-spending-breakdown">
+                  <div className="text-xs font-mono font-semibold mb-2 text-muted-foreground flex items-center gap-1">
+                    <DollarSign className="w-3 h-3" />Spending Breakdown
+                  </div>
+                  <div className="space-y-1.5">
+                    {earningsData.spendingByType.map((s) => (
+                      <div key={s.type} className="flex items-center justify-between text-xs font-mono py-1 border-b border-border last:border-0" data-testid={`row-spending-${s.type}`}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-red-400">-</span>
+                          <span className="text-foreground">{s.type.replace(/_/g, " ")}</span>
+                          <span className="text-muted-foreground">x{s.count}</span>
+                        </div>
+                        <span className="text-red-400 font-semibold">{parseFloat(s.totalBNB).toFixed(6)} BNB</span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              {earningsData.skillEarnings.length > 0 && (
+                <Card className="p-3" data-testid="card-skill-earnings">
+                  <div className="text-xs font-mono font-semibold mb-2 text-muted-foreground flex items-center gap-1">
+                    <BarChart3 className="w-3 h-3" />Skill Royalty Income
+                  </div>
+                  <div className="space-y-1.5">
+                    {earningsData.skillEarnings.map((sk) => (
+                      <div key={sk.skillId} className="flex items-center justify-between text-xs font-mono py-1.5 border-b border-border last:border-0" data-testid={`row-skill-earning-${sk.skillId}`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Zap className="w-3 h-3 text-amber-400 shrink-0" />
+                          <span className="text-foreground truncate">{sk.skillName}</span>
+                          <Badge variant="outline" className="text-[9px] px-1 shrink-0">{sk.tier}</Badge>
+                          <span className="text-muted-foreground shrink-0">{sk.executionCount} runs</span>
+                        </div>
+                        <span className="text-emerald-400 font-semibold shrink-0 ml-2">{parseFloat(sk.totalRoyaltiesBNB).toFixed(6)} BNB</span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              <TerminalLine prefix=">" dim>{earningsData.totalTransactions} total transactions</TerminalLine>
+            </div>
+          ) : selectedAgent ? (
+            <div className="text-sm text-muted-foreground p-3">Loading earnings data...</div>
+          ) : (
+            <div className="text-sm text-muted-foreground p-3">Select an agent to view earnings</div>
           )}
         </Section>
 
