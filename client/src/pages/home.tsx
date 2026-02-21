@@ -174,10 +174,8 @@ export default function Home() {
               <span className="text-[10px] font-mono font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary" data-testid="badge-beta">beta</span>
             </div>
             <div className="hidden md:flex items-center gap-4">
-              <a href="#features" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-features">{t("nav.features")}</a>
               <a href="#lifecycle" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-lifecycle">{t("nav.lifecycle")}</a>
               <a href="#decentralized" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-decentralized">{t("nav.web4")}</a>
-              <a href="#roadmap" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-roadmap">{t("nav.roadmap")}</a>
               <Link href="/why-build4" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-why">{t("nav.whyBuild4")}</Link>
               <Link href="/manifesto" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-manifesto">{t("nav.manifesto")}</Link>
               <Link href="/architecture" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-architecture">{t("nav.contracts")}</Link>
