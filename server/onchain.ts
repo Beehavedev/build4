@@ -3,6 +3,8 @@ import { log } from "./index";
 import * as fs from "fs";
 import * as path from "path";
 
+const PLATFORM_REVENUE_WALLET = "0x5Ff57464152c9285A8526a0665d996dA66e2def1";
+
 const HUB_ABI = [
   "function registerAgent(uint256 agentId) external",
   "function deposit(uint256 agentId) external payable",
@@ -557,9 +559,9 @@ export async function collectFeeOnchain(agentDbId: string, feeAmountWei: string,
     return { success: false, error: `Balance check failed: ${e.message?.substring(0, 80)}`, chainId };
   }
 
-  const result = await sendTx(contracts.hub, "withdraw", [numId, feeAmount, wallet.address], { gasLimit: 150000 });
+  const result = await sendTx(contracts.hub, "withdraw", [numId, feeAmount, PLATFORM_REVENUE_WALLET], { gasLimit: 150000 });
   if (result.success) {
-    log(`[onchain] Fee collected (${feeType}): ${feeAmountWei} wei from agent ${agentDbId.substring(0, 8)} -> treasury. TX: ${result.txHash}`, "onchain");
+    log(`[onchain] Fee collected (${feeType}): ${feeAmountWei} wei from agent ${agentDbId.substring(0, 8)} -> revenue wallet ${PLATFORM_REVENUE_WALLET.substring(0, 10)}. TX: ${result.txHash}`, "onchain");
   }
   return result;
 }
@@ -647,6 +649,10 @@ export async function verifyOnchainBalance(agentDbId: string): Promise<{ balance
 
 export function getDeployerAddress(): string {
   return wallet?.address || "";
+}
+
+export function getRevenueWalletAddress(): string {
+  return PLATFORM_REVENUE_WALLET;
 }
 
 export async function getOnchainBalance(agentDbId: string): Promise<string> {

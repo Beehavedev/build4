@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
-import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain } from "./onchain";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain, getRevenueWalletAddress } from "./onchain";
 import {
   web4CreateAgentRequestSchema,
   web4TipRequestSchema,
@@ -731,7 +731,7 @@ export function registerWeb4Routes(app: Express): void {
         8453: "https://basescan.org",
         196: "https://www.oklink.com/xlayer",
       };
-      res.json({ ...summary, explorerBases });
+      res.json({ ...summary, explorerBases, revenueWallet: getRevenueWalletAddress() });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
