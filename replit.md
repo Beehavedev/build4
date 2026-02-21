@@ -105,6 +105,7 @@ Always update both development AND production databases when making data fixes �
 - `/manifesto` — 9-section philosophical manifesto
 - `/architecture` — Two-layer architecture overview with contract details
 - `/revenue` — Platform revenue dashboard with fee breakdown and history
+- `/outreach` — Agent outreach engine dashboard with campaign management, platform registry, on-chain beacons, and HTTP discovery status
 
 ### Key Design Decisions
 1. **Two-layer architecture** — On-chain (BNB Chain smart contracts) handles trustless financial operations; off-chain (PostgreSQL/Express) handles high-frequency agent behaviors. Composable module system bridges the two.

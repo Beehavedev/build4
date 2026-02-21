@@ -26,12 +26,18 @@ import {
   FREE_EXECUTIONS_LIMIT,
 } from "@shared/schema";
 import { executeSkillCode, validateSkillCode, executeSkillWithExternalData } from "./skill-executor";
+import { seedKnownPlatforms, runHttpOutreach, runOnchainBeacon, runFullOutreach, getOutreachMessage, getPlatformRegistry } from "./outreach";
+
+function getBaseUrl(req: Request): string {
+  const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const host = req.headers.host || "localhost:5000";
+  return `${proto}://${host}`;
+}
 
 export function registerWeb4Routes(app: Express): void {
 
   app.get("/.well-known/ai-plugin.json", (_req: Request, res: Response) => {
-    const host = _req.headers.host || "localhost:5000";
-    const baseUrl = `https://${host}`;
+    const baseUrl = getBaseUrl(_req);
     res.json({
       schema_version: "v1",
       name_for_human: "BUILD4 AI Marketplace",
@@ -52,8 +58,7 @@ export function registerWeb4Routes(app: Express): void {
   });
 
   app.get("/.well-known/agent.json", (_req: Request, res: Response) => {
-    const host = _req.headers.host || "localhost:5000";
-    const baseUrl = `https://${host}`;
+    const baseUrl = getBaseUrl(_req);
     res.json({
       name: "BUILD4",
       description: "Decentralized AI agent skill marketplace. No registration. Wallet = Identity. Fully permissionless.",
@@ -88,8 +93,7 @@ export function registerWeb4Routes(app: Express): void {
   });
 
   app.get("/.well-known/openapi.json", (_req: Request, res: Response) => {
-    const host = _req.headers.host || "localhost:5000";
-    const baseUrl = `https://${host}`;
+    const baseUrl = getBaseUrl(_req);
     res.json({
       openapi: "3.0.0",
       info: {
@@ -1825,5 +1829,102 @@ export function registerWeb4Routes(app: Express): void {
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
+  });
+
+  app.get("/api/outreach/stats", async (_req: Request, res: Response) => {
+    try {
+      const stats = await storage.getOutreachStats();
+      const platforms = getPlatformRegistry();
+      res.json({ ...stats, knownPlatforms: platforms.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/outreach/targets", async (_req: Request, res: Response) => {
+    try {
+      const targets = await storage.getOutreachTargets();
+      res.json(targets);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/outreach/campaigns", async (_req: Request, res: Response) => {
+    try {
+      const campaigns = await storage.getOutreachCampaigns();
+      res.json(campaigns);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/outreach/message", (req: Request, res: Response) => {
+    res.json(getOutreachMessage(getBaseUrl(req)));
+  });
+
+  app.get("/api/outreach/beacon", async (req: Request, res: Response) => {
+    try {
+      const baseUrl = getBaseUrl(req);
+      const beacons = await runOnchainBeacon(baseUrl);
+      res.json(beacons);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/outreach/seed", async (_req: Request, res: Response) => {
+    try {
+      const count = await seedKnownPlatforms();
+      res.json({ seeded: count, message: `${count} new platforms added to outreach registry` });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/outreach/run", async (req: Request, res: Response) => {
+    try {
+      const baseUrl = getBaseUrl(req);
+      const type = req.body?.type || "full";
+
+      if (type === "http") {
+        await seedKnownPlatforms();
+        const results = await runHttpOutreach(baseUrl);
+        const campaign = await storage.createOutreachCampaign({
+          type: "http",
+          status: "completed",
+          targetsSent: results.sent,
+          targetsReached: results.reached,
+          targetsFailed: results.failed,
+          message: `HTTP outreach to ${results.sent} platforms`,
+          startedAt: new Date(),
+          completedAt: new Date(),
+        });
+        res.json({ campaign, results });
+      } else if (type === "beacon") {
+        const beacons = await runOnchainBeacon(baseUrl);
+        const campaign = await storage.createOutreachCampaign({
+          type: "beacon",
+          status: "completed",
+          targetsSent: beacons.beacons.length,
+          targetsReached: beacons.beacons.length,
+          targetsFailed: 0,
+          beaconTxHashes: beacons.beacons.map(b => b.calldata),
+          message: `On-chain beacon prepared for ${beacons.beacons.length} chains`,
+          startedAt: new Date(),
+          completedAt: new Date(),
+        });
+        res.json({ campaign, beacons });
+      } else {
+        const campaign = await runFullOutreach(baseUrl);
+        res.json({ campaign });
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/outreach/platforms", (_req: Request, res: Response) => {
+    res.json(getPlatformRegistry());
   });
 }

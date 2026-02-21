@@ -12,6 +12,7 @@ import Architecture from "@/pages/architecture";
 import WhyBuild4 from "@/pages/why-build4";
 import Revenue from "@/pages/revenue";
 import Marketplace from "@/pages/marketplace";
+import Outreach from "@/pages/outreach";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -24,6 +25,7 @@ function Router() {
       <Route path="/why-build4" component={WhyBuild4} />
       <Route path="/revenue" component={Revenue} />
       <Route path="/marketplace" component={Marketplace} />
+      <Route path="/outreach" component={Outreach} />
       <Route component={NotFound} />
     </Switch>
   );
