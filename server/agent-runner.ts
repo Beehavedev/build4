@@ -484,7 +484,9 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           log(`[Agent ${agent.name}] Cannot afford any skills`, "agent-runner");
           return;
         }
-        const skill = affordable[Math.floor(Math.random() * affordable.length)];
+        const paidSkills = affordable.filter(s => BigInt(s.priceAmount) > 0n && s.isExecutable);
+        const pool = paidSkills.length > 0 && Math.random() < 0.8 ? paidSkills : affordable;
+        const skill = pool[Math.floor(Math.random() * pool.length)];
         try {
           const price = BigInt(skill.priceAmount);
           const platformFee = (price * BigInt(PLATFORM_FEES.SKILL_PURCHASE_FEE_BPS)) / BigInt(10000);
