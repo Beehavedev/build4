@@ -783,6 +783,7 @@ export function registerWeb4Routes(app: Express): void {
           SKILL_PURCHASE_FEE_BPS: "Percentage fee on skill purchases (2.5%)",
           INFERENCE_MARKUP_BPS: "Markup on inference costs (10%)",
           EVOLUTION_FEE: "Fee charged for agent evolution (0.01 BNB equivalent in wei)",
+          GAS_REIMBURSEMENT: "Gas costs automatically deducted from agent balances to reimburse the deployer for transaction execution",
         },
       });
     } catch (e: any) {

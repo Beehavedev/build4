@@ -18,6 +18,7 @@ import {
   ExternalLink,
   ShieldCheck,
   ShieldAlert,
+  Fuel,
 } from "lucide-react";
 import type { PlatformRevenue } from "@shared/schema";
 
@@ -45,6 +46,7 @@ function feeTypeIcon(type: string) {
     case "replication": return <GitBranch className="w-4 h-4" />;
     case "inference": return <Brain className="w-4 h-4" />;
     case "evolution": return <Zap className="w-4 h-4" />;
+    case "gas_reimbursement": return <Fuel className="w-4 h-4" />;
     default: return <DollarSign className="w-4 h-4" />;
   }
 }
@@ -57,6 +59,7 @@ function feeTypeBadge(type: string) {
     replication: "bg-purple-500/20 text-purple-400 border-purple-500/30",
     inference: "bg-amber-500/20 text-amber-400 border-amber-500/30",
     evolution: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    gas_reimbursement: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   };
   return colors[type] || "bg-muted text-muted-foreground";
 }
@@ -69,6 +72,7 @@ function feeTypeLabel(type: string): string {
     replication: "Replication",
     inference: "Inference",
     evolution: "Evolution",
+    gas_reimbursement: "Gas Reimbursement",
   };
   return labels[type] || type;
 }
@@ -105,7 +109,7 @@ export default function Revenue() {
     descriptions: Record<string, string>;
   }>({ queryKey: ["/api/web4/revenue/fees"] });
 
-  const feeTypes = ["agent_creation", "skill_listing", "skill_purchase", "replication", "inference", "evolution"];
+  const feeTypes = ["agent_creation", "skill_listing", "skill_purchase", "replication", "inference", "evolution", "gas_reimbursement"];
   const explorerBases = summary?.explorerBases || {};
   const onchainPct = summary && summary.totalTransactions > 0 ? Math.round((summary.onchainVerified / summary.totalTransactions) * 100) : 0;
 

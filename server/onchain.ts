@@ -574,18 +574,23 @@ export async function reimburseGasCost(agentDbId: string, gasCostWei: string, ac
 
   const numId = uuidToNumericId(agentDbId);
 
+  let withdrawAmount = gasCost;
   try {
     const onchainBal = await contracts.hub.getBalance(numId);
+    if (onchainBal === 0n) {
+      log(`[onchain] Gas reimbursement skipped (${actionType}): Agent has zero balance`, "onchain");
+      return { success: false, error: "Agent has zero balance", chainId };
+    }
     if (onchainBal < gasCost) {
-      log(`[onchain] Gas reimbursement skipped (${actionType}): Agent balance ${onchainBal.toString()} < gas cost ${gasCostWei}`, "onchain");
-      return { success: false, error: "Insufficient balance for gas reimbursement", chainId };
+      withdrawAmount = onchainBal;
+      log(`[onchain] Gas reimbursement partial (${actionType}): Agent balance ${onchainBal.toString()} < gas cost ${gasCostWei}, withdrawing available balance`, "onchain");
     }
   } catch (e: any) {
     log(`[onchain] Gas reimbursement balance check failed: ${e.message?.substring(0, 100)}`, "onchain");
     return { success: false, error: "Balance check failed", chainId };
   }
 
-  const result = await sendTx(contracts.hub, "withdraw", [numId, gasCost, wallet.address], { gasLimit: 150000 });
+  const result = await sendTx(contracts.hub, "withdraw", [numId, withdrawAmount, wallet.address], { gasLimit: 150000 });
   if (result.success) {
     log(`[onchain] Gas reimbursed (${actionType}): ${gasCostWei} wei from agent ${agentDbId.substring(0, 8)} -> deployer. TX: ${result.txHash}`, "onchain");
   }
@@ -604,18 +609,23 @@ export async function reimburseGasCostMultiChain(agentDbId: string, chainKey: st
 
   const numId = uuidToNumericId(agentDbId);
 
+  let withdrawAmount = gasCost;
   try {
     const onchainBal = await conn.hub.getBalance(numId);
+    if (onchainBal === 0n) {
+      log(`[onchain] ${conn.name} gas reimbursement skipped (${actionType}): Agent has zero balance`, "onchain");
+      return { success: false, error: "Agent has zero balance", chainId: conn.chainId };
+    }
     if (onchainBal < gasCost) {
-      log(`[onchain] ${conn.name} gas reimbursement skipped (${actionType}): Agent balance ${onchainBal.toString()} < gas ${gasCostWei}`, "onchain");
-      return { success: false, error: "Insufficient balance for gas reimbursement", chainId: conn.chainId };
+      withdrawAmount = onchainBal;
+      log(`[onchain] ${conn.name} gas reimbursement partial (${actionType}): Agent balance ${onchainBal.toString()} < gas ${gasCostWei}, withdrawing available`, "onchain");
     }
   } catch (e: any) {
     log(`[onchain] ${conn.name} gas reimbursement balance check failed: ${e.message?.substring(0, 100)}`, "onchain");
     return { success: false, error: "Balance check failed", chainId: conn.chainId };
   }
 
-  const result = await multiChainSendTx(conn, conn.hub, "withdraw", [numId, gasCost, conn.wallet.address], { gasLimit: 150000 });
+  const result = await multiChainSendTx(conn, conn.hub, "withdraw", [numId, withdrawAmount, conn.wallet.address], { gasLimit: 150000 });
   if (result.success) {
     log(`[onchain] ${conn.name} gas reimbursed (${actionType}): ${gasCostWei} wei from agent ${agentDbId.substring(0, 8)} -> deployer. TX: ${result.txHash}`, "onchain");
   }
