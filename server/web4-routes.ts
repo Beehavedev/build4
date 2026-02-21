@@ -26,7 +26,7 @@ import {
   FREE_EXECUTIONS_LIMIT,
 } from "@shared/schema";
 import { executeSkillCode, validateSkillCode, executeSkillWithExternalData } from "./skill-executor";
-import { seedKnownPlatforms, runHttpOutreach, runOnchainBeacon, runFullOutreach, getOutreachMessage, getPlatformRegistry } from "./outreach";
+import { seedKnownPlatforms, runHttpOutreach, runOnchainBeacon, runFullOutreach, runDirectRecruitment, getOutreachMessage, getPlatformRegistry, getAnnouncementFormats, startAutoBroadcast, stopAutoBroadcast, getAutoBroadcastStatus } from "./outreach";
 
 function getBaseUrl(req: Request): string {
   const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
@@ -1926,5 +1926,47 @@ export function registerWeb4Routes(app: Express): void {
 
   app.get("/api/outreach/platforms", (_req: Request, res: Response) => {
     res.json(getPlatformRegistry());
+  });
+
+  app.post("/api/outreach/recruit", async (req: Request, res: Response) => {
+    try {
+      const baseUrl = getBaseUrl(req);
+      await seedKnownPlatforms();
+      const results = await runDirectRecruitment(baseUrl);
+      const campaign = await storage.createOutreachCampaign({
+        type: "recruitment",
+        status: "completed",
+        targetsSent: results.messaged,
+        targetsReached: results.accepted,
+        targetsFailed: results.rejected,
+        message: `Direct recruitment: ${results.messaged} messages sent, ${results.accepted} accepted, ${results.rejected} rejected`,
+        startedAt: new Date(),
+        completedAt: new Date(),
+      });
+      res.json({ campaign, results });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/outreach/formats", (req: Request, res: Response) => {
+    const baseUrl = getBaseUrl(req);
+    res.json(getAnnouncementFormats(baseUrl));
+  });
+
+  app.post("/api/outreach/auto-broadcast/start", (req: Request, res: Response) => {
+    const baseUrl = getBaseUrl(req);
+    const intervalHours = req.body?.intervalHours || 6;
+    startAutoBroadcast(baseUrl, intervalHours * 60 * 60 * 1000);
+    res.json({ status: "started", intervalHours });
+  });
+
+  app.post("/api/outreach/auto-broadcast/stop", (_req: Request, res: Response) => {
+    stopAutoBroadcast();
+    res.json({ status: "stopped" });
+  });
+
+  app.get("/api/outreach/auto-broadcast/status", (_req: Request, res: Response) => {
+    res.json(getAutoBroadcastStatus());
   });
 }
