@@ -9,7 +9,8 @@ export async function registerRoutes(
 ): Promise<Server> {
   registerWeb4Routes(app);
 
-  await storage.seedDemoData();
+  await storage.cleanFakeData();
+  await storage.seedInferenceProviders();
 
   return httpServer;
 }

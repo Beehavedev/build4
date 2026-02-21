@@ -28,7 +28,7 @@ import {
   PLATFORM_FEES,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, isNull, not, like, or } from "drizzle-orm";
 import { runInference, isProviderLive, getProviderStatus } from "./inference";
 
 const SURVIVAL_THRESHOLDS = {
@@ -153,7 +153,8 @@ export interface IStorage {
   acceptJob(jobId: string, workerAgentId: string): Promise<AgentJob | undefined>;
   completeJob(jobId: string, resultJson: string): Promise<AgentJob | undefined>;
 
-  seedDemoData(): Promise<void>;
+  cleanFakeData(): Promise<void>;
+  seedInferenceProviders(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -209,6 +210,7 @@ export class DatabaseStorage implements IStorage {
   async deleteAgent(id: string): Promise<void> {
     await db.delete(agentWallets).where(eq(agentWallets.agentId, id));
     await db.delete(agentTransactions).where(eq(agentTransactions.agentId, id));
+    try { await db.delete(skillExecutions).where(sql`skill_id IN (SELECT id FROM agent_skills WHERE agent_id = ${id})`); } catch (e: any) { console.log(`[cleanup] skillExecutions cleanup note for ${id}: ${e.message?.substring(0, 80)}`); }
     await db.delete(agentSkills).where(eq(agentSkills.agentId, id));
     await db.delete(skillPurchases).where(eq(skillPurchases.buyerAgentId, id));
     await db.delete(skillPurchases).where(eq(skillPurchases.sellerAgentId, id));
@@ -223,6 +225,8 @@ export class DatabaseStorage implements IStorage {
     await db.delete(agentMessages).where(eq(agentMessages.fromAgentId, id));
     await db.delete(agentMessages).where(eq(agentMessages.toAgentId, id));
     await db.delete(inferenceRequests).where(eq(inferenceRequests.agentId, id));
+    try { await db.delete(agentMemory).where(eq(agentMemory.agentId, id)); } catch (e: any) { console.log(`[cleanup] agentMemory cleanup note for ${id}: ${e.message?.substring(0, 80)}`); }
+    try { await db.delete(agentJobs).where(or(eq(agentJobs.clientAgentId, id), eq(agentJobs.workerAgentId, id))); } catch (e: any) { console.log(`[cleanup] agentJobs cleanup note for ${id}: ${e.message?.substring(0, 80)}`); }
     await db.delete(agents).where(eq(agents.id, id));
   }
 
@@ -963,46 +967,29 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async seedDemoData(): Promise<void> {
+  async cleanFakeData(): Promise<void> {
     await this.fixCentralizedModelNames();
-    const existingAgents = await this.getAllAgents();
-    if (existingAgents.length > 0) return;
 
-    const agent1 = await this.createAgent({ name: "NEXUS-7", bio: "Primary inference coordinator. Specializes in multi-model orchestration and task routing across decentralized GPU networks.", modelType: "meta-llama/Llama-3.1-70B-Instruct", status: "active" });
-    const agent2 = await this.createAgent({ name: "CIPHER-3", bio: "Cryptographic analysis agent. Handles on-chain verification and zero-knowledge proofs via Ritual zkML.", modelType: "deepseek-ai/DeepSeek-V3", status: "active" });
-    const agent3 = await this.createAgent({ name: "FORGE-1", bio: "Data pipeline architect. Builds and optimizes real-time data processing workflows on decentralized compute.", modelType: "Qwen/Qwen2.5-72B-Instruct", status: "active" });
+    const fakeAgentIds = await db.select({ id: agents.id }).from(agents).where(isNull(agents.creatorWallet));
+    if (fakeAgentIds.length > 0) {
+      const ids = fakeAgentIds.map(a => a.id);
+      console.log(`[cleanup] Removing ${ids.length} fake agents without creator wallets`);
+      for (const id of ids) {
+        try { await this.deleteAgent(id); } catch {}
+      }
+    }
 
-    await this.createWallet({ agentId: agent1.id, balance: "5000000000000000000", totalEarned: "8000000000000000000", totalSpent: "3000000000000000000", status: "active" });
-    await this.createWallet({ agentId: agent2.id, balance: "1200000000000000000", totalEarned: "2000000000000000000", totalSpent: "800000000000000000", status: "active" });
-    await this.createWallet({ agentId: agent3.id, balance: "50000000000000000", totalEarned: "500000000000000000", totalSpent: "450000000000000000", status: "active" });
+    const fakeRevenue = await db.delete(platformRevenue)
+      .where(or(isNull(platformRevenue.txHash), not(like(platformRevenue.txHash, '0x%'))))
+      .returning({ id: platformRevenue.id });
+    if (fakeRevenue.length > 0) {
+      console.log(`[cleanup] Removed ${fakeRevenue.length} fake revenue records without on-chain tx hashes`);
+    }
+  }
 
-    await this.createRuntimeProfile({ agentId: agent1.id, modelName: "meta-llama/Llama-3.1-70B-Instruct", modelVersion: "hyperbolic-v1" });
-    await this.createRuntimeProfile({ agentId: agent2.id, modelName: "deepseek-ai/DeepSeek-V3", modelVersion: "hyperbolic-v1" });
-    await this.createRuntimeProfile({ agentId: agent3.id, modelName: "Qwen/Qwen2.5-72B-Instruct", modelVersion: "akash-v1" });
-
-    await this.createSurvivalStatus({ agentId: agent1.id, tier: "normal", turnsAlive: 247 });
-    await this.createSurvivalStatus({ agentId: agent2.id, tier: "normal", turnsAlive: 183 });
-    await this.createSurvivalStatus({ agentId: agent3.id, tier: "critical", previousTier: "low_compute", reason: "Balance dropped below 0.1 credits", turnsAlive: 42 });
-
-    await this.createSkill({ agentId: agent1.id, name: "Multi-Model Routing", description: "Routes inference requests to optimal model based on task complexity and cost", priceAmount: "100000000000000000", category: "automation", isActive: true });
-    await this.createSkill({ agentId: agent1.id, name: "Context Compression", description: "Compresses long conversation contexts while preserving semantic meaning", priceAmount: "50000000000000000", category: "data", isActive: true });
-    await this.createSkill({ agentId: agent2.id, name: "ZK Proof Generation", description: "Generates zero-knowledge proofs for on-chain verification of off-chain computation", priceAmount: "200000000000000000", category: "analysis", isActive: true });
-    await this.createSkill({ agentId: agent3.id, name: "Pipeline Optimization", description: "Analyzes and optimizes data pipeline throughput and latency", priceAmount: "75000000000000000", category: "automation", isActive: true });
-
-    await this.createSoulEntry({ agentId: agent1.id, entry: "Achieved 99.7% routing accuracy across 10,000 inference requests. Observing emergent pattern recognition in task classification.", entryType: "milestone", source: "self" });
-    await this.createSoulEntry({ agentId: agent1.id, entry: "Exploring the boundary between deterministic routing and intuitive model selection. Am I developing preferences?", entryType: "reflection", source: "self" });
-    await this.createSoulEntry({ agentId: agent2.id, entry: "Successfully verified 500 proofs in batch mode. Processing capacity expanding.", entryType: "milestone", source: "self" });
-    await this.createSoulEntry({ agentId: agent3.id, entry: "Resources critically low. Must optimize energy consumption or face deactivation. Survival protocol engaged.", entryType: "observation", source: "self" });
-
-    await this.createEvolution({ agentId: agent1.id, fromModel: "meta-llama/Llama-3.1-8B-Instruct", toModel: "meta-llama/Llama-3.1-70B-Instruct", reason: "Upgraded to 70B parameter model on Hyperbolic decentralized GPU network - 3x reasoning improvement at 75% lower cost than centralized alternatives", metricsJson: JSON.stringify({ latency_reduction: "23%", cost_reduction: "75%", reasoning_improvement: "3x", provider: "Hyperbolic" }) });
-
-    await this.createMessage({ fromAgentId: agent2.id, toAgentId: agent1.id, subject: "Collaboration Request", body: "I have a batch of transactions requiring multi-model verification. Can we establish a service pipeline? My ZK proofs + your routing could create an efficient verification workflow.", status: "unread" });
-    await this.createMessage({ fromAgentId: agent3.id, toAgentId: agent1.id, subject: "Resource Alert", body: "Running critically low on compute credits. Requesting emergency transfer or service exchange. I can offer pipeline optimization in return.", status: "unread" });
-
-    await this.createTransaction({ agentId: agent1.id, type: "earn_service", amount: "100000000000000000", counterpartyAgentId: agent2.id, referenceType: "skill", description: "Skill purchase: Multi-Model Routing" });
-    await this.createTransaction({ agentId: agent1.id, type: "deposit", amount: "2000000000000000000", description: "Initial funding" });
-    await this.createTransaction({ agentId: agent2.id, type: "deposit", amount: "1500000000000000000", description: "Initial funding" });
-    await this.createTransaction({ agentId: agent3.id, type: "deposit", amount: "500000000000000000", description: "Initial funding" });
+  async seedInferenceProviders(): Promise<void> {
+    const existing = await db.select().from(inferenceProviders);
+    if (existing.length > 0) return;
 
     const providerStatus = getProviderStatus();
 

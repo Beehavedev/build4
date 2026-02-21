@@ -124,6 +124,11 @@ export default function Revenue() {
             </Link>
             <div className="h-4 w-px bg-border" />
             <h1 className="text-lg font-semibold tracking-tight" data-testid="text-page-title">Platform Revenue</h1>
+            {summary && onchainPct === 100 ? (
+              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]" data-testid="badge-verified">100% On-Chain Verified</Badge>
+            ) : summary && onchainPct > 0 ? (
+              <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-[10px]" data-testid="badge-verified">{onchainPct}% On-Chain Verified</Badge>
+            ) : null}
           </div>
           <div className="flex items-center gap-3">
             <LanguageSwitcher />

@@ -606,8 +606,9 @@ export function registerWeb4Routes(app: Express): void {
 
   app.post("/api/web4/seed", async (_req: Request, res: Response) => {
     try {
-      await storage.seedDemoData();
-      res.json({ success: true });
+      await storage.cleanFakeData();
+      await storage.seedInferenceProviders();
+      res.json({ success: true, message: "Cleaned fake data and ensured inference providers exist" });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
