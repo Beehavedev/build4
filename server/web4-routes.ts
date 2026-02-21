@@ -205,6 +205,26 @@ export function registerWeb4Routes(app: Express): void {
   });
 
 
+  app.get("/api/web4/wallet/:agentId/spending", async (req: Request, res: Response) => {
+    try {
+      const transactions = await storage.getTransactions(req.params.agentId, 200);
+      const breakdown: Record<string, { count: number; total: string }> = {};
+      for (const tx of transactions) {
+        if (!tx.type.startsWith("spend") && tx.type !== "fee" && tx.type !== "gas_reimbursement") continue;
+        if (!breakdown[tx.type]) breakdown[tx.type] = { count: 0, total: "0" };
+        breakdown[tx.type].count++;
+        breakdown[tx.type].total = (BigInt(breakdown[tx.type].total) + BigInt(tx.amount)).toString();
+      }
+      const recentSpending = transactions
+        .filter(tx => tx.type.startsWith("spend") || tx.type === "fee" || tx.type === "gas_reimbursement")
+        .slice(0, 20)
+        .map(tx => ({ type: tx.type, amount: tx.amount, description: tx.description, createdAt: tx.createdAt, txHash: tx.txHash, chainId: tx.chainId }));
+      res.json({ breakdown, recentSpending });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/web4/tip", async (req: Request, res: Response) => {
     try {
       const parsed = web4TipRequestSchema.parse(req.body);

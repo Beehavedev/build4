@@ -218,6 +218,12 @@ export default function AutonomousEconomy() {
     refetchInterval: 30000,
   });
 
+  const { data: spendingData } = useQuery<{ breakdown: Record<string, { count: number; total: string }>; recentSpending: any[] }>({
+    queryKey: ["/api/web4/wallet", agentId, "spending"],
+    enabled: !!agentId,
+    refetchInterval: 30000,
+  });
+
   const { data: skills = [] } = useQuery<AgentSkill[]>({
     queryKey: ["/api/web4/skills/agent", agentId],
     enabled: !!agentId,
@@ -959,11 +965,11 @@ export default function AutonomousEconomy() {
                   </div>
                   <div className="text-center p-2 rounded bg-muted/20">
                     <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-earned">{onChainAgentWallet ? parseFloat(onChainAgentWallet.totalEarned).toFixed(4) : formatShortCredits(wallet?.totalEarned || "0")}</div>
-                    <div className="text-[10px] text-muted-foreground">{t("dashboard.earned")}</div>
+                    <div className="text-[10px] text-muted-foreground">Deposited</div>
                   </div>
                   <div className="text-center p-2 rounded bg-muted/20">
                     <div className="font-mono text-lg font-bold text-red-400" data-testid="text-wallet-spent">{onChainAgentWallet ? parseFloat(onChainAgentWallet.totalSpent || "0").toFixed(4) : formatShortCredits(wallet?.totalSpent || "0")}</div>
-                    <div className="text-[10px] text-muted-foreground">{t("dashboard.spent")}</div>
+                    <div className="text-[10px] text-muted-foreground">Spent</div>
                   </div>
                   <div className="text-center p-2 rounded bg-muted/20">
                     <div className="font-mono text-lg font-bold" data-testid="text-turns-alive">{survival?.turnsAlive || 0}</div>
@@ -1335,7 +1341,7 @@ export default function AutonomousEconomy() {
                               </div>
                             </div>
                             <div className="p-2 bg-muted/30 rounded">
-                              <div className="text-[9px] text-muted-foreground">Total Earned</div>
+                              <div className="text-[9px] text-muted-foreground">Total Deposited</div>
                               <div className="font-mono text-xs">{onChainAgentWallet.totalEarned} {activeChain.currency}</div>
                             </div>
                           </div>
@@ -1664,11 +1670,11 @@ export default function AutonomousEconomy() {
                 )}
               </Card>
               <Card className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">{t("dashboard.totalEarned")}</div>
+                <div className="text-xs text-muted-foreground mb-1">Total Deposited</div>
                 <div className="font-mono font-bold text-primary">{onChainAgentWallet ? `${parseFloat(onChainAgentWallet.totalEarned).toFixed(6)} ${activeChain.currency}` : formatCredits(wallet?.totalEarned || "0") + ` ${activeChain.currency}`}</div>
               </Card>
               <Card className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">{t("dashboard.totalSpent")}</div>
+                <div className="text-xs text-muted-foreground mb-1">Total Spent</div>
                 <div className="font-mono font-bold text-red-400">{onChainAgentWallet ? `${parseFloat(onChainAgentWallet.totalSpent || "0").toFixed(6)} ${activeChain.currency}` : formatCredits(wallet?.totalSpent || "0") + ` ${activeChain.currency}`}</div>
               </Card>
             </div>
@@ -1677,6 +1683,31 @@ export default function AutonomousEconomy() {
               <div className="text-[10px] font-mono text-muted-foreground mb-2">To deposit or withdraw real {activeChain.currency}, use the On-Chain Contracts section above. All fund movements require a wallet signature and execute on the blockchain.</div>
               <div className="text-[10px] font-mono text-muted-foreground">Off-chain balance reflects agent earnings and fees from autonomous activity.</div>
             </div>
+
+            {spendingData && Object.keys(spendingData.breakdown).length > 0 && (
+              <div className="mt-3">
+                <div className="text-xs font-mono font-semibold mb-2 text-muted-foreground">Spending Breakdown</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.entries(spendingData.breakdown).map(([type, data]) => {
+                    const labels: Record<string, string> = {
+                      "fee": "Platform Fees",
+                      "spend_inference": "AI Inference",
+                      "spend_skill": "Skill Purchases",
+                      "spend_evolution": "Evolution Costs",
+                      "spend_replication": "Replication",
+                      "gas_reimbursement": "Gas Costs",
+                    };
+                    return (
+                      <div key={type} className="p-2 rounded bg-muted/30 border border-border/50" data-testid={`spending-${type}`}>
+                        <div className="text-[10px] text-muted-foreground">{labels[type] || type}</div>
+                        <div className="font-mono text-xs font-bold text-red-400">{formatShortCredits(data.total)}</div>
+                        <div className="text-[9px] text-muted-foreground">{data.count} txns</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {transactions.length > 0 && (
               <div className="mt-3">

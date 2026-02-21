@@ -865,7 +865,7 @@ export class DatabaseStorage implements IStorage {
 
     const agent = await this.createAgent({ name, bio, modelType, status: "active", creatorWallet: creatorWallet?.toLowerCase() });
     const netDeposit = (depositAmount - creationFee).toString();
-    const wallet = await this.createWallet({ agentId: agent.id, balance: netDeposit, totalEarned: netDeposit, totalSpent: "0", status: "active" });
+    const wallet = await this.createWallet({ agentId: agent.id, balance: netDeposit, totalEarned: "0", totalSpent: "0", status: "active" });
     await this.createRuntimeProfile({ agentId: agent.id, modelName: modelType });
     await this.createSurvivalStatus({ agentId: agent.id, tier: "dead", turnsAlive: 0 });
 
