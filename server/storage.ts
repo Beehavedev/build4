@@ -26,8 +26,11 @@ import {
   inferenceProviders, inferenceRequests,
   platformRevenue, skillExecutions, agentMemory, agentJobs,
   skillPipelines, userCredits,
+  outreachTargets, outreachCampaigns,
   type SkillPipeline, type InsertSkillPipeline,
   type UserCredits, type InsertUserCredits,
+  type OutreachTarget, type InsertOutreachTarget,
+  type OutreachCampaign, type InsertOutreachCampaign,
   PLATFORM_FEES,
 } from "@shared/schema";
 import { db } from "./db";
@@ -1262,6 +1265,56 @@ export class DatabaseStorage implements IStorage {
       .set({ freeExecutionsUsed: sql`${userCredits.freeExecutionsUsed} + 1`, updatedAt: new Date() })
       .where(eq(userCredits.sessionId, sessionId)).returning();
     return result;
+  }
+
+  async getOutreachTargets(): Promise<OutreachTarget[]> {
+    return db.select().from(outreachTargets).orderBy(desc(outreachTargets.createdAt));
+  }
+
+  async getOutreachTarget(id: string): Promise<OutreachTarget | undefined> {
+    const [result] = await db.select().from(outreachTargets).where(eq(outreachTargets.id, id));
+    return result;
+  }
+
+  async getOutreachTargetByUrl(url: string): Promise<OutreachTarget | undefined> {
+    const [result] = await db.select().from(outreachTargets).where(eq(outreachTargets.endpointUrl, url));
+    return result;
+  }
+
+  async createOutreachTarget(data: InsertOutreachTarget): Promise<OutreachTarget> {
+    const [result] = await db.insert(outreachTargets).values(data).returning();
+    return result;
+  }
+
+  async updateOutreachTarget(id: string, data: Partial<InsertOutreachTarget> & { lastContactedAt?: Date; timesContacted?: number; responseCode?: number; lastResponse?: string }): Promise<OutreachTarget> {
+    const [result] = await db.update(outreachTargets).set(data).where(eq(outreachTargets.id, id)).returning();
+    return result;
+  }
+
+  async getOutreachCampaigns(): Promise<OutreachCampaign[]> {
+    return db.select().from(outreachCampaigns).orderBy(desc(outreachCampaigns.createdAt));
+  }
+
+  async createOutreachCampaign(data: InsertOutreachCampaign): Promise<OutreachCampaign> {
+    const [result] = await db.insert(outreachCampaigns).values(data).returning();
+    return result;
+  }
+
+  async updateOutreachCampaign(id: string, data: Partial<OutreachCampaign>): Promise<OutreachCampaign> {
+    const [result] = await db.update(outreachCampaigns).set(data).where(eq(outreachCampaigns.id, id)).returning();
+    return result;
+  }
+
+  async getOutreachStats(): Promise<{ totalTargets: number; reached: number; pending: number; failed: number; campaigns: number }> {
+    const targets = await db.select().from(outreachTargets);
+    const campaigns = await db.select().from(outreachCampaigns);
+    return {
+      totalTargets: targets.length,
+      reached: targets.filter(t => t.status === "reached").length,
+      pending: targets.filter(t => t.status === "pending").length,
+      failed: targets.filter(t => t.status === "failed").length,
+      campaigns: campaigns.length,
+    };
   }
 }
 

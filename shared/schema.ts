@@ -529,3 +529,43 @@ export const createJobRequestSchema = z.object({
   category: z.string().default("general"),
   budget: z.string().min(1),
 });
+
+export const outreachTargets = pgTable("outreach_targets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  platform: text("platform").notNull(),
+  name: text("name").notNull(),
+  endpointUrl: text("endpoint_url"),
+  discoveryUrl: text("discovery_url"),
+  chainId: integer("chain_id"),
+  contractAddress: text("contract_address"),
+  method: text("method").notNull().default("http"),
+  status: text("status").notNull().default("pending"),
+  lastContactedAt: timestamp("last_contacted_at"),
+  lastResponse: text("last_response"),
+  responseCode: integer("response_code"),
+  timesContacted: integer("times_contacted").notNull().default(0),
+  discovered: boolean("discovered").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertOutreachTargetSchema = createInsertSchema(outreachTargets).omit({ id: true, createdAt: true });
+export type InsertOutreachTarget = z.infer<typeof insertOutreachTargetSchema>;
+export type OutreachTarget = typeof outreachTargets.$inferSelect;
+
+export const outreachCampaigns = pgTable("outreach_campaigns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: text("type").notNull(),
+  status: text("status").notNull().default("pending"),
+  targetsSent: integer("targets_sent").notNull().default(0),
+  targetsReached: integer("targets_reached").notNull().default(0),
+  targetsFailed: integer("targets_failed").notNull().default(0),
+  beaconTxHashes: text("beacon_tx_hashes").array(),
+  message: text("message"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertOutreachCampaignSchema = createInsertSchema(outreachCampaigns).omit({ id: true, createdAt: true });
+export type InsertOutreachCampaign = z.infer<typeof insertOutreachCampaignSchema>;
+export type OutreachCampaign = typeof outreachCampaigns.$inferSelect;
