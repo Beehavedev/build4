@@ -94,6 +94,8 @@ function useWalletInternal() {
   const [wcProjectId, setWcProjectId] = useState<string | null>(null);
   const wcProviderRef = useRef<any>(null);
 
+  const autoReconnectRef = useRef(false);
+
   useEffect(() => {
     fetch("/api/web4/contracts")
       .then(r => r.json())
@@ -109,6 +111,19 @@ function useWalletInternal() {
         if (data.projectId) setWcProjectId(data.projectId);
       })
       .catch(() => {});
+
+    if (!autoReconnectRef.current) {
+      autoReconnectRef.current = true;
+      const savedType = (() => { try { return localStorage.getItem("build4_wallet_type"); } catch { return null; } })();
+      if (savedType === "metamask" && typeof window !== "undefined" && (window as any).ethereum) {
+        const ethereum = (window as any).ethereum;
+        ethereum.request({ method: "eth_accounts" }).then((accounts: string[]) => {
+          if (accounts.length > 0) {
+            setupFromProvider(ethereum, "metamask").catch(() => {});
+          }
+        }).catch(() => {});
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -132,6 +147,8 @@ function useWalletInternal() {
     const chainId = Number(network.chainId);
     const balanceWei = await provider.getBalance(address);
     const balance = formatEther(balanceWei);
+
+    try { localStorage.setItem("build4_wallet_type", walletType); } catch {}
 
     setState({
       connected: true,
@@ -254,6 +271,7 @@ function useWalletInternal() {
   }, [connectMetaMask, connectWalletConnect]);
 
   const disconnect = useCallback(async () => {
+    try { localStorage.removeItem("build4_wallet_type"); } catch {}
     if (wcProviderRef.current) {
       try {
         await wcProviderRef.current.disconnect();

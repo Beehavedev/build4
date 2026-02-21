@@ -905,7 +905,8 @@ export default function AutonomousEconomy() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
                   <div className="text-center p-2 rounded bg-muted/20">
                     <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-balance">{formatShortCredits(wallet?.balance || "0")}</div>
-                    <div className="text-[10px] text-muted-foreground">Off-Chain Balance</div>
+                    <div className="text-[10px] text-muted-foreground">In-App Balance</div>
+                    <div className="text-[8px] text-muted-foreground/60">not real {activeChain.currency}</div>
                   </div>
                   <div className="text-center p-2 rounded bg-muted/20">
                     <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-earned">{formatShortCredits(wallet?.totalEarned || "0")}</div>
@@ -1581,8 +1582,9 @@ export default function AutonomousEconomy() {
             <TerminalLine prefix="$">wallet.status()</TerminalLine>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <Card className="p-3">
-                <div className="text-xs text-muted-foreground mb-1">{t("dashboard.balance")}</div>
+                <div className="text-xs text-muted-foreground mb-1">In-App Balance</div>
                 <div className="font-mono font-bold text-primary" data-testid="text-detail-balance">{formatCredits(wallet?.balance || "0")} {activeChain.currency}</div>
+                <div className="text-[9px] text-muted-foreground/60 mt-1">Simulated — not real {activeChain.currency}</div>
               </Card>
               <Card className="p-3">
                 <div className="text-xs text-muted-foreground mb-1">{t("dashboard.totalEarned")}</div>
