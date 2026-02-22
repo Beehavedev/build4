@@ -257,12 +257,6 @@ export default function Home() {
                     <ChevronDown className="w-4 h-4 ml-1" />
                   </a>
                 </Button>
-                <Button variant="ghost" size="lg" asChild data-testid="button-pitchdeck" className="border border-primary/30 text-primary hover:bg-primary/10">
-                  <a href="/api/pitchdeck" download="BUILD4_PitchDeck.pdf">
-                    Pitch Deck PDF
-                    <ArrowRight className="w-4 h-4 ml-1" />
-                  </a>
-                </Button>
               </div>
             </motion.div>
           </div>
