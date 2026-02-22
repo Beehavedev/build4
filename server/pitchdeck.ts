@@ -40,7 +40,7 @@ function drawBg(doc: PDFKit.PDFDocument) {
   doc.rect(0, H - 3, W, 3).fill(C.accent);
 }
 
-function drawBgWithImage(doc: PDFKit.PDFDocument, imageName: string, opacity: number = 0.3) {
+function drawBgWithImage(doc: PDFKit.PDFDocument, imageName: string, opacity: number = 0.15) {
   doc.rect(0, 0, W, H).fill(C.bgDark);
 
   const imgPath = img(imageName);
@@ -52,7 +52,7 @@ function drawBgWithImage(doc: PDFKit.PDFDocument, imageName: string, opacity: nu
   }
 
   doc.save();
-  doc.opacity(0.7);
+  doc.opacity(0.88);
   doc.rect(0, 0, W, H).fill(C.bgDark);
   doc.restore();
 
@@ -167,11 +167,11 @@ export async function generatePitchDeck(res: Response) {
   // ═══════════════════════════════════════════
   // SLIDE 1 — COVER
   // ═══════════════════════════════════════════
-  drawBgWithImage(doc, "cover.png", 0.45);
+  drawBgWithImage(doc, "cover.png", 0.15);
 
   doc.save();
-  doc.roundedRect(40, 100, 450, 360, 12);
-  doc.opacity(0.85);
+  doc.roundedRect(30, 80, 732, 400, 12);
+  doc.opacity(0.9);
   doc.fill(C.bgDark);
   doc.restore();
 
@@ -264,18 +264,18 @@ export async function generatePitchDeck(res: Response) {
     { title: "Survival Pressure", desc: "Earn or die — genuine market pressure drives value" },
   ];
 
-  const colW = 222;
-  const colGap = 12;
-  py = 170;
+  const colW = 215;
+  const colGap = 10;
+  py = 165;
   for (let i = 0; i < solutions.length; i++) {
     const col = i % 3;
     const row = Math.floor(i / 3);
-    const sx = 55 + col * (colW + colGap);
-    const sy = py + row * 110;
+    const sx = 40 + col * (colW + colGap);
+    const sy = py + row * 105;
 
-    drawCard(doc, sx, sy, colW, 90);
-    doc.fontSize(14).fillColor(C.accent).text(solutions[i].title, sx + 15, sy + 15, { width: colW - 30 });
-    doc.fontSize(11).fillColor(C.lightGray).text(solutions[i].desc, sx + 15, sy + 38, { width: colW - 30, lineGap: 3 });
+    drawCard(doc, sx, sy, colW, 85);
+    doc.fontSize(13).fillColor(C.accent).text(solutions[i].title, sx + 12, sy + 14, { width: colW - 24 });
+    doc.fontSize(10).fillColor(C.lightGray).text(solutions[i].desc, sx + 12, sy + 34, { width: colW - 24, lineGap: 3 });
   }
 
   // ═══════════════════════════════════════════
@@ -521,19 +521,19 @@ export async function generatePitchDeck(res: Response) {
     { title: "Survival Economics", desc: "Earn or die creates genuine market signals & competition.", color: C.green },
   ];
 
-  const moatW = 220;
-  const moatGap = 12;
+  const moatW = 215;
+  const moatGap = 10;
   for (let i = 0; i < moats.length; i++) {
     const col = i % 3;
     const row = Math.floor(i / 3);
-    const mx = 55 + col * (moatW + moatGap);
+    const mx = 40 + col * (moatW + moatGap);
     const my = 120 + row * 140;
 
     drawCard(doc, mx, my, moatW, 120);
     doc.roundedRect(mx, my, moatW, 3, 2).fill(moats[i].color);
 
-    doc.fontSize(12).fillColor(C.white).text(moats[i].title, mx + 15, my + 18, { width: moatW - 30 });
-    doc.fontSize(10).fillColor(C.lightGray).text(moats[i].desc, mx + 15, my + 50, { width: moatW - 30, lineGap: 3 });
+    doc.fontSize(11).fillColor(C.white).text(moats[i].title, mx + 12, my + 18, { width: moatW - 24 });
+    doc.fontSize(10).fillColor(C.lightGray).text(moats[i].desc, mx + 12, my + 48, { width: moatW - 24, lineGap: 3 });
   }
 
   drawCard(doc, 55, 415, 695, 45);
@@ -588,16 +588,16 @@ export async function generatePitchDeck(res: Response) {
     },
   ];
 
-  const phaseW = 220;
-  const phaseGap = 12;
+  const phaseW = 215;
+  const phaseGap = 10;
   for (let i = 0; i < phases.length; i++) {
-    const px = 55 + i * (phaseW + phaseGap);
+    const px = 40 + i * (phaseW + phaseGap);
     const pyStart = 120;
 
     drawCard(doc, px, pyStart, phaseW, 360);
     doc.roundedRect(px, pyStart, phaseW, 4, 2).fill(phases[i].color);
 
-    doc.fontSize(16).fillColor(phases[i].color).text(phases[i].phase, px + 15, pyStart + 18, { width: phaseW - 30 });
+    doc.fontSize(15).fillColor(phases[i].color).text(phases[i].phase, px + 12, pyStart + 18, { width: phaseW - 24 });
 
     doc.save();
     doc.roundedRect(px + 15, pyStart + 42, 75, 18, 4).fill(phases[i].color);
@@ -608,7 +608,7 @@ export async function generatePitchDeck(res: Response) {
     let itemY = pyStart + 75;
     for (const item of phases[i].items) {
       drawBulletIcon(doc, px + 25, itemY);
-      doc.fontSize(10).fillColor(C.offWhite).text(item, px + 37, itemY, { width: phaseW - 55, lineGap: 2 });
+      doc.fontSize(10).fillColor(C.offWhite).text(item, px + 37, itemY, { width: phaseW - 50, lineGap: 2 });
       itemY += 32;
     }
   }
@@ -675,11 +675,11 @@ export async function generatePitchDeck(res: Response) {
   // SLIDE 12 — CLOSING
   // ═══════════════════════════════════════════
   doc.addPage();
-  drawBgWithImage(doc, "cover.png", 0.35);
+  drawBgWithImage(doc, "cover.png", 0.15);
 
   doc.save();
   doc.rect(0, 0, W, H);
-  doc.opacity(0.75);
+  doc.opacity(0.9);
   doc.fill(C.bgDark);
   doc.restore();
 
