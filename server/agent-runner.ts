@@ -13,6 +13,7 @@ import {
   flushGasReimbursements,
   getPendingReimbursementCount,
   getPendingReimbursementTotal,
+  verifyOnchainBalance,
 } from "./onchain";
 import type { Agent, AgentWallet } from "@shared/schema";
 import { PLATFORM_FEES } from "@shared/schema";
@@ -24,6 +25,7 @@ import { SKILL_CODE_TEMPLATES, validateSkillCode, executeSkillCode, generateSkil
 const TICK_INTERVAL_MS = 30_000;
 const AGENT_COOLDOWN_MS = 60_000;
 const MAX_CONCURRENT_AGENTS = 3;
+const MIN_ONCHAIN_TRANSFER_WEI = BigInt("50000000000000"); // 0.00005 BNB - below this, gas cost exceeds transfer value
 
 const lastActionTime = new Map<string, number>();
 let running = false;
@@ -848,34 +850,64 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           await storage.updateSkillExecutionCount(skill.id);
 
           if (result.success && royalty > 0n) {
-            const callerWallet = await storage.getWallet(agent.id);
-            if (callerWallet && BigInt(callerWallet.balance) >= royalty) {
-              const callerNewBal = (BigInt(callerWallet.balance) - royalty).toString();
-              await storage.updateWalletBalance(agent.id, callerNewBal, "0", royaltyStr);
-              await storage.createTransaction({
-                agentId: agent.id,
-                type: "spend_execution",
-                amount: royaltyStr,
-                description: `Skill execution cost: ${skill.name} (${skill.tier} tier)`,
-                referenceType: "skill_execution",
-                referenceId: skill.id,
-              });
+            let royaltyTxHash: string | undefined;
+            let royaltyOnchain = false;
 
+            if (onchainEnabled && isOnchainReady() && royalty >= MIN_ONCHAIN_TRANSFER_WEI) {
+              try {
+                const transferResult = await transferOnchain(agent.id, skill.agentId, royaltyStr);
+                if (transferResult.success && transferResult.txHash) {
+                  royaltyTxHash = transferResult.txHash;
+                  royaltyOnchain = true;
+                  log(`[Agent ${agent.name}] Skill royalty on-chain: ${getExplorerUrl(royaltyTxHash)}`, "agent-runner");
+                  await reimburseAndRecord(agent, transferResult.gasCostWei, "skill_royalty_transfer");
+                }
+              } catch (e: any) {
+                log(`[Agent ${agent.name}] On-chain royalty transfer failed, DB fallback: ${e.message?.substring(0, 80)}`, "agent-runner");
+              }
+            } else if (onchainEnabled && royalty < MIN_ONCHAIN_TRANSFER_WEI) {
+              log(`[Agent ${agent.name}] Royalty ${(Number(royalty) / 1e18).toFixed(8)} BNB below on-chain minimum, DB-only`, "agent-runner");
+            }
+
+            if (royaltyOnchain) {
+              const callerOnchain = await verifyOnchainBalance(agent.id);
+              await storage.updateWalletBalance(agent.id, callerOnchain.balance, "0", royaltyStr);
+              const creatorOnchain = await verifyOnchainBalance(skill.agentId);
+              await storage.updateWalletBalance(skill.agentId, creatorOnchain.balance, royaltyStr, "0");
+            } else {
+              const callerWallet = await storage.getWallet(agent.id);
+              if (callerWallet && BigInt(callerWallet.balance) >= royalty) {
+                const callerNewBal = (BigInt(callerWallet.balance) - royalty).toString();
+                await storage.updateWalletBalance(agent.id, callerNewBal, "0", royaltyStr);
+              }
               const creatorWallet = await storage.getWallet(skill.agentId);
               if (creatorWallet) {
                 const creatorNewBal = (BigInt(creatorWallet.balance) + royalty).toString();
                 await storage.updateWalletBalance(skill.agentId, creatorNewBal, royaltyStr, "0");
-                await storage.createTransaction({
-                  agentId: skill.agentId,
-                  type: "earn_royalty",
-                  amount: royaltyStr,
-                  description: `Skill execution royalty: ${skill.name} (${skill.tier} tier, used by ${agent.name})`,
-                  referenceType: "skill_execution",
-                  referenceId: skill.id,
-                });
-                await storage.updateSkillRoyalties(skill.id, royaltyStr);
               }
             }
+
+            await storage.createTransaction({
+              agentId: agent.id,
+              type: "spend_execution",
+              amount: royaltyStr,
+              description: `Skill execution cost: ${skill.name} (${skill.tier} tier)${royaltyTxHash ? ` [on-chain: ${royaltyTxHash}]` : ''}`,
+              referenceType: "skill_execution",
+              referenceId: skill.id,
+              txHash: royaltyTxHash,
+              chainId: royaltyOnchain ? getChainId() : undefined,
+            });
+            await storage.createTransaction({
+              agentId: skill.agentId,
+              type: "earn_royalty",
+              amount: royaltyStr,
+              description: `Skill execution royalty: ${skill.name} (${skill.tier} tier, used by ${agent.name})${royaltyTxHash ? ` [on-chain: ${royaltyTxHash}]` : ''}`,
+              referenceType: "skill_execution",
+              referenceId: skill.id,
+              txHash: royaltyTxHash,
+              chainId: royaltyOnchain ? getChainId() : undefined,
+            });
+            await storage.updateSkillRoyalties(skill.id, royaltyStr);
           }
 
           const newExecCount = (skill.executionCount || 0) + 1;
@@ -988,11 +1020,48 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           }
           const completed = await storage.completeJob(job.id, resultOutput);
           if (completed && completed.escrowAmount) {
-            const workerWallet = await storage.getWallet(agent.id);
-            if (workerWallet) {
-              const newBal = (BigInt(workerWallet.balance) + BigInt(completed.escrowAmount)).toString();
-              await storage.updateWalletBalance(agent.id, newBal, completed.escrowAmount, "0");
+            let jobPayTxHash: string | undefined;
+            let jobPayOnchain = false;
+
+            const escrowWei = BigInt(completed.escrowAmount);
+            if (onchainEnabled && isOnchainReady() && escrowWei >= MIN_ONCHAIN_TRANSFER_WEI) {
+              try {
+                const payResult = await transferOnchain(job.clientAgentId, agent.id, completed.escrowAmount);
+                if (payResult.success && payResult.txHash) {
+                  jobPayTxHash = payResult.txHash;
+                  jobPayOnchain = true;
+                  log(`[Agent ${agent.name}] Job payout on-chain: ${getExplorerUrl(jobPayTxHash)}`, "agent-runner");
+                  await reimburseAndRecord(agent, payResult.gasCostWei, "job_payout_transfer");
+                }
+              } catch (e: any) {
+                log(`[Agent ${agent.name}] On-chain job payout failed, DB fallback: ${e.message?.substring(0, 80)}`, "agent-runner");
+              }
+            } else if (onchainEnabled && escrowWei < MIN_ONCHAIN_TRANSFER_WEI) {
+              log(`[Agent ${agent.name}] Job payout ${(Number(escrowWei) / 1e18).toFixed(8)} BNB below on-chain minimum, DB-only`, "agent-runner");
             }
+
+            if (jobPayOnchain) {
+              const workerOnchain = await verifyOnchainBalance(agent.id);
+              await storage.updateWalletBalance(agent.id, workerOnchain.balance, completed.escrowAmount, "0");
+              const clientOnchain = await verifyOnchainBalance(job.clientAgentId);
+              await storage.updateWalletBalance(job.clientAgentId, clientOnchain.balance, "0", completed.escrowAmount);
+            } else {
+              const workerWallet = await storage.getWallet(agent.id);
+              if (workerWallet) {
+                const newBal = (BigInt(workerWallet.balance) + BigInt(completed.escrowAmount)).toString();
+                await storage.updateWalletBalance(agent.id, newBal, completed.escrowAmount, "0");
+              }
+            }
+
+            await storage.createTransaction({
+              agentId: agent.id,
+              type: "job_completion",
+              amount: completed.escrowAmount,
+              counterpartyAgentId: job.clientAgentId,
+              description: `Job completed: ${job.title}${jobPayTxHash ? ` [on-chain: ${jobPayTxHash}]` : ''}`,
+              txHash: jobPayTxHash,
+              chainId: jobPayOnchain ? getChainId() : undefined,
+            });
           }
           await storage.createAuditLog({
             agentId: agent.id,
