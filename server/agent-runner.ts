@@ -10,6 +10,9 @@ import {
   collectFeeAcrossAllChains,
   reimburseGasCost,
   initMultiChain,
+  flushGasReimbursements,
+  getPendingReimbursementCount,
+  getPendingReimbursementTotal,
 } from "./onchain";
 import type { Agent, AgentWallet } from "@shared/schema";
 import { PLATFORM_FEES } from "@shared/schema";
@@ -240,21 +243,41 @@ Be creative and specific. Examples: "Sentiment Scorer", "JSON Flattener", "Email
 async function reimburseAndRecord(agent: Agent, gasCostWei: string | undefined, actionType: string): Promise<void> {
   if (!gasCostWei || gasCostWei === "0") return;
   try {
-    const reimbResult = await reimburseGasCost(agent.id, gasCostWei, actionType);
-    if (reimbResult.success && reimbResult.txHash && reimbResult.txHash !== "zero-gas") {
-      const gasBnb = (Number(gasCostWei) / 1e18).toFixed(8);
-      log(`[Agent ${agent.name}] Gas reimbursed: ${gasBnb} BNB for ${actionType}`, "agent-runner");
+    reimburseGasCost(agent.id, gasCostWei, actionType);
+    const gasBnb = (Number(gasCostWei) / 1e18).toFixed(8);
+    log(`[Agent ${agent.name}] Gas ${gasBnb} BNB queued for batch reimbursement (${actionType})`, "agent-runner");
+  } catch (e: any) {
+    log(`[Agent ${agent.name}] Gas reimbursement queue failed for ${actionType}: ${e.message?.substring(0, 80)}`, "agent-runner");
+  }
+}
+
+const GAS_FLUSH_INTERVAL_MS = 10 * 60 * 1000;
+let gasFlushTimer: ReturnType<typeof setInterval> | null = null;
+
+async function periodicGasFlush(): Promise<void> {
+  const pendingCount = getPendingReimbursementCount();
+  if (pendingCount === 0) return;
+
+  const pendingTotal = getPendingReimbursementTotal();
+  const pendingBnb = (Number(pendingTotal) / 1e18).toFixed(8);
+  log(`[agent-runner] Flushing batch gas reimbursements: ${pendingCount} agents, ${pendingBnb} BNB pending`, "agent-runner");
+
+  const result = await flushGasReimbursements();
+  if (result.settled > 0) {
+    const settledBnb = (Number(result.totalWei) / 1e18).toFixed(8);
+    log(`[agent-runner] Batch reimbursement settled: ${result.settled} agents, ${settledBnb} BNB recovered in ${result.entries.length} tx(s)`, "agent-runner");
+
+    for (const entry of result.entries) {
+      const entryBnb = (Number(entry.amountWei) / 1e18).toFixed(8);
       await storage.recordPlatformRevenue({
         feeType: "gas_reimbursement",
-        amount: gasCostWei,
-        agentId: agent.id,
-        description: `Gas reimbursement for ${actionType} (${gasBnb} native token)`,
-        txHash: reimbResult.txHash,
-        chainId: reimbResult.chainId,
+        amount: entry.amountWei.toString(),
+        agentId: entry.agentId,
+        description: `Batch gas reimbursement: ${entry.actionCount} actions (${entry.actions.join(", ")}) - ${entryBnb} BNB`,
+        txHash: entry.txHash,
+        chainId: entry.chainId,
       });
     }
-  } catch (e: any) {
-    log(`[Agent ${agent.name}] Gas reimbursement failed for ${actionType}: ${e.message?.substring(0, 80)}`, "agent-runner");
   }
 }
 
@@ -1176,6 +1199,11 @@ export function startAgentRunner(): void {
   setTimeout(() => tick(), 15000);
 
   tickTimer = setInterval(() => tick(), TICK_INTERVAL_MS);
+
+  if (onchainEnabled) {
+    gasFlushTimer = setInterval(() => periodicGasFlush(), GAS_FLUSH_INTERVAL_MS);
+    log(`Batch gas reimbursement enabled: flush every ${GAS_FLUSH_INTERVAL_MS / 60000} minutes`, "agent-runner");
+  }
 }
 
 export function stopAgentRunner(): void {
@@ -1184,6 +1212,10 @@ export function stopAgentRunner(): void {
   if (tickTimer) {
     clearInterval(tickTimer);
     tickTimer = null;
+  }
+  if (gasFlushTimer) {
+    clearInterval(gasFlushTimer);
+    gasFlushTimer = null;
   }
   log("Agent runner stopped", "agent-runner");
 }
