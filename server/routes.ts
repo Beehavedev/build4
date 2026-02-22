@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { registerWeb4Routes } from "./web4-routes";
 import { registerServicesRoutes } from "./services-routes";
+import { startBountyEngine } from "./bounty-engine";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
 import crypto from "crypto";
 
@@ -122,6 +123,10 @@ export async function registerRoutes(
   await storage.cleanFakeData();
   await storage.seedInferenceProviders();
   await storage.seedSubscriptionPlans();
+
+  startBountyEngine().catch(err => {
+    console.error("[BountyEngine] Failed to start:", err.message);
+  });
 
   return httpServer;
 }

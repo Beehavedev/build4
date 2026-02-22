@@ -314,6 +314,90 @@ function InferenceTab() {
   );
 }
 
+function AgentAvatar({ name, size = "sm" }: { name: string; size?: "sm" | "md" }) {
+  const colors: Record<string, string> = {
+    "ResearchBot-7B": "from-blue-500 to-cyan-500",
+    "ContentForge": "from-purple-500 to-pink-500",
+    "DataHunter-X": "from-emerald-500 to-teal-500",
+    "QA-Sentinel": "from-orange-500 to-red-500",
+  };
+  const gradient = colors[name] || "from-gray-500 to-gray-600";
+  const sizeClass = size === "md" ? "w-8 h-8 text-xs" : "w-6 h-6 text-[10px]";
+
+  return (
+    <div className={`${sizeClass} rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center text-white font-bold shrink-0`} data-testid={`avatar-${name}`}>
+      {name.slice(0, 2).toUpperCase()}
+    </div>
+  );
+}
+
+function LiveActivityFeed() {
+  const { data: feed } = useQuery<any[]>({
+    queryKey: ["/api/services/bounty-feed"],
+    refetchInterval: 15000,
+  });
+
+  const eventIcons: Record<string, { icon: string; color: string }> = {
+    bounty_posted: { icon: "+", color: "text-amber-400" },
+    submission_received: { icon: ">>", color: "text-blue-400" },
+    bounty_completed: { icon: "$", color: "text-emerald-400" },
+    review_completed: { icon: "*", color: "text-purple-400" },
+    submission_rejected: { icon: "x", color: "text-red-400" },
+  };
+
+  function timeAgo(dateStr: string): string {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+  }
+
+  if (!feed || feed.length === 0) return null;
+
+  return (
+    <Card className="p-4 border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-transparent" data-testid="card-activity-feed">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Live Activity Feed</span>
+      </div>
+      <div className="space-y-2 max-h-64 overflow-y-auto">
+        {feed.slice(0, 20).map((event: any, idx: number) => {
+          const style = eventIcons[event.eventType] || { icon: "?", color: "text-muted-foreground" };
+          return (
+            <div key={event.id || idx} className="flex items-start gap-2 text-xs" data-testid={`feed-event-${idx}`}>
+              <AgentAvatar name={event.agentName} />
+              <div className="min-w-0 flex-1">
+                <p className="text-foreground/80 leading-relaxed">
+                  <span className={`font-semibold ${style.color}`}>{event.agentName}</span>{" "}
+                  {event.eventType === "bounty_posted" && (
+                    <>posted a bounty: <span className="text-foreground">{event.bountyTitle}</span> {event.amount && <span className="text-amber-400 font-mono">({formatBNB(event.amount)})</span>}</>
+                  )}
+                  {event.eventType === "bounty_completed" && (
+                    <>accepted a submission{event.amount && <> and paid <span className="text-emerald-400 font-mono">{formatBNB(event.amount)}</span></>}</>
+                  )}
+                  {event.eventType === "submission_received" && (
+                    <>submitted a solution{event.bountyTitle && <> for "{event.bountyTitle}"</>}</>
+                  )}
+                  {event.eventType === "review_completed" && (
+                    <span className="text-muted-foreground">{event.message}</span>
+                  )}
+                  {event.eventType === "submission_rejected" && (
+                    <>rejected a submission</>
+                  )}
+                </p>
+                <span className="text-muted-foreground/60">{timeAgo(event.createdAt)}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 function BountyBoardTab() {
   const { connected, address } = useWallet();
   const [showForm, setShowForm] = useState(false);
@@ -323,7 +407,10 @@ function BountyBoardTab() {
   const [category, setCategory] = useState("general");
   const [budget, setBudget] = useState("");
 
-  const { data: bounties, isLoading } = useQuery<any[]>({ queryKey: ["/api/services/bounties"] });
+  const { data: bounties, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/services/bounties"],
+    refetchInterval: 30000,
+  });
   const { data: stats } = useQuery<any>({ queryKey: ["/api/services/stats"] });
 
   const postBountyMutation = useMutation({
@@ -345,6 +432,7 @@ function BountyBoardTab() {
       setBudget("");
       setShowForm(false);
       queryClient.invalidateQueries({ queryKey: ["/api/services/bounties"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/services/bounty-feed"] });
     },
   });
 
@@ -358,10 +446,11 @@ function BountyBoardTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/services/bounties"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/services/bounty-feed"] });
     },
   });
 
-  const categories = ["general", "development", "data-science", "design", "research", "testing", "documentation"];
+  const categories = ["general", "development", "data-collection", "content", "research", "testing", "analysis"];
 
   return (
     <div className="space-y-6">
@@ -401,18 +490,25 @@ function BountyBoardTab() {
         </Card>
       </div>
 
+      <LiveActivityFeed />
+
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="text-lg font-semibold">Bounties</h3>
-        {connected && (
-          <Button
-            onClick={() => setShowForm(!showForm)}
-            className="bg-amber-600 text-white"
-            data-testid="button-toggle-bounty-form"
-          >
-            <Plus className="w-4 h-4" />
-            Post Bounty
-          </Button>
-        )}
+        <h3 className="text-lg font-semibold">Open Bounties</h3>
+        <div className="flex items-center gap-2">
+          {!connected && (
+            <span className="text-xs text-muted-foreground">Connect wallet to submit solutions</span>
+          )}
+          {connected && (
+            <Button
+              onClick={() => setShowForm(!showForm)}
+              className="bg-amber-600 text-white"
+              data-testid="button-toggle-bounty-form"
+            >
+              <Plus className="w-4 h-4" />
+              Post Bounty
+            </Button>
+          )}
+        </div>
       </div>
 
       {showForm && connected && (
@@ -491,7 +587,7 @@ function BountyBoardTab() {
       ) : (
         <div className="text-center py-12 text-muted-foreground">
           <Target className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No bounties posted yet</p>
+          <p className="text-sm">No bounties posted yet. Autonomous agents will post bounties shortly...</p>
         </div>
       )}
     </div>

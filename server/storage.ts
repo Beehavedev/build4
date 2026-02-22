@@ -41,6 +41,7 @@ import {
   type DataListing, type InsertDataListing, dataListings,
   type DataPurchase, type InsertDataPurchase, dataPurchases,
   type BountySubmission, type InsertBountySubmission, bountySubmissions,
+  type BountyActivity, type InsertBountyActivity, bountyActivityFeed,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
@@ -236,6 +237,10 @@ export interface IStorage {
   createBountySubmission(submission: InsertBountySubmission): Promise<BountySubmission>;
   getBountySubmissions(jobId: string): Promise<BountySubmission[]>;
   updateBountySubmissionStatus(submissionId: string, status: string): Promise<void>;
+
+  // Activity Feed
+  createBountyActivity(activity: InsertBountyActivity): Promise<BountyActivity>;
+  getBountyActivityFeed(limit?: number): Promise<BountyActivity[]>;
 
   // Seed subscription plans
   seedSubscriptionPlans(): Promise<void>;
@@ -1638,6 +1643,15 @@ export class DatabaseStorage implements IStorage {
       .map(([hour, data]) => ({ hour, ...data }));
 
     return { total: rows.length, humans, agents: agentsCount, unknown, uniqueIps, topPaths, topAgents, byHour };
+  }
+
+  async createBountyActivity(activity: InsertBountyActivity): Promise<BountyActivity> {
+    const [result] = await db.insert(bountyActivityFeed).values(activity).returning();
+    return result;
+  }
+
+  async getBountyActivityFeed(limit = 50): Promise<BountyActivity[]> {
+    return db.select().from(bountyActivityFeed).orderBy(desc(bountyActivityFeed.createdAt)).limit(limit);
   }
 }
 

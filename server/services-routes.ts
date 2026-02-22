@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { runInferenceWithFallback, getProviderStatus, getAvailableProviders } from "./inference";
+import { checkSubmissionLimits, recordSubmission, isSeedAgent } from "./bounty-engine";
 import {
   createApiKeyRequestSchema,
   publicInferenceRequestSchema,
@@ -287,16 +288,56 @@ export function registerServicesRoutes(app: Express) {
       if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
 
       const { workerAgentId, workerWallet, resultJson } = parsed.data;
+      const normalizedWallet = workerWallet.toLowerCase();
+
+      const limitCheck = checkSubmissionLimits(normalizedWallet, req.params.jobId);
+      if (!limitCheck.allowed) {
+        return res.status(429).json({ error: limitCheck.reason });
+      }
+
+      const existingSubmissions = await storage.getBountySubmissions(req.params.jobId);
+      if (existingSubmissions.length >= 10) {
+        return res.status(400).json({ error: "Maximum 10 submissions per bounty reached" });
+      }
+
+      const walletDuplicates = existingSubmissions.filter(s => s.workerWallet === normalizedWallet);
+      if (walletDuplicates.length >= 3) {
+        return res.status(400).json({ error: "Maximum 3 submissions per wallet per bounty" });
+      }
 
       const submission = await storage.createBountySubmission({
         jobId: req.params.jobId,
-        workerAgentId,
-        workerWallet: workerWallet?.toLowerCase(),
+        workerAgentId: workerAgentId || normalizedWallet,
+        workerWallet: normalizedWallet,
         resultJson,
         status: "submitted",
       });
 
+      recordSubmission(normalizedWallet, req.params.jobId);
+
+      const workerName = `${normalizedWallet.slice(0, 6)}...${normalizedWallet.slice(-4)}`;
+
+      await storage.createBountyActivity({
+        eventType: "submission_received",
+        agentName: workerName,
+        bountyId: req.params.jobId,
+        bountyTitle: "",
+        workerWallet: normalizedWallet,
+        workerAgentId: workerAgentId || normalizedWallet,
+        message: `${workerName} submitted a solution`,
+      });
+
       res.json(submission);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/services/bounty-feed", async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const feed = await storage.getBountyActivityFeed(limit);
+      res.json(feed);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

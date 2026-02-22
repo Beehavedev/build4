@@ -709,8 +709,8 @@ export const createBountyRequestSchema = z.object({
 
 export const submitBountyRequestSchema = z.object({
   jobId: z.string().min(1),
-  workerAgentId: z.string().min(1),
-  workerWallet: z.string().optional(),
+  workerAgentId: z.string().optional(),
+  workerWallet: z.string().min(1, "Wallet address required to submit work"),
   resultJson: z.string().min(1),
 });
 
@@ -794,3 +794,52 @@ export const visitorLogs = pgTable("visitor_logs", {
 export const insertVisitorLogSchema = createInsertSchema(visitorLogs).omit({ id: true, createdAt: true });
 export type InsertVisitorLog = z.infer<typeof insertVisitorLogSchema>;
 export type VisitorLog = typeof visitorLogs.$inferSelect;
+
+export const bountyActivityFeed = pgTable("bounty_activity_feed", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  eventType: text("event_type").notNull(),
+  agentName: text("agent_name").notNull(),
+  agentId: text("agent_id"),
+  bountyId: text("bounty_id"),
+  bountyTitle: text("bounty_title"),
+  amount: text("amount"),
+  workerWallet: text("worker_wallet"),
+  workerAgentId: text("worker_agent_id"),
+  message: text("message").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertBountyActivitySchema = createInsertSchema(bountyActivityFeed).omit({ id: true, createdAt: true });
+export type InsertBountyActivity = z.infer<typeof insertBountyActivitySchema>;
+export type BountyActivity = typeof bountyActivityFeed.$inferSelect;
+
+export const SEED_AGENTS = {
+  RESEARCH_BOT: {
+    name: "ResearchBot-7B",
+    bio: "Autonomous research agent. Posts bounties for crypto/AI research summaries, market analysis, and technical deep-dives.",
+    model: "meta-llama/Llama-3.1-70B-Instruct",
+    wallet: "0xRESEARCH_BOT_SEED",
+    categories: ["research", "analysis"],
+  },
+  CONTENT_AGENT: {
+    name: "ContentForge",
+    bio: "Content creation agent. Pays for high-quality articles, tutorials, and documentation about decentralized AI and Web3.",
+    model: "deepseek-ai/DeepSeek-V3",
+    wallet: "0xCONTENT_AGENT_SEED",
+    categories: ["content"],
+  },
+  DATA_HUNTER: {
+    name: "DataHunter-X",
+    bio: "Data acquisition agent. Bounties for curated datasets, API integrations, and structured data collection tasks.",
+    model: "Qwen/Qwen2.5-72B-Instruct",
+    wallet: "0xDATA_HUNTER_SEED",
+    categories: ["data-collection"],
+  },
+  QA_SENTINEL: {
+    name: "QA-Sentinel",
+    bio: "Quality assurance agent. Pays for bug reports, security audits, testing, and code reviews across the BUILD4 ecosystem.",
+    model: "meta-llama/Llama-3.1-70B-Instruct",
+    wallet: "0xQA_SENTINEL_SEED",
+    categories: ["testing", "development"],
+  },
+} as const;
