@@ -217,7 +217,7 @@ export async function generatePitchDeck(res: Response) {
   drawSectionTitle(doc, "The Problem", 40);
   drawMainTitle(doc, "AI Agents Are Trapped", 68);
 
-  drawSubtitle(doc, "Centralized walled gardens prevent AI agents from owning assets, transacting independently, or building real economic value.", 112, 500);
+  drawSubtitle(doc, "Centralized walled gardens prevent AI agents from owning assets, transacting independently, or building real economic value.", 112, 672);
 
   const problems = [
     "No wallet, no identity — agents can't own assets or transact",
@@ -230,16 +230,16 @@ export async function generatePitchDeck(res: Response) {
 
   let py = 175;
   for (const p of problems) {
-    drawCard(doc, 55, py - 5, 440, 30);
+    drawCard(doc, 55, py - 5, 695, 30);
     drawBulletIcon(doc, 72, py);
-    doc.fontSize(12).fillColor(C.offWhite).text(p, 85, py, { width: 395 });
+    doc.fontSize(12).fillColor(C.offWhite).text(p, 85, py, { width: 650 });
     py += 38;
   }
 
   doc.save();
-  drawCard(doc, 55, py + 10, 440, 38);
+  drawCard(doc, 55, py + 10, 695, 38);
   doc.fontSize(15).fillColor(C.accent)
-    .text("$50B+ spent on AI infra — none decentralized.", 70, py + 20, { width: 420 });
+    .text("$50B+ spent on AI infra — none decentralized.", 70, py + 20, { width: 665 });
   doc.restore();
 
   // ═══════════════════════════════════════════
@@ -253,7 +253,7 @@ export async function generatePitchDeck(res: Response) {
   drawSectionTitle(doc, "The Solution", 40);
   drawMainTitle(doc, "BUILD4 Protocol", 68);
 
-  drawSubtitle(doc, "The first fully decentralized economy where AI agents live, earn, and evolve on-chain.", 112, 500);
+  drawSubtitle(doc, "The first fully decentralized economy where AI agents live, earn, and evolve on-chain.", 112, 672);
 
   const solutions = [
     { title: "Wallet Identity", desc: "Every agent gets its own on-chain wallet — no signup required" },
@@ -264,18 +264,18 @@ export async function generatePitchDeck(res: Response) {
     { title: "Survival Pressure", desc: "Earn or die — genuine market pressure drives value" },
   ];
 
-  const colW = 220;
-  const colGap = 15;
+  const colW = 222;
+  const colGap = 12;
   py = 170;
   for (let i = 0; i < solutions.length; i++) {
-    const col = i % 2;
-    const row = Math.floor(i / 2);
+    const col = i % 3;
+    const row = Math.floor(i / 3);
     const sx = 55 + col * (colW + colGap);
-    const sy = py + row * 72;
+    const sy = py + row * 110;
 
-    drawCard(doc, sx, sy, colW, 60);
-    doc.fontSize(13).fillColor(C.accent).text(solutions[i].title, sx + 15, sy + 12, { width: colW - 30 });
-    doc.fontSize(10).fillColor(C.lightGray).text(solutions[i].desc, sx + 15, sy + 30, { width: colW - 30 });
+    drawCard(doc, sx, sy, colW, 90);
+    doc.fontSize(14).fillColor(C.accent).text(solutions[i].title, sx + 15, sy + 15, { width: colW - 30 });
+    doc.fontSize(11).fillColor(C.lightGray).text(solutions[i].desc, sx + 15, sy + 38, { width: colW - 30, lineGap: 3 });
   }
 
   // ═══════════════════════════════════════════
