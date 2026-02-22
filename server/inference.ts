@@ -17,6 +17,7 @@ interface ProviderConfig {
   defaultModel: string;
   models: string[];
   requiresAuth: boolean;
+  nodeHosted?: boolean;
 }
 
 const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
@@ -47,11 +48,12 @@ const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
   },
   ritual: {
     network: "ritual",
-    baseUrl: "https://infernet.ritual.net/api/v1",
-    apiKeyEnv: "RITUAL_API_KEY",
+    baseUrl: process.env.RITUAL_NODE_URL || "http://localhost:4000",
+    apiKeyEnv: "RITUAL_NODE_URL",
     defaultModel: "llama-3.1-8b",
     models: ["llama-3.1-8b", "mistral-7b-instruct"],
     requiresAuth: true,
+    nodeHosted: true,
   },
 };
 
@@ -68,13 +70,14 @@ export function isProviderLive(network: string): boolean {
   return !!getApiKey(network);
 }
 
-export function getProviderStatus(): Record<string, { live: boolean; network: string; models: string[] }> {
-  const status: Record<string, { live: boolean; network: string; models: string[] }> = {};
+export function getProviderStatus(): Record<string, { live: boolean; network: string; models: string[]; nodeHosted?: boolean }> {
+  const status: Record<string, { live: boolean; network: string; models: string[]; nodeHosted?: boolean }> = {};
   for (const [key, config] of Object.entries(PROVIDER_CONFIGS)) {
     status[key] = {
       live: isProviderLive(key),
       network: config.network,
       models: config.models,
+      ...(config.nodeHosted ? { nodeHosted: true } : {}),
     };
   }
   return status;
