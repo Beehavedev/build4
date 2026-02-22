@@ -38,9 +38,9 @@ interface AgentAction {
 
 function getSurvivalTier(balance: string): string {
   const bal = BigInt(balance);
-  if (bal >= BigInt("1000000000000000000")) return "NORMAL";
-  if (bal >= BigInt("100000000000000000")) return "LOW";
-  if (bal >= BigInt("10000000000000000")) return "CRITICAL";
+  if (bal >= BigInt("10000000000000000")) return "NORMAL";
+  if (bal >= BigInt("1000000000000000")) return "LOW";
+  if (bal >= BigInt("100000000000000")) return "CRITICAL";
   return "DEAD";
 }
 

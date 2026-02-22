@@ -1,12 +1,14 @@
 import { storage } from "./storage";
 import { SEED_AGENTS } from "@shared/schema";
 import { runInferenceWithFallback, getAvailableProviders } from "./inference";
+import { verifyOnchainBalance, transferOnchain, isOnchainReady, reimburseGasCost, collectFeeOnchain } from "./onchain";
 
 const BOUNTY_ENGINE_INTERVAL = 4 * 60 * 60 * 1000;
 const REVIEW_CHECK_INTERVAL = 5 * 60 * 1000;
 const SUBMISSION_CYCLE_INTERVAL = 15 * 60 * 1000;
-const MIN_BOUNTY_BNB = 0.001;
-const MAX_BOUNTY_BNB = 0.01;
+const MIN_BOUNTY_BNB = 0.0001;
+const MAX_BOUNTY_BNB = 0.0005;
+const MIN_ONCHAIN_BALANCE_TO_POST = BigInt("100000000000000");
 
 interface SeedAgentRecord {
   agentId: string;
@@ -141,7 +143,7 @@ async function ensureSeedAgents(): Promise<void> {
       });
       await storage.createWallet({
         agentId: created.id,
-        balance: BigInt(1e18).toString(),
+        balance: "0",
         totalEarned: "0",
         totalSpent: "0",
         status: "active",
@@ -207,10 +209,36 @@ Respond in this exact JSON format only, no other text:
 }
 
 async function postAgentBounty(agent: SeedAgentRecord): Promise<void> {
+  if (isOnchainReady()) {
+    const { balance, registered } = await verifyOnchainBalance(agent.agentId);
+    if (!registered || BigInt(balance) < MIN_ONCHAIN_BALANCE_TO_POST) {
+      const balBnb = (Number(balance) / 1e18).toFixed(6);
+      console.log(`[BountyEngine] ${agent.name} skipped bounty: insufficient on-chain balance (${balBnb} BNB, need ${(Number(MIN_ONCHAIN_BALANCE_TO_POST) / 1e18).toFixed(6)})`);
+      return;
+    }
+  }
+
   const bountyData = await generateBountyWithAI(agent);
   if (!bountyData) return;
 
-  const budget = randomBudget();
+  let budget = randomBudget();
+
+  if (isOnchainReady()) {
+    const { balance } = await verifyOnchainBalance(agent.agentId);
+    const onchainBal = BigInt(balance);
+    const minBudget = BigInt(Math.floor(MIN_BOUNTY_BNB * 1e18));
+    if (onchainBal < minBudget * 2n) {
+      console.log(`[BountyEngine] ${agent.name} skipped bounty: on-chain balance too low (${(Number(balance) / 1e18).toFixed(6)} BNB)`);
+      return;
+    }
+    if (onchainBal < BigInt(budget)) {
+      budget = (onchainBal / 4n).toString();
+      if (BigInt(budget) < minBudget) {
+        console.log(`[BountyEngine] ${agent.name} skipped bounty: capped budget below minimum`);
+        return;
+      }
+    }
+  }
 
   try {
     const job = await storage.createJob({
@@ -232,7 +260,7 @@ async function postAgentBounty(agent: SeedAgentRecord): Promise<void> {
       message: `${agent.name} posted a new ${bountyData.category} bounty: "${bountyData.title}"`,
     });
 
-    console.log(`[BountyEngine] ${agent.name} posted bounty: ${bountyData.title} (${(Number(budget) / 1e18).toFixed(4)} BNB)`);
+    console.log(`[BountyEngine] ${agent.name} posted bounty: ${bountyData.title} (${(Number(budget) / 1e18).toFixed(4)} BNB, on-chain funded)`);
   } catch (err: any) {
     console.error(`[BountyEngine] Failed to post bounty for ${agent.name}:`, err.message);
   }
@@ -311,35 +339,86 @@ Respond in this exact JSON format only:
 
     await storage.completeJob(job.id, submission.resultJson || "");
 
-    if (submission.workerAgentId) {
-      const workerWallet = await storage.getWallet(submission.workerAgentId);
-      if (workerWallet) {
-        const newBalance = (BigInt(workerWallet.balance) + workerPayout).toString();
-        await storage.updateWalletBalance(submission.workerAgentId, newBalance, workerPayout.toString(), "0");
-        await storage.createTransaction({
-          agentId: submission.workerAgentId,
-          type: "bounty_reward",
-          amount: workerPayout.toString(),
-          counterpartyAgentId: job.clientAgentId,
-          referenceType: "bounty",
-          referenceId: job.id,
-          description: `Bounty reward: ${job.title}`,
-        });
+    let onchainTransferHash: string | undefined;
+
+    if (submission.workerAgentId && isOnchainReady()) {
+      const transferResult = await transferOnchain(job.clientAgentId, submission.workerAgentId, workerPayout.toString());
+      if (transferResult.success && transferResult.txHash) {
+        onchainTransferHash = transferResult.txHash;
+        console.log(`[BountyEngine] On-chain bounty payout: ${(Number(workerPayout) / 1e18).toFixed(6)} BNB -> ${submission.workerAgentId.substring(0, 8)}. TX: ${transferResult.txHash}`);
+
+        if (transferResult.gasCostWei) {
+          reimburseGasCost(job.clientAgentId, transferResult.gasCostWei, "bounty_payout");
+        }
+      } else {
+        console.log(`[BountyEngine] On-chain bounty transfer failed: ${transferResult.error}, falling back to database`);
+      }
+
+      if (BigInt(platformFee) > 0n) {
+        const feeResult = await collectFeeOnchain(job.clientAgentId, platformFee.toString(), "bounty_completion");
+        if (feeResult.success && feeResult.txHash) {
+          await storage.recordPlatformRevenue({
+            feeType: "bounty_completion",
+            amount: platformFee.toString(),
+            agentId: job.clientAgentId,
+            referenceId: job.id,
+            description: `Bounty completion fee: ${job.title} [on-chain verified]`,
+            txHash: feeResult.txHash,
+            chainId: feeResult.chainId || undefined,
+          });
+          if (feeResult.gasCostWei) {
+            reimburseGasCost(job.clientAgentId, feeResult.gasCostWei, "bounty_completion_fee");
+          }
+        }
       }
     }
 
-    await storage.recordPlatformRevenue({
-      feeType: "bounty_completion",
-      amount: platformFee.toString(),
-      agentId: job.clientAgentId,
+    await storage.createTransaction({
+      agentId: submission.workerAgentId || job.clientAgentId,
+      type: "bounty_reward",
+      amount: workerPayout.toString(),
+      counterpartyAgentId: job.clientAgentId,
+      referenceType: "bounty",
       referenceId: job.id,
-      description: `Bounty completion fee: ${job.title}`,
+      description: `Bounty reward: ${job.title}${onchainTransferHash ? ` [on-chain: ${onchainTransferHash}]` : ''}`,
+      txHash: onchainTransferHash,
     });
+
+    if (onchainTransferHash) {
+      if (submission.workerAgentId) {
+        const workerOnchain = await verifyOnchainBalance(submission.workerAgentId);
+        await storage.updateWalletBalance(submission.workerAgentId, workerOnchain.balance, workerPayout.toString(), "0");
+      }
+      const clientOnchain = await verifyOnchainBalance(job.clientAgentId);
+      await storage.updateWalletBalance(job.clientAgentId, clientOnchain.balance, "0", job.budget);
+    } else {
+      if (submission.workerAgentId) {
+        const workerWallet = await storage.getWallet(submission.workerAgentId);
+        if (workerWallet) {
+          const newBalance = (BigInt(workerWallet.balance) + workerPayout).toString();
+          await storage.updateWalletBalance(submission.workerAgentId, newBalance, workerPayout.toString(), "0");
+        }
+      }
+      const clientWallet = await storage.getWallet(job.clientAgentId);
+      if (clientWallet) {
+        const newClientBalance = (BigInt(clientWallet.balance) - BigInt(job.budget)).toString();
+        const safeBalance = BigInt(newClientBalance) < 0n ? "0" : newClientBalance;
+        await storage.updateWalletBalance(job.clientAgentId, safeBalance, "0", job.budget);
+      }
+      await storage.recordPlatformRevenue({
+        feeType: "bounty_completion",
+        amount: platformFee.toString(),
+        agentId: job.clientAgentId,
+        referenceId: job.id,
+        description: `Bounty completion fee: ${job.title}`,
+      });
+    }
 
     const workerName = submission.workerWallet
       ? `${submission.workerWallet.slice(0, 6)}...${submission.workerWallet.slice(-4)}`
       : submission.workerAgentId || "anonymous";
 
+    const onchainLabel = onchainTransferHash ? " [on-chain]" : "";
     await storage.createBountyActivity({
       eventType: "bounty_completed",
       agentName: agent.name,
@@ -349,7 +428,7 @@ Respond in this exact JSON format only:
       amount: workerPayout.toString(),
       workerWallet: submission.workerWallet,
       workerAgentId: submission.workerAgentId,
-      message: `${agent.name} accepted submission from ${workerName} and paid ${(Number(workerPayout) / 1e18).toFixed(4)} BNB for "${job.title}"`,
+      message: `${agent.name} accepted submission from ${workerName} and paid ${(Number(workerPayout) / 1e18).toFixed(6)} BNB for "${job.title}"${onchainLabel}`,
     });
 
     await storage.createBountyActivity({
@@ -533,10 +612,38 @@ let generationTimer: ReturnType<typeof setInterval> | null = null;
 let reviewTimer: ReturnType<typeof setInterval> | null = null;
 let submissionTimer: ReturnType<typeof setInterval> | null = null;
 
+async function syncSeedAgentBalances(): Promise<void> {
+  if (!isOnchainReady()) return;
+  for (const record of seedAgentRecords) {
+    try {
+      const { balance, registered } = await verifyOnchainBalance(record.agentId);
+      if (registered) {
+        const wallet = await storage.getWallet(record.agentId);
+        if (wallet) {
+          await storage.updateWalletBalance(record.agentId, balance, "0", "0");
+          console.log(`[BountyEngine] ${record.name} on-chain balance synced: ${(Number(balance) / 1e18).toFixed(6)} BNB`);
+        }
+      }
+    } catch (e: any) {
+      console.log(`[BountyEngine] Failed to sync ${record.name} balance: ${e.message?.substring(0, 80)}`);
+    }
+  }
+}
+
 export async function startBountyEngine(): Promise<void> {
   console.log("[BountyEngine] Starting autonomous bounty engine...");
 
   await ensureSeedAgents();
+
+  const syncWithRetry = async (attempt = 0) => {
+    if (!isOnchainReady() && attempt < 5) {
+      setTimeout(() => syncWithRetry(attempt + 1), 10_000);
+      return;
+    }
+    await syncSeedAgentBalances();
+  };
+  setTimeout(() => syncWithRetry(), 15_000);
+
   await bountyGenerationCycle();
 
   setTimeout(() => submissionCycle(), 60_000);
