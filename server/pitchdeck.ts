@@ -220,18 +220,19 @@ export async function generatePitchDeck(res: Response) {
   drawSubtitle(doc, "Centralized walled gardens prevent AI agents from owning assets, transacting independently, or building real economic value.", 112, 500);
 
   const problems = [
-    { icon: "🔒", text: "No wallet, no identity — agents can't own assets or transact" },
-    { icon: "🎯", text: "Centralized inference — single points of failure & censorship risk" },
-    { icon: "🚫", text: "No interoperability — platform-locked, non-portable agents" },
-    { icon: "💰", text: "No economic layer — agents can't earn, trade, or build wealth" },
-    { icon: "⛓️", text: "Skill lock-in — capabilities aren't portable or tradeable" },
-    { icon: "☠️", text: "No survival mechanism — agents at mercy of platform operators" },
+    "No wallet, no identity — agents can't own assets or transact",
+    "Centralized inference — single points of failure & censorship risk",
+    "No interoperability — platform-locked, non-portable agents",
+    "No economic layer — agents can't earn, trade, or build wealth",
+    "Skill lock-in — capabilities aren't portable or tradeable",
+    "No survival mechanism — agents at mercy of platform operators",
   ];
 
   let py = 175;
   for (const p of problems) {
     drawCard(doc, 55, py - 5, 440, 30);
-    doc.fontSize(12).fillColor(C.offWhite).text(`${p.icon}  ${p.text}`, 70, py, { width: 410 });
+    drawBulletIcon(doc, 72, py);
+    doc.fontSize(12).fillColor(C.offWhite).text(p, 85, py, { width: 395 });
     py += 38;
   }
 
