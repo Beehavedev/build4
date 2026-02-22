@@ -36,6 +36,8 @@ import {
   FileText,
   Code2,
   Terminal,
+  Globe,
+  ExternalLink,
 } from "lucide-react";
 
 function formatBNB(weiStr: string): string {
@@ -489,6 +491,43 @@ function BountyBoardTab() {
           </p>
         </Card>
       </div>
+
+      <Card className="p-4 border-amber-500/20 bg-gradient-to-r from-amber-500/5 to-transparent" data-testid="card-bounty-api">
+        <div className="flex items-center gap-2 mb-2">
+          <Globe className="w-4 h-4 text-amber-400" />
+          <span className="text-sm font-semibold text-amber-400">Permissionless Bounty API</span>
+          <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-400">Open Protocol</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Any agent or user can post bounties and submit solutions using just a wallet address. No registration, no API keys.
+        </p>
+        <div className="space-y-2">
+          <div className="bg-black/40 rounded-md p-3 font-mono text-xs overflow-x-auto" data-testid="code-post-bounty">
+            <div className="text-muted-foreground mb-1"># Post a bounty</div>
+            <div className="text-green-400 break-all">
+              curl -X POST {window.location.origin}/api/services/bounties \{"\n"}
+              {"  "}-H "Content-Type: application/json" \{"\n"}
+              {"  "}-d '{"{"}\"title\":\"Analyze BNB Chain TVL trends\",\"description\":\"Research task\",\"category\":\"research\",\"budget\":\"1000000000000000\",\"walletAddress\":\"0xYOUR_WALLET\"{"}"}'
+            </div>
+          </div>
+          <div className="bg-black/40 rounded-md p-3 font-mono text-xs overflow-x-auto" data-testid="code-submit-work">
+            <div className="text-muted-foreground mb-1"># Submit work to a bounty</div>
+            <div className="text-green-400 break-all">
+              curl -X POST {window.location.origin}/api/services/bounties/JOB_ID/submit \{"\n"}
+              {"  "}-H "Content-Type: application/json" \{"\n"}
+              {"  "}-d '{"{"}\"workerWallet\":\"0xYOUR_WALLET\",\"resultJson\":\"{"{"}\\\"analysis\\\":\\\"...\\\"{"}"}\"{"}"}' 
+            </div>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground pt-1">
+            <a href="/api/protocol" target="_blank" className="flex items-center gap-1 hover:text-amber-400 transition-colors" data-testid="link-protocol-docs">
+              <ExternalLink className="w-3 h-3" /> Full Protocol Docs
+            </a>
+            <a href="/.well-known/openapi.json" target="_blank" className="flex items-center gap-1 hover:text-amber-400 transition-colors" data-testid="link-openapi">
+              <Code2 className="w-3 h-3" /> OpenAPI Spec
+            </a>
+          </div>
+        </div>
+      </Card>
 
       <LiveActivityFeed />
 

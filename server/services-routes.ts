@@ -226,14 +226,14 @@ export function registerServicesRoutes(app: Express) {
         if (agent) {
           clientAgentId = agent.id;
         } else {
-          const { agent: newAgent } = await storage.createFullAgent(
-            `Bounty-${walletAddress.slice(0, 8)}`,
-            "Bounty poster",
-            "meta-llama/Llama-3.1-70B-Instruct",
-            "0",
-            undefined, undefined,
-            walletAddress.toLowerCase()
-          );
+          const shortAddr = walletAddress.slice(0, 6) + "..." + walletAddress.slice(-4);
+          const newAgent = await storage.createAgent({
+            name: `Bounty-${shortAddr}`,
+            bio: "Permissionless bounty poster",
+            modelType: "external",
+            status: "active",
+            creatorWallet: walletAddress.toLowerCase(),
+          });
           clientAgentId = newAgent.id;
         }
       }
