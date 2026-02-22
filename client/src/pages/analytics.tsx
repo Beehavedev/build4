@@ -173,23 +173,50 @@ function LoginGate({ onLogin }: { onLogin: (token: string) => void }) {
 function AnalyticsDashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
   const [period, setPeriod] = useState<Period>("24h");
 
-  const { data: stats, isLoading: statsLoading } = useQuery<VisitorStats>({
+  const handleAuthError = (error: Error) => {
+    if (error.message === "Unauthorized") {
+      sessionStorage.removeItem("analytics_token");
+      onLogout();
+    }
+  };
+
+  const { data: stats, isLoading: statsLoading, error: statsError } = useQuery<VisitorStats>({
     queryKey: ["/api/analytics/stats", period],
     queryFn: () => authFetch(`/api/analytics/stats?period=${period}`, token),
     refetchInterval: 30000,
+    retry: (failureCount, error) => {
+      if (error instanceof Error && error.message === "Unauthorized") return false;
+      return failureCount < 2;
+    },
   });
 
-  const { data: live } = useQuery<LiveData>({
+  const { data: live, error: liveError } = useQuery<LiveData>({
     queryKey: ["/api/analytics/live"],
     queryFn: () => authFetch("/api/analytics/live", token),
     refetchInterval: 10000,
+    retry: (failureCount, error) => {
+      if (error instanceof Error && error.message === "Unauthorized") return false;
+      return failureCount < 2;
+    },
   });
 
-  const { data: logs } = useQuery<VisitorLog[]>({
+  const { data: logs, error: logsError } = useQuery<VisitorLog[]>({
     queryKey: ["/api/analytics/logs"],
     queryFn: () => authFetch("/api/analytics/logs", token),
     refetchInterval: 15000,
+    retry: (failureCount, error) => {
+      if (error instanceof Error && error.message === "Unauthorized") return false;
+      return failureCount < 2;
+    },
   });
+
+  const authError = [statsError, liveError, logsError].find(
+    e => e instanceof Error && e.message === "Unauthorized"
+  );
+  if (authError) {
+    handleAuthError(authError as Error);
+    return null;
+  }
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/analytics/stats"] });

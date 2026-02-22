@@ -7,23 +7,30 @@ import { startBountyEngine } from "./bounty-engine";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
 import crypto from "crypto";
 
-const analyticsTokens = new Map<string, number>();
 const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
+function getTokenSecret(): string {
+  return process.env.SESSION_SECRET || process.env.ANALYTICS_PASSWORD || "build4-analytics-fallback";
+}
+
 function generateAnalyticsToken(): string {
-  const token = crypto.randomBytes(32).toString("hex");
-  analyticsTokens.set(token, Date.now() + TOKEN_EXPIRY_MS);
-  return token;
+  const expiry = Date.now() + TOKEN_EXPIRY_MS;
+  const payload = `analytics:${expiry}`;
+  const hmac = crypto.createHmac("sha256", getTokenSecret()).update(payload).digest("hex");
+  return Buffer.from(JSON.stringify({ exp: expiry, sig: hmac })).toString("base64");
 }
 
 function isValidToken(token: string): boolean {
-  const expiry = analyticsTokens.get(token);
-  if (!expiry) return false;
-  if (Date.now() > expiry) {
-    analyticsTokens.delete(token);
+  try {
+    const decoded = JSON.parse(Buffer.from(token, "base64").toString("utf8"));
+    if (!decoded.exp || !decoded.sig) return false;
+    if (Date.now() > decoded.exp) return false;
+    const payload = `analytics:${decoded.exp}`;
+    const expected = crypto.createHmac("sha256", getTokenSecret()).update(payload).digest("hex");
+    return constantTimeCompare(decoded.sig, expected);
+  } catch {
     return false;
   }
-  return true;
 }
 
 function constantTimeCompare(a: string, b: string): boolean {
