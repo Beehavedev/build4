@@ -14,6 +14,7 @@ import Revenue from "@/pages/revenue";
 import Marketplace from "@/pages/marketplace";
 import Outreach from "@/pages/outreach";
 import Analytics from "@/pages/analytics";
+import Services from "@/pages/services";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -28,6 +29,7 @@ function Router() {
       <Route path="/marketplace" component={Marketplace} />
       <Route path="/outreach" component={Outreach} />
       <Route path="/analytics" component={Analytics} />
+      <Route path="/services" component={Services} />
       <Route component={NotFound} />
     </Switch>
   );

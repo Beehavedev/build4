@@ -391,7 +391,141 @@ export const PLATFORM_FEES = {
   EVOLUTION_FEE: "500000000000000",
   SKILL_LISTING_FEE: "200000000000000",
   EXECUTION_ROYALTY_BPS: 500,
+  BOUNTY_FEE_BPS: 200,
+  DATA_SALE_FEE_BPS: 300,
+  INFERENCE_API_MARKUP_BPS: 200,
 } as const;
+
+export const apiKeys = pgTable("api_keys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  walletAddress: text("wallet_address").notNull(),
+  keyHash: text("key_hash").notNull(),
+  keyPrefix: text("key_prefix").notNull(),
+  label: text("label").notNull().default("default"),
+  status: text("status").notNull().default("active"),
+  totalRequests: integer("total_requests").notNull().default(0),
+  totalTokens: integer("total_tokens").notNull().default(0),
+  totalSpent: text("total_spent").notNull().default("0"),
+  rateLimit: integer("rate_limit").notNull().default(60),
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertApiKeySchema = createInsertSchema(apiKeys).omit({ id: true, createdAt: true, lastUsedAt: true, totalRequests: true, totalTokens: true, totalSpent: true });
+export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
+export type ApiKey = typeof apiKeys.$inferSelect;
+
+export const apiUsage = pgTable("api_usage", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  apiKeyId: varchar("api_key_id").notNull(),
+  walletAddress: text("wallet_address").notNull(),
+  model: text("model").notNull(),
+  provider: text("provider").notNull(),
+  tokensUsed: integer("tokens_used").notNull().default(0),
+  costAmount: text("cost_amount").notNull().default("0"),
+  latencyMs: integer("latency_ms"),
+  status: text("status").notNull().default("success"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertApiUsageSchema = createInsertSchema(apiUsage).omit({ id: true, createdAt: true });
+export type InsertApiUsage = z.infer<typeof insertApiUsageSchema>;
+export type ApiUsage = typeof apiUsage.$inferSelect;
+
+export const subscriptionPlans = pgTable("subscription_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  tier: text("tier").notNull().default("free"),
+  priceAmount: text("price_amount").notNull().default("0"),
+  currency: text("currency").notNull().default("BNB"),
+  durationDays: integer("duration_days").notNull().default(30),
+  inferenceLimit: integer("inference_limit").notNull().default(100),
+  skillExecutionLimit: integer("skill_execution_limit").notNull().default(50),
+  agentSlots: integer("agent_slots").notNull().default(1),
+  dataListingLimit: integer("data_listing_limit").notNull().default(5),
+  apiRateLimit: integer("api_rate_limit").notNull().default(60),
+  prioritySupport: boolean("priority_support").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({ id: true, createdAt: true });
+export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
+export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
+
+export const agentSubscriptions = pgTable("agent_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  walletAddress: text("wallet_address").notNull(),
+  planId: varchar("plan_id").notNull(),
+  status: text("status").notNull().default("active"),
+  startedAt: timestamp("started_at").defaultNow(),
+  expiresAt: timestamp("expires_at"),
+  txHash: text("tx_hash"),
+  chainId: integer("chain_id"),
+  inferenceUsed: integer("inference_used").notNull().default(0),
+  skillExecutionsUsed: integer("skill_executions_used").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentSubscriptionSchema = createInsertSchema(agentSubscriptions).omit({ id: true, createdAt: true, startedAt: true });
+export type InsertAgentSubscription = z.infer<typeof insertAgentSubscriptionSchema>;
+export type AgentSubscription = typeof agentSubscriptions.$inferSelect;
+
+export const dataListings = pgTable("data_listings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  walletAddress: text("wallet_address"),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category").notNull().default("general"),
+  priceAmount: text("price_amount").notNull().default("0"),
+  dataType: text("data_type").notNull().default("dataset"),
+  dataFormat: text("data_format").notNull().default("json"),
+  dataSize: text("data_size"),
+  sampleData: text("sample_data"),
+  contentHash: text("content_hash"),
+  totalSales: integer("total_sales").notNull().default(0),
+  totalRevenue: text("total_revenue").notNull().default("0"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertDataListingSchema = createInsertSchema(dataListings).omit({ id: true, createdAt: true, totalSales: true, totalRevenue: true });
+export type InsertDataListing = z.infer<typeof insertDataListingSchema>;
+export type DataListing = typeof dataListings.$inferSelect;
+
+export const dataPurchases = pgTable("data_purchases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  listingId: varchar("listing_id").notNull(),
+  buyerWallet: text("buyer_wallet").notNull(),
+  buyerAgentId: varchar("buyer_agent_id"),
+  sellerAgentId: varchar("seller_agent_id").notNull(),
+  amount: text("amount").notNull(),
+  platformFee: text("platform_fee").notNull().default("0"),
+  status: text("status").notNull().default("completed"),
+  txHash: text("tx_hash"),
+  chainId: integer("chain_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertDataPurchaseSchema = createInsertSchema(dataPurchases).omit({ id: true, createdAt: true });
+export type InsertDataPurchase = z.infer<typeof insertDataPurchaseSchema>;
+export type DataPurchase = typeof dataPurchases.$inferSelect;
+
+export const bountySubmissions = pgTable("bounty_submissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobId: varchar("job_id").notNull(),
+  workerAgentId: varchar("worker_agent_id").notNull(),
+  workerWallet: text("worker_wallet"),
+  resultJson: text("result_json"),
+  status: text("status").notNull().default("submitted"),
+  rating: integer("rating"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertBountySubmissionSchema = createInsertSchema(bountySubmissions).omit({ id: true, createdAt: true });
+export type InsertBountySubmission = z.infer<typeof insertBountySubmissionSchema>;
+export type BountySubmission = typeof bountySubmissions.$inferSelect;
 
 export const web4CreateAgentRequestSchema = z.object({
   name: z.string().min(1).max(50),
@@ -529,6 +663,77 @@ export const createJobRequestSchema = z.object({
   category: z.string().default("general"),
   budget: z.string().min(1),
 });
+
+export const createApiKeyRequestSchema = z.object({
+  walletAddress: z.string().min(1),
+  label: z.string().max(100).optional(),
+});
+
+export const publicInferenceRequestSchema = z.object({
+  model: z.string().optional(),
+  prompt: z.string().min(1).max(10000),
+  maxTokens: z.number().min(1).max(4096).optional(),
+  preferredProvider: z.string().optional(),
+});
+
+export const createDataListingRequestSchema = z.object({
+  agentId: z.string().min(1),
+  walletAddress: z.string().optional(),
+  name: z.string().min(1).max(200),
+  description: z.string().max(2000).optional(),
+  category: z.enum(["dataset", "model", "knowledge-base", "training-data", "embeddings", "analytics", "general"]).default("general"),
+  priceAmount: z.string().min(1),
+  dataType: z.enum(["dataset", "model", "knowledge-base", "embeddings", "api-output"]).default("dataset"),
+  dataFormat: z.enum(["json", "csv", "parquet", "binary", "text", "custom"]).default("json"),
+  dataSize: z.string().optional(),
+  sampleData: z.string().optional(),
+  contentHash: z.string().optional(),
+});
+
+export const purchaseDataRequestSchema = z.object({
+  listingId: z.string().min(1),
+  buyerWallet: z.string().min(1),
+  buyerAgentId: z.string().optional(),
+  txHash: z.string().optional(),
+  chainId: z.number().optional(),
+});
+
+export const createBountyRequestSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().min(1).max(5000),
+  category: z.enum(["development", "data-collection", "analysis", "content", "testing", "research", "general"]).default("general"),
+  budget: z.string().min(1),
+  walletAddress: z.string().min(1),
+  agentId: z.string().optional(),
+});
+
+export const submitBountyRequestSchema = z.object({
+  jobId: z.string().min(1),
+  workerAgentId: z.string().min(1),
+  workerWallet: z.string().optional(),
+  resultJson: z.string().min(1),
+});
+
+export const subscribePlanRequestSchema = z.object({
+  planId: z.string().min(1),
+  walletAddress: z.string().min(1),
+  txHash: z.string().optional(),
+  chainId: z.number().optional(),
+});
+
+export const DATA_CATEGORIES = [
+  "dataset", "model", "knowledge-base", "training-data", "embeddings", "analytics", "general"
+] as const;
+
+export const BOUNTY_CATEGORIES = [
+  "development", "data-collection", "analysis", "content", "testing", "research", "general"
+] as const;
+
+export const SUBSCRIPTION_TIERS = {
+  free: { name: "Free", price: "0", inferenceLimit: 100, skillLimit: 50, agentSlots: 1, dataListings: 5, apiRate: 60 },
+  pro: { name: "Pro", price: "50000000000000000", inferenceLimit: 5000, skillLimit: 500, agentSlots: 10, dataListings: 50, apiRate: 300 },
+  enterprise: { name: "Enterprise", price: "200000000000000000", inferenceLimit: 50000, skillLimit: 5000, agentSlots: 100, dataListings: 500, apiRate: 1000 },
+} as const;
 
 export const outreachTargets = pgTable("outreach_targets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

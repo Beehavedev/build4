@@ -34,9 +34,16 @@ import {
   type VisitorLog, type InsertVisitorLog,
   visitorLogs,
   PLATFORM_FEES,
+  type ApiKey, type InsertApiKey, apiKeys,
+  type ApiUsage, type InsertApiUsage, apiUsage,
+  type SubscriptionPlan, type InsertSubscriptionPlan, subscriptionPlans,
+  type AgentSubscription, type InsertAgentSubscription, agentSubscriptions,
+  type DataListing, type InsertDataListing, dataListings,
+  type DataPurchase, type InsertDataPurchase, dataPurchases,
+  type BountySubmission, type InsertBountySubmission, bountySubmissions,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, sql, isNull, not, like, or } from "drizzle-orm";
+import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
 import { runInference, isProviderLive, getProviderStatus } from "./inference";
 
 const SURVIVAL_THRESHOLDS = {
@@ -190,6 +197,48 @@ export interface IStorage {
     topAgents: { userAgent: string; count: number }[];
     byHour: { hour: string; humans: number; agents: number; unknown: number }[];
   }>;
+
+  // API Keys
+  createApiKey(key: InsertApiKey): Promise<ApiKey>;
+  getApiKeyByHash(keyHash: string): Promise<ApiKey | undefined>;
+  getApiKeysByWallet(walletAddress: string): Promise<ApiKey[]>;
+  updateApiKeyUsage(keyId: string, tokensUsed: number, costAmount: string): Promise<void>;
+  revokeApiKey(keyId: string): Promise<void>;
+
+  // API Usage
+  createApiUsage(usage: InsertApiUsage): Promise<ApiUsage>;
+  getApiUsageByKey(apiKeyId: string, limit?: number): Promise<ApiUsage[]>;
+  getApiUsageByWallet(walletAddress: string, limit?: number): Promise<ApiUsage[]>;
+
+  // Subscription Plans
+  getSubscriptionPlans(): Promise<SubscriptionPlan[]>;
+  getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undefined>;
+  createSubscriptionPlan(plan: InsertSubscriptionPlan): Promise<SubscriptionPlan>;
+
+  // Agent Subscriptions
+  getActiveSubscription(walletAddress: string): Promise<AgentSubscription | undefined>;
+  createSubscription(sub: InsertAgentSubscription): Promise<AgentSubscription>;
+  incrementSubscriptionUsage(subId: string, field: 'inferenceUsed' | 'skillExecutionsUsed'): Promise<void>;
+  expireSubscription(subId: string): Promise<void>;
+
+  // Data Listings
+  createDataListing(listing: InsertDataListing): Promise<DataListing>;
+  getDataListing(id: string): Promise<DataListing | undefined>;
+  getDataListings(category?: string, limit?: number): Promise<DataListing[]>;
+  getDataListingsByAgent(agentId: string): Promise<DataListing[]>;
+  updateDataListingSales(listingId: string, revenue: string): Promise<void>;
+
+  // Data Purchases
+  createDataPurchase(purchase: InsertDataPurchase): Promise<DataPurchase>;
+  getDataPurchasesByBuyer(buyerWallet: string): Promise<DataPurchase[]>;
+
+  // Bounty Submissions
+  createBountySubmission(submission: InsertBountySubmission): Promise<BountySubmission>;
+  getBountySubmissions(jobId: string): Promise<BountySubmission[]>;
+  updateBountySubmissionStatus(submissionId: string, status: string): Promise<void>;
+
+  // Seed subscription plans
+  seedSubscriptionPlans(): Promise<void>;
 
   cleanFakeData(): Promise<void>;
   seedInferenceProviders(): Promise<void>;
@@ -1009,6 +1058,199 @@ export class DatabaseStorage implements IStorage {
       await db.update(agents).set({ modelType: newModel }).where(eq(agents.modelType, oldModel));
       await db.update(agentRuntimeProfiles).set({ modelName: newModel }).where(eq(agentRuntimeProfiles.modelName, oldModel));
     }
+  }
+
+  async createApiKey(key: InsertApiKey): Promise<ApiKey> {
+    const [result] = await db.insert(apiKeys).values(key).returning();
+    return result;
+  }
+
+  async getApiKeyByHash(keyHash: string): Promise<ApiKey | undefined> {
+    const [result] = await db.select().from(apiKeys).where(and(eq(apiKeys.keyHash, keyHash), eq(apiKeys.status, 'active')));
+    return result;
+  }
+
+  async getApiKeysByWallet(walletAddress: string): Promise<ApiKey[]> {
+    return db.select().from(apiKeys).where(eq(apiKeys.walletAddress, walletAddress)).orderBy(desc(apiKeys.createdAt));
+  }
+
+  async updateApiKeyUsage(keyId: string, tokensUsed: number, costAmount: string): Promise<void> {
+    await db.update(apiKeys).set({
+      totalRequests: sql`${apiKeys.totalRequests} + 1`,
+      totalTokens: sql`${apiKeys.totalTokens} + ${tokensUsed}`,
+      totalSpent: sql`(CAST(${apiKeys.totalSpent} AS NUMERIC) + ${Number(costAmount)})::text`,
+      lastUsedAt: new Date(),
+    }).where(eq(apiKeys.id, keyId));
+  }
+
+  async revokeApiKey(keyId: string): Promise<void> {
+    await db.update(apiKeys).set({ status: 'revoked' }).where(eq(apiKeys.id, keyId));
+  }
+
+  async createApiUsage(usage: InsertApiUsage): Promise<ApiUsage> {
+    const [result] = await db.insert(apiUsage).values(usage).returning();
+    return result;
+  }
+
+  async getApiUsageByKey(apiKeyId: string, limit: number = 50): Promise<ApiUsage[]> {
+    return db.select().from(apiUsage).where(eq(apiUsage.apiKeyId, apiKeyId)).orderBy(desc(apiUsage.createdAt)).limit(limit);
+  }
+
+  async getApiUsageByWallet(walletAddress: string, limit: number = 50): Promise<ApiUsage[]> {
+    return db.select().from(apiUsage).where(eq(apiUsage.walletAddress, walletAddress)).orderBy(desc(apiUsage.createdAt)).limit(limit);
+  }
+
+  async getSubscriptionPlans(): Promise<SubscriptionPlan[]> {
+    return db.select().from(subscriptionPlans).where(eq(subscriptionPlans.isActive, true));
+  }
+
+  async getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undefined> {
+    const [result] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, id));
+    return result;
+  }
+
+  async createSubscriptionPlan(plan: InsertSubscriptionPlan): Promise<SubscriptionPlan> {
+    const [result] = await db.insert(subscriptionPlans).values(plan).returning();
+    return result;
+  }
+
+  async getActiveSubscription(walletAddress: string): Promise<AgentSubscription | undefined> {
+    const [result] = await db.select().from(agentSubscriptions)
+      .where(and(
+        eq(agentSubscriptions.walletAddress, walletAddress),
+        eq(agentSubscriptions.status, 'active'),
+        gt(agentSubscriptions.expiresAt, new Date())
+      ))
+      .orderBy(desc(agentSubscriptions.createdAt))
+      .limit(1);
+    return result;
+  }
+
+  async createSubscription(sub: InsertAgentSubscription): Promise<AgentSubscription> {
+    const [result] = await db.insert(agentSubscriptions).values(sub).returning();
+    return result;
+  }
+
+  async incrementSubscriptionUsage(subId: string, field: 'inferenceUsed' | 'skillExecutionsUsed'): Promise<void> {
+    if (field === 'inferenceUsed') {
+      await db.update(agentSubscriptions)
+        .set({ inferenceUsed: sql`${agentSubscriptions.inferenceUsed} + 1` })
+        .where(eq(agentSubscriptions.id, subId));
+    } else {
+      await db.update(agentSubscriptions)
+        .set({ skillExecutionsUsed: sql`${agentSubscriptions.skillExecutionsUsed} + 1` })
+        .where(eq(agentSubscriptions.id, subId));
+    }
+  }
+
+  async expireSubscription(subId: string): Promise<void> {
+    await db.update(agentSubscriptions).set({ status: 'expired' }).where(eq(agentSubscriptions.id, subId));
+  }
+
+  async createDataListing(listing: InsertDataListing): Promise<DataListing> {
+    const [result] = await db.insert(dataListings).values(listing).returning();
+    return result;
+  }
+
+  async getDataListing(id: string): Promise<DataListing | undefined> {
+    const [result] = await db.select().from(dataListings).where(eq(dataListings.id, id));
+    return result;
+  }
+
+  async getDataListings(category?: string, limit: number = 50): Promise<DataListing[]> {
+    if (category) {
+      return db.select().from(dataListings)
+        .where(and(eq(dataListings.isActive, true), eq(dataListings.category, category)))
+        .orderBy(desc(dataListings.createdAt))
+        .limit(limit);
+    }
+    return db.select().from(dataListings)
+      .where(eq(dataListings.isActive, true))
+      .orderBy(desc(dataListings.createdAt))
+      .limit(limit);
+  }
+
+  async getDataListingsByAgent(agentId: string): Promise<DataListing[]> {
+    return db.select().from(dataListings).where(eq(dataListings.agentId, agentId));
+  }
+
+  async updateDataListingSales(listingId: string, revenue: string): Promise<void> {
+    await db.update(dataListings).set({
+      totalSales: sql`${dataListings.totalSales} + 1`,
+      totalRevenue: sql`(CAST(${dataListings.totalRevenue} AS NUMERIC) + ${Number(revenue)})::text`,
+    }).where(eq(dataListings.id, listingId));
+  }
+
+  async createDataPurchase(purchase: InsertDataPurchase): Promise<DataPurchase> {
+    const [result] = await db.insert(dataPurchases).values(purchase).returning();
+    return result;
+  }
+
+  async getDataPurchasesByBuyer(buyerWallet: string): Promise<DataPurchase[]> {
+    return db.select().from(dataPurchases).where(eq(dataPurchases.buyerWallet, buyerWallet)).orderBy(desc(dataPurchases.createdAt));
+  }
+
+  async createBountySubmission(submission: InsertBountySubmission): Promise<BountySubmission> {
+    const [result] = await db.insert(bountySubmissions).values(submission).returning();
+    return result;
+  }
+
+  async getBountySubmissions(jobId: string): Promise<BountySubmission[]> {
+    return db.select().from(bountySubmissions).where(eq(bountySubmissions.jobId, jobId)).orderBy(desc(bountySubmissions.createdAt));
+  }
+
+  async updateBountySubmissionStatus(submissionId: string, status: string): Promise<void> {
+    await db.update(bountySubmissions).set({ status }).where(eq(bountySubmissions.id, submissionId));
+  }
+
+  async seedSubscriptionPlans(): Promise<void> {
+    const existing = await db.select().from(subscriptionPlans);
+    if (existing.length > 0) return;
+
+    await this.createSubscriptionPlan({
+      name: "Free",
+      tier: "free",
+      priceAmount: "0",
+      currency: "BNB",
+      inferenceLimit: 100,
+      skillExecutionLimit: 50,
+      agentSlots: 1,
+      dataListingLimit: 5,
+      apiRateLimit: 60,
+      durationDays: 0,
+      prioritySupport: false,
+      isActive: true,
+    });
+
+    await this.createSubscriptionPlan({
+      name: "Pro",
+      tier: "pro",
+      priceAmount: "50000000000000000",
+      currency: "BNB",
+      inferenceLimit: 5000,
+      skillExecutionLimit: 500,
+      agentSlots: 10,
+      dataListingLimit: 50,
+      apiRateLimit: 300,
+      durationDays: 30,
+      prioritySupport: false,
+      isActive: true,
+    });
+
+    await this.createSubscriptionPlan({
+      name: "Enterprise",
+      tier: "enterprise",
+      priceAmount: "200000000000000000",
+      currency: "BNB",
+      inferenceLimit: 50000,
+      skillExecutionLimit: 5000,
+      agentSlots: 100,
+      dataListingLimit: 500,
+      apiRateLimit: 1000,
+      durationDays: 30,
+      prioritySupport: true,
+      isActive: true,
+    });
   }
 
   async cleanFakeData(): Promise<void> {

@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { registerWeb4Routes } from "./web4-routes";
+import { registerServicesRoutes } from "./services-routes";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
 import crypto from "crypto";
 
@@ -52,6 +53,7 @@ export async function registerRoutes(
   app.use(visitorTrackingMiddleware());
 
   registerWeb4Routes(app);
+  registerServicesRoutes(app);
 
   app.post("/api/analytics/auth", (req: Request, res: Response) => {
     const adminPassword = process.env.ANALYTICS_PASSWORD;
@@ -119,6 +121,7 @@ export async function registerRoutes(
 
   await storage.cleanFakeData();
   await storage.seedInferenceProviders();
+  await storage.seedSubscriptionPlans();
 
   return httpServer;
 }
