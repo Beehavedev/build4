@@ -5,6 +5,7 @@ import { registerWeb4Routes } from "./web4-routes";
 import { registerServicesRoutes } from "./services-routes";
 import { startBountyEngine } from "./bounty-engine";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
+import { generatePitchDeck } from "./pitchdeck";
 import crypto from "crypto";
 
 const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
@@ -122,6 +123,14 @@ export async function registerRoutes(
         unknown: stats.unknown,
         recentPaths: stats.topPaths.slice(0, 5),
       });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/pitchdeck", async (_req: Request, res: Response) => {
+    try {
+      await generatePitchDeck(res);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
