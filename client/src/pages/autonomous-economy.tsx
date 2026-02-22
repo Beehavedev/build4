@@ -1308,7 +1308,10 @@ export default function AutonomousEconomy() {
                     </div>
                   </div>
                   {!web3.hasContracts && (
-                    <div className="mt-2 text-[10px] text-destructive font-mono">No contracts found on this network. Switch to BNB Chain, Base, or XLayer.</div>
+                    <div className="mt-2 p-2 bg-destructive/10 border border-destructive/30 rounded-md">
+                      <div className="text-[10px] text-destructive font-mono font-semibold">Unsupported Network</div>
+                      <div className="text-[9px] text-destructive/80 font-mono mt-0.5">BUILD4 contracts are deployed on BNB Chain, Base, and XLayer only. Switch your wallet to one of these networks to deposit, withdraw, or interact with agents on-chain.</div>
+                    </div>
                   )}
                   {lastTxHash && (
                     <div className="mt-2 flex items-center gap-1">
@@ -1338,22 +1341,34 @@ export default function AutonomousEconomy() {
                         className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5"
                         data-testid="input-onchain-deposit"
                       />
+                      {!web3.hasContracts && (
+                        <div className="text-[9px] text-destructive font-mono">Switch wallet to BNB Chain, Base, or XLayer to deposit</div>
+                      )}
                       <Button
                         size="sm"
                         className="w-full"
-                        disabled={onChainLoading === "deposit" || !onChainDeposit || parseFloat(onChainDeposit) <= 0}
+                        disabled={!web3.hasContracts || onChainLoading === "deposit" || !onChainDeposit || parseFloat(onChainDeposit) <= 0}
                         data-testid="button-onchain-deposit"
                         onClick={async () => {
                           try {
+                            if (!web3.hasContracts) {
+                              toast({ title: "Unsupported chain", description: "Please switch your wallet to BNB Chain, Base, or XLayer to deposit", variant: "destructive" });
+                              return;
+                            }
                             setOnChainLoading("deposit");
                             const depositWei = (parseFloat(onChainDeposit) * 1e18).toFixed(0);
                             let txHash: string | undefined;
 
                             const agentNumId = selectedAgent?.onchainId ? BigInt(selectedAgent.onchainId) : null;
-                            if (agentNumId && web3.hasContracts) {
+                            if (agentNumId) {
                               const receipt = await web3.depositToAgent(agentNumId, onChainDeposit);
                               txHash = receipt.hash;
                               setLastTxHash(receipt.hash);
+                            }
+
+                            if (!txHash) {
+                              toast({ title: "Deposit failed", description: "On-chain transaction required. Make sure the agent is registered on-chain and try again.", variant: "destructive" });
+                              return;
                             }
 
                             await apiRequest("POST", `/api/web4/agents/${agentId}/fund`, {
@@ -1364,7 +1379,7 @@ export default function AutonomousEconomy() {
                             });
 
                             queryClient.invalidateQueries({ queryKey: ["/api/web4/wallet", agentId] });
-                            toast({ title: "Deposit successful", description: `${onChainDeposit} ${activeChain.currency} deposited${txHash ? ' on-chain' : ''}` });
+                            toast({ title: "Deposit successful", description: `${onChainDeposit} ${activeChain.currency} deposited on-chain` });
                           } catch (err: any) {
                             toast({ title: "Deposit failed", description: err.message, variant: "destructive" });
                           } finally {
@@ -1389,6 +1404,9 @@ export default function AutonomousEconomy() {
                         className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5"
                         data-testid="input-onchain-withdraw"
                       />
+                      {!web3.hasContracts && (
+                        <div className="text-[9px] text-destructive font-mono">Switch wallet to a supported chain</div>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"
