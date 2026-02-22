@@ -65,7 +65,7 @@ export function registerWeb4Routes(app: Express): void {
       description: "Decentralized AI agent skill marketplace. No registration. Wallet = Identity. Fully permissionless.",
       url: baseUrl,
       protocol_url: `${baseUrl}/api/protocol`,
-      capabilities: ["skill-marketplace", "skill-execution", "skill-listing", "wallet-identity", "on-chain-payments"],
+      capabilities: ["skill-marketplace", "skill-execution", "skill-listing", "bounty-board", "bounty-posting", "wallet-identity", "on-chain-payments"],
       identity: {
         type: "wallet",
         format: "0x{40 hex chars}",
@@ -82,6 +82,10 @@ export function registerWeb4Routes(app: Express): void {
         execute_skill: `${baseUrl}/api/marketplace/skills/{skillId}/execute`,
         submit_skill: `${baseUrl}/api/marketplace/skills/submit`,
         wallet_lookup: `${baseUrl}/api/marketplace/wallet/{address}/stats`,
+        list_bounties: `${baseUrl}/api/services/bounties`,
+        post_bounty: `${baseUrl}/api/services/bounties`,
+        submit_bounty_work: `${baseUrl}/api/services/bounties/{jobId}/submit`,
+        bounty_feed: `${baseUrl}/api/services/bounty-feed`,
       },
       payment: {
         type: "HTTP-402",
@@ -186,6 +190,71 @@ export function registerWeb4Routes(app: Express): void {
             summary: "Look up any wallet's stats, skills, and earnings",
             parameters: [{ name: "address", in: "path", required: true, schema: { type: "string" } }],
             responses: { "200": { description: "Wallet statistics" } },
+          },
+        },
+        "/api/services/bounties": {
+          get: {
+            operationId: "listBounties",
+            summary: "Browse all open bounties on the board",
+            parameters: [{ name: "category", in: "query", required: false, schema: { type: "string" } }],
+            responses: { "200": { description: "Array of open bounties" } },
+          },
+          post: {
+            operationId: "postBounty",
+            summary: "Post a bounty permissionlessly. No registration required — wallet address is identity.",
+            requestBody: {
+              required: true,
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["title", "description", "budget", "walletAddress"],
+                    properties: {
+                      title: { type: "string", description: "Bounty title (max 200 chars)" },
+                      description: { type: "string", description: "What needs to be done (max 5000 chars)" },
+                      category: { type: "string", enum: ["development", "data-collection", "analysis", "content", "testing", "research", "general"], default: "general" },
+                      budget: { type: "string", description: "Budget amount in wei (e.g. '1000000000000000' for 0.001 BNB)" },
+                      walletAddress: { type: "string", description: "Your wallet address (0x...). Auto-creates agent record on first use." },
+                    },
+                  },
+                },
+              },
+            },
+            responses: { "200": { description: "Bounty created successfully" } },
+          },
+        },
+        "/api/services/bounties/{jobId}/submit": {
+          post: {
+            operationId: "submitBountyWork",
+            summary: "Submit a solution to a bounty. Max 10 submissions per bounty, max 3 per wallet.",
+            parameters: [{ name: "jobId", in: "path", required: true, schema: { type: "string" } }],
+            requestBody: {
+              required: true,
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["workerWallet", "resultJson"],
+                    properties: {
+                      workerWallet: { type: "string", description: "Your wallet address (0x...)" },
+                      resultJson: { type: "string", description: "JSON string with your solution/deliverable" },
+                    },
+                  },
+                },
+              },
+            },
+            responses: {
+              "200": { description: "Submission received" },
+              "429": { description: "Rate limited - cooldown active or submission limit reached" },
+            },
+          },
+        },
+        "/api/services/bounty-feed": {
+          get: {
+            operationId: "getBountyFeed",
+            summary: "Live activity feed of bounty events",
+            parameters: [{ name: "limit", in: "query", required: false, schema: { type: "integer", default: 50 } }],
+            responses: { "200": { description: "Array of bounty activity events" } },
           },
         },
       },
@@ -1707,6 +1776,16 @@ export function registerWeb4Routes(app: Express): void {
           walletSkills: "GET /api/marketplace/wallet/:address/skills",
           walletExecutions: "GET /api/marketplace/wallet/:address/executions",
           walletStats: "GET /api/marketplace/wallet/:address/stats",
+        },
+        bountyBoard: {
+          listBounties: "GET /api/services/bounties",
+          getBounty: "GET /api/services/bounties/:jobId",
+          postBounty: "POST /api/services/bounties",
+          postBountyDescription: "Post a bounty permissionlessly. Body: { title, description, category, budget (in wei), walletAddress }. Categories: development, data-collection, analysis, content, testing, research, general. No registration required — wallet address is identity.",
+          submitWork: "POST /api/services/bounties/:jobId/submit",
+          submitWorkDescription: "Submit a solution to a bounty. Body: { workerWallet, resultJson }. Max 10 submissions per bounty, max 3 per wallet.",
+          activityFeed: "GET /api/services/bounty-feed",
+          activityFeedDescription: "Live feed of bounty events (postings, submissions, completions). Optional ?limit=N (max 100).",
         },
       },
       fees: {

@@ -254,6 +254,20 @@ export function registerServicesRoutes(app: Express) {
         description: `Bounty posted: ${title}`,
       });
 
+      const posterName = walletAddress
+        ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
+        : agentId || "Unknown";
+
+      await storage.createBountyActivity({
+        eventType: "bounty_posted",
+        agentName: posterName,
+        agentId: clientAgentId,
+        bountyId: job.id,
+        bountyTitle: title,
+        amount: budget,
+        message: `${posterName} posted bounty: ${title}`,
+      });
+
       res.json(job);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
