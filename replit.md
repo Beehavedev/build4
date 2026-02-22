@@ -55,7 +55,8 @@ Always update both development AND production databases when making data fixes �
 - **Compiler**: Solidity 0.8.24 with optimizer (200 runs)
 - **Framework**: Hardhat v2 with custom config at `hardhat.config.web4.cjs`
 - **Libraries**: OpenZeppelin Contracts v5 (Ownable, ReentrancyGuard)
-- **Target Networks**: BNB Chain (56/97), Base (8453/84532), XLayer (196/195)
+- **Target Networks (Contracts)**: BNB Chain (56/97), Base (8453/84532), XLayer (196/195)
+- **Multichain Deposits**: All 30+ EVM chains supported via direct transfer to platform wallet. Registry in `shared/evm-chains.ts`. Contract chains use AgentEconomyHub.deposit(); non-contract chains use direct native token transfer to `0x5Ff57464152c9285A8526a0665d996dA66e2def1`, verified via public RPC
 - **Contracts**:
   1. `AgentEconomyHub.sol` — Core wallet layer: deposit/withdraw/transfer, survival tier computation, module authorization for cross-contract calls
   2. `SkillMarketplace.sol` — Skill listing and purchase with 3-way revenue split (platform fee, parent revenue share, seller)

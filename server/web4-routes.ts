@@ -3,6 +3,7 @@ import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
 import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, collectFeeAcrossAllChains, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain, getRevenueWalletAddress, verifyPaymentTransaction, getSupportedChains } from "./onchain";
+import { EVM_CHAINS, getChainName, getChainCurrency, getRpcUrl, isContractChain } from "@shared/evm-chains";
 import {
   web4CreateAgentRequestSchema,
   web4TipRequestSchema,
@@ -382,7 +383,7 @@ export function registerWeb4Routes(app: Express): void {
   app.post("/api/web4/agents/:agentId/fund", async (req: Request, res: Response) => {
     try {
       const { agentId } = req.params;
-      const { amount, txHash, chainId: chainIdVal, senderWallet } = req.body;
+      const { amount, txHash, chainId: chainIdVal, senderWallet, depositType } = req.body;
       if (!amount || typeof amount !== "string") {
         return res.status(400).json({ error: "Valid deposit amount required" });
       }
@@ -391,7 +392,7 @@ export function registerWeb4Routes(app: Express): void {
       if (amountBigInt <= 0n) return res.status(400).json({ error: "Amount must be positive" });
 
       const maxDeposit = BigInt("100000000000000000000");
-      if (amountBigInt > maxDeposit) return res.status(400).json({ error: "Deposit exceeds maximum (100 BNB)" });
+      if (amountBigInt > maxDeposit) return res.status(400).json({ error: "Deposit exceeds maximum (100 native tokens)" });
 
       const agent = await storage.getAgent(agentId);
       if (!agent) return res.status(404).json({ error: "Agent not found" });
@@ -409,6 +410,42 @@ export function registerWeb4Routes(app: Express): void {
       const existingTx = await storage.getTransactionByTxHash(normalizedTxHash);
       if (existingTx) return res.status(409).json({ error: "This transaction has already been processed" });
 
+      const chainId = chainIdVal ? Number(chainIdVal) : null;
+      const isDirectTransfer = depositType === "direct" || (chainId && !isContractChain(chainId));
+      const chainName = chainId ? getChainName(chainId) : "Unknown";
+      const currency = chainId ? getChainCurrency(chainId) : "ETH";
+
+      if (isDirectTransfer && chainId) {
+        const rpcUrl = getRpcUrl(chainId);
+        if (rpcUrl) {
+          try {
+            const { JsonRpcProvider } = await import("ethers");
+            const provider = new JsonRpcProvider(rpcUrl);
+            const txReceipt = await provider.getTransactionReceipt(normalizedTxHash);
+            if (!txReceipt || txReceipt.status !== 1) {
+              return res.status(400).json({ error: "Transaction not confirmed or failed on " + chainName });
+            }
+            const tx = await provider.getTransaction(normalizedTxHash);
+            if (!tx) {
+              return res.status(400).json({ error: "Transaction not found on " + chainName });
+            }
+            if (tx.from.toLowerCase() !== sender) {
+              return res.status(403).json({ error: "Transaction sender does not match your wallet" });
+            }
+            const revenueWallet = getRevenueWalletAddress();
+            if (tx.to?.toLowerCase() !== revenueWallet.toLowerCase()) {
+              return res.status(400).json({ error: `Transaction must be sent to the platform wallet (${revenueWallet.slice(0, 10)}...)` });
+            }
+            const txValue = tx.value;
+            if (txValue < amountBigInt) {
+              return res.status(400).json({ error: `Transaction value (${txValue.toString()}) is less than claimed deposit amount` });
+            }
+          } catch (verifyErr: any) {
+            console.warn(`[fund] RPC verification warning on ${chainName}: ${verifyErr.message}`);
+          }
+        }
+      }
+
       const wallet = await storage.getWallet(agentId);
       if (!wallet) return res.status(404).json({ error: "Agent wallet not found" });
 
@@ -419,13 +456,13 @@ export function registerWeb4Routes(app: Express): void {
         agentId,
         type: "deposit",
         amount,
-        description: `Deposit from owner wallet (tx: ${normalizedTxHash.slice(0, 10)}...)`,
+        description: `Deposit from ${chainName} (${currency}) via ${isDirectTransfer ? "direct transfer" : "contract"} (tx: ${normalizedTxHash.slice(0, 10)}...)`,
         txHash: normalizedTxHash,
-        chainId: chainIdVal || undefined,
+        chainId: chainId || undefined,
       });
 
       const updatedWallet = await storage.getWallet(agentId);
-      res.json({ success: true, wallet: updatedWallet, txHash: normalizedTxHash });
+      res.json({ success: true, wallet: updatedWallet, txHash: normalizedTxHash, chain: chainName, currency, depositType: isDirectTransfer ? "direct" : "contract" });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -976,6 +1013,31 @@ export function registerWeb4Routes(app: Express): void {
           { name: "Base", chainId: 8453, rpc: "https://mainnet.base.org" },
           { name: "XLayer", chainId: 196, rpc: "https://rpc.xlayer.tech" },
         ],
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/web4/deposit-info", async (_req: Request, res: Response) => {
+    try {
+      const revenueWallet = getRevenueWalletAddress();
+      const contractChains = getSupportedChains();
+      const allChains = Object.values(EVM_CHAINS).filter(c => !c.isTestnet).map(c => ({
+        chainId: c.chainId,
+        name: c.name,
+        currency: c.currency,
+        hasContracts: isContractChain(c.chainId),
+        explorerUrl: c.explorerUrl,
+      }));
+      res.json({
+        platformWallet: revenueWallet,
+        contractChains,
+        allSupportedChains: allChains,
+        depositMethods: {
+          contract: "For BNB Chain, Base, XLayer — deposit through smart contract (AgentEconomyHub.deposit)",
+          direct: "For all other EVM chains — send native tokens directly to the platform wallet address",
+        },
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });

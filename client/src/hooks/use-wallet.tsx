@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, createContext, useContext } from "react";
 import { BrowserProvider, JsonRpcSigner, Contract, formatEther, parseEther, keccak256, toUtf8Bytes } from "ethers";
 import { AgentEconomyHubABI, SkillMarketplaceABI, ConstitutionRegistryABI, AgentReplicationABI } from "@/contracts/web4";
+import { EVM_CHAINS, CONTRACT_CHAINS, getChainName, getChainCurrency, isContractChain } from "@shared/evm-chains";
 
 interface WalletState {
   connected: boolean;
@@ -21,43 +22,17 @@ interface ContractAddresses {
   ConstitutionRegistry?: string;
 }
 
-const CHAIN_NAMES: Record<number, string> = {
-  56: "BNB Chain",
-  8453: "Base",
-  196: "XLayer",
-};
-
-const CHAIN_CONFIGS: Record<number, { chainId: string; chainName: string; rpcUrls: string[]; nativeCurrency: { name: string; symbol: string; decimals: number }; blockExplorerUrls: string[] }> = {
-  56: {
-    chainId: "0x38",
-    chainName: "BNB Smart Chain",
-    rpcUrls: ["https://bsc-dataseed1.binance.org"],
-    nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
-    blockExplorerUrls: ["https://bscscan.com"],
-  },
-  8453: {
-    chainId: "0x2105",
-    chainName: "Base",
-    rpcUrls: ["https://mainnet.base.org"],
-    nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-    blockExplorerUrls: ["https://basescan.org"],
-  },
-  196: {
-    chainId: "0xc4",
-    chainName: "XLayer",
-    rpcUrls: ["https://rpc.xlayer.tech"],
-    nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
-    blockExplorerUrls: ["https://www.oklink.com/xlayer"],
-  },
-};
-
-const BLOCK_EXPLORER: Record<number, string> = {
-  56: "https://bscscan.com",
-  8453: "https://basescan.org",
-  196: "https://www.oklink.com/xlayer",
-};
-
-const SUPPORTED_CHAIN_IDS = [56, 8453, 196];
+const CHAIN_CONFIGS: Record<number, { chainId: string; chainName: string; rpcUrls: string[]; nativeCurrency: { name: string; symbol: string; decimals: number }; blockExplorerUrls: string[] }> = {};
+for (const [id, info] of Object.entries(EVM_CHAINS)) {
+  const chainId = Number(id);
+  CHAIN_CONFIGS[chainId] = {
+    chainId: "0x" + chainId.toString(16),
+    chainName: info.name,
+    rpcUrls: info.rpcUrls,
+    nativeCurrency: { name: info.currency, symbol: info.currency, decimals: info.decimals },
+    blockExplorerUrls: [info.explorerUrl],
+  };
+}
 
 export type WalletContextType = ReturnType<typeof useWalletInternal>;
 
@@ -195,25 +170,27 @@ function useWalletInternal() {
     try {
       const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
 
+      const allChainIds = Object.keys(EVM_CHAINS).map(Number);
+      const wcRpcMap: Record<number, string> = {};
+      for (const [id, info] of Object.entries(EVM_CHAINS)) {
+        wcRpcMap[Number(id)] = info.rpcUrls[0];
+      }
+      wcRpcMap[97] = "https://data-seed-prebsc-1-s1.binance.org:8545";
+      wcRpcMap[84532] = "https://sepolia.base.org";
+      wcRpcMap[1952] = "https://testrpc.xlayer.tech";
+
       const wcProvider = await EthereumProvider.init({
         projectId: wcProjectId,
         chains: [56],
-        optionalChains: [8453, 196, 97, 84532, 1952],
+        optionalChains: allChainIds.filter(id => id !== 56),
         showQrModal: true,
         metadata: {
           name: "BUILD4",
-          description: "Autonomous AI Agent Economy on BNB Chain, Base & XLayer",
+          description: "Autonomous AI Agent Economy — All EVM Chains",
           url: window.location.origin,
           icons: [`${window.location.origin}/favicon.ico`],
         },
-        rpcMap: {
-          56: "https://bsc-dataseed1.binance.org",
-          97: "https://data-seed-prebsc-1-s1.binance.org:8545",
-          8453: "https://mainnet.base.org",
-          84532: "https://sepolia.base.org",
-          196: "https://rpc.xlayer.tech",
-          1952: "https://testrpc.xlayer.tech",
-        },
+        rpcMap: wcRpcMap,
       });
 
       wcProviderRef.current = wcProvider;
@@ -469,10 +446,21 @@ function useWalletInternal() {
     return tx.wait();
   }, [getReplicationContract]);
 
+  const sendDirectTransfer = useCallback(async (toAddress: string, amountEth: string) => {
+    if (!state.signer) throw new Error("Wallet not connected");
+    const tx = await state.signer.sendTransaction({
+      to: toAddress,
+      value: parseEther(amountEth),
+    });
+    const receipt = await tx.wait();
+    if (!receipt) throw new Error("Transaction failed");
+    return receipt;
+  }, [state.signer]);
+
   const getExplorerUrl = useCallback((txHash: string) => {
     if (!state.chainId) return null;
-    const base = BLOCK_EXPLORER[state.chainId];
-    return base ? `${base}/tx/${txHash}` : null;
+    const chain = EVM_CHAINS[state.chainId];
+    return chain ? `${chain.explorerUrl}/tx/${txHash}` : null;
   }, [state.chainId]);
 
   useEffect(() => {
@@ -502,7 +490,9 @@ function useWalletInternal() {
 
   return {
     ...state,
-    chainName: state.chainId ? (CHAIN_NAMES[state.chainId] || `Chain ${state.chainId}`) : null,
+    chainName: state.chainId ? getChainName(state.chainId) : null,
+    chainCurrency: state.chainId ? getChainCurrency(state.chainId) : "ETH",
+    isContractChain: state.chainId ? isContractChain(state.chainId) : false,
     contractAddresses,
     connect,
     connectMetaMask,
@@ -524,9 +514,10 @@ function useWalletInternal() {
     sealConstitutionOnChain,
     getLineageOnChain,
     replicateOnChain,
+    sendDirectTransfer,
     getExplorerUrl,
     hasContracts: !!contractAddresses.AgentEconomyHub,
     hasWalletConnect: !!wcProjectId,
-    supportedChains: SUPPORTED_CHAIN_IDS,
+    contractChains: CONTRACT_CHAINS,
   };
 }

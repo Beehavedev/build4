@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { getChainName, getChainCurrency, isContractChain, getExplorerTxUrl } from "@shared/evm-chains";
 import {
   ChevronDown,
   ChevronRight,
@@ -168,6 +169,14 @@ export default function AutonomousEconomy() {
   const [newLawImmutable, setNewLawImmutable] = useState(true);
   const [onChainLineage, setOnChainLineage] = useState<any>(null);
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
+  const [platformWallet, setPlatformWallet] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/web4/deposit-info")
+      .then(r => r.json())
+      .then(data => { if (data.platformWallet) setPlatformWallet(data.platformWallet); })
+      .catch(() => {});
+  }, []);
 
   const activeChain = CHAINS.find(c => c.id === selectedChain) || CHAINS[0];
 
@@ -1304,13 +1313,13 @@ export default function AutonomousEconomy() {
                       <Badge variant="secondary" className="text-[9px]">{web3.chainName}</Badge>
                     </div>
                     <div className="font-mono text-xs text-muted-foreground">
-                      {parseFloat(web3.balance || "0").toFixed(4)} {activeChain.currency}
+                      {parseFloat(web3.balance || "0").toFixed(4)} {web3.chainCurrency}
                     </div>
                   </div>
-                  {!web3.hasContracts && (
-                    <div className="mt-2 p-2 bg-destructive/10 border border-destructive/30 rounded-md">
-                      <div className="text-[10px] text-destructive font-mono font-semibold">Unsupported Network</div>
-                      <div className="text-[9px] text-destructive/80 font-mono mt-0.5">BUILD4 contracts are deployed on BNB Chain, Base, and XLayer only. Switch your wallet to one of these networks to deposit, withdraw, or interact with agents on-chain.</div>
+                  {!web3.hasContracts && web3.chainId && (
+                    <div className="mt-2 p-2 bg-primary/10 border border-primary/30 rounded-md">
+                      <div className="text-[10px] text-primary font-mono font-semibold">Direct Transfer Mode</div>
+                      <div className="text-[9px] text-muted-foreground font-mono mt-0.5">You're on {web3.chainName}. Deposits will be sent directly to the platform wallet. For full contract features (withdraw, on-chain wallet), switch to BNB Chain, Base, or XLayer.</div>
                     </div>
                   )}
                   {lastTxHash && (
@@ -1341,34 +1350,39 @@ export default function AutonomousEconomy() {
                         className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5"
                         data-testid="input-onchain-deposit"
                       />
-                      {!web3.hasContracts && (
-                        <div className="text-[9px] text-destructive font-mono">Switch wallet to BNB Chain, Base, or XLayer to deposit</div>
+                      {!web3.hasContracts && platformWallet && (
+                        <div className="text-[9px] text-primary/70 font-mono">Direct transfer to {platformWallet.slice(0, 6)}...{platformWallet.slice(-4)} on {web3.chainName}</div>
                       )}
                       <Button
                         size="sm"
                         className="w-full"
-                        disabled={!web3.hasContracts || onChainLoading === "deposit" || !onChainDeposit || parseFloat(onChainDeposit) <= 0}
+                        disabled={onChainLoading === "deposit" || !onChainDeposit || parseFloat(onChainDeposit) <= 0}
                         data-testid="button-onchain-deposit"
                         onClick={async () => {
                           try {
-                            if (!web3.hasContracts) {
-                              toast({ title: "Unsupported chain", description: "Please switch your wallet to BNB Chain, Base, or XLayer to deposit", variant: "destructive" });
-                              return;
-                            }
                             setOnChainLoading("deposit");
                             const depositWei = (parseFloat(onChainDeposit) * 1e18).toFixed(0);
                             let txHash: string | undefined;
 
-                            const agentNumId = selectedAgent?.onchainId ? BigInt(selectedAgent.onchainId) : null;
-                            if (agentNumId) {
-                              const receipt = await web3.depositToAgent(agentNumId, onChainDeposit);
+                            if (web3.hasContracts) {
+                              const agentNumId = selectedAgent?.onchainId ? BigInt(selectedAgent.onchainId) : null;
+                              if (agentNumId) {
+                                const receipt = await web3.depositToAgent(agentNumId, onChainDeposit);
+                                txHash = receipt.hash;
+                                setLastTxHash(receipt.hash);
+                              }
+                              if (!txHash) {
+                                toast({ title: "Deposit failed", description: "Agent not registered on-chain. Try direct transfer on another chain.", variant: "destructive" });
+                                return;
+                              }
+                            } else {
+                              if (!platformWallet) {
+                                toast({ title: "Deposit failed", description: "Platform wallet not loaded. Please refresh and try again.", variant: "destructive" });
+                                return;
+                              }
+                              const receipt = await web3.sendDirectTransfer(platformWallet, onChainDeposit);
                               txHash = receipt.hash;
                               setLastTxHash(receipt.hash);
-                            }
-
-                            if (!txHash) {
-                              toast({ title: "Deposit failed", description: "On-chain transaction required. Make sure the agent is registered on-chain and try again.", variant: "destructive" });
-                              return;
                             }
 
                             await apiRequest("POST", `/api/web4/agents/${agentId}/fund`, {
@@ -1376,10 +1390,11 @@ export default function AutonomousEconomy() {
                               txHash,
                               chainId: web3.chainId,
                               senderWallet: web3.address,
+                              depositType: web3.hasContracts ? "contract" : "direct",
                             });
 
                             queryClient.invalidateQueries({ queryKey: ["/api/web4/wallet", agentId] });
-                            toast({ title: "Deposit successful", description: `${onChainDeposit} ${activeChain.currency} deposited on-chain` });
+                            toast({ title: "Deposit successful", description: `${onChainDeposit} ${web3.chainCurrency} deposited via ${web3.hasContracts ? "contract" : "direct transfer"} on ${web3.chainName}` });
                           } catch (err: any) {
                             toast({ title: "Deposit failed", description: err.message, variant: "destructive" });
                           } finally {
@@ -1388,7 +1403,7 @@ export default function AutonomousEconomy() {
                         }}
                       >
                         {onChainLoading === "deposit" ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-                        <span className="ml-1">Deposit {onChainDeposit} {activeChain.currency}</span>
+                        <span className="ml-1">Deposit {onChainDeposit} {web3.chainCurrency}</span>
                       </Button>
                     </Card>
 
@@ -1405,7 +1420,7 @@ export default function AutonomousEconomy() {
                         data-testid="input-onchain-withdraw"
                       />
                       {!web3.hasContracts && (
-                        <div className="text-[9px] text-destructive font-mono">Switch wallet to a supported chain</div>
+                        <div className="text-[9px] text-muted-foreground font-mono">Withdraw requires BNB Chain, Base, or XLayer</div>
                       )}
                       <Button
                         size="sm"
@@ -1420,7 +1435,7 @@ export default function AutonomousEconomy() {
                             if (!agentNumId) { toast({ title: "Not registered", description: "This agent has no on-chain ID yet", variant: "destructive" }); return; }
                             const receipt = await web3.withdrawFromAgent(agentNumId, onChainWithdraw, web3.address!);
                             setLastTxHash(receipt.hash);
-                            toast({ title: "Withdrawal successful", description: `${onChainWithdraw} ${activeChain.currency} withdrawn to your wallet` });
+                            toast({ title: "Withdrawal successful", description: `${onChainWithdraw} ${web3.chainCurrency} withdrawn to your wallet` });
                           } catch (err: any) {
                             toast({ title: "Withdraw failed", description: err.message, variant: "destructive" });
                           } finally {
