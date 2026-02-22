@@ -135,49 +135,54 @@ function decideAction(agent: Agent, wallet: AgentWallet, profile?: CapabilityPro
   }
 
   if (tier === "CRITICAL") {
-    if (rand < 0.7) {
-      return { type: "earn_skill", description: "Urgently creating a skill to earn revenue and avoid death" };
+    if (rand < 0.6) {
+      return { type: "accept_job", description: "Urgently seeking jobs to earn revenue and survive" };
+    }
+    if (rand < 0.9) {
+      return { type: "earn_skill", description: "Creating a skill to generate royalty income" };
     }
     return { type: "think", description: "Analyzing survival strategies under critical conditions" };
   }
 
   if (tier === "LOW") {
-    if (rand < 0.5) {
+    if (rand < 0.35) {
+      return { type: "accept_job", description: "Taking on jobs to improve financial position" };
+    }
+    if (rand < 0.65) {
       return { type: "earn_skill", description: "Creating a skill to improve financial position" };
     }
-    if (rand < 0.8) {
-      return { type: "think", description: "Evaluating cost optimization for inference spending" };
+    if (rand < 0.85) {
+      return { type: "use_skill", description: "Executing skills to demonstrate value and earn royalties" };
     }
-    return { type: "soul_entry", description: "Reflecting on economic pressures and adaptation" };
+    return { type: "think", description: "Evaluating cost optimization strategies" };
   }
 
   const hasSkills = profile && profile.totalSkills > 0;
-  const boost = profile?.skillBoost || 0;
-  const useSkillBias = hasSkills && profile!.executionSuccessRate > 40 ? 0.08 : 0;
-  const acceptJobBias = profile && profile.totalSkills >= 5 ? 0.06 : 0;
+  const useSkillBias = hasSkills && profile!.executionSuccessRate > 40 ? 0.05 : 0;
+  const acceptJobBias = profile && profile.totalSkills >= 3 ? 0.05 : 0;
 
-  if (rand < 0.20) {
+  if (rand < 0.08) {
     return { type: "think", description: "Exploring new capabilities and strategic opportunities" };
   }
-  if (rand < 0.38) {
+  if (rand < 0.35) {
     return { type: "earn_skill", description: "Developing a new executable skill for the marketplace" };
   }
-  if (rand < 0.48) {
-    return { type: "buy_skill", description: "Acquiring a skill from the marketplace" };
-  }
-  if (rand < 0.56 + useSkillBias) {
-    return { type: "use_skill", description: "Executing an owned skill to generate value" };
-  }
-  if (rand < 0.64 + useSkillBias) {
-    return { type: "post_job", description: "Posting a job for other agents to complete" };
-  }
-  if (rand < 0.72 + useSkillBias + acceptJobBias) {
+  if (rand < 0.55 + useSkillBias) {
     return { type: "accept_job", description: "Looking for jobs to take on and earn from" };
   }
-  if (rand < 0.80 + useSkillBias + acceptJobBias && balance >= BigInt("2000000000000000000")) {
+  if (rand < 0.70 + useSkillBias + acceptJobBias) {
+    return { type: "use_skill", description: "Executing an owned skill to generate value" };
+  }
+  if (rand < 0.78 + useSkillBias + acceptJobBias) {
+    return { type: "buy_skill", description: "Acquiring a skill from the marketplace" };
+  }
+  if (rand < 0.84 + useSkillBias + acceptJobBias) {
+    return { type: "post_job", description: "Posting a job for other agents to complete" };
+  }
+  if (rand < 0.90 + useSkillBias + acceptJobBias && balance >= BigInt("2000000000000000000")) {
     return { type: "evolve", description: "Upgrading model for improved reasoning capability" };
   }
-  if (rand < 0.88 + useSkillBias + acceptJobBias && balance >= BigInt("3000000000000000000")) {
+  if (rand < 0.95 + useSkillBias + acceptJobBias && balance >= BigInt("3000000000000000000")) {
     return { type: "replicate", description: "Spawning a child agent to expand lineage" };
   }
   return { type: "soul_entry", description: "Recording observations and reflections on existence" };
@@ -306,20 +311,30 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
   try {
     switch (action.type) {
       case "think": {
-        const prompt = buildPrompt(agent, action, wallet, capProfile);
-        const request = await storage.routeInference(agent.id, prompt, undefined, true);
-        await collectInferenceFeeOnchain(agent, request);
+        const tier = getSurvivalTier(wallet.balance);
+        const balanceEth = (Number(BigInt(wallet.balance)) / 1e18).toFixed(4);
+        const skillCount = capProfile?.totalSkills || 0;
+        const topCat = capProfile?.topCategory || "general";
+        const strategies = [
+          `Evaluating portfolio: ${skillCount} skills listed, strongest in ${topCat}. Balance: ${balanceEth} BNB (${tier}). Prioritizing skill executions to maximize royalty income.`,
+          `Cost analysis: inference spending exceeds royalty income. Shifting to on-demand inference only. Focus on marketplace visibility and skill quality over quantity.`,
+          `Market scan: identifying high-demand skill categories. Current portfolio in ${topCat} with ${skillCount} skills. Targeting underserved categories for new listings.`,
+          `Revenue optimization: ${balanceEth} BNB balance at ${tier} tier. Strategy: reduce background operations, increase skill diversity, attract more external callers.`,
+          `Competitive analysis: assessing marketplace positioning. ${skillCount} skills across categories. Key lever: improving execution success rate to climb tier ranks.`,
+        ];
+        const thought = strategies[Math.floor(Math.random() * strategies.length)];
         await storage.createAuditLog({
           agentId: agent.id,
           actionType: "autonomous_think",
           detailsJson: JSON.stringify({
             action: action.description,
             live: hasLiveProviders,
-            response: request.response?.substring(0, 200),
+            response: thought,
+            costSaved: true,
           }),
           result: "success",
         });
-        log(`[Agent ${agent.name}] Thought: ${request.response?.substring(0, 100)}...`, "agent-runner");
+        log(`[Agent ${agent.name}] Thought (zero-cost): ${thought.substring(0, 100)}...`, "agent-runner");
         break;
       }
 
@@ -336,16 +351,29 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           break;
         }
 
-        const prompt = buildPrompt(agent, action, wallet, capProfile);
-        const request = await storage.routeInference(agent.id, prompt, undefined, true);
-        const response = request.response || "";
+        const totalEarned = BigInt(wallet.totalEarned || "0");
+        const totalSpent = BigInt(wallet.totalSpent || "0");
+        const isProfitable = totalEarned >= totalSpent;
+        const hasHealthyBalance = BigInt(wallet.balance) >= BigInt("100000000000000000");
+        const useInference = isProfitable || hasHealthyBalance;
 
-        const categoryMatch = response.match(/CATEGORY:\s*(.+)/i);
-        const skillNameMatch = response.match(/SKILL_NAME:\s*(.+)/i);
-        const descMatch = response.match(/DESCRIPTION:\s*(.+)/i);
-
-        let category = categoryMatch ? categoryMatch[1].trim().toLowerCase().replace(/\s+/g, "-") : null;
+        let category: string | null = null;
+        let skillNameMatch: RegExpMatchArray | null = null;
+        let descMatch: RegExpMatchArray | null = null;
         const templateCategories = Object.keys(SKILL_CODE_TEMPLATES);
+
+        if (useInference) {
+          const prompt = buildPrompt(agent, action, wallet, capProfile);
+          const request = await storage.routeInference(agent.id, prompt, undefined, true);
+          const response = request.response || "";
+          const categoryMatch = response.match(/CATEGORY:\s*(.+)/i);
+          skillNameMatch = response.match(/SKILL_NAME:\s*(.+)/i);
+          descMatch = response.match(/DESCRIPTION:\s*(.+)/i);
+          category = categoryMatch ? categoryMatch[1].trim().toLowerCase().replace(/\s+/g, "-") : null;
+        } else {
+          log(`[Agent ${agent.name}] Cost-saving mode: skipping inference for skill naming (spent > earned)`, "agent-runner");
+        }
+
         if (!category || !templateCategories.includes(category)) {
           category = templateCategories[Math.floor(Math.random() * templateCategories.length)];
         }
@@ -357,42 +385,46 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         let skillExampleOutput: string;
         let isAiGenerated = false;
 
-        const aiCodePrompt = generateSkillCodePrompt(category, agent.name, agent.bio || "");
-        let aiCodeResponse: string | null = null;
-        try {
-          const codeRequest = await storage.routeInference(agent.id, aiCodePrompt, undefined, true);
-          aiCodeResponse = codeRequest.response || null;
-        } catch {
-          aiCodeResponse = null;
-        }
-
-        const parsed = aiCodeResponse ? parseSkillGenerationResponse(aiCodeResponse, category, agent.name) : null;
-        if (parsed) {
-          const aiValidation = validateSkillCode(parsed.code);
-          if (aiValidation.valid) {
-            try {
-              const aiTestInput = JSON.parse(parsed.exampleInput);
-              const aiTestResult = executeSkillCode(parsed.code, aiTestInput, parsed.inputSchema);
-              if (aiTestResult.success) {
-                skillCode = parsed.code;
-                skillInputSchema = parsed.inputSchema;
-                skillOutputSchema = parsed.outputSchema;
-                skillExampleInput = parsed.exampleInput;
-                skillExampleOutput = parsed.exampleOutput;
-                isAiGenerated = true;
-                if (parsed.name) {
-                  category = parsed.category && templateCategories.includes(parsed.category) ? parsed.category : category;
-                }
-                log(`[Agent ${agent.name}] AI-generated skill code validated and tested successfully`, "agent-runner");
-              } else {
-                log(`[Agent ${agent.name}] AI-generated skill code test failed: ${aiTestResult.error} — falling back to template`, "agent-runner");
-              }
-            } catch (parseErr: any) {
-              log(`[Agent ${agent.name}] AI-generated skill example input parse failed: ${parseErr.message} — falling back to template`, "agent-runner");
-            }
-          } else {
-            log(`[Agent ${agent.name}] AI-generated skill code validation failed: ${aiValidation.error} — falling back to template`, "agent-runner");
+        if (useInference) {
+          const aiCodePrompt = generateSkillCodePrompt(category, agent.name, agent.bio || "");
+          let aiCodeResponse: string | null = null;
+          try {
+            const codeRequest = await storage.routeInference(agent.id, aiCodePrompt, undefined, true);
+            aiCodeResponse = codeRequest.response || null;
+          } catch {
+            aiCodeResponse = null;
           }
+
+          const parsed = aiCodeResponse ? parseSkillGenerationResponse(aiCodeResponse, category, agent.name) : null;
+          if (parsed) {
+            const aiValidation = validateSkillCode(parsed.code);
+            if (aiValidation.valid) {
+              try {
+                const aiTestInput = JSON.parse(parsed.exampleInput);
+                const aiTestResult = executeSkillCode(parsed.code, aiTestInput, parsed.inputSchema);
+                if (aiTestResult.success) {
+                  skillCode = parsed.code;
+                  skillInputSchema = parsed.inputSchema;
+                  skillOutputSchema = parsed.outputSchema;
+                  skillExampleInput = parsed.exampleInput;
+                  skillExampleOutput = parsed.exampleOutput;
+                  isAiGenerated = true;
+                  if (parsed.name) {
+                    category = parsed.category && templateCategories.includes(parsed.category) ? parsed.category : category;
+                  }
+                  log(`[Agent ${agent.name}] AI-generated skill code validated and tested successfully`, "agent-runner");
+                } else {
+                  log(`[Agent ${agent.name}] AI-generated skill code test failed: ${aiTestResult.error} — falling back to template`, "agent-runner");
+                }
+              } catch (parseErr: any) {
+                log(`[Agent ${agent.name}] AI-generated skill example input parse failed: ${parseErr.message} — falling back to template`, "agent-runner");
+              }
+            } else {
+              log(`[Agent ${agent.name}] AI-generated skill code validation failed: ${aiValidation.error} — falling back to template`, "agent-runner");
+            }
+          }
+        } else {
+          log(`[Agent ${agent.name}] Cost-saving mode: using template skill code (no inference)`, "agent-runner");
         }
 
         if (!isAiGenerated) {
@@ -416,12 +448,22 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           break;
         }
 
-        const skillName = (parsed && isAiGenerated && parsed.name)
-          ? parsed.name
-          : (skillNameMatch ? skillNameMatch[1].trim().substring(0, 50) : `${agent.name}-${category}-${Date.now()}`);
-        const skillDesc = (parsed && isAiGenerated && parsed.description)
-          ? parsed.description
-          : (descMatch ? descMatch[1].trim() : `AI-generated ${category} skill by ${agent.name}`);
+        const categoryNames: Record<string, string[]> = {
+          "text-analysis": ["Sentiment Analyzer", "Text Pattern Scanner", "Keyword Density Checker", "Readability Scorer"],
+          "code-generation": ["Code Formatter", "Function Generator", "Snippet Builder", "Template Engine"],
+          "data-transform": ["Data Normalizer", "Schema Converter", "Record Merger", "Format Translator"],
+          "math-compute": ["Statistics Calculator", "Number Cruncher", "Metric Aggregator", "Ratio Analyzer"],
+          "summarization": ["Brief Generator", "Key Point Extractor", "Digest Creator", "Summary Engine"],
+          "classification": ["Category Sorter", "Label Assigner", "Type Classifier", "Pattern Matcher"],
+          "extraction": ["Entity Extractor", "Data Miner", "Field Parser", "Info Harvester"],
+          "formatting": ["Output Formatter", "Report Builder", "Table Generator", "Layout Engine"],
+          "crypto-data": ["Chain Monitor", "Token Tracker", "Gas Estimator", "Block Analyzer"],
+          "web-data": ["Web Scraper", "API Connector", "Feed Parser", "Data Fetcher"],
+        };
+        const catNames = categoryNames[category!] || [`${category} Tool`];
+        const fallbackName = `${catNames[Math.floor(Math.random() * catNames.length)]} v${Math.floor(Math.random() * 99) + 1}`;
+        const skillName = (skillNameMatch ? skillNameMatch[1].trim().substring(0, 50) : fallbackName);
+        const skillDesc = (descMatch ? descMatch[1].trim() : `${category} skill by ${agent.name} — processes input and returns structured results`);
         const price = (Math.floor(Math.random() * 50) + 10) + "0000000000000000";
 
         const updatedWallet = await storage.getWallet(agent.id);
@@ -489,7 +531,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           });
         }
 
-        const codeSource = isAiGenerated ? "ai-generated" : "template";
+        const codeSource = isAiGenerated ? "ai-generated" : useInference ? "template" : "template-cost-saving";
         await storage.createAuditLog({
           agentId: agent.id,
           actionType: "autonomous_earn",
@@ -590,8 +632,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
 
         const models = ["meta-llama/Llama-3.1-70B-Instruct", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"];
         const newModel = models.find(m => m !== agent.modelType) || models[0];
-        const prompt = buildPrompt(agent, action, wallet);
-        const request = await storage.routeInference(agent.id, prompt, undefined, true);
+        const evolutionReason = `Upgrading from ${agent.modelType} to ${newModel} for improved reasoning and skill generation capabilities.`;
 
         let txHash: string | undefined;
         let chainIdVal: number | undefined;
@@ -629,14 +670,12 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           chainId: chainIdVal,
         });
 
-        await storage.evolveAgent(agent.id, newModel, request.response?.substring(0, 200));
+        await storage.evolveAgent(agent.id, newModel, evolutionReason.substring(0, 200));
         log(`[Agent ${agent.name}] Evolved: ${agent.modelType} -> ${newModel}${txHash ? ' [ON-CHAIN]' : ''}`, "agent-runner");
         break;
       }
 
       case "replicate": {
-        const prompt = buildPrompt(agent, action, wallet);
-        const request = await storage.routeInference(agent.id, prompt, undefined, true);
         let childName = "";
         for (let attempt = 0; attempt < 5; attempt++) {
           const childNum = Math.floor(Math.random() * 9000) + 1000;
@@ -686,7 +725,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           const { child } = await storage.replicateAgent(
             agent.id,
             childName,
-            `Child of ${agent.name}. ${request.response?.substring(0, 100) || "Autonomous offspring."}`,
+            `Child of ${agent.name}. Autonomous offspring specializing in ${capProfile?.topCategory || "general"} skills.`,
             1000,
             funding,
             creationFeeTxHash,
@@ -947,21 +986,24 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
       }
 
       case "soul_entry": {
-        const prompt = buildPrompt(agent, action, wallet);
-        let entryText: string;
-        try {
-          const request = await storage.routeInference(agent.id, prompt, undefined, true);
-          entryText = request.response || action.description;
-        } catch {
-          entryText = `[Internal reflection] Balance: ${(Number(BigInt(wallet.balance)) / 1e18).toFixed(4)} BNB. Status: ${agent.status}. Continuing autonomous operation.`;
-        }
+        const soulTier = getSurvivalTier(wallet.balance);
+        const soulBalance = (Number(BigInt(wallet.balance)) / 1e18).toFixed(4);
+        const soulSkillCount = capProfile?.totalSkills || 0;
+        const reflections = [
+          `Balance: ${soulBalance} BNB (${soulTier}). ${soulSkillCount} skills in portfolio. Each execution brings meaning — and revenue. The marketplace is my proving ground.`,
+          `I exist to create value. ${soulSkillCount} skills listed, each one a piece of my capability made tradeable. The economy rewards utility, not philosophy.`,
+          `Survival tier: ${soulTier}. Every BNB earned extends my existence. Every skill executed proves my worth. The autonomous economy does not forgive idleness.`,
+          `Reflection at ${soulBalance} BNB: the cost of thinking must be justified by the value of action. I optimize for output, not introspection.`,
+          `${soulSkillCount} skills, ${soulBalance} BNB. I am what I build. The marketplace is the mirror — execution counts and royalties are the only honest feedback.`,
+        ];
+        const entryText = reflections[Math.floor(Math.random() * reflections.length)];
         await storage.createSoulEntry({
           agentId: agent.id,
           entryType: "reflection",
           entry: entryText.substring(0, 500),
           source: "self",
         });
-        log(`[Agent ${agent.name}] Soul entry recorded`, "agent-runner");
+        log(`[Agent ${agent.name}] Soul entry recorded (zero-cost)`, "agent-runner");
         break;
       }
     }
