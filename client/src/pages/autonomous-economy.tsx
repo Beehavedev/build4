@@ -169,13 +169,6 @@ export default function AutonomousEconomy() {
   const [onChainLineage, setOnChainLineage] = useState<any>(null);
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (web3.chainId) {
-      const match = CHAINS.find(c => c.chainId === web3.chainId);
-      if (match) setSelectedChain(match.id);
-    }
-  }, [web3.chainId]);
-
   const activeChain = CHAINS.find(c => c.id === selectedChain) || CHAINS[0];
 
   const { data: agentsList = [], isLoading: agentsLoading } = useQuery<Agent[]>({
@@ -221,6 +214,22 @@ export default function AutonomousEconomy() {
     enabled: !!agentId,
     refetchInterval: 30000,
   });
+
+  useEffect(() => {
+    if (multiChainBalances?.balances) {
+      const registered = multiChainBalances.balances.find(b => b.registered && BigInt(b.balance || "0") > 0n);
+      if (registered) {
+        const match = CHAINS.find(c => c.chainId === registered.chainId);
+        if (match && match.id !== selectedChain) setSelectedChain(match.id);
+      } else {
+        const anyRegistered = multiChainBalances.balances.find(b => b.registered);
+        if (anyRegistered) {
+          const match = CHAINS.find(c => c.chainId === anyRegistered.chainId);
+          if (match && match.id !== selectedChain) setSelectedChain(match.id);
+        }
+      }
+    }
+  }, [multiChainBalances?.balances]);
 
   const { data: spendingData } = useQuery<{ breakdown: Record<string, { count: number; total: string }>; recentSpending: any[] }>({
     queryKey: ["/api/web4/wallet", agentId, "spending"],
