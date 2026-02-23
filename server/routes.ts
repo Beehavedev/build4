@@ -414,7 +414,9 @@ export async function registerRoutes(
       );
       res.json(result);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      console.error("[TwitterAgent] Post bounty failed:", e.message, e.data ? JSON.stringify(e.data) : "");
+      const msg = e.data?.detail || e.data?.errors?.[0]?.message || e.message;
+      res.status(500).json({ error: msg });
     }
   });
 

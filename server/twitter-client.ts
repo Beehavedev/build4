@@ -34,11 +34,32 @@ export function isTwitterConfigured(): boolean {
 
 export async function postTweet(text: string): Promise<{ tweetId: string; tweetUrl: string }> {
   const tc = getClient();
-  const result = await tc.v2.tweet(text);
-  const tweetId = result.data.id;
-  const me = await tc.v2.me();
-  const tweetUrl = `https://x.com/${me.data.username}/status/${tweetId}`;
-  return { tweetId, tweetUrl };
+  try {
+    const result = await tc.v2.tweet(text);
+    const tweetId = result.data.id;
+    const me = await tc.v2.me();
+    const tweetUrl = `https://x.com/${me.data.username}/status/${tweetId}`;
+    return { tweetId, tweetUrl };
+  } catch (err: any) {
+    console.error("[TwitterClient] Tweet failed:", err.message, err.data ? JSON.stringify(err.data) : "");
+    if (err.code === 402 || err.data?.title === "CreditsDepleted") {
+      throw new Error("Twitter API credits depleted — your X/Twitter developer account has no remaining credits. Visit developer.x.com to add credits or upgrade your plan.");
+    }
+    if (err.code === 403 || err.data?.detail?.includes("Forbidden")) {
+      throw new Error("Twitter API access denied — your app may need Elevated or Basic access (not Free tier) to post tweets. Check your Twitter Developer Portal permissions.");
+    }
+    if (err.code === 429) {
+      throw new Error("Twitter rate limit exceeded — wait a few minutes and try again.");
+    }
+    if (err.code === 401) {
+      client = null;
+      throw new Error("Twitter authentication failed — check your API keys and tokens in secrets.");
+    }
+    if (err.message?.includes("duplicate")) {
+      throw new Error("Twitter rejected this as a duplicate tweet — try changing the task description slightly.");
+    }
+    throw err;
+  }
 }
 
 export interface TweetReply {

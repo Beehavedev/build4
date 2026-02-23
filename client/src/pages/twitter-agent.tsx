@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Link } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
   Twitter,
@@ -42,17 +43,19 @@ function authFetch(url: string, token: string) {
   });
 }
 
-function authPost(url: string, token: string, body?: any) {
-  return fetch(url, {
+async function authPost(url: string, token: string, body?: any) {
+  const res = await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json", "x-analytics-token": token },
     body: body ? JSON.stringify(body) : undefined,
-  }).then(res => {
-    if (res.status === 401) throw new Error("Unauthorized");
-    if (!res.ok) throw new Error("Failed");
-    return res.json();
   });
+  if (res.status === 401) throw new Error("Unauthorized");
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  return res.json();
 }
 
 interface TwitterStatus {
@@ -163,6 +166,7 @@ function TwitterLoginGate({ onLogin }: { onLogin: (token: string) => void }) {
 }
 
 function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
+  const { toast } = useToast();
   const [showSettings, setShowSettings] = useState(false);
   const [taskDescription, setTaskDescription] = useState("");
   const [rewardBnb, setRewardBnb] = useState("0.015");
@@ -217,10 +221,14 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
 
   const postBounty = useMutation({
     mutationFn: () => authPost("/api/twitter/post-bounty", token, { taskDescription, rewardBnb }),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       setTaskDescription("");
       queryClient.invalidateQueries({ queryKey: ["/api/twitter/bounties"] });
       queryClient.invalidateQueries({ queryKey: ["/api/twitter/status"] });
+      toast({ title: "Bounty posted", description: data.tweetUrl ? `Tweet: ${data.tweetUrl}` : "Bounty tweeted successfully" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to post bounty", description: err.message, variant: "destructive" });
     },
   });
 
