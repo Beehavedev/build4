@@ -169,13 +169,13 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
   const { toast } = useToast();
   const [showSettings, setShowSettings] = useState(false);
   const [taskDescription, setTaskDescription] = useState("");
-  const [rewardBnb, setRewardBnb] = useState("0.015");
+  const [rewardBnb, setRewardBnb] = useState("0.02");
   const [expandedBounty, setExpandedBounty] = useState<string | null>(null);
   const [settingsForm, setSettingsForm] = useState({
     pollingIntervalMs: 300000,
     minVerificationScore: 60,
-    maxPayoutBnb: "0.015",
-    defaultBountyBudget: "0.015",
+    maxPayoutBnb: "0.02",
+    defaultBountyBudget: "0.02",
     maxWinnersPerBounty: 3,
   });
 

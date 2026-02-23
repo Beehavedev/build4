@@ -5,7 +5,7 @@ import { ethers } from "ethers";
 
 const WALLET_REGEX = /0x[a-fA-F0-9]{40}/;
 const MAX_WINNERS_DEFAULT = 3;
-const DEFAULT_REWARD_BNB = "0.015";
+const DEFAULT_REWARD_BNB = "0.02";
 
 let pollingInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
