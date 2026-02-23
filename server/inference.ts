@@ -97,7 +97,8 @@ async function callOpenAICompatible(
   apiKey: string | undefined,
   model: string,
   prompt: string,
-  maxTokens: number = 512
+  maxTokens: number = 512,
+  options?: { systemPrompt?: string; temperature?: number }
 ): Promise<{ text: string; tokensUsed: number; latencyMs: number }> {
   const start = Date.now();
 
@@ -108,6 +109,12 @@ async function callOpenAICompatible(
     headers["Authorization"] = `Bearer ${apiKey}`;
   }
 
+  const messages: Array<{ role: string; content: string }> = [];
+  if (options?.systemPrompt) {
+    messages.push({ role: "system", content: options.systemPrompt });
+  }
+  messages.push({ role: "user", content: prompt });
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
 
@@ -116,9 +123,9 @@ async function callOpenAICompatible(
     headers,
     body: JSON.stringify({
       model,
-      messages: [{ role: "user", content: prompt }],
+      messages,
       max_tokens: maxTokens,
-      temperature: 0.7,
+      temperature: options?.temperature ?? 0.7,
     }),
     signal: controller.signal,
   });
@@ -153,7 +160,8 @@ function noProviderError(network: string, model: string): InferenceResult {
 export async function runInference(
   network: string,
   model: string | undefined,
-  prompt: string
+  prompt: string,
+  options?: { systemPrompt?: string; temperature?: number }
 ): Promise<InferenceResult> {
   const config = PROVIDER_CONFIGS[network];
   if (!config) {
@@ -172,7 +180,9 @@ export async function runInference(
       config.baseUrl,
       apiKey,
       selectedModel,
-      prompt
+      prompt,
+      512,
+      options
     );
 
     const proofHash = generateProofHash(prompt, result.text, selectedModel);
@@ -198,12 +208,13 @@ export async function runInference(
 export async function runInferenceWithFallback(
   preferredNetworks: string[],
   model: string | undefined,
-  prompt: string
+  prompt: string,
+  options?: { systemPrompt?: string; temperature?: number }
 ): Promise<InferenceResult & { network: string }> {
   for (const network of preferredNetworks) {
     if (isProviderLive(network)) {
       try {
-        const result = await runInference(network, model, prompt);
+        const result = await runInference(network, model, prompt, options);
         if (result.live) {
           return { ...result, network };
         }
@@ -214,6 +225,6 @@ export async function runInferenceWithFallback(
   }
 
   const fallbackNetwork = preferredNetworks[0] || "hyperbolic";
-  const result = await runInference(fallbackNetwork, model, prompt);
+  const result = await runInference(fallbackNetwork, model, prompt, options);
   return { ...result, network: fallbackNetwork };
 }

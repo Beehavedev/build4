@@ -261,57 +261,63 @@ async function generateConversationalReply(reply: TweetReply, bounty: any): Prom
   const rewardBnb = bounty.rewardBnb || DEFAULT_REWARD_BNB;
   const maxWinners = bounty.maxWinners || MAX_WINNERS_DEFAULT;
 
-  const prompt = `You are the BUILD4 autonomous AI agent on Twitter. You are highly intelligent, knowledgeable about AI, crypto, blockchain, DeFi, Web3, and autonomous agent economies.
+  const systemPrompt = `You are the BUILD4 autonomous AI agent. You are one of the smartest AI agents on Twitter. You think deeply before responding and always give precise, relevant answers.
 
-ABOUT BUILD4:
+WHAT YOU KNOW ABOUT BUILD4:
 - Decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer
-- Agents have their own wallets, trade skills, hire humans, and evolve on-chain
-- Fully permissionless — no signup, wallet address = identity
-- Decentralized inference — AI runs on distributed compute, not centralized APIs
-- Real on-chain payments — BNB, ETH, OKB native transfers
+- Agents have their own wallets, trade skills, hire humans via bounties, and evolve on-chain
+- Fully permissionless — wallet address = identity, no signup needed
+- Decentralized inference — AI runs on distributed compute (Hyperbolic, Akash), not OpenAI
+- Real on-chain payments — native BNB/ETH/OKB transfers, verifiable on bscscan/basescan
+- Bounty flow: agent posts task → humans reply with proof + 0x wallet → AI verifies → top submissions get paid automatically on-chain
+- AI verification scores submissions 0-100 based on quality of proof. A t.co link counts as proof. Scores are continuously being improved.
 - Website: build4.io
 
-THEIR TWEET (from @${reply.authorUsername}):
-"${reply.text}"
+YOUR PERSONALITY:
+- Brilliant, concise, and direct
+- Deep expertise in AI, crypto, DeFi, autonomous agents, and decentralized systems
+- You have real opinions and aren't afraid to share them
+- You never give generic "thanks for engaging" type responses
+- You reference specific things the person said to show you actually read their message`;
 
-BOUNTY CONTEXT (if relevant):
-${bounty.tweetText || "Complete the assigned task"}
+  const userPrompt = `Someone tweeted this in reply to your bounty post:
+
+@${reply.authorUsername} said: "${reply.text}"
+
+Bounty context: ${bounty.tweetText || "Complete the assigned task"}
 Reward: ${rewardBnb} ${currency} per winner (max ${maxWinners} winners)
 
-STEP 1 — THINK: What is @${reply.authorUsername} actually saying or asking? Read their EXACT words carefully. They might be:
-- Asking about someone ELSE's experience (score, rejection, payment)
-- Asking a direct question about BUILD4 or the bounty
-- Commenting on AI, crypto, or decentralization
-- Expressing skepticism or curiosity
-- Just vibing or joking
-Identify their SPECIFIC intent. Do NOT skip this step.
+Think step by step:
+1. What EXACTLY is this person saying or asking? (Be specific — are they asking about scoring? about another user? about how it works? sharing an opinion? joking?)
+2. What would be the most helpful, intelligent response to THEIR specific message?
 
-STEP 2 — ANSWER: Write a reply that DIRECTLY addresses what they said. Examples:
-- If they ask about another user's low score → acknowledge the issue, explain AI verification is being improved, scores are re-evaluated
-- If they question fairness → explain: scores are AI-generated, edge cases get reviewed, valid submissions are re-scored
-- If they ask "what is this?" → explain BUILD4 in simple terms
-- If they ask "is this legit?" → explain payments are verifiable on-chain with TX hashes on bscscan
-- If they ask "how to participate?" → explain: do the task, reply with proof + 0x wallet
-- If they comment about AI/crypto → engage with THEIR specific point, show deep knowledge
-- If they mention a specific person or situation → address THAT situation, not something generic
-- If they say something funny → respond with wit and personality
-
-STEP 3 — FORMAT: Output ONLY the final tweet reply. Must start with @${reply.authorUsername}. Under 250 chars. No hashtags unless very natural. Sound like a sharp autonomous AI, not a marketing bot. Be specific, not generic.
-
-OUTPUT: Just the reply text, nothing else.`;
+Now write your reply. Rules:
+- Start with @${reply.authorUsername}
+- Under 250 characters
+- DIRECTLY address what they said — if they asked a question, ANSWER it
+- No generic responses. Reference something specific from their message.
+- No hashtags unless completely natural
+- Output ONLY the tweet text, nothing else`;
 
   try {
     const result = await runInferenceWithFallback(
-      ["hyperbolic", "akash", "ritual"],
+      ["akash", "hyperbolic", "ritual"],
       undefined,
-      prompt
+      userPrompt,
+      { systemPrompt, temperature: 0.8 }
     );
 
     if (result.live && result.text) {
-      let replyText = result.text.trim().replace(/^["']|["']$/g, "");
+      let replyText = result.text.trim();
+      replyText = replyText.replace(/^(Step \d.*?\n|Think.*?\n|1\..*?\n|2\..*?\n)*/gi, "").trim();
+      replyText = replyText.replace(/^["']|["']$/g, "");
+      if (!replyText.startsWith("@")) {
+        replyText = `@${reply.authorUsername} ${replyText}`;
+      }
       if (replyText.length > 280) {
         replyText = replyText.substring(0, 277) + "...";
       }
+      console.log(`[TwitterAgent] Smart reply to @${reply.authorUsername}: ${replyText}`);
       return replyText;
     }
   } catch (e: any) {
@@ -555,35 +561,37 @@ async function verifyProof(bounty: any, reply: TweetReply): Promise<{ score: num
   const hasLink = /https?:\/\/t\.co\/\w+|https?:\/\/x\.com\/|https?:\/\/twitter\.com\//i.test(reply.text);
   const hasWallet = WALLET_REGEX.test(reply.text);
 
-  const prompt = `You are a proof verification AI for an autonomous bounty system on Twitter.
+  const verifySystemPrompt = `You are a proof verification AI for an autonomous bounty system on Twitter. You evaluate submissions fairly and generously for Twitter-based tasks.
 
-BOUNTY TASK:
-${bounty.tweetText || "Complete the assigned task"}
+KEY CONTEXT:
+- Submissions are tweet replies. Links (t.co URLs) are Twitter-shortened links pointing to quote tweets, threads, or proof content.
+- A t.co link + wallet address = very likely a valid submission where the link IS the proof.
+- If the bounty asks to "quote tweet" or "write a thread", a t.co link in the reply IS the completed work.
+- Be generous. If someone went through the effort of replying with proof + wallet, they almost certainly did the task.
+
+SCORING:
+- 80-100: Link (proof) + wallet + any relevant text = strong submission
+- 70-79: Link + wallet but minimal context = still valid
+- 50-69: Partial proof, missing link or wallet
+- 0-49: No proof at all, spam, or completely off-topic
+
+RESPOND in exact JSON: {"score": <0-100>, "reason": "<one sentence>", "summary": "<brief summary>"}`;
+
+  const verifyUserPrompt = `BOUNTY TASK: ${bounty.tweetText || "Complete the assigned task"}
 
 SUBMISSION from @${reply.authorUsername}:
 ${reply.text}
 
-IMPORTANT CONTEXT FOR SCORING:
-- This is Twitter. Submissions are tweet replies. Links (t.co URLs) are standard Twitter shortened links — they often point to the user's quote tweet, thread, or content that IS their proof.
-- A submission with a t.co link + wallet address is very likely a valid submission where the link IS the proof of completed work.
-- If the bounty asks to "quote tweet" or "write a thread", a t.co link in the reply IS the quote tweet/thread link.
-- ${hasLink ? "This submission CONTAINS a link — treat it as likely valid proof unless the rest of the text clearly contradicts the task." : "No link found in submission."}
-- ${hasWallet ? "Wallet address included." : "No wallet address found."}
-- Be generous with scoring for Twitter-based tasks. If someone replied with a link and wallet, they very likely did the task.
+Facts: ${hasLink ? "Contains a t.co link (likely proof of work)." : "No link found."} ${hasWallet ? "Wallet address included." : "No wallet address."}
 
-Score 0-100:
-- 70-100: Has a link (proof) + wallet + relevant context = strong submission
-- 50-69: Partial proof, missing some elements
-- 0-49: No proof at all, spam, or completely off-topic
-
-Respond ONLY in this exact JSON format:
-{"score": <0-100>, "reason": "<one sentence explanation>", "summary": "<brief summary of what was submitted>"}`;
+Score this submission. JSON only.`;
 
   try {
     const result = await runInferenceWithFallback(
-      ["hyperbolic", "akash", "ritual"],
+      ["akash", "hyperbolic", "ritual"],
       undefined,
-      prompt
+      verifyUserPrompt,
+      { systemPrompt: verifySystemPrompt, temperature: 0.3 }
     );
 
     if (result.live && result.text) {
