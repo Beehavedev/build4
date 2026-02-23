@@ -13,6 +13,41 @@ let rateLimitBackoff = 0;
 let consecutiveErrors = 0;
 let lastMentionId: string | undefined = undefined;
 const repliedToMentions = new Set<string>();
+let stateLoaded = false;
+
+async function loadPersistedState() {
+  if (stateLoaded) return;
+  try {
+    const config = await storage.getTwitterAgentConfig();
+    if (config) {
+      if (config.lastMentionId) {
+        lastMentionId = config.lastMentionId;
+        console.log(`[TwitterAgent] Restored lastMentionId: ${lastMentionId}`);
+      }
+      if (config.repliedTweetIds) {
+        const ids = config.repliedTweetIds.split(",").filter(Boolean);
+        ids.forEach(id => repliedToMentions.add(id));
+        console.log(`[TwitterAgent] Restored ${repliedToMentions.size} replied tweet IDs`);
+      }
+    }
+    stateLoaded = true;
+  } catch (e: any) {
+    console.error("[TwitterAgent] Failed to load persisted state:", e.message);
+  }
+}
+
+async function persistState() {
+  try {
+    const idsArray = Array.from(repliedToMentions);
+    const last300 = idsArray.slice(-300);
+    await storage.upsertTwitterAgentConfig({
+      lastMentionId: lastMentionId || null,
+      repliedTweetIds: last300.join(","),
+    });
+  } catch (e: any) {
+    console.error("[TwitterAgent] Failed to persist state:", e.message);
+  }
+}
 
 function getProvider(): ethers.JsonRpcProvider | null {
   const network = process.env.ONCHAIN_NETWORK || "bnbMainnet";
@@ -171,6 +206,7 @@ export async function runTwitterAgentCycle() {
   console.log("[TwitterAgent] Starting cycle...");
 
   try {
+    await loadPersistedState();
     const activeBounties = await storage.getTwitterBounties("posted");
 
     for (const bounty of activeBounties) {
@@ -225,6 +261,7 @@ export async function runTwitterAgentCycle() {
       console.warn(`[TwitterAgent] Rate limited at cycle level! Backing off for ${backoffMs / 1000}s`);
     }
   } finally {
+    await persistState();
     isRunning = false;
     console.log("[TwitterAgent] Cycle complete");
   }
@@ -398,13 +435,6 @@ async function processMentions() {
   }
 
   lastMentionId = newMaxId;
-
-  if (repliedToMentions.size > 500) {
-    const arr = Array.from(repliedToMentions);
-    arr.splice(0, arr.length - 300);
-    repliedToMentions.clear();
-    arr.forEach(id => repliedToMentions.add(id));
-  }
 }
 
 async function generateMentionReply(mention: TweetReply): Promise<string> {

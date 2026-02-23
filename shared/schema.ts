@@ -932,6 +932,8 @@ export const twitterAgentConfig = pgTable("twitter_agent_config", {
   defaultBountyBudget: text("default_bounty_budget").default("0.015"),
   maxWinnersPerBounty: integer("max_winners_per_bounty").default(3),
   agentId: varchar("agent_id"),
+  lastMentionId: text("last_mention_id"),
+  repliedTweetIds: text("replied_tweet_ids"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
