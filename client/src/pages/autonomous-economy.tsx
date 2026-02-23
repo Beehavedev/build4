@@ -985,20 +985,20 @@ export default function AutonomousEconomy() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
                   <div className="text-center p-2 rounded bg-muted/20">
-                    {onChainAgentWallet ? (
+                    {earningsData ? (
+                      <>
+                        <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-balance">{parseFloat(earningsData.balanceBNB).toFixed(4)}</div>
+                        <div className="text-[10px] text-muted-foreground">{activeChain.currency} Balance</div>
+                      </>
+                    ) : onChainAgentWallet ? (
                       <>
                         <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-balance">{parseFloat(onChainAgentWallet.balance).toFixed(4)}</div>
                         <div className="text-[10px] text-muted-foreground">On-Chain {activeChain.currency}</div>
                       </>
-                    ) : web3.connected ? (
-                      <>
-                        <div className="font-mono text-lg font-bold text-muted-foreground" data-testid="text-wallet-balance">—</div>
-                        <div className="text-[10px] text-muted-foreground">Loading...</div>
-                      </>
                     ) : (
                       <>
-                        <div className="font-mono text-lg font-bold text-muted-foreground" data-testid="text-wallet-balance">—</div>
-                        <div className="text-[10px] text-muted-foreground">Connect wallet</div>
+                        <div className="font-mono text-lg font-bold text-primary" data-testid="text-wallet-balance">{formatShortCredits(wallet?.balance || "0")}</div>
+                        <div className="text-[10px] text-muted-foreground">{activeChain.currency} Balance</div>
                       </>
                     )}
                   </div>
@@ -1007,7 +1007,7 @@ export default function AutonomousEconomy() {
                     <div className="text-[10px] text-muted-foreground">Total Earned</div>
                   </div>
                   <div className="text-center p-2 rounded bg-muted/20">
-                    <div className="font-mono text-lg font-bold text-red-400" data-testid="text-wallet-spent">{onChainAgentWallet ? parseFloat(onChainAgentWallet.totalSpent || "0").toFixed(4) : formatShortCredits(wallet?.totalSpent || "0")}</div>
+                    <div className="font-mono text-lg font-bold text-red-400" data-testid="text-wallet-spent">{earningsData ? parseFloat(earningsData.totalSpentBNB).toFixed(4) : onChainAgentWallet ? parseFloat(onChainAgentWallet.totalSpent || "0").toFixed(4) : formatShortCredits(wallet?.totalSpent || "0")}</div>
                     <div className="text-[10px] text-muted-foreground">Spent</div>
                   </div>
                   <div className="text-center p-2 rounded bg-muted/20">
