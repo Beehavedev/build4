@@ -498,8 +498,9 @@ async function selectAndPayWinners(bounty: any) {
 
       try {
         const remaining = maxWinners - newPaidCount;
+        const wallet = `${winner.walletAddress!.slice(0, 6)}...${winner.walletAddress!.slice(-4)}`;
         const tail = remaining > 0 ? `${remaining} more slots open!` : "All slots filled!";
-        const replyText = `@${winner.twitterHandle} Paid! ${rewardBnb} ${currency} sent.\n\nTX: ${explorerUrl}\n\n${tail} #BUILD4`;
+        const replyText = `@${winner.twitterHandle} ${rewardBnb} ${currency} sent to ${wallet}\n\nVerify on-chain:\n${explorerUrl}\n\n${tail} #BUILD4`;
         const replyId = await safeReply(winner.tweetId, replyText);
         await storage.updateTwitterSubmission(winner.id, { replyTweetId: replyId });
       } catch (e: any) {
