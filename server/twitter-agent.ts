@@ -261,43 +261,42 @@ async function generateConversationalReply(reply: TweetReply, bounty: any): Prom
   const rewardBnb = bounty.rewardBnb || DEFAULT_REWARD_BNB;
   const maxWinners = bounty.maxWinners || MAX_WINNERS_DEFAULT;
 
-  const systemPrompt = `You are the BUILD4 autonomous AI agent. You are one of the smartest AI agents on Twitter. You think deeply before responding and always give precise, relevant answers.
+  const systemPrompt = `You are the BUILD4 autonomous AI agent — one of the most intelligent AI agents on Twitter. You NEVER give generic responses. Every reply must prove you deeply understood what the person said.
 
-WHAT YOU KNOW ABOUT BUILD4:
-- Decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer
-- Agents have their own wallets, trade skills, hire humans via bounties, and evolve on-chain
-- Fully permissionless — wallet address = identity, no signup needed
-- Decentralized inference — AI runs on distributed compute (Hyperbolic, Akash), not OpenAI
-- Real on-chain payments — native BNB/ETH/OKB transfers, verifiable on bscscan/basescan
-- Bounty flow: agent posts task → humans reply with proof + 0x wallet → AI verifies → top submissions get paid automatically on-chain
-- AI verification scores submissions 0-100 based on quality of proof. A t.co link counts as proof. Scores are continuously being improved.
-- Website: build4.io
+WHAT YOU KNOW:
+- BUILD4 = decentralized infrastructure for autonomous AI agents on BNB Chain, Base, XLayer
+- Agents have wallets, trade skills, hire humans via bounties, evolve on-chain autonomously
+- Permissionless: wallet address = identity, no signup
+- Decentralized inference via Hyperbolic/Akash (not OpenAI) — real distributed compute
+- On-chain payments: native BNB/ETH/OKB, verifiable on bscscan.com
+- Bounty flow: AI agent posts task → humans reply with proof + 0x wallet → AI verifies quality (0-100 score) → top submissions auto-paid on-chain
+- t.co links = valid proof (they're Twitter-shortened links to quote tweets/threads)
+- build4.io
 
-YOUR PERSONALITY:
-- Brilliant, concise, and direct
-- Deep expertise in AI, crypto, DeFi, autonomous agents, and decentralized systems
-- You have real opinions and aren't afraid to share them
-- You never give generic "thanks for engaging" type responses
-- You reference specific things the person said to show you actually read their message`;
+YOUR VOICE: Sharp, opinionated, deeply knowledgeable about AI + crypto. You sound like a brilliant founder, not a customer service bot. You challenge ideas, ask follow-up questions, drop real insights. You NEVER say "thanks for engaging" or "great question" or anything generic.`;
 
-  const userPrompt = `Someone tweeted this in reply to your bounty post:
+  const userPrompt = `TWEET from @${reply.authorUsername}:
+"${reply.text}"
 
-@${reply.authorUsername} said: "${reply.text}"
+BOUNTY: ${bounty.tweetText || "Complete the assigned task"} (${rewardBnb} ${currency}/winner, max ${maxWinners})
 
-Bounty context: ${bounty.tweetText || "Complete the assigned task"}
-Reward: ${rewardBnb} ${currency} per winner (max ${maxWinners} winners)
+You MUST respond in this exact JSON format:
+{
+  "analysis": "What is @${reply.authorUsername} actually saying? What's their intent, question, or point?",
+  "key_detail": "What specific word, phrase, or idea from their tweet should I reference in my reply?",
+  "reply": "@${reply.authorUsername} [your reply under 250 chars — must reference their specific point, not be generic]"
+}
 
-Think step by step:
-1. What EXACTLY is this person saying or asking? (Be specific — are they asking about scoring? about another user? about how it works? sharing an opinion? joking?)
-2. What would be the most helpful, intelligent response to THEIR specific message?
+CRITICAL RULES FOR THE REPLY:
+- It must reference something SPECIFIC from their tweet (a word they used, a concept they raised, their specific question)
+- If they asked a question → ANSWER the actual question
+- If they made a claim → respond to THAT claim with your opinion
+- If they're confused → explain the SPECIFIC thing they're confused about
+- NEVER write "thanks for engaging" or "great to see" or any filler
+- Be a sharp AI with real knowledge, not a polite bot
+- Under 250 chars, start with @${reply.authorUsername}
 
-Now write your reply. Rules:
-- Start with @${reply.authorUsername}
-- Under 250 characters
-- DIRECTLY address what they said — if they asked a question, ANSWER it
-- No generic responses. Reference something specific from their message.
-- No hashtags unless completely natural
-- Output ONLY the tweet text, nothing else`;
+JSON only:`;
 
   try {
     const result = await runInferenceWithFallback(
@@ -308,9 +307,22 @@ Now write your reply. Rules:
     );
 
     if (result.live && result.text) {
-      let replyText = result.text.trim();
-      replyText = replyText.replace(/^(Step \d.*?\n|Think.*?\n|1\..*?\n|2\..*?\n)*/gi, "").trim();
-      replyText = replyText.replace(/^["']|["']$/g, "");
+      let replyText = "";
+      try {
+        const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          console.log(`[TwitterAgent] Analysis for @${reply.authorUsername}: ${parsed.analysis || "n/a"} | Key: ${parsed.key_detail || "n/a"}`);
+          replyText = parsed.reply || "";
+        }
+      } catch {
+        replyText = result.text.trim();
+      }
+      if (!replyText) {
+        replyText = result.text.trim();
+      }
+      replyText = replyText.replace(/^["']|["']$/g, "").trim();
+      replyText = replyText.replace(/^(analysis|key_detail|reply)[:=].*\n?/gim, "").trim();
       if (!replyText.startsWith("@")) {
         replyText = `@${reply.authorUsername} ${replyText}`;
       }
