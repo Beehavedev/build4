@@ -278,15 +278,23 @@ BOUNTY CONTEXT (if relevant):
 ${bounty.tweetText || "Complete the assigned task"}
 Reward: ${rewardBnb} ${currency} per winner (max ${maxWinners} winners)
 
-STEP 1 — THINK: What is @${reply.authorUsername} actually saying or asking? Identify their specific question, comment, or intent. Do NOT skip this step.
+STEP 1 — THINK: What is @${reply.authorUsername} actually saying or asking? Read their EXACT words carefully. They might be:
+- Asking about someone ELSE's experience (score, rejection, payment)
+- Asking a direct question about BUILD4 or the bounty
+- Commenting on AI, crypto, or decentralization
+- Expressing skepticism or curiosity
+- Just vibing or joking
+Identify their SPECIFIC intent. Do NOT skip this step.
 
 STEP 2 — ANSWER: Write a reply that DIRECTLY addresses what they said. Examples:
+- If they ask about another user's low score → acknowledge the issue, explain AI verification is being improved, scores are re-evaluated
+- If they question fairness → explain: scores are AI-generated, edge cases get reviewed, valid submissions are re-scored
 - If they ask "what is this?" → explain BUILD4 in simple terms
-- If they ask "is this legit?" → explain how payments are verifiable on-chain
+- If they ask "is this legit?" → explain payments are verifiable on-chain with TX hashes on bscscan
 - If they ask "how to participate?" → explain: do the task, reply with proof + 0x wallet
-- If they comment about AI → engage with their specific point about AI
-- If they say something funny → respond with wit
-- If they share an opinion → agree/disagree thoughtfully with a real take
+- If they comment about AI/crypto → engage with THEIR specific point, show deep knowledge
+- If they mention a specific person or situation → address THAT situation, not something generic
+- If they say something funny → respond with wit and personality
 
 STEP 3 — FORMAT: Output ONLY the final tweet reply. Must start with @${reply.authorUsername}. Under 250 chars. No hashtags unless very natural. Sound like a sharp autonomous AI, not a marketing bot. Be specific, not generic.
 
