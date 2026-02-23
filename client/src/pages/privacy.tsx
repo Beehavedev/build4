@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useWallet } from "@/hooks/use-wallet";
+import { WalletConnector } from "@/components/wallet-connector";
 import type { PrivacyTransfer } from "@shared/schema";
 import { ZERC20_CONTRACTS, SUPPORTED_PRIVACY_CHAINS } from "@shared/schema";
 
@@ -61,7 +62,7 @@ export default function Privacy() {
   const [lastTransferResult, setLastTransferResult] = useState<TransferResponse | null>(null);
 
   const agentsQuery = useQuery<any[]>({
-    queryKey: ["/api/agents"],
+    queryKey: ["/api/web4/agents"],
   });
 
   const userAgent = agentsQuery.data?.find(
@@ -215,8 +216,9 @@ export default function Privacy() {
               {!wallet.connected ? (
                 <div className="bg-gray-800/50 rounded-lg p-8 text-center border border-gray-700" data-testid="text-connect-wallet-prompt">
                   <Wallet className="w-12 h-12 text-gray-500 mx-auto mb-3" />
-                  <p className="text-gray-400 mb-2">Connect your wallet to initiate privacy transfers</p>
-                  <p className="text-sm text-gray-500">Wallet-based identity - no registration required</p>
+                  <p className="text-gray-400 mb-3">Connect your wallet to initiate privacy transfers</p>
+                  <WalletConnector />
+                  <p className="text-sm text-gray-500 mt-3">Wallet-based identity - no registration required</p>
                 </div>
               ) : !userAgent ? (
                 <div className="bg-gray-800/50 rounded-lg p-8 text-center border border-gray-700" data-testid="text-no-agent">
