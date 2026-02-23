@@ -43,6 +43,9 @@ import {
   type BountySubmission, type InsertBountySubmission, bountySubmissions,
   type BountyActivity, type InsertBountyActivity, bountyActivityFeed,
   type PrivacyTransfer, type InsertPrivacyTransfer, privacyTransfers,
+  type TwitterBounty, type InsertTwitterBounty, twitterBounties,
+  type TwitterSubmission, type InsertTwitterSubmission, twitterSubmissions,
+  type TwitterAgentConfig, type InsertTwitterAgentConfig, twitterAgentConfig,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
@@ -248,6 +251,22 @@ export interface IStorage {
   getPrivacyTransfer(id: string): Promise<PrivacyTransfer | undefined>;
   getPrivacyTransfers(agentId: string, limit?: number): Promise<PrivacyTransfer[]>;
   updatePrivacyTransferStatus(id: string, status: string, txHash?: string, proofId?: string, errorMessage?: string): Promise<PrivacyTransfer | undefined>;
+
+  // Twitter Bounty Agent
+  createTwitterBounty(bounty: InsertTwitterBounty): Promise<TwitterBounty>;
+  getTwitterBounty(id: string): Promise<TwitterBounty | undefined>;
+  getTwitterBountyByJobId(jobId: string): Promise<TwitterBounty | undefined>;
+  getTwitterBounties(status?: string): Promise<TwitterBounty[]>;
+  updateTwitterBounty(id: string, data: Partial<TwitterBounty>): Promise<TwitterBounty | undefined>;
+
+  createTwitterSubmission(submission: InsertTwitterSubmission): Promise<TwitterSubmission>;
+  getTwitterSubmission(id: string): Promise<TwitterSubmission | undefined>;
+  getTwitterSubmissionByTweetId(tweetId: string): Promise<TwitterSubmission | undefined>;
+  getTwitterSubmissions(twitterBountyId: string): Promise<TwitterSubmission[]>;
+  updateTwitterSubmission(id: string, data: Partial<TwitterSubmission>): Promise<TwitterSubmission | undefined>;
+
+  getTwitterAgentConfig(): Promise<TwitterAgentConfig | undefined>;
+  upsertTwitterAgentConfig(config: Partial<InsertTwitterAgentConfig>): Promise<TwitterAgentConfig>;
 
   // Seed subscription plans
   seedSubscriptionPlans(): Promise<void>;
@@ -1685,6 +1704,72 @@ export class DatabaseStorage implements IStorage {
     if (errorMessage) updates.errorMessage = errorMessage;
     if (status === "completed" || status === "withdrawn") updates.completedAt = new Date();
     const [result] = await db.update(privacyTransfers).set(updates).where(eq(privacyTransfers.id, id)).returning();
+    return result;
+  }
+
+  async createTwitterBounty(bounty: InsertTwitterBounty): Promise<TwitterBounty> {
+    const [result] = await db.insert(twitterBounties).values(bounty).returning();
+    return result;
+  }
+
+  async getTwitterBounty(id: string): Promise<TwitterBounty | undefined> {
+    const [result] = await db.select().from(twitterBounties).where(eq(twitterBounties.id, id));
+    return result;
+  }
+
+  async getTwitterBountyByJobId(jobId: string): Promise<TwitterBounty | undefined> {
+    const [result] = await db.select().from(twitterBounties).where(eq(twitterBounties.jobId, jobId));
+    return result;
+  }
+
+  async getTwitterBounties(status?: string): Promise<TwitterBounty[]> {
+    if (status) {
+      return db.select().from(twitterBounties).where(eq(twitterBounties.status, status)).orderBy(desc(twitterBounties.createdAt));
+    }
+    return db.select().from(twitterBounties).orderBy(desc(twitterBounties.createdAt));
+  }
+
+  async updateTwitterBounty(id: string, data: Partial<TwitterBounty>): Promise<TwitterBounty | undefined> {
+    const [result] = await db.update(twitterBounties).set(data).where(eq(twitterBounties.id, id)).returning();
+    return result;
+  }
+
+  async createTwitterSubmission(submission: InsertTwitterSubmission): Promise<TwitterSubmission> {
+    const [result] = await db.insert(twitterSubmissions).values(submission).returning();
+    return result;
+  }
+
+  async getTwitterSubmission(id: string): Promise<TwitterSubmission | undefined> {
+    const [result] = await db.select().from(twitterSubmissions).where(eq(twitterSubmissions.id, id));
+    return result;
+  }
+
+  async getTwitterSubmissionByTweetId(tweetId: string): Promise<TwitterSubmission | undefined> {
+    const [result] = await db.select().from(twitterSubmissions).where(eq(twitterSubmissions.tweetId, tweetId));
+    return result;
+  }
+
+  async getTwitterSubmissions(twitterBountyId: string): Promise<TwitterSubmission[]> {
+    return db.select().from(twitterSubmissions).where(eq(twitterSubmissions.twitterBountyId, twitterBountyId)).orderBy(desc(twitterSubmissions.createdAt));
+  }
+
+  async updateTwitterSubmission(id: string, data: Partial<TwitterSubmission>): Promise<TwitterSubmission | undefined> {
+    const [result] = await db.update(twitterSubmissions).set(data).where(eq(twitterSubmissions.id, id)).returning();
+    return result;
+  }
+
+  async getTwitterAgentConfig(): Promise<TwitterAgentConfig | undefined> {
+    const [result] = await db.select().from(twitterAgentConfig).where(eq(twitterAgentConfig.id, "default"));
+    return result;
+  }
+
+  async upsertTwitterAgentConfig(config: Partial<InsertTwitterAgentConfig>): Promise<TwitterAgentConfig> {
+    const existing = await this.getTwitterAgentConfig();
+    if (existing) {
+      const [result] = await db.update(twitterAgentConfig).set({ ...config, updatedAt: new Date() }).where(eq(twitterAgentConfig.id, "default")).returning();
+      return result;
+    }
+    const [result] = await db.insert(twitterAgentConfig).values({ id: "default", ...config }).returning();
     return result;
   }
 }

@@ -16,6 +16,7 @@ import Outreach from "@/pages/outreach";
 import Analytics from "@/pages/analytics";
 import Services from "@/pages/services";
 import Privacy from "@/pages/privacy";
+import TwitterAgent from "@/pages/twitter-agent";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -32,6 +33,7 @@ function Router() {
       <Route path="/analytics" component={Analytics} />
       <Route path="/services" component={Services} />
       <Route path="/privacy" component={Privacy} />
+      <Route path="/twitter-agent" component={TwitterAgent} />
       <Route component={NotFound} />
     </Switch>
   );

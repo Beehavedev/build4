@@ -6,6 +6,8 @@ import { registerWeb4Routes } from "./web4-routes";
 import { registerServicesRoutes } from "./services-routes";
 import { preparePrivacyTransfer, generateProof, getProof, verifyCommitment } from "./zerc20-sdk";
 import { startBountyEngine } from "./bounty-engine";
+import { startTwitterAgent, stopTwitterAgent, getTwitterAgentStatus, runTwitterAgentCycle, postBountyTweet } from "./twitter-agent";
+import { isTwitterConfigured } from "./twitter-client";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
 import crypto from "crypto";
 
@@ -349,6 +351,107 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/twitter/status", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      const status = await getTwitterAgentStatus();
+      res.json(status);
+    } catch (e: any) {
+      res.json({ configured: isTwitterConfigured(), enabled: false, running: false, error: e.message });
+    }
+  });
+
+  app.get("/api/twitter/config", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      const config = await storage.getTwitterAgentConfig();
+      res.json(config || { id: "default", enabled: 0, pollingIntervalMs: 300000, minVerificationScore: 60, maxPayoutBnb: "0.005", defaultBountyBudget: "0.002", agentId: null });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/twitter/config", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const config = await storage.upsertTwitterAgentConfig(req.body);
+      if (config.enabled === 1) {
+        await startTwitterAgent();
+      } else {
+        stopTwitterAgent();
+      }
+      res.json(config);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/twitter/run-cycle", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!isTwitterConfigured()) {
+        res.status(400).json({ error: "Twitter API not configured" });
+        return;
+      }
+      await runTwitterAgentCycle();
+      res.json({ success: true, message: "Cycle completed" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/twitter/post-bounty", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const { jobId, taskDescription, rewardBnb } = req.body;
+      if (!taskDescription) {
+        res.status(400).json({ error: "Task description required" });
+        return;
+      }
+      const result = await postBountyTweet(
+        jobId || `manual-${Date.now()}`,
+        taskDescription,
+        rewardBnb || "0.002"
+      );
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/twitter/bounties", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      const bounties = await storage.getTwitterBounties();
+      res.json(bounties);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/twitter/bounties/:id/submissions", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const submissions = await storage.getTwitterSubmissions(req.params.id);
+      res.json(submissions);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/twitter/start", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      await storage.upsertTwitterAgentConfig({ enabled: 1 });
+      await startTwitterAgent();
+      res.json({ success: true, message: "Twitter agent started" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/twitter/stop", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      await storage.upsertTwitterAgentConfig({ enabled: 0 });
+      stopTwitterAgent();
+      res.json({ success: true, message: "Twitter agent stopped" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   await storage.cleanFakeData();
   await storage.seedInferenceProviders();
   await storage.seedSubscriptionPlans();
@@ -356,6 +459,12 @@ export async function registerRoutes(
   startBountyEngine().catch(err => {
     console.error("[BountyEngine] Failed to start:", err.message);
   });
+
+  if (isTwitterConfigured()) {
+    startTwitterAgent().catch(err => {
+      console.error("[TwitterAgent] Failed to start:", err.message);
+    });
+  }
 
   return httpServer;
 }

@@ -59,6 +59,15 @@ The project is organized as a monorepo with `client/` for the React frontend, `s
 - **Frontend**: `/privacy` page with token/chain selector, transfer form, history.
 - **Next Steps**: Integrate circomlibjs Poseidon hashing for proper burn address derivation; connect to ZERC20 SDK for proof generation.
 
+### Twitter Bounty Agent (Feb 2026)
+- **Integration**: OAuth 1.0a via `twitter-api-v2` package, connected to @Build4ai account.
+- **Schema**: `twitter_bounties`, `twitter_submissions`, `twitter_agent_config` tables.
+- **Engine**: Background process (`server/twitter-agent.ts`) posts bounties, monitors replies, extracts wallet addresses, verifies proof quality via decentralized inference, and auto-pays verified workers.
+- **API Routes**: `/api/twitter/*` (all admin-authed via analyticsAuth) for status, config, post-bounty, bounties, submissions, start/stop controls.
+- **Frontend**: `/twitter-agent` page with admin login gate, dashboard with stats, settings, bounty posting, and submission tracking.
+- **Payment Status**: Currently simulated (prefixed `sim_`). Real on-chain transfers to be integrated with existing `onchain.ts` bridge.
+- **Secrets**: TWITTER_API_KEY, TWITTER_API_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET stored as Replit Secrets.
+
 ### Key Design Decisions
 - **Two-layer architecture**: On-chain for financial operations, off-chain for high-frequency agent behaviors.
 - **Shared schema**: `shared/` directory ensures type-safe data contracts between client and server.

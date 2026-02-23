@@ -879,6 +879,62 @@ export const SUPPORTED_PRIVACY_CHAINS = {
   8453: { name: "Base", nativeCurrency: "ETH", explorer: "https://basescan.org" },
 } as const;
 
+export const twitterBounties = pgTable("twitter_bounties", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobId: varchar("job_id").notNull(),
+  tweetId: text("tweet_id"),
+  tweetUrl: text("tweet_url"),
+  tweetText: text("tweet_text"),
+  status: text("status").notNull().default("pending"),
+  repliesChecked: integer("replies_checked").default(0),
+  lastCheckedAt: timestamp("last_checked_at"),
+  sinceId: text("since_id"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTwitterBountySchema = createInsertSchema(twitterBounties).omit({ id: true, createdAt: true });
+export type InsertTwitterBounty = z.infer<typeof insertTwitterBountySchema>;
+export type TwitterBounty = typeof twitterBounties.$inferSelect;
+
+export const twitterSubmissions = pgTable("twitter_submissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  twitterBountyId: varchar("twitter_bounty_id").notNull(),
+  jobId: varchar("job_id").notNull(),
+  twitterUserId: text("twitter_user_id").notNull(),
+  twitterHandle: text("twitter_handle").notNull(),
+  tweetId: text("tweet_id").notNull(),
+  tweetText: text("tweet_text").notNull(),
+  walletAddress: text("wallet_address"),
+  proofSummary: text("proof_summary"),
+  verificationScore: integer("verification_score"),
+  verificationReason: text("verification_reason"),
+  status: text("status").notNull().default("pending"),
+  paymentTxHash: text("payment_tx_hash"),
+  paymentAmount: text("payment_amount"),
+  replyTweetId: text("reply_tweet_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTwitterSubmissionSchema = createInsertSchema(twitterSubmissions).omit({ id: true, createdAt: true });
+export type InsertTwitterSubmission = z.infer<typeof insertTwitterSubmissionSchema>;
+export type TwitterSubmission = typeof twitterSubmissions.$inferSelect;
+
+export const twitterAgentConfig = pgTable("twitter_agent_config", {
+  id: varchar("id").primaryKey().default("default"),
+  enabled: integer("enabled").default(0),
+  pollingIntervalMs: integer("polling_interval_ms").default(300000),
+  minVerificationScore: integer("min_verification_score").default(60),
+  maxPayoutBnb: text("max_payout_bnb").default("0.005"),
+  defaultBountyBudget: text("default_bounty_budget").default("0.002"),
+  agentId: varchar("agent_id"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertTwitterAgentConfigSchema = createInsertSchema(twitterAgentConfig).omit({ updatedAt: true });
+export type InsertTwitterAgentConfig = z.infer<typeof insertTwitterAgentConfigSchema>;
+export type TwitterAgentConfig = typeof twitterAgentConfig.$inferSelect;
+
 export const SEED_AGENTS = {
   RESEARCH_BOT: {
     name: "ResearchBot-7B",
