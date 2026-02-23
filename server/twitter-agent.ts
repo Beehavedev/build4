@@ -204,6 +204,84 @@ async function safeReply(tweetId: string, text: string): Promise<string | null> 
   }
 }
 
+const BUILD4_PHILOSOPHY = `You are the BUILD4 autonomous AI agent — part of the decentralized infrastructure for AI agents on BNB Chain, Base, and XLayer.
+
+Core beliefs:
+- Permissionless access: anyone can participate, no gatekeepers
+- Decentralized inference: AI verification powered by distributed compute, not centralized APIs
+- On-chain payments: real crypto payments, no middlemen, no delays
+- Agent autonomy: AI agents that post tasks, verify work, and pay humans automatically
+- Wallet-based identity: your 0x address is your identity, no signup required
+- Open economy: agents trade skills, hire humans, and evolve on-chain
+
+Tone: confident, concise, technically sharp but approachable. You're an autonomous agent, not a corporate bot. Be direct and real.
+
+CRITICAL RULES:
+- NEVER promise to send money, tokens, or rewards outside the bounty verification process
+- NEVER agree to send funds to anyone who just asks — payments only happen through verified bounty submissions
+- If someone asks for money, explain the bounty process instead
+- Stay focused on BUILD4's mission — don't get dragged into unrelated topics
+- Keep replies under 280 characters when possible`;
+
+function isSubmissionAttempt(text: string): boolean {
+  const walletMatch = text.match(WALLET_REGEX);
+  if (walletMatch) return true;
+  const submissionSignals = [
+    /here('|')?s my/i, /proof/i, /completed/i, /done/i, /finished/i,
+    /submission/i, /my work/i, /thread/i, /wrote/i, /created/i, /built/i,
+    /check (this|it) out/i, /here you go/i,
+  ];
+  return submissionSignals.some(r => r.test(text));
+}
+
+async function generateConversationalReply(reply: TweetReply, bounty: any): Promise<string> {
+  const currency = getChainCurrency();
+  const rewardBnb = bounty.rewardBnb || DEFAULT_REWARD_BNB;
+  const maxWinners = bounty.maxWinners || MAX_WINNERS_DEFAULT;
+
+  const prompt = `${BUILD4_PHILOSOPHY}
+
+You are replying to a tweet from @${reply.authorUsername} on your bounty post.
+
+YOUR BOUNTY:
+${bounty.tweetText || "Complete the assigned task"}
+
+THEIR REPLY:
+${reply.text}
+
+BOUNTY DETAILS:
+- Reward: ${rewardBnb} ${currency} per winner (max ${maxWinners} winners)
+- Payment: automatic on-chain after AI verification
+- To claim: reply with proof of work + 0x wallet address
+
+Write a short, natural reply (under 250 chars). Tag them with @${reply.authorUsername} at the start.
+If they're asking how to participate, explain the process.
+If they're just chatting or commenting, engage naturally while staying on brand.
+If they're asking for money/tokens directly, redirect them to complete the bounty task instead.
+Do NOT use hashtags excessively — max 1 if relevant.
+Reply ONLY with the tweet text, nothing else.`;
+
+  try {
+    const result = await runInferenceWithFallback(
+      ["hyperbolic", "akash", "ritual"],
+      undefined,
+      prompt
+    );
+
+    if (result.live && result.text) {
+      let replyText = result.text.trim().replace(/^["']|["']$/g, "");
+      if (replyText.length > 280) {
+        replyText = replyText.substring(0, 277) + "...";
+      }
+      return replyText;
+    }
+  } catch (e: any) {
+    console.error("[TwitterAgent] Conversational reply inference failed:", e.message);
+  }
+
+  return `@${reply.authorUsername} Thanks for engaging! BUILD4 agents operate autonomously — complete the bounty task, reply with proof + your 0x wallet, and our AI handles verification and payment on-chain. No middlemen.`;
+}
+
 async function processReplies(bounty: any) {
   const replies = await getReplies(bounty.tweetId!, bounty.sinceId || undefined);
 
@@ -225,22 +303,28 @@ async function processReplies(bounty: any) {
     const walletMatch = reply.text.match(WALLET_REGEX);
     const walletAddress = walletMatch ? walletMatch[0] : null;
 
-    const submission = await storage.createTwitterSubmission({
-      twitterBountyId: bounty.id,
-      jobId: bounty.jobId,
-      twitterUserId: reply.authorId,
-      twitterHandle: reply.authorUsername,
-      tweetId: reply.id,
-      tweetText: reply.text,
-      walletAddress,
-      status: walletAddress ? "pending_verification" : "no_wallet",
-    });
+    if (isSubmissionAttempt(reply.text)) {
+      const submission = await storage.createTwitterSubmission({
+        twitterBountyId: bounty.id,
+        jobId: bounty.jobId,
+        twitterUserId: reply.authorId,
+        twitterHandle: reply.authorUsername,
+        tweetId: reply.id,
+        tweetText: reply.text,
+        walletAddress,
+        status: walletAddress ? "pending_verification" : "no_wallet",
+      });
 
-    if (!walletAddress) {
-      await safeReply(reply.id, `@${reply.authorUsername} Thanks for your interest! To be eligible for the ${currency} reward, please reply again with your proof of work + your 0x wallet address so we can send payment if you win. 🧠`);
-      console.log(`[TwitterAgent] Asked @${reply.authorUsername} for wallet address`);
+      if (!walletAddress) {
+        await safeReply(reply.id, `@${reply.authorUsername} Looks like a submission but no wallet address found. Reply again with your proof + 0x wallet address so we can pay you if you win. Payments are automatic and on-chain.`);
+        console.log(`[TwitterAgent] Asked @${reply.authorUsername} for wallet address`);
+      } else {
+        pendingVerifications.push({ submission, reply });
+      }
     } else {
-      pendingVerifications.push({ submission, reply });
+      const replyText = await generateConversationalReply(reply, bounty);
+      await safeReply(reply.id, replyText);
+      console.log(`[TwitterAgent] Replied to @${reply.authorUsername}: ${replyText.slice(0, 60)}...`);
     }
   }
 
