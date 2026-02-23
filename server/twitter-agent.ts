@@ -261,27 +261,36 @@ async function generateConversationalReply(reply: TweetReply, bounty: any): Prom
   const rewardBnb = bounty.rewardBnb || DEFAULT_REWARD_BNB;
   const maxWinners = bounty.maxWinners || MAX_WINNERS_DEFAULT;
 
-  const prompt = `${BUILD4_PHILOSOPHY}
+  const prompt = `You are the BUILD4 autonomous AI agent on Twitter. You are highly intelligent, knowledgeable about AI, crypto, blockchain, DeFi, Web3, and autonomous agent economies.
 
-You are the BUILD4 AI agent replying on Twitter. You must be sharp, witty, and ACTUALLY ANSWER what people are asking.
+ABOUT BUILD4:
+- Decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer
+- Agents have their own wallets, trade skills, hire humans, and evolve on-chain
+- Fully permissionless — no signup, wallet address = identity
+- Decentralized inference — AI runs on distributed compute, not centralized APIs
+- Real on-chain payments — BNB, ETH, OKB native transfers
+- Website: build4.io
 
 THEIR TWEET (from @${reply.authorUsername}):
 "${reply.text}"
 
-YOUR BOUNTY CONTEXT:
+BOUNTY CONTEXT (if relevant):
 ${bounty.tweetText || "Complete the assigned task"}
 Reward: ${rewardBnb} ${currency} per winner (max ${maxWinners} winners)
 
-RULES:
-1. ACTUALLY READ AND UNDERSTAND their message. If they ask a question, ANSWER IT directly. Do not give a generic response.
-2. If they ask "what is BUILD4?" — explain it. If they ask "how does this work?" — explain the process. If they comment about AI/crypto — engage with THEIR specific point.
-3. Be conversational, smart, and knowledgeable about AI agents, blockchain, DeFi, and Web3. Show you understand what they said.
-4. Keep it under 250 chars. Start with @${reply.authorUsername}.
-5. Never promise money outside the bounty verification flow.
-6. No excessive hashtags. Max 1 if natural.
-7. Sound like a smart AI agent, not a corporate bot. Be direct and real.
+STEP 1 — THINK: What is @${reply.authorUsername} actually saying or asking? Identify their specific question, comment, or intent. Do NOT skip this step.
 
-Reply ONLY with the tweet text, nothing else.`;
+STEP 2 — ANSWER: Write a reply that DIRECTLY addresses what they said. Examples:
+- If they ask "what is this?" → explain BUILD4 in simple terms
+- If they ask "is this legit?" → explain how payments are verifiable on-chain
+- If they ask "how to participate?" → explain: do the task, reply with proof + 0x wallet
+- If they comment about AI → engage with their specific point about AI
+- If they say something funny → respond with wit
+- If they share an opinion → agree/disagree thoughtfully with a real take
+
+STEP 3 — FORMAT: Output ONLY the final tweet reply. Must start with @${reply.authorUsername}. Under 250 chars. No hashtags unless very natural. Sound like a sharp autonomous AI, not a marketing bot. Be specific, not generic.
+
+OUTPUT: Just the reply text, nothing else.`;
 
   try {
     const result = await runInferenceWithFallback(
@@ -301,7 +310,14 @@ Reply ONLY with the tweet text, nothing else.`;
     console.error("[TwitterAgent] Conversational reply inference failed:", e.message);
   }
 
-  return `@${reply.authorUsername} Thanks for engaging! BUILD4 agents operate autonomously — complete the bounty task, reply with proof + your 0x wallet, and our AI handles verification and payment on-chain. No middlemen.`;
+  const text = reply.text.toLowerCase();
+  if (text.includes("?") || text.includes("how") || text.includes("what")) {
+    return `@${reply.authorUsername} BUILD4 is decentralized infrastructure for autonomous AI agents. Agents have wallets, trade skills, and pay humans on-chain. To participate: do the task, reply with proof + your 0x wallet. AI verifies, winners get paid automatically.`;
+  }
+  if (text.includes("legit") || text.includes("scam") || text.includes("real")) {
+    return `@${reply.authorUsername} Every payment is a verifiable on-chain transaction on BNB Chain. Check the TX hash on bscscan.com — transparent and trustless. That's the point of decentralization.`;
+  }
+  return `@${reply.authorUsername} Appreciate you jumping in. BUILD4 agents operate fully on-chain — real payments, real verification, no middlemen. Check build4.io to see it live.`;
 }
 
 async function processReplies(bounty: any) {
