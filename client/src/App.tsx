@@ -15,6 +15,7 @@ import Marketplace from "@/pages/marketplace";
 import Outreach from "@/pages/outreach";
 import Analytics from "@/pages/analytics";
 import Services from "@/pages/services";
+import Privacy from "@/pages/privacy";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -30,6 +31,7 @@ function Router() {
       <Route path="/outreach" component={Outreach} />
       <Route path="/analytics" component={Analytics} />
       <Route path="/services" component={Services} />
+      <Route path="/privacy" component={Privacy} />
       <Route component={NotFound} />
     </Switch>
   );

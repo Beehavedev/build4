@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { ZERC20_CONTRACTS, SUPPORTED_PRIVACY_CHAINS } from "@shared/schema";
 import { registerWeb4Routes } from "./web4-routes";
 import { registerServicesRoutes } from "./services-routes";
 import { startBountyEngine } from "./bounty-engine";
@@ -127,6 +128,131 @@ export async function registerRoutes(
     }
   });
 
+
+  app.get("/api/privacy/config", (_req: Request, res: Response) => {
+    res.json({ contracts: ZERC20_CONTRACTS, chains: SUPPORTED_PRIVACY_CHAINS });
+  });
+
+  app.post("/api/privacy/transfers", async (req: Request, res: Response) => {
+    try {
+      const { agentId, chainId, tokenSymbol, tokenAddress, burnAddress, recipientAddress, amount, secretHint, walletAddress } = req.body;
+      if (!agentId || !chainId || !tokenSymbol || !tokenAddress || !burnAddress || !recipientAddress || !amount) {
+        res.status(400).json({ error: "Missing required fields" });
+        return;
+      }
+      if (!/^0x[a-fA-F0-9]{40}$/.test(recipientAddress)) {
+        res.status(400).json({ error: "Invalid recipient address" });
+        return;
+      }
+      if (!/^0x[a-fA-F0-9]{40}$/.test(burnAddress)) {
+        res.status(400).json({ error: "Invalid burn address" });
+        return;
+      }
+      const parsedAmount = parseFloat(amount);
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        res.status(400).json({ error: "Invalid amount" });
+        return;
+      }
+      const agent = await storage.getAgent(agentId);
+      if (!agent) {
+        res.status(404).json({ error: "Agent not found" });
+        return;
+      }
+      if (walletAddress && agent.creatorWallet?.toLowerCase() !== walletAddress.toLowerCase()) {
+        res.status(403).json({ error: "Not authorized for this agent" });
+        return;
+      }
+      const transfer = await storage.createPrivacyTransfer({
+        agentId,
+        chainId: parseInt(chainId),
+        tokenSymbol,
+        tokenAddress,
+        burnAddress,
+        recipientAddress,
+        amount: String(amount),
+        status: "pending",
+        secretHint: secretHint || null,
+        depositTxHash: null,
+        withdrawalTxHash: null,
+        proofId: null,
+        errorMessage: null,
+      });
+      res.json(transfer);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/privacy/transfers/:agentId", async (req: Request, res: Response) => {
+    try {
+      const walletAddress = req.query.wallet as string;
+      if (walletAddress) {
+        const agent = await storage.getAgent(req.params.agentId);
+        if (!agent || agent.creatorWallet?.toLowerCase() !== walletAddress.toLowerCase()) {
+          res.status(403).json({ error: "Not authorized" });
+          return;
+        }
+      }
+      const transfers = await storage.getPrivacyTransfers(req.params.agentId);
+      res.json(transfers);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/privacy/transfer/:id", async (req: Request, res: Response) => {
+    try {
+      const transfer = await storage.getPrivacyTransfer(req.params.id);
+      if (!transfer) {
+        res.status(404).json({ error: "Transfer not found" });
+        return;
+      }
+      res.json(transfer);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/privacy/transfer/:id", async (req: Request, res: Response) => {
+    try {
+      const { status, depositTxHash, withdrawalTxHash, proofId, errorMessage, walletAddress } = req.body;
+      if (!status) {
+        res.status(400).json({ error: "Status required" });
+        return;
+      }
+      const validStatuses = ["pending", "deposited", "proving", "completed", "withdrawn", "failed"];
+      if (!validStatuses.includes(status)) {
+        res.status(400).json({ error: "Invalid status" });
+        return;
+      }
+      const existing = await storage.getPrivacyTransfer(req.params.id);
+      if (!existing) {
+        res.status(404).json({ error: "Transfer not found" });
+        return;
+      }
+      if (walletAddress) {
+        const agent = await storage.getAgent(existing.agentId);
+        if (!agent || agent.creatorWallet?.toLowerCase() !== walletAddress.toLowerCase()) {
+          res.status(403).json({ error: "Not authorized" });
+          return;
+        }
+      }
+      const transfer = await storage.updatePrivacyTransferStatus(
+        req.params.id, status, depositTxHash || withdrawalTxHash, proofId, errorMessage
+      );
+      if (withdrawalTxHash && transfer) {
+        await storage.updatePrivacyTransferStatus(req.params.id, status, undefined, undefined, undefined);
+        const updated = await storage.getPrivacyTransfer(req.params.id);
+        if (updated) {
+          res.json(updated);
+          return;
+        }
+      }
+      res.json(transfer);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   await storage.cleanFakeData();
   await storage.seedInferenceProviders();

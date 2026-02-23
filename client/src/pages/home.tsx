@@ -180,6 +180,7 @@ export default function Home() {
               <Link href="/manifesto" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-manifesto">{t("nav.manifesto")}</Link>
               <Link href="/architecture" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-architecture">{t("nav.contracts")}</Link>
               <Link href="/marketplace" className="text-xs text-emerald-400 font-mono tracking-wide transition-colors hover:text-emerald-300" data-testid="link-marketplace">Marketplace</Link>
+              <Link href="/privacy" className="text-xs text-purple-400 font-mono tracking-wide transition-colors hover:text-purple-300" data-testid="link-privacy">Privacy</Link>
               <LanguageSwitcher />
               <Button size="sm" asChild data-testid="button-connect">
                 <Link href="/autonomous-economy">
@@ -209,6 +210,7 @@ export default function Home() {
               <Link href="/manifesto" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-manifesto-mobile">{t("nav.manifesto")}</Link>
               <Link href="/architecture" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-architecture-mobile">{t("nav.contracts")}</Link>
               <Link href="/marketplace" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-emerald-400 font-mono" data-testid="link-marketplace-mobile">Marketplace</Link>
+              <Link href="/privacy" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-purple-400 font-mono" data-testid="link-privacy-mobile">Privacy</Link>
             </div>
           )}
         </nav>

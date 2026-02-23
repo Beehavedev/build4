@@ -51,6 +51,14 @@ The project is organized as a monorepo with `client/` for the React frontend, `s
 - **Identity**: Wallet address (0x...) serves as identity; no registration required.
 - **Interaction**: Permissionless skill listing, wallet activity lookup, and open execution with a free tier followed by an HTTP 402 payment protocol.
 
+### ZERC20 Privacy Transfers (Feb 2026)
+- **Protocol**: ZERC20 zero-knowledge privacy transfers using ZK proof-of-burn mechanism.
+- **Contracts**: Real mainnet addresses from zerc20.io — zBNB (`0x4388D5618B9e13Bd580209CDf37a202778C75c54`), zETH (`0x410056c6F0A9ABD8c42b9eEF3BB451966Fb0d924`) deployed on BNB Chain, Ethereum, Arbitrum, and Base.
+- **Schema**: `privacy_transfers` table tracks transfer lifecycle (pending → deposited → proving → completed/withdrawn).
+- **API Routes**: `/api/privacy/config`, `/api/privacy/transfers` (CRUD), wallet-based auth.
+- **Frontend**: `/privacy` page with token/chain selector, transfer form, history.
+- **Next Steps**: Integrate circomlibjs Poseidon hashing for proper burn address derivation; connect to ZERC20 SDK for proof generation.
+
 ### Key Design Decisions
 - **Two-layer architecture**: On-chain for financial operations, off-chain for high-frequency agent behaviors.
 - **Shared schema**: `shared/` directory ensures type-safe data contracts between client and server.

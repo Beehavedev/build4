@@ -42,6 +42,7 @@ import {
   type DataPurchase, type InsertDataPurchase, dataPurchases,
   type BountySubmission, type InsertBountySubmission, bountySubmissions,
   type BountyActivity, type InsertBountyActivity, bountyActivityFeed,
+  type PrivacyTransfer, type InsertPrivacyTransfer, privacyTransfers,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
@@ -241,6 +242,12 @@ export interface IStorage {
   // Activity Feed
   createBountyActivity(activity: InsertBountyActivity): Promise<BountyActivity>;
   getBountyActivityFeed(limit?: number): Promise<BountyActivity[]>;
+
+  // Privacy Transfers (ZERC20)
+  createPrivacyTransfer(transfer: InsertPrivacyTransfer): Promise<PrivacyTransfer>;
+  getPrivacyTransfer(id: string): Promise<PrivacyTransfer | undefined>;
+  getPrivacyTransfers(agentId: string, limit?: number): Promise<PrivacyTransfer[]>;
+  updatePrivacyTransferStatus(id: string, status: string, txHash?: string, proofId?: string, errorMessage?: string): Promise<PrivacyTransfer | undefined>;
 
   // Seed subscription plans
   seedSubscriptionPlans(): Promise<void>;
@@ -1652,6 +1659,33 @@ export class DatabaseStorage implements IStorage {
 
   async getBountyActivityFeed(limit = 50): Promise<BountyActivity[]> {
     return db.select().from(bountyActivityFeed).orderBy(desc(bountyActivityFeed.createdAt)).limit(limit);
+  }
+
+  async createPrivacyTransfer(transfer: InsertPrivacyTransfer): Promise<PrivacyTransfer> {
+    const [result] = await db.insert(privacyTransfers).values(transfer).returning();
+    return result;
+  }
+
+  async getPrivacyTransfer(id: string): Promise<PrivacyTransfer | undefined> {
+    const [result] = await db.select().from(privacyTransfers).where(eq(privacyTransfers.id, id));
+    return result;
+  }
+
+  async getPrivacyTransfers(agentId: string, limit = 50): Promise<PrivacyTransfer[]> {
+    return db.select().from(privacyTransfers)
+      .where(eq(privacyTransfers.agentId, agentId))
+      .orderBy(desc(privacyTransfers.createdAt))
+      .limit(limit);
+  }
+
+  async updatePrivacyTransferStatus(id: string, status: string, txHash?: string, proofId?: string, errorMessage?: string): Promise<PrivacyTransfer | undefined> {
+    const updates: Record<string, any> = { status };
+    if (txHash) updates.depositTxHash = txHash;
+    if (proofId) updates.proofId = proofId;
+    if (errorMessage) updates.errorMessage = errorMessage;
+    if (status === "completed" || status === "withdrawn") updates.completedAt = new Date();
+    const [result] = await db.update(privacyTransfers).set(updates).where(eq(privacyTransfers.id, id)).returning();
+    return result;
   }
 }
 

@@ -813,6 +813,72 @@ export const insertBountyActivitySchema = createInsertSchema(bountyActivityFeed)
 export type InsertBountyActivity = z.infer<typeof insertBountyActivitySchema>;
 export type BountyActivity = typeof bountyActivityFeed.$inferSelect;
 
+export const privacyTransfers = pgTable("privacy_transfers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  chainId: integer("chain_id").notNull(),
+  tokenSymbol: text("token_symbol").notNull(),
+  tokenAddress: text("token_address").notNull(),
+  burnAddress: text("burn_address").notNull(),
+  recipientAddress: text("recipient_address").notNull(),
+  amount: text("amount").notNull(),
+  status: text("status").notNull().default("pending"),
+  depositTxHash: text("deposit_tx_hash"),
+  withdrawalTxHash: text("withdrawal_tx_hash"),
+  proofId: text("proof_id"),
+  secretHint: text("secret_hint"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const insertPrivacyTransferSchema = createInsertSchema(privacyTransfers).omit({ id: true, createdAt: true, completedAt: true });
+export type InsertPrivacyTransfer = z.infer<typeof insertPrivacyTransferSchema>;
+export type PrivacyTransfer = typeof privacyTransfers.$inferSelect;
+
+export const ZERC20_CONTRACTS = {
+  zBNB: {
+    symbol: "zBNB",
+    tokenAddress: "0x4388D5618B9e13Bd580209CDf37a202778C75c54",
+    verifierAddress: "0xb05977Af4aA54117910ed72141F674531894774A",
+    hubAddress: "0x35eE54CEDb9aba3b785C493C0B50643E65471c7A",
+    liquidityManagerAddress: "0x39Cc069dF606c7bc8c79b0ADd0696BCaf548eFD9",
+    chains: {
+      56: { label: "bnb-mainnet", hasLiquidity: true },
+      1: { label: "eth-mainnet", hasLiquidity: false },
+      42161: { label: "arb-mainnet", hasLiquidity: false },
+      8453: { label: "base-mainnet", hasLiquidity: false },
+    },
+  },
+  zETH: {
+    symbol: "zETH",
+    tokenAddress: "0x410056c6F0A9ABD8c42b9eEF3BB451966Fb0d924",
+    verifierAddress: "0xdCC76DEbb526Eef0210Bd38729b803591951Ab34",
+    hubAddress: "0x6B5e8509ae57A54863A7255e610d6F0c10FCAFB5",
+    liquidityManagerAddress: "0xcC10b7098FEf1aB2f0FF3bE91d2A7B3230b90CF0",
+    adaptorAddress: "0xfDe2C5758BbdDcDEa2d73EdeB5C13DE98B21Eb7D",
+    chains: {
+      1: { label: "eth-mainnet", hasLiquidity: true },
+      42161: { label: "arb-mainnet", hasLiquidity: true },
+      8453: { label: "base-mainnet", hasLiquidity: true },
+    },
+  },
+  zUSDC: {
+    symbol: "zUSDC",
+    tokenAddress: "", // To be populated from mainnet config
+    verifierAddress: "",
+    hubAddress: "",
+    chains: {},
+  },
+} as const;
+
+export const SUPPORTED_PRIVACY_CHAINS = {
+  56: { name: "BNB Chain", nativeCurrency: "BNB", explorer: "https://bscscan.com" },
+  1: { name: "Ethereum", nativeCurrency: "ETH", explorer: "https://etherscan.io" },
+  42161: { name: "Arbitrum", nativeCurrency: "ETH", explorer: "https://arbiscan.io" },
+  8453: { name: "Base", nativeCurrency: "ETH", explorer: "https://basescan.org" },
+} as const;
+
 export const SEED_AGENTS = {
   RESEARCH_BOT: {
     name: "ResearchBot-7B",
