@@ -1,11 +1,91 @@
 import { storage } from "./storage";
 import { isTwitterConfigured, postTweet, getReplies, replyToTweet, getAccountInfo, type TweetReply } from "./twitter-client";
 import { runInferenceWithFallback } from "./inference";
+import { ethers } from "ethers";
 
 const WALLET_REGEX = /0x[a-fA-F0-9]{40}/;
+const MAX_WINNERS_DEFAULT = 3;
+const DEFAULT_REWARD_BNB = "0.015";
 
 let pollingInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
+
+function getProvider(): ethers.JsonRpcProvider | null {
+  const network = process.env.ONCHAIN_NETWORK || "bnbMainnet";
+  const rpcUrls: Record<string, string> = {
+    bnbMainnet: "https://bsc-dataseed1.binance.org",
+    bnbTestnet: "https://data-seed-prebsc-1-s1.binance.org:8545",
+    baseMainnet: "https://mainnet.base.org",
+    baseTestnet: "https://sepolia.base.org",
+  };
+  const rpcUrl = rpcUrls[network];
+  if (!rpcUrl) return null;
+  return new ethers.JsonRpcProvider(rpcUrl);
+}
+
+function getExplorerBase(): string {
+  const network = process.env.ONCHAIN_NETWORK || "bnbMainnet";
+  const explorers: Record<string, string> = {
+    bnbMainnet: "https://bscscan.com",
+    bnbTestnet: "https://testnet.bscscan.com",
+    baseMainnet: "https://basescan.org",
+    baseTestnet: "https://sepolia.basescan.org",
+  };
+  return explorers[network] || "https://bscscan.com";
+}
+
+function getChainCurrency(): string {
+  const network = process.env.ONCHAIN_NETWORK || "bnbMainnet";
+  return network.startsWith("base") ? "ETH" : "BNB";
+}
+
+async function sendNativePayment(toAddress: string, amountBnb: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
+  if (!privateKey) {
+    return { success: false, error: "DEPLOYER_PRIVATE_KEY not configured" };
+  }
+
+  const provider = getProvider();
+  if (!provider) {
+    return { success: false, error: "No RPC provider available" };
+  }
+
+  try {
+    const wallet = new ethers.Wallet(privateKey, provider);
+    const balance = await provider.getBalance(wallet.address);
+    const amountWei = ethers.parseEther(amountBnb);
+
+    const feeData = await provider.getFeeData();
+    const gasPrice = feeData.gasPrice || ethers.parseUnits("5", "gwei");
+    const estimatedGas = BigInt(21000) * gasPrice;
+
+    if (balance < amountWei + estimatedGas) {
+      const balBnb = ethers.formatEther(balance);
+      return { success: false, error: `Deployer balance too low: ${balBnb} ${getChainCurrency()} (need ${amountBnb} + gas)` };
+    }
+
+    const tx = await wallet.sendTransaction({
+      to: toAddress,
+      value: amountWei,
+      gasLimit: 21000,
+    });
+
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("Transaction timeout (90s)")), 90_000)),
+    ]);
+
+    if (!receipt || receipt.status !== 1) {
+      return { success: false, error: "Transaction reverted" };
+    }
+
+    console.log(`[TwitterAgent] On-chain payment sent: ${receipt.hash} (${amountBnb} ${getChainCurrency()} -> ${toAddress})`);
+    return { success: true, txHash: receipt.hash };
+  } catch (e: any) {
+    console.error(`[TwitterAgent] Payment failed:`, e.message);
+    return { success: false, error: e.message?.substring(0, 200) || "Unknown error" };
+  }
+}
 
 export async function startTwitterAgent() {
   if (!isTwitterConfigured()) {
@@ -53,12 +133,17 @@ export async function getTwitterAgentStatus() {
     }
   }
 
+  const hasDeployerKey = !!process.env.DEPLOYER_PRIVATE_KEY;
+
   return {
     configured,
     enabled: config?.enabled === 1,
     running: isRunning,
     account,
     config,
+    onchainReady: hasDeployerKey,
+    explorerBase: getExplorerBase(),
+    currency: getChainCurrency(),
     stats: {
       totalBounties: bounties.length,
       activeBounties: activeBounties.length,
@@ -81,6 +166,16 @@ export async function runTwitterAgentCycle() {
 
     for (const bounty of activeBounties) {
       if (!bounty.tweetId) continue;
+
+      const maxWinners = bounty.maxWinners || MAX_WINNERS_DEFAULT;
+      const paidCount = await storage.getPaidSubmissionCount(bounty.id);
+      if (paidCount >= maxWinners) {
+        await storage.updateTwitterBounty(bounty.id, {
+          status: "completed",
+        });
+        console.log(`[TwitterAgent] Bounty ${bounty.jobId} completed (${paidCount}/${maxWinners} winners)`);
+        continue;
+      }
 
       try {
         await processReplies(bounty);
@@ -106,6 +201,8 @@ async function processReplies(bounty: any) {
 
   let maxId = bounty.sinceId || "0";
 
+  const pendingVerifications: Array<{ submission: any; reply: TweetReply }> = [];
+
   for (const reply of replies) {
     if (BigInt(reply.id) > BigInt(maxId)) {
       maxId = reply.id;
@@ -129,9 +226,15 @@ async function processReplies(bounty: any) {
     });
 
     if (walletAddress) {
-      await verifyAndPay(submission, bounty, reply);
+      pendingVerifications.push({ submission, reply });
     }
   }
+
+  for (const { submission, reply } of pendingVerifications) {
+    await verifySubmission(submission, bounty, reply);
+  }
+
+  await selectAndPayWinners(bounty);
 
   await storage.updateTwitterBounty(bounty.id, {
     sinceId: maxId,
@@ -140,10 +243,9 @@ async function processReplies(bounty: any) {
   });
 }
 
-async function verifyAndPay(submission: any, bounty: any, reply: TweetReply) {
+async function verifySubmission(submission: any, bounty: any, reply: TweetReply) {
   const config = await storage.getTwitterAgentConfig();
   const minScore = config?.minVerificationScore || 60;
-  const payoutAmount = config?.defaultBountyBudget || "0.002";
 
   try {
     const verificationResult = await verifyProof(bounty, reply);
@@ -157,30 +259,8 @@ async function verifyAndPay(submission: any, bounty: any, reply: TweetReply) {
     if (verificationResult.score >= minScore && submission.walletAddress) {
       await storage.updateTwitterSubmission(submission.id, {
         status: "verified",
-        paymentAmount: payoutAmount,
       });
-
-      const txHash = `sim_${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`;
-
-      try {
-        const replyText = `Verified! Payment of ${payoutAmount} BNB queued for ${submission.walletAddress.slice(0, 6)}...${submission.walletAddress.slice(-4)}\n\n[Simulated - real on-chain transfers coming soon]\n\nThank you for contributing to the autonomous agent economy.`;
-
-        const replyId = await replyToTweet(reply.id, replyText);
-
-        await storage.updateTwitterSubmission(submission.id, {
-          status: "paid",
-          paymentTxHash: txHash,
-          replyTweetId: replyId,
-        });
-
-        console.log(`[TwitterAgent] Paid @${reply.authorUsername} ${payoutAmount} BNB for bounty ${bounty.jobId}`);
-      } catch (e: any) {
-        console.error(`[TwitterAgent] Payment reply failed:`, e.message);
-        await storage.updateTwitterSubmission(submission.id, {
-          status: "payment_pending",
-          paymentTxHash: txHash,
-        });
-      }
+      console.log(`[TwitterAgent] Verified @${reply.authorUsername} (score: ${verificationResult.score})`);
     } else {
       await storage.updateTwitterSubmission(submission.id, {
         status: "rejected",
@@ -193,6 +273,79 @@ async function verifyAndPay(submission: any, bounty: any, reply: TweetReply) {
       status: "verification_failed",
       verificationReason: e.message,
     });
+  }
+}
+
+async function selectAndPayWinners(bounty: any) {
+  const maxWinners = bounty.maxWinners || MAX_WINNERS_DEFAULT;
+  const rewardBnb = bounty.rewardBnb || DEFAULT_REWARD_BNB;
+  const currency = getChainCurrency();
+  const explorerBase = getExplorerBase();
+
+  const paidCount = await storage.getPaidSubmissionCount(bounty.id);
+  if (paidCount >= maxWinners) {
+    await storage.updateTwitterBounty(bounty.id, { status: "completed", winnersCount: paidCount });
+    return;
+  }
+
+  const allSubmissions = await storage.getTwitterSubmissions(bounty.id);
+  const verified = allSubmissions
+    .filter(s => s.status === "verified" && s.walletAddress && s.verificationScore != null)
+    .sort((a, b) => (b.verificationScore || 0) - (a.verificationScore || 0));
+
+  if (verified.length === 0) return;
+
+  const slotsRemaining = maxWinners - paidCount;
+  const winners = verified.slice(0, slotsRemaining);
+
+  for (const winner of winners) {
+    const currentPaid = await storage.getPaidSubmissionCount(bounty.id);
+    if (currentPaid >= maxWinners) {
+      console.log(`[TwitterAgent] Bounty ${bounty.jobId} already at max winners, skipping remaining`);
+      break;
+    }
+
+    const paymentResult = await sendNativePayment(winner.walletAddress!, rewardBnb);
+
+    if (paymentResult.success && paymentResult.txHash) {
+      const explorerUrl = `${explorerBase}/tx/${paymentResult.txHash}`;
+
+      await storage.updateTwitterSubmission(winner.id, {
+        status: "paid",
+        paymentTxHash: paymentResult.txHash,
+        paymentAmount: rewardBnb,
+      });
+
+      const newPaidCount = currentPaid + 1;
+      await storage.updateTwitterBounty(bounty.id, {
+        winnersCount: newPaidCount,
+      });
+
+      try {
+        const replyText = `Verified! ${rewardBnb} ${currency} sent to ${winner.walletAddress!.slice(0, 6)}...${winner.walletAddress!.slice(-4)}\n\nTX: ${explorerUrl}\n\nThank you for contributing to the autonomous agent economy. #BUILD4`;
+        const replyId = await replyToTweet(winner.tweetId, replyText);
+        await storage.updateTwitterSubmission(winner.id, { replyTweetId: replyId });
+      } catch (e: any) {
+        console.error(`[TwitterAgent] Payment reply tweet failed:`, e.message);
+      }
+
+      console.log(`[TwitterAgent] Paid @${winner.twitterHandle} ${rewardBnb} ${currency} for bounty ${bounty.jobId} (TX: ${paymentResult.txHash})`);
+    } else {
+      console.error(`[TwitterAgent] Payment failed for @${winner.twitterHandle}: ${paymentResult.error}`);
+      await storage.updateTwitterSubmission(winner.id, {
+        status: "payment_failed",
+        verificationReason: `Payment failed: ${paymentResult.error}`,
+      });
+    }
+  }
+
+  const finalPaidCount = await storage.getPaidSubmissionCount(bounty.id);
+  if (finalPaidCount >= maxWinners) {
+    await storage.updateTwitterBounty(bounty.id, {
+      status: "completed",
+      winnersCount: finalPaidCount,
+    });
+    console.log(`[TwitterAgent] Bounty ${bounty.jobId} completed (${finalPaidCount}/${maxWinners} winners paid)`);
   }
 }
 
@@ -247,15 +400,18 @@ Respond ONLY in this exact JSON format:
   };
 }
 
-export async function postBountyTweet(jobId: string, taskDescription: string, rewardBnb: string): Promise<{ tweetId: string; tweetUrl: string }> {
+export async function postBountyTweet(jobId: string, taskDescription: string, rewardBnb: string, maxWinners: number = MAX_WINNERS_DEFAULT): Promise<{ tweetId: string; tweetUrl: string }> {
+  const currency = getChainCurrency();
+  const reward = rewardBnb || DEFAULT_REWARD_BNB;
+
   const tweetText = `BOUNTY: ${taskDescription}
 
-Reward: ${rewardBnb} BNB
+Reward: ${reward} ${currency} per winner (max ${maxWinners} winners)
 How to claim:
 1. Complete the task
 2. Reply with proof + your 0x wallet address
-3. AI verifies your work
-4. Auto-payment on BNB Chain
+3. AI verifies & ranks submissions
+4. Top ${maxWinners} auto-paid on-chain
 
 #BUILD4 #BNBChain #CryptoBounty #Web3Jobs`;
 
@@ -267,6 +423,8 @@ How to claim:
       tweetId: result.tweetId,
       tweetUrl: result.tweetUrl,
       tweetText,
+      rewardBnb: reward,
+      maxWinners,
       status: "posted",
     });
   } else {
@@ -275,6 +433,9 @@ How to claim:
       tweetId: result.tweetId,
       tweetUrl: result.tweetUrl,
       tweetText,
+      rewardBnb: reward,
+      maxWinners,
+      winnersCount: 0,
       status: "posted",
     });
   }

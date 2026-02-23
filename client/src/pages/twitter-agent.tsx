@@ -61,6 +61,9 @@ interface TwitterStatus {
   running: boolean;
   account: { id: string; username: string; name: string } | null;
   config: any;
+  onchainReady: boolean;
+  explorerBase: string;
+  currency: string;
   stats: { totalBounties: number; activeBounties: number; totalSubmissions: number };
   error?: string;
 }
@@ -71,6 +74,9 @@ interface TwitterBounty {
   tweetId: string | null;
   tweetUrl: string | null;
   tweetText: string | null;
+  rewardBnb: string | null;
+  maxWinners: number | null;
+  winnersCount: number | null;
   status: string;
   repliesChecked: number | null;
   lastCheckedAt: string | null;
@@ -159,13 +165,14 @@ function TwitterLoginGate({ onLogin }: { onLogin: (token: string) => void }) {
 function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
   const [showSettings, setShowSettings] = useState(false);
   const [taskDescription, setTaskDescription] = useState("");
-  const [rewardBnb, setRewardBnb] = useState("0.002");
+  const [rewardBnb, setRewardBnb] = useState("0.015");
   const [expandedBounty, setExpandedBounty] = useState<string | null>(null);
   const [settingsForm, setSettingsForm] = useState({
     pollingIntervalMs: 300000,
     minVerificationScore: 60,
-    maxPayoutBnb: "0.005",
-    defaultBountyBudget: "0.002",
+    maxPayoutBnb: "0.015",
+    defaultBountyBudget: "0.015",
+    maxWinnersPerBounty: 3,
   });
 
   const { data: status, isLoading: statusLoading } = useQuery<TwitterStatus>({
@@ -323,9 +330,14 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
                   <span className="text-sm text-gray-400">Payout</span>
                 </div>
                 <p className="text-lg font-bold" data-testid="text-payout-amount">
-                  {status?.config?.defaultBountyBudget || "0.002"} BNB
+                  {status?.config?.defaultBountyBudget || "0.015"} BNB
                 </p>
-                <p className="text-xs text-gray-500">per verified task</p>
+                <p className="text-xs text-gray-500">per winner ({status?.config?.maxWinnersPerBounty || 3} max)</p>
+                {status?.onchainReady ? (
+                  <Badge className="bg-green-500/20 text-green-400 text-[10px] mt-1">On-chain</Badge>
+                ) : (
+                  <Badge className="bg-yellow-500/20 text-yellow-400 text-[10px] mt-1">No deployer key</Badge>
+                )}
               </Card>
             </div>
 
@@ -408,13 +420,26 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
                     />
                   </div>
                   <div>
-                    <Label className="text-gray-400 text-sm">Default Bounty Budget (BNB)</Label>
+                    <Label className="text-gray-400 text-sm">Default Reward per Winner (BNB)</Label>
                     <Input
                       value={settingsForm.defaultBountyBudget}
                       onChange={(e) => setSettingsForm({ ...settingsForm, defaultBountyBudget: e.target.value })}
                       className="bg-gray-800 border-gray-700 mt-1"
                       data-testid="input-default-budget"
                     />
+                  </div>
+                  <div>
+                    <Label className="text-gray-400 text-sm">Max Winners per Bounty</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={3}
+                      value={settingsForm.maxWinnersPerBounty}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, maxWinnersPerBounty: Math.min(3, Math.max(1, parseInt(e.target.value) || 3)) })}
+                      className="bg-gray-800 border-gray-700 mt-1"
+                      data-testid="input-max-winners"
+                    />
+                    <p className="text-xs text-gray-600 mt-1">Maximum 3 winners allowed</p>
                   </div>
                 </div>
                 <Button
@@ -448,13 +473,14 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
                 </div>
                 <div className="flex items-end gap-4">
                   <div className="w-40">
-                    <Label className="text-gray-400 text-sm">Reward (BNB)</Label>
+                    <Label className="text-gray-400 text-sm">Reward per Winner (BNB)</Label>
                     <Input
                       value={rewardBnb}
                       onChange={(e) => setRewardBnb(e.target.value)}
                       className="bg-gray-800 border-gray-700 mt-1"
                       data-testid="input-reward-bnb"
                     />
+                    <p className="text-xs text-gray-600 mt-1">~${(parseFloat(rewardBnb || "0") * 650).toFixed(0)} USD · 3 winners max</p>
                   </div>
                   <Button
                     onClick={() => postBounty.mutate()}
@@ -492,6 +518,7 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
                       bounty={bounty}
                       expanded={expandedBounty === bounty.id}
                       onToggle={() => setExpandedBounty(expandedBounty === bounty.id ? null : bounty.id)}
+                      explorerBase={status?.explorerBase || "https://bscscan.com"}
                     />
                   ))}
                 </div>
@@ -522,7 +549,7 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
   );
 }
 
-function BountyCard({ bounty, expanded, onToggle, token }: { bounty: TwitterBounty; expanded: boolean; onToggle: () => void; token: string }) {
+function BountyCard({ bounty, expanded, onToggle, token, explorerBase }: { bounty: TwitterBounty; expanded: boolean; onToggle: () => void; token: string; explorerBase: string }) {
   const { data: submissions } = useQuery<TwitterSubmission[]>({
     queryKey: ["/api/twitter/bounties", bounty.id, "submissions"],
     queryFn: () => authFetch(`/api/twitter/bounties/${bounty.id}/submissions`, token),
@@ -564,6 +591,7 @@ function BountyCard({ bounty, expanded, onToggle, token }: { bounty: TwitterBoun
               <ExternalLink className="w-4 h-4" />
             </a>
           )}
+          <span className="text-xs text-gray-500">{bounty.winnersCount || 0}/{bounty.maxWinners || 3} winners</span>
           <span className="text-xs text-gray-500">{bounty.repliesChecked || 0} replies</span>
           {expanded ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
         </div>
@@ -586,7 +614,7 @@ function BountyCard({ bounty, expanded, onToggle, token }: { bounty: TwitterBoun
             <div className="space-y-2">
               <p className="text-sm font-bold text-gray-400">{submissions.length} Submissions</p>
               {submissions.map((sub) => (
-                <SubmissionRow key={sub.id} submission={sub} />
+                <SubmissionRow key={sub.id} submission={sub} explorerBase={explorerBase} />
               ))}
             </div>
           ) : (
@@ -598,12 +626,13 @@ function BountyCard({ bounty, expanded, onToggle, token }: { bounty: TwitterBoun
   );
 }
 
-function SubmissionRow({ submission }: { submission: TwitterSubmission }) {
+function SubmissionRow({ submission, explorerBase }: { submission: TwitterSubmission; explorerBase: string }) {
   const statusIcons: Record<string, JSX.Element> = {
     paid: <CheckCircle2 className="w-4 h-4 text-green-400" />,
     verified: <CheckCircle2 className="w-4 h-4 text-blue-400" />,
     rejected: <XCircle className="w-4 h-4 text-red-400" />,
     pending_verification: <Clock className="w-4 h-4 text-yellow-400" />,
+    payment_failed: <XCircle className="w-4 h-4 text-orange-400" />,
     no_wallet: <Wallet className="w-4 h-4 text-gray-500" />,
   };
 
@@ -630,10 +659,24 @@ function SubmissionRow({ submission }: { submission: TwitterSubmission }) {
           <p className="text-xs text-gray-500 mt-1 italic">{submission.verificationReason}</p>
         )}
         {submission.paymentTxHash && (
-          <span className="text-xs text-yellow-400 mt-1 inline-flex items-center gap-1" data-testid={`link-tx-${submission.id}`}>
-            <DollarSign className="w-3 h-3" />
-            {submission.paymentAmount} BNB {submission.paymentTxHash.startsWith("sim_") ? "(simulated)" : "paid"}
-          </span>
+          submission.paymentTxHash.startsWith("sim_") ? (
+            <span className="text-xs text-yellow-400 mt-1 inline-flex items-center gap-1" data-testid={`link-tx-${submission.id}`}>
+              <DollarSign className="w-3 h-3" />
+              {submission.paymentAmount} BNB (simulated)
+            </span>
+          ) : (
+            <a
+              href={`${explorerBase}/tx/${submission.paymentTxHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-green-400 mt-1 inline-flex items-center gap-1 hover:underline"
+              data-testid={`link-tx-${submission.id}`}
+            >
+              <DollarSign className="w-3 h-3" />
+              {submission.paymentAmount} BNB paid
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          )
         )}
       </div>
     </div>

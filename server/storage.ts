@@ -263,6 +263,7 @@ export interface IStorage {
   getTwitterSubmission(id: string): Promise<TwitterSubmission | undefined>;
   getTwitterSubmissionByTweetId(tweetId: string): Promise<TwitterSubmission | undefined>;
   getTwitterSubmissions(twitterBountyId: string): Promise<TwitterSubmission[]>;
+  getPaidSubmissionCount(twitterBountyId: string): Promise<number>;
   updateTwitterSubmission(id: string, data: Partial<TwitterSubmission>): Promise<TwitterSubmission | undefined>;
 
   getTwitterAgentConfig(): Promise<TwitterAgentConfig | undefined>;
@@ -1751,6 +1752,16 @@ export class DatabaseStorage implements IStorage {
 
   async getTwitterSubmissions(twitterBountyId: string): Promise<TwitterSubmission[]> {
     return db.select().from(twitterSubmissions).where(eq(twitterSubmissions.twitterBountyId, twitterBountyId)).orderBy(desc(twitterSubmissions.createdAt));
+  }
+
+  async getPaidSubmissionCount(twitterBountyId: string): Promise<number> {
+    const results = await db.select().from(twitterSubmissions).where(
+      and(
+        eq(twitterSubmissions.twitterBountyId, twitterBountyId),
+        eq(twitterSubmissions.status, "paid")
+      )
+    );
+    return results.length;
   }
 
   async updateTwitterSubmission(id: string, data: Partial<TwitterSubmission>): Promise<TwitterSubmission | undefined> {
