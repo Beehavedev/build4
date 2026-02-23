@@ -4,11 +4,13 @@ import { runInferenceWithFallback } from "./inference";
 import { ethers } from "ethers";
 
 const WALLET_REGEX = /0x[a-fA-F0-9]{40}/;
-const MAX_WINNERS_DEFAULT = 3;
+const MAX_WINNERS_DEFAULT = 10;
 const DEFAULT_REWARD_BNB = "0.02";
 
 let pollingInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
+let rateLimitBackoff = 0;
+let consecutiveErrors = 0;
 
 function getProvider(): ethers.JsonRpcProvider | null {
   const network = process.env.ONCHAIN_NETWORK || "bnbMainnet";
@@ -99,7 +101,7 @@ export async function startTwitterAgent() {
     return;
   }
 
-  const interval = config.pollingIntervalMs || 300000;
+  const interval = config.pollingIntervalMs || 30000;
   console.log(`[TwitterAgent] Starting with ${interval / 1000}s interval`);
 
   if (pollingInterval) {
@@ -158,6 +160,11 @@ export async function runTwitterAgentCycle() {
     return;
   }
 
+  if (rateLimitBackoff > Date.now()) {
+    console.log(`[TwitterAgent] Rate-limited, skipping cycle (backoff until ${new Date(rateLimitBackoff).toISOString()})`);
+    return;
+  }
+
   isRunning = true;
   console.log("[TwitterAgent] Starting cycle...");
 
@@ -180,14 +187,28 @@ export async function runTwitterAgentCycle() {
       try {
         await processReplies(bounty);
       } catch (e: any) {
+        if (e.code === 429 || e.message?.includes("429") || e.message?.includes("rate limit")) {
+          const backoffMs = Math.min(60000 * Math.pow(2, consecutiveErrors), 900000);
+          rateLimitBackoff = Date.now() + backoffMs;
+          consecutiveErrors++;
+          console.warn(`[TwitterAgent] Rate limited! Backing off for ${backoffMs / 1000}s (attempt ${consecutiveErrors})`);
+          break;
+        }
         console.error(`[TwitterAgent] Error processing bounty ${bounty.id}:`, e.message);
         await storage.updateTwitterBounty(bounty.id, {
           errorMessage: e.message,
         });
       }
     }
+    consecutiveErrors = 0;
   } catch (e: any) {
     console.error("[TwitterAgent] Cycle error:", e.message);
+    if (e.code === 429 || e.message?.includes("429") || e.message?.includes("rate limit")) {
+      const backoffMs = Math.min(60000 * Math.pow(2, consecutiveErrors), 900000);
+      rateLimitBackoff = Date.now() + backoffMs;
+      consecutiveErrors++;
+      console.warn(`[TwitterAgent] Rate limited at cycle level! Backing off for ${backoffMs / 1000}s`);
+    }
   } finally {
     isRunning = false;
     console.log("[TwitterAgent] Cycle complete");

@@ -363,7 +363,7 @@ export async function registerRoutes(
   app.get("/api/twitter/config", analyticsAuth, async (_req: Request, res: Response) => {
     try {
       const config = await storage.getTwitterAgentConfig();
-      res.json(config || { id: "default", enabled: 0, pollingIntervalMs: 300000, minVerificationScore: 60, maxPayoutBnb: "0.02", defaultBountyBudget: "0.02", maxWinnersPerBounty: 3, agentId: null });
+      res.json(config || { id: "default", enabled: 0, pollingIntervalMs: 30000, minVerificationScore: 60, maxPayoutBnb: "0.02", defaultBountyBudget: "0.02", maxWinnersPerBounty: 10, agentId: null });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -405,7 +405,7 @@ export async function registerRoutes(
       }
       const config = await storage.getTwitterAgentConfig();
       const reward = rewardBnb || config?.defaultBountyBudget || "0.02";
-      const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 3, 10);
+      const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 10, 10);
       const result = await postBountyTweet(
         jobId || `manual-${Date.now()}`,
         taskDescription,

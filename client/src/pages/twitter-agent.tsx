@@ -172,11 +172,11 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
   const [rewardBnb, setRewardBnb] = useState("0.02");
   const [expandedBounty, setExpandedBounty] = useState<string | null>(null);
   const [settingsForm, setSettingsForm] = useState({
-    pollingIntervalMs: 300000,
+    pollingIntervalMs: 30000,
     minVerificationScore: 60,
     maxPayoutBnb: "0.02",
     defaultBountyBudget: "0.02",
-    maxWinnersPerBounty: 3,
+    maxWinnersPerBounty: 10,
   });
 
   const { data: status, isLoading: statusLoading } = useQuery<TwitterStatus>({
@@ -340,7 +340,7 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
                 <p className="text-lg font-bold" data-testid="text-payout-amount">
                   {status?.config?.defaultBountyBudget || "0.015"} BNB
                 </p>
-                <p className="text-xs text-gray-500">per winner ({status?.config?.maxWinnersPerBounty || 3} max)</p>
+                <p className="text-xs text-gray-500">per winner ({status?.config?.maxWinnersPerBounty || 10} max)</p>
                 {status?.onchainReady ? (
                   <Badge className="bg-green-500/20 text-green-400 text-[10px] mt-1">On-chain</Badge>
                 ) : (
@@ -443,7 +443,7 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
                       min={1}
                       max={10}
                       value={settingsForm.maxWinnersPerBounty}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, maxWinnersPerBounty: Math.min(10, Math.max(1, parseInt(e.target.value) || 3)) })}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, maxWinnersPerBounty: Math.min(10, Math.max(1, parseInt(e.target.value) || 10)) })}
                       className="bg-gray-800 border-gray-700 mt-1"
                       data-testid="input-max-winners"
                     />
