@@ -115,6 +115,45 @@ export async function replyToTweet(tweetId: string, text: string): Promise<strin
   return result.data.id;
 }
 
+export async function getMentions(sinceId?: string): Promise<TweetReply[]> {
+  const tc = getClient();
+  const me = await tc.v2.me();
+
+  const query = `@${me.data.username} -from:${me.data.username}`;
+  const params: any = {
+    "tweet.fields": ["author_id", "created_at", "text", "conversation_id", "in_reply_to_user_id"],
+    "user.fields": ["username"],
+    expansions: ["author_id"],
+    max_results: 20,
+  };
+  if (sinceId) {
+    params.since_id = sinceId;
+  }
+
+  const searchResult = await tc.v2.search(query, params);
+
+  const mentions: TweetReply[] = [];
+  const users = new Map<string, string>();
+
+  if (searchResult.includes?.users) {
+    for (const user of searchResult.includes.users) {
+      users.set(user.id, user.username);
+    }
+  }
+
+  for (const tweet of searchResult.data?.data || []) {
+    mentions.push({
+      id: tweet.id,
+      text: tweet.text,
+      authorId: tweet.author_id || "",
+      authorUsername: users.get(tweet.author_id || "") || "unknown",
+      createdAt: tweet.created_at,
+    });
+  }
+
+  return mentions;
+}
+
 export async function getAccountInfo(): Promise<{ id: string; username: string; name: string }> {
   const tc = getClient();
   const me = await tc.v2.me({ "user.fields": ["name", "username"] });

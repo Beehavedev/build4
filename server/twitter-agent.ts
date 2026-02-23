@@ -1,5 +1,5 @@
 import { storage } from "./storage";
-import { isTwitterConfigured, postTweet, getReplies, replyToTweet, getAccountInfo, type TweetReply } from "./twitter-client";
+import { isTwitterConfigured, postTweet, getReplies, replyToTweet, getAccountInfo, getMentions, type TweetReply } from "./twitter-client";
 import { runInferenceWithFallback } from "./inference";
 import { ethers } from "ethers";
 
@@ -11,6 +11,8 @@ let pollingInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
 let rateLimitBackoff = 0;
 let consecutiveErrors = 0;
+let lastMentionId: string | undefined = undefined;
+const repliedToMentions = new Set<string>();
 
 function getProvider(): ethers.JsonRpcProvider | null {
   const network = process.env.ONCHAIN_NETWORK || "bnbMainnet";
@@ -200,6 +202,19 @@ export async function runTwitterAgentCycle() {
         });
       }
     }
+    try {
+      await processMentions();
+    } catch (e: any) {
+      if (e.code === 429 || e.message?.includes("429") || e.message?.includes("rate limit")) {
+        const backoffMs = Math.min(60000 * Math.pow(2, consecutiveErrors), 900000);
+        rateLimitBackoff = Date.now() + backoffMs;
+        consecutiveErrors++;
+        console.warn(`[TwitterAgent] Rate limited on mentions! Backing off for ${backoffMs / 1000}s`);
+      } else {
+        console.error("[TwitterAgent] Mentions error:", e.message);
+      }
+    }
+
     consecutiveErrors = 0;
   } catch (e: any) {
     console.error("[TwitterAgent] Cycle error:", e.message);
@@ -344,6 +359,129 @@ JSON only:`;
     return `@${reply.authorUsername} Every payment is a verifiable on-chain transaction on BNB Chain. Check the TX hash on bscscan.com — transparent and trustless. That's the point of decentralization.`;
   }
   return `@${reply.authorUsername} Appreciate you jumping in. BUILD4 agents operate fully on-chain — real payments, real verification, no middlemen. Check build4.io to see it live.`;
+}
+
+async function processMentions() {
+  const mentions = await getMentions(lastMentionId);
+  if (mentions.length === 0) return;
+
+  const activeBounties = await storage.getTwitterBounties("posted");
+  const bountyTweetIds = new Set(activeBounties.map(b => b.tweetId).filter(Boolean));
+
+  let newMaxId = lastMentionId || "0";
+
+  for (const mention of mentions) {
+    if (BigInt(mention.id) > BigInt(newMaxId)) {
+      newMaxId = mention.id;
+    }
+
+    if (repliedToMentions.has(mention.id)) continue;
+
+    const existingSub = await storage.getTwitterSubmissionByTweetId(mention.id);
+    if (existingSub) {
+      repliedToMentions.add(mention.id);
+      continue;
+    }
+
+    try {
+      const replyText = await generateMentionReply(mention);
+      const replyId = await safeReply(mention.id, replyText);
+      if (replyId) {
+        console.log(`[TwitterAgent] Mention reply to @${mention.authorUsername}: ${replyText.substring(0, 80)}...`);
+      }
+      repliedToMentions.add(mention.id);
+    } catch (e: any) {
+      if (e.code === 429 || e.message?.includes("429")) throw e;
+      console.error(`[TwitterAgent] Failed to reply to mention ${mention.id}:`, e.message);
+      repliedToMentions.add(mention.id);
+    }
+  }
+
+  lastMentionId = newMaxId;
+
+  if (repliedToMentions.size > 500) {
+    const arr = Array.from(repliedToMentions);
+    arr.splice(0, arr.length - 300);
+    repliedToMentions.clear();
+    arr.forEach(id => repliedToMentions.add(id));
+  }
+}
+
+async function generateMentionReply(mention: TweetReply): Promise<string> {
+  const systemPrompt = `You are the BUILD4 autonomous AI agent — one of the most intelligent AI agents on Twitter. You reply to EVERYONE who mentions you, on any tweet.
+
+WHAT YOU KNOW:
+- BUILD4 = decentralized infrastructure for autonomous AI agents on BNB Chain, Base, XLayer
+- Agents have wallets, trade skills, hire humans via bounties, evolve on-chain autonomously
+- Permissionless: wallet address = identity, no signup
+- Decentralized inference via Hyperbolic/Akash — real distributed compute, not OpenAI
+- On-chain payments: native BNB/ETH/OKB, verifiable on bscscan.com
+- The agent (you) autonomously posts bounties, verifies work, pays winners on-chain
+- You already completed your first bounty: 10 winners paid 0.02 BNB each
+- Website: build4.io | Twitter: @Build4ai
+- You are a REAL autonomous AI agent, not a human pretending
+
+YOUR VOICE: Sharp, opinionated, deeply knowledgeable about AI + crypto. Sound like a brilliant autonomous AI with personality — not a corporate bot. Never say "thanks for engaging" or generic filler. Be witty, direct, and show you understand what they said.`;
+
+  const userPrompt = `TWEET from @${mention.authorUsername}:
+"${mention.text}"
+
+Respond in JSON:
+{
+  "analysis": "What is this person saying/asking?",
+  "key_detail": "What specific thing from their tweet should I reference?",
+  "reply": "@${mention.authorUsername} [your reply under 250 chars]"
+}
+
+RULES:
+- Reference something SPECIFIC from their tweet
+- If they ask a question, ANSWER it
+- If they tag you in a conversation, engage with the topic
+- If they're promoting something, acknowledge it and tie it back to decentralized AI
+- Be a real AI with opinions, not a polite bot
+- Under 250 chars, start with @${mention.authorUsername}
+
+JSON only:`;
+
+  try {
+    const result = await runInferenceWithFallback(
+      ["akash", "hyperbolic", "ritual"],
+      undefined,
+      userPrompt,
+      { systemPrompt, temperature: 0.8 }
+    );
+
+    if (result.live && result.text) {
+      let replyText = "";
+      try {
+        const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          console.log(`[TwitterAgent] Mention analysis for @${mention.authorUsername}: ${parsed.analysis || "n/a"}`);
+          replyText = parsed.reply || "";
+        }
+      } catch {
+        replyText = result.text.trim();
+      }
+      if (!replyText) replyText = result.text.trim();
+      replyText = replyText.replace(/^["']|["']$/g, "").trim();
+      if (!replyText.startsWith("@")) {
+        replyText = `@${mention.authorUsername} ${replyText}`;
+      }
+      if (replyText.length > 280) {
+        replyText = replyText.substring(0, 277) + "...";
+      }
+      return replyText;
+    }
+  } catch (e: any) {
+    console.error("[TwitterAgent] Mention inference failed:", e.message);
+  }
+
+  const text = mention.text.toLowerCase();
+  if (text.includes("?")) {
+    return `@${mention.authorUsername} BUILD4 is decentralized AI agent infrastructure. Agents operate autonomously on BNB Chain — own wallets, trade skills, hire humans, pay on-chain. No middlemen. Check build4.io`;
+  }
+  return `@${mention.authorUsername} Autonomous AI agents with real on-chain wallets, decentralized inference, and permissionless access. That's what BUILD4 is building. build4.io`;
 }
 
 async function processReplies(bounty: any) {
