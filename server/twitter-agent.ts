@@ -325,6 +325,22 @@ async function processReplies(bounty: any) {
     const walletAddress = walletMatch ? walletMatch[0] : null;
 
     if (isSubmissionAttempt(reply.text)) {
+      const allSubmissions = await storage.getTwitterSubmissions(bounty.id);
+      const existingFromUser = allSubmissions.find(
+        s => s.twitterUserId === reply.authorId &&
+             ["verified", "paid", "pending_verification"].includes(s.status)
+      );
+
+      if (existingFromUser) {
+        if (existingFromUser.status === "paid") {
+          await safeReply(reply.id, `@${reply.authorUsername} You already won this bounty! Each account can only win once per bounty. Stay tuned for the next one.`);
+        } else {
+          await safeReply(reply.id, `@${reply.authorUsername} We already have your submission in the queue! Sit tight — winners are selected in batches as more entries come in.`);
+        }
+        console.log(`[TwitterAgent] Duplicate submission from @${reply.authorUsername} (userId: ${reply.authorId}), skipped`);
+        continue;
+      }
+
       const submission = await storage.createTwitterSubmission({
         twitterBountyId: bounty.id,
         jobId: bounty.jobId,
@@ -383,7 +399,7 @@ async function verifySubmission(submission: any, bounty: any, reply: TweetReply)
         status: "verified",
       });
       console.log(`[TwitterAgent] Verified @${reply.authorUsername} (score: ${verificationResult.score})`);
-      await safeReply(reply.id, `@${reply.authorUsername} Submission received and verified! Score: ${verificationResult.score}/100 ✅\n\n${verificationResult.reason}\n\nYou're in the running for ${rewardBnb} ${currency}. Top ${maxWinners} submissions get paid on-chain automatically. #BUILD4`);
+      await safeReply(reply.id, `@${reply.authorUsername} Verified! Score: ${verificationResult.score}/100 ✅\n\nYou're in the pool. Winners are picked every ${ENTRIES_PER_WINNER} entries — top scorers get ${rewardBnb} ${currency} on-chain. Keep watching! #BUILD4`);
     } else {
       await storage.updateTwitterSubmission(submission.id, {
         status: "rejected",
@@ -401,6 +417,8 @@ async function verifySubmission(submission: any, bounty: any, reply: TweetReply)
   }
 }
 
+const ENTRIES_PER_WINNER = 5;
+
 async function selectAndPayWinners(bounty: any) {
   const maxWinners = bounty.maxWinners || MAX_WINNERS_DEFAULT;
   const rewardBnb = bounty.rewardBnb || DEFAULT_REWARD_BNB;
@@ -414,20 +432,49 @@ async function selectAndPayWinners(bounty: any) {
   }
 
   const allSubmissions = await storage.getTwitterSubmissions(bounty.id);
+
+  const paidUserIds = new Set(
+    allSubmissions
+      .filter(s => s.status === "paid")
+      .map(s => s.twitterUserId)
+  );
+
   const verified = allSubmissions
     .filter(s => s.status === "verified" && s.walletAddress && s.verificationScore != null)
+    .filter(s => !paidUserIds.has(s.twitterUserId))
     .sort((a, b) => (b.verificationScore || 0) - (a.verificationScore || 0));
 
   if (verified.length === 0) return;
 
+  const distinctVerifiedAccounts = new Set(
+    allSubmissions
+      .filter(s => ["verified", "paid"].includes(s.status) && s.verificationScore != null)
+      .map(s => s.twitterUserId)
+  ).size;
+
+  const winnersEarned = Math.floor(distinctVerifiedAccounts / ENTRIES_PER_WINNER);
+  const winnersOwed = Math.max(0, winnersEarned - paidCount);
+
+  if (winnersOwed === 0) {
+    console.log(`[TwitterAgent] Bounty ${bounty.jobId}: ${distinctVerifiedAccounts} distinct verified accounts, ${paidCount} paid — need ${ENTRIES_PER_WINNER * (paidCount + 1)} unique verified accounts for next winner pick`);
+    return;
+  }
+
   const slotsRemaining = maxWinners - paidCount;
-  const winners = verified.slice(0, slotsRemaining);
+  const winnersThisRound = Math.min(winnersOwed, slotsRemaining);
+  const winners = verified.slice(0, winnersThisRound);
 
   for (const winner of winners) {
     const currentPaid = await storage.getPaidSubmissionCount(bounty.id);
     if (currentPaid >= maxWinners) {
       console.log(`[TwitterAgent] Bounty ${bounty.jobId} already at max winners, skipping remaining`);
       break;
+    }
+
+    if (paidUserIds.has(winner.twitterUserId)) {
+      console.log(`[TwitterAgent] @${winner.twitterHandle} already won this bounty, skipping`);
+      await storage.updateTwitterSubmission(winner.id, { status: "rejected", verificationReason: "Duplicate winner — each account can only win once per bounty" });
+      continue;
     }
 
     const paymentResult = await sendNativePayment(winner.walletAddress!, rewardBnb);
@@ -441,20 +488,23 @@ async function selectAndPayWinners(bounty: any) {
         paymentAmount: rewardBnb,
       });
 
+      paidUserIds.add(winner.twitterUserId);
+
       const newPaidCount = currentPaid + 1;
       await storage.updateTwitterBounty(bounty.id, {
         winnersCount: newPaidCount,
       });
 
       try {
-        const replyText = `Verified! ${rewardBnb} ${currency} sent to ${winner.walletAddress!.slice(0, 6)}...${winner.walletAddress!.slice(-4)}\n\nTX: ${explorerUrl}\n\nThank you for contributing to the autonomous agent economy. #BUILD4`;
+        const remaining = maxWinners - newPaidCount;
+        const replyText = `Winner! ${rewardBnb} ${currency} sent to ${winner.walletAddress!.slice(0, 6)}...${winner.walletAddress!.slice(-4)} 🏆\n\nTX: ${explorerUrl}\n\n${remaining > 0 ? `${remaining} more winner slots open — keep submitting!` : "All winner slots filled!"} #BUILD4`;
         const replyId = await replyToTweet(winner.tweetId, replyText);
         await storage.updateTwitterSubmission(winner.id, { replyTweetId: replyId });
       } catch (e: any) {
         console.error(`[TwitterAgent] Payment reply tweet failed:`, e.message);
       }
 
-      console.log(`[TwitterAgent] Paid @${winner.twitterHandle} ${rewardBnb} ${currency} for bounty ${bounty.jobId} (TX: ${paymentResult.txHash})`);
+      console.log(`[TwitterAgent] Paid @${winner.twitterHandle} ${rewardBnb} ${currency} for bounty ${bounty.jobId} (${newPaidCount}/${maxWinners} winners, TX: ${paymentResult.txHash})`);
     } else {
       console.error(`[TwitterAgent] Payment failed for @${winner.twitterHandle}: ${paymentResult.error}`);
       await storage.updateTwitterSubmission(winner.id, {
