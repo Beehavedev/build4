@@ -405,7 +405,7 @@ export async function registerRoutes(
       }
       const config = await storage.getTwitterAgentConfig();
       const reward = rewardBnb || config?.defaultBountyBudget || "0.02";
-      const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 3, 3);
+      const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 3, 10);
       const result = await postBountyTweet(
         jobId || `manual-${Date.now()}`,
         taskDescription,

@@ -441,13 +441,13 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
                     <Input
                       type="number"
                       min={1}
-                      max={3}
+                      max={10}
                       value={settingsForm.maxWinnersPerBounty}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, maxWinnersPerBounty: Math.min(3, Math.max(1, parseInt(e.target.value) || 3)) })}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, maxWinnersPerBounty: Math.min(10, Math.max(1, parseInt(e.target.value) || 3)) })}
                       className="bg-gray-800 border-gray-700 mt-1"
                       data-testid="input-max-winners"
                     />
-                    <p className="text-xs text-gray-600 mt-1">Maximum 3 winners allowed</p>
+                    <p className="text-xs text-gray-600 mt-1">Maximum 10 winners allowed</p>
                   </div>
                 </div>
                 <Button
@@ -488,7 +488,7 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
                       className="bg-gray-800 border-gray-700 mt-1"
                       data-testid="input-reward-bnb"
                     />
-                    <p className="text-xs text-gray-600 mt-1">~${(parseFloat(rewardBnb || "0") * 650).toFixed(0)} USD · 3 winners max</p>
+                    <p className="text-xs text-gray-600 mt-1">~${(parseFloat(rewardBnb || "0") * 650).toFixed(0)} USD per winner</p>
                   </div>
                   <Button
                     onClick={() => postBounty.mutate()}
