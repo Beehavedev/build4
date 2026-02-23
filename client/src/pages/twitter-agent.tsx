@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -100,7 +100,37 @@ interface TwitterSubmission {
 }
 
 export default function TwitterAgent() {
-  const [token, setToken] = useState<string | null>(() => sessionStorage.getItem("analytics_token"));
+  const [token, setToken] = useState<string | null>(null);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    const stored = sessionStorage.getItem("analytics_token");
+    if (!stored) {
+      setChecking(false);
+      return;
+    }
+    fetch("/api/twitter/status", { headers: { "x-analytics-token": stored } })
+      .then(res => {
+        if (res.ok) {
+          setToken(stored);
+        } else {
+          sessionStorage.removeItem("analytics_token");
+        }
+        setChecking(false);
+      })
+      .catch(() => {
+        sessionStorage.removeItem("analytics_token");
+        setChecking(false);
+      });
+  }, []);
+
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
+      </div>
+    );
+  }
 
   if (!token) {
     return <TwitterLoginGate onLogin={setToken} />;
