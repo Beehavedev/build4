@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { ZERC20_CONTRACTS, SUPPORTED_PRIVACY_CHAINS } from "@shared/schema";
 import { registerWeb4Routes } from "./web4-routes";
 import { registerServicesRoutes } from "./services-routes";
+import { preparePrivacyTransfer, generateProof, getProof, verifyCommitment } from "./zerc20-sdk";
 import { startBountyEngine } from "./bounty-engine";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
 import crypto from "crypto";
@@ -133,19 +134,34 @@ export async function registerRoutes(
     res.json({ contracts: ZERC20_CONTRACTS, chains: SUPPORTED_PRIVACY_CHAINS });
   });
 
+  app.post("/api/privacy/prepare", async (req: Request, res: Response) => {
+    try {
+      const { recipientAddress, chainId, tokenSymbol, amount } = req.body;
+      if (!recipientAddress || !chainId || !tokenSymbol || !amount) {
+        res.status(400).json({ error: "Missing required fields: recipientAddress, chainId, tokenSymbol, amount" });
+        return;
+      }
+      const prepared = await preparePrivacyTransfer({
+        recipientAddress,
+        chainId: Number(chainId),
+        tokenSymbol,
+        amount: String(amount),
+      });
+      res.json(prepared);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
   app.post("/api/privacy/transfers", async (req: Request, res: Response) => {
     try {
-      const { agentId, chainId, tokenSymbol, tokenAddress, burnAddress, recipientAddress, amount, secretHint, walletAddress } = req.body;
-      if (!agentId || !chainId || !tokenSymbol || !tokenAddress || !burnAddress || !recipientAddress || !amount) {
+      const { agentId, chainId, tokenSymbol, tokenAddress, recipientAddress, amount, walletAddress } = req.body;
+      if (!agentId || !chainId || !tokenSymbol || !tokenAddress || !recipientAddress || !amount) {
         res.status(400).json({ error: "Missing required fields" });
         return;
       }
       if (!/^0x[a-fA-F0-9]{40}$/.test(recipientAddress)) {
         res.status(400).json({ error: "Invalid recipient address" });
-        return;
-      }
-      if (!/^0x[a-fA-F0-9]{40}$/.test(burnAddress)) {
-        res.status(400).json({ error: "Invalid burn address" });
         return;
       }
       const parsedAmount = parseFloat(amount);
@@ -162,22 +178,101 @@ export async function registerRoutes(
         res.status(403).json({ error: "Not authorized for this agent" });
         return;
       }
+      const prepared = await preparePrivacyTransfer({
+        recipientAddress,
+        chainId: Number(chainId),
+        tokenSymbol,
+        amount: String(amount),
+      });
       const transfer = await storage.createPrivacyTransfer({
         agentId,
-        chainId: parseInt(chainId),
+        chainId: Number(chainId),
         tokenSymbol,
         tokenAddress,
-        burnAddress,
+        burnAddress: prepared.burnAddress,
         recipientAddress,
         amount: String(amount),
         status: "pending",
-        secretHint: secretHint || null,
+        secretHint: prepared.commitmentHash,
         depositTxHash: null,
         withdrawalTxHash: null,
         proofId: null,
         errorMessage: null,
       });
-      res.json(transfer);
+      res.json({
+        ...transfer,
+        secret: prepared.secret,
+        commitment: prepared.commitmentHash,
+        nullifier: prepared.nullifierHash,
+        burnAddress: prepared.burnAddress,
+        verifierAddress: prepared.verifierAddress,
+        hubAddress: prepared.hubAddress,
+        _securityNote: "Store the secret securely on your device. It will not be stored on the server and cannot be recovered.",
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/privacy/transfer/:id/prove", async (req: Request, res: Response) => {
+    try {
+      const { secret } = req.body;
+      const transfer = await storage.getPrivacyTransfer(req.params.id);
+      if (!transfer) {
+        res.status(404).json({ error: "Transfer not found" });
+        return;
+      }
+      if (transfer.status !== "deposited" && transfer.status !== "pending") {
+        res.status(400).json({ error: `Cannot generate proof for transfer in '${transfer.status}' status` });
+        return;
+      }
+      if (!secret) {
+        res.status(400).json({ error: "Secret is required for proof generation. Provide the secret you received when creating the transfer." });
+        return;
+      }
+      await storage.updatePrivacyTransferStatus(req.params.id, "proving");
+      const proofResult = await generateProof(
+        req.params.id,
+        transfer.recipientAddress,
+        secret,
+        transfer.chainId,
+        transfer.amount,
+        transfer.tokenSymbol
+      );
+      if (proofResult.status === "generated") {
+        const updated = await storage.updatePrivacyTransferStatus(
+          req.params.id, "completed", undefined, proofResult.proofId
+        );
+        res.json({ transfer: updated, proof: proofResult });
+      } else {
+        await storage.updatePrivacyTransferStatus(
+          req.params.id, "failed", undefined, undefined, proofResult.error
+        );
+        res.status(500).json({ error: proofResult.error, proof: proofResult });
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/privacy/proof/:proofId", (req: Request, res: Response) => {
+    const proof = getProof(req.params.proofId);
+    if (!proof) {
+      res.status(404).json({ error: "Proof not found" });
+      return;
+    }
+    res.json(proof);
+  });
+
+  app.post("/api/privacy/verify", async (req: Request, res: Response) => {
+    try {
+      const { recipientAddress, secret, chainId, burnAddress } = req.body;
+      if (!recipientAddress || !secret || !chainId || !burnAddress) {
+        res.status(400).json({ error: "Missing required fields" });
+        return;
+      }
+      const result = await verifyCommitment(recipientAddress, secret, Number(chainId), burnAddress);
+      res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
