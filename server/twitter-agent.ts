@@ -499,6 +499,8 @@ async function processReplies(bounty: any) {
       maxId = reply.id;
     }
 
+    repliedToMentions.add(reply.id);
+
     const existing = await storage.getTwitterSubmissionByTweetId(reply.id);
     if (existing) continue;
 
