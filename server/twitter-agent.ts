@@ -336,7 +336,7 @@ async function processReplies(bounty: any) {
         if (existingFromUser.status === "paid") {
           await safeReply(reply.id, `@${reply.authorUsername} You already won this bounty! Each account can only win once per bounty. Stay tuned for the next one.`);
         } else {
-          await safeReply(reply.id, `@${reply.authorUsername} We already have your submission in the queue! Sit tight — winners are selected in batches as more entries come in.`);
+          await safeReply(reply.id, `@${reply.authorUsername} We already have your submission! Sit tight — results coming soon.`);
         }
         console.log(`[TwitterAgent] Duplicate submission from @${reply.authorUsername} (userId: ${reply.authorId}), skipped`);
         continue;
@@ -400,7 +400,7 @@ async function verifySubmission(submission: any, bounty: any, reply: TweetReply)
         status: "verified",
       });
       console.log(`[TwitterAgent] Verified @${reply.authorUsername} (score: ${verificationResult.score})`);
-      await safeReply(reply.id, `@${reply.authorUsername} Verified! Score: ${verificationResult.score}/100 ✅\n\nYou're in the pool. Winners are picked every ${ENTRIES_PER_WINNER} entries — top scorers get ${rewardBnb} ${currency} on-chain. Keep watching! #BUILD4`);
+      await safeReply(reply.id, `@${reply.authorUsername} Verified! Score: ${verificationResult.score}/100. You're in the running for ${rewardBnb} ${currency}. Stay tuned.`);
     } else {
       await storage.updateTwitterSubmission(submission.id, {
         status: "rejected",
