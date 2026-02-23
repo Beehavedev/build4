@@ -217,7 +217,8 @@ export async function runTwitterAgentCycle() {
 
 async function safeReply(tweetId: string, text: string): Promise<string | null> {
   try {
-    const replyId = await replyToTweet(tweetId, text);
+    const safeText = text.length > 280 ? text.substring(0, 277) + "..." : text;
+    const replyId = await replyToTweet(tweetId, safeText);
     return replyId;
   } catch (e: any) {
     console.error(`[TwitterAgent] Reply failed:`, e.message);
@@ -353,7 +354,7 @@ async function processReplies(bounty: any) {
       });
 
       if (!walletAddress) {
-        await safeReply(reply.id, `@${reply.authorUsername} Looks like a submission but no wallet address found. Reply again with your proof + 0x wallet address so we can pay you if you win. Payments are automatic and on-chain.`);
+        await safeReply(reply.id, `@${reply.authorUsername} No wallet found! Reply with your proof + 0x wallet address so we can pay you if you win.`);
         console.log(`[TwitterAgent] Asked @${reply.authorUsername} for wallet address`);
       } else {
         pendingVerifications.push({ submission, reply });
@@ -405,7 +406,7 @@ async function verifySubmission(submission: any, bounty: any, reply: TweetReply)
         status: "rejected",
       });
       console.log(`[TwitterAgent] Rejected @${reply.authorUsername} (score: ${verificationResult.score})`);
-      await safeReply(reply.id, `@${reply.authorUsername} Thanks for submitting! Your proof scored ${verificationResult.score}/100 — below our ${minScore} threshold.\n\n${verificationResult.reason}\n\nFeel free to try again with stronger proof. We're looking for detailed, verifiable work. 💪`);
+      await safeReply(reply.id, `@${reply.authorUsername} Scored ${verificationResult.score}/100 — below our ${minScore} threshold. ${verificationResult.reason}\n\nTry again with stronger proof!`);
     }
   } catch (e: any) {
     console.error(`[TwitterAgent] Verification error:`, e.message);
@@ -497,8 +498,9 @@ async function selectAndPayWinners(bounty: any) {
 
       try {
         const remaining = maxWinners - newPaidCount;
-        const replyText = `Winner! ${rewardBnb} ${currency} sent to ${winner.walletAddress!.slice(0, 6)}...${winner.walletAddress!.slice(-4)} 🏆\n\nTX: ${explorerUrl}\n\n${remaining > 0 ? `${remaining} more winner slots open — keep submitting!` : "All winner slots filled!"} #BUILD4`;
-        const replyId = await replyToTweet(winner.tweetId, replyText);
+        const tail = remaining > 0 ? `${remaining} more slots open!` : "All slots filled!";
+        const replyText = `@${winner.twitterHandle} Paid! ${rewardBnb} ${currency} sent.\n\nTX: ${explorerUrl}\n\n${tail} #BUILD4`;
+        const replyId = await safeReply(winner.tweetId, replyText);
         await storage.updateTwitterSubmission(winner.id, { replyTweetId: replyId });
       } catch (e: any) {
         console.error(`[TwitterAgent] Payment reply tweet failed:`, e.message);
@@ -579,16 +581,13 @@ export async function postBountyTweet(jobId: string, taskDescription: string, re
   const currency = getChainCurrency();
   const reward = rewardBnb || DEFAULT_REWARD_BNB;
 
-  const tweetText = `BOUNTY: ${taskDescription}
-
-Reward: ${reward} ${currency} per winner (max ${maxWinners} winners)
-How to claim:
-1. Complete the task
-2. Reply with proof + your 0x wallet address
-3. AI verifies & ranks submissions
-4. Top ${maxWinners} auto-paid on-chain
-
-#BUILD4 #BNBChain #CryptoBounty #Web3Jobs`;
+  const header = `BOUNTY [${reward} ${currency} x ${maxWinners} winners]`;
+  const footer = `Reply with proof + 0x wallet. AI verifies, top scorers get paid on-chain.\n\n#BUILD4 #BNBChain`;
+  const maxTaskLen = 280 - header.length - footer.length - 4;
+  const trimmedTask = taskDescription.length > maxTaskLen
+    ? taskDescription.substring(0, maxTaskLen - 3) + "..."
+    : taskDescription;
+  const tweetText = `${header}\n\n${trimmedTask}\n\n${footer}`;
 
   const result = await postTweet(tweetText);
 
