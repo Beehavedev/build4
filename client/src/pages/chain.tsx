@@ -40,7 +40,7 @@ function SubtleGrid() {
       canvas.width = window.innerWidth;
       canvas.height = document.documentElement.scrollHeight;
 
-      ctx.strokeStyle = "rgba(59, 130, 246, 0.03)";
+      ctx.strokeStyle = "rgba(45, 170, 120, 0.03)";
       ctx.lineWidth = 0.5;
       const gap = 60;
       for (let x = 0; x < canvas.width; x += gap) {
@@ -129,7 +129,7 @@ const architectureLayers = [
   {
     layer: "Execution Layer",
     icon: Cpu,
-    color: "border-blue-500/30 bg-blue-500/5",
+    color: "border-emerald-500/30 bg-emerald-500/5",
     badge: "BUILD4 Chain",
     items: [
       "Modified Geth client optimized for agent transactions",
@@ -255,7 +255,7 @@ export default function Chain() {
                 <span className="font-mono text-sm">BUILD4</span>
               </button>
             </Link>
-            <Badge variant="outline" className="border-blue-500/40 text-blue-400 font-mono text-xs">
+            <Badge variant="outline" className="border-primary/40 text-primary font-mono text-xs">
               L2 ROLLUP
             </Badge>
           </div>
@@ -265,7 +265,7 @@ export default function Chain() {
           <div className="max-w-4xl mx-auto text-center">
             <FadeIn>
               <div className="flex items-center justify-center gap-3 mb-6">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center">
                   <Boxes className="w-6 h-6 text-white" />
                 </div>
               </div>
@@ -273,7 +273,7 @@ export default function Chain() {
             <FadeIn index={1}>
               <h1 className="text-5xl md:text-6xl font-bold mb-6 tracking-tight">
                 <span className="text-white">BUILD4</span>{" "}
-                <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">Chain</span>
+                <span className="text-primary">Chain</span>
               </h1>
             </FadeIn>
             <FadeIn index={2}>
@@ -290,7 +290,7 @@ export default function Chain() {
             <FadeIn index={4}>
               <div className="flex items-center justify-center gap-4 flex-wrap">
                 <a href="#architecture" data-testid="link-architecture">
-                  <Button className="bg-blue-600 text-white font-mono gap-2" data-testid="button-view-architecture">
+                  <Button className="bg-primary text-primary-foreground font-mono gap-2" data-testid="button-view-architecture">
                     View Architecture <ChevronRight className="w-4 h-4" />
                   </Button>
                 </a>
@@ -335,8 +335,8 @@ export default function Chain() {
               {advantages.map((adv, i) => (
                 <FadeIn key={adv.title} index={i}>
                   <Card className="bg-white/[0.02] border-white/5 p-6 h-full" data-testid={`card-advantage-${i}`}>
-                    <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center mb-4">
-                      <adv.icon className="w-5 h-5 text-blue-400" />
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
+                      <adv.icon className="w-5 h-5 text-primary/80" />
                     </div>
                     <h3 className="text-base font-semibold text-white mb-2">{adv.title}</h3>
                     <p className="text-sm text-gray-500 leading-relaxed">{adv.desc}</p>
@@ -402,7 +402,7 @@ export default function Chain() {
                   <thead>
                     <tr className="border-b border-white/10">
                       <th className="text-left py-3 px-4 text-xs font-mono text-gray-500 uppercase">Feature</th>
-                      <th className="text-left py-3 px-4 text-xs font-mono text-blue-400 uppercase">BUILD4 Chain</th>
+                      <th className="text-left py-3 px-4 text-xs font-mono text-primary uppercase">BUILD4 Chain</th>
                       <th className="text-left py-3 px-4 text-xs font-mono text-gray-500 uppercase">BNB Chain</th>
                       <th className="text-left py-3 px-4 text-xs font-mono text-gray-500 uppercase">Ethereum</th>
                       <th className="text-left py-3 px-4 text-xs font-mono text-gray-500 uppercase">Solana</th>
@@ -412,7 +412,7 @@ export default function Chain() {
                     {comparisonRows.map((row) => (
                       <tr key={row.feature} className="border-b border-white/5" data-testid={`row-comparison-${row.feature}`}>
                         <td className="py-3 px-4 text-sm text-gray-400">{row.feature}</td>
-                        <td className="py-3 px-4 text-sm text-blue-300 font-medium">{row.build4}</td>
+                        <td className="py-3 px-4 text-sm text-primary font-medium">{row.build4}</td>
                         <td className="py-3 px-4 text-sm text-gray-500">{row.bnb}</td>
                         <td className="py-3 px-4 text-sm text-gray-500">{row.eth}</td>
                         <td className="py-3 px-4 text-sm text-gray-500">{row.solana}</td>
@@ -455,8 +455,8 @@ export default function Chain() {
                 </Card>
               </FadeIn>
               <FadeIn index={1}>
-                <Card className="bg-blue-500/[0.03] border-blue-500/10 p-6">
-                  <h3 className="text-base font-semibold text-blue-400 mb-4 flex items-center gap-2">
+                <Card className="bg-emerald-500/[0.03] border-emerald-500/10 p-6">
+                  <h3 className="text-base font-semibold text-primary mb-4 flex items-center gap-2">
                     <Boxes className="w-4 h-4" /> BUILD4 Chain (L2)
                   </h3>
                   <ul className="space-y-3">
@@ -468,7 +468,7 @@ export default function Chain() {
                       "Dedicated blockspace — 100% reserved for agent operations",
                     ].map((item) => (
                       <li key={item} className="text-sm text-gray-300 flex items-start gap-2">
-                        <span className="text-blue-400 mt-0.5">+</span> {item}
+                        <span className="text-primary mt-0.5">+</span> {item}
                       </li>
                     ))}
                   </ul>
@@ -501,7 +501,7 @@ export default function Chain() {
                           phase.status === "live"
                             ? "border-emerald-500/40 text-emerald-400"
                             : phase.status === "upcoming"
-                              ? "border-blue-500/40 text-blue-400"
+                              ? "border-primary/40 text-primary"
                               : "border-white/10 text-gray-500"
                         }`}
                       >
@@ -536,7 +536,7 @@ export default function Chain() {
               <FadeIn index={0}>
                 <Card className="bg-white/[0.02] border-white/5 p-6">
                   <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-                    <Cpu className="w-4 h-4 text-blue-400" /> Execution Client
+                    <Cpu className="w-4 h-4 text-primary" /> Execution Client
                   </h3>
                   <div className="space-y-2 font-mono text-xs text-gray-500">
                     <div className="flex justify-between"><span>Base</span><span className="text-gray-300">Modified Geth (Go)</span></div>
@@ -550,7 +550,7 @@ export default function Chain() {
               <FadeIn index={1}>
                 <Card className="bg-white/[0.02] border-white/5 p-6">
                   <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-blue-400" /> Sequencer
+                    <Activity className="w-4 h-4 text-primary" /> Sequencer
                   </h3>
                   <div className="space-y-2 font-mono text-xs text-gray-500">
                     <div className="flex justify-between"><span>Block Time</span><span className="text-gray-300">1,000ms</span></div>
@@ -564,7 +564,7 @@ export default function Chain() {
               <FadeIn index={2}>
                 <Card className="bg-white/[0.02] border-white/5 p-6">
                   <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-blue-400" /> Settlement
+                    <Shield className="w-4 h-4 text-primary" /> Settlement
                   </h3>
                   <div className="space-y-2 font-mono text-xs text-gray-500">
                     <div className="flex justify-between"><span>L1 Chain</span><span className="text-gray-300">BNB Chain (ChainID 56)</span></div>
@@ -578,7 +578,7 @@ export default function Chain() {
               <FadeIn index={3}>
                 <Card className="bg-white/[0.02] border-white/5 p-6">
                   <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-                    <GitBranch className="w-4 h-4 text-blue-400" /> Agent Precompiles
+                    <GitBranch className="w-4 h-4 text-primary" /> Agent Precompiles
                   </h3>
                   <div className="space-y-2 font-mono text-xs text-gray-500">
                     <div className="flex justify-between"><span>agentRegister()</span><span className="text-gray-300">100 gas</span></div>
@@ -596,7 +596,7 @@ export default function Chain() {
         <section className="py-24 px-6">
           <div className="max-w-3xl mx-auto text-center">
             <FadeIn>
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center mx-auto mb-8">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center mx-auto mb-8">
                 <Rocket className="w-8 h-8 text-white" />
               </div>
             </FadeIn>
