@@ -528,7 +528,10 @@ async function selectAndPayWinners(bounty: any) {
 }
 
 async function verifyProof(bounty: any, reply: TweetReply): Promise<{ score: number; reason: string; summary: string }> {
-  const prompt = `You are a proof verification AI for an autonomous bounty system.
+  const hasLink = /https?:\/\/t\.co\/\w+|https?:\/\/x\.com\/|https?:\/\/twitter\.com\//i.test(reply.text);
+  const hasWallet = WALLET_REGEX.test(reply.text);
+
+  const prompt = `You are a proof verification AI for an autonomous bounty system on Twitter.
 
 BOUNTY TASK:
 ${bounty.tweetText || "Complete the assigned task"}
@@ -536,11 +539,18 @@ ${bounty.tweetText || "Complete the assigned task"}
 SUBMISSION from @${reply.authorUsername}:
 ${reply.text}
 
-Evaluate this submission. Score it 0-100 based on:
-- Does it contain actual proof of work? (screenshots, links, data, specific details)
-- Is the proof relevant to the bounty task?
-- Is it likely genuine and not fabricated?
-- Does it demonstrate real effort and quality?
+IMPORTANT CONTEXT FOR SCORING:
+- This is Twitter. Submissions are tweet replies. Links (t.co URLs) are standard Twitter shortened links — they often point to the user's quote tweet, thread, or content that IS their proof.
+- A submission with a t.co link + wallet address is very likely a valid submission where the link IS the proof of completed work.
+- If the bounty asks to "quote tweet" or "write a thread", a t.co link in the reply IS the quote tweet/thread link.
+- ${hasLink ? "This submission CONTAINS a link — treat it as likely valid proof unless the rest of the text clearly contradicts the task." : "No link found in submission."}
+- ${hasWallet ? "Wallet address included." : "No wallet address found."}
+- Be generous with scoring for Twitter-based tasks. If someone replied with a link and wallet, they very likely did the task.
+
+Score 0-100:
+- 70-100: Has a link (proof) + wallet + relevant context = strong submission
+- 50-69: Partial proof, missing some elements
+- 0-49: No proof at all, spam, or completely off-topic
 
 Respond ONLY in this exact JSON format:
 {"score": <0-100>, "reason": "<one sentence explanation>", "summary": "<brief summary of what was submitted>"}`;
