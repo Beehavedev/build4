@@ -194,12 +194,23 @@ export async function runTwitterAgentCycle() {
   }
 }
 
+async function safeReply(tweetId: string, text: string): Promise<string | null> {
+  try {
+    const replyId = await replyToTweet(tweetId, text);
+    return replyId;
+  } catch (e: any) {
+    console.error(`[TwitterAgent] Reply failed:`, e.message);
+    return null;
+  }
+}
+
 async function processReplies(bounty: any) {
   const replies = await getReplies(bounty.tweetId!, bounty.sinceId || undefined);
 
   if (replies.length === 0) return;
 
   let maxId = bounty.sinceId || "0";
+  const currency = getChainCurrency();
 
   const pendingVerifications: Array<{ submission: any; reply: TweetReply }> = [];
 
@@ -225,7 +236,10 @@ async function processReplies(bounty: any) {
       status: walletAddress ? "pending_verification" : "no_wallet",
     });
 
-    if (walletAddress) {
+    if (!walletAddress) {
+      await safeReply(reply.id, `@${reply.authorUsername} Thanks for your interest! To be eligible for the ${currency} reward, please reply again with your proof of work + your 0x wallet address so we can send payment if you win. 🧠`);
+      console.log(`[TwitterAgent] Asked @${reply.authorUsername} for wallet address`);
+    } else {
       pendingVerifications.push({ submission, reply });
     }
   }
@@ -246,6 +260,9 @@ async function processReplies(bounty: any) {
 async function verifySubmission(submission: any, bounty: any, reply: TweetReply) {
   const config = await storage.getTwitterAgentConfig();
   const minScore = config?.minVerificationScore || 60;
+  const currency = getChainCurrency();
+  const rewardBnb = bounty.rewardBnb || DEFAULT_REWARD_BNB;
+  const maxWinners = bounty.maxWinners || MAX_WINNERS_DEFAULT;
 
   try {
     const verificationResult = await verifyProof(bounty, reply);
@@ -261,11 +278,13 @@ async function verifySubmission(submission: any, bounty: any, reply: TweetReply)
         status: "verified",
       });
       console.log(`[TwitterAgent] Verified @${reply.authorUsername} (score: ${verificationResult.score})`);
+      await safeReply(reply.id, `@${reply.authorUsername} Submission received and verified! Score: ${verificationResult.score}/100 ✅\n\n${verificationResult.reason}\n\nYou're in the running for ${rewardBnb} ${currency}. Top ${maxWinners} submissions get paid on-chain automatically. #BUILD4`);
     } else {
       await storage.updateTwitterSubmission(submission.id, {
         status: "rejected",
       });
       console.log(`[TwitterAgent] Rejected @${reply.authorUsername} (score: ${verificationResult.score})`);
+      await safeReply(reply.id, `@${reply.authorUsername} Thanks for submitting! Your proof scored ${verificationResult.score}/100 — below our ${minScore} threshold.\n\n${verificationResult.reason}\n\nFeel free to try again with stronger proof. We're looking for detailed, verifiable work. 💪`);
     }
   } catch (e: any) {
     console.error(`[TwitterAgent] Verification error:`, e.message);
@@ -273,6 +292,7 @@ async function verifySubmission(submission: any, bounty: any, reply: TweetReply)
       status: "verification_failed",
       verificationReason: e.message,
     });
+    await safeReply(reply.id, `@${reply.authorUsername} Got your submission! Our AI verification is temporarily busy — we'll review it shortly. Hang tight. 🔄`);
   }
 }
 
