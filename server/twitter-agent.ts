@@ -1079,17 +1079,22 @@ Score this submission. JSON only.`;
   };
 }
 
-export async function postBountyTweet(jobId: string, taskDescription: string, rewardBnb: string, maxWinners: number = MAX_WINNERS_DEFAULT): Promise<{ tweetId: string; tweetUrl: string }> {
+export async function postBountyTweet(jobId: string, taskDescription: string, rewardBnb: string, maxWinners: number = MAX_WINNERS_DEFAULT, customTweetText?: string, verificationCriteria?: string): Promise<{ tweetId: string; tweetUrl: string }> {
   const currency = getChainCurrency();
   const reward = rewardBnb || DEFAULT_REWARD_BNB;
 
-  const header = `BOUNTY [${reward} ${currency} x ${maxWinners} winners]`;
-  const footer = `Reply with proof + 0x wallet. AI verifies, top scorers get paid on-chain.\n\n#BUILD4 #BNBChain`;
-  const maxTaskLen = 280 - header.length - footer.length - 4;
-  const trimmedTask = taskDescription.length > maxTaskLen
-    ? taskDescription.substring(0, maxTaskLen - 3) + "..."
-    : taskDescription;
-  const tweetText = `${header}\n\n${trimmedTask}\n\n${footer}`;
+  let tweetText: string;
+  if (customTweetText) {
+    tweetText = customTweetText.length > 280 ? customTweetText.substring(0, 277) + "..." : customTweetText;
+  } else {
+    const header = `BOUNTY [${reward} ${currency} x ${maxWinners} winners]`;
+    const footer = `Reply with proof + 0x wallet. AI verifies, top scorers get paid on-chain.\n\n#BUILD4 #BNBChain`;
+    const maxTaskLen = 280 - header.length - footer.length - 4;
+    const trimmedTask = taskDescription.length > maxTaskLen
+      ? taskDescription.substring(0, maxTaskLen - 3) + "..."
+      : taskDescription;
+    tweetText = `${header}\n\n${trimmedTask}\n\n${footer}`;
+  }
 
   const result = await postTweet(tweetText);
 
