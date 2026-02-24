@@ -285,6 +285,8 @@ async function safeReply(tweetId: string, text: string): Promise<string | null> 
   }
 }
 
+const repliedConversations = new Set<string>();
+
 async function processSupportMentions() {
   try {
     const config = await storage.getSupportAgentConfig();
@@ -312,6 +314,13 @@ async function processSupportMentions() {
       }
 
       if (repliedToMentions.has(mention.id) || repliedSet.has(mention.id) || bountyRepliedIds.has(mention.id)) {
+        continue;
+      }
+
+      if (mention.conversationId && repliedConversations.has(mention.conversationId)) {
+        console.log(`[SupportAgent] Skipping mention ${mention.id} — already replied in conversation ${mention.conversationId}`);
+        repliedToMentions.add(mention.id);
+        repliedSet.add(mention.id);
         continue;
       }
 
@@ -351,6 +360,9 @@ async function processSupportMentions() {
 
       repliedToMentions.add(mention.id);
       repliedSet.add(mention.id);
+      if (mention.conversationId) {
+        repliedConversations.add(mention.conversationId);
+      }
       console.log(`[SupportAgent] Ticket created [${category}/${priority}] for @${mention.authorUsername}: ${summary.slice(0, 80)}`);
     }
 
@@ -361,6 +373,12 @@ async function processSupportMentions() {
       lastMentionId: newMaxId,
       repliedTweetIds: recentIds.join(","),
     });
+
+    if (repliedConversations.size > 1000) {
+      const arr = Array.from(repliedConversations);
+      const toRemove = arr.slice(0, arr.length - 500);
+      toRemove.forEach(id => repliedConversations.delete(id));
+    }
 
   } catch (e: any) {
     console.error("[SupportAgent] Mention processing failed:", e.message);

@@ -627,6 +627,7 @@ const MAX_MENTION_REPLIES_PER_CYCLE = 3;
 const MAX_REPLIES_PER_USER_PER_CYCLE = 1;
 const userReplyCooldowns = new Map<string, number>();
 const USER_COOLDOWN_MS = 10 * 60 * 1000;
+const repliedConversations = new Set<string>();
 
 async function processMentions() {
   const mentions = await getMentions(lastMentionId);
@@ -634,6 +635,11 @@ async function processMentions() {
 
   const activeBounties = await storage.getTwitterBounties("posted");
   const bountyTweetIds = new Set(activeBounties.map(b => b.tweetId).filter(Boolean));
+
+  const supportConfig = await storage.getSupportAgentConfig();
+  const supportRepliedIds = new Set<string>(
+    supportConfig?.repliedTweetIds ? supportConfig.repliedTweetIds.split(",").filter(Boolean) : []
+  );
 
   let newMaxId = lastMentionId || "0";
   let repliesSent = 0;
@@ -645,7 +651,13 @@ async function processMentions() {
       newMaxId = mention.id;
     }
 
-    if (repliedToMentions.has(mention.id)) continue;
+    if (repliedToMentions.has(mention.id) || supportRepliedIds.has(mention.id)) continue;
+
+    if (mention.conversationId && repliedConversations.has(mention.conversationId)) {
+      console.log(`[TwitterAgent] Skipping mention ${mention.id} — already replied in conversation ${mention.conversationId}`);
+      repliedToMentions.add(mention.id);
+      continue;
+    }
 
     if (repliesSent >= MAX_MENTION_REPLIES_PER_CYCLE) {
       repliedToMentions.add(mention.id);
@@ -685,6 +697,9 @@ async function processMentions() {
         usersRepliedThisCycle.set(userKey, userCount + 1);
         userReplyCooldowns.set(userKey, now);
         logReplyForLearning(replyId, mention.authorUsername, mention.text, replyText);
+        if (mention.conversationId) {
+          repliedConversations.add(mention.conversationId);
+        }
       }
       repliedToMentions.add(mention.id);
     } catch (e: any) {
@@ -699,6 +714,12 @@ async function processMentions() {
     for (const [key, time] of userReplyCooldowns) {
       if (time < cutoff) userReplyCooldowns.delete(key);
     }
+  }
+
+  if (repliedConversations.size > 1000) {
+    const arr = Array.from(repliedConversations);
+    const toRemove = arr.slice(0, arr.length - 500);
+    toRemove.forEach(id => repliedConversations.delete(id));
   }
 
   lastMentionId = newMaxId;

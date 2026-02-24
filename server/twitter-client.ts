@@ -149,6 +149,7 @@ export async function getMentions(sinceId?: string): Promise<TweetReply[]> {
       authorId: tweet.author_id || "",
       authorUsername: users.get(tweet.author_id || "") || "unknown",
       createdAt: tweet.created_at,
+      conversationId: (tweet as any).conversation_id || undefined,
     });
   }
 
