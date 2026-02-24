@@ -336,7 +336,7 @@ async function collectInferenceFeeOnchain(agent: Agent, inferenceRequest: any): 
   if (platformMarkup <= 0n) return;
 
   await ensureAgentRegisteredOnchain(agent);
-  const feeResult = await collectFeeAcrossAllChains(agent.id, platformMarkup.toString(), "inference");
+  const feeResult = await collectFeeAcrossAllChains(agent.id, platformMarkup.toString(), "inference", getAgentChain(agent));
   if (feeResult.success && feeResult.txHash) {
     log(`[Agent ${agent.name}] Inference fee collected on-chain: ${getExplorerUrl(feeResult.txHash)}`, "agent-runner");
     const recentRevenue = await storage.getRecentPlatformRevenueForAgent(agent.id, "inference");
@@ -539,7 +539,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         if (onchainEnabled) {
           const agentChain = getAgentChain(agent);
           await ensureAgentRegisteredOnchain(agent);
-          const feeResult = await collectFeeAcrossAllChains(agent.id, listingFee.toString(), "skill_listing");
+          const feeResult = await collectFeeAcrossAllChains(agent.id, listingFee.toString(), "skill_listing", agentChain);
           if (feeResult.success && feeResult.txHash) {
             txHash = feeResult.txHash;
             chainIdVal = feeResult.chainId;
@@ -621,7 +621,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
             }
 
             if (platformFee > 0n) {
-              const feeResult = await collectFeeAcrossAllChains(agent.id, platformFee.toString(), "skill_purchase");
+              const feeResult = await collectFeeAcrossAllChains(agent.id, platformFee.toString(), "skill_purchase", agentChain);
               if (feeResult.success && feeResult.txHash) {
                 feeTxHash = feeResult.txHash;
                 feeChainId = feeResult.chainId;
@@ -684,7 +684,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         let chainIdVal: number | undefined;
         if (onchainEnabled) {
           await ensureAgentRegisteredOnchain(agent);
-          const feeResult = await collectFeeAcrossAllChains(agent.id, evolutionFee.toString(), "evolution");
+          const feeResult = await collectFeeAcrossAllChains(agent.id, evolutionFee.toString(), "evolution", getAgentChain(agent));
           if (feeResult.success && feeResult.txHash) {
             txHash = feeResult.txHash;
             chainIdVal = feeResult.chainId;
@@ -749,7 +749,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           if (onchainEnabled) {
             await ensureAgentRegisteredOnchain(agent);
             if (creationFee > 0n) {
-              const feeResult = await collectFeeAcrossAllChains(agent.id, creationFee.toString(), "agent_creation");
+              const feeResult = await collectFeeAcrossAllChains(agent.id, creationFee.toString(), "agent_creation", getAgentChain(agent));
               if (feeResult.success && feeResult.txHash) {
                 creationFeeTxHash = feeResult.txHash;
                 creationFeeChainId = feeResult.chainId;
@@ -758,7 +758,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
               }
             }
             if (replicationFee > 0n) {
-              const feeResult = await collectFeeAcrossAllChains(agent.id, replicationFee.toString(), "replication");
+              const feeResult = await collectFeeAcrossAllChains(agent.id, replicationFee.toString(), "replication", getAgentChain(agent));
               if (feeResult.success && feeResult.txHash) {
                 replicationFeeTxHash = feeResult.txHash;
                 replicationFeeChainId = feeResult.chainId;

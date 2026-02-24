@@ -595,13 +595,19 @@ export async function collectFeeOnchainMultiChain(agentDbId: string, chainKey: s
   return result;
 }
 
-export async function collectFeeAcrossAllChains(agentDbId: string, feeAmountWei: string, feeType: string): Promise<OnchainResult> {
+export async function collectFeeAcrossAllChains(agentDbId: string, feeAmountWei: string, feeType: string, preferredChain?: string): Promise<OnchainResult> {
+  if (multiChainConnections.size === 0) initMultiChain();
+
+  if (preferredChain && preferredChain !== "bnbMainnet") {
+    const preferredResult = await collectFeeOnchainMultiChain(agentDbId, preferredChain, feeAmountWei, feeType);
+    if (preferredResult.success) return preferredResult;
+  }
+
   const primaryResult = await collectFeeOnchain(agentDbId, feeAmountWei, feeType);
   if (primaryResult.success) return primaryResult;
 
-  if (multiChainConnections.size === 0) initMultiChain();
-
   for (const [chainKey] of multiChainConnections) {
+    if (chainKey === preferredChain) continue;
     const result = await collectFeeOnchainMultiChain(agentDbId, chainKey, feeAmountWei, feeType);
     if (result.success) return result;
   }
