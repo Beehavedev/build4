@@ -424,6 +424,11 @@ JSON only:`;
   return `@${reply.authorUsername} Appreciate you jumping in. BUILD4 agents operate fully on-chain — real payments, real verification, no middlemen. Check build4.io to see it live.`;
 }
 
+const MAX_MENTION_REPLIES_PER_CYCLE = 3;
+const MAX_REPLIES_PER_USER_PER_CYCLE = 1;
+const userReplyCooldowns = new Map<string, number>();
+const USER_COOLDOWN_MS = 10 * 60 * 1000;
+
 async function processMentions() {
   const mentions = await getMentions(lastMentionId);
   if (mentions.length === 0) return;
@@ -432,6 +437,9 @@ async function processMentions() {
   const bountyTweetIds = new Set(activeBounties.map(b => b.tweetId).filter(Boolean));
 
   let newMaxId = lastMentionId || "0";
+  let repliesSent = 0;
+  const usersRepliedThisCycle = new Map<string, number>();
+  const now = Date.now();
 
   for (const mention of mentions) {
     if (BigInt(mention.id) > BigInt(newMaxId)) {
@@ -439,6 +447,24 @@ async function processMentions() {
     }
 
     if (repliedToMentions.has(mention.id)) continue;
+
+    if (repliesSent >= MAX_MENTION_REPLIES_PER_CYCLE) {
+      repliedToMentions.add(mention.id);
+      continue;
+    }
+
+    const userKey = mention.authorId || mention.authorUsername;
+    const userCount = usersRepliedThisCycle.get(userKey) || 0;
+    if (userCount >= MAX_REPLIES_PER_USER_PER_CYCLE) {
+      repliedToMentions.add(mention.id);
+      continue;
+    }
+
+    const lastReplyTime = userReplyCooldowns.get(userKey);
+    if (lastReplyTime && now - lastReplyTime < USER_COOLDOWN_MS) {
+      repliedToMentions.add(mention.id);
+      continue;
+    }
 
     const existingSub = await storage.getTwitterSubmissionByTweetId(mention.id);
     if (existingSub) {
@@ -451,12 +477,22 @@ async function processMentions() {
       const replyId = await safeReply(mention.id, replyText);
       if (replyId) {
         console.log(`[TwitterAgent] Mention reply to @${mention.authorUsername}: ${replyText.substring(0, 80)}...`);
+        repliesSent++;
+        usersRepliedThisCycle.set(userKey, userCount + 1);
+        userReplyCooldowns.set(userKey, now);
       }
       repliedToMentions.add(mention.id);
     } catch (e: any) {
       if (e.code === 429 || e.message?.includes("429")) throw e;
       console.error(`[TwitterAgent] Failed to reply to mention ${mention.id}:`, e.message);
       repliedToMentions.add(mention.id);
+    }
+  }
+
+  if (userReplyCooldowns.size > 500) {
+    const cutoff = now - USER_COOLDOWN_MS * 2;
+    for (const [key, time] of userReplyCooldowns) {
+      if (time < cutoff) userReplyCooldowns.delete(key);
     }
   }
 
