@@ -975,6 +975,41 @@ export const twitterReplyLog = pgTable("twitter_reply_log", {
 
 export type TwitterReplyLog = typeof twitterReplyLog.$inferSelect;
 
+export const supportTickets = pgTable("support_tickets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tweetId: text("tweet_id").notNull(),
+  tweetUrl: text("tweet_url"),
+  twitterHandle: text("twitter_handle").notNull(),
+  twitterUserId: text("twitter_user_id"),
+  userMessage: text("user_message").notNull(),
+  category: text("category").notNull().default("general"),
+  priority: text("priority").notNull().default("normal"),
+  aiSummary: text("ai_summary"),
+  aiReplyText: text("ai_reply_text"),
+  replyTweetId: text("reply_tweet_id"),
+  status: text("status").notNull().default("open"),
+  resolution: text("resolution"),
+  createdAt: timestamp("created_at").defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+});
+
+export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit({ id: true, createdAt: true, resolvedAt: true });
+export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
+export type SupportTicket = typeof supportTickets.$inferSelect;
+
+export const supportAgentConfig = pgTable("support_agent_config", {
+  id: varchar("id").primaryKey().default("default"),
+  enabled: integer("enabled").default(0),
+  pollingIntervalMs: integer("polling_interval_ms").default(120000),
+  lastMentionId: text("last_mention_id"),
+  repliedTweetIds: text("replied_tweet_ids"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertSupportAgentConfigSchema = createInsertSchema(supportAgentConfig).omit({ updatedAt: true });
+export type InsertSupportAgentConfig = z.infer<typeof insertSupportAgentConfigSchema>;
+export type SupportAgentConfig = typeof supportAgentConfig.$inferSelect;
+
 export const SEED_AGENTS = {
   RESEARCH_BOT: {
     name: "ResearchBot-7B",

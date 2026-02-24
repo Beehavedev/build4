@@ -48,6 +48,8 @@ import {
   type TwitterAgentConfig, type InsertTwitterAgentConfig, twitterAgentConfig,
   type TwitterAgentPersonality, twitterAgentPersonality,
   type TwitterReplyLog, twitterReplyLog,
+  type SupportTicket, type InsertSupportTicket, supportTickets,
+  type SupportAgentConfig, type InsertSupportAgentConfig, supportAgentConfig,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
@@ -276,6 +278,15 @@ export interface IStorage {
   logTwitterReply(data: { tweetId: string; inReplyToUser: string; inReplyToText: string; replyText: string; tone?: string; selfScore?: number }): Promise<TwitterReplyLog>;
   getRecentTwitterReplies(limit?: number): Promise<TwitterReplyLog[]>;
   updateTwitterReplyEngagement(tweetId: string, likes: number, retweets: number, replies: number): Promise<void>;
+
+  // Support Agent
+  createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket>;
+  getSupportTicket(id: string): Promise<SupportTicket | undefined>;
+  getSupportTicketByTweetId(tweetId: string): Promise<SupportTicket | undefined>;
+  getSupportTickets(status?: string): Promise<SupportTicket[]>;
+  updateSupportTicket(id: string, data: Partial<SupportTicket>): Promise<SupportTicket | undefined>;
+  getSupportAgentConfig(): Promise<SupportAgentConfig | undefined>;
+  upsertSupportAgentConfig(config: Partial<InsertSupportAgentConfig>): Promise<SupportAgentConfig>;
 
   // Seed subscription plans
   seedSubscriptionPlans(): Promise<void>;
@@ -1821,6 +1832,48 @@ export class DatabaseStorage implements IStorage {
       likes, retweets, replies,
       engagement: likes + retweets * 3 + replies * 2,
     }).where(eq(twitterReplyLog.tweetId!, tweetId));
+  }
+
+  async createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket> {
+    const [result] = await db.insert(supportTickets).values(ticket).returning();
+    return result;
+  }
+
+  async getSupportTicket(id: string): Promise<SupportTicket | undefined> {
+    const [result] = await db.select().from(supportTickets).where(eq(supportTickets.id, id));
+    return result;
+  }
+
+  async getSupportTicketByTweetId(tweetId: string): Promise<SupportTicket | undefined> {
+    const [result] = await db.select().from(supportTickets).where(eq(supportTickets.tweetId, tweetId));
+    return result;
+  }
+
+  async getSupportTickets(status?: string): Promise<SupportTicket[]> {
+    if (status) {
+      return db.select().from(supportTickets).where(eq(supportTickets.status, status)).orderBy(desc(supportTickets.createdAt));
+    }
+    return db.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
+  }
+
+  async updateSupportTicket(id: string, data: Partial<SupportTicket>): Promise<SupportTicket | undefined> {
+    const [result] = await db.update(supportTickets).set(data).where(eq(supportTickets.id, id)).returning();
+    return result;
+  }
+
+  async getSupportAgentConfig(): Promise<SupportAgentConfig | undefined> {
+    const [result] = await db.select().from(supportAgentConfig).where(eq(supportAgentConfig.id, "default"));
+    return result;
+  }
+
+  async upsertSupportAgentConfig(config: Partial<InsertSupportAgentConfig>): Promise<SupportAgentConfig> {
+    const existing = await this.getSupportAgentConfig();
+    if (existing) {
+      const [result] = await db.update(supportAgentConfig).set({ ...config, updatedAt: new Date() }).where(eq(supportAgentConfig.id, "default")).returning();
+      return result;
+    }
+    const [result] = await db.insert(supportAgentConfig).values({ id: "default", ...config }).returning();
+    return result;
   }
 }
 
