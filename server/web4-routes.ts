@@ -37,6 +37,10 @@ function getBaseUrl(req: Request): string {
 
 export function registerWeb4Routes(app: Express): void {
 
+  app.get("/googlefe6010e7634caae1.html", (_req: Request, res: Response) => {
+    res.type("text/html").send("google-site-verification: googlefe6010e7634caae1.html");
+  });
+
   app.get("/robots.txt", (_req: Request, res: Response) => {
     const baseUrl = getBaseUrl(_req);
     res.type("text/plain").send(
