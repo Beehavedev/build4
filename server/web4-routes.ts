@@ -37,6 +37,46 @@ function getBaseUrl(req: Request): string {
 
 export function registerWeb4Routes(app: Express): void {
 
+  app.get("/robots.txt", (_req: Request, res: Response) => {
+    const baseUrl = getBaseUrl(_req);
+    res.type("text/plain").send(
+`User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /analytics
+Disallow: /twitter-agent
+
+Sitemap: ${baseUrl}/sitemap.xml
+`
+    );
+  });
+
+  app.get("/sitemap.xml", async (_req: Request, res: Response) => {
+    const baseUrl = getBaseUrl(_req);
+    const pages = [
+      { loc: "/", priority: "1.0", changefreq: "daily" },
+      { loc: "/autonomous-economy", priority: "0.9", changefreq: "weekly" },
+      { loc: "/marketplace", priority: "0.9", changefreq: "daily" },
+      { loc: "/manifesto", priority: "0.8", changefreq: "monthly" },
+      { loc: "/architecture", priority: "0.7", changefreq: "monthly" },
+      { loc: "/why-build4", priority: "0.8", changefreq: "monthly" },
+      { loc: "/revenue", priority: "0.7", changefreq: "weekly" },
+      { loc: "/services", priority: "0.7", changefreq: "weekly" },
+      { loc: "/privacy", priority: "0.6", changefreq: "monthly" },
+      { loc: "/chain", priority: "0.8", changefreq: "monthly" },
+    ];
+    const today = new Date().toISOString().split("T")[0];
+    const urls = pages.map(p =>
+      `  <url>\n    <loc>${baseUrl}${p.loc}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>${p.changefreq}</changefreq>\n    <priority>${p.priority}</priority>\n  </url>`
+    ).join("\n");
+    res.type("application/xml").send(
+`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>`
+    );
+  });
+
   app.get("/.well-known/ai-plugin.json", (_req: Request, res: Response) => {
     const baseUrl = getBaseUrl(_req);
     res.json({
