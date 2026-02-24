@@ -49,44 +49,66 @@ async function persistState() {
   }
 }
 
-function getProvider(): ethers.JsonRpcProvider | null {
-  const network = process.env.ONCHAIN_NETWORK || "bnbMainnet";
+function getProvider(chainKey?: string): ethers.JsonRpcProvider | null {
+  const network = chainKey || process.env.ONCHAIN_NETWORK || "bnbMainnet";
   const rpcUrls: Record<string, string> = {
     bnbMainnet: "https://bsc-dataseed1.binance.org",
     bnbTestnet: "https://data-seed-prebsc-1-s1.binance.org:8545",
     baseMainnet: "https://mainnet.base.org",
     baseTestnet: "https://sepolia.base.org",
+    xlayerMainnet: "https://rpc.xlayer.tech",
+    xlayerTestnet: "https://testrpc.xlayer.tech",
   };
   const rpcUrl = rpcUrls[network];
   if (!rpcUrl) return null;
   return new ethers.JsonRpcProvider(rpcUrl);
 }
 
-function getExplorerBase(): string {
-  const network = process.env.ONCHAIN_NETWORK || "bnbMainnet";
+function getExplorerBase(chainKey?: string): string {
+  const network = chainKey || process.env.ONCHAIN_NETWORK || "bnbMainnet";
   const explorers: Record<string, string> = {
     bnbMainnet: "https://bscscan.com",
     bnbTestnet: "https://testnet.bscscan.com",
     baseMainnet: "https://basescan.org",
     baseTestnet: "https://sepolia.basescan.org",
+    xlayerMainnet: "https://www.okx.com/web3/explorer/xlayer",
+    xlayerTestnet: "https://www.okx.com/web3/explorer/xlayer-test",
   };
   return explorers[network] || "https://bscscan.com";
 }
 
-function getChainCurrency(): string {
-  const network = process.env.ONCHAIN_NETWORK || "bnbMainnet";
-  return network.startsWith("base") ? "ETH" : "BNB";
+function getChainCurrency(chainKey?: string): string {
+  const network = chainKey || process.env.ONCHAIN_NETWORK || "bnbMainnet";
+  if (network.startsWith("base")) return "ETH";
+  if (network.startsWith("xlayer")) return "OKB";
+  return "BNB";
 }
 
-async function sendNativePayment(toAddress: string, amountBnb: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
+function getChainLabel(chainKey: string): string {
+  if (chainKey.startsWith("base")) return "Base";
+  if (chainKey.startsWith("xlayer")) return "XLayer";
+  return "BNB Chain";
+}
+
+const BOUNTY_CHAINS = ["bnbMainnet", "baseMainnet", "xlayerMainnet"];
+let nextBountyChainIdx = 0;
+
+function getNextBountyChain(): string {
+  const chain = BOUNTY_CHAINS[nextBountyChainIdx % BOUNTY_CHAINS.length];
+  nextBountyChainIdx++;
+  return chain;
+}
+
+async function sendNativePayment(toAddress: string, amountBnb: string, chainKey?: string): Promise<{ success: boolean; txHash?: string; error?: string; chainKey?: string }> {
   const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
   if (!privateKey) {
     return { success: false, error: "DEPLOYER_PRIVATE_KEY not configured" };
   }
 
-  const provider = getProvider();
+  const targetChain = chainKey || process.env.ONCHAIN_NETWORK || "bnbMainnet";
+  const provider = getProvider(targetChain);
   if (!provider) {
-    return { success: false, error: "No RPC provider available" };
+    return { success: false, error: `No RPC provider for ${targetChain}` };
   }
 
   try {
@@ -99,8 +121,8 @@ async function sendNativePayment(toAddress: string, amountBnb: string): Promise<
     const estimatedGas = BigInt(21000) * gasPrice;
 
     if (balance < amountWei + estimatedGas) {
-      const balBnb = ethers.formatEther(balance);
-      return { success: false, error: `Deployer balance too low: ${balBnb} ${getChainCurrency()} (need ${amountBnb} + gas)` };
+      const balNative = ethers.formatEther(balance);
+      return { success: false, error: `Deployer balance too low on ${getChainLabel(targetChain)}: ${balNative} ${getChainCurrency(targetChain)} (need ${amountBnb} + gas)` };
     }
 
     const tx = await wallet.sendTransaction({
@@ -118,10 +140,14 @@ async function sendNativePayment(toAddress: string, amountBnb: string): Promise<
       return { success: false, error: "Transaction reverted" };
     }
 
-    console.log(`[TwitterAgent] On-chain payment sent: ${receipt.hash} (${amountBnb} ${getChainCurrency()} -> ${toAddress})`);
-    return { success: true, txHash: receipt.hash };
+    console.log(`[TwitterAgent] Payment on ${getChainLabel(targetChain)}: ${receipt.hash} (${amountBnb} ${getChainCurrency(targetChain)} -> ${toAddress})`);
+    return { success: true, txHash: receipt.hash, chainKey: targetChain };
   } catch (e: any) {
-    console.error(`[TwitterAgent] Payment failed:`, e.message);
+    console.error(`[TwitterAgent] Payment on ${getChainLabel(targetChain)} failed:`, e.message);
+    if (targetChain !== "bnbMainnet") {
+      console.log(`[TwitterAgent] Falling back to BNB Chain for payment`);
+      return sendNativePayment(toAddress, amountBnb, "bnbMainnet");
+    }
     return { success: false, error: e.message?.substring(0, 200) || "Unknown error" };
   }
 }
@@ -690,10 +716,14 @@ async function selectAndPayWinners(bounty: any) {
       continue;
     }
 
-    const paymentResult = await sendNativePayment(winner.walletAddress!, rewardBnb);
+    const payChain = getNextBountyChain();
+    const paymentResult = await sendNativePayment(winner.walletAddress!, rewardBnb, payChain);
 
     if (paymentResult.success && paymentResult.txHash) {
-      const explorerUrl = `${explorerBase}/tx/${paymentResult.txHash}`;
+      const paidChain = paymentResult.chainKey || payChain;
+      const paidExplorer = getExplorerBase(paidChain);
+      const paidCurrency = getChainCurrency(paidChain);
+      const explorerUrl = `${paidExplorer}/tx/${paymentResult.txHash}`;
 
       await storage.updateTwitterSubmission(winner.id, {
         status: "paid",
@@ -712,14 +742,15 @@ async function selectAndPayWinners(bounty: any) {
         const remaining = maxWinners - newPaidCount;
         const wallet = `${winner.walletAddress!.slice(0, 6)}...${winner.walletAddress!.slice(-4)}`;
         const tail = remaining > 0 ? `${remaining} more slots open!` : "All slots filled!";
-        const replyText = `@${winner.twitterHandle} ${rewardBnb} ${currency} sent to ${wallet}\n\nVerify on-chain:\n${explorerUrl}\n\n${tail} #BUILD4`;
+        const chainTag = getChainLabel(paidChain);
+        const replyText = `@${winner.twitterHandle} ${rewardBnb} ${paidCurrency} sent on ${chainTag} to ${wallet}\n\nVerify:\n${explorerUrl}\n\n${tail} #BUILD4`;
         const replyId = await safeReply(winner.tweetId, replyText);
         await storage.updateTwitterSubmission(winner.id, { replyTweetId: replyId });
       } catch (e: any) {
         console.error(`[TwitterAgent] Payment reply tweet failed:`, e.message);
       }
 
-      console.log(`[TwitterAgent] Paid @${winner.twitterHandle} ${rewardBnb} ${currency} for bounty ${bounty.jobId} (${newPaidCount}/${maxWinners} winners, TX: ${paymentResult.txHash})`);
+      console.log(`[TwitterAgent] Paid @${winner.twitterHandle} ${rewardBnb} ${paidCurrency} on ${getChainLabel(paidChain)} for bounty ${bounty.jobId} (${newPaidCount}/${maxWinners} winners, TX: ${paymentResult.txHash})`);
     } else {
       console.error(`[TwitterAgent] Payment failed for @${winner.twitterHandle}: ${paymentResult.error}`);
       await storage.updateTwitterSubmission(winner.id, {

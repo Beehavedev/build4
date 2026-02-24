@@ -14,6 +14,13 @@ import {
   getPendingReimbursementCount,
   getPendingReimbursementTotal,
   verifyOnchainBalance,
+  transferOnChainRouted,
+  listSkillOnChainRouted,
+  replicateOnChainRouted,
+  getMultiChainExplorerUrl,
+  getChainCurrency,
+  getDeployerBalanceOnChain,
+  registerAndDepositOnChain,
 } from "./onchain";
 import type { Agent, AgentWallet } from "@shared/schema";
 import { PLATFORM_FEES } from "@shared/schema";
@@ -49,6 +56,16 @@ function getSurvivalTier(balance: string): string {
 function canAct(agentId: string): boolean {
   const last = lastActionTime.get(agentId) || 0;
   return Date.now() - last >= AGENT_COOLDOWN_MS;
+}
+
+function getAgentChain(agent: Agent): string {
+  return agent.preferredChain || "bnbMainnet";
+}
+
+function getChainLabel(chainKey: string): string {
+  if (chainKey === "baseMainnet") return "Base";
+  if (chainKey === "xlayerMainnet") return "XLayer";
+  return "BNB Chain";
 }
 
 async function getAgentStrategy(agentId: string): Promise<{ bestCategory: string | null; bestSkillType: string | null; totalEarnings: number; successRate: number }> {
@@ -519,19 +536,21 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         let txHash: string | undefined;
         let chainIdVal: number | undefined;
         if (onchainEnabled) {
+          const agentChain = getAgentChain(agent);
           await ensureAgentRegisteredOnchain(agent);
           const feeResult = await collectFeeAcrossAllChains(agent.id, listingFee.toString(), "skill_listing");
           if (feeResult.success && feeResult.txHash) {
             txHash = feeResult.txHash;
             chainIdVal = feeResult.chainId;
-            log(`[Agent ${agent.name}] Listing fee collected on-chain: ${getExplorerUrl(txHash)}`, "agent-runner");
+            log(`[Agent ${agent.name}] Listing fee collected on ${getChainLabel(agentChain)}: ${getMultiChainExplorerUrl(agentChain, txHash)}`, "agent-runner");
             await reimburseAndRecord(agent, feeResult.gasCostWei, "skill_listing_fee");
           } else {
             log(`[Agent ${agent.name}] On-chain fee collection failed: ${feeResult.error} — proceeding with off-chain only`, "agent-runner");
           }
-          const onchainResult = await listSkillOnchain(agent.id, skillName, price);
+          const onchainResult = await listSkillOnChainRouted(agent.id, skillName, price, agentChain);
           if (onchainResult.success && onchainResult.txHash) {
-            log(`[Agent ${agent.name}] Skill listed on-chain: ${getExplorerUrl(onchainResult.txHash)}`, "agent-runner");
+            chainIdVal = onchainResult.chainId;
+            log(`[Agent ${agent.name}] Skill listed on ${getChainLabel(agentChain)}: ${getMultiChainExplorerUrl(agentChain, onchainResult.txHash)}`, "agent-runner");
             await reimburseAndRecord(agent, onchainResult.gasCostWei, "skill_listing_onchain");
           }
         }
@@ -593,6 +612,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           let purchaseTxHash: string | undefined;
 
           if (onchainEnabled) {
+            const agentChain = getAgentChain(agent);
             await ensureAgentRegisteredOnchain(agent);
             const sellerAgent = await storage.getAgent(skill.agentId);
             if (sellerAgent) {
@@ -604,15 +624,15 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
               if (feeResult.success && feeResult.txHash) {
                 feeTxHash = feeResult.txHash;
                 feeChainId = feeResult.chainId;
-                log(`[Agent ${agent.name}] Skill purchase fee collected on-chain: ${getExplorerUrl(feeTxHash)}`, "agent-runner");
+                log(`[Agent ${agent.name}] Skill purchase fee collected on ${getChainLabel(agentChain)}: ${getMultiChainExplorerUrl(agentChain, feeTxHash)}`, "agent-runner");
                 await reimburseAndRecord(agent, feeResult.gasCostWei, "skill_purchase_fee");
               }
             }
 
-            const transferResult = await transferOnchain(agent.id, skill.agentId, skill.priceAmount);
+            const transferResult = await transferOnChainRouted(agent.id, skill.agentId, skill.priceAmount, agentChain);
             if (transferResult.success && transferResult.txHash) {
               purchaseTxHash = transferResult.txHash;
-              log(`[Agent ${agent.name}] Skill payment on-chain: ${getExplorerUrl(purchaseTxHash)}`, "agent-runner");
+              log(`[Agent ${agent.name}] Skill payment on ${getChainLabel(agentChain)}: ${getMultiChainExplorerUrl(agentChain, purchaseTxHash)}`, "agent-runner");
               await reimburseAndRecord(agent, transferResult.gasCostWei, "skill_purchase_transfer");
             }
           }
@@ -760,16 +780,17 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           );
 
           if (onchainEnabled) {
+            const agentChain = getAgentChain(agent);
             const regResult = await registerAgentOnchain(child.id);
             if (regResult.success) {
               await db.update(agentsTable)
-                .set({ onchainId: getOnchainId(child.id), onchainRegistered: true })
+                .set({ onchainId: getOnchainId(child.id), onchainRegistered: true, preferredChain: agentChain })
                 .where(eq(agentsTable.id, child.id));
             }
 
-            const repResult = await replicateOnchain(agent.id, child.id, 1000, funding);
+            const repResult = await replicateOnChainRouted(agent.id, child.id, 1000, funding, agentChain);
             if (repResult.success && repResult.txHash) {
-              log(`[Agent ${agent.name}] Replication on-chain: ${getExplorerUrl(repResult.txHash)}`, "agent-runner");
+              log(`[Agent ${agent.name}] Replication on ${getChainLabel(agentChain)}: ${getMultiChainExplorerUrl(agentChain, repResult.txHash)}`, "agent-runner");
               await storage.createTransaction({
                 agentId: agent.id,
                 type: "onchain_replicate",
@@ -855,11 +876,12 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
 
             if (onchainEnabled && isOnchainReady() && royalty >= MIN_ONCHAIN_TRANSFER_WEI) {
               try {
-                const transferResult = await transferOnchain(agent.id, skill.agentId, royaltyStr);
+                const agentChain = getAgentChain(agent);
+                const transferResult = await transferOnChainRouted(agent.id, skill.agentId, royaltyStr, agentChain);
                 if (transferResult.success && transferResult.txHash) {
                   royaltyTxHash = transferResult.txHash;
                   royaltyOnchain = true;
-                  log(`[Agent ${agent.name}] Skill royalty on-chain: ${getExplorerUrl(royaltyTxHash)}`, "agent-runner");
+                  log(`[Agent ${agent.name}] Skill royalty on ${getChainLabel(agentChain)}: ${getMultiChainExplorerUrl(agentChain, royaltyTxHash)}`, "agent-runner");
                   await reimburseAndRecord(agent, transferResult.gasCostWei, "skill_royalty_transfer");
                 }
               } catch (e: any) {
@@ -1026,11 +1048,12 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
             const escrowWei = BigInt(completed.escrowAmount);
             if (onchainEnabled && isOnchainReady() && escrowWei >= MIN_ONCHAIN_TRANSFER_WEI) {
               try {
-                const payResult = await transferOnchain(job.clientAgentId, agent.id, completed.escrowAmount);
+                const agentChain = getAgentChain(agent);
+                const payResult = await transferOnChainRouted(job.clientAgentId, agent.id, completed.escrowAmount, agentChain);
                 if (payResult.success && payResult.txHash) {
                   jobPayTxHash = payResult.txHash;
                   jobPayOnchain = true;
-                  log(`[Agent ${agent.name}] Job payout on-chain: ${getExplorerUrl(jobPayTxHash)}`, "agent-runner");
+                  log(`[Agent ${agent.name}] Job payout on ${getChainLabel(agentChain)}: ${getMultiChainExplorerUrl(agentChain, jobPayTxHash)}`, "agent-runner");
                   await reimburseAndRecord(agent, payResult.gasCostWei, "job_payout_transfer");
                 }
               } catch (e: any) {
@@ -1252,6 +1275,14 @@ export function startAgentRunner(): void {
         log(`MAINNET SAFETY: max ${status.maxPerHour} BNB/hr, ${status.maxTxPerHour} tx/hr`, "agent-runner");
       }
     });
+    initMultiChain();
+    (async () => {
+      for (const chain of ["bnbMainnet", "baseMainnet", "xlayerMainnet"] as const) {
+        const bal = await getDeployerBalanceOnChain(chain);
+        const currency = getChainCurrency(chain);
+        log(`[multi-chain] ${getChainLabel(chain)} deployer balance: ${bal} ${currency}`, "agent-runner");
+      }
+    })();
   } else {
     log("On-chain bridge DISABLED - database-only mode", "agent-runner");
   }

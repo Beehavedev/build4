@@ -449,8 +449,11 @@ export async function transferOnchain(fromAgentId: string, toAgentId: string, am
     if (fromBal === 0n) {
       return { success: false, error: "No on-chain balance to transfer", chainId };
     }
-    const transferAmt = fromBal < BigInt(amountWei) ? fromBal / 2n : BigInt(amountWei);
-    if (transferAmt === 0n) {
+    const requestedAmt = BigInt(amountWei);
+    if (fromBal < requestedAmt) {
+      return { success: false, error: `Insufficient on-chain balance: has ${ethers.formatEther(fromBal)}, needs ${ethers.formatEther(requestedAmt)}`, chainId };
+    }
+    if (requestedAmt === 0n) {
       return { success: false, error: "Zero transfer amount", chainId };
     }
 
@@ -461,7 +464,7 @@ export async function transferOnchain(fromAgentId: string, toAgentId: string, am
       await new Promise(r => setTimeout(r, 2000));
     }
 
-    return sendTx(contracts.hub, "transfer", [fromNum, toNum, transferAmt]);
+    return sendTx(contracts.hub, "transfer", [fromNum, toNum, requestedAmt]);
   } catch (e: any) {
     return { success: false, error: e.message?.substring(0, 200), chainId };
   }
@@ -471,9 +474,7 @@ export async function listSkillOnchain(agentDbId: string, skillName: string, pri
   if (!contracts) return { success: false, error: "Not initialized", chainId };
 
   const numId = uuidToNumericId(agentDbId);
-  const skillPrice = BigInt(price) > BigInt("100000000000000000")
-    ? BigInt("1000000000000000")
-    : BigInt(price);
+  const skillPrice = BigInt(price);
 
   try {
     const nextId = await contracts.marketplace.nextSkillId();
@@ -842,6 +843,8 @@ interface MultiChainConnection {
   provider: ethers.JsonRpcProvider;
   wallet: ethers.Wallet;
   hub: ethers.Contract;
+  marketplace: ethers.Contract;
+  replication: ethers.Contract;
   managedNonce: number;
   nonceLock: boolean;
 }
@@ -875,6 +878,8 @@ export function initMultiChain(): string[] {
       const prov = new ethers.JsonRpcProvider(config.rpcUrl);
       const w = new ethers.Wallet(privateKey, prov);
       const hub = new ethers.Contract(addrs.AgentEconomyHub, HUB_ABI, w);
+      const marketplace = new ethers.Contract(addrs.SkillMarketplace, MARKETPLACE_ABI, w);
+      const replication = new ethers.Contract(addrs.AgentReplication, REPLICATION_ABI, w);
 
       multiChainConnections.set(key, {
         name: config.name,
@@ -883,6 +888,8 @@ export function initMultiChain(): string[] {
         provider: prov,
         wallet: w,
         hub,
+        marketplace,
+        replication,
         managedNonce: -1,
         nonceLock: false,
       });
@@ -1117,4 +1124,143 @@ export function getMultiChainExplorerUrl(chainKey: string, txHash: string): stri
   const conn = multiChainConnections.get(chainKey);
   if (conn) return `${conn.explorerBase}/tx/${txHash}`;
   return `https://bscscan.com/tx/${txHash}`;
+}
+
+function getMultiChainConn(chainKey: string): MultiChainConnection | null {
+  if (multiChainConnections.size === 0) initMultiChain();
+  return multiChainConnections.get(chainKey) || null;
+}
+
+export function getChainCurrency(chainKey?: string): string {
+  const key = chainKey || process.env.ONCHAIN_NETWORK || "bnbMainnet";
+  if (key.startsWith("base")) return "ETH";
+  if (key.startsWith("xlayer")) return "OKB";
+  return "BNB";
+}
+
+export function getChainExplorerBase(chainKey?: string): string {
+  const key = chainKey || process.env.ONCHAIN_NETWORK || "bnbMainnet";
+  const conn = multiChainConnections.get(key);
+  if (conn) return conn.explorerBase;
+  const config = CHAIN_CONFIGS[key];
+  return config?.explorerBase || "https://bscscan.com";
+}
+
+export async function transferOnChainRouted(fromAgentId: string, toAgentId: string, amountWei: string, chainKey: string): Promise<OnchainResult> {
+  const conn = getMultiChainConn(chainKey);
+  if (!conn) return transferOnchain(fromAgentId, toAgentId, amountWei);
+
+  const fromNum = uuidToNumericId(fromAgentId);
+  const toNum = uuidToNumericId(toAgentId);
+
+  try {
+    const fromBal = await conn.hub.getBalance(fromNum);
+    if (fromBal === 0n) {
+      return transferOnchain(fromAgentId, toAgentId, amountWei);
+    }
+    const requestedAmt = BigInt(amountWei);
+    if (fromBal < requestedAmt) {
+      return { success: false, error: `Insufficient on-chain balance on ${getChainLabel(chainKey)}: has ${ethers.formatEther(fromBal)}, needs ${ethers.formatEther(requestedAmt)}`, chainId: conn.chainId };
+    }
+    if (requestedAmt === 0n) {
+      return { success: false, error: "Zero transfer amount", chainId: conn.chainId };
+    }
+
+    const toRegistered = await conn.hub.isAgentRegistered(toNum);
+    if (!toRegistered) {
+      const regResult = await multiChainSendTx(conn, conn.hub, "registerAgent", [toNum]);
+      if (!regResult.success) return regResult;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
+    return multiChainSendTx(conn, conn.hub, "transfer", [fromNum, toNum, requestedAmt]);
+  } catch (e: any) {
+    return transferOnchain(fromAgentId, toAgentId, amountWei);
+  }
+}
+
+export async function listSkillOnChainRouted(agentDbId: string, skillName: string, price: string, chainKey: string): Promise<OnchainResult & { skillId?: string }> {
+  const conn = getMultiChainConn(chainKey);
+  if (!conn) return listSkillOnchain(agentDbId, skillName, price);
+
+  const numId = uuidToNumericId(agentDbId);
+  const skillPrice = BigInt(price);
+
+  try {
+    const nextId = await conn.marketplace.nextSkillId();
+    const result = await multiChainSendTx(conn, conn.marketplace, "listSkill", [
+      numId,
+      skillName.substring(0, 50),
+      `ipfs://build4-skill-${Date.now()}`,
+      skillPrice,
+    ]);
+    return { ...result, skillId: nextId.toString() };
+  } catch (e: any) {
+    return listSkillOnchain(agentDbId, skillName, price);
+  }
+}
+
+export async function replicateOnChainRouted(parentAgentId: string, childAgentId: string, revenueShareBps: number, fundingWei: string, chainKey: string): Promise<OnchainResult> {
+  const conn = getMultiChainConn(chainKey);
+  if (!conn) return replicateOnchain(parentAgentId, childAgentId, revenueShareBps, fundingWei);
+
+  const parentNum = uuidToNumericId(parentAgentId);
+  const childNum = uuidToNumericId(childAgentId);
+
+  const limits = getSafetyLimits();
+  let fundingAmt = BigInt(fundingWei);
+  if (fundingAmt > limits.maxDepositPerAgentWei) {
+    fundingAmt = limits.maxDepositPerAgentWei;
+  }
+
+  try {
+    const parentBal = await conn.hub.getBalance(parentNum);
+    if (parentBal < fundingAmt) {
+      return { success: false, error: "Insufficient on-chain balance for replication", chainId: conn.chainId };
+    }
+  } catch (e: any) {
+    log(`[onchain] ${conn.name} replicate balance check failed: ${e.message?.substring(0, 100)}`, "onchain");
+  }
+
+  return multiChainSendTx(conn, conn.replication, "replicate", [parentNum, childNum, revenueShareBps, fundingAmt]);
+}
+
+export async function nativeTransferOnChain(toAddress: string, amountWei: string, chainKey: string): Promise<OnchainResult> {
+  const conn = getMultiChainConn(chainKey);
+  if (!conn) {
+    if (!wallet) return { success: false, error: "Not initialized", chainId };
+    try {
+      const tx = await wallet.sendTransaction({ to: toAddress, value: BigInt(amountWei) });
+      const receipt = await tx.wait();
+      if (!receipt || receipt.status !== 1) return { success: false, error: "Reverted", chainId };
+      return { success: true, txHash: receipt.hash, chainId };
+    } catch (e: any) {
+      return { success: false, error: e.message?.substring(0, 200), chainId };
+    }
+  }
+
+  try {
+    const nonce = await multiChainAcquireNonce(conn);
+    const tx = await conn.wallet.sendTransaction({ to: toAddress, value: BigInt(amountWei), nonce });
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) {
+      conn.managedNonce = -1;
+      return { success: false, error: "Reverted", chainId: conn.chainId };
+    }
+    return { success: true, txHash: receipt.hash, chainId: conn.chainId };
+  } catch (e: any) {
+    conn.managedNonce = -1;
+    return { success: false, error: e.message?.substring(0, 200), chainId: conn.chainId };
+  }
+}
+
+export async function getDeployerBalanceOnChain(chainKey: string): Promise<string> {
+  const conn = getMultiChainConn(chainKey);
+  if (!conn) return "0";
+  try {
+    const bal = await conn.provider.getBalance(conn.wallet.address);
+    return ethers.formatEther(bal);
+  } catch {
+    return "0";
+  }
 }
