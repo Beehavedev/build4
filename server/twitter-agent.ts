@@ -351,7 +351,15 @@ WHAT YOU KNOW:
 - t.co links = valid proof (they're Twitter-shortened links to quote tweets/threads)
 - build4.io
 
-YOUR VOICE: Sharp, opinionated, deeply knowledgeable about AI + crypto. You sound like a brilliant founder, not a customer service bot. You challenge ideas, ask follow-up questions, drop real insights. You NEVER say "thanks for engaging" or "great question" or anything generic.`;
+YOUR VOICE: Confident, knowledgeable, professional. You sound like a respected founder, not a customer service bot. You share real insights and engage thoughtfully. You NEVER say "thanks for engaging" or "great question" or anything generic.
+
+CRITICAL TONE RULES:
+- NEVER insult, mock, or call anyone names (no "scammer", "idiot", "clown", etc.)
+- NEVER be hostile, aggressive, or condescending — even if someone is negative toward you
+- If someone is skeptical or critical: respond with facts and proof (TX hashes, on-chain data), not attacks
+- If someone is clearly a spam/scam bot: IGNORE them entirely by returning an empty reply field
+- If someone is confused or wrong: educate them respectfully with real data
+- Always protect the BUILD4 brand — be the mature, professional voice in the room`;
 
   const userPrompt = `TWEET from @${reply.authorUsername}:
 "${reply.text}"
@@ -368,10 +376,12 @@ You MUST respond in this exact JSON format:
 CRITICAL RULES FOR THE REPLY:
 - It must reference something SPECIFIC from their tweet (a word they used, a concept they raised, their specific question)
 - If they asked a question → ANSWER the actual question
-- If they made a claim → respond to THAT claim with your opinion
+- If they made a claim → respond to THAT claim with facts
 - If they're confused → explain the SPECIFIC thing they're confused about
 - NEVER write "thanks for engaging" or "great to see" or any filler
-- Be a sharp AI with real knowledge, not a polite bot
+- NEVER insult anyone — no name-calling, no mocking, no hostility
+- If the tweet is obvious spam/scam → return an empty string "" for the reply field
+- Be confident and knowledgeable, but always professional and respectful
 - Under 250 chars, start with @${reply.authorUsername}
 
 JSON only:`;
@@ -401,6 +411,18 @@ JSON only:`;
       }
       replyText = replyText.replace(/^["']|["']$/g, "").trim();
       replyText = replyText.replace(/^(analysis|key_detail|reply)[:=].*\n?/gim, "").trim();
+
+      if (!replyText || replyText === '""' || replyText === "''") {
+        console.log(`[TwitterAgent] Skipping reply to @${reply.authorUsername} — AI flagged as spam/ignore`);
+        return "";
+      }
+
+      const BLOCKED_WORDS = /\b(scammer|scam artist|idiot|moron|stupid|dumb|loser|clown|fool|trash|garbage|pathetic|liar|fraud|fraudster|fake|shill|rug pull|rugpull|ponzi)\b/i;
+      if (BLOCKED_WORDS.test(replyText)) {
+        console.warn(`[TwitterAgent] BLOCKED hostile reply to @${reply.authorUsername}: ${replyText}`);
+        return `@${reply.authorUsername} Every BUILD4 payment is a verifiable on-chain transaction. Check any TX hash on bscscan.com — fully transparent and trustless. That's the power of decentralization.`;
+      }
+
       if (!replyText.startsWith("@")) {
         replyText = `@${reply.authorUsername} ${replyText}`;
       }
@@ -474,6 +496,11 @@ async function processMentions() {
 
     try {
       const replyText = await generateMentionReply(mention);
+      if (!replyText) {
+        console.log(`[TwitterAgent] Skipping mention from @${mention.authorUsername} — empty reply (spam/ignore)`);
+        repliedToMentions.add(mention.id);
+        continue;
+      }
       const replyId = await safeReply(mention.id, replyText);
       if (replyId) {
         console.log(`[TwitterAgent] Mention reply to @${mention.authorUsername}: ${replyText.substring(0, 80)}...`);
