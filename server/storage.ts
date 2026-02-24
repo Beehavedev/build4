@@ -50,6 +50,10 @@ import {
   type TwitterReplyLog, twitterReplyLog,
   type SupportTicket, type InsertSupportTicket, supportTickets,
   type SupportAgentConfig, type InsertSupportAgentConfig, supportAgentConfig,
+  type Erc8004Identity, type InsertErc8004Identity, erc8004Identities,
+  type Erc8004Reputation, type InsertErc8004Reputation, erc8004Reputation,
+  type Erc8004Validation, type InsertErc8004Validation, erc8004Validations,
+  type Bap578Nfa, type InsertBap578Nfa, bap578Nfas,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
@@ -287,6 +291,24 @@ export interface IStorage {
   updateSupportTicket(id: string, data: Partial<SupportTicket>): Promise<SupportTicket | undefined>;
   getSupportAgentConfig(): Promise<SupportAgentConfig | undefined>;
   upsertSupportAgentConfig(config: Partial<InsertSupportAgentConfig>): Promise<SupportAgentConfig>;
+
+  // ERC-8004 Trustless Agents
+  createErc8004Identity(identity: InsertErc8004Identity): Promise<Erc8004Identity>;
+  getErc8004Identity(id: string): Promise<Erc8004Identity | undefined>;
+  getErc8004Identities(ownerWallet?: string): Promise<Erc8004Identity[]>;
+  updateErc8004Identity(id: string, data: Partial<Erc8004Identity>): Promise<Erc8004Identity | undefined>;
+
+  createErc8004Reputation(feedback: InsertErc8004Reputation): Promise<Erc8004Reputation>;
+  getErc8004Reputation(agentIdentityId: string): Promise<Erc8004Reputation[]>;
+
+  createErc8004Validation(validation: InsertErc8004Validation): Promise<Erc8004Validation>;
+  getErc8004Validations(agentIdentityId: string): Promise<Erc8004Validation[]>;
+
+  // BAP-578 Non-Fungible Agents
+  createBap578Nfa(nfa: InsertBap578Nfa): Promise<Bap578Nfa>;
+  getBap578Nfa(id: string): Promise<Bap578Nfa | undefined>;
+  getBap578Nfas(ownerWallet?: string): Promise<Bap578Nfa[]>;
+  updateBap578Nfa(id: string, data: Partial<Bap578Nfa>): Promise<Bap578Nfa | undefined>;
 
   // Seed subscription plans
   seedSubscriptionPlans(): Promise<void>;
@@ -1873,6 +1895,70 @@ export class DatabaseStorage implements IStorage {
       return result;
     }
     const [result] = await db.insert(supportAgentConfig).values({ id: "default", ...config }).returning();
+    return result;
+  }
+
+  // ERC-8004 Trustless Agents
+  async createErc8004Identity(identity: InsertErc8004Identity): Promise<Erc8004Identity> {
+    const [result] = await db.insert(erc8004Identities).values(identity).returning();
+    return result;
+  }
+
+  async getErc8004Identity(id: string): Promise<Erc8004Identity | undefined> {
+    const [result] = await db.select().from(erc8004Identities).where(eq(erc8004Identities.id, id));
+    return result;
+  }
+
+  async getErc8004Identities(ownerWallet?: string): Promise<Erc8004Identity[]> {
+    if (ownerWallet) {
+      return db.select().from(erc8004Identities).where(eq(erc8004Identities.ownerWallet, ownerWallet)).orderBy(desc(erc8004Identities.createdAt));
+    }
+    return db.select().from(erc8004Identities).orderBy(desc(erc8004Identities.createdAt));
+  }
+
+  async updateErc8004Identity(id: string, data: Partial<Erc8004Identity>): Promise<Erc8004Identity | undefined> {
+    const [result] = await db.update(erc8004Identities).set(data).where(eq(erc8004Identities.id, id)).returning();
+    return result;
+  }
+
+  async createErc8004Reputation(feedback: InsertErc8004Reputation): Promise<Erc8004Reputation> {
+    const [result] = await db.insert(erc8004Reputation).values(feedback).returning();
+    return result;
+  }
+
+  async getErc8004Reputation(agentIdentityId: string): Promise<Erc8004Reputation[]> {
+    return db.select().from(erc8004Reputation).where(eq(erc8004Reputation.agentIdentityId, agentIdentityId)).orderBy(desc(erc8004Reputation.createdAt));
+  }
+
+  async createErc8004Validation(validation: InsertErc8004Validation): Promise<Erc8004Validation> {
+    const [result] = await db.insert(erc8004Validations).values(validation).returning();
+    return result;
+  }
+
+  async getErc8004Validations(agentIdentityId: string): Promise<Erc8004Validation[]> {
+    return db.select().from(erc8004Validations).where(eq(erc8004Validations.agentIdentityId, agentIdentityId)).orderBy(desc(erc8004Validations.createdAt));
+  }
+
+  // BAP-578 Non-Fungible Agents
+  async createBap578Nfa(nfa: InsertBap578Nfa): Promise<Bap578Nfa> {
+    const [result] = await db.insert(bap578Nfas).values(nfa).returning();
+    return result;
+  }
+
+  async getBap578Nfa(id: string): Promise<Bap578Nfa | undefined> {
+    const [result] = await db.select().from(bap578Nfas).where(eq(bap578Nfas.id, id));
+    return result;
+  }
+
+  async getBap578Nfas(ownerWallet?: string): Promise<Bap578Nfa[]> {
+    if (ownerWallet) {
+      return db.select().from(bap578Nfas).where(eq(bap578Nfas.ownerWallet, ownerWallet)).orderBy(desc(bap578Nfas.createdAt));
+    }
+    return db.select().from(bap578Nfas).orderBy(desc(bap578Nfas.createdAt));
+  }
+
+  async updateBap578Nfa(id: string, data: Partial<Bap578Nfa>): Promise<Bap578Nfa | undefined> {
+    const [result] = await db.update(bap578Nfas).set(data).where(eq(bap578Nfas.id, id)).returning();
     return result;
   }
 }

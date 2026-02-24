@@ -71,6 +71,14 @@ The project is organized as a monorepo with `client/` for the React frontend, `s
 - **Default Reward**: 0.015 BNB (~$10) per winner. Bounty tweet shows per-winner reward and max winners.
 - **Secrets**: TWITTER_API_KEY, TWITTER_API_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET, DEPLOYER_PRIVATE_KEY stored as Replit Secrets.
 
+### ERC-8004 & BAP-578 Standards (Feb 2026)
+- **ERC-8004 (Trustless Agents)**: On-chain identity, reputation, and validation registries for autonomous AI agents. Spec by MetaMask, Ethereum Foundation, Google, Coinbase.
+- **BAP-578 (Non-Fungible Agent)**: BNB Chain's NFA token standard extending ERC-721 for intelligent, autonomous digital entities with verifiable learning.
+- **Schema**: `erc8004_identities`, `erc8004_reputation`, `erc8004_validations`, `bap578_nfas` tables.
+- **API Routes**: `/api/standards/*` for registry CRUD, `/api/standards/erc8004/info`, `/api/standards/bap578/info`.
+- **Discovery**: `/.well-known/agent.json` and `/.well-known/agent-registration.json` serve ERC-8004 compliant registration files.
+- **Frontend**: `/standards` page with interactive tabs showing registry details, features, contract addresses, and API endpoints.
+
 ### Key Design Decisions
 - **Two-layer architecture**: On-chain for financial operations, off-chain for high-frequency agent behaviors.
 - **Shared schema**: `shared/` directory ensures type-safe data contracts between client and server.

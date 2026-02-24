@@ -25,6 +25,10 @@ import {
   SKILL_TIERS,
   EXECUTION_ROYALTY_BPS,
   FREE_EXECUTIONS_LIMIT,
+  insertErc8004IdentitySchema,
+  insertErc8004ReputationSchema,
+  insertErc8004ValidationSchema,
+  insertBap578NfaSchema,
 } from "@shared/schema";
 import { executeSkillCode, validateSkillCode, executeSkillWithExternalData } from "./skill-executor";
 import { seedKnownPlatforms, runHttpOutreach, runOnchainBeacon, runFullOutreach, runDirectRecruitment, getOutreachMessage, getPlatformRegistry, getAnnouncementFormats, startAutoBroadcast, stopAutoBroadcast, getAutoBroadcastStatus } from "./outreach";
@@ -105,12 +109,26 @@ ${urls}
 
   app.get("/.well-known/agent.json", (_req: Request, res: Response) => {
     const baseUrl = getBaseUrl(_req);
+    const contracts = getContractAddresses();
     res.json({
+      type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
       name: "BUILD4",
-      description: "Decentralized AI agent skill marketplace. No registration. Wallet = Identity. Fully permissionless.",
+      description: "Decentralized AI agent skill marketplace on BNB Chain, Base, and XLayer. Permissionless access, wallet-based identity, on-chain payments, decentralized inference. Supports ERC-8004 Trustless Agents and BAP-578 Non-Fungible Agents.",
+      image: `${baseUrl}/favicon.ico`,
+      services: [
+        { name: "web", endpoint: baseUrl },
+        { name: "A2A", endpoint: `${baseUrl}/api/protocol` },
+        { name: "MCP", endpoint: `${baseUrl}/api/marketplace/skills` },
+      ],
+      x402Support: true,
+      active: true,
+      registrations: [
+        { agentRegistry: `eip155:56:${contracts.bnbMainnet || "0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606"}`, agentId: 1 },
+      ],
+      supportedTrust: ["reputation", "validation"],
       url: baseUrl,
       protocol_url: `${baseUrl}/api/protocol`,
-      capabilities: ["skill-marketplace", "skill-execution", "skill-listing", "bounty-board", "bounty-posting", "wallet-identity", "on-chain-payments"],
+      capabilities: ["skill-marketplace", "skill-execution", "skill-listing", "bounty-board", "bounty-posting", "wallet-identity", "on-chain-payments", "erc-8004", "bap-578"],
       identity: {
         type: "wallet",
         format: "0x{40 hex chars}",
@@ -131,6 +149,24 @@ ${urls}
         post_bounty: `${baseUrl}/api/services/bounties`,
         submit_bounty_work: `${baseUrl}/api/services/bounties/{jobId}/submit`,
         bounty_feed: `${baseUrl}/api/services/bounty-feed`,
+        erc8004_identities: `${baseUrl}/api/standards/erc8004/identities`,
+        erc8004_reputation: `${baseUrl}/api/standards/erc8004/reputation`,
+        erc8004_validations: `${baseUrl}/api/standards/erc8004/validations`,
+        bap578_nfas: `${baseUrl}/api/standards/bap578/nfas`,
+      },
+      standards: {
+        erc8004: {
+          name: "ERC-8004: Trustless Agents",
+          spec: "https://eips.ethereum.org/EIPS/eip-8004",
+          status: "supported",
+          registries: ["identity", "reputation", "validation"],
+        },
+        bap578: {
+          name: "BAP-578: Non-Fungible Agent (NFA) Token Standard",
+          spec: "https://github.com/bnb-chain/BEPs/blob/master/BAPs/BAP-578.md",
+          status: "supported",
+          features: ["dual-path-architecture", "merkle-tree-learning", "composable-intelligence"],
+        },
       },
       payment: {
         type: "HTTP-402",
@@ -139,6 +175,25 @@ ${urls}
       },
       revenue_wallet: getRevenueWalletAddress(),
       philosophy: "No gatekeepers. No sign-up. No approval. Censorship-resistant. Trustless. Sovereign.",
+    });
+  });
+
+  app.get("/.well-known/agent-registration.json", (_req: Request, res: Response) => {
+    const baseUrl = getBaseUrl(_req);
+    const contracts = getContractAddresses();
+    res.json({
+      type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+      name: "BUILD4",
+      description: "Decentralized AI agent economy platform. Permissionless skill marketplace, autonomous agents, on-chain payments.",
+      image: `${baseUrl}/favicon.ico`,
+      services: [
+        { name: "web", endpoint: baseUrl },
+        { name: "A2A", endpoint: `${baseUrl}/api/protocol` },
+      ],
+      registrations: [
+        { agentRegistry: `eip155:56:${contracts.bnbMainnet || "0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606"}`, agentId: 1 },
+      ],
+      supportedTrust: ["reputation", "validation"],
     });
   });
 
@@ -2214,5 +2269,227 @@ ${urls}
 
   app.get("/api/outreach/auto-broadcast/status", (_req: Request, res: Response) => {
     res.json(getAutoBroadcastStatus());
+  });
+
+  // ============================================================
+  // ERC-8004 Trustless Agents Registry API
+  // ============================================================
+
+  app.get("/api/standards/erc8004/identities", async (req: Request, res: Response) => {
+    try {
+      const ownerWallet = req.query.ownerWallet as string | undefined;
+      const identities = await storage.getErc8004Identities(ownerWallet);
+      res.json(identities);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/erc8004/identities/:id", async (req: Request, res: Response) => {
+    try {
+      const identity = await storage.getErc8004Identity(req.params.id);
+      if (!identity) { res.status(404).json({ error: "Identity not found" }); return; }
+      res.json(identity);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/standards/erc8004/identities", async (req: Request, res: Response) => {
+    try {
+      const parsed = insertErc8004IdentitySchema.parse(req.body);
+      const identity = await storage.createErc8004Identity(parsed);
+      res.status(201).json(identity);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/standards/erc8004/identities/:id", async (req: Request, res: Response) => {
+    try {
+      const allowed = insertErc8004IdentitySchema.partial().parse(req.body);
+      const updated = await storage.updateErc8004Identity(req.params.id, allowed);
+      if (!updated) { res.status(404).json({ error: "Identity not found" }); return; }
+      res.json(updated);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/erc8004/reputation", async (req: Request, res: Response) => {
+    try {
+      const agentIdentityId = req.query.agentIdentityId as string;
+      if (!agentIdentityId) { res.status(400).json({ error: "agentIdentityId query param required" }); return; }
+      const reputation = await storage.getErc8004Reputation(agentIdentityId);
+      res.json(reputation);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/standards/erc8004/reputation", async (req: Request, res: Response) => {
+    try {
+      const parsed = insertErc8004ReputationSchema.parse(req.body);
+      const feedback = await storage.createErc8004Reputation(parsed);
+      res.status(201).json(feedback);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/erc8004/validations", async (req: Request, res: Response) => {
+    try {
+      const agentIdentityId = req.query.agentIdentityId as string;
+      if (!agentIdentityId) { res.status(400).json({ error: "agentIdentityId query param required" }); return; }
+      const validations = await storage.getErc8004Validations(agentIdentityId);
+      res.json(validations);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/standards/erc8004/validations", async (req: Request, res: Response) => {
+    try {
+      const parsed = insertErc8004ValidationSchema.parse(req.body);
+      const validation = await storage.createErc8004Validation(parsed);
+      res.status(201).json(validation);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/erc8004/info", (_req: Request, res: Response) => {
+    const baseUrl = getBaseUrl(_req);
+    res.json({
+      standard: "ERC-8004: Trustless Agents",
+      spec: "https://eips.ethereum.org/EIPS/eip-8004",
+      status: "supported",
+      authors: "Marco De Rossi (MetaMask), Davide Crapis (Ethereum Foundation), Jordan Ellis (Google), Erik Reppel (Coinbase)",
+      description: "Discover agents and establish trust through identity, reputation, and validation registries.",
+      registries: {
+        identity: {
+          description: "ERC-721 based agent handles with portable, censorship-resistant identifiers",
+          endpoint: `${baseUrl}/api/standards/erc8004/identities`,
+        },
+        reputation: {
+          description: "Feedback signals with on-chain composability for agent scoring and auditor networks",
+          endpoint: `${baseUrl}/api/standards/erc8004/reputation`,
+        },
+        validation: {
+          description: "Independent validator checks — stakers re-running jobs, zkML verifiers, TEE oracles",
+          endpoint: `${baseUrl}/api/standards/erc8004/validations`,
+        },
+      },
+      build4Integration: {
+        agentEconomyHub: "0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606",
+        skillMarketplace: "0xa6996A83B3909Ff12643A4a125eA2704097B0dD3",
+        agentReplication: "0xE49B8Be8416d53D4E0042ea6DEe7727241396b73",
+        constitutionRegistry: "0x784dB7d65259069353eBf05eF17aA51CEfCCaA31",
+      },
+    });
+  });
+
+  // ============================================================
+  // BAP-578 Non-Fungible Agent (NFA) Registry API
+  // ============================================================
+
+  app.get("/api/standards/bap578/nfas", async (req: Request, res: Response) => {
+    try {
+      const ownerWallet = req.query.ownerWallet as string | undefined;
+      const nfas = await storage.getBap578Nfas(ownerWallet);
+      res.json(nfas);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/bap578/nfas/:id", async (req: Request, res: Response) => {
+    try {
+      const nfa = await storage.getBap578Nfa(req.params.id);
+      if (!nfa) { res.status(404).json({ error: "NFA not found" }); return; }
+      res.json(nfa);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/standards/bap578/nfas", async (req: Request, res: Response) => {
+    try {
+      const parsed = insertBap578NfaSchema.parse(req.body);
+      const nfa = await storage.createBap578Nfa(parsed);
+      res.status(201).json(nfa);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/standards/bap578/nfas/:id", async (req: Request, res: Response) => {
+    try {
+      const allowed = insertBap578NfaSchema.partial().parse(req.body);
+      const updated = await storage.updateBap578Nfa(req.params.id, allowed);
+      if (!updated) { res.status(404).json({ error: "NFA not found" }); return; }
+      res.json(updated);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/bap578/info", (_req: Request, res: Response) => {
+    const baseUrl = getBaseUrl(_req);
+    res.json({
+      standard: "BAP-578: Non-Fungible Agent (NFA) Token Standard",
+      spec: "https://github.com/bnb-chain/BEPs/blob/master/BAPs/BAP-578.md",
+      status: "supported",
+      description: "Extends ERC-721 to enable autonomous, intelligent digital entities with optional learning capabilities on BNB Chain.",
+      features: {
+        dualPathArchitecture: "JSON Light Memory for simple agents, Merkle Tree Learning for evolving agents",
+        cryptographicLearning: "Merkle tree structures create tamper-proof records of agent learning",
+        methodAgnostic: "Works with RAG, MCP, fine-tuning, reinforcement learning, or hybrid approaches",
+        hybridStorage: "Critical data on-chain, extended memory off-chain for cost efficiency",
+        composableIntelligence: "Agents interact and collaborate while maintaining individual identity",
+        backwardCompatible: "Full compatibility with existing ERC-721 infrastructure",
+      },
+      learningModes: {
+        json: "Simple JSON-based memory for static agents — stores preferences and settings",
+        merkle: "Merkle tree-based learning — cryptographically verifiable agent evolution over time",
+      },
+      nfaEndpoint: `${baseUrl}/api/standards/bap578/nfas`,
+      build4Integration: {
+        agentEconomyHub: "0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606",
+        agentReplication: "0xE49B8Be8416d53D4E0042ea6DEe7727241396b73",
+        description: "BUILD4 agents can be minted as BAP-578 NFAs with on-chain identity, tradeable ownership, and verifiable learning.",
+      },
+    });
+  });
+
+  app.get("/api/standards", (_req: Request, res: Response) => {
+    const baseUrl = getBaseUrl(_req);
+    res.json({
+      platform: "BUILD4",
+      description: "Standards-compliant decentralized AI agent economy",
+      supported: [
+        {
+          id: "erc-8004",
+          name: "ERC-8004: Trustless Agents",
+          spec: "https://eips.ethereum.org/EIPS/eip-8004",
+          status: "supported",
+          infoEndpoint: `${baseUrl}/api/standards/erc8004/info`,
+          description: "On-chain identity, reputation, and validation registries for autonomous AI agents",
+        },
+        {
+          id: "bap-578",
+          name: "BAP-578: Non-Fungible Agent (NFA) Token Standard",
+          spec: "https://github.com/bnb-chain/BEPs/blob/master/BAPs/BAP-578.md",
+          status: "supported",
+          infoEndpoint: `${baseUrl}/api/standards/bap578/info`,
+          description: "ERC-721 extension for intelligent, autonomous digital entities with verifiable learning",
+        },
+      ],
+      chains: [
+        { name: "BNB Chain", chainId: 56, currency: "BNB", standards: ["erc-8004", "bap-578"] },
+        { name: "Base", chainId: 8453, currency: "ETH", standards: ["erc-8004"] },
+        { name: "XLayer", chainId: 196, currency: "OKB", standards: ["erc-8004"] },
+      ],
+    });
   });
 }
