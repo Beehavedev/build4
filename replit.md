@@ -61,8 +61,9 @@ The project is organized as a monorepo with `client/` for the React frontend, `s
 
 ### Twitter Bounty Agent (Feb 2026)
 - **Integration**: OAuth 1.0a via `twitter-api-v2` package, connected to @Build4ai account.
-- **Schema**: `twitter_bounties`, `twitter_submissions`, `twitter_agent_config` tables.
+- **Schema**: `twitter_bounties`, `twitter_submissions`, `twitter_agent_config`, `twitter_agent_personality`, `twitter_reply_log` tables.
 - **Engine**: Background process (`server/twitter-agent.ts`) posts bounties, monitors replies, extracts wallet addresses, verifies proof quality via decentralized inference, and auto-pays verified workers.
+- **Self-Learning Personality**: Agent develops its own voice through experience. Logs every reply, runs hourly self-reflection via AI, evolves personality traits (voice, values, do/don't lists, lessons). Personality stored in DB and injected into prompts dynamically. Hard safety guardrails (no insults, blocked words filter, spam detection) can never be overridden by personality evolution.
 - **API Routes**: `/api/twitter/*` (all admin-authed via analyticsAuth) for status, config, post-bounty, bounties, submissions, start/stop controls.
 - **Frontend**: `/twitter-agent` page with admin login gate, dashboard with stats, settings, bounty posting, and submission tracking.
 - **Payments**: Real on-chain native token transfers via deployer wallet (ethers.js). Requires DEPLOYER_PRIVATE_KEY secret. Falls back gracefully if key not set.

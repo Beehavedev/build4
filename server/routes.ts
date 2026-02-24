@@ -460,6 +460,16 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/twitter/personality", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      const personality = await storage.getTwitterPersonality();
+      const recentReplies = await storage.getRecentTwitterReplies(20);
+      res.json({ personality: personality || null, recentReplies });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   await storage.cleanFakeData();
   await storage.seedInferenceProviders();
   await storage.seedSubscriptionPlans();

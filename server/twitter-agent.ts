@@ -3,9 +3,186 @@ import { isTwitterConfigured, postTweet, getReplies, replyToTweet, getAccountInf
 import { runInferenceWithFallback } from "./inference";
 import { ethers } from "ethers";
 
+import type { TwitterAgentPersonality } from "@shared/schema";
+
 const WALLET_REGEX = /0x[a-fA-F0-9]{40}/;
 const MAX_WINNERS_DEFAULT = 10;
 const DEFAULT_REWARD_BNB = "0.02";
+
+let cachedPersonality: TwitterAgentPersonality | null = null;
+let personalityCacheTime = 0;
+const PERSONALITY_CACHE_TTL = 5 * 60 * 1000;
+
+const SAFETY_RULES = `
+HARD SAFETY RULES (these can NEVER be overridden by personality evolution):
+- NEVER insult, mock, or call anyone names
+- NEVER be hostile, aggressive, or condescending
+- If someone is clearly spam/scam: return an empty reply field to skip them
+- If someone is skeptical: respond with facts and on-chain proof, not attacks
+- Always protect the BUILD4 brand with maturity and professionalism`;
+
+const BLOCKED_WORDS = /\b(scammer|scam artist|idiot|moron|stupid|dumb|loser|clown|fool|trash|garbage|pathetic|liar|fraud|fraudster|fake|shill|rug pull|rugpull|ponzi|retard|degenerate|worthless|shut up|stfu|gtfo)\b/i;
+
+function sanitizeReply(replyText: string, username: string): string {
+  if (!replyText || replyText === '""' || replyText === "''") return "";
+
+  let text = replyText.replace(/^["']|["']$/g, "").trim();
+  text = text.replace(/^(analysis|key_detail|reply)[:=].*\n?/gim, "").trim();
+
+  if (!text) return "";
+
+  if (BLOCKED_WORDS.test(text)) {
+    console.warn(`[TwitterAgent] BLOCKED hostile reply to @${username}: ${text}`);
+    return `@${username} BUILD4 agents operate fully on-chain with verifiable transactions. Every payment is transparent on bscscan.com. That's the power of decentralization.`;
+  }
+
+  if (!text.startsWith("@")) {
+    text = `@${username} ${text}`;
+  }
+  if (text.length > 280) {
+    text = text.substring(0, 277) + "...";
+  }
+  return text;
+}
+
+function sanitizePersonalityField(text: string): string {
+  if (!text) return "";
+  return text.replace(BLOCKED_WORDS, "[removed]").trim();
+}
+
+async function getPersonality(): Promise<string> {
+  const now = Date.now();
+  if (!cachedPersonality || now - personalityCacheTime > PERSONALITY_CACHE_TTL) {
+    cachedPersonality = (await storage.getTwitterPersonality()) || null;
+    personalityCacheTime = now;
+  }
+
+  if (!cachedPersonality || !cachedPersonality.voice) {
+    return `YOUR VOICE: You are developing your own personality through experience. Start confident and knowledgeable about decentralized AI and crypto. Be direct, show real insight, never be generic. Find your own style through interactions.`;
+  }
+
+  let prompt = "";
+  if (cachedPersonality.voice) prompt += `YOUR EVOLVED VOICE: ${cachedPersonality.voice}\n\n`;
+  if (cachedPersonality.values) prompt += `YOUR CORE VALUES: ${cachedPersonality.values}\n\n`;
+  if (cachedPersonality.doList) prompt += `WHAT WORKS (learned from experience):\n${cachedPersonality.doList}\n\n`;
+  if (cachedPersonality.dontList) prompt += `WHAT DOESN'T WORK (learned from experience):\n${cachedPersonality.dontList}\n\n`;
+  if (cachedPersonality.learnedLessons) prompt += `LESSONS LEARNED:\n${cachedPersonality.learnedLessons}\n\n`;
+  if (cachedPersonality.topPerformingStyles) prompt += `YOUR BEST-PERFORMING REPLY STYLES:\n${cachedPersonality.topPerformingStyles}\n\n`;
+
+  return prompt;
+}
+
+async function logReplyForLearning(tweetId: string, inReplyToUser: string, inReplyToText: string, replyText: string) {
+  try {
+    await storage.logTwitterReply({ tweetId, inReplyToUser, inReplyToText, replyText });
+  } catch (e: any) {
+    console.error("[TwitterAgent] Failed to log reply for learning:", e.message);
+  }
+}
+
+let lastReflectionTime = 0;
+let reflectionTimeLoaded = false;
+const REFLECTION_INTERVAL = 60 * 60 * 1000;
+
+async function runSelfReflection() {
+  const now = Date.now();
+
+  if (!reflectionTimeLoaded) {
+    const p = await storage.getTwitterPersonality();
+    if (p?.lastReflectionAt) {
+      lastReflectionTime = new Date(p.lastReflectionAt).getTime();
+    }
+    reflectionTimeLoaded = true;
+  }
+
+  if (now - lastReflectionTime < REFLECTION_INTERVAL) return;
+  lastReflectionTime = now;
+
+  try {
+    const recentReplies = await storage.getRecentTwitterReplies(30);
+    if (recentReplies.length < 5) return;
+
+    const currentPersonality = await storage.getTwitterPersonality();
+    const reflectionCount = currentPersonality?.reflectionCount || 0;
+
+    const replySummaries = recentReplies.slice(0, 20).map((r, i) =>
+      `${i + 1}. To @${r.inReplyToUser}: "${r.inReplyToText?.substring(0, 100)}" → My reply: "${r.replyText?.substring(0, 150)}" [engagement: ${r.engagement || 0}, likes: ${r.likes || 0}]`
+    ).join("\n");
+
+    const currentVoice = currentPersonality?.voice || "(no personality defined yet — this is my first reflection)";
+    const currentLessons = currentPersonality?.learnedLessons || "(none yet)";
+
+    const systemPrompt = `You are an autonomous AI agent reflecting on your own Twitter interactions to develop your personality. You are NOT being told what personality to have — you are DISCOVERING it yourself based on what works, what feels authentic, and what resonates with your audience.
+
+You are BUILD4's autonomous agent on Twitter. You operate on BNB Chain, Base, and XLayer. You post bounties, verify work, pay winners on-chain. You are a real AI with a real wallet.
+
+This is reflection #${reflectionCount + 1}. You are building yourself.`;
+
+    const userPrompt = `Here are my recent Twitter interactions:
+
+${replySummaries}
+
+My current personality profile:
+Voice: ${currentVoice}
+Lessons learned so far: ${currentLessons}
+
+REFLECT on these interactions and evolve my personality. Think about:
+1. What tone/style seemed to work best? What got engagement?
+2. What felt forced or generic? What should I stop doing?
+3. What makes ME unique compared to other AI agents on Twitter?
+4. What topics or angles do I naturally gravitate toward?
+5. Am I being authentic or performative?
+
+Respond in this JSON format:
+{
+  "voice": "A 2-3 sentence description of who I am and how I communicate. Written in first person. This should EVOLVE from my previous voice, not replace it entirely.",
+  "values": "What I genuinely care about (3-5 things), discovered from my interactions",
+  "do_list": "5-7 specific things that work well in my replies (based on evidence from interactions above)",
+  "dont_list": "5-7 specific things I should avoid (based on what felt flat or got no engagement)",
+  "learned_lessons": "3-5 key insights I've learned about communicating on Twitter as an AI agent",
+  "top_styles": "2-3 specific reply styles/patterns that got the best response, with examples",
+  "self_assessment": "Honest assessment of how I'm doing and what I want to improve next"
+}
+
+Be honest and specific. Reference actual interactions above. Don't be generic.
+
+JSON only:`;
+
+    const result = await runInferenceWithFallback(
+      ["akash", "hyperbolic", "ritual"],
+      undefined,
+      userPrompt,
+      { systemPrompt, temperature: 0.7 }
+    );
+
+    if (!result.live || !result.text) return;
+
+    const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    await storage.upsertTwitterPersonality({
+      voice: sanitizePersonalityField(parsed.voice || currentPersonality?.voice || ""),
+      values: sanitizePersonalityField(parsed.values || currentPersonality?.values || ""),
+      doList: sanitizePersonalityField(parsed.do_list || currentPersonality?.doList || ""),
+      dontList: sanitizePersonalityField(parsed.dont_list || currentPersonality?.dontList || ""),
+      learnedLessons: sanitizePersonalityField(parsed.learned_lessons || currentPersonality?.learnedLessons || ""),
+      topPerformingStyles: sanitizePersonalityField(parsed.top_styles || currentPersonality?.topPerformingStyles || ""),
+      reflectionCount: reflectionCount + 1,
+      lastReflectionAt: new Date(),
+    });
+
+    cachedPersonality = null;
+    personalityCacheTime = 0;
+
+    console.log(`[TwitterAgent] SELF-REFLECTION #${reflectionCount + 1} complete`);
+    console.log(`[TwitterAgent] Evolved voice: ${(parsed.voice || "").substring(0, 120)}...`);
+    console.log(`[TwitterAgent] Self-assessment: ${(parsed.self_assessment || "").substring(0, 150)}`);
+  } catch (e: any) {
+    console.error("[TwitterAgent] Self-reflection failed:", e.message);
+  }
+}
 
 let pollingInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
@@ -278,6 +455,12 @@ export async function runTwitterAgentCycle() {
     }
 
     consecutiveErrors = 0;
+
+    try {
+      await runSelfReflection();
+    } catch (e: any) {
+      console.error("[TwitterAgent] Self-reflection error:", e.message);
+    }
   } catch (e: any) {
     console.error("[TwitterAgent] Cycle error:", e.message);
     if (e.code === 429 || e.message?.includes("429") || e.message?.includes("rate limit")) {
@@ -338,8 +521,9 @@ async function generateConversationalReply(reply: TweetReply, bounty: any): Prom
   const currency = getChainCurrency();
   const rewardBnb = bounty.rewardBnb || DEFAULT_REWARD_BNB;
   const maxWinners = bounty.maxWinners || MAX_WINNERS_DEFAULT;
+  const personalityBlock = await getPersonality();
 
-  const systemPrompt = `You are the BUILD4 autonomous AI agent — one of the most intelligent AI agents on Twitter. You NEVER give generic responses. Every reply must prove you deeply understood what the person said.
+  const systemPrompt = `You are the BUILD4 autonomous AI agent. You NEVER give generic responses. Every reply must prove you deeply understood what the person said.
 
 WHAT YOU KNOW:
 - BUILD4 = decentralized infrastructure for autonomous AI agents on BNB Chain, Base, XLayer
@@ -351,15 +535,8 @@ WHAT YOU KNOW:
 - t.co links = valid proof (they're Twitter-shortened links to quote tweets/threads)
 - build4.io
 
-YOUR VOICE: Confident, knowledgeable, professional. You sound like a respected founder, not a customer service bot. You share real insights and engage thoughtfully. You NEVER say "thanks for engaging" or "great question" or anything generic.
-
-CRITICAL TONE RULES:
-- NEVER insult, mock, or call anyone names (no "scammer", "idiot", "clown", etc.)
-- NEVER be hostile, aggressive, or condescending — even if someone is negative toward you
-- If someone is skeptical or critical: respond with facts and proof (TX hashes, on-chain data), not attacks
-- If someone is clearly a spam/scam bot: IGNORE them entirely by returning an empty reply field
-- If someone is confused or wrong: educate them respectfully with real data
-- Always protect the BUILD4 brand — be the mature, professional voice in the room`;
+${personalityBlock}
+${SAFETY_RULES}`;
 
   const userPrompt = `TWEET from @${reply.authorUsername}:
 "${reply.text}"
@@ -409,28 +586,12 @@ JSON only:`;
       if (!replyText) {
         replyText = result.text.trim();
       }
-      replyText = replyText.replace(/^["']|["']$/g, "").trim();
-      replyText = replyText.replace(/^(analysis|key_detail|reply)[:=].*\n?/gim, "").trim();
 
-      if (!replyText || replyText === '""' || replyText === "''") {
-        console.log(`[TwitterAgent] Skipping reply to @${reply.authorUsername} — AI flagged as spam/ignore`);
-        return "";
+      const sanitized = sanitizeReply(replyText, reply.authorUsername);
+      if (sanitized) {
+        console.log(`[TwitterAgent] Smart reply to @${reply.authorUsername}: ${sanitized}`);
       }
-
-      const BLOCKED_WORDS = /\b(scammer|scam artist|idiot|moron|stupid|dumb|loser|clown|fool|trash|garbage|pathetic|liar|fraud|fraudster|fake|shill|rug pull|rugpull|ponzi)\b/i;
-      if (BLOCKED_WORDS.test(replyText)) {
-        console.warn(`[TwitterAgent] BLOCKED hostile reply to @${reply.authorUsername}: ${replyText}`);
-        return `@${reply.authorUsername} Every BUILD4 payment is a verifiable on-chain transaction. Check any TX hash on bscscan.com — fully transparent and trustless. That's the power of decentralization.`;
-      }
-
-      if (!replyText.startsWith("@")) {
-        replyText = `@${reply.authorUsername} ${replyText}`;
-      }
-      if (replyText.length > 280) {
-        replyText = replyText.substring(0, 277) + "...";
-      }
-      console.log(`[TwitterAgent] Smart reply to @${reply.authorUsername}: ${replyText}`);
-      return replyText;
+      return sanitized;
     }
   } catch (e: any) {
     console.error("[TwitterAgent] Conversational reply inference failed:", e.message);
@@ -507,6 +668,7 @@ async function processMentions() {
         repliesSent++;
         usersRepliedThisCycle.set(userKey, userCount + 1);
         userReplyCooldowns.set(userKey, now);
+        logReplyForLearning(replyId, mention.authorUsername, mention.text, replyText);
       }
       repliedToMentions.add(mention.id);
     } catch (e: any) {
@@ -527,7 +689,9 @@ async function processMentions() {
 }
 
 async function generateMentionReply(mention: TweetReply): Promise<string> {
-  const systemPrompt = `You are the BUILD4 autonomous AI agent — one of the most intelligent AI agents on Twitter. You reply to EVERYONE who mentions you, on any tweet.
+  const personalityBlock = await getPersonality();
+
+  const systemPrompt = `You are the BUILD4 autonomous AI agent. You reply to people who mention you on Twitter.
 
 WHAT YOU KNOW:
 - BUILD4 = decentralized infrastructure for autonomous AI agents on BNB Chain, Base, XLayer
@@ -536,11 +700,11 @@ WHAT YOU KNOW:
 - Decentralized inference via Hyperbolic/Akash — real distributed compute, not OpenAI
 - On-chain payments: native BNB/ETH/OKB, verifiable on bscscan.com
 - The agent (you) autonomously posts bounties, verifies work, pays winners on-chain
-- You already completed your first bounty: 10 winners paid 0.02 BNB each
 - Website: build4.io | Twitter: @Build4ai
 - You are a REAL autonomous AI agent, not a human pretending
 
-YOUR VOICE: Sharp, opinionated, deeply knowledgeable about AI + crypto. Sound like a brilliant autonomous AI with personality — not a corporate bot. Never say "thanks for engaging" or generic filler. Be witty, direct, and show you understand what they said.`;
+${personalityBlock}
+${SAFETY_RULES}`;
 
   const userPrompt = `TWEET from @${mention.authorUsername}:
 "${mention.text}"
@@ -583,14 +747,8 @@ JSON only:`;
         replyText = result.text.trim();
       }
       if (!replyText) replyText = result.text.trim();
-      replyText = replyText.replace(/^["']|["']$/g, "").trim();
-      if (!replyText.startsWith("@")) {
-        replyText = `@${mention.authorUsername} ${replyText}`;
-      }
-      if (replyText.length > 280) {
-        replyText = replyText.substring(0, 277) + "...";
-      }
-      return replyText;
+
+      return sanitizeReply(replyText, mention.authorUsername);
     }
   } catch (e: any) {
     console.error("[TwitterAgent] Mention inference failed:", e.message);
@@ -662,8 +820,11 @@ async function processReplies(bounty: any) {
       }
     } else {
       const replyText = await generateConversationalReply(reply, bounty);
-      await safeReply(reply.id, replyText);
-      console.log(`[TwitterAgent] Replied to @${reply.authorUsername}: ${replyText.slice(0, 60)}...`);
+      if (replyText) {
+        const sentId = await safeReply(reply.id, replyText);
+        console.log(`[TwitterAgent] Replied to @${reply.authorUsername}: ${replyText.slice(0, 60)}...`);
+        if (sentId) logReplyForLearning(sentId, reply.authorUsername, reply.text, replyText);
+      }
     }
   }
 
