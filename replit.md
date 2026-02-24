@@ -96,6 +96,16 @@ The project is organized as a monorepo with `client/` for the React frontend, `s
 - **connect-pg-simple**: PostgreSQL session store.
 - **passport**, **passport-local**: Authentication framework (integrated but not fully wired).
 
+### Twitter Support Agent (Feb 2026)
+- **Purpose**: Autonomous support agent that monitors Twitter mentions, answers user questions, and logs support tickets.
+- **Safety**: Ironclad guardrails — NEVER changes contracts, payouts, wallets, or system settings. Blocks social engineering, prohibited action requests, and sensitive information leaks. Triple-layer safety: pre-classification, post-generation scan, and outbound filter.
+- **Schema**: `support_tickets`, `support_agent_config` tables.
+- **Engine**: Background process (`server/twitter-support-agent.ts`) polls mentions, classifies category/priority, generates AI replies via decentralized inference, creates tickets.
+- **API Routes**: `/api/support/*` (all admin-authed via analyticsAuth) for status, config, start/stop, run-cycle, tickets CRUD.
+- **Frontend**: `/support-agent` page with admin login gate, start/stop controls, ticket filtering (all/needs_attention/open/auto_resolved/resolved), and resolution.
+- **Ticket Categories**: financial, bug_report, bounty, skill_marketplace, agent_management, privacy, security_concern, question, general.
+- **Priorities**: high (security concerns, bug reports, financial issues) and normal.
+
 ### Replit-Specific Integrations
 - **@replit/vite-plugin-runtime-error-modal**: Development error display.
 - **@replit/vite-plugin-cartographer**: Replit-specific dev tooling.

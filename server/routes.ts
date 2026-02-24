@@ -7,6 +7,7 @@ import { registerServicesRoutes } from "./services-routes";
 import { preparePrivacyTransfer, generateProof, getProof, verifyCommitment } from "./zerc20-sdk";
 import { startBountyEngine } from "./bounty-engine";
 import { startTwitterAgent, stopTwitterAgent, getTwitterAgentStatus, runTwitterAgentCycle, postBountyTweet } from "./twitter-agent";
+import { startSupportAgent, stopSupportAgent, getSupportAgentStatus, runSupportAgentCycle } from "./twitter-support-agent";
 import { isTwitterConfigured } from "./twitter-client";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
 import { registerSeoPrerender } from "./seo-prerender";
@@ -470,6 +471,112 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/support/status", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      const status = await getSupportAgentStatus();
+      res.json(status);
+    } catch (e: any) {
+      res.json({ configured: isTwitterConfigured(), enabled: false, running: false, error: e.message });
+    }
+  });
+
+  app.get("/api/support/config", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      const config = await storage.getSupportAgentConfig();
+      res.json(config || { id: "default", enabled: 0, pollingIntervalMs: 120000 });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/support/config", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const config = await storage.upsertSupportAgentConfig(req.body);
+      if (config.enabled === 1) {
+        await startSupportAgent();
+      } else {
+        stopSupportAgent();
+      }
+      res.json(config);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/support/start", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      await storage.upsertSupportAgentConfig({ enabled: 1 });
+      await startSupportAgent();
+      res.json({ success: true, message: "Support agent started" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/support/stop", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      await storage.upsertSupportAgentConfig({ enabled: 0 });
+      stopSupportAgent();
+      res.json({ success: true, message: "Support agent stopped" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/support/run-cycle", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!isTwitterConfigured()) {
+        res.status(400).json({ error: "Twitter API not configured" });
+        return;
+      }
+      await runSupportAgentCycle();
+      res.json({ success: true, message: "Support cycle completed" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/support/tickets", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const tickets = await storage.getSupportTickets(status);
+      res.json(tickets);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/support/tickets/:id", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const ticket = await storage.getSupportTicket(req.params.id);
+      if (!ticket) {
+        res.status(404).json({ error: "Ticket not found" });
+        return;
+      }
+      res.json(ticket);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/support/tickets/:id", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const { status, resolution } = req.body;
+      const update: any = {};
+      if (status) update.status = status;
+      if (resolution) update.resolution = resolution;
+      if (status === "resolved") update.resolvedAt = new Date();
+      const ticket = await storage.updateSupportTicket(req.params.id, update);
+      if (!ticket) {
+        res.status(404).json({ error: "Ticket not found" });
+        return;
+      }
+      res.json(ticket);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   await storage.cleanFakeData();
   await storage.seedInferenceProviders();
   await storage.seedSubscriptionPlans();
@@ -481,6 +588,9 @@ export async function registerRoutes(
   if (isTwitterConfigured()) {
     startTwitterAgent().catch(err => {
       console.error("[TwitterAgent] Failed to start:", err.message);
+    });
+    startSupportAgent().catch(err => {
+      console.error("[SupportAgent] Failed to start:", err.message);
     });
   }
 

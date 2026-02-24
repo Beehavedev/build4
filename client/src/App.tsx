@@ -17,6 +17,7 @@ import Analytics from "@/pages/analytics";
 import Services from "@/pages/services";
 import Privacy from "@/pages/privacy";
 import TwitterAgent from "@/pages/twitter-agent";
+import SupportAgent from "@/pages/support-agent";
 import Chain from "@/pages/chain";
 import NotFound from "@/pages/not-found";
 
@@ -35,6 +36,7 @@ function Router() {
       <Route path="/services" component={Services} />
       <Route path="/privacy" component={Privacy} />
       <Route path="/twitter-agent" component={TwitterAgent} />
+      <Route path="/support-agent" component={SupportAgent} />
       <Route path="/chain" component={Chain} />
       <Route component={NotFound} />
     </Switch>
