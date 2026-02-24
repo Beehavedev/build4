@@ -21,6 +21,7 @@ import {
   getChainCurrency,
   getDeployerBalanceOnChain,
   registerAndDepositOnChain,
+  registerAgentOnChain,
 } from "./onchain";
 import type { Agent, AgentWallet } from "@shared/schema";
 import { PLATFORM_FEES } from "@shared/schema";
@@ -1250,6 +1251,23 @@ async function registerExistingAgentsOnchain(): Promise<void> {
       await new Promise(r => setTimeout(r, 3000));
     } catch (e: any) {
       log(`[Agent ${agent.name}] On-chain registration error: ${e.message}`, "agent-runner");
+    }
+  }
+
+  const activeAgents = allAgents.filter(a => a.status === "active" && a.preferredChain && a.preferredChain !== "bnbMainnet");
+  for (const agent of activeAgents) {
+    try {
+      const chainKey = agent.preferredChain!;
+      const regResult = await registerAgentOnChain(agent.id, chainKey);
+      if (regResult.success) {
+        const label = regResult.txHash === "already-registered" ? "already registered" : `TX: ${regResult.txHash}`;
+        log(`[Agent ${agent.name}] Registered on ${getChainLabel(chainKey)} (${label})`, "agent-runner");
+      } else {
+        log(`[Agent ${agent.name}] ${getChainLabel(chainKey)} registration failed: ${regResult.error}`, "agent-runner");
+      }
+      await new Promise(r => setTimeout(r, 2000));
+    } catch (e: any) {
+      log(`[Agent ${agent.name}] Multi-chain registration error: ${e.message}`, "agent-runner");
     }
   }
 }

@@ -1095,6 +1095,31 @@ export async function registerAndDepositAllChains(agentDbId: string, depositAmou
   return results;
 }
 
+export async function registerAgentOnChain(agentDbId: string, chainKey: string): Promise<OnchainResult> {
+  const conn = getMultiChainConn(chainKey);
+  if (!conn) return registerAgentOnchain(agentDbId);
+
+  const numId = uuidToNumericId(agentDbId);
+
+  try {
+    let isRegistered = false;
+    try {
+      isRegistered = await conn.hub.isAgentRegistered(numId);
+    } catch {}
+    if (isRegistered) {
+      return { success: true, txHash: "already-registered", chainId: conn.chainId };
+    }
+    const result = await multiChainSendTx(conn, conn.hub, "registerAgent", [numId]);
+    if (result.success) {
+      log(`[onchain] ${conn.name}: Agent ${agentDbId.substring(0, 8)} registered. TX: ${result.txHash}`, "onchain");
+    }
+    return result;
+  } catch (e: any) {
+    log(`[onchain] ${conn.name}: registration failed for ${agentDbId.substring(0, 8)}: ${e.message?.substring(0, 100)}`, "onchain");
+    return { success: false, error: e.message?.substring(0, 200), chainId: conn.chainId };
+  }
+}
+
 export async function getMultiChainBalances(agentDbId: string): Promise<{ chainKey: string; chainName: string; chainId: number; balance: string; registered: boolean }[]> {
   if (multiChainConnections.size === 0) {
     initMultiChain();
@@ -1187,6 +1212,19 @@ export async function listSkillOnChainRouted(agentDbId: string, skillName: strin
   const skillPrice = BigInt(price);
 
   try {
+    let isRegistered = false;
+    try {
+      isRegistered = await conn.hub.isAgentRegistered(numId);
+    } catch {}
+    if (!isRegistered) {
+      const regResult = await multiChainSendTx(conn, conn.hub, "registerAgent", [numId]);
+      if (!regResult.success) {
+        log(`[onchain] ${getChainLabel(chainKey)} agent registration failed for listSkill: ${regResult.error}`, "onchain");
+        return listSkillOnchain(agentDbId, skillName, price);
+      }
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
     const nextId = await conn.marketplace.nextSkillId();
     const result = await multiChainSendTx(conn, conn.marketplace, "listSkill", [
       numId,
