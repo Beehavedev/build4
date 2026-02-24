@@ -46,6 +46,8 @@ import {
   type TwitterBounty, type InsertTwitterBounty, twitterBounties,
   type TwitterSubmission, type InsertTwitterSubmission, twitterSubmissions,
   type TwitterAgentConfig, type InsertTwitterAgentConfig, twitterAgentConfig,
+  type TwitterAgentPersonality, twitterAgentPersonality,
+  type TwitterReplyLog, twitterReplyLog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
@@ -268,6 +270,12 @@ export interface IStorage {
 
   getTwitterAgentConfig(): Promise<TwitterAgentConfig | undefined>;
   upsertTwitterAgentConfig(config: Partial<InsertTwitterAgentConfig>): Promise<TwitterAgentConfig>;
+
+  getTwitterPersonality(): Promise<TwitterAgentPersonality | undefined>;
+  upsertTwitterPersonality(data: Partial<TwitterAgentPersonality>): Promise<TwitterAgentPersonality>;
+  logTwitterReply(data: { tweetId: string; inReplyToUser: string; inReplyToText: string; replyText: string; tone?: string; selfScore?: number }): Promise<TwitterReplyLog>;
+  getRecentTwitterReplies(limit?: number): Promise<TwitterReplyLog[]>;
+  updateTwitterReplyEngagement(tweetId: string, likes: number, retweets: number, replies: number): Promise<void>;
 
   // Seed subscription plans
   seedSubscriptionPlans(): Promise<void>;
@@ -1782,6 +1790,37 @@ export class DatabaseStorage implements IStorage {
     }
     const [result] = await db.insert(twitterAgentConfig).values({ id: "default", ...config }).returning();
     return result;
+  }
+
+  async getTwitterPersonality(): Promise<TwitterAgentPersonality | undefined> {
+    const [row] = await db.select().from(twitterAgentPersonality).where(eq(twitterAgentPersonality.id, "default"));
+    return row;
+  }
+
+  async upsertTwitterPersonality(data: Partial<TwitterAgentPersonality>): Promise<TwitterAgentPersonality> {
+    const existing = await this.getTwitterPersonality();
+    if (existing) {
+      const [result] = await db.update(twitterAgentPersonality).set({ ...data, updatedAt: new Date() }).where(eq(twitterAgentPersonality.id, "default")).returning();
+      return result;
+    }
+    const [result] = await db.insert(twitterAgentPersonality).values({ id: "default", ...data }).returning();
+    return result;
+  }
+
+  async logTwitterReply(data: { tweetId: string; inReplyToUser: string; inReplyToText: string; replyText: string; tone?: string; selfScore?: number }): Promise<TwitterReplyLog> {
+    const [result] = await db.insert(twitterReplyLog).values(data).returning();
+    return result;
+  }
+
+  async getRecentTwitterReplies(limit = 50): Promise<TwitterReplyLog[]> {
+    return db.select().from(twitterReplyLog).orderBy(desc(twitterReplyLog.createdAt)).limit(limit);
+  }
+
+  async updateTwitterReplyEngagement(tweetId: string, likes: number, retweets: number, replies: number): Promise<void> {
+    await db.update(twitterReplyLog).set({
+      likes, retweets, replies,
+      engagement: likes + retweets * 3 + replies * 2,
+    }).where(eq(twitterReplyLog.tweetId!, tweetId));
   }
 }
 

@@ -942,6 +942,39 @@ export const insertTwitterAgentConfigSchema = createInsertSchema(twitterAgentCon
 export type InsertTwitterAgentConfig = z.infer<typeof insertTwitterAgentConfigSchema>;
 export type TwitterAgentConfig = typeof twitterAgentConfig.$inferSelect;
 
+export const twitterAgentPersonality = pgTable("twitter_agent_personality", {
+  id: varchar("id").primaryKey().default("default"),
+  voice: text("voice").default(""),
+  values: text("values").default(""),
+  doList: text("do_list").default(""),
+  dontList: text("dont_list").default(""),
+  learnedLessons: text("learned_lessons").default(""),
+  topPerformingStyles: text("top_performing_styles").default(""),
+  reflectionCount: integer("reflection_count").default(0),
+  lastReflectionAt: timestamp("last_reflection_at"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type TwitterAgentPersonality = typeof twitterAgentPersonality.$inferSelect;
+
+export const twitterReplyLog = pgTable("twitter_reply_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tweetId: text("tweet_id"),
+  inReplyToUser: text("in_reply_to_user"),
+  inReplyToText: text("in_reply_to_text"),
+  replyText: text("reply_text"),
+  tone: text("tone"),
+  engagement: integer("engagement").default(0),
+  likes: integer("likes").default(0),
+  retweets: integer("retweets").default(0),
+  replies: integer("replies").default(0),
+  selfScore: integer("self_score").default(0),
+  reflectionNotes: text("reflection_notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type TwitterReplyLog = typeof twitterReplyLog.$inferSelect;
+
 export const SEED_AGENTS = {
   RESEARCH_BOT: {
     name: "ResearchBot-7B",
