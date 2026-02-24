@@ -1010,6 +1010,82 @@ export const insertSupportAgentConfigSchema = createInsertSchema(supportAgentCon
 export type InsertSupportAgentConfig = z.infer<typeof insertSupportAgentConfigSchema>;
 export type SupportAgentConfig = typeof supportAgentConfig.$inferSelect;
 
+export const erc8004Identities = pgTable("erc8004_identities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id"),
+  agentRegistry: text("agent_registry"),
+  chainId: text("chain_id").notNull().default("56"),
+  agentUri: text("agent_uri"),
+  ownerWallet: text("owner_wallet").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  image: text("image"),
+  servicesJson: text("services_json"),
+  supportedTrust: text("supported_trust"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertErc8004IdentitySchema = createInsertSchema(erc8004Identities).omit({ id: true, createdAt: true });
+export type InsertErc8004Identity = z.infer<typeof insertErc8004IdentitySchema>;
+export type Erc8004Identity = typeof erc8004Identities.$inferSelect;
+
+export const erc8004Reputation = pgTable("erc8004_reputation", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentIdentityId: varchar("agent_identity_id").notNull(),
+  clientWallet: text("client_wallet").notNull(),
+  value: integer("value").notNull(),
+  valueDecimals: integer("value_decimals").notNull().default(0),
+  tag1: text("tag1"),
+  tag2: text("tag2"),
+  endpoint: text("endpoint"),
+  feedbackUri: text("feedback_uri"),
+  feedbackHash: text("feedback_hash"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertErc8004ReputationSchema = createInsertSchema(erc8004Reputation).omit({ id: true, createdAt: true });
+export type InsertErc8004Reputation = z.infer<typeof insertErc8004ReputationSchema>;
+export type Erc8004Reputation = typeof erc8004Reputation.$inferSelect;
+
+export const erc8004Validations = pgTable("erc8004_validations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentIdentityId: varchar("agent_identity_id").notNull(),
+  validatorWallet: text("validator_wallet").notNull(),
+  method: text("method").notNull().default("reputation"),
+  result: text("result").notNull().default("pass"),
+  score: integer("score"),
+  proofUri: text("proof_uri"),
+  proofHash: text("proof_hash"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertErc8004ValidationSchema = createInsertSchema(erc8004Validations).omit({ id: true, createdAt: true });
+export type InsertErc8004Validation = z.infer<typeof insertErc8004ValidationSchema>;
+export type Erc8004Validation = typeof erc8004Validations.$inferSelect;
+
+export const bap578Nfas = pgTable("bap578_nfas", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id"),
+  tokenId: text("token_id"),
+  chainId: text("chain_id").notNull().default("56"),
+  ownerWallet: text("owner_wallet").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  logicAddress: text("logic_address"),
+  metadataUri: text("metadata_uri"),
+  learningRoot: text("learning_root"),
+  learningMode: text("learning_mode").notNull().default("json"),
+  status: text("status").notNull().default("active"),
+  templateId: text("template_id"),
+  vaultPermissions: text("vault_permissions"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertBap578NfaSchema = createInsertSchema(bap578Nfas).omit({ id: true, createdAt: true });
+export type InsertBap578Nfa = z.infer<typeof insertBap578NfaSchema>;
+export type Bap578Nfa = typeof bap578Nfas.$inferSelect;
+
 export const SEED_AGENTS = {
   RESEARCH_BOT: {
     name: "ResearchBot-7B",
