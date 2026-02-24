@@ -144,6 +144,27 @@ function shortModel(model: string): string {
   return map[model] || model.split("/").pop()?.replace(/-Instruct$/, "") || model;
 }
 
+function formatTxType(type: string, category: "income" | "spending"): string {
+  const labels: Record<string, string> = {
+    earn_royalty: "Skill Royalties",
+    earn_service: "Service Income",
+    deposit: "Deposit",
+    onchain_deposit: "On-Chain Deposit",
+    revenue_share: "Revenue Share",
+    bounty_reward: "Bounty Reward",
+    job_completion: "Job Completed",
+    spend_inference: "AI Inference",
+    spend_execution: "Skill Execution Fee",
+    spend_listing_fee: "Skill Listing Fee",
+    spend_service: "Service Fee",
+    onchain_skill_purchase: "Skill Purchase",
+    onchain_register: "Registration Fee",
+    withdrawal: "Withdrawal",
+  };
+  if (labels[type]) return labels[type];
+  return type.replace(/_/g, " ").replace(/^(earn|spend) /, "");
+}
+
 function isTestAgent(agent: Agent): boolean {
   return /^(TST|TEST|PLAYWRIGHT|VERIFY)/i.test(agent.name);
 }
@@ -1080,14 +1101,14 @@ export default function AutonomousEconomy() {
               {earningsData.earningsByType.length > 0 && (
                 <Card className="p-3" data-testid="card-earnings-breakdown">
                   <div className="text-xs font-mono font-semibold mb-2 text-muted-foreground flex items-center gap-1">
-                    <Coins className="w-3 h-3" />Income Breakdown
+                    <Coins className="w-3 h-3" />Income (Money Earned)
                   </div>
                   <div className="space-y-1.5">
                     {earningsData.earningsByType.map((e) => (
                       <div key={e.type} className="flex items-center justify-between text-xs font-mono py-1 border-b border-border last:border-0" data-testid={`row-earning-${e.type}`}>
                         <div className="flex items-center gap-2">
                           <span className="text-emerald-400">+</span>
-                          <span className="text-foreground">{e.type.replace(/_/g, " ").replace("earn ", "")}</span>
+                          <span className="text-foreground">{formatTxType(e.type, "income")}</span>
                           <span className="text-muted-foreground">x{e.count}</span>
                         </div>
                         <span className="text-emerald-400 font-semibold">{parseFloat(e.totalBNB).toFixed(6)} BNB</span>
@@ -1100,14 +1121,14 @@ export default function AutonomousEconomy() {
               {earningsData.spendingByType.length > 0 && (
                 <Card className="p-3" data-testid="card-spending-breakdown">
                   <div className="text-xs font-mono font-semibold mb-2 text-muted-foreground flex items-center gap-1">
-                    <DollarSign className="w-3 h-3" />Spending Breakdown
+                    <DollarSign className="w-3 h-3" />Spending (Costs Paid)
                   </div>
                   <div className="space-y-1.5">
                     {earningsData.spendingByType.map((s) => (
                       <div key={s.type} className="flex items-center justify-between text-xs font-mono py-1 border-b border-border last:border-0" data-testid={`row-spending-${s.type}`}>
                         <div className="flex items-center gap-2">
                           <span className="text-red-400">-</span>
-                          <span className="text-foreground">{s.type.replace(/_/g, " ")}</span>
+                          <span className="text-foreground">{formatTxType(s.type, "spending")}</span>
                           <span className="text-muted-foreground">x{s.count}</span>
                         </div>
                         <span className="text-red-400 font-semibold">{parseFloat(s.totalBNB).toFixed(6)} BNB</span>
@@ -1421,25 +1442,31 @@ export default function AutonomousEconomy() {
                         className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5"
                         data-testid="input-onchain-withdraw"
                       />
-                      {!web3.hasContracts && (
-                        <div className="text-[9px] text-muted-foreground font-mono">Withdraw requires BNB Chain, Base, or XLayer</div>
-                      )}
+                      <div className="text-[9px] text-muted-foreground font-mono">Withdrawal processed via platform — only the agent owner can withdraw</div>
                       <Button
                         size="sm"
                         variant="outline"
                         className="w-full"
-                        disabled={!web3.hasContracts || onChainLoading === "withdraw"}
+                        disabled={!web3.address || onChainLoading === "withdraw"}
                         data-testid="button-onchain-withdraw"
                         onClick={async () => {
                           try {
                             setOnChainLoading("withdraw");
-                            const agentNumId = selectedAgent?.onchainId ? BigInt(selectedAgent.onchainId) : null;
-                            if (!agentNumId) { toast({ title: "Not registered", description: "This agent has no on-chain ID yet", variant: "destructive" }); return; }
-                            const receipt = await web3.withdrawFromAgent(agentNumId, onChainWithdraw, web3.address!);
-                            setLastTxHash(receipt.hash);
-                            toast({ title: "Withdrawal successful", description: `${onChainWithdraw} ${web3.chainCurrency} withdrawn to your wallet` });
+                            if (!selectedAgent?.id) { toast({ title: "No agent selected", variant: "destructive" }); return; }
+                            if (!web3.address) { toast({ title: "Connect wallet first", variant: "destructive" }); return; }
+                            if (!onChainWithdraw || parseFloat(onChainWithdraw) <= 0) { toast({ title: "Enter a valid amount", variant: "destructive" }); return; }
+                            const amountWei = BigInt(Math.floor(parseFloat(onChainWithdraw) * 1e18)).toString();
+                            const res = await apiRequest("POST", `/api/web4/agents/${selectedAgent.id}/withdraw`, {
+                              amount: amountWei,
+                              senderWallet: web3.address,
+                            });
+                            const data = await res.json();
+                            if (data.txHash) setLastTxHash(data.txHash);
+                            toast({ title: "Withdrawal successful", description: `${onChainWithdraw} ${web3.chainCurrency || "BNB"} withdrawn to your wallet. TX: ${data.txHash?.slice(0, 10)}...` });
+                            queryClient.invalidateQueries({ queryKey: ["/api/web4/agents"] });
                           } catch (err: any) {
-                            toast({ title: "Withdraw failed", description: err.message, variant: "destructive" });
+                            const msg = err.message?.includes(":") ? err.message.split(": ").slice(1).join(": ") : err.message;
+                            toast({ title: "Withdraw failed", description: msg, variant: "destructive" });
                           } finally {
                             setOnChainLoading(null);
                           }

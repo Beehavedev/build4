@@ -470,6 +470,30 @@ export async function transferOnchain(fromAgentId: string, toAgentId: string, am
   }
 }
 
+export async function withdrawOnchain(agentDbId: string, amountWei: string, toAddress: string): Promise<OnchainResult> {
+  if (!contracts) return { success: false, error: "Not initialized", chainId };
+
+  const numId = uuidToNumericId(agentDbId);
+
+  try {
+    const onchainBal = await contracts.hub.getBalance(numId);
+    if (onchainBal === 0n) {
+      return { success: false, error: "No on-chain balance to withdraw", chainId };
+    }
+    const requestedAmt = BigInt(amountWei);
+    if (requestedAmt === 0n) {
+      return { success: false, error: "Zero withdrawal amount", chainId };
+    }
+    if (onchainBal < requestedAmt) {
+      return { success: false, error: `Insufficient on-chain balance: has ${ethers.formatEther(onchainBal)}, needs ${ethers.formatEther(requestedAmt)}`, chainId };
+    }
+
+    return sendTx(contracts.hub, "withdraw", [numId, requestedAmt, toAddress], { gasLimit: 150000 });
+  } catch (e: any) {
+    return { success: false, error: e.message?.substring(0, 200), chainId };
+  }
+}
+
 export async function listSkillOnchain(agentDbId: string, skillName: string, price: string): Promise<OnchainResult & { skillId?: string }> {
   if (!contracts) return { success: false, error: "Not initialized", chainId };
 

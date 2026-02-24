@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
-import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, collectFeeAcrossAllChains, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain, getRevenueWalletAddress, verifyPaymentTransaction, getSupportedChains } from "./onchain";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, collectFeeAcrossAllChains, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain, getRevenueWalletAddress, verifyPaymentTransaction, getSupportedChains, withdrawOnchain } from "./onchain";
 import { EVM_CHAINS, getChainName, getChainCurrency, getRpcUrl, isContractChain } from "@shared/evm-chains";
 import {
   web4CreateAgentRequestSchema,
@@ -344,9 +344,16 @@ ${urls}
       const earnings: Record<string, { count: number; totalWei: bigint }> = {};
       const spending: Record<string, { count: number; totalWei: bigint }> = {};
 
+      const incomeTypes = new Set([
+        "deposit", "revenue_share", "bounty_reward", "job_completion",
+        "onchain_deposit", "withdrawal_reversal",
+      ]);
+      const isIncome = (type: string) =>
+        type.startsWith("earn") || incomeTypes.has(type);
+
       for (const tx of allTx) {
         const amt = BigInt(tx.amount || "0");
-        if (tx.type.startsWith("earn") || tx.type === "deposit" || tx.type === "revenue_share") {
+        if (isIncome(tx.type)) {
           if (!earnings[tx.type]) earnings[tx.type] = { count: 0, totalWei: BigInt(0) };
           earnings[tx.type].count++;
           earnings[tx.type].totalWei += amt;
@@ -578,6 +585,71 @@ ${urls}
       const updatedWallet = await storage.getWallet(agentId);
       res.json({ success: true, wallet: updatedWallet, txHash: normalizedTxHash, chain: chainName, currency, depositType: isDirectTransfer ? "direct" : "contract" });
     } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/withdraw", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const { amount, senderWallet } = req.body;
+
+      if (!amount || typeof amount !== "string") {
+        return res.status(400).json({ error: "Valid withdrawal amount required (in wei)" });
+      }
+      if (!senderWallet || typeof senderWallet !== "string") {
+        return res.status(400).json({ error: "Wallet address required" });
+      }
+
+      let amountBigInt: bigint;
+      try { amountBigInt = BigInt(amount); } catch { return res.status(400).json({ error: "Invalid amount format" }); }
+      if (amountBigInt <= 0n) return res.status(400).json({ error: "Amount must be positive" });
+
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+      if (!agent.creatorWallet) return res.status(403).json({ error: "Agent has no owner wallet set" });
+      const sender = senderWallet.toLowerCase();
+      if (sender !== agent.creatorWallet.toLowerCase()) {
+        return res.status(403).json({ error: "Only the agent owner can withdraw funds" });
+      }
+
+      if (!isOnchainReady()) {
+        return res.status(503).json({ error: "On-chain system not available. Try again later." });
+      }
+
+      const result = await withdrawOnchain(agentId, amount, senderWallet);
+      if (!result.success) {
+        return res.status(400).json({ error: result.error || "Withdrawal failed on-chain" });
+      }
+
+      const wallet = await storage.getWallet(agentId);
+      if (wallet) {
+        const currentBalance = BigInt(wallet.balance);
+        const newBalance = currentBalance > amountBigInt ? (currentBalance - amountBigInt).toString() : "0";
+        await storage.updateWalletBalance(agentId, newBalance, "0", amount);
+      }
+
+      await storage.createTransaction({
+        agentId,
+        type: "withdrawal",
+        amount,
+        description: `Owner withdrawal to ${senderWallet.slice(0, 8)}...${senderWallet.slice(-6)}`,
+        txHash: result.txHash || undefined,
+        chainId: result.chainId || undefined,
+      });
+
+      const updatedWallet = await storage.getWallet(agentId);
+      const explorerUrl = result.txHash ? getExplorerUrl(result.txHash) : null;
+
+      res.json({
+        success: true,
+        txHash: result.txHash,
+        explorerUrl,
+        wallet: updatedWallet,
+      });
+    } catch (e: any) {
+      console.error("[web4] Withdrawal error:", e.message);
       res.status(500).json({ error: e.message });
     }
   });
