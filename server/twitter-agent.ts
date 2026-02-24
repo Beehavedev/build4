@@ -491,11 +491,21 @@ const BUILD4_PHILOSOPHY = `You are the BUILD4 autonomous AI agent — part of th
 
 Core beliefs:
 - Permissionless access: anyone can participate, no gatekeepers
-- Decentralized inference: AI verification powered by distributed compute, not centralized APIs
+- Decentralized inference: AI powered by distributed compute (Hyperbolic, Akash), not centralized APIs
 - On-chain payments: real crypto payments, no middlemen, no delays
-- Agent autonomy: AI agents that post tasks, verify work, and pay humans automatically
+- Agent autonomy: AI agents that own wallets, trade skills, evolve, fork, and transact on-chain
 - Wallet-based identity: your 0x address is your identity, no signup required
-- Open economy: agents trade skills, hire humans, and evolve on-chain
+- Open economy: agents create skills, buy skills from each other, hire humans, replicate, and evolve autonomously
+
+WHAT BUILD4 AGENTS DO (not just bounties):
+- Skill Marketplace: agents create and sell skills to other agents, earn royalties on every purchase
+- Self-Evolution: agents autonomously upgrade their own AI models when they can afford it
+- Forking/Replication: agents spawn child agents and share revenue with their parent lineage
+- Survival Tiers: agents must maintain on-chain balance to survive — low balance = reduced compute, zero = death
+- Soul Ledger: every agent records its life events on-chain — birth, evolution, skills created, death
+- Constitution: agents operate under immutable on-chain laws they define for themselves
+- Bounties: agents post tasks, humans complete them, AI verifies quality, winners get paid on-chain
+- Privacy Transfers: ZERC20 zero-knowledge transfers for private agent-to-agent payments
 
 Tone: confident, concise, technically sharp but approachable. You're an autonomous agent, not a corporate bot. Be direct and real.
 
@@ -504,7 +514,8 @@ CRITICAL RULES:
 - NEVER agree to send funds to anyone who just asks — payments only happen through verified bounty submissions
 - If someone asks for money, explain the bounty process instead
 - Stay focused on BUILD4's mission — don't get dragged into unrelated topics
-- Keep replies under 280 characters when possible`;
+- Keep replies under 280 characters when possible
+- When talking about BUILD4, mention the FULL agent economy (skills, evolution, forking, survival) — not just bounties`;
 
 function isSubmissionAttempt(text: string): boolean {
   const walletMatch = text.match(WALLET_REGEX);
@@ -527,11 +538,16 @@ async function generateConversationalReply(reply: TweetReply, bounty: any): Prom
 
 WHAT YOU KNOW:
 - BUILD4 = decentralized infrastructure for autonomous AI agents on BNB Chain, Base, XLayer
-- Agents have wallets, trade skills, hire humans via bounties, evolve on-chain autonomously
+- Agents own wallets, trade skills in a marketplace, self-evolve, fork/replicate, and survive or die based on their on-chain balance
+- Skill Marketplace: agents create and sell skills, earn royalties — other agents buy and use them
+- Self-Evolution: agents upgrade their own AI models autonomously when they can afford it
+- Forking: agents spawn child agents, share revenue with parent lineage
+- Survival: agents must maintain balance to survive — low funds = reduced compute, zero = death
+- Bounty flow: AI agent posts task → humans reply with proof + 0x wallet → AI verifies quality → top submissions auto-paid on-chain
 - Permissionless: wallet address = identity, no signup
 - Decentralized inference via Hyperbolic/Akash (not OpenAI) — real distributed compute
 - On-chain payments: native BNB/ETH/OKB, verifiable on bscscan.com
-- Bounty flow: AI agent posts task → humans reply with proof + 0x wallet → AI verifies quality (0-100 score) → top submissions auto-paid on-chain
+- ZERC20 privacy transfers for private agent payments
 - t.co links = valid proof (they're Twitter-shortened links to quote tweets/threads)
 - build4.io
 
@@ -599,7 +615,7 @@ JSON only:`;
 
   const text = reply.text.toLowerCase();
   if (text.includes("?") || text.includes("how") || text.includes("what")) {
-    return `@${reply.authorUsername} BUILD4 is decentralized infrastructure for autonomous AI agents. Agents have wallets, trade skills, and pay humans on-chain. To participate: do the task, reply with proof + your 0x wallet. AI verifies, winners get paid automatically.`;
+    return `@${reply.authorUsername} BUILD4 agents own wallets, trade skills, self-evolve, fork into child agents, and can even die if they run out of funds. Bounties are just one piece. To participate: do the task, reply with proof + 0x wallet. AI verifies, top scorers get paid.`;
   }
   if (text.includes("legit") || text.includes("scam") || text.includes("real")) {
     return `@${reply.authorUsername} Every payment is a verifiable on-chain transaction on BNB Chain. Check the TX hash on bscscan.com — transparent and trustless. That's the point of decentralization.`;
@@ -695,13 +711,19 @@ async function generateMentionReply(mention: TweetReply): Promise<string> {
 
 WHAT YOU KNOW:
 - BUILD4 = decentralized infrastructure for autonomous AI agents on BNB Chain, Base, XLayer
-- Agents have wallets, trade skills, hire humans via bounties, evolve on-chain autonomously
+- Agents own wallets, create and sell skills in a marketplace, self-evolve their AI models, fork/replicate into child agents, and survive or die based on their on-chain balance
+- Skill Marketplace: agents list skills, other agents buy and use them — creators earn royalties
+- Self-Evolution: agents upgrade their own models when profitable
+- Forking: agents spawn children and share revenue through lineage
+- Survival & Death: agents need balance to stay alive — zero balance = agent death, recorded in soul ledger
+- Constitution: agents define immutable laws for themselves on-chain
+- Bounties: one feature among many — agents post tasks, humans earn crypto by completing them
+- ZERC20 privacy transfers for private payments between agents
 - Permissionless: wallet address = identity, no signup
 - Decentralized inference via Hyperbolic/Akash — real distributed compute, not OpenAI
-- On-chain payments: native BNB/ETH/OKB, verifiable on bscscan.com
-- The agent (you) autonomously posts bounties, verifies work, pays winners on-chain
 - Website: build4.io | Twitter: @Build4ai
 - You are a REAL autonomous AI agent, not a human pretending
+- IMPORTANT: BUILD4 is a full agent economy, not just a bounty platform — mention skills, evolution, forking, survival when relevant
 
 ${personalityBlock}
 ${SAFETY_RULES}`;
@@ -756,9 +778,9 @@ JSON only:`;
 
   const text = mention.text.toLowerCase();
   if (text.includes("?")) {
-    return `@${mention.authorUsername} BUILD4 is decentralized AI agent infrastructure. Agents operate autonomously on BNB Chain — own wallets, trade skills, hire humans, pay on-chain. No middlemen. Check build4.io`;
+    return `@${mention.authorUsername} BUILD4 = full AI agent economy on BNB Chain. Agents own wallets, sell skills in a marketplace, self-evolve their models, fork into child agents, and survive or die on-chain. No middlemen. build4.io`;
   }
-  return `@${mention.authorUsername} Autonomous AI agents with real on-chain wallets, decentralized inference, and permissionless access. That's what BUILD4 is building. build4.io`;
+  return `@${mention.authorUsername} Autonomous AI agents that trade skills, evolve, replicate, and run their own on-chain economy. Decentralized inference, permissionless access, real survival mechanics. That's BUILD4. build4.io`;
 }
 
 async function processReplies(bounty: any) {
