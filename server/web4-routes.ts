@@ -64,6 +64,7 @@ Sitemap: ${baseUrl}/sitemap.xml
       { loc: "/services", priority: "0.7", changefreq: "weekly" },
       { loc: "/privacy", priority: "0.6", changefreq: "monthly" },
       { loc: "/chain", priority: "0.8", changefreq: "monthly" },
+      { loc: "/outreach", priority: "0.6", changefreq: "weekly" },
     ];
     const today = new Date().toISOString().split("T")[0];
     const urls = pages.map(p =>

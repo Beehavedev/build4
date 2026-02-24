@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { SEO } from "@/components/seo";
 import { getChainName, getChainCurrency, isContractChain, getExplorerTxUrl } from "@shared/evm-chains";
 import {
   ChevronDown,
@@ -687,6 +688,7 @@ export default function AutonomousEconomy() {
 
   return (
     <div className="min-h-screen bg-background">
+      <SEO />
       <header className="border-b sticky top-0 z-40 bg-background/95 backdrop-blur">
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-14">

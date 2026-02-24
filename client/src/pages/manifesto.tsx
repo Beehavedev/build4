@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { SEO } from "@/components/seo";
 import { Terminal, ArrowLeft, ArrowRight, Cpu, Shield, Coins, GitFork, Skull, Brain, BookOpen, Scale, Zap, Globe, Server, Unlock } from "lucide-react";
 
 function SubtleGrid() {
@@ -211,6 +212,7 @@ export default function Manifesto() {
   const t = useT();
   return (
     <div className="min-h-screen bg-background relative">
+      <SEO />
       <SubtleGrid />
       <div className="relative z-10">
 

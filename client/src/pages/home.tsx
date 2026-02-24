@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { SEO } from "@/components/seo";
 import {
   Wallet,
   Zap,
@@ -158,6 +159,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background relative">
+      <SEO />
       <MatrixRain />
       <div className="relative z-10 grid-overlay">
 

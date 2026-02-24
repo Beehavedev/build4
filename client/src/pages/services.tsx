@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { SEO } from "@/components/seo";
 import { useWallet } from "@/hooks/use-wallet";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -1159,6 +1160,7 @@ export default function Services() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <SEO />
       <header className="border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <div className="flex items-center gap-4">

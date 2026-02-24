@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useT } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { SEO } from "@/components/seo";
 import {
   ArrowLeft,
   Terminal,
@@ -158,6 +159,7 @@ export default function Architecture() {
   const t = useT();
   return (
     <div className="min-h-screen bg-background">
+      <SEO />
       <header className="border-b sticky top-0 z-50 bg-background/95 backdrop-blur">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">

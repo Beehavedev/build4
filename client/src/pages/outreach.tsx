@@ -3,6 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
+import { SEO } from "@/components/seo";
 import {
   ArrowLeft,
   Radio,
@@ -164,6 +165,7 @@ export default function Outreach() {
 
   return (
     <div className="min-h-screen bg-black text-white">
+      <SEO />
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="flex items-center gap-4 mb-8">
           <Link href="/">

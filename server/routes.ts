@@ -9,6 +9,7 @@ import { startBountyEngine } from "./bounty-engine";
 import { startTwitterAgent, stopTwitterAgent, getTwitterAgentStatus, runTwitterAgentCycle, postBountyTweet } from "./twitter-agent";
 import { isTwitterConfigured } from "./twitter-client";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
+import { registerSeoPrerender } from "./seo-prerender";
 import crypto from "crypto";
 
 const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
@@ -63,6 +64,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   app.use(visitorTrackingMiddleware());
+  registerSeoPrerender(app);
 
   registerWeb4Routes(app);
   registerServicesRoutes(app);

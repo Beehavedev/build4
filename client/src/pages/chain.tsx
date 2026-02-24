@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
+import { SEO } from "@/components/seo";
 import {
   ArrowLeft,
   ArrowRight,
@@ -243,6 +244,7 @@ const comparisonRows = [
 export default function Chain() {
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-gray-100 relative">
+      <SEO />
       <SubtleGrid />
 
       <div className="relative z-10">

@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
+import { SEO } from "@/components/seo";
 import {
   ArrowLeft, Shield, Eye, EyeOff, Lock, Unlock, Copy, Check,
   ExternalLink, AlertTriangle, Loader2, ChevronDown, Info,
@@ -139,6 +140,7 @@ export default function Privacy() {
 
   return (
     <div className="min-h-screen bg-black text-white" data-testid="privacy-page">
+      <SEO />
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="flex items-center gap-4 mb-8">
           <Link href="/">

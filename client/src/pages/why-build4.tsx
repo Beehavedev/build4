@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { SEO } from "@/components/seo";
 import {
   Terminal,
   ArrowLeft,
@@ -112,6 +113,7 @@ export default function WhyBuild4() {
   const t = useT();
   return (
     <div className="min-h-screen bg-background relative">
+      <SEO />
       <SubtleGrid />
       <div className="relative z-10">
 
