@@ -1022,6 +1022,9 @@ export const erc8004Identities = pgTable("erc8004_identities", {
   image: text("image"),
   servicesJson: text("services_json"),
   supportedTrust: text("supported_trust"),
+  onchainTokenId: text("onchain_token_id"),
+  txHash: text("tx_hash"),
+  registryAddress: text("registry_address"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -1079,6 +1082,8 @@ export const bap578Nfas = pgTable("bap578_nfas", {
   status: text("status").notNull().default("active"),
   templateId: text("template_id"),
   vaultPermissions: text("vault_permissions"),
+  txHash: text("tx_hash"),
+  contractAddress: text("contract_address"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

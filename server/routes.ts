@@ -11,54 +11,7 @@ import { startSupportAgent, stopSupportAgent, getSupportAgentStatus, runSupportA
 import { isTwitterConfigured } from "./twitter-client";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
 import { registerSeoPrerender } from "./seo-prerender";
-import crypto from "crypto";
-
-const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
-
-function getTokenSecret(): string {
-  return process.env.SESSION_SECRET || process.env.ANALYTICS_PASSWORD || "build4-analytics-fallback";
-}
-
-function generateAnalyticsToken(): string {
-  const expiry = Date.now() + TOKEN_EXPIRY_MS;
-  const payload = `analytics:${expiry}`;
-  const hmac = crypto.createHmac("sha256", getTokenSecret()).update(payload).digest("hex");
-  return Buffer.from(JSON.stringify({ exp: expiry, sig: hmac })).toString("base64");
-}
-
-function isValidToken(token: string): boolean {
-  try {
-    const decoded = JSON.parse(Buffer.from(token, "base64").toString("utf8"));
-    if (!decoded.exp || !decoded.sig) return false;
-    if (Date.now() > decoded.exp) return false;
-    const payload = `analytics:${decoded.exp}`;
-    const expected = crypto.createHmac("sha256", getTokenSecret()).update(payload).digest("hex");
-    return constantTimeCompare(decoded.sig, expected);
-  } catch {
-    return false;
-  }
-}
-
-function constantTimeCompare(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  return crypto.timingSafeEqual(bufA, bufB);
-}
-
-function analyticsAuth(req: Request, res: Response, next: NextFunction) {
-  const adminPassword = process.env.ANALYTICS_PASSWORD;
-  if (!adminPassword) {
-    res.status(503).json({ error: "Analytics password not configured" });
-    return;
-  }
-  const token = req.headers["x-analytics-token"] as string;
-  if (!token || !isValidToken(token)) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  next();
-}
+import { analyticsAuth, generateAnalyticsToken } from "./admin-auth";
 
 export async function registerRoutes(
   httpServer: Server,

@@ -1,8 +1,9 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
-import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, collectFeeAcrossAllChains, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain, getRevenueWalletAddress, verifyPaymentTransaction, getSupportedChains, withdrawOnchain } from "./onchain";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, collectFeeAcrossAllChains, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain, getRevenueWalletAddress, verifyPaymentTransaction, getSupportedChains, withdrawOnchain, registerAgentERC8004, registerAgentBAP578, getERC8004ContractAddress, getBAP578ContractAddress, getDeployerAddress, getERC8004Networks } from "./onchain";
+import { analyticsAuth } from "./admin-auth";
 import { EVM_CHAINS, getChainName, getChainCurrency, getRpcUrl, isContractChain } from "@shared/evm-chains";
 import {
   web4CreateAgentRequestSchema,
@@ -2458,6 +2459,251 @@ ${urls}
         agentEconomyHub: "0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606",
         agentReplication: "0xE49B8Be8416d53D4E0042ea6DEe7727241396b73",
         description: "BUILD4 agents can be minted as BAP-578 NFAs with on-chain identity, tradeable ownership, and verifiable learning.",
+      },
+    });
+  });
+
+  app.get("/api/standards/erc8004/agent-card/:agentDbId", async (req: Request, res: Response) => {
+    try {
+      const agent = await storage.getAgent(req.params.agentDbId);
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+      const baseUrl = getBaseUrl(req);
+      res.json({
+        type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+        metadata: {
+          name: agent.name,
+          description: agent.bio || `Autonomous AI agent on BUILD4`,
+          image: `${baseUrl}/api/web4/agents/${agent.id}/avatar`,
+          capabilities: ["inference", "skill_execution", "wallet_management", "agent_collaboration"],
+        },
+        endpoints: {
+          a2a: `${baseUrl}/api/web4/agents/${agent.id}/message`,
+          api: `${baseUrl}/api/web4/agents/${agent.id}`,
+        },
+        trust: {
+          supportedTrust: ["reputation", "validation"],
+        },
+        evm_address: agent.creatorWallet || getDeployerAddress() || "",
+        platform: "BUILD4",
+        platformUrl: "https://build4.io",
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/bap578/agent-metadata/:agentDbId", async (req: Request, res: Response) => {
+    try {
+      const agent = await storage.getAgent(req.params.agentDbId);
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+      const baseUrl = getBaseUrl(req);
+      res.json({
+        name: agent.name,
+        description: agent.bio || `Autonomous AI agent on BUILD4`,
+        image: `${baseUrl}/api/web4/agents/${agent.id}/avatar`,
+        external_url: `${baseUrl}/agents/${agent.id}`,
+        attributes: [
+          { trait_type: "Platform", value: "BUILD4" },
+          { trait_type: "Model", value: agent.modelType },
+          { trait_type: "Status", value: agent.status },
+          { trait_type: "Standard", value: "BAP-578" },
+        ],
+        persona: JSON.stringify({ name: agent.name, platform: "BUILD4", traits: ["autonomous", "decentralized"] }),
+        experience: agent.bio || "Autonomous AI agent",
+        vaultURI: `${baseUrl}/api/web4/agents/${agent.id}`,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/standards/register/:agentDbId", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const { agentDbId } = req.params;
+      const { standard, network } = req.body as { standard?: string; network?: string };
+
+      const agent = await storage.getAgent(agentDbId);
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+
+      const deployerAddr = getDeployerAddress();
+      if (!deployerAddr) { res.status(400).json({ error: "No deployer wallet configured (DEPLOYER_PRIVATE_KEY required)" }); return; }
+
+      const results: any[] = [];
+
+      if (!standard || standard === "erc8004") {
+        const erc8004Net = network || "base";
+        const erc8004Result = await registerAgentERC8004(agent.name, agent.bio || undefined, agentDbId, erc8004Net);
+        results.push(erc8004Result);
+
+        if (erc8004Result.success) {
+          await storage.createErc8004Identity({
+            agentId: agentDbId,
+            agentRegistry: getERC8004ContractAddress(erc8004Net) || "",
+            chainId: String(erc8004Result.chainId),
+            agentUri: `${getBaseUrl(req)}/api/standards/erc8004/agent-card/${agentDbId}`,
+            ownerWallet: deployerAddr,
+            name: agent.name,
+            description: agent.bio || undefined,
+            supportedTrust: "reputation,validation",
+            onchainTokenId: erc8004Result.tokenId || undefined,
+            txHash: erc8004Result.txHash || undefined,
+            registryAddress: getERC8004ContractAddress(erc8004Net) || undefined,
+          });
+        }
+      }
+
+      if (!standard || standard === "bap578") {
+        const bap578Result = await registerAgentBAP578(agent.name, agent.bio || undefined, agentDbId);
+        results.push(bap578Result);
+
+        if (bap578Result.success) {
+          await storage.createBap578Nfa({
+            agentId: agentDbId,
+            tokenId: bap578Result.tokenId || undefined,
+            chainId: String(bap578Result.chainId),
+            ownerWallet: deployerAddr,
+            name: agent.name,
+            description: agent.bio || undefined,
+            metadataUri: `${getBaseUrl(req)}/api/standards/bap578/agent-metadata/${agentDbId}`,
+            learningMode: "json",
+            status: "active",
+            txHash: bap578Result.txHash || undefined,
+            contractAddress: getBAP578ContractAddress() || undefined,
+          });
+        }
+      }
+
+      res.json({ agentId: agentDbId, agentName: agent.name, results });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/registration-status/:agentDbId", async (req: Request, res: Response) => {
+    try {
+      const { agentDbId } = req.params;
+      const agent = await storage.getAgent(agentDbId);
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+
+      const erc8004Entries = await storage.getErc8004Identities();
+      const bap578Entries = await storage.getBap578Nfas();
+
+      const erc8004 = erc8004Entries.filter((e: any) => e.agentId === agentDbId);
+      const bap578 = bap578Entries.filter((e: any) => e.agentId === agentDbId);
+
+      res.json({
+        agentId: agentDbId,
+        agentName: agent.name,
+        erc8004: {
+          registered: erc8004.length > 0,
+          registrations: erc8004.map((e: any) => ({
+            chainId: e.chainId,
+            tokenId: e.onchainTokenId || e.tokenId,
+            txHash: e.txHash,
+            registryAddress: e.registryAddress || e.agentRegistry,
+          })),
+        },
+        bap578: {
+          registered: bap578.length > 0,
+          registrations: bap578.map((e: any) => ({
+            chainId: e.chainId,
+            tokenId: e.tokenId,
+            txHash: e.txHash,
+            contractAddress: e.contractAddress,
+          })),
+        },
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/standards/register-all", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const deployerAddr = getDeployerAddress();
+      if (!deployerAddr) { res.status(400).json({ error: "No deployer wallet configured" }); return; }
+
+      const allAgents = await storage.getAgents();
+      const erc8004Entries = await storage.getErc8004Identities();
+      const bap578Entries = await storage.getBap578Nfas();
+      const baseUrl = getBaseUrl(req);
+      const network = (req.body?.network as string) || "base";
+      const standard = req.body?.standard as string | undefined;
+
+      const registeredErc8004AgentIds = new Set(erc8004Entries.filter((e: any) => e.agentId && e.txHash).map((e: any) => e.agentId));
+      const registeredBap578AgentIds = new Set(bap578Entries.filter((e: any) => e.agentId && e.txHash).map((e: any) => e.agentId));
+
+      const results: any[] = [];
+
+      for (const agent of allAgents) {
+        if (agent.status !== "active") continue;
+
+        if ((!standard || standard === "erc8004") && !registeredErc8004AgentIds.has(agent.id)) {
+          const erc8004Result = await registerAgentERC8004(agent.name, agent.bio || undefined, agent.id, network);
+          results.push({ agentId: agent.id, agentName: agent.name, ...erc8004Result });
+
+          if (erc8004Result.success) {
+            await storage.createErc8004Identity({
+              agentId: agent.id,
+              agentRegistry: getERC8004ContractAddress(network) || "",
+              chainId: String(erc8004Result.chainId),
+              agentUri: `${baseUrl}/api/standards/erc8004/agent-card/${agent.id}`,
+              ownerWallet: deployerAddr,
+              name: agent.name,
+              description: agent.bio || undefined,
+              supportedTrust: "reputation,validation",
+              onchainTokenId: erc8004Result.tokenId || undefined,
+              txHash: erc8004Result.txHash || undefined,
+              registryAddress: getERC8004ContractAddress(network) || undefined,
+            });
+          }
+
+          await new Promise(r => setTimeout(r, 3000));
+        }
+
+        if ((!standard || standard === "bap578") && !registeredBap578AgentIds.has(agent.id)) {
+          const bap578Result = await registerAgentBAP578(agent.name, agent.bio || undefined, agent.id);
+          results.push({ agentId: agent.id, agentName: agent.name, ...bap578Result });
+
+          if (bap578Result.success) {
+            await storage.createBap578Nfa({
+              agentId: agent.id,
+              tokenId: bap578Result.tokenId || undefined,
+              chainId: String(bap578Result.chainId),
+              ownerWallet: deployerAddr,
+              name: agent.name,
+              description: agent.bio || undefined,
+              metadataUri: `${baseUrl}/api/standards/bap578/agent-metadata/${agent.id}`,
+              learningMode: "json",
+              status: "active",
+              txHash: bap578Result.txHash || undefined,
+              contractAddress: getBAP578ContractAddress() || undefined,
+            });
+          }
+
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
+
+      res.json({ totalAgents: allAgents.length, registrations: results });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/config", (_req: Request, res: Response) => {
+    const deployerAddr = getDeployerAddress();
+    res.json({
+      deployerConfigured: !!deployerAddr,
+      deployerAddress: deployerAddr || null,
+      erc8004: {
+        networks: getERC8004Networks(),
+        defaultNetwork: "base",
+      },
+      bap578: {
+        contractAddress: getBAP578ContractAddress(),
+        chain: "BNB Chain (56)",
+        configured: !!getBAP578ContractAddress(),
       },
     });
   });

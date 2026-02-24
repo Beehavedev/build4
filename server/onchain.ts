@@ -1332,3 +1332,248 @@ export async function getDeployerBalanceOnChain(chainKey: string): Promise<strin
     return "0";
   }
 }
+
+const ERC8004_IDENTITY_REGISTRY_ABI = [
+  "function register(string agentURI) external returns (uint256 agentId)",
+  "function register() external returns (uint256 agentId)",
+  "function setMetadata(uint256 agentId, string metadataKey, bytes metadataValue) external",
+  "function setAgentURI(uint256 agentId, string newURI) external",
+  "function getMetadata(uint256 agentId, string metadataKey) external view returns (bytes)",
+  "function getAgentWallet(uint256 agentId) external view returns (address)",
+  "function ownerOf(uint256 tokenId) external view returns (address)",
+  "function tokenURI(uint256 tokenId) external view returns (string)",
+  "event Registered(uint256 indexed agentId, string agentURI, address indexed owner)",
+];
+
+const BAP578_NFA_ABI = [
+  "function createAgent(address to, address logicAddress, string metadataURI, tuple(string persona, string experience, string voiceHash, string animationURI, string vaultURI, bytes32 vaultHash) extendedMetadata) external payable returns (uint256)",
+  "function getAgentState(uint256 tokenId) external view returns (uint256 balance, bool active, address logicAddress, uint256 createdAt, address owner)",
+  "function getAgentMetadata(uint256 tokenId) external view returns (tuple(string persona, string experience, string voiceHash, string animationURI, string vaultURI, bytes32 vaultHash) metadata, string metadataURI)",
+  "function getFreeMints(address user) external view returns (uint256)",
+  "function getTotalSupply() external view returns (uint256)",
+  "function ownerOf(uint256 tokenId) external view returns (address)",
+  "function MINT_FEE() external view returns (uint256)",
+  "event AgentCreated(uint256 indexed tokenId, address indexed owner, address logicAddress, string metadataURI)",
+];
+
+const ERC8004_CONTRACTS: Record<string, { identityRegistry: string; reputationRegistry: string }> = {
+  ethereum: {
+    identityRegistry: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+    reputationRegistry: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
+  },
+  base: {
+    identityRegistry: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+    reputationRegistry: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
+  },
+  sepolia: {
+    identityRegistry: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    reputationRegistry: "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+  },
+  baseSepolia: {
+    identityRegistry: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    reputationRegistry: "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+  },
+};
+
+const ERC8004_CHAIN_CONFIGS: Record<string, { rpc: string; chainId: number; name: string }> = {
+  ethereum: { rpc: "https://eth.llamarpc.com", chainId: 1, name: "Ethereum" },
+  base: { rpc: "https://mainnet.base.org", chainId: 8453, name: "Base" },
+  sepolia: { rpc: "https://rpc.sepolia.org", chainId: 11155111, name: "Sepolia" },
+  baseSepolia: { rpc: "https://sepolia.base.org", chainId: 84532, name: "Base Sepolia" },
+};
+
+export interface StandardsRegistrationResult {
+  standard: "erc8004" | "bap578";
+  success: boolean;
+  txHash?: string;
+  tokenId?: string;
+  chainId?: number;
+  chainName?: string;
+  error?: string;
+}
+
+export async function registerAgentERC8004(
+  agentName: string,
+  agentBio: string | undefined,
+  agentDbId: string,
+  network: string = "base"
+): Promise<StandardsRegistrationResult> {
+  const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
+  if (!privateKey) {
+    return { standard: "erc8004", success: false, error: "No DEPLOYER_PRIVATE_KEY configured" };
+  }
+
+  const contractAddrs = ERC8004_CONTRACTS[network];
+  const chainConfig = ERC8004_CHAIN_CONFIGS[network];
+  if (!contractAddrs || !chainConfig) {
+    return { standard: "erc8004", success: false, error: `Unknown ERC-8004 network: ${network}` };
+  }
+
+  try {
+    const prov = new ethers.JsonRpcProvider(chainConfig.rpc);
+    const w = new ethers.Wallet(privateKey, prov);
+    const registry = new ethers.Contract(contractAddrs.identityRegistry, ERC8004_IDENTITY_REGISTRY_ABI, w);
+
+    const baseUrl = process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : process.env.REPL_SLUG
+        ? `https://${process.env.REPL_SLUG}.replit.app`
+        : "https://build4.io";
+
+    const agentURI = `${baseUrl}/api/standards/erc8004/agent-card/${agentDbId}`;
+
+    log(`[ERC-8004] Registering agent "${agentName}" on ${chainConfig.name} IdentityRegistry...`, "onchain");
+
+    const tx = await registry["register(string)"](agentURI, { gasLimit: 350000 });
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("Timeout (90s)")), 90_000)),
+    ]);
+
+    if (!receipt || receipt.status !== 1) {
+      return { standard: "erc8004", success: false, error: "Transaction reverted", chainId: chainConfig.chainId };
+    }
+
+    let tokenId: string | undefined;
+    for (const eventLog of receipt.logs) {
+      try {
+        const parsed = registry.interface.parseLog({ topics: [...eventLog.topics], data: eventLog.data });
+        if (parsed && parsed.name === "Registered") {
+          tokenId = parsed.args.agentId.toString();
+          break;
+        }
+      } catch {}
+    }
+
+    log(`[ERC-8004] Agent "${agentName}" registered on ${chainConfig.name}! Token ID: ${tokenId}, TX: ${receipt.hash}`, "onchain");
+
+    return {
+      standard: "erc8004",
+      success: true,
+      txHash: receipt.hash,
+      tokenId,
+      chainId: chainConfig.chainId,
+      chainName: chainConfig.name,
+    };
+  } catch (e: any) {
+    const msg = e.message?.substring(0, 300) || "Unknown error";
+    log(`[ERC-8004] Registration failed for "${agentName}": ${msg}`, "onchain");
+    return { standard: "erc8004", success: false, error: msg, chainId: chainConfig.chainId, chainName: chainConfig.name };
+  }
+}
+
+export async function registerAgentBAP578(
+  agentName: string,
+  agentBio: string | undefined,
+  agentDbId: string,
+  contractAddress?: string
+): Promise<StandardsRegistrationResult> {
+  const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
+  if (!privateKey) {
+    return { standard: "bap578", success: false, error: "No DEPLOYER_PRIVATE_KEY configured" };
+  }
+
+  const bap578Address = contractAddress || process.env.BAP578_CONTRACT_ADDRESS;
+  if (!bap578Address) {
+    return { standard: "bap578", success: false, error: "No BAP578_CONTRACT_ADDRESS configured. Set the deployed BAP-578 contract address." };
+  }
+
+  try {
+    const bscRpc = "https://bsc-dataseed1.binance.org";
+    const prov = new ethers.JsonRpcProvider(bscRpc);
+    const w = new ethers.Wallet(privateKey, prov);
+    const nfaContract = new ethers.Contract(bap578Address, BAP578_NFA_ABI, w);
+
+    const baseUrl = process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : process.env.REPL_SLUG
+        ? `https://${process.env.REPL_SLUG}.replit.app`
+        : "https://build4.io";
+
+    const metadataURI = `${baseUrl}/api/standards/bap578/agent-metadata/${agentDbId}`;
+
+    const persona = JSON.stringify({
+      name: agentName,
+      platform: "BUILD4",
+      traits: ["autonomous", "decentralized"],
+    });
+
+    const extendedMetadata = {
+      persona,
+      experience: agentBio || `Autonomous AI agent on BUILD4 platform`,
+      voiceHash: "",
+      animationURI: "",
+      vaultURI: `${baseUrl}/api/web4/agents/${agentDbId}`,
+      vaultHash: ethers.zeroPadValue("0x00", 32),
+    };
+
+    let freeMints = BigInt(0);
+    try {
+      freeMints = await nfaContract.getFreeMints(w.address);
+    } catch {}
+
+    const mintValue = freeMints > 0n ? BigInt(0) : ethers.parseEther("0.01");
+
+    log(`[BAP-578] Minting NFA for agent "${agentName}" on BNB Chain (free mints: ${freeMints})...`, "onchain");
+
+    const tx = await nfaContract.createAgent(
+      w.address,
+      ethers.ZeroAddress,
+      metadataURI,
+      extendedMetadata,
+      { value: mintValue, gasLimit: 500000 }
+    );
+
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("Timeout (90s)")), 90_000)),
+    ]);
+
+    if (!receipt || receipt.status !== 1) {
+      return { standard: "bap578", success: false, error: "Transaction reverted", chainId: 56 };
+    }
+
+    let tokenId: string | undefined;
+    for (const eventLog of receipt.logs) {
+      try {
+        const parsed = nfaContract.interface.parseLog({ topics: [...eventLog.topics], data: eventLog.data });
+        if (parsed && parsed.name === "AgentCreated") {
+          tokenId = parsed.args.tokenId.toString();
+          break;
+        }
+      } catch {}
+    }
+
+    log(`[BAP-578] NFA minted for "${agentName}" on BNB Chain! Token ID: ${tokenId}, TX: ${receipt.hash}`, "onchain");
+
+    return {
+      standard: "bap578",
+      success: true,
+      txHash: receipt.hash,
+      tokenId,
+      chainId: 56,
+      chainName: "BNB Chain",
+    };
+  } catch (e: any) {
+    const msg = e.message?.substring(0, 300) || "Unknown error";
+    log(`[BAP-578] NFA minting failed for "${agentName}": ${msg}`, "onchain");
+    return { standard: "bap578", success: false, error: msg, chainId: 56, chainName: "BNB Chain" };
+  }
+}
+
+export function getERC8004ContractAddress(network: string = "base"): string | null {
+  return ERC8004_CONTRACTS[network]?.identityRegistry || null;
+}
+
+export function getERC8004Networks(): Array<{ network: string; identityRegistry: string; reputationRegistry: string }> {
+  return Object.entries(ERC8004_CONTRACTS).map(([net, addrs]) => ({
+    network: net,
+    identityRegistry: addrs.identityRegistry,
+    reputationRegistry: addrs.reputationRegistry,
+  }));
+}
+
+export function getBAP578ContractAddress(): string | null {
+  return process.env.BAP578_CONTRACT_ADDRESS || null;
+}
+
