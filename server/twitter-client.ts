@@ -68,6 +68,7 @@ export interface TweetReply {
   authorId: string;
   authorUsername: string;
   createdAt?: string;
+  conversationId?: string;
 }
 
 export async function getReplies(tweetId: string, sinceId?: string): Promise<TweetReply[]> {
