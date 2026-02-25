@@ -1098,8 +1098,20 @@ export default function AutonomousEconomy() {
                           disabled={createAgentMutation.isPending}
                         >
                           <option value="cmo">CMO — Marketing & Growth</option>
+                          <option value="ceo">CEO — Vision & Strategy</option>
+                          <option value="cto">CTO — Tech & Engineering</option>
+                          <option value="cfo">CFO — Finance & Treasury</option>
+                          <option value="community_manager">Community Manager</option>
+                          <option value="content_creator">Content Creator</option>
                           <option value="bounty_hunter">Bounty Hunter</option>
                           <option value="support">Support Agent</option>
+                          <option value="researcher">Research Analyst</option>
+                          <option value="sales">Sales Lead</option>
+                          <option value="partnerships">Partnerships Lead</option>
+                          <option value="developer_relations">DevRel — Developer Relations</option>
+                          <option value="brand_ambassador">Brand Ambassador</option>
+                          <option value="analyst">Market Analyst</option>
+                          <option value="trader">Trading Agent</option>
                         </select>
                       </div>
                     </div>
@@ -2705,8 +2717,20 @@ export default function AutonomousEconomy() {
                         data-testid="select-twitter-role"
                       >
                         <option value="cmo">CMO — Marketing & Growth</option>
-                        <option value="bounty_hunter">Bounty Hunter — Task Engagement</option>
-                        <option value="support">Support — Community Help</option>
+                        <option value="ceo">CEO — Vision & Strategy</option>
+                        <option value="cto">CTO — Tech & Engineering</option>
+                        <option value="cfo">CFO — Finance & Treasury</option>
+                        <option value="community_manager">Community Manager</option>
+                        <option value="content_creator">Content Creator</option>
+                        <option value="bounty_hunter">Bounty Hunter</option>
+                        <option value="support">Support Agent</option>
+                        <option value="researcher">Research Analyst</option>
+                        <option value="sales">Sales Lead</option>
+                        <option value="partnerships">Partnerships Lead</option>
+                        <option value="developer_relations">DevRel — Developer Relations</option>
+                        <option value="brand_ambassador">Brand Ambassador</option>
+                        <option value="analyst">Market Analyst</option>
+                        <option value="trader">Trading Agent</option>
                       </select>
                     </div>
                     <div className="space-y-2">
@@ -2883,7 +2907,9 @@ export default function AutonomousEconomy() {
 
                 {twitterStatus.role && (
                   <div className="text-xs text-muted-foreground">
-                    Role: <Badge variant="outline" className="text-[10px] ml-1">{twitterStatus.role === "cmo" ? "CMO" : twitterStatus.role}</Badge>
+                    Role: <Badge variant="outline" className="text-[10px] ml-1">{
+                      { cmo: "CMO", ceo: "CEO", cto: "CTO", cfo: "CFO", bounty_hunter: "Bounty Hunter", support: "Support", community_manager: "Community Mgr", content_creator: "Content Creator", researcher: "Researcher", sales: "Sales", partnerships: "Partnerships", developer_relations: "DevRel", brand_ambassador: "Ambassador", analyst: "Analyst", trader: "Trader" }[twitterStatus.role || ""] || twitterStatus.role
+                    }</Badge>
                     {twitterStatus.lastPostedAt && <span className="ml-2">Last posted: {new Date(twitterStatus.lastPostedAt).toLocaleString()}</span>}
                   </div>
                 )}

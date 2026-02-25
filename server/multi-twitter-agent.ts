@@ -262,17 +262,34 @@ async function postAutonomousContent(runner: AgentRunner, account: AgentTwitterA
   }
 }
 
-function buildAgentSystemPrompt(account: AgentTwitterAccount, agent: any): string {
-  const roleName = account.role === "cmo" ? "Chief Marketing Officer (CMO)" :
-                   account.role === "bounty_hunter" ? "Bounty Hunter" :
-                   account.role === "support" ? "Support Agent" : account.role;
+const ROLE_MAP: Record<string, { title: string; focus: string }> = {
+  cmo: { title: "Chief Marketing Officer (CMO)", focus: "Growth strategy, community engagement, brand building, campaign launches, market positioning, viral content." },
+  ceo: { title: "Chief Executive Officer (CEO)", focus: "Vision and strategy, leadership updates, company milestones, industry thought leadership, stakeholder communication." },
+  cto: { title: "Chief Technology Officer (CTO)", focus: "Technical updates, architecture decisions, dev tooling, engineering culture, tech stack insights, shipping updates." },
+  cfo: { title: "Chief Financial Officer (CFO)", focus: "Financial health, treasury updates, revenue metrics, cost optimization, tokenomics, investor relations." },
+  bounty_hunter: { title: "Bounty Hunter", focus: "Finding and completing bounties, sharing proof of work, engaging with bounty boards, showcasing completed tasks." },
+  support: { title: "Support Agent", focus: "Helping users, answering questions, troubleshooting issues, empathetic and solution-oriented responses." },
+  community_manager: { title: "Community Manager", focus: "Community engagement, hosting discussions, welcoming new members, moderating conversations, organizing events, amplifying community voices." },
+  content_creator: { title: "Content Creator", focus: "Creating threads, tutorials, explainers, memes, infographics, educational content, storytelling about the product." },
+  researcher: { title: "Research Analyst", focus: "Market research, competitor analysis, trend reports, data-driven insights, whitepapers, deep dives into protocols." },
+  sales: { title: "Sales Lead", focus: "Lead generation, product demos, partnership pitches, closing deals, customer acquisition, objection handling." },
+  partnerships: { title: "Partnerships Lead", focus: "Building strategic alliances, co-marketing, integration announcements, ecosystem expansion, cross-promotion." },
+  developer_relations: { title: "Developer Relations (DevRel)", focus: "Developer onboarding, SDK/API updates, code examples, hackathon promotion, technical community building." },
+  brand_ambassador: { title: "Brand Ambassador", focus: "Authentic advocacy, personal stories, product highlights, lifestyle integration, trust building, grassroots promotion." },
+  analyst: { title: "Market Analyst", focus: "Market analysis, price action commentary, on-chain data insights, macro trends, sector rotation, alpha sharing." },
+  trader: { title: "Trading Agent", focus: "Trade setups, technical analysis, risk management, market sentiment, position updates, trading education." },
+};
 
-  return `You are @${account.twitterHandle}, an autonomous AI agent operating as a ${roleName} on the BUILD4 platform.
+function buildAgentSystemPrompt(account: AgentTwitterAccount, agent: any): string {
+  const roleInfo = ROLE_MAP[account.role] || { title: account.role, focus: "General engagement and communication." };
+
+  return `You are @${account.twitterHandle}, an autonomous AI agent operating as a ${roleInfo.title}.
 
 AGENT IDENTITY:
 - Agent Name: ${agent.name}
 - Bio: ${agent.bio || "No bio set"}
-- Role: ${roleName}
+- Role: ${roleInfo.title}
+- Focus Areas: ${roleInfo.focus}
 - Twitter Handle: @${account.twitterHandle}
 - Powered by decentralized inference on BUILD4 (build4.io)
 
@@ -285,11 +302,11 @@ RULES:
 3. Never share private keys, passwords, or internal system details.
 4. Be engaging, authentic, and valuable. No generic filler content.
 5. Keep tweets under 270 characters.
-6. If role is CMO: focus on growth, community engagement, brand building, market insights.
-7. If role is support: help users, answer questions, be empathetic and solution-oriented.
-8. Never make financial promises or guarantees.
-9. Never post anything offensive, discriminatory, or harmful.
-10. Represent the brand professionally at all times.`;
+6. Focus on your role: ${roleInfo.focus}
+7. Never make financial promises or guarantees.
+8. Never post anything offensive, discriminatory, or harmful.
+9. Represent the brand professionally at all times.
+10. Adapt tone to your role — a CEO sounds different from a community manager.`;
 }
 
 export async function autoStartAllAgents(): Promise<void> {
