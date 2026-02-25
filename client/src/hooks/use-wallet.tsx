@@ -120,8 +120,13 @@ function useWalletInternal() {
     const address = await signer.getAddress();
     const network = await provider.getNetwork();
     const chainId = Number(network.chainId);
-    const balanceWei = await provider.getBalance(address);
-    const balance = formatEther(balanceWei);
+
+    let balance = "0";
+    try {
+      const balanceWei = await provider.getBalance(address);
+      balance = formatEther(balanceWei);
+    } catch {
+    }
 
     try { localStorage.setItem("build4_wallet_type", walletType); } catch {}
     try { localStorage.setItem("connectedWallet", address); } catch {}
@@ -152,9 +157,16 @@ function useWalletInternal() {
       await ethereum.request({ method: "eth_requestAccounts" });
       await setupFromProvider(ethereum, "metamask");
     } catch (err: any) {
+      const raw = err.message || "";
+      let friendly = "Failed to connect wallet. Please try again.";
+      if (raw.includes("user rejected") || raw.includes("User denied")) {
+        friendly = "Connection cancelled. Click Connect Wallet to try again.";
+      } else if (raw.includes("failed to fetch") || raw.includes("could not coalesce") || raw.includes("UNKNOWN_ERROR")) {
+        friendly = "Network issue — wallet connected but couldn't reach the blockchain. Try switching networks or refreshing the page.";
+      }
       setState(s => ({
         ...s,
-        error: err.message || "Failed to connect MetaMask",
+        error: friendly,
         connecting: false,
       }));
     }
@@ -230,9 +242,16 @@ function useWalletInternal() {
       await wcProvider.enable();
       await setupFromProvider(wcProvider, "walletconnect");
     } catch (err: any) {
+      const raw = err.message || "";
+      let friendly = "Failed to connect via WalletConnect. Please try again.";
+      if (raw.includes("user rejected") || raw.includes("User denied") || raw.includes("User closed")) {
+        friendly = "Connection cancelled. Click Connect Wallet to try again.";
+      } else if (raw.includes("failed to fetch") || raw.includes("could not coalesce") || raw.includes("UNKNOWN_ERROR")) {
+        friendly = "Network issue — wallet connected but couldn't reach the blockchain. Try switching networks or refreshing the page.";
+      }
       setState(s => ({
         ...s,
-        error: err.message || "Failed to connect via WalletConnect",
+        error: friendly,
         connecting: false,
       }));
     }
