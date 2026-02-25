@@ -3475,6 +3475,31 @@ export default function AutonomousEconomy() {
                         data-testid="input-twitter-settings-frequency"
                       />
                     </div>
+                    <div className="border rounded-md p-2.5 space-y-2 bg-muted/30">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-semibold">Update API Keys</span>
+                        <span className="text-[9px] text-muted-foreground">(leave blank to keep current)</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">If you changed permissions on developer.x.com, you MUST regenerate your tokens and paste the new ones here.</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">API Key</label>
+                          <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" type="password" placeholder="Keep current" id="twitter-settings-api-key" data-testid="input-settings-api-key" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">API Secret</label>
+                          <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" type="password" placeholder="Keep current" id="twitter-settings-api-secret" data-testid="input-settings-api-secret" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Access Token</label>
+                          <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" type="password" placeholder="Keep current" id="twitter-settings-access-token" data-testid="input-settings-access-token" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Access Token Secret</label>
+                          <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" type="password" placeholder="Keep current" id="twitter-settings-access-secret" data-testid="input-settings-access-secret" />
+                        </div>
+                      </div>
+                    </div>
                     <Button
                       size="sm"
                       onClick={() => {
@@ -3487,7 +3512,16 @@ export default function AutonomousEconomy() {
                         const companyAudience = (document.getElementById("twitter-settings-company-audience") as HTMLInputElement)?.value;
                         const companyWebsite = (document.getElementById("twitter-settings-company-website") as HTMLInputElement)?.value;
                         const companyKeyMessages = (document.getElementById("twitter-settings-company-messages") as HTMLTextAreaElement)?.value;
-                        twitterSettingsMutation.mutate({ personality, instructions, postingFrequencyMins: freq, companyName, companyDescription, companyProduct, companyAudience, companyWebsite, companyKeyMessages });
+                        const apiKey = (document.getElementById("twitter-settings-api-key") as HTMLInputElement)?.value;
+                        const apiSecret = (document.getElementById("twitter-settings-api-secret") as HTMLInputElement)?.value;
+                        const accessToken = (document.getElementById("twitter-settings-access-token") as HTMLInputElement)?.value;
+                        const accessSecret = (document.getElementById("twitter-settings-access-secret") as HTMLInputElement)?.value;
+                        const settings: any = { personality, instructions, postingFrequencyMins: freq, companyName, companyDescription, companyProduct, companyAudience, companyWebsite, companyKeyMessages };
+                        if (apiKey) settings.twitterApiKey = apiKey;
+                        if (apiSecret) settings.twitterApiSecret = apiSecret;
+                        if (accessToken) settings.twitterAccessToken = accessToken;
+                        if (accessSecret) settings.twitterAccessTokenSecret = accessSecret;
+                        twitterSettingsMutation.mutate(settings);
                       }}
                       disabled={twitterSettingsMutation.isPending}
                       data-testid="button-save-twitter-settings"

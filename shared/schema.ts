@@ -1042,6 +1042,10 @@ export const agentTwitterSettingsSchema = z.object({
   autoReplyEnabled: z.number().min(0).max(1).optional(),
   autoBountyEnabled: z.number().min(0).max(1).optional(),
   defaultRewardBnb: z.string().optional(),
+  twitterApiKey: z.string().min(1).optional(),
+  twitterApiSecret: z.string().min(1).optional(),
+  twitterAccessToken: z.string().min(1).optional(),
+  twitterAccessTokenSecret: z.string().min(1).optional(),
 });
 
 export const supportTickets = pgTable("support_tickets", {

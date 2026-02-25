@@ -58,12 +58,15 @@ export async function startAgentTwitter(agentId: string): Promise<{ success: boo
 
     runners.set(agentId, runner);
 
-    const intervalMs = (account.postingFrequencyMins || 60) * 60 * 1000;
+    const hasPostedBefore = !!account.lastPostedAt;
+    const intervalMs = hasPostedBefore
+      ? (account.postingFrequencyMins || 60) * 60 * 1000
+      : 2 * 60 * 1000;
     runner.interval = setInterval(() => runAgentCycle(agentId), intervalMs);
 
     await storage.updateAgentTwitterAccount(agentId, { enabled: 1 });
 
-    console.log(`[MultiTwitter] Started agent ${agentId} as @${runner.username}, cycle every ${account.postingFrequencyMins}m`);
+    console.log(`[MultiTwitter] Started agent ${agentId} as @${runner.username}, cycle every ${hasPostedBefore ? account.postingFrequencyMins + "m" : "2m (first-post mode)"}`);
 
     setTimeout(() => runAgentCycle(agentId), 5000);
 
@@ -263,12 +266,23 @@ async function postAutonomousContent(runner: AgentRunner, account: AgentTwitterA
 
       await runner.client.v2.tweet(tweetText);
 
+      const isFirstTweet = !account.lastPostedAt;
       await storage.updateAgentTwitterAccount(runner.agentId, {
         lastPostedAt: new Date(),
         totalTweets: (account.totalTweets || 0) + 1,
       });
 
+      runner.lastError = null;
+      runner.lastErrorAt = null;
+
       console.log(`[MultiTwitter] @${runner.username} posted: "${tweetText.substring(0, 60)}..."`);
+
+      if (isFirstTweet && runner.interval) {
+        clearInterval(runner.interval);
+        const normalMs = (account.postingFrequencyMins || 60) * 60 * 1000;
+        runner.interval = setInterval(() => runAgentCycle(runner.agentId), normalMs);
+        console.log(`[MultiTwitter] @${runner.username} first tweet successful! Switched to normal ${account.postingFrequencyMins}m interval.`);
+      }
     }
   } catch (err: any) {
     if (err.code === 429) {
