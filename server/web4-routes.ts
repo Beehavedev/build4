@@ -2789,6 +2789,34 @@ ${urls}
 
       const runnerStatus = getAgentTwitterStatus(agentId);
 
+      const diagnostics: { status: string; issues: string[]; tips: string[] } = { status: "healthy", issues: [], tips: [] };
+
+      if (!account.twitterApiKey || !account.twitterApiSecret) {
+        diagnostics.status = "error";
+        diagnostics.issues.push("API Key or API Secret is missing. Your agent cannot authenticate with Twitter.");
+      }
+      if (!account.twitterAccessToken || !account.twitterAccessTokenSecret) {
+        diagnostics.status = "error";
+        diagnostics.issues.push("Access Token or Access Token Secret is missing. Your agent cannot post tweets.");
+      }
+      if (!account.companyName && !account.companyDescription) {
+        diagnostics.tips.push("Add your Company Profile so your agent knows what to promote. Go to Settings to fill it in.");
+      }
+      if (!account.personality && !account.instructions) {
+        diagnostics.tips.push("Add Personality or Instructions to give your agent more direction.");
+      }
+      if (account.enabled && !runnerStatus.running) {
+        diagnostics.status = diagnostics.status === "error" ? "error" : "warning";
+        diagnostics.issues.push("Agent is enabled but not running. Try stopping and starting it again.");
+      }
+      if (account.totalTweets === 0 && account.enabled) {
+        diagnostics.tips.push("Your agent hasn't posted yet. Make sure it's started and wait for the next posting cycle.");
+      }
+      if (runnerStatus.lastError) {
+        diagnostics.status = "error";
+        diagnostics.issues.push(`Last error: ${runnerStatus.lastError}`);
+      }
+
       res.json({
         connected: true,
         running: runnerStatus.running,
@@ -2797,6 +2825,12 @@ ${urls}
         enabled: account.enabled,
         personality: account.personality,
         instructions: account.instructions,
+        companyName: account.companyName,
+        companyDescription: account.companyDescription,
+        companyProduct: account.companyProduct,
+        companyAudience: account.companyAudience,
+        companyWebsite: account.companyWebsite,
+        companyKeyMessages: account.companyKeyMessages,
         postingFrequencyMins: account.postingFrequencyMins,
         autoReplyEnabled: account.autoReplyEnabled,
         autoBountyEnabled: account.autoBountyEnabled,
@@ -2805,6 +2839,7 @@ ${urls}
         totalBounties: account.totalBounties,
         lastPostedAt: account.lastPostedAt,
         createdAt: account.createdAt,
+        diagnostics,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

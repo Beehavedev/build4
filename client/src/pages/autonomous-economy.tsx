@@ -40,6 +40,10 @@ import {
   Power,
   Settings,
   MessageSquare,
+  HelpCircle,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
@@ -453,6 +457,7 @@ export default function AutonomousEconomy() {
 
   const [showTwitterConnect, setShowTwitterConnect] = useState(false);
   const [showTwitterSettings, setShowTwitterSettings] = useState(false);
+  const [showTwitterHelp, setShowTwitterHelp] = useState(false);
 
   const twitterConnectMutation = useMutation({
     mutationFn: async () => {

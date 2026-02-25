@@ -12,6 +12,8 @@ interface AgentRunner {
   repliedTweets: Set<string>;
   repliedConversations: Set<string>;
   isProcessing: boolean;
+  lastError: string | null;
+  lastErrorAt: Date | null;
 }
 
 const runners = new Map<string, AgentRunner>();
@@ -50,6 +52,8 @@ export async function startAgentTwitter(agentId: string): Promise<{ success: boo
       repliedTweets: new Set(existingReplied),
       repliedConversations: new Set(),
       isProcessing: false,
+      lastError: null,
+      lastErrorAt: null,
     };
 
     runners.set(agentId, runner);
@@ -80,13 +84,15 @@ export async function stopAgentTwitter(agentId: string): Promise<void> {
   }
 }
 
-export function getAgentTwitterStatus(agentId: string): { running: boolean; handle?: string; stats?: { repliedTweets: number } } {
+export function getAgentTwitterStatus(agentId: string): { running: boolean; handle?: string; stats?: { repliedTweets: number }; lastError?: string | null; lastErrorAt?: Date | null } {
   const runner = runners.get(agentId);
   if (!runner) return { running: false };
   return {
     running: true,
     handle: runner.username,
     stats: { repliedTweets: runner.repliedTweets.size },
+    lastError: runner.lastError,
+    lastErrorAt: runner.lastErrorAt,
   };
 }
 
