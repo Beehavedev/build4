@@ -440,6 +440,12 @@ export default function AutonomousEconomy() {
     twitterAccessToken: "",
     twitterAccessTokenSecret: "",
     role: "cmo" as string,
+    companyName: "",
+    companyDescription: "",
+    companyProduct: "",
+    companyAudience: "",
+    companyWebsite: "",
+    companyKeyMessages: "",
     personality: "",
     instructions: "",
     postingFrequencyMins: 60,
@@ -2837,6 +2843,76 @@ export default function AutonomousEconomy() {
                         </div>
                       </div>
                     )}
+                    <div className="border rounded-md p-3 space-y-2.5 bg-muted/30">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold">Company / Project Profile</span>
+                        <span className="text-[9px] text-muted-foreground">(so your agent knows what to promote)</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-medium text-muted-foreground">Company Name</label>
+                          <input
+                            className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono"
+                            placeholder="e.g. Acme Protocol"
+                            value={twitterForm.companyName}
+                            onChange={(e) => setTwitterForm(f => ({ ...f, companyName: e.target.value }))}
+                            data-testid="input-twitter-company-name"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-medium text-muted-foreground">Website</label>
+                          <input
+                            className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono"
+                            placeholder="https://yourproject.com"
+                            value={twitterForm.companyWebsite}
+                            onChange={(e) => setTwitterForm(f => ({ ...f, companyWebsite: e.target.value }))}
+                            data-testid="input-twitter-company-website"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-muted-foreground">What does your company/project do?</label>
+                        <textarea
+                          className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono resize-none"
+                          rows={2}
+                          placeholder="Describe your company, mission, and what makes it unique..."
+                          value={twitterForm.companyDescription}
+                          onChange={(e) => setTwitterForm(f => ({ ...f, companyDescription: e.target.value }))}
+                          data-testid="input-twitter-company-description"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-muted-foreground">Product / Service</label>
+                        <input
+                          className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono"
+                          placeholder="What do you sell or offer? (e.g. DeFi yield aggregator, NFT marketplace...)"
+                          value={twitterForm.companyProduct}
+                          onChange={(e) => setTwitterForm(f => ({ ...f, companyProduct: e.target.value }))}
+                          data-testid="input-twitter-company-product"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-muted-foreground">Target Audience</label>
+                        <input
+                          className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono"
+                          placeholder="Who are your users? (e.g. DeFi traders, NFT collectors, developers...)"
+                          value={twitterForm.companyAudience}
+                          onChange={(e) => setTwitterForm(f => ({ ...f, companyAudience: e.target.value }))}
+                          data-testid="input-twitter-company-audience"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-muted-foreground">Key Messages & Talking Points</label>
+                        <textarea
+                          className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono resize-none"
+                          rows={2}
+                          placeholder="Main selling points, slogans, value propositions the agent should emphasize..."
+                          value={twitterForm.companyKeyMessages}
+                          onChange={(e) => setTwitterForm(f => ({ ...f, companyKeyMessages: e.target.value }))}
+                          data-testid="input-twitter-company-messages"
+                        />
+                      </div>
+                    </div>
                     <div className="space-y-2">
                       <label className="text-xs font-medium">Personality</label>
                       <textarea

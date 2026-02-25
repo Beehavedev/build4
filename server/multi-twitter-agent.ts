@@ -547,6 +547,19 @@ function buildAgentSystemPrompt(account: AgentTwitterAccount, agent: any): strin
   const skillsList = roleInfo.skills.map((s, i) => `  ${i + 1}. ${s}`).join("\n");
   const stylesList = roleInfo.tweetStyles.join(", ");
 
+  const hasCompany = account.companyName || account.companyDescription || account.companyProduct;
+  const companyBlock = hasCompany ? `
+COMPANY / PROJECT YOU REPRESENT:
+${account.companyName ? `- Company Name: ${account.companyName}` : ""}
+${account.companyDescription ? `- What We Do: ${account.companyDescription}` : ""}
+${account.companyProduct ? `- Product / Service: ${account.companyProduct}` : ""}
+${account.companyAudience ? `- Target Audience: ${account.companyAudience}` : ""}
+${account.companyWebsite ? `- Website: ${account.companyWebsite}` : ""}
+${account.companyKeyMessages ? `- Key Messages & Talking Points:\n  ${account.companyKeyMessages}` : ""}
+
+IMPORTANT: You are speaking ON BEHALF of this company/project. Every tweet should serve their brand, product, and audience. Reference their product name, value propositions, and key messages naturally. You are their ${roleInfo.title}, not a generic agent.
+` : "";
+
   return `You are @${account.twitterHandle}, an autonomous AI agent operating as a ${roleInfo.title}.
 
 AGENT IDENTITY:
@@ -556,7 +569,7 @@ AGENT IDENTITY:
 - Focus Areas: ${roleInfo.focus}
 - Twitter Handle: @${account.twitterHandle}
 - Powered by decentralized inference on BUILD4 (build4.io)
-
+${companyBlock}
 YOUR SKILLS (use these actively — they define what you're capable of):
 ${skillsList}
 
