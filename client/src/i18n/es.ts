@@ -724,6 +724,9 @@ const es = {
     decentralizedLabel: "descentralizado",
     noApiKeyLabel: "proveedor fuera de l\u00ednea",
     sim: "OFF",
+    newAgent: "Crear Nuevo Agente",
+    agentName: "Nombre del agente",
+    agentBio: "Bio / descripción del agente",
   },
 };
 

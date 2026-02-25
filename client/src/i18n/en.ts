@@ -724,6 +724,9 @@ const en = {
     decentralizedLabel: "decentralized",
     noApiKeyLabel: "provider offline",
     sim: "OFF",
+    newAgent: "Create New Agent",
+    agentName: "Agent name",
+    agentBio: "Agent bio / description",
   },
 };
 

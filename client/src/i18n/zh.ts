@@ -724,6 +724,9 @@ const zh = {
     decentralizedLabel: "去中心化",
     noApiKeyLabel: "提供商离线",
     sim: "离线",
+    newAgent: "创建新代理",
+    agentName: "代理名称",
+    agentBio: "代理简介 / 描述",
   },
 };
 
