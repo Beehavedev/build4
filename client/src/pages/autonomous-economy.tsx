@@ -3393,6 +3393,20 @@ export default function AutonomousEconomy() {
                   </Button>
                 </div>
 
+                {twitterStatus.diagnostics && twitterStatus.diagnostics.status !== "healthy" && twitterStatus.diagnostics.issues.length > 0 && (
+                  <div className="space-y-2 p-3 rounded-lg border border-destructive/30 bg-destructive/5" data-testid="twitter-error-banner">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
+                      <span className="font-mono text-xs font-bold text-destructive">Action Required</span>
+                    </div>
+                    {twitterStatus.diagnostics.issues.map((issue: string, i: number) => (
+                      <div key={i} className="flex items-start gap-2 pl-6">
+                        <span className="font-mono text-[11px] text-destructive/90">{issue}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {showTwitterSettings && (
                   <Card className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
                     <div className="text-xs font-semibold">Agent Settings</div>

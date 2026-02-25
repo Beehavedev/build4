@@ -2832,7 +2832,7 @@ ${urls}
       }
       if (runnerStatus.lastError) {
         diagnostics.status = "error";
-        diagnostics.issues.push(`Last error: ${runnerStatus.lastError}`);
+        diagnostics.issues.push(runnerStatus.lastError);
       }
 
       res.json({
