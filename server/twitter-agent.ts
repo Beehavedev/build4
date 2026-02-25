@@ -342,7 +342,7 @@ export async function startTwitterAgent() {
     return;
   }
 
-  const interval = config.pollingIntervalMs || 30000;
+  const interval = config.pollingIntervalMs || 300000;
   console.log(`[TwitterAgent] Starting with ${interval / 1000}s interval`);
 
   if (pollingInterval) {

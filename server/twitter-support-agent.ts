@@ -423,7 +423,7 @@ export async function startSupportAgent() {
     return;
   }
 
-  const interval = config.pollingIntervalMs || 120000;
+  const interval = config.pollingIntervalMs || 300000;
   console.log(`[SupportAgent] Starting with ${interval / 1000}s interval`);
 
   if (pollingInterval) {
