@@ -342,6 +342,21 @@ async function handleQuestion(chatId: number, messageId: number, question: strin
   }
 }
 
+export async function sendTelegramMessage(chatId: string | number, text: string): Promise<boolean> {
+  if (!bot || !isRunning) {
+    console.warn("[TelegramBot] Cannot send message — bot is not running");
+    return false;
+  }
+
+  try {
+    await bot.sendMessage(chatId, text);
+    return true;
+  } catch (e: any) {
+    console.error("[TelegramBot] Failed to send message:", e.message);
+    return false;
+  }
+}
+
 export function stopTelegramBot(): void {
   if (bot) {
     bot.stopPolling();

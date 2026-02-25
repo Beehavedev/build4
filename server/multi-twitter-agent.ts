@@ -1,7 +1,10 @@
 import { TwitterApi } from "twitter-api-v2";
 import { storage } from "./storage";
 import { runInferenceWithFallback } from "./inference";
+import { sendTelegramMessage } from "./telegram-bot";
 import type { AgentTwitterAccount } from "@shared/schema";
+
+const STRATEGY_INTERVAL_MS = 12 * 60 * 60 * 1000;
 
 interface AgentRunner {
   agentId: string;
@@ -15,6 +18,7 @@ interface AgentRunner {
   lastError: string | null;
   lastErrorAt: Date | null;
   consecutivePostErrors: number;
+  lastStrategyAt: number;
 }
 
 const runners = new Map<string, AgentRunner>();
@@ -56,6 +60,7 @@ export async function startAgentTwitter(agentId: string): Promise<{ success: boo
       lastError: null,
       lastErrorAt: null,
       consecutivePostErrors: 0,
+      lastStrategyAt: 0,
     };
 
     runners.set(agentId, runner);
@@ -145,6 +150,15 @@ async function runAgentCycle(agentId: string) {
       await postAutonomousContent(runner, account, agent);
     }
 
+    if (now - runner.lastStrategyAt >= STRATEGY_INTERVAL_MS) {
+      try {
+        await runStrategyCycle(agentId, account, agent);
+        runner.lastStrategyAt = now;
+      } catch (stratErr: any) {
+        console.error(`[MultiTwitter] @${runner.username} strategy cycle error: ${stratErr.message}`);
+      }
+    }
+
   } catch (err: any) {
     console.error(`[MultiTwitter] Cycle error for ${agentId}:`, err.message);
     runner.lastError = err.message;
@@ -193,7 +207,7 @@ async function processAgentMentions(runner: AgentRunner, account: AgentTwitterAc
           runner.repliedTweets.add(tweet.id);
           if (conversationId) runner.repliedConversations.add(conversationId);
 
-          await storage.updateAgentTwitterAccount(agentId(runner), {
+          await storage.updateAgentTwitterAccount(runner.agentId, {
             totalReplies: (account.totalReplies || 0) + 1,
             repliedTweetIds: Array.from(runner.repliedTweets).slice(-200).join(","),
           });
@@ -256,13 +270,14 @@ async function generateAgentReply(account: AgentTwitterAccount, agent: any, ment
 
 async function postAutonomousContent(runner: AgentRunner, account: AgentTwitterAccount, agent: any) {
   const systemPrompt = buildAgentSystemPrompt(account, agent);
+  const strategyContext = await getStrategyContext(runner.agentId);
 
   try {
     const result = await runInferenceWithFallback(
       ["akash", "hyperbolic", "ritual"],
       undefined,
-      `Generate an original tweet as @${account.twitterHandle}. Pick ONE of your listed skills and craft a tweet that demonstrates that skill. Choose a different tweet style each time. Keep it under 270 characters. No hashtags unless truly relevant. Be authentic, sharp, and role-specific — not generic. Output ONLY the tweet text, nothing else.`,
-      { systemPrompt, temperature: 0.8 }
+      `Generate an original tweet as @${account.twitterHandle}. Pick ONE of your listed skills and craft a tweet that demonstrates that skill. Choose a different tweet style each time. Keep it under 270 characters. No hashtags unless truly relevant. Be authentic, sharp, and role-specific — not generic.${strategyContext ? " Follow your active strategy plan for topic selection." : ""} Output ONLY the tweet text, nothing else.`,
+      { systemPrompt: systemPrompt + strategyContext, temperature: 0.8 }
     );
 
     if (result.live && result.text && !result.text.startsWith("[NO_PROVIDER]") && !result.text.startsWith("[ERROR")) {
@@ -781,6 +796,137 @@ RULES:
 8. Never make financial promises or guarantees.
 9. Never post anything offensive, discriminatory, or harmful.
 10. Represent the brand professionally at all times.`;
+}
+
+async function getStrategyContext(agentId: string): Promise<string> {
+  try {
+    const activeStrategy = await storage.getActiveStrategy(agentId);
+    if (!activeStrategy) return "";
+    return `\nACTIVE STRATEGY (follow this plan for your tweets):\nTitle: ${activeStrategy.title}\n${activeStrategy.content}\n`;
+  } catch {
+    return "";
+  }
+}
+
+export async function runStrategyCycle(agentId: string, account?: AgentTwitterAccount, agent?: any): Promise<void> {
+  if (!account) account = await storage.getAgentTwitterAccount(agentId) ?? undefined;
+  if (!account) return;
+  if (!agent) agent = await storage.getAgent(agentId);
+  if (!agent) return;
+
+  const roleInfo = ROLE_MAP[account.role] || ROLE_MAP["cmo"];
+  const isNew = !account.lastPostedAt || (account.totalTweets || 0) < 3;
+
+  const metrics = {
+    totalTweets: account.totalTweets || 0,
+    totalReplies: account.totalReplies || 0,
+    totalBounties: account.totalBounties || 0,
+    daysSinceCreation: Math.floor((Date.now() - new Date(account.createdAt || Date.now()).getTime()) / 86400000),
+    role: account.role,
+    handle: account.twitterHandle,
+  };
+
+  const companyContext = [
+    account.companyName ? `Company: ${account.companyName}` : "",
+    account.companyDescription ? `About: ${account.companyDescription}` : "",
+    account.companyProduct ? `Product: ${account.companyProduct}` : "",
+    account.companyAudience ? `Audience: ${account.companyAudience}` : "",
+    account.companyKeyMessages ? `Key Messages: ${account.companyKeyMessages}` : "",
+  ].filter(Boolean).join("\n");
+
+  const strategyPrompt = `You are @${account.twitterHandle}, an autonomous ${roleInfo.title} agent.
+
+${companyContext}
+
+CURRENT METRICS:
+- Total tweets posted: ${metrics.totalTweets}
+- Total replies sent: ${metrics.totalReplies}
+- Days active: ${metrics.daysSinceCreation}
+- Role: ${roleInfo.title}
+
+${account.personality ? `PERSONALITY:\n${account.personality}\n` : ""}
+${account.instructions ? `INSTRUCTIONS:\n${account.instructions}\n` : ""}
+
+${isNew ? "This is a NEW agent — create an initial go-to-market plan." : "This is an active agent — analyze what's working and refine the strategy."}
+
+Generate a comprehensive STRATEGY MEMO with the following sections:
+
+## EXECUTIVE SUMMARY
+One paragraph overview of the current strategy and priorities.
+
+## MARKET POSITIONING
+How should the brand be positioned? What differentiates it? What's the competitive angle?
+
+## CONTENT STRATEGY
+- Primary themes to focus on (3-5 themes)
+- Content mix (what % thought leadership, community engagement, product updates, etc.)
+- Tone and messaging guidelines specific to current market conditions
+
+## CONTENT CALENDAR (Next 5 Tweets)
+For each planned tweet, provide:
+1. Topic/angle
+2. Key message
+3. Tweet style (thread opener, hot take, data insight, story, question, etc.)
+
+## GO-TO-MARKET PRIORITIES
+Top 3 priorities for the next cycle with specific actions.
+
+## RECOMMENDATIONS
+What should change? What should continue? Any pivots needed?
+
+Be specific, actionable, and strategic. No filler. Write like a real CMO presenting to a board.`;
+
+  try {
+    const result = await runInferenceWithFallback(
+      ["akash", "hyperbolic", "ritual"],
+      undefined,
+      strategyPrompt,
+      { temperature: 0.7 }
+    );
+
+    if (!result.live || !result.text || result.text.startsWith("[NO_PROVIDER]") || result.text.startsWith("[ERROR")) {
+      console.log(`[MultiTwitter] @${account.twitterHandle} strategy cycle: inference failed`);
+      return;
+    }
+
+    const memoContent = result.text.trim();
+    const titleMatch = memoContent.match(/#{1,2}\s*EXECUTIVE SUMMARY/i);
+    const memoType = isNew ? "gtm_plan" : "strategy";
+    const title = isNew
+      ? `Initial Go-To-Market Strategy for @${account.twitterHandle}`
+      : `Strategy Update — ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+
+    const summaryLines = memoContent.split("\n").filter((l: string) => l.trim().length > 10).slice(0, 5);
+    const summary = summaryLines.join(" ").substring(0, 500);
+
+    const existingActive = await storage.getActiveStrategy(agentId);
+    if (existingActive) {
+      await storage.supersedeMemo(existingActive.id);
+    }
+
+    await storage.createStrategyMemo({
+      agentId,
+      memoType,
+      title,
+      content: memoContent,
+      summary,
+      metrics: JSON.stringify(metrics),
+      status: "active",
+    });
+
+    console.log(`[MultiTwitter] @${account.twitterHandle} strategy memo created: "${title}"`);
+
+    if (account.ownerTelegramChatId) {
+      const telegramMsg = `📋 Strategy Update from your ${roleInfo.title} @${account.twitterHandle}\n\n${title}\n\n${summary}\n\nFull memo available in your agent dashboard on BUILD4.`;
+      const sent = await sendTelegramMessage(account.ownerTelegramChatId, telegramMsg);
+      if (sent) {
+        console.log(`[MultiTwitter] @${account.twitterHandle} strategy sent to owner via Telegram`);
+      }
+    }
+
+  } catch (err: any) {
+    console.error(`[MultiTwitter] @${account.twitterHandle} strategy cycle failed: ${err.message}`);
+  }
 }
 
 export async function autoStartAllAgents(): Promise<void> {

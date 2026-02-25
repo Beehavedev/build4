@@ -44,6 +44,9 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
+  FileText,
+  Calendar,
+  Sparkles,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
@@ -701,6 +704,8 @@ export default function AutonomousEconomy() {
   const [showTwitterConnect, setShowTwitterConnect] = useState(false);
   const [showTwitterSettings, setShowTwitterSettings] = useState(false);
   const [showTwitterHelp, setShowTwitterHelp] = useState(false);
+  const [showStrategyDashboard, setShowStrategyDashboard] = useState(false);
+  const [expandedMemoId, setExpandedMemoId] = useState<string | null>(null);
   const [connectStep, setConnectStep] = useState(1);
   const [keyValidation, setKeyValidation] = useState<{ valid?: boolean; username?: string; name?: string; canWrite?: boolean; writeWarning?: string | null; error?: string } | null>(null);
   const [permissionChecks, setPermissionChecks] = useState({ createdApp: false, setReadWrite: false, generatedTokens: false });
@@ -794,6 +799,42 @@ export default function AutonomousEconomy() {
       toast({ title: "Twitter disconnected" });
     },
     onError: (e: Error) => toast({ title: "Disconnect failed", description: e.message, variant: "destructive" }),
+  });
+
+  const strategyQuery = useQuery<any[]>({
+    queryKey: ["/api/web4/agents", agentId, "strategy"],
+    queryFn: async () => {
+      if (!agentId) return [];
+      const res = await fetch(`/api/web4/agents/${agentId}/strategy`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!agentId && showStrategyDashboard,
+    refetchInterval: 60000,
+  });
+
+  const activeStrategyQuery = useQuery<any>({
+    queryKey: ["/api/web4/agents", agentId, "strategy", "active"],
+    queryFn: async () => {
+      if (!agentId) return null;
+      const res = await fetch(`/api/web4/agents/${agentId}/strategy/active`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!agentId && showStrategyDashboard,
+    refetchInterval: 60000,
+  });
+
+  const generateStrategyMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/web4/agents/${agentId}/strategy/generate`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "strategy"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "strategy", "active"] });
+      toast({ title: "Strategy generated", description: "Your agent's new strategy is ready." });
+    },
+    onError: (e: Error) => toast({ title: "Strategy generation failed", description: e.message, variant: "destructive" }),
   });
 
   const evolveMutation = useMutation({
@@ -3469,6 +3510,15 @@ export default function AutonomousEconomy() {
                   <Button
                     size="sm"
                     variant="outline"
+                    onClick={() => { setShowStrategyDashboard(!showStrategyDashboard); if (!showStrategyDashboard) { setShowTwitterSettings(false); setShowTwitterHelp(false); } }}
+                    data-testid="button-twitter-strategy"
+                  >
+                    <Brain className="w-3.5 h-3.5 mr-1.5" />
+                    Strategy
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => setShowTwitterHelp(!showTwitterHelp)}
                     data-testid="button-twitter-help"
                   >
@@ -3572,6 +3622,17 @@ export default function AutonomousEconomy() {
                         data-testid="input-twitter-settings-frequency"
                       />
                     </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Telegram Chat ID <span className="text-muted-foreground font-normal">(for strategy notifications)</span></label>
+                      <input
+                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
+                        placeholder="e.g. 123456789"
+                        defaultValue={twitterStatus.ownerTelegramChatId || ""}
+                        id="twitter-settings-telegram-chat-id"
+                        data-testid="input-settings-telegram-chat-id"
+                      />
+                      <p className="text-[10px] text-muted-foreground">Message @BUILD4_BOT on Telegram with /start to get your chat ID. Strategy memos will be sent here.</p>
+                    </div>
                     <div className="border rounded-md p-2.5 space-y-2 bg-muted/30">
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-semibold">Update API Keys</span>
@@ -3613,7 +3674,8 @@ export default function AutonomousEconomy() {
                         const apiSecret = (document.getElementById("twitter-settings-api-secret") as HTMLInputElement)?.value;
                         const accessToken = (document.getElementById("twitter-settings-access-token") as HTMLInputElement)?.value;
                         const accessSecret = (document.getElementById("twitter-settings-access-secret") as HTMLInputElement)?.value;
-                        const settings: any = { personality, instructions, postingFrequencyMins: freq, companyName, companyDescription, companyProduct, companyAudience, companyWebsite, companyKeyMessages };
+                        const ownerTelegramChatId = (document.getElementById("twitter-settings-telegram-chat-id") as HTMLInputElement)?.value;
+                        const settings: any = { personality, instructions, postingFrequencyMins: freq, companyName, companyDescription, companyProduct, companyAudience, companyWebsite, companyKeyMessages, ownerTelegramChatId: ownerTelegramChatId || null };
                         if (apiKey) settings.twitterApiKey = apiKey;
                         if (apiSecret) settings.twitterApiSecret = apiSecret;
                         if (accessToken) settings.twitterAccessToken = accessToken;
@@ -3733,6 +3795,112 @@ export default function AutonomousEconomy() {
                         <li>If you changed permissions, regenerate Access Token and Secret</li>
                       </ol>
                     </div>
+                  </Card>
+                )}
+
+                {showStrategyDashboard && (
+                  <Card className="p-4 space-y-4 max-h-[80vh] overflow-y-auto" data-testid="strategy-dashboard">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Brain className="w-4 h-4 text-primary" />
+                        <span className="text-xs font-semibold">Strategy Brain</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => generateStrategyMutation.mutate()}
+                        disabled={generateStrategyMutation.isPending || !twitterStatus.running}
+                        data-testid="button-generate-strategy"
+                      >
+                        {generateStrategyMutation.isPending ? (
+                          <><RefreshCw className="w-3 h-3 mr-1.5 animate-spin" /> Generating...</>
+                        ) : (
+                          <><Sparkles className="w-3 h-3 mr-1.5" /> Generate Strategy Now</>
+                        )}
+                      </Button>
+                    </div>
+
+                    {!twitterStatus.running && (
+                      <div className="text-[11px] text-muted-foreground bg-muted/30 rounded-md p-2 border">
+                        Start your agent to generate strategies. The Strategy Brain runs automatically every 12 hours while the agent is active.
+                      </div>
+                    )}
+
+                    {activeStrategyQuery.data && (
+                      <div className="border rounded-lg p-3 space-y-2 bg-primary/5 border-primary/20">
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-primary/15 text-primary text-[10px] border-0">ACTIVE</Badge>
+                          <span className="font-mono text-xs font-bold">{activeStrategyQuery.data.title}</span>
+                        </div>
+                        {activeStrategyQuery.data.summary && (
+                          <p className="text-[11px] text-muted-foreground leading-relaxed">{activeStrategyQuery.data.summary}</p>
+                        )}
+                        <div className="prose prose-sm dark:prose-invert max-w-none">
+                          <pre className="text-[11px] whitespace-pre-wrap font-mono bg-muted/30 rounded-md p-3 border max-h-[300px] overflow-y-auto" data-testid="text-active-strategy-content">
+                            {activeStrategyQuery.data.content}
+                          </pre>
+                        </div>
+                        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                          <span>Type: <Badge variant="outline" className="text-[9px] ml-1">{activeStrategyQuery.data.memoType?.replace(/_/g, " ")}</Badge></span>
+                          <span>Created: {new Date(activeStrategyQuery.data.createdAt).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {!activeStrategyQuery.data && !activeStrategyQuery.isLoading && twitterStatus.running && (
+                      <div className="text-center py-6 text-muted-foreground">
+                        <Brain className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                        <p className="text-xs">No strategy generated yet. Click "Generate Strategy Now" to create your first one.</p>
+                      </div>
+                    )}
+
+                    {strategyQuery.data && strategyQuery.data.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 border-t pt-3">
+                          <FileText className="w-3.5 h-3.5 text-muted-foreground" />
+                          <span className="text-[11px] font-semibold text-muted-foreground uppercase">Past Memos ({strategyQuery.data.length})</span>
+                        </div>
+                        {strategyQuery.data.map((memo: any) => (
+                          <div
+                            key={memo.id}
+                            className="border rounded-md p-2.5 space-y-1.5 hover:bg-muted/20 transition-colors cursor-pointer"
+                            onClick={() => setExpandedMemoId(expandedMemoId === memo.id ? null : memo.id)}
+                            data-testid={`card-strategy-memo-${memo.id}`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                {memo.memoType === "strategy" && <Brain className="w-3 h-3 text-blue-500 shrink-0" />}
+                                {memo.memoType === "content_calendar" && <Calendar className="w-3 h-3 text-green-500 shrink-0" />}
+                                {memo.memoType === "performance_report" && <BarChart3 className="w-3 h-3 text-orange-500 shrink-0" />}
+                                {memo.memoType === "gtm_plan" && <TrendingUp className="w-3 h-3 text-purple-500 shrink-0" />}
+                                {memo.memoType === "pivot_recommendation" && <RefreshCw className="w-3 h-3 text-red-500 shrink-0" />}
+                                <span className="font-mono text-[11px] font-medium truncate">{memo.title}</span>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <Badge variant="outline" className={`text-[9px] ${memo.status === "active" ? "border-primary text-primary" : memo.status === "superseded" ? "border-muted-foreground" : ""}`}>
+                                  {memo.status}
+                                </Badge>
+                                <ChevronDown className={`w-3 h-3 text-muted-foreground transition-transform ${expandedMemoId === memo.id ? "rotate-180" : ""}`} />
+                              </div>
+                            </div>
+                            <div className="text-[10px] text-muted-foreground">
+                              {new Date(memo.createdAt).toLocaleString()} · {memo.memoType?.replace(/_/g, " ")}
+                            </div>
+                            {expandedMemoId === memo.id && (
+                              <pre className="text-[11px] whitespace-pre-wrap font-mono bg-muted/30 rounded-md p-3 border max-h-[250px] overflow-y-auto mt-2" data-testid={`text-memo-content-${memo.id}`}>
+                                {memo.content}
+                              </pre>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {strategyQuery.isLoading && (
+                      <div className="flex items-center justify-center py-4">
+                        <RefreshCw className="w-4 h-4 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
                   </Card>
                 )}
 

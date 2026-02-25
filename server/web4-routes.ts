@@ -2926,6 +2926,7 @@ ${urls}
         companyAudience: account.companyAudience,
         companyWebsite: account.companyWebsite,
         companyKeyMessages: account.companyKeyMessages,
+        ownerTelegramChatId: account.ownerTelegramChatId,
         postingFrequencyMins: account.postingFrequencyMins,
         autoReplyEnabled: account.autoReplyEnabled,
         autoBountyEnabled: account.autoBountyEnabled,
@@ -3048,6 +3049,56 @@ ${urls}
       await stopAgentTwitter(agentId);
       await storage.deleteAgentTwitterAccount(agentId);
       res.json({ success: true, message: "Twitter disconnected" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/agents/:agentId/strategy", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const memos = await storage.getStrategyMemos(agentId, 20);
+      res.json(memos);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/agents/:agentId/strategy/active", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const active = await storage.getActiveStrategy(agentId);
+      if (!active) return res.status(404).json({ error: "No active strategy found" });
+      res.json(active);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/strategy/generate", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const status = getAgentTwitterStatus(agentId);
+      if (!status.running) {
+        return res.status(400).json({ error: "Agent Twitter is not running. Start the agent first." });
+      }
+      try {
+        const { runStrategyCycle } = await import("./multi-twitter-agent");
+        if (typeof runStrategyCycle !== "function") {
+          return res.status(501).json({ error: "Strategy cycle not yet implemented" });
+        }
+        await runStrategyCycle(agentId);
+        const active = await storage.getActiveStrategy(agentId);
+        res.json({ success: true, memo: active || null });
+      } catch (importErr: any) {
+        return res.status(501).json({ error: "Strategy cycle not available: " + importErr.message });
+      }
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

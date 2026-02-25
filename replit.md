@@ -103,6 +103,15 @@ The project uses a monorepo with `client/` for the React frontend, `server/` for
 - **Diagnostics**: Status endpoint returns live health diagnostics, error tracking per agent.
 - **Frontend**: Twitter Agent section in Autonomous Economy page with connect wizard, controls, settings, help panel, and activity stats.
 
+### CMO Strategy Brain
+- **Purpose**: Autonomous strategy generation for Twitter agents — go-to-market plans, content calendars, performance analysis, and strategic recommendations.
+- **Schema**: `agent_strategy_memos` table (id, agentId, memoType, title, content, summary, metrics, status, createdAt). `ownerTelegramChatId` field on `agent_twitter_accounts`.
+- **Engine**: `runStrategyCycle()` in `server/multi-twitter-agent.ts` runs every 12 hours per agent. Generates memos via decentralized inference, supersedes previous active strategies, and injects active strategy into tweet generation system prompt.
+- **Memo Types**: strategy, content_calendar, performance_report, gtm_plan, pivot_recommendation.
+- **Telegram Notifications**: If `ownerTelegramChatId` is set, strategy summaries are sent to the owner via `sendTelegramMessage()`.
+- **API Routes**: `GET /api/web4/agents/:agentId/strategy` (list memos), `GET /api/web4/agents/:agentId/strategy/active` (current active), `POST /api/web4/agents/:agentId/strategy/generate` (manual trigger).
+- **Frontend**: Strategy Dashboard in Twitter Agent section with active strategy display, past memo list with type badges and expandable content, "Generate Strategy Now" button, Telegram Chat ID input in Settings.
+
 ## External Dependencies
 
 ### Database

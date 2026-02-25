@@ -1004,6 +1004,7 @@ export const agentTwitterAccounts = pgTable("agent_twitter_accounts", {
   totalReplies: integer("total_replies").notNull().default(0),
   totalBounties: integer("total_bounties").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
+  ownerTelegramChatId: text("owner_telegram_chat_id"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -1046,7 +1047,24 @@ export const agentTwitterSettingsSchema = z.object({
   twitterApiSecret: z.string().min(1).optional(),
   twitterAccessToken: z.string().min(1).optional(),
   twitterAccessTokenSecret: z.string().min(1).optional(),
+  ownerTelegramChatId: z.string().optional(),
 });
+
+export const agentStrategyMemos = pgTable("agent_strategy_memos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  memoType: text("memo_type").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  summary: text("summary").notNull(),
+  metrics: text("metrics"),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentStrategyMemoSchema = createInsertSchema(agentStrategyMemos).omit({ id: true, createdAt: true });
+export type InsertAgentStrategyMemo = z.infer<typeof insertAgentStrategyMemoSchema>;
+export type AgentStrategyMemo = typeof agentStrategyMemos.$inferSelect;
 
 export const supportTickets = pgTable("support_tickets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

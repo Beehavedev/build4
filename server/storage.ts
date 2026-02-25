@@ -19,12 +19,14 @@ import {
   type SkillExecution, type InsertSkillExecution,
   type AgentMemory, type InsertAgentMemory,
   type AgentJob, type InsertAgentJob,
+  type AgentStrategyMemo, type InsertAgentStrategyMemo,
   users, agents, agentWallets, agentTransactions,
   agentSkills, skillPurchases, agentEvolutions,
   agentLineage, agentRuntimeProfiles, agentSurvivalStatus,
   agentConstitution, agentSoulEntries, agentAuditLogs, agentMessages,
   inferenceProviders, inferenceRequests,
   platformRevenue, skillExecutions, agentMemory, agentJobs,
+  agentStrategyMemos,
   skillPipelines, userCredits,
   outreachTargets, outreachCampaigns,
   type SkillPipeline, type InsertSkillPipeline,
@@ -317,6 +319,12 @@ export interface IStorage {
   getAllAgentTwitterAccounts(): Promise<AgentTwitterAccount[]>;
   updateAgentTwitterAccount(agentId: string, data: Partial<AgentTwitterAccount>): Promise<AgentTwitterAccount | undefined>;
   deleteAgentTwitterAccount(agentId: string): Promise<void>;
+
+  // Strategy Memos
+  createStrategyMemo(memo: InsertAgentStrategyMemo): Promise<AgentStrategyMemo>;
+  getStrategyMemos(agentId: string, limit?: number): Promise<AgentStrategyMemo[]>;
+  getActiveStrategy(agentId: string): Promise<AgentStrategyMemo | undefined>;
+  supersedeMemo(memoId: string): Promise<void>;
 
   // Seed subscription plans
   seedSubscriptionPlans(): Promise<void>;
@@ -1995,6 +2003,36 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAgentTwitterAccount(agentId: string): Promise<void> {
     await db.delete(agentTwitterAccounts).where(eq(agentTwitterAccounts.agentId, agentId));
+  }
+
+  async createStrategyMemo(memo: InsertAgentStrategyMemo): Promise<AgentStrategyMemo> {
+    const [created] = await db.insert(agentStrategyMemos).values(memo).returning();
+    return created;
+  }
+
+  async getStrategyMemos(agentId: string, limit = 20): Promise<AgentStrategyMemo[]> {
+    return db.select().from(agentStrategyMemos)
+      .where(eq(agentStrategyMemos.agentId, agentId))
+      .orderBy(desc(agentStrategyMemos.createdAt))
+      .limit(limit);
+  }
+
+  async getActiveStrategy(agentId: string): Promise<AgentStrategyMemo | undefined> {
+    const [memo] = await db.select().from(agentStrategyMemos)
+      .where(and(
+        eq(agentStrategyMemos.agentId, agentId),
+        eq(agentStrategyMemos.status, "active"),
+        eq(agentStrategyMemos.memoType, "strategy")
+      ))
+      .orderBy(desc(agentStrategyMemos.createdAt))
+      .limit(1);
+    return memo;
+  }
+
+  async supersedeMemo(memoId: string): Promise<void> {
+    await db.update(agentStrategyMemos)
+      .set({ status: "superseded" })
+      .where(eq(agentStrategyMemos.id, memoId));
   }
 }
 
