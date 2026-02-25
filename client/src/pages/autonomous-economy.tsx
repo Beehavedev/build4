@@ -655,6 +655,12 @@ export default function AutonomousEconomy() {
   const [createTwitterApiSecret, setCreateTwitterApiSecret] = useState("");
   const [createTwitterAccessToken, setCreateTwitterAccessToken] = useState("");
   const [createTwitterAccessSecret, setCreateTwitterAccessSecret] = useState("");
+  const [createCompanyName, setCreateCompanyName] = useState("");
+  const [createCompanyDescription, setCreateCompanyDescription] = useState("");
+  const [createCompanyProduct, setCreateCompanyProduct] = useState("");
+  const [createCompanyAudience, setCreateCompanyAudience] = useState("");
+  const [createCompanyWebsite, setCreateCompanyWebsite] = useState("");
+  const [createCompanyKeyMessages, setCreateCompanyKeyMessages] = useState("");
 
   function uuidToNumericId(uuid: string): bigint {
     const hex = uuid.replace(/-/g, "");
@@ -742,6 +748,12 @@ export default function AutonomousEconomy() {
             twitterAccessToken: createTwitterAccessToken,
             twitterAccessTokenSecret: createTwitterAccessSecret,
             role: createTwitterRole,
+            companyName: createCompanyName,
+            companyDescription: createCompanyDescription,
+            companyProduct: createCompanyProduct,
+            companyAudience: createCompanyAudience,
+            companyWebsite: createCompanyWebsite,
+            companyKeyMessages: createCompanyKeyMessages,
             personality: "",
             instructions: newAgentBio || "",
             postingFrequencyMins: 60,
@@ -757,6 +769,12 @@ export default function AutonomousEconomy() {
         setCreateTwitterApiSecret("");
         setCreateTwitterAccessToken("");
         setCreateTwitterAccessSecret("");
+        setCreateCompanyName("");
+        setCreateCompanyDescription("");
+        setCreateCompanyProduct("");
+        setCreateCompanyAudience("");
+        setCreateCompanyWebsite("");
+        setCreateCompanyKeyMessages("");
       } else {
         const txMsg = data.onchainTx ? ` — tx: ${data.onchainTx.slice(0, 10)}...` : "";
         const depositMsg = data.depositPending ? " (deposit pending — you can deposit later from wallet panel)" : "";
@@ -1260,6 +1278,84 @@ export default function AutonomousEconomy() {
                           placeholder="Access Token Secret"
                           className="w-full font-mono text-sm bg-background border rounded-md px-3 py-1.5"
                           data-testid="input-create-twitter-secret"
+                          disabled={createAgentMutation.isPending}
+                        />
+                      </div>
+                    </div>
+                    <div className="border rounded-md p-2.5 space-y-2 bg-muted/30">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] font-semibold">Company / Project Profile</span>
+                        <span className="font-mono text-[9px] text-muted-foreground">(what should this agent promote?)</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="font-mono text-[10px] text-muted-foreground">Company Name</label>
+                          <input
+                            value={createCompanyName}
+                            onChange={(e) => setCreateCompanyName(e.target.value)}
+                            placeholder="e.g. Acme Protocol"
+                            className="w-full font-mono text-sm bg-background border rounded-md px-2.5 py-1.5"
+                            data-testid="input-create-company-name"
+                            disabled={createAgentMutation.isPending}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="font-mono text-[10px] text-muted-foreground">Website</label>
+                          <input
+                            value={createCompanyWebsite}
+                            onChange={(e) => setCreateCompanyWebsite(e.target.value)}
+                            placeholder="https://yourproject.com"
+                            className="w-full font-mono text-sm bg-background border rounded-md px-2.5 py-1.5"
+                            data-testid="input-create-company-website"
+                            disabled={createAgentMutation.isPending}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="font-mono text-[10px] text-muted-foreground">What does your company do?</label>
+                        <textarea
+                          value={createCompanyDescription}
+                          onChange={(e) => setCreateCompanyDescription(e.target.value)}
+                          placeholder="Describe your company, mission, and what makes it unique..."
+                          className="w-full font-mono text-sm bg-background border rounded-md px-2.5 py-1.5 resize-none"
+                          rows={2}
+                          data-testid="input-create-company-description"
+                          disabled={createAgentMutation.isPending}
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="font-mono text-[10px] text-muted-foreground">Product / Service</label>
+                          <input
+                            value={createCompanyProduct}
+                            onChange={(e) => setCreateCompanyProduct(e.target.value)}
+                            placeholder="e.g. DEX aggregator"
+                            className="w-full font-mono text-sm bg-background border rounded-md px-2.5 py-1.5"
+                            data-testid="input-create-company-product"
+                            disabled={createAgentMutation.isPending}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="font-mono text-[10px] text-muted-foreground">Target Audience</label>
+                          <input
+                            value={createCompanyAudience}
+                            onChange={(e) => setCreateCompanyAudience(e.target.value)}
+                            placeholder="e.g. DeFi traders"
+                            className="w-full font-mono text-sm bg-background border rounded-md px-2.5 py-1.5"
+                            data-testid="input-create-company-audience"
+                            disabled={createAgentMutation.isPending}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="font-mono text-[10px] text-muted-foreground">Key Messages & Talking Points</label>
+                        <textarea
+                          value={createCompanyKeyMessages}
+                          onChange={(e) => setCreateCompanyKeyMessages(e.target.value)}
+                          placeholder="Selling points, slogans, value props the agent should emphasize..."
+                          className="w-full font-mono text-sm bg-background border rounded-md px-2.5 py-1.5 resize-none"
+                          rows={2}
+                          data-testid="input-create-company-messages"
                           disabled={createAgentMutation.isPending}
                         />
                       </div>
@@ -3035,8 +3131,41 @@ export default function AutonomousEconomy() {
                 </div>
 
                 {showTwitterSettings && (
-                  <Card className="p-4 space-y-3">
+                  <Card className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
                     <div className="text-xs font-semibold">Agent Settings</div>
+                    <div className="border rounded-md p-2.5 space-y-2 bg-muted/30">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-semibold">Company / Project Profile</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Company Name</label>
+                          <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" defaultValue={twitterStatus.companyName || ""} id="twitter-settings-company-name" data-testid="input-settings-company-name" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Website</label>
+                          <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" defaultValue={twitterStatus.companyWebsite || ""} id="twitter-settings-company-website" data-testid="input-settings-company-website" />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-muted-foreground">What does your company do?</label>
+                        <textarea className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono resize-none" rows={2} defaultValue={twitterStatus.companyDescription || ""} id="twitter-settings-company-description" data-testid="input-settings-company-description" />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Product / Service</label>
+                          <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" defaultValue={twitterStatus.companyProduct || ""} id="twitter-settings-company-product" data-testid="input-settings-company-product" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Target Audience</label>
+                          <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" defaultValue={twitterStatus.companyAudience || ""} id="twitter-settings-company-audience" data-testid="input-settings-company-audience" />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-muted-foreground">Key Messages & Talking Points</label>
+                        <textarea className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono resize-none" rows={2} defaultValue={twitterStatus.companyKeyMessages || ""} id="twitter-settings-company-messages" data-testid="input-settings-company-messages" />
+                      </div>
+                    </div>
                     <div className="space-y-2">
                       <label className="text-xs font-medium">Personality</label>
                       <textarea
@@ -3075,7 +3204,13 @@ export default function AutonomousEconomy() {
                         const personality = (document.getElementById("twitter-settings-personality") as HTMLTextAreaElement)?.value;
                         const instructions = (document.getElementById("twitter-settings-instructions") as HTMLTextAreaElement)?.value;
                         const freq = parseInt((document.getElementById("twitter-settings-frequency") as HTMLInputElement)?.value) || 60;
-                        twitterSettingsMutation.mutate({ personality, instructions, postingFrequencyMins: freq });
+                        const companyName = (document.getElementById("twitter-settings-company-name") as HTMLInputElement)?.value;
+                        const companyDescription = (document.getElementById("twitter-settings-company-description") as HTMLTextAreaElement)?.value;
+                        const companyProduct = (document.getElementById("twitter-settings-company-product") as HTMLInputElement)?.value;
+                        const companyAudience = (document.getElementById("twitter-settings-company-audience") as HTMLInputElement)?.value;
+                        const companyWebsite = (document.getElementById("twitter-settings-company-website") as HTMLInputElement)?.value;
+                        const companyKeyMessages = (document.getElementById("twitter-settings-company-messages") as HTMLTextAreaElement)?.value;
+                        twitterSettingsMutation.mutate({ personality, instructions, postingFrequencyMins: freq, companyName, companyDescription, companyProduct, companyAudience, companyWebsite, companyKeyMessages });
                       }}
                       disabled={twitterSettingsMutation.isPending}
                       data-testid="button-save-twitter-settings"
