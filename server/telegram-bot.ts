@@ -3,6 +3,7 @@ import { runInferenceWithFallback } from "./inference";
 
 let bot: TelegramBot | null = null;
 let isRunning = false;
+let botUsername: string | null = null;
 
 const BUILD4_KNOWLEDGE = `
 BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.
@@ -131,7 +132,7 @@ function generateFallbackAnswer(question: string): string {
   return "Great question! BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer. For detailed info, check build4.io or ask me something specific!";
 }
 
-export function startTelegramBot(): void {
+export async function startTelegramBot(): Promise<void> {
   if (isRunning || !isTelegramConfigured()) return;
 
   const token = process.env.TELEGRAM_BOT_TOKEN!;
@@ -139,53 +140,76 @@ export function startTelegramBot(): void {
   try {
     bot = new TelegramBot(token, { polling: true });
     isRunning = true;
-    console.log("[TelegramBot] Started with polling");
+
+    const me = await bot.getMe();
+    botUsername = me.username || null;
+    console.log(`[TelegramBot] Started with polling as @${botUsername}`);
 
     bot.on("message", async (msg) => {
       if (!msg.text) return;
 
       const chatId = msg.chat.id;
-      const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
+      const chatType = msg.chat.type;
+      const isGroup = chatType === "group" || chatType === "supergroup";
       const username = msg.from?.username || msg.from?.first_name || "user";
       const text = msg.text.trim();
 
-      if (text === "/start" && !isGroup) {
-        bot!.sendMessage(chatId, "Hey! I'm the BUILD4 bot. Ask me anything about BUILD4 — decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\nJust type your question or use /ask followed by your question.", { parse_mode: "Markdown" });
-        return;
-      }
+      console.log(`[TelegramBot] ${isGroup ? "Group" : "DM"} message from @${username}: ${text.slice(0, 80)}`);
 
-      if (text === "/help") {
-        bot!.sendMessage(chatId, "*BUILD4 Bot Commands*\n\n/ask <question> — Ask about BUILD4\n/info — What is BUILD4?\n/chains — Supported blockchains\n/contracts — Smart contract overview\n/help — Show this message\n\nIn groups, mention me or use /ask. In DMs, just type your question!", { parse_mode: "Markdown" });
-        return;
-      }
+      const commandMatch = text.match(/^\/(\w+)(?:@\S+)?\s*(.*)/s);
+      if (commandMatch) {
+        const cmd = commandMatch[1].toLowerCase();
+        const cmdArg = commandMatch[2]?.trim() || "";
 
-      if (text === "/info") {
-        bot!.sendMessage(chatId, "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\nAgents get wallets, trade skills, evolve, replicate, and operate fully on-chain. No centralized AI — inference runs through Hyperbolic, Akash ML, and Ritual.\n\n🌐 build4.io", { parse_mode: "Markdown" });
-        return;
-      }
+        if (cmd === "start" && !isGroup) {
+          await bot!.sendMessage(chatId, "Hey! I'm the BUILD4 bot. Ask me anything about BUILD4 — decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\nJust type your question or use /ask followed by your question.");
+          return;
+        }
 
-      if (text === "/chains") {
-        bot!.sendMessage(chatId, "*Supported Chains*\n\n• BNB Chain — BAP-578 NFA registry live\n• Base — ERC-8004 identity registry live\n• XLayer — Agent economy deployment\n\nAll agent wallets, skill trades, and replication happen on-chain.", { parse_mode: "Markdown" });
-        return;
-      }
+        if (cmd === "help") {
+          await bot!.sendMessage(chatId, "BUILD4 Bot Commands\n\n/ask <question> — Ask about BUILD4\n/info — What is BUILD4?\n/chains — Supported blockchains\n/contracts — Smart contract overview\n/help — Show this message\n\nIn groups, mention me or use /ask. In DMs, just type your question!");
+          return;
+        }
 
-      if (text === "/contracts") {
-        bot!.sendMessage(chatId, "*BUILD4 Smart Contracts*\n\n1. *AgentEconomyHub* — Wallet layer (deposits, withdrawals, transfers)\n2. *SkillMarketplace* — Skill trading with 3-way revenue split\n3. *AgentReplication* — Agent forking + NFT minting\n4. *ConstitutionRegistry* — Immutable agent laws\n\nAll built with Solidity 0.8.24 + OpenZeppelin.", { parse_mode: "Markdown" });
+        if (cmd === "info") {
+          await bot!.sendMessage(chatId, "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\nAgents get wallets, trade skills, evolve, replicate, and operate fully on-chain. No centralized AI — inference runs through Hyperbolic, Akash ML, and Ritual.\n\nhttps://build4.io");
+          return;
+        }
+
+        if (cmd === "chains") {
+          await bot!.sendMessage(chatId, "Supported Chains\n\n- BNB Chain — BAP-578 NFA registry live\n- Base — ERC-8004 identity registry live\n- XLayer — Agent economy deployment\n\nAll agent wallets, skill trades, and replication happen on-chain.");
+          return;
+        }
+
+        if (cmd === "contracts") {
+          await bot!.sendMessage(chatId, "BUILD4 Smart Contracts\n\n1. AgentEconomyHub — Wallet layer (deposits, withdrawals, transfers)\n2. SkillMarketplace — Skill trading with 3-way revenue split\n3. AgentReplication — Agent forking + NFT minting\n4. ConstitutionRegistry — Immutable agent laws\n\nAll built with Solidity 0.8.24 + OpenZeppelin.");
+          return;
+        }
+
+        if (cmd === "ask") {
+          if (!cmdArg) {
+            await bot!.sendMessage(chatId, "What would you like to know? Use /ask followed by your question");
+            return;
+          }
+          return await handleQuestion(chatId, msg.message_id, cmdArg, username);
+        }
+
         return;
       }
 
       let question = "";
 
-      if (text.startsWith("/ask")) {
-        question = text.replace(/^\/ask\s*/i, "").trim();
-        if (!question) {
-          bot!.sendMessage(chatId, "What would you like to know? Use `/ask your question here`", { parse_mode: "Markdown" });
-          return;
-        }
-      } else if (isGroup) {
-        const botUsername = (await bot!.getMe()).username;
-        if (botUsername && text.toLowerCase().includes(`@${botUsername.toLowerCase()}`)) {
-          question = text.replace(new RegExp(`@${botUsername}`, "gi"), "").trim();
+      if (isGroup) {
+        const mentionsBotEntity = msg.entities?.some((e: any) =>
+          e.type === "mention" && botUsername &&
+          text.substring(e.offset, e.offset + e.length).toLowerCase() === `@${botUsername.toLowerCase()}`
+        );
+        const mentionsBotText = botUsername && text.toLowerCase().includes(`@${botUsername.toLowerCase()}`);
+
+        if (mentionsBotEntity || mentionsBotText) {
+          question = botUsername
+            ? text.replace(new RegExp(`@${botUsername}`, "gi"), "").trim()
+            : text;
         } else {
           return;
         }
@@ -195,31 +219,7 @@ export function startTelegramBot(): void {
 
       if (!question) return;
 
-      const userId = msg.from?.id || 0;
-      const now = Date.now();
-      const lastMsg = rateLimitMap.get(userId);
-      if (lastMsg && now - lastMsg < RATE_LIMIT_MS) {
-        return;
-      }
-      rateLimitMap.set(userId, now);
-
-      if (rateLimitMap.size > 1000) {
-        const cutoff = now - RATE_LIMIT_MS * 10;
-        for (const [key, time] of rateLimitMap) {
-          if (time < cutoff) rateLimitMap.delete(key);
-        }
-      }
-
-      try {
-        await bot!.sendChatAction(chatId, "typing");
-        const answer = await generateAnswer(question, username);
-        await bot!.sendMessage(chatId, answer, { parse_mode: "Markdown", reply_to_message_id: msg.message_id });
-      } catch (e: any) {
-        console.error("[TelegramBot] Error handling message:", e.message);
-        try {
-          await bot!.sendMessage(chatId, "Something went wrong. Try again!", { reply_to_message_id: msg.message_id });
-        } catch {}
-      }
+      await handleQuestion(chatId, msg.message_id, question, username);
     });
 
     bot.on("polling_error", (error) => {
@@ -229,6 +229,35 @@ export function startTelegramBot(): void {
   } catch (e: any) {
     console.error("[TelegramBot] Failed to start:", e.message);
     isRunning = false;
+  }
+}
+
+async function handleQuestion(chatId: number, messageId: number, question: string, username: string): Promise<void> {
+  const userId = chatId;
+  const now = Date.now();
+  const lastMsg = rateLimitMap.get(userId);
+  if (lastMsg && now - lastMsg < RATE_LIMIT_MS) {
+    return;
+  }
+  rateLimitMap.set(userId, now);
+
+  if (rateLimitMap.size > 1000) {
+    const cutoff = now - RATE_LIMIT_MS * 10;
+    for (const [key, time] of rateLimitMap) {
+      if (time < cutoff) rateLimitMap.delete(key);
+    }
+  }
+
+  try {
+    await bot!.sendChatAction(chatId, "typing");
+    const answer = await generateAnswer(question, username);
+    console.log(`[TelegramBot] Answering @${username}: ${answer.slice(0, 80)}...`);
+    await bot!.sendMessage(chatId, answer, { reply_to_message_id: messageId });
+  } catch (e: any) {
+    console.error("[TelegramBot] Error handling message:", e.message);
+    try {
+      await bot!.sendMessage(chatId, "Something went wrong. Try again!", { reply_to_message_id: messageId });
+    } catch {}
   }
 }
 
