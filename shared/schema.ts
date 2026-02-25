@@ -1066,6 +1066,37 @@ export const insertAgentStrategyMemoSchema = createInsertSchema(agentStrategyMem
 export type InsertAgentStrategyMemo = z.infer<typeof insertAgentStrategyMemoSchema>;
 export type AgentStrategyMemo = typeof agentStrategyMemos.$inferSelect;
 
+export const tweetPerformance = pgTable("tweet_performance", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  tweetId: text("tweet_id"),
+  tweetText: text("tweet_text").notNull(),
+  strategyMemoId: varchar("strategy_memo_id"),
+  themeAlignment: integer("theme_alignment"),
+  alignedThemes: text("aligned_themes"),
+  engagementScore: integer("engagement_score"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTweetPerformanceSchema = createInsertSchema(tweetPerformance).omit({ id: true, createdAt: true });
+export type InsertTweetPerformance = z.infer<typeof insertTweetPerformanceSchema>;
+export type TweetPerformance = typeof tweetPerformance.$inferSelect;
+
+export const strategyActionItems = pgTable("strategy_action_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  memoId: varchar("memo_id").notNull(),
+  action: text("action").notNull(),
+  priority: text("priority").notNull().default("medium"),
+  status: text("status").notNull().default("pending"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertStrategyActionItemSchema = createInsertSchema(strategyActionItems).omit({ id: true, createdAt: true, completedAt: true });
+export type InsertStrategyActionItem = z.infer<typeof insertStrategyActionItemSchema>;
+export type StrategyActionItem = typeof strategyActionItems.$inferSelect;
+
 export const supportTickets = pgTable("support_tickets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tweetId: text("tweet_id").notNull(),

@@ -3179,6 +3179,72 @@ ${urls}
     }
   });
 
+  app.get("/api/web4/agents/:agentId/performance", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const limit = parseInt(req.query.limit as string) || 50;
+      const records = await storage.getTweetPerformance(agentId, limit);
+
+      const avgAlignment = records.length > 0
+        ? Math.round(records.reduce((sum, r) => sum + (r.themeAlignment || 0), 0) / records.length)
+        : 0;
+
+      const themeCounts: Record<string, number> = {};
+      for (const r of records) {
+        if (r.alignedThemes) {
+          try {
+            for (const theme of JSON.parse(r.alignedThemes)) {
+              themeCounts[theme] = (themeCounts[theme] || 0) + 1;
+            }
+          } catch {}
+        }
+      }
+
+      const topThemes = Object.entries(themeCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+      res.json({
+        total: records.length,
+        avgAlignment,
+        topThemes: Object.fromEntries(topThemes),
+        tweets: records,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/agents/:agentId/action-items", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const items = await storage.getStrategyActionItems(agentId);
+      res.json(items);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/web4/agents/:agentId/action-items/:itemId", async (req: Request, res: Response) => {
+    try {
+      const { itemId } = req.params;
+      const { status } = req.body;
+      if (!["pending", "done", "skipped"].includes(status)) {
+        return res.status(400).json({ error: "Status must be pending, done, or skipped" });
+      }
+      const updated = await storage.updateStrategyActionItem(itemId, {
+        status,
+        completedAt: status === "done" ? new Date() : null,
+      });
+      if (!updated) return res.status(404).json({ error: "Action item not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/web4/agents/:agentId/strategy/generate", async (req: Request, res: Response) => {
     try {
       const { agentId } = req.params;

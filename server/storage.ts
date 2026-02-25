@@ -20,6 +20,8 @@ import {
   type AgentMemory, type InsertAgentMemory,
   type AgentJob, type InsertAgentJob,
   type AgentStrategyMemo, type InsertAgentStrategyMemo,
+  type TweetPerformance, type InsertTweetPerformance, tweetPerformance,
+  type StrategyActionItem, type InsertStrategyActionItem, strategyActionItems,
   users, agents, agentWallets, agentTransactions,
   agentSkills, skillPurchases, agentEvolutions,
   agentLineage, agentRuntimeProfiles, agentSurvivalStatus,
@@ -325,6 +327,15 @@ export interface IStorage {
   getStrategyMemos(agentId: string, limit?: number): Promise<AgentStrategyMemo[]>;
   getActiveStrategy(agentId: string): Promise<AgentStrategyMemo | undefined>;
   supersedeMemo(memoId: string): Promise<void>;
+
+  // Tweet Performance
+  createTweetPerformance(record: InsertTweetPerformance): Promise<TweetPerformance>;
+  getTweetPerformance(agentId: string, limit?: number): Promise<TweetPerformance[]>;
+
+  // Strategy Action Items
+  createStrategyActionItem(item: InsertStrategyActionItem): Promise<StrategyActionItem>;
+  getStrategyActionItems(agentId: string): Promise<StrategyActionItem[]>;
+  updateStrategyActionItem(id: string, data: Partial<StrategyActionItem>): Promise<StrategyActionItem | undefined>;
 
   // Seed subscription plans
   seedSubscriptionPlans(): Promise<void>;
@@ -2033,6 +2044,37 @@ export class DatabaseStorage implements IStorage {
     await db.update(agentStrategyMemos)
       .set({ status: "superseded" })
       .where(eq(agentStrategyMemos.id, memoId));
+  }
+
+  async createTweetPerformance(record: InsertTweetPerformance): Promise<TweetPerformance> {
+    const [created] = await db.insert(tweetPerformance).values(record).returning();
+    return created;
+  }
+
+  async getTweetPerformance(agentId: string, limit = 50): Promise<TweetPerformance[]> {
+    return db.select().from(tweetPerformance)
+      .where(eq(tweetPerformance.agentId, agentId))
+      .orderBy(desc(tweetPerformance.createdAt))
+      .limit(limit);
+  }
+
+  async createStrategyActionItem(item: InsertStrategyActionItem): Promise<StrategyActionItem> {
+    const [created] = await db.insert(strategyActionItems).values(item).returning();
+    return created;
+  }
+
+  async getStrategyActionItems(agentId: string): Promise<StrategyActionItem[]> {
+    return db.select().from(strategyActionItems)
+      .where(eq(strategyActionItems.agentId, agentId))
+      .orderBy(desc(strategyActionItems.createdAt));
+  }
+
+  async updateStrategyActionItem(id: string, data: Partial<StrategyActionItem>): Promise<StrategyActionItem | undefined> {
+    const [updated] = await db.update(strategyActionItems)
+      .set(data)
+      .where(eq(strategyActionItems.id, id))
+      .returning();
+    return updated;
   }
 }
 

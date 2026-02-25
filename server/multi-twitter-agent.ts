@@ -299,6 +299,10 @@ async function postAutonomousContent(runner: AgentRunner, account: AgentTwitterA
 
       console.log(`[MultiTwitter] @${runner.username} posted: "${tweetText.substring(0, 60)}..."`);
 
+      scoreTweetAgainstStrategy(runner.agentId, tweetText).catch(e =>
+        console.log(`[MultiTwitter] @${runner.username} tweet scoring failed (non-fatal): ${e.message}`)
+      );
+
       if (isFirstTweet && runner.interval) {
         clearInterval(runner.interval);
         const normalMs = (account.postingFrequencyMins || 60) * 60 * 1000;
@@ -838,6 +842,8 @@ export async function runStrategyCycle(agentId: string, account?: AgentTwitterAc
     account.companyKeyMessages ? `Key Messages: ${account.companyKeyMessages}` : "",
   ].filter(Boolean).join("\n");
 
+  const performanceFeedback = isNew ? "" : await getPerformanceFeedback(agentId);
+
   const strategyPrompt = `You are @${account.twitterHandle}, an autonomous ${roleInfo.title} agent.
 
 ${companyContext}
@@ -847,11 +853,11 @@ CURRENT METRICS:
 - Total replies sent: ${metrics.totalReplies}
 - Days active: ${metrics.daysSinceCreation}
 - Role: ${roleInfo.title}
-
+${performanceFeedback}
 ${account.personality ? `PERSONALITY:\n${account.personality}\n` : ""}
 ${account.instructions ? `INSTRUCTIONS:\n${account.instructions}\n` : ""}
 
-${isNew ? "This is a NEW agent — create an initial go-to-market plan." : "This is an active agent — analyze what's working and refine the strategy."}
+${isNew ? "This is a NEW agent — create an initial go-to-market plan." : "This is an active agent — analyze what's working and refine the strategy. Use the performance feedback data above to make data-driven decisions."}
 
 Generate a comprehensive STRATEGY MEMO with the following sections:
 
@@ -920,6 +926,21 @@ Be specific, actionable, and strategic. No filler. Write like a real CMO present
 
     console.log(`[MultiTwitter] @${account.twitterHandle} strategy memo created: "${title}"`);
 
+    const createdMemo = await storage.getActiveStrategy(agentId);
+    if (createdMemo) {
+      extractAndStoreActionItems(agentId, createdMemo.id, memoContent).catch(e =>
+        console.log(`[MultiTwitter] Action item extraction failed (non-fatal): ${e.message}`)
+      );
+    }
+
+    generatePerformanceReport(agentId, account, agent).catch(e =>
+      console.log(`[MultiTwitter] Performance report generation failed (non-fatal): ${e.message}`)
+    );
+
+    generateContentCalendar(agentId, account, agent).catch(e =>
+      console.log(`[MultiTwitter] Content calendar generation failed (non-fatal): ${e.message}`)
+    );
+
     if (account.ownerTelegramChatId) {
       const telegramMsg = `📋 Strategy Update from your ${roleInfo.title} @${account.twitterHandle}\n\n${title}\n\n${summary}\n\nFull memo available in your agent dashboard on BUILD4.`;
       const sent = await sendTelegramMessage(account.ownerTelegramChatId, telegramMsg);
@@ -930,6 +951,286 @@ Be specific, actionable, and strategic. No filler. Write like a real CMO present
 
   } catch (err: any) {
     console.error(`[MultiTwitter] @${account.twitterHandle} strategy cycle failed: ${err.message}`);
+  }
+}
+
+async function scoreTweetAgainstStrategy(agentId: string, tweetText: string): Promise<void> {
+  const activeStrategy = await storage.getActiveStrategy(agentId);
+
+  const themes = activeStrategy
+    ? extractThemesFromStrategy(activeStrategy.content)
+    : [];
+
+  let themeAlignment = 0;
+  let alignedThemes: string[] = [];
+
+  if (themes.length > 0) {
+    try {
+      const result = await runInferenceWithFallback(
+        ["akash", "hyperbolic"],
+        undefined,
+        `Score how well this tweet aligns with the agent's content strategy themes.
+
+TWEET: "${tweetText}"
+
+STRATEGY THEMES:
+${themes.map((t, i) => `${i + 1}. ${t}`).join("\n")}
+
+Respond with EXACTLY this format (no other text):
+SCORE: <number 0-100>
+THEMES: <comma-separated list of which themes this tweet touches on, or "none">`,
+        { temperature: 0.2 }
+      );
+
+      if (result.live && result.text) {
+        const scoreMatch = result.text.match(/SCORE:\s*(\d+)/i);
+        const themesMatch = result.text.match(/THEMES:\s*(.+)/i);
+        if (scoreMatch) themeAlignment = Math.min(100, parseInt(scoreMatch[1]));
+        if (themesMatch && !themesMatch[1].toLowerCase().includes("none")) {
+          alignedThemes = themesMatch[1].split(",").map(t => t.trim()).filter(Boolean);
+        }
+      }
+    } catch {
+      themeAlignment = 50;
+    }
+  }
+
+  await storage.createTweetPerformance({
+    agentId,
+    tweetText,
+    strategyMemoId: activeStrategy?.id || null,
+    themeAlignment,
+    alignedThemes: alignedThemes.length > 0 ? JSON.stringify(alignedThemes) : null,
+    engagementScore: null,
+    tweetId: null,
+  });
+
+  console.log(`[MultiTwitter] Tweet scored: alignment=${themeAlignment}%, themes=[${alignedThemes.join(", ")}]`);
+}
+
+function extractThemesFromStrategy(content: string): string[] {
+  const themes: string[] = [];
+  const themeSection = content.match(/(?:primary themes|content strategy|themes to focus)[^]*?(?=##|\n\n\n|$)/i);
+  if (themeSection) {
+    const lines = themeSection[0].split("\n");
+    for (const line of lines) {
+      const bullet = line.match(/^[\s]*[-*\d.]+\s+(.+)/);
+      if (bullet && bullet[1].trim().length > 5 && bullet[1].trim().length < 150) {
+        themes.push(bullet[1].trim());
+      }
+    }
+  }
+  if (themes.length === 0) {
+    const bullets = content.match(/^[\s]*[-*]\s+.{10,100}/gm);
+    if (bullets) {
+      for (const b of bullets.slice(0, 5)) {
+        themes.push(b.replace(/^[\s]*[-*]\s+/, "").trim());
+      }
+    }
+  }
+  return themes.slice(0, 8);
+}
+
+async function generatePerformanceReport(agentId: string, account: AgentTwitterAccount, agent: any): Promise<void> {
+  const recentTweets = await storage.getTweetPerformance(agentId, 20);
+  if (recentTweets.length < 3) return;
+
+  const avgAlignment = Math.round(recentTweets.reduce((sum, t) => sum + (t.themeAlignment || 0), 0) / recentTweets.length);
+
+  const themeCounts: Record<string, number> = {};
+  for (const t of recentTweets) {
+    if (t.alignedThemes) {
+      try {
+        const arr = JSON.parse(t.alignedThemes);
+        for (const theme of arr) { themeCounts[theme] = (themeCounts[theme] || 0) + 1; }
+      } catch {}
+    }
+  }
+
+  const topThemes = Object.entries(themeCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  const prompt = `You are analyzing the Twitter performance of @${account.twitterHandle} (${ROLE_MAP[account.role]?.title || account.role}).
+
+PERFORMANCE DATA:
+- Total tweets analyzed: ${recentTweets.length}
+- Average strategy alignment: ${avgAlignment}%
+- Most used themes: ${topThemes.map(([t, c]) => `${t} (${c}x)`).join(", ") || "No theme data"}
+
+RECENT TWEETS:
+${recentTweets.slice(0, 10).map((t, i) => `${i + 1}. [Alignment: ${t.themeAlignment || 0}%] "${t.tweetText.substring(0, 100)}"`).join("\n")}
+
+Generate a PERFORMANCE REPORT with these sections:
+
+## PERFORMANCE SUMMARY
+Key metrics and overall assessment.
+
+## WHAT'S WORKING
+Specific themes, styles, and approaches that are performing well.
+
+## WHAT NEEDS IMPROVEMENT
+Areas where the agent is underperforming or drifting from strategy.
+
+## RECOMMENDATIONS
+3-5 specific, actionable changes for the next cycle.
+
+Be data-driven and specific. No generic advice.`;
+
+  try {
+    const result = await runInferenceWithFallback(
+      ["akash", "hyperbolic", "ritual"],
+      undefined,
+      prompt,
+      { temperature: 0.6 }
+    );
+
+    if (!result.live || !result.text || result.text.startsWith("[NO_PROVIDER]")) return;
+
+    const content = result.text.trim();
+    const summary = content.split("\n").filter(l => l.trim().length > 10).slice(0, 3).join(" ").substring(0, 500);
+
+    await storage.createStrategyMemo({
+      agentId,
+      memoType: "performance_report",
+      title: `Performance Report — ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
+      content,
+      summary,
+      metrics: JSON.stringify({ avgAlignment, totalTweets: recentTweets.length, topThemes: Object.fromEntries(topThemes) }),
+      status: "active",
+    });
+
+    console.log(`[MultiTwitter] @${account.twitterHandle} performance report generated (avg alignment: ${avgAlignment}%)`);
+  } catch (err: any) {
+    console.error(`[MultiTwitter] Performance report failed: ${err.message}`);
+  }
+}
+
+async function generateContentCalendar(agentId: string, account: AgentTwitterAccount, agent: any): Promise<void> {
+  const activeStrategy = await storage.getActiveStrategy(agentId);
+  const roleInfo = ROLE_MAP[account.role] || ROLE_MAP["cmo"];
+
+  const prompt = `You are @${account.twitterHandle}, a ${roleInfo.title}.
+${account.companyName ? `Company: ${account.companyName}` : ""}
+${account.companyDescription ? `About: ${account.companyDescription}` : ""}
+
+${activeStrategy ? `ACTIVE STRATEGY:\n${activeStrategy.content.substring(0, 500)}` : "No active strategy yet."}
+
+Generate a CONTENT CALENDAR for the next 10 tweets. For each tweet provide:
+
+1. **Topic**: What the tweet is about
+2. **Style**: Thread opener / hot take / data insight / story / question / announcement / tip / meme
+3. **Theme**: Which strategic theme it serves
+4. **Draft**: A rough draft of the tweet (under 270 chars)
+5. **Why**: Why this tweet matters for the strategy
+
+Format each as a numbered item. Be specific and creative — no filler.`;
+
+  try {
+    const result = await runInferenceWithFallback(
+      ["akash", "hyperbolic", "ritual"],
+      undefined,
+      prompt,
+      { temperature: 0.8 }
+    );
+
+    if (!result.live || !result.text || result.text.startsWith("[NO_PROVIDER]")) return;
+
+    const content = result.text.trim();
+    const summary = `Content calendar with 10 planned tweets for @${account.twitterHandle}`;
+
+    const existingCalendars = await storage.getStrategyMemos(agentId, 5);
+    for (const cal of existingCalendars) {
+      if (cal.memoType === "content_calendar" && cal.status === "active") {
+        await storage.supersedeMemo(cal.id);
+      }
+    }
+
+    await storage.createStrategyMemo({
+      agentId,
+      memoType: "content_calendar",
+      title: `Content Calendar — ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
+      content,
+      summary,
+      metrics: null,
+      status: "active",
+    });
+
+    console.log(`[MultiTwitter] @${account.twitterHandle} content calendar generated`);
+  } catch (err: any) {
+    console.error(`[MultiTwitter] Content calendar failed: ${err.message}`);
+  }
+}
+
+async function extractAndStoreActionItems(agentId: string, memoId: string, memoContent: string): Promise<void> {
+  try {
+    const result = await runInferenceWithFallback(
+      ["akash", "hyperbolic"],
+      undefined,
+      `Extract specific, actionable items from this strategy memo. Only extract items that require the agent OWNER to take action (not the AI agent itself).
+
+MEMO:
+${memoContent.substring(0, 2000)}
+
+Respond with a numbered list of action items. For each, provide:
+ACTION: <specific action>
+PRIORITY: high | medium | low
+
+Extract 3-7 items maximum. Only include genuinely actionable items. Output ONLY the list, nothing else.`,
+      { temperature: 0.3 }
+    );
+
+    if (!result.live || !result.text || result.text.startsWith("[NO_PROVIDER]")) return;
+
+    const actionBlocks = result.text.split(/\d+\.\s*/);
+    for (const block of actionBlocks) {
+      const actionMatch = block.match(/ACTION:\s*(.+)/i);
+      const priorityMatch = block.match(/PRIORITY:\s*(high|medium|low)/i);
+      if (actionMatch) {
+        await storage.createStrategyActionItem({
+          agentId,
+          memoId,
+          action: actionMatch[1].trim(),
+          priority: priorityMatch ? priorityMatch[1].toLowerCase() : "medium",
+          status: "pending",
+        });
+      }
+    }
+
+    console.log(`[MultiTwitter] Action items extracted for memo ${memoId.substring(0, 8)}`);
+  } catch (err: any) {
+    console.error(`[MultiTwitter] Action item extraction failed: ${err.message}`);
+  }
+}
+
+async function getPerformanceFeedback(agentId: string): Promise<string> {
+  try {
+    const recentTweets = await storage.getTweetPerformance(agentId, 20);
+    if (recentTweets.length === 0) return "";
+
+    const avgAlignment = Math.round(recentTweets.reduce((sum, t) => sum + (t.themeAlignment || 0), 0) / recentTweets.length);
+    const highAligned = recentTweets.filter(t => (t.themeAlignment || 0) >= 70).length;
+    const lowAligned = recentTweets.filter(t => (t.themeAlignment || 0) < 30).length;
+
+    const themeCounts: Record<string, number> = {};
+    for (const t of recentTweets) {
+      if (t.alignedThemes) {
+        try {
+          for (const theme of JSON.parse(t.alignedThemes)) {
+            themeCounts[theme] = (themeCounts[theme] || 0) + 1;
+          }
+        } catch {}
+      }
+    }
+
+    const topThemes = Object.entries(themeCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+    return `\n\nPERFORMANCE FEEDBACK FROM LAST ${recentTweets.length} TWEETS:
+- Average strategy alignment: ${avgAlignment}%
+- High-alignment tweets (≥70%): ${highAligned}/${recentTweets.length}
+- Low-alignment tweets (<30%): ${lowAligned}/${recentTweets.length}
+- Most covered themes: ${topThemes.map(([t, c]) => `${t} (${c}x)`).join(", ") || "No theme data yet"}
+Use this data to refine the strategy. Double down on what's working, fix what's drifting.`;
+  } catch {
+    return "";
   }
 }
 

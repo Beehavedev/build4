@@ -825,6 +825,39 @@ export default function AutonomousEconomy() {
     refetchInterval: 60000,
   });
 
+  const performanceQuery = useQuery<any>({
+    queryKey: ["/api/web4/agents", agentId, "performance"],
+    queryFn: async () => {
+      if (!agentId) return null;
+      const res = await fetch(`/api/web4/agents/${agentId}/performance?limit=30`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!agentId && showStrategyDashboard,
+    refetchInterval: 120000,
+  });
+
+  const actionItemsQuery = useQuery<any[]>({
+    queryKey: ["/api/web4/agents", agentId, "action-items"],
+    queryFn: async () => {
+      if (!agentId) return [];
+      const res = await fetch(`/api/web4/agents/${agentId}/action-items`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!agentId && showStrategyDashboard,
+    refetchInterval: 60000,
+  });
+
+  const actionItemMutation = useMutation({
+    mutationFn: async ({ itemId, status }: { itemId: string; status: string }) => {
+      await apiRequest("PATCH", `/api/web4/agents/${agentId}/action-items/${itemId}`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "action-items"] });
+    },
+  });
+
   const generateStrategyMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", `/api/web4/agents/${agentId}/strategy/generate`, {});
@@ -832,6 +865,8 @@ export default function AutonomousEconomy() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "strategy"] });
       queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "strategy", "active"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "performance"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "action-items"] });
       toast({ title: "Strategy generated", description: "Your agent's new strategy is ready." });
     },
     onError: (e: Error) => toast({ title: "Strategy generation failed", description: e.message, variant: "destructive" }),
@@ -3826,6 +3861,94 @@ export default function AutonomousEconomy() {
                       </div>
                     )}
 
+                    {performanceQuery.data && performanceQuery.data.total > 0 && (
+                      <div className="border rounded-lg p-3 space-y-2" data-testid="performance-metrics">
+                        <div className="flex items-center gap-2 mb-2">
+                          <BarChart3 className="w-3.5 h-3.5 text-orange-500" />
+                          <span className="text-[11px] font-semibold">Performance Metrics</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="bg-muted/30 rounded-md p-2 text-center">
+                            <div className="text-lg font-bold text-primary" data-testid="text-avg-alignment">{performanceQuery.data.avgAlignment}%</div>
+                            <div className="text-[9px] text-muted-foreground">Avg Alignment</div>
+                          </div>
+                          <div className="bg-muted/30 rounded-md p-2 text-center">
+                            <div className="text-lg font-bold" data-testid="text-tweets-scored">{performanceQuery.data.total}</div>
+                            <div className="text-[9px] text-muted-foreground">Tweets Scored</div>
+                          </div>
+                          <div className="bg-muted/30 rounded-md p-2 text-center">
+                            <div className="text-lg font-bold text-emerald-500" data-testid="text-top-themes-count">
+                              {Object.keys(performanceQuery.data.topThemes || {}).length}
+                            </div>
+                            <div className="text-[9px] text-muted-foreground">Themes Hit</div>
+                          </div>
+                        </div>
+                        {Object.keys(performanceQuery.data.topThemes || {}).length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {Object.entries(performanceQuery.data.topThemes).slice(0, 6).map(([theme, count]: [string, any]) => (
+                              <Badge key={theme} variant="outline" className="text-[9px]" data-testid={`badge-theme-${theme.substring(0, 20)}`}>
+                                {theme.length > 25 ? theme.substring(0, 25) + "..." : theme} ({count})
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                        {performanceQuery.data.tweets?.length > 0 && (
+                          <div className="mt-2 space-y-1 max-h-[120px] overflow-y-auto">
+                            {performanceQuery.data.tweets.slice(0, 8).map((t: any) => (
+                              <div key={t.id} className="flex items-center gap-2 text-[10px]" data-testid={`row-tweet-perf-${t.id}`}>
+                                <div className={`w-8 text-right font-bold ${(t.themeAlignment || 0) >= 70 ? "text-emerald-500" : (t.themeAlignment || 0) >= 40 ? "text-yellow-500" : "text-red-400"}`}>
+                                  {t.themeAlignment || 0}%
+                                </div>
+                                <span className="text-muted-foreground truncate flex-1">{t.tweetText?.substring(0, 80)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {actionItemsQuery.data && actionItemsQuery.data.length > 0 && (
+                      <div className="border rounded-lg p-3 space-y-2" data-testid="action-items-section">
+                        <div className="flex items-center gap-2 mb-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
+                          <span className="text-[11px] font-semibold">Action Items</span>
+                          <Badge variant="outline" className="text-[9px] ml-auto">
+                            {actionItemsQuery.data.filter((i: any) => i.status === "done").length}/{actionItemsQuery.data.length} done
+                          </Badge>
+                        </div>
+                        <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                          {actionItemsQuery.data.filter((i: any) => i.status === "pending").map((item: any) => (
+                            <div key={item.id} className="flex items-start gap-2 p-1.5 rounded hover:bg-muted/20" data-testid={`row-action-item-${item.id}`}>
+                              <button
+                                className="mt-0.5 shrink-0 w-4 h-4 rounded border border-muted-foreground/40 hover:border-primary flex items-center justify-center"
+                                onClick={() => actionItemMutation.mutate({ itemId: item.id, status: "done" })}
+                                data-testid={`button-complete-action-${item.id}`}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] leading-tight">{item.action}</p>
+                                <Badge variant="outline" className={`text-[8px] mt-0.5 ${item.priority === "high" ? "border-red-400 text-red-400" : item.priority === "low" ? "border-muted-foreground" : "border-yellow-500 text-yellow-500"}`}>
+                                  {item.priority}
+                                </Badge>
+                              </div>
+                              <button
+                                className="text-[9px] text-muted-foreground hover:text-foreground shrink-0"
+                                onClick={() => actionItemMutation.mutate({ itemId: item.id, status: "skipped" })}
+                                data-testid={`button-skip-action-${item.id}`}
+                              >
+                                skip
+                              </button>
+                            </div>
+                          ))}
+                          {actionItemsQuery.data.filter((i: any) => i.status === "done").slice(0, 3).map((item: any) => (
+                            <div key={item.id} className="flex items-start gap-2 p-1.5 opacity-50" data-testid={`row-action-done-${item.id}`}>
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                              <p className="text-[11px] line-through">{item.action}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {activeStrategyQuery.data && (
                       <div className="border rounded-lg p-3 space-y-2 bg-primary/5 border-primary/20">
                         <div className="flex items-center gap-2">
@@ -3858,7 +3981,7 @@ export default function AutonomousEconomy() {
                       <div className="space-y-2">
                         <div className="flex items-center gap-2 border-t pt-3">
                           <FileText className="w-3.5 h-3.5 text-muted-foreground" />
-                          <span className="text-[11px] font-semibold text-muted-foreground uppercase">Past Memos ({strategyQuery.data.length})</span>
+                          <span className="text-[11px] font-semibold text-muted-foreground uppercase">All Memos ({strategyQuery.data.length})</span>
                         </div>
                         {strategyQuery.data.map((memo: any) => (
                           <div
