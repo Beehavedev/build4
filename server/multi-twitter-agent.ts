@@ -299,8 +299,18 @@ async function postAutonomousContent(runner: AgentRunner, account: AgentTwitterA
     } else if (err.code === 403 || err.message?.includes("403")) {
       runner.consecutivePostErrors++;
       const detail = err.data?.detail || err.data?.errors?.[0]?.message || "";
-      console.error(`[MultiTwitter] @${runner.username} 403 Forbidden (${runner.consecutivePostErrors}/3) — ${detail || "app lacks Write permissions"}`);
-      runner.lastError = `Twitter returned 403 Forbidden${detail ? `: ${detail}` : ""}. Common fixes: 1) Go to developer.x.com → your app → Settings → set permissions to 'Read and Write'. 2) IMPORTANT: After changing permissions, go to Keys & Tokens and REGENERATE your Access Token and Access Token Secret — old tokens keep old permissions. 3) Update the new tokens in Settings here. 4) Stop and Start the agent again.`;
+      const rawData = JSON.stringify(err.data || err.errors || {});
+      console.error(`[MultiTwitter] @${runner.username} 403 Forbidden (${runner.consecutivePostErrors}/3) — detail: ${detail || "none"} | raw: ${rawData} | message: ${err.message}`);
+
+      let fixMessage: string;
+      if (detail.includes("not permitted") || detail.includes("oauth1") || rawData.includes("oauth1")) {
+        fixMessage = "Your Access Token was generated with old permissions. Even though your app now has Read+Write, the token still has Read-only scope. Go to developer.x.com → Keys & Tokens → REGENERATE your Access Token and Access Token Secret. Then update them in Settings here and restart.";
+      } else if (detail.includes("suspended") || detail.includes("locked")) {
+        fixMessage = "Your Twitter account or app appears to be suspended/locked. Check your account status at developer.x.com.";
+      } else {
+        fixMessage = `Twitter returned 403 Forbidden${detail ? `: ${detail}` : ""}. Possible causes: 1) Access Token was created before Read+Write was enabled — regenerate tokens at developer.x.com and update in Settings. 2) Tokens were regenerated on developer.x.com after connecting, invalidating the ones stored here — paste your current tokens in Settings. 3) Your Twitter app or account was restricted by Twitter.`;
+      }
+      runner.lastError = fixMessage;
       runner.lastErrorAt = new Date();
       if (runner.consecutivePostErrors >= 3) {
         console.error(`[MultiTwitter] @${runner.username} auto-paused after ${runner.consecutivePostErrors} consecutive 403 errors. Fix credentials and restart.`);
