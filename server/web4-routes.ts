@@ -2753,6 +2753,52 @@ ${urls}
     return agent;
   };
 
+  app.post("/api/web4/agents/:agentId/twitter/validate-keys", async (req: Request, res: Response) => {
+    try {
+      const { twitterApiKey, twitterApiSecret, twitterAccessToken, twitterAccessTokenSecret } = req.body;
+      if (!twitterApiKey || !twitterApiSecret || !twitterAccessToken || !twitterAccessTokenSecret) {
+        return res.json({ valid: false, error: "All 4 keys are required: API Key, API Secret, Access Token, Access Token Secret." });
+      }
+      const { TwitterApi } = await import("twitter-api-v2");
+      const client = new TwitterApi({
+        appKey: twitterApiKey,
+        appSecret: twitterApiSecret,
+        accessToken: twitterAccessToken,
+        accessSecret: twitterAccessTokenSecret,
+      });
+      const me = await client.v2.me();
+      if (!me.data?.username) {
+        return res.json({ valid: false, error: "Could not retrieve your Twitter account. Check your keys." });
+      }
+      let canWrite = false;
+      try {
+        const testTweet = await client.v2.tweet(`BUILD4 agent activation test — ${Date.now()}`);
+        if (testTweet.data?.id) {
+          await client.v2.deleteTweet(testTweet.data.id);
+          canWrite = true;
+        }
+      } catch (writeErr: any) {
+        if (writeErr.code === 403 || writeErr.message?.includes("403")) {
+          canWrite = false;
+        }
+      }
+      res.json({
+        valid: true,
+        username: me.data.username,
+        name: me.data.name,
+        canWrite,
+        writeWarning: !canWrite ? "Your tokens have READ-ONLY permissions. Go to developer.x.com → your app → Settings → set 'App permissions' to 'Read and Write', then go to Keys & Tokens and click 'Regenerate' on your Access Token. Paste the new token here." : null,
+      });
+    } catch (err: any) {
+      const msg = err.code === 401 || err.message?.includes("401")
+        ? "Invalid API credentials. Double-check your API Key and API Secret."
+        : err.code === 403 || err.message?.includes("403")
+        ? "Twitter rejected these credentials (403 Forbidden). Your app may be suspended or the keys are wrong."
+        : err.message || "Unknown error validating keys.";
+      res.json({ valid: false, error: msg });
+    }
+  });
+
   app.post("/api/web4/agents/:agentId/twitter/connect", async (req: Request, res: Response) => {
     try {
       const agent = await verifyAgentOwnership(req, res);
@@ -2765,9 +2811,26 @@ ${urls}
       const parsed = agentTwitterConnectSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
+      const { TwitterApi } = await import("twitter-api-v2");
+      let verifiedHandle = (parsed.data.twitterHandle || "").replace(/^@/, "");
+      try {
+        const testClient = new TwitterApi({
+          appKey: parsed.data.twitterApiKey,
+          appSecret: parsed.data.twitterApiSecret,
+          accessToken: parsed.data.twitterAccessToken,
+          accessSecret: parsed.data.twitterAccessTokenSecret,
+        });
+        const me = await testClient.v2.me();
+        if (me.data?.username) verifiedHandle = me.data.username;
+      } catch (authErr: any) {
+        return res.status(400).json({
+          error: `Twitter credential check failed: ${authErr.message}. Please verify your API keys are correct and your app is approved.`,
+        });
+      }
+
       const account = await storage.createAgentTwitterAccount({
         agentId,
-        twitterHandle: (parsed.data.twitterHandle || "").replace(/^@/, ""),
+        twitterHandle: verifiedHandle,
         twitterApiKey: parsed.data.twitterApiKey,
         twitterApiSecret: parsed.data.twitterApiSecret,
         twitterAccessToken: parsed.data.twitterAccessToken,
@@ -2790,9 +2853,17 @@ ${urls}
         totalBounties: 0,
       });
 
+      let autoStarted = false;
+      try {
+        const startResult = await startAgentTwitter(agentId);
+        autoStarted = !!startResult.success;
+      } catch {}
+
       res.json({
         success: true,
-        account: { id: account.id, agentId: account.agentId, twitterHandle: account.twitterHandle, role: account.role, enabled: account.enabled },
+        autoStarted,
+        verifiedHandle,
+        account: { id: account.id, agentId: account.agentId, twitterHandle: verifiedHandle, role: account.role, enabled: account.enabled },
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2901,7 +2972,16 @@ ${urls}
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
       const updated = await storage.updateAgentTwitterAccount(agentId, parsed.data);
-      if (parsed.data.postingFrequencyMins) {
+      const keysChanged = parsed.data.twitterApiKey || parsed.data.twitterApiSecret || parsed.data.twitterAccessToken || parsed.data.twitterAccessTokenSecret;
+      if (keysChanged) {
+        const runnerStatus = getAgentTwitterStatus(agentId);
+        if (runnerStatus.running) {
+          await stopAgentTwitter(agentId);
+          const restartResult = await startAgentTwitter(agentId);
+          res.json({ success: true, account: updated, restarted: restartResult.success, restartError: restartResult.error || null });
+          return;
+        }
+      } else if (parsed.data.postingFrequencyMins) {
         updateAgentTwitterInterval(agentId, parsed.data.postingFrequencyMins);
       }
       res.json({ success: true, account: updated });

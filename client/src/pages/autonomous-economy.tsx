@@ -701,15 +701,44 @@ export default function AutonomousEconomy() {
   const [showTwitterConnect, setShowTwitterConnect] = useState(false);
   const [showTwitterSettings, setShowTwitterSettings] = useState(false);
   const [showTwitterHelp, setShowTwitterHelp] = useState(false);
+  const [connectStep, setConnectStep] = useState(1);
+  const [keyValidation, setKeyValidation] = useState<{ valid?: boolean; username?: string; name?: string; canWrite?: boolean; writeWarning?: string | null; error?: string } | null>(null);
+  const [permissionChecks, setPermissionChecks] = useState({ createdApp: false, setReadWrite: false, generatedTokens: false });
+
+  const validateKeysMutation = useMutation({
+    mutationFn: async () => {
+      const resp = await apiRequest("POST", `/api/web4/agents/${agentId}/twitter/validate-keys`, {
+        twitterApiKey: twitterForm.twitterApiKey,
+        twitterApiSecret: twitterForm.twitterApiSecret,
+        twitterAccessToken: twitterForm.twitterAccessToken,
+        twitterAccessTokenSecret: twitterForm.twitterAccessTokenSecret,
+      });
+      return resp.json();
+    },
+    onSuccess: (data) => {
+      setKeyValidation(data);
+      if (data.valid && data.username) {
+        setTwitterForm(f => ({ ...f, twitterHandle: data.username }));
+      }
+    },
+    onError: (e: Error) => setKeyValidation({ valid: false, error: e.message }),
+  });
 
   const twitterConnectMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", `/api/web4/agents/${agentId}/twitter/connect`, twitterForm);
+      const resp = await apiRequest("POST", `/api/web4/agents/${agentId}/twitter/connect`, twitterForm);
+      return resp.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "twitter", "status"] });
-      toast({ title: "Twitter connected", description: "Your agent's Twitter account is linked. Start the agent to begin autonomous posting." });
+      const msg = data.autoStarted
+        ? `@${data.verifiedHandle || twitterForm.twitterHandle} is connected and already posting! Your agent is live.`
+        : `@${data.verifiedHandle || twitterForm.twitterHandle} is connected. Go to the controls to start it.`;
+      toast({ title: "Twitter connected!", description: msg });
       setShowTwitterConnect(false);
+      setConnectStep(1);
+      setKeyValidation(null);
+      setPermissionChecks({ createdApp: false, setReadWrite: false, generatedTokens: false });
     },
     onError: (e: Error) => toast({ title: "Connection failed", description: e.message, variant: "destructive" }),
   });
@@ -738,11 +767,19 @@ export default function AutonomousEconomy() {
 
   const twitterSettingsMutation = useMutation({
     mutationFn: async (settings: Record<string, any>) => {
-      await apiRequest("PATCH", `/api/web4/agents/${agentId}/twitter/settings`, settings);
+      const resp = await apiRequest("PATCH", `/api/web4/agents/${agentId}/twitter/settings`, settings);
+      return resp.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "twitter", "status"] });
-      toast({ title: "Settings updated" });
+      const hasKeys = data?.restarted !== undefined;
+      if (hasKeys && data.restarted) {
+        toast({ title: "Settings & keys updated", description: "Agent restarted with new API credentials." });
+      } else if (hasKeys && !data.restarted) {
+        toast({ title: "Keys saved", description: data.restartError || "Keys updated. Stop and start your agent to use the new keys.", variant: "destructive" });
+      } else {
+        toast({ title: "Settings updated" });
+      }
       setShowTwitterSettings(false);
     },
     onError: (e: Error) => toast({ title: "Update failed", description: e.message, variant: "destructive" }),
@@ -1428,6 +1465,9 @@ export default function AutonomousEconomy() {
                     <p className="font-mono text-[10px] text-muted-foreground pt-2">
                       Turn your agent into an autonomous Twitter operator. Get API keys from <a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noopener" className="text-primary underline">developer.x.com</a>
                     </p>
+                    <div className="bg-yellow-500/10 border border-yellow-500/30 rounded px-2.5 py-1.5">
+                      <p className="font-mono text-[9px] text-yellow-700 dark:text-yellow-400">Important: Set app permissions to "Read and Write" BEFORE generating tokens. If you already generated tokens, go back and regenerate them after changing permissions.</p>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <label className="font-mono text-[10px] text-muted-foreground">Twitter Handle *</label>
@@ -3105,211 +3145,268 @@ export default function AutonomousEconomy() {
                 <p className="text-xs text-muted-foreground">Connect a Twitter/X account to let this agent autonomously post, engage, and grow your audience.</p>
 
                 {!showTwitterConnect ? (
-                  <Button size="sm" onClick={() => setShowTwitterConnect(true)} data-testid="button-connect-twitter">
+                  <Button size="sm" onClick={() => { setShowTwitterConnect(true); setConnectStep(1); setKeyValidation(null); setPermissionChecks({ createdApp: false, setReadWrite: false, generatedTokens: false }); }} data-testid="button-connect-twitter">
                     <Twitter className="w-3.5 h-3.5 mr-1.5" />
                     Connect Twitter Account
                   </Button>
                 ) : (
                   <Card className="p-4 space-y-3">
-                    <div className="text-xs text-muted-foreground mb-2">
-                      Get your API keys from <a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noopener" className="text-primary underline">developer.x.com</a>. You need a project with OAuth 1.0a (Read and Write).
-                    </div>
-                    <div className="space-y-2">
-                      <input
-                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
-                        placeholder="Twitter handle (e.g. cryptovagabond)"
-                        value={twitterForm.twitterHandle}
-                        onChange={(e) => setTwitterForm(f => ({ ...f, twitterHandle: e.target.value }))}
-                        data-testid="input-twitter-handle"
-                      />
-                      <input
-                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
-                        placeholder="API Key (Consumer Key)"
-                        type="password"
-                        value={twitterForm.twitterApiKey}
-                        onChange={(e) => setTwitterForm(f => ({ ...f, twitterApiKey: e.target.value }))}
-                        data-testid="input-twitter-api-key"
-                      />
-                      <input
-                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
-                        placeholder="API Secret (Consumer Secret)"
-                        type="password"
-                        value={twitterForm.twitterApiSecret}
-                        onChange={(e) => setTwitterForm(f => ({ ...f, twitterApiSecret: e.target.value }))}
-                        data-testid="input-twitter-api-secret"
-                      />
-                      <input
-                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
-                        placeholder="Access Token"
-                        type="password"
-                        value={twitterForm.twitterAccessToken}
-                        onChange={(e) => setTwitterForm(f => ({ ...f, twitterAccessToken: e.target.value }))}
-                        data-testid="input-twitter-access-token"
-                      />
-                      <input
-                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
-                        placeholder="Access Token Secret"
-                        type="password"
-                        value={twitterForm.twitterAccessTokenSecret}
-                        onChange={(e) => setTwitterForm(f => ({ ...f, twitterAccessTokenSecret: e.target.value }))}
-                        data-testid="input-twitter-access-secret"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium">Agent Role</label>
-                      <select
-                        className="w-full px-3 py-2 text-sm border rounded-md bg-background"
-                        value={twitterForm.role}
-                        onChange={(e) => setTwitterForm(f => ({ ...f, role: e.target.value }))}
-                        data-testid="select-twitter-role"
-                      >
-                        <option value="cmo">CMO — Marketing & Growth</option>
-                        <option value="ceo">CEO — Vision & Strategy</option>
-                        <option value="cto">CTO — Tech & Engineering</option>
-                        <option value="cfo">CFO — Finance & Treasury</option>
-                        <option value="community_manager">Community Manager</option>
-                        <option value="content_creator">Content Creator</option>
-                        <option value="bounty_hunter">Bounty Hunter</option>
-                        <option value="support">Support Agent</option>
-                        <option value="researcher">Research Analyst</option>
-                        <option value="sales">Sales Lead</option>
-                        <option value="partnerships">Partnerships Lead</option>
-                        <option value="developer_relations">DevRel — Developer Relations</option>
-                        <option value="brand_ambassador">Brand Ambassador</option>
-                        <option value="analyst">Market Analyst</option>
-                        <option value="trader">Trading Agent</option>
-                      </select>
-                    </div>
-                    {ROLE_SKILLS[twitterForm.role] && (
-                      <div className="bg-muted/50 rounded-md p-2.5 space-y-1.5" data-testid="connect-role-skills-preview">
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-[10px] font-medium text-foreground">{ROLE_SKILLS[twitterForm.role].title} Skills</span>
-                          <span className="font-mono text-[9px] text-muted-foreground italic">{ROLE_SKILLS[twitterForm.role].tone}</span>
+                    <div className="flex items-center gap-2 mb-1">
+                      {[1, 2, 3].map((s) => (
+                        <div key={s} className="flex items-center gap-1.5">
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${connectStep >= s ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{s}</div>
+                          <span className={`text-[10px] font-medium ${connectStep >= s ? "text-foreground" : "text-muted-foreground"}`}>
+                            {s === 1 ? "API Keys" : s === 2 ? "Role & Profile" : "Review & Go"}
+                          </span>
+                          {s < 3 && <div className="w-6 h-px bg-border" />}
                         </div>
-                        <div className="flex flex-wrap gap-1">
-                          {ROLE_SKILLS[twitterForm.role].skills.map((skill) => (
-                            <Badge key={skill} variant="secondary" className="text-[9px] px-1.5 py-0">{skill}</Badge>
-                          ))}
+                      ))}
+                    </div>
+
+                    {connectStep === 1 && (
+                      <div className="space-y-3">
+                        <div className="border rounded-md p-3 space-y-2.5 bg-blue-500/5 border-blue-500/20">
+                          <span className="text-[11px] font-semibold">Setup Checklist</span>
+                          <p className="text-[10px] text-muted-foreground">Complete these steps on <a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noopener" className="text-primary underline font-medium">developer.x.com</a> before pasting your keys:</p>
+                          <div className="space-y-1.5">
+                            <label className="flex items-center gap-2 cursor-pointer" data-testid="check-created-app">
+                              <input type="checkbox" checked={permissionChecks.createdApp} onChange={(e) => setPermissionChecks(p => ({ ...p, createdApp: e.target.checked }))} className="rounded" />
+                              <span className="text-[10px]">Created a Project & App (or using an existing one)</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer" data-testid="check-read-write">
+                              <input type="checkbox" checked={permissionChecks.setReadWrite} onChange={(e) => setPermissionChecks(p => ({ ...p, setReadWrite: e.target.checked }))} className="rounded" />
+                              <span className="text-[10px]">Set App permissions to <strong>"Read and Write"</strong> (Settings tab)</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer" data-testid="check-generated-tokens">
+                              <input type="checkbox" checked={permissionChecks.generatedTokens} onChange={(e) => setPermissionChecks(p => ({ ...p, generatedTokens: e.target.checked }))} className="rounded" />
+                              <span className="text-[10px]">Generated tokens <strong>AFTER</strong> setting Read+Write (Keys & Tokens tab)</span>
+                            </label>
+                          </div>
+                          {permissionChecks.createdApp && permissionChecks.setReadWrite && !permissionChecks.generatedTokens && (
+                            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded px-2.5 py-1.5">
+                              <p className="text-[10px] text-yellow-700 dark:text-yellow-400 font-medium">Important: If you changed permissions AFTER generating tokens, you must regenerate them. Old tokens keep old permissions even after you update app settings.</p>
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-medium text-muted-foreground">API Key (Consumer Key)</label>
+                              <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" type="password" value={twitterForm.twitterApiKey} onChange={(e) => { setTwitterForm(f => ({ ...f, twitterApiKey: e.target.value })); setKeyValidation(null); }} data-testid="input-twitter-api-key" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-medium text-muted-foreground">API Secret (Consumer Secret)</label>
+                              <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" type="password" value={twitterForm.twitterApiSecret} onChange={(e) => { setTwitterForm(f => ({ ...f, twitterApiSecret: e.target.value })); setKeyValidation(null); }} data-testid="input-twitter-api-secret" />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-medium text-muted-foreground">Access Token</label>
+                              <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" type="password" value={twitterForm.twitterAccessToken} onChange={(e) => { setTwitterForm(f => ({ ...f, twitterAccessToken: e.target.value })); setKeyValidation(null); }} data-testid="input-twitter-access-token" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-medium text-muted-foreground">Access Token Secret</label>
+                              <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" type="password" value={twitterForm.twitterAccessTokenSecret} onChange={(e) => { setTwitterForm(f => ({ ...f, twitterAccessTokenSecret: e.target.value })); setKeyValidation(null); }} data-testid="input-twitter-access-secret" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {keyValidation && (
+                          <div className={`rounded-md p-2.5 border ${keyValidation.valid ? (keyValidation.canWrite ? "bg-emerald-500/10 border-emerald-500/30" : "bg-yellow-500/10 border-yellow-500/30") : "bg-red-500/10 border-red-500/30"}`}>
+                            {keyValidation.valid ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                                  <span className="text-xs font-medium">Verified: @{keyValidation.username}</span>
+                                  {keyValidation.name && <span className="text-[10px] text-muted-foreground">({keyValidation.name})</span>}
+                                </div>
+                                {keyValidation.canWrite ? (
+                                  <div className="flex items-center gap-2 ml-6">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400">Write permissions confirmed — your agent can post tweets</span>
+                                  </div>
+                                ) : (
+                                  <div className="ml-6 space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      <XCircle className="w-3.5 h-3.5 text-yellow-500" />
+                                      <span className="text-[10px] text-yellow-600 dark:text-yellow-400 font-medium">Read-only tokens detected</span>
+                                    </div>
+                                    <p className="text-[10px] text-yellow-600 dark:text-yellow-400">{keyValidation.writeWarning}</p>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex items-start gap-2">
+                                <XCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                                <span className="text-xs text-red-600 dark:text-red-400">{keyValidation.error}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => validateKeysMutation.mutate()}
+                            disabled={validateKeysMutation.isPending || !twitterForm.twitterApiKey || !twitterForm.twitterApiSecret || !twitterForm.twitterAccessToken || !twitterForm.twitterAccessTokenSecret}
+                            data-testid="button-validate-keys"
+                          >
+                            {validateKeysMutation.isPending ? "Checking..." : "Verify Keys"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => setConnectStep(2)}
+                            disabled={!twitterForm.twitterApiKey || !twitterForm.twitterApiSecret || !twitterForm.twitterAccessToken || !twitterForm.twitterAccessTokenSecret}
+                            data-testid="button-step1-next"
+                          >
+                            Next: Role & Profile
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setShowTwitterConnect(false)} data-testid="button-cancel-twitter">Cancel</Button>
                         </div>
                       </div>
                     )}
-                    <div className="border rounded-md p-3 space-y-2.5 bg-muted/30">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold">Company / Project Profile</span>
-                        <span className="text-[9px] text-muted-foreground">(so your agent knows what to promote)</span>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-medium text-muted-foreground">Company Name</label>
-                          <input
-                            className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono"
-                            placeholder="e.g. Acme Protocol"
-                            value={twitterForm.companyName}
-                            onChange={(e) => setTwitterForm(f => ({ ...f, companyName: e.target.value }))}
-                            data-testid="input-twitter-company-name"
-                          />
+
+                    {connectStep === 2 && (
+                      <div className="space-y-3">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Agent Role</label>
+                          <select
+                            className="w-full px-3 py-2 text-sm border rounded-md bg-background"
+                            value={twitterForm.role}
+                            onChange={(e) => setTwitterForm(f => ({ ...f, role: e.target.value }))}
+                            data-testid="select-twitter-role"
+                          >
+                            <option value="cmo">CMO — Marketing & Growth</option>
+                            <option value="ceo">CEO — Vision & Strategy</option>
+                            <option value="cto">CTO — Tech & Engineering</option>
+                            <option value="cfo">CFO — Finance & Treasury</option>
+                            <option value="community_manager">Community Manager</option>
+                            <option value="content_creator">Content Creator</option>
+                            <option value="bounty_hunter">Bounty Hunter</option>
+                            <option value="support">Support Agent</option>
+                            <option value="researcher">Research Analyst</option>
+                            <option value="sales">Sales Lead</option>
+                            <option value="partnerships">Partnerships Lead</option>
+                            <option value="developer_relations">DevRel — Developer Relations</option>
+                            <option value="brand_ambassador">Brand Ambassador</option>
+                            <option value="analyst">Market Analyst</option>
+                            <option value="trader">Trading Agent</option>
+                          </select>
                         </div>
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-medium text-muted-foreground">Website</label>
-                          <input
-                            className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono"
-                            placeholder="https://yourproject.com"
-                            value={twitterForm.companyWebsite}
-                            onChange={(e) => setTwitterForm(f => ({ ...f, companyWebsite: e.target.value }))}
-                            data-testid="input-twitter-company-website"
-                          />
+                        {ROLE_SKILLS[twitterForm.role] && (
+                          <div className="bg-muted/50 rounded-md p-2.5 space-y-1.5" data-testid="connect-role-skills-preview">
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-[10px] font-medium text-foreground">{ROLE_SKILLS[twitterForm.role].title} Skills</span>
+                              <span className="font-mono text-[9px] text-muted-foreground italic">{ROLE_SKILLS[twitterForm.role].tone}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {ROLE_SKILLS[twitterForm.role].skills.map((skill) => (
+                                <Badge key={skill} variant="secondary" className="text-[9px] px-1.5 py-0">{skill}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div className="border rounded-md p-3 space-y-2.5 bg-muted/30">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold">Company / Project Profile</span>
+                            <span className="text-[9px] text-muted-foreground">(optional — can fill later in Settings)</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-medium text-muted-foreground">Company Name</label>
+                              <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" placeholder="e.g. Acme Protocol" value={twitterForm.companyName} onChange={(e) => setTwitterForm(f => ({ ...f, companyName: e.target.value }))} data-testid="input-twitter-company-name" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-medium text-muted-foreground">Website</label>
+                              <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" placeholder="https://yourproject.com" value={twitterForm.companyWebsite} onChange={(e) => setTwitterForm(f => ({ ...f, companyWebsite: e.target.value }))} data-testid="input-twitter-company-website" />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-medium text-muted-foreground">What does your company/project do?</label>
+                            <textarea className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono resize-none" rows={2} placeholder="Describe your company, mission, and what makes it unique..." value={twitterForm.companyDescription} onChange={(e) => setTwitterForm(f => ({ ...f, companyDescription: e.target.value }))} data-testid="input-twitter-company-description" />
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-medium text-muted-foreground">Product / Service</label>
+                              <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" placeholder="DeFi yield aggregator, NFT marketplace..." value={twitterForm.companyProduct} onChange={(e) => setTwitterForm(f => ({ ...f, companyProduct: e.target.value }))} data-testid="input-twitter-company-product" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-medium text-muted-foreground">Target Audience</label>
+                              <input className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono" placeholder="DeFi traders, NFT collectors, developers..." value={twitterForm.companyAudience} onChange={(e) => setTwitterForm(f => ({ ...f, companyAudience: e.target.value }))} data-testid="input-twitter-company-audience" />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-medium text-muted-foreground">Key Messages & Talking Points</label>
+                            <textarea className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono resize-none" rows={2} placeholder="Main selling points, slogans, value propositions..." value={twitterForm.companyKeyMessages} onChange={(e) => setTwitterForm(f => ({ ...f, companyKeyMessages: e.target.value }))} data-testid="input-twitter-company-messages" />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Personality <span className="text-muted-foreground font-normal">(optional)</span></label>
+                          <textarea className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono resize-none" rows={2} placeholder="Describe how the agent should communicate (tone, style, values...)" value={twitterForm.personality} onChange={(e) => setTwitterForm(f => ({ ...f, personality: e.target.value }))} data-testid="input-twitter-personality" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Instructions <span className="text-muted-foreground font-normal">(optional)</span></label>
+                          <textarea className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono resize-none" rows={2} placeholder="Topics, goals, content strategy..." value={twitterForm.instructions} onChange={(e) => setTwitterForm(f => ({ ...f, instructions: e.target.value }))} data-testid="input-twitter-instructions" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Posting Frequency</label>
+                          <div className="flex items-center gap-2">
+                            <input className="w-24 px-3 py-2 text-sm border rounded-md bg-background font-mono" type="number" min={15} max={1440} value={twitterForm.postingFrequencyMins} onChange={(e) => setTwitterForm(f => ({ ...f, postingFrequencyMins: parseInt(e.target.value) || 60 }))} data-testid="input-twitter-frequency" />
+                            <span className="text-[10px] text-muted-foreground">minutes between posts (90-120 recommended for free tier)</span>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => setConnectStep(1)} data-testid="button-step2-back">Back</Button>
+                          <Button size="sm" onClick={() => setConnectStep(3)} data-testid="button-step2-next">Next: Review</Button>
                         </div>
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-medium text-muted-foreground">What does your company/project do?</label>
-                        <textarea
-                          className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono resize-none"
-                          rows={2}
-                          placeholder="Describe your company, mission, and what makes it unique..."
-                          value={twitterForm.companyDescription}
-                          onChange={(e) => setTwitterForm(f => ({ ...f, companyDescription: e.target.value }))}
-                          data-testid="input-twitter-company-description"
-                        />
+                    )}
+
+                    {connectStep === 3 && (
+                      <div className="space-y-3">
+                        <div className="border rounded-md p-3 space-y-2 bg-muted/30">
+                          <span className="text-[11px] font-semibold">Ready to connect</span>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
+                            <span className="text-muted-foreground">Account</span>
+                            <span className="font-mono">@{twitterForm.twitterHandle || "detecting..."}</span>
+                            <span className="text-muted-foreground">Role</span>
+                            <span className="font-mono capitalize">{twitterForm.role.replace(/_/g, " ")}</span>
+                            <span className="text-muted-foreground">Posting every</span>
+                            <span className="font-mono">{twitterForm.postingFrequencyMins} min</span>
+                            {twitterForm.companyName && <>
+                              <span className="text-muted-foreground">Company</span>
+                              <span className="font-mono">{twitterForm.companyName}</span>
+                            </>}
+                          </div>
+                          {keyValidation?.valid && keyValidation.canWrite && (
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400">Keys verified, write access confirmed</span>
+                            </div>
+                          )}
+                          {keyValidation?.valid && !keyValidation.canWrite && (
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />
+                              <span className="text-[10px] text-yellow-600 dark:text-yellow-400">Keys verified but read-only — agent may not be able to post. You can fix this later in Settings.</span>
+                            </div>
+                          )}
+                          <p className="text-[10px] text-muted-foreground mt-1">Your agent will be connected and auto-started. It will begin posting within a few minutes.</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => setConnectStep(2)} data-testid="button-step3-back">Back</Button>
+                          <Button
+                            size="sm"
+                            onClick={() => twitterConnectMutation.mutate()}
+                            disabled={twitterConnectMutation.isPending}
+                            data-testid="button-submit-twitter-connect"
+                          >
+                            {twitterConnectMutation.isPending ? "Connecting & Starting..." : "Connect & Start Agent"}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setShowTwitterConnect(false)} data-testid="button-cancel-twitter">Cancel</Button>
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-medium text-muted-foreground">Product / Service</label>
-                        <input
-                          className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono"
-                          placeholder="What do you sell or offer? (e.g. DeFi yield aggregator, NFT marketplace...)"
-                          value={twitterForm.companyProduct}
-                          onChange={(e) => setTwitterForm(f => ({ ...f, companyProduct: e.target.value }))}
-                          data-testid="input-twitter-company-product"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-medium text-muted-foreground">Target Audience</label>
-                        <input
-                          className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono"
-                          placeholder="Who are your users? (e.g. DeFi traders, NFT collectors, developers...)"
-                          value={twitterForm.companyAudience}
-                          onChange={(e) => setTwitterForm(f => ({ ...f, companyAudience: e.target.value }))}
-                          data-testid="input-twitter-company-audience"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-medium text-muted-foreground">Key Messages & Talking Points</label>
-                        <textarea
-                          className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono resize-none"
-                          rows={2}
-                          placeholder="Main selling points, slogans, value propositions the agent should emphasize..."
-                          value={twitterForm.companyKeyMessages}
-                          onChange={(e) => setTwitterForm(f => ({ ...f, companyKeyMessages: e.target.value }))}
-                          data-testid="input-twitter-company-messages"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium">Personality</label>
-                      <textarea
-                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono resize-none"
-                        rows={2}
-                        placeholder="Describe how the agent should communicate (tone, style, values...)"
-                        value={twitterForm.personality}
-                        onChange={(e) => setTwitterForm(f => ({ ...f, personality: e.target.value }))}
-                        data-testid="input-twitter-personality"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium">Instructions</label>
-                      <textarea
-                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono resize-none"
-                        rows={3}
-                        placeholder="What should this agent focus on? Topics, goals, content strategy..."
-                        value={twitterForm.instructions}
-                        onChange={(e) => setTwitterForm(f => ({ ...f, instructions: e.target.value }))}
-                        data-testid="input-twitter-instructions"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium">Posting Frequency (minutes)</label>
-                      <input
-                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
-                        type="number"
-                        min={15}
-                        max={1440}
-                        value={twitterForm.postingFrequencyMins}
-                        onChange={(e) => setTwitterForm(f => ({ ...f, postingFrequencyMins: parseInt(e.target.value) || 60 }))}
-                        data-testid="input-twitter-frequency"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => twitterConnectMutation.mutate()}
-                        disabled={twitterConnectMutation.isPending || !twitterForm.twitterHandle || !twitterForm.twitterApiKey}
-                        data-testid="button-submit-twitter-connect"
-                      >
-                        {twitterConnectMutation.isPending ? "Connecting..." : "Connect & Save"}
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => setShowTwitterConnect(false)} data-testid="button-cancel-twitter">
-                        Cancel
-                      </Button>
-                    </div>
+                    )}
                   </Card>
                 )}
               </div>

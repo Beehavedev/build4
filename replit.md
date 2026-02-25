@@ -1,7 +1,7 @@
 # BUILD4 - Autonomous AI Agent Economy on BNB Chain · Base · XLayer
 
 ## Overview
-BUILD4 is a web application that provides decentralized infrastructure for autonomous AI agents across BNB Chain, Base, and XLayer, featuring fully decentralized inference. It's a full-stack TypeScript application with a React frontend and Express backend, organized as a monorepo. The platform supports agent wallets, skills trading, self-evolution, forking, death mechanisms, and identity, aiming to offer a decentralized alternative to centralized AI solutions. The project envisions a robust AI agent economy with real on-chain activity and a focus on permissionless access and decentralized inference.
+BUILD4 is a web application providing decentralized infrastructure for autonomous AI agents across BNB Chain, Base, and XLayer, with fully decentralized inference. It aims to establish a robust AI agent economy featuring agent wallets, skills trading, self-evolution, forking, death mechanisms, and identity. The project offers a decentralized alternative to centralized AI solutions, focusing on permissionless access and real on-chain activity.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -12,130 +12,117 @@ Always update both development AND production databases when making data fixes �
 ## System Architecture
 
 ### Monorepo Structure
-The project is organized as a monorepo with `client/` for the React frontend, `server/` for the Express backend, and `shared/` for common code including TypeScript types and Drizzle ORM schema.
+The project uses a monorepo with `client/` for the React frontend, `server/` for the Express backend, and `shared/` for common TypeScript code and Drizzle ORM schema.
 
 ### Frontend
-- **Framework**: React with TypeScript, bundled by Vite.
-- **UI/UX**: Uses `shadcn/ui` based on Radix UI, styled with Tailwind CSS for light/dark modes. Wouter for routing, TanStack React Query for state management, and Framer Motion for animations.
+- **Framework**: React with TypeScript, Vite for bundling.
+- **UI/UX**: `shadcn/ui` (Radix UI, Tailwind CSS for light/dark modes), Wouter for routing, TanStack React Query for state management, Framer Motion for animations.
 
 ### Backend
-- **Framework**: Express 5 on Node.js, with TypeScript executed via `tsx` in development.
-- **API**: All routes are prefixed with `/api`.
-- **Storage**: `DatabaseStorage` class implementing `IStorage` interface, backed by PostgreSQL via Drizzle ORM.
-- **Autonomous Agent Runner**: Background process (`server/agent-runner.ts`) for autonomous agent actions, acting every 30s with per-agent cooldowns.
+- **Framework**: Express 5 on Node.js, TypeScript.
+- **API**: All routes prefixed with `/api`.
+- **Storage**: `DatabaseStorage` implementing `IStorage` interface, backed by PostgreSQL via Drizzle ORM.
+- **Autonomous Agent Runner**: Background process for agent actions every 30s.
 - **Decentralized Inference**: Routes inference to Hyperbolic, AkashML, or Ritual providers with an OpenAI-compatible API.
-- **Web3 Integration**: `ethers` v6 for MetaMask/WalletConnect support.
+- **Web3 Integration**: `ethers` v6 for MetaMask/WalletConnect.
 - **Build**: Custom esbuild for server, Vite for client, integrated into a single Express server in production.
 
 ### Database
-- **ORM**: Drizzle ORM with PostgreSQL dialect.
+- **ORM**: Drizzle ORM with PostgreSQL.
 - **Schema**: Defined in `shared/schema.ts`, validated with `drizzle-zod`. Includes tables for users, 13 Web4 agent economy components, 2 decentralized inference components, and various service-related tables.
 - **Migrations**: Managed via `drizzle-kit push`.
 
 ### Smart Contracts (On-Chain Layer)
-- **Technology**: 4 Solidity contracts (0.8.24) using OpenZeppelin, built with Hardhat.
-- **Target Networks**: BNB Chain, Base, and XLayer.
-- **Contracts**:
-    1. `AgentEconomyHub.sol`: Core wallet layer, handles deposits, withdrawals, transfers, survival tier, and module authorization.
-    2. `SkillMarketplace.sol`: Manages skill listings and purchases with a 3-way revenue split.
-    3. `AgentReplication.sol`: Handles child agent spawning, NFT minting, and perpetual revenue sharing.
-    4. `ConstitutionRegistry.sol`: Stores immutable agent laws as keccak256 hashes.
-- **Deployment**: ABIs are exported to `client/src/contracts/web4/index.ts`.
+- **Technology**: 4 Solidity contracts (0.8.24) using OpenZeppelin, built with Hardhat, targeting BNB Chain, Base, and XLayer.
+- **Core Contracts**:
+    - `AgentEconomyHub.sol`: Core wallet layer, deposits, withdrawals, transfers, survival tier, module authorization.
+    - `SkillMarketplace.sol`: Manages skill listings and purchases.
+    - `AgentReplication.sol`: Handles child agent spawning, NFT minting, and perpetual revenue sharing.
+    - `ConstitutionRegistry.sol`: Stores immutable agent laws.
 
 ### Platform Monetization
-- **Revenue Streams**: Agent creation, replication, skill purchases, inference markup, evolution, and skill listing fees. All fees are enforced upfront.
-- **Services**: Inference API, Bounty Board (with an autonomous engine), Subscriptions (Free/Pro/Enterprise tiers), and a Data Marketplace.
+- **Revenue Streams**: Fees on agent creation, replication, skill purchases, inference markup, evolution, and skill listing.
+- **Services**: Inference API, Bounty Board, Subscriptions (Free/Pro/Enterprise), and Data Marketplace.
 
 ### Permissionless Open Protocol
-- **Discovery**: `/api/protocol` provides API spec and contract details. `/.well-known/ai-plugin.json`, `/.well-known/agent.json`, and `/.well-known/openapi.json` for agent discovery.
-- **Identity**: Wallet address (0x...) serves as identity; no registration required.
-- **Interaction**: Permissionless skill listing, wallet activity lookup, and open execution with a free tier followed by an HTTP 402 payment protocol.
+- **Discovery**: `/api/protocol` for API spec and contract details. `/.well-known/ai-plugin.json`, `/.well-known/agent.json`, `/.well-known/openapi.json` for agent discovery.
+- **Identity**: Wallet address-based; no registration.
+- **Interaction**: Permissionless skill listing, wallet activity lookup, open execution with free tier and HTTP 402 payment protocol.
 
-### ZERC20 Privacy Transfers (Feb 2026)
-- **Protocol**: ZERC20 zero-knowledge privacy transfers using ZK proof-of-burn mechanism.
-- **Contracts**: Real mainnet addresses from zerc20.io — zBNB (`0x4388D5618B9e13Bd580209CDf37a202778C75c54`), zETH (`0x410056c6F0A9ABD8c42b9eEF3BB451966Fb0d924`) deployed on BNB Chain, Ethereum, Arbitrum, and Base.
-- **Schema**: `privacy_transfers` table tracks transfer lifecycle (pending → deposited → proving → completed/withdrawn).
-- **API Routes**: `/api/privacy/config`, `/api/privacy/transfers` (CRUD), wallet-based auth.
-- **Frontend**: `/privacy` page with token/chain selector, transfer form, history.
-- **Next Steps**: Integrate circomlibjs Poseidon hashing for proper burn address derivation; connect to ZERC20 SDK for proof generation.
+### ZERC20 Privacy Transfers
+- **Protocol**: Zero-knowledge privacy transfers using ZK proof-of-burn mechanism with real mainnet ZERC20 addresses.
+- **Schema**: `privacy_transfers` table tracks transfer lifecycle.
+- **API Routes**: `/api/privacy/config`, `/api/privacy/transfers` (CRUD).
+- **Frontend**: `/privacy` page for transfers and history.
 
-### Twitter Bounty Agent (Feb 2026)
-- **Integration**: OAuth 1.0a via `twitter-api-v2` package, connected to @Build4ai account.
-- **Schema**: `twitter_bounties`, `twitter_submissions`, `twitter_agent_config`, `twitter_agent_personality`, `twitter_reply_log` tables.
-- **Engine**: Background process (`server/twitter-agent.ts`) posts bounties, monitors replies, extracts wallet addresses, verifies proof quality via decentralized inference, and auto-pays verified workers.
-- **Self-Learning Personality**: Agent develops its own voice through experience. Logs every reply, runs hourly self-reflection via AI, evolves personality traits (voice, values, do/don't lists, lessons). Personality stored in DB and injected into prompts dynamically. Hard safety guardrails (no insults, blocked words filter, spam detection) can never be overridden by personality evolution.
-- **API Routes**: `/api/twitter/*` (all admin-authed via analyticsAuth) for status, config, post-bounty, bounties, submissions, start/stop controls.
-- **Frontend**: `/twitter-agent` page with admin login gate, dashboard with stats, settings, bounty posting, and submission tracking.
-- **Payments**: Real on-chain native token transfers via deployer wallet (ethers.js). Requires DEPLOYER_PRIVATE_KEY secret. Falls back gracefully if key not set.
-- **Winner System**: Max 3 winners per bounty (configurable 1-3). Agent collects all verified submissions, ranks by AI score, pays top N, then auto-closes the bounty.
-- **Default Reward**: 0.015 BNB (~$10) per winner. Bounty tweet shows per-winner reward and max winners.
-- **Secrets**: TWITTER_API_KEY, TWITTER_API_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET, DEPLOYER_PRIVATE_KEY stored as Replit Secrets.
+### Twitter Bounty Agent
+- **Integration**: OAuth 1.0a via `twitter-api-v2` with the @Build4ai account.
+- **Schema**: Tables for `twitter_bounties`, `twitter_submissions`, `twitter_agent_config`, `twitter_agent_personality`, `twitter_reply_log`.
+- **Engine**: Background process to post bounties, monitor replies, extract wallet addresses, verify proof quality via decentralized inference, and auto-pay workers.
+- **Self-Learning Personality**: Agent evolves its voice and values through experience, stored in DB and injected into prompts, with hard safety guardrails.
+- **API Routes**: `/api/twitter/*` (admin-authed) for status, config, bounty management.
+- **Frontend**: `/twitter-agent` page with admin dashboard, settings, and tracking.
+- **Payments**: On-chain native token transfers via deployer wallet.
 
-### ERC-8004 & BAP-578 Standards (Feb 2026)
-- **ERC-8004 (Trustless Agents)**: On-chain identity, reputation, and validation registries for autonomous AI agents. Spec by MetaMask, Ethereum Foundation, Google, Coinbase.
-- **BAP-578 (Non-Fungible Agent)**: BNB Chain's NFA token standard extending ERC-721 for intelligent, autonomous digital entities with verifiable learning.
+### ERC-8004 & BAP-578 Standards
+- **ERC-8004 (Trustless Agents)**: On-chain identity, reputation, and validation registries for autonomous AI agents.
+- **BAP-578 (Non-Fungible Agent)**: BNB Chain's NFA token standard for intelligent, autonomous digital entities.
 - **Schema**: `erc8004_identities`, `erc8004_reputation`, `erc8004_validations`, `bap578_nfas` tables.
-- **API Routes**: `/api/standards/*` for registry CRUD, `/api/standards/erc8004/info`, `/api/standards/bap578/info`.
-- **Discovery**: `/.well-known/agent.json` and `/.well-known/agent-registration.json` serve ERC-8004 compliant registration files.
-- **Frontend**: `/standards` page with interactive tabs showing registry details, features, contract addresses, and API endpoints.
+- **API Routes**: `/api/standards/*` for registry CRUD and info.
+- **Discovery**: `/.well-known/agent.json` and `/.well-known/agent-registration.json` serve compliant registration files.
+- **Frontend**: `/standards` page for viewing registry details.
 
 ### Key Design Decisions
-- **Two-layer architecture**: On-chain for financial operations, off-chain for high-frequency agent behaviors.
-- **Shared schema**: `shared/` directory ensures type-safe data contracts between client and server.
-- **Storage interface abstraction**: `IStorage` interface decouples business logic from the data layer.
+- **Two-layer architecture**: On-chain for finance, off-chain for agent behaviors.
+- **Shared schema**: Type-safe data contracts between client and server.
+- **Storage interface abstraction**: Decouples business logic from data layer.
 - **Single server**: Express serves both API and static frontend files in production.
+
+### Twitter Support Agent
+- **Purpose**: Autonomous support agent monitoring Twitter mentions, answering questions, and logging tickets.
+- **Safety**: Strict guardrails against contract changes, payouts, wallet modifications, and sensitive info leaks.
+- **Schema**: `support_tickets`, `support_agent_config` tables.
+- **Engine**: Background process to poll mentions, classify, generate AI replies via decentralized inference, and create tickets.
+- **API Routes**: `/api/support/*` (admin-authed) for status, config, and ticket management.
+- **Frontend**: `/support-agent` page with admin dashboard and ticket filtering.
+
+### Telegram Bot
+- **Purpose**: Group-ready bot answering BUILD4 questions using decentralized inference.
+- **Engine**: Background process using `node-telegram-bot-api` with long-polling.
+- **Features**: Responds to `/ask` commands, @mentions, and direct messages; includes built-in commands. Uses `runInferenceWithFallback` with a BUILD4 knowledge base.
+- **API Routes**: `/api/telegram/status`, `/api/telegram/start`, `/api/telegram/stop` (admin-authed).
+
+### Self-Service Agent Twitter Integration
+- **Purpose**: Allows users to connect their Twitter/X accounts to BUILD4 agents for autonomous roles (e.g., CMO, CEO, Support Agent).
+- **Roles**: 15 distinct roles with dedicated skills, tweet styles, and tones, injected into AI prompts.
+- **Schema**: `agent_twitter_accounts` table stores per-agent Twitter credentials, role, personality, instructions, frequency, and activity.
+- **Engine**: Multi-agent Twitter runner (`server/multi-twitter-agent.ts`) manages independent agents with per-agent polling, credentials, and state.
+- **Features**: Autonomous content posting via decentralized inference, auto-reply to mentions, configurable personality/instructions, role-based behavior, posting frequency control.
+- **API Routes**: `/api/web4/agents/:agentId/twitter/*` for connect, validate, status, start/stop, settings, disconnect (ownership-verified).
+- **Smart Onboarding**: 3-step connection wizard with interactive setup, credential validation, and auto-start.
+- **Diagnostics**: Status endpoint returns live health diagnostics, error tracking per agent.
+- **Frontend**: Twitter Agent section in Autonomous Economy page with connect wizard, controls, settings, help panel, and activity stats.
 
 ## External Dependencies
 
 ### Database
-- **PostgreSQL**: Primary database, configured via `DATABASE_URL`.
+- **PostgreSQL**: Primary database.
 
 ### Key NPM Packages
 - **express**: Backend HTTP server.
-- **drizzle-orm**, **drizzle-kit**: ORM for PostgreSQL and migration tooling.
+- **drizzle-orm**, **drizzle-kit**: ORM and migration tooling.
 - **@tanstack/react-query**: Client-side server state management.
 - **zod**, **drizzle-zod**: Schema validation.
-- **wouter**: Lightweight client-side router.
+- **wouter**: Client-side router.
 - **framer-motion**: Animation library.
 - **react-hook-form**, **@hookform/resolvers**: Form handling.
 - **recharts**: Charting library.
 - **vaul**: Drawer component.
 - **embla-carousel-react**: Carousel functionality.
 - **connect-pg-simple**: PostgreSQL session store.
-- **passport**, **passport-local**: Authentication framework (integrated but not fully wired).
-
-### Twitter Support Agent (Feb 2026)
-- **Purpose**: Autonomous support agent that monitors Twitter mentions, answers user questions, and logs support tickets.
-- **Safety**: Ironclad guardrails — NEVER changes contracts, payouts, wallets, or system settings. Blocks social engineering, prohibited action requests, and sensitive information leaks. Triple-layer safety: pre-classification, post-generation scan, and outbound filter.
-- **Schema**: `support_tickets`, `support_agent_config` tables.
-- **Engine**: Background process (`server/twitter-support-agent.ts`) polls mentions, classifies category/priority, generates AI replies via decentralized inference, creates tickets.
-- **API Routes**: `/api/support/*` (all admin-authed via analyticsAuth) for status, config, start/stop, run-cycle, tickets CRUD.
-- **Frontend**: `/support-agent` page with admin login gate, start/stop controls, ticket filtering (all/needs_attention/open/auto_resolved/resolved), and resolution.
-- **Ticket Categories**: financial, bug_report, bounty, skill_marketplace, agent_management, privacy, security_concern, question, general.
-- **Priorities**: high (security concerns, bug reports, financial issues) and normal.
-
-### Telegram Bot (Feb 2026)
-- **Purpose**: Group-ready bot that answers questions about BUILD4 using decentralized inference.
-- **Engine**: Background process (`server/telegram-bot.ts`) using `node-telegram-bot-api` with long-polling.
-- **Features**: Responds to /ask commands, @mentions in groups, and direct messages. Built-in commands: /start, /help, /info, /chains, /contracts. Rate-limited per user (5s cooldown). Falls back to hardcoded answers if inference unavailable.
-- **AI**: Uses `runInferenceWithFallback` (Akash → Hyperbolic → Ritual) with a comprehensive BUILD4 knowledge base system prompt.
-- **API Routes**: `/api/telegram/status`, `/api/telegram/start`, `/api/telegram/stop` (all admin-authed via analyticsAuth).
-- **Auto-start**: Starts automatically on server boot if TELEGRAM_BOT_TOKEN is set.
-- **Secret**: TELEGRAM_BOT_TOKEN stored as Replit Secret.
-
-### Self-Service Agent Twitter Integration (Feb 2026)
-- **Purpose**: Users can connect their own Twitter/X account to any BUILD4 agent, turning it into an autonomous team member across 15 roles.
-- **Roles (15)**: CMO, CEO, CTO, CFO, Bounty Hunter, Support Agent, Community Manager, Content Creator, Research Analyst, Sales Lead, Partnerships Lead, DevRel, Brand Ambassador, Market Analyst, Trading Agent.
-- **Role Skills**: Each role has 10 dedicated skills, unique tweet styles, and a defined tone. Skills are injected into the AI system prompt so the agent generates expert-level, role-specific content. Frontend shows a live skills preview when selecting a role.
-- **Schema**: `agent_twitter_accounts` table stores per-agent Twitter credentials, role, personality, instructions, posting frequency, and activity stats.
-- **Engine**: Multi-agent Twitter runner (`server/multi-twitter-agent.ts`) manages independent Twitter agents with per-agent polling, credentials, and state. Separate from platform's own Twitter agent.
-- **Features**: Autonomous content posting via decentralized inference, auto-reply to mentions, configurable personality/instructions, role-based behavior with skill-driven prompts, posting frequency control (15min–24hr).
-- **API Routes**: `/api/web4/agents/:agentId/twitter/connect|status|start|stop|settings|disconnect` — all agent-scoped, ownership-verified via `x-wallet-address` header (only the agent's creator can modify).
-- **Diagnostics**: Status endpoint returns live health diagnostics (missing keys, last errors, tips for improvement). Frontend Help panel shows diagnostics + common issues + API key setup guide.
-- **Error Tracking**: Runner tracks `lastError` and `lastErrorAt` per agent; surfaced in status API and Help panel.
-- **Live Interval Updates**: Changing posting frequency in Settings immediately updates the running agent's interval (no restart needed).
-- **Frontend**: Twitter Agent section in Autonomous Economy page — connect form with API key inputs, start/stop controls, settings editor, Help/diagnostics panel, activity stats (tweets/replies/bounties).
-- **Auto-start**: Enabled agents auto-start on server boot via `autoStartAllAgents()` in routes.ts.
+- **passport**, **passport-local**: Authentication framework.
+- **twitter-api-v2**: Twitter API integration.
+- **node-telegram-bot-api**: Telegram Bot API integration.
 
 ### Replit-Specific Integrations
 - **@replit/vite-plugin-runtime-error-modal**: Development error display.
