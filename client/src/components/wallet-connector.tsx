@@ -2,7 +2,7 @@ import { useWallet } from "@/hooks/use-wallet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Wallet, ExternalLink, ChevronDown, Smartphone, Globe } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export function WalletConnector() {
   const {
@@ -22,6 +22,18 @@ export function WalletConnector() {
   } = useWallet();
   const [showDetails, setShowDetails] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [dismissedError, setDismissedError] = useState(false);
+
+  useEffect(() => {
+    if (error) {
+      setDismissedError(false);
+      const timer = setTimeout(() => setDismissedError(true), 5000);
+      return () => clearTimeout(timer);
+    }
+    setDismissedError(false);
+  }, [error]);
+
+  const visibleError = error && !dismissedError ? error : null;
 
   if (!connected) {
     return (
@@ -71,9 +83,9 @@ export function WalletConnector() {
           </div>
         )}
 
-        {error && (
-          <div className="absolute right-0 top-full mt-1 z-40 w-56 bg-destructive/10 border border-destructive/30 rounded-lg p-2">
-            <p className="font-mono text-[10px] text-destructive">{error}</p>
+        {visibleError && (
+          <div className="absolute right-0 top-full mt-1 z-40 w-56 bg-destructive/10 border border-destructive/30 rounded-lg p-2 animate-in fade-in">
+            <p className="font-mono text-[10px] text-destructive">{visibleError}</p>
           </div>
         )}
       </div>
@@ -122,8 +134,8 @@ export function WalletConnector() {
               {hasContracts ? "Deployed" : "Not Found"}
             </Badge>
           </div>
-          {error && (
-            <div className="text-[10px] text-destructive font-mono">{error}</div>
+          {visibleError && (
+            <div className="text-[10px] text-destructive font-mono">{visibleError}</div>
           )}
           <Button
             variant="ghost"
