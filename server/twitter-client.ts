@@ -125,32 +125,45 @@ export async function getMentions(sinceId?: string): Promise<TweetReply[]> {
     "tweet.fields": ["author_id", "created_at", "text", "conversation_id", "in_reply_to_user_id"],
     "user.fields": ["username"],
     expansions: ["author_id"],
-    max_results: 20,
+    max_results: 100,
   };
   if (sinceId) {
     params.since_id = sinceId;
   }
 
-  const searchResult = await tc.v2.search(query, params);
-
   const mentions: TweetReply[] = [];
   const users = new Map<string, string>();
+  const MAX_PAGES = 5;
+  let page = 0;
+  let nextToken: string | undefined = undefined;
 
-  if (searchResult.includes?.users) {
-    for (const user of searchResult.includes.users) {
-      users.set(user.id, user.username);
+  do {
+    if (nextToken) params.next_token = nextToken;
+    const searchResult = await tc.v2.search(query, params);
+
+    if (searchResult.includes?.users) {
+      for (const user of searchResult.includes.users) {
+        users.set(user.id, user.username);
+      }
     }
-  }
 
-  for (const tweet of searchResult.data?.data || []) {
-    mentions.push({
-      id: tweet.id,
-      text: tweet.text,
-      authorId: tweet.author_id || "",
-      authorUsername: users.get(tweet.author_id || "") || "unknown",
-      createdAt: tweet.created_at,
-      conversationId: (tweet as any).conversation_id || undefined,
-    });
+    for (const tweet of searchResult.data?.data || []) {
+      mentions.push({
+        id: tweet.id,
+        text: tweet.text,
+        authorId: tweet.author_id || "",
+        authorUsername: users.get(tweet.author_id || "") || "unknown",
+        createdAt: tweet.created_at,
+        conversationId: (tweet as any).conversation_id || undefined,
+      });
+    }
+
+    nextToken = searchResult.meta?.next_token;
+    page++;
+  } while (nextToken && page < MAX_PAGES);
+
+  if (mentions.length > 100) {
+    console.log(`[TwitterAgent] Fetched ${mentions.length} mentions across ${page} pages`);
   }
 
   return mentions;

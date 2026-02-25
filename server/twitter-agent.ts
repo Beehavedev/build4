@@ -190,6 +190,7 @@ let rateLimitBackoff = 0;
 let consecutiveErrors = 0;
 let lastMentionId: string | undefined = undefined;
 const repliedToMentions = new Set<string>();
+const pendingMentions: TweetReply[] = [];
 let stateLoaded = false;
 
 async function loadPersistedState() {
@@ -623,15 +624,25 @@ JSON only:`;
   return `@${reply.authorUsername} Appreciate you jumping in. BUILD4 agents operate fully on-chain — real payments, real verification, no middlemen. Check build4.io to see it live.`;
 }
 
-const MAX_MENTION_REPLIES_PER_CYCLE = 3;
+const MAX_MENTION_REPLIES_PER_CYCLE = 5;
 const MAX_REPLIES_PER_USER_PER_CYCLE = 1;
 const userReplyCooldowns = new Map<string, number>();
 const USER_COOLDOWN_MS = 10 * 60 * 1000;
 const repliedConversations = new Set<string>();
 
 async function processMentions() {
-  const mentions = await getMentions(lastMentionId);
-  if (mentions.length === 0) return;
+  const freshMentions = await getMentions(lastMentionId);
+
+  for (const m of freshMentions) {
+    if (!repliedToMentions.has(m.id) && !pendingMentions.some(p => p.id === m.id)) {
+      pendingMentions.push(m);
+    }
+    if (BigInt(m.id) > BigInt(lastMentionId || "0")) {
+      lastMentionId = m.id;
+    }
+  }
+
+  if (pendingMentions.length === 0) return;
 
   const activeBounties = await storage.getTwitterBounties("posted");
   const bountyTweetIds = new Set(activeBounties.map(b => b.tweetId).filter(Boolean));
@@ -641,45 +652,43 @@ async function processMentions() {
     supportConfig?.repliedTweetIds ? supportConfig.repliedTweetIds.split(",").filter(Boolean) : []
   );
 
-  let newMaxId = lastMentionId || "0";
   let repliesSent = 0;
   const usersRepliedThisCycle = new Map<string, number>();
   const now = Date.now();
+  const processed: string[] = [];
 
-  for (const mention of mentions) {
-    if (BigInt(mention.id) > BigInt(newMaxId)) {
-      newMaxId = mention.id;
+  for (const mention of pendingMentions) {
+    if (repliedToMentions.has(mention.id) || supportRepliedIds.has(mention.id)) {
+      processed.push(mention.id);
+      continue;
     }
-
-    if (repliedToMentions.has(mention.id) || supportRepliedIds.has(mention.id)) continue;
 
     if (mention.conversationId && repliedConversations.has(mention.conversationId)) {
       console.log(`[TwitterAgent] Skipping mention ${mention.id} — already replied in conversation ${mention.conversationId}`);
       repliedToMentions.add(mention.id);
+      processed.push(mention.id);
       continue;
     }
 
     if (repliesSent >= MAX_MENTION_REPLIES_PER_CYCLE) {
-      repliedToMentions.add(mention.id);
-      continue;
+      break;
     }
 
     const userKey = mention.authorId || mention.authorUsername;
     const userCount = usersRepliedThisCycle.get(userKey) || 0;
     if (userCount >= MAX_REPLIES_PER_USER_PER_CYCLE) {
-      repliedToMentions.add(mention.id);
       continue;
     }
 
     const lastReplyTime = userReplyCooldowns.get(userKey);
     if (lastReplyTime && now - lastReplyTime < USER_COOLDOWN_MS) {
-      repliedToMentions.add(mention.id);
       continue;
     }
 
     const existingSub = await storage.getTwitterSubmissionByTweetId(mention.id);
     if (existingSub) {
       repliedToMentions.add(mention.id);
+      processed.push(mention.id);
       continue;
     }
 
@@ -688,6 +697,7 @@ async function processMentions() {
       if (!replyText) {
         console.log(`[TwitterAgent] Skipping mention from @${mention.authorUsername} — empty reply (spam/ignore)`);
         repliedToMentions.add(mention.id);
+        processed.push(mention.id);
         continue;
       }
       const replyId = await safeReply(mention.id, replyText);
@@ -702,11 +712,27 @@ async function processMentions() {
         }
       }
       repliedToMentions.add(mention.id);
+      processed.push(mention.id);
     } catch (e: any) {
       if (e.code === 429 || e.message?.includes("429")) throw e;
       console.error(`[TwitterAgent] Failed to reply to mention ${mention.id}:`, e.message);
       repliedToMentions.add(mention.id);
+      processed.push(mention.id);
     }
+  }
+
+  for (const id of processed) {
+    const idx = pendingMentions.findIndex(m => m.id === id);
+    if (idx !== -1) pendingMentions.splice(idx, 1);
+  }
+
+  if (pendingMentions.length > 0) {
+    console.log(`[TwitterAgent] ${pendingMentions.length} mentions still pending — will process in next cycle`);
+  }
+
+  if (pendingMentions.length > 200) {
+    const overflow = pendingMentions.splice(0, pendingMentions.length - 200);
+    console.log(`[TwitterAgent] Trimmed ${overflow.length} oldest pending mentions to prevent unbounded growth`);
   }
 
   if (userReplyCooldowns.size > 500) {
@@ -722,7 +748,6 @@ async function processMentions() {
     toRemove.forEach(id => repliedConversations.delete(id));
   }
 
-  lastMentionId = newMaxId;
 }
 
 async function generateMentionReply(mention: TweetReply): Promise<string> {
