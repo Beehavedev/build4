@@ -2941,6 +2941,26 @@ ${urls}
     }
   });
 
+  app.post("/api/web4/agents/:agentId/twitter/intro-tweet", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const account = await storage.getAgentTwitterAccount(agentId);
+      if (!account) return res.status(404).json({ error: "No Twitter account connected" });
+
+      const status = getAgentTwitterStatus(agentId);
+      if (!status.running) {
+        const startResult = await startAgentTwitter(agentId);
+        if (!startResult.success) return res.status(400).json({ error: `Could not start agent: ${startResult.error}` });
+      }
+
+      const result = await postIntroTweet(agentId);
+      if (!result.success) return res.status(400).json({ error: result.error });
+      res.json({ success: true, tweetText: result.tweetText });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/web4/agents/:agentId/twitter/start", async (req: Request, res: Response) => {
     try {
       const agent = await verifyAgentOwnership(req, res);

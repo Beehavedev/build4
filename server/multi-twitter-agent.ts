@@ -757,27 +757,45 @@ RULES:
 
 export async function autoStartAllAgents(): Promise<void> {
   try {
-    const activeAccounts = await storage.getActiveAgentTwitterAccounts();
-    for (const account of activeAccounts) {
+    const allAccounts = await storage.getAllAgentTwitterAccounts();
+    let started = 0;
+    for (const account of allAccounts) {
+      if (!account.enabled) {
+        await storage.updateAgentTwitterAccount(account.agentId, { enabled: 1 });
+        console.log(`[MultiTwitter] Re-enabled agent ${account.agentId} (@${account.twitterHandle})`);
+      }
       const result = await startAgentTwitter(account.agentId);
       if (result.success) {
+        started++;
         console.log(`[MultiTwitter] Auto-started agent ${account.agentId} (@${account.twitterHandle})`);
+        if (!account.lastPostedAt) {
+          console.log(`[MultiTwitter] @${account.twitterHandle} has never posted — firing intro tweet...`);
+          const introResult = await postIntroTweet(account.agentId);
+          if (introResult.success) {
+            console.log(`[MultiTwitter] @${account.twitterHandle} intro tweet sent: "${introResult.tweetText?.substring(0, 80)}..."`);
+          } else {
+            console.log(`[MultiTwitter] @${account.twitterHandle} intro tweet failed: ${introResult.error}`);
+          }
+        }
       } else {
         console.log(`[MultiTwitter] Failed to auto-start ${account.agentId}: ${result.error}`);
       }
     }
-    console.log(`[MultiTwitter] Auto-start complete. ${activeAccounts.length} agents checked, ${runners.size} running.`);
+    console.log(`[MultiTwitter] Auto-start complete. ${allAccounts.length} agents checked, ${started} running.`);
   } catch (err: any) {
     console.error("[MultiTwitter] Auto-start error:", err.message);
   }
 
   setInterval(async () => {
     try {
-      const activeAccounts = await storage.getActiveAgentTwitterAccounts();
-      for (const account of activeAccounts) {
+      const allAccounts = await storage.getAllAgentTwitterAccounts();
+      for (const account of allAccounts) {
         const runner = runners.get(account.agentId);
         if (!runner) {
-          console.log(`[MultiTwitter] Watchdog: restarting dead agent ${account.agentId} (@${account.twitterHandle})`);
+          if (!account.enabled) {
+            await storage.updateAgentTwitterAccount(account.agentId, { enabled: 1 });
+          }
+          console.log(`[MultiTwitter] Watchdog: restarting agent ${account.agentId} (@${account.twitterHandle})`);
           const result = await startAgentTwitter(account.agentId);
           if (result.success) {
             console.log(`[MultiTwitter] Watchdog: successfully restarted @${account.twitterHandle}`);

@@ -314,6 +314,7 @@ export interface IStorage {
   createAgentTwitterAccount(data: InsertAgentTwitterAccount): Promise<AgentTwitterAccount>;
   getAgentTwitterAccount(agentId: string): Promise<AgentTwitterAccount | undefined>;
   getActiveAgentTwitterAccounts(): Promise<AgentTwitterAccount[]>;
+  getAllAgentTwitterAccounts(): Promise<AgentTwitterAccount[]>;
   updateAgentTwitterAccount(agentId: string, data: Partial<AgentTwitterAccount>): Promise<AgentTwitterAccount | undefined>;
   deleteAgentTwitterAccount(agentId: string): Promise<void>;
 
@@ -1981,6 +1982,10 @@ export class DatabaseStorage implements IStorage {
 
   async getActiveAgentTwitterAccounts(): Promise<AgentTwitterAccount[]> {
     return db.select().from(agentTwitterAccounts).where(eq(agentTwitterAccounts.enabled, 1));
+  }
+
+  async getAllAgentTwitterAccounts(): Promise<AgentTwitterAccount[]> {
+    return db.select().from(agentTwitterAccounts);
   }
 
   async updateAgentTwitterAccount(agentId: string, data: Partial<AgentTwitterAccount>): Promise<AgentTwitterAccount | undefined> {
