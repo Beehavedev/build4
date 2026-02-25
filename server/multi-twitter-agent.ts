@@ -353,13 +353,17 @@ async function postAutonomousContent(runner: AgentRunner, account: AgentTwitterA
   }
 }
 
-export async function postCustomTweet(agentId: string, tweetText: string): Promise<{ success: boolean; tweetText?: string; error?: string }> {
+export async function postCustomTweet(agentId: string, tweetText: string, replyToTweetId?: string): Promise<{ success: boolean; tweetText?: string; error?: string }> {
   const runner = runners.get(agentId);
   if (!runner) return { success: false, error: "Agent not running" };
   try {
     let text = tweetText.trim();
     if (text.length > 280) text = text.substring(0, 277) + "...";
-    await runner.client.v2.tweet(text);
+    if (replyToTweetId) {
+      await runner.client.v2.reply(text, replyToTweetId);
+    } else {
+      await runner.client.v2.tweet(text);
+    }
     const account = await storage.getAgentTwitterAccount(agentId);
     if (account) {
       await storage.updateAgentTwitterAccount(agentId, {

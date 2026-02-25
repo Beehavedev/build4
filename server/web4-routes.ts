@@ -2945,7 +2945,7 @@ ${urls}
   app.post("/api/web4/agents/:agentId/twitter/post", async (req: Request, res: Response) => {
     try {
       const { agentId } = req.params;
-      const { text } = req.body;
+      const { text, replyToTweetId } = req.body;
       if (!text || typeof text !== "string" || text.trim().length === 0) {
         return res.status(400).json({ error: "Tweet text is required" });
       }
@@ -2958,7 +2958,7 @@ ${urls}
         if (!startResult.success) return res.status(400).json({ error: `Could not start agent: ${startResult.error}` });
       }
 
-      const result = await postCustomTweet(agentId, text.trim());
+      const result = await postCustomTweet(agentId, text.trim(), replyToTweetId);
       if (!result.success) return res.status(400).json({ error: result.error });
       res.json({ success: true, tweetText: result.tweetText });
     } catch (err: any) {
