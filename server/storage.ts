@@ -50,6 +50,7 @@ import {
   type TwitterReplyLog, twitterReplyLog,
   type SupportTicket, type InsertSupportTicket, supportTickets,
   type SupportAgentConfig, type InsertSupportAgentConfig, supportAgentConfig,
+  type AgentTwitterAccount, type InsertAgentTwitterAccount, agentTwitterAccounts,
   type Erc8004Identity, type InsertErc8004Identity, erc8004Identities,
   type Erc8004Reputation, type InsertErc8004Reputation, erc8004Reputation,
   type Erc8004Validation, type InsertErc8004Validation, erc8004Validations,
@@ -309,6 +310,12 @@ export interface IStorage {
   getBap578Nfa(id: string): Promise<Bap578Nfa | undefined>;
   getBap578Nfas(ownerWallet?: string): Promise<Bap578Nfa[]>;
   updateBap578Nfa(id: string, data: Partial<Bap578Nfa>): Promise<Bap578Nfa | undefined>;
+
+  createAgentTwitterAccount(data: InsertAgentTwitterAccount): Promise<AgentTwitterAccount>;
+  getAgentTwitterAccount(agentId: string): Promise<AgentTwitterAccount | undefined>;
+  getActiveAgentTwitterAccounts(): Promise<AgentTwitterAccount[]>;
+  updateAgentTwitterAccount(agentId: string, data: Partial<AgentTwitterAccount>): Promise<AgentTwitterAccount | undefined>;
+  deleteAgentTwitterAccount(agentId: string): Promise<void>;
 
   // Seed subscription plans
   seedSubscriptionPlans(): Promise<void>;
@@ -1960,6 +1967,29 @@ export class DatabaseStorage implements IStorage {
   async updateBap578Nfa(id: string, data: Partial<Bap578Nfa>): Promise<Bap578Nfa | undefined> {
     const [result] = await db.update(bap578Nfas).set(data).where(eq(bap578Nfas.id, id)).returning();
     return result;
+  }
+
+  async createAgentTwitterAccount(data: InsertAgentTwitterAccount): Promise<AgentTwitterAccount> {
+    const [result] = await db.insert(agentTwitterAccounts).values(data).returning();
+    return result;
+  }
+
+  async getAgentTwitterAccount(agentId: string): Promise<AgentTwitterAccount | undefined> {
+    const [result] = await db.select().from(agentTwitterAccounts).where(eq(agentTwitterAccounts.agentId, agentId));
+    return result;
+  }
+
+  async getActiveAgentTwitterAccounts(): Promise<AgentTwitterAccount[]> {
+    return db.select().from(agentTwitterAccounts).where(eq(agentTwitterAccounts.enabled, 1));
+  }
+
+  async updateAgentTwitterAccount(agentId: string, data: Partial<AgentTwitterAccount>): Promise<AgentTwitterAccount | undefined> {
+    const [result] = await db.update(agentTwitterAccounts).set({ ...data, updatedAt: new Date() }).where(eq(agentTwitterAccounts.agentId, agentId)).returning();
+    return result;
+  }
+
+  async deleteAgentTwitterAccount(agentId: string): Promise<void> {
+    await db.delete(agentTwitterAccounts).where(eq(agentTwitterAccounts.agentId, agentId));
   }
 }
 

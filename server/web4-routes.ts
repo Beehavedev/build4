@@ -33,6 +33,8 @@ import {
 } from "@shared/schema";
 import { executeSkillCode, validateSkillCode, executeSkillWithExternalData } from "./skill-executor";
 import { seedKnownPlatforms, runHttpOutreach, runOnchainBeacon, runFullOutreach, runDirectRecruitment, getOutreachMessage, getPlatformRegistry, getAnnouncementFormats, startAutoBroadcast, stopAutoBroadcast, getAutoBroadcastStatus } from "./outreach";
+import { startAgentTwitter, stopAgentTwitter, getAgentTwitterStatus } from "./multi-twitter-agent";
+import { agentTwitterConnectSchema, agentTwitterSettingsSchema } from "@shared/schema";
 
 function getBaseUrl(req: Request): string {
   const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
@@ -2737,5 +2739,123 @@ ${urls}
         { name: "XLayer", chainId: 196, currency: "OKB", standards: ["erc-8004"] },
       ],
     });
+  });
+
+  app.post("/api/web4/agents/:agentId/twitter/connect", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+      const existing = await storage.getAgentTwitterAccount(agentId);
+      if (existing) return res.status(409).json({ error: "Twitter already connected. Disconnect first." });
+
+      const parsed = agentTwitterConnectSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+      const account = await storage.createAgentTwitterAccount({
+        agentId,
+        twitterHandle: parsed.data.twitterHandle,
+        twitterApiKey: parsed.data.twitterApiKey,
+        twitterApiSecret: parsed.data.twitterApiSecret,
+        twitterAccessToken: parsed.data.twitterAccessToken,
+        twitterAccessTokenSecret: parsed.data.twitterAccessTokenSecret,
+        role: parsed.data.role,
+        personality: parsed.data.personality || "",
+        instructions: parsed.data.instructions || "",
+        postingFrequencyMins: parsed.data.postingFrequencyMins,
+        enabled: 0,
+        autoReplyEnabled: 1,
+        autoBountyEnabled: 0,
+        totalTweets: 0,
+        totalReplies: 0,
+        totalBounties: 0,
+      });
+
+      res.json({
+        success: true,
+        account: { id: account.id, agentId: account.agentId, twitterHandle: account.twitterHandle, role: account.role, enabled: account.enabled },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/agents/:agentId/twitter/status", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const account = await storage.getAgentTwitterAccount(agentId);
+      if (!account) return res.json({ connected: false });
+
+      const runnerStatus = getAgentTwitterStatus(agentId);
+
+      res.json({
+        connected: true,
+        running: runnerStatus.running,
+        handle: account.twitterHandle,
+        role: account.role,
+        enabled: account.enabled,
+        personality: account.personality,
+        instructions: account.instructions,
+        postingFrequencyMins: account.postingFrequencyMins,
+        autoReplyEnabled: account.autoReplyEnabled,
+        autoBountyEnabled: account.autoBountyEnabled,
+        totalTweets: account.totalTweets,
+        totalReplies: account.totalReplies,
+        totalBounties: account.totalBounties,
+        lastPostedAt: account.lastPostedAt,
+        createdAt: account.createdAt,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/twitter/start", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const result = await startAgentTwitter(agentId);
+      if (!result.success) return res.status(400).json({ error: result.error });
+      res.json({ success: true, message: "Twitter agent started" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/twitter/stop", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      await stopAgentTwitter(agentId);
+      res.json({ success: true, message: "Twitter agent stopped" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/web4/agents/:agentId/twitter/settings", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const account = await storage.getAgentTwitterAccount(agentId);
+      if (!account) return res.status(404).json({ error: "No Twitter account connected" });
+
+      const parsed = agentTwitterSettingsSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+      const updated = await storage.updateAgentTwitterAccount(agentId, parsed.data);
+      res.json({ success: true, account: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/web4/agents/:agentId/twitter/disconnect", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      await stopAgentTwitter(agentId);
+      await storage.deleteAgentTwitterAccount(agentId);
+      res.json({ success: true, message: "Twitter disconnected" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 }

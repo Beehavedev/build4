@@ -975,6 +975,57 @@ export const twitterReplyLog = pgTable("twitter_reply_log", {
 
 export type TwitterReplyLog = typeof twitterReplyLog.$inferSelect;
 
+export const agentTwitterAccounts = pgTable("agent_twitter_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  twitterHandle: text("twitter_handle").notNull(),
+  twitterApiKey: text("twitter_api_key").notNull(),
+  twitterApiSecret: text("twitter_api_secret").notNull(),
+  twitterAccessToken: text("twitter_access_token").notNull(),
+  twitterAccessTokenSecret: text("twitter_access_token_secret").notNull(),
+  role: text("role").notNull().default("cmo"),
+  enabled: integer("enabled").notNull().default(0),
+  personality: text("personality").default(""),
+  instructions: text("instructions").default(""),
+  postingFrequencyMins: integer("posting_frequency_mins").default(60),
+  autoReplyEnabled: integer("auto_reply_enabled").notNull().default(1),
+  autoBountyEnabled: integer("auto_bounty_enabled").notNull().default(0),
+  defaultRewardBnb: text("default_reward_bnb").default("0.015"),
+  lastPostedAt: timestamp("last_posted_at"),
+  lastMentionId: text("last_mention_id"),
+  repliedTweetIds: text("replied_tweet_ids").default(""),
+  totalTweets: integer("total_tweets").notNull().default(0),
+  totalReplies: integer("total_replies").notNull().default(0),
+  totalBounties: integer("total_bounties").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAgentTwitterAccountSchema = createInsertSchema(agentTwitterAccounts).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAgentTwitterAccount = z.infer<typeof insertAgentTwitterAccountSchema>;
+export type AgentTwitterAccount = typeof agentTwitterAccounts.$inferSelect;
+
+export const agentTwitterConnectSchema = z.object({
+  twitterHandle: z.string().min(1).max(50),
+  twitterApiKey: z.string().min(1),
+  twitterApiSecret: z.string().min(1),
+  twitterAccessToken: z.string().min(1),
+  twitterAccessTokenSecret: z.string().min(1),
+  role: z.enum(["cmo", "bounty_hunter", "support"]).default("cmo"),
+  personality: z.string().max(1000).optional(),
+  instructions: z.string().max(2000).optional(),
+  postingFrequencyMins: z.number().min(15).max(1440).default(60),
+});
+
+export const agentTwitterSettingsSchema = z.object({
+  personality: z.string().max(1000).optional(),
+  instructions: z.string().max(2000).optional(),
+  postingFrequencyMins: z.number().min(15).max(1440).optional(),
+  autoReplyEnabled: z.number().min(0).max(1).optional(),
+  autoBountyEnabled: z.number().min(0).max(1).optional(),
+  defaultRewardBnb: z.string().optional(),
+});
+
 export const supportTickets = pgTable("support_tickets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tweetId: text("tweet_id").notNull(),

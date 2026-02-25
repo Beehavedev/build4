@@ -10,6 +10,7 @@ import { startTwitterAgent, stopTwitterAgent, getTwitterAgentStatus, runTwitterA
 import { startSupportAgent, stopSupportAgent, getSupportAgentStatus, runSupportAgentCycle } from "./twitter-support-agent";
 import { isTwitterConfigured } from "./twitter-client";
 import { startTelegramBot, stopTelegramBot, getTelegramBotStatus } from "./telegram-bot";
+import { autoStartAllAgents } from "./multi-twitter-agent";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
 import { registerSeoPrerender } from "./seo-prerender";
 import { analyticsAuth, generateAnalyticsToken } from "./admin-auth";
@@ -551,6 +552,10 @@ export async function registerRoutes(
   if (process.env.TELEGRAM_BOT_TOKEN) {
     startTelegramBot();
   }
+
+  autoStartAllAgents().catch(err => {
+    console.error("[MultiTwitter] Auto-start failed:", err.message);
+  });
 
   app.get("/api/telegram/status", analyticsAuth, (req: Request, res: Response) => {
     res.json(getTelegramBotStatus());

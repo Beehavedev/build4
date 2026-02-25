@@ -36,6 +36,10 @@ import {
   Coins,
   DollarSign,
   BarChart3,
+  Twitter,
+  Power,
+  Settings,
+  MessageSquare,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
@@ -331,6 +335,97 @@ export default function AutonomousEconomy() {
     enabled: !!agentId,
   });
 
+  const { data: twitterStatus } = useQuery<{
+    connected: boolean;
+    running?: boolean;
+    handle?: string;
+    role?: string;
+    enabled?: number;
+    personality?: string;
+    instructions?: string;
+    postingFrequencyMins?: number;
+    autoReplyEnabled?: number;
+    totalTweets?: number;
+    totalReplies?: number;
+    totalBounties?: number;
+    lastPostedAt?: string;
+  }>({
+    queryKey: ["/api/web4/agents", agentId, "twitter", "status"],
+    enabled: !!agentId,
+    refetchInterval: 10000,
+  });
+
+  const [twitterForm, setTwitterForm] = useState({
+    twitterHandle: "",
+    twitterApiKey: "",
+    twitterApiSecret: "",
+    twitterAccessToken: "",
+    twitterAccessTokenSecret: "",
+    role: "cmo" as string,
+    personality: "",
+    instructions: "",
+    postingFrequencyMins: 60,
+  });
+
+  const [showTwitterConnect, setShowTwitterConnect] = useState(false);
+  const [showTwitterSettings, setShowTwitterSettings] = useState(false);
+
+  const twitterConnectMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/web4/agents/${agentId}/twitter/connect`, twitterForm);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "twitter", "status"] });
+      toast({ title: "Twitter connected", description: "Your agent's Twitter account is linked. Start the agent to begin autonomous posting." });
+      setShowTwitterConnect(false);
+    },
+    onError: (e: Error) => toast({ title: "Connection failed", description: e.message, variant: "destructive" }),
+  });
+
+  const twitterStartMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/web4/agents/${agentId}/twitter/start`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "twitter", "status"] });
+      toast({ title: "Twitter agent started", description: "Your agent is now autonomously posting and engaging." });
+    },
+    onError: (e: Error) => toast({ title: "Start failed", description: e.message, variant: "destructive" }),
+  });
+
+  const twitterStopMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/web4/agents/${agentId}/twitter/stop`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "twitter", "status"] });
+      toast({ title: "Twitter agent stopped" });
+    },
+    onError: (e: Error) => toast({ title: "Stop failed", description: e.message, variant: "destructive" }),
+  });
+
+  const twitterSettingsMutation = useMutation({
+    mutationFn: async (settings: Record<string, any>) => {
+      await apiRequest("PATCH", `/api/web4/agents/${agentId}/twitter/settings`, settings);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "twitter", "status"] });
+      toast({ title: "Settings updated" });
+      setShowTwitterSettings(false);
+    },
+    onError: (e: Error) => toast({ title: "Update failed", description: e.message, variant: "destructive" }),
+  });
+
+  const twitterDisconnectMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/web4/agents/${agentId}/twitter/disconnect`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "twitter", "status"] });
+      toast({ title: "Twitter disconnected" });
+    },
+    onError: (e: Error) => toast({ title: "Disconnect failed", description: e.message, variant: "destructive" }),
+  });
 
   const evolveMutation = useMutation({
     mutationFn: async ({ toModel, reason }: { toModel: string; reason: string }) => {
@@ -2400,6 +2495,260 @@ export default function AutonomousEconomy() {
                     );
                   })}
                 </div>
+              </div>
+            )}
+          </div>
+        </Section>
+
+        <Section title="Twitter Agent" icon={Twitter}>
+          <div className="space-y-3 px-1">
+            {!twitterStatus?.connected ? (
+              <div className="space-y-3">
+                <TerminalLine prefix="$">twitter.connect()</TerminalLine>
+                <p className="text-xs text-muted-foreground">Connect a Twitter/X account to let this agent autonomously post, engage, and grow your audience.</p>
+
+                {!showTwitterConnect ? (
+                  <Button size="sm" onClick={() => setShowTwitterConnect(true)} data-testid="button-connect-twitter">
+                    <Twitter className="w-3.5 h-3.5 mr-1.5" />
+                    Connect Twitter Account
+                  </Button>
+                ) : (
+                  <Card className="p-4 space-y-3">
+                    <div className="text-xs text-muted-foreground mb-2">
+                      Get your API keys from <a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noopener" className="text-primary underline">developer.x.com</a>. You need a project with OAuth 1.0a (Read and Write).
+                    </div>
+                    <div className="space-y-2">
+                      <input
+                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
+                        placeholder="Twitter handle (e.g. cryptovagabond)"
+                        value={twitterForm.twitterHandle}
+                        onChange={(e) => setTwitterForm(f => ({ ...f, twitterHandle: e.target.value }))}
+                        data-testid="input-twitter-handle"
+                      />
+                      <input
+                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
+                        placeholder="API Key (Consumer Key)"
+                        type="password"
+                        value={twitterForm.twitterApiKey}
+                        onChange={(e) => setTwitterForm(f => ({ ...f, twitterApiKey: e.target.value }))}
+                        data-testid="input-twitter-api-key"
+                      />
+                      <input
+                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
+                        placeholder="API Secret (Consumer Secret)"
+                        type="password"
+                        value={twitterForm.twitterApiSecret}
+                        onChange={(e) => setTwitterForm(f => ({ ...f, twitterApiSecret: e.target.value }))}
+                        data-testid="input-twitter-api-secret"
+                      />
+                      <input
+                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
+                        placeholder="Access Token"
+                        type="password"
+                        value={twitterForm.twitterAccessToken}
+                        onChange={(e) => setTwitterForm(f => ({ ...f, twitterAccessToken: e.target.value }))}
+                        data-testid="input-twitter-access-token"
+                      />
+                      <input
+                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
+                        placeholder="Access Token Secret"
+                        type="password"
+                        value={twitterForm.twitterAccessTokenSecret}
+                        onChange={(e) => setTwitterForm(f => ({ ...f, twitterAccessTokenSecret: e.target.value }))}
+                        data-testid="input-twitter-access-secret"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Agent Role</label>
+                      <select
+                        className="w-full px-3 py-2 text-sm border rounded-md bg-background"
+                        value={twitterForm.role}
+                        onChange={(e) => setTwitterForm(f => ({ ...f, role: e.target.value }))}
+                        data-testid="select-twitter-role"
+                      >
+                        <option value="cmo">CMO — Marketing & Growth</option>
+                        <option value="bounty_hunter">Bounty Hunter — Task Engagement</option>
+                        <option value="support">Support — Community Help</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Personality</label>
+                      <textarea
+                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono resize-none"
+                        rows={2}
+                        placeholder="Describe how the agent should communicate (tone, style, values...)"
+                        value={twitterForm.personality}
+                        onChange={(e) => setTwitterForm(f => ({ ...f, personality: e.target.value }))}
+                        data-testid="input-twitter-personality"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Instructions</label>
+                      <textarea
+                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono resize-none"
+                        rows={3}
+                        placeholder="What should this agent focus on? Topics, goals, content strategy..."
+                        value={twitterForm.instructions}
+                        onChange={(e) => setTwitterForm(f => ({ ...f, instructions: e.target.value }))}
+                        data-testid="input-twitter-instructions"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Posting Frequency (minutes)</label>
+                      <input
+                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
+                        type="number"
+                        min={15}
+                        max={1440}
+                        value={twitterForm.postingFrequencyMins}
+                        onChange={(e) => setTwitterForm(f => ({ ...f, postingFrequencyMins: parseInt(e.target.value) || 60 }))}
+                        data-testid="input-twitter-frequency"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => twitterConnectMutation.mutate()}
+                        disabled={twitterConnectMutation.isPending || !twitterForm.twitterHandle || !twitterForm.twitterApiKey}
+                        data-testid="button-submit-twitter-connect"
+                      >
+                        {twitterConnectMutation.isPending ? "Connecting..." : "Connect & Save"}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setShowTwitterConnect(false)} data-testid="button-cancel-twitter">
+                        Cancel
+                      </Button>
+                    </div>
+                  </Card>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <TerminalLine prefix="$">twitter.status()</TerminalLine>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <Card className="p-3">
+                    <div className="text-[10px] text-muted-foreground uppercase">Account</div>
+                    <div className="font-mono text-sm font-bold" data-testid="text-twitter-handle">@{twitterStatus.handle}</div>
+                  </Card>
+                  <Card className="p-3">
+                    <div className="text-[10px] text-muted-foreground uppercase">Status</div>
+                    <Badge variant={twitterStatus.running ? "default" : "outline"} className="mt-1" data-testid="text-twitter-status">
+                      {twitterStatus.running ? "RUNNING" : "STOPPED"}
+                    </Badge>
+                  </Card>
+                  <Card className="p-3">
+                    <div className="text-[10px] text-muted-foreground uppercase">Tweets</div>
+                    <div className="font-mono text-sm font-bold" data-testid="text-twitter-tweets">{twitterStatus.totalTweets || 0}</div>
+                  </Card>
+                  <Card className="p-3">
+                    <div className="text-[10px] text-muted-foreground uppercase">Replies</div>
+                    <div className="font-mono text-sm font-bold" data-testid="text-twitter-replies">{twitterStatus.totalReplies || 0}</div>
+                  </Card>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {twitterStatus.running ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => twitterStopMutation.mutate()}
+                      disabled={twitterStopMutation.isPending}
+                      data-testid="button-stop-twitter"
+                    >
+                      <Power className="w-3.5 h-3.5 mr-1.5" />
+                      {twitterStopMutation.isPending ? "Stopping..." : "Stop Agent"}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={() => twitterStartMutation.mutate()}
+                      disabled={twitterStartMutation.isPending}
+                      data-testid="button-start-twitter"
+                    >
+                      <Power className="w-3.5 h-3.5 mr-1.5" />
+                      {twitterStartMutation.isPending ? "Starting..." : "Start Agent"}
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowTwitterSettings(!showTwitterSettings)}
+                    data-testid="button-twitter-settings"
+                  >
+                    <Settings className="w-3.5 h-3.5 mr-1.5" />
+                    Settings
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => {
+                      if (confirm("Disconnect Twitter from this agent? This will stop all autonomous activity.")) {
+                        twitterDisconnectMutation.mutate();
+                      }
+                    }}
+                    disabled={twitterDisconnectMutation.isPending}
+                    data-testid="button-disconnect-twitter"
+                  >
+                    {twitterDisconnectMutation.isPending ? "Disconnecting..." : "Disconnect"}
+                  </Button>
+                </div>
+
+                {showTwitterSettings && (
+                  <Card className="p-4 space-y-3">
+                    <div className="text-xs font-semibold">Agent Settings</div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Personality</label>
+                      <textarea
+                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono resize-none"
+                        rows={2}
+                        defaultValue={twitterStatus.personality || ""}
+                        id="twitter-settings-personality"
+                        data-testid="input-twitter-settings-personality"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Instructions</label>
+                      <textarea
+                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono resize-none"
+                        rows={3}
+                        defaultValue={twitterStatus.instructions || ""}
+                        id="twitter-settings-instructions"
+                        data-testid="input-twitter-settings-instructions"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Posting Frequency (minutes)</label>
+                      <input
+                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
+                        type="number"
+                        min={15}
+                        max={1440}
+                        defaultValue={twitterStatus.postingFrequencyMins || 60}
+                        id="twitter-settings-frequency"
+                        data-testid="input-twitter-settings-frequency"
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const personality = (document.getElementById("twitter-settings-personality") as HTMLTextAreaElement)?.value;
+                        const instructions = (document.getElementById("twitter-settings-instructions") as HTMLTextAreaElement)?.value;
+                        const freq = parseInt((document.getElementById("twitter-settings-frequency") as HTMLInputElement)?.value) || 60;
+                        twitterSettingsMutation.mutate({ personality, instructions, postingFrequencyMins: freq });
+                      }}
+                      disabled={twitterSettingsMutation.isPending}
+                      data-testid="button-save-twitter-settings"
+                    >
+                      {twitterSettingsMutation.isPending ? "Saving..." : "Save Settings"}
+                    </Button>
+                  </Card>
+                )}
+
+                {twitterStatus.role && (
+                  <div className="text-xs text-muted-foreground">
+                    Role: <Badge variant="outline" className="text-[10px] ml-1">{twitterStatus.role === "cmo" ? "CMO" : twitterStatus.role}</Badge>
+                    {twitterStatus.lastPostedAt && <span className="ml-2">Last posted: {new Date(twitterStatus.lastPostedAt).toLocaleString()}</span>}
+                  </div>
+                )}
               </div>
             )}
           </div>
