@@ -1036,7 +1036,7 @@ export default function AutonomousEconomy() {
       {showCreateAgent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" data-testid="modal-create-agent">
           <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => !createAgentMutation.isPending && setShowCreateAgent(false)} />
-          <div className="relative z-10 w-full max-w-lg mx-4 bg-card border rounded-lg shadow-lg p-5 sm:p-6">
+          <div className="relative z-10 w-full max-w-lg mx-4 bg-card border rounded-lg shadow-lg p-5 sm:p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-2 mb-4">
               <Bot className="w-4 h-4 text-primary" />
               <span className="font-mono text-sm font-semibold">Create New Agent</span>
