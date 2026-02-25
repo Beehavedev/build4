@@ -14,6 +14,7 @@ interface AgentRunner {
   isProcessing: boolean;
   lastError: string | null;
   lastErrorAt: Date | null;
+  consecutivePostErrors: number;
 }
 
 const runners = new Map<string, AgentRunner>();
@@ -54,6 +55,7 @@ export async function startAgentTwitter(agentId: string): Promise<{ success: boo
       isProcessing: false,
       lastError: null,
       lastErrorAt: null,
+      consecutivePostErrors: 0,
     };
 
     runners.set(agentId, runner);
@@ -128,7 +130,11 @@ async function runAgentCycle(agentId: string) {
     if (!agent) return;
 
     if (account.autoReplyEnabled) {
-      await processAgentMentions(runner, account, agent);
+      try {
+        await processAgentMentions(runner, account, agent);
+      } catch (mentionErr: any) {
+        console.log(`[MultiTwitter] @${runner.username} mention processing failed (non-fatal): ${mentionErr.message?.substring(0, 100)}`);
+      }
     }
 
     const now = Date.now();
@@ -274,6 +280,7 @@ async function postAutonomousContent(runner: AgentRunner, account: AgentTwitterA
 
       runner.lastError = null;
       runner.lastErrorAt = null;
+      runner.consecutivePostErrors = 0;
 
       console.log(`[MultiTwitter] @${runner.username} posted: "${tweetText.substring(0, 60)}..."`);
 
@@ -290,14 +297,26 @@ async function postAutonomousContent(runner: AgentRunner, account: AgentTwitterA
       runner.lastError = "Rate limited by Twitter. Your app may have hit its posting limit. Wait a few minutes.";
       runner.lastErrorAt = new Date();
     } else if (err.code === 403 || err.message?.includes("403")) {
+      runner.consecutivePostErrors++;
       const detail = err.data?.detail || err.data?.errors?.[0]?.message || "";
-      console.error(`[MultiTwitter] @${runner.username} 403 Forbidden — ${detail || "app may lack Write permissions"}`);
+      console.error(`[MultiTwitter] @${runner.username} 403 Forbidden (${runner.consecutivePostErrors}/3) — ${detail || "app lacks Write permissions"}`);
       runner.lastError = `Twitter returned 403 Forbidden${detail ? `: ${detail}` : ""}. Common fixes: 1) Go to developer.x.com → your app → Settings → set permissions to 'Read and Write'. 2) IMPORTANT: After changing permissions, go to Keys & Tokens and REGENERATE your Access Token and Access Token Secret — old tokens keep old permissions. 3) Update the new tokens in Settings here. 4) Stop and Start the agent again.`;
       runner.lastErrorAt = new Date();
+      if (runner.consecutivePostErrors >= 3) {
+        console.error(`[MultiTwitter] @${runner.username} auto-paused after ${runner.consecutivePostErrors} consecutive 403 errors. Fix credentials and restart.`);
+        await stopAgentTwitter(runner.agentId);
+        await storage.updateAgentTwitterAccount(runner.agentId, { enabled: 0 });
+      }
     } else if (err.code === 402 || err.message?.includes("402")) {
-      console.error(`[MultiTwitter] @${runner.username} 402 — Twitter API tier doesn't support this`);
+      runner.consecutivePostErrors++;
+      console.error(`[MultiTwitter] @${runner.username} 402 (${runner.consecutivePostErrors}/3) — Twitter API tier doesn't support this`);
       runner.lastError = "Twitter API returned 402. Your API plan may not support posting. Make sure you have at least the Free tier active at developer.x.com.";
       runner.lastErrorAt = new Date();
+      if (runner.consecutivePostErrors >= 3) {
+        console.error(`[MultiTwitter] @${runner.username} auto-paused after ${runner.consecutivePostErrors} consecutive 402 errors. Check API tier and restart.`);
+        await stopAgentTwitter(runner.agentId);
+        await storage.updateAgentTwitterAccount(runner.agentId, { enabled: 0 });
+      }
     } else if (err.message?.includes("duplicate")) {
       console.log(`[MultiTwitter] @${runner.username} duplicate tweet skipped`);
     } else {
@@ -656,4 +675,22 @@ export async function autoStartAllAgents(): Promise<void> {
   } catch (err: any) {
     console.error("[MultiTwitter] Auto-start error:", err.message);
   }
+
+  setInterval(async () => {
+    try {
+      const activeAccounts = await storage.getActiveAgentTwitterAccounts();
+      for (const account of activeAccounts) {
+        const runner = runners.get(account.agentId);
+        if (!runner) {
+          console.log(`[MultiTwitter] Watchdog: restarting dead agent ${account.agentId} (@${account.twitterHandle})`);
+          const result = await startAgentTwitter(account.agentId);
+          if (result.success) {
+            console.log(`[MultiTwitter] Watchdog: successfully restarted @${account.twitterHandle}`);
+          } else {
+            console.log(`[MultiTwitter] Watchdog: restart failed for @${account.twitterHandle}: ${result.error}`);
+          }
+        }
+      }
+    } catch {}
+  }, 5 * 60 * 1000);
 }
