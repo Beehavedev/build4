@@ -33,7 +33,7 @@ import {
 } from "@shared/schema";
 import { executeSkillCode, validateSkillCode, executeSkillWithExternalData } from "./skill-executor";
 import { seedKnownPlatforms, runHttpOutreach, runOnchainBeacon, runFullOutreach, runDirectRecruitment, getOutreachMessage, getPlatformRegistry, getAnnouncementFormats, startAutoBroadcast, stopAutoBroadcast, getAutoBroadcastStatus } from "./outreach";
-import { startAgentTwitter, stopAgentTwitter, getAgentTwitterStatus, updateAgentTwitterInterval } from "./multi-twitter-agent";
+import { startAgentTwitter, stopAgentTwitter, getAgentTwitterStatus, updateAgentTwitterInterval, postIntroTweet } from "./multi-twitter-agent";
 import { agentTwitterConnectSchema, agentTwitterSettingsSchema } from "@shared/schema";
 
 function getBaseUrl(req: Request): string {
@@ -2854,14 +2854,20 @@ ${urls}
       });
 
       let autoStarted = false;
+      let introTweet: string | null = null;
       try {
         const startResult = await startAgentTwitter(agentId);
         autoStarted = !!startResult.success;
+        if (autoStarted) {
+          const introResult = await postIntroTweet(agentId);
+          if (introResult.success) introTweet = introResult.tweetText || null;
+        }
       } catch {}
 
       res.json({
         success: true,
         autoStarted,
+        introTweet,
         verifiedHandle,
         account: { id: account.id, agentId: account.agentId, twitterHandle: verifiedHandle, role: account.role, enabled: account.enabled },
       });

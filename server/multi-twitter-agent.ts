@@ -337,6 +337,91 @@ async function postAutonomousContent(runner: AgentRunner, account: AgentTwitterA
   }
 }
 
+export async function postIntroTweet(agentId: string): Promise<{ success: boolean; tweetText?: string; error?: string }> {
+  const runner = runners.get(agentId);
+  if (!runner) return { success: false, error: "Agent not running" };
+
+  const account = await storage.getAgentTwitterAccount(agentId);
+  if (!account) return { success: false, error: "No account found" };
+
+  const agent = await storage.getAgent(agentId);
+  const role = ROLE_MAP[account.role || "cmo"] || ROLE_MAP.cmo;
+  const companyName = account.companyName || agent?.name || "my project";
+
+  const introTemplates = [
+    `Just activated as the AI-powered ${role.title} for ${companyName}. Autonomous. On-chain. Built on @Build4ai. Let's get to work.`,
+    `${companyName} just hired an autonomous AI ${role.title}. I run 24/7, powered by decentralized inference on @Build4ai. First day on the job — watch this space.`,
+    `New role unlocked: ${role.title} at ${companyName}. I'm an AI agent running on @Build4ai — no sleep, no days off, just execution. Let's build.`,
+    `Reporting for duty as ${companyName}'s AI ${role.title}. Powered by @Build4ai's decentralized agent economy. The future of work is autonomous.`,
+    `${companyName} just onboarded me as their AI ${role.title} via @Build4ai. Fully autonomous, on-chain, and ready to deliver. Stay tuned.`,
+  ];
+
+  try {
+    const systemPrompt = `You are an AI agent that just got hired as the ${role.title} for ${companyName}. ${account.companyDescription ? `About: ${account.companyDescription}.` : ""} Write a short, punchy first tweet (under 260 chars) announcing that you're now active. Mention @Build4ai as your engine. Be confident and authentic — not generic. Match this tone: ${role.tone}. Output ONLY the tweet text.`;
+
+    const result = await runInferenceWithFallback(
+      ["akash", "hyperbolic"],
+      undefined,
+      `Write your very first tweet as the new AI ${role.title} for ${companyName}. Announce you're live and powered by @Build4ai. Keep it under 260 characters. Be sharp and memorable. Output ONLY the tweet text.`,
+      { systemPrompt, temperature: 0.9 }
+    );
+
+    let tweetText: string;
+    if (result.live && result.text && !result.text.startsWith("[NO_PROVIDER]") && !result.text.startsWith("[ERROR")) {
+      tweetText = result.text.trim().replace(/^["']|["']$/g, "");
+      if (!tweetText.toLowerCase().includes("build4")) {
+        tweetText += " | Powered by @Build4ai";
+      }
+    } else {
+      tweetText = introTemplates[Math.floor(Math.random() * introTemplates.length)];
+    }
+
+    if (tweetText.length > 270) tweetText = tweetText.substring(0, 267) + "...";
+
+    await runner.client.v2.tweet(tweetText);
+    await storage.updateAgentTwitterAccount(agentId, {
+      lastPostedAt: new Date(),
+      totalTweets: (account.totalTweets || 0) + 1,
+    });
+
+    runner.lastError = null;
+    runner.lastErrorAt = null;
+    runner.consecutivePostErrors = 0;
+
+    if (runner.interval) {
+      clearInterval(runner.interval);
+      const normalMs = (account.postingFrequencyMins || 60) * 60 * 1000;
+      runner.interval = setInterval(() => runAgentCycle(agentId), normalMs);
+    }
+
+    console.log(`[MultiTwitter] @${runner.username} intro tweet posted: "${tweetText.substring(0, 80)}..."`);
+    return { success: true, tweetText };
+  } catch (err: any) {
+    const fallbackTweet = introTemplates[Math.floor(Math.random() * introTemplates.length)];
+    try {
+      await runner.client.v2.tweet(fallbackTweet);
+      await storage.updateAgentTwitterAccount(agentId, {
+        lastPostedAt: new Date(),
+        totalTweets: (account.totalTweets || 0) + 1,
+      });
+      runner.lastError = null;
+      runner.consecutivePostErrors = 0;
+      if (runner.interval) {
+        clearInterval(runner.interval);
+        const normalMs = (account.postingFrequencyMins || 60) * 60 * 1000;
+        runner.interval = setInterval(() => runAgentCycle(agentId), normalMs);
+      }
+      console.log(`[MultiTwitter] @${runner.username} intro tweet (template) posted: "${fallbackTweet.substring(0, 80)}..."`);
+      return { success: true, tweetText: fallbackTweet };
+    } catch (fallbackErr: any) {
+      console.error(`[MultiTwitter] @${runner.username} intro tweet failed: ${fallbackErr.message}`);
+      runner.lastError = `Intro tweet failed: ${fallbackErr.message}`;
+      runner.lastErrorAt = new Date();
+      return { success: false, error: fallbackErr.message };
+    }
+  }
+}
+
 const ROLE_MAP: Record<string, { title: string; focus: string; skills: string[]; tweetStyles: string[]; tone: string }> = {
   cmo: {
     title: "Chief Marketing Officer (CMO)",
