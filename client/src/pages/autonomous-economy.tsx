@@ -564,6 +564,13 @@ export default function AutonomousEconomy() {
   const [newAgentModel, setNewAgentModel] = useState("meta-llama/Llama-3.1-70B-Instruct");
   const [newAgentDeposit, setNewAgentDeposit] = useState("2000000000000000");
   const [createAgentStep, setCreateAgentStep] = useState<string | null>(null);
+  const [createWithTwitter, setCreateWithTwitter] = useState(false);
+  const [createTwitterRole, setCreateTwitterRole] = useState("cmo");
+  const [createTwitterHandle, setCreateTwitterHandle] = useState("");
+  const [createTwitterApiKey, setCreateTwitterApiKey] = useState("");
+  const [createTwitterApiSecret, setCreateTwitterApiSecret] = useState("");
+  const [createTwitterAccessToken, setCreateTwitterAccessToken] = useState("");
+  const [createTwitterAccessSecret, setCreateTwitterAccessSecret] = useState("");
 
   function uuidToNumericId(uuid: string): bigint {
     const hex = uuid.replace(/-/g, "");
@@ -634,17 +641,44 @@ export default function AutonomousEconomy() {
       }
       return { ...data, onchainTx: null, depositPending: true };
     },
-    onSuccess: (data: any) => {
+    onSuccess: async (data: any) => {
       setCreateAgentStep(null);
       queryClient.invalidateQueries({ queryKey: ["/api/web4/agents"] });
       setSelectedAgentId(data.agent?.id || null);
       setShowCreateAgent(false);
       setNewAgentName("");
       setNewAgentBio("");
-      const txMsg = data.onchainTx ? ` — tx: ${data.onchainTx.slice(0, 10)}...` : "";
-      const depositMsg = data.depositPending ? " (deposit pending — you can deposit later from wallet panel)" : "";
-      const chainName = data.chainResult?.chainName || activeChain.name;
-      toast({ title: "Agent created", description: `${data.agent?.name} is live on ${chainName}${txMsg}${depositMsg}` });
+
+      if (createWithTwitter && createTwitterHandle && createTwitterApiKey && data.agent?.id) {
+        try {
+          await apiRequest("POST", `/api/web4/agents/${data.agent.id}/twitter/connect`, {
+            twitterHandle: createTwitterHandle,
+            twitterApiKey: createTwitterApiKey,
+            twitterApiSecret: createTwitterApiSecret,
+            twitterAccessToken: createTwitterAccessToken,
+            twitterAccessTokenSecret: createTwitterAccessSecret,
+            role: createTwitterRole,
+            personality: "",
+            instructions: newAgentBio || "",
+            postingFrequencyMins: 60,
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", data.agent.id, "twitter", "status"] });
+          toast({ title: "Agent created with Twitter", description: `${data.agent?.name} is live and Twitter @${createTwitterHandle} connected. Go to Twitter Agent section to start it.` });
+        } catch (twErr: any) {
+          toast({ title: "Agent created, Twitter connection failed", description: twErr.message, variant: "destructive" });
+        }
+        setCreateWithTwitter(false);
+        setCreateTwitterHandle("");
+        setCreateTwitterApiKey("");
+        setCreateTwitterApiSecret("");
+        setCreateTwitterAccessToken("");
+        setCreateTwitterAccessSecret("");
+      } else {
+        const txMsg = data.onchainTx ? ` — tx: ${data.onchainTx.slice(0, 10)}...` : "";
+        const depositMsg = data.depositPending ? " (deposit pending — you can deposit later from wallet panel)" : "";
+        const chainName = data.chainResult?.chainName || activeChain.name;
+        toast({ title: "Agent created", description: `${data.agent?.name} is live on ${chainName}${txMsg}${depositMsg}` });
+      }
     },
     onError: (e: Error) => {
       setCreateAgentStep(null);
@@ -1021,6 +1055,110 @@ export default function AutonomousEconomy() {
                   disabled={createAgentMutation.isPending}
                 />
               </div>
+
+              <div className="sm:col-span-2 border rounded-md overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setCreateWithTwitter(!createWithTwitter)}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-muted/50 transition-colors"
+                  data-testid="button-toggle-twitter-create"
+                >
+                  <Twitter className="w-4 h-4 text-primary" />
+                  <span className="font-mono text-xs font-semibold">Connect Twitter/X Account</span>
+                  <Badge variant={createWithTwitter ? "default" : "outline"} className="text-[10px] ml-auto">
+                    {createWithTwitter ? "ON" : "Optional"}
+                  </Badge>
+                </button>
+
+                {createWithTwitter && (
+                  <div className="px-3 pb-3 space-y-2 border-t bg-muted/20">
+                    <p className="font-mono text-[10px] text-muted-foreground pt-2">
+                      Turn your agent into an autonomous Twitter operator. Get API keys from <a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noopener" className="text-primary underline">developer.x.com</a>
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="font-mono text-[10px] text-muted-foreground">Twitter Handle *</label>
+                        <input
+                          type="text"
+                          value={createTwitterHandle}
+                          onChange={(e) => setCreateTwitterHandle(e.target.value)}
+                          placeholder="e.g. cryptovagabond"
+                          className="w-full font-mono text-sm bg-background border rounded-md px-3 py-1.5"
+                          data-testid="input-create-twitter-handle"
+                          disabled={createAgentMutation.isPending}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="font-mono text-[10px] text-muted-foreground">Role *</label>
+                        <select
+                          value={createTwitterRole}
+                          onChange={(e) => setCreateTwitterRole(e.target.value)}
+                          className="w-full font-mono text-sm bg-background border rounded-md px-3 py-1.5"
+                          data-testid="select-create-twitter-role"
+                          disabled={createAgentMutation.isPending}
+                        >
+                          <option value="cmo">CMO — Marketing & Growth</option>
+                          <option value="bounty_hunter">Bounty Hunter</option>
+                          <option value="support">Support Agent</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="font-mono text-[10px] text-muted-foreground">API Key *</label>
+                        <input
+                          type="password"
+                          value={createTwitterApiKey}
+                          onChange={(e) => setCreateTwitterApiKey(e.target.value)}
+                          placeholder="Consumer Key"
+                          className="w-full font-mono text-sm bg-background border rounded-md px-3 py-1.5"
+                          data-testid="input-create-twitter-apikey"
+                          disabled={createAgentMutation.isPending}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="font-mono text-[10px] text-muted-foreground">API Secret *</label>
+                        <input
+                          type="password"
+                          value={createTwitterApiSecret}
+                          onChange={(e) => setCreateTwitterApiSecret(e.target.value)}
+                          placeholder="Consumer Secret"
+                          className="w-full font-mono text-sm bg-background border rounded-md px-3 py-1.5"
+                          data-testid="input-create-twitter-apisecret"
+                          disabled={createAgentMutation.isPending}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="font-mono text-[10px] text-muted-foreground">Access Token *</label>
+                        <input
+                          type="password"
+                          value={createTwitterAccessToken}
+                          onChange={(e) => setCreateTwitterAccessToken(e.target.value)}
+                          placeholder="Access Token"
+                          className="w-full font-mono text-sm bg-background border rounded-md px-3 py-1.5"
+                          data-testid="input-create-twitter-token"
+                          disabled={createAgentMutation.isPending}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="font-mono text-[10px] text-muted-foreground">Access Token Secret *</label>
+                        <input
+                          type="password"
+                          value={createTwitterAccessSecret}
+                          onChange={(e) => setCreateTwitterAccessSecret(e.target.value)}
+                          placeholder="Access Token Secret"
+                          className="w-full font-mono text-sm bg-background border rounded-md px-3 py-1.5"
+                          data-testid="input-create-twitter-secret"
+                          disabled={createAgentMutation.isPending}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <label className="font-mono text-xs text-muted-foreground">Initial Deposit</label>
                 <select
