@@ -4,6 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { Wallet, ExternalLink, ChevronDown, Smartphone, Globe } from "lucide-react";
 import { useState, useEffect } from "react";
 
+const isMobile = () => /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
+const hasInjectedWallet = () => typeof window !== "undefined" && !!(window as any).ethereum;
+
 export function WalletConnector() {
   const {
     connected,
@@ -27,7 +30,7 @@ export function WalletConnector() {
   useEffect(() => {
     if (error) {
       setDismissedError(false);
-      const timer = setTimeout(() => setDismissedError(true), 5000);
+      const timer = setTimeout(() => setDismissedError(true), 8000);
       return () => clearTimeout(timer);
     }
     setDismissedError(false);
@@ -42,7 +45,9 @@ export function WalletConnector() {
           variant="outline"
           size="sm"
           onClick={() => {
-            if (hasWalletConnect) {
+            if (isMobile() && hasInjectedWallet()) {
+              connect("metamask");
+            } else if (hasWalletConnect) {
               setShowOptions(!showOptions);
             } else {
               connect("metamask");
@@ -58,17 +63,19 @@ export function WalletConnector() {
 
         {showOptions && !connecting && (
           <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-card border rounded-lg shadow-xl p-2 space-y-1">
-            <button
-              onClick={() => { setShowOptions(false); connect("metamask"); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md hover:bg-accent transition-colors text-left"
-              data-testid="button-connect-metamask"
-            >
-              <Globe className="w-4 h-4 text-orange-500" />
-              <div>
-                <div className="font-mono text-xs font-medium">Browser Wallet</div>
-                <div className="font-mono text-[10px] text-muted-foreground">MetaMask, Brave, etc.</div>
-              </div>
-            </button>
+            {hasInjectedWallet() && (
+              <button
+                onClick={() => { setShowOptions(false); connect("metamask"); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md hover:bg-accent transition-colors text-left"
+                data-testid="button-connect-metamask"
+              >
+                <Globe className="w-4 h-4 text-orange-500" />
+                <div>
+                  <div className="font-mono text-xs font-medium">Browser Wallet</div>
+                  <div className="font-mono text-[10px] text-muted-foreground">MetaMask, Brave, etc.</div>
+                </div>
+              </button>
+            )}
             <button
               onClick={() => { setShowOptions(false); connect("walletconnect"); }}
               className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md hover:bg-accent transition-colors text-left"
@@ -77,9 +84,22 @@ export function WalletConnector() {
               <Smartphone className="w-4 h-4 text-blue-500" />
               <div>
                 <div className="font-mono text-xs font-medium">WalletConnect</div>
-                <div className="font-mono text-[10px] text-muted-foreground">Scan QR with mobile wallet</div>
+                <div className="font-mono text-[10px] text-muted-foreground">{isMobile() ? "Open your wallet app" : "Scan QR with mobile wallet"}</div>
               </div>
             </button>
+            {!hasInjectedWallet() && (
+              <button
+                onClick={() => { setShowOptions(false); connect("metamask"); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md hover:bg-accent transition-colors text-left"
+                data-testid="button-connect-metamask"
+              >
+                <Globe className="w-4 h-4 text-orange-500" />
+                <div>
+                  <div className="font-mono text-xs font-medium">Browser Wallet</div>
+                  <div className="font-mono text-[10px] text-muted-foreground">MetaMask extension, Brave, etc.</div>
+                </div>
+              </button>
+            )}
           </div>
         )}
 

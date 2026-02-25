@@ -192,6 +192,11 @@ function useWalletInternal() {
       wcRpcMap[84532] = "https://sepolia.base.org";
       wcRpcMap[1952] = "https://testrpc.xlayer.tech";
 
+      if (wcProviderRef.current) {
+        try { await wcProviderRef.current.disconnect(); } catch {}
+        wcProviderRef.current = null;
+      }
+
       const wcProvider = await EthereumProvider.init({
         projectId: wcProjectId,
         chains: [56],
@@ -239,15 +244,26 @@ function useWalletInternal() {
         }
       });
 
-      await wcProvider.enable();
+      const enableTimeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("WC_TIMEOUT")), 120000)
+      );
+      await Promise.race([wcProvider.enable(), enableTimeout]);
       await setupFromProvider(wcProvider, "walletconnect");
     } catch (err: any) {
-      const raw = err.message || "";
+      const raw = err.message || err.toString() || "";
       let friendly = "Failed to connect via WalletConnect. Please try again.";
-      if (raw.includes("user rejected") || raw.includes("User denied") || raw.includes("User closed")) {
-        friendly = "Connection cancelled. Click Connect Wallet to try again.";
+      if (raw.includes("user rejected") || raw.includes("User denied") || raw.includes("User closed") || raw.includes("modal_closed")) {
+        friendly = "Connection cancelled. Tap Connect Wallet to try again.";
+      } else if (raw.includes("WC_TIMEOUT")) {
+        friendly = "Connection timed out. Make sure you approve the request in your wallet app.";
       } else if (raw.includes("failed to fetch") || raw.includes("could not coalesce") || raw.includes("UNKNOWN_ERROR")) {
-        friendly = "Network issue — wallet connected but couldn't reach the blockchain. Try switching networks or refreshing the page.";
+        friendly = "Network issue — try switching networks in your wallet or refreshing the page.";
+      } else if (raw.includes("Missing or invalid") || raw.includes("projectId")) {
+        friendly = "WalletConnect configuration issue. Please try Browser Wallet instead.";
+      }
+      if (wcProviderRef.current) {
+        try { await wcProviderRef.current.disconnect(); } catch {}
+        wcProviderRef.current = null;
       }
       setState(s => ({
         ...s,
