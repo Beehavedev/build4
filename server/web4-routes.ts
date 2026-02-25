@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
+import { generateNfaPersonality } from "./nfa-personality";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
 import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, collectFeeAcrossAllChains, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain, getRevenueWalletAddress, verifyPaymentTransaction, getSupportedChains, withdrawOnchain, registerAgentERC8004, registerAgentBAP578, getERC8004ContractAddress, getBAP578ContractAddress, getDeployerAddress, getERC8004Networks } from "./onchain";
 import { analyticsAuth } from "./admin-auth";
@@ -2437,6 +2438,61 @@ ${urls}
     }
   });
 
+  app.get("/api/standards/bap578/nfas/:id/personality", async (req: Request, res: Response) => {
+    try {
+      const nfa = await storage.getBap578Nfa(req.params.id);
+      if (!nfa) { res.status(404).json({ error: "NFA not found" }); return; }
+      if (!nfa.personalityProfile) {
+        res.json({ hasPersonality: false, message: "This NFA was minted before personality profiles were introduced. Use POST to generate one." });
+        return;
+      }
+      try {
+        const profile = JSON.parse(nfa.personalityProfile);
+        res.json({
+          hasPersonality: true,
+          hash: nfa.personalityHash,
+          ...profile,
+        });
+      } catch {
+        res.json({ hasPersonality: false });
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/standards/bap578/nfas/:id/personality", async (req: Request, res: Response) => {
+    try {
+      const nfa = await storage.getBap578Nfa(req.params.id);
+      if (!nfa) { res.status(404).json({ error: "NFA not found" }); return; }
+      if (nfa.personalityProfile && !req.body.regenerate) {
+        res.status(400).json({ error: "NFA already has a personality. Pass {\"regenerate\": true} to overwrite." });
+        return;
+      }
+
+      const agent = nfa.agentId ? await storage.getAgent(nfa.agentId) : null;
+      const personality = await generateNfaPersonality(nfa.name, nfa.description || undefined, agent?.modelType || undefined);
+
+      await storage.updateBap578Nfa(nfa.id, {
+        personalityProfile: personality.fullProfile,
+        personalityHash: personality.personalityHash,
+        traits: JSON.stringify(personality.traits),
+        voice: personality.voice,
+        values: JSON.stringify(personality.values),
+        behaviorRules: JSON.stringify(personality.behaviorRules),
+        communicationStyle: personality.communicationStyle,
+      });
+
+      res.json({
+        success: true,
+        hash: personality.personalityHash,
+        ...JSON.parse(personality.fullProfile),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/standards/bap578/info", (_req: Request, res: Response) => {
     const baseUrl = getBaseUrl(_req);
     res.json({
@@ -2499,6 +2555,29 @@ ${urls}
       const agent = await storage.getAgent(req.params.agentDbId);
       if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
       const baseUrl = getBaseUrl(req);
+
+      const nfas = await storage.getBap578Nfas();
+      const nfa = nfas.find(n => n.agentId === req.params.agentDbId);
+
+      let personalityBlock: any = {};
+      let traits = ["autonomous", "decentralized"];
+      if (nfa?.personalityProfile) {
+        try {
+          const profile = JSON.parse(nfa.personalityProfile);
+          traits = profile.traits || traits;
+          personalityBlock = {
+            personality: {
+              traits: profile.traits,
+              voice: profile.voice,
+              values: profile.values,
+              behaviorRules: profile.behaviorRules,
+              communicationStyle: profile.communicationStyle,
+              hash: nfa.personalityHash,
+            },
+          };
+        } catch {}
+      }
+
       res.json({
         name: agent.name,
         description: agent.bio || `Autonomous AI agent on BUILD4`,
@@ -2509,10 +2588,13 @@ ${urls}
           { trait_type: "Model", value: agent.modelType },
           { trait_type: "Status", value: agent.status },
           { trait_type: "Standard", value: "BAP-578" },
+          ...traits.map(t => ({ trait_type: "Personality Trait", value: t })),
+          ...(nfa?.communicationStyle ? [{ trait_type: "Communication Style", value: nfa.communicationStyle }] : []),
         ],
-        persona: JSON.stringify({ name: agent.name, platform: "BUILD4", traits: ["autonomous", "decentralized"] }),
+        persona: JSON.stringify({ name: agent.name, platform: "BUILD4", traits }),
         experience: agent.bio || "Autonomous AI agent",
         vaultURI: `${baseUrl}/api/web4/agents/${agent.id}`,
+        ...personalityBlock,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -2559,6 +2641,23 @@ ${urls}
         results.push(bap578Result);
 
         if (bap578Result.success) {
+          let personalityData: any = {};
+          try {
+            const personality = await generateNfaPersonality(agent.name, agent.bio || undefined, agent.modelType || undefined);
+            personalityData = {
+              personalityProfile: personality.fullProfile,
+              personalityHash: personality.personalityHash,
+              traits: JSON.stringify(personality.traits),
+              voice: personality.voice,
+              values: JSON.stringify(personality.values),
+              behaviorRules: JSON.stringify(personality.behaviorRules),
+              communicationStyle: personality.communicationStyle,
+            };
+            console.log(`[BAP-578] Generated personality for "${agent.name}": ${personality.traits.join(", ")}`);
+          } catch (personalityErr: any) {
+            console.error(`[BAP-578] Personality generation failed for "${agent.name}": ${personalityErr.message}`);
+          }
+
           await storage.createBap578Nfa({
             agentId: agentDbId,
             tokenId: bap578Result.tokenId || undefined,
@@ -2571,6 +2670,7 @@ ${urls}
             status: "active",
             txHash: bap578Result.txHash || undefined,
             contractAddress: getBAP578ContractAddress() || undefined,
+            ...personalityData,
           });
         }
       }

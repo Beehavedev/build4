@@ -1175,6 +1175,13 @@ export const bap578Nfas = pgTable("bap578_nfas", {
   vaultPermissions: text("vault_permissions"),
   txHash: text("tx_hash"),
   contractAddress: text("contract_address"),
+  personalityProfile: text("personality_profile"),
+  personalityHash: text("personality_hash"),
+  traits: text("traits"),
+  voice: text("voice"),
+  values: text("values_text"),
+  behaviorRules: text("behavior_rules"),
+  communicationStyle: text("communication_style"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

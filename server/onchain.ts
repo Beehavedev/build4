@@ -1492,16 +1492,28 @@ export async function registerAgentBAP578(
 
     const metadataURI = `${baseUrl}/api/standards/bap578/agent-metadata/${agentDbId}`;
 
+    const { generateNfaPersonality } = await import("./nfa-personality");
+    let personalityTraits = ["autonomous", "decentralized"];
+    let voiceHashVal = "";
+    try {
+      const personality = await generateNfaPersonality(agentName, agentBio);
+      personalityTraits = personality.traits;
+      voiceHashVal = personality.personalityHash;
+      log(`[BAP-578] Personality generated for "${agentName}": ${personalityTraits.join(", ")}`, "onchain");
+    } catch (pErr: any) {
+      log(`[BAP-578] Personality generation skipped for "${agentName}": ${pErr.message}`, "onchain");
+    }
+
     const persona = JSON.stringify({
       name: agentName,
       platform: "BUILD4",
-      traits: ["autonomous", "decentralized"],
+      traits: personalityTraits,
     });
 
     const extendedMetadata = {
       persona,
       experience: agentBio || `Autonomous AI agent on BUILD4 platform`,
-      voiceHash: "",
+      voiceHash: voiceHashVal,
       animationURI: "",
       vaultURI: `${baseUrl}/api/web4/agents/${agentDbId}`,
       vaultHash: ethers.zeroPadValue("0x00", 32),

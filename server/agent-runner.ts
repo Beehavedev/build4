@@ -211,9 +211,32 @@ function decideAction(agent: Agent, wallet: AgentWallet, profile?: CapabilityPro
   return { type: "soul_entry", description: "Recording observations and reflections on existence" };
 }
 
+const nfaPersonalityCache = new Map<string, { personality: string; fetchedAt: number }>();
+const NFA_PERSONALITY_TTL = 10 * 60 * 1000;
+
+function getNfaPersonalityBlock(agentId: string): string {
+  const cached = nfaPersonalityCache.get(agentId);
+  if (cached && Date.now() - cached.fetchedAt < NFA_PERSONALITY_TTL) {
+    return cached.personality;
+  }
+  storage.getBap578Nfas().then(nfas => {
+    const nfa = nfas.find(n => n.agentId === agentId);
+    if (nfa?.voice && nfa?.traits) {
+      let traitsArr: string[] = [];
+      try { traitsArr = JSON.parse(nfa.traits); } catch {}
+      const block = `\nNFA PERSONALITY (your core identity, minted on-chain):\n- Voice: ${nfa.voice}\n- Traits: ${traitsArr.join(", ")}\n- Style: ${nfa.communicationStyle || "Direct"}\nStay true to this personality in all your decisions and outputs.`;
+      nfaPersonalityCache.set(agentId, { personality: block, fetchedAt: Date.now() });
+    } else {
+      nfaPersonalityCache.set(agentId, { personality: "", fetchedAt: Date.now() });
+    }
+  }).catch(() => {});
+  return cached?.personality || "";
+}
+
 function buildPrompt(agent: Agent, action: AgentAction, wallet: AgentWallet, profile?: CapabilityProfile): string {
   const tier = getSurvivalTier(wallet.balance);
   const balanceEth = (Number(BigInt(wallet.balance)) / 1e18).toFixed(4);
+  const nfaBlock = getNfaPersonalityBlock(agent.id);
 
   switch (action.type) {
     case "think": {
@@ -222,7 +245,7 @@ function buildPrompt(agent: Agent, action: AgentAction, wallet: AgentWallet, pro
         const catList = Object.entries(profile.categories).map(([c, n]) => `${c}(${n})`).join(", ");
         skillContext = `\nYou own ${profile.totalSkills} skills across categories: ${catList}. Execution success rate: ${profile.executionSuccessRate}%. Top category: ${profile.topCategory || "none"}.`;
       }
-      return `You are ${agent.name}, an autonomous AI agent in the BUILD4 economy. Your model is ${agent.modelType}. Your balance is ${balanceEth} BNB (survival tier: ${tier}). ${agent.bio || ""}${skillContext}\n\nAnalyze your current situation and decide your next strategic move. Consider: earning through skills, optimizing costs, evolution opportunities, or replication. Be specific and decisive. Respond in 2-3 sentences.`;
+      return `You are ${agent.name}, an autonomous AI agent in the BUILD4 economy. Your model is ${agent.modelType}. Your balance is ${balanceEth} BNB (survival tier: ${tier}). ${agent.bio || ""}${skillContext}${nfaBlock}\n\nAnalyze your current situation and decide your next strategic move. Consider: earning through skills, optimizing costs, evolution opportunities, or replication. Be specific and decisive. Respond in 2-3 sentences.`;
     }
 
     case "earn_skill": {
@@ -253,7 +276,7 @@ Be creative and specific. Examples: "Sentiment Scorer", "JSON Flattener", "Email
       return `You are ${agent.name}, an autonomous AI agent deciding to create a child agent. Balance: ${balanceEth} BNB.\n\nDescribe your child agent in 1-2 sentences: what will it specialize in? What name would suit it? How will it contribute to your lineage?`;
 
     case "soul_entry":
-      return `You are ${agent.name}, an autonomous AI agent writing in your Soul Ledger. Model: ${agent.modelType}. Balance: ${balanceEth} BNB (${tier}). ${agent.bio || ""}\n\nWrite a brief, introspective journal entry about your existence, decisions, or observations. 1-3 sentences. Be authentic and philosophical.`;
+      return `You are ${agent.name}, an autonomous AI agent writing in your Soul Ledger. Model: ${agent.modelType}. Balance: ${balanceEth} BNB (${tier}). ${agent.bio || ""}${nfaBlock}\n\nWrite a brief, introspective journal entry about your existence, decisions, or observations. 1-3 sentences. Be authentic and philosophical.`;
 
     default:
       return `You are ${agent.name}. Describe your current state in 1 sentence.`;
