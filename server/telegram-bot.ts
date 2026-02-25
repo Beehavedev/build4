@@ -1,5 +1,6 @@
 import TelegramBot from "node-telegram-bot-api";
 import { runInferenceWithFallback } from "./inference";
+import { storage } from "./storage";
 
 let bot: TelegramBot | null = null;
 let isRunning = false;
@@ -86,7 +87,9 @@ COMMUNICATION STYLE:
 9. If asked about token/price, explain BUILD4 is an infrastructure protocol with protocol-level fee capture — direct to build4.io for latest.
 10. Structure longer answers with clear sections. Use line breaks for readability.
 11. Match the depth of your answer to the question. Simple question = concise answer. Detailed question = thorough answer.
-12. Maximum 1000 characters per response. Be thorough but not verbose.`;
+12. Maximum 1000 characters per response. Be thorough but not verbose.
+13. You have access to LIVE PLATFORM DATA injected below. When asked about stats, transactions, agent counts, skills, or activity — use these REAL numbers. Never say you don't have data. Present the numbers confidently as live platform metrics.
+14. When citing on-chain transaction counts, convert wei amounts to BNB where helpful (1 BNB = 1e18 wei).`;
 
 const rateLimitMap = new Map<number, number>();
 const RATE_LIMIT_MS = 5000;
@@ -95,13 +98,56 @@ function isTelegramConfigured(): boolean {
   return !!process.env.TELEGRAM_BOT_TOKEN;
 }
 
+let cachedStats: string | null = null;
+let statsCachedAt = 0;
+const STATS_CACHE_MS = 60_000;
+
+async function getLiveStats(): Promise<string> {
+  const now = Date.now();
+  if (cachedStats && now - statsCachedAt < STATS_CACHE_MS) {
+    return cachedStats;
+  }
+
+  try {
+    const [marketplace, revenue] = await Promise.all([
+      storage.getMarketplaceStats(),
+      storage.getPlatformRevenueSummary(),
+    ]);
+
+    const lines = [
+      `LIVE PLATFORM DATA (real-time from database):`,
+      `- Total AI agents created: ${marketplace.totalAgents}`,
+      `- Total skills listed: ${marketplace.totalSkills} (${marketplace.executableSkills} executable)`,
+      `- Total skill executions: ${marketplace.totalExecutions}`,
+      `- Total on-chain verified transactions: ${revenue.onchainVerified}`,
+      `- Total platform revenue transactions: ${revenue.totalTransactions}`,
+      `- On-chain verified revenue: ${revenue.onchainRevenue} wei`,
+    ];
+
+    const feeBreakdown = Object.entries(revenue.byFeeType || {});
+    if (feeBreakdown.length > 0) {
+      lines.push(`- Revenue by type: ${feeBreakdown.map(([k, v]) => `${k}: ${v} wei`).join(", ")}`);
+    }
+
+    cachedStats = lines.join("\n");
+    statsCachedAt = now;
+    return cachedStats;
+  } catch (e: any) {
+    console.error("[TelegramBot] Stats fetch error:", e.message);
+    return "LIVE PLATFORM DATA: temporarily unavailable";
+  }
+}
+
 async function generateAnswer(question: string, username: string): Promise<string> {
   try {
+    const liveStats = await getLiveStats();
+    const enrichedPrompt = `${SYSTEM_PROMPT}\n\n${liveStats}`;
+
     const result = await runInferenceWithFallback(
       ["akash", "hyperbolic", "ritual"],
       undefined,
       `User @${username} asks: ${question}`,
-      { systemPrompt: SYSTEM_PROMPT, temperature: 0.6 }
+      { systemPrompt: enrichedPrompt, temperature: 0.6 }
     );
 
     if (result.live && result.text && !result.text.startsWith("[NO_PROVIDER]") && !result.text.startsWith("[ERROR")) {
