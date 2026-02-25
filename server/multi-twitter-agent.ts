@@ -338,6 +338,32 @@ async function postAutonomousContent(runner: AgentRunner, account: AgentTwitterA
   }
 }
 
+export async function postCustomTweet(agentId: string, tweetText: string): Promise<{ success: boolean; tweetText?: string; error?: string }> {
+  const runner = runners.get(agentId);
+  if (!runner) return { success: false, error: "Agent not running" };
+  try {
+    let text = tweetText.trim();
+    if (text.length > 280) text = text.substring(0, 277) + "...";
+    await runner.client.v2.tweet(text);
+    const account = await storage.getAgentTwitterAccount(agentId);
+    if (account) {
+      await storage.updateAgentTwitterAccount(agentId, {
+        lastPostedAt: new Date(),
+        totalTweets: (account.totalTweets || 0) + 1,
+      });
+    }
+    runner.consecutivePostErrors = 0;
+    runner.lastError = null;
+    runner.lastErrorAt = null;
+    console.log(`[MultiTwitter] @${runner.username} custom tweet posted: "${text.substring(0, 60)}..."`);
+    return { success: true, tweetText: text };
+  } catch (err: any) {
+    const rawDetail = JSON.stringify(err.data || err.errors || {});
+    console.error(`[MultiTwitter] @${runner.username} custom tweet failed: code=${err.code} msg=${err.message} raw=${rawDetail}`);
+    return { success: false, error: `${err.message} (raw: ${rawDetail})` };
+  }
+}
+
 export async function postIntroTweet(agentId: string): Promise<{ success: boolean; tweetText?: string; error?: string }> {
   const runner = runners.get(agentId);
   if (!runner) return { success: false, error: "Agent not running" };
