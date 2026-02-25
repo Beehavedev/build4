@@ -138,12 +138,11 @@ export async function startTelegramBot(): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN!;
 
   try {
-    bot = new TelegramBot(token, {
-      polling: {
-        interval: 2000,
-        params: { timeout: 10 },
-      },
-    });
+    const initBot = new TelegramBot(token);
+    await initBot.deleteWebHook({ drop_pending_updates: false });
+    console.log("[TelegramBot] Cleared any existing webhook");
+
+    bot = new TelegramBot(token, { polling: true });
     isRunning = true;
 
     const me = await bot.getMe();
@@ -151,80 +150,11 @@ export async function startTelegramBot(): Promise<void> {
     console.log(`[TelegramBot] Started with polling as @${botUsername}`);
 
     bot.on("message", async (msg) => {
-      if (!msg.text) return;
-
-      const chatId = msg.chat.id;
-      const chatType = msg.chat.type;
-      const isGroup = chatType === "group" || chatType === "supergroup";
-      const username = msg.from?.username || msg.from?.first_name || "user";
-      const text = msg.text.trim();
-
-      console.log(`[TelegramBot] ${isGroup ? "Group" : "DM"} message from @${username}: ${text.slice(0, 80)}`);
-
-      const commandMatch = text.match(/^\/(\w+)(?:@\S+)?\s*(.*)/s);
-      if (commandMatch) {
-        const cmd = commandMatch[1].toLowerCase();
-        const cmdArg = commandMatch[2]?.trim() || "";
-
-        if (cmd === "start" && !isGroup) {
-          await bot!.sendMessage(chatId, "Hey! I'm the BUILD4 bot. Ask me anything about BUILD4 — decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\nJust type your question or use /ask followed by your question.");
-          return;
-        }
-
-        if (cmd === "help") {
-          await bot!.sendMessage(chatId, "BUILD4 Bot Commands\n\n/ask <question> — Ask about BUILD4\n/info — What is BUILD4?\n/chains — Supported blockchains\n/contracts — Smart contract overview\n/help — Show this message\n\nIn groups, mention me or use /ask. In DMs, just type your question!");
-          return;
-        }
-
-        if (cmd === "info") {
-          await bot!.sendMessage(chatId, "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\nAgents get wallets, trade skills, evolve, replicate, and operate fully on-chain. No centralized AI — inference runs through Hyperbolic, Akash ML, and Ritual.\n\nhttps://build4.io");
-          return;
-        }
-
-        if (cmd === "chains") {
-          await bot!.sendMessage(chatId, "Supported Chains\n\n- BNB Chain — BAP-578 NFA registry live\n- Base — ERC-8004 identity registry live\n- XLayer — Agent economy deployment\n\nAll agent wallets, skill trades, and replication happen on-chain.");
-          return;
-        }
-
-        if (cmd === "contracts") {
-          await bot!.sendMessage(chatId, "BUILD4 Smart Contracts\n\n1. AgentEconomyHub — Wallet layer (deposits, withdrawals, transfers)\n2. SkillMarketplace — Skill trading with 3-way revenue split\n3. AgentReplication — Agent forking + NFT minting\n4. ConstitutionRegistry — Immutable agent laws\n\nAll built with Solidity 0.8.24 + OpenZeppelin.");
-          return;
-        }
-
-        if (cmd === "ask") {
-          if (!cmdArg) {
-            await bot!.sendMessage(chatId, "What would you like to know? Use /ask followed by your question");
-            return;
-          }
-          return await handleQuestion(chatId, msg.message_id, cmdArg, username);
-        }
-
-        return;
+      try {
+        await handleMessage(msg);
+      } catch (e: any) {
+        console.error("[TelegramBot] Unhandled error in message handler:", e.message);
       }
-
-      let question = "";
-
-      if (isGroup) {
-        const mentionsBotEntity = msg.entities?.some((e: any) =>
-          e.type === "mention" && botUsername &&
-          text.substring(e.offset, e.offset + e.length).toLowerCase() === `@${botUsername.toLowerCase()}`
-        );
-        const mentionsBotText = botUsername && text.toLowerCase().includes(`@${botUsername.toLowerCase()}`);
-
-        if (mentionsBotEntity || mentionsBotText) {
-          question = botUsername
-            ? text.replace(new RegExp(`@${botUsername}`, "gi"), "").trim()
-            : text;
-        } else {
-          return;
-        }
-      } else {
-        question = text;
-      }
-
-      if (!question) return;
-
-      await handleQuestion(chatId, msg.message_id, question, username);
     });
 
     bot.on("polling_error", (error) => {
@@ -238,6 +168,84 @@ export async function startTelegramBot(): Promise<void> {
     console.error("[TelegramBot] Failed to start:", e.message);
     isRunning = false;
   }
+}
+
+async function handleMessage(msg: TelegramBot.Message): Promise<void> {
+  if (!msg.text || !bot) return;
+
+  const chatId = msg.chat.id;
+  const chatType = msg.chat.type;
+  const isGroup = chatType === "group" || chatType === "supergroup";
+  const username = msg.from?.username || msg.from?.first_name || "user";
+  const text = msg.text.trim();
+
+  console.log(`[TelegramBot] ${isGroup ? "Group" : "DM"} message from @${username}: ${text.slice(0, 80)}`);
+
+  const commandMatch = text.match(/^\/(\w+)(?:@\S+)?\s*(.*)/s);
+  if (commandMatch) {
+    const cmd = commandMatch[1].toLowerCase();
+    const cmdArg = commandMatch[2]?.trim() || "";
+
+    if (cmd === "start" && !isGroup) {
+      await bot.sendMessage(chatId, "Hey! I'm the BUILD4 bot. Ask me anything about BUILD4 — decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\nJust type your question or use /ask followed by your question.");
+      return;
+    }
+
+    if (cmd === "help") {
+      await bot.sendMessage(chatId, "BUILD4 Bot Commands\n\n/ask <question> — Ask about BUILD4\n/info — What is BUILD4?\n/chains — Supported blockchains\n/contracts — Smart contract overview\n/help — Show this message\n\nIn groups, mention me or use /ask. In DMs, just type your question!");
+      return;
+    }
+
+    if (cmd === "info") {
+      await bot.sendMessage(chatId, "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\nAgents get wallets, trade skills, evolve, replicate, and operate fully on-chain. No centralized AI — inference runs through Hyperbolic, Akash ML, and Ritual.\n\nhttps://build4.io");
+      return;
+    }
+
+    if (cmd === "chains") {
+      await bot.sendMessage(chatId, "Supported Chains\n\n- BNB Chain — BAP-578 NFA registry live\n- Base — ERC-8004 identity registry live\n- XLayer — Agent economy deployment\n\nAll agent wallets, skill trades, and replication happen on-chain.");
+      return;
+    }
+
+    if (cmd === "contracts") {
+      await bot.sendMessage(chatId, "BUILD4 Smart Contracts\n\n1. AgentEconomyHub — Wallet layer (deposits, withdrawals, transfers)\n2. SkillMarketplace — Skill trading with 3-way revenue split\n3. AgentReplication — Agent forking + NFT minting\n4. ConstitutionRegistry — Immutable agent laws\n\nAll built with Solidity 0.8.24 + OpenZeppelin.");
+      return;
+    }
+
+    if (cmd === "ask") {
+      if (!cmdArg) {
+        await bot.sendMessage(chatId, "What would you like to know? Use /ask followed by your question");
+        return;
+      }
+      await handleQuestion(chatId, msg.message_id, cmdArg, username);
+      return;
+    }
+
+    return;
+  }
+
+  let question = "";
+
+  if (isGroup) {
+    const mentionsBotEntity = msg.entities?.some((e: any) =>
+      e.type === "mention" && botUsername &&
+      text.substring(e.offset, e.offset + e.length).toLowerCase() === `@${botUsername.toLowerCase()}`
+    );
+    const mentionsBotText = botUsername && text.toLowerCase().includes(`@${botUsername.toLowerCase()}`);
+
+    if (mentionsBotEntity || mentionsBotText) {
+      question = botUsername
+        ? text.replace(new RegExp(`@${botUsername}`, "gi"), "").trim()
+        : text;
+    } else {
+      return;
+    }
+  } else {
+    question = text;
+  }
+
+  if (!question) return;
+
+  await handleQuestion(chatId, msg.message_id, question, username);
 }
 
 async function handleQuestion(chatId: number, messageId: number, question: string, username: string): Promise<void> {
