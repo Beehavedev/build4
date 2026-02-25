@@ -209,6 +209,8 @@ async function processAgentMentions(runner: AgentRunner, account: AgentTwitterAc
   } catch (err: any) {
     if (err.code === 429) {
       console.log(`[MultiTwitter] @${runner.username} rate limited on search`);
+    } else if (err.code === 402 || err.message?.includes("402")) {
+      console.log(`[MultiTwitter] @${runner.username} mention search skipped — Twitter Free tier doesn't support search API. Upgrade to Basic ($100/mo) for auto-reply.`);
     } else {
       console.error(`[MultiTwitter] Mention processing error for ${runner.agentId}:`, err.message);
     }
@@ -272,6 +274,14 @@ async function postAutonomousContent(runner: AgentRunner, account: AgentTwitterA
     if (err.code === 429) {
       console.log(`[MultiTwitter] @${runner.username} rate limited on posting`);
       runner.lastError = "Rate limited by Twitter. Your app may have hit its posting limit. Wait a few minutes.";
+      runner.lastErrorAt = new Date();
+    } else if (err.code === 403 || err.message?.includes("403")) {
+      console.error(`[MultiTwitter] @${runner.username} 403 Forbidden — app lacks Write permissions`);
+      runner.lastError = "Twitter returned 403 Forbidden. Your Twitter app needs Read+Write permissions. Go to developer.x.com → your app → Settings → App permissions → set to 'Read and Write'. After changing permissions, you MUST regenerate your Access Token and Secret, then update them in Settings here.";
+      runner.lastErrorAt = new Date();
+    } else if (err.code === 402 || err.message?.includes("402")) {
+      console.error(`[MultiTwitter] @${runner.username} 402 — Twitter API tier doesn't support this`);
+      runner.lastError = "Twitter API returned 402. Your API plan may not support posting. Make sure you have at least the Free tier active at developer.x.com.";
       runner.lastErrorAt = new Date();
     } else if (err.message?.includes("duplicate")) {
       console.log(`[MultiTwitter] @${runner.username} duplicate tweet skipped`);
