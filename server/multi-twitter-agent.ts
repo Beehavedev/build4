@@ -129,6 +129,8 @@ async function runAgentCycle(agentId: string) {
 
   } catch (err: any) {
     console.error(`[MultiTwitter] Cycle error for ${agentId}:`, err.message);
+    runner.lastError = err.message;
+    runner.lastErrorAt = new Date();
   } finally {
     runner.isProcessing = false;
   }
@@ -260,10 +262,14 @@ async function postAutonomousContent(runner: AgentRunner, account: AgentTwitterA
   } catch (err: any) {
     if (err.code === 429) {
       console.log(`[MultiTwitter] @${runner.username} rate limited on posting`);
+      runner.lastError = "Rate limited by Twitter. Your app may have hit its posting limit. Wait a few minutes.";
+      runner.lastErrorAt = new Date();
     } else if (err.message?.includes("duplicate")) {
       console.log(`[MultiTwitter] @${runner.username} duplicate tweet skipped`);
     } else {
       console.error(`[MultiTwitter] Post error for ${runner.agentId}:`, err.message);
+      runner.lastError = err.message;
+      runner.lastErrorAt = new Date();
     }
   }
 }

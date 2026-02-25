@@ -3122,6 +3122,15 @@ export default function AutonomousEconomy() {
                   </Button>
                   <Button
                     size="sm"
+                    variant="outline"
+                    onClick={() => setShowTwitterHelp(!showTwitterHelp)}
+                    data-testid="button-twitter-help"
+                  >
+                    <HelpCircle className="w-3.5 h-3.5 mr-1.5" />
+                    Help
+                  </Button>
+                  <Button
+                    size="sm"
                     variant="destructive"
                     onClick={() => {
                       if (confirm("Disconnect Twitter from this agent? This will stop all autonomous activity.")) {
@@ -3222,6 +3231,114 @@ export default function AutonomousEconomy() {
                     >
                       {twitterSettingsMutation.isPending ? "Saving..." : "Save Settings"}
                     </Button>
+                  </Card>
+                )}
+
+                {showTwitterHelp && (
+                  <Card className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+                    <div className="flex items-center gap-2">
+                      <HelpCircle className="w-4 h-4 text-primary" />
+                      <span className="text-xs font-semibold">Diagnostics & Help</span>
+                    </div>
+
+                    {twitterStatus.diagnostics && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          {twitterStatus.diagnostics.status === "healthy" && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+                          {twitterStatus.diagnostics.status === "warning" && <AlertTriangle className="w-4 h-4 text-yellow-500" />}
+                          {twitterStatus.diagnostics.status === "error" && <XCircle className="w-4 h-4 text-red-500" />}
+                          <span className="font-mono text-xs font-bold">
+                            {twitterStatus.diagnostics.status === "healthy" ? "All Systems Healthy" :
+                             twitterStatus.diagnostics.status === "warning" ? "Needs Attention" : "Issues Found"}
+                          </span>
+                        </div>
+
+                        {twitterStatus.diagnostics.issues.length > 0 && (
+                          <div className="space-y-1.5">
+                            {twitterStatus.diagnostics.issues.map((issue: string, i: number) => (
+                              <div key={i} className="flex items-start gap-2 p-2 rounded-md bg-destructive/10 border border-destructive/20">
+                                <XCircle className="w-3.5 h-3.5 text-destructive mt-0.5 shrink-0" />
+                                <span className="font-mono text-[11px] text-destructive">{issue}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {twitterStatus.diagnostics.tips.length > 0 && (
+                          <div className="space-y-1.5">
+                            {twitterStatus.diagnostics.tips.map((tip: string, i: number) => (
+                              <div key={i} className="flex items-start gap-2 p-2 rounded-md bg-blue-500/10 border border-blue-500/20">
+                                <AlertTriangle className="w-3.5 h-3.5 text-blue-500 mt-0.5 shrink-0" />
+                                <span className="font-mono text-[11px] text-blue-400">{tip}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="border-t pt-3 space-y-3">
+                      <div className="text-xs font-semibold">Common Issues & Fixes</div>
+
+                      <div className="space-y-2.5">
+                        <div className="space-y-1">
+                          <div className="font-mono text-[11px] font-bold">Agent won't start</div>
+                          <ul className="text-[10px] text-muted-foreground space-y-0.5 pl-3 list-disc">
+                            <li>Check that all 4 Twitter API credentials are entered correctly</li>
+                            <li>Make sure your Twitter app has Read and Write permissions</li>
+                            <li>Regenerate your Access Token if it was created before enabling Write access</li>
+                          </ul>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="font-mono text-[11px] font-bold">Agent started but no tweets</div>
+                          <ul className="text-[10px] text-muted-foreground space-y-0.5 pl-3 list-disc">
+                            <li>The first tweet posts after the posting frequency interval (default: 60 minutes)</li>
+                            <li>Check if inference providers are available — the agent needs AI to generate content</li>
+                            <li>Try stopping and restarting the agent</li>
+                          </ul>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="font-mono text-[11px] font-bold">Rate limited by Twitter</div>
+                          <ul className="text-[10px] text-muted-foreground space-y-0.5 pl-3 list-disc">
+                            <li>Free Twitter API tier allows ~17 tweets per 24 hours</li>
+                            <li>Increase your posting frequency (e.g. 120 minutes instead of 60)</li>
+                            <li>Upgrade your Twitter API plan for higher limits</li>
+                          </ul>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="font-mono text-[11px] font-bold">Tweets are too generic</div>
+                          <ul className="text-[10px] text-muted-foreground space-y-0.5 pl-3 list-disc">
+                            <li>Fill in your Company Profile in Settings — name, product, audience, and key messages</li>
+                            <li>Add specific Instructions telling the agent what topics to focus on</li>
+                            <li>Set a Personality to give the agent a unique voice</li>
+                          </ul>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="font-mono text-[11px] font-bold">Agent not replying to mentions</div>
+                          <ul className="text-[10px] text-muted-foreground space-y-0.5 pl-3 list-disc">
+                            <li>Auto-reply is enabled by default. Make sure the agent is running</li>
+                            <li>The agent checks mentions every cycle — wait for the next interval</li>
+                            <li>Twitter API must have Read access to see mentions</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t pt-3 space-y-2">
+                      <div className="text-xs font-semibold">Getting Twitter API Keys</div>
+                      <ol className="text-[10px] text-muted-foreground space-y-1 pl-3 list-decimal">
+                        <li>Go to <a href="https://developer.twitter.com" target="_blank" rel="noopener" className="text-primary underline">developer.twitter.com</a> and sign in</li>
+                        <li>Create a new Project and App (Free tier works)</li>
+                        <li>In App Settings, set User Authentication to Read and Write</li>
+                        <li>Go to Keys and Tokens tab</li>
+                        <li>Copy: API Key, API Secret, Access Token, Access Token Secret</li>
+                        <li>If you changed permissions, regenerate Access Token and Secret</li>
+                      </ol>
+                    </div>
                   </Card>
                 )}
 
