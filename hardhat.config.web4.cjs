@@ -53,4 +53,23 @@ module.exports = {
       accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
     },
   },
+  sourcify: {
+    enabled: true,
+  },
+  etherscan: {
+    apiKey: {
+      bsc: process.env.BSCSCAN_API_KEY || "PLACEHOLDER",
+      base: process.env.BASESCAN_API_KEY || "PLACEHOLDER",
+    },
+    customChains: [
+      {
+        network: "xlayerMainnet",
+        chainId: 196,
+        urls: {
+          apiURL: "https://www.oklink.com/api/v5/explorer/contract/verify-source-code-plugin/XLAYER",
+          browserURL: "https://www.oklink.com/xlayer",
+        },
+      },
+    ],
+  },
 };
