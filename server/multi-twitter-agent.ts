@@ -312,17 +312,18 @@ async function postAutonomousContent(runner: AgentRunner, account: AgentTwitterA
       }
       runner.lastError = fixMessage;
       runner.lastErrorAt = new Date();
-      if (runner.consecutivePostErrors >= 3) {
+      if (runner.consecutivePostErrors >= 10) {
         console.error(`[MultiTwitter] @${runner.username} auto-paused after ${runner.consecutivePostErrors} consecutive 403 errors. Fix credentials and restart.`);
         await stopAgentTwitter(runner.agentId);
         await storage.updateAgentTwitterAccount(runner.agentId, { enabled: 0 });
       }
     } else if (err.code === 402 || err.message?.includes("402")) {
       runner.consecutivePostErrors++;
-      console.error(`[MultiTwitter] @${runner.username} 402 (${runner.consecutivePostErrors}/3) — Twitter API tier doesn't support this`);
-      runner.lastError = "Twitter API returned 402. Your API plan may not support posting. Make sure you have at least the Free tier active at developer.x.com.";
+      const rawData402 = JSON.stringify(err.data || err.errors || {});
+      console.error(`[MultiTwitter] @${runner.username} 402 (${runner.consecutivePostErrors}/10) — raw: ${rawData402} | msg: ${err.message}`);
+      runner.lastError = `Twitter API returned 402: ${rawData402}. Check your app status at developer.x.com — your Free tier may need reactivation.`;
       runner.lastErrorAt = new Date();
-      if (runner.consecutivePostErrors >= 3) {
+      if (runner.consecutivePostErrors >= 10) {
         console.error(`[MultiTwitter] @${runner.username} auto-paused after ${runner.consecutivePostErrors} consecutive 402 errors. Check API tier and restart.`);
         await stopAgentTwitter(runner.agentId);
         await storage.updateAgentTwitterAccount(runner.agentId, { enabled: 0 });
@@ -414,10 +415,11 @@ export async function postIntroTweet(agentId: string): Promise<{ success: boolea
       console.log(`[MultiTwitter] @${runner.username} intro tweet (template) posted: "${fallbackTweet.substring(0, 80)}..."`);
       return { success: true, tweetText: fallbackTweet };
     } catch (fallbackErr: any) {
-      console.error(`[MultiTwitter] @${runner.username} intro tweet failed: ${fallbackErr.message}`);
+      const rawDetail = JSON.stringify(fallbackErr.data || fallbackErr.errors || fallbackErr.rateLimit || {});
+      console.error(`[MultiTwitter] @${runner.username} intro tweet failed: code=${fallbackErr.code} msg=${fallbackErr.message} raw=${rawDetail}`);
       runner.lastError = `Intro tweet failed: ${fallbackErr.message}`;
       runner.lastErrorAt = new Date();
-      return { success: false, error: fallbackErr.message };
+      return { success: false, error: `${fallbackErr.message} (raw: ${rawDetail})` };
     }
   }
 }
