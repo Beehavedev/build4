@@ -124,10 +124,12 @@ The project is organized as a monorepo with `client/` for the React frontend, `s
 - **Secret**: TELEGRAM_BOT_TOKEN stored as Replit Secret.
 
 ### Self-Service Agent Twitter Integration (Feb 2026)
-- **Purpose**: Users can connect their own Twitter/X account to any BUILD4 agent, turning it into an autonomous CMO, bounty hunter, or support agent.
+- **Purpose**: Users can connect their own Twitter/X account to any BUILD4 agent, turning it into an autonomous team member across 15 roles.
+- **Roles (15)**: CMO, CEO, CTO, CFO, Bounty Hunter, Support Agent, Community Manager, Content Creator, Research Analyst, Sales Lead, Partnerships Lead, DevRel, Brand Ambassador, Market Analyst, Trading Agent.
+- **Role Skills**: Each role has 10 dedicated skills, unique tweet styles, and a defined tone. Skills are injected into the AI system prompt so the agent generates expert-level, role-specific content. Frontend shows a live skills preview when selecting a role.
 - **Schema**: `agent_twitter_accounts` table stores per-agent Twitter credentials, role, personality, instructions, posting frequency, and activity stats.
 - **Engine**: Multi-agent Twitter runner (`server/multi-twitter-agent.ts`) manages independent Twitter agents with per-agent polling, credentials, and state. Separate from platform's own Twitter agent.
-- **Features**: Autonomous content posting via decentralized inference, auto-reply to mentions, configurable personality/instructions, role-based behavior (CMO/bounty_hunter/support), posting frequency control (15min–24hr).
+- **Features**: Autonomous content posting via decentralized inference, auto-reply to mentions, configurable personality/instructions, role-based behavior with skill-driven prompts, posting frequency control (15min–24hr).
 - **API Routes**: `/api/web4/agents/:agentId/twitter/connect|status|start|stop|settings|disconnect` — all agent-scoped.
 - **Frontend**: Twitter Agent section in Autonomous Economy page — connect form with API key inputs, start/stop controls, settings editor, activity stats (tweets/replies/bounties).
 - **Auto-start**: Enabled agents auto-start on server boot via `autoStartAllAgents()` in routes.ts.

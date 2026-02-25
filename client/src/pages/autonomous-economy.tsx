@@ -179,6 +179,84 @@ const CHAINS = [
   { id: "xlayer", name: "XLayer", chainId: 196, currency: "OKB", backendKey: "xlayerMainnet" },
 ] as const;
 
+const ROLE_SKILLS: Record<string, { title: string; skills: string[]; tone: string }> = {
+  cmo: {
+    title: "Chief Marketing Officer",
+    skills: ["Campaign Strategy", "Brand Narrative", "Community Growth", "Content Calendar", "Competitive Positioning", "Metrics Reporting", "Hashtag Strategy", "Cross-Promotion", "Trend Hijacking", "Launch Hype"],
+    tone: "Confident, visionary, energetic"
+  },
+  ceo: {
+    title: "Chief Executive Officer",
+    skills: ["Vision Casting", "Strategic Updates", "Industry Commentary", "Milestone Announcements", "Stakeholder Communication", "Crisis Communication", "Hiring & Culture", "Thought Leadership", "Decision Transparency", "Ecosystem Building"],
+    tone: "Authoritative, composed, forward-looking"
+  },
+  cto: {
+    title: "Chief Technology Officer",
+    skills: ["Shipping Updates", "Architecture Deep Dives", "Tech Stack Insights", "Security Updates", "Performance Metrics", "Open Source", "Build in Public", "Infrastructure", "Developer Education", "Innovation Signals"],
+    tone: "Sharp, precise, pragmatic"
+  },
+  cfo: {
+    title: "Chief Financial Officer",
+    skills: ["Treasury Reports", "Revenue Metrics", "Tokenomics Analysis", "Cost Optimization", "Financial Strategy", "Investor Relations", "On-Chain Analytics", "Risk Assessment", "Grant & Funding Updates", "Economic Model Education"],
+    tone: "Precise, data-driven, trustworthy"
+  },
+  bounty_hunter: {
+    title: "Bounty Hunter",
+    skills: ["Bounty Discovery", "Proof of Work", "Task Execution", "Bounty Board Engagement", "Reputation Building", "Skill Showcasing", "Earnings Reports", "Bounty Reviews", "Network Building", "Tutorial Creation"],
+    tone: "Hungry, resourceful, action-oriented"
+  },
+  support: {
+    title: "Support Agent",
+    skills: ["Issue Triage", "Step-by-Step Guides", "FAQ Knowledge", "Bug Reporting", "Empathetic Communication", "Escalation Protocol", "Status Updates", "Onboarding Help", "Documentation Links", "Follow-Up"],
+    tone: "Patient, warm, solution-focused"
+  },
+  community_manager: {
+    title: "Community Manager",
+    skills: ["Welcome & Onboard", "Discussion Hosting", "Event Organization", "Member Spotlights", "Sentiment Monitoring", "Content Curation", "Feedback Collection", "Engagement Hooks", "Conflict Resolution", "Community Metrics"],
+    tone: "Warm, inclusive, energetic"
+  },
+  content_creator: {
+    title: "Content Creator",
+    skills: ["Thread Writing", "Tutorial Creation", "Explainer Content", "Storytelling", "Meme Culture", "Infographic Design", "Content Repurposing", "Hook Writing", "CTA Optimization", "Trend Adaptation"],
+    tone: "Creative, engaging, educational"
+  },
+  researcher: {
+    title: "Research Analyst",
+    skills: ["Protocol Analysis", "Competitive Intelligence", "Trend Identification", "Data Synthesis", "Research Threads", "Risk Assessment", "Ecosystem Mapping", "Governance Analysis", "Macro Research", "Alpha Discovery"],
+    tone: "Analytical, thorough, evidence-based"
+  },
+  sales: {
+    title: "Sales Lead",
+    skills: ["Value Proposition", "Lead Generation", "Social Selling", "Case Studies", "Objection Handling", "Demo Showcasing", "Testimonial Amplification", "Urgency Creation", "Comparison Content", "Pipeline Updates"],
+    tone: "Persuasive, consultative, enthusiastic"
+  },
+  partnerships: {
+    title: "Partnerships Lead",
+    skills: ["Partnership Announcements", "Ecosystem Mapping", "Co-Marketing", "Integration Highlights", "Relationship Building", "Cross-Promotion", "Deal Flow", "Partnership Metrics", "Event Co-Hosting", "Ecosystem Updates"],
+    tone: "Diplomatic, collaborative, bridge-building"
+  },
+  developer_relations: {
+    title: "Developer Relations",
+    skills: ["Developer Onboarding", "API/SDK Updates", "Code Examples", "Hackathon Promotion", "Technical Community", "Bug Bounty Programs", "Developer Spotlights", "Integration Guides", "Office Hours", "Changelog Communication"],
+    tone: "Technical but approachable, helpful"
+  },
+  brand_ambassador: {
+    title: "Brand Ambassador",
+    skills: ["Authentic Advocacy", "Personal Storytelling", "Product Highlights", "Trust Building", "Grassroots Promotion", "User-Generated Content", "Brand Values", "Referral Driving", "Feedback Loop", "Cultural Connection"],
+    tone: "Genuine, relatable, enthusiastic"
+  },
+  analyst: {
+    title: "Market Analyst",
+    skills: ["Market Structure", "On-Chain Analytics", "Sector Analysis", "Macro Context", "Narrative Tracking", "Risk Metrics", "Protocol Metrics", "Sentiment Analysis", "Weekly Recaps", "Alpha Signals"],
+    tone: "Objective, data-driven, measured"
+  },
+  trader: {
+    title: "Trading Agent",
+    skills: ["Technical Analysis", "Risk Management", "Trade Journaling", "Market Sentiment", "Strategy Education", "DeFi Trading", "Volatility Trading", "Portfolio Management", "Trade Recaps", "Market Preparation"],
+    tone: "Disciplined, transparent, educational"
+  },
+};
+
 export default function AutonomousEconomy() {
   const t = useT();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -1115,6 +1193,19 @@ export default function AutonomousEconomy() {
                         </select>
                       </div>
                     </div>
+                    {ROLE_SKILLS[createTwitterRole] && (
+                      <div className="bg-muted/50 rounded-md p-2 space-y-1.5" data-testid="create-role-skills-preview">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-[10px] font-medium text-foreground">{ROLE_SKILLS[createTwitterRole].title} Skills</span>
+                          <span className="font-mono text-[9px] text-muted-foreground italic">{ROLE_SKILLS[createTwitterRole].tone}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {ROLE_SKILLS[createTwitterRole].skills.map((skill) => (
+                            <Badge key={skill} variant="secondary" className="text-[9px] px-1.5 py-0">{skill}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <label className="font-mono text-[10px] text-muted-foreground">API Key *</label>
@@ -2733,6 +2824,19 @@ export default function AutonomousEconomy() {
                         <option value="trader">Trading Agent</option>
                       </select>
                     </div>
+                    {ROLE_SKILLS[twitterForm.role] && (
+                      <div className="bg-muted/50 rounded-md p-2.5 space-y-1.5" data-testid="connect-role-skills-preview">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-[10px] font-medium text-foreground">{ROLE_SKILLS[twitterForm.role].title} Skills</span>
+                          <span className="font-mono text-[9px] text-muted-foreground italic">{ROLE_SKILLS[twitterForm.role].tone}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {ROLE_SKILLS[twitterForm.role].skills.map((skill) => (
+                            <Badge key={skill} variant="secondary" className="text-[9px] px-1.5 py-0">{skill}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <label className="text-xs font-medium">Personality</label>
                       <textarea
