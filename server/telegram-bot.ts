@@ -138,7 +138,12 @@ export async function startTelegramBot(): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN!;
 
   try {
-    bot = new TelegramBot(token, { polling: true });
+    bot = new TelegramBot(token, {
+      polling: {
+        interval: 2000,
+        params: { timeout: 10 },
+      },
+    });
     isRunning = true;
 
     const me = await bot.getMe();
@@ -223,6 +228,9 @@ export async function startTelegramBot(): Promise<void> {
     });
 
     bot.on("polling_error", (error) => {
+      if (error.message?.includes("409 Conflict")) {
+        return;
+      }
       console.error("[TelegramBot] Polling error:", error.message);
     });
 
