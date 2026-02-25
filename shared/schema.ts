@@ -1011,7 +1011,7 @@ export const agentTwitterConnectSchema = z.object({
   twitterApiSecret: z.string().min(1),
   twitterAccessToken: z.string().min(1),
   twitterAccessTokenSecret: z.string().min(1),
-  role: z.enum(["cmo", "bounty_hunter", "support"]).default("cmo"),
+  role: z.enum(["cmo", "ceo", "cto", "cfo", "bounty_hunter", "support", "community_manager", "content_creator", "researcher", "sales", "partnerships", "developer_relations", "brand_ambassador", "analyst", "trader"]).default("cmo"),
   personality: z.string().max(1000).optional(),
   instructions: z.string().max(2000).optional(),
   postingFrequencyMins: z.number().min(15).max(1440).default(60),
