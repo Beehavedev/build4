@@ -130,8 +130,11 @@ The project is organized as a monorepo with `client/` for the React frontend, `s
 - **Schema**: `agent_twitter_accounts` table stores per-agent Twitter credentials, role, personality, instructions, posting frequency, and activity stats.
 - **Engine**: Multi-agent Twitter runner (`server/multi-twitter-agent.ts`) manages independent Twitter agents with per-agent polling, credentials, and state. Separate from platform's own Twitter agent.
 - **Features**: Autonomous content posting via decentralized inference, auto-reply to mentions, configurable personality/instructions, role-based behavior with skill-driven prompts, posting frequency control (15min–24hr).
-- **API Routes**: `/api/web4/agents/:agentId/twitter/connect|status|start|stop|settings|disconnect` — all agent-scoped.
-- **Frontend**: Twitter Agent section in Autonomous Economy page — connect form with API key inputs, start/stop controls, settings editor, activity stats (tweets/replies/bounties).
+- **API Routes**: `/api/web4/agents/:agentId/twitter/connect|status|start|stop|settings|disconnect` — all agent-scoped, ownership-verified via `x-wallet-address` header (only the agent's creator can modify).
+- **Diagnostics**: Status endpoint returns live health diagnostics (missing keys, last errors, tips for improvement). Frontend Help panel shows diagnostics + common issues + API key setup guide.
+- **Error Tracking**: Runner tracks `lastError` and `lastErrorAt` per agent; surfaced in status API and Help panel.
+- **Live Interval Updates**: Changing posting frequency in Settings immediately updates the running agent's interval (no restart needed).
+- **Frontend**: Twitter Agent section in Autonomous Economy page — connect form with API key inputs, start/stop controls, settings editor, Help/diagnostics panel, activity stats (tweets/replies/bounties).
 - **Auto-start**: Enabled agents auto-start on server boot via `autoStartAllAgents()` in routes.ts.
 
 ### Replit-Specific Integrations

@@ -124,6 +124,7 @@ function useWalletInternal() {
     const balance = formatEther(balanceWei);
 
     try { localStorage.setItem("build4_wallet_type", walletType); } catch {}
+    try { localStorage.setItem("connectedWallet", address); } catch {}
 
     setState({
       connected: true,
@@ -249,6 +250,7 @@ function useWalletInternal() {
 
   const disconnect = useCallback(async () => {
     try { localStorage.removeItem("build4_wallet_type"); } catch {}
+    try { localStorage.removeItem("connectedWallet"); } catch {}
     if (wcProviderRef.current) {
       try {
         await wcProviderRef.current.disconnect();

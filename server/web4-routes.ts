@@ -33,7 +33,7 @@ import {
 } from "@shared/schema";
 import { executeSkillCode, validateSkillCode, executeSkillWithExternalData } from "./skill-executor";
 import { seedKnownPlatforms, runHttpOutreach, runOnchainBeacon, runFullOutreach, runDirectRecruitment, getOutreachMessage, getPlatformRegistry, getAnnouncementFormats, startAutoBroadcast, stopAutoBroadcast, getAutoBroadcastStatus } from "./outreach";
-import { startAgentTwitter, stopAgentTwitter, getAgentTwitterStatus } from "./multi-twitter-agent";
+import { startAgentTwitter, stopAgentTwitter, getAgentTwitterStatus, updateAgentTwitterInterval } from "./multi-twitter-agent";
 import { agentTwitterConnectSchema, agentTwitterSettingsSchema } from "@shared/schema";
 
 function getBaseUrl(req: Request): string {
@@ -2741,11 +2741,23 @@ ${urls}
     });
   });
 
+  const verifyAgentOwnership = async (req: Request, res: Response): Promise<any | null> => {
+    const { agentId } = req.params;
+    const agent = await storage.getAgent(agentId);
+    if (!agent) { res.status(404).json({ error: "Agent not found" }); return null; }
+    const callerWallet = (req.headers["x-wallet-address"] as string || "").toLowerCase();
+    if (agent.creatorWallet && callerWallet && agent.creatorWallet.toLowerCase() !== callerWallet) {
+      res.status(403).json({ error: "You are not the owner of this agent" });
+      return null;
+    }
+    return agent;
+  };
+
   app.post("/api/web4/agents/:agentId/twitter/connect", async (req: Request, res: Response) => {
     try {
+      const agent = await verifyAgentOwnership(req, res);
+      if (!agent) return;
       const { agentId } = req.params;
-      const agent = await storage.getAgent(agentId);
-      if (!agent) return res.status(404).json({ error: "Agent not found" });
 
       const existing = await storage.getAgentTwitterAccount(agentId);
       if (existing) return res.status(409).json({ error: "Twitter already connected. Disconnect first." });
@@ -2764,6 +2776,12 @@ ${urls}
         personality: parsed.data.personality || "",
         instructions: parsed.data.instructions || "",
         postingFrequencyMins: parsed.data.postingFrequencyMins,
+        companyName: parsed.data.companyName || "",
+        companyDescription: parsed.data.companyDescription || "",
+        companyProduct: parsed.data.companyProduct || "",
+        companyAudience: parsed.data.companyAudience || "",
+        companyWebsite: parsed.data.companyWebsite || "",
+        companyKeyMessages: parsed.data.companyKeyMessages || "",
         enabled: 0,
         autoReplyEnabled: 1,
         autoBountyEnabled: 0,
@@ -2848,6 +2866,8 @@ ${urls}
 
   app.post("/api/web4/agents/:agentId/twitter/start", async (req: Request, res: Response) => {
     try {
+      const agent = await verifyAgentOwnership(req, res);
+      if (!agent) return;
       const { agentId } = req.params;
       const result = await startAgentTwitter(agentId);
       if (!result.success) return res.status(400).json({ error: result.error });
@@ -2859,6 +2879,8 @@ ${urls}
 
   app.post("/api/web4/agents/:agentId/twitter/stop", async (req: Request, res: Response) => {
     try {
+      const agent = await verifyAgentOwnership(req, res);
+      if (!agent) return;
       const { agentId } = req.params;
       await stopAgentTwitter(agentId);
       res.json({ success: true, message: "Twitter agent stopped" });
@@ -2869,6 +2891,8 @@ ${urls}
 
   app.patch("/api/web4/agents/:agentId/twitter/settings", async (req: Request, res: Response) => {
     try {
+      const agent = await verifyAgentOwnership(req, res);
+      if (!agent) return;
       const { agentId } = req.params;
       const account = await storage.getAgentTwitterAccount(agentId);
       if (!account) return res.status(404).json({ error: "No Twitter account connected" });
@@ -2877,6 +2901,9 @@ ${urls}
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
       const updated = await storage.updateAgentTwitterAccount(agentId, parsed.data);
+      if (parsed.data.postingFrequencyMins) {
+        updateAgentTwitterInterval(agentId, parsed.data.postingFrequencyMins);
+      }
       res.json({ success: true, account: updated });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2885,6 +2912,8 @@ ${urls}
 
   app.delete("/api/web4/agents/:agentId/twitter/disconnect", async (req: Request, res: Response) => {
     try {
+      const agent = await verifyAgentOwnership(req, res);
+      if (!agent) return;
       const { agentId } = req.params;
       await stopAgentTwitter(agentId);
       await storage.deleteAgentTwitterAccount(agentId);

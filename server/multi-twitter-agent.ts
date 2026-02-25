@@ -96,6 +96,15 @@ export function getAgentTwitterStatus(agentId: string): { running: boolean; hand
   };
 }
 
+export function updateAgentTwitterInterval(agentId: string, newFrequencyMins: number): void {
+  const runner = runners.get(agentId);
+  if (!runner) return;
+  if (runner.interval) clearInterval(runner.interval);
+  const intervalMs = Math.max(newFrequencyMins, 15) * 60 * 1000;
+  runner.interval = setInterval(() => runAgentCycle(agentId), intervalMs);
+  console.log(`[MultiTwitter] Updated posting interval for ${agentId} to ${newFrequencyMins}m`);
+}
+
 export function getAllRunningAgents(): string[] {
   return Array.from(runners.keys());
 }
