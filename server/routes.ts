@@ -548,7 +548,7 @@ export async function registerRoutes(
     });
   }
 
-  if (process.env.TELEGRAM_BOT_TOKEN && process.env.NODE_ENV !== "development") {
+  if (process.env.TELEGRAM_BOT_TOKEN) {
     startTelegramBot();
   }
 
