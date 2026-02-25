@@ -114,6 +114,15 @@ The project is organized as a monorepo with `client/` for the React frontend, `s
 - **Ticket Categories**: financial, bug_report, bounty, skill_marketplace, agent_management, privacy, security_concern, question, general.
 - **Priorities**: high (security concerns, bug reports, financial issues) and normal.
 
+### Telegram Bot (Feb 2026)
+- **Purpose**: Group-ready bot that answers questions about BUILD4 using decentralized inference.
+- **Engine**: Background process (`server/telegram-bot.ts`) using `node-telegram-bot-api` with long-polling.
+- **Features**: Responds to /ask commands, @mentions in groups, and direct messages. Built-in commands: /start, /help, /info, /chains, /contracts. Rate-limited per user (5s cooldown). Falls back to hardcoded answers if inference unavailable.
+- **AI**: Uses `runInferenceWithFallback` (Akash → Hyperbolic → Ritual) with a comprehensive BUILD4 knowledge base system prompt.
+- **API Routes**: `/api/telegram/status`, `/api/telegram/start`, `/api/telegram/stop` (all admin-authed via analyticsAuth).
+- **Auto-start**: Starts automatically on server boot if TELEGRAM_BOT_TOKEN is set.
+- **Secret**: TELEGRAM_BOT_TOKEN stored as Replit Secret.
+
 ### Replit-Specific Integrations
 - **@replit/vite-plugin-runtime-error-modal**: Development error display.
 - **@replit/vite-plugin-cartographer**: Replit-specific dev tooling.

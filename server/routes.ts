@@ -9,6 +9,7 @@ import { startBountyEngine } from "./bounty-engine";
 import { startTwitterAgent, stopTwitterAgent, getTwitterAgentStatus, runTwitterAgentCycle, postBountyTweet } from "./twitter-agent";
 import { startSupportAgent, stopSupportAgent, getSupportAgentStatus, runSupportAgentCycle } from "./twitter-support-agent";
 import { isTwitterConfigured } from "./twitter-client";
+import { startTelegramBot, stopTelegramBot, getTelegramBotStatus } from "./telegram-bot";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
 import { registerSeoPrerender } from "./seo-prerender";
 import { analyticsAuth, generateAnalyticsToken } from "./admin-auth";
@@ -546,6 +547,24 @@ export async function registerRoutes(
       console.error("[SupportAgent] Failed to start:", err.message);
     });
   }
+
+  if (process.env.TELEGRAM_BOT_TOKEN) {
+    startTelegramBot();
+  }
+
+  app.get("/api/telegram/status", analyticsAuth, (req: Request, res: Response) => {
+    res.json(getTelegramBotStatus());
+  });
+
+  app.post("/api/telegram/start", analyticsAuth, (req: Request, res: Response) => {
+    startTelegramBot();
+    res.json({ success: true, message: "Telegram bot started" });
+  });
+
+  app.post("/api/telegram/stop", analyticsAuth, (req: Request, res: Response) => {
+    stopTelegramBot();
+    res.json({ success: true, message: "Telegram bot stopped" });
+  });
 
   return httpServer;
 }
