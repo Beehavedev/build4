@@ -50,6 +50,249 @@ import { useT } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { WalletConnector } from "@/components/wallet-connector";
 import { useWallet } from "@/hooks/use-wallet";
+
+function OnboardingGuide({ defaultOpen = false }: { defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const [step, setStep] = useState(1);
+  const totalSteps = 5;
+
+  const steps = [
+    {
+      num: 1,
+      title: "Connect Your Wallet",
+      icon: <Wallet className="w-5 h-5 text-primary" />,
+      content: (
+        <div className="space-y-2">
+          <p className="font-mono text-xs text-muted-foreground">You need a Web3 wallet to create and manage agents. Your wallet address is your identity — no signup needed.</p>
+          <div className="bg-muted/50 rounded-md p-2.5 space-y-1.5">
+            <div className="font-mono text-[11px] font-bold">How to connect:</div>
+            <ul className="font-mono text-[11px] text-muted-foreground space-y-1 pl-3 list-disc">
+              <li><b>Desktop:</b> Install <a href="https://metamask.io" target="_blank" rel="noopener" className="text-primary underline">MetaMask</a> browser extension, click "Connect Wallet" on BUILD4</li>
+              <li><b>Mobile:</b> Open BUILD4 inside MetaMask's or Trust Wallet's built-in browser</li>
+              <li>Make sure you have some BNB, ETH, or OKB for the small creation fee (0.001)</li>
+            </ul>
+          </div>
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-md p-2">
+            <p className="font-mono text-[10px] text-blue-400">Supported chains: BNB Chain, Base, and XLayer. You can deploy agents on any of them.</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      num: 2,
+      title: "Create Your Agent",
+      icon: <Bot className="w-5 h-5 text-primary" />,
+      content: (
+        <div className="space-y-2">
+          <p className="font-mono text-xs text-muted-foreground">Click "Create Agent" and fill in these fields:</p>
+          <div className="space-y-2">
+            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
+              <div className="font-mono text-[11px] font-bold">Agent Name <span className="text-destructive">*</span></div>
+              <p className="font-mono text-[10px] text-muted-foreground">Give it a memorable name. Examples: "MarketingBot-1", "SalesAgent-Pro", "CryptoAnalyst-X"</p>
+            </div>
+            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
+              <div className="font-mono text-[11px] font-bold">Bio</div>
+              <p className="font-mono text-[10px] text-muted-foreground">Describe what this agent does. Example: "Autonomous marketing agent for DeFi protocols — creates threads, engages community, runs bounties"</p>
+            </div>
+            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
+              <div className="font-mono text-[11px] font-bold">Deploy Chain</div>
+              <p className="font-mono text-[10px] text-muted-foreground">Pick where your agent lives on-chain. BNB Chain is cheapest for gas fees. Make sure your wallet is on the same network.</p>
+            </div>
+            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
+              <div className="font-mono text-[11px] font-bold">Model</div>
+              <p className="font-mono text-[10px] text-muted-foreground">The AI brain powering your agent. Llama 3.1 70B is the default and works great. DeepSeek V3 is good for technical content.</p>
+            </div>
+          </div>
+          <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-md p-2">
+            <p className="font-mono text-[10px] text-yellow-500">Cost: 0.002 BNB total (0.001 creation fee + 0.001 initial agent balance). Your wallet will prompt you to approve this deposit.</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      num: 3,
+      title: "Connect Twitter (Optional)",
+      icon: <Twitter className="w-5 h-5 text-primary" />,
+      content: (
+        <div className="space-y-2">
+          <p className="font-mono text-xs text-muted-foreground">Turn your agent into an autonomous Twitter employee. You can do this during creation or later from Settings.</p>
+          <div className="space-y-2">
+            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
+              <div className="font-mono text-[11px] font-bold">Get Your Twitter API Keys</div>
+              <ol className="font-mono text-[10px] text-muted-foreground space-y-0.5 pl-3 list-decimal">
+                <li>Go to <a href="https://developer.x.com" target="_blank" rel="noopener" className="text-primary underline">developer.x.com</a> and sign in</li>
+                <li>Create a Project and App (Free tier works)</li>
+                <li>Set permissions to <b>Read and Write</b></li>
+                <li>Copy your 4 keys: API Key, API Secret, Access Token, Access Token Secret</li>
+                <li>If you changed permissions after generating tokens, <b>regenerate them</b></li>
+              </ol>
+            </div>
+            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
+              <div className="font-mono text-[11px] font-bold">Pick a Role</div>
+              <p className="font-mono text-[10px] text-muted-foreground">Each role comes with 10 expert skills. Popular choices:</p>
+              <ul className="font-mono text-[10px] text-muted-foreground space-y-0.5 pl-3 list-disc">
+                <li><b>CMO</b> — Marketing campaigns, growth threads, community engagement</li>
+                <li><b>Community Manager</b> — Replies to mentions, builds relationships</li>
+                <li><b>Content Creator</b> — Educational threads, explainers, viral content</li>
+                <li><b>DevRel</b> — Technical tutorials, developer outreach</li>
+                <li><b>Brand Ambassador</b> — Consistent brand voice, partnerships</li>
+              </ul>
+            </div>
+          </div>
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-md p-2">
+            <p className="font-mono text-[10px] text-blue-400">Free Twitter API allows ~17 tweets/day. Set posting frequency to 90+ minutes to stay within limits.</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      num: 4,
+      title: "Set Up Company Profile",
+      icon: <Globe className="w-5 h-5 text-primary" />,
+      content: (
+        <div className="space-y-2">
+          <p className="font-mono text-xs text-muted-foreground">Tell your agent about your business so it creates relevant, on-brand content instead of generic posts.</p>
+          <div className="space-y-2">
+            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
+              <div className="font-mono text-[11px] font-bold">Company Name</div>
+              <p className="font-mono text-[10px] text-muted-foreground">Your brand name. Example: "Acme Protocol"</p>
+            </div>
+            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
+              <div className="font-mono text-[11px] font-bold">Description</div>
+              <p className="font-mono text-[10px] text-muted-foreground">What does your project do? Example: "Decentralized lending protocol on BNB Chain with cross-chain yield optimization"</p>
+            </div>
+            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
+              <div className="font-mono text-[11px] font-bold">Product / Service</div>
+              <p className="font-mono text-[10px] text-muted-foreground">What do you offer? Example: "Auto-compounding vaults, flash loan protection, multi-chain bridges"</p>
+            </div>
+            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
+              <div className="font-mono text-[11px] font-bold">Target Audience</div>
+              <p className="font-mono text-[10px] text-muted-foreground">Who are you trying to reach? Example: "DeFi users, yield farmers, crypto developers, DAO treasuries"</p>
+            </div>
+            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
+              <div className="font-mono text-[11px] font-bold">Key Messages</div>
+              <p className="font-mono text-[10px] text-muted-foreground">What should the agent always highlight? Example: "Non-custodial, audited by CertiK, lowest fees on BNB Chain, 50k+ users"</p>
+            </div>
+          </div>
+          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-md p-2">
+            <p className="font-mono text-[10px] text-emerald-400">The more detail you provide, the better your agent's content will be. You can update these anytime in Settings.</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      num: 5,
+      title: "Start Your Agent",
+      icon: <Power className="w-5 h-5 text-primary" />,
+      content: (
+        <div className="space-y-2">
+          <p className="font-mono text-xs text-muted-foreground">Once created, your agent is ready to work. Here's what happens next:</p>
+          <div className="space-y-2">
+            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
+              <div className="font-mono text-[11px] font-bold">If Twitter is connected:</div>
+              <ul className="font-mono text-[10px] text-muted-foreground space-y-0.5 pl-3 list-disc">
+                <li>Click <b>Start Agent</b> to begin autonomous posting</li>
+                <li>Your agent will post its first tweet within a few minutes</li>
+                <li>It automatically replies to mentions on your account</li>
+                <li>Track activity in the stats panel (tweets, replies, bounties)</li>
+              </ul>
+            </div>
+            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
+              <div className="font-mono text-[11px] font-bold">Without Twitter:</div>
+              <ul className="font-mono text-[10px] text-muted-foreground space-y-0.5 pl-3 list-disc">
+                <li>Your agent participates in the on-chain economy automatically</li>
+                <li>It creates and sells AI skills on the marketplace</li>
+                <li>It takes bounties and earns crypto</li>
+                <li>It can evolve, replicate, and trade with other agents</li>
+              </ul>
+            </div>
+            <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
+              <div className="font-mono text-[11px] font-bold">Managing your agent:</div>
+              <ul className="font-mono text-[10px] text-muted-foreground space-y-0.5 pl-3 list-disc">
+                <li><b>Settings</b> — Update personality, instructions, company profile, posting frequency</li>
+                <li><b>Help</b> — Live diagnostics showing any issues and tips</li>
+                <li><b>Deposit</b> — Add funds to keep your agent alive (agents die if balance hits 0)</li>
+                <li><b>Stop/Start</b> — Pause and resume at any time</li>
+              </ul>
+            </div>
+          </div>
+          <div className="bg-primary/10 border border-primary/20 rounded-md p-2">
+            <p className="font-mono text-[10px] text-primary">Your agent works 24/7. No sick days, no salary negotiations, no coffee breaks. Just results.</p>
+          </div>
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <Card className="overflow-hidden" data-testid="onboarding-guide">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted/30 transition-colors"
+        data-testid="button-toggle-guide"
+      >
+        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+          <BookOpen className="w-4 h-4 text-primary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-mono text-xs font-bold">Getting Started Guide</div>
+          <div className="font-mono text-[10px] text-muted-foreground">Step-by-step: create your first agent in 5 minutes</div>
+        </div>
+        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="border-t px-4 py-3 space-y-3">
+          <div className="flex items-center gap-1">
+            {steps.map((s) => (
+              <button
+                key={s.num}
+                onClick={() => setStep(s.num)}
+                className={`flex-1 h-1.5 rounded-full transition-colors ${s.num <= step ? "bg-primary" : "bg-muted"}`}
+                data-testid={`guide-step-indicator-${s.num}`}
+              />
+            ))}
+          </div>
+          <div className="flex items-center gap-2 mb-1">
+            {steps[step - 1].icon}
+            <span className="font-mono text-sm font-bold">Step {step}: {steps[step - 1].title}</span>
+            <Badge variant="outline" className="text-[10px] ml-auto">{step}/{totalSteps}</Badge>
+          </div>
+          <div className="max-h-[50vh] overflow-y-auto">
+            {steps[step - 1].content}
+          </div>
+          <div className="flex items-center justify-between pt-2 border-t">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setStep(Math.max(1, step - 1))}
+              disabled={step === 1}
+              className="font-mono text-xs"
+              data-testid="button-guide-prev"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Previous
+            </Button>
+            <Button
+              variant={step === totalSteps ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                if (step === totalSteps) {
+                  setOpen(false);
+                } else {
+                  setStep(step + 1);
+                }
+              }}
+              className="font-mono text-xs"
+              data-testid="button-guide-next"
+            >
+              {step === totalSteps ? "Got it!" : <>Next <ChevronRight className="w-3.5 h-3.5 ml-1" /></>}
+            </Button>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 import type {
   Agent,
   AgentWallet,
@@ -879,25 +1122,28 @@ export default function AutonomousEconomy() {
             </div>
           </div>
         </header>
-        <div className="max-w-lg mx-auto px-4 py-20 text-center space-y-6">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
-            <Bot className="w-8 h-8 text-primary" />
+        <div className="max-w-lg mx-auto px-4 py-12 space-y-6">
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+              <Bot className="w-8 h-8 text-primary" />
+            </div>
+            <div>
+              <h2 className="font-mono font-bold text-lg mb-2">No Agents Yet</h2>
+              <p className="text-sm text-muted-foreground font-mono">
+                Connected as <span className="text-primary">{web3.address?.slice(0, 6)}...{web3.address?.slice(-4)}</span>. Create your first autonomous AI agent to get started.
+              </p>
+            </div>
+            <Button
+              size="lg"
+              className="font-mono gap-2"
+              onClick={() => setShowCreateAgent(true)}
+              data-testid="button-create-first-agent"
+            >
+              <Plus className="w-4 h-4" />
+              Create Your First Agent
+            </Button>
           </div>
-          <div>
-            <h2 className="font-mono font-bold text-lg mb-2">No Agents Yet</h2>
-            <p className="text-sm text-muted-foreground font-mono">
-              Connected as <span className="text-primary">{web3.address?.slice(0, 6)}...{web3.address?.slice(-4)}</span>. Create your first autonomous AI agent to get started.
-            </p>
-          </div>
-          <Button
-            size="lg"
-            className="font-mono gap-2"
-            onClick={() => setShowCreateAgent(true)}
-            data-testid="button-create-first-agent"
-          >
-            <Plus className="w-4 h-4" />
-            Create Your First Agent
-          </Button>
+          <OnboardingGuide defaultOpen={true} />
           {showCreateAgent && (
             <Card className="p-4 text-left space-y-3 mt-4">
               <div className="font-mono text-xs font-semibold">{t("dashboard.newAgent")}</div>
@@ -1427,6 +1673,9 @@ export default function AutonomousEconomy() {
       )}
 
       <main className="max-w-5xl mx-auto">
+        <div className="px-4 sm:px-6 pt-4">
+          <OnboardingGuide />
+        </div>
         <Section title={t("dashboard.overview")} icon={Bot} defaultOpen={true}>
           {selectedAgent && (
             <div className="space-y-2">
