@@ -3319,7 +3319,7 @@ export default function AutonomousEconomy() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <Card className="p-3">
                     <div className="text-[10px] text-muted-foreground uppercase">Account</div>
-                    <div className="font-mono text-sm font-bold" data-testid="text-twitter-handle">@{twitterStatus.handle}</div>
+                    <div className="font-mono text-sm font-bold" data-testid="text-twitter-handle">@{(twitterStatus.handle || "").replace(/^@/, "")}</div>
                   </Card>
                   <Card className="p-3">
                     <div className="text-[10px] text-muted-foreground uppercase">Status</div>

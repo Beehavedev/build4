@@ -2767,7 +2767,7 @@ ${urls}
 
       const account = await storage.createAgentTwitterAccount({
         agentId,
-        twitterHandle: parsed.data.twitterHandle,
+        twitterHandle: (parsed.data.twitterHandle || "").replace(/^@/, ""),
         twitterApiKey: parsed.data.twitterApiKey,
         twitterApiSecret: parsed.data.twitterApiSecret,
         twitterAccessToken: parsed.data.twitterAccessToken,
