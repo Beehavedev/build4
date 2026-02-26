@@ -1013,7 +1013,7 @@ export type InsertAgentTwitterAccount = z.infer<typeof insertAgentTwitterAccount
 export type AgentTwitterAccount = typeof agentTwitterAccounts.$inferSelect;
 
 export const agentTwitterConnectSchema = z.object({
-  twitterHandle: z.string().min(1).max(50),
+  twitterHandle: z.string().max(50).optional().default(""),
   twitterApiKey: z.string().min(1),
   twitterApiSecret: z.string().min(1),
   twitterAccessToken: z.string().min(1),
