@@ -244,7 +244,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
   const username = msg.from?.username || msg.from?.first_name || "user";
   const text = msg.text.trim();
 
-  console.log(`[TelegramBot] ${isGroup ? "Group" : "DM"} message from @${username}: ${text.slice(0, 80)}`);
+  console.log(`[TelegramBot] ${isGroup ? "Group" : "DM"} message from @${username} (chatId: ${chatId}): ${text.slice(0, 80)}`);
 
   const commandMatch = text.match(/^\/(\w+)(?:@\S+)?\s*(.*)/s);
   if (commandMatch) {
@@ -252,12 +252,17 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     const cmdArg = commandMatch[2]?.trim() || "";
 
     if (cmd === "start" && !isGroup) {
-      await bot.sendMessage(chatId, "Hey! I'm the BUILD4 bot. Ask me anything about BUILD4 — decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\nJust type your question or use /ask followed by your question.");
+      await bot.sendMessage(chatId, `Hey! I'm the BUILD4 bot. Ask me anything about BUILD4 — decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\nYour Telegram Chat ID: ${chatId}\nUse this in your agent settings to receive strategy memos.\n\nJust type your question or use /ask followed by your question.`);
+      return;
+    }
+
+    if (cmd === "mychatid") {
+      await bot.sendMessage(chatId, `Your Telegram Chat ID is: ${chatId}\n\nCopy this number and paste it into the Telegram Chat ID field in your agent's Twitter settings on BUILD4 to receive strategy memos.`);
       return;
     }
 
     if (cmd === "help") {
-      await bot.sendMessage(chatId, "BUILD4 Bot Commands\n\n/ask <question> — Ask about BUILD4\n/info — What is BUILD4?\n/chains — Supported blockchains\n/contracts — Smart contract overview\n/help — Show this message\n\nIn groups, mention me or use /ask. In DMs, just type your question!");
+      await bot.sendMessage(chatId, "BUILD4 Bot Commands\n\n/ask <question> — Ask about BUILD4\n/info — What is BUILD4?\n/chains — Supported blockchains\n/contracts — Smart contract overview\n/mychatid — Get your Chat ID for strategy notifications\n/help — Show this message\n\nIn groups, mention me or use /ask. In DMs, just type your question!");
       return;
     }
 
