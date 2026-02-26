@@ -200,6 +200,8 @@ async function processAgentMentions(runner: AgentRunner, account: AgentTwitterAc
 
       const authorUsername = users.get(tweet.author_id || "") || "someone";
 
+      if (authorUsername.toLowerCase() === runner.username.toLowerCase()) continue;
+
       try {
         const replyText = await generateAgentReply(account, agent, tweet.text, authorUsername);
         if (replyText) {
