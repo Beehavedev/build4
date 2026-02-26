@@ -104,13 +104,16 @@ The project uses a monorepo with `client/` for the React frontend, `server/` for
 - **Frontend**: Twitter Agent section in Autonomous Economy page with connect wizard, controls, settings, help panel, and activity stats.
 
 ### CMO Strategy Brain
-- **Purpose**: Autonomous strategy generation for Twitter agents — go-to-market plans, content calendars, performance analysis, and strategic recommendations.
-- **Schema**: `agent_strategy_memos` table (id, agentId, memoType, title, content, summary, metrics, status, createdAt). `ownerTelegramChatId` field on `agent_twitter_accounts`.
-- **Engine**: `runStrategyCycle()` in `server/multi-twitter-agent.ts` runs every 12 hours per agent. Generates memos via decentralized inference, supersedes previous active strategies, and injects active strategy into tweet generation system prompt.
-- **Memo Types**: strategy, content_calendar, performance_report, gtm_plan, pivot_recommendation.
+- **Purpose**: Autonomous strategy generation for Twitter agents — go-to-market plans, content calendars, performance analysis, and strategic recommendations with a closed-loop feedback system.
+- **Schema**: `agent_strategy_memos` table (id, agentId, memoType, title, content, summary, metrics, status, createdAt). `tweet_performance` table (id, agentId, tweetId, tweetText, strategyMemoId, themeAlignment, alignedThemes, engagementScore, createdAt). `strategy_action_items` table (id, agentId, memoId, action, priority, status, completedAt, createdAt). `ownerTelegramChatId` field on `agent_twitter_accounts`.
+- **Engine**: `runStrategyCycle()` in `server/multi-twitter-agent.ts` runs every 12 hours per agent. Generates strategy memos via decentralized inference, supersedes previous active strategies, and injects active strategy into tweet generation system prompt. Each cycle also generates a performance report (using tweet scoring data), content calendar (10 planned tweets), and extracts owner action items.
+- **Tweet Scoring**: `scoreTweetAgainstStrategy()` runs after every autonomous tweet post — scores alignment (0-100%) against active strategy themes via inference. Stored in `tweet_performance` table.
+- **Performance Feedback Loop**: `getPerformanceFeedback()` aggregates tweet scoring data (avg alignment, high/low alignment counts, top themes) and injects it into the strategy prompt so each new strategy is data-driven.
+- **Separate Memo Types**: strategy, content_calendar, performance_report, gtm_plan, pivot_recommendation — each generated independently with role-appropriate prompts.
+- **Action Items**: `extractAndStoreActionItems()` parses strategy memos to extract 3-7 actionable recommendations for the agent owner, stored with priority (high/medium/low) and status (pending/done/skipped).
 - **Telegram Notifications**: If `ownerTelegramChatId` is set, strategy summaries are sent to the owner via `sendTelegramMessage()`.
-- **API Routes**: `GET /api/web4/agents/:agentId/strategy` (list memos), `GET /api/web4/agents/:agentId/strategy/active` (current active), `POST /api/web4/agents/:agentId/strategy/generate` (manual trigger).
-- **Frontend**: Strategy Dashboard in Twitter Agent section with active strategy display, past memo list with type badges and expandable content, "Generate Strategy Now" button, Telegram Chat ID input in Settings.
+- **API Routes**: `GET /api/web4/agents/:agentId/strategy` (list memos), `GET /api/web4/agents/:agentId/strategy/active` (current active), `POST /api/web4/agents/:agentId/strategy/generate` (manual trigger), `GET /api/web4/agents/:agentId/performance` (tweet scoring data with aggregated metrics), `GET /api/web4/agents/:agentId/action-items` (owner action items), `PATCH /api/web4/agents/:agentId/action-items/:itemId` (update action item status).
+- **Frontend**: Strategy Dashboard in Twitter Agent section with performance metrics panel (avg alignment, tweets scored, themes hit, per-tweet scores), action items checklist with complete/skip buttons and priority badges, active strategy display, past memo list with type-specific icons and expandable content, "Generate Strategy Now" button, Telegram Chat ID input in Settings.
 
 ## External Dependencies
 

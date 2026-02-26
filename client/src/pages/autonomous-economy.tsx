@@ -543,7 +543,7 @@ export default function AutonomousEconomy() {
 
   const myAgents = web3.address
     ? visibleAgents.filter(a => a.creatorWallet?.toLowerCase() === web3.address?.toLowerCase())
-    : [];
+    : visibleAgents;
 
   const selectedAgent = myAgents.find((a) => a.id === selectedAgentId) || myAgents[0];
   const agentId = selectedAgent?.id;
@@ -1171,45 +1171,7 @@ export default function AutonomousEconomy() {
     );
   }
 
-  if (!web3.connected) {
-    return (
-      <div className="min-h-screen bg-background">
-        <header className="border-b sticky top-0 z-40 bg-background/95 backdrop-blur">
-          <div className="max-w-5xl mx-auto px-4 sm:px-6">
-            <div className="flex items-center justify-between h-14">
-              <div className="flex items-center gap-3">
-                <Link href="/">
-                  <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-back-home-nowall">
-                    <ArrowLeft className="w-4 h-4" />
-                  </Button>
-                </Link>
-                <div className="flex items-center gap-2">
-                  <Terminal className="w-4 h-4 text-primary" />
-                  <span className="font-mono font-bold text-sm tracking-wider">BUILD<span className="text-primary">4</span></span>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <LanguageSwitcher />
-                <WalletConnector />
-              </div>
-            </div>
-          </div>
-        </header>
-        <div className="max-w-lg mx-auto px-4 py-20 text-center space-y-6">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
-            <Wallet className="w-8 h-8 text-primary" />
-          </div>
-          <div>
-            <h2 className="font-mono font-bold text-lg mb-2" data-testid="text-connect-prompt">Connect Your Wallet</h2>
-            <p className="text-sm text-muted-foreground font-mono">
-              Connect your wallet to view and manage your autonomous AI agents. Your agents are linked to your wallet address.
-            </p>
-          </div>
-          <WalletConnector />
-        </div>
-      </div>
-    );
-  }
+  
 
   if (myAgents.length === 0 && !agentsLoading) {
     return (
