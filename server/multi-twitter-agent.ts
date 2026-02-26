@@ -941,14 +941,19 @@ Be specific, actionable, and strategic. No filler. Write like a real CMO present
       console.log(`[MultiTwitter] Content calendar generation failed (non-fatal): ${e.message}`)
     );
 
-    if (account.ownerTelegramChatId) {
+    const freshAccount = await storage.getAgentTwitterAccount(agentId);
+    const telegramChatId = freshAccount?.ownerTelegramChatId || account.ownerTelegramChatId;
+    console.log(`[MultiTwitter] @${account.twitterHandle} Telegram chatId check: "${telegramChatId || "not set"}"`);
+    if (telegramChatId) {
       const telegramMsg = `📋 Strategy Update from your ${roleInfo.title} @${account.twitterHandle}\n\n${title}\n\n${summary}\n\nFull memo available in your agent dashboard on BUILD4.`;
-      const sent = await sendTelegramMessage(account.ownerTelegramChatId, telegramMsg);
+      const sent = await sendTelegramMessage(telegramChatId, telegramMsg);
       if (sent) {
         console.log(`[MultiTwitter] @${account.twitterHandle} strategy sent to owner via Telegram`);
       } else {
-        console.log(`[MultiTwitter] @${account.twitterHandle} Telegram notification failed (chatId: ${account.ownerTelegramChatId}). Ensure it's a numeric Chat ID, not a username.`);
+        console.log(`[MultiTwitter] @${account.twitterHandle} Telegram notification failed (chatId: ${telegramChatId}). Ensure it's a numeric Chat ID, not a username.`);
       }
+    } else {
+      console.log(`[MultiTwitter] @${account.twitterHandle} no Telegram Chat ID set — skipping notification`);
     }
 
   } catch (err: any) {
