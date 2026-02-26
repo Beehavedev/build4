@@ -536,39 +536,44 @@ export async function registerRoutes(
   await storage.seedInferenceProviders();
   await storage.seedSubscriptionPlans();
 
-  setTimeout(() => {
-    startBountyEngine().catch(err => {
-      console.error("[BountyEngine] Failed to start:", err.message);
-    });
-  }, 5000);
-
-  setTimeout(() => {
-    if (isTwitterConfigured()) {
-      startTwitterAgent().catch(err => {
-        console.error("[TwitterAgent] Failed to start:", err.message);
+  const isDev = process.env.NODE_ENV !== "production";
+  if (isDev) {
+    console.log("[dev] Skipping background agents in development to save memory. They run in production.");
+  } else {
+    setTimeout(() => {
+      startBountyEngine().catch(err => {
+        console.error("[BountyEngine] Failed to start:", err.message);
       });
-    }
-  }, 10000);
+    }, 5000);
 
-  setTimeout(() => {
-    if (isTwitterConfigured()) {
-      startSupportAgent().catch(err => {
-        console.error("[SupportAgent] Failed to start:", err.message);
+    setTimeout(() => {
+      if (isTwitterConfigured()) {
+        startTwitterAgent().catch(err => {
+          console.error("[TwitterAgent] Failed to start:", err.message);
+        });
+      }
+    }, 10000);
+
+    setTimeout(() => {
+      if (isTwitterConfigured()) {
+        startSupportAgent().catch(err => {
+          console.error("[SupportAgent] Failed to start:", err.message);
+        });
+      }
+    }, 15000);
+
+    setTimeout(() => {
+      if (process.env.TELEGRAM_BOT_TOKEN) {
+        startTelegramBot();
+      }
+    }, 20000);
+
+    setTimeout(() => {
+      autoStartAllAgents().catch(err => {
+        console.error("[MultiTwitter] Auto-start failed:", err.message);
       });
-    }
-  }, 15000);
-
-  setTimeout(() => {
-    if (process.env.TELEGRAM_BOT_TOKEN) {
-      startTelegramBot();
-    }
-  }, 20000);
-
-  setTimeout(() => {
-    autoStartAllAgents().catch(err => {
-      console.error("[MultiTwitter] Auto-start failed:", err.message);
-    });
-  }, 25000);
+    }, 25000);
+  }
 
   app.get("/api/telegram/status", analyticsAuth, (req: Request, res: Response) => {
     res.json(getTelegramBotStatus());

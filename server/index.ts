@@ -4,6 +4,16 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startAgentRunner } from "./agent-runner";
 
+process.on("uncaughtException", (err) => {
+  console.error("[CRASH] Uncaught exception:", err.message, err.stack);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[CRASH] Unhandled rejection:", reason);
+});
+process.on("SIGTERM", () => console.log("[SIGNAL] SIGTERM received"));
+process.on("SIGINT", () => console.log("[SIGNAL] SIGINT received"));
+process.on("exit", (code) => console.log(`[EXIT] Process exiting with code ${code}`));
+
 const app = express();
 const httpServer = createServer(app);
 
@@ -100,8 +110,10 @@ app.use((req, res, next) => {
     () => {
       log(`serving on port ${port}`);
 
-      if (process.env.AGENT_RUNNER_ENABLED === "true") {
+      if (process.env.NODE_ENV === "production" && process.env.AGENT_RUNNER_ENABLED === "true") {
         setTimeout(() => startAgentRunner(), 3000);
+      } else if (process.env.NODE_ENV !== "production") {
+        log("Agent runner skipped in development to save memory. Runs in production.");
       } else {
         log("Agent runner disabled — only real user-initiated actions allowed. Set AGENT_RUNNER_ENABLED=true to enable autonomous mode.");
       }
