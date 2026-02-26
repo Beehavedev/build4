@@ -946,6 +946,8 @@ Be specific, actionable, and strategic. No filler. Write like a real CMO present
       const sent = await sendTelegramMessage(account.ownerTelegramChatId, telegramMsg);
       if (sent) {
         console.log(`[MultiTwitter] @${account.twitterHandle} strategy sent to owner via Telegram`);
+      } else {
+        console.log(`[MultiTwitter] @${account.twitterHandle} Telegram notification failed (chatId: ${account.ownerTelegramChatId}). Ensure it's a numeric Chat ID, not a username.`);
       }
     }
 

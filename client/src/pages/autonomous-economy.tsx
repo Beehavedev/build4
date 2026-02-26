@@ -3628,7 +3628,7 @@ export default function AutonomousEconomy() {
                         id="twitter-settings-telegram-chat-id"
                         data-testid="input-settings-telegram-chat-id"
                       />
-                      <p className="text-[10px] text-muted-foreground">Message @BUILD4_BOT on Telegram with /start to get your chat ID. Strategy memos will be sent here.</p>
+                      <p className="text-[10px] text-muted-foreground">Enter your numeric Telegram Chat ID (not username). Message @userinfobot on Telegram to get it, then message @BUILD4_BOT with /start so the bot can reach you. Strategy memos will be sent here.</p>
                     </div>
                     <div className="border rounded-md p-2.5 space-y-2 bg-muted/30">
                       <div className="flex items-center gap-2">
