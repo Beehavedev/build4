@@ -536,26 +536,39 @@ export async function registerRoutes(
   await storage.seedInferenceProviders();
   await storage.seedSubscriptionPlans();
 
-  startBountyEngine().catch(err => {
-    console.error("[BountyEngine] Failed to start:", err.message);
-  });
-
-  if (isTwitterConfigured()) {
-    startTwitterAgent().catch(err => {
-      console.error("[TwitterAgent] Failed to start:", err.message);
+  setTimeout(() => {
+    startBountyEngine().catch(err => {
+      console.error("[BountyEngine] Failed to start:", err.message);
     });
-    startSupportAgent().catch(err => {
-      console.error("[SupportAgent] Failed to start:", err.message);
+  }, 5000);
+
+  setTimeout(() => {
+    if (isTwitterConfigured()) {
+      startTwitterAgent().catch(err => {
+        console.error("[TwitterAgent] Failed to start:", err.message);
+      });
+    }
+  }, 10000);
+
+  setTimeout(() => {
+    if (isTwitterConfigured()) {
+      startSupportAgent().catch(err => {
+        console.error("[SupportAgent] Failed to start:", err.message);
+      });
+    }
+  }, 15000);
+
+  setTimeout(() => {
+    if (process.env.TELEGRAM_BOT_TOKEN) {
+      startTelegramBot();
+    }
+  }, 20000);
+
+  setTimeout(() => {
+    autoStartAllAgents().catch(err => {
+      console.error("[MultiTwitter] Auto-start failed:", err.message);
     });
-  }
-
-  if (process.env.TELEGRAM_BOT_TOKEN) {
-    startTelegramBot();
-  }
-
-  autoStartAllAgents().catch(err => {
-    console.error("[MultiTwitter] Auto-start failed:", err.message);
-  });
+  }, 25000);
 
   app.get("/api/telegram/status", analyticsAuth, (req: Request, res: Response) => {
     res.json(getTelegramBotStatus());
