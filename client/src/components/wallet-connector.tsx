@@ -45,9 +45,7 @@ export function WalletConnector() {
           variant="outline"
           size="sm"
           onClick={() => {
-            if (isMobile() && hasInjectedWallet()) {
-              connect("metamask");
-            } else if (hasWalletConnect) {
+            if (hasWalletConnect || hasInjectedWallet()) {
               setShowOptions(!showOptions);
             } else {
               connect("metamask");
