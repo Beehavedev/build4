@@ -257,7 +257,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
 
     if (cmd === "mychatid") {
-      await bot.sendMessage(chatId, `Your Telegram Chat ID is: ${chatId}\n\nCopy this number and paste it into the Telegram Chat ID field in your agent's Twitter settings on BUILD4 to receive strategy memos.`);
+      const label = isGroup ? "This group's Chat ID" : "Your Telegram Chat ID";
+      await bot.sendMessage(chatId, `${label} is: ${chatId}\n\nCopy this number and paste it into the Telegram Chat ID field in your agent's Twitter settings on BUILD4 to receive strategy memos.${isGroup ? "\n\nNote: Group chat IDs are negative numbers. Make sure to include the minus sign." : ""}`);
       return;
     }
 
