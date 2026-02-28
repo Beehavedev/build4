@@ -59,6 +59,10 @@ import {
   type Erc8004Reputation, type InsertErc8004Reputation, erc8004Reputation,
   type Erc8004Validation, type InsertErc8004Validation, erc8004Validations,
   type Bap578Nfa, type InsertBap578Nfa, bap578Nfas,
+  type AgentKnowledgeBase, type InsertAgentKnowledgeBase, agentKnowledgeBase,
+  type AgentConversationMemory, type InsertAgentConversationMemory, agentConversationMemory,
+  type AgentToolResult, type InsertAgentToolResult, agentToolResults,
+  type AgentCollaborationLog, type InsertAgentCollaborationLog, agentCollaborationLog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
@@ -336,6 +340,20 @@ export interface IStorage {
   createStrategyActionItem(item: InsertStrategyActionItem): Promise<StrategyActionItem>;
   getStrategyActionItems(agentId: string): Promise<StrategyActionItem[]>;
   updateStrategyActionItem(id: string, data: Partial<StrategyActionItem>): Promise<StrategyActionItem | undefined>;
+
+  createKnowledgeEntry(entry: InsertAgentKnowledgeBase): Promise<AgentKnowledgeBase>;
+  getKnowledgeBase(agentId: string): Promise<AgentKnowledgeBase[]>;
+  deleteKnowledgeEntry(id: string): Promise<void>;
+
+  upsertConversationMemory(agentId: string, twitterUsername: string, lastInteraction: string, sentiment: string): Promise<AgentConversationMemory>;
+  getConversationMemory(agentId: string, twitterUsername: string): Promise<AgentConversationMemory | undefined>;
+  getRecentConversations(agentId: string, limit?: number): Promise<AgentConversationMemory[]>;
+
+  createToolResult(result: InsertAgentToolResult): Promise<AgentToolResult>;
+  getRecentToolResults(agentId: string, limit?: number): Promise<AgentToolResult[]>;
+
+  createCollaborationLog(log: InsertAgentCollaborationLog): Promise<AgentCollaborationLog>;
+  getRecentCollaborations(agentId: string, limit?: number): Promise<AgentCollaborationLog[]>;
 
   // Seed subscription plans
   seedSubscriptionPlans(): Promise<void>;
@@ -2075,6 +2093,83 @@ export class DatabaseStorage implements IStorage {
       .where(eq(strategyActionItems.id, id))
       .returning();
     return updated;
+  }
+
+  async createKnowledgeEntry(entry: InsertAgentKnowledgeBase): Promise<AgentKnowledgeBase> {
+    const [created] = await db.insert(agentKnowledgeBase).values(entry).returning();
+    return created;
+  }
+
+  async getKnowledgeBase(agentId: string): Promise<AgentKnowledgeBase[]> {
+    return db.select().from(agentKnowledgeBase)
+      .where(eq(agentKnowledgeBase.agentId, agentId))
+      .orderBy(desc(agentKnowledgeBase.createdAt));
+  }
+
+  async deleteKnowledgeEntry(id: string): Promise<void> {
+    await db.delete(agentKnowledgeBase).where(eq(agentKnowledgeBase.id, id));
+  }
+
+  async upsertConversationMemory(agentId: string, twitterUsername: string, lastInteraction: string, sentiment: string): Promise<AgentConversationMemory> {
+    const existing = await db.select().from(agentConversationMemory)
+      .where(and(eq(agentConversationMemory.agentId, agentId), eq(agentConversationMemory.twitterUsername, twitterUsername)));
+    if (existing.length > 0) {
+      const [updated] = await db.update(agentConversationMemory)
+        .set({
+          lastInteraction,
+          sentiment,
+          interactionCount: sql`${agentConversationMemory.interactionCount} + 1`,
+          lastInteractionAt: new Date(),
+        })
+        .where(eq(agentConversationMemory.id, existing[0].id)).returning();
+      return updated;
+    }
+    const [created] = await db.insert(agentConversationMemory).values({
+      agentId,
+      twitterUsername,
+      lastInteraction,
+      sentiment,
+      interactionCount: 1,
+      lastInteractionAt: new Date(),
+    }).returning();
+    return created;
+  }
+
+  async getConversationMemory(agentId: string, twitterUsername: string): Promise<AgentConversationMemory | undefined> {
+    const [result] = await db.select().from(agentConversationMemory)
+      .where(and(eq(agentConversationMemory.agentId, agentId), eq(agentConversationMemory.twitterUsername, twitterUsername)));
+    return result;
+  }
+
+  async getRecentConversations(agentId: string, limit = 20): Promise<AgentConversationMemory[]> {
+    return db.select().from(agentConversationMemory)
+      .where(eq(agentConversationMemory.agentId, agentId))
+      .orderBy(desc(agentConversationMemory.lastInteractionAt))
+      .limit(limit);
+  }
+
+  async createToolResult(result: InsertAgentToolResult): Promise<AgentToolResult> {
+    const [created] = await db.insert(agentToolResults).values(result).returning();
+    return created;
+  }
+
+  async getRecentToolResults(agentId: string, limit = 10): Promise<AgentToolResult[]> {
+    return db.select().from(agentToolResults)
+      .where(eq(agentToolResults.agentId, agentId))
+      .orderBy(desc(agentToolResults.createdAt))
+      .limit(limit);
+  }
+
+  async createCollaborationLog(log: InsertAgentCollaborationLog): Promise<AgentCollaborationLog> {
+    const [created] = await db.insert(agentCollaborationLog).values(log).returning();
+    return created;
+  }
+
+  async getRecentCollaborations(agentId: string, limit = 10): Promise<AgentCollaborationLog[]> {
+    return db.select().from(agentCollaborationLog)
+      .where(eq(agentCollaborationLog.requestingAgentId, agentId))
+      .orderBy(desc(agentCollaborationLog.createdAt))
+      .limit(limit);
   }
 }
 

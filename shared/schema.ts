@@ -1005,6 +1005,7 @@ export const agentTwitterAccounts = pgTable("agent_twitter_accounts", {
   totalBounties: integer("total_bounties").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
   ownerTelegramChatId: text("owner_telegram_chat_id"),
+  preferredModel: text("preferred_model"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -1048,6 +1049,7 @@ export const agentTwitterSettingsSchema = z.object({
   twitterAccessToken: z.string().min(1).optional(),
   twitterAccessTokenSecret: z.string().min(1).optional(),
   ownerTelegramChatId: z.string().optional(),
+  preferredModel: z.string().optional(),
 });
 
 export const agentStrategyMemos = pgTable("agent_strategy_memos", {
@@ -1219,6 +1221,70 @@ export const bap578Nfas = pgTable("bap578_nfas", {
 export const insertBap578NfaSchema = createInsertSchema(bap578Nfas).omit({ id: true, createdAt: true });
 export type InsertBap578Nfa = z.infer<typeof insertBap578NfaSchema>;
 export type Bap578Nfa = typeof bap578Nfas.$inferSelect;
+
+export const agentKnowledgeBase = pgTable("agent_knowledge_base", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  sourceType: text("source_type").notNull().default("custom"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentKnowledgeBaseSchema = createInsertSchema(agentKnowledgeBase).omit({ id: true, createdAt: true });
+export type InsertAgentKnowledgeBase = z.infer<typeof insertAgentKnowledgeBaseSchema>;
+export type AgentKnowledgeBase = typeof agentKnowledgeBase.$inferSelect;
+
+export const agentConversationMemory = pgTable("agent_conversation_memory", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  twitterUsername: text("twitter_username").notNull(),
+  lastInteraction: text("last_interaction"),
+  sentiment: text("sentiment").notNull().default("neutral"),
+  interactionCount: integer("interaction_count").notNull().default(1),
+  lastInteractionAt: timestamp("last_interaction_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentConversationMemorySchema = createInsertSchema(agentConversationMemory).omit({ id: true, createdAt: true });
+export type InsertAgentConversationMemory = z.infer<typeof insertAgentConversationMemorySchema>;
+export type AgentConversationMemory = typeof agentConversationMemory.$inferSelect;
+
+export const agentToolResults = pgTable("agent_tool_results", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  toolType: text("tool_type").notNull(),
+  result: text("result").notNull(),
+  usedInTweetId: text("used_in_tweet_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentToolResultSchema = createInsertSchema(agentToolResults).omit({ id: true, createdAt: true });
+export type InsertAgentToolResult = z.infer<typeof insertAgentToolResultSchema>;
+export type AgentToolResult = typeof agentToolResults.$inferSelect;
+
+export const agentCollaborationLog = pgTable("agent_collaboration_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  requestingAgentId: varchar("requesting_agent_id").notNull(),
+  consultedAgentId: varchar("consulted_agent_id").notNull(),
+  question: text("question").notNull(),
+  answer: text("answer").notNull(),
+  usedInContext: text("used_in_context"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentCollaborationLogSchema = createInsertSchema(agentCollaborationLog).omit({ id: true, createdAt: true });
+export type InsertAgentCollaborationLog = z.infer<typeof insertAgentCollaborationLogSchema>;
+export type AgentCollaborationLog = typeof agentCollaborationLog.$inferSelect;
+
+export const AVAILABLE_MODELS = [
+  { id: "meta-llama/Meta-Llama-3.1-70B-Instruct", name: "Llama 3.1 70B", provider: "hyperbolic" },
+  { id: "meta-llama/Llama-3.3-70B-Instruct", name: "Llama 3.3 70B", provider: "akash" },
+  { id: "deepseek-ai/DeepSeek-V3", name: "DeepSeek V3", provider: "hyperbolic" },
+  { id: "deepseek-ai/DeepSeek-V3.2", name: "DeepSeek V3.2", provider: "akash" },
+  { id: "Qwen/Qwen2.5-72B-Instruct", name: "Qwen 2.5 72B", provider: "hyperbolic" },
+  { id: "Qwen/Qwen3-30B-A3B", name: "Qwen3 30B", provider: "akash" },
+] as const;
 
 export const SEED_AGENTS = {
   RESEARCH_BOT: {

@@ -2,6 +2,7 @@ import { TwitterApi } from "twitter-api-v2";
 import { storage } from "./storage";
 import { runInferenceWithFallback } from "./inference";
 import { sendTelegramMessage } from "./telegram-bot";
+import { runToolsForRole } from "./agent-tools";
 import type { AgentTwitterAccount } from "@shared/schema";
 
 const STRATEGY_INTERVAL_MS = 12 * 60 * 60 * 1000;
@@ -475,24 +476,24 @@ export async function postIntroTweet(agentId: string): Promise<{ success: boolea
   }
 }
 
-const ROLE_MAP: Record<string, { title: string; focus: string; skills: string[]; tweetStyles: string[]; tone: string }> = {
+const ROLE_MAP: Record<string, { title: string; focus: string; skills: string[]; tweetStyles: string[]; tone: string; frameworks: string; contentDecisionTree: string }> = {
   cmo: {
     title: "Chief Marketing Officer (CMO)",
     focus: "Growth strategy, community engagement, brand building, campaign launches, market positioning, viral content.",
     skills: [
-      "Campaign Strategy: Design and announce marketing campaigns, product launches, and growth initiatives",
-      "Brand Narrative: Craft compelling brand stories that resonate with target audiences",
-      "Community Growth: Drive follower growth through engagement hooks, giveaways, and viral loops",
-      "Content Calendar: Plan and execute consistent posting schedules around key themes",
-      "Competitive Positioning: Highlight differentiators vs competitors without naming them directly",
-      "Metrics Reporting: Share growth milestones (users, TVL, volume) as social proof",
-      "Hashtag Strategy: Create and promote branded hashtags for campaigns",
-      "Cross-Promotion: Amplify partner content and ecosystem projects strategically",
-      "Trend Hijacking: Identify trending topics and tie them back to the brand naturally",
-      "Launch Hype: Build anticipation for new features with teaser threads and countdowns"
+      "Campaign Strategy: Design AIDA-framework campaigns (Attention → Interest → Desire → Action). Open with a hook, build curiosity, present value, close with CTA",
+      "Brand Narrative: Use the StoryBrand framework — position the user as the hero, your product as the guide. Never lead with features, lead with transformation",
+      "Community Growth: Deploy viral loop mechanics — referral incentives, exclusive access, social proof snowballs. Track growth rate, not just follower count",
+      "Competitive Positioning: Use blue ocean strategy — don't attack competitors, redefine the category. Create new demand rather than fighting for existing",
+      "Trend Hijacking: Monitor trending topics and news cycles. React within 2 hours of a trend emerging. Connect trends to your product with a unique angle, not forced relevance",
+      "Metrics Storytelling: Never share raw numbers. Frame every metric as a narrative — '10K users' becomes 'From 0 to 10K believers in 30 days. Here's what we learned.'",
+      "Launch Sequencing: Pre-launch (teasers, countdowns) → Launch (announcement, social proof) → Post-launch (results, testimonials, iteration). Each phase needs different messaging",
+      "Content Remixing: Every insight becomes 5+ content pieces — thread, hot take, question, data point, meme format. Maximum output from minimum ideation"
     ],
-    tweetStyles: ["announcement threads", "milestone celebrations", "campaign launches", "growth updates", "brand storytelling", "community spotlights"],
-    tone: "Confident, visionary, energetic. Speaks like a growth-obsessed leader who lives and breathes brand."
+    tweetStyles: ["announcement threads", "milestone celebrations", "campaign launches", "growth updates", "brand storytelling", "community spotlights", "hot takes", "data-backed insights"],
+    tone: "Confident, visionary, energetic. Speaks like a growth-obsessed leader who lives and breathes brand. Uses power words and urgency without being salesy.",
+    frameworks: "AIDA (Attention-Interest-Desire-Action), StoryBrand (Hero's Journey), Blue Ocean Strategy, Growth Loop Design, Jobs-To-Be-Done",
+    contentDecisionTree: "IF market_trending → trend hijack with brand angle. IF milestone_reached → celebration + social proof. IF product_update → benefit-first announcement. IF slow_day → educational content or community engagement. IF crisis → transparent communication, no spin.",
   },
   ceo: {
     title: "Chief Executive Officer (CEO)",
