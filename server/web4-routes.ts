@@ -3245,6 +3245,75 @@ ${urls}
     }
   });
 
+  app.get("/api/web4/agents/:agentId/knowledge", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const entries = await storage.getKnowledgeBase(agentId);
+      res.json(entries);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/knowledge", async (req: Request, res: Response) => {
+    try {
+      const agent = await verifyAgentOwnership(req, res);
+      if (!agent) return;
+      const { agentId } = req.params;
+      const { title, content, sourceType } = req.body;
+      if (!title || !content) {
+        return res.status(400).json({ error: "Title and content are required" });
+      }
+      if (typeof title !== "string" || title.length > 200) {
+        return res.status(400).json({ error: "Title must be a string under 200 characters" });
+      }
+      if (typeof content !== "string" || content.length > 5000) {
+        return res.status(400).json({ error: "Content must be a string under 5000 characters" });
+      }
+      const entry = await storage.createKnowledgeEntry({
+        agentId,
+        title: title.trim(),
+        content: content.trim(),
+        sourceType: sourceType || "manual",
+      });
+      res.json(entry);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/web4/agents/:agentId/knowledge/:entryId", async (req: Request, res: Response) => {
+    try {
+      const agent = await verifyAgentOwnership(req, res);
+      if (!agent) return;
+      const { entryId } = req.params;
+      await storage.deleteKnowledgeEntry(entryId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/agents/:agentId/conversations", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const conversations = await storage.getRecentConversations(agentId, 50);
+      res.json(conversations);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/agents/:agentId/collaborations", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const collabs = await storage.getRecentCollaborations(agentId, 20);
+      res.json(collabs);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/web4/agents/:agentId/strategy/generate", async (req: Request, res: Response) => {
     try {
       const { agentId } = req.params;

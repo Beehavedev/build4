@@ -47,6 +47,7 @@ import {
   FileText,
   Calendar,
   Sparkles,
+  X,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
@@ -506,6 +507,107 @@ const ROLE_SKILLS: Record<string, { title: string; skills: string[]; tone: strin
     tone: "Disciplined, transparent, educational"
   },
 };
+
+function KnowledgeBaseSection({ agentId }: { agentId: string }) {
+  const [newTitle, setNewTitle] = useState("");
+  const [newContent, setNewContent] = useState("");
+
+  const { data: knowledgeEntries = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/web4/agents", agentId, "knowledge"],
+    queryFn: () => fetch(`/api/web4/agents/${agentId}/knowledge`).then(r => r.json()),
+    enabled: !!agentId,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async (entry: { title: string; content: string }) => {
+      const res = await fetch(`/api/web4/agents/${agentId}/knowledge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+      if (!res.ok) throw new Error("Failed to add knowledge");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "knowledge"] });
+      setNewTitle("");
+      setNewContent("");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (entryId: string) => {
+      const res = await fetch(`/api/web4/agents/${agentId}/knowledge/${entryId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/web4/agents", agentId, "knowledge"] });
+    },
+  });
+
+  return (
+    <div className="border rounded-md p-2.5 space-y-2 bg-muted/30 mt-3">
+      <div className="flex items-center gap-2">
+        <BookOpen className="w-3.5 h-3.5 text-primary" />
+        <span className="text-[10px] font-semibold">Knowledge Base</span>
+        <span className="text-[9px] text-muted-foreground">({knowledgeEntries.length} entries)</span>
+      </div>
+      <p className="text-[10px] text-muted-foreground">Add reference documents, product info, FAQs, or talking points. Your agent will use this knowledge when creating tweets and replies.</p>
+
+      {knowledgeEntries.length > 0 && (
+        <div className="space-y-1.5 max-h-40 overflow-y-auto">
+          {knowledgeEntries.map((entry: any) => (
+            <div key={entry.id} className="flex items-start justify-between gap-2 p-1.5 rounded bg-background border text-[10px]">
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold truncate" data-testid={`text-knowledge-title-${entry.id}`}>{entry.title}</div>
+                <div className="text-muted-foreground line-clamp-2">{entry.content}</div>
+              </div>
+              <button
+                onClick={() => deleteMutation.mutate(entry.id)}
+                className="text-destructive hover:text-destructive/80 shrink-0 mt-0.5"
+                data-testid={`button-delete-knowledge-${entry.id}`}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="space-y-1.5">
+        <input
+          className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono"
+          placeholder="Title (e.g. Product Features)"
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          data-testid="input-knowledge-title"
+        />
+        <textarea
+          className="w-full px-2.5 py-1.5 text-sm border rounded-md bg-background font-mono resize-none"
+          rows={3}
+          placeholder="Content — paste product docs, FAQs, talking points, or any reference material your agent should know..."
+          value={newContent}
+          onChange={(e) => setNewContent(e.target.value)}
+          data-testid="input-knowledge-content"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            if (newTitle.trim() && newContent.trim()) {
+              addMutation.mutate({ title: newTitle.trim(), content: newContent.trim() });
+            }
+          }}
+          disabled={!newTitle.trim() || !newContent.trim() || addMutation.isPending}
+          data-testid="button-add-knowledge"
+        >
+          {addMutation.isPending ? "Adding..." : "Add Knowledge Entry"}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export default function AutonomousEconomy() {
   const t = useT();
@@ -3608,6 +3710,24 @@ export default function AutonomousEconomy() {
                       />
                     </div>
                     <div className="space-y-2">
+                      <label className="text-xs font-medium">AI Model</label>
+                      <select
+                        className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
+                        defaultValue={twitterStatus.preferredModel || ""}
+                        id="twitter-settings-model"
+                        data-testid="select-twitter-settings-model"
+                      >
+                        <option value="">Auto (best available)</option>
+                        <option value="meta-llama/Meta-Llama-3.1-70B-Instruct">Llama 3.1 70B (Hyperbolic)</option>
+                        <option value="meta-llama/Llama-3.3-70B-Instruct">Llama 3.3 70B (Akash)</option>
+                        <option value="deepseek-ai/DeepSeek-V3">DeepSeek V3 (Hyperbolic)</option>
+                        <option value="deepseek-ai/DeepSeek-V3.2">DeepSeek V3.2 (Akash)</option>
+                        <option value="Qwen/Qwen2.5-72B-Instruct">Qwen 2.5 72B (Hyperbolic)</option>
+                        <option value="Qwen/Qwen3-30B-A3B">Qwen3 30B (Akash)</option>
+                      </select>
+                      <p className="text-[10px] text-muted-foreground">Choose which AI model powers this agent's tweets and replies. Different models have different strengths.</p>
+                    </div>
+                    <div className="space-y-2">
                       <label className="text-xs font-medium">Posting Frequency (minutes)</label>
                       <input
                         className="w-full px-3 py-2 text-sm border rounded-md bg-background font-mono"
@@ -3672,7 +3792,8 @@ export default function AutonomousEconomy() {
                         const accessToken = (document.getElementById("twitter-settings-access-token") as HTMLInputElement)?.value;
                         const accessSecret = (document.getElementById("twitter-settings-access-secret") as HTMLInputElement)?.value;
                         const ownerTelegramChatId = (document.getElementById("twitter-settings-telegram-chat-id") as HTMLInputElement)?.value;
-                        const settings: any = { personality, instructions, postingFrequencyMins: freq, companyName, companyDescription, companyProduct, companyAudience, companyWebsite, companyKeyMessages, ownerTelegramChatId: ownerTelegramChatId || null };
+                        const preferredModel = (document.getElementById("twitter-settings-model") as HTMLSelectElement)?.value;
+                        const settings: any = { personality, instructions, postingFrequencyMins: freq, companyName, companyDescription, companyProduct, companyAudience, companyWebsite, companyKeyMessages, ownerTelegramChatId: ownerTelegramChatId || null, preferredModel: preferredModel || null };
                         if (apiKey) settings.twitterApiKey = apiKey;
                         if (apiSecret) settings.twitterApiSecret = apiSecret;
                         if (accessToken) settings.twitterAccessToken = accessToken;
@@ -3684,6 +3805,8 @@ export default function AutonomousEconomy() {
                     >
                       {twitterSettingsMutation.isPending ? "Saving..." : "Save Settings"}
                     </Button>
+
+                    <KnowledgeBaseSection agentId={selectedAgent.id} />
                   </Card>
                 )}
 
