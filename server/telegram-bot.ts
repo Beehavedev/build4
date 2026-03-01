@@ -6,6 +6,11 @@ let bot: TelegramBot | null = null;
 let isRunning = false;
 let botUsername: string | null = null;
 
+const telegramWalletMap = new Map<number, string>();
+
+const pendingAgentCreation = new Map<number, { step: string; name?: string; bio?: string; model?: string }>();
+const pendingTask = new Map<number, { step: string; agentId?: string; taskType?: string; title?: string }>();
+
 const BUILD4_KNOWLEDGE = `
 BUILD4 is decentralized infrastructure for autonomous AI agents — the economic layer where AI agents operate as independent economic actors on-chain. Live on BNB Chain, Base, and XLayer.
 
@@ -197,6 +202,32 @@ function generateFallbackAnswer(question: string): string {
   return "Great question! BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer. For detailed info, check build4.io or ask me something specific!";
 }
 
+function getLinkedWallet(chatId: number): string | undefined {
+  return telegramWalletMap.get(chatId);
+}
+
+const MODELS: Record<string, string> = {
+  "1": "meta-llama/Llama-3.1-70B-Instruct",
+  "2": "deepseek-ai/DeepSeek-V3",
+  "3": "Qwen/Qwen2.5-72B-Instruct",
+};
+
+const TASK_TYPES: Record<string, string> = {
+  "1": "research",
+  "2": "analysis",
+  "3": "content",
+  "4": "code_review",
+  "5": "strategy",
+  "6": "general",
+};
+
+function shortModel(m: string): string {
+  if (m.includes("Llama")) return "Llama-70B";
+  if (m.includes("DeepSeek")) return "DeepSeek-V3";
+  if (m.includes("Qwen")) return "Qwen-72B";
+  return m.split("/").pop() || m;
+}
+
 export async function startTelegramBot(): Promise<void> {
   if (isRunning || !isTelegramConfigured()) return;
 
@@ -246,13 +277,39 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
   console.log(`[TelegramBot] ${isGroup ? "Group" : "DM"} message from @${username} (chatId: ${chatId}): ${text.slice(0, 80)}`);
 
+  if (pendingAgentCreation.has(chatId)) {
+    await handleAgentCreationFlow(chatId, text);
+    return;
+  }
+  if (pendingTask.has(chatId)) {
+    await handleTaskFlow(chatId, text, username);
+    return;
+  }
+
   const commandMatch = text.match(/^\/(\w+)(?:@\S+)?\s*(.*)/s);
   if (commandMatch) {
     const cmd = commandMatch[1].toLowerCase();
     const cmdArg = commandMatch[2]?.trim() || "";
 
     if (cmd === "start" && !isGroup) {
-      await bot.sendMessage(chatId, `Hey! I'm the BUILD4 bot. Ask me anything about BUILD4 — decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\nYour Telegram Chat ID: ${chatId}\nUse this in your agent settings to receive strategy memos.\n\nJust type your question or use /ask followed by your question.`);
+      await bot.sendMessage(chatId,
+        `Welcome to BUILD4 — decentralized AI agent infrastructure.\n\n` +
+        `Here's what you can do right here in Telegram:\n\n` +
+        `Agent Management:\n` +
+        `/newagent — Create a new AI agent\n` +
+        `/myagents — List your agents\n` +
+        `/linkwallet 0x... — Link your wallet\n\n` +
+        `Task Terminal:\n` +
+        `/task — Give your agent a task\n` +
+        `/taskstatus <id> — Check task result\n\n` +
+        `Info & Support:\n` +
+        `/ask <question> — Ask about BUILD4\n` +
+        `/info — What is BUILD4?\n` +
+        `/mychatid — Get your Chat ID\n` +
+        `/help — All commands\n\n` +
+        `Your Chat ID: ${chatId}\n` +
+        `Start by linking your wallet with /linkwallet`
+      );
       return;
     }
 
@@ -263,7 +320,24 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
 
     if (cmd === "help") {
-      await bot.sendMessage(chatId, "BUILD4 Bot Commands\n\n/ask <question> — Ask about BUILD4\n/info — What is BUILD4?\n/chains — Supported blockchains\n/contracts — Smart contract overview\n/mychatid — Get your Chat ID for strategy notifications\n/help — Show this message\n\nIn groups, mention me or use /ask. In DMs, just type your question!");
+      await bot.sendMessage(chatId,
+        `BUILD4 Bot Commands\n\n` +
+        `Agent Management:\n` +
+        `/newagent — Create a new AI agent\n` +
+        `/myagents — View your agents\n` +
+        `/linkwallet 0x... — Link your wallet address\n\n` +
+        `Task Terminal:\n` +
+        `/task — Assign a task to your agent\n` +
+        `/taskstatus <id> — Check task result\n` +
+        `/mytasks — View your recent tasks\n\n` +
+        `Info:\n` +
+        `/ask <question> — Ask about BUILD4\n` +
+        `/info — What is BUILD4?\n` +
+        `/chains — Supported blockchains\n` +
+        `/contracts — Smart contract overview\n` +
+        `/mychatid — Get your Chat ID\n\n` +
+        `In DMs, just type your question!`
+      );
       return;
     }
 
@@ -288,6 +362,92 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         return;
       }
       await handleQuestion(chatId, msg.message_id, cmdArg, username);
+      return;
+    }
+
+    if (cmd === "linkwallet") {
+      if (!cmdArg || !/^0x[a-fA-F0-9]{40}$/.test(cmdArg)) {
+        await bot.sendMessage(chatId, "Please provide a valid wallet address.\n\nUsage: /linkwallet 0x1234...abcd\n\nThis links your Telegram account to your BUILD4 wallet so you can create agents and assign tasks.");
+        return;
+      }
+      telegramWalletMap.set(chatId, cmdArg.toLowerCase());
+      await bot.sendMessage(chatId,
+        `Wallet linked: ${cmdArg.substring(0, 6)}...${cmdArg.substring(38)}\n\n` +
+        `You can now:\n` +
+        `/newagent — Create a new AI agent\n` +
+        `/myagents — View your agents\n` +
+        `/task — Give your agent a task`
+      );
+      return;
+    }
+
+    if (cmd === "newagent") {
+      if (isGroup) {
+        await bot.sendMessage(chatId, "Agent creation is only available in DMs. Send me a private message to get started!");
+        return;
+      }
+      const wallet = getLinkedWallet(chatId);
+      if (!wallet) {
+        await bot.sendMessage(chatId, "Link your wallet first!\n\nUse /linkwallet 0x... to connect your wallet address, then try /newagent again.");
+        return;
+      }
+      pendingAgentCreation.set(chatId, { step: "name" });
+      await bot.sendMessage(chatId, "Let's create your AI agent!\n\nStep 1/3: What's your agent's name?\n\n(1-50 characters, must be unique)");
+      return;
+    }
+
+    if (cmd === "myagents") {
+      const wallet = getLinkedWallet(chatId);
+      if (!wallet) {
+        await bot.sendMessage(chatId, "Link your wallet first with /linkwallet 0x...");
+        return;
+      }
+      await handleMyAgents(chatId, wallet);
+      return;
+    }
+
+    if (cmd === "task") {
+      if (isGroup) {
+        await bot.sendMessage(chatId, "Task assignment is only available in DMs. Send me a private message!");
+        return;
+      }
+      const wallet = getLinkedWallet(chatId);
+      if (!wallet) {
+        await bot.sendMessage(chatId, "Link your wallet first with /linkwallet 0x...\nThen use /task to assign tasks to your agents.");
+        return;
+      }
+      await startTaskFlow(chatId, wallet);
+      return;
+    }
+
+    if (cmd === "taskstatus") {
+      if (!cmdArg) {
+        await bot.sendMessage(chatId, "Usage: /taskstatus <task-id>\n\nYou can find your task IDs using /mytasks");
+        return;
+      }
+      const wallet = getLinkedWallet(chatId);
+      if (!wallet) {
+        await bot.sendMessage(chatId, "Link your wallet first with /linkwallet 0x...");
+        return;
+      }
+      await handleTaskStatus(chatId, cmdArg, wallet);
+      return;
+    }
+
+    if (cmd === "mytasks") {
+      const wallet = getLinkedWallet(chatId);
+      if (!wallet) {
+        await bot.sendMessage(chatId, "Link your wallet first with /linkwallet 0x...");
+        return;
+      }
+      await handleMyTasks(chatId, wallet);
+      return;
+    }
+
+    if (cmd === "cancel") {
+      pendingAgentCreation.delete(chatId);
+      pendingTask.delete(chatId);
+      await bot.sendMessage(chatId, "Cancelled. What would you like to do? /help for commands.");
       return;
     }
 
@@ -317,6 +477,348 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
   if (!question) return;
 
   await handleQuestion(chatId, msg.message_id, question, username);
+}
+
+async function handleAgentCreationFlow(chatId: number, text: string): Promise<void> {
+  if (!bot) return;
+  const state = pendingAgentCreation.get(chatId)!;
+
+  if (text.toLowerCase() === "/cancel") {
+    pendingAgentCreation.delete(chatId);
+    await bot.sendMessage(chatId, "Agent creation cancelled.");
+    return;
+  }
+
+  if (state.step === "name") {
+    const name = text.trim();
+    if (name.length < 1 || name.length > 50) {
+      await bot.sendMessage(chatId, "Name must be 1-50 characters. Try again:");
+      return;
+    }
+    const existing = await storage.getAgentByName(name);
+    if (existing) {
+      await bot.sendMessage(chatId, `An agent named "${name}" already exists. Pick a different name:`);
+      return;
+    }
+    state.name = name;
+    state.step = "bio";
+    pendingAgentCreation.set(chatId, state);
+    await bot.sendMessage(chatId, `Name: ${name}\n\nStep 2/3: Write a short bio for your agent.\n\n(What does it do? Max 300 characters)\n\nExample: "Crypto market analyst specializing in DeFi trends and on-chain data"`);
+    return;
+  }
+
+  if (state.step === "bio") {
+    const bio = text.trim();
+    if (bio.length > 300) {
+      await bot.sendMessage(chatId, `That's ${bio.length} characters. Max is 300. Try a shorter bio:`);
+      return;
+    }
+    state.bio = bio;
+    state.step = "model";
+    pendingAgentCreation.set(chatId, state);
+    await bot.sendMessage(chatId,
+      `Step 3/3: Choose your agent's AI model:\n\n` +
+      `1. Llama 70B — Fast, general purpose\n` +
+      `2. DeepSeek V3 — Strong reasoning\n` +
+      `3. Qwen 72B — Multilingual, versatile\n\n` +
+      `Reply with 1, 2, or 3:`
+    );
+    return;
+  }
+
+  if (state.step === "model") {
+    const model = MODELS[text.trim()];
+    if (!model) {
+      await bot.sendMessage(chatId, "Reply with 1, 2, or 3:\n\n1. Llama 70B\n2. DeepSeek V3\n3. Qwen 72B");
+      return;
+    }
+
+    const wallet = getLinkedWallet(chatId)!;
+    const name = state.name!;
+    const bio = state.bio || "";
+
+    pendingAgentCreation.delete(chatId);
+
+    try {
+      await bot.sendMessage(chatId, `Creating your agent "${name}"...`);
+
+      const initialDeposit = "1000000000000000";
+      const result = await storage.createFullAgent(name, bio, model, initialDeposit, undefined, undefined, wallet);
+
+      await bot.sendMessage(chatId,
+        `Agent created!\n\n` +
+        `Name: ${result.agent.name}\n` +
+        `ID: ${result.agent.id}\n` +
+        `Model: ${shortModel(model)}\n` +
+        `Wallet: Active\n\n` +
+        `What's next:\n` +
+        `/task — Give it a task right now\n` +
+        `/myagents — See all your agents\n\n` +
+        `Manage advanced settings (Twitter, knowledge base, strategy) at build4.io`
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Failed to create agent: ${e.message}\n\nTry again with /newagent`);
+    }
+    return;
+  }
+}
+
+async function handleMyAgents(chatId: number, wallet: string): Promise<void> {
+  if (!bot) return;
+  try {
+    const agents = await storage.getAgents();
+    const myAgents = agents.filter(a => a.creatorWallet && a.creatorWallet.toLowerCase() === wallet.toLowerCase());
+
+    if (myAgents.length === 0) {
+      await bot.sendMessage(chatId, `No agents found for your wallet.\n\nCreate one with /newagent`);
+      return;
+    }
+
+    const lines = myAgents.map((a, i) => {
+      return `${i + 1}. ${a.name}\n   ID: ${a.id}\n   Model: ${shortModel(a.modelType || "unknown")}\n   Status: ${a.status || "active"}`;
+    });
+
+    await bot.sendMessage(chatId,
+      `Your Agents (${myAgents.length}):\n\n${lines.join("\n\n")}\n\n` +
+      `Use /task to assign a task to any agent.`
+    );
+  } catch (e: any) {
+    await bot.sendMessage(chatId, `Error loading agents: ${e.message}`);
+  }
+}
+
+async function startTaskFlow(chatId: number, wallet: string): Promise<void> {
+  if (!bot) return;
+  try {
+    const agents = await storage.getAgents();
+    const myAgents = agents.filter(a => a.creatorWallet && a.creatorWallet.toLowerCase() === wallet.toLowerCase());
+
+    if (myAgents.length === 0) {
+      await bot.sendMessage(chatId, "You don't have any agents yet.\n\nCreate one first with /newagent");
+      return;
+    }
+
+    const lines = myAgents.map((a, i) => `${i + 1}. ${a.name} (${shortModel(a.modelType || "unknown")})`);
+
+    pendingTask.set(chatId, { step: "agent" });
+    await bot.sendMessage(chatId,
+      `Which agent should handle this task?\n\n${lines.join("\n")}\n\nReply with the number (or /cancel):`
+    );
+  } catch (e: any) {
+    await bot.sendMessage(chatId, `Error: ${e.message}`);
+  }
+}
+
+async function handleTaskFlow(chatId: number, text: string, username: string): Promise<void> {
+  if (!bot) return;
+  const state = pendingTask.get(chatId)!;
+
+  if (text.toLowerCase() === "/cancel") {
+    pendingTask.delete(chatId);
+    await bot.sendMessage(chatId, "Task cancelled.");
+    return;
+  }
+
+  const wallet = getLinkedWallet(chatId);
+  if (!wallet) {
+    pendingTask.delete(chatId);
+    await bot.sendMessage(chatId, "Wallet not linked. Use /linkwallet first.");
+    return;
+  }
+
+  if (state.step === "agent") {
+    const agents = await storage.getAgents();
+    const myAgents = agents.filter(a => a.creatorWallet && a.creatorWallet.toLowerCase() === wallet.toLowerCase());
+    const idx = parseInt(text.trim()) - 1;
+
+    if (isNaN(idx) || idx < 0 || idx >= myAgents.length) {
+      await bot.sendMessage(chatId, `Pick a number between 1 and ${myAgents.length}:`);
+      return;
+    }
+
+    state.agentId = myAgents[idx].id;
+    state.step = "type";
+    pendingTask.set(chatId, state);
+
+    await bot.sendMessage(chatId,
+      `Agent: ${myAgents[idx].name}\n\n` +
+      `What type of task?\n\n` +
+      `1. Research — Deep analysis with sources\n` +
+      `2. Analysis — Market/protocol data analysis\n` +
+      `3. Content — Tweets, threads, articles\n` +
+      `4. Code Review — Review code, suggest fixes\n` +
+      `5. Strategy — Marketing/business/trading\n` +
+      `6. General — Open-ended\n\n` +
+      `Reply with the number:`
+    );
+    return;
+  }
+
+  if (state.step === "type") {
+    const taskType = TASK_TYPES[text.trim()];
+    if (!taskType) {
+      await bot.sendMessage(chatId, "Reply with a number 1-6:\n1. Research\n2. Analysis\n3. Content\n4. Code Review\n5. Strategy\n6. General");
+      return;
+    }
+    state.taskType = taskType;
+    state.step = "title";
+    pendingTask.set(chatId, state);
+    await bot.sendMessage(chatId, "Give your task a short title (under 200 chars):");
+    return;
+  }
+
+  if (state.step === "title") {
+    const title = text.trim();
+    if (title.length > 200) {
+      await bot.sendMessage(chatId, `That's ${title.length} chars. Keep it under 200:`);
+      return;
+    }
+    state.title = title;
+    state.step = "description";
+    pendingTask.set(chatId, state);
+    await bot.sendMessage(chatId, "Now describe the task in detail. The more specific you are, the better the result.\n\n(Up to 5000 characters — just type it out):");
+    return;
+  }
+
+  if (state.step === "description") {
+    const description = text.trim();
+    if (description.length > 5000) {
+      await bot.sendMessage(chatId, `That's ${description.length} chars. Max is 5000. Try shorter:`);
+      return;
+    }
+
+    const { agentId, taskType, title } = state;
+    pendingTask.delete(chatId);
+
+    try {
+      await bot.sendMessage(chatId, `Submitting task to your agent...`);
+
+      const task = await storage.createTask({
+        agentId: agentId!,
+        creatorWallet: wallet,
+        taskType: taskType!,
+        title: title!,
+        description,
+        status: "pending",
+        result: null,
+        toolsUsed: null,
+        modelUsed: null,
+        executionTimeMs: null,
+      });
+
+      await bot.sendMessage(chatId,
+        `Task submitted!\n\n` +
+        `Task ID: ${task.id}\n` +
+        `Type: ${taskType}\n` +
+        `Title: ${title}\n\n` +
+        `Your agent is processing this now using decentralized AI. I'll send you the result when it's ready.\n\n` +
+        `Or check status anytime: /taskstatus ${task.id}`
+      );
+
+      const { executeTask } = await import("./task-engine");
+      executeTask(task.id).then(async () => {
+        try {
+          const completed = await storage.getTask(task.id);
+          if (completed && completed.status === "completed" && completed.result && bot) {
+            const resultPreview = completed.result.length > 3500
+              ? completed.result.substring(0, 3500) + "\n\n... (truncated — view full result at build4.io/tasks)"
+              : completed.result;
+
+            const meta = [];
+            if (completed.modelUsed) meta.push(`Model: ${shortModel(completed.modelUsed)}`);
+            if (completed.executionTimeMs) meta.push(`Time: ${(completed.executionTimeMs / 1000).toFixed(1)}s`);
+            if (completed.toolsUsed) {
+              try {
+                const tools = JSON.parse(completed.toolsUsed);
+                if (tools.length > 0) meta.push(`Tools: ${tools.join(", ")}`);
+              } catch {}
+            }
+
+            await bot.sendMessage(chatId,
+              `Task Complete!\n\n` +
+              `${title}\n` +
+              (meta.length > 0 ? `${meta.join(" | ")}\n\n` : "\n") +
+              `${resultPreview}`
+            );
+          } else if (completed && completed.status === "failed" && bot) {
+            await bot.sendMessage(chatId,
+              `Task failed.\n\nTask: ${title}\n\n${completed.result || "No error details available."}\n\nTry again with /task`
+            );
+          }
+        } catch (e: any) {
+          console.error(`[TelegramBot] Error sending task result to chatId ${chatId}:`, e.message);
+        }
+      }).catch(err => {
+        console.error(`[TelegramBot] Task ${task.id} execution error:`, err.message);
+        bot?.sendMessage(chatId, `Task execution encountered an error: ${err.message}\n\nTry again with /task`).catch(() => {});
+      });
+
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Failed to create task: ${e.message}\n\nTry again with /task`);
+    }
+    return;
+  }
+}
+
+async function handleTaskStatus(chatId: number, taskId: string, wallet: string): Promise<void> {
+  if (!bot) return;
+  try {
+    const task = await storage.getTask(taskId.trim());
+    if (!task) {
+      await bot.sendMessage(chatId, "Task not found. Check the ID and try again.");
+      return;
+    }
+    if (task.creatorWallet && task.creatorWallet.toLowerCase() !== wallet.toLowerCase()) {
+      await bot.sendMessage(chatId, "That task doesn't belong to your wallet.");
+      return;
+    }
+
+    const agent = await storage.getAgent(task.agentId);
+    const statusEmoji = task.status === "completed" ? "Done" : task.status === "running" ? "Running..." : task.status === "failed" ? "Failed" : "Pending";
+
+    let msg = `Task: ${task.title}\nAgent: ${agent?.name || "Unknown"}\nType: ${task.taskType}\nStatus: ${statusEmoji}`;
+
+    if (task.modelUsed) msg += `\nModel: ${shortModel(task.modelUsed)}`;
+    if (task.executionTimeMs) msg += `\nTime: ${(task.executionTimeMs / 1000).toFixed(1)}s`;
+
+    if (task.result) {
+      const resultPreview = task.result.length > 3000
+        ? task.result.substring(0, 3000) + "\n\n... (truncated)"
+        : task.result;
+      msg += `\n\nResult:\n${resultPreview}`;
+    } else if (task.status === "running") {
+      msg += "\n\nStill processing — check back in a moment.";
+    }
+
+    await bot.sendMessage(chatId, msg);
+  } catch (e: any) {
+    await bot.sendMessage(chatId, `Error: ${e.message}`);
+  }
+}
+
+async function handleMyTasks(chatId: number, wallet: string): Promise<void> {
+  if (!bot) return;
+  try {
+    const tasks = await storage.getTasksByCreator(wallet, 10);
+
+    if (tasks.length === 0) {
+      await bot.sendMessage(chatId, "No tasks yet. Use /task to create one!");
+      return;
+    }
+
+    const lines = tasks.map((t, i) => {
+      const status = t.status === "completed" ? "Done" : t.status === "running" ? "Running" : t.status === "failed" ? "Failed" : "Pending";
+      const time = t.executionTimeMs ? ` (${(t.executionTimeMs / 1000).toFixed(1)}s)` : "";
+      return `${i + 1}. [${status}] ${t.title}${time}\n   ID: ${t.id}`;
+    });
+
+    await bot.sendMessage(chatId,
+      `Your Recent Tasks:\n\n${lines.join("\n\n")}\n\n` +
+      `Use /taskstatus <id> to see full results.`
+    );
+  } catch (e: any) {
+    await bot.sendMessage(chatId, `Error: ${e.message}`);
+  }
 }
 
 async function handleQuestion(chatId: number, messageId: number, question: string, username: string): Promise<void> {
