@@ -115,11 +115,26 @@ export function getTelegramWalletPage(wcProjectId: string): string {
     <div class="status" id="status"></div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@walletconnect/ethereum-provider@2.11.2/dist/index.umd.min.js"></script>
   <script>
     const WC_PROJECT_ID = "${wcProjectId}";
     const params = new URLSearchParams(window.location.search);
     const chatId = params.get('chatId');
+    let wcLoaded = false;
+
+    (async function loadWC() {
+      try {
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/@walletconnect/ethereum-provider@2.11.2/dist/index.umd.js';
+        script.onload = function() { wcLoaded = true; };
+        script.onerror = function() {
+          const s2 = document.createElement('script');
+          s2.src = 'https://cdn.jsdelivr.net/npm/@walletconnect/ethereum-provider@2.11.2/dist/index.umd.js';
+          s2.onload = function() { wcLoaded = true; };
+          document.head.appendChild(s2);
+        };
+        document.head.appendChild(script);
+      } catch(e) {}
+    })();
 
     function setStatus(msg, type) {
       const el = document.getElementById('status');
@@ -173,8 +188,12 @@ export function getTelegramWalletPage(wcProjectId: string): string {
     async function connectWalletConnect() {
       setStatus('Opening WalletConnect...', 'loading');
       try {
+        if (!wcLoaded) {
+          await new Promise(r => setTimeout(r, 2000));
+        }
         const EP = window.EthereumProvider?.default || window.EthereumProvider;
-        if (!EP) { setStatus('WalletConnect failed to load.', 'error'); return; }
+        if (!EP) { setStatus('WalletConnect unavailable. Paste your address below instead.', 'error'); return; }
+        if (!WC_PROJECT_ID) { setStatus('WalletConnect not configured. Paste your address below instead.', 'error'); return; }
         const provider = await EP.init({
           projectId: WC_PROJECT_ID,
           chains: [56],
