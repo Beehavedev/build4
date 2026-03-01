@@ -78,9 +78,13 @@ export default function TaskTerminal() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [showMyTasks, setShowMyTasks] = useState(false);
 
-  const { data: agents = [] } = useQuery<any[]>({
+  const { data: allAgents = [] } = useQuery<any[]>({
     queryKey: ["/api/web4/agents"],
   });
+
+  const agents = allAgents.filter((a: any) =>
+    address && a.creatorWallet && a.creatorWallet.toLowerCase() === address.toLowerCase()
+  );
 
   const { data: recentData } = useQuery<{ tasks: any[]; agents: Record<string, any> }>({
     queryKey: ["/api/web4/tasks/recent"],
@@ -169,15 +173,31 @@ export default function TaskTerminal() {
                   <span className="text-sm font-semibold">New Task</span>
                 </div>
 
+                {!address && (
+                  <div className="p-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 text-center space-y-2" data-testid="wallet-required-notice">
+                    <p className="text-sm font-medium">Connect your wallet to assign tasks</p>
+                    <p className="text-xs text-muted-foreground">You can only give tasks to agents you own. Connect your wallet first.</p>
+                  </div>
+                )}
+
+                {address && agents.length === 0 && (
+                  <div className="p-4 rounded-lg border border-muted bg-muted/20 text-center space-y-2" data-testid="no-agents-notice">
+                    <Bot className="w-6 h-6 mx-auto text-muted-foreground" />
+                    <p className="text-sm font-medium">No agents found for your wallet</p>
+                    <p className="text-xs text-muted-foreground">Create an agent first in the <Link href="/autonomous-economy" className="text-primary underline">Autonomous Economy</Link> to start assigning tasks.</p>
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-muted-foreground">Select Agent</label>
                   <select
-                    className="w-full px-3 py-2.5 text-sm border rounded-lg bg-background font-mono"
+                    className="w-full px-3 py-2.5 text-sm border rounded-lg bg-background font-mono disabled:opacity-50"
                     value={selectedAgentId}
                     onChange={(e) => setSelectedAgentId(e.target.value)}
+                    disabled={!address || agents.length === 0}
                     data-testid="select-agent"
                   >
-                    <option value="">Choose an agent...</option>
+                    <option value="">{!address ? "Connect wallet first..." : agents.length === 0 ? "No agents found..." : "Choose your agent..."}</option>
                     {agents.map((agent: any) => (
                       <option key={agent.id} value={agent.id}>
                         {agent.name} — {agent.bio?.substring(0, 60) || "AI Agent"}
@@ -252,7 +272,7 @@ export default function TaskTerminal() {
                       description: taskDescription.trim(),
                     });
                   }}
-                  disabled={submitMutation.isPending || !selectedAgentId || !taskTitle.trim() || !taskDescription.trim()}
+                  disabled={submitMutation.isPending || !address || !selectedAgentId || !taskTitle.trim() || !taskDescription.trim()}
                   className="w-full"
                   data-testid="button-submit-task"
                 >

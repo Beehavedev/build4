@@ -3347,6 +3347,13 @@ ${urls}
       }
       const agent = await storage.getAgent(agentId);
       if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const callerWallet = (req.headers["x-wallet-address"] as string || "").toLowerCase();
+      if (!callerWallet) {
+        return res.status(401).json({ error: "Wallet connection required to assign tasks" });
+      }
+      if (agent.creatorWallet && agent.creatorWallet.toLowerCase() !== callerWallet) {
+        return res.status(403).json({ error: "You can only assign tasks to your own agents" });
+      }
       if (typeof title !== "string" || title.length > 200) {
         return res.status(400).json({ error: "Title must be under 200 characters" });
       }
@@ -3360,7 +3367,7 @@ ${urls}
 
       const task = await storage.createTask({
         agentId,
-        creatorWallet: creatorWallet || null,
+        creatorWallet: callerWallet,
         taskType,
         title: title.trim(),
         description: description.trim(),
