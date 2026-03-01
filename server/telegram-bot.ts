@@ -1,6 +1,7 @@
 import TelegramBot from "node-telegram-bot-api";
 import { runInferenceWithFallback } from "./inference";
 import { storage } from "./storage";
+import { registerAgentOnchain, registerAgentERC8004, registerAgentBAP578, isOnchainReady, getExplorerUrl } from "./onchain";
 
 let bot: TelegramBot | null = null;
 let isRunning = false;
@@ -721,22 +722,83 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
     await bot.sendChatAction(chatId, "typing");
     const initialDeposit = "1000000000000000";
     const result = await storage.createFullAgent(name, bio, model, initialDeposit, undefined, undefined, wallet);
+    const agentId = result.agent.id;
 
     await bot.sendMessage(chatId,
-      `Agent created!\n\n${result.agent.name} | ${shortModel(model)}\nID: ${result.agent.id}`,
+      `Agent created!\n\n${result.agent.name} | ${shortModel(model)}\nID: ${agentId}\n\nRegistering on-chain...`,
       {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "Give it a task", callback_data: `agenttask:${result.agent.id}` }],
+            [{ text: "Give it a task", callback_data: `agenttask:${agentId}` }],
             [{ text: "My Agents", callback_data: "action:myagents" }, { text: "Menu", callback_data: "action:menu" }],
           ]
         }
       }
     );
+
+    registerAgentOnAllChains(chatId, agentId, name, bio);
   } catch (e: any) {
     await bot.sendMessage(chatId, `Failed: ${e.message}`, {
       reply_markup: { inline_keyboard: [[{ text: "Try again", callback_data: "action:newagent" }]] }
     });
+  }
+}
+
+async function registerAgentOnAllChains(chatId: number, agentId: string, name: string, bio: string): Promise<void> {
+  if (!bot) return;
+  const results: string[] = [];
+
+  try {
+    if (isOnchainReady()) {
+      const hubResult = await registerAgentOnchain(agentId);
+      if (hubResult.success && hubResult.txHash !== "already-registered") {
+        const explorer = getExplorerUrl(hubResult.txHash || "");
+        results.push(`AgentEconomyHub: ${explorer ? explorer : "registered"}`);
+      } else if (hubResult.success) {
+        results.push("AgentEconomyHub: already registered");
+      }
+    }
+  } catch (e: any) {
+    console.error(`[TelegramBot] Hub registration error for ${agentId}:`, e.message);
+  }
+
+  try {
+    const erc8004Result = await registerAgentERC8004(name, bio, agentId, "base");
+    if (erc8004Result.success) {
+      results.push(`ERC-8004 (${erc8004Result.chainName || "Base"}): ${erc8004Result.txHash?.substring(0, 14)}...`);
+      if (erc8004Result.tokenId) {
+        results.push(`  Token ID: ${erc8004Result.tokenId}`);
+      }
+    } else {
+      results.push(`ERC-8004: ${erc8004Result.error?.substring(0, 80) || "skipped"}`);
+    }
+  } catch (e: any) {
+    console.error(`[TelegramBot] ERC-8004 registration error for ${agentId}:`, e.message);
+    results.push(`ERC-8004: ${e.message?.substring(0, 60)}`);
+  }
+
+  try {
+    const bap578Result = await registerAgentBAP578(name, bio, agentId);
+    if (bap578Result.success) {
+      results.push(`BAP-578 (BNB Chain): ${bap578Result.txHash?.substring(0, 14)}...`);
+      if (bap578Result.tokenId) {
+        results.push(`  NFA Token ID: ${bap578Result.tokenId}`);
+      }
+    } else {
+      results.push(`BAP-578: ${bap578Result.error?.substring(0, 80) || "skipped"}`);
+    }
+  } catch (e: any) {
+    console.error(`[TelegramBot] BAP-578 registration error for ${agentId}:`, e.message);
+    results.push(`BAP-578: ${e.message?.substring(0, 60)}`);
+  }
+
+  if (results.length > 0) {
+    try {
+      await bot.sendMessage(chatId,
+        `On-chain registration complete:\n\n${results.join("\n")}`,
+        { reply_markup: mainMenuKeyboard(true, chatId) }
+      );
+    } catch {}
   }
 }
 
