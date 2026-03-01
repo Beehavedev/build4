@@ -195,7 +195,6 @@ async function promptWalletConnect(chatId: number): Promise<void> {
     reply_markup: {
       inline_keyboard: [
         [{ text: "Connect Wallet", web_app: { url: walletUrl } }],
-        [{ text: "Paste address instead", callback_data: "action:linkwallet" }],
       ]
     }
   });
@@ -217,7 +216,6 @@ function mainMenuKeyboard(hasWallet: boolean): TelegramBot.InlineKeyboardMarkup 
     return {
       inline_keyboard: [
         [{ text: "Connect Wallet", web_app: { url: walletUrl } }],
-        [{ text: "Paste address instead", callback_data: "action:linkwallet" }],
         [{ text: "What is BUILD4?", callback_data: "action:info" }, { text: "Help", callback_data: "action:help" }],
       ]
     };
@@ -283,10 +281,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   await bot.answerCallbackQuery(query.id);
 
   if (data === "action:linkwallet") {
-    pendingWallet.add(chatId);
-    pendingAgentCreation.delete(chatId);
-    pendingTask.delete(chatId);
-    await bot.sendMessage(chatId, "Paste your wallet address (0x...):");
+    await promptWalletConnect(chatId);
     return;
   }
 
@@ -456,16 +451,12 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
   if ((msg as any).web_app_data) {
     try {
-      const rawData = (msg as any).web_app_data.data;
-      const data = JSON.parse(rawData);
+      const data = JSON.parse((msg as any).web_app_data.data);
       if (data.wallet && /^0x[a-fA-F0-9]{40}$/i.test(data.wallet)) {
-        if (msg.from?.id !== chatId && msg.from?.id) {
-          console.warn(`[TelegramBot] web_app_data user mismatch: from=${msg.from.id} chat=${chatId}`);
-        }
         const addr = data.wallet.toLowerCase();
         telegramWalletMap.set(chatId, addr);
         pendingWallet.delete(chatId);
-        console.log(`[TelegramBot] Wallet connected via Mini App for chatId ${chatId}: ${addr.substring(0, 8)}...`);
+        console.log(`[TelegramBot] Wallet connected via WalletConnect for chatId ${chatId}: ${addr.substring(0, 8)}...`);
         await bot.sendMessage(chatId,
           `Wallet connected: ${shortWallet(addr)}`,
           { reply_markup: mainMenuKeyboard(true) }
@@ -483,19 +474,6 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
   console.log(`[TelegramBot] ${isGroup ? "Group" : "DM"} message from @${username} (chatId: ${chatId}): ${text.slice(0, 80)}`);
 
-  if (pendingWallet.has(chatId) && /^0x[a-fA-F0-9]{40}$/.test(text)) {
-    pendingWallet.delete(chatId);
-    telegramWalletMap.set(chatId, text.toLowerCase());
-    await bot.sendMessage(chatId,
-      `Wallet connected: ${shortWallet(text)}`,
-      { reply_markup: mainMenuKeyboard(true) }
-    );
-    return;
-  }
-  if (pendingWallet.has(chatId) && !text.startsWith("/")) {
-    await bot.sendMessage(chatId, "That doesn't look like a wallet address. Send your 0x... address:");
-    return;
-  }
 
   if (pendingAgentCreation.has(chatId) && !text.startsWith("/")) {
     await handleAgentCreationFlow(chatId, text);
@@ -574,12 +552,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
 
     if (cmd === "linkwallet") {
-      if (cmdArg && /^0x[a-fA-F0-9]{40}$/.test(cmdArg)) {
-        telegramWalletMap.set(chatId, cmdArg.toLowerCase());
-        await bot.sendMessage(chatId, `Wallet connected: ${shortWallet(cmdArg)}`, { reply_markup: mainMenuKeyboard(true) });
-      } else {
-        await promptWalletConnect(chatId);
-      }
+      await promptWalletConnect(chatId);
       return;
     }
 
