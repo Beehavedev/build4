@@ -261,14 +261,17 @@ export async function startTelegramBot(): Promise<void> {
     }
 
     const initBot = new TelegramBot(token, { polling: false });
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=-1&timeout=0`);
+    } catch {}
     await initBot.deleteWebHook({ drop_pending_updates: false });
-    console.log("[TelegramBot] Cleared any existing webhook");
+    console.log("[TelegramBot] Cleared webhook and flushed pending updates");
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     bot = new TelegramBot(token, {
       polling: {
-        interval: 1000,
+        interval: 300,
         autoStart: true,
         params: { timeout: 30 }
       }
