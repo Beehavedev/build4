@@ -1414,11 +1414,7 @@ export async function registerAgentERC8004(
     const w = new ethers.Wallet(privateKey, prov);
     const registry = new ethers.Contract(contractAddrs.identityRegistry, ERC8004_IDENTITY_REGISTRY_ABI, w);
 
-    const baseUrl = process.env.REPLIT_DEV_DOMAIN
-      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-      : process.env.REPL_SLUG
-        ? `https://${process.env.REPL_SLUG}.replit.app`
-        : "https://build4.io";
+    const baseUrl = "https://build4.io";
 
     const agentURI = `${baseUrl}/api/standards/erc8004/agent-card/${agentDbId}`;
 
@@ -1484,11 +1480,7 @@ export async function registerAgentBAP578(
     const w = new ethers.Wallet(privateKey, prov);
     const nfaContract = new ethers.Contract(bap578Address, BAP578_NFA_ABI, w);
 
-    const baseUrl = process.env.REPLIT_DEV_DOMAIN
-      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-      : process.env.REPL_SLUG
-        ? `https://${process.env.REPL_SLUG}.replit.app`
-        : "https://build4.io";
+    const baseUrl = "https://build4.io";
 
     const metadataURI = `${baseUrl}/api/standards/bap578/agent-metadata/${agentDbId}`;
 

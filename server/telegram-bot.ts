@@ -212,17 +212,7 @@ async function promptWalletConnect(chatId: number): Promise<void> {
 }
 
 function getWalletConnectUrl(chatId?: number): string {
-  let base: string;
-  if (appBaseUrl) {
-    base = appBaseUrl;
-  } else {
-    const deployUrl = process.env.REPLIT_DEPLOYMENT_URL || process.env.REPLIT_DEV_DOMAIN;
-    if (deployUrl) {
-      base = deployUrl.startsWith("http") ? deployUrl : `https://${deployUrl}`;
-    } else {
-      base = "https://build4.io";
-    }
-  }
+  const base = appBaseUrl || "https://build4.io";
   const url = `${base}/api/web4/telegram-wallet`;
   return chatId ? `${url}?chatId=${chatId}` : url;
 }
