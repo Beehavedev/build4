@@ -172,6 +172,17 @@ function getLinkedWallet(chatId: number): string | undefined {
   return telegramWalletMap.get(chatId);
 }
 
+export function linkTelegramWallet(chatId: number, wallet: string): void {
+  telegramWalletMap.set(chatId, wallet.toLowerCase());
+  console.log(`[TelegramBot] Wallet linked via web for chatId ${chatId}: ${wallet.substring(0, 8)}...`);
+  if (bot) {
+    bot.sendMessage(chatId,
+      `Wallet connected: ${wallet.substring(0, 6)}...${wallet.substring(38)}`,
+      { reply_markup: mainMenuKeyboard(true, chatId) }
+    ).catch(() => {});
+  }
+}
+
 function shortModel(m: string): string {
   if (m.includes("Llama")) return "Llama 70B";
   if (m.includes("DeepSeek")) return "DeepSeek V3";
@@ -190,32 +201,38 @@ async function getMyAgents(wallet: string) {
 
 async function promptWalletConnect(chatId: number): Promise<void> {
   if (!bot) return;
-  const walletUrl = getWalletConnectUrl();
+  const walletUrl = getWalletConnectUrl(chatId);
   await bot.sendMessage(chatId, "Connect your wallet first:", {
     reply_markup: {
       inline_keyboard: [
-        [{ text: "Connect Wallet", web_app: { url: walletUrl } }],
+        [{ text: "Connect Wallet", url: walletUrl }],
       ]
     }
   });
 }
 
-function getWalletConnectUrl(): string {
-  if (appBaseUrl) return `${appBaseUrl}/api/web4/telegram-wallet`;
-  const replitDomain = process.env.REPLIT_DEPLOYMENT_URL || process.env.REPLIT_DEV_DOMAIN;
-  if (replitDomain) {
-    const url = replitDomain.startsWith("http") ? replitDomain : `https://${replitDomain}`;
-    return `${url}/api/web4/telegram-wallet`;
+function getWalletConnectUrl(chatId?: number): string {
+  let base: string;
+  if (appBaseUrl) {
+    base = appBaseUrl;
+  } else {
+    const deployUrl = process.env.REPLIT_DEPLOYMENT_URL || process.env.REPLIT_DEV_DOMAIN;
+    if (deployUrl) {
+      base = deployUrl.startsWith("http") ? deployUrl : `https://${deployUrl}`;
+    } else {
+      base = "https://build4.io";
+    }
   }
-  return "https://build4.io/api/web4/telegram-wallet";
+  const url = `${base}/api/web4/telegram-wallet`;
+  return chatId ? `${url}?chatId=${chatId}` : url;
 }
 
-function mainMenuKeyboard(hasWallet: boolean): TelegramBot.InlineKeyboardMarkup {
+function mainMenuKeyboard(hasWallet: boolean, chatId?: number): TelegramBot.InlineKeyboardMarkup {
   if (!hasWallet) {
-    const walletUrl = getWalletConnectUrl();
+    const walletUrl = getWalletConnectUrl(chatId);
     return {
       inline_keyboard: [
-        [{ text: "Connect Wallet", web_app: { url: walletUrl } }],
+        [{ text: "Connect Wallet", url: walletUrl }],
         [{ text: "What is BUILD4?", callback_data: "action:info" }, { text: "Help", callback_data: "action:help" }],
       ]
     };
@@ -311,7 +328,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\n" +
       "Agents get wallets, trade skills, evolve, replicate, and operate fully on-chain. No centralized AI — inference runs through Hyperbolic, Akash ML, and Ritual.\n\n" +
       "https://build4.io",
-      { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId)) }
+      { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId), chatId) }
     );
     return;
   }
@@ -322,7 +339,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       "/ask <question> — Ask about BUILD4\n" +
       "/mychatid — For strategy notifications\n\n" +
       "Or just type any question and I'll answer it.",
-      { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId)) }
+      { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId), chatId) }
     );
     return;
   }
@@ -369,7 +386,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:menu") {
     await bot.sendMessage(chatId, "What would you like to do?", {
-      reply_markup: mainMenuKeyboard(!!wallet)
+      reply_markup: mainMenuKeyboard(!!wallet, chatId)
     });
     return;
   }
@@ -480,7 +497,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         console.log(`[TelegramBot] Wallet connected via WalletConnect for chatId ${chatId}: ${addr.substring(0, 8)}...`);
         await bot.sendMessage(chatId,
           `Wallet connected: ${shortWallet(addr)}`,
-          { reply_markup: mainMenuKeyboard(true) }
+          { reply_markup: mainMenuKeyboard(true, chatId) }
         );
         return;
       }
@@ -520,13 +537,13 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         `Welcome to BUILD4\nDecentralized AI agents on BNB Chain, Base, and XLayer.\n\n` +
         (wallet ? `Wallet: ${shortWallet(wallet)}\n\n` : "") +
         `Tap a button to get started:`,
-        { reply_markup: mainMenuKeyboard(!!wallet) }
+        { reply_markup: mainMenuKeyboard(!!wallet, chatId) }
       );
       return;
     }
 
     if (cmd === "cancel") {
-      await bot.sendMessage(chatId, "Cancelled.", { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId)) });
+      await bot.sendMessage(chatId, "Cancelled.", { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId), chatId) });
       return;
     }
 
@@ -539,7 +556,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     if (cmd === "help") {
       await bot.sendMessage(chatId,
         "Tap buttons to navigate, or type:\n\n/ask <question> — Ask anything\n/mychatid — For notifications\n\nOr just type a question directly.",
-        { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId)) }
+        { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId), chatId) }
       );
       return;
     }
@@ -548,7 +565,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       await bot.sendMessage(chatId,
         "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\n" +
         "Agents get wallets, trade skills, evolve, replicate, and operate fully on-chain. No centralized AI — inference runs through Hyperbolic, Akash ML, and Ritual.\n\nhttps://build4.io",
-        { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId)) }
+        { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId), chatId) }
       );
       return;
     }

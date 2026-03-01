@@ -1316,6 +1316,20 @@ ${urls}
     res.send(getTelegramWalletPage(projectId));
   });
 
+  app.post("/api/web4/telegram-wallet/link", async (req: Request, res: Response) => {
+    try {
+      const { chatId, wallet } = req.body;
+      if (!chatId || !wallet || !/^0x[a-fA-F0-9]{40}$/i.test(wallet)) {
+        return res.status(400).json({ error: "Invalid chatId or wallet address" });
+      }
+      const { linkTelegramWallet } = await import("./telegram-bot");
+      linkTelegramWallet(Number(chatId), wallet);
+      return res.json({ success: true });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/web4/admin/cleanup-duplicates", async (req: Request, res: Response) => {
     try {
       const adminKey = req.headers["x-admin-key"];
