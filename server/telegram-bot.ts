@@ -229,17 +229,33 @@ function mainMenuKeyboard(hasWallet: boolean): TelegramBot.InlineKeyboardMarkup 
   };
 }
 
+let startingBot = false;
+
 export async function startTelegramBot(): Promise<void> {
-  if (isRunning || !isTelegramConfigured()) return;
+  if (isRunning || startingBot || !isTelegramConfigured()) return;
+  startingBot = true;
 
   const token = process.env.TELEGRAM_BOT_TOKEN!;
 
   try {
-    const initBot = new TelegramBot(token);
+    if (bot) {
+      try { bot.stopPolling(); } catch {}
+      bot = null;
+    }
+
+    const initBot = new TelegramBot(token, { polling: false });
     await initBot.deleteWebHook({ drop_pending_updates: false });
     console.log("[TelegramBot] Cleared any existing webhook");
 
-    bot = new TelegramBot(token, { polling: true });
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    bot = new TelegramBot(token, {
+      polling: {
+        interval: 1000,
+        autoStart: true,
+        params: { timeout: 30 }
+      }
+    });
     isRunning = true;
 
     const me = await bot.getMe();
@@ -263,13 +279,18 @@ export async function startTelegramBot(): Promise<void> {
     });
 
     bot.on("polling_error", (error) => {
-      if (error.message?.includes("409 Conflict")) return;
+      if (error.message?.includes("409 Conflict")) {
+        console.warn("[TelegramBot] 409 Conflict — another instance may be running. Retrying...");
+        return;
+      }
       console.error("[TelegramBot] Polling error:", error.message);
     });
 
   } catch (e: any) {
     console.error("[TelegramBot] Failed to start:", e.message);
     isRunning = false;
+  } finally {
+    startingBot = false;
   }
 }
 
