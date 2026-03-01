@@ -1385,6 +1385,17 @@ export default function AutonomousEconomy() {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <Link href="/tasks">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="font-mono text-xs gap-1.5 h-8 px-3"
+                  data-testid="button-task-terminal"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Tasks</span>
+                </Button>
+              </Link>
               <Button
                 variant="default"
                 size="sm"

@@ -177,12 +177,9 @@ export default function Home() {
             </div>
             <div className="hidden md:flex items-center gap-4">
               <a href="#lifecycle" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-lifecycle">{t("nav.lifecycle")}</a>
-              <a href="#decentralized" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-decentralized">{t("nav.web4")}</a>
-              <Link href="/why-build4" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-why">{t("nav.whyBuild4")}</Link>
               <Link href="/manifesto" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-manifesto">{t("nav.manifesto")}</Link>
               <Link href="/architecture" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-architecture">{t("nav.contracts")}</Link>
               <Link href="/marketplace" className="text-xs text-emerald-400 font-mono tracking-wide transition-colors hover:text-emerald-300" data-testid="link-marketplace">Marketplace</Link>
-              <Link href="/tasks" className="text-xs text-cyan-400 font-mono tracking-wide transition-colors hover:text-cyan-300" data-testid="link-tasks">Tasks</Link>
               <Link href="/privacy" className="text-xs text-purple-400 font-mono tracking-wide transition-colors hover:text-purple-300" data-testid="link-privacy">Privacy</Link>
               <LanguageSwitcher />
               <Button size="sm" asChild data-testid="button-connect">
@@ -208,12 +205,9 @@ export default function Home() {
           {mobileMenuOpen && (
             <div className="md:hidden border-t bg-background/95 backdrop-blur-xl px-4 py-3 space-y-1">
               <a href="#lifecycle" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-lifecycle-mobile">{t("nav.lifecycle")}</a>
-              <a href="#decentralized" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-decentralized-mobile">{t("nav.web4")}</a>
-              <Link href="/why-build4" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-why-mobile">{t("nav.whyBuild4")}</Link>
               <Link href="/manifesto" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-manifesto-mobile">{t("nav.manifesto")}</Link>
               <Link href="/architecture" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-architecture-mobile">{t("nav.contracts")}</Link>
               <Link href="/marketplace" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-emerald-400 font-mono" data-testid="link-marketplace-mobile">Marketplace</Link>
-              <Link href="/tasks" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-cyan-400 font-mono" data-testid="link-tasks-mobile">Tasks</Link>
               <Link href="/privacy" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-purple-400 font-mono" data-testid="link-privacy-mobile">Privacy</Link>
             </div>
           )}

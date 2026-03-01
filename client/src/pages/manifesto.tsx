@@ -5,7 +5,7 @@ import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { SEO } from "@/components/seo";
-import { Terminal, ArrowLeft, ArrowRight, Cpu, Shield, Coins, GitFork, Skull, Brain, BookOpen, Scale, Zap, Globe, Server, Unlock } from "lucide-react";
+import { Terminal, ArrowLeft, ArrowRight, Cpu, Shield, Coins, GitFork, Skull, Brain, BookOpen, Scale, Zap, Globe, Server, Unlock, HelpCircle } from "lucide-react";
 
 function SubtleGrid() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -236,6 +236,12 @@ export default function Manifesto() {
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <LanguageSwitcher />
+              <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex" data-testid="button-why-build4-nav">
+                <Link href="/why-build4">
+                  <HelpCircle className="w-3.5 h-3.5" />
+                  {t("nav.whyBuild4")}
+                </Link>
+              </Button>
               <Button variant="outline" size="sm" asChild className="hidden sm:inline-flex" data-testid="button-architecture-nav">
                 <Link href="/architecture">
                   <Cpu className="w-3.5 h-3.5" />
