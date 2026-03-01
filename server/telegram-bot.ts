@@ -279,6 +279,18 @@ export async function startTelegramBot(): Promise<void> {
     botUsername = me.username || null;
     console.log(`[TelegramBot] Started with polling as @${botUsername}`);
 
+    try {
+      const resp = await fetch(`https://api.telegram.org/bot${token}/setChatMenuButton`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ menu_button: { type: "default" } })
+      });
+      const result = await resp.json();
+      console.log("[TelegramBot] Reset menu button:", result.ok ? "success" : result.description);
+    } catch (e: any) {
+      console.log("[TelegramBot] Menu button reset skipped:", e.message);
+    }
+
     bot.on("message", async (msg) => {
       try {
         await handleMessage(msg);
