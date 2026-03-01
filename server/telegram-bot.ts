@@ -196,8 +196,7 @@ function shortWallet(w: string): string {
 }
 
 async function getMyAgents(wallet: string) {
-  const agents = await storage.getAgents();
-  return agents.filter(a => a.creatorWallet && a.creatorWallet.toLowerCase() === wallet.toLowerCase());
+  return storage.getAgentsByWallet(wallet);
 }
 
 async function promptWalletConnect(chatId: number): Promise<void> {
