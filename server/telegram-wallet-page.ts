@@ -55,6 +55,56 @@ export function getTelegramWalletPage(wcProjectId: string): string {
     .status.error { display: block; background: #2a0a0a; border: 1px solid #5a1a1a; color: #f87171; }
     .status.loading { display: block; background: #1a1a2a; border: 1px solid #3a3a5a; color: #a0a0c0; }
     .addr { font-family: monospace; font-size: 13px; word-break: break-all; margin-top: 4px; }
+    .deeplink-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
+    .deeplink-btn {
+      padding: 12px 8px;
+      border-radius: 10px;
+      border: 1px solid #2a2a3a;
+      background: #14141f;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      text-align: center;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .deeplink-btn:hover { background: #1a1a2a; border-color: #9333ea; }
+    .or-divider {
+      display: flex; align-items: center; gap: 12px;
+      margin: 20px 0; color: #4a4a6a; font-size: 13px;
+    }
+    .or-divider::before, .or-divider::after {
+      content: ''; flex: 1; height: 1px; background: #1a1a2a;
+    }
+    .manual-section { margin-top: 0; }
+    .manual-input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid #2a2a3a;
+      background: #14141f;
+      color: #fff;
+      font-size: 14px;
+      font-family: monospace;
+      outline: none;
+      margin-bottom: 8px;
+    }
+    .manual-input:focus { border-color: #9333ea; }
+    .manual-input::placeholder { color: #4a4a6a; }
+    .submit-btn {
+      width: 100%;
+      padding: 14px;
+      border-radius: 10px;
+      border: none;
+      background: #9333ea;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .submit-btn:hover { background: #7c28c8; }
+    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -62,117 +112,118 @@ export function getTelegramWalletPage(wcProjectId: string): string {
     <h1>Connect Wallet</h1>
     <p class="subtitle">Link your wallet to BUILD4 on Telegram</p>
 
-    <button class="wallet-btn" id="btn-metamask" onclick="connectMetaMask()">
+    <button class="wallet-btn" id="btn-metamask" onclick="openMetaMask()">
       <div class="icon" style="background:#f6851b;">MM</div>
       <div class="label">MetaMask</div>
       <div class="arrow">></div>
     </button>
 
-    <button class="wallet-btn" id="btn-wc" onclick="connectWalletConnect()">
-      <div class="icon" style="background:#3b99fc;">WC</div>
-      <div class="label">WalletConnect</div>
+    <button class="wallet-btn" id="btn-trust" onclick="openTrustWallet()">
+      <div class="icon" style="background:#3375BB;">TW</div>
+      <div class="label">Trust Wallet</div>
       <div class="arrow">></div>
     </button>
+
+    <div class="or-divider">or paste address</div>
+
+    <div class="manual-section">
+      <input class="manual-input" id="addr-input" type="text" placeholder="0x..." maxlength="42" />
+      <button class="submit-btn" id="btn-submit" onclick="submitAddress()">Connect</button>
+    </div>
 
     <div class="status" id="status"></div>
   </div>
 
-  <script src="https://unpkg.com/@walletconnect/ethereum-provider@2.17.0/dist/index.umd.js"></script>
   <script>
-    const WC_PROJECT_ID = "${wcProjectId}";
-    const params = new URLSearchParams(window.location.search);
-    const chatId = params.get('chatId');
+    var WC_PROJECT_ID = "${wcProjectId}";
+    var params = new URLSearchParams(window.location.search);
+    var chatId = params.get('chatId');
+    var pageUrl = window.location.href;
 
     function setStatus(msg, type) {
-      const el = document.getElementById('status');
+      var el = document.getElementById('status');
       el.className = 'status ' + type;
       el.innerHTML = msg;
     }
 
-    async function done(address) {
+    function linkWallet(address) {
       setStatus('Linking wallet...', 'loading');
       if (chatId) {
-        try {
-          const resp = await fetch('/api/web4/telegram-wallet/link', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chatId: chatId, wallet: address })
-          });
+        fetch('/api/web4/telegram-wallet/link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chatId: chatId, wallet: address })
+        }).then(function(resp) {
           if (resp.ok) {
             setStatus('Wallet connected! Return to Telegram.<div class="addr">' + address + '</div>', 'success');
+            document.getElementById('btn-metamask').disabled = true;
+            document.getElementById('btn-trust').disabled = true;
+            document.getElementById('btn-submit').disabled = true;
           } else {
-            setStatus('Failed to link wallet. Please try again.', 'error');
+            setStatus('Failed to link. Try again.', 'error');
           }
-        } catch (e) {
-          setStatus('Network error. Please try again.', 'error');
-        }
+        }).catch(function() {
+          setStatus('Network error. Try again.', 'error');
+        });
       } else {
         setStatus('Connected!<div class="addr">' + address + '</div>', 'success');
       }
-      document.getElementById('btn-metamask').disabled = true;
-      document.getElementById('btn-wc').disabled = true;
     }
 
-    async function connectMetaMask() {
-      setStatus('Connecting...', 'loading');
-      try {
-        if (!window.ethereum) {
-          setStatus('MetaMask not detected. Try WalletConnect instead.', 'error');
-          return;
-        }
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        if (accounts && accounts[0]) {
-          done(accounts[0].toLowerCase());
-        } else {
-          setStatus('No account returned.', 'error');
-        }
-      } catch (e) {
-        setStatus('Connection rejected.', 'error');
+    function openMetaMask() {
+      if (window.ethereum && window.ethereum.isMetaMask) {
+        setStatus('Connecting MetaMask...', 'loading');
+        window.ethereum.request({ method: 'eth_requestAccounts' }).then(function(accounts) {
+          if (accounts && accounts[0]) {
+            linkWallet(accounts[0].toLowerCase());
+          } else {
+            setStatus('No account returned.', 'error');
+          }
+        }).catch(function() {
+          setStatus('Connection rejected.', 'error');
+        });
+        return;
+      }
+      var dappUrl = encodeURIComponent(window.location.host + window.location.pathname + window.location.search);
+      window.location.href = 'https://metamask.app.link/dapp/' + dappUrl;
+    }
+
+    function openTrustWallet() {
+      if (window.ethereum && window.ethereum.isTrust) {
+        setStatus('Connecting Trust Wallet...', 'loading');
+        window.ethereum.request({ method: 'eth_requestAccounts' }).then(function(accounts) {
+          if (accounts && accounts[0]) {
+            linkWallet(accounts[0].toLowerCase());
+          } else {
+            setStatus('No account returned.', 'error');
+          }
+        }).catch(function() {
+          setStatus('Connection rejected.', 'error');
+        });
+        return;
+      }
+      var url = encodeURIComponent(pageUrl);
+      window.location.href = 'trust://open_url?coin_id=60&url=' + url;
+    }
+
+    function submitAddress() {
+      var addr = document.getElementById('addr-input').value.trim().toLowerCase();
+      if (/^0x[a-f0-9]{40}$/.test(addr)) {
+        linkWallet(addr);
+      } else {
+        setStatus('Invalid address. Must start with 0x followed by 40 hex characters.', 'error');
       }
     }
 
-    async function connectWalletConnect() {
-      setStatus('Opening WalletConnect...', 'loading');
-      try {
-        var EP = null;
-        if (typeof window.EthereumProvider !== 'undefined') {
-          EP = window.EthereumProvider.default || window.EthereumProvider;
+    if (window.ethereum) {
+      window.ethereum.on('accountsChanged', function(accounts) {
+        if (accounts && accounts[0]) {
+          linkWallet(accounts[0].toLowerCase());
         }
-        if (!EP) {
-          setStatus('WalletConnect is loading, please wait...', 'loading');
-          await new Promise(function(resolve) { setTimeout(resolve, 3000); });
-          if (typeof window.EthereumProvider !== 'undefined') {
-            EP = window.EthereumProvider.default || window.EthereumProvider;
-          }
-        }
-        if (!EP) {
-          setStatus('WalletConnect could not load. Try MetaMask instead.', 'error');
-          return;
-        }
-        var provider = await EP.init({
-          projectId: WC_PROJECT_ID,
-          chains: [56],
-          optionalChains: [8453, 196, 1],
-          showQrModal: true,
-          metadata: {
-            name: 'BUILD4',
-            description: 'Decentralized AI Agent Infrastructure',
-            url: 'https://build4.io',
-            icons: ['https://build4.io/logo.png']
-          }
-        });
-        await provider.enable();
-        if (provider.accounts && provider.accounts[0]) {
-          done(provider.accounts[0].toLowerCase());
-        } else {
-          setStatus('No account returned.', 'error');
-        }
-      } catch (e) {
-        if (e && e.message) {
-          setStatus('Error: ' + e.message, 'error');
-        } else {
-          setStatus('Connection cancelled.', 'error');
-        }
+      });
+
+      if (window.ethereum.selectedAddress) {
+        linkWallet(window.ethereum.selectedAddress.toLowerCase());
       }
     }
   </script>
