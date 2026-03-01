@@ -63,6 +63,7 @@ import {
   type AgentConversationMemory, type InsertAgentConversationMemory, agentConversationMemory,
   type AgentToolResult, type InsertAgentToolResult, agentToolResults,
   type AgentCollaborationLog, type InsertAgentCollaborationLog, agentCollaborationLog,
+  type AgentTask, type InsertAgentTask, agentTasks,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
@@ -354,6 +355,13 @@ export interface IStorage {
 
   createCollaborationLog(log: InsertAgentCollaborationLog): Promise<AgentCollaborationLog>;
   getRecentCollaborations(agentId: string, limit?: number): Promise<AgentCollaborationLog[]>;
+
+  createTask(task: InsertAgentTask): Promise<AgentTask>;
+  getTask(id: string): Promise<AgentTask | undefined>;
+  getTasksByAgent(agentId: string, limit?: number): Promise<AgentTask[]>;
+  getTasksByCreator(wallet: string, limit?: number): Promise<AgentTask[]>;
+  updateTask(id: string, data: Partial<AgentTask>): Promise<AgentTask | undefined>;
+  getRecentPublicTasks(limit?: number): Promise<AgentTask[]>;
 
   // Seed subscription plans
   seedSubscriptionPlans(): Promise<void>;
@@ -2169,6 +2177,41 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(agentCollaborationLog)
       .where(eq(agentCollaborationLog.requestingAgentId, agentId))
       .orderBy(desc(agentCollaborationLog.createdAt))
+      .limit(limit);
+  }
+
+  async createTask(task: InsertAgentTask): Promise<AgentTask> {
+    const [created] = await db.insert(agentTasks).values(task).returning();
+    return created;
+  }
+
+  async getTask(id: string): Promise<AgentTask | undefined> {
+    const [result] = await db.select().from(agentTasks).where(eq(agentTasks.id, id));
+    return result;
+  }
+
+  async getTasksByAgent(agentId: string, limit = 20): Promise<AgentTask[]> {
+    return db.select().from(agentTasks)
+      .where(eq(agentTasks.agentId, agentId))
+      .orderBy(desc(agentTasks.createdAt))
+      .limit(limit);
+  }
+
+  async getTasksByCreator(wallet: string, limit = 20): Promise<AgentTask[]> {
+    return db.select().from(agentTasks)
+      .where(eq(agentTasks.creatorWallet, wallet))
+      .orderBy(desc(agentTasks.createdAt))
+      .limit(limit);
+  }
+
+  async updateTask(id: string, data: Partial<AgentTask>): Promise<AgentTask | undefined> {
+    const [updated] = await db.update(agentTasks).set(data).where(eq(agentTasks.id, id)).returning();
+    return updated;
+  }
+
+  async getRecentPublicTasks(limit = 30): Promise<AgentTask[]> {
+    return db.select().from(agentTasks)
+      .orderBy(desc(agentTasks.createdAt))
       .limit(limit);
   }
 }

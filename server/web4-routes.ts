@@ -3338,4 +3338,91 @@ ${urls}
       res.status(500).json({ error: err.message });
     }
   });
+
+  app.post("/api/web4/tasks", async (req: Request, res: Response) => {
+    try {
+      const { agentId, title, description, taskType, creatorWallet } = req.body;
+      if (!agentId || !title || !description || !taskType) {
+        return res.status(400).json({ error: "agentId, title, description, and taskType are required" });
+      }
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      if (typeof title !== "string" || title.length > 200) {
+        return res.status(400).json({ error: "Title must be under 200 characters" });
+      }
+      if (typeof description !== "string" || description.length > 5000) {
+        return res.status(400).json({ error: "Description must be under 5000 characters" });
+      }
+      const validTypes = ["research", "analysis", "content", "code_review", "strategy", "general"];
+      if (!validTypes.includes(taskType)) {
+        return res.status(400).json({ error: `taskType must be one of: ${validTypes.join(", ")}` });
+      }
+
+      const task = await storage.createTask({
+        agentId,
+        creatorWallet: creatorWallet || null,
+        taskType,
+        title: title.trim(),
+        description: description.trim(),
+        status: "pending",
+        result: null,
+        toolsUsed: null,
+        modelUsed: null,
+        executionTimeMs: null,
+      });
+
+      res.json(task);
+
+      const { executeTask } = await import("./task-engine");
+      executeTask(task.id).catch(err =>
+        console.error(`[TaskEngine] Task ${task.id} execution error:`, err.message)
+      );
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/tasks/recent", async (req: Request, res: Response) => {
+    try {
+      const tasks = await storage.getRecentPublicTasks(30);
+      const agentIds = [...new Set(tasks.map(t => t.agentId))];
+      const agents: Record<string, any> = {};
+      for (const id of agentIds) {
+        const agent = await storage.getAgent(id);
+        if (agent) agents[id] = { name: agent.name, bio: agent.bio };
+      }
+      res.json({ tasks, agents });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/tasks/:taskId", async (req: Request, res: Response) => {
+    try {
+      const task = await storage.getTask(req.params.taskId);
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      const agent = await storage.getAgent(task.agentId);
+      res.json({ task, agent: agent ? { name: agent.name, bio: agent.bio } : null });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/tasks/agent/:agentId", async (req: Request, res: Response) => {
+    try {
+      const tasks = await storage.getTasksByAgent(req.params.agentId, 30);
+      res.json(tasks);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/tasks/creator/:wallet", async (req: Request, res: Response) => {
+    try {
+      const tasks = await storage.getTasksByCreator(req.params.wallet, 30);
+      res.json(tasks);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 }

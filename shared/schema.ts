@@ -1277,6 +1277,35 @@ export const insertAgentCollaborationLogSchema = createInsertSchema(agentCollabo
 export type InsertAgentCollaborationLog = z.infer<typeof insertAgentCollaborationLogSchema>;
 export type AgentCollaborationLog = typeof agentCollaborationLog.$inferSelect;
 
+export const agentTasks = pgTable("agent_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  creatorWallet: varchar("creator_wallet"),
+  taskType: text("task_type").notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  status: text("status").notNull().default("pending"),
+  result: text("result"),
+  toolsUsed: text("tools_used"),
+  modelUsed: text("model_used"),
+  executionTimeMs: integer("execution_time_ms"),
+  createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const insertAgentTaskSchema = createInsertSchema(agentTasks).omit({ id: true, createdAt: true, completedAt: true });
+export type InsertAgentTask = z.infer<typeof insertAgentTaskSchema>;
+export type AgentTask = typeof agentTasks.$inferSelect;
+
+export const TASK_TYPES = [
+  { id: "research", name: "Research", description: "Deep analysis with sources and methodology" },
+  { id: "analysis", name: "Market Analysis", description: "Data-driven market or protocol analysis" },
+  { id: "content", name: "Content", description: "Write tweets, threads, articles, or copy" },
+  { id: "code_review", name: "Code Review", description: "Review code snippets and suggest improvements" },
+  { id: "strategy", name: "Strategy", description: "Marketing, business, or trading strategy" },
+  { id: "general", name: "General", description: "Open-ended tasks" },
+] as const;
+
 export const AVAILABLE_MODELS = [
   { id: "meta-llama/Meta-Llama-3.1-70B-Instruct", name: "Llama 3.1 70B", provider: "hyperbolic" },
   { id: "meta-llama/Llama-3.3-70B-Instruct", name: "Llama 3.3 70B", provider: "akash" },

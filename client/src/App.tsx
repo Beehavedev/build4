@@ -20,6 +20,7 @@ import TwitterAgent from "@/pages/twitter-agent";
 import SupportAgent from "@/pages/support-agent";
 import Chain from "@/pages/chain";
 import Standards from "@/pages/standards";
+import TaskTerminal from "@/pages/task-terminal";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -40,6 +41,7 @@ function Router() {
       <Route path="/support-agent" component={SupportAgent} />
       <Route path="/chain" component={Chain} />
       <Route path="/standards" component={Standards} />
+      <Route path="/tasks" component={TaskTerminal} />
       <Route component={NotFound} />
     </Switch>
   );
