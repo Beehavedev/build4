@@ -23,6 +23,13 @@ declare module "http" {
   }
 }
 
+app.get("/", (_req, res, next) => {
+  if (_req.headers["user-agent"]?.includes("health") || _req.headers["x-healthcheck"]) {
+    return res.status(200).send("OK");
+  }
+  next();
+});
+
 app.use(
   express.json({
     verify: (req, _res, buf) => {
