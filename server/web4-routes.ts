@@ -1309,6 +1309,13 @@ ${urls}
     res.json({ projectId });
   });
 
+  app.get("/api/web4/telegram-wallet", async (_req: Request, res: Response) => {
+    const projectId = process.env.WALLETCONNECT_PROJECT_ID || "";
+    const { getTelegramWalletPage } = await import("./telegram-wallet-page");
+    res.setHeader("Content-Type", "text/html");
+    res.send(getTelegramWalletPage(projectId));
+  });
+
   app.post("/api/web4/admin/cleanup-duplicates", async (req: Request, res: Response) => {
     try {
       const adminKey = req.headers["x-admin-key"];

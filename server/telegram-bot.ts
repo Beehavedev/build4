@@ -5,6 +5,7 @@ import { storage } from "./storage";
 let bot: TelegramBot | null = null;
 let isRunning = false;
 let botUsername: string | null = null;
+let appBaseUrl: string | null = null;
 
 const telegramWalletMap = new Map<number, string>();
 
@@ -187,11 +188,36 @@ async function getMyAgents(wallet: string) {
   return agents.filter(a => a.creatorWallet && a.creatorWallet.toLowerCase() === wallet.toLowerCase());
 }
 
-function mainMenuKeyboard(hasWallet: boolean) {
+async function promptWalletConnect(chatId: number): Promise<void> {
+  if (!bot) return;
+  const walletUrl = getWalletConnectUrl();
+  await bot.sendMessage(chatId, "Connect your wallet first:", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "Connect Wallet", web_app: { url: walletUrl } }],
+        [{ text: "Paste address instead", callback_data: "action:linkwallet" }],
+      ]
+    }
+  });
+}
+
+function getWalletConnectUrl(): string {
+  if (appBaseUrl) return `${appBaseUrl}/api/web4/telegram-wallet`;
+  const replitDomain = process.env.REPLIT_DEPLOYMENT_URL || process.env.REPLIT_DEV_DOMAIN;
+  if (replitDomain) {
+    const url = replitDomain.startsWith("http") ? replitDomain : `https://${replitDomain}`;
+    return `${url}/api/web4/telegram-wallet`;
+  }
+  return "https://build4.io/api/web4/telegram-wallet";
+}
+
+function mainMenuKeyboard(hasWallet: boolean): TelegramBot.InlineKeyboardMarkup {
   if (!hasWallet) {
+    const walletUrl = getWalletConnectUrl();
     return {
       inline_keyboard: [
-        [{ text: "Connect Wallet", callback_data: "action:linkwallet" }],
+        [{ text: "Connect Wallet", web_app: { url: walletUrl } }],
+        [{ text: "Paste address instead", callback_data: "action:linkwallet" }],
         [{ text: "What is BUILD4?", callback_data: "action:info" }, { text: "Help", callback_data: "action:help" }],
       ]
     };
@@ -289,8 +315,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:newagent") {
     if (!wallet) {
-      pendingWallet.add(chatId);
-      await bot.sendMessage(chatId, "First, paste your wallet address (0x...):");
+      await promptWalletConnect(chatId);
       return;
     }
     pendingAgentCreation.set(chatId, { step: "name" });
@@ -301,8 +326,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:myagents") {
     if (!wallet) {
-      pendingWallet.add(chatId);
-      await bot.sendMessage(chatId, "First, paste your wallet address (0x...):");
+      await promptWalletConnect(chatId);
       return;
     }
     await handleMyAgents(chatId, wallet);
@@ -311,8 +335,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:task") {
     if (!wallet) {
-      pendingWallet.add(chatId);
-      await bot.sendMessage(chatId, "First, paste your wallet address (0x...):");
+      await promptWalletConnect(chatId);
       return;
     }
     await startTaskFlow(chatId, wallet);
@@ -321,8 +344,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:mytasks") {
     if (!wallet) {
-      pendingWallet.add(chatId);
-      await bot.sendMessage(chatId, "First, paste your wallet address (0x...):");
+      await promptWalletConnect(chatId);
       return;
     }
     await handleMyTasks(chatId, wallet);
@@ -425,12 +447,38 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 }
 
 async function handleMessage(msg: TelegramBot.Message): Promise<void> {
-  if (!msg.text || !bot) return;
+  if (!bot) return;
 
   const chatId = msg.chat.id;
   const chatType = msg.chat.type;
   const isGroup = chatType === "group" || chatType === "supergroup";
   const username = msg.from?.username || msg.from?.first_name || "user";
+
+  if ((msg as any).web_app_data) {
+    try {
+      const rawData = (msg as any).web_app_data.data;
+      const data = JSON.parse(rawData);
+      if (data.wallet && /^0x[a-fA-F0-9]{40}$/i.test(data.wallet)) {
+        if (msg.from?.id !== chatId && msg.from?.id) {
+          console.warn(`[TelegramBot] web_app_data user mismatch: from=${msg.from.id} chat=${chatId}`);
+        }
+        const addr = data.wallet.toLowerCase();
+        telegramWalletMap.set(chatId, addr);
+        pendingWallet.delete(chatId);
+        console.log(`[TelegramBot] Wallet connected via Mini App for chatId ${chatId}: ${addr.substring(0, 8)}...`);
+        await bot.sendMessage(chatId,
+          `Wallet connected: ${shortWallet(addr)}`,
+          { reply_markup: mainMenuKeyboard(true) }
+        );
+        return;
+      }
+    } catch (e: any) {
+      console.error("[TelegramBot] web_app_data parse error:", e.message);
+    }
+    return;
+  }
+
+  if (!msg.text) return;
   const text = msg.text.trim();
 
   console.log(`[TelegramBot] ${isGroup ? "Group" : "DM"} message from @${username} (chatId: ${chatId}): ${text.slice(0, 80)}`);
@@ -530,8 +578,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         telegramWalletMap.set(chatId, cmdArg.toLowerCase());
         await bot.sendMessage(chatId, `Wallet connected: ${shortWallet(cmdArg)}`, { reply_markup: mainMenuKeyboard(true) });
       } else {
-        pendingWallet.add(chatId);
-        await bot.sendMessage(chatId, "Paste your wallet address (0x...):");
+        await promptWalletConnect(chatId);
       }
       return;
     }
@@ -539,11 +586,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     if (cmd === "newagent") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me to create agents!"); return; }
       const wallet = getLinkedWallet(chatId);
-      if (!wallet) {
-        pendingWallet.add(chatId);
-        await bot.sendMessage(chatId, "First, paste your wallet address (0x...):");
-        return;
-      }
+      if (!wallet) { await promptWalletConnect(chatId); return; }
       pendingAgentCreation.set(chatId, { step: "name" });
       await bot.sendMessage(chatId, "What's your agent's name? (1-50 characters)");
       return;
@@ -551,7 +594,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
     if (cmd === "myagents") {
       const wallet = getLinkedWallet(chatId);
-      if (!wallet) { pendingWallet.add(chatId); await bot.sendMessage(chatId, "First, paste your wallet address (0x...):"); return; }
+      if (!wallet) { await promptWalletConnect(chatId); return; }
       await handleMyAgents(chatId, wallet);
       return;
     }
@@ -559,14 +602,14 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     if (cmd === "task") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me to assign tasks!"); return; }
       const wallet = getLinkedWallet(chatId);
-      if (!wallet) { pendingWallet.add(chatId); await bot.sendMessage(chatId, "First, paste your wallet address (0x...):"); return; }
+      if (!wallet) { await promptWalletConnect(chatId); return; }
       await startTaskFlow(chatId, wallet);
       return;
     }
 
     if (cmd === "taskstatus") {
       const wallet = getLinkedWallet(chatId);
-      if (!wallet) { pendingWallet.add(chatId); await bot.sendMessage(chatId, "First, paste your wallet address (0x...):"); return; }
+      if (!wallet) { await promptWalletConnect(chatId); return; }
       if (!cmdArg) { await bot.sendMessage(chatId, "Usage: /taskstatus <task-id>"); return; }
       await handleTaskStatus(chatId, cmdArg, wallet);
       return;
@@ -574,7 +617,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
     if (cmd === "mytasks") {
       const wallet = getLinkedWallet(chatId);
-      if (!wallet) { pendingWallet.add(chatId); await bot.sendMessage(chatId, "First, paste your wallet address (0x...):"); return; }
+      if (!wallet) { await promptWalletConnect(chatId); return; }
       await handleMyTasks(chatId, wallet);
       return;
     }

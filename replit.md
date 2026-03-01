@@ -60,11 +60,13 @@ The project uses a monorepo with `client/` for the React frontend, `server/` for
 
 ### Telegram Bot (Onboarding + Agent Management)
 - **Purpose**: Full agent lifecycle via Telegram — create agents, assign tasks, check results, and manage wallet linking without visiting the website.
-- **Commands**: `/start` (onboarding), `/linkwallet 0x...` (wallet link), `/newagent` (guided 3-step creation), `/myagents` (list agents), `/task` (guided task assignment), `/taskstatus <id>`, `/mytasks`, `/ask`, `/info`, `/chains`, `/contracts`, `/mychatid`, `/cancel`, `/help`.
-- **Agent Creation Flow**: Name → Bio → Model selection (Llama/DeepSeek/Qwen) — conversational steps, DM only.
-- **Task Flow**: Agent selection → Task type → Title → Description — auto-executes and sends result back when done.
-- **Wallet Linking**: In-memory `telegramWalletMap` links Telegram chatId to 0x wallet for ownership verification.
-- **File**: `server/telegram-bot.ts`
+- **UX**: Fully button-driven with Telegram inline keyboards. No typing numbers — every choice is a tappable button.
+- **Commands**: `/start` (menu with buttons), `/linkwallet` (wallet connect), `/newagent` (3-step: name→bio→model buttons), `/myagents`, `/task` (agent picker→type buttons→describe), `/taskstatus <id>`, `/mytasks`, `/ask`, `/info`, `/chains`, `/contracts`, `/mychatid`, `/cancel`, `/help`.
+- **Wallet Connection**: Primary method is WalletConnect/MetaMask via Telegram Mini App (`web_app` button). Opens a styled page at `/api/web4/telegram-wallet` with MetaMask, WalletConnect, and manual paste options. Address is sent back to bot via `web_app_data`. Fallback: paste 0x address directly.
+- **Agent Creation Flow**: Name (text) → Bio (text) → Model (inline keyboard buttons) — DM only.
+- **Task Flow**: Single-agent users skip agent selection. Agent picker → Task type (6 buttons) → Describe task (text) → Auto-executes, bot sends result. Title auto-generated from description.
+- **Wallet Linking**: In-memory `telegramWalletMap` links Telegram chatId to 0x wallet. Session-based (resets on server restart).
+- **Files**: `server/telegram-bot.ts`, `server/telegram-wallet-page.ts`
 
 ### Agent Task Terminal
 - **Purpose**: Direct task interface where users assign tasks to agents and get AI-powered results. Competes with OpenClaw and Moltbook.
