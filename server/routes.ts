@@ -13,7 +13,7 @@ import { startTelegramBot, stopTelegramBot, getTelegramBotStatus } from "./teleg
 import { autoStartAllAgents } from "./multi-twitter-agent";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
 import { registerSeoPrerender } from "./seo-prerender";
-import { analyticsAuth, generateAnalyticsToken } from "./admin-auth";
+import { analyticsAuth, generateAnalyticsToken, constantTimeCompare } from "./admin-auth";
 
 export async function registerRoutes(
   httpServer: Server,

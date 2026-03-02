@@ -14,7 +14,7 @@ export function generateAnalyticsToken(): string {
   return Buffer.from(JSON.stringify({ exp: expiry, sig: hmac })).toString("base64");
 }
 
-function constantTimeCompare(a: string, b: string): boolean {
+export function constantTimeCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
