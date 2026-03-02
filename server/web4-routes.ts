@@ -1330,6 +1330,25 @@ ${urls}
     }
   });
 
+  app.post("/api/web4/admin/launch-bounty", async (req: Request, res: Response) => {
+    try {
+      const adminKey = req.headers["x-admin-key"];
+      if (!adminKey || adminKey !== process.env.SESSION_SECRET) {
+        return res.status(403).json({ error: "Unauthorized" });
+      }
+      const { postBountyTweet } = await import("./twitter-agent");
+      const { customTweet, rewardBnb, maxWinners, jobId } = req.body;
+      const id = jobId || `campaign-${Date.now()}`;
+      const reward = rewardBnb || "0.016";
+      const winners = maxWinners || 44;
+      const tweet = customTweet || "Default bounty tweet";
+      const result = await postBountyTweet(id, tweet, reward, winners, tweet);
+      return res.json({ success: true, tweetId: result.tweetId, tweetUrl: result.tweetUrl, jobId: id });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/web4/admin/cleanup-duplicates", async (req: Request, res: Response) => {
     try {
       const adminKey = req.headers["x-admin-key"];
