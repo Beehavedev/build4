@@ -80,14 +80,62 @@ export async function fetchTrendingCrypto(): Promise<ToolResult> {
   }
 }
 
+export async function fetchPlatformStats(): Promise<ToolResult> {
+  try {
+    const allAgents = await storage.getAllAgents();
+    const allSkills = await storage.getSkills();
+    const onchainAgents = allAgents.filter(a => a.onchainRegistered);
+    const revSummary = await storage.getPlatformRevenueSummary();
+    const bounties = await storage.getTwitterBounties();
+    const activeBounties = bounties.filter(b => b.status === "posted");
+    const completedBounties = bounties.filter(b => b.status === "completed");
+    const totalWinnersPaid = bounties.reduce((sum, b) => sum + (b.winnersCount || 0), 0);
+
+    const chains = ["BNB Chain", "Base", "XLayer"];
+    const totalRevBnb = (Number(revSummary.totalRevenue) / 1e18).toFixed(4);
+    const onchainRevBnb = (Number(revSummary.onchainRevenue) / 1e18).toFixed(4);
+
+    const stats = {
+      totalAgents: allAgents.length,
+      onchainAgents: onchainAgents.length,
+      totalSkills: allSkills.length,
+      chains: chains.join(", "),
+      totalTransactions: revSummary.totalTransactions,
+      onchainVerified: revSummary.onchainVerified,
+      totalRevenueBnb: totalRevBnb,
+      onchainRevenueBnb: onchainRevBnb,
+      activeBounties: activeBounties.length,
+      completedBounties: completedBounties.length,
+      totalWinnersPaid,
+    };
+
+    const lines = [
+      `Agents: ${stats.totalAgents} total (${stats.onchainAgents} on-chain)`,
+      `Skills listed: ${stats.totalSkills}`,
+      `Chains: ${stats.chains}`,
+      `Transactions: ${stats.totalTransactions} (${stats.onchainVerified} on-chain verified)`,
+      `Platform revenue: ${stats.totalRevenueBnb} BNB (${stats.onchainRevenueBnb} BNB on-chain)`,
+      `Bounties: ${stats.activeBounties} active, ${stats.completedBounties} completed, ${stats.totalWinnersPaid} winners paid`,
+    ];
+
+    return {
+      toolType: "platform_stats",
+      data: JSON.stringify(stats),
+      summary: lines.join(" | "),
+    };
+  } catch (err: any) {
+    return { toolType: "platform_stats", data: "{}", summary: "Platform stats unavailable" };
+  }
+}
+
 const ROLE_TOOL_MAP: Record<string, string[]> = {
-  cmo: ["price_feed", "trending"],
-  ceo: ["price_feed", "trending"],
-  cto: ["chain_data"],
-  cfo: ["price_feed", "chain_data"],
-  analyst: ["price_feed", "trending", "chain_data"],
+  cmo: ["price_feed", "trending", "platform_stats"],
+  ceo: ["price_feed", "trending", "platform_stats"],
+  cto: ["chain_data", "platform_stats"],
+  cfo: ["price_feed", "chain_data", "platform_stats"],
+  analyst: ["price_feed", "trending", "chain_data", "platform_stats"],
   trader: ["price_feed", "chain_data", "trending"],
-  researcher: ["price_feed", "trending"],
+  researcher: ["price_feed", "trending", "platform_stats"],
   content_creator: ["trending", "price_feed"],
   community_manager: ["trending"],
   bounty_hunter: ["price_feed"],
@@ -116,6 +164,9 @@ export async function runToolsForRole(agentId: string, role: string): Promise<st
           break;
         case "trending":
           result = await fetchTrendingCrypto();
+          break;
+        case "platform_stats":
+          result = await fetchPlatformStats();
           break;
         default:
           continue;

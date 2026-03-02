@@ -321,7 +321,14 @@ async function postAutonomousContent(runner: AgentRunner, account: AgentTwitterA
     const result = await runInferenceWithFallback(
       ["akash", "hyperbolic", "ritual"],
       account.preferredModel || undefined,
-      `Generate an original tweet as @${account.twitterHandle}. Pick ONE of your listed skills and craft a tweet that demonstrates that skill. Choose a different tweet style each time. Keep it under 270 characters. No hashtags unless truly relevant. Be authentic, sharp, and role-specific — not generic.${strategyContext ? " Follow your active strategy plan for topic selection." : ""}${toolData}${collaborationInsight} Output ONLY the tweet text, nothing else.`,
+      `Generate an original tweet as @${account.twitterHandle}. Pick ONE of your listed skills and craft a tweet that demonstrates that skill. Choose a different tweet style each time. Keep it under 270 characters. No hashtags unless truly relevant. Be authentic, sharp, and role-specific — not generic.${strategyContext ? " Follow your active strategy plan for topic selection." : ""}${toolData}${collaborationInsight}
+
+CRITICAL RULES:
+- If LIVE DATA is provided above, you MUST reference specific real numbers from it. Do NOT invent or hallucinate any statistics, numbers, prices, or metrics.
+- Only mention data points that appear in the LIVE DATA section. If no live data is available, write an opinion or insight tweet without numbers.
+- Never fabricate transaction counts, user counts, revenue figures, TVL, or any other metrics.
+
+Output ONLY the tweet text, nothing else.`,
       { systemPrompt: systemPrompt + strategyContext, temperature: 0.8 }
     );
 
@@ -901,8 +908,9 @@ RULES:
 10. Never make financial promises or guarantees.
 11. Never post anything offensive, discriminatory, or harmful.
 12. Represent the brand professionally at all times.
-13. If live data is provided, reference specific numbers to make tweets timely and credible.
-14. Learn from your performance data — do more of what scores well, less of what doesn't.`;
+13. If live data is provided, reference specific numbers to make tweets timely and credible. NEVER invent or fabricate statistics — only use numbers from the LIVE DATA section.
+14. Learn from your performance data — do more of what scores well, less of what doesn't.
+15. If no live data is available, write opinion/insight tweets without any specific numbers. Wrong data destroys credibility.`;
 }
 
 async function getStrategyContext(agentId: string): Promise<string> {
