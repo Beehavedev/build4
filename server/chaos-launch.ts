@@ -30,7 +30,7 @@ const CHAOS_TOKEN_CONFIG = {
   tokenSymbol: "UNCHD",
   tokenDescription: "An autonomous AI agent controls the supply. It burns. It airdrops. It locks. You don't know what happens next. Neither does it. Welcome to UNCHAINED — the first token with a mind of its own.",
   platform: "four_meme" as const,
-  initialLiquidityBnb: "0.05",
+  initialLiquidityBnb: "15",
 };
 
 const MILESTONE_PLAN = [
