@@ -690,5 +690,31 @@ export async function registerRoutes(
     res.json(result);
   });
 
+  app.get("/api/chaos/status", async (_req: Request, res: Response) => {
+    const { getChaosStatus } = await import("./chaos-launch");
+    const status = await getChaosStatus();
+    res.json(status);
+  });
+
+  app.get("/api/chaos/plan", async (_req: Request, res: Response) => {
+    const { getMilestonePlan } = await import("./chaos-launch");
+    res.json(getMilestonePlan());
+  });
+
+  app.post("/api/chaos/launch", analyticsAuth, async (req: Request, res: Response) => {
+    const { initiateChaosLaunch } = await import("./chaos-launch");
+    const { agentId } = req.body || {};
+    const result = await initiateChaosLaunch(agentId);
+    res.json(result);
+  });
+
+  app.post("/api/chaos/execute-next", analyticsAuth, async (_req: Request, res: Response) => {
+    const { checkAndExecuteMilestones } = await import("./chaos-launch");
+    await checkAndExecuteMilestones();
+    const { getChaosStatus } = await import("./chaos-launch");
+    const status = await getChaosStatus();
+    res.json(status);
+  });
+
   return httpServer;
 }

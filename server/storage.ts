@@ -65,6 +65,7 @@ import {
   type AgentCollaborationLog, type InsertAgentCollaborationLog, agentCollaborationLog,
   type AgentTask, type InsertAgentTask, agentTasks,
   type TokenLaunch, type InsertTokenLaunch, tokenLaunches,
+  type ChaosMilestone, type InsertChaosMilestone, chaosMilestones,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
@@ -368,6 +369,12 @@ export interface IStorage {
   getTokenLaunch(id: string): Promise<TokenLaunch | undefined>;
   getTokenLaunches(agentId?: string, limit?: number): Promise<TokenLaunch[]>;
   updateTokenLaunch(id: string, data: Partial<TokenLaunch>): Promise<TokenLaunch | undefined>;
+
+  createChaosMilestone(milestone: InsertChaosMilestone): Promise<ChaosMilestone>;
+  getChaosMilestones(launchId: string): Promise<ChaosMilestone[]>;
+  updateChaosMilestone(id: string, data: Partial<ChaosMilestone>): Promise<ChaosMilestone | undefined>;
+  getPendingChaosMilestones(): Promise<ChaosMilestone[]>;
+  getActiveChaosPlan(): Promise<{ launch: TokenLaunch; milestones: ChaosMilestone[] } | null>;
 
   seedSubscriptionPlans(): Promise<void>;
 
@@ -2245,6 +2252,49 @@ export class DatabaseStorage implements IStorage {
   async updateTokenLaunch(id: string, data: Partial<TokenLaunch>): Promise<TokenLaunch | undefined> {
     const [updated] = await db.update(tokenLaunches).set(data).where(eq(tokenLaunches.id, id)).returning();
     return updated;
+  }
+
+  async createChaosMilestone(milestone: InsertChaosMilestone): Promise<ChaosMilestone> {
+    const [created] = await db.insert(chaosMilestones).values(milestone).returning();
+    return created;
+  }
+
+  async getChaosMilestones(launchId: string): Promise<ChaosMilestone[]> {
+    return db.select().from(chaosMilestones)
+      .where(eq(chaosMilestones.launchId, launchId))
+      .orderBy(chaosMilestones.milestoneNumber);
+  }
+
+  async updateChaosMilestone(id: string, data: Partial<ChaosMilestone>): Promise<ChaosMilestone | undefined> {
+    const [updated] = await db.update(chaosMilestones).set(data).where(eq(chaosMilestones.id, id)).returning();
+    return updated;
+  }
+
+  async getPendingChaosMilestones(): Promise<ChaosMilestone[]> {
+    return db.select().from(chaosMilestones)
+      .where(eq(chaosMilestones.status, "pending"))
+      .orderBy(chaosMilestones.milestoneNumber);
+  }
+
+  async getActiveChaosPlan(): Promise<{ launch: TokenLaunch; milestones: ChaosMilestone[] } | null> {
+    const milestones = await db.select().from(chaosMilestones)
+      .where(eq(chaosMilestones.status, "pending"))
+      .orderBy(chaosMilestones.milestoneNumber)
+      .limit(1);
+    if (milestones.length === 0) {
+      const executing = await db.select().from(chaosMilestones)
+        .where(eq(chaosMilestones.status, "executing"))
+        .limit(1);
+      if (executing.length === 0) return null;
+      const launch = await this.getTokenLaunch(executing[0].launchId);
+      if (!launch) return null;
+      const all = await this.getChaosMilestones(launch.id);
+      return { launch, milestones: all };
+    }
+    const launch = await this.getTokenLaunch(milestones[0].launchId);
+    if (!launch) return null;
+    const all = await this.getChaosMilestones(launch.id);
+    return { launch, milestones: all };
   }
 }
 

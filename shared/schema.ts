@@ -1344,6 +1344,29 @@ export const AVAILABLE_MODELS = [
   { id: "Qwen/Qwen3-30B-A3B", name: "Qwen3 30B", provider: "akash" },
 ] as const;
 
+export const chaosMilestones = pgTable("chaos_milestones", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  launchId: varchar("launch_id").notNull(),
+  milestoneNumber: integer("milestone_number").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  action: text("action").notNull(),
+  triggerAfterMinutes: integer("trigger_after_minutes").notNull(),
+  status: text("status").notNull().default("pending"),
+  txHash: text("tx_hash"),
+  tweetId: text("tweet_id"),
+  tweetText: text("tweet_text"),
+  tokensBurned: text("tokens_burned"),
+  tokensTransferred: text("tokens_transferred"),
+  executedAt: timestamp("executed_at"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertChaosMilestoneSchema = createInsertSchema(chaosMilestones).omit({ id: true, createdAt: true });
+export type InsertChaosMilestone = z.infer<typeof insertChaosMilestoneSchema>;
+export type ChaosMilestone = typeof chaosMilestones.$inferSelect;
+
 export const SEED_AGENTS = {
   RESEARCH_BOT: {
     name: "ResearchBot-7B",
