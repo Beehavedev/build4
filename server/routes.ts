@@ -363,7 +363,7 @@ export async function registerRoutes(
       }
       const config = await storage.getTwitterAgentConfig();
       const reward = rewardBnb || config?.defaultBountyBudget || "0.02";
-      const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 10, 10);
+      const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 10, 100);
       const tweetText = generateBountyTweetText(taskDescription, reward, winners);
       res.json({ tweetText, charCount: tweetText.length });
     } catch (e: any) {
@@ -380,7 +380,7 @@ export async function registerRoutes(
       }
       const config = await storage.getTwitterAgentConfig();
       const reward = rewardBnb || config?.defaultBountyBudget || "0.02";
-      const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 10, 10);
+      const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 10, 100);
       const result = await postBountyTweet(
         jobId || `manual-${Date.now()}`,
         taskDescription,

@@ -473,13 +473,13 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
                     <Input
                       type="number"
                       min={1}
-                      max={10}
+                      max={100}
                       value={settingsForm.maxWinnersPerBounty}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, maxWinnersPerBounty: Math.min(10, Math.max(1, parseInt(e.target.value) || 10)) })}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, maxWinnersPerBounty: Math.min(100, Math.max(1, parseInt(e.target.value) || 10)) })}
                       className="bg-gray-800 border-gray-700 mt-1"
                       data-testid="input-max-winners"
                     />
-                    <p className="text-xs text-gray-600 mt-1">Maximum 10 winners allowed</p>
+                    <p className="text-xs text-gray-600 mt-1">Maximum 100 winners allowed</p>
                   </div>
                 </div>
                 <Button

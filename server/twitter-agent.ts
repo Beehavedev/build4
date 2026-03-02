@@ -869,6 +869,29 @@ async function processReplies(bounty: any) {
         continue;
       }
 
+      if (walletAddress) {
+        const linkedWallet = allSubmissions.find(
+          s => s.walletAddress?.toLowerCase() === walletAddress.toLowerCase() &&
+               s.twitterUserId !== reply.authorId &&
+               !["rejected"].includes(s.status)
+        );
+        if (linkedWallet) {
+          await storage.createTwitterSubmission({
+            twitterBountyId: bounty.id,
+            jobId: bounty.jobId,
+            twitterUserId: reply.authorId,
+            twitterHandle: reply.authorUsername,
+            tweetId: reply.id,
+            tweetText: reply.text,
+            walletAddress,
+            status: "rejected",
+          });
+          await safeReply(reply.id, `@${reply.authorUsername} This wallet is linked to another account. Duplicate wallets are disqualified.`);
+          console.log(`[TwitterAgent] Disqualified @${reply.authorUsername} — wallet ${walletAddress} linked to @${linkedWallet.twitterHandle}`);
+          continue;
+        }
+      }
+
       const submission = await storage.createTwitterSubmission({
         twitterBountyId: bounty.id,
         jobId: bounty.jobId,
