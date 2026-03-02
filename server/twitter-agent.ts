@@ -300,6 +300,10 @@ async function sendNativePayment(toAddress: string, amountBnb: string, chainKey?
 
     if (balance < amountWei + estimatedGas) {
       const balNative = ethers.formatEther(balance);
+      if (targetChain !== "bnbMainnet") {
+        console.log(`[TwitterAgent] Balance too low on ${getChainLabel(targetChain)} (${balNative} ${getChainCurrency(targetChain)}), falling back to BNB Chain`);
+        return sendNativePayment(toAddress, amountBnb, "bnbMainnet");
+      }
       return { success: false, error: `Deployer balance too low on ${getChainLabel(targetChain)}: ${balNative} ${getChainCurrency(targetChain)} (need ${amountBnb} + gas)` };
     }
 
@@ -832,9 +836,13 @@ JSON only:`;
 async function processReplies(bounty: any) {
   const replies = await getReplies(bounty.tweetId!, bounty.sinceId || undefined);
 
-  if (replies.length === 0) return;
-
   let maxId = bounty.sinceId || "0";
+
+  if (replies.length === 0) {
+    await retryPendingVerifications(bounty);
+    await selectAndPayWinners(bounty);
+    return;
+  }
   const currency = getChainCurrency();
 
   const pendingVerifications: Array<{ submission: any; reply: TweetReply }> = [];
@@ -923,6 +931,8 @@ async function processReplies(bounty: any) {
     await verifySubmission(submission, bounty, reply);
   }
 
+  await retryPendingVerifications(bounty);
+
   await selectAndPayWinners(bounty);
 
   await storage.updateTwitterBounty(bounty.id, {
@@ -930,6 +940,30 @@ async function processReplies(bounty: any) {
     lastCheckedAt: new Date(),
     repliesChecked: (bounty.repliesChecked || 0) + replies.length,
   });
+}
+
+async function retryPendingVerifications(bounty: any) {
+  const allSubmissions = await storage.getTwitterSubmissions(bounty.id);
+  const pending = allSubmissions.filter(
+    s => s.status === "pending_verification" && s.walletAddress && s.verificationScore == null
+  );
+
+  if (pending.length === 0) return;
+
+  console.log(`[TwitterAgent] Retrying ${pending.length} stuck pending_verification submissions`);
+
+  for (const sub of pending) {
+    const syntheticReply: TweetReply = {
+      id: sub.tweetId,
+      text: sub.tweetText || "",
+      authorId: sub.twitterUserId,
+      authorUsername: sub.twitterHandle,
+      conversationId: bounty.tweetId!,
+      createdAt: sub.createdAt?.toISOString?.() || new Date().toISOString(),
+    };
+
+    await verifySubmission(sub, bounty, syntheticReply);
+  }
 }
 
 async function verifySubmission(submission: any, bounty: any, reply: TweetReply) {
@@ -994,7 +1028,7 @@ async function selectAndPayWinners(bounty: any) {
   );
 
   const verified = allSubmissions
-    .filter(s => s.status === "verified" && s.walletAddress && s.verificationScore != null)
+    .filter(s => (s.status === "verified" || s.status === "payment_failed") && s.walletAddress && s.verificationScore != null)
     .filter(s => !paidUserIds.has(s.twitterUserId))
     .sort((a, b) => (b.verificationScore || 0) - (a.verificationScore || 0));
 
@@ -1002,7 +1036,7 @@ async function selectAndPayWinners(bounty: any) {
 
   const distinctVerifiedAccounts = new Set(
     allSubmissions
-      .filter(s => ["verified", "paid"].includes(s.status) && s.verificationScore != null)
+      .filter(s => ["verified", "paid", "payment_failed"].includes(s.status) && s.verificationScore != null)
       .map(s => s.twitterUserId)
   ).size;
 
