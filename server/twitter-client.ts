@@ -35,10 +35,20 @@ export function isTwitterConfigured(): boolean {
 export async function postTweet(text: string): Promise<{ tweetId: string; tweetUrl: string }> {
   const tc = getClient();
   try {
-    const result = await tc.v2.tweet(text);
-    const tweetId = result.data.id;
-    const me = await tc.v2.me();
-    const tweetUrl = `https://x.com/${me.data.username}/status/${tweetId}`;
+    let tweetId: string;
+    let username: string;
+    try {
+      const result = await tc.v1.tweet(text);
+      tweetId = result.id_str;
+      username = result.user?.screen_name || "Build4ai";
+    } catch (v1Err: any) {
+      console.log("[TwitterClient] v1 tweet failed, trying v2:", v1Err.message);
+      const result = await tc.v2.tweet(text);
+      tweetId = result.data.id;
+      const me = await tc.v2.me();
+      username = me.data.username;
+    }
+    const tweetUrl = `https://x.com/${username}/status/${tweetId}`;
     return { tweetId, tweetUrl };
   } catch (err: any) {
     console.error("[TwitterClient] Tweet failed:", err.message, err.data ? JSON.stringify(err.data) : "");
