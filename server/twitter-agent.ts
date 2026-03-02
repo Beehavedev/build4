@@ -278,9 +278,9 @@ function getNextBountyChain(): string {
 }
 
 async function sendNativePayment(toAddress: string, amountBnb: string, chainKey?: string): Promise<{ success: boolean; txHash?: string; error?: string; chainKey?: string }> {
-  const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
+  const privateKey = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
   if (!privateKey) {
-    return { success: false, error: "DEPLOYER_PRIVATE_KEY not configured" };
+    return { success: false, error: "Bounty wallet private key not configured" };
   }
 
   const targetChain = chainKey || process.env.ONCHAIN_NETWORK || "bnbMainnet";
