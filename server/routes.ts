@@ -396,6 +396,26 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/twitter/register-bounty", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const { tweetId, tweetUrl, tweetText, rewardBnb, maxWinners } = req.body;
+      if (!tweetId) { res.status(400).json({ error: "tweetId required" }); return; }
+      const bounty = await storage.createTwitterBounty({
+        jobId: `manual-${Date.now()}`,
+        tweetId,
+        tweetUrl: tweetUrl || `https://x.com/Build4ai/status/${tweetId}`,
+        tweetText: tweetText || "",
+        rewardBnb: rewardBnb || "0.015",
+        maxWinners: maxWinners || 10,
+        winnersCount: 0,
+        status: "posted",
+      });
+      res.json(bounty);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/twitter/bounties", analyticsAuth, async (_req: Request, res: Response) => {
     try {
       const bounties = await storage.getTwitterBounties();

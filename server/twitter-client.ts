@@ -1,24 +1,27 @@
 import { TwitterApi } from "twitter-api-v2";
 
 let client: TwitterApi | null = null;
+let clientKeyHash: string = "";
 
 function getClient(): TwitterApi {
-  if (!client) {
-    const apiKey = process.env.TWITTER_API_KEY;
-    const apiSecret = process.env.TWITTER_API_SECRET;
-    const accessToken = process.env.TWITTER_ACCESS_TOKEN;
-    const accessTokenSecret = process.env.TWITTER_ACCESS_TOKEN_SECRET;
+  const apiKey = process.env.TWITTER_API_KEY || "";
+  const apiSecret = process.env.TWITTER_API_SECRET || "";
+  const accessToken = process.env.TWITTER_ACCESS_TOKEN || "";
+  const accessTokenSecret = process.env.TWITTER_ACCESS_TOKEN_SECRET || "";
 
-    if (!apiKey || !apiSecret || !accessToken || !accessTokenSecret) {
-      throw new Error("Twitter API credentials not configured");
-    }
+  if (!apiKey || !apiSecret || !accessToken || !accessTokenSecret) {
+    throw new Error("Twitter API credentials not configured");
+  }
 
+  const currentHash = `${apiKey}:${accessToken}`;
+  if (!client || currentHash !== clientKeyHash) {
     client = new TwitterApi({
       appKey: apiKey,
       appSecret: apiSecret,
       accessToken,
       accessSecret: accessTokenSecret,
     });
+    clientKeyHash = currentHash;
   }
   return client;
 }
