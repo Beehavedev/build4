@@ -510,7 +510,7 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
                     disabled={previewText !== null}
                     data-testid="textarea-task-description"
                   />
-                  <p className="text-xs text-gray-600 mt-1">{280 - taskDescription.length} chars remaining (tweet limit)</p>
+                  <p className="text-xs text-gray-600 mt-1">{taskDescription.length} chars (Premium+ limit: 25,000)</p>
                 </div>
                 <div className="flex items-end gap-4">
                   <div className="w-40">

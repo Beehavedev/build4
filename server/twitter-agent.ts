@@ -1148,17 +1148,19 @@ Score this submission. JSON only.`;
   };
 }
 
+const TWEET_CHAR_LIMIT = 25000;
+
 export function generateBountyTweetText(taskDescription: string, rewardBnb: string, maxWinners: number = MAX_WINNERS_DEFAULT, customTweetText?: string): string {
   const currency = getChainCurrency();
   const reward = rewardBnb || DEFAULT_REWARD_BNB;
 
   if (customTweetText) {
-    return customTweetText.length > 280 ? customTweetText.substring(0, 277) + "..." : customTweetText;
+    return customTweetText.length > TWEET_CHAR_LIMIT ? customTweetText.substring(0, TWEET_CHAR_LIMIT - 3) + "..." : customTweetText;
   }
 
   const header = `BOUNTY [${reward} ${currency} x ${maxWinners} winners]`;
   const footer = `Reply with proof + 0x wallet. AI verifies, top scorers get paid on-chain.\n\n#BUILD4 #BNBChain`;
-  const maxTaskLen = 280 - header.length - footer.length - 4;
+  const maxTaskLen = TWEET_CHAR_LIMIT - header.length - footer.length - 4;
   const trimmedTask = taskDescription.length > maxTaskLen
     ? taskDescription.substring(0, maxTaskLen - 3) + "..."
     : taskDescription;

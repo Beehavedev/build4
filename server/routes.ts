@@ -356,15 +356,15 @@ export async function registerRoutes(
 
   app.post("/api/twitter/preview-bounty", analyticsAuth, async (req: Request, res: Response) => {
     try {
-      const { taskDescription, rewardBnb, maxWinners } = req.body;
-      if (!taskDescription) {
-        res.status(400).json({ error: "Task description required" });
+      const { taskDescription, rewardBnb, maxWinners, customTweetText } = req.body;
+      if (!taskDescription && !customTweetText) {
+        res.status(400).json({ error: "Task description or custom tweet text required" });
         return;
       }
       const config = await storage.getTwitterAgentConfig();
       const reward = rewardBnb || config?.defaultBountyBudget || "0.02";
       const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 10, 100);
-      const tweetText = generateBountyTweetText(taskDescription, reward, winners);
+      const tweetText = generateBountyTweetText(taskDescription || "", reward, winners, customTweetText);
       res.json({ tweetText, charCount: tweetText.length });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -373,9 +373,9 @@ export async function registerRoutes(
 
   app.post("/api/twitter/post-bounty", analyticsAuth, async (req: Request, res: Response) => {
     try {
-      const { jobId, taskDescription, rewardBnb, maxWinners } = req.body;
-      if (!taskDescription) {
-        res.status(400).json({ error: "Task description required" });
+      const { jobId, taskDescription, rewardBnb, maxWinners, customTweetText } = req.body;
+      if (!taskDescription && !customTweetText) {
+        res.status(400).json({ error: "Task description or custom tweet text required" });
         return;
       }
       const config = await storage.getTwitterAgentConfig();
@@ -383,9 +383,10 @@ export async function registerRoutes(
       const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 10, 100);
       const result = await postBountyTweet(
         jobId || `manual-${Date.now()}`,
-        taskDescription,
+        taskDescription || "",
         reward,
-        winners
+        winners,
+        customTweetText
       );
       res.json(result);
     } catch (e: any) {
