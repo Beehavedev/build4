@@ -46,7 +46,10 @@ export async function postTweet(text: string): Promise<{ tweetId: string; tweetU
       throw new Error("Twitter API credits depleted — your X/Twitter developer account has no remaining credits. Visit developer.x.com to add credits or upgrade your plan.");
     }
     if (err.code === 403 || err.data?.detail?.includes("Forbidden")) {
-      throw new Error("Twitter API access denied — your app may need Elevated or Basic access (not Free tier) to post tweets. Check your Twitter Developer Portal permissions.");
+      client = null;
+      const detail = err.data?.detail || err.data?.errors?.[0]?.message || err.message || "";
+      console.error("[TwitterClient] 403 detail:", detail, "full data:", JSON.stringify(err.data || {}));
+      throw new Error(`Twitter API 403: ${detail}`);
     }
     if (err.code === 429) {
       throw new Error("Twitter rate limit exceeded — wait a few minutes and try again.");
