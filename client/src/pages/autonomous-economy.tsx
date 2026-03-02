@@ -48,6 +48,7 @@ import {
   Calendar,
   Sparkles,
   X,
+  Rocket,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
@@ -1405,6 +1406,17 @@ export default function AutonomousEconomy() {
                 >
                   <Zap className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Tasks</span>
+                </Button>
+              </Link>
+              <Link href="/token-launcher">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="font-mono text-xs gap-1.5 h-8 px-3"
+                  data-testid="button-token-launcher"
+                >
+                  <Rocket className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Launch Token</span>
                 </Button>
               </Link>
               <Button

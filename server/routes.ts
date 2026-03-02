@@ -14,6 +14,8 @@ import { autoStartAllAgents } from "./multi-twitter-agent";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
 import { registerSeoPrerender } from "./seo-prerender";
 import { analyticsAuth, generateAnalyticsToken, constantTimeCompare } from "./admin-auth";
+import { launchToken, getTokenLaunches, getTokenLaunch } from "./token-launcher";
+import { TOKEN_LAUNCHPADS } from "@shared/schema";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -625,6 +627,67 @@ export async function registerRoutes(
   app.post("/api/telegram/stop", analyticsAuth, (req: Request, res: Response) => {
     stopTelegramBot();
     res.json({ success: true, message: "Telegram bot stopped" });
+  });
+
+  app.get("/api/token-launcher/platforms", (req: Request, res: Response) => {
+    res.json(TOKEN_LAUNCHPADS);
+  });
+
+  app.get("/api/token-launcher/launches", async (req: Request, res: Response) => {
+    const agentId = req.query.agentId as string | undefined;
+    const launches = await getTokenLaunches(agentId);
+    res.json(launches);
+  });
+
+  app.get("/api/token-launcher/launches/:id", async (req: Request, res: Response) => {
+    const launch = await getTokenLaunch(req.params.id);
+    if (!launch) return res.status(404).json({ error: "Launch not found" });
+    res.json(launch);
+  });
+
+  app.post("/api/token-launcher/launch", analyticsAuth, async (req: Request, res: Response) => {
+    const { tokenName, tokenSymbol, tokenDescription, imageUrl, platform, initialLiquidityBnb, agentId, creatorWallet } = req.body;
+
+    if (!tokenName || !tokenSymbol || !platform) {
+      return res.status(400).json({ error: "tokenName, tokenSymbol, and platform are required" });
+    }
+
+    if (typeof tokenName !== "string" || tokenName.length < 1 || tokenName.length > 50) {
+      return res.status(400).json({ error: "Token name must be 1-50 characters" });
+    }
+
+    if (typeof tokenSymbol !== "string" || tokenSymbol.length < 1 || tokenSymbol.length > 10 || !/^[A-Z0-9]+$/.test(tokenSymbol)) {
+      return res.status(400).json({ error: "Token symbol must be 1-10 uppercase alphanumeric characters" });
+    }
+
+    const validPlatforms = TOKEN_LAUNCHPADS.map(p => p.id);
+    if (!validPlatforms.includes(platform)) {
+      return res.status(400).json({ error: `Invalid platform. Must be one of: ${validPlatforms.join(", ")}` });
+    }
+
+    if (initialLiquidityBnb) {
+      const liq = parseFloat(initialLiquidityBnb);
+      if (isNaN(liq) || liq < 0.001 || liq > 10) {
+        return res.status(400).json({ error: "Initial liquidity must be between 0.001 and 10" });
+      }
+    }
+
+    if (tokenDescription && tokenDescription.length > 500) {
+      return res.status(400).json({ error: "Description must be 500 characters or less" });
+    }
+
+    const result = await launchToken({
+      tokenName: tokenName.trim(),
+      tokenSymbol: tokenSymbol.trim(),
+      tokenDescription: (tokenDescription || `${tokenName} - launched by an autonomous AI agent on BUILD4`).substring(0, 500),
+      imageUrl: imageUrl?.substring(0, 500),
+      platform,
+      initialLiquidityBnb: initialLiquidityBnb || (platform === "four_meme" ? "0.01" : "0.001"),
+      agentId,
+      creatorWallet,
+    });
+
+    res.json(result);
   });
 
   return httpServer;

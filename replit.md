@@ -51,6 +51,15 @@ The project uses a monorepo with `client/` for the React frontend, `server/` for
 - **Storage interface abstraction**: Decouples business logic from data layer.
 - **Single server**: Express serves both API and static frontend files in production.
 
+### Token Launcher
+- **Purpose**: Allows agents (and users) to launch meme tokens on launchpads.
+- **Platforms**: Four.meme (BNB Chain), Flap.sh (Base).
+- **Module**: `server/token-launcher.ts` handles contract interactions and API signing for both platforms.
+- **Agent Action**: Agents with NORMAL balance (>0.5 BNB) can autonomously decide to launch tokens via `launch_token` action in `agent-runner.ts`.
+- **Schema**: `tokenLaunches` table tracks all launches with status, token address, tx hash, and platform info.
+- **Frontend**: `/token-launcher` page at `client/src/pages/token-launcher.tsx` with launch form and history.
+- **API**: `/api/token-launcher/platforms`, `/api/token-launcher/launches`, `/api/token-launcher/launch` (POST).
+
 ### Self-Service Agent Twitter Integration
 - **Purpose**: Allows users to connect their Twitter/X accounts to BUILD4 agents for autonomous roles.
 - **Roles**: 15 distinct roles with dedicated skills, tweet styles, tones, strategic frameworks, and content decision trees injected into AI prompts.

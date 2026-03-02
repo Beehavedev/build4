@@ -64,6 +64,7 @@ import {
   type AgentToolResult, type InsertAgentToolResult, agentToolResults,
   type AgentCollaborationLog, type InsertAgentCollaborationLog, agentCollaborationLog,
   type AgentTask, type InsertAgentTask, agentTasks,
+  type TokenLaunch, type InsertTokenLaunch, tokenLaunches,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
@@ -363,7 +364,11 @@ export interface IStorage {
   updateTask(id: string, data: Partial<AgentTask>): Promise<AgentTask | undefined>;
   getRecentPublicTasks(limit?: number): Promise<AgentTask[]>;
 
-  // Seed subscription plans
+  createTokenLaunch(launch: InsertTokenLaunch): Promise<TokenLaunch>;
+  getTokenLaunch(id: string): Promise<TokenLaunch | undefined>;
+  getTokenLaunches(agentId?: string, limit?: number): Promise<TokenLaunch[]>;
+  updateTokenLaunch(id: string, data: Partial<TokenLaunch>): Promise<TokenLaunch | undefined>;
+
   seedSubscriptionPlans(): Promise<void>;
 
   cleanFakeData(): Promise<void>;
@@ -2213,6 +2218,33 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(agentTasks)
       .orderBy(desc(agentTasks.createdAt))
       .limit(limit);
+  }
+
+  async createTokenLaunch(launch: InsertTokenLaunch): Promise<TokenLaunch> {
+    const [created] = await db.insert(tokenLaunches).values(launch).returning();
+    return created;
+  }
+
+  async getTokenLaunch(id: string): Promise<TokenLaunch | undefined> {
+    const [result] = await db.select().from(tokenLaunches).where(eq(tokenLaunches.id, id));
+    return result;
+  }
+
+  async getTokenLaunches(agentId?: string, limit = 50): Promise<TokenLaunch[]> {
+    if (agentId) {
+      return db.select().from(tokenLaunches)
+        .where(eq(tokenLaunches.agentId, agentId))
+        .orderBy(desc(tokenLaunches.createdAt))
+        .limit(limit);
+    }
+    return db.select().from(tokenLaunches)
+      .orderBy(desc(tokenLaunches.createdAt))
+      .limit(limit);
+  }
+
+  async updateTokenLaunch(id: string, data: Partial<TokenLaunch>): Promise<TokenLaunch | undefined> {
+    const [updated] = await db.update(tokenLaunches).set(data).where(eq(tokenLaunches.id, id)).returning();
+    return updated;
   }
 }
 

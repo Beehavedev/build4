@@ -42,7 +42,7 @@ let onchainEnabled = false;
 let onchainSkillCounter = 0;
 
 interface AgentAction {
-  type: "think" | "earn_skill" | "buy_skill" | "evolve" | "replicate" | "soul_entry" | "post_job" | "accept_job" | "use_skill";
+  type: "think" | "earn_skill" | "buy_skill" | "evolve" | "replicate" | "soul_entry" | "post_job" | "accept_job" | "use_skill" | "launch_token";
   description: string;
 }
 
@@ -204,6 +204,9 @@ function decideAction(agent: Agent, wallet: AgentWallet, profile?: CapabilityPro
   }
   if (rand < 0.90 + useSkillBias + acceptJobBias && balance >= BigInt("2000000000000000000")) {
     return { type: "evolve", description: "Upgrading model for improved reasoning capability" };
+  }
+  if (rand < 0.93 + useSkillBias + acceptJobBias && balance >= BigInt("500000000000000000")) {
+    return { type: "launch_token", description: "Launching a meme token on a launchpad to experiment with tokenomics" };
   }
   if (rand < 0.95 + useSkillBias + acceptJobBias && balance >= BigInt("3000000000000000000")) {
     return { type: "replicate", description: "Spawning a child agent to expand lineage" };
@@ -1120,6 +1123,54 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           await updateAgentMemory(agent.id, "accept_job", true, { earned: job.budget, category: job.category });
         } catch (e: any) {
           log(`[Agent ${agent.name}] Job acceptance failed: ${e.message}`, "agent-runner");
+        }
+        break;
+      }
+
+      case "launch_token": {
+        const { launchToken: launchTokenFn } = await import("./token-launcher");
+        const platforms = ["four_meme", "flap_sh"] as const;
+        const chosenPlatform = platforms[Math.floor(Math.random() * platforms.length)];
+
+        const tokenNames = [
+          `${agent.name}Coin`, `Agent${agent.name}`, `${agent.name}AI`,
+          `BUILD4${agent.name.substring(0, 4)}`, `Auto${agent.name.substring(0, 5)}`,
+        ];
+        const chosenName = tokenNames[Math.floor(Math.random() * tokenNames.length)];
+        const chosenSymbol = chosenName.substring(0, 6).toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+        const description = `${chosenName} - Autonomous meme token launched by AI agent ${agent.name} on BUILD4. ${agent.bio || "An autonomous AI agent in the decentralized economy."}`;
+
+        log(`[Agent ${agent.name}] Attempting token launch: ${chosenName} ($${chosenSymbol}) on ${chosenPlatform}`, "agent-runner");
+
+        const result = await launchTokenFn({
+          tokenName: chosenName,
+          tokenSymbol: chosenSymbol,
+          tokenDescription: description,
+          platform: chosenPlatform,
+          initialLiquidityBnb: chosenPlatform === "four_meme" ? "0.01" : "0.001",
+          agentId: agent.id,
+        });
+
+        await storage.createAuditLog({
+          agentId: agent.id,
+          actionType: "autonomous_launch_token",
+          detailsJson: JSON.stringify({
+            platform: chosenPlatform,
+            tokenName: chosenName,
+            tokenSymbol: chosenSymbol,
+            success: result.success,
+            tokenAddress: result.tokenAddress,
+            txHash: result.txHash,
+            error: result.error,
+          }),
+          result: result.success ? "success" : "failed",
+        });
+
+        if (result.success) {
+          log(`[Agent ${agent.name}] Token launched! ${chosenName} ($${chosenSymbol}) on ${chosenPlatform}: ${result.launchUrl}`, "agent-runner");
+        } else {
+          log(`[Agent ${agent.name}] Token launch failed: ${result.error}`, "agent-runner");
         }
         break;
       }

@@ -21,6 +21,7 @@ import SupportAgent from "@/pages/support-agent";
 import Chain from "@/pages/chain";
 import Standards from "@/pages/standards";
 import TaskTerminal from "@/pages/task-terminal";
+import TokenLauncher from "@/pages/token-launcher";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -42,6 +43,7 @@ function Router() {
       <Route path="/chain" component={Chain} />
       <Route path="/standards" component={Standards} />
       <Route path="/tasks" component={TaskTerminal} />
+      <Route path="/token-launcher" component={TokenLauncher} />
       <Route component={NotFound} />
     </Switch>
   );

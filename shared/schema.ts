@@ -1297,6 +1297,35 @@ export const insertAgentTaskSchema = createInsertSchema(agentTasks).omit({ id: t
 export type InsertAgentTask = z.infer<typeof insertAgentTaskSchema>;
 export type AgentTask = typeof agentTasks.$inferSelect;
 
+export const tokenLaunches = pgTable("token_launches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id"),
+  creatorWallet: text("creator_wallet"),
+  platform: text("platform").notNull(),
+  chainId: integer("chain_id").notNull(),
+  tokenName: text("token_name").notNull(),
+  tokenSymbol: text("token_symbol").notNull(),
+  tokenDescription: text("token_description"),
+  imageUrl: text("image_url"),
+  tokenAddress: text("token_address"),
+  txHash: text("tx_hash"),
+  launchUrl: text("launch_url"),
+  initialLiquidityBnb: text("initial_liquidity_bnb"),
+  status: text("status").notNull().default("pending"),
+  errorMessage: text("error_message"),
+  metadata: text("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTokenLaunchSchema = createInsertSchema(tokenLaunches).omit({ id: true, createdAt: true });
+export type InsertTokenLaunch = z.infer<typeof insertTokenLaunchSchema>;
+export type TokenLaunch = typeof tokenLaunches.$inferSelect;
+
+export const TOKEN_LAUNCHPADS = [
+  { id: "four_meme", name: "Four.meme", chain: "BNB Chain", chainId: 56, url: "https://four.meme" },
+  { id: "flap_sh", name: "Flap.sh", chain: "Base", chainId: 8453, url: "https://flap.sh" },
+] as const;
+
 export const TASK_TYPES = [
   { id: "research", name: "Research", description: "Deep analysis with sources and methodology" },
   { id: "analysis", name: "Market Analysis", description: "Data-driven market or protocol analysis" },
