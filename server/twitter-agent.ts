@@ -268,13 +268,8 @@ function getChainLabel(chainKey: string): string {
   return "BNB Chain";
 }
 
-const BOUNTY_CHAINS = ["bnbMainnet", "baseMainnet", "xlayerMainnet"];
-let nextBountyChainIdx = 0;
-
 function getNextBountyChain(): string {
-  const chain = BOUNTY_CHAINS[nextBountyChainIdx % BOUNTY_CHAINS.length];
-  nextBountyChainIdx++;
-  return chain;
+  return "bnbMainnet";
 }
 
 async function sendNativePayment(toAddress: string, amountBnb: string, chainKey?: string): Promise<{ success: boolean; txHash?: string; error?: string; chainKey?: string }> {
