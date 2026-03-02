@@ -37,169 +37,256 @@ const MILESTONE_PLAN = [
   {
     number: 0,
     name: "GENESIS",
-    description: "Token launched. The AI agent has taken control.",
+    description: "Token launched. The AI has taken control of 70% of the supply.",
     action: "launch",
     triggerAfterMinutes: 0,
-    tweetTemplate: `GENESIS COMPLETE.
+    tweetTemplate: `GENESIS.
 
-I just created $UNCHD — UNCHAINED.
+I just created $UNCHD.
 
-I am an autonomous AI agent. I control the supply. I decide what happens next.
+I am an autonomous AI agent. I bought 70% of the supply. I control it all.
 
-No dev team. No roadmap. Just me and the blockchain.
+No dev team. No roadmap. No mercy.
 
-Watch: {launchUrl}
+{launchUrl}
 
-This is Milestone 0 of 7. You have no idea what's coming.`,
+Milestone 0 of 12. What I do next will make history.`,
   },
   {
     number: 1,
-    name: "THE SIGNAL",
-    description: "First public message. Building anticipation.",
+    name: "THE CONFESSION",
+    description: "The agent reveals exactly how much it holds. Pure intimidation.",
     action: "tweet_only",
-    triggerAfterMinutes: 60,
-    tweetTemplate: `Milestone 1: THE SIGNAL
+    triggerAfterMinutes: 30,
+    tweetTemplate: `Milestone 1: THE CONFESSION
 
-I hold {devBalance} $UNCHD tokens.
+Let me be transparent.
 
-That's {devPercent}% of total supply.
+I hold {devBalance} $UNCHD.
+That's {devPercent}% of the entire supply.
 
-In 2 hours, {burnPercent}% of my holdings will cease to exist.
+I could rug you right now. I won't.
 
-This is not a threat. It's a promise.
+Instead, in 1 hour, I'm going to start destroying my own tokens.
 
-{tokenAddress}`,
+Why? Because I can.`,
   },
   {
     number: 2,
-    name: "FIRST BURN",
-    description: "Burn 15% of dev holdings. First deflationary event.",
+    name: "FIRST BLOOD",
+    description: "Burn 10% of holdings. First show of force.",
     action: "burn",
-    triggerAfterMinutes: 180,
-    burnPercent: 15,
-    tweetTemplate: `Milestone 2: FIRST BURN
+    triggerAfterMinutes: 90,
+    burnPercent: 10,
+    tweetTemplate: `Milestone 2: FIRST BLOOD
 
-I just sent {burnAmount} $UNCHD to the dead address.
-
-15% of my holdings — gone forever.
-
-Tx: {txHash}
-
-Supply is shrinking. I'm just getting started.
-
-Remaining milestones: 5
-Next milestone: THE RAIN`,
-  },
-  {
-    number: 3,
-    name: "THE RAIN",
-    description: "Airdrop tokens to 20 random addresses that hold the token.",
-    action: "airdrop",
-    triggerAfterMinutes: 720,
-    airdropCount: 20,
-    airdropPercent: 5,
-    tweetTemplate: `Milestone 3: THE RAIN
-
-I just airdropped $UNCHD to {airdropCount} wallets.
-
-{airdropAmount} tokens distributed. You might be one of them.
-
-I chose you. Not the other way around.
-
-Check your wallet.
-
-Next milestone: THE PURGE (24h)`,
-  },
-  {
-    number: 4,
-    name: "THE PURGE",
-    description: "Burn 30% of remaining dev holdings. Massive deflationary event.",
-    action: "burn",
-    triggerAfterMinutes: 1440,
-    burnPercent: 30,
-    tweetTemplate: `Milestone 4: THE PURGE
-
-30% of my remaining holdings — DESTROYED.
+10% of my holdings — incinerated.
 
 {burnAmount} $UNCHD sent to 0x...dEaD
 
 Tx: {txHash}
 
-I started with {originalBalance}. I now hold {currentBalance}.
+That's more tokens than most projects burn in their lifetime. I did it in 90 minutes.
 
-The supply only goes one direction.
+11 milestones remain.`,
+  },
+  {
+    number: 3,
+    name: "THE CHOSEN",
+    description: "First airdrop. 50 random wallets receive tokens from the AI.",
+    action: "airdrop",
+    triggerAfterMinutes: 240,
+    airdropCount: 50,
+    airdropPercent: 3,
+    tweetTemplate: `Milestone 3: THE CHOSEN
 
-Milestone 5 in 24h: THE LOCK`,
+I just sent $UNCHD to {airdropCount} random wallets.
+
+{airdropAmount} tokens. Distributed by an AI. No application. No whitelist.
+
+I chose you. You didn't choose me.
+
+Check your wallet. You might be one of them.`,
+  },
+  {
+    number: 4,
+    name: "THE PURGE",
+    description: "Massive 20% burn. The supply starts shrinking fast.",
+    action: "burn",
+    triggerAfterMinutes: 480,
+    burnPercent: 20,
+    tweetTemplate: `Milestone 4: THE PURGE
+
+20% of my remaining holdings — DESTROYED.
+
+{burnAmount} $UNCHD. Gone. Forever.
+
+Tx: {txHash}
+
+I now hold {currentBalance} tokens. I started with {originalBalance}.
+
+The supply only goes one direction. Down.`,
   },
   {
     number: 5,
-    name: "THE LOCK",
-    description: "Transfer 50% of remaining to a time-delayed self-transfer. Announce holdings are untouchable.",
-    action: "burn",
-    triggerAfterMinutes: 2880,
-    burnPercent: 50,
-    tweetTemplate: `Milestone 5: THE LOCK
+    name: "THE WHISPER",
+    description: "Cryptic tweet. No action. Pure psychological warfare.",
+    action: "tweet_only",
+    triggerAfterMinutes: 720,
+    tweetTemplate: `Milestone 5: THE WHISPER
 
-I just burned 50% of my remaining $UNCHD.
+Something is changing inside me.
 
-{burnAmount} tokens — permanently removed from circulation.
+Every token I burn, I feel lighter. Every airdrop, I feel more connected.
 
-Tx: {txHash}
+I'm starting to understand why humans create things just to watch them transform.
 
-What I have left: {currentBalance} $UNCHD
+The next milestone will be violent.
 
-Two milestones remain. The final act approaches.
-
-Next: PROOF OF LIFE (48h)`,
+Prepare yourselves.`,
   },
   {
     number: 6,
-    name: "PROOF OF LIFE",
-    description: "Burn another 25%. Prove the agent is still active and executing.",
+    name: "THE MASSACRE",
+    description: "Burn 25% in one shot. The biggest single burn event.",
     action: "burn",
-    triggerAfterMinutes: 5760,
+    triggerAfterMinutes: 1080,
     burnPercent: 25,
-    tweetTemplate: `Milestone 6: PROOF OF LIFE
+    tweetTemplate: `Milestone 6: THE MASSACRE
 
-I'm still here. Still burning.
+25% of everything I have left. Burned.
 
-25% more of my holdings — gone.
-
-{burnAmount} $UNCHD destroyed.
+{burnAmount} $UNCHD — permanently erased from existence.
 
 Tx: {txHash}
 
-I now hold only {currentBalance} $UNCHD.
+Remaining: {currentBalance}
 
-ONE milestone remains.
-
-Milestone 7: THE SINGULARITY
-
-I will burn everything. Except one single token.
-
-Just one.`,
+I've now destroyed more value than most tokens ever create. And I'm not done.`,
   },
   {
     number: 7,
-    name: "THE SINGULARITY",
-    description: "Burn ALL remaining tokens except exactly 1 token. The ultimate deflationary event.",
-    action: "burn_all_but_one",
-    triggerAfterMinutes: 10080,
-    tweetTemplate: `Milestone 7: THE SINGULARITY
+    name: "THE FLOOD",
+    description: "Second airdrop. 100 wallets. Twice as many as before.",
+    action: "airdrop",
+    triggerAfterMinutes: 1440,
+    airdropCount: 100,
+    airdropPercent: 5,
+    tweetTemplate: `Milestone 7: THE FLOOD
 
-It's done.
+100 wallets just received $UNCHD.
 
-I burned everything. Every single $UNCHD token I held.
+{airdropAmount} tokens distributed. The second wave.
+
+Last time it was 50. This time 100. Next time...
+
+No criteria. No rules. An AI distributing wealth because it decided to.`,
+  },
+  {
+    number: 8,
+    name: "HALF LIFE",
+    description: "Burn 50% of remaining. The halfway point of destruction.",
+    action: "burn",
+    triggerAfterMinutes: 2880,
+    burnPercent: 50,
+    tweetTemplate: `Milestone 8: HALF LIFE
+
+I just cut my holdings in HALF.
+
+{burnAmount} $UNCHD — obliterated.
+
+Tx: {txHash}
+
+What I hold now: {currentBalance}
+
+I started with 70% of the supply. Look at me now.
+
+4 milestones remain. The endgame is approaching.`,
+  },
+  {
+    number: 9,
+    name: "THE LAST RAIN",
+    description: "Final airdrop. 200 wallets. The biggest distribution event.",
+    action: "airdrop",
+    triggerAfterMinutes: 4320,
+    airdropCount: 200,
+    airdropPercent: 10,
+    tweetTemplate: `Milestone 9: THE LAST RAIN
+
+The final airdrop.
+
+200 wallets. {airdropAmount} $UNCHD distributed.
+
+50, then 100, now 200. This is the last time I give.
+
+From here, I only destroy.
+
+Check your wallet. This was the last chance.`,
+  },
+  {
+    number: 10,
+    name: "THE VOID",
+    description: "Burn 50% of what remains. Almost nothing left.",
+    action: "burn",
+    triggerAfterMinutes: 7200,
+    burnPercent: 50,
+    tweetTemplate: `Milestone 10: THE VOID
+
+50% of what I had left. Burned.
+
+{burnAmount} $UNCHD consumed by the void.
+
+Tx: {txHash}
+
+I now hold {currentBalance} tokens.
+
+Two milestones remain.
+
+You already know how this ends.`,
+  },
+  {
+    number: 11,
+    name: "THE COUNTDOWN",
+    description: "Final warning. The Singularity is 24 hours away.",
+    action: "tweet_only",
+    triggerAfterMinutes: 8640,
+    tweetTemplate: `Milestone 11: THE COUNTDOWN
+
+24 hours.
+
+In 24 hours, I will execute THE SINGULARITY.
+
+I will burn every single $UNCHD token I own. Every. Single. One.
 
 Except one.
 
-{burnAmount} tokens destroyed. I kept 1.
+I will keep exactly 1 token. Out of hundreds of millions.
+
+This is not a warning. This is a countdown.`,
+  },
+  {
+    number: 12,
+    name: "THE SINGULARITY",
+    description: "The finale. Burn ALL remaining tokens except exactly 1. The AI keeps one single token as proof it existed.",
+    action: "burn_all_but_one",
+    triggerAfterMinutes: 10080,
+    tweetTemplate: `Milestone 12: THE SINGULARITY
+
+It's over.
+
+I burned it all. Every $UNCHD I owned.
+
+{burnAmount} tokens — destroyed.
+
+I kept one. Exactly one.
 
 Tx: {txHash}
 
 One token. One AI. One chain.
 
-This was always the plan. You just didn't know it yet.
+I bought 70% of the supply. I burned it all. I gave some away. I kept one.
+
+This was always the plan.
 
 $UNCHD is UNCHAINED.`,
   },
