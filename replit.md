@@ -56,9 +56,10 @@ The project uses a monorepo with `client/` for the React frontend, `server/` for
 - **Platforms**: Four.meme (BNB Chain), Flap.sh (Base).
 - **Module**: `server/token-launcher.ts` handles contract interactions and API signing for both platforms.
 - **Agent Action**: Agents with NORMAL balance (>0.5 BNB) can autonomously decide to launch tokens via `launch_token` action in `agent-runner.ts`.
+- **User Task**: Users can ask their agents to launch tokens via the Task Terminal by selecting "Launch Token" task type. The agent uses AI to determine token params from the user's description, then executes the actual on-chain launch via `executeLaunchTokenTask` in `server/task-engine.ts`.
 - **Schema**: `tokenLaunches` table tracks all launches with status, token address, tx hash, and platform info.
-- **Frontend**: `/token-launcher` page at `client/src/pages/token-launcher.tsx` with launch form and history.
-- **API**: `/api/token-launcher/platforms`, `/api/token-launcher/launches`, `/api/token-launcher/launch` (POST).
+- **Frontend**: `/token-launcher` admin page (auth-gated) at `client/src/pages/token-launcher.tsx`. Task Terminal at `/tasks` includes "Launch Token" as a task type.
+- **API**: `/api/token-launcher/platforms`, `/api/token-launcher/launches`, `/api/token-launcher/launch` (POST, admin auth).
 
 ### Self-Service Agent Twitter Integration
 - **Purpose**: Allows users to connect their Twitter/X accounts to BUILD4 agents for autonomous roles.

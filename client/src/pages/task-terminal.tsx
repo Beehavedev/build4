@@ -26,6 +26,7 @@ import {
   ChevronDown,
   Sparkles,
   BarChart3,
+  Rocket,
 } from "lucide-react";
 
 const TASK_TYPES = [
@@ -35,6 +36,7 @@ const TASK_TYPES = [
   { id: "code_review", name: "Code Review", icon: Code, description: "Review code and suggest improvements", placeholder: "e.g. Review this Solidity function for security issues and gas optimization opportunities: [paste code]" },
   { id: "strategy", name: "Strategy", icon: Brain, description: "Marketing, business, or trading strategy", placeholder: "e.g. Create a go-to-market strategy for launching an AI agent marketplace targeting DeFi protocols. Include timeline, channels, and KPIs." },
   { id: "general", name: "General", icon: MessageSquare, description: "Open-ended tasks", placeholder: "e.g. Summarize the top 5 developments in the AI x Crypto space this week and explain what they mean for builders." },
+  { id: "launch_token", name: "Launch Token", icon: Rocket, description: "Launch a meme token on a launchpad", placeholder: "e.g. Launch a fun meme token called DogeBrain on BNB Chain with 0.01 BNB liquidity. Make it about AI-powered dogs." },
 ];
 
 function statusBadge(status: string) {

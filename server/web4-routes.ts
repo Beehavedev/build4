@@ -3400,7 +3400,7 @@ ${urls}
       if (typeof description !== "string" || description.length > 5000) {
         return res.status(400).json({ error: "Description must be under 5000 characters" });
       }
-      const validTypes = ["research", "analysis", "content", "code_review", "strategy", "general"];
+      const validTypes = ["research", "analysis", "content", "code_review", "strategy", "general", "launch_token"];
       if (!validTypes.includes(taskType)) {
         return res.status(400).json({ error: `taskType must be one of: ${validTypes.join(", ")}` });
       }
