@@ -201,6 +201,8 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
   const [taskDescription, setTaskDescription] = useState("");
   const [rewardBnb, setRewardBnb] = useState("0.02");
   const [expandedBounty, setExpandedBounty] = useState<string | null>(null);
+  const [previewText, setPreviewText] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [settingsForm, setSettingsForm] = useState({
     pollingIntervalMs: 30000,
     minVerificationScore: 60,
@@ -502,9 +504,10 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
                   <Label className="text-gray-400 text-sm">Task Description</Label>
                   <Textarea
                     value={taskDescription}
-                    onChange={(e) => setTaskDescription(e.target.value)}
+                    onChange={(e) => { setTaskDescription(e.target.value); setPreviewText(null); }}
                     placeholder="e.g., Review the BUILD4 smart contracts and report any potential vulnerabilities. Include specific function names and risk levels."
-                    className="bg-gray-800 border-gray-700 mt-1 min-h-[80px]"
+                    className={`bg-gray-800 border-gray-700 mt-1 min-h-[80px] ${previewText !== null ? "opacity-50" : ""}`}
+                    disabled={previewText !== null}
                     data-testid="textarea-task-description"
                   />
                   <p className="text-xs text-gray-600 mt-1">{280 - taskDescription.length} chars remaining (tweet limit)</p>
@@ -514,26 +517,85 @@ function TwitterAgentDashboard({ token, onLogout }: { token: string; onLogout: (
                     <Label className="text-gray-400 text-sm">Reward per Winner (BNB)</Label>
                     <Input
                       value={rewardBnb}
-                      onChange={(e) => setRewardBnb(e.target.value)}
-                      className="bg-gray-800 border-gray-700 mt-1"
+                      onChange={(e) => { setRewardBnb(e.target.value); setPreviewText(null); }}
+                      className={`bg-gray-800 border-gray-700 mt-1 ${previewText !== null ? "opacity-50" : ""}`}
+                      disabled={previewText !== null}
                       data-testid="input-reward-bnb"
                     />
                     <p className="text-xs text-gray-600 mt-1">~${(parseFloat(rewardBnb || "0") * 650).toFixed(0)} USD per winner</p>
                   </div>
-                  <Button
-                    onClick={() => postBounty.mutate()}
-                    disabled={postBounty.isPending || !taskDescription.trim()}
-                    className="bg-blue-600 hover:bg-blue-700"
-                    data-testid="button-post-bounty"
-                  >
-                    {postBounty.isPending ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <Twitter className="w-4 h-4 mr-2" />
-                    )}
-                    Post to Twitter
-                  </Button>
+                  {previewText === null && (
+                    <Button
+                      onClick={async () => {
+                        setPreviewLoading(true);
+                        try {
+                          const data = await authPost("/api/twitter/preview-bounty", token, { taskDescription, rewardBnb });
+                          setPreviewText(data.tweetText);
+                        } catch (err: any) {
+                          toast({ title: "Preview failed", description: err.message, variant: "destructive" });
+                        } finally {
+                          setPreviewLoading(false);
+                        }
+                      }}
+                      disabled={previewLoading || !taskDescription.trim()}
+                      className="bg-blue-600 hover:bg-blue-700"
+                      data-testid="button-preview-bounty"
+                    >
+                      {previewLoading ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Eye className="w-4 h-4 mr-2" />
+                      )}
+                      Preview Tweet
+                    </Button>
+                  )}
                 </div>
+
+                {previewText !== null && (
+                  <div className="mt-4 space-y-3">
+                    <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                          <Twitter className="w-4 h-4 text-blue-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-white">{status?.account?.name || "BUILD4 Agent"}</p>
+                          <p className="text-xs text-gray-500">@{status?.account?.username || "build4"}</p>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed" data-testid="text-tweet-preview">{previewText}</p>
+                      <p className={`text-xs mt-2 ${previewText.length > 280 ? "text-red-400" : "text-gray-500"}`}>
+                        {previewText.length}/280 characters
+                      </p>
+                    </div>
+                    <div className="flex gap-3">
+                      <Button
+                        onClick={() => {
+                          postBounty.mutate();
+                          setPreviewText(null);
+                        }}
+                        disabled={postBounty.isPending}
+                        className="bg-green-600 hover:bg-green-700"
+                        data-testid="button-confirm-post"
+                      >
+                        {postBounty.isPending ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Send className="w-4 h-4 mr-2" />
+                        )}
+                        Confirm & Post
+                      </Button>
+                      <Button
+                        onClick={() => setPreviewText(null)}
+                        variant="outline"
+                        className="border-gray-700 text-gray-400 hover:text-white"
+                        data-testid="button-cancel-preview"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </Card>
 

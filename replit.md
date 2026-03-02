@@ -57,6 +57,7 @@ The project uses a monorepo with `client/` for the React frontend, `server/` for
 - **Engine**: Multi-agent Twitter runner manages independent agents with per-agent polling, credentials, and state.
 - **Features**: Autonomous content posting via decentralized inference, auto-reply to mentions, configurable personality/instructions, role-based behavior, posting frequency control, per-agent model selection.
 - **Agent Intelligence**: Includes model selection (Llama, DeepSeek, Qwen), per-agent knowledge base, conversation memory with sentiment detection, tool use (e.g., crypto prices, gas price), multi-agent collaboration, and performance learning.
+- **Tweet Preview**: Bounty tweets go through a preview step before posting. The `generateBountyTweetText` function (exported from `server/twitter-agent.ts`) generates the tweet text, and a `/api/twitter/preview-bounty` endpoint returns the preview without posting. The frontend shows the full tweet in a styled preview card, with "Confirm & Post" or "Cancel" actions. Inputs are locked while preview is shown and dismissed if edited.
 
 ### Telegram Bot (Onboarding + Agent Management)
 - **Purpose**: Full agent lifecycle via Telegram — create agents, assign tasks, check results, and manage wallet linking without visiting the website.

@@ -6,7 +6,7 @@ import { registerWeb4Routes } from "./web4-routes";
 import { registerServicesRoutes } from "./services-routes";
 import { preparePrivacyTransfer, generateProof, getProof, verifyCommitment } from "./zerc20-sdk";
 import { startBountyEngine } from "./bounty-engine";
-import { startTwitterAgent, stopTwitterAgent, getTwitterAgentStatus, runTwitterAgentCycle, postBountyTweet } from "./twitter-agent";
+import { startTwitterAgent, stopTwitterAgent, getTwitterAgentStatus, runTwitterAgentCycle, postBountyTweet, generateBountyTweetText } from "./twitter-agent";
 import { startSupportAgent, stopSupportAgent, getSupportAgentStatus, runSupportAgentCycle } from "./twitter-support-agent";
 import { isTwitterConfigured } from "./twitter-client";
 import { startTelegramBot, stopTelegramBot, getTelegramBotStatus } from "./telegram-bot";
@@ -349,6 +349,23 @@ export async function registerRoutes(
       }
       await runTwitterAgentCycle();
       res.json({ success: true, message: "Cycle completed" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/twitter/preview-bounty", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const { taskDescription, rewardBnb, maxWinners } = req.body;
+      if (!taskDescription) {
+        res.status(400).json({ error: "Task description required" });
+        return;
+      }
+      const config = await storage.getTwitterAgentConfig();
+      const reward = rewardBnb || config?.defaultBountyBudget || "0.02";
+      const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 10, 10);
+      const tweetText = generateBountyTweetText(taskDescription, reward, winners);
+      res.json({ tweetText, charCount: tweetText.length });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
