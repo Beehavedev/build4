@@ -581,6 +581,12 @@ export async function registerRoutes(
     console.log("[dev] Skipping background agents in development to save memory. They run in production.");
   } else {
     setTimeout(() => {
+      if (process.env.TELEGRAM_BOT_TOKEN) {
+        startTelegramBot();
+      }
+    }, 2000);
+
+    setTimeout(() => {
       startBountyEngine().catch(err => {
         console.error("[BountyEngine] Failed to start:", err.message);
       });
@@ -592,7 +598,7 @@ export async function registerRoutes(
           console.error("[TwitterAgent] Failed to start:", err.message);
         });
       }
-    }, 10000);
+    }, 8000);
 
     setTimeout(() => {
       if (isTwitterConfigured()) {
@@ -600,19 +606,13 @@ export async function registerRoutes(
           console.error("[SupportAgent] Failed to start:", err.message);
         });
       }
-    }, 15000);
-
-    setTimeout(() => {
-      if (process.env.TELEGRAM_BOT_TOKEN) {
-        startTelegramBot();
-      }
-    }, 20000);
+    }, 10000);
 
     setTimeout(() => {
       autoStartAllAgents().catch(err => {
         console.error("[MultiTwitter] Auto-start failed:", err.message);
       });
-    }, 25000);
+    }, 12000);
   }
 
   app.get("/api/telegram/status", analyticsAuth, (req: Request, res: Response) => {
