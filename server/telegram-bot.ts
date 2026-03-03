@@ -854,24 +854,31 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
     if (cmd === "wallet") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for wallet info!"); return; }
-      const wallet = getLinkedWallet(chatId);
-      if (!wallet) { await promptWalletConnect(chatId); return; }
+      const wallets = getUserWallets(chatId);
+      if (wallets.length === 0) { await promptWalletConnect(chatId); return; }
+
+      const activeIdx = getActiveWalletIndex(chatId);
       const walletUrl = getWalletConnectUrl(chatId);
-      await bot.sendMessage(chatId,
-        `👛 Your Wallet\n\n` +
-        `Address: \`${wallet}\`\n\n` +
-        `Send BNB or ETH to this address to fund it.`,
-        {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "📋 Copy Address", callback_data: "action:copyaddr" }],
-              [{ text: "🔄 Switch Wallet", url: walletUrl }],
-              [{ text: "◀️ Back to Menu", callback_data: "action:menu" }],
-            ]
-          }
+      let text = `👛 Your Wallets\n\n`;
+      wallets.forEach((w, i) => {
+        const marker = i === activeIdx ? "✅" : "⬜";
+        text += `${marker} ${shortWallet(w)}${i === activeIdx ? " (active)" : ""}\n`;
+      });
+      text += `\nSend BNB or ETH to your active wallet to fund it.`;
+
+      const walletButtons: TelegramBot.InlineKeyboardButton[][] = wallets.map((w, i) => {
+        if (i === activeIdx) {
+          return [{ text: `📋 Copy: ${shortWallet(w)}`, callback_data: `copywall:${i}` }];
         }
-      );
+        return [
+          { text: `▶️ Use ${shortWallet(w)}`, callback_data: `switchwall:${i}` },
+          { text: `🗑`, callback_data: `removewall:${i}` },
+        ];
+      });
+      walletButtons.push([{ text: "➕ Add Another Wallet", url: walletUrl }]);
+      walletButtons.push([{ text: "◀️ Menu", callback_data: "action:menu" }]);
+
+      await bot.sendMessage(chatId, text, { reply_markup: { inline_keyboard: walletButtons } });
       return;
     }
 

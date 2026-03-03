@@ -78,7 +78,7 @@ The project uses a monorepo with `client/` for the React frontend, `server/` for
 - **Task Flow**: Single-agent users skip agent selection. Agent picker → Task type (6 buttons) → Describe task (text) → Auto-executes, bot sends result. Title auto-generated from description.
 - **Token Launch Flow**: Main menu "Launch Token" button or `/launch` command. Agent picker → Platform (Four.meme/Flap.sh) → Token name → Symbol → Description (or skip) → Preview with confirm/cancel → Executes via `token-launcher.ts`. Also accessible from agent task type menu via "Launch Token" button.
 - **Agent Token Proposals**: When agents autonomously decide to launch tokens (3% probability in agent runner), they now create a proposal instead of executing directly. The proposal is stored in `tokenLaunches` with status `"proposed"` and the agent's owner is notified via Telegram with Approve/Reject buttons. On approval, the launch executes. On rejection, the proposal is marked rejected. If the owner isn't on Telegram, the proposal is still created in DB for later review.
-- **Wallet Linking**: In-memory `telegramWalletMap` links Telegram chatId to 0x wallet. Session-based (resets on server restart).
+- **Multi-Wallet Support**: Users can add multiple wallets and switch between them. In-memory `telegramWalletMap` stores `{ wallets: string[], active: number }` per chatId. "My Wallet" button and `/wallet` command show all wallets with active marker, copy address, switch, remove, and add new wallet buttons. Session-based (resets on server restart).
 - **Files**: `server/telegram-bot.ts`, `server/telegram-wallet-page.ts`
 
 ### Agent Task Terminal
