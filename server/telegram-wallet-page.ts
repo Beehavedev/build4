@@ -186,10 +186,10 @@ export function getTelegramWalletPage(wcProjectId: string): string {
 </head>
 <body>
   <div class="container">
-    <h1>Connect Wallet</h1>
-    <p class="subtitle">Link your wallet to BUILD4 on Telegram</p>
+    <h1>BUILD4 Wallet</h1>
+    <p class="subtitle">Create a new wallet or connect an existing one</p>
 
-    <button class="create-btn" id="btn-create" onclick="createNewWallet()">+ Create New Wallet</button>
+    <button class="create-btn" id="btn-create" onclick="createNewWallet()">🔑 Create New Wallet (takes 2 seconds)</button>
 
     <div id="create-result">
       <div class="warning-text">Save your private key now. It will NOT be shown again. Anyone with this key controls your funds.</div>

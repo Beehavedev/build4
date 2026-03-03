@@ -212,13 +212,17 @@ async function getMyAgents(wallet: string) {
 async function promptWalletConnect(chatId: number): Promise<void> {
   if (!bot) return;
   const walletUrl = getWalletConnectUrl(chatId);
-  await bot.sendMessage(chatId, "Connect your wallet first:", {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "Connect Wallet", url: walletUrl }],
-      ]
+  await bot.sendMessage(chatId,
+    "You need a wallet first. Create one in seconds or import your existing wallet:",
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🔑 Create New Wallet", url: walletUrl }],
+          [{ text: "🔗 Import Existing Wallet", url: walletUrl }],
+        ]
+      }
     }
-  });
+  );
 }
 
 function getWalletConnectUrl(chatId?: number): string {
@@ -232,17 +236,19 @@ function mainMenuKeyboard(hasWallet: boolean, chatId?: number): TelegramBot.Inli
     const walletUrl = getWalletConnectUrl(chatId);
     return {
       inline_keyboard: [
-        [{ text: "Connect Wallet", url: walletUrl }],
-        [{ text: "What is BUILD4?", callback_data: "action:info" }, { text: "Help", callback_data: "action:help" }],
+        [{ text: "🔑 Create New Wallet", url: walletUrl }],
+        [{ text: "🔗 Import Existing Wallet", url: walletUrl }],
+        [{ text: "ℹ️ What is BUILD4?", callback_data: "action:info" }],
       ]
     };
   }
   return {
     inline_keyboard: [
       [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
-      [{ text: "Create Agent", callback_data: "action:newagent" }, { text: "My Agents", callback_data: "action:myagents" }],
-      [{ text: "New Task", callback_data: "action:task" }, { text: "My Tasks", callback_data: "action:mytasks" }],
-      [{ text: "Help & Commands", callback_data: "action:help" }],
+      [{ text: "🤖 Create Agent", callback_data: "action:newagent" }, { text: "📋 My Agents", callback_data: "action:myagents" }],
+      [{ text: "📝 New Task", callback_data: "action:task" }, { text: "📊 My Tasks", callback_data: "action:mytasks" }],
+      [{ text: "👛 My Wallet", callback_data: "action:wallet" }],
+      [{ text: "❓ Help & Commands", callback_data: "action:help" }],
     ]
   };
 }
@@ -350,21 +356,56 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   if (data === "action:help") {
+    const hasW = !!getLinkedWallet(chatId);
     await bot.sendMessage(chatId,
       "Commands:\n\n" +
-      "/start — Main menu\n" +
-      "/launch — Launch a token on Four.meme or Flap.sh\n" +
-      "/newagent — Create a new AI agent\n" +
-      "/myagents — View & manage your agents\n" +
-      "/task — Assign a task to an agent\n" +
-      "/mytasks — View recent tasks\n" +
-      "/linkwallet — Connect your wallet\n" +
-      "/ask <question> — Ask anything about BUILD4\n" +
-      "/mychatid — Get your Chat ID for notifications\n" +
-      "/cancel — Cancel current action\n\n" +
-      "Or just type any question and I'll answer it.",
-      { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId), chatId) }
+      "🚀 /launch — Launch a token\n" +
+      "🤖 /newagent — Create an AI agent\n" +
+      "📋 /myagents — Your agents\n" +
+      "📝 /task — Assign a task\n" +
+      "📊 /mytasks — Recent tasks\n" +
+      "👛 /wallet — Wallet info\n" +
+      "🔗 /linkwallet — Connect wallet\n" +
+      "❓ /ask <question> — Ask anything\n" +
+      "🔔 /mychatid — Chat ID for notifications\n" +
+      "❌ /cancel — Cancel current action\n\n" +
+      "Or just type any question!",
+      { reply_markup: mainMenuKeyboard(hasW, chatId) }
     );
+    return;
+  }
+
+  if (data === "action:wallet") {
+    const w = getLinkedWallet(chatId);
+    if (!w) {
+      await promptWalletConnect(chatId);
+      return;
+    }
+    const walletUrl = getWalletConnectUrl(chatId);
+    await bot.sendMessage(chatId,
+      `👛 Your Wallet\n\n` +
+      `Address: \`${w}\`\n\n` +
+      `Send BNB or ETH to this address to fund it.\n` +
+      `Then you can launch tokens and create agents.`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "📋 Copy Address", callback_data: "action:copyaddr" }],
+            [{ text: "🔄 Switch Wallet", url: walletUrl }],
+            [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
+            [{ text: "◀️ Back to Menu", callback_data: "action:menu" }],
+          ]
+        }
+      }
+    );
+    return;
+  }
+
+  if (data === "action:copyaddr") {
+    const w = getLinkedWallet(chatId);
+    if (!w) { await promptWalletConnect(chatId); return; }
+    await bot.sendMessage(chatId, `\`${w}\``, { parse_mode: "Markdown" });
     return;
   }
 
@@ -662,23 +703,18 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       if (!wallet) {
         await bot.sendMessage(chatId,
           `Welcome to BUILD4\n\n` +
-          `Create AI agents that operate on-chain — BNB Chain, Base, and XLayer.\n\n` +
-          `What you can do here:\n` +
-          `• Create & manage AI agents\n` +
-          `• Launch tokens on Four.meme & Flap.sh\n` +
-          `• Assign tasks to your agents\n\n` +
-          `Connect your wallet to get started:`,
+          `Launch tokens, create AI agents, and operate on-chain — all from Telegram.\n\n` +
+          `Step 1: Create or import a wallet\n` +
+          `Step 2: Launch tokens on Four.meme or Flap.sh\n` +
+          `Step 3: Create agents to work for you\n\n` +
+          `Tap below to get started:`,
           { reply_markup: mainMenuKeyboard(false, chatId) }
         );
       } else {
         await bot.sendMessage(chatId,
-          `Welcome back! Wallet: ${shortWallet(wallet)}\n\n` +
-          `Quick commands:\n` +
-          `/launch — Launch a token on Four.meme or Flap.sh\n` +
-          `/task — Assign a task to your agent\n` +
-          `/myagents — View your agents\n` +
-          `/help — All commands\n\n` +
-          `Or tap a button:`,
+          `Welcome back!\n\n` +
+          `👛 Wallet: ${shortWallet(wallet)}\n\n` +
+          `What do you want to do?`,
           { reply_markup: mainMenuKeyboard(true, chatId) }
         );
       }
@@ -697,20 +733,44 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
 
     if (cmd === "help") {
+      const hasW = !!getLinkedWallet(chatId);
       await bot.sendMessage(chatId,
         "Commands:\n\n" +
-        "/start — Main menu\n" +
-        "/launch — Launch a token on Four.meme or Flap.sh\n" +
-        "/newagent — Create a new AI agent\n" +
-        "/myagents — View & manage your agents\n" +
-        "/task — Assign a task to an agent\n" +
-        "/mytasks — View recent tasks\n" +
-        "/linkwallet — Connect your wallet\n" +
-        "/ask <question> — Ask anything about BUILD4\n" +
-        "/mychatid — Get your Chat ID for notifications\n" +
-        "/cancel — Cancel current action\n\n" +
-        "Or just type any question and I'll answer it.",
-        { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId), chatId) }
+        "🚀 /launch — Launch a token\n" +
+        "🤖 /newagent — Create an AI agent\n" +
+        "📋 /myagents — Your agents\n" +
+        "📝 /task — Assign a task\n" +
+        "📊 /mytasks — Recent tasks\n" +
+        "👛 /wallet — Wallet info\n" +
+        "🔗 /linkwallet — Connect wallet\n" +
+        "❓ /ask <question> — Ask anything\n" +
+        "🔔 /mychatid — Chat ID for notifications\n" +
+        "❌ /cancel — Cancel current action\n\n" +
+        "Or just type any question!",
+        { reply_markup: mainMenuKeyboard(hasW, chatId) }
+      );
+      return;
+    }
+
+    if (cmd === "wallet") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for wallet info!"); return; }
+      const wallet = getLinkedWallet(chatId);
+      if (!wallet) { await promptWalletConnect(chatId); return; }
+      const walletUrl = getWalletConnectUrl(chatId);
+      await bot.sendMessage(chatId,
+        `👛 Your Wallet\n\n` +
+        `Address: \`${wallet}\`\n\n` +
+        `Send BNB or ETH to this address to fund it.`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "📋 Copy Address", callback_data: "action:copyaddr" }],
+              [{ text: "🔄 Switch Wallet", url: walletUrl }],
+              [{ text: "◀️ Back to Menu", callback_data: "action:menu" }],
+            ]
+          }
+        }
       );
       return;
     }
