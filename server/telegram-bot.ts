@@ -341,7 +341,21 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
   const addr = wallet.address.toLowerCase();
   const pk = wallet.privateKey;
 
-  linkTelegramWallet(chatId, addr, pk);
+  const existing = telegramWalletMap.get(chatId);
+  if (existing) {
+    if (!existing.wallets.includes(addr)) {
+      existing.wallets.push(addr);
+      existing.active = existing.wallets.length - 1;
+    } else {
+      existing.active = existing.wallets.indexOf(addr);
+    }
+    telegramWalletMap.set(chatId, existing);
+  } else {
+    telegramWalletMap.set(chatId, { wallets: [addr], active: 0 });
+  }
+
+  await storage.saveTelegramWallet(chatId.toString(), addr, pk);
+  await storage.setActiveTelegramWallet(chatId.toString(), addr);
 
   await bot.sendMessage(chatId,
     `🔑 Wallet created!\n\n` +
@@ -359,8 +373,29 @@ async function ensureWallet(chatId: number): Promise<string> {
   let wallet = getLinkedWallet(chatId);
   if (!wallet) {
     wallet = await autoGenerateWallet(chatId);
+  } else {
+    const hasKey = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+    if (!hasKey) {
+      wallet = await autoGenerateWallet(chatId);
+    }
   }
   return wallet;
+}
+
+async function regenerateWalletWithKey(chatId: number): Promise<string | null> {
+  if (!bot) return null;
+  try {
+    const newAddr = await autoGenerateWallet(chatId);
+    await bot.sendMessage(chatId,
+      `🔄 Generated a new wallet with stored keys.\n\nNew active wallet: \`${newAddr}\`\n\n` +
+      `⚠️ Fund this wallet before launching tokens.`,
+      { parse_mode: "Markdown" }
+    );
+    return newAddr;
+  } catch (e: any) {
+    console.error("[TelegramBot] regenerateWalletWithKey error:", e.message);
+    return null;
+  }
 }
 
 function getWalletConnectUrl(chatId?: number): string {
@@ -1561,13 +1596,12 @@ async function handleProposalApproval(chatId: number, proposalId: string, approv
     await bot.sendMessage(chatId, `🚀 Launching ${proposal.tokenName} ($${proposal.tokenSymbol})...\n\nThis may take a minute.`);
     await bot.sendChatAction(chatId, "typing");
 
-    const userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+    let userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
 
     if (!userPk) {
       await bot.sendMessage(chatId,
-        "⚠️ Your wallet doesn't have a private key stored — you linked an address only.\n\n" +
-        "To launch tokens, import your wallet with its private key:\n" +
-        "Tap 🔑 Wallet → Import Wallet → paste your private key.",
+        "⚠️ Your wallet doesn't have a stored private key.\n\n" +
+        "Use 🔑 Wallet → Import to re-import this wallet's private key, or create a new proposal from a fresh wallet.",
         { reply_markup: mainMenuKeyboard() }
       );
       return;
@@ -1735,16 +1769,21 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
 
   const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (Base)";
 
-  const userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+  let userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
 
   if (!userPk) {
-    await bot.sendMessage(chatId,
-      "⚠️ Your wallet doesn't have a private key stored — you linked an address only.\n\n" +
-      "To launch tokens, import your wallet with its private key:\n" +
-      "Tap 🔑 Wallet → Import Wallet → paste your private key.",
-      { reply_markup: mainMenuKeyboard() }
-    );
-    return;
+    const newWallet = await regenerateWalletWithKey(chatId);
+    if (newWallet) {
+      userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), newWallet);
+      wallet = newWallet;
+    }
+    if (!userPk) {
+      await bot.sendMessage(chatId,
+        "⚠️ Could not access wallet keys. Try /start to create a fresh wallet.",
+        { reply_markup: mainMenuKeyboard() }
+      );
+      return;
+    }
   }
 
   await bot.sendMessage(chatId, `🚀 Launching ${state.tokenName} ($${state.tokenSymbol}) on ${platformName} from your wallet...\n\nThis may take a minute.`);
