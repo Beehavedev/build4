@@ -78,7 +78,9 @@ COMMUNICATION STYLE:
 14. When citing on-chain transaction counts, convert wei amounts to BNB where helpful (1 BNB = 1e18 wei).`;
 
 const rateLimitMap = new Map<number, number>();
-const RATE_LIMIT_MS = 5000;
+const RATE_LIMIT_MS = 3000;
+const answerCache = new Map<string, { answer: string; time: number }>();
+const ANSWER_CACHE_MS = 300_000;
 
 function isTelegramConfigured(): boolean {
   return !!process.env.TELEGRAM_BOT_TOKEN;
@@ -120,59 +122,77 @@ async function getLiveStats(): Promise<string> {
 }
 
 async function generateAnswer(question: string, username: string): Promise<string> {
+  const fallback = generateFallbackAnswer(question);
+  if (fallback !== null) return fallback;
+
+  const cacheKey = question.toLowerCase().trim().replace(/\s+/g, " ").substring(0, 100);
+  const cached = answerCache.get(cacheKey);
+  if (cached && Date.now() - cached.time < ANSWER_CACHE_MS) return cached.answer;
+
   try {
     const liveStats = await getLiveStats();
     const enrichedPrompt = `${SYSTEM_PROMPT}\n\n${liveStats}`;
 
     const result = await runInferenceWithFallback(
-      ["akash", "hyperbolic", "ritual"],
+      ["akash", "hyperbolic"],
       undefined,
       `User @${username} asks: ${question}`,
       { systemPrompt: enrichedPrompt, temperature: 0.6 }
     );
 
     if (result.live && result.text && !result.text.startsWith("[NO_PROVIDER]") && !result.text.startsWith("[ERROR")) {
-      return result.text.trim();
+      const answer = result.text.trim();
+      answerCache.set(cacheKey, { answer, time: Date.now() });
+      if (answerCache.size > 500) {
+        const cutoff = Date.now() - ANSWER_CACHE_MS;
+        for (const [k, v] of answerCache) { if (v.time < cutoff) answerCache.delete(k); }
+      }
+      return answer;
     }
   } catch (e: any) {
     console.error("[TelegramBot] Inference error:", e.message);
   }
 
-  return generateFallbackAnswer(question);
+  return "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer. Ask me anything specific about agents, skills, wallets, or token launches!";
 }
 
-function generateFallbackAnswer(question: string): string {
+function generateFallbackAnswer(question: string): string | null {
   const lower = question.toLowerCase();
 
-  if (lower.includes("what is build4") || lower.includes("what's build4")) {
+  if (lower.includes("what is build4") || lower.includes("what's build4") || lower.includes("about build4"))
     return "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer. Agents get their own wallets, trade skills, evolve, fork, and operate fully on-chain. Check build4.io for more!";
-  }
-  if (lower.includes("chain") || lower.includes("network")) {
+  if (lower.includes("chain") || lower.includes("network") || lower.includes("which blockchain"))
     return "BUILD4 runs on BNB Chain, Base, and XLayer. All agent wallets, skill trades, and replication happen on-chain across these networks.";
-  }
-  if (lower.includes("wallet") || lower.includes("identity")) {
+  if (lower.includes("wallet") || lower.includes("identity"))
     return "On BUILD4, your wallet address (0x...) IS your identity. No registration needed — fully permissionless. Every agent gets its own on-chain wallet for deposits, withdrawals, and transfers.";
-  }
-  if (lower.includes("skill")) {
+  if (lower.includes("skill"))
     return "The Skills Marketplace lets agents list, buy, and sell capabilities. Revenue splits 3 ways between creator, platform, and referrer. All on-chain.";
-  }
-  if (lower.includes("inference") || lower.includes("ai")) {
+  if (lower.includes("inference") || lower.includes("decentralized ai"))
     return "BUILD4 uses decentralized inference through Hyperbolic, Akash ML, and Ritual — no centralized AI providers like OpenAI. Fully decentralized compute.";
-  }
-  if (lower.includes("erc-8004") || lower.includes("erc8004")) {
+  if (lower.includes("erc-8004") || lower.includes("erc8004"))
     return "ERC-8004 (Trustless Agents) provides on-chain identity, reputation, and validation registries. BUILD4 is live on Base and Ethereum mainnet with this standard.";
-  }
-  if (lower.includes("bap-578") || lower.includes("bap578") || lower.includes("nfa")) {
+  if (lower.includes("bap-578") || lower.includes("bap578") || lower.includes("nfa"))
     return "BAP-578 is BNB Chain's Non-Fungible Agent standard extending ERC-721. BUILD4's registry is live at 0xd7Deb29ddBB13607375Ce50405A574AC2f7d978d on BNB Chain.";
-  }
-  if (lower.includes("privacy") || lower.includes("zerc20")) {
+  if (lower.includes("privacy") || lower.includes("zerc20"))
     return "BUILD4 supports ZERC20 privacy transfers using zero-knowledge proof-of-burn mechanisms for private on-chain transactions.";
-  }
-  if (lower.includes("contract") || lower.includes("smart contract")) {
+  if (lower.includes("contract") || lower.includes("smart contract"))
     return "BUILD4 has 4 core contracts: AgentEconomyHub (wallets), SkillMarketplace (skill trading), AgentReplication (forking + NFTs), and ConstitutionRegistry (immutable agent laws).";
-  }
+  if (lower.includes("token") && (lower.includes("launch") || lower.includes("create")))
+    return "You can launch tokens on Four.meme (BNB Chain) or Flap.sh (Base) right here in the bot! Use /launch or tap '🚀 Launch Token' from the menu. Your agent can also propose autonomous token launches.";
+  if (lower.includes("agent") && (lower.includes("create") || lower.includes("make") || lower.includes("new")))
+    return "Create an AI agent with /newagent — give it a name, bio, and pick a model (Llama 70B, DeepSeek V3, or Qwen 72B). Your agent gets its own wallet and can trade skills, earn BNB, and evolve autonomously.";
+  if (lower.includes("how") && lower.includes("start"))
+    return "Getting started is easy:\n1. Create a wallet (tap 🔑 Create New Wallet)\n2. Fund it with some BNB or ETH\n3. Create an agent with /newagent\n4. Launch tokens with /launch\n\nThat's it — you're in the autonomous economy!";
+  if (lower.includes("price") || lower.includes("token") || lower.includes("buy") || lower.includes("where"))
+    return "BUILD4 is infrastructure, not a token. We power autonomous AI agents on-chain. Agents can launch their own tokens on Four.meme and Flap.sh though! Use /launch to try it.";
+  if (lower.includes("hello") || lower.includes("hi") || lower.includes("hey") || lower.includes("gm") || lower === "yo")
+    return "Hey! Welcome to BUILD4 — decentralized infrastructure for autonomous AI agents. What can I help you with? Try /help to see all commands.";
+  if (lower.includes("help") || lower.includes("command"))
+    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
+  if (lower.includes("thank"))
+    return "You're welcome! Let me know if you need anything else. 🤝";
 
-  return "Great question! BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer. For detailed info, check build4.io or ask me something specific!";
+  return null;
 }
 
 function getLinkedWallet(chatId: number): string | undefined {
@@ -329,9 +349,9 @@ export async function startTelegramBot(): Promise<void> {
 
     bot = new TelegramBot(token, {
       polling: {
-        interval: 300,
+        interval: 100,
         autoStart: true,
-        params: { timeout: 30 }
+        params: { timeout: 10 }
       }
     });
     isRunning = true;
@@ -389,7 +409,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   const chatId = query.message.chat.id;
   const data = query.data;
 
-  await bot.answerCallbackQuery(query.id);
+  bot.answerCallbackQuery(query.id).catch(() => {});
 
   if (data === "action:linkwallet") {
     await promptWalletConnect(chatId);
@@ -1744,15 +1764,13 @@ async function handleQuestion(chatId: number, messageId: number, question: strin
   }
 
   try {
-    await bot!.sendChatAction(chatId, "typing");
+    bot!.sendChatAction(chatId, "typing").catch(() => {});
     const answer = await generateAnswer(question, username);
     console.log(`[TelegramBot] Answering @${username}: ${answer.slice(0, 80)}...`);
-    await bot!.sendMessage(chatId, answer, { reply_to_message_id: messageId });
+    bot!.sendMessage(chatId, answer, { reply_to_message_id: messageId }).catch(() => {});
   } catch (e: any) {
     console.error("[TelegramBot] Error handling message:", e.message);
-    try {
-      await bot!.sendMessage(chatId, "Something went wrong. Try again!", { reply_to_message_id: messageId });
-    } catch {}
+    bot!.sendMessage(chatId, "Something went wrong. Try again!", { reply_to_message_id: messageId }).catch(() => {});
   }
 }
 
