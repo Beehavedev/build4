@@ -22,20 +22,50 @@ const FOUR_MEME_ABI = [
 const TOKEN_CREATE_EVENT = "0x396d5e902b675b032348d3d2e9517ee8f0c4a926603fbc075d3d282ff00cad20";
 
 const FLAP_PORTAL = "0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0";
+const FLAP_TOKEN_IMPL = "0x29e6383f0ce68507b5a72a53c2b118a118332aa8";
+
+function mineVanitySalt(portal: string, tokenImpl: string, suffix: string): { salt: string; address: string } {
+  const bytecode = "0x3d602d80600a3d3981f3363d3d373d3d3d363d73" + tokenImpl.slice(2).toLowerCase() + "5af43d82803e903d91602b57fd5bf3";
+  const bytecodeHash = ethers.keccak256(bytecode);
+  let salt = ethers.keccak256(ethers.randomBytes(32));
+  const maxIterations = 10_000_000;
+  for (let i = 0; i < maxIterations; i++) {
+    const addr = ethers.getCreate2Address(portal, salt, bytecodeHash);
+    if (addr.toLowerCase().endsWith(suffix)) {
+      return { salt, address: addr };
+    }
+    salt = ethers.keccak256(salt);
+  }
+  throw new Error(`Failed to mine vanity salt ending in ${suffix} after ${maxIterations} iterations`);
+}
+
 const FLAP_PORTAL_ABI = [
   {
     inputs: [
-      { internalType: "string", name: "name", type: "string" },
-      { internalType: "string", name: "symbol", type: "string" },
-      { internalType: "string", name: "meta", type: "string" },
+      {
+        components: [
+          { name: "name", type: "string" },
+          { name: "symbol", type: "string" },
+          { name: "meta", type: "string" },
+          { name: "dexThresh", type: "uint8" },
+          { name: "salt", type: "bytes32" },
+          { name: "taxRate", type: "uint16" },
+          { name: "migratorType", type: "uint8" },
+          { name: "quoteToken", type: "address" },
+          { name: "quoteAmt", type: "uint256" },
+          { name: "beneficiary", type: "address" },
+          { name: "permitData", type: "bytes" },
+        ],
+        name: "params",
+        type: "tuple",
+      },
     ],
-    name: "newToken",
-    outputs: [{ internalType: "address", name: "token", type: "address" }],
+    name: "newTokenV2",
+    outputs: [{ name: "token", type: "address" }],
     stateMutability: "payable",
     type: "function",
   },
 ];
-const FLAP_TOKEN_CREATED_TOPIC = "0x"; // parsed from logs generically
 
 function sanitizeError(rawError: string): string {
   if (!rawError) return "Unknown error";
@@ -438,16 +468,34 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
       return { success: false, error: `Insufficient BNB — your wallet has ${balFormatted} BNB but needs at least ${needed} BNB. Fund your wallet and try again.`, launchId: launchRecord.id };
     }
 
-    log(`[TokenLauncher] Calling Flap Portal newToken(${params.tokenName}, ${params.tokenSymbol}) with ${ethers.formatEther(initialBuy)} BNB...`, "token-launcher");
+    log(`[TokenLauncher] Calling Flap Portal newTokenV2(${params.tokenName}, ${params.tokenSymbol}) with ${ethers.formatEther(initialBuy)} BNB...`, "token-launcher");
     const portal = new ethers.Contract(FLAP_PORTAL, FLAP_PORTAL_ABI, wallet);
 
     const meta = params.tokenDescription || "";
 
+    log(`[TokenLauncher] Mining vanity salt for flap.sh token...`, "token-launcher");
+    const minedSalt = mineVanitySalt(FLAP_PORTAL, FLAP_TOKEN_IMPL, "7777");
+    log(`[TokenLauncher] Vanity salt found: ${minedSalt.salt.substring(0, 18)}... -> ${minedSalt.address}`, "token-launcher");
+
+    const tokenParams = {
+      name: params.tokenName,
+      symbol: params.tokenSymbol,
+      meta,
+      dexThresh: 1,
+      salt: minedSalt.salt,
+      taxRate: 100,
+      migratorType: 1,
+      quoteToken: ethers.ZeroAddress,
+      quoteAmt: initialBuy,
+      beneficiary: wallet.address,
+      permitData: "0x",
+    };
+
     let tx;
     try {
-      tx = await portal.newToken(params.tokenName, params.tokenSymbol, meta, {
+      tx = await portal.newTokenV2(tokenParams, {
         value: initialBuy,
-        gasLimit: 1500000,
+        gasLimit: 2000000,
       });
     } catch (txError: any) {
       const rawMsg = txError.message || String(txError);
@@ -492,27 +540,27 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
 
     let tokenAddress: string | undefined;
     for (const eventLog of receipt.logs) {
-      if (eventLog.data && eventLog.data.length >= 66) {
-        try {
-          const decoded = ethers.AbiCoder.defaultAbiCoder().decode(["address"], "0x" + eventLog.data.slice(2, 66));
-          if (decoded[0] && ethers.isAddress(decoded[0]) && decoded[0] !== ethers.ZeroAddress) {
-            tokenAddress = decoded[0];
-            break;
-          }
-        } catch {}
+      if (eventLog.address?.toLowerCase().endsWith("7777") || eventLog.address?.toLowerCase().endsWith("8888")) {
+        tokenAddress = eventLog.address;
+        break;
       }
     }
-
     if (!tokenAddress) {
       for (const eventLog of receipt.logs) {
-        if (eventLog.topics && eventLog.topics.length >= 2) {
-          const possibleAddr = "0x" + eventLog.topics[1]?.slice(26);
-          if (possibleAddr.length === 42 && ethers.isAddress(possibleAddr) && possibleAddr !== ethers.ZeroAddress) {
-            tokenAddress = possibleAddr;
-            break;
-          }
+        if (eventLog.data && eventLog.data.length >= 66) {
+          try {
+            const decoded = ethers.AbiCoder.defaultAbiCoder().decode(["address"], "0x" + eventLog.data.slice(2, 66));
+            if (decoded[0] && ethers.isAddress(decoded[0]) && decoded[0] !== ethers.ZeroAddress) {
+              tokenAddress = decoded[0];
+              break;
+            }
+          } catch {}
         }
       }
+    }
+    if (!tokenAddress) {
+      tokenAddress = minedSalt.address;
+      log(`[TokenLauncher] Could not extract token address from logs, using mined vanity address: ${tokenAddress}`, "token-launcher");
     }
 
     const launchUrl = tokenAddress
