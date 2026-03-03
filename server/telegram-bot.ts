@@ -195,6 +195,26 @@ function generateFallbackAnswer(question: string): string | null {
   return null;
 }
 
+async function loadWalletsFromDb(): Promise<void> {
+  try {
+    const allLinks = await storage.getAllTelegramWalletLinks();
+    telegramWalletMap.clear();
+    for (const link of allLinks) {
+      const chatId = parseInt(link.chatId, 10);
+      const existing = telegramWalletMap.get(chatId);
+      if (existing) {
+        existing.wallets.push(link.walletAddress);
+        if (link.isActive) existing.active = existing.wallets.length - 1;
+      } else {
+        telegramWalletMap.set(chatId, { wallets: [link.walletAddress], active: link.isActive ? 0 : 0 });
+      }
+    }
+    console.log(`[TelegramBot] Loaded ${allLinks.length} wallet links from DB for ${telegramWalletMap.size} chats`);
+  } catch (e) {
+    console.error("[TelegramBot] Failed to load wallets from DB:", e);
+  }
+}
+
 function getLinkedWallet(chatId: number): string | undefined {
   const data = telegramWalletMap.get(chatId);
   if (!data || data.wallets.length === 0) return undefined;
@@ -216,19 +236,28 @@ function setActiveWallet(chatId: number, index: number): boolean {
   if (!data || index < 0 || index >= data.wallets.length) return false;
   data.active = index;
   telegramWalletMap.set(chatId, data);
+  storage.setActiveTelegramWallet(chatId.toString(), data.wallets[index]).catch(e =>
+    console.error("[TelegramBot] DB setActive error:", e));
   return true;
 }
 
 function removeWallet(chatId: number, index: number): boolean {
   const data = telegramWalletMap.get(chatId);
   if (!data || index < 0 || index >= data.wallets.length) return false;
+  const removedAddr = data.wallets[index];
   data.wallets.splice(index, 1);
+  storage.removeTelegramWallet(chatId.toString(), removedAddr).catch(e =>
+    console.error("[TelegramBot] DB remove error:", e));
   if (data.wallets.length === 0) {
     telegramWalletMap.delete(chatId);
     return true;
   }
   if (data.active >= data.wallets.length) data.active = 0;
   telegramWalletMap.set(chatId, data);
+  if (data.wallets.length > 0) {
+    storage.setActiveTelegramWallet(chatId.toString(), data.wallets[data.active]).catch(e =>
+      console.error("[TelegramBot] DB setActive after remove error:", e));
+  }
   return true;
 }
 
@@ -256,6 +285,11 @@ export function linkTelegramWallet(chatId: number, wallet: string): void {
   } else {
     telegramWalletMap.set(chatId, { wallets: [lower], active: 0 });
   }
+
+  storage.saveTelegramWallet(chatId.toString(), lower).then(() => {
+    storage.setActiveTelegramWallet(chatId.toString(), lower).catch(e =>
+      console.error("[TelegramBot] DB setActive error:", e));
+  }).catch(e => console.error("[TelegramBot] DB save error:", e));
 
   console.log(`[TelegramBot] Wallet linked via web for chatId ${chatId}: ${wallet.substring(0, 8)}...`);
   if (bot) {
@@ -355,6 +389,8 @@ export async function startTelegramBot(): Promise<void> {
       }
     });
     isRunning = true;
+
+    await loadWalletsFromDb();
 
     const me = await bot.getMe();
     botUsername = me.username || null;

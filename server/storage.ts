@@ -66,6 +66,7 @@ import {
   type AgentTask, type InsertAgentTask, agentTasks,
   type TokenLaunch, type InsertTokenLaunch, tokenLaunches,
   type ChaosMilestone, type InsertChaosMilestone, chaosMilestones,
+  type TelegramWallet, type InsertTelegramWallet, telegramWallets,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
@@ -379,6 +380,12 @@ export interface IStorage {
   seedSubscriptionPlans(): Promise<void>;
 
   cleanFakeData(): Promise<void>;
+
+  getTelegramWallets(chatId: string): Promise<TelegramWallet[]>;
+  saveTelegramWallet(chatId: string, walletAddress: string): Promise<TelegramWallet>;
+  removeTelegramWallet(chatId: string, walletAddress: string): Promise<void>;
+  setActiveTelegramWallet(chatId: string, walletAddress: string): Promise<void>;
+  getAllTelegramWalletLinks(): Promise<TelegramWallet[]>;
   seedInferenceProviders(): Promise<void>;
 }
 
@@ -2295,6 +2302,40 @@ export class DatabaseStorage implements IStorage {
     if (!launch) return null;
     const all = await this.getChaosMilestones(launch.id);
     return { launch, milestones: all };
+  }
+
+  async getTelegramWallets(chatId: string): Promise<TelegramWallet[]> {
+    return db.select().from(telegramWallets).where(eq(telegramWallets.chatId, chatId)).orderBy(desc(telegramWallets.createdAt));
+  }
+
+  async saveTelegramWallet(chatId: string, walletAddress: string): Promise<TelegramWallet> {
+    const existing = await db.select().from(telegramWallets)
+      .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
+    if (existing.length > 0) return existing[0];
+
+    await db.update(telegramWallets).set({ isActive: false }).where(eq(telegramWallets.chatId, chatId));
+
+    const [row] = await db.insert(telegramWallets).values({
+      chatId,
+      walletAddress: walletAddress.toLowerCase(),
+      isActive: true,
+    }).returning();
+    return row;
+  }
+
+  async removeTelegramWallet(chatId: string, walletAddress: string): Promise<void> {
+    await db.delete(telegramWallets)
+      .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
+  }
+
+  async setActiveTelegramWallet(chatId: string, walletAddress: string): Promise<void> {
+    await db.update(telegramWallets).set({ isActive: false }).where(eq(telegramWallets.chatId, chatId));
+    await db.update(telegramWallets).set({ isActive: true })
+      .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
+  }
+
+  async getAllTelegramWalletLinks(): Promise<TelegramWallet[]> {
+    return db.select().from(telegramWallets).orderBy(telegramWallets.chatId);
   }
 }
 

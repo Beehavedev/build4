@@ -1010,6 +1010,18 @@ export const agentTwitterAccounts = pgTable("agent_twitter_accounts", {
 });
 
 export const insertAgentTwitterAccountSchema = createInsertSchema(agentTwitterAccounts).omit({ id: true, createdAt: true, updatedAt: true });
+
+export const telegramWallets = pgTable("telegram_wallets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  chatId: text("chat_id").notNull(),
+  walletAddress: text("wallet_address").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTelegramWalletSchema = createInsertSchema(telegramWallets).omit({ id: true, createdAt: true });
+export type InsertTelegramWallet = z.infer<typeof insertTelegramWalletSchema>;
+export type TelegramWallet = typeof telegramWallets.$inferSelect;
 export type InsertAgentTwitterAccount = z.infer<typeof insertAgentTwitterAccountSchema>;
 export type AgentTwitterAccount = typeof agentTwitterAccounts.$inferSelect;
 
