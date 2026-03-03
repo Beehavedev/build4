@@ -329,6 +329,35 @@ async function sendNativePayment(toAddress: string, amountBnb: string, chainKey?
   }
 }
 
+async function recordBountyReputation(
+  winnerWallet: string,
+  verificationScore: number,
+  paymentChain: string,
+  bountyJobId: string,
+  txHash: string
+): Promise<void> {
+  const chainLabel = getChainLabel(paymentChain);
+  const identities = await storage.getErc8004Identities();
+  const bountyAgentIdentity = identities.find(id =>
+    id.name?.toLowerCase().includes("researchbot") || id.name?.toLowerCase().includes("bounty")
+  );
+  const agentIdentityId = bountyAgentIdentity?.id || "bounty-engine";
+
+  await storage.createErc8004Reputation({
+    agentIdentityId,
+    clientWallet: winnerWallet.toLowerCase(),
+    value: verificationScore,
+    valueDecimals: 0,
+    tag1: "bounty",
+    tag2: chainLabel,
+    endpoint: `bounty:${bountyJobId}`,
+    feedbackUri: `tx:${txHash}`,
+    feedbackHash: txHash,
+  });
+
+  console.log(`[TwitterAgent] Reputation +${verificationScore} recorded for ${winnerWallet.slice(0, 8)}... (bounty on ${chainLabel}, maps to BNB score)`);
+}
+
 export async function startTwitterAgent() {
   if (!isTwitterConfigured()) {
     console.log("[TwitterAgent] API credentials not configured, skipping start");
@@ -1095,6 +1124,10 @@ async function selectAndPayWinners(bounty: any) {
       }
 
       console.log(`[TwitterAgent] Paid @${winner.twitterHandle} ${rewardBnb} ${paidCurrency} on ${getChainLabel(paidChain)} for bounty ${bounty.jobId} (${newPaidCount}/${maxWinners} winners, TX: ${paymentResult.txHash})`);
+
+      recordBountyReputation(winner.walletAddress!, winner.verificationScore || 50, paidChain, bounty.jobId, paymentResult.txHash!).catch(e => {
+        console.error(`[TwitterAgent] Reputation record failed for @${winner.twitterHandle}:`, e.message);
+      });
     } else {
       console.error(`[TwitterAgent] Payment failed for @${winner.twitterHandle}: ${paymentResult.error}`);
       await storage.updateTwitterSubmission(winner.id, {

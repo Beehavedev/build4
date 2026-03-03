@@ -2381,6 +2381,38 @@ ${urls}
     }
   });
 
+  app.get("/api/standards/erc8004/reputation/wallet/:address", async (req: Request, res: Response) => {
+    try {
+      const wallet = req.params.address.toLowerCase();
+      const allIdentities = await storage.getErc8004Identities();
+      let allRepEntries: any[] = [];
+      for (const identity of allIdentities) {
+        const entries = await storage.getErc8004Reputation(identity.id);
+        const walletEntries = entries.filter(e => e.clientWallet.toLowerCase() === wallet);
+        allRepEntries.push(...walletEntries);
+      }
+      const bountyEntries = allRepEntries.filter(e => e.tag1 === "bounty");
+      const bnbBounties = bountyEntries.filter(e => e.tag2 === "BNB Chain");
+      const baseBounties = bountyEntries.filter(e => e.tag2 === "Base");
+      const bnbScore = bnbBounties.reduce((sum, e) => sum + (e.value || 0), 0);
+      const baseScore = baseBounties.reduce((sum, e) => sum + (e.value || 0), 0);
+
+      res.json({
+        wallet,
+        bnbScore: bnbScore + baseScore,
+        crossChainBreakdown: {
+          fromBnb: bnbScore,
+          fromBase: baseScore,
+        },
+        totalBounties: bountyEntries.length,
+        totalScore: bountyEntries.reduce((sum, e) => sum + (e.value || 0), 0),
+        entries: allRepEntries,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/standards/erc8004/validations", async (req: Request, res: Response) => {
     try {
       const agentIdentityId = req.query.agentIdentityId as string;
