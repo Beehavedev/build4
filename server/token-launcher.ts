@@ -139,11 +139,21 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
 
     let signatureResponse: any = null;
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
       const signRes = await fetch(`${FOUR_MEME_API}/mapi/defi/v3/public/wallet-direct/wallet/address/sign`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "User-Agent": "BUILD4/1.0",
+          "Origin": "https://four.meme",
+          "Referer": "https://four.meme/",
+        },
         body: JSON.stringify({ address: wallet.address, chainId: 56 }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       const contentType = signRes.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
         log(`[TokenLauncher] four.meme sign API returned non-JSON (${signRes.status} ${contentType})`, "token-launcher");
@@ -155,25 +165,34 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
       log(`[TokenLauncher] four.meme API sign failed: ${e.message}`, "token-launcher");
     }
 
-    if (!signatureResponse?.data?.signature) {
-      await storage.updateTokenLaunch(launchRecord.id, {
-        status: "failed",
-        errorMessage: "Four.meme API is temporarily unavailable — the signature service returned an error. Try again in a few minutes.",
-      });
-      return { success: false, error: "Four.meme API is temporarily unavailable — try again in a few minutes. If this keeps happening, the platform may be under maintenance.", launchId: launchRecord.id };
-    }
-
-    const contract = new ethers.Contract(FOUR_MEME_TOKEN_MANAGER_V3, FOUR_MEME_ABI, wallet);
     const totalSupply = ethers.parseUnits("1000000000", 18);
     const launchTime = BigInt(Math.floor(Date.now() / 1000) + 60);
 
     let tx;
     try {
-      const args = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["string", "string", "string", "string", "uint256", "uint256"],
-        [params.tokenName, params.tokenSymbol, params.tokenDescription || "", params.imageUrl || "", totalSupply, launchTime]
-      );
-      tx = await contract["createToken(bytes,bytes)"](args, signatureResponse.data.signature, { value: liquidity, gasLimit: 800000 });
+      if (signatureResponse?.data?.signature) {
+        log(`[TokenLauncher] Using V3 signed path`, "token-launcher");
+        const contract = new ethers.Contract(FOUR_MEME_TOKEN_MANAGER_V3, FOUR_MEME_ABI, wallet);
+        const args = ethers.AbiCoder.defaultAbiCoder().encode(
+          ["string", "string", "string", "string", "uint256", "uint256"],
+          [params.tokenName, params.tokenSymbol, params.tokenDescription || "", params.imageUrl || "", totalSupply, launchTime]
+        );
+        tx = await contract["createToken(bytes,bytes)"](args, signatureResponse.data.signature, { value: liquidity, gasLimit: 800000 });
+      } else {
+        log(`[TokenLauncher] V3 sign unavailable, using V1 unsigned fallback`, "token-launcher");
+        const contractV1 = new ethers.Contract(FOUR_MEME_TOKEN_MANAGER, FOUR_MEME_ABI, wallet);
+        const maxOffer = ethers.parseUnits("500000000", 18);
+        const presale = BigInt(0);
+        tx = await contractV1["createToken(string,string,uint256,uint256,uint256,uint256)"](
+          params.tokenName,
+          params.tokenSymbol,
+          totalSupply,
+          maxOffer,
+          presale,
+          launchTime,
+          { value: liquidity, gasLimit: 800000 }
+        );
+      }
     } catch (txError: any) {
       const rawMsg = txError.message || String(txError);
       log(`[TokenLauncher] four.meme TX error: ${rawMsg.substring(0, 500)}`, "token-launcher");
