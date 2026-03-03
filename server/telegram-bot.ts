@@ -1,4 +1,5 @@
 import TelegramBot from "node-telegram-bot-api";
+import { ethers } from "ethers";
 import { runInferenceWithFallback } from "./inference";
 import { storage } from "./storage";
 import { registerAgentOnchain, registerAgentERC8004, registerAgentBAP578, isOnchainReady, getExplorerUrl } from "./onchain";
@@ -19,6 +20,7 @@ const pendingAgentCreation = new Map<number, AgentCreationState>();
 const pendingTask = new Map<number, TaskState>();
 const pendingTokenLaunch = new Map<number, TokenLaunchState>();
 const pendingWallet = new Set<number>();
+const pendingImportWallet = new Set<number>();
 
 const BUILD4_KNOWLEDGE = `
 BUILD4 is decentralized infrastructure for autonomous AI agents — the economic layer where AI agents operate as independent economic actors on-chain. Live on BNB Chain, Base, and XLayer.
@@ -262,14 +264,13 @@ async function getMyAgents(wallet: string) {
 
 async function promptWalletConnect(chatId: number): Promise<void> {
   if (!bot) return;
-  const walletUrl = getWalletConnectUrl(chatId);
   await bot.sendMessage(chatId,
-    "You need a wallet first. Create one in seconds or import your existing wallet:",
+    "You need a wallet first. Create one instantly or import your existing one:",
     {
       reply_markup: {
         inline_keyboard: [
-          [{ text: "🔑 Create New Wallet", url: walletUrl }],
-          [{ text: "🔗 Import Existing Wallet", url: walletUrl }],
+          [{ text: "🔑 Create New Wallet", callback_data: "action:genwallet" }],
+          [{ text: "🔗 Import Existing Wallet", callback_data: "action:importwallet" }],
         ]
       }
     }
@@ -284,11 +285,10 @@ function getWalletConnectUrl(chatId?: number): string {
 
 function mainMenuKeyboard(hasWallet: boolean, chatId?: number): TelegramBot.InlineKeyboardMarkup {
   if (!hasWallet) {
-    const walletUrl = getWalletConnectUrl(chatId);
     return {
       inline_keyboard: [
-        [{ text: "🔑 Create New Wallet", url: walletUrl }],
-        [{ text: "🔗 Import Existing Wallet", url: walletUrl }],
+        [{ text: "🔑 Create New Wallet", callback_data: "action:genwallet" }],
+        [{ text: "🔗 Import Existing Wallet", callback_data: "action:importwallet" }],
         [{ text: "ℹ️ What is BUILD4?", callback_data: "action:info" }],
       ]
     };
@@ -396,6 +396,50 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data === "action:genwallet") {
+    try {
+      const wallet = ethers.Wallet.createRandom();
+      const addr = wallet.address.toLowerCase();
+      const pk = wallet.privateKey;
+
+      linkTelegramWallet(chatId, addr);
+      pendingImportWallet.delete(chatId);
+
+      await bot.sendMessage(chatId,
+        `✅ Wallet created!\n\n` +
+        `Address:\n\`${addr}\`\n\n` +
+        `Private Key:\n\`${pk}\`\n\n` +
+        `⚠️ SAVE YOUR PRIVATE KEY NOW — it won't be shown again.\n` +
+        `Never share it with anyone.`,
+        { parse_mode: "Markdown" }
+      );
+
+      await bot.sendMessage(chatId,
+        `Your wallet is ready. What would you like to do?`,
+        { reply_markup: mainMenuKeyboard(true, chatId) }
+      );
+    } catch (e: any) {
+      console.error("[TelegramBot] Wallet generation error:", e.message);
+      await bot.sendMessage(chatId, "Failed to generate wallet. Please try again.");
+    }
+    return;
+  }
+
+  if (data === "action:importwallet") {
+    pendingImportWallet.add(chatId);
+    pendingAgentCreation.delete(chatId);
+    pendingTask.delete(chatId);
+    pendingTokenLaunch.delete(chatId);
+
+    await bot.sendMessage(chatId,
+      "Paste your wallet private key or address below.\n\n" +
+      "• Private key — full access (starts with 0x, 66 chars)\n" +
+      "• Address — view only (starts with 0x, 42 chars)\n\n" +
+      "Type /cancel to go back.",
+    );
+    return;
+  }
+
   if (data === "action:info") {
     await bot.sendMessage(chatId,
       "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\n" +
@@ -433,7 +477,6 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       return;
     }
     const activeIdx = getActiveWalletIndex(chatId);
-    const walletUrl = getWalletConnectUrl(chatId);
 
     let text = `👛 Your Wallets\n\n`;
     wallets.forEach((w, i) => {
@@ -442,7 +485,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     });
     text += `\nSend BNB or ETH to your active wallet to fund it.`;
 
-    const walletButtons = wallets.map((w, i) => {
+    const walletButtons: TelegramBot.InlineKeyboardButton[][] = wallets.map((w, i) => {
       if (i === activeIdx) {
         return [{ text: `📋 Copy: ${shortWallet(w)}`, callback_data: `copywall:${i}` }];
       }
@@ -452,7 +495,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       ];
     });
 
-    walletButtons.push([{ text: "➕ Add Another Wallet", url: walletUrl }]);
+    walletButtons.push([{ text: "🔑 New Wallet", callback_data: "action:genwallet" }, { text: "🔗 Import", callback_data: "action:importwallet" }]);
     walletButtons.push([{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }, { text: "◀️ Menu", callback_data: "action:menu" }]);
 
     await bot.sendMessage(chatId, text, {
@@ -754,13 +797,9 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       const data = JSON.parse((msg as any).web_app_data.data);
       if (data.wallet && /^0x[a-fA-F0-9]{40}$/i.test(data.wallet)) {
         const addr = data.wallet.toLowerCase();
-        telegramWalletMap.set(chatId, addr);
+        linkTelegramWallet(chatId, addr);
         pendingWallet.delete(chatId);
-        console.log(`[TelegramBot] Wallet connected via WalletConnect for chatId ${chatId}: ${addr.substring(0, 8)}...`);
-        await bot.sendMessage(chatId,
-          `Wallet connected: ${shortWallet(addr)}`,
-          { reply_markup: mainMenuKeyboard(true, chatId) }
-        );
+        pendingImportWallet.delete(chatId);
         return;
       }
     } catch (e: any) {
@@ -775,6 +814,10 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
   console.log(`[TelegramBot] ${isGroup ? "Group" : "DM"} message from @${username} (chatId: ${chatId}): ${text.slice(0, 80)}`);
 
 
+  if (pendingImportWallet.has(chatId) && !text.startsWith("/")) {
+    await handleImportWalletFlow(chatId, text);
+    return;
+  }
   if (pendingAgentCreation.has(chatId) && !text.startsWith("/")) {
     await handleAgentCreationFlow(chatId, text);
     return;
@@ -797,6 +840,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     pendingTask.delete(chatId);
     pendingTokenLaunch.delete(chatId);
     pendingWallet.delete(chatId);
+    pendingImportWallet.delete(chatId);
 
     if (cmd === "start" && !isGroup) {
       const wallet = getLinkedWallet(chatId);
@@ -858,7 +902,6 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       if (wallets.length === 0) { await promptWalletConnect(chatId); return; }
 
       const activeIdx = getActiveWalletIndex(chatId);
-      const walletUrl = getWalletConnectUrl(chatId);
       let text = `👛 Your Wallets\n\n`;
       wallets.forEach((w, i) => {
         const marker = i === activeIdx ? "✅" : "⬜";
@@ -875,7 +918,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           { text: `🗑`, callback_data: `removewall:${i}` },
         ];
       });
-      walletButtons.push([{ text: "➕ Add Another Wallet", url: walletUrl }]);
+      walletButtons.push([{ text: "🔑 New Wallet", callback_data: "action:genwallet" }, { text: "🔗 Import", callback_data: "action:importwallet" }]);
       walletButtons.push([{ text: "◀️ Menu", callback_data: "action:menu" }]);
 
       await bot.sendMessage(chatId, text, { reply_markup: { inline_keyboard: walletButtons } });
@@ -1000,6 +1043,55 @@ function shouldIgnoreMessage(text: string, msg: TelegramBot.Message): boolean {
   if ((t.match(/0x[a-fA-F0-9]{10,}/g) || []).length > 1) return true;
   if (msg.forward_from || msg.forward_sender_name) return true;
   return false;
+}
+
+async function handleImportWalletFlow(chatId: number, text: string): Promise<void> {
+  if (!bot) return;
+  const input = text.trim();
+
+  if (/^0x[a-fA-F0-9]{64}$/i.test(input)) {
+    try {
+      const wallet = new ethers.Wallet(input);
+      const addr = wallet.address.toLowerCase();
+      linkTelegramWallet(chatId, addr);
+      pendingImportWallet.delete(chatId);
+
+      await bot.sendMessage(chatId,
+        `✅ Wallet imported!\n\nAddress: \`${addr}\``,
+        { parse_mode: "Markdown" }
+      );
+      await bot.sendMessage(chatId,
+        "What would you like to do?",
+        { reply_markup: mainMenuKeyboard(true, chatId) }
+      );
+    } catch {
+      await bot.sendMessage(chatId, "Invalid private key. Please try again or type /cancel.");
+    }
+    return;
+  }
+
+  if (/^0x[a-fA-F0-9]{40}$/i.test(input)) {
+    const addr = input.toLowerCase();
+    linkTelegramWallet(chatId, addr);
+    pendingImportWallet.delete(chatId);
+
+    await bot.sendMessage(chatId,
+      `✅ Wallet linked (view-only)!\n\nAddress: \`${addr}\``,
+      { parse_mode: "Markdown" }
+    );
+    await bot.sendMessage(chatId,
+      "What would you like to do?",
+      { reply_markup: mainMenuKeyboard(true, chatId) }
+    );
+    return;
+  }
+
+  await bot.sendMessage(chatId,
+    "That doesn't look like a valid wallet address or private key.\n\n" +
+    "• Private key: 0x + 64 hex characters\n" +
+    "• Address: 0x + 40 hex characters\n\n" +
+    "Try again or type /cancel."
+  );
 }
 
 async function handleAgentCreationFlow(chatId: number, text: string): Promise<void> {
