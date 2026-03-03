@@ -855,7 +855,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         reply_markup: {
           inline_keyboard: [
             [{ text: "Four.meme (BNB Chain)", callback_data: `launchplatform:${agentId}:four_meme` }],
-            [{ text: "Flap.sh (Base)", callback_data: `launchplatform:${agentId}:flap_sh` }],
+            [{ text: "Flap.sh (BNB Chain)", callback_data: `launchplatform:${agentId}:flap_sh` }],
             [{ text: "Cancel", callback_data: "action:menu" }],
           ]
         }
@@ -1760,7 +1760,7 @@ async function startTokenLaunchFlow(chatId: number, wallet: string): Promise<voi
           reply_markup: {
             inline_keyboard: [
               [{ text: "Four.meme (BNB Chain)", callback_data: `launchplatform:${agent.id}:four_meme` }],
-              [{ text: "Flap.sh (Base)", callback_data: `launchplatform:${agent.id}:flap_sh` }],
+              [{ text: "Flap.sh (BNB Chain)", callback_data: `launchplatform:${agent.id}:flap_sh` }],
               [{ text: "Cancel", callback_data: "action:menu" }],
             ]
           }

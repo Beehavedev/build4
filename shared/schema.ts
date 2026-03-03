@@ -1336,7 +1336,7 @@ export type TokenLaunch = typeof tokenLaunches.$inferSelect;
 
 export const TOKEN_LAUNCHPADS = [
   { id: "four_meme", name: "Four.meme", chain: "BNB Chain", chainId: 56, url: "https://four.meme" },
-  { id: "flap_sh", name: "Flap.sh", chain: "Base", chainId: 8453, url: "https://flap.sh" },
+  { id: "flap_sh", name: "Flap.sh", chain: "BNB Chain", chainId: 56, url: "https://flap.sh" },
 ] as const;
 
 export const TASK_TYPES = [

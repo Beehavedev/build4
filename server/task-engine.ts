@@ -60,7 +60,7 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation, no 
 
 Platform guide:
 - four_meme: Launches on BNB Chain (BSC). Use initialLiquidityBnb of 0.01 unless the user says otherwise.
-- flap_sh: Launches on Base chain. Use initialLiquidityBnb of 0.001 unless the user says otherwise.
+- flap_sh: Launches on BNB Chain (BSC). Use initialLiquidityBnb of 0.01 unless the user says otherwise.
 
 If the user specifies a platform, chain, or preference, use that. If not, default to four_meme (BNB Chain).
 If the user specifies a token name/symbol, use those exactly. Otherwise, create something creative and memorable.
