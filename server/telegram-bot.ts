@@ -1212,6 +1212,24 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
   if (!bot) return;
   const results: string[] = [];
 
+  const wallet = getLinkedWallet(chatId);
+  let userPk: string | undefined;
+  if (wallet) {
+    userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet) || undefined;
+  }
+
+  if (!userPk) {
+    try {
+      await bot.sendMessage(chatId,
+        `⚠️ On-chain registration skipped — your wallet needs funds to register agents.\n\n` +
+        `• ERC-8004 (Base): ~0.0005 ETH for gas\n` +
+        `• BAP-578 (BNB): ~0.012 BNB (0.01 mint + gas)\n\n` +
+        `Fund your wallet and use /myagents to register later.`,
+      );
+    } catch {}
+    return;
+  }
+
   try {
     if (isOnchainReady()) {
       const hubResult = await registerAgentOnchain(agentId);
@@ -1227,7 +1245,7 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
   }
 
   try {
-    const erc8004Result = await registerAgentERC8004(name, bio, agentId, "base");
+    const erc8004Result = await registerAgentERC8004(name, bio, agentId, "base", userPk);
     if (erc8004Result.success) {
       results.push(`ERC-8004 (${erc8004Result.chainName || "Base"}): ${erc8004Result.txHash?.substring(0, 14)}...`);
       if (erc8004Result.tokenId) {
@@ -1242,7 +1260,7 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
   }
 
   try {
-    const bap578Result = await registerAgentBAP578(name, bio, agentId);
+    const bap578Result = await registerAgentBAP578(name, bio, agentId, undefined, userPk);
     if (bap578Result.success) {
       results.push(`BAP-578 (BNB Chain): ${bap578Result.txHash?.substring(0, 14)}...`);
       if (bap578Result.tokenId) {

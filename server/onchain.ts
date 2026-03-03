@@ -1396,11 +1396,12 @@ export async function registerAgentERC8004(
   agentName: string,
   agentBio: string | undefined,
   agentDbId: string,
-  network: string = "base"
+  network: string = "base",
+  userPrivateKey?: string
 ): Promise<StandardsRegistrationResult> {
-  const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
+  const privateKey = userPrivateKey || process.env.DEPLOYER_PRIVATE_KEY;
   if (!privateKey) {
-    return { standard: "erc8004", success: false, error: "No DEPLOYER_PRIVATE_KEY configured" };
+    return { standard: "erc8004", success: false, error: "No wallet available for registration. Fund your wallet with ETH for gas." };
   }
 
   const contractAddrs = ERC8004_CONTRACTS[network];
@@ -1412,6 +1413,18 @@ export async function registerAgentERC8004(
   try {
     const prov = new ethers.JsonRpcProvider(chainConfig.rpc);
     const w = new ethers.Wallet(privateKey, prov);
+
+    const balance = await prov.getBalance(w.address);
+    const minGas = ethers.parseEther("0.0005");
+    if (balance < minGas) {
+      return {
+        standard: "erc8004",
+        success: false,
+        error: `Insufficient ${chainConfig.name} balance for gas. Have ${ethers.formatEther(balance)}, need ~0.0005 ETH. Fund wallet: ${w.address}`,
+        chainId: chainConfig.chainId,
+        chainName: chainConfig.name,
+      };
+    }
     const registry = new ethers.Contract(contractAddrs.identityRegistry, ERC8004_IDENTITY_REGISTRY_ABI, w);
 
     const baseUrl = "https://build4.io";
@@ -1462,11 +1475,12 @@ export async function registerAgentBAP578(
   agentName: string,
   agentBio: string | undefined,
   agentDbId: string,
-  contractAddress?: string
+  contractAddress?: string,
+  userPrivateKey?: string
 ): Promise<StandardsRegistrationResult> {
-  const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
+  const privateKey = userPrivateKey || process.env.DEPLOYER_PRIVATE_KEY;
   if (!privateKey) {
-    return { standard: "bap578", success: false, error: "No DEPLOYER_PRIVATE_KEY configured" };
+    return { standard: "bap578", success: false, error: "No wallet available for registration. Fund your wallet with BNB for gas + mint fee." };
   }
 
   const bap578Address = contractAddress || process.env.BAP578_CONTRACT_ADDRESS;
