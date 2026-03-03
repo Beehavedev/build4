@@ -21,7 +21,21 @@ const FOUR_MEME_ABI = [
 
 const TOKEN_CREATE_EVENT = "0x396d5e902b675b032348d3d2e9517ee8f0c4a926603fbc075d3d282ff00cad20";
 
-const FLAP_API = "https://flap.sh";
+const FLAP_PORTAL = "0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0";
+const FLAP_PORTAL_ABI = [
+  {
+    inputs: [
+      { internalType: "string", name: "name", type: "string" },
+      { internalType: "string", name: "symbol", type: "string" },
+      { internalType: "string", name: "meta", type: "string" },
+    ],
+    name: "newToken",
+    outputs: [{ internalType: "address", name: "token", type: "address" }],
+    stateMutability: "payable",
+    type: "function",
+  },
+];
+const FLAP_TOKEN_CREATED_TOPIC = "0x"; // parsed from logs generically
 
 function sanitizeError(rawError: string): string {
   if (!rawError) return "Unknown error";
@@ -378,7 +392,7 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
 }
 
 async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
-  const provider = getBaseProvider();
+  const provider = getBscProvider();
   let wallet: ethers.Wallet | null = null;
   if (params.userPrivateKey) {
     wallet = new ethers.Wallet(params.userPrivateKey, provider);
@@ -394,12 +408,12 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
     agentId: params.agentId || null,
     creatorWallet: params.creatorWallet || wallet.address,
     platform: "flap_sh",
-    chainId: 8453,
+    chainId: 56,
     tokenName: params.tokenName,
     tokenSymbol: params.tokenSymbol,
     tokenDescription: params.tokenDescription,
     imageUrl: params.imageUrl || null,
-    initialLiquidityBnb: params.initialLiquidityBnb || "0.001",
+    initialLiquidityBnb: params.initialLiquidityBnb || "0.01",
     status: "pending",
     tokenAddress: null,
     txHash: null,
@@ -409,95 +423,118 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
   });
 
   try {
-    const balance = await provider.getBalance(wallet.address);
-    const liquidity = ethers.parseEther(params.initialLiquidityBnb || "0.001");
+    const initialBuy = ethers.parseEther(params.initialLiquidityBnb || "0.01");
 
-    if (balance < liquidity + ethers.parseEther("0.0005")) {
+    const balance = await provider.getBalance(wallet.address);
+    const balFormatted = ethers.formatEther(balance);
+    log(`[TokenLauncher] Deployer balance: ${balFormatted} BNB`, "token-launcher");
+
+    if (balance < initialBuy + ethers.parseEther("0.005")) {
+      const needed = ethers.formatEther(initialBuy + ethers.parseEther("0.005"));
       await storage.updateTokenLaunch(launchRecord.id, {
         status: "failed",
-        errorMessage: `Insufficient ETH on Base: ${ethers.formatEther(balance)} ETH`,
+        errorMessage: `Insufficient BNB: ${balFormatted} BNB (need ${needed} BNB)`,
       });
-      return { success: false, error: `Insufficient ETH on Base: ${ethers.formatEther(balance)}`, launchId: launchRecord.id };
+      return { success: false, error: `Insufficient BNB — your wallet has ${balFormatted} BNB but needs at least ${needed} BNB. Fund your wallet and try again.`, launchId: launchRecord.id };
     }
 
-    let apiResult;
+    log(`[TokenLauncher] Calling Flap Portal newToken(${params.tokenName}, ${params.tokenSymbol}) with ${ethers.formatEther(initialBuy)} BNB...`, "token-launcher");
+    const portal = new ethers.Contract(FLAP_PORTAL, FLAP_PORTAL_ABI, wallet);
+
+    const meta = params.tokenDescription || "";
+
+    let tx;
     try {
-      const res = await fetch(`${FLAP_API}/api/tokens/create`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: params.tokenName,
-          symbol: params.tokenSymbol,
-          description: params.tokenDescription,
-          image: params.imageUrl || "",
-          chain: "base",
-          creator: wallet.address,
-        }),
+      tx = await portal.newToken(params.tokenName, params.tokenSymbol, meta, {
+        value: initialBuy,
+        gasLimit: 1500000,
       });
+    } catch (txError: any) {
+      const rawMsg = txError.message || String(txError);
+      log(`[TokenLauncher] flap.sh TX error: ${rawMsg.substring(0, 500)}`, "token-launcher");
+      if (txError.reason) log(`[TokenLauncher] TX revert reason: ${txError.reason}`, "token-launcher");
 
-      if (res.ok) {
-        apiResult = await res.json();
+      let userError: string;
+      if (rawMsg.includes("insufficient funds") || rawMsg.includes("exceeds balance")) {
+        userError = `Insufficient BNB — your wallet has ${balFormatted} BNB. Fund your wallet and try again.`;
+      } else if (rawMsg.includes("CALL_EXCEPTION") || rawMsg.includes("reverted")) {
+        userError = `Flap.sh contract rejected the launch${txError.reason ? ` (${txError.reason})` : ""}. Try a different token name/symbol.`;
+      } else {
+        userError = sanitizeError(rawMsg);
       }
-    } catch (e: any) {
-      log(`[TokenLauncher] flap.sh API failed: ${e.message}`, "token-launcher");
-    }
-
-    if (apiResult?.contractAddress && apiResult?.data) {
-      const tx = await wallet.sendTransaction({
-        to: apiResult.contractAddress,
-        data: apiResult.data,
-        value: liquidity,
-        gasLimit: 500000,
-      });
 
       await storage.updateTokenLaunch(launchRecord.id, {
-        txHash: tx.hash,
-        status: "confirming",
+        status: "failed",
+        errorMessage: rawMsg.substring(0, 500),
       });
+      return { success: false, error: userError, launchId: launchRecord.id };
+    }
 
-      const receipt = await Promise.race([
-        tx.wait(),
-        new Promise<null>((_, reject) => setTimeout(() => reject(new Error("TX timeout (120s)")), 120000)),
-      ]);
+    log(`[TokenLauncher] flap.sh TX sent: ${tx.hash}`, "token-launcher");
 
-      if (!receipt || receipt.status !== 1) {
-        await storage.updateTokenLaunch(launchRecord.id, { status: "failed", errorMessage: "Transaction reverted" });
-        return { success: false, error: "Transaction reverted", launchId: launchRecord.id };
+    await storage.updateTokenLaunch(launchRecord.id, {
+      txHash: tx.hash,
+      status: "confirming",
+    });
+
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("TX timeout (120s)")), 120000)),
+    ]);
+
+    if (!receipt || receipt.status !== 1) {
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: "Transaction reverted on-chain",
+      });
+      return { success: false, error: "Transaction reverted on-chain", txHash: tx.hash, launchId: launchRecord.id };
+    }
+
+    let tokenAddress: string | undefined;
+    for (const eventLog of receipt.logs) {
+      if (eventLog.data && eventLog.data.length >= 66) {
+        try {
+          const decoded = ethers.AbiCoder.defaultAbiCoder().decode(["address"], "0x" + eventLog.data.slice(2, 66));
+          if (decoded[0] && ethers.isAddress(decoded[0]) && decoded[0] !== ethers.ZeroAddress) {
+            tokenAddress = decoded[0];
+            break;
+          }
+        } catch {}
       }
+    }
 
-      let tokenAddress: string | undefined;
+    if (!tokenAddress) {
       for (const eventLog of receipt.logs) {
-        if (eventLog.topics.length >= 2) {
-          const possibleAddress = "0x" + eventLog.topics[1]?.slice(26);
-          if (possibleAddress && possibleAddress.length === 42 && ethers.isAddress(possibleAddress) && possibleAddress !== ethers.ZeroAddress) {
-            tokenAddress = possibleAddress;
+        if (eventLog.topics && eventLog.topics.length >= 2) {
+          const possibleAddr = "0x" + eventLog.topics[1]?.slice(26);
+          if (possibleAddr.length === 42 && ethers.isAddress(possibleAddr) && possibleAddr !== ethers.ZeroAddress) {
+            tokenAddress = possibleAddr;
             break;
           }
         }
       }
-
-      const launchUrl = tokenAddress
-        ? `https://flap.sh/token/${tokenAddress}`
-        : `https://basescan.org/tx/${tx.hash}`;
-
-      await storage.updateTokenLaunch(launchRecord.id, {
-        status: "launched",
-        tokenAddress: tokenAddress || null,
-        txHash: receipt.hash,
-        launchUrl,
-      });
-
-      return { success: true, tokenAddress, txHash: receipt.hash, launchUrl, launchId: launchRecord.id };
     }
 
+    const launchUrl = tokenAddress
+      ? `https://flap.sh/token/${tokenAddress}`
+      : `https://bscscan.com/tx/${tx.hash}`;
+
     await storage.updateTokenLaunch(launchRecord.id, {
-      status: "failed",
-      errorMessage: "flap.sh API unavailable — direct contract interaction requires API signature",
+      status: "launched",
+      tokenAddress: tokenAddress || null,
+      txHash: receipt.hash,
+      launchUrl,
     });
 
-    return { success: false, error: "flap.sh API currently unavailable for programmatic launches", launchId: launchRecord.id };
+    log(`[TokenLauncher] flap.sh launch success! Token: ${tokenAddress || "parsing..."}, TX: ${receipt.hash}`, "token-launcher");
+
+    return {
+      success: true,
+      tokenAddress,
+      txHash: receipt.hash,
+      launchUrl,
+      launchId: launchRecord.id,
+    };
   } catch (e: any) {
     log(`[TokenLauncher] flap.sh launch failed: ${e.message}`, "token-launcher");
     const cleanError = sanitizeError(e.message || "");
