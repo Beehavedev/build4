@@ -11,6 +11,7 @@ let appBaseUrl: string | null = null;
 
 interface UserWallets { wallets: string[]; active: number }
 const telegramWalletMap = new Map<number, UserWallets>();
+const walletsWithKey = new Set<string>();
 
 interface AgentCreationState { step: "name" | "bio" | "model"; name?: string; bio?: string }
 interface TaskState { step: "describe"; agentId: string; taskType: string; agentName: string }
@@ -199,6 +200,7 @@ async function loadWalletsFromDb(): Promise<void> {
   try {
     const allLinks = await storage.getAllTelegramWalletLinks();
     telegramWalletMap.clear();
+    walletsWithKey.clear();
     for (const link of allLinks) {
       const chatId = parseInt(link.chatId, 10);
       const existing = telegramWalletMap.get(chatId);
@@ -207,6 +209,9 @@ async function loadWalletsFromDb(): Promise<void> {
         if (link.isActive) existing.active = existing.wallets.length - 1;
       } else {
         telegramWalletMap.set(chatId, { wallets: [link.walletAddress], active: link.isActive ? 0 : 0 });
+      }
+      if (link.encryptedPrivateKey) {
+        walletsWithKey.add(`${link.chatId}:${link.walletAddress}`);
       }
     }
     console.log(`[TelegramBot] Loaded ${allLinks.length} wallet links from DB for ${telegramWalletMap.size} chats`);
@@ -305,6 +310,10 @@ export function linkTelegramWallet(chatId: number, wallet: string, privateKey?: 
     telegramWalletMap.set(chatId, { wallets: [lower], active: 0 });
   }
 
+  if (privateKey) {
+    walletsWithKey.add(`${chatId}:${lower}`);
+  }
+
   storage.saveTelegramWallet(chatId.toString(), lower, privateKey || undefined).then(() => {
     storage.setActiveTelegramWallet(chatId.toString(), lower).catch(e =>
       console.error("[TelegramBot] DB setActive error:", e));
@@ -356,6 +365,7 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
 
   await storage.saveTelegramWallet(chatId.toString(), addr, pk);
   await storage.setActiveTelegramWallet(chatId.toString(), addr);
+  walletsWithKey.add(`${chatId}:${addr}`);
 
   await bot.sendMessage(chatId,
     `🔑 Wallet created!\n\n` +
@@ -373,11 +383,6 @@ async function ensureWallet(chatId: number): Promise<string> {
   let wallet = getLinkedWallet(chatId);
   if (!wallet) {
     wallet = await autoGenerateWallet(chatId);
-  } else {
-    const hasKey = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
-    if (!hasKey) {
-      wallet = await autoGenerateWallet(chatId);
-    }
   }
   return wallet;
 }
@@ -418,6 +423,18 @@ function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.I
 
 let startingBot = false;
 
+async function clearTelegramPolling(token: string): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/deleteWebhook?drop_pending_updates=false`);
+      const resp = await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=-1&timeout=1`);
+      const data = await resp.json();
+      if (data.ok) return;
+    } catch {}
+    await new Promise(r => setTimeout(r, 1000));
+  }
+}
+
 export async function startTelegramBot(): Promise<void> {
   if (isRunning || startingBot || !isTelegramConfigured()) return;
   startingBot = true;
@@ -428,43 +445,36 @@ export async function startTelegramBot(): Promise<void> {
     if (bot) {
       try { bot.stopPolling(); } catch {}
       bot = null;
+      isRunning = false;
     }
 
-    const initBot = new TelegramBot(token, { polling: false });
-    try {
-      await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=-1&timeout=0`);
-    } catch {}
-    await initBot.deleteWebHook({ drop_pending_updates: false });
+    await clearTelegramPolling(token);
     console.log("[TelegramBot] Cleared webhook and flushed pending updates");
 
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     bot = new TelegramBot(token, {
       polling: {
-        interval: 100,
+        interval: 300,
         autoStart: true,
-        params: { timeout: 10 }
+        params: { timeout: 30 }
       }
     });
     isRunning = true;
 
-    await loadWalletsFromDb();
+    loadWalletsFromDb().catch(e => console.error("[TelegramBot] Wallet load error:", e.message));
 
     const me = await bot.getMe();
     botUsername = me.username || null;
     console.log(`[TelegramBot] Started with polling as @${botUsername}`);
 
-    try {
-      const resp = await fetch(`https://api.telegram.org/bot${token}/setChatMenuButton`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ menu_button: { type: "default" } })
-      });
-      const result = await resp.json();
-      console.log("[TelegramBot] Reset menu button:", result.ok ? "success" : result.description);
-    } catch (e: any) {
-      console.log("[TelegramBot] Menu button reset skipped:", e.message);
-    }
+    fetch(`https://api.telegram.org/bot${token}/setChatMenuButton`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ menu_button: { type: "default" } })
+    }).then(r => r.json()).then(r => {
+      console.log("[TelegramBot] Reset menu button:", r.ok ? "success" : r.description);
+    }).catch(() => {});
 
     bot.on("message", async (msg) => {
       try {
@@ -482,9 +492,13 @@ export async function startTelegramBot(): Promise<void> {
       }
     });
 
+    let conflictCount = 0;
     bot.on("polling_error", (error) => {
       if (error.message?.includes("409 Conflict")) {
-        console.warn("[TelegramBot] 409 Conflict — another instance may be running. Retrying...");
+        conflictCount++;
+        if (conflictCount <= 3) {
+          console.warn(`[TelegramBot] 409 Conflict (${conflictCount}) — waiting for old instance to stop`);
+        }
         return;
       }
       console.error("[TelegramBot] Polling error:", error.message);
