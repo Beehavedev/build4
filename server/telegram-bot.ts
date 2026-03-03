@@ -468,12 +468,28 @@ export async function startTelegramBot(): Promise<void> {
     botUsername = me.username || null;
     console.log(`[TelegramBot] Started with polling as @${botUsername}`);
 
+    bot.setMyCommands([
+      { command: "start", description: "Start BUILD4 and create a wallet" },
+      { command: "launch", description: "Launch a token on Four.meme or Flap.sh" },
+      { command: "newagent", description: "Create an AI agent" },
+      { command: "myagents", description: "View your agents" },
+      { command: "task", description: "Assign a task to your agent" },
+      { command: "wallet", description: "Wallet info and management" },
+      { command: "ask", description: "Ask anything about BUILD4" },
+      { command: "cancel", description: "Cancel current action" },
+      { command: "help", description: "Show all commands" },
+    ]).then(() => {
+      console.log("[TelegramBot] Registered bot commands");
+    }).catch((e: any) => {
+      console.error("[TelegramBot] Failed to set commands:", e.message);
+    });
+
     fetch(`https://api.telegram.org/bot${token}/setChatMenuButton`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ menu_button: { type: "default" } })
+      body: JSON.stringify({ menu_button: { type: "commands" } })
     }).then(r => r.json()).then(r => {
-      console.log("[TelegramBot] Reset menu button:", r.ok ? "success" : r.description);
+      console.log("[TelegramBot] Set menu button:", r.ok ? "success" : r.description);
     }).catch(() => {});
 
     bot.on("message", async (msg) => {
