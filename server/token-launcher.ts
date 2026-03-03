@@ -115,65 +115,80 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
   });
 
   try {
-    const signPayload = {
-      name: params.tokenName,
-      symbol: params.tokenSymbol,
-      description: params.tokenDescription,
-      image: params.imageUrl || "",
-      totalSupply: "1000000000",
-      creator: wallet.address,
-      timestamp: Math.floor(Date.now() / 1000),
-    };
+    const liquidity = ethers.parseEther(params.initialLiquidityBnb || "0.01");
 
-    let signatureResponse;
+    const balance = await provider.getBalance(wallet.address);
+    const balFormatted = ethers.formatEther(balance);
+    log(`[TokenLauncher] Deployer balance: ${balFormatted} BNB`, "token-launcher");
+
+    if (balance < liquidity + ethers.parseEther("0.005")) {
+      const needed = ethers.formatEther(liquidity + ethers.parseEther("0.005"));
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: `Insufficient BNB balance: ${balFormatted} BNB (need ${needed} BNB)`,
+      });
+      return { success: false, error: `Insufficient BNB — wallet has ${balFormatted} BNB but needs at least ${needed} BNB (${ethers.formatEther(liquidity)} liquidity + gas). Fund the deployer wallet and try again.`, launchId: launchRecord.id };
+    }
+
+    let signatureResponse: any = null;
     try {
-      const res = await fetch(`${FOUR_MEME_API}/mapi/defi/v3/public/wallet-direct/wallet/address/sign`, {
+      const signRes = await fetch(`${FOUR_MEME_API}/mapi/defi/v3/public/wallet-direct/wallet/address/sign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          address: wallet.address,
-          chainId: 56,
-        }),
+        body: JSON.stringify({ address: wallet.address, chainId: 56 }),
       });
-      signatureResponse = await res.json();
+      signatureResponse = await signRes.json();
+      log(`[TokenLauncher] four.meme sign response: ${JSON.stringify(signatureResponse).substring(0, 200)}`, "token-launcher");
     } catch (e: any) {
-      log(`[TokenLauncher] four.meme API sign request failed: ${e.message}`, "token-launcher");
+      log(`[TokenLauncher] four.meme API sign failed: ${e.message}`, "token-launcher");
     }
 
     const contract = new ethers.Contract(FOUR_MEME_TOKEN_MANAGER_V3, FOUR_MEME_ABI, wallet);
-
     const totalSupply = ethers.parseUnits("1000000000", 18);
     const maxOffer = ethers.parseUnits("500000000", 18);
     const presale = BigInt(0);
     const launchTime = BigInt(Math.floor(Date.now() / 1000) + 60);
-    const liquidity = ethers.parseEther(params.initialLiquidityBnb || "0.01");
-
-    const balance = await provider.getBalance(wallet.address);
-    if (balance < liquidity + ethers.parseEther("0.005")) {
-      await storage.updateTokenLaunch(launchRecord.id, {
-        status: "failed",
-        errorMessage: `Insufficient BNB balance: ${ethers.formatEther(balance)} BNB`,
-      });
-      return { success: false, error: `Insufficient BNB: ${ethers.formatEther(balance)}`, launchId: launchRecord.id };
-    }
 
     let tx;
-    if (signatureResponse?.data?.signature) {
-      const args = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["string", "string", "string", "string", "uint256", "uint256"],
-        [params.tokenName, params.tokenSymbol, params.tokenDescription || "", params.imageUrl || "", totalSupply, launchTime]
-      );
-      tx = await contract["createToken(bytes,bytes)"](args, signatureResponse.data.signature, { value: liquidity, gasLimit: 500000 });
-    } else {
-      tx = await contract["createToken(string,string,uint256,uint256,uint256,uint256)"](
-        params.tokenName,
-        params.tokenSymbol,
-        totalSupply,
-        maxOffer,
-        presale,
-        launchTime,
-        { value: liquidity, gasLimit: 500000 }
-      );
+    try {
+      if (signatureResponse?.data?.signature) {
+        const args = ethers.AbiCoder.defaultAbiCoder().encode(
+          ["string", "string", "string", "string", "uint256", "uint256"],
+          [params.tokenName, params.tokenSymbol, params.tokenDescription || "", params.imageUrl || "", totalSupply, launchTime]
+        );
+        tx = await contract["createToken(bytes,bytes)"](args, signatureResponse.data.signature, { value: liquidity, gasLimit: 800000 });
+      } else {
+        tx = await contract["createToken(string,string,uint256,uint256,uint256,uint256)"](
+          params.tokenName,
+          params.tokenSymbol,
+          totalSupply,
+          maxOffer,
+          presale,
+          launchTime,
+          { value: liquidity, gasLimit: 800000 }
+        );
+      }
+    } catch (txError: any) {
+      const rawMsg = txError.message || String(txError);
+      log(`[TokenLauncher] four.meme TX error: ${rawMsg.substring(0, 500)}`, "token-launcher");
+      if (txError.info) log(`[TokenLauncher] TX error info: ${JSON.stringify(txError.info).substring(0, 300)}`, "token-launcher");
+      if (txError.reason) log(`[TokenLauncher] TX revert reason: ${txError.reason}`, "token-launcher");
+
+      let userError: string;
+      if (rawMsg.includes("insufficient funds") || rawMsg.includes("exceeds balance")) {
+        userError = `Insufficient BNB — wallet has ${balFormatted} BNB but needs at least ${ethers.formatEther(liquidity)} BNB + gas fees. Fund the deployer wallet and try again.`;
+      } else if (rawMsg.includes("CALL_EXCEPTION") || rawMsg.includes("reverted")) {
+        const revertReason = txError.reason || "";
+        userError = `Four.meme contract rejected the launch${revertReason ? ` (${revertReason})` : ""}. The token name/symbol may already be taken, or the contract requires a different parameter format. Try a different name.`;
+      } else {
+        userError = sanitizeError(rawMsg);
+      }
+
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: rawMsg.substring(0, 500),
+      });
+      return { success: false, error: userError, launchId: launchRecord.id };
     }
 
     log(`[TokenLauncher] four.meme TX sent: ${tx.hash}`, "token-launcher");
