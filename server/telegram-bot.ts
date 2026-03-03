@@ -12,9 +12,11 @@ const telegramWalletMap = new Map<number, string>();
 
 interface AgentCreationState { step: "name" | "bio" | "model"; name?: string; bio?: string }
 interface TaskState { step: "describe"; agentId: string; taskType: string; agentName: string }
+interface TokenLaunchState { step: "platform" | "name" | "symbol" | "description"; agentId: string; agentName: string; platform?: string; tokenName?: string; tokenSymbol?: string; tokenDescription?: string }
 
 const pendingAgentCreation = new Map<number, AgentCreationState>();
 const pendingTask = new Map<number, TaskState>();
+const pendingTokenLaunch = new Map<number, TokenLaunchState>();
 const pendingWallet = new Set<number>();
 
 const BUILD4_KNOWLEDGE = `
@@ -231,6 +233,7 @@ function mainMenuKeyboard(hasWallet: boolean, chatId?: number): TelegramBot.Inli
     inline_keyboard: [
       [{ text: "Create Agent", callback_data: "action:newagent" }, { text: "My Agents", callback_data: "action:myagents" }],
       [{ text: "New Task", callback_data: "action:task" }, { text: "My Tasks", callback_data: "action:mytasks" }],
+      [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
       [{ text: "What is BUILD4?", callback_data: "action:info" }],
     ]
   };
@@ -342,6 +345,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId,
       "Just tap the buttons! You can also type:\n\n" +
       "/ask <question> — Ask about BUILD4\n" +
+      "/launch — Launch a token\n" +
       "/mychatid — For strategy notifications\n\n" +
       "Or just type any question and I'll answer it.",
       { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId), chatId) }
@@ -389,6 +393,15 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data === "action:launchtoken") {
+    if (!wallet) {
+      await promptWalletConnect(chatId);
+      return;
+    }
+    await startTokenLaunchFlow(chatId, wallet);
+    return;
+  }
+
   if (data === "action:menu") {
     await bot.sendMessage(chatId, "What would you like to do?", {
       reply_markup: mainMenuKeyboard(!!wallet, chatId)
@@ -425,6 +438,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           [{ text: "Research", callback_data: `tasktype:${agentId}:research` }, { text: "Analysis", callback_data: `tasktype:${agentId}:analysis` }],
           [{ text: "Content", callback_data: `tasktype:${agentId}:content` }, { text: "Strategy", callback_data: `tasktype:${agentId}:strategy` }],
           [{ text: "Code Review", callback_data: `tasktype:${agentId}:code_review` }, { text: "General", callback_data: `tasktype:${agentId}:general` }],
+          [{ text: "🚀 Launch Token", callback_data: `launchagent:${agentId}` }],
         ]
       }
     });
@@ -475,11 +489,86 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
               [{ text: "Research", callback_data: `tasktype:${agentId}:research` }, { text: "Analysis", callback_data: `tasktype:${agentId}:analysis` }],
               [{ text: "Content", callback_data: `tasktype:${agentId}:content` }, { text: "Strategy", callback_data: `tasktype:${agentId}:strategy` }],
               [{ text: "Code Review", callback_data: `tasktype:${agentId}:code_review` }, { text: "General", callback_data: `tasktype:${agentId}:general` }],
+              [{ text: "🚀 Launch Token", callback_data: `launchagent:${agentId}` }],
             ]
           }
         });
       }
     }
+    return;
+  }
+
+  if (data.startsWith("launchagent:")) {
+    const agentId = data.split(":")[1];
+    if (!wallet) { await promptWalletConnect(chatId); return; }
+    const agents = await getMyAgents(wallet);
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) { await bot.sendMessage(chatId, "Agent not found."); return; }
+
+    pendingAgentCreation.delete(chatId);
+    pendingTask.delete(chatId);
+    pendingTokenLaunch.set(chatId, { step: "platform", agentId, agentName: agent.name });
+
+    await bot.sendMessage(chatId,
+      `🚀 Launch a token with ${agent.name}\n\nPick a launchpad:`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Four.meme (BNB Chain)", callback_data: `launchplatform:${agentId}:four_meme` }],
+            [{ text: "Flap.sh (Base)", callback_data: `launchplatform:${agentId}:flap_sh` }],
+            [{ text: "Cancel", callback_data: "action:menu" }],
+          ]
+        }
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("launchplatform:")) {
+    const parts = data.split(":");
+    const agentId = parts[1];
+    const platform = parts[2];
+    const state = pendingTokenLaunch.get(chatId);
+    if (!state || state.agentId !== agentId) return;
+    if (platform !== "four_meme" && platform !== "flap_sh") {
+      await bot.sendMessage(chatId, "Invalid platform. Please try again.");
+      return;
+    }
+
+    state.platform = platform;
+    state.step = "name";
+    pendingTokenLaunch.set(chatId, state);
+
+    const platformName = platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (Base)";
+    await bot.sendMessage(chatId,
+      `Platform: ${platformName}\n\nWhat's the token name? (1-50 chars)\n\nExample: DogeBrain, MoonCat, AgentX`
+    );
+    return;
+  }
+
+  if (data.startsWith("launchconfirm:")) {
+    const agentId = data.split(":")[1];
+    const state = pendingTokenLaunch.get(chatId);
+    if (!state || state.agentId !== agentId || !wallet) return;
+
+    if (!state.platform || !state.tokenName || !state.tokenSymbol) {
+      pendingTokenLaunch.delete(chatId);
+      await bot.sendMessage(chatId, "Missing token details. Please start again.", {
+        reply_markup: { inline_keyboard: [[{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }]] }
+      });
+      return;
+    }
+
+    pendingTokenLaunch.delete(chatId);
+    await executeTelegramTokenLaunch(chatId, wallet, state);
+    return;
+  }
+
+  if (data.startsWith("launchcancel:")) {
+    pendingTokenLaunch.delete(chatId);
+    await bot.sendMessage(chatId, "Token launch cancelled.", {
+      reply_markup: mainMenuKeyboard(!!wallet, chatId)
+    });
     return;
   }
 }
@@ -522,6 +611,10 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     await handleAgentCreationFlow(chatId, text);
     return;
   }
+  if (pendingTokenLaunch.has(chatId) && !text.startsWith("/")) {
+    await handleTokenLaunchFlow(chatId, text);
+    return;
+  }
   if (pendingTask.has(chatId) && !text.startsWith("/")) {
     await handleTaskFlow(chatId, text);
     return;
@@ -534,6 +627,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
     pendingAgentCreation.delete(chatId);
     pendingTask.delete(chatId);
+    pendingTokenLaunch.delete(chatId);
     pendingWallet.delete(chatId);
 
     if (cmd === "start" && !isGroup) {
@@ -560,7 +654,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
     if (cmd === "help") {
       await bot.sendMessage(chatId,
-        "Tap buttons to navigate, or type:\n\n/ask <question> — Ask anything\n/mychatid — For notifications\n\nOr just type a question directly.",
+        "Tap buttons to navigate, or type:\n\n/ask <question> — Ask anything\n/launch — Launch a token\n/mychatid — For notifications\n\nOr just type a question directly.",
         { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId), chatId) }
       );
       return;
@@ -620,6 +714,14 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       const wallet = getLinkedWallet(chatId);
       if (!wallet) { await promptWalletConnect(chatId); return; }
       await startTaskFlow(chatId, wallet);
+      return;
+    }
+
+    if (cmd === "launch") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me to launch tokens!"); return; }
+      const wallet = getLinkedWallet(chatId);
+      if (!wallet) { await promptWalletConnect(chatId); return; }
+      await startTokenLaunchFlow(chatId, wallet);
       return;
     }
 
@@ -849,6 +951,7 @@ async function startTaskFlow(chatId: number, wallet: string): Promise<void> {
             [{ text: "Research", callback_data: `tasktype:${agent.id}:research` }, { text: "Analysis", callback_data: `tasktype:${agent.id}:analysis` }],
             [{ text: "Content", callback_data: `tasktype:${agent.id}:content` }, { text: "Strategy", callback_data: `tasktype:${agent.id}:strategy` }],
             [{ text: "Code Review", callback_data: `tasktype:${agent.id}:code_review` }, { text: "General", callback_data: `tasktype:${agent.id}:general` }],
+            [{ text: "🚀 Launch Token", callback_data: `launchagent:${agent.id}` }],
           ]
         }
       });
@@ -1022,6 +1125,180 @@ async function handleMyTasks(chatId: number, wallet: string): Promise<void> {
     );
   } catch (e: any) {
     await bot.sendMessage(chatId, `Error: ${e.message}`);
+  }
+}
+
+async function startTokenLaunchFlow(chatId: number, wallet: string): Promise<void> {
+  if (!bot) return;
+  try {
+    const myAgents = await getMyAgents(wallet);
+
+    if (myAgents.length === 0) {
+      await bot.sendMessage(chatId, "You need an agent first to launch a token.", {
+        reply_markup: { inline_keyboard: [[{ text: "Create agent", callback_data: "action:newagent" }]] }
+      });
+      return;
+    }
+
+    if (myAgents.length === 1) {
+      const agent = myAgents[0];
+      pendingAgentCreation.delete(chatId);
+      pendingTask.delete(chatId);
+      pendingTokenLaunch.set(chatId, { step: "platform", agentId: agent.id, agentName: agent.name });
+
+      await bot.sendMessage(chatId,
+        `🚀 Launch a token with ${agent.name}\n\nPick a launchpad:`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "Four.meme (BNB Chain)", callback_data: `launchplatform:${agent.id}:four_meme` }],
+              [{ text: "Flap.sh (Base)", callback_data: `launchplatform:${agent.id}:flap_sh` }],
+              [{ text: "Cancel", callback_data: "action:menu" }],
+            ]
+          }
+        }
+      );
+      return;
+    }
+
+    const buttons = myAgents.map(a => [
+      { text: `🚀 ${a.name}`, callback_data: `launchagent:${a.id}` }
+    ]);
+    buttons.push([{ text: "Cancel", callback_data: "action:menu" }]);
+
+    await bot.sendMessage(chatId, "Which agent should launch the token?", {
+      reply_markup: { inline_keyboard: buttons }
+    });
+  } catch (e: any) {
+    await bot.sendMessage(chatId, `Error: ${e.message}`);
+  }
+}
+
+async function handleTokenLaunchFlow(chatId: number, text: string): Promise<void> {
+  if (!bot) return;
+  const state = pendingTokenLaunch.get(chatId)!;
+  const input = text.trim();
+
+  if (state.step === "name") {
+    if (input.length < 1 || input.length > 50) {
+      await bot.sendMessage(chatId, "Token name must be 1-50 characters. Try again:");
+      return;
+    }
+    state.tokenName = input;
+    state.step = "symbol";
+    pendingTokenLaunch.set(chatId, state);
+    await bot.sendMessage(chatId,
+      `Token: ${input}\n\nNow enter the ticker symbol (1-10 chars, letters/numbers only)\n\nExample: DOGE, PEPE, AGT`
+    );
+    return;
+  }
+
+  if (state.step === "symbol") {
+    const symbol = input.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (symbol.length < 1 || symbol.length > 10) {
+      await bot.sendMessage(chatId, "Symbol must be 1-10 alphanumeric characters. Try again:");
+      return;
+    }
+    state.tokenSymbol = symbol;
+    state.step = "description";
+    pendingTokenLaunch.set(chatId, state);
+    await bot.sendMessage(chatId,
+      `Token: ${state.tokenName} ($${symbol})\n\nShort description (optional — type "skip" to skip):\n\nExample: The first AI-powered meme token on BNB Chain`
+    );
+    return;
+  }
+
+  if (state.step === "description") {
+    const description = input.toLowerCase() === "skip" ? "" : input.substring(0, 500);
+    state.tokenDescription = description;
+    const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (Base)";
+    const liquidity = state.platform === "four_meme" ? "0.01 BNB" : "0.001 ETH";
+
+    pendingTokenLaunch.set(chatId, state);
+
+    await bot.sendMessage(chatId,
+      `🚀 LAUNCH PREVIEW\n\n` +
+      `Token: ${state.tokenName} ($${state.tokenSymbol})\n` +
+      `Platform: ${platformName}\n` +
+      `Liquidity: ${liquidity}\n` +
+      `Agent: ${state.agentName}\n` +
+      (description ? `Description: ${description}\n` : "") +
+      `\nReady to launch?`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🚀 Confirm & Launch", callback_data: `launchconfirm:${state.agentId}` }],
+            [{ text: "Cancel", callback_data: `launchcancel:${state.agentId}` }],
+          ]
+        }
+      }
+    );
+    return;
+  }
+}
+
+async function executeTelegramTokenLaunch(chatId: number, wallet: string, state: TokenLaunchState): Promise<void> {
+  if (!bot) return;
+
+  const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (Base)";
+  await bot.sendMessage(chatId, `🚀 Launching ${state.tokenName} ($${state.tokenSymbol}) on ${platformName}...\n\nThis may take a minute.`);
+  await bot.sendChatAction(chatId, "typing");
+
+  try {
+    const { launchToken } = await import("./token-launcher");
+    const result = await launchToken({
+      tokenName: state.tokenName!,
+      tokenSymbol: state.tokenSymbol!,
+      tokenDescription: state.tokenDescription || `${state.tokenName} — launched by ${state.agentName} on BUILD4`,
+      platform: state.platform as "four_meme" | "flap_sh",
+      initialLiquidityBnb: state.platform === "four_meme" ? "0.01" : "0.001",
+      agentId: state.agentId,
+      creatorWallet: wallet,
+    });
+
+    if (result.success) {
+      const lines = [
+        `✅ TOKEN LAUNCHED!\n`,
+        `Token: ${state.tokenName} ($${state.tokenSymbol})`,
+        `Platform: ${platformName}`,
+      ];
+      if (result.tokenAddress) lines.push(`Address: ${result.tokenAddress}`);
+      if (result.txHash) lines.push(`Tx: https://bscscan.com/tx/${result.txHash}`);
+      if (result.launchUrl) lines.push(`\nView: ${result.launchUrl}`);
+
+      await bot.sendMessage(chatId, lines.join("\n"), {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🚀 Launch another", callback_data: "action:launchtoken" }],
+            [{ text: "Menu", callback_data: "action:menu" }],
+          ]
+        }
+      });
+    } else {
+      await bot.sendMessage(chatId,
+        `❌ Launch failed: ${result.error}\n\nThis could be due to insufficient balance, network issues, or platform unavailability.`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "Try again", callback_data: "action:launchtoken" }],
+              [{ text: "Menu", callback_data: "action:menu" }],
+            ]
+          }
+        }
+      );
+    }
+  } catch (e: any) {
+    await bot.sendMessage(chatId,
+      `❌ Error: ${e.message}`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Try again", callback_data: "action:launchtoken" }],
+            [{ text: "Menu", callback_data: "action:menu" }],
+          ]
+        }
+      }
+    );
   }
 }
 

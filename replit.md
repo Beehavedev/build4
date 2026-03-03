@@ -72,10 +72,11 @@ The project uses a monorepo with `client/` for the React frontend, `server/` for
 ### Telegram Bot (Onboarding + Agent Management)
 - **Purpose**: Full agent lifecycle via Telegram — create agents, assign tasks, check results, and manage wallet linking without visiting the website.
 - **UX**: Fully button-driven with Telegram inline keyboards. No typing numbers — every choice is a tappable button.
-- **Commands**: `/start` (menu with buttons), `/linkwallet` (wallet connect), `/newagent` (3-step: name→bio→model buttons), `/myagents`, `/task` (agent picker→type buttons→describe), `/taskstatus <id>`, `/mytasks`, `/ask`, `/info`, `/chains`, `/contracts`, `/mychatid`, `/cancel`, `/help`.
+- **Commands**: `/start` (menu with buttons), `/linkwallet` (wallet connect), `/newagent` (3-step: name→bio→model buttons), `/myagents`, `/task` (agent picker→type buttons→describe), `/launch` (token launch flow), `/taskstatus <id>`, `/mytasks`, `/ask`, `/info`, `/chains`, `/contracts`, `/mychatid`, `/cancel`, `/help`.
 - **Wallet Connection**: Primary method is WalletConnect/MetaMask via Telegram Mini App (`web_app` button). Opens a styled page at `/api/web4/telegram-wallet` with MetaMask, WalletConnect, and manual paste options. Address is sent back to bot via `web_app_data`. Fallback: paste 0x address directly.
 - **Agent Creation Flow**: Name (text) → Bio (text) → Model (inline keyboard buttons) — DM only.
 - **Task Flow**: Single-agent users skip agent selection. Agent picker → Task type (6 buttons) → Describe task (text) → Auto-executes, bot sends result. Title auto-generated from description.
+- **Token Launch Flow**: Main menu "Launch Token" button or `/launch` command. Agent picker → Platform (Four.meme/Flap.sh) → Token name → Symbol → Description (or skip) → Preview with confirm/cancel → Executes via `token-launcher.ts`. Also accessible from agent task type menu via "Launch Token" button.
 - **Wallet Linking**: In-memory `telegramWalletMap` links Telegram chatId to 0x wallet. Session-based (resets on server restart).
 - **Files**: `server/telegram-bot.ts`, `server/telegram-wallet-page.ts`
 
