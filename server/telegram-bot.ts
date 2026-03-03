@@ -221,6 +221,25 @@ function getLinkedWallet(chatId: number): string | undefined {
   return data.wallets[data.active] || data.wallets[0];
 }
 
+async function ensureWalletsLoaded(chatId: number): Promise<void> {
+  if (telegramWalletMap.has(chatId)) return;
+  try {
+    const rows = await storage.getTelegramWallets(chatId.toString());
+    if (rows.length > 0) {
+      const wallets: string[] = [];
+      let activeIdx = 0;
+      for (let i = 0; i < rows.length; i++) {
+        wallets.push(rows[i].walletAddress);
+        if (rows[i].isActive) activeIdx = i;
+      }
+      telegramWalletMap.set(chatId, { wallets, active: activeIdx });
+      console.log(`[TelegramBot] Loaded ${rows.length} wallets from DB for chatId ${chatId}`);
+    }
+  } catch (e) {
+    console.error("[TelegramBot] DB wallet lookup error:", e);
+  }
+}
+
 function getUserWallets(chatId: number): string[] {
   const data = telegramWalletMap.get(chatId);
   return data ? data.wallets : [];
@@ -445,6 +464,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   const chatId = query.message.chat.id;
   const data = query.data;
 
+  await ensureWalletsLoaded(chatId);
   bot.answerCallbackQuery(query.id).catch(() => {});
 
   if (data === "action:linkwallet") {
@@ -866,6 +886,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
   if (!msg.text) return;
   const text = msg.text.trim();
+
+  await ensureWalletsLoaded(chatId);
 
   console.log(`[TelegramBot] ${isGroup ? "Group" : "DM"} message from @${username} (chatId: ${chatId}): ${text.slice(0, 80)}`);
 
