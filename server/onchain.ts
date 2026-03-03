@@ -1516,17 +1516,51 @@ export async function registerAgentBAP578(
       freeMints = await nfaContract.getFreeMints(w.address);
     } catch {}
 
-    const mintValue = freeMints > 0n ? BigInt(0) : ethers.parseEther("0.01");
+    let mintFee = ethers.parseEther("0.01");
+    try {
+      mintFee = await nfaContract.MINT_FEE();
+    } catch {}
 
-    log(`[BAP-578] Minting NFA for agent "${agentName}" on BNB Chain (free mints: ${freeMints})...`, "onchain");
+    const walletBalance = await prov.getBalance(w.address);
+    const gasReserve = ethers.parseEther("0.002");
 
-    const tx = await nfaContract.createAgent(
-      w.address,
-      ethers.ZeroAddress,
-      metadataURI,
-      extendedMetadata,
-      { value: mintValue, gasLimit: 500000 }
-    );
+    let mintValue: bigint;
+    if (freeMints > 0n) {
+      mintValue = BigInt(0);
+      log(`[BAP-578] Using free mint for "${agentName}" (${freeMints} remaining)`, "onchain");
+    } else if (walletBalance >= mintFee + gasReserve) {
+      mintValue = mintFee;
+      log(`[BAP-578] Paying mint fee ${ethers.formatEther(mintFee)} BNB for "${agentName}"`, "onchain");
+    } else {
+      mintValue = BigInt(0);
+      log(`[BAP-578] Attempting zero-value mint for "${agentName}" (balance: ${ethers.formatEther(walletBalance)} BNB, fee: ${ethers.formatEther(mintFee)} BNB)`, "onchain");
+    }
+
+    log(`[BAP-578] Minting NFA for agent "${agentName}" on BNB Chain...`, "onchain");
+
+    let tx;
+    try {
+      tx = await nfaContract.createAgent(
+        w.address,
+        ethers.ZeroAddress,
+        metadataURI,
+        extendedMetadata,
+        { value: mintValue, gasLimit: 500000 }
+      );
+    } catch (mintErr: any) {
+      if (mintValue === BigInt(0) && freeMints === BigInt(0)) {
+        const needed = ethers.formatEther(mintFee + gasReserve);
+        const have = ethers.formatEther(walletBalance);
+        return {
+          standard: "bap578",
+          success: false,
+          error: `Insufficient BNB for BAP-578 mint. Need ~${needed} BNB (${ethers.formatEther(mintFee)} fee + gas), have ${have} BNB. Fund deployer wallet: ${w.address}`,
+          chainId: 56,
+          chainName: "BNB Chain",
+        };
+      }
+      throw mintErr;
+    }
 
     const receipt = await Promise.race([
       tx.wait(),
