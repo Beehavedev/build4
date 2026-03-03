@@ -875,12 +875,24 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
   } else {
+    if (shouldIgnoreMessage(text, msg)) return;
     question = text;
   }
 
   if (!question) return;
 
   await handleQuestion(chatId, msg.message_id, question, username);
+}
+
+function shouldIgnoreMessage(text: string, msg: TelegramBot.Message): boolean {
+  const t = text.trim();
+  if (t.length < 2) return true;
+  if (/^0x[a-fA-F0-9]{40,64}$/i.test(t)) return true;
+  if (/^[a-fA-F0-9]{64}$/i.test(t)) return true;
+  if (t.startsWith("{") || t.startsWith("[")) return true;
+  if ((t.match(/0x[a-fA-F0-9]{10,}/g) || []).length > 1) return true;
+  if (msg.forward_from || msg.forward_sender_name) return true;
+  return false;
 }
 
 async function handleAgentCreationFlow(chatId: number, text: string): Promise<void> {
