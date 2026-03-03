@@ -288,7 +288,7 @@ export function getChatIdByWallet(wallet: string): number | undefined {
   return undefined;
 }
 
-export function linkTelegramWallet(chatId: number, wallet: string): void {
+export function linkTelegramWallet(chatId: number, wallet: string, privateKey?: string): void {
   const lower = wallet.toLowerCase();
   const existing = telegramWalletMap.get(chatId);
 
@@ -305,7 +305,7 @@ export function linkTelegramWallet(chatId: number, wallet: string): void {
     telegramWalletMap.set(chatId, { wallets: [lower], active: 0 });
   }
 
-  storage.saveTelegramWallet(chatId.toString(), lower).then(() => {
+  storage.saveTelegramWallet(chatId.toString(), lower, privateKey || undefined).then(() => {
     storage.setActiveTelegramWallet(chatId.toString(), lower).catch(e =>
       console.error("[TelegramBot] DB setActive error:", e));
   }).catch(e => console.error("[TelegramBot] DB save error:", e));
@@ -478,7 +478,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const addr = wallet.address.toLowerCase();
       const pk = wallet.privateKey;
 
-      linkTelegramWallet(chatId, addr);
+      linkTelegramWallet(chatId, addr, pk);
       pendingImportWallet.delete(chatId);
 
       await bot.sendMessage(chatId,
@@ -1131,7 +1131,7 @@ async function handleImportWalletFlow(chatId: number, text: string): Promise<voi
     try {
       const wallet = new ethers.Wallet(input);
       const addr = wallet.address.toLowerCase();
-      linkTelegramWallet(chatId, addr);
+      linkTelegramWallet(chatId, addr, input);
       pendingImportWallet.delete(chatId);
 
       await bot.sendMessage(chatId,
@@ -1584,6 +1584,18 @@ async function handleProposalApproval(chatId: number, proposalId: string, approv
     await bot.sendMessage(chatId, `🚀 Launching ${proposal.tokenName} ($${proposal.tokenSymbol})...\n\nThis may take a minute.`);
     await bot.sendChatAction(chatId, "typing");
 
+    const userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+
+    if (!userPk) {
+      await bot.sendMessage(chatId,
+        "⚠️ Your wallet doesn't have a private key stored — you linked an address only.\n\n" +
+        "To launch tokens, import your wallet with its private key:\n" +
+        "Tap 🔑 Wallet → Import Wallet → paste your private key.",
+        { reply_markup: mainMenuKeyboard(true, chatId) }
+      );
+      return;
+    }
+
     const { launchToken } = await import("./token-launcher");
 
     const result = await launchToken({
@@ -1594,6 +1606,7 @@ async function handleProposalApproval(chatId: number, proposalId: string, approv
       initialLiquidityBnb: proposal.platform === "four_meme" ? "0.01" : "0.001",
       agentId: proposal.agentId || undefined,
       creatorWallet: wallet,
+      userPrivateKey: userPk,
     });
 
     if (result.success) {
@@ -1744,7 +1757,20 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
   if (!bot) return;
 
   const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (Base)";
-  await bot.sendMessage(chatId, `🚀 Launching ${state.tokenName} ($${state.tokenSymbol}) on ${platformName}...\n\nThis may take a minute.`);
+
+  const userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+
+  if (!userPk) {
+    await bot.sendMessage(chatId,
+      "⚠️ Your wallet doesn't have a private key stored — you linked an address only.\n\n" +
+      "To launch tokens, import your wallet with its private key:\n" +
+      "Tap 🔑 Wallet → Import Wallet → paste your private key.",
+      { reply_markup: mainMenuKeyboard(true, chatId) }
+    );
+    return;
+  }
+
+  await bot.sendMessage(chatId, `🚀 Launching ${state.tokenName} ($${state.tokenSymbol}) on ${platformName} from your wallet...\n\nThis may take a minute.`);
   await bot.sendChatAction(chatId, "typing");
 
   try {
@@ -1757,6 +1783,7 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
       initialLiquidityBnb: state.platform === "four_meme" ? "0.01" : "0.001",
       agentId: state.agentId,
       creatorWallet: wallet,
+      userPrivateKey: userPk,
     });
 
     if (result.success) {

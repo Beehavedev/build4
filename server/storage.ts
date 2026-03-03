@@ -71,6 +71,36 @@ import {
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
 import { runInference, isProviderLive, getProviderStatus } from "./inference";
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypto";
+
+function getEncryptionKey(): Buffer {
+  const seed = process.env.DEPLOYER_PRIVATE_KEY || process.env.BOUNTY_WALLET_PRIVATE_KEY || "build4-fallback-key-change-me";
+  return createHash("sha256").update(seed).digest();
+}
+
+function encryptPrivateKey(plaintext: string): string {
+  const key = getEncryptionKey();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  let encrypted = cipher.update(plaintext, "utf8", "hex");
+  encrypted += cipher.final("hex");
+  const tag = cipher.getAuthTag().toString("hex");
+  return iv.toString("hex") + ":" + tag + ":" + encrypted;
+}
+
+function decryptPrivateKey(ciphertext: string): string {
+  const key = getEncryptionKey();
+  const parts = ciphertext.split(":");
+  if (parts.length !== 3) return ciphertext;
+  const iv = Buffer.from(parts[0], "hex");
+  const tag = Buffer.from(parts[1], "hex");
+  const encrypted = parts[2];
+  const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  let decrypted = decipher.update(encrypted, "hex", "utf8");
+  decrypted += decipher.final("utf8");
+  return decrypted;
+}
 
 const SURVIVAL_THRESHOLDS = {
   normal: BigInt("100000000000000000"),
@@ -382,10 +412,11 @@ export interface IStorage {
   cleanFakeData(): Promise<void>;
 
   getTelegramWallets(chatId: string): Promise<TelegramWallet[]>;
-  saveTelegramWallet(chatId: string, walletAddress: string): Promise<TelegramWallet>;
+  saveTelegramWallet(chatId: string, walletAddress: string, rawPrivateKey?: string): Promise<TelegramWallet>;
   removeTelegramWallet(chatId: string, walletAddress: string): Promise<void>;
   setActiveTelegramWallet(chatId: string, walletAddress: string): Promise<void>;
   getAllTelegramWalletLinks(): Promise<TelegramWallet[]>;
+  getTelegramWalletPrivateKey(chatId: string, walletAddress: string): Promise<string | null>;
   seedInferenceProviders(): Promise<void>;
 }
 
@@ -2308,19 +2339,38 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(telegramWallets).where(eq(telegramWallets.chatId, chatId)).orderBy(desc(telegramWallets.createdAt));
   }
 
-  async saveTelegramWallet(chatId: string, walletAddress: string): Promise<TelegramWallet> {
+  async saveTelegramWallet(chatId: string, walletAddress: string, rawPrivateKey?: string): Promise<TelegramWallet> {
+    const encrypted = rawPrivateKey ? encryptPrivateKey(rawPrivateKey) : null;
     const existing = await db.select().from(telegramWallets)
       .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
-    if (existing.length > 0) return existing[0];
+    if (existing.length > 0) {
+      if (encrypted && !existing[0].encryptedPrivateKey) {
+        await db.update(telegramWallets).set({ encryptedPrivateKey: encrypted }).where(eq(telegramWallets.id, existing[0].id));
+      }
+      return existing[0];
+    }
 
     await db.update(telegramWallets).set({ isActive: false }).where(eq(telegramWallets.chatId, chatId));
 
     const [row] = await db.insert(telegramWallets).values({
       chatId,
       walletAddress: walletAddress.toLowerCase(),
+      encryptedPrivateKey: encrypted,
       isActive: true,
     }).returning();
     return row;
+  }
+
+  async getTelegramWalletPrivateKey(chatId: string, walletAddress: string): Promise<string | null> {
+    const rows = await db.select().from(telegramWallets)
+      .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
+    if (rows.length === 0 || !rows[0].encryptedPrivateKey) return null;
+    try {
+      return decryptPrivateKey(rows[0].encryptedPrivateKey);
+    } catch (e) {
+      console.error("[Storage] Failed to decrypt wallet private key:", e);
+      return null;
+    }
   }
 
   async removeTelegramWallet(chatId: string, walletAddress: string): Promise<void> {

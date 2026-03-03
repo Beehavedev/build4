@@ -49,7 +49,7 @@ function sanitizeError(rawError: string): string {
 
   if (rawError.length > 150) {
     const shortMsg = rawError.substring(0, 100).split(",")[0].split("{")[0].trim();
-    return shortMsg || "Transaction failed — check deployer wallet balance and try again";
+    return shortMsg || "Transaction failed — check your wallet balance and try again";
   }
 
   return rawError;
@@ -64,6 +64,7 @@ interface LaunchParams {
   initialLiquidityBnb?: string;
   agentId?: string;
   creatorWallet?: string;
+  userPrivateKey?: string;
 }
 
 interface LaunchResult {
@@ -91,9 +92,15 @@ function getDeployerWallet(provider: ethers.JsonRpcProvider): ethers.Wallet | nu
 
 async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
   const provider = getBscProvider();
-  const wallet = getDeployerWallet(provider);
+  let wallet: ethers.Wallet | null = null;
+  if (params.userPrivateKey) {
+    wallet = new ethers.Wallet(params.userPrivateKey, provider);
+    log(`[TokenLauncher] Using user wallet ${wallet.address.substring(0, 10)}... for Four.meme launch`, "token-launcher");
+  } else {
+    wallet = getDeployerWallet(provider);
+  }
   if (!wallet) {
-    return { success: false, error: "No deployer wallet configured" };
+    return { success: false, error: "No wallet available — generate or import a wallet with a private key first" };
   }
 
   const launchRecord = await storage.createTokenLaunch({
@@ -127,7 +134,7 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
         status: "failed",
         errorMessage: `Insufficient BNB balance: ${balFormatted} BNB (need ${needed} BNB)`,
       });
-      return { success: false, error: `Insufficient BNB — wallet has ${balFormatted} BNB but needs at least ${needed} BNB (${ethers.formatEther(liquidity)} liquidity + gas). Fund the deployer wallet and try again.`, launchId: launchRecord.id };
+      return { success: false, error: `Insufficient BNB — your wallet has ${balFormatted} BNB but needs at least ${needed} BNB (${ethers.formatEther(liquidity)} liquidity + gas). Fund your wallet and try again.`, launchId: launchRecord.id };
     }
 
     let signatureResponse: any = null;
@@ -176,7 +183,7 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
 
       let userError: string;
       if (rawMsg.includes("insufficient funds") || rawMsg.includes("exceeds balance")) {
-        userError = `Insufficient BNB — wallet has ${balFormatted} BNB but needs at least ${ethers.formatEther(liquidity)} BNB + gas fees. Fund the deployer wallet and try again.`;
+        userError = `Insufficient BNB — your wallet has ${balFormatted} BNB but needs at least ${ethers.formatEther(liquidity)} BNB + gas fees. Fund your wallet and try again.`;
       } else if (rawMsg.includes("CALL_EXCEPTION") || rawMsg.includes("reverted")) {
         const revertReason = txError.reason || "";
         userError = `Four.meme contract rejected the launch${revertReason ? ` (${revertReason})` : ""}. The token name/symbol may already be taken, or the contract requires a different parameter format. Try a different name.`;
@@ -267,9 +274,15 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
 
 async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
   const provider = getBaseProvider();
-  const wallet = getDeployerWallet(provider);
+  let wallet: ethers.Wallet | null = null;
+  if (params.userPrivateKey) {
+    wallet = new ethers.Wallet(params.userPrivateKey, provider);
+    log(`[TokenLauncher] Using user wallet ${wallet.address.substring(0, 10)}... for Flap.sh launch`, "token-launcher");
+  } else {
+    wallet = getDeployerWallet(provider);
+  }
   if (!wallet) {
-    return { success: false, error: "No deployer wallet configured" };
+    return { success: false, error: "No wallet available — generate or import a wallet with a private key first" };
   }
 
   const launchRecord = await storage.createTokenLaunch({

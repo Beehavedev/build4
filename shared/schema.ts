@@ -1015,6 +1015,7 @@ export const telegramWallets = pgTable("telegram_wallets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   chatId: text("chat_id").notNull(),
   walletAddress: text("wallet_address").notNull(),
+  encryptedPrivateKey: text("encrypted_private_key"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });
