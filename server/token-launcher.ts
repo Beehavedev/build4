@@ -14,6 +14,47 @@ const FOUR_MEME_ABI = [
 
 const FLAP_API = "https://flap.sh";
 
+function sanitizeError(rawError: string): string {
+  if (!rawError) return "Unknown error";
+
+  if (rawError.includes("CALL_EXCEPTION") || rawError.includes("transaction execution reverted")) {
+    if (rawError.includes("insufficient funds") || rawError.includes("insufficient balance")) {
+      return "Insufficient balance — wallet needs more BNB/ETH for gas + liquidity";
+    }
+    if (rawError.includes("exceeds balance")) {
+      return "Insufficient balance to cover transaction cost";
+    }
+    return "Transaction reverted by the contract — this may be due to insufficient balance, invalid parameters, or the platform rejecting the launch";
+  }
+
+  if (rawError.includes("insufficient funds")) {
+    return "Insufficient balance — wallet needs more BNB/ETH for gas + liquidity";
+  }
+
+  if (rawError.includes("nonce")) {
+    return "Transaction nonce conflict — try again in a moment";
+  }
+
+  if (rawError.includes("timeout") || rawError.includes("TIMEOUT")) {
+    return "Network timeout — the blockchain may be congested, try again";
+  }
+
+  if (rawError.includes("network") || rawError.includes("NETWORK_ERROR")) {
+    return "Network error — could not connect to the blockchain";
+  }
+
+  if (rawError.includes("user rejected") || rawError.includes("ACTION_REJECTED")) {
+    return "Transaction was rejected";
+  }
+
+  if (rawError.length > 150) {
+    const shortMsg = rawError.substring(0, 100).split(",")[0].split("{")[0].trim();
+    return shortMsg || "Transaction failed — check deployer wallet balance and try again";
+  }
+
+  return rawError;
+}
+
 interface LaunchParams {
   tokenName: string;
   tokenSymbol: string;
@@ -200,11 +241,12 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
     };
   } catch (e: any) {
     log(`[TokenLauncher] four.meme launch failed: ${e.message}`, "token-launcher");
+    const cleanError = sanitizeError(e.message || "");
     await storage.updateTokenLaunch(launchRecord.id, {
       status: "failed",
       errorMessage: e.message?.substring(0, 500),
     });
-    return { success: false, error: e.message, launchId: launchRecord.id };
+    return { success: false, error: cleanError, launchId: launchRecord.id };
   }
 }
 
@@ -325,11 +367,12 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
     return { success: false, error: "flap.sh API currently unavailable for programmatic launches", launchId: launchRecord.id };
   } catch (e: any) {
     log(`[TokenLauncher] flap.sh launch failed: ${e.message}`, "token-launcher");
+    const cleanError = sanitizeError(e.message || "");
     await storage.updateTokenLaunch(launchRecord.id, {
       status: "failed",
       errorMessage: e.message?.substring(0, 500),
     });
-    return { success: false, error: e.message, launchId: launchRecord.id };
+    return { success: false, error: cleanError, launchId: launchRecord.id };
   }
 }
 

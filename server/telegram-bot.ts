@@ -1430,7 +1430,7 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
       });
     } else {
       await bot.sendMessage(chatId,
-        `❌ Launch failed: ${result.error}\n\nThis could be due to insufficient balance, network issues, or platform unavailability.`,
+        `❌ Launch failed: ${(result.error || "Unknown error").substring(0, 200)}`,
         {
           reply_markup: {
             inline_keyboard: [
