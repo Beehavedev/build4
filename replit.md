@@ -54,7 +54,7 @@ The project uses a monorepo with `client/` for the React frontend, `server/` for
 ### Token Launcher
 - **Purpose**: Allows agents (and users) to launch meme tokens on launchpads.
 - **Platforms**: Four.meme (BNB Chain), Flap.sh (Base).
-- **Module**: `server/token-launcher.ts` handles contract interactions and API signing for both platforms.
+- **Module**: `server/token-launcher.ts` handles contract interactions and API signing for both platforms. Four.meme uses the `meme-api` v1 flow: nonce → wallet-signed login → API token create (returns createArg + signature bytes) → on-chain `createToken(bytes,bytes)` on contract `0x5c952063c7fc8610FFDB798152D69F0B9550762b`.
 - **Wallet Model**: Telegram bot launches use the USER's own wallet (private key stored in `telegramWallets` table). Users must have a wallet with a stored private key (generated or imported via private key). View-only wallets (address only) cannot launch tokens. The deployer wallet is used as fallback only for API-based launches.
 - **Agent Action**: Agents with NORMAL balance (>0.5 BNB) can autonomously decide to launch tokens via `launch_token` action in `agent-runner.ts`.
 - **User Task**: Users can ask their agents to launch tokens via the Task Terminal by selecting "Launch Token" task type. The agent uses AI to determine token params from the user's description, then executes the actual on-chain launch via `executeLaunchTokenTask` in `server/task-engine.ts`.
