@@ -239,10 +239,10 @@ function mainMenuKeyboard(hasWallet: boolean, chatId?: number): TelegramBot.Inli
   }
   return {
     inline_keyboard: [
+      [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
       [{ text: "Create Agent", callback_data: "action:newagent" }, { text: "My Agents", callback_data: "action:myagents" }],
       [{ text: "New Task", callback_data: "action:task" }, { text: "My Tasks", callback_data: "action:mytasks" }],
-      [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
-      [{ text: "What is BUILD4?", callback_data: "action:info" }],
+      [{ text: "Help & Commands", callback_data: "action:help" }],
     ]
   };
 }
@@ -351,10 +351,17 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:help") {
     await bot.sendMessage(chatId,
-      "Just tap the buttons! You can also type:\n\n" +
-      "/ask <question> — Ask about BUILD4\n" +
-      "/launch — Launch a token\n" +
-      "/mychatid — For strategy notifications\n\n" +
+      "Commands:\n\n" +
+      "/start — Main menu\n" +
+      "/launch — Launch a token on Four.meme or Flap.sh\n" +
+      "/newagent — Create a new AI agent\n" +
+      "/myagents — View & manage your agents\n" +
+      "/task — Assign a task to an agent\n" +
+      "/mytasks — View recent tasks\n" +
+      "/linkwallet — Connect your wallet\n" +
+      "/ask <question> — Ask anything about BUILD4\n" +
+      "/mychatid — Get your Chat ID for notifications\n" +
+      "/cancel — Cancel current action\n\n" +
       "Or just type any question and I'll answer it.",
       { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId), chatId) }
     );
@@ -652,12 +659,29 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
     if (cmd === "start" && !isGroup) {
       const wallet = getLinkedWallet(chatId);
-      await bot.sendMessage(chatId,
-        `Welcome to BUILD4\nDecentralized AI agents on BNB Chain, Base, and XLayer.\n\n` +
-        (wallet ? `Wallet: ${shortWallet(wallet)}\n\n` : "") +
-        `Tap a button to get started:`,
-        { reply_markup: mainMenuKeyboard(!!wallet, chatId) }
-      );
+      if (!wallet) {
+        await bot.sendMessage(chatId,
+          `Welcome to BUILD4\n\n` +
+          `Create AI agents that operate on-chain — BNB Chain, Base, and XLayer.\n\n` +
+          `What you can do here:\n` +
+          `• Create & manage AI agents\n` +
+          `• Launch tokens on Four.meme & Flap.sh\n` +
+          `• Assign tasks to your agents\n\n` +
+          `Connect your wallet to get started:`,
+          { reply_markup: mainMenuKeyboard(false, chatId) }
+        );
+      } else {
+        await bot.sendMessage(chatId,
+          `Welcome back! Wallet: ${shortWallet(wallet)}\n\n` +
+          `Quick commands:\n` +
+          `/launch — Launch a token on Four.meme or Flap.sh\n` +
+          `/task — Assign a task to your agent\n` +
+          `/myagents — View your agents\n` +
+          `/help — All commands\n\n` +
+          `Or tap a button:`,
+          { reply_markup: mainMenuKeyboard(true, chatId) }
+        );
+      }
       return;
     }
 
@@ -674,7 +698,18 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
     if (cmd === "help") {
       await bot.sendMessage(chatId,
-        "Tap buttons to navigate, or type:\n\n/ask <question> — Ask anything\n/launch — Launch a token\n/mychatid — For notifications\n\nOr just type a question directly.",
+        "Commands:\n\n" +
+        "/start — Main menu\n" +
+        "/launch — Launch a token on Four.meme or Flap.sh\n" +
+        "/newagent — Create a new AI agent\n" +
+        "/myagents — View & manage your agents\n" +
+        "/task — Assign a task to an agent\n" +
+        "/mytasks — View recent tasks\n" +
+        "/linkwallet — Connect your wallet\n" +
+        "/ask <question> — Ask anything about BUILD4\n" +
+        "/mychatid — Get your Chat ID for notifications\n" +
+        "/cancel — Cancel current action\n\n" +
+        "Or just type any question and I'll answer it.",
         { reply_markup: mainMenuKeyboard(!!getLinkedWallet(chatId), chatId) }
       );
       return;
