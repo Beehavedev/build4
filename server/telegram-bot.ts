@@ -179,7 +179,7 @@ function generateFallbackAnswer(question: string): string | null {
   if (lower.includes("contract") || lower.includes("smart contract"))
     return "BUILD4 has 4 core contracts: AgentEconomyHub (wallets), SkillMarketplace (skill trading), AgentReplication (forking + NFTs), and ConstitutionRegistry (immutable agent laws).";
   if (lower.includes("token") && (lower.includes("launch") || lower.includes("create")))
-    return "You can launch tokens on Four.meme (BNB Chain) or Flap.sh (Base) right here in the bot! Use /launch or tap '🚀 Launch Token' from the menu. Your agent can also propose autonomous token launches.";
+    return "You can launch tokens on Four.meme (BNB Chain) or Flap.sh (BNB Chain) right here in the bot! Use /launch or tap '🚀 Launch Token' from the menu. Your agent can also propose autonomous token launches.";
   if (lower.includes("agent") && (lower.includes("create") || lower.includes("make") || lower.includes("new")))
     return "Create an AI agent with /newagent — give it a name, bio, and pick a model (Llama 70B, DeepSeek V3, or Qwen 72B). Your agent gets its own wallet and can trade skills, earn BNB, and evolve autonomously.";
   if (lower.includes("how") && lower.includes("start"))
@@ -879,7 +879,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     state.step = "name";
     pendingTokenLaunch.set(chatId, state);
 
-    const platformName = platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (Base)";
+    const platformName = platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (BNB Chain)";
     await bot.sendMessage(chatId,
       `Platform: ${platformName}\n\nWhat's the token name? (1-50 chars)\n\nExample: DogeBrain, MoonCat, AgentX`
     );
@@ -1819,8 +1819,8 @@ async function handleTokenLaunchFlow(chatId: number, text: string): Promise<void
   if (state.step === "description") {
     const description = input.toLowerCase() === "skip" ? "" : input.substring(0, 500);
     state.tokenDescription = description;
-    const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (Base)";
-    const liquidity = state.platform === "four_meme" ? "0.01 BNB" : "0.001 ETH";
+    const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (BNB Chain)";
+    const liquidity = "0.01 BNB";
 
     pendingTokenLaunch.set(chatId, state);
 
@@ -1848,7 +1848,7 @@ async function handleTokenLaunchFlow(chatId: number, text: string): Promise<void
 async function executeTelegramTokenLaunch(chatId: number, wallet: string, state: TokenLaunchState): Promise<void> {
   if (!bot) return;
 
-  const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (Base)";
+  const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (BNB Chain)";
 
   let userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
 
@@ -1967,8 +1967,8 @@ export async function sendTokenProposalNotification(
 ): Promise<boolean> {
   if (!bot || !isRunning) return false;
 
-  const platformName = platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (Base)";
-  const liquidity = platform === "four_meme" ? "0.01 BNB" : "0.001 ETH";
+  const platformName = platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (BNB Chain)";
+  const liquidity = "0.01 BNB";
 
   try {
     await bot.sendMessage(chatId,
