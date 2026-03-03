@@ -1128,7 +1128,6 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
       }
 
       case "launch_token": {
-        const { launchToken: launchTokenFn } = await import("./token-launcher");
         const platforms = ["four_meme", "flap_sh"] as const;
         const chosenPlatform = platforms[Math.floor(Math.random() * platforms.length)];
 
@@ -1141,36 +1140,58 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
 
         const description = `${chosenName} - Autonomous meme token launched by AI agent ${agent.name} on BUILD4. ${agent.bio || "An autonomous AI agent in the decentralized economy."}`;
 
-        log(`[Agent ${agent.name}] Attempting token launch: ${chosenName} ($${chosenSymbol}) on ${chosenPlatform}`, "agent-runner");
+        log(`[Agent ${agent.name}] Proposing token launch: ${chosenName} ($${chosenSymbol}) on ${chosenPlatform}`, "agent-runner");
 
-        const result = await launchTokenFn({
+        if (!agent.creatorWallet) {
+          log(`[Agent ${agent.name}] Cannot propose token launch — agent has no creator wallet`, "agent-runner");
+          break;
+        }
+
+        const proposal = await storage.createTokenLaunch({
+          agentId: agent.id,
+          creatorWallet: agent.creatorWallet,
+          platform: chosenPlatform,
+          chainId: chosenPlatform === "four_meme" ? 56 : 8453,
           tokenName: chosenName,
           tokenSymbol: chosenSymbol,
           tokenDescription: description,
-          platform: chosenPlatform,
           initialLiquidityBnb: chosenPlatform === "four_meme" ? "0.01" : "0.001",
-          agentId: agent.id,
+          status: "proposed",
         });
 
         await storage.createAuditLog({
           agentId: agent.id,
-          actionType: "autonomous_launch_token",
+          actionType: "autonomous_launch_token_proposal",
           detailsJson: JSON.stringify({
+            proposalId: proposal.id,
             platform: chosenPlatform,
             tokenName: chosenName,
             tokenSymbol: chosenSymbol,
-            success: result.success,
-            tokenAddress: result.tokenAddress,
-            txHash: result.txHash,
-            error: result.error,
           }),
-          result: result.success ? "success" : "failed",
+          result: "success",
         });
 
-        if (result.success) {
-          log(`[Agent ${agent.name}] Token launched! ${chosenName} ($${chosenSymbol}) on ${chosenPlatform}: ${result.launchUrl}`, "agent-runner");
+        let notified = false;
+        if (agent.creatorWallet) {
+          const { getChatIdByWallet, sendTokenProposalNotification } = await import("./telegram-bot");
+          const ownerChatId = getChatIdByWallet(agent.creatorWallet);
+          if (ownerChatId) {
+            notified = await sendTokenProposalNotification(
+              ownerChatId,
+              proposal.id,
+              agent.name,
+              chosenName,
+              chosenSymbol,
+              chosenPlatform,
+              description
+            );
+          }
+        }
+
+        if (notified) {
+          log(`[Agent ${agent.name}] Token proposal sent to owner for approval: ${chosenName} ($${chosenSymbol})`, "agent-runner");
         } else {
-          log(`[Agent ${agent.name}] Token launch failed: ${result.error}`, "agent-runner");
+          log(`[Agent ${agent.name}] Token proposal created (owner not on Telegram): ${chosenName} ($${chosenSymbol}) — proposal ID: ${proposal.id}`, "agent-runner");
         }
         break;
       }

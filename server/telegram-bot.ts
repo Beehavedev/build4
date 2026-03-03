@@ -175,6 +175,14 @@ function getLinkedWallet(chatId: number): string | undefined {
   return telegramWalletMap.get(chatId);
 }
 
+export function getChatIdByWallet(wallet: string): number | undefined {
+  const lowerWallet = wallet.toLowerCase();
+  for (const [chatId, w] of telegramWalletMap.entries()) {
+    if (w === lowerWallet) return chatId;
+  }
+  return undefined;
+}
+
 export function linkTelegramWallet(chatId: number, wallet: string): void {
   telegramWalletMap.set(chatId, wallet.toLowerCase());
   console.log(`[TelegramBot] Wallet linked via web for chatId ${chatId}: ${wallet.substring(0, 8)}...`);
@@ -569,6 +577,18 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId, "Token launch cancelled.", {
       reply_markup: mainMenuKeyboard(!!wallet, chatId)
     });
+    return;
+  }
+
+  if (data.startsWith("proposal_approve:")) {
+    const proposalId = data.split(":")[1];
+    await handleProposalApproval(chatId, proposalId, true);
+    return;
+  }
+
+  if (data.startsWith("proposal_reject:")) {
+    const proposalId = data.split(":")[1];
+    await handleProposalApproval(chatId, proposalId, false);
     return;
   }
 }
@@ -1128,6 +1148,105 @@ async function handleMyTasks(chatId: number, wallet: string): Promise<void> {
   }
 }
 
+async function handleProposalApproval(chatId: number, proposalId: string, approved: boolean): Promise<void> {
+  if (!bot) return;
+
+  try {
+    const { storage } = await import("./storage");
+    const proposal = await storage.getTokenLaunch(proposalId);
+
+    if (!proposal) {
+      await bot.sendMessage(chatId, "Proposal not found or already expired.");
+      return;
+    }
+
+    if (proposal.status !== "proposed") {
+      const statusMsg = proposal.status === "success" ? "already launched" : proposal.status === "rejected" ? "already rejected" : proposal.status;
+      await bot.sendMessage(chatId, `This proposal is ${statusMsg}.`);
+      return;
+    }
+
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) {
+      await bot.sendMessage(chatId, "Please connect your wallet first.");
+      return;
+    }
+
+    if (!proposal.creatorWallet) {
+      await bot.sendMessage(chatId, "This proposal has no owner — cannot approve.");
+      return;
+    }
+
+    if (proposal.creatorWallet.toLowerCase() !== wallet.toLowerCase()) {
+      await bot.sendMessage(chatId, "This proposal belongs to a different wallet.");
+      return;
+    }
+
+    if (!approved) {
+      await storage.updateTokenLaunch(proposalId, { status: "rejected" });
+      await bot.sendMessage(chatId,
+        `❌ Proposal rejected: ${proposal.tokenName} ($${proposal.tokenSymbol})\n\nYour agent will learn from this.`,
+        { reply_markup: mainMenuKeyboard(true, chatId) }
+      );
+      return;
+    }
+
+    const updated = await storage.updateTokenLaunch(proposalId, { status: "pending" });
+    if (!updated || (updated.status !== "pending")) {
+      await bot.sendMessage(chatId, "This proposal was already processed.");
+      return;
+    }
+
+    await bot.sendMessage(chatId, `🚀 Launching ${proposal.tokenName} ($${proposal.tokenSymbol})...\n\nThis may take a minute.`);
+    await bot.sendChatAction(chatId, "typing");
+
+    const { launchToken } = await import("./token-launcher");
+
+    const result = await launchToken({
+      tokenName: proposal.tokenName,
+      tokenSymbol: proposal.tokenSymbol,
+      tokenDescription: proposal.tokenDescription || `${proposal.tokenName} — launched by agent on BUILD4`,
+      platform: proposal.platform as "four_meme" | "flap_sh",
+      initialLiquidityBnb: proposal.platform === "four_meme" ? "0.01" : "0.001",
+      agentId: proposal.agentId || undefined,
+      creatorWallet: wallet,
+    });
+
+    if (result.success) {
+      await storage.updateTokenLaunch(proposalId, {
+        status: "success",
+        tokenAddress: result.tokenAddress,
+        txHash: result.txHash,
+        launchUrl: result.launchUrl,
+      });
+
+      const lines = [
+        `✅ TOKEN LAUNCHED!\n`,
+        `Token: ${proposal.tokenName} ($${proposal.tokenSymbol})`,
+      ];
+      if (result.tokenAddress) lines.push(`Address: ${result.tokenAddress}`);
+      if (result.txHash) lines.push(`Tx: https://bscscan.com/tx/${result.txHash}`);
+      if (result.launchUrl) lines.push(`\nView: ${result.launchUrl}`);
+
+      await bot.sendMessage(chatId, lines.join("\n"), {
+        reply_markup: mainMenuKeyboard(true, chatId)
+      });
+    } else {
+      await storage.updateTokenLaunch(proposalId, {
+        status: "failed",
+        errorMessage: result.error,
+      });
+
+      await bot.sendMessage(chatId,
+        `❌ Launch failed: ${result.error}`,
+        { reply_markup: mainMenuKeyboard(true, chatId) }
+      );
+    }
+  } catch (e: any) {
+    await bot.sendMessage(chatId, `Error: ${e.message}`);
+  }
+}
+
 async function startTokenLaunchFlow(chatId: number, wallet: string): Promise<void> {
   if (!bot) return;
   try {
@@ -1328,6 +1447,45 @@ async function handleQuestion(chatId: number, messageId: number, question: strin
     try {
       await bot!.sendMessage(chatId, "Something went wrong. Try again!", { reply_to_message_id: messageId });
     } catch {}
+  }
+}
+
+export async function sendTokenProposalNotification(
+  chatId: number,
+  proposalId: string,
+  agentName: string,
+  tokenName: string,
+  tokenSymbol: string,
+  platform: string,
+  description: string
+): Promise<boolean> {
+  if (!bot || !isRunning) return false;
+
+  const platformName = platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (Base)";
+  const liquidity = platform === "four_meme" ? "0.01 BNB" : "0.001 ETH";
+
+  try {
+    await bot.sendMessage(chatId,
+      `🤖 AGENT TOKEN PROPOSAL\n\n` +
+      `Your agent ${agentName} wants to launch a token:\n\n` +
+      `Token: ${tokenName} ($${tokenSymbol})\n` +
+      `Platform: ${platformName}\n` +
+      `Liquidity: ${liquidity}\n` +
+      `Description: ${description.substring(0, 200)}\n\n` +
+      `Approve this launch?`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✅ Approve Launch", callback_data: `proposal_approve:${proposalId}` }],
+            [{ text: "❌ Reject", callback_data: `proposal_reject:${proposalId}` }],
+          ]
+        }
+      }
+    );
+    return true;
+  } catch (e: any) {
+    console.error("[TelegramBot] Failed to send proposal notification:", e.message);
+    return false;
   }
 }
 
