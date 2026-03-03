@@ -403,6 +403,28 @@ async function regenerateWalletWithKey(chatId: number): Promise<string | null> {
   }
 }
 
+async function fetchWalletBalances(wallets: string[]): Promise<Record<string, { bnb: string; eth: string }>> {
+  const result: Record<string, { bnb: string; eth: string }> = {};
+  const bnbProvider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+  const baseProvider = new ethers.JsonRpcProvider("https://mainnet.base.org");
+
+  await Promise.all(wallets.map(async (w) => {
+    try {
+      const [bnbBal, ethBal] = await Promise.all([
+        bnbProvider.getBalance(w).catch(() => BigInt(0)),
+        baseProvider.getBalance(w).catch(() => BigInt(0)),
+      ]);
+      const bnbStr = parseFloat(ethers.formatEther(bnbBal)).toFixed(4);
+      const ethStr = parseFloat(ethers.formatEther(ethBal)).toFixed(4);
+      result[w] = { bnb: bnbStr, eth: ethStr };
+    } catch {
+      result[w] = { bnb: "0.0000", eth: "0.0000" };
+    }
+  }));
+
+  return result;
+}
+
 function getWalletConnectUrl(chatId?: number): string {
   const base = appBaseUrl || "https://build4.io";
   const url = `${base}/api/web4/telegram-wallet`;
@@ -601,17 +623,32 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       await ensureWallet(chatId);
     }
     const activeIdx = getActiveWalletIndex(chatId);
+    const updatedWallets = getUserWallets(chatId);
+
+    await bot.sendMessage(chatId, "Loading wallet balances...");
+
+    const balances = await fetchWalletBalances(updatedWallets);
 
     let text = `👛 Your Wallets\n\n`;
-    wallets.forEach((w, i) => {
+    updatedWallets.forEach((w, i) => {
       const marker = i === activeIdx ? "✅" : "⬜";
-      text += `${marker} ${shortWallet(w)}${i === activeIdx ? " (active)" : ""}\n`;
+      const bal = balances[w];
+      const hasKey = walletsWithKey.has(`${chatId}:${w}`);
+      const keyTag = hasKey ? "" : " 🔒 view-only";
+      let balText = "";
+      if (bal) {
+        const parts: string[] = [];
+        if (parseFloat(bal.bnb) > 0) parts.push(`${bal.bnb} BNB`);
+        if (parseFloat(bal.eth) > 0) parts.push(`${bal.eth} ETH`);
+        balText = parts.length > 0 ? ` (${parts.join(", ")})` : " (empty)";
+      }
+      text += `${marker} \`${w}\`${i === activeIdx ? " ← active" : ""}${keyTag}\n    ${balText}\n\n`;
     });
-    text += `\nSend BNB or ETH to your active wallet to fund it.`;
+    text += `Send BNB to your active wallet address to fund it.`;
 
-    const walletButtons: TelegramBot.InlineKeyboardButton[][] = wallets.map((w, i) => {
+    const walletButtons: TelegramBot.InlineKeyboardButton[][] = updatedWallets.map((w, i) => {
       if (i === activeIdx) {
-        return [{ text: `📋 Copy: ${shortWallet(w)}`, callback_data: `copywall:${i}` }];
+        return [{ text: `📋 Copy Address`, callback_data: `copywall:${i}` }];
       }
       return [
         { text: `▶️ Use ${shortWallet(w)}`, callback_data: `switchwall:${i}` },
@@ -623,6 +660,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     walletButtons.push([{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }, { text: "◀️ Menu", callback_data: "action:menu" }]);
 
     await bot.sendMessage(chatId, text, {
+      parse_mode: "Markdown",
       reply_markup: { inline_keyboard: walletButtons }
     });
     return;
@@ -1007,18 +1045,31 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for wallet info!"); return; }
       await ensureWallet(chatId);
       const wallets = getUserWallets(chatId);
-
       const activeIdx = getActiveWalletIndex(chatId);
+
+      await bot.sendMessage(chatId, "Loading wallet balances...");
+      const balances = await fetchWalletBalances(wallets);
+
       let text = `👛 Your Wallets\n\n`;
       wallets.forEach((w, i) => {
         const marker = i === activeIdx ? "✅" : "⬜";
-        text += `${marker} ${shortWallet(w)}${i === activeIdx ? " (active)" : ""}\n`;
+        const bal = balances[w];
+        const hasKey = walletsWithKey.has(`${chatId}:${w}`);
+        const keyTag = hasKey ? "" : " 🔒 view-only";
+        let balText = "";
+        if (bal) {
+          const parts: string[] = [];
+          if (parseFloat(bal.bnb) > 0) parts.push(`${bal.bnb} BNB`);
+          if (parseFloat(bal.eth) > 0) parts.push(`${bal.eth} ETH`);
+          balText = parts.length > 0 ? ` (${parts.join(", ")})` : " (empty)";
+        }
+        text += `${marker} \`${w}\`${i === activeIdx ? " ← active" : ""}${keyTag}\n    ${balText}\n\n`;
       });
-      text += `\nSend BNB or ETH to your active wallet to fund it.`;
+      text += `Send BNB to your active wallet address to fund it.`;
 
       const walletButtons: TelegramBot.InlineKeyboardButton[][] = wallets.map((w, i) => {
         if (i === activeIdx) {
-          return [{ text: `📋 Copy: ${shortWallet(w)}`, callback_data: `copywall:${i}` }];
+          return [{ text: `📋 Copy Address`, callback_data: `copywall:${i}` }];
         }
         return [
           { text: `▶️ Use ${shortWallet(w)}`, callback_data: `switchwall:${i}` },
@@ -1028,7 +1079,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       walletButtons.push([{ text: "🔑 Add Wallet", callback_data: "action:genwallet" }]);
       walletButtons.push([{ text: "◀️ Menu", callback_data: "action:menu" }]);
 
-      await bot.sendMessage(chatId, text, { reply_markup: { inline_keyboard: walletButtons } });
+      await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: walletButtons } });
       return;
     }
 
