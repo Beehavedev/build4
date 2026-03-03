@@ -102,10 +102,18 @@ function MatrixRain() {
 
     const chars = "01BUILD4AGENT";
     const fontSize = 13;
-    const columns = Math.floor(canvas.width / fontSize);
-    const drops: number[] = Array(columns).fill(0).map(() => Math.random() * -100);
+    let columns = Math.floor(canvas.width / fontSize);
+    let drops: number[] = Array(columns).fill(0).map(() => Math.random() * -100);
 
-    const draw = () => {
+    let lastFrame = 0;
+    const FRAME_INTERVAL = 100;
+    let rafId: number;
+
+    const draw = (timestamp: number) => {
+      rafId = requestAnimationFrame(draw);
+      if (timestamp - lastFrame < FRAME_INTERVAL) return;
+      lastFrame = timestamp;
+
       ctx.fillStyle = "rgba(8, 12, 10, 0.08)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.font = `${fontSize}px monospace`;
@@ -125,11 +133,18 @@ function MatrixRain() {
       }
     };
 
-    const interval = setInterval(draw, 60);
-    window.addEventListener("resize", resize);
+    rafId = requestAnimationFrame(draw);
+
+    const handleResize = () => {
+      resize();
+      columns = Math.floor(canvas.width / fontSize);
+      drops = Array(columns).fill(0).map(() => Math.random() * -100);
+    };
+    window.addEventListener("resize", handleResize);
+
     return () => {
-      clearInterval(interval);
-      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", handleResize);
     };
   }, []);
 

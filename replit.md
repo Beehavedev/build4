@@ -71,17 +71,25 @@ The project uses a monorepo with `client/` for the React frontend, `server/` for
 - **Tweet Preview**: Bounty tweets go through a preview step before posting. The `generateBountyTweetText` function (exported from `server/twitter-agent.ts`) generates the tweet text, and a `/api/twitter/preview-bounty` endpoint returns the preview without posting. The frontend shows the full tweet in a styled preview card, with "Confirm & Post" or "Cancel" actions. Inputs are locked while preview is shown and dismissed if edited.
 
 ### Telegram Bot (Onboarding + Agent Management)
-- **Purpose**: Full agent lifecycle via Telegram — create agents, assign tasks, check results, and manage wallet linking without visiting the website.
+- **Purpose**: Full agent lifecycle via Telegram — create agents, assign tasks, check results, and manage wallets without visiting the website.
 - **UX**: Fully button-driven with Telegram inline keyboards. No typing numbers — every choice is a tappable button.
-- **Commands**: `/start` (menu with buttons), `/linkwallet` (wallet connect), `/newagent` (3-step: name→bio→model buttons), `/myagents`, `/task` (agent picker→type buttons→describe), `/launch` (token launch flow), `/taskstatus <id>`, `/mytasks`, `/ask`, `/info`, `/chains`, `/contracts`, `/mychatid`, `/cancel`, `/help`.
-- **Wallet Connection**: Primary method is WalletConnect/MetaMask via Telegram Mini App (`web_app` button). Opens a styled page at `/api/web4/telegram-wallet` with options to: 1) Create a new wallet (generates keypair in-browser via ethers.js, shows private key for backup, user confirms before linking), 2) Connect MetaMask, 3) Connect Trust Wallet, 4) Paste 0x address manually. Address is sent back to bot via `web_app_data`.
+- **Onboarding**: Zero-friction. `/start` auto-generates a wallet, shows private key for backup, and presents the main menu. No "connect wallet" or "import wallet" steps — users are ready instantly. The `ensureWallet(chatId)` helper guarantees every action has a wallet, auto-creating one if needed.
+- **Commands**: `/start` (auto-wallet + menu), `/linkwallet` (ensure wallet), `/newagent` (3-step: name→bio→model buttons), `/myagents`, `/task` (agent picker→type buttons→describe), `/launch` (token launch flow), `/taskstatus <id>`, `/mytasks`, `/ask`, `/info`, `/chains`, `/contracts`, `/mychatid`, `/cancel`, `/help`, `/wallet` (manage wallets).
 - **Agent Creation Flow**: Name (text) → Bio (text) → Model (inline keyboard buttons) — DM only.
 - **Task Flow**: Single-agent users skip agent selection. Agent picker → Task type (6 buttons) → Describe task (text) → Auto-executes, bot sends result. Title auto-generated from description.
-- **Token Launch Flow**: Main menu "Launch Token" button or `/launch` command. Agent picker → Platform (Four.meme/Flap.sh) → Token name → Symbol → Description (or skip) → Preview with confirm/cancel → Executes via `token-launcher.ts`. Also accessible from agent task type menu via "Launch Token" button.
-- **Agent Token Proposals**: When agents autonomously decide to launch tokens (3% probability in agent runner), they now create a proposal instead of executing directly. The proposal is stored in `tokenLaunches` with status `"proposed"` and the agent's owner is notified via Telegram with Approve/Reject buttons. On approval, the launch executes. On rejection, the proposal is marked rejected. If the owner isn't on Telegram, the proposal is still created in DB for later review.
-- **Multi-Wallet Support**: Users can add multiple wallets and switch between them. `telegramWallets` DB table persists wallets across restarts. In-memory `telegramWalletMap` acts as a cache, loaded from DB on startup and per-user on first interaction via `ensureWalletsLoaded()`. "My Wallet" button and `/wallet` command show all wallets with active marker, copy address, switch, remove, and add new wallet buttons.
-- **In-Bot Wallet Generation**: Wallets are created instantly inside Telegram using `ethers.Wallet.createRandom()` — no external links. "Create New Wallet" generates a keypair server-side, shows the private key for backup, and stores the private key in DB for token launching. "Import Existing Wallet" accepts private keys (derives address, stores key) or raw addresses (view-only, no key stored). All via callback buttons, no browser needed.
+- **Token Launch Flow**: Main menu "Launch Token" button or `/launch` command. Agent picker → Platform (Four.meme/Flap.sh) → Token name → Symbol → Description (or skip) → Preview with confirm/cancel → Executes via `token-launcher.ts`. Uses user's own wallet private key from DB.
+- **Agent Token Proposals**: When agents autonomously decide to launch tokens (3% probability in agent runner), they create a proposal. Owner is notified via Telegram with Approve/Reject buttons.
+- **Multi-Wallet Support**: Users can add multiple wallets and switch between them. `telegramWallets` DB table persists wallets with AES-256-GCM encrypted private keys. In-memory cache loaded from DB on startup and per-user via `ensureWalletsLoaded()`.
+- **Wallet Generation**: Wallets created instantly server-side using `ethers.Wallet.createRandom()`. Private keys encrypted before DB storage. Import via private key also supported for power users.
 - **Files**: `server/telegram-bot.ts`, `server/telegram-wallet-page.ts`
+
+### Performance Optimizations
+- **API Logging**: Lightweight timing-only logs for `/api` routes — no response body capture/stringify.
+- **Visitor Tracking**: Batched writes (flush every 10s or 50 entries) instead of per-request DB writes.
+- **SEO Prerender**: 5-minute TTL cache for bot-targeted HTML pages.
+- **Startup**: Seeds and cleanup run non-blocking — server starts serving requests immediately.
+- **Heavy Imports**: `circomlibjs` (Poseidon hashing) lazy-loaded on first use, not at startup.
+- **Frontend Animation**: MatrixRain canvas uses `requestAnimationFrame` throttled to 10fps instead of `setInterval`.
 
 ### Agent Task Terminal
 - **Purpose**: Direct task interface where users assign tasks to agents and get AI-powered results. Competes with OpenClaw and Moltbook.

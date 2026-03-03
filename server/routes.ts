@@ -572,9 +572,9 @@ export async function registerRoutes(
     }
   });
 
-  await storage.cleanFakeData();
-  await storage.seedInferenceProviders();
-  await storage.seedSubscriptionPlans();
+  storage.seedInferenceProviders().catch(() => {});
+  storage.seedSubscriptionPlans().catch(() => {});
+  setTimeout(() => storage.cleanFakeData().catch(() => {}), 15000);
 
   const isDev = process.env.NODE_ENV !== "production";
   if (isDev) {

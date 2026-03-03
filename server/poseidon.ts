@@ -1,9 +1,8 @@
-import { buildPoseidon } from "circomlibjs";
-
 let poseidonInstance: any = null;
 
 export async function getPoseidon(): Promise<any> {
   if (!poseidonInstance) {
+    const { buildPoseidon } = await import("circomlibjs");
     poseidonInstance = await buildPoseidon();
   }
   return poseidonInstance;
