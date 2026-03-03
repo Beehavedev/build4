@@ -8,7 +8,8 @@ let isRunning = false;
 let botUsername: string | null = null;
 let appBaseUrl: string | null = null;
 
-const telegramWalletMap = new Map<number, string>();
+interface UserWallets { wallets: string[]; active: number }
+const telegramWalletMap = new Map<number, UserWallets>();
 
 interface AgentCreationState { step: "name" | "bio" | "model"; name?: string; bio?: string }
 interface TaskState { step: "describe"; agentId: string; taskType: string; agentName: string }
@@ -173,25 +174,74 @@ function generateFallbackAnswer(question: string): string {
 }
 
 function getLinkedWallet(chatId: number): string | undefined {
-  return telegramWalletMap.get(chatId);
+  const data = telegramWalletMap.get(chatId);
+  if (!data || data.wallets.length === 0) return undefined;
+  return data.wallets[data.active] || data.wallets[0];
+}
+
+function getUserWallets(chatId: number): string[] {
+  const data = telegramWalletMap.get(chatId);
+  return data ? data.wallets : [];
+}
+
+function getActiveWalletIndex(chatId: number): number {
+  const data = telegramWalletMap.get(chatId);
+  return data ? data.active : 0;
+}
+
+function setActiveWallet(chatId: number, index: number): boolean {
+  const data = telegramWalletMap.get(chatId);
+  if (!data || index < 0 || index >= data.wallets.length) return false;
+  data.active = index;
+  telegramWalletMap.set(chatId, data);
+  return true;
+}
+
+function removeWallet(chatId: number, index: number): boolean {
+  const data = telegramWalletMap.get(chatId);
+  if (!data || index < 0 || index >= data.wallets.length) return false;
+  data.wallets.splice(index, 1);
+  if (data.wallets.length === 0) {
+    telegramWalletMap.delete(chatId);
+    return true;
+  }
+  if (data.active >= data.wallets.length) data.active = 0;
+  telegramWalletMap.set(chatId, data);
+  return true;
 }
 
 export function getChatIdByWallet(wallet: string): number | undefined {
   const lowerWallet = wallet.toLowerCase();
-  for (const [chatId, w] of telegramWalletMap.entries()) {
-    if (w === lowerWallet) return chatId;
+  for (const [chatId, data] of telegramWalletMap.entries()) {
+    if (data.wallets.includes(lowerWallet)) return chatId;
   }
   return undefined;
 }
 
 export function linkTelegramWallet(chatId: number, wallet: string): void {
-  telegramWalletMap.set(chatId, wallet.toLowerCase());
+  const lower = wallet.toLowerCase();
+  const existing = telegramWalletMap.get(chatId);
+
+  if (existing) {
+    if (!existing.wallets.includes(lower)) {
+      existing.wallets.push(lower);
+      existing.active = existing.wallets.length - 1;
+      telegramWalletMap.set(chatId, existing);
+    } else {
+      existing.active = existing.wallets.indexOf(lower);
+      telegramWalletMap.set(chatId, existing);
+    }
+  } else {
+    telegramWalletMap.set(chatId, { wallets: [lower], active: 0 });
+  }
+
   console.log(`[TelegramBot] Wallet linked via web for chatId ${chatId}: ${wallet.substring(0, 8)}...`);
   if (bot) {
-    bot.sendMessage(chatId,
-      `Wallet connected: ${wallet.substring(0, 6)}...${wallet.substring(38)}`,
-      { reply_markup: mainMenuKeyboard(true, chatId) }
-    ).catch(() => {});
+    const count = getUserWallets(chatId).length;
+    const msg = count > 1
+      ? `Wallet added: ${shortWallet(lower)} (${count} wallets — this one is now active)`
+      : `Wallet connected: ${shortWallet(lower)}`;
+    bot.sendMessage(chatId, msg, { reply_markup: mainMenuKeyboard(true, chatId) }).catch(() => {});
   }
 }
 
@@ -377,29 +427,37 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   if (data === "action:wallet") {
-    const w = getLinkedWallet(chatId);
-    if (!w) {
+    const wallets = getUserWallets(chatId);
+    if (wallets.length === 0) {
       await promptWalletConnect(chatId);
       return;
     }
+    const activeIdx = getActiveWalletIndex(chatId);
     const walletUrl = getWalletConnectUrl(chatId);
-    await bot.sendMessage(chatId,
-      `👛 Your Wallet\n\n` +
-      `Address: \`${w}\`\n\n` +
-      `Send BNB or ETH to this address to fund it.\n` +
-      `Then you can launch tokens and create agents.`,
-      {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "📋 Copy Address", callback_data: "action:copyaddr" }],
-            [{ text: "🔄 Switch Wallet", url: walletUrl }],
-            [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
-            [{ text: "◀️ Back to Menu", callback_data: "action:menu" }],
-          ]
-        }
+
+    let text = `👛 Your Wallets\n\n`;
+    wallets.forEach((w, i) => {
+      const marker = i === activeIdx ? "✅" : "⬜";
+      text += `${marker} ${shortWallet(w)}${i === activeIdx ? " (active)" : ""}\n`;
+    });
+    text += `\nSend BNB or ETH to your active wallet to fund it.`;
+
+    const walletButtons = wallets.map((w, i) => {
+      if (i === activeIdx) {
+        return [{ text: `📋 Copy: ${shortWallet(w)}`, callback_data: `copywall:${i}` }];
       }
-    );
+      return [
+        { text: `▶️ Use ${shortWallet(w)}`, callback_data: `switchwall:${i}` },
+        { text: `🗑`, callback_data: `removewall:${i}` },
+      ];
+    });
+
+    walletButtons.push([{ text: "➕ Add Another Wallet", url: walletUrl }]);
+    walletButtons.push([{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }, { text: "◀️ Menu", callback_data: "action:menu" }]);
+
+    await bot.sendMessage(chatId, text, {
+      reply_markup: { inline_keyboard: walletButtons }
+    });
     return;
   }
 
@@ -407,6 +465,47 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const w = getLinkedWallet(chatId);
     if (!w) { await promptWalletConnect(chatId); return; }
     await bot.sendMessage(chatId, `\`${w}\``, { parse_mode: "Markdown" });
+    return;
+  }
+
+  if (data.startsWith("copywall:")) {
+    const idx = parseInt(data.split(":")[1]);
+    const wallets = getUserWallets(chatId);
+    if (idx >= 0 && idx < wallets.length) {
+      await bot.sendMessage(chatId, `\`${wallets[idx]}\``, { parse_mode: "Markdown" });
+    }
+    return;
+  }
+
+  if (data.startsWith("switchwall:")) {
+    const idx = parseInt(data.split(":")[1]);
+    const wallets = getUserWallets(chatId);
+    if (idx >= 0 && idx < wallets.length && setActiveWallet(chatId, idx)) {
+      await bot.sendMessage(chatId,
+        `✅ Switched to wallet: ${shortWallet(wallets[idx])}`,
+        { reply_markup: { inline_keyboard: [[{ text: "👛 My Wallets", callback_data: "action:wallet" }, { text: "◀️ Menu", callback_data: "action:menu" }]] } }
+      );
+    }
+    return;
+  }
+
+  if (data.startsWith("removewall:")) {
+    const idx = parseInt(data.split(":")[1]);
+    const wallets = getUserWallets(chatId);
+    if (idx >= 0 && idx < wallets.length) {
+      const removed = wallets[idx];
+      removeWallet(chatId, idx);
+      const remaining = getUserWallets(chatId);
+      if (remaining.length === 0) {
+        await bot.sendMessage(chatId, `Wallet removed: ${shortWallet(removed)}\n\nNo wallets left.`, {
+          reply_markup: mainMenuKeyboard(false, chatId)
+        });
+      } else {
+        await bot.sendMessage(chatId, `Wallet removed: ${shortWallet(removed)}`, {
+          reply_markup: { inline_keyboard: [[{ text: "👛 My Wallets", callback_data: "action:wallet" }, { text: "◀️ Menu", callback_data: "action:menu" }]] }
+        });
+      }
+    }
     return;
   }
 
