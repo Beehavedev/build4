@@ -1566,6 +1566,19 @@ export async function registerAgentBAP578(
 
     log(`[BAP-578] Minting NFA for agent "${agentName}" on BNB Chain...`, "onchain");
 
+    const freshBalance = await prov.getBalance(w.address);
+    if (freshBalance < mintValue + gasReserve) {
+      const needed = ethers.formatEther(mintValue + gasReserve);
+      const have = ethers.formatEther(freshBalance);
+      return {
+        standard: "bap578",
+        success: false,
+        error: `Insufficient BNB for BAP-578 mint. Need ~${needed} BNB (${ethers.formatEther(mintValue)} fee + gas), have ${have} BNB. Fund wallet: ${w.address}`,
+        chainId: 56,
+        chainName: "BNB Chain",
+      };
+    }
+
     let tx;
     try {
       tx = await nfaContract.createAgent(
@@ -1576,13 +1589,13 @@ export async function registerAgentBAP578(
         { value: mintValue, gasLimit: 500000 }
       );
     } catch (mintErr: any) {
-      if (mintValue === BigInt(0) && freeMints === BigInt(0)) {
-        const needed = ethers.formatEther(mintFee + gasReserve);
-        const have = ethers.formatEther(walletBalance);
+      const errMsg = mintErr.message || "";
+      if (errMsg.includes("insufficient funds") || errMsg.includes("exceeds balance")) {
+        const currentBal = await prov.getBalance(w.address).catch(() => 0n);
         return {
           standard: "bap578",
           success: false,
-          error: `Insufficient BNB for BAP-578 mint. Need ~${needed} BNB (${ethers.formatEther(mintFee)} fee + gas), have ${have} BNB. Fund deployer wallet: ${w.address}`,
+          error: `Insufficient BNB balance. Need ~0.012 BNB, have ${ethers.formatEther(currentBal)} BNB. Fund wallet: ${w.address}`,
           chainId: 56,
           chainName: "BNB Chain",
         };
