@@ -107,8 +107,11 @@ const ERC8004_IDENTITY_REGISTRY_BSC = "0x8004A818BFB912233c491871b3d84c89A494BD9
 
 const registeredAgentWallets = new Set<string>();
 
+let erc8004BscDisabled = false;
+
 async function isAgentRegistered(walletAddress: string): Promise<boolean> {
   if (registeredAgentWallets.has(walletAddress.toLowerCase())) return true;
+  if (erc8004BscDisabled) return false;
   try {
     const provider = getBscProvider();
     const registry = new ethers.Contract(ERC8004_IDENTITY_REGISTRY_BSC, [
@@ -119,7 +122,8 @@ async function isAgentRegistered(walletAddress: string): Promise<boolean> {
     if (hasNft) registeredAgentWallets.add(walletAddress.toLowerCase());
     return hasNft;
   } catch (e: any) {
-    log(`[ERC-8004] balanceOf check failed: ${e.message?.substring(0, 80)}`, "token-launcher");
+    log(`[ERC-8004] balanceOf check failed on BSC — disabling further checks: ${e.message?.substring(0, 80)}`, "token-launcher");
+    erc8004BscDisabled = true;
     return false;
   }
 }
@@ -519,38 +523,11 @@ async function fourMemeCreateTokenData(
     body: JSON.stringify({
       name: params.tokenName,
       shortName: params.tokenSymbol,
+      symbol: params.tokenSymbol,
       desc: params.tokenDescription || "",
       imgUrl: params.imageUrl || "https://static.four.meme/market/68b871b6-96f7-408c-b8d0-388d804b34275092658264263839640.png",
-      totalSupply: 1000000000,
-      raisedAmount: 24,
-      saleRate: 0.8,
-      reserveRate: 0,
-      raisedToken: {
-        symbol: "BNB",
-        nativeSymbol: "BNB",
-        symbolAddress: "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
-        deployCost: "0",
-        buyFee: "0.01",
-        sellFee: "0.01",
-        minTradeFee: "0",
-        b0Amount: "8",
-        totalBAmount: "24",
-        totalAmount: "1000000000",
-        logoUrl: "https://static.four.meme/market/68b871b6-96f7-408c-b8d0-388d804b34275092658264263839640.png",
-        tradeLevel: ["0.1", "0.5", "1"],
-        status: "PUBLISH",
-        buyTokenLink: "https://pancakeswap.finance/swap",
-        reservedNumber: 10,
-        saleRate: "0.8",
-        networkCode: "BSC",
-        platform: "MEME",
-      },
-      launchTime: Date.now(),
-      funGroup: false,
-      clickFun: false,
-      symbol: "BNB",
       label: "Meme",
-      lpTradingFee: 0.0025,
+      raiseBnb: preSaleEth,
     }),
   });
 
@@ -559,12 +536,14 @@ async function fourMemeCreateTokenData(
     throw new Error(`four.meme create API failed: ${createJson.msg || JSON.stringify(createJson).substring(0, 200)}`);
   }
 
-  const preSaleWei = (ethers.parseEther(preSaleEth) * BigInt(101)) / BigInt(100);
+  const platformFee = ethers.parseEther("0.01");
+  const preSaleWei = ethers.parseEther(preSaleEth);
+  const totalValue = platformFee + preSaleWei;
 
   return {
     createArg: createJson.data.createArg,
     signature: createJson.data.signature,
-    value: preSaleWei,
+    value: totalValue,
   };
 }
 
@@ -601,14 +580,16 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
 
   try {
     const preSaleEth = params.initialLiquidityBnb || "0.01";
-    const preSaleWei = (ethers.parseEther(preSaleEth) * BigInt(101)) / BigInt(100);
+    const platformFee = ethers.parseEther("0.01");
+    const preSaleWei = ethers.parseEther(preSaleEth);
+    const totalLaunchCost = platformFee + preSaleWei;
 
     const balance = await provider.getBalance(wallet.address);
     const balFormatted = ethers.formatEther(balance);
     log(`[TokenLauncher] Deployer balance: ${balFormatted} BNB`, "token-launcher");
 
-    if (balance < preSaleWei + ethers.parseEther("0.005")) {
-      const needed = ethers.formatEther(preSaleWei + ethers.parseEther("0.005"));
+    if (balance < totalLaunchCost + ethers.parseEther("0.005")) {
+      const needed = ethers.formatEther(totalLaunchCost + ethers.parseEther("0.005"));
       await storage.updateTokenLaunch(launchRecord.id, {
         status: "failed",
         errorMessage: `Insufficient BNB balance: ${balFormatted} BNB (need ${needed} BNB)`,
@@ -616,16 +597,11 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
       return { success: false, error: `Insufficient BNB — your wallet has ${balFormatted} BNB but needs at least ${needed} BNB. Fund your wallet and try again.`, launchId: launchRecord.id };
     }
 
-    const agentReg = await ensureAgentRegisteredBSC(
-      wallet,
-      params.tokenName ? `BUILD4 Agent — ${params.tokenName}` : undefined,
-      params.tokenDescription || undefined,
-      params.agentId || undefined,
-    );
-    if (agentReg.registered) {
-      log(`[TokenLauncher] Step 0 OK: Agent wallet registered on ERC-8004 (AI badge enabled)`, "token-launcher");
+    const agentRegStatus = await isAgentRegistered(wallet.address);
+    if (agentRegStatus) {
+      log(`[TokenLauncher] Step 0 OK: Agent wallet already registered on ERC-8004 (AI badge enabled)`, "token-launcher");
     } else {
-      log(`[TokenLauncher] Step 0 WARN: ERC-8004 registration skipped — ${agentReg.error?.substring(0, 80) || "unknown"}. Launch continues without AI badge.`, "token-launcher");
+      log(`[TokenLauncher] Step 0: ERC-8004 BSC registration — skipping (contract not yet functional on BSC mainnet). AI badge will be available once ERC-8004 BSC deployment is active.`, "token-launcher");
     }
 
     log(`[TokenLauncher] Step 1: Logging into four.meme...`, "token-launcher");
@@ -642,6 +618,30 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
           log(`[TokenLauncher] Step 1.5 OK: image uploaded to ${cdnUrl}`, "token-launcher");
         }
       }
+    }
+
+    try {
+      const searchRes = await fetch(`${FOUR_MEME_API}/meme-api/v1/public/token/search?keyword=${encodeURIComponent(params.tokenName)}&pageNo=1&pageSize=5`);
+      const searchJson = await searchRes.json() as any;
+      const existing = searchJson?.data?.records?.find((t: any) =>
+        t.name?.toLowerCase() === params.tokenName.toLowerCase() ||
+        t.shortName?.toLowerCase() === params.tokenSymbol.toLowerCase()
+      );
+      if (existing) {
+        const existingAddr = existing.contractAddress || existing.address || "";
+        log(`[TokenLauncher] Token name/symbol already exists on four.meme: ${existing.name} (${existingAddr})`, "token-launcher");
+        await storage.updateTokenLaunch(launchRecord.id, {
+          status: "failed",
+          errorMessage: `Token "${existing.name}" already exists on four.meme`,
+        });
+        return {
+          success: false,
+          error: `A token named "${existing.name}" ($${existing.shortName || params.tokenSymbol}) already exists on four.meme. Choose a different, unique name.`,
+          launchId: launchRecord.id,
+        };
+      }
+    } catch (searchErr: any) {
+      log(`[TokenLauncher] Token search check skipped: ${searchErr.message?.substring(0, 60)}`, "token-launcher");
     }
 
     log(`[TokenLauncher] Step 2: Creating token via four.meme API...`, "token-launcher");
@@ -693,11 +693,14 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
     ]);
 
     if (!receipt || receipt.status !== 1) {
+      const revertMsg = `Transaction reverted — the token name or symbol may already be taken on four.meme. Try a different, unique name. TX: ${tx.hash.substring(0, 14)}...`;
+      log(`[TokenLauncher] four.meme launch reverted on-chain. TX: ${tx.hash}`, "token-launcher");
       await storage.updateTokenLaunch(launchRecord.id, {
         status: "failed",
-        errorMessage: "Transaction reverted on-chain",
+        txHash: tx.hash,
+        errorMessage: revertMsg,
       });
-      return { success: false, error: "Transaction reverted on-chain", txHash: tx.hash, launchId: launchRecord.id };
+      return { success: false, error: revertMsg, txHash: tx.hash, launchId: launchRecord.id };
     }
 
     let tokenAddress: string | undefined;
@@ -869,11 +872,14 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
     ]);
 
     if (!receipt || receipt.status !== 1) {
+      const revertMsg = `Flap.sh transaction reverted on-chain — try a different token name/symbol. TX: ${tx.hash.substring(0, 14)}...`;
+      log(`[TokenLauncher] flap.sh launch reverted on-chain. TX: ${tx.hash}`, "token-launcher");
       await storage.updateTokenLaunch(launchRecord.id, {
         status: "failed",
-        errorMessage: "Transaction reverted on-chain",
+        txHash: tx.hash,
+        errorMessage: revertMsg,
       });
-      return { success: false, error: "Transaction reverted on-chain", txHash: tx.hash, launchId: launchRecord.id };
+      return { success: false, error: revertMsg, txHash: tx.hash, launchId: launchRecord.id };
     }
 
     let tokenAddress: string | undefined;
