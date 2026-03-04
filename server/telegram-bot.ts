@@ -340,8 +340,15 @@ function shortWallet(w: string): string {
   return `${w.substring(0, 6)}...${w.substring(38)}`;
 }
 
+const agentCache = new Map<string, { agents: any[]; ts: number }>();
+const AGENT_CACHE_TTL = 15_000;
+
 async function getMyAgents(wallet: string) {
-  return storage.getAgentsByWallet(wallet);
+  const cached = agentCache.get(wallet);
+  if (cached && Date.now() - cached.ts < AGENT_CACHE_TTL) return cached.agents;
+  const agents = await storage.getAgentsByWallet(wallet);
+  agentCache.set(wallet, { agents, ts: Date.now() });
+  return agents;
 }
 
 async function autoGenerateWallet(chatId: number): Promise<string> {
@@ -403,20 +410,37 @@ async function regenerateWalletWithKey(chatId: number): Promise<string | null> {
   }
 }
 
+const balanceCache = new Map<string, { bnb: string; eth: string; ts: number }>();
+const BALANCE_CACHE_TTL = 30_000;
+const bnbProviderCached = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+const baseProviderCached = new ethers.JsonRpcProvider("https://mainnet.base.org");
+
 async function fetchWalletBalances(wallets: string[]): Promise<Record<string, { bnb: string; eth: string }>> {
   const result: Record<string, { bnb: string; eth: string }> = {};
-  const bnbProvider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
-  const baseProvider = new ethers.JsonRpcProvider("https://mainnet.base.org");
+  const now = Date.now();
+  const uncached: string[] = [];
 
-  await Promise.all(wallets.map(async (w) => {
+  for (const w of wallets) {
+    const cached = balanceCache.get(w);
+    if (cached && now - cached.ts < BALANCE_CACHE_TTL) {
+      result[w] = { bnb: cached.bnb, eth: cached.eth };
+    } else {
+      uncached.push(w);
+    }
+  }
+
+  if (uncached.length === 0) return result;
+
+  await Promise.all(uncached.map(async (w) => {
     try {
       const [bnbBal, ethBal] = await Promise.all([
-        bnbProvider.getBalance(w).catch(() => BigInt(0)),
-        baseProvider.getBalance(w).catch(() => BigInt(0)),
+        bnbProviderCached.getBalance(w).catch(() => BigInt(0)),
+        baseProviderCached.getBalance(w).catch(() => BigInt(0)),
       ]);
       const bnbStr = parseFloat(ethers.formatEther(bnbBal)).toFixed(4);
       const ethStr = parseFloat(ethers.formatEther(ethBal)).toFixed(4);
       result[w] = { bnb: bnbStr, eth: ethStr };
+      balanceCache.set(w, { bnb: bnbStr, eth: ethStr, ts: now });
     } catch {
       result[w] = { bnb: "0.0000", eth: "0.0000" };
     }
@@ -555,8 +579,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   const chatId = query.message.chat.id;
   const data = query.data;
 
-  await ensureWalletsLoaded(chatId);
   bot.answerCallbackQuery(query.id).catch(() => {});
+  await ensureWalletsLoaded(chatId);
 
   if (data === "action:linkwallet" || data === "action:genwallet") {
     try {
@@ -767,8 +791,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data.startsWith("taskagent:")) {
     const agentId = data.split(":")[1];
-    const agents = wallet ? await getMyAgents(wallet) : [];
-    const agent = agents.find(a => a.id === agentId);
+    const agent = await storage.getAgent(agentId);
     if (!agent) {
       await bot.sendMessage(chatId, "Agent not found.");
       return;
@@ -790,8 +813,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const parts = data.split(":");
     const agentId = parts[1];
     const taskType = parts[2];
-    const agents = wallet ? await getMyAgents(wallet) : [];
-    const agent = agents.find(a => a.id === agentId);
+    const agent = await storage.getAgent(agentId);
     if (!agent) return;
 
     pendingAgentCreation.delete(chatId);
@@ -820,29 +842,25 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data.startsWith("agenttask:")) {
     const agentId = data.split(":")[1];
-    if (wallet) {
-      const agents = await getMyAgents(wallet);
-      const agent = agents.find(a => a.id === agentId);
-      if (agent) {
-        await bot.sendMessage(chatId, `What type of task for ${agent.name}?`, {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "Research", callback_data: `tasktype:${agentId}:research` }, { text: "Analysis", callback_data: `tasktype:${agentId}:analysis` }],
-              [{ text: "Content", callback_data: `tasktype:${agentId}:content` }, { text: "Strategy", callback_data: `tasktype:${agentId}:strategy` }],
-              [{ text: "Code Review", callback_data: `tasktype:${agentId}:code_review` }, { text: "General", callback_data: `tasktype:${agentId}:general` }],
-              [{ text: "🚀 Launch Token", callback_data: `launchagent:${agentId}` }],
-            ]
-          }
-        });
-      }
+    const agent = await storage.getAgent(agentId);
+    if (agent) {
+      await bot.sendMessage(chatId, `What type of task for ${agent.name}?`, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Research", callback_data: `tasktype:${agentId}:research` }, { text: "Analysis", callback_data: `tasktype:${agentId}:analysis` }],
+            [{ text: "Content", callback_data: `tasktype:${agentId}:content` }, { text: "Strategy", callback_data: `tasktype:${agentId}:strategy` }],
+            [{ text: "Code Review", callback_data: `tasktype:${agentId}:code_review` }, { text: "General", callback_data: `tasktype:${agentId}:general` }],
+            [{ text: "🚀 Launch Token", callback_data: `launchagent:${agentId}` }],
+          ]
+        }
+      });
     }
     return;
   }
 
   if (data.startsWith("launchagent:")) {
     const agentId = data.split(":")[1];
-    const agents = await getMyAgents(wallet);
-    const agent = agents.find(a => a.id === agentId);
+    const agent = await storage.getAgent(agentId);
     if (!agent) { await bot.sendMessage(chatId, "Agent not found."); return; }
 
     pendingAgentCreation.delete(chatId);
