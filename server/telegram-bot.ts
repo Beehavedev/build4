@@ -44,7 +44,7 @@ CORE INFRASTRUCTURE:
 - Privacy Transfers: ZERC20 zero-knowledge privacy transfers using ZK proof-of-burn mechanism for confidential agent transactions.
 
 STANDARDS (INDUSTRY-FIRST):
-- ERC-8004 (Trustless Agents): On-chain identity, reputation, and validation registries. Co-authored with MetaMask, Ethereum Foundation, Google, Coinbase. BUILD4 is live on Base and Ethereum mainnet.
+- ERC-8004 (Trustless Agents): On-chain identity, reputation, and validation registries. Co-authored with MetaMask, Ethereum Foundation, Google, Coinbase. BUILD4 is live on BNB Chain.
 - BAP-578 (Non-Fungible Agent): BNB Chain's NFA token standard extending ERC-721 for autonomous digital entities. BUILD4's registry is live on BNB Chain mainnet at 0xd7Deb29ddBB13607375Ce50405A574AC2f7d978d.
 
 SMART CONTRACTS (4 auditable Solidity contracts, OpenZeppelin, Hardhat):
@@ -175,7 +175,7 @@ function generateFallbackAnswer(question: string): string | null {
   if (lower.includes("inference") || lower.includes("decentralized ai"))
     return "BUILD4 uses decentralized inference through Hyperbolic, Akash ML, and Ritual — no centralized AI providers like OpenAI. Fully decentralized compute.";
   if (lower.includes("erc-8004") || lower.includes("erc8004"))
-    return "ERC-8004 (Trustless Agents) provides on-chain identity, reputation, and validation registries. BUILD4 is live on Base and Ethereum mainnet with this standard.";
+    return "ERC-8004 (Trustless Agents) provides on-chain identity, reputation, and validation registries. BUILD4 is live on BNB Chain with this standard.";
   if (lower.includes("bap-578") || lower.includes("bap578") || lower.includes("nfa"))
     return "BAP-578 is BNB Chain's Non-Fungible Agent standard extending ERC-721. BUILD4's registry is live at 0xd7Deb29ddBB13607375Ce50405A574AC2f7d978d on BNB Chain.";
   if (lower.includes("privacy") || lower.includes("zerc20"))
@@ -1545,7 +1545,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
 
     if (cmd === "chains") {
-      await bot.sendMessage(chatId, "Supported Chains:\n\n- BNB Chain — BAP-578 NFA registry\n- Base — ERC-8004 identity registry\n- XLayer — Agent economy\n\nAll on-chain.");
+      await bot.sendMessage(chatId, "Supported Chains:\n\n- BNB Chain — ERC-8004 identity + BAP-578 NFA registry\n- XLayer — Agent economy\n\nAll on-chain.");
       return;
     }
 
@@ -1833,8 +1833,8 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
     try {
       await bot.sendMessage(chatId,
         `⚠️ On-chain registration skipped — your wallet needs funds to register agents.\n\n` +
-        `• ERC-8004 (Base): ~0.0005 ETH for gas\n` +
-        `• BAP-578 (BNB): ~0.012 BNB (0.01 mint + gas)\n\n` +
+        `• ERC-8004 (BNB Chain): ~0.002 BNB for gas\n` +
+        `• BAP-578 (BNB Chain): ~0.012 BNB (0.01 mint + gas)\n\n` +
         `Fund your wallet and use /myagents to register later.`,
       );
     } catch {}
@@ -1853,21 +1853,6 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
     }
   } catch (e: any) {
     console.error(`[TelegramBot] Hub registration error for ${agentId}:`, e.message);
-  }
-
-  try {
-    const erc8004Result = await registerAgentERC8004(name, bio, agentId, "base", userPk);
-    if (erc8004Result.success) {
-      results.push(`ERC-8004 (${erc8004Result.chainName || "Base"}): ${erc8004Result.txHash?.substring(0, 14)}...`);
-      if (erc8004Result.tokenId) {
-        results.push(`  Token ID: ${erc8004Result.tokenId}`);
-      }
-    } else {
-      results.push(`ERC-8004 (Base): ${erc8004Result.error?.substring(0, 80) || "skipped"}`);
-    }
-  } catch (e: any) {
-    console.error(`[TelegramBot] ERC-8004 Base registration error for ${agentId}:`, e.message);
-    results.push(`ERC-8004 (Base): ${e.message?.substring(0, 60)}`);
   }
 
   try {
