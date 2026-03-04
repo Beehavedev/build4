@@ -603,7 +603,7 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
     tokenSymbol: params.tokenSymbol,
     tokenDescription: params.tokenDescription,
     imageUrl: params.imageUrl || null,
-    initialLiquidityBnb: params.initialLiquidityBnb || "0.01",
+    initialLiquidityBnb: params.initialLiquidityBnb || "0",
     status: "pending",
     tokenAddress: null,
     txHash: null,
@@ -613,17 +613,16 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
   });
 
   try {
-    const preSaleEth = params.initialLiquidityBnb || "0.01";
-    const platformFee = ethers.parseEther("0.01");
+    const preSaleEth = params.initialLiquidityBnb || "0";
     const preSaleWei = ethers.parseEther(preSaleEth);
-    const totalLaunchCost = platformFee + preSaleWei;
+    const totalLaunchCost = preSaleWei + ethers.parseEther("0.005");
 
     const balance = await provider.getBalance(wallet.address);
     const balFormatted = ethers.formatEther(balance);
     log(`[TokenLauncher] Deployer balance: ${balFormatted} BNB`, "token-launcher");
 
-    if (balance < totalLaunchCost + ethers.parseEther("0.005")) {
-      const needed = ethers.formatEther(totalLaunchCost + ethers.parseEther("0.005"));
+    if (balance < totalLaunchCost) {
+      const needed = ethers.formatEther(totalLaunchCost);
       await storage.updateTokenLaunch(launchRecord.id, {
         status: "failed",
         errorMessage: `Insufficient BNB balance: ${balFormatted} BNB (need ${needed} BNB)`,
@@ -818,7 +817,7 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
     tokenSymbol: params.tokenSymbol,
     tokenDescription: params.tokenDescription,
     imageUrl: params.imageUrl || null,
-    initialLiquidityBnb: params.initialLiquidityBnb || "0.01",
+    initialLiquidityBnb: params.initialLiquidityBnb || "0.001",
     status: "pending",
     tokenAddress: null,
     txHash: null,
@@ -828,7 +827,7 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
   });
 
   try {
-    const initialBuy = ethers.parseEther(params.initialLiquidityBnb || "0.01");
+    const initialBuy = ethers.parseEther(params.initialLiquidityBnb || "0.001");
 
     const balance = await provider.getBalance(wallet.address);
     const balFormatted = ethers.formatEther(balance);

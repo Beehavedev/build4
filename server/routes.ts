@@ -685,7 +685,7 @@ export async function registerRoutes(
       tokenDescription: (tokenDescription || `${tokenName} - launched by an autonomous AI agent on BUILD4`).substring(0, 500),
       imageUrl: imageUrl?.substring(0, 500),
       platform,
-      initialLiquidityBnb: initialLiquidityBnb || (platform === "four_meme" ? "0.01" : "0.001"),
+      initialLiquidityBnb: initialLiquidityBnb || (platform === "four_meme" ? "0" : "0.001"),
       agentId,
       creatorWallet,
     });

@@ -55,12 +55,12 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation, no 
   "tokenSymbol": "string (1-10 chars, uppercase letters/numbers only, e.g. MYTOKEN)",
   "tokenDescription": "string (max 500 chars, a fun/compelling description for the token)",
   "platform": "four_meme or flap_sh",
-  "initialLiquidityBnb": "string number (e.g. 0.01)"
+  "initialLiquidityBnb": "string number (e.g. 0 for no initial buy, or 0.1/0.5/1 for initial purchase)"
 }
 
 Platform guide:
-- four_meme: Launches on BNB Chain (BSC). Use initialLiquidityBnb of 0.01 unless the user says otherwise.
-- flap_sh: Launches on BNB Chain (BSC). Use initialLiquidityBnb of 0.01 unless the user says otherwise.
+- four_meme: Launches on BNB Chain (BSC). Use initialLiquidityBnb of 0 (no initial buy) unless the user specifies an amount. Valid amounts: 0, 0.1, 0.5, 1 BNB.
+- flap_sh: Launches on BNB Chain (BSC). Use initialLiquidityBnb of 0.001 unless the user says otherwise.
 
 If the user specifies a platform, chain, or preference, use that. If not, default to four_meme (BNB Chain).
 If the user specifies a token name/symbol, use those exactly. Otherwise, create something creative and memorable.
@@ -233,7 +233,7 @@ async function executeLaunchTokenTask(
     const tokenSymbol = (parsed.tokenSymbol || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").substring(0, 10);
     const tokenDescription = (parsed.tokenDescription || "").trim().substring(0, 500);
     const platform = parsed.platform === "flap_sh" ? "flap_sh" : "four_meme";
-    const initialLiquidityBnb = parsed.initialLiquidityBnb || (platform === "four_meme" ? "0.01" : "0.001");
+    const initialLiquidityBnb = parsed.initialLiquidityBnb || (platform === "four_meme" ? "0" : "0.001");
 
     if (!tokenName || !tokenSymbol) {
       await storage.updateTask(taskId, {

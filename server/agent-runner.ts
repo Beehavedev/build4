@@ -1155,7 +1155,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           tokenName: chosenName,
           tokenSymbol: chosenSymbol,
           tokenDescription: description,
-          initialLiquidityBnb: chosenPlatform === "four_meme" ? "0.01" : "0.001",
+          initialLiquidityBnb: chosenPlatform === "four_meme" ? "0" : "0.001",
           status: "proposed",
         });
 
