@@ -1201,27 +1201,95 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     return;
   }
 
-  if (msg.photo && msg.photo.length > 0) {
-    const state = pendingTokenLaunch.get(chatId);
-    if (state && state.step === "logo") {
+  const logoState = pendingTokenLaunch.get(chatId);
+  if (logoState && logoState.step === "logo") {
+    let fileId: string | null = null;
+    let fileSize: number | undefined;
+
+    if (msg.photo && msg.photo.length > 0) {
       const photo = msg.photo[msg.photo.length - 1];
-      if (photo.file_size && photo.file_size > 5 * 1024 * 1024) {
+      fileId = photo.file_id;
+      fileSize = photo.file_size;
+    } else if (msg.document && msg.document.mime_type?.startsWith("image/")) {
+      fileId = msg.document.file_id;
+      fileSize = msg.document.file_size;
+    } else if (msg.sticker && !msg.sticker.is_animated && !msg.sticker.is_video) {
+      fileId = msg.sticker.file_id;
+      fileSize = msg.sticker.file_size;
+    }
+
+    if (fileId) {
+      if (fileSize && fileSize > 5 * 1024 * 1024) {
         await bot.sendMessage(chatId, "⚠️ Image too large (max 5MB). Send a smaller image or type \"skip\".");
         return;
       }
+
+      const SUPPORTED_FORMATS: Record<string, string> = {
+        png: "image/png",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        gif: "image/gif",
+        webp: "image/webp",
+        bmp: "image/bmp",
+        svg: "image/svg+xml",
+        tiff: "image/tiff",
+        tif: "image/tiff",
+        ico: "image/x-icon",
+        avif: "image/avif",
+      };
+
+      const docMime = msg.document?.mime_type || (msg.sticker ? "image/webp" : null);
+
       try {
-        const fileInfo = await bot.getFile(photo.file_id);
+        const fileInfo = await bot.getFile(fileId);
         if (fileInfo.file_path) {
+          const MIME_TO_EXT: Record<string, string> = {
+            "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif",
+            "image/webp": "webp", "image/bmp": "bmp", "image/svg+xml": "svg",
+            "image/tiff": "tiff", "image/x-icon": "ico", "image/avif": "avif",
+          };
+
+          let ext: string;
+          if (docMime && MIME_TO_EXT[docMime]) {
+            ext = MIME_TO_EXT[docMime];
+          } else {
+            const rawExt = (fileInfo.file_path.split(".").pop() || "").toLowerCase();
+            ext = rawExt in SUPPORTED_FORMATS ? rawExt : "png";
+          }
+          const mimeType = SUPPORTED_FORMATS[ext] || "image/png";
+
           const telegramFileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
           const imageResp = await fetch(telegramFileUrl);
           if (imageResp.ok) {
-            const imageBuffer = Buffer.from(await imageResp.arrayBuffer());
-            const ext = fileInfo.file_path.split(".").pop() || "png";
-            const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "gif" ? "image/gif" : "image/png";
+            let imageBuffer = Buffer.from(await imageResp.arrayBuffer());
+
+            const needsConvert = ["webp", "bmp", "tiff", "tif", "svg", "ico", "avif"].includes(ext);
+            let uploadExt = ext;
+            let uploadMime = mimeType;
+
+            if (needsConvert) {
+              try {
+                const sharp = (await import("sharp")).default;
+                imageBuffer = await sharp(imageBuffer).png().toBuffer();
+                uploadExt = "png";
+                uploadMime = "image/png";
+              } catch (convErr: any) {
+                console.error(`[TelegramBot] Image conversion from ${ext} failed:`, convErr.message);
+                await bot.sendMessage(chatId, `⚠️ Could not convert ${ext.toUpperCase()} image. Continuing without custom logo.`);
+                logoState.step = "links";
+                pendingTokenLaunch.set(chatId, logoState);
+                await bot.sendMessage(chatId,
+                  `🔗 Social links (optional):\n\nSend links in this format:\n` +
+                  `website: https://yoursite.com\ntwitter: https://x.com/yourtoken\ntelegram: https://t.me/yourgroup\n\n` +
+                  `You can include one, two, or all three. Or type "skip" to continue without links.`,
+                );
+                return;
+              }
+            }
 
             const formData = new FormData();
-            const blob = new Blob([imageBuffer], { type: mimeType });
-            formData.append("file", blob, `logo.${ext}`);
+            const blob = new Blob([imageBuffer], { type: uploadMime });
+            formData.append("file", blob, `logo.${uploadExt}`);
 
             const uploadRes = await fetch("https://four.meme/meme-api/meme/image/upload", {
               method: "POST",
@@ -1229,21 +1297,14 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             });
             if (!uploadRes.ok) {
               await bot.sendMessage(chatId, `⚠️ Logo upload failed (HTTP ${uploadRes.status}). Continuing without custom logo.`);
-              state.step = "links";
-              pendingTokenLaunch.set(chatId, state);
-              await bot.sendMessage(chatId,
-                `🔗 Social links (optional):\n\nSend links in this format:\n` +
-                `website: https://yoursite.com\ntwitter: https://x.com/yourtoken\ntelegram: https://t.me/yourgroup\n\n` +
-                `You can include one, two, or all three. Or type "skip" to continue without links.`,
-              );
-              return;
-            }
-            const uploadJson = await uploadRes.json();
-            if (uploadJson.msg === "success" && uploadJson.data?.imageUrl) {
-              state.imageUrl = uploadJson.data.imageUrl;
-              await bot.sendMessage(chatId, `✅ Logo uploaded successfully!`);
             } else {
-              await bot.sendMessage(chatId, `⚠️ Logo upload failed, using auto-generated logo. Continuing...`);
+              const uploadJson = await uploadRes.json();
+              if (uploadJson.msg === "success" && uploadJson.data?.imageUrl) {
+                logoState.imageUrl = uploadJson.data.imageUrl;
+                await bot.sendMessage(chatId, `✅ Logo uploaded successfully! (${ext.toUpperCase()} format)`);
+              } else {
+                await bot.sendMessage(chatId, `⚠️ Logo upload failed, using auto-generated logo. Continuing...`);
+              }
             }
           }
         }
@@ -1252,8 +1313,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         await bot.sendMessage(chatId, `⚠️ Could not process image. Continuing without custom logo.`);
       }
 
-      state.step = "links";
-      pendingTokenLaunch.set(chatId, state);
+      logoState.step = "links";
+      pendingTokenLaunch.set(chatId, logoState);
 
       await bot.sendMessage(chatId,
         `🔗 Social links (optional):\n\nSend links in this format:\n` +
@@ -2262,7 +2323,7 @@ async function handleTokenLaunchFlow(chatId: number, text: string): Promise<void
     pendingTokenLaunch.set(chatId, state);
 
     await bot.sendMessage(chatId,
-      `🖼️ Token logo (optional):\n\nSend an image file, or type "skip" to auto-generate a logo.`,
+      `🖼️ Token logo (optional):\n\nSend an image in any of these formats:\nPNG, JPG, GIF, WebP, SVG, BMP, TIFF, AVIF, ICO\n\nYou can send it as a photo, as a file, or even a static sticker.\n\nType "skip" to auto-generate a logo instead.`,
     );
     return;
   }
