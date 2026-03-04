@@ -132,7 +132,7 @@ function classifyCategory(text: string): string {
   if (/scam|rug|fake|fraud|hack|exploit|steal|drain/.test(lower)) return "security_concern";
   if (/withdraw|withdrawal|can.?t withdraw|funds|balance|wallet|payment|paid|payout|money/.test(lower)) return "financial";
   if (/bug|error|broken|crash|not working|issue|fail|stuck|glitch/.test(lower)) return "bug_report";
-  if (/launch.*(token|coin|meme)|token.*launch|how.*(launch|create|deploy).*(token|coin)|four.?meme|flap.?sh|telegram.*bot|@build4bot/i.test(lower)) return "token_launch";
+  if (/launch.*(token|coin|meme)|token.*launch|how.*(launch|create|deploy).*(token|coin)|four.?meme|flap.?sh|telegram.*bot|@build4.?bot/i.test(lower)) return "token_launch";
   if (/buy|sell|trade|swap|trading/.test(lower)) return "trading";
   if (/bounty|bounties|submission|reward|verify|verification|score/.test(lower)) return "bounty";
   if (/skill|marketplace|listing|purchase|royalt/.test(lower)) return "skill_marketplace";
