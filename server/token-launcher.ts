@@ -103,6 +103,63 @@ const FOUR_MEME_CONTRACT = "0x5c952063c7fc8610FFDB798152D69F0B9550762b";
 const FOUR_MEME_HELPER3 = "0xF251F83e40a78868FcfA3FA4599Dad6494E46034";
 const FOUR_MEME_API = "https://four.meme";
 
+const ERC8004_IDENTITY_REGISTRY_BSC = "0x8004A818BFB912233c491871b3d84c89A494BD9e";
+
+const registeredAgentWallets = new Set<string>();
+
+async function isAgentRegistered(walletAddress: string): Promise<boolean> {
+  if (registeredAgentWallets.has(walletAddress.toLowerCase())) return true;
+  try {
+    const provider = getBscProvider();
+    const registry = new ethers.Contract(ERC8004_IDENTITY_REGISTRY_BSC, [
+      "function balanceOf(address owner) view returns (uint256)",
+    ], provider);
+    const balance = await registry.balanceOf(walletAddress);
+    const hasNft = BigInt(balance) > 0n;
+    if (hasNft) registeredAgentWallets.add(walletAddress.toLowerCase());
+    return hasNft;
+  } catch (e: any) {
+    log(`[ERC-8004] balanceOf check failed: ${e.message?.substring(0, 80)}`, "token-launcher");
+    return false;
+  }
+}
+
+async function ensureAgentRegisteredBSC(
+  wallet: ethers.Wallet,
+  agentName?: string,
+  agentDescription?: string,
+  agentDbId?: string,
+): Promise<{ registered: boolean; txHash?: string; error?: string }> {
+  try {
+    const already = await isAgentRegistered(wallet.address);
+    if (already) {
+      log(`[ERC-8004] Wallet ${wallet.address.substring(0, 10)}... already registered as agent on BSC`, "token-launcher");
+      return { registered: true };
+    }
+
+    const { registerAgentERC8004 } = await import("./onchain");
+    const result = await registerAgentERC8004(
+      agentName || "BUILD4 Agent",
+      agentDescription || "Autonomous AI agent on BUILD4",
+      agentDbId || "telegram-user",
+      "bsc",
+      wallet.privateKey,
+    );
+
+    if (result.success) {
+      registeredAgentWallets.add(wallet.address.toLowerCase());
+      log(`[ERC-8004] Agent registered on BSC! TX: ${result.txHash}`, "token-launcher");
+      return { registered: true, txHash: result.txHash };
+    } else {
+      return { registered: false, error: result.error };
+    }
+  } catch (e: any) {
+    const msg = e.message?.substring(0, 150) || "Unknown error";
+    log(`[ERC-8004] BSC registration failed: ${msg}`, "token-launcher");
+    return { registered: false, error: msg };
+  }
+}
+
 const FOUR_MEME_ABI = [
   {
     inputs: [
@@ -557,6 +614,18 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
         errorMessage: `Insufficient BNB balance: ${balFormatted} BNB (need ${needed} BNB)`,
       });
       return { success: false, error: `Insufficient BNB — your wallet has ${balFormatted} BNB but needs at least ${needed} BNB. Fund your wallet and try again.`, launchId: launchRecord.id };
+    }
+
+    const agentReg = await ensureAgentRegisteredBSC(
+      wallet,
+      params.tokenName ? `BUILD4 Agent — ${params.tokenName}` : undefined,
+      params.tokenDescription || undefined,
+      params.agentId || undefined,
+    );
+    if (agentReg.registered) {
+      log(`[TokenLauncher] Step 0 OK: Agent wallet registered on ERC-8004 (AI badge enabled)`, "token-launcher");
+    } else {
+      log(`[TokenLauncher] Step 0 WARN: ERC-8004 registration skipped — ${agentReg.error?.substring(0, 80) || "unknown"}. Launch continues without AI badge.`, "token-launcher");
     }
 
     log(`[TokenLauncher] Step 1: Logging into four.meme...`, "token-launcher");
@@ -1126,3 +1195,5 @@ export async function getTokenLaunches(agentId?: string, limit = 50): Promise<To
 export async function getTokenLaunch(id: string): Promise<TokenLaunch | undefined> {
   return storage.getTokenLaunch(id);
 }
+
+export { ensureAgentRegisteredBSC, isAgentRegistered, ERC8004_IDENTITY_REGISTRY_BSC };

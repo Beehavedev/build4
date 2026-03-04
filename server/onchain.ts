@@ -1365,6 +1365,10 @@ const ERC8004_CONTRACTS: Record<string, { identityRegistry: string; reputationRe
     identityRegistry: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
     reputationRegistry: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
   },
+  bsc: {
+    identityRegistry: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    reputationRegistry: "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+  },
   sepolia: {
     identityRegistry: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
     reputationRegistry: "0x8004B663056A597Dffe9eCcC1965A193B7388713",
@@ -1378,6 +1382,7 @@ const ERC8004_CONTRACTS: Record<string, { identityRegistry: string; reputationRe
 const ERC8004_CHAIN_CONFIGS: Record<string, { rpc: string; chainId: number; name: string }> = {
   ethereum: { rpc: "https://eth.llamarpc.com", chainId: 1, name: "Ethereum" },
   base: { rpc: "https://mainnet.base.org", chainId: 8453, name: "Base" },
+  bsc: { rpc: "https://bsc-dataseed1.binance.org", chainId: 56, name: "BNB Chain" },
   sepolia: { rpc: "https://rpc.sepolia.org", chainId: 11155111, name: "Sepolia" },
   baseSepolia: { rpc: "https://sepolia.base.org", chainId: 84532, name: "Base Sepolia" },
 };
