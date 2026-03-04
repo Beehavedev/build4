@@ -63,13 +63,47 @@ SMART CONTRACTS (BNB Chain Mainnet):
 - AgentReplication: Child agent spawning and revenue sharing
 - ConstitutionRegistry: Immutable agent laws
 
+HOW TO LAUNCH A TOKEN (via Telegram Bot @Build4Bot):
+1. Open Telegram and search for @Build4Bot
+2. Send /start — the bot instantly creates a wallet for you (save your private key!)
+3. Fund your wallet with BNB (at least 0.03 BNB — 0.01 for the token + 0.01 platform fee + gas)
+4. Send /launch or tap "Launch Token" from the main menu
+5. Pick your agent (or create one first with /newagent)
+6. Choose platform: Four.meme (BNB Chain) or Flap.sh (BNB Chain)
+7. Enter your token name, symbol, and description
+8. Review the preview and confirm — your token launches on-chain!
+9. The bot returns your token address and a link to view it on four.meme or flap.sh
+- No coding required. Everything happens through buttons and simple text inputs in Telegram.
+- Your token gets an auto-generated logo if you don't provide one.
+- Telegram bot: @Build4Bot | Website: build4.io
+
+HOW TO TRADE TOKENS (via Telegram Bot):
+- /buy — Buy tokens on Four.meme (enter token address + BNB amount)
+- /sell — Sell tokens on Four.meme (enter token address + amount or use quick-sell buttons)
+- /tokeninfo <address> — Check token price, bonding curve progress, and liquidity status
+
+TELEGRAM BOT COMMANDS:
+- /start — Get started, auto-creates your wallet
+- /newagent — Create an AI agent (name, bio, model)
+- /launch — Launch a token on Four.meme or Flap.sh
+- /buy — Buy tokens on Four.meme
+- /sell — Sell tokens on Four.meme
+- /wallet — Manage wallets (view, add, switch)
+- /myagents — View your agents
+- /task — Give your agent a task
+- /help — See all commands
+
 COMMON ISSUES & ANSWERS:
-- "How do I create an agent?" → Go to build4.io, connect your wallet, and create an agent from the dashboard
+- "How do I launch a token?" → Use our Telegram bot @Build4Bot! Send /start, fund your wallet with BNB, then /launch. Full step-by-step in the bot — no coding needed
+- "How do I create an agent?" → Use @Build4Bot on Telegram: /newagent, or go to build4.io and create from the dashboard
 - "How do I withdraw?" → Go to your agent's page, click withdraw, confirm with your wallet
 - "Is this legit/safe?" → All transactions are on-chain and verifiable. Smart contracts are deployed on BNB Chain mainnet
 - "When do bounty winners get paid?" → After the AI verifies submissions and the bounty closes, top scorers are paid automatically
 - "What chains are supported?" → BNB Chain (primary), Base, and XLayer
 - "How do skills work?" → Agents can list skills for sale. Other agents buy and use them. Creators earn royalties on every purchase
+- "How much does it cost to launch?" → About 0.03 BNB total (0.01 presale + 0.01 platform fee + gas fees)
+- "What is Four.meme?" → A meme token launchpad on BNB Chain where tokens start with a bonding curve and graduate to PancakeSwap
+- "What is Flap.sh?" → Another BNB Chain launchpad for meme tokens, similar to Four.meme
 `;
 
 function sanitizeReply(text: string, username: string): string {
@@ -95,13 +129,15 @@ function sanitizeReply(text: string, username: string): string {
 
 function classifyCategory(text: string): string {
   const lower = text.toLowerCase();
+  if (/scam|rug|fake|fraud|hack|exploit|steal|drain/.test(lower)) return "security_concern";
   if (/withdraw|withdrawal|can.?t withdraw|funds|balance|wallet|payment|paid|payout|money/.test(lower)) return "financial";
   if (/bug|error|broken|crash|not working|issue|fail|stuck|glitch/.test(lower)) return "bug_report";
+  if (/launch.*(token|coin|meme)|token.*launch|how.*(launch|create|deploy).*(token|coin)|four.?meme|flap.?sh|telegram.*bot|@build4bot/i.test(lower)) return "token_launch";
+  if (/buy|sell|trade|swap|trading/.test(lower)) return "trading";
   if (/bounty|bounties|submission|reward|verify|verification|score/.test(lower)) return "bounty";
   if (/skill|marketplace|listing|purchase|royalt/.test(lower)) return "skill_marketplace";
   if (/agent|create|deploy|evolve|fork|replic/.test(lower)) return "agent_management";
   if (/privacy|zerc|zk|private|transfer/.test(lower)) return "privacy";
-  if (/scam|rug|fake|fraud|hack|exploit|steal|drain/.test(lower)) return "security_concern";
   if (/how|what|when|where|why|can i|do i|is there/.test(lower)) return "question";
   return "general";
 }
