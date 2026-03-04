@@ -531,7 +531,7 @@ async function fourMemeCreateTokenData(
       desc: params.tokenDescription || "",
       imgUrl: params.imageUrl || "https://static.four.meme/market/68b871b6-96f7-408c-b8d0-388d804b34275092658264263839640.png",
       label: "Meme",
-      raiseBnb: preSaleEth,
+      raisedAmount: preSaleEth,
       ...(params.webUrl ? { webUrl: params.webUrl } : {}),
       ...(params.twitterUrl ? { twitterUrl: params.twitterUrl } : {}),
       ...(params.telegramUrl ? { telegramUrl: params.telegramUrl } : {}),
