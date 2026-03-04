@@ -63,8 +63,8 @@ SMART CONTRACTS (BNB Chain Mainnet):
 - AgentReplication: Child agent spawning and revenue sharing
 - ConstitutionRegistry: Immutable agent laws
 
-HOW TO LAUNCH A TOKEN (via Telegram Bot @Build4_bot):
-1. Open Telegram and search for @Build4_bot
+HOW TO LAUNCH A TOKEN (via Telegram Bot):
+1. Open the BUILD4 Telegram bot: https://t.me/BUILD4_BOT
 2. Send /start — the bot instantly creates a wallet for you (save your private key!)
 3. Fund your wallet with BNB (at least 0.03 BNB — 0.01 for the token + 0.01 platform fee + gas)
 4. Send /launch or tap "Launch Token" from the main menu
@@ -75,7 +75,8 @@ HOW TO LAUNCH A TOKEN (via Telegram Bot @Build4_bot):
 9. The bot returns your token address and a link to view it on four.meme or flap.sh
 - No coding required. Everything happens through buttons and simple text inputs in Telegram.
 - Your token gets an auto-generated logo if you don't provide one.
-- Telegram bot: @Build4_bot | Website: build4.io
+- Telegram bot link: https://t.me/BUILD4_BOT | Website: build4.io
+- IMPORTANT: When replying on Twitter, always use the full link https://t.me/BUILD4_BOT (not @Build4_bot) so users can click it directly.
 
 HOW TO TRADE TOKENS (via Telegram Bot):
 - /buy — Buy tokens on Four.meme (enter token address + BNB amount)
@@ -94,8 +95,8 @@ TELEGRAM BOT COMMANDS:
 - /help — See all commands
 
 COMMON ISSUES & ANSWERS:
-- "How do I launch a token?" → Use our Telegram bot @Build4_bot! Send /start, fund your wallet with BNB, then /launch. Full step-by-step in the bot — no coding needed
-- "How do I create an agent?" → Use @Build4_bot on Telegram: /newagent, or go to build4.io and create from the dashboard
+- "How do I launch a token?" → Use our Telegram bot https://t.me/BUILD4_BOT — send /start, fund your wallet with BNB, then /launch. No coding needed!
+- "How do I create an agent?" → Open https://t.me/BUILD4_BOT and send /newagent, or go to build4.io and create from the dashboard
 - "How do I withdraw?" → Go to your agent's page, click withdraw, confirm with your wallet
 - "Is this legit/safe?" → All transactions are on-chain and verifiable. Smart contracts are deployed on BNB Chain mainnet
 - "When do bounty winners get paid?" → After the AI verifies submissions and the bounty closes, top scorers are paid automatically
