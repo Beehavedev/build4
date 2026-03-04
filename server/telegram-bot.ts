@@ -1724,35 +1724,10 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
     results.push(`ERC-8004 (Base): ${e.message?.substring(0, 60)}`);
   }
 
-  try {
-    const erc8004BscResult = await registerAgentERC8004(name, bio, agentId, "bsc", userPk);
-    if (erc8004BscResult.success) {
-      results.push(`ERC-8004 (${erc8004BscResult.chainName || "BSC"}): ${erc8004BscResult.txHash?.substring(0, 14)}...`);
-      if (erc8004BscResult.tokenId) {
-        results.push(`  Token ID: ${erc8004BscResult.tokenId}`);
-      }
-    } else {
-      results.push(`ERC-8004 (BSC): ${erc8004BscResult.error?.substring(0, 80) || "skipped"}`);
-    }
-  } catch (e: any) {
-    console.error(`[TelegramBot] ERC-8004 BSC registration error for ${agentId}:`, e.message);
-    results.push(`ERC-8004 (BSC): ${e.message?.substring(0, 60)}`);
-  }
+  // ERC-8004 BSC and BAP-578 BSC contracts are non-functional (minimal proxy / reverts on all calls)
+  // Skipping until working contracts are deployed on BSC mainnet
+  console.log(`[TelegramBot] Skipping ERC-8004 BSC + BAP-578 registration for ${agentId} (contracts not yet functional on BSC)`);
 
-  try {
-    const bap578Result = await registerAgentBAP578(name, bio, agentId, undefined, userPk);
-    if (bap578Result.success) {
-      results.push(`BAP-578 (BNB Chain): ${bap578Result.txHash?.substring(0, 14)}...`);
-      if (bap578Result.tokenId) {
-        results.push(`  NFA Token ID: ${bap578Result.tokenId}`);
-      }
-    } else {
-      results.push(`BAP-578: ${bap578Result.error?.substring(0, 80) || "skipped"}`);
-    }
-  } catch (e: any) {
-    console.error(`[TelegramBot] BAP-578 registration error for ${agentId}:`, e.message);
-    results.push(`BAP-578: ${e.message?.substring(0, 60)}`);
-  }
 
   if (results.length > 0) {
     try {
