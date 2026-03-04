@@ -1419,21 +1419,6 @@ export async function registerAgentERC8004(
     const prov = new ethers.JsonRpcProvider(chainConfig.rpc);
     const w = new ethers.Wallet(privateKey, prov);
 
-    if (network === "bsc") {
-      try {
-        const testContract = new ethers.Contract(contractAddrs.identityRegistry, ["function name() view returns (string)"], prov);
-        await testContract.name();
-      } catch {
-        return {
-          standard: "erc8004",
-          success: false,
-          error: `ERC-8004 BSC contract not yet initialized — proxy at ${contractAddrs.identityRegistry} has no active implementation. Registration will be available once the contract is upgraded.`,
-          chainId: chainConfig.chainId,
-          chainName: chainConfig.name,
-        };
-      }
-    }
-
     const balance = await prov.getBalance(w.address);
     const minGas = network === "bsc" ? ethers.parseEther("0.002") : ethers.parseEther("0.0005");
     const gasUnit = network === "bsc" ? "BNB" : "ETH";
