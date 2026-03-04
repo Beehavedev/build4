@@ -22,7 +22,8 @@ const FOUR_MEME_ABI = [
 const TOKEN_CREATE_EVENT = "0x396d5e902b675b032348d3d2e9517ee8f0c4a926603fbc075d3d282ff00cad20";
 
 const FLAP_PORTAL = "0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0";
-const FLAP_TOKEN_IMPL = "0x29e6383f0ce68507b5a72a53c2b118a118332aa8";
+const FLAP_NO_TAX_IMPL = "0x8B4329947e34B6d56D71A3385caC122BaDe7d78D";
+const FLAP_TAX_IMPL = "0x5dd913731C12aD8DF3E574859FDe45412bF4aaD9";
 
 function mineVanitySalt(portal: string, tokenImpl: string, suffix: string): { salt: string; address: string } {
   const bytecode = "0x3d602d80600a3d3981f3363d3d373d3d3d363d73" + tokenImpl.slice(2).toLowerCase() + "5af43d82803e903d91602b57fd5bf3";
@@ -473,8 +474,8 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
 
     const meta = params.tokenDescription || "";
 
-    log(`[TokenLauncher] Mining vanity salt for flap.sh token...`, "token-launcher");
-    const minedSalt = mineVanitySalt(FLAP_PORTAL, FLAP_TOKEN_IMPL, "7777");
+    log(`[TokenLauncher] Mining vanity salt for flap.sh token (suffix 8888)...`, "token-launcher");
+    const minedSalt = mineVanitySalt(FLAP_PORTAL, FLAP_NO_TAX_IMPL, "8888");
     log(`[TokenLauncher] Vanity salt found: ${minedSalt.salt.substring(0, 18)}... -> ${minedSalt.address}`, "token-launcher");
 
     const tokenParams = {
@@ -483,8 +484,8 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
       meta,
       dexThresh: 1,
       salt: minedSalt.salt,
-      taxRate: 100,
-      migratorType: 1,
+      taxRate: 0,
+      migratorType: 0,
       quoteToken: ethers.ZeroAddress,
       quoteAmt: initialBuy,
       beneficiary: wallet.address,
