@@ -367,7 +367,7 @@ async function fourMemeCreateTokenData(
       name: params.tokenName,
       shortName: params.tokenSymbol,
       desc: params.tokenDescription || "",
-      imgUrl: params.imageUrl || "",
+      imgUrl: params.imageUrl || "https://static.four.meme/market/68b871b6-96f7-408c-b8d0-388d804b34275092658264263839640.png",
       totalSupply: 1000000000,
       raisedAmount: 24,
       saleRate: 0.8,
