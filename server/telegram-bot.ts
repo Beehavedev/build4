@@ -15,7 +15,7 @@ const walletsWithKey = new Set<string>();
 
 interface AgentCreationState { step: "name" | "bio" | "model"; name?: string; bio?: string }
 interface TaskState { step: "describe"; agentId: string; taskType: string; agentName: string }
-interface TokenLaunchState { step: "platform" | "name" | "symbol" | "description"; agentId: string; agentName: string; platform?: string; tokenName?: string; tokenSymbol?: string; tokenDescription?: string }
+interface TokenLaunchState { step: "platform" | "name" | "symbol" | "description" | "logo" | "links" | "tax"; agentId: string; agentName: string; platform?: string; tokenName?: string; tokenSymbol?: string; tokenDescription?: string; imageUrl?: string; webUrl?: string; twitterUrl?: string; telegramUrl?: string; taxRate?: number }
 interface FourMemeBuyState { step: "token" | "amount" | "confirm"; tokenAddress?: string; bnbAmount?: string; estimate?: any }
 interface FourMemeSellState { step: "token" | "amount" | "confirm"; tokenAddress?: string; tokenAmount?: string; tokenSymbol?: string; estimate?: any }
 
@@ -991,6 +991,15 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId, "Token launch cancelled.", {
       reply_markup: mainMenuKeyboard()
     });
+    return;
+  }
+
+  if (data.startsWith("launchtax:")) {
+    const taxVal = parseInt(data.split(":")[1], 10);
+    const state = pendingTokenLaunch.get(chatId);
+    if (!state || state.step !== "tax") return;
+    state.taxRate = taxVal;
+    showLaunchPreview(chatId, state);
     return;
   }
 
@@ -2184,30 +2193,116 @@ async function handleTokenLaunchFlow(chatId: number, text: string): Promise<void
   if (state.step === "description") {
     const description = input.toLowerCase() === "skip" ? "" : input.substring(0, 500);
     state.tokenDescription = description;
-    const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (BNB Chain)";
-    const liquidity = "0.01 BNB";
-
+    state.step = "logo";
     pendingTokenLaunch.set(chatId, state);
 
     await bot.sendMessage(chatId,
-      `🚀 LAUNCH PREVIEW\n\n` +
-      `Token: ${state.tokenName} ($${state.tokenSymbol})\n` +
-      `Platform: ${platformName}\n` +
-      `Liquidity: ${liquidity}\n` +
-      `Agent: ${state.agentName}\n` +
-      (description ? `Description: ${description}\n` : "") +
-      `\nReady to launch?`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🚀 Confirm & Launch", callback_data: `launchconfirm:${state.agentId}` }],
-            [{ text: "Cancel", callback_data: `launchcancel:${state.agentId}` }],
-          ]
-        }
-      }
+      `🖼️ Token logo (optional):\n\nSend an image file, or type "skip" to auto-generate a logo.`,
     );
     return;
   }
+
+  if (state.step === "logo") {
+    if (input.toLowerCase() !== "skip") {
+      state.imageUrl = input.trim();
+    }
+    state.step = "links";
+    pendingTokenLaunch.set(chatId, state);
+
+    await bot.sendMessage(chatId,
+      `🔗 Social links (optional):\n\nSend links in this format:\n` +
+      `website: https://yoursite.com\n` +
+      `twitter: https://x.com/yourtoken\n` +
+      `telegram: https://t.me/yourgroup\n\n` +
+      `You can include one, two, or all three. Or type "skip" to continue without links.`,
+    );
+    return;
+  }
+
+  if (state.step === "links") {
+    if (input.toLowerCase() !== "skip") {
+      const lines = input.split("\n");
+      for (const line of lines) {
+        const lower = line.toLowerCase().trim();
+        const urlMatch = line.match(/https?:\/\/\S+/i);
+        if (!urlMatch) continue;
+        const url = urlMatch[0].trim();
+        if (lower.startsWith("website:") || lower.startsWith("web:") || lower.startsWith("site:")) {
+          state.webUrl = url;
+        } else if (lower.startsWith("twitter:") || lower.startsWith("x:")) {
+          state.twitterUrl = url;
+        } else if (lower.startsWith("telegram:") || lower.startsWith("tg:")) {
+          state.telegramUrl = url;
+        } else if (url.includes("x.com") || url.includes("twitter.com")) {
+          state.twitterUrl = url;
+        } else if (url.includes("t.me")) {
+          state.telegramUrl = url;
+        } else {
+          state.webUrl = state.webUrl || url;
+        }
+      }
+    }
+
+    if (state.platform === "flap_sh") {
+      state.step = "tax";
+      pendingTokenLaunch.set(chatId, state);
+      await bot.sendMessage(chatId,
+        `💰 Tax configuration (Flap.sh only):\n\nChoose a buy/sell tax rate for your token:`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "0% (No Tax)", callback_data: "launchtax:0" },
+                { text: "1%", callback_data: "launchtax:1" },
+              ],
+              [
+                { text: "2%", callback_data: "launchtax:2" },
+                { text: "5%", callback_data: "launchtax:5" },
+              ],
+            ]
+          }
+        }
+      );
+      return;
+    }
+
+    showLaunchPreview(chatId, state);
+    return;
+  }
+}
+
+async function showLaunchPreview(chatId: number, state: TokenLaunchState) {
+  if (!bot) return;
+  const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (BNB Chain)";
+  const liquidity = state.platform === "four_meme" ? "0.01 BNB" : "0.001 BNB";
+
+  let preview = `🚀 LAUNCH PREVIEW\n\n` +
+    `Token: ${state.tokenName} ($${state.tokenSymbol})\n` +
+    `Platform: ${platformName}\n` +
+    `Liquidity: ${liquidity}\n` +
+    `Agent: ${state.agentName}\n`;
+
+  if (state.tokenDescription) preview += `Description: ${state.tokenDescription}\n`;
+  if (state.imageUrl) preview += `Logo: Custom image ✅\n`;
+  else preview += `Logo: Auto-generated\n`;
+  if (state.webUrl) preview += `Website: ${state.webUrl}\n`;
+  if (state.twitterUrl) preview += `Twitter: ${state.twitterUrl}\n`;
+  if (state.telegramUrl) preview += `Telegram: ${state.telegramUrl}\n`;
+  if (state.platform === "flap_sh") {
+    preview += `Tax: ${state.taxRate ?? 0}%\n`;
+  }
+  preview += `\nReady to launch?`;
+
+  pendingTokenLaunch.set(chatId, state);
+
+  await bot.sendMessage(chatId, preview, {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "🚀 Confirm & Launch", callback_data: `launchconfirm:${state.agentId}` }],
+        [{ text: "Cancel", callback_data: `launchcancel:${state.agentId}` }],
+      ]
+    }
+  });
 }
 
 async function executeTelegramTokenLaunch(chatId: number, wallet: string, state: TokenLaunchState): Promise<void> {

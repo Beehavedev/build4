@@ -436,6 +436,10 @@ interface LaunchParams {
   agentId?: string;
   creatorWallet?: string;
   userPrivateKey?: string;
+  webUrl?: string;
+  twitterUrl?: string;
+  telegramUrl?: string;
+  taxRate?: number;
 }
 
 interface LaunchResult {
@@ -528,6 +532,9 @@ async function fourMemeCreateTokenData(
       imgUrl: params.imageUrl || "https://static.four.meme/market/68b871b6-96f7-408c-b8d0-388d804b34275092658264263839640.png",
       label: "Meme",
       raiseBnb: preSaleEth,
+      ...(params.webUrl ? { webUrl: params.webUrl } : {}),
+      ...(params.twitterUrl ? { twitterUrl: params.twitterUrl } : {}),
+      ...(params.telegramUrl ? { telegramUrl: params.telegramUrl } : {}),
     }),
   });
 
@@ -814,8 +821,13 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
 
     const meta = params.tokenDescription || "";
 
-    log(`[TokenLauncher] Mining vanity salt for flap.sh token (suffix 8888)...`, "token-launcher");
-    const minedSalt = mineVanitySalt(FLAP_PORTAL, FLAP_NO_TAX_IMPL, "8888");
+    const useTax = (params.taxRate ?? 0) > 0;
+    const taxImpl = useTax ? FLAP_TAX_IMPL : FLAP_NO_TAX_IMPL;
+    const vanitySuffix = useTax ? "7777" : "8888";
+    const taxBps = Math.round((params.taxRate ?? 0) * 100);
+
+    log(`[TokenLauncher] Mining vanity salt for flap.sh token (suffix ${vanitySuffix}, tax ${taxBps}bps)...`, "token-launcher");
+    const minedSalt = mineVanitySalt(FLAP_PORTAL, taxImpl, vanitySuffix);
     log(`[TokenLauncher] Vanity salt found: ${minedSalt.salt.substring(0, 18)}... -> ${minedSalt.address}`, "token-launcher");
 
     const tokenParams = {
@@ -824,7 +836,7 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
       meta,
       dexThresh: 1,
       salt: minedSalt.salt,
-      taxRate: 0,
+      taxRate: taxBps,
       migratorType: 0,
       quoteToken: ethers.ZeroAddress,
       quoteAmt: initialBuy,
