@@ -513,6 +513,30 @@ async function fourMemeLogin(wallet: ethers.Wallet): Promise<string> {
   return loginJson.data;
 }
 
+async function fourMemeFetchRaisedConfig(accessToken: string): Promise<any> {
+  try {
+    const res = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/raise`, {
+      headers: {
+        "Accept": "application/json",
+        "meme-web-access": accessToken,
+      },
+    });
+    const json = await res.json();
+    log(`[TokenLauncher] four.meme raise config: ${JSON.stringify(json).substring(0, 800)}`, "token-launcher");
+    if (json.code === 0 && json.data) {
+      const configs = Array.isArray(json.data) ? json.data : [json.data];
+      const bnbConfig = configs.find((c: any) => c.symbol === "BNB" && c.status === "PUBLISH" && c.platform === "MEME");
+      if (bnbConfig) {
+        log(`[TokenLauncher] Using dynamic BNB config: b0=${bnbConfig.b0Amount}, totalB=${bnbConfig.totalBAmount}, total=${bnbConfig.totalAmount}, saleRate=${bnbConfig.saleRate}`, "token-launcher");
+        return bnbConfig;
+      }
+    }
+  } catch (e: any) {
+    log(`[TokenLauncher] Failed to fetch raise config: ${e.message?.substring(0, 100)}`, "token-launcher");
+  }
+  return null;
+}
+
 async function fourMemeCreateTokenData(
   params: LaunchParams,
   accessToken: string,
@@ -520,29 +544,51 @@ async function fourMemeCreateTokenData(
 ): Promise<{ createArg: string; signature: string; value: bigint }> {
   const launchTime = Date.now();
 
+  const dynamicConfig = await fourMemeFetchRaisedConfig(accessToken);
+
+  const raisedToken: Record<string, any> = dynamicConfig ? {
+    symbol: dynamicConfig.symbol || "BNB",
+    nativeSymbol: dynamicConfig.nativeSymbol || "BNB",
+    symbolAddress: dynamicConfig.symbolAddress || "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    deployCost: dynamicConfig.deployCost || "0",
+    buyFee: dynamicConfig.buyFee || "0.01",
+    sellFee: dynamicConfig.sellFee || "0.01",
+    minTradeFee: dynamicConfig.minTradeFee || "0",
+    b0Amount: dynamicConfig.b0Amount || "8",
+    totalBAmount: dynamicConfig.totalBAmount || "18",
+    totalAmount: dynamicConfig.totalAmount || "1000000000",
+    logoUrl: dynamicConfig.logoUrl || "https://static.four.meme/market/fc6c4c92-63a3-4034-bc27-355ea380a6795959172881106751506.png",
+    status: dynamicConfig.status || "PUBLISH",
+  } : {
+    symbol: "BNB",
+    nativeSymbol: "BNB",
+    symbolAddress: "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    deployCost: "0",
+    buyFee: "0.01",
+    sellFee: "0.01",
+    minTradeFee: "0",
+    b0Amount: "8",
+    totalBAmount: "18",
+    totalAmount: "1000000000",
+    logoUrl: "https://static.four.meme/market/fc6c4c92-63a3-4034-bc27-355ea380a6795959172881106751506.png",
+    status: "PUBLISH",
+  };
+
+  const saleRate = dynamicConfig?.saleRate ? parseFloat(dynamicConfig.saleRate) : 0.8;
+  const totalBAmount = parseFloat(raisedToken.totalBAmount);
+  const b0Amount = parseFloat(raisedToken.b0Amount);
+  const raisedAmount = totalBAmount + b0Amount;
+
   const requestBody: Record<string, any> = {
     name: params.tokenName,
     shortName: params.tokenSymbol,
     desc: params.tokenDescription || "",
     totalSupply: 1000000000,
-    raisedAmount: 24,
-    saleRate: 0.8,
+    raisedAmount,
+    saleRate,
     reserveRate: 0,
     imgUrl: params.imageUrl || "https://static.four.meme/market/68b871b6-96f7-408c-b8d0-388d804b34275092658264263839640.png",
-    raisedToken: {
-      symbol: "BNB",
-      nativeSymbol: "BNB",
-      symbolAddress: "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
-      deployCost: "0",
-      buyFee: "0.01",
-      sellFee: "0.01",
-      minTradeFee: "0",
-      b0Amount: "8",
-      totalBAmount: "18",
-      totalAmount: "1000000000",
-      logoUrl: "https://static.four.meme/market/68b871b6-96f7-408c-b8d0-388d804b34275092658264263839640.png",
-      status: "PUBLISH",
-    },
+    raisedToken,
     launchTime,
     funGroup: false,
     preSale: preSaleEth,
@@ -568,16 +614,18 @@ async function fourMemeCreateTokenData(
   });
 
   const createJson = await createRes.json();
+  log(`[TokenLauncher] four.meme create API response: ${JSON.stringify(createJson).substring(0, 1000)}`, "token-launcher");
   if ((createJson.code !== 0 && createJson.msg !== "success") || !createJson.data?.createArg || !createJson.data?.signature) {
     throw new Error(`four.meme create API failed: ${createJson.msg || JSON.stringify(createJson).substring(0, 300)}`);
   }
 
   const preSaleWei = ethers.parseEther(preSaleEth);
+  const txValue = createJson.data.value ? BigInt(createJson.data.value) : preSaleWei;
 
   return {
     createArg: createJson.data.createArg,
     signature: createJson.data.signature,
-    value: preSaleWei,
+    value: txValue,
   };
 }
 
@@ -688,7 +736,7 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
     try {
       tx = await contract.createToken(txData.createArg, txData.signature, {
         value: txData.value,
-        gasLimit: 1000000,
+        gasLimit: 2000000,
       });
     } catch (txError: any) {
       const rawMsg = txError.message || String(txError);
