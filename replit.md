@@ -58,6 +58,7 @@ The project uses a monorepo with `client/` for the React frontend, `server/` for
 - **Four.meme Trading**: Full buy/sell integration via TokenManager2 V2 (`0x5c952063c7fc8610FFDB798152D69F0B9550762b`) and TokenManagerHelper3 (`0xF251F83e40a78868FcfA3FA4599Dad6494E46034`). Helper3 provides `getTokenInfo()` (price, bonding curve progress, liquidity status), `tryBuy()` (pre-calculate buy), `trySell()` (pre-calculate sell). Trading uses `buyTokenAMAP` (spend BNB, get max tokens) and `sellToken` (sell tokens, receive BNB). Sell requires ERC20 `approve()` to TokenManager before calling `sellToken`. Exported functions: `fourMemeGetTokenInfo()`, `fourMemeEstimateBuy()`, `fourMemeEstimateSell()`, `fourMemeBuyToken()`, `fourMemeSellToken()`, `fourMemeGetTokenBalance()`.
 - **Four.meme API Routes**: `GET /api/four-meme/token/:address` (token info), `GET /api/four-meme/estimate-buy?token=&bnbAmount=`, `GET /api/four-meme/estimate-sell?token=&amount=`, `GET /api/four-meme/balance?token=&wallet=`.
 - **Telegram Bot Trading**: `/buy` (buy tokens on Four.meme), `/sell` (sell tokens), `/tokeninfo <address>` (bonding curve + price info). Flow: enter token address → enter amount (or quick-pick buttons) → preview with estimate → confirm → execute on-chain. Sell flow shows balance and 25%/50%/100% quick-sell buttons.
+- **Auto Image Generation**: When no custom image URL is provided, auto-generates a unique token logo (SVG → PNG via `sharp`), uploads it to four.meme's CDN via their `/meme-api/v1/private/token/upload` endpoint, and uses the CDN URL for the token listing. Colors are deterministically derived from the token name+symbol hash. Functions: `generateTokenSvg()`, `generateTokenImagePng()`, `fourMemeUploadImage()`.
 - **Module**: `server/token-launcher.ts` handles contract interactions and API signing for both platforms. Four.meme uses the `meme-api` v1 flow: nonce → wallet-signed login → API token create (returns createArg + signature bytes) → on-chain `createToken(bytes,bytes)` on contract `0x5c952063c7fc8610FFDB798152D69F0B9550762b`. Flap.sh uses `newTokenV2(NewTokenV2Params)` on portal — requires vanity salt mining before TX submission, no API login needed.
 - **Wallet Model**: Telegram bot launches use the USER's own wallet (private key stored in `telegramWallets` table). Users must have a wallet with a stored private key (generated or imported via private key). View-only wallets (address only) cannot launch tokens. The deployer wallet is used as fallback only for API-based launches.
 - **Agent Action**: Agents with NORMAL balance (>0.5 BNB) can autonomously decide to launch tokens via `launch_token` action in `agent-runner.ts`.
@@ -124,6 +125,7 @@ The project uses a monorepo with `client/` for the React frontend, `server/` for
 - **framer-motion**: Animation library.
 - **twitter-api-v2**: Twitter API integration.
 - **node-telegram-bot-api**: Telegram Bot API integration.
+- **sharp**: Image processing (SVG → PNG conversion for token logos).
 
 ### Replit-Specific Integrations
 - **@replit/vite-plugin-runtime-error-modal**: Development error display.

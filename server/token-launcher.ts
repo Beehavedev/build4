@@ -2,6 +2,102 @@ import { ethers } from "ethers";
 import { storage } from "./storage";
 import { log } from "./index";
 import type { TokenLaunch, InsertTokenLaunch } from "@shared/schema";
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
+
+const TOKEN_IMAGE_DIR = path.resolve(process.cwd(), "public/uploads/token-images");
+
+function hashToColors(input: string): { bg1: string; bg2: string; fg: string; accent: string } {
+  const hash = crypto.createHash("sha256").update(input).digest("hex");
+  const hue1 = parseInt(hash.substring(0, 4), 16) % 360;
+  const hue2 = (hue1 + 40 + (parseInt(hash.substring(4, 6), 16) % 60)) % 360;
+  const sat = 65 + (parseInt(hash.substring(6, 8), 16) % 25);
+  return {
+    bg1: `hsl(${hue1}, ${sat}%, 45%)`,
+    bg2: `hsl(${hue2}, ${sat}%, 30%)`,
+    fg: "#ffffff",
+    accent: `hsl(${hue1}, ${sat}%, 65%)`,
+  };
+}
+
+function escapeXml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+function generateTokenSvg(tokenName: string, tokenSymbol: string): string {
+  const colors = hashToColors(`${tokenName}-${tokenSymbol}`);
+  const displaySymbol = escapeXml(tokenSymbol.substring(0, 4).replace(/[^a-zA-Z0-9]/g, ""));
+  const fontSize = displaySymbol.length <= 2 ? 180 : displaySymbol.length === 3 ? 150 : 120;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="${colors.bg1}"/>
+      <stop offset="100%" stop-color="${colors.bg2}"/>
+    </radialGradient>
+    <radialGradient id="shine" cx="30%" cy="25%" r="50%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.25)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </radialGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="rgba(0,0,0,0.3)"/>
+    </filter>
+  </defs>
+  <circle cx="256" cy="256" r="250" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="220" fill="none" stroke="${colors.accent}" stroke-width="3" opacity="0.4"/>
+  <circle cx="256" cy="256" r="250" fill="url(#shine)"/>
+  <text x="256" y="${268 + (fontSize > 140 ? 10 : 0)}" text-anchor="middle" dominant-baseline="central" font-family="Arial,Helvetica,sans-serif" font-weight="bold" font-size="${fontSize}" fill="${colors.fg}" filter="url(#shadow)">${displaySymbol}</text>
+  <circle cx="256" cy="256" r="248" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="4"/>
+</svg>`;
+}
+
+async function generateTokenImagePng(tokenName: string, tokenSymbol: string): Promise<Buffer | null> {
+  try {
+    const sharp = (await import("sharp")).default;
+    const svg = generateTokenSvg(tokenName, tokenSymbol);
+    const pngBuffer = await sharp(Buffer.from(svg)).resize(512, 512).png().toBuffer();
+    log(`[TokenLauncher] Generated PNG image for ${tokenSymbol} (${pngBuffer.length} bytes)`, "token-launcher");
+    return pngBuffer;
+  } catch (e: any) {
+    log(`[TokenLauncher] PNG generation failed: ${e.message?.substring(0, 100)}`, "token-launcher");
+    return null;
+  }
+}
+
+async function fourMemeUploadImage(pngBuffer: Buffer, accessToken: string): Promise<string | null> {
+  try {
+    const boundary = `----FormBoundary${crypto.randomBytes(8).toString("hex")}`;
+    const filename = `token-${Date.now()}.png`;
+
+    const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: image/png\r\n\r\n`;
+    const footer = `\r\n--${boundary}--\r\n`;
+
+    const body = Buffer.concat([Buffer.from(header), pngBuffer, Buffer.from(footer)]);
+
+    const uploadRes = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/upload`, {
+      method: "POST",
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "meme-web-access": accessToken,
+      },
+      body,
+    });
+
+    const uploadJson = await uploadRes.json() as any;
+    if (uploadJson.code === 0 && uploadJson.data) {
+      const imgUrl = typeof uploadJson.data === "string" ? uploadJson.data : uploadJson.data.url || uploadJson.data.imgUrl;
+      log(`[TokenLauncher] Image uploaded to four.meme CDN: ${imgUrl}`, "token-launcher");
+      return imgUrl;
+    }
+
+    log(`[TokenLauncher] four.meme upload response: ${JSON.stringify(uploadJson).substring(0, 200)}`, "token-launcher");
+    return null;
+  } catch (e: any) {
+    log(`[TokenLauncher] four.meme image upload failed: ${e.message?.substring(0, 100)}`, "token-launcher");
+    return null;
+  }
+}
 
 const FOUR_MEME_CONTRACT = "0x5c952063c7fc8610FFDB798152D69F0B9550762b";
 const FOUR_MEME_HELPER3 = "0xF251F83e40a78868FcfA3FA4599Dad6494E46034";
@@ -466,6 +562,18 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
     log(`[TokenLauncher] Step 1: Logging into four.meme...`, "token-launcher");
     const accessToken = await fourMemeLogin(wallet);
     log(`[TokenLauncher] Step 1 OK: logged in`, "token-launcher");
+
+    if (!params.imageUrl) {
+      log(`[TokenLauncher] Step 1.5: Generating + uploading token image...`, "token-launcher");
+      const pngBuffer = await generateTokenImagePng(params.tokenName, params.tokenSymbol);
+      if (pngBuffer) {
+        const cdnUrl = await fourMemeUploadImage(pngBuffer, accessToken);
+        if (cdnUrl) {
+          params.imageUrl = cdnUrl;
+          log(`[TokenLauncher] Step 1.5 OK: image uploaded to ${cdnUrl}`, "token-launcher");
+        }
+      }
+    }
 
     log(`[TokenLauncher] Step 2: Creating token via four.meme API...`, "token-launcher");
     const txData = await fourMemeCreateTokenData(params, accessToken, preSaleEth);

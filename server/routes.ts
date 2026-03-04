@@ -1,5 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import express from "express";
 import { createServer, type Server } from "http";
+import path from "path";
 import { storage } from "./storage";
 import { ZERC20_CONTRACTS, SUPPORTED_PRIVACY_CHAINS } from "@shared/schema";
 import { registerWeb4Routes } from "./web4-routes";
@@ -22,6 +24,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   app.use(visitorTrackingMiddleware());
+  app.use("/uploads", express.static(path.resolve(process.cwd(), "public/uploads")));
   registerSeoPrerender(app);
 
   registerWeb4Routes(app);
