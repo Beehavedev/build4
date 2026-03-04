@@ -1201,6 +1201,71 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     return;
   }
 
+  if (msg.photo && msg.photo.length > 0) {
+    const state = pendingTokenLaunch.get(chatId);
+    if (state && state.step === "logo") {
+      const photo = msg.photo[msg.photo.length - 1];
+      if (photo.file_size && photo.file_size > 5 * 1024 * 1024) {
+        await bot.sendMessage(chatId, "⚠️ Image too large (max 5MB). Send a smaller image or type \"skip\".");
+        return;
+      }
+      try {
+        const fileInfo = await bot.getFile(photo.file_id);
+        if (fileInfo.file_path) {
+          const telegramFileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
+          const imageResp = await fetch(telegramFileUrl);
+          if (imageResp.ok) {
+            const imageBuffer = Buffer.from(await imageResp.arrayBuffer());
+            const ext = fileInfo.file_path.split(".").pop() || "png";
+            const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "gif" ? "image/gif" : "image/png";
+
+            const formData = new FormData();
+            const blob = new Blob([imageBuffer], { type: mimeType });
+            formData.append("file", blob, `logo.${ext}`);
+
+            const uploadRes = await fetch("https://four.meme/meme-api/meme/image/upload", {
+              method: "POST",
+              body: formData,
+            });
+            if (!uploadRes.ok) {
+              await bot.sendMessage(chatId, `⚠️ Logo upload failed (HTTP ${uploadRes.status}). Continuing without custom logo.`);
+              state.step = "links";
+              pendingTokenLaunch.set(chatId, state);
+              await bot.sendMessage(chatId,
+                `🔗 Social links (optional):\n\nSend links in this format:\n` +
+                `website: https://yoursite.com\ntwitter: https://x.com/yourtoken\ntelegram: https://t.me/yourgroup\n\n` +
+                `You can include one, two, or all three. Or type "skip" to continue without links.`,
+              );
+              return;
+            }
+            const uploadJson = await uploadRes.json();
+            if (uploadJson.msg === "success" && uploadJson.data?.imageUrl) {
+              state.imageUrl = uploadJson.data.imageUrl;
+              await bot.sendMessage(chatId, `✅ Logo uploaded successfully!`);
+            } else {
+              await bot.sendMessage(chatId, `⚠️ Logo upload failed, using auto-generated logo. Continuing...`);
+            }
+          }
+        }
+      } catch (e: any) {
+        console.error("[TelegramBot] Logo upload error:", e.message);
+        await bot.sendMessage(chatId, `⚠️ Could not process image. Continuing without custom logo.`);
+      }
+
+      state.step = "links";
+      pendingTokenLaunch.set(chatId, state);
+
+      await bot.sendMessage(chatId,
+        `🔗 Social links (optional):\n\nSend links in this format:\n` +
+        `website: https://yoursite.com\n` +
+        `twitter: https://x.com/yourtoken\n` +
+        `telegram: https://t.me/yourgroup\n\n` +
+        `You can include one, two, or all three. Or type "skip" to continue without links.`,
+      );
+      return;
+    }
+  }
+
   if (!msg.text) return;
   const text = msg.text.trim();
 
@@ -2336,11 +2401,16 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
       tokenName: state.tokenName!,
       tokenSymbol: state.tokenSymbol!,
       tokenDescription: state.tokenDescription || `${state.tokenName} — launched by ${state.agentName} on BUILD4`,
+      imageUrl: state.imageUrl,
       platform: state.platform as "four_meme" | "flap_sh",
       initialLiquidityBnb: state.platform === "four_meme" ? "0.01" : "0.001",
       agentId: state.agentId,
       creatorWallet: wallet,
       userPrivateKey: userPk,
+      webUrl: state.webUrl,
+      twitterUrl: state.twitterUrl,
+      telegramUrl: state.telegramUrl,
+      taxRate: state.taxRate,
     });
 
     if (result.success) {
