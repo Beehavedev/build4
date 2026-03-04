@@ -1866,6 +1866,12 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
       if (erc8004BscResult.tokenId) {
         results.push(`  Token ID: ${erc8004BscResult.tokenId}`);
       }
+      try {
+        const { db } = await import("./db");
+        const { agents: agentsTable } = await import("@shared/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(agentsTable).set({ erc8004Registered: true }).where(eq(agentsTable.id, agentId));
+      } catch {}
     } else {
       results.push(`ERC-8004 (BSC): ${erc8004BscResult.error?.substring(0, 80) || "skipped"}`);
     }
@@ -1881,6 +1887,12 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
       if (bap578Result.tokenId) {
         results.push(`  NFA Token ID: ${bap578Result.tokenId}`);
       }
+      try {
+        const { db } = await import("./db");
+        const { agents: agentsTable } = await import("@shared/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(agentsTable).set({ bap578Registered: true }).where(eq(agentsTable.id, agentId));
+      } catch {}
     } else {
       results.push(`BAP-578: ${bap578Result.error?.substring(0, 80) || "skipped"}`);
     }

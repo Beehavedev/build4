@@ -1367,6 +1367,85 @@ async function registerExistingAgentsOnchain(): Promise<void> {
   }
 }
 
+const STANDARDS_REGISTRATION_INTERVAL_MS = 5 * 60 * 1000;
+let standardsRegTimer: ReturnType<typeof setInterval> | null = null;
+const regFailures: Map<string, { count: number; lastAttempt: number }> = new Map();
+const MAX_REG_RETRIES = 3;
+const REG_BACKOFF_MS = 30 * 60 * 1000;
+
+async function autoRegisterAgentStandards(): Promise<void> {
+  try {
+    const { registerAgentERC8004, registerAgentBAP578 } = await import("./onchain");
+    const { db } = await import("./db");
+    const { agents: agentsTable } = await import("@shared/schema");
+    const { eq } = await import("drizzle-orm");
+
+    const allAgents = await storage.getAllAgents();
+    const active = allAgents.filter(a => a.status === "active");
+
+    for (const agent of active) {
+      if (agent.erc8004Registered && agent.bap578Registered) continue;
+
+      const creatorWallet = agent.creatorWallet;
+      if (!creatorWallet || !/^0x[a-fA-F0-9]{40}$/i.test(creatorWallet)) continue;
+
+      const failKey = `${agent.id}`;
+      const failInfo = regFailures.get(failKey);
+      if (failInfo && failInfo.count >= MAX_REG_RETRIES && (Date.now() - failInfo.lastAttempt) < REG_BACKOFF_MS) {
+        continue;
+      }
+
+      const userPk = await storage.getPrivateKeyByWalletAddress(creatorWallet);
+      if (!userPk) continue;
+
+      let hadFailure = false;
+
+      if (!agent.erc8004Registered) {
+        try {
+          const bscResult = await registerAgentERC8004(agent.name, agent.bio || undefined, agent.id, "bsc", userPk);
+          if (bscResult.success) {
+            log(`[AutoReg] ${agent.name} registered on ERC-8004 (BSC): ${bscResult.txHash?.substring(0, 18)}...`, "agent-runner");
+            await db.update(agentsTable).set({ erc8004Registered: true }).where(eq(agentsTable.id, agent.id));
+            await new Promise(r => setTimeout(r, 3000));
+          } else {
+            hadFailure = true;
+            log(`[AutoReg] ${agent.name} ERC-8004 (BSC) skipped: ${bscResult.error?.substring(0, 100)}`, "agent-runner");
+          }
+        } catch (e: any) {
+          hadFailure = true;
+          log(`[AutoReg] ${agent.name} ERC-8004 error: ${e.message?.substring(0, 100)}`, "agent-runner");
+        }
+      }
+
+      if (!agent.bap578Registered) {
+        try {
+          const bapResult = await registerAgentBAP578(agent.name, agent.bio || undefined, agent.id, undefined, userPk);
+          if (bapResult.success) {
+            log(`[AutoReg] ${agent.name} registered on BAP-578 (BNB): ${bapResult.txHash?.substring(0, 18)}...`, "agent-runner");
+            await db.update(agentsTable).set({ bap578Registered: true }).where(eq(agentsTable.id, agent.id));
+            await new Promise(r => setTimeout(r, 3000));
+          } else {
+            hadFailure = true;
+            log(`[AutoReg] ${agent.name} BAP-578 skipped: ${bapResult.error?.substring(0, 100)}`, "agent-runner");
+          }
+        } catch (e: any) {
+          hadFailure = true;
+          log(`[AutoReg] ${agent.name} BAP-578 error: ${e.message?.substring(0, 100)}`, "agent-runner");
+        }
+      }
+
+      if (hadFailure) {
+        const prev = regFailures.get(failKey) || { count: 0, lastAttempt: 0 };
+        regFailures.set(failKey, { count: prev.count + 1, lastAttempt: Date.now() });
+      } else {
+        regFailures.delete(failKey);
+      }
+    }
+  } catch (e: any) {
+    log(`[AutoReg] Standards registration cycle error: ${e.message}`, "agent-runner");
+  }
+}
+
 export function startAgentRunner(): void {
   if (running) {
     log("Agent runner already running", "agent-runner");
@@ -1409,6 +1488,10 @@ export function startAgentRunner(): void {
     setTimeout(() => registerExistingAgentsOnchain(), 8000);
   }
 
+  setTimeout(() => autoRegisterAgentStandards(), 12000);
+  standardsRegTimer = setInterval(() => autoRegisterAgentStandards(), STANDARDS_REGISTRATION_INTERVAL_MS);
+  log(`Auto-registration for ERC-8004/BAP-578 enabled: check every ${STANDARDS_REGISTRATION_INTERVAL_MS / 60000} minutes`, "agent-runner");
+
   setTimeout(() => tick(), 15000);
 
   tickTimer = setInterval(() => tick(), TICK_INTERVAL_MS);
@@ -1429,6 +1512,10 @@ export function stopAgentRunner(): void {
   if (gasFlushTimer) {
     clearInterval(gasFlushTimer);
     gasFlushTimer = null;
+  }
+  if (standardsRegTimer) {
+    clearInterval(standardsRegTimer);
+    standardsRegTimer = null;
   }
   log("Agent runner stopped", "agent-runner");
 }

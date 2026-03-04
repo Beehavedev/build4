@@ -417,6 +417,7 @@ export interface IStorage {
   setActiveTelegramWallet(chatId: string, walletAddress: string): Promise<void>;
   getAllTelegramWalletLinks(): Promise<TelegramWallet[]>;
   getTelegramWalletPrivateKey(chatId: string, walletAddress: string): Promise<string | null>;
+  getPrivateKeyByWalletAddress(walletAddress: string): Promise<string | null>;
   seedInferenceProviders(): Promise<void>;
 }
 
@@ -2364,6 +2365,18 @@ export class DatabaseStorage implements IStorage {
   async getTelegramWalletPrivateKey(chatId: string, walletAddress: string): Promise<string | null> {
     const rows = await db.select().from(telegramWallets)
       .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
+    if (rows.length === 0 || !rows[0].encryptedPrivateKey) return null;
+    try {
+      return decryptPrivateKey(rows[0].encryptedPrivateKey);
+    } catch (e) {
+      console.error("[Storage] Failed to decrypt wallet private key:", e);
+      return null;
+    }
+  }
+
+  async getPrivateKeyByWalletAddress(walletAddress: string): Promise<string | null> {
+    const rows = await db.select().from(telegramWallets)
+      .where(eq(telegramWallets.walletAddress, walletAddress.toLowerCase()));
     if (rows.length === 0 || !rows[0].encryptedPrivateKey) return null;
     try {
       return decryptPrivateKey(rows[0].encryptedPrivateKey);

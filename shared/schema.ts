@@ -25,6 +25,8 @@ export const agents = pgTable("agents", {
   status: text("status").notNull().default("active"),
   onchainId: text("onchain_id"),
   onchainRegistered: boolean("onchain_registered").notNull().default(false),
+  erc8004Registered: boolean("erc8004_registered").notNull().default(false),
+  bap578Registered: boolean("bap578_registered").notNull().default(false),
   creatorWallet: text("creator_wallet"),
   preferredChain: text("preferred_chain").default("bnbMainnet"),
   createdAt: timestamp("created_at").defaultNow(),
