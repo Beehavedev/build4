@@ -619,9 +619,20 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   if (data === "erc8004_register") {
     const wallets = getUserWallets(chatId);
     const activeIdx = getActiveWalletIndex(chatId);
-    const activeWallet = wallets[activeIdx];
-    if (!activeWallet || !activeWallet.privateKey) {
+    const walletAddr = wallets[activeIdx];
+    if (!walletAddr) {
+      await bot.sendMessage(chatId, "No wallet found. Use /wallet to set one up first.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+    const hasKey = walletsWithKey.has(walletAddr.toLowerCase());
+    if (!hasKey) {
       await bot.sendMessage(chatId, "You need a wallet with a private key to register. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+
+    const pk = await storage.getTelegramWalletPrivateKey(String(chatId), walletAddr);
+    if (!pk) {
+      await bot.sendMessage(chatId, "Could not retrieve wallet private key. Try generating a new wallet with /wallet.", { reply_markup: mainMenuKeyboard() });
       return;
     }
 
@@ -631,7 +642,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const { ensureAgentRegisteredBSC } = await import("./token-launcher");
       const { ethers } = await import("ethers");
       const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
-      const wallet = new ethers.Wallet(activeWallet.privateKey, provider);
+      const wallet = new ethers.Wallet(pk, provider);
 
       const result = await ensureAgentRegisteredBSC(wallet, "BUILD4 Agent", "Autonomous AI agent on BUILD4");
 
@@ -639,7 +650,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         const txInfo = result.txHash ? `\nTX: ${result.txHash.substring(0, 14)}...` : "";
         await bot.sendMessage(chatId,
           "✅ AI Agent Badge: REGISTERED\n\n" +
-          `Wallet: ${activeWallet.address.substring(0, 8)}...${activeWallet.address.slice(-6)}${txInfo}\n\n` +
+          `Wallet: ${walletAddr.substring(0, 8)}...${walletAddr.slice(-6)}${txInfo}\n\n` +
           "Your token launches on Four.meme will now show the AI Agent icon on GMGN and other trackers!",
           { reply_markup: mainMenuKeyboard() }
         );
@@ -1414,8 +1425,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       await ensureWallet(chatId);
       const wallets = getUserWallets(chatId);
       const activeIdx = getActiveWalletIndex(chatId);
-      const activeWallet = wallets[activeIdx];
-      if (!activeWallet) {
+      const walletAddr = wallets[activeIdx];
+      if (!walletAddr) {
         await bot.sendMessage(chatId, "No wallet found. Use /wallet to set one up first.");
         return;
       }
@@ -1423,13 +1434,13 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       await bot.sendMessage(chatId, "Checking ERC-8004 agent registration...");
 
       try {
-        const { isAgentRegistered, ensureAgentRegistered, ERC8004_IDENTITY_REGISTRY_BSC } = await import("./token-launcher");
-        const registered = await isAgentRegistered(activeWallet.address);
+        const { isAgentRegistered, ERC8004_IDENTITY_REGISTRY_BSC } = await import("./token-launcher");
+        const registered = await isAgentRegistered(walletAddr);
 
         if (registered) {
           await bot.sendMessage(chatId,
             "✅ AI Agent Badge: ACTIVE\n\n" +
-            `Wallet: ${activeWallet.address.substring(0, 8)}...${activeWallet.address.slice(-6)}\n` +
+            `Wallet: ${walletAddr.substring(0, 8)}...${walletAddr.slice(-6)}\n` +
             `Registry: ERC-8004 on BSC\n` +
             `Contract: ${ERC8004_IDENTITY_REGISTRY_BSC.substring(0, 10)}...\n\n` +
             "Your tokens launched on Four.meme will show the AI Agent icon on GMGN and other trackers.",
@@ -1438,7 +1449,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         } else {
           await bot.sendMessage(chatId,
             "❌ AI Agent Badge: NOT REGISTERED\n\n" +
-            `Wallet: ${activeWallet.address.substring(0, 8)}...${activeWallet.address.slice(-6)}\n\n` +
+            `Wallet: ${walletAddr.substring(0, 8)}...${walletAddr.slice(-6)}\n\n` +
             "Your wallet is not registered on the ERC-8004 Identity Registry. " +
             "When you launch a token, we'll auto-register your wallet so it gets the AI Agent badge on GMGN.\n\n" +
             "Want to register now? It costs a small gas fee (~0.001 BNB).",
