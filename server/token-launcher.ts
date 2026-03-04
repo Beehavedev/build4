@@ -518,39 +518,66 @@ async function fourMemeCreateTokenData(
   accessToken: string,
   preSaleEth: string,
 ): Promise<{ createArg: string; signature: string; value: bigint }> {
+  const launchTime = Date.now();
+
+  const requestBody: Record<string, any> = {
+    name: params.tokenName,
+    shortName: params.tokenSymbol,
+    desc: params.tokenDescription || "",
+    totalSupply: 1000000000,
+    raisedAmount: 24,
+    saleRate: 0.8,
+    reserveRate: 0,
+    imgUrl: params.imageUrl || "https://static.four.meme/market/68b871b6-96f7-408c-b8d0-388d804b34275092658264263839640.png",
+    raisedToken: {
+      symbol: "BNB",
+      nativeSymbol: "BNB",
+      symbolAddress: "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+      deployCost: "0",
+      buyFee: "0.01",
+      sellFee: "0.01",
+      minTradeFee: "0",
+      b0Amount: "8",
+      totalBAmount: "18",
+      totalAmount: "1000000000",
+      logoUrl: "https://static.four.meme/market/68b871b6-96f7-408c-b8d0-388d804b34275092658264263839640.png",
+      status: "PUBLISH",
+    },
+    launchTime,
+    funGroup: false,
+    preSale: preSaleEth,
+    clickFun: false,
+    symbol: "BNB",
+    label: "Meme",
+  };
+
+  if (params.webUrl) requestBody.webUrl = params.webUrl;
+  if (params.twitterUrl) requestBody.twitterUrl = params.twitterUrl;
+  if (params.telegramUrl) requestBody.telegramUrl = params.telegramUrl;
+
+  log(`[TokenLauncher] four.meme create body: ${JSON.stringify(requestBody).substring(0, 500)}`, "token-launcher");
+
   const createRes = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/create`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "Accept": "application/json",
       "meme-web-access": accessToken,
     },
-    body: JSON.stringify({
-      name: params.tokenName,
-      shortName: params.tokenSymbol,
-      symbol: params.tokenSymbol,
-      desc: params.tokenDescription || "",
-      imgUrl: params.imageUrl || "https://static.four.meme/market/68b871b6-96f7-408c-b8d0-388d804b34275092658264263839640.png",
-      label: "Meme",
-      raisedAmount: preSaleEth,
-      ...(params.webUrl ? { webUrl: params.webUrl } : {}),
-      ...(params.twitterUrl ? { twitterUrl: params.twitterUrl } : {}),
-      ...(params.telegramUrl ? { telegramUrl: params.telegramUrl } : {}),
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   const createJson = await createRes.json();
-  if (createJson.msg !== "success" || !createJson.data?.createArg || !createJson.data?.signature) {
-    throw new Error(`four.meme create API failed: ${createJson.msg || JSON.stringify(createJson).substring(0, 200)}`);
+  if ((createJson.code !== 0 && createJson.msg !== "success") || !createJson.data?.createArg || !createJson.data?.signature) {
+    throw new Error(`four.meme create API failed: ${createJson.msg || JSON.stringify(createJson).substring(0, 300)}`);
   }
 
-  const platformFee = ethers.parseEther("0.01");
   const preSaleWei = ethers.parseEther(preSaleEth);
-  const totalValue = platformFee + preSaleWei;
 
   return {
     createArg: createJson.data.createArg,
     signature: createJson.data.signature,
-    value: totalValue,
+    value: preSaleWei,
   };
 }
 
