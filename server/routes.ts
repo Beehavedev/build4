@@ -14,7 +14,7 @@ import { autoStartAllAgents } from "./multi-twitter-agent";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
 import { registerSeoPrerender } from "./seo-prerender";
 import { analyticsAuth, generateAnalyticsToken, constantTimeCompare } from "./admin-auth";
-import { launchToken, getTokenLaunches, getTokenLaunch } from "./token-launcher";
+import { launchToken, getTokenLaunches, getTokenLaunch, fourMemeGetTokenInfo, fourMemeEstimateBuy, fourMemeEstimateSell, fourMemeBuyToken, fourMemeSellToken, fourMemeGetTokenBalance } from "./token-launcher";
 import { TOKEN_LAUNCHPADS } from "@shared/schema";
 
 export async function registerRoutes(
@@ -688,6 +688,48 @@ export async function registerRoutes(
     });
 
     res.json(result);
+  });
+
+  app.get("/api/four-meme/token/:address", async (req: Request, res: Response) => {
+    try {
+      const info = await fourMemeGetTokenInfo(req.params.address);
+      res.json(info);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message?.substring(0, 200) || "Failed to get token info" });
+    }
+  });
+
+  app.get("/api/four-meme/estimate-buy", async (req: Request, res: Response) => {
+    const { token, bnbAmount } = req.query;
+    if (!token || !bnbAmount) return res.status(400).json({ error: "token and bnbAmount required" });
+    try {
+      const estimate = await fourMemeEstimateBuy(token as string, bnbAmount as string);
+      res.json(estimate);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message?.substring(0, 200) || "Failed to estimate buy" });
+    }
+  });
+
+  app.get("/api/four-meme/estimate-sell", async (req: Request, res: Response) => {
+    const { token, amount } = req.query;
+    if (!token || !amount) return res.status(400).json({ error: "token and amount required" });
+    try {
+      const estimate = await fourMemeEstimateSell(token as string, amount as string);
+      res.json(estimate);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message?.substring(0, 200) || "Failed to estimate sell" });
+    }
+  });
+
+  app.get("/api/four-meme/balance", async (req: Request, res: Response) => {
+    const { token, wallet } = req.query;
+    if (!token || !wallet) return res.status(400).json({ error: "token and wallet required" });
+    try {
+      const balance = await fourMemeGetTokenBalance(token as string, wallet as string);
+      res.json(balance);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message?.substring(0, 200) || "Failed to get balance" });
+    }
   });
 
   app.get("/api/chaos/status", async (_req: Request, res: Response) => {

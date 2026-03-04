@@ -4,6 +4,7 @@ import { log } from "./index";
 import type { TokenLaunch, InsertTokenLaunch } from "@shared/schema";
 
 const FOUR_MEME_CONTRACT = "0x5c952063c7fc8610FFDB798152D69F0B9550762b";
+const FOUR_MEME_HELPER3 = "0xF251F83e40a78868FcfA3FA4599Dad6494E46034";
 const FOUR_MEME_API = "https://four.meme";
 
 const FOUR_MEME_ABI = [
@@ -15,6 +16,165 @@ const FOUR_MEME_ABI = [
     name: "createToken",
     outputs: [],
     stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "funds", type: "uint256" },
+      { internalType: "uint256", name: "minAmount", type: "uint256" },
+    ],
+    name: "buyTokenAMAP",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+      { internalType: "uint256", name: "maxFunds", type: "uint256" },
+    ],
+    name: "buyToken",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "sellToken",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+];
+
+const FOUR_MEME_HELPER3_ABI = [
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+    ],
+    name: "getTokenInfo",
+    outputs: [
+      { internalType: "uint256", name: "version", type: "uint256" },
+      { internalType: "address", name: "tokenManager", type: "address" },
+      { internalType: "address", name: "quote", type: "address" },
+      { internalType: "uint256", name: "lastPrice", type: "uint256" },
+      { internalType: "uint256", name: "tradingFeeRate", type: "uint256" },
+      { internalType: "uint256", name: "minTradingFee", type: "uint256" },
+      { internalType: "uint256", name: "launchTime", type: "uint256" },
+      { internalType: "uint256", name: "offers", type: "uint256" },
+      { internalType: "uint256", name: "maxOffers", type: "uint256" },
+      { internalType: "uint256", name: "funds", type: "uint256" },
+      { internalType: "uint256", name: "maxFunds", type: "uint256" },
+      { internalType: "bool", name: "liquidityAdded", type: "bool" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+      { internalType: "uint256", name: "funds", type: "uint256" },
+    ],
+    name: "tryBuy",
+    outputs: [
+      { internalType: "address", name: "tokenManager", type: "address" },
+      { internalType: "address", name: "quote", type: "address" },
+      { internalType: "uint256", name: "estimatedAmount", type: "uint256" },
+      { internalType: "uint256", name: "estimatedCost", type: "uint256" },
+      { internalType: "uint256", name: "estimatedFee", type: "uint256" },
+      { internalType: "uint256", name: "amountMsgValue", type: "uint256" },
+      { internalType: "uint256", name: "amountApproval", type: "uint256" },
+      { internalType: "uint256", name: "amountFunds", type: "uint256" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "trySell",
+    outputs: [
+      { internalType: "address", name: "tokenManager", type: "address" },
+      { internalType: "address", name: "quote", type: "address" },
+      { internalType: "uint256", name: "funds", type: "uint256" },
+      { internalType: "uint256", name: "fee", type: "uint256" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+];
+
+const ERC20_ABI = [
+  {
+    inputs: [{ internalType: "address", name: "account", type: "address" }],
+    name: "balanceOf",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "spender", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "approve",
+    outputs: [{ internalType: "bool", name: "", type: "bool" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "decimals",
+    outputs: [{ internalType: "uint8", name: "", type: "uint8" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "symbol",
+    outputs: [{ internalType: "string", name: "", type: "string" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "name",
+    outputs: [{ internalType: "string", name: "", type: "string" }],
+    stateMutability: "view",
+    type: "function",
+  },
+];
+
+const FOUR_MEME_V1_CONTRACT = "0xEC4549caDcE5DA21Df6E6422d448034B5233bFbC";
+
+const FOUR_MEME_V1_ABI = [
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "funds", type: "uint256" },
+      { internalType: "uint256", name: "minAmount", type: "uint256" },
+    ],
+    name: "purchaseTokenAMAP",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "saleToken",
+    outputs: [],
+    stateMutability: "nonpayable",
     type: "function",
   },
 ];
@@ -593,6 +753,250 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
     });
     return { success: false, error: cleanError, launchId: launchRecord.id };
   }
+}
+
+export interface FourMemeTokenInfo {
+  version: number;
+  tokenManager: string;
+  quote: string;
+  lastPrice: string;
+  tradingFeeRate: number;
+  minTradingFee: string;
+  launchTime: number;
+  offers: string;
+  maxOffers: string;
+  funds: string;
+  maxFunds: string;
+  liquidityAdded: boolean;
+  progressPercent: number;
+}
+
+export async function fourMemeGetTokenInfo(tokenAddress: string): Promise<FourMemeTokenInfo> {
+  const provider = getBscProvider();
+  const helper = new ethers.Contract(FOUR_MEME_HELPER3, FOUR_MEME_HELPER3_ABI, provider);
+
+  const info = await helper.getTokenInfo(tokenAddress);
+
+  const fundsNum = parseFloat(ethers.formatEther(info.funds));
+  const maxFundsNum = parseFloat(ethers.formatEther(info.maxFunds));
+  const progressPercent = maxFundsNum > 0 ? Math.min(100, (fundsNum / maxFundsNum) * 100) : 0;
+
+  return {
+    version: Number(info.version),
+    tokenManager: info.tokenManager,
+    quote: info.quote,
+    lastPrice: ethers.formatEther(info.lastPrice),
+    tradingFeeRate: Number(info.tradingFeeRate) / 10000,
+    minTradingFee: ethers.formatEther(info.minTradingFee),
+    launchTime: Number(info.launchTime),
+    offers: ethers.formatEther(info.offers),
+    maxOffers: ethers.formatEther(info.maxOffers),
+    funds: ethers.formatEther(info.funds),
+    maxFunds: ethers.formatEther(info.maxFunds),
+    liquidityAdded: info.liquidityAdded,
+    progressPercent: Math.round(progressPercent * 100) / 100,
+  };
+}
+
+export interface FourMemeBuyEstimate {
+  tokenManager: string;
+  quote: string;
+  estimatedAmount: string;
+  estimatedCost: string;
+  estimatedFee: string;
+  msgValue: string;
+}
+
+export async function fourMemeEstimateBuy(
+  tokenAddress: string,
+  bnbAmount: string,
+): Promise<FourMemeBuyEstimate> {
+  const provider = getBscProvider();
+  const helper = new ethers.Contract(FOUR_MEME_HELPER3, FOUR_MEME_HELPER3_ABI, provider);
+
+  const fundsWei = ethers.parseEther(bnbAmount);
+  const result = await helper.tryBuy(tokenAddress, 0, fundsWei);
+
+  return {
+    tokenManager: result.tokenManager,
+    quote: result.quote,
+    estimatedAmount: ethers.formatEther(result.estimatedAmount),
+    estimatedCost: ethers.formatEther(result.estimatedCost),
+    estimatedFee: ethers.formatEther(result.estimatedFee),
+    msgValue: ethers.formatEther(result.amountMsgValue),
+  };
+}
+
+export interface FourMemeSellEstimate {
+  tokenManager: string;
+  quote: string;
+  fundsReceived: string;
+  fee: string;
+}
+
+export async function fourMemeEstimateSell(
+  tokenAddress: string,
+  tokenAmount: string,
+): Promise<FourMemeSellEstimate> {
+  const provider = getBscProvider();
+  const helper = new ethers.Contract(FOUR_MEME_HELPER3, FOUR_MEME_HELPER3_ABI, provider);
+
+  const amountWei = ethers.parseEther(tokenAmount);
+  const result = await helper.trySell(tokenAddress, amountWei);
+
+  return {
+    tokenManager: result.tokenManager,
+    quote: result.quote,
+    fundsReceived: ethers.formatEther(result.funds),
+    fee: ethers.formatEther(result.fee),
+  };
+}
+
+export interface FourMemeTradeResult {
+  success: boolean;
+  txHash?: string;
+  error?: string;
+}
+
+export async function fourMemeBuyToken(
+  tokenAddress: string,
+  bnbAmount: string,
+  slippagePct: number,
+  userPrivateKey: string,
+): Promise<FourMemeTradeResult> {
+  try {
+    const provider = getBscProvider();
+    const wallet = new ethers.Wallet(userPrivateKey, provider);
+
+    log(`[FourMeme] Estimating buy for ${bnbAmount} BNB on token ${tokenAddress.substring(0, 10)}...`, "token-launcher");
+
+    const helper = new ethers.Contract(FOUR_MEME_HELPER3, FOUR_MEME_HELPER3_ABI, provider);
+    const fundsWei = ethers.parseEther(bnbAmount);
+
+    const [estimate, info] = await Promise.all([
+      helper.tryBuy(tokenAddress, 0, fundsWei),
+      helper.getTokenInfo(tokenAddress),
+    ]);
+
+    const version = Number(info.version);
+    const quote = info.quote;
+    const isNativeQuote = quote === ethers.ZeroAddress;
+
+    if (!isNativeQuote) {
+      return { success: false, error: "This token uses a BEP20 quote (not BNB). BEP20-quoted token trading is not yet supported." };
+    }
+
+    const minAmount = (estimate.estimatedAmount * BigInt(Math.floor((100 - slippagePct) * 100))) / BigInt(10000);
+    const tokenManager = estimate.tokenManager;
+
+    log(`[FourMeme] V${version} token — buying ~${ethers.formatEther(estimate.estimatedAmount)} tokens for ${bnbAmount} BNB (slippage ${slippagePct}%)`, "token-launcher");
+
+    let tx;
+    if (version === 1) {
+      const tm = new ethers.Contract(tokenManager, FOUR_MEME_V1_ABI, wallet);
+      tx = await tm.purchaseTokenAMAP(tokenAddress, fundsWei, minAmount, {
+        value: estimate.amountMsgValue,
+        gasLimit: 500000,
+      });
+    } else {
+      const tm = new ethers.Contract(tokenManager, FOUR_MEME_ABI, wallet);
+      tx = await tm.buyTokenAMAP(tokenAddress, fundsWei, minAmount, {
+        value: estimate.amountMsgValue,
+        gasLimit: 500000,
+      });
+    }
+
+    log(`[FourMeme] Buy TX sent: ${tx.hash}`, "token-launcher");
+
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("TX timeout (90s)")), 90000)),
+    ]);
+
+    if (!receipt || receipt.status !== 1) {
+      return { success: false, error: "Buy transaction reverted on-chain" };
+    }
+
+    log(`[FourMeme] Buy confirmed: ${receipt.hash}`, "token-launcher");
+    return { success: true, txHash: receipt.hash };
+  } catch (e: any) {
+    const msg = e.message || "";
+    if (msg.includes("error code=\"A\"") || msg.includes("\"A\"")) {
+      return { success: false, error: "This is an X Mode exclusive token — cannot buy via standard method. Trade it directly on four.meme." };
+    }
+    log(`[FourMeme] Buy failed: ${msg.substring(0, 300)}`, "token-launcher");
+    return { success: false, error: sanitizeError(msg) };
+  }
+}
+
+export async function fourMemeSellToken(
+  tokenAddress: string,
+  tokenAmount: string,
+  userPrivateKey: string,
+): Promise<FourMemeTradeResult> {
+  try {
+    const provider = getBscProvider();
+    const wallet = new ethers.Wallet(userPrivateKey, provider);
+
+    const helper = new ethers.Contract(FOUR_MEME_HELPER3, FOUR_MEME_HELPER3_ABI, provider);
+    const amountWei = ethers.parseEther(tokenAmount);
+
+    const info = await helper.getTokenInfo(tokenAddress);
+    const version = Number(info.version);
+    const tokenManager = info.tokenManager;
+
+    log(`[FourMeme] V${version} token — approving ${tokenAmount} tokens for TokenManager ${tokenManager.substring(0, 10)}...`, "token-launcher");
+    const token = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
+    const approveTx = await token.approve(tokenManager, amountWei, { gasLimit: 100000 });
+    await approveTx.wait();
+    log(`[FourMeme] Approval confirmed`, "token-launcher");
+
+    let tx;
+    if (version === 1) {
+      const tm = new ethers.Contract(tokenManager, FOUR_MEME_V1_ABI, wallet);
+      log(`[FourMeme] Selling ${tokenAmount} tokens via V1 saleToken...`, "token-launcher");
+      tx = await tm.saleToken(tokenAddress, amountWei, { gasLimit: 500000 });
+    } else {
+      const tm = new ethers.Contract(tokenManager, FOUR_MEME_ABI, wallet);
+      log(`[FourMeme] Selling ${tokenAmount} tokens via V2 sellToken...`, "token-launcher");
+      tx = await tm.sellToken(tokenAddress, amountWei, { gasLimit: 500000 });
+    }
+
+    log(`[FourMeme] Sell TX sent: ${tx.hash}`, "token-launcher");
+
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("TX timeout (90s)")), 90000)),
+    ]);
+
+    if (!receipt || receipt.status !== 1) {
+      return { success: false, error: "Sell transaction reverted on-chain" };
+    }
+
+    log(`[FourMeme] Sell confirmed: ${receipt.hash}`, "token-launcher");
+    return { success: true, txHash: receipt.hash };
+  } catch (e: any) {
+    log(`[FourMeme] Sell failed: ${e.message?.substring(0, 300)}`, "token-launcher");
+    return { success: false, error: sanitizeError(e.message || "") };
+  }
+}
+
+export async function fourMemeGetTokenBalance(
+  tokenAddress: string,
+  walletAddress: string,
+): Promise<{ balance: string; symbol: string; decimals: number }> {
+  const provider = getBscProvider();
+  const token = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+  const [balance, symbol, decimals] = await Promise.all([
+    token.balanceOf(walletAddress),
+    token.symbol().catch(() => "???"),
+    token.decimals().catch(() => 18),
+  ]);
+  return {
+    balance: ethers.formatUnits(balance, decimals),
+    symbol,
+    decimals: Number(decimals),
+  };
 }
 
 export async function launchToken(params: LaunchParams): Promise<LaunchResult> {

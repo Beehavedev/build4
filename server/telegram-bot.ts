@@ -16,10 +16,14 @@ const walletsWithKey = new Set<string>();
 interface AgentCreationState { step: "name" | "bio" | "model"; name?: string; bio?: string }
 interface TaskState { step: "describe"; agentId: string; taskType: string; agentName: string }
 interface TokenLaunchState { step: "platform" | "name" | "symbol" | "description"; agentId: string; agentName: string; platform?: string; tokenName?: string; tokenSymbol?: string; tokenDescription?: string }
+interface FourMemeBuyState { step: "token" | "amount" | "confirm"; tokenAddress?: string; bnbAmount?: string; estimate?: any }
+interface FourMemeSellState { step: "token" | "amount" | "confirm"; tokenAddress?: string; tokenAmount?: string; tokenSymbol?: string; estimate?: any }
 
 const pendingAgentCreation = new Map<number, AgentCreationState>();
 const pendingTask = new Map<number, TaskState>();
 const pendingTokenLaunch = new Map<number, TokenLaunchState>();
+const pendingFourMemeBuy = new Map<number, FourMemeBuyState>();
+const pendingFourMemeSell = new Map<number, FourMemeSellState>();
 const pendingWallet = new Set<number>();
 const pendingImportWallet = new Set<number>();
 
@@ -459,6 +463,7 @@ function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.I
   return {
     inline_keyboard: [
       [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
+      [{ text: "💰 Buy Token", callback_data: "action:buy" }, { text: "💸 Sell Token", callback_data: "action:sell" }],
       [{ text: "🤖 Create Agent", callback_data: "action:newagent" }, { text: "📋 My Agents", callback_data: "action:myagents" }],
       [{ text: "📝 New Task", callback_data: "action:task" }, { text: "📊 My Tasks", callback_data: "action:mytasks" }],
       [{ text: "👛 My Wallet", callback_data: "action:wallet" }],
@@ -767,6 +772,26 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data === "action:buy") {
+    if (!walletsWithKey.has(`${chatId}:${wallet}`)) {
+      await bot.sendMessage(chatId, "Your active wallet is view-only. Import a wallet with a private key first (/linkwallet).");
+      return;
+    }
+    pendingFourMemeBuy.set(chatId, { step: "token" });
+    await bot.sendMessage(chatId, "Enter the token contract address you want to buy (0x...):");
+    return;
+  }
+
+  if (data === "action:sell") {
+    if (!walletsWithKey.has(`${chatId}:${wallet}`)) {
+      await bot.sendMessage(chatId, "Your active wallet is view-only. Import a wallet with a private key first (/linkwallet).");
+      return;
+    }
+    pendingFourMemeSell.set(chatId, { step: "token" });
+    await bot.sendMessage(chatId, "Enter the token contract address you want to sell (0x...):");
+    return;
+  }
+
   if (data === "action:menu") {
     await bot.sendMessage(chatId, "What would you like to do?", {
       reply_markup: mainMenuKeyboard()
@@ -941,6 +966,167 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await handleProposalApproval(chatId, proposalId, false);
     return;
   }
+
+  if (data.startsWith("fmbuy:")) {
+    const tokenAddress = data.split(":")[1];
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet || !walletsWithKey.has(`${chatId}:${wallet}`)) {
+      await bot.sendMessage(chatId, "Import a wallet with a private key first (/linkwallet).");
+      return;
+    }
+    pendingFourMemeBuy.set(chatId, { step: "amount", tokenAddress });
+    await bot.sendMessage(chatId,
+      `How much BNB do you want to spend?`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "0.01 BNB", callback_data: `fmbuyamt:0.01:${tokenAddress}` },
+              { text: "0.05 BNB", callback_data: `fmbuyamt:0.05:${tokenAddress}` },
+              { text: "0.1 BNB", callback_data: `fmbuyamt:0.1:${tokenAddress}` },
+            ],
+            [{ text: "Cancel", callback_data: "action:menu" }],
+          ]
+        }
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("fmbuyamt:")) {
+    const parts = data.split(":");
+    const amount = parts[1];
+    const tokenAddress = parts[2];
+    const state: FourMemeBuyState = { step: "amount", tokenAddress, bnbAmount: amount };
+    pendingFourMemeBuy.set(chatId, state);
+    await executeFourMemeBuyConfirm(chatId, state);
+    return;
+  }
+
+  if (data.startsWith("fmbuyconfirm:")) {
+    const tokenAddress = data.split(":")[1];
+    const state = pendingFourMemeBuy.get(chatId);
+    if (!state || !state.bnbAmount) {
+      await bot.sendMessage(chatId, "Buy session expired. Use /buy to start again.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+    pendingFourMemeBuy.delete(chatId);
+
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) return;
+
+    const userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+    if (!userPk) {
+      await bot.sendMessage(chatId, "Could not access wallet keys. Try /start to create a fresh wallet.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+
+    await bot.sendMessage(chatId, `💰 Buying with ${state.bnbAmount} BNB...\nThis may take a minute.`);
+    await bot.sendChatAction(chatId, "typing");
+
+    const { fourMemeBuyToken } = await import("./token-launcher");
+    const result = await fourMemeBuyToken(tokenAddress, state.bnbAmount, 5, userPk);
+
+    if (result.success) {
+      await bot.sendMessage(chatId,
+        `✅ Buy successful!\n\nTx: https://bscscan.com/tx/${result.txHash}\n\nView token: https://four.meme/token/${tokenAddress}`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "📈 Token Info", callback_data: `fminfo:${tokenAddress}` }],
+              [{ text: "◀️ Menu", callback_data: "action:menu" }],
+            ]
+          }
+        }
+      );
+    } else {
+      await bot.sendMessage(chatId, `❌ Buy failed: ${result.error?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+    }
+    return;
+  }
+
+  if (data.startsWith("fmsell:")) {
+    const tokenAddress = data.split(":")[1];
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet || !walletsWithKey.has(`${chatId}:${wallet}`)) {
+      await bot.sendMessage(chatId, "Import a wallet with a private key first (/linkwallet).");
+      return;
+    }
+    pendingFourMemeSell.set(chatId, { step: "amount", tokenAddress });
+    await showSellAmountPrompt(chatId, tokenAddress);
+    return;
+  }
+
+  if (data.startsWith("fmsellpct:")) {
+    const parts = data.split(":");
+    const pct = parseInt(parts[1]);
+    const tokenAddress = parts[2];
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) return;
+
+    try {
+      const { fourMemeGetTokenBalance } = await import("./token-launcher");
+      const balInfo = await fourMemeGetTokenBalance(tokenAddress, wallet);
+      const bal = parseFloat(balInfo.balance);
+      const sellAmount = (bal * pct / 100).toString();
+
+      const state: FourMemeSellState = { step: "amount", tokenAddress, tokenAmount: sellAmount, tokenSymbol: balInfo.symbol };
+      pendingFourMemeSell.set(chatId, state);
+      await executeFourMemeSellConfirm(chatId, state);
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Failed: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard() });
+      pendingFourMemeSell.delete(chatId);
+    }
+    return;
+  }
+
+  if (data.startsWith("fmsellconfirm:")) {
+    const tokenAddress = data.split(":")[1];
+    const state = pendingFourMemeSell.get(chatId);
+    if (!state || !state.tokenAmount) {
+      await bot.sendMessage(chatId, "Sell session expired. Use /sell to start again.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+    pendingFourMemeSell.delete(chatId);
+
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) return;
+
+    const userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+    if (!userPk) {
+      await bot.sendMessage(chatId, "Could not access wallet keys. Try /start to create a fresh wallet.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+
+    await bot.sendMessage(chatId, `💸 Selling ${state.tokenAmount} ${state.tokenSymbol || "tokens"}...\nThis may take a minute.`);
+    await bot.sendChatAction(chatId, "typing");
+
+    const { fourMemeSellToken } = await import("./token-launcher");
+    const result = await fourMemeSellToken(tokenAddress, state.tokenAmount, userPk);
+
+    if (result.success) {
+      await bot.sendMessage(chatId,
+        `✅ Sell successful!\n\nTx: https://bscscan.com/tx/${result.txHash}`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "📈 Token Info", callback_data: `fminfo:${tokenAddress}` }],
+              [{ text: "◀️ Menu", callback_data: "action:menu" }],
+            ]
+          }
+        }
+      );
+    } else {
+      await bot.sendMessage(chatId, `❌ Sell failed: ${result.error?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+    }
+    return;
+  }
+
+  if (data.startsWith("fminfo:")) {
+    const tokenAddress = data.split(":")[1];
+    await handleTokenInfo(chatId, tokenAddress);
+    return;
+  }
 }
 
 async function handleMessage(msg: TelegramBot.Message): Promise<void> {
@@ -987,6 +1173,14 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     await handleTokenLaunchFlow(chatId, text);
     return;
   }
+  if (pendingFourMemeBuy.has(chatId) && !text.startsWith("/")) {
+    await handleFourMemeBuyFlow(chatId, text);
+    return;
+  }
+  if (pendingFourMemeSell.has(chatId) && !text.startsWith("/")) {
+    await handleFourMemeSellFlow(chatId, text);
+    return;
+  }
   if (pendingTask.has(chatId) && !text.startsWith("/")) {
     await handleTaskFlow(chatId, text);
     return;
@@ -1000,6 +1194,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     pendingAgentCreation.delete(chatId);
     pendingTask.delete(chatId);
     pendingTokenLaunch.delete(chatId);
+    pendingFourMemeBuy.delete(chatId);
+    pendingFourMemeSell.delete(chatId);
     pendingWallet.delete(chatId);
     pendingImportWallet.delete(chatId);
 
@@ -1044,6 +1240,9 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       await bot.sendMessage(chatId,
         "Commands:\n\n" +
         "🚀 /launch — Launch a token\n" +
+        "💰 /buy — Buy tokens on Four.meme\n" +
+        "💸 /sell — Sell tokens on Four.meme\n" +
+        "📈 /tokeninfo — Token price & info\n" +
         "🤖 /newagent — Create an AI agent\n" +
         "📋 /myagents — Your agents\n" +
         "📝 /task — Assign a task\n" +
@@ -1160,6 +1359,49 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       if (isGroup) { await bot.sendMessage(chatId, "DM me to launch tokens!"); return; }
       const wallet = await ensureWallet(chatId);
       await startTokenLaunchFlow(chatId, wallet);
+      return;
+    }
+
+    if (cmd === "buy") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me to buy tokens!"); return; }
+      const wallet = await ensureWallet(chatId);
+      if (!walletsWithKey.has(`${chatId}:${wallet}`)) {
+        await bot.sendMessage(chatId, "Your active wallet is view-only. Import a wallet with a private key first (/linkwallet).");
+        return;
+      }
+      if (cmdArg && /^0x[a-fA-F0-9]{40}$/i.test(cmdArg)) {
+        pendingFourMemeBuy.set(chatId, { step: "amount", tokenAddress: cmdArg.toLowerCase() });
+        await bot.sendMessage(chatId, `How much BNB do you want to spend?\n\nEnter an amount (e.g. 0.01, 0.1, 1):`);
+      } else {
+        pendingFourMemeBuy.set(chatId, { step: "token" });
+        await bot.sendMessage(chatId, "Enter the token contract address you want to buy (0x...):");
+      }
+      return;
+    }
+
+    if (cmd === "sell") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me to sell tokens!"); return; }
+      const wallet = await ensureWallet(chatId);
+      if (!walletsWithKey.has(`${chatId}:${wallet}`)) {
+        await bot.sendMessage(chatId, "Your active wallet is view-only. Import a wallet with a private key first (/linkwallet).");
+        return;
+      }
+      if (cmdArg && /^0x[a-fA-F0-9]{40}$/i.test(cmdArg)) {
+        pendingFourMemeSell.set(chatId, { step: "amount", tokenAddress: cmdArg.toLowerCase() });
+        await showSellAmountPrompt(chatId, cmdArg.toLowerCase());
+      } else {
+        pendingFourMemeSell.set(chatId, { step: "token" });
+        await bot.sendMessage(chatId, "Enter the token contract address you want to sell (0x...):");
+      }
+      return;
+    }
+
+    if (cmd === "tokeninfo") {
+      if (!cmdArg || !/^0x[a-fA-F0-9]{40}$/i.test(cmdArg)) {
+        await bot.sendMessage(chatId, "Usage: /tokeninfo <token_address>\n\nExample: /tokeninfo 0x1234...abcd");
+        return;
+      }
+      await handleTokenInfo(chatId, cmdArg);
       return;
     }
 
@@ -1944,6 +2186,241 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
         }
       }
     );
+  }
+}
+
+async function handleTokenInfo(chatId: number, tokenAddress: string): Promise<void> {
+  if (!bot) return;
+  await bot.sendChatAction(chatId, "typing");
+  try {
+    const { fourMemeGetTokenInfo, fourMemeGetTokenBalance } = await import("./token-launcher");
+    const info = await fourMemeGetTokenInfo(tokenAddress);
+
+    const quoteName = info.quote === "0x0000000000000000000000000000000000000000" ? "BNB" : "BEP20";
+    const progressBar = "█".repeat(Math.floor(info.progressPercent / 10)) + "░".repeat(10 - Math.floor(info.progressPercent / 10));
+
+    let text = `📈 TOKEN INFO\n\n` +
+      `Address: \`${tokenAddress}\`\n` +
+      `Version: V${info.version} TokenManager\n` +
+      `Quote: ${quoteName}\n` +
+      `Price: ${parseFloat(info.lastPrice).toFixed(12)} ${quoteName}\n` +
+      `Fee Rate: ${(info.tradingFeeRate * 100).toFixed(2)}%\n` +
+      `Launched: ${new Date(info.launchTime * 1000).toISOString().split("T")[0]}\n\n` +
+      `Bonding Curve:\n` +
+      `[${progressBar}] ${info.progressPercent}%\n` +
+      `Raised: ${parseFloat(info.funds).toFixed(4)} / ${parseFloat(info.maxFunds).toFixed(4)} ${quoteName}\n` +
+      `Remaining: ${parseFloat(info.offers).toFixed(0)} / ${parseFloat(info.maxOffers).toFixed(0)} tokens\n`;
+
+    if (info.liquidityAdded) {
+      text += `\n✅ Liquidity added — trading on PancakeSwap`;
+    }
+
+    text += `\n\nhttps://four.meme/token/${tokenAddress}`;
+
+    const wallet = getLinkedWallet(chatId);
+    const buttons: TelegramBot.InlineKeyboardButton[][] = [];
+    if (wallet) {
+      buttons.push([
+        { text: "💰 Buy", callback_data: `fmbuy:${tokenAddress.substring(0, 42)}` },
+        { text: "💸 Sell", callback_data: `fmsell:${tokenAddress.substring(0, 42)}` },
+      ]);
+    }
+    buttons.push([{ text: "◀️ Menu", callback_data: "action:menu" }]);
+
+    await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+  } catch (e: any) {
+    await bot.sendMessage(chatId, `Failed to fetch token info: ${e.message?.substring(0, 150) || "Unknown error"}`, { reply_markup: mainMenuKeyboard() });
+  }
+}
+
+async function showSellAmountPrompt(chatId: number, tokenAddress: string): Promise<void> {
+  if (!bot) return;
+  const wallet = getLinkedWallet(chatId);
+  if (!wallet) return;
+
+  try {
+    const { fourMemeGetTokenBalance } = await import("./token-launcher");
+    const balInfo = await fourMemeGetTokenBalance(tokenAddress, wallet);
+    const bal = parseFloat(balInfo.balance);
+
+    if (bal <= 0) {
+      pendingFourMemeSell.delete(chatId);
+      await bot.sendMessage(chatId, `You don't hold any of this token in your active wallet.`, { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+
+    const state = pendingFourMemeSell.get(chatId);
+    if (state) {
+      state.tokenSymbol = balInfo.symbol;
+      pendingFourMemeSell.set(chatId, state);
+    }
+
+    await bot.sendMessage(chatId,
+      `Your balance: ${bal.toFixed(4)} ${balInfo.symbol}\n\nHow many tokens do you want to sell?\n\nType an amount or tap a button:`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "25%", callback_data: `fmsellpct:25:${tokenAddress}` },
+              { text: "50%", callback_data: `fmsellpct:50:${tokenAddress}` },
+              { text: "100%", callback_data: `fmsellpct:100:${tokenAddress}` },
+            ],
+            [{ text: "Cancel", callback_data: "action:menu" }],
+          ]
+        }
+      }
+    );
+  } catch (e: any) {
+    await bot.sendMessage(chatId, `Failed to check balance: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard() });
+    pendingFourMemeSell.delete(chatId);
+  }
+}
+
+async function handleFourMemeBuyFlow(chatId: number, text: string): Promise<void> {
+  if (!bot) return;
+  const state = pendingFourMemeBuy.get(chatId)!;
+  const input = text.trim();
+
+  if (state.step === "token") {
+    if (!/^0x[a-fA-F0-9]{40}$/i.test(input)) {
+      await bot.sendMessage(chatId, "Invalid address. Enter a valid token contract address (0x...):");
+      return;
+    }
+    state.tokenAddress = input.toLowerCase();
+    state.step = "amount";
+    pendingFourMemeBuy.set(chatId, state);
+    await bot.sendMessage(chatId,
+      `How much BNB do you want to spend?\n\nEnter an amount (e.g. 0.01, 0.1, 1):`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "0.01 BNB", callback_data: `fmbuyamt:0.01:${state.tokenAddress}` },
+              { text: "0.05 BNB", callback_data: `fmbuyamt:0.05:${state.tokenAddress}` },
+              { text: "0.1 BNB", callback_data: `fmbuyamt:0.1:${state.tokenAddress}` },
+            ],
+            [{ text: "Cancel", callback_data: "action:menu" }],
+          ]
+        }
+      }
+    );
+    return;
+  }
+
+  if (state.step === "amount") {
+    const amount = parseFloat(input);
+    if (isNaN(amount) || amount <= 0 || amount > 100) {
+      await bot.sendMessage(chatId, "Enter a valid BNB amount (e.g. 0.01, 0.1, 1):");
+      return;
+    }
+    state.bnbAmount = amount.toString();
+    await executeFourMemeBuyConfirm(chatId, state);
+    return;
+  }
+}
+
+async function executeFourMemeBuyConfirm(chatId: number, state: FourMemeBuyState): Promise<void> {
+  if (!bot || !state.tokenAddress || !state.bnbAmount) return;
+
+  await bot.sendChatAction(chatId, "typing");
+
+  try {
+    const { fourMemeEstimateBuy } = await import("./token-launcher");
+    const estimate = await fourMemeEstimateBuy(state.tokenAddress, state.bnbAmount);
+
+    state.estimate = estimate;
+    state.step = "confirm";
+    pendingFourMemeBuy.set(chatId, state);
+
+    await bot.sendMessage(chatId,
+      `💰 BUY PREVIEW\n\n` +
+      `Token: \`${state.tokenAddress}\`\n` +
+      `Spend: ${state.bnbAmount} BNB\n` +
+      `Est. tokens: ${parseFloat(estimate.estimatedAmount).toFixed(2)}\n` +
+      `Est. cost: ${parseFloat(estimate.estimatedCost).toFixed(6)} BNB\n` +
+      `Fee: ${parseFloat(estimate.estimatedFee).toFixed(6)} BNB\n` +
+      `Slippage: 5%\n\n` +
+      `Confirm purchase?`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✅ Confirm Buy", callback_data: `fmbuyconfirm:${state.tokenAddress}` }],
+            [{ text: "Cancel", callback_data: "action:menu" }],
+          ]
+        }
+      }
+    );
+  } catch (e: any) {
+    pendingFourMemeBuy.delete(chatId);
+    await bot.sendMessage(chatId, `Failed to estimate: ${e.message?.substring(0, 150) || "Unknown error"}`, { reply_markup: mainMenuKeyboard() });
+  }
+}
+
+async function handleFourMemeSellFlow(chatId: number, text: string): Promise<void> {
+  if (!bot) return;
+  const state = pendingFourMemeSell.get(chatId)!;
+  const input = text.trim();
+
+  if (state.step === "token") {
+    if (!/^0x[a-fA-F0-9]{40}$/i.test(input)) {
+      await bot.sendMessage(chatId, "Invalid address. Enter a valid token contract address (0x...):");
+      return;
+    }
+    state.tokenAddress = input.toLowerCase();
+    state.step = "amount";
+    pendingFourMemeSell.set(chatId, state);
+    await showSellAmountPrompt(chatId, state.tokenAddress);
+    return;
+  }
+
+  if (state.step === "amount") {
+    const amount = parseFloat(input);
+    if (isNaN(amount) || amount <= 0) {
+      await bot.sendMessage(chatId, "Enter a valid token amount:");
+      return;
+    }
+    state.tokenAmount = amount.toString();
+    await executeFourMemeSellConfirm(chatId, state);
+    return;
+  }
+}
+
+async function executeFourMemeSellConfirm(chatId: number, state: FourMemeSellState): Promise<void> {
+  if (!bot || !state.tokenAddress || !state.tokenAmount) return;
+
+  await bot.sendChatAction(chatId, "typing");
+
+  try {
+    const { fourMemeEstimateSell } = await import("./token-launcher");
+    const estimate = await fourMemeEstimateSell(state.tokenAddress, state.tokenAmount);
+
+    state.estimate = estimate;
+    state.step = "confirm";
+    pendingFourMemeSell.set(chatId, state);
+
+    const quoteName = estimate.quote === "0x0000000000000000000000000000000000000000" ? "BNB" : "BEP20";
+
+    await bot.sendMessage(chatId,
+      `💸 SELL PREVIEW\n\n` +
+      `Token: \`${state.tokenAddress}\`\n` +
+      `Sell: ${state.tokenAmount} ${state.tokenSymbol || "tokens"}\n` +
+      `Est. receive: ${parseFloat(estimate.fundsReceived).toFixed(6)} ${quoteName}\n` +
+      `Fee: ${parseFloat(estimate.fee).toFixed(6)} ${quoteName}\n\n` +
+      `Confirm sale?`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✅ Confirm Sell", callback_data: `fmsellconfirm:${state.tokenAddress}` }],
+            [{ text: "Cancel", callback_data: "action:menu" }],
+          ]
+        }
+      }
+    );
+  } catch (e: any) {
+    pendingFourMemeSell.delete(chatId);
+    await bot.sendMessage(chatId, `Failed to estimate: ${e.message?.substring(0, 150) || "Unknown error"}`, { reply_markup: mainMenuKeyboard() });
   }
 }
 
