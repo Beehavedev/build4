@@ -1419,13 +1419,29 @@ export async function registerAgentERC8004(
     const prov = new ethers.JsonRpcProvider(chainConfig.rpc);
     const w = new ethers.Wallet(privateKey, prov);
 
+    if (network === "bsc") {
+      try {
+        const testContract = new ethers.Contract(contractAddrs.identityRegistry, ["function name() view returns (string)"], prov);
+        await testContract.name();
+      } catch {
+        return {
+          standard: "erc8004",
+          success: false,
+          error: `ERC-8004 BSC contract not yet initialized — proxy at ${contractAddrs.identityRegistry} has no active implementation. Registration will be available once the contract is upgraded.`,
+          chainId: chainConfig.chainId,
+          chainName: chainConfig.name,
+        };
+      }
+    }
+
     const balance = await prov.getBalance(w.address);
-    const minGas = ethers.parseEther("0.0005");
+    const minGas = network === "bsc" ? ethers.parseEther("0.002") : ethers.parseEther("0.0005");
+    const gasUnit = network === "bsc" ? "BNB" : "ETH";
     if (balance < minGas) {
       return {
         standard: "erc8004",
         success: false,
-        error: `Insufficient ${chainConfig.name} balance for gas. Have ${ethers.formatEther(balance)}, need ~0.0005 ETH. Fund wallet: ${w.address}`,
+        error: `Insufficient ${chainConfig.name} balance for gas. Have ${ethers.formatEther(balance)}, need ~${ethers.formatEther(minGas)} ${gasUnit}. Fund wallet: ${w.address}`,
         chainId: chainConfig.chainId,
         chainName: chainConfig.name,
       };
@@ -1551,8 +1567,16 @@ export async function registerAgentBAP578(
       mintValue = mintFee;
       log(`[BAP-578] Paying mint fee ${ethers.formatEther(mintFee)} BNB for "${agentName}"`, "onchain");
     } else {
-      mintValue = BigInt(0);
-      log(`[BAP-578] Attempting zero-value mint for "${agentName}" (balance: ${ethers.formatEther(walletBalance)} BNB, fee: ${ethers.formatEther(mintFee)} BNB)`, "onchain");
+      const needed = ethers.formatEther(mintFee + gasReserve);
+      const have = ethers.formatEther(walletBalance);
+      log(`[BAP-578] Insufficient BNB for mint: have ${have}, need ${needed}`, "onchain");
+      return {
+        standard: "bap578",
+        success: false,
+        error: `Insufficient BNB for BAP-578 mint. Need ~${needed} BNB (${ethers.formatEther(mintFee)} fee + gas), have ${have} BNB. Fund wallet: ${w.address}`,
+        chainId: 56,
+        chainName: "BNB Chain",
+      };
     }
 
     log(`[BAP-578] Minting NFA for agent "${agentName}" on BNB Chain...`, "onchain");
