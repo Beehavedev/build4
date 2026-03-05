@@ -753,12 +753,19 @@ export async function registerRoutes(
     res.json(result);
   });
 
-  app.post("/api/chaos/execute-next", analyticsAuth, async (_req: Request, res: Response) => {
-    const { checkAndExecuteMilestones } = await import("./chaos-launch");
-    await checkAndExecuteMilestones();
-    const { getChaosStatus } = await import("./chaos-launch");
-    const status = await getChaosStatus();
-    res.json(status);
+  app.post("/api/chaos/execute-next", analyticsAuth, async (req: Request, res: Response) => {
+    const force = req.query.force === "true" || req.body?.force === true;
+    if (force) {
+      const { forceExecuteNextMilestone } = await import("./chaos-launch");
+      const result = await forceExecuteNextMilestone();
+      res.json(result);
+    } else {
+      const { checkAndExecuteMilestones } = await import("./chaos-launch");
+      await checkAndExecuteMilestones();
+      const { getChaosStatus } = await import("./chaos-launch");
+      const status = await getChaosStatus();
+      res.json(status);
+    }
   });
 
   app.post("/api/chaos/confession", analyticsAuth, async (_req: Request, res: Response) => {

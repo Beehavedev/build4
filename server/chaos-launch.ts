@@ -126,15 +126,27 @@ function formatTokenAmount(amount: bigint, decimals: number): string {
 function getMilestoneConfig(milestone: ChaosMilestone): { burnPercent?: number; airdropCount?: number; airdropPercent?: number; tweetTemplate: string } {
   try {
     const config = JSON.parse(milestone.description);
+    if (config.tweetTemplate !== undefined) {
+      return {
+        burnPercent: config.burnPercent,
+        airdropCount: config.airdropCount,
+        airdropPercent: config.airdropPercent,
+        tweetTemplate: config.tweetTemplate || "",
+      };
+    }
+  } catch {}
+
+  const legacy = MILESTONE_PLAN.find(m => m.number === milestone.milestoneNumber);
+  if (legacy) {
     return {
-      burnPercent: config.burnPercent,
-      airdropCount: config.airdropCount,
-      airdropPercent: config.airdropPercent,
-      tweetTemplate: config.tweetTemplate || "",
+      burnPercent: (legacy as any).burnPercent,
+      airdropCount: (legacy as any).airdropCount,
+      airdropPercent: (legacy as any).airdropPercent,
+      tweetTemplate: legacy.tweetTemplate,
     };
-  } catch {
-    return { tweetTemplate: milestone.description };
   }
+
+  return { tweetTemplate: milestone.description };
 }
 
 export async function createChaosPlanForUser(params: {
@@ -321,6 +333,33 @@ export async function executeConfessionTweet(): Promise<{ success: boolean; twee
 
 export async function initiateChaosLaunch(agentId?: string): Promise<{ success: boolean; error?: string; launchId?: string }> {
   return attachChaosPlan();
+}
+
+export async function forceExecuteNextMilestone(): Promise<{ success: boolean; milestone?: string; error?: string }> {
+  const plan = await storage.getActiveChaosPlan();
+  if (!plan) return { success: false, error: "No active chaos plan" };
+
+  const { launch, milestones } = plan;
+  if (!launch.tokenAddress) return { success: false, error: "No token address" };
+
+  const next = milestones.find(m => m.status === "pending");
+  if (!next) return { success: false, error: "No pending milestones" };
+
+  log(`[ChaosLaunch] FORCE executing milestone ${next.milestoneNumber}: ${next.name} for $${launch.tokenSymbol}`, "chaos");
+  await storage.updateChaosMilestone(next.id, { status: "executing" });
+
+  try {
+    await executeMilestone(launch, next);
+    return { success: true, milestone: `${next.milestoneNumber}: ${next.name}` };
+  } catch (e: any) {
+    log(`[ChaosLaunch] Force milestone ${next.milestoneNumber} failed: ${e.message}`, "chaos");
+    await storage.updateChaosMilestone(next.id, {
+      status: "failed",
+      errorMessage: e.message?.substring(0, 500),
+      executedAt: new Date(),
+    });
+    return { success: false, milestone: `${next.milestoneNumber}: ${next.name}`, error: e.message };
+  }
 }
 
 export async function checkAndExecuteMilestones(): Promise<void> {
