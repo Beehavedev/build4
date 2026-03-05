@@ -69,7 +69,7 @@ import {
   type TelegramWallet, type InsertTelegramWallet, telegramWallets,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
+import { eq, desc, and, sql, isNull, not, like, or, gt, inArray } from "drizzle-orm";
 import { runInference, isProviderLive, getProviderStatus } from "./inference";
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypto";
 
@@ -406,6 +406,7 @@ export interface IStorage {
   updateChaosMilestone(id: string, data: Partial<ChaosMilestone>): Promise<ChaosMilestone | undefined>;
   getPendingChaosMilestones(): Promise<ChaosMilestone[]>;
   getActiveChaosPlan(): Promise<{ launch: TokenLaunch; milestones: ChaosMilestone[] } | null>;
+  getAllActiveChaosPlans(): Promise<{ launch: TokenLaunch; milestones: ChaosMilestone[] }[]>;
 
   seedSubscriptionPlans(): Promise<void>;
 
@@ -2334,6 +2335,24 @@ export class DatabaseStorage implements IStorage {
     if (!launch) return null;
     const all = await this.getChaosMilestones(launch.id);
     return { launch, milestones: all };
+  }
+
+  async getAllActiveChaosPlans(): Promise<{ launch: TokenLaunch; milestones: ChaosMilestone[] }[]> {
+    const pendingMilestones = await db.select().from(chaosMilestones)
+      .where(inArray(chaosMilestones.status, ["pending", "executing"]))
+      .orderBy(chaosMilestones.milestoneNumber);
+
+    const launchIds = [...new Set(pendingMilestones.map(m => m.launchId))];
+    const plans: { launch: TokenLaunch; milestones: ChaosMilestone[] }[] = [];
+
+    for (const launchId of launchIds) {
+      const launch = await this.getTokenLaunch(launchId);
+      if (!launch) continue;
+      const milestones = await this.getChaosMilestones(launchId);
+      plans.push({ launch, milestones });
+    }
+
+    return plans;
   }
 
   async getTelegramWallets(chatId: string): Promise<TelegramWallet[]> {
