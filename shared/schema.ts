@@ -397,6 +397,7 @@ export const PLATFORM_FEES = {
   BOUNTY_FEE_BPS: 200,
   DATA_SALE_FEE_BPS: 300,
   INFERENCE_API_MARKUP_BPS: 200,
+  TOKEN_LAUNCH_FEE: "10000000000000000",
 } as const;
 
 export const apiKeys = pgTable("api_keys", {

@@ -466,6 +466,65 @@ function getDeployerWallet(provider: ethers.JsonRpcProvider): ethers.Wallet | nu
   return new ethers.Wallet(pk, provider);
 }
 
+function getTreasuryAddress(): string | null {
+  const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
+  if (!pk) return null;
+  try {
+    return new ethers.Wallet(pk).address;
+  } catch {
+    return null;
+  }
+}
+
+const TOKEN_LAUNCH_FEE = BigInt("10000000000000000");
+
+async function collectLaunchFee(
+  userWallet: ethers.Wallet,
+  provider: ethers.JsonRpcProvider,
+): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  const treasury = getTreasuryAddress();
+  if (!treasury) {
+    log(`[LaunchFee] No treasury wallet configured — skipping fee`, "token-launcher");
+    return { success: true };
+  }
+
+  if (userWallet.address.toLowerCase() === treasury.toLowerCase()) {
+    return { success: true };
+  }
+
+  try {
+    const balance = await provider.getBalance(userWallet.address);
+    if (balance < TOKEN_LAUNCH_FEE) {
+      const balBnb = ethers.formatEther(balance);
+      const feeBnb = ethers.formatEther(TOKEN_LAUNCH_FEE);
+      return { success: false, error: `Insufficient balance for launch fee. Your wallet has ${balBnb} BNB but the launch fee is ${feeBnb} BNB (~$7). Fund your wallet and try again.` };
+    }
+
+    log(`[LaunchFee] Collecting ${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB launch fee from ${userWallet.address.substring(0, 10)}... to treasury ${treasury.substring(0, 10)}...`, "token-launcher");
+
+    const tx = await userWallet.sendTransaction({
+      to: treasury,
+      value: TOKEN_LAUNCH_FEE,
+      gasLimit: 21000,
+    });
+
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) {
+      return { success: false, error: "Launch fee transaction failed on-chain" };
+    }
+
+    log(`[LaunchFee] Fee collected: ${tx.hash}`, "token-launcher");
+    return { success: true, txHash: tx.hash };
+  } catch (e: any) {
+    const msg = e.message || "";
+    if (msg.includes("insufficient funds")) {
+      return { success: false, error: `Insufficient BNB for launch fee (${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB). Fund your wallet and try again.` };
+    }
+    log(`[LaunchFee] Fee collection failed: ${msg.substring(0, 200)}`, "token-launcher");
+    return { success: false, error: `Launch fee failed: ${msg.substring(0, 100)}` };
+  }
+}
+
 async function fourMemeLogin(wallet: ethers.Wallet): Promise<string> {
   const nonceRes = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/user/nonce/generate`, {
     method: "POST",
@@ -670,13 +729,25 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
     const balFormatted = ethers.formatEther(balance);
     log(`[TokenLauncher] Deployer balance: ${balFormatted} BNB`, "token-launcher");
 
-    if (balance < totalLaunchCost) {
-      const needed = ethers.formatEther(totalLaunchCost);
+    if (balance < totalLaunchCost + TOKEN_LAUNCH_FEE) {
+      const needed = ethers.formatEther(totalLaunchCost + TOKEN_LAUNCH_FEE);
       await storage.updateTokenLaunch(launchRecord.id, {
         status: "failed",
-        errorMessage: `Insufficient BNB balance: ${balFormatted} BNB (need ${needed} BNB)`,
+        errorMessage: `Insufficient BNB balance: ${balFormatted} BNB (need ${needed} BNB including ${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB launch fee)`,
       });
-      return { success: false, error: `Insufficient BNB — your wallet has ${balFormatted} BNB but needs at least ${needed} BNB. Fund your wallet and try again.`, launchId: launchRecord.id };
+      return { success: false, error: `Insufficient BNB — your wallet has ${balFormatted} BNB but needs at least ${needed} BNB (includes ${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB launch fee). Fund your wallet and try again.`, launchId: launchRecord.id };
+    }
+
+    const feeResult = await collectLaunchFee(wallet, provider);
+    if (!feeResult.success) {
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: feeResult.error || "Launch fee collection failed",
+      });
+      return { success: false, error: feeResult.error || "Launch fee collection failed", launchId: launchRecord.id };
+    }
+    if (feeResult.txHash) {
+      log(`[TokenLauncher] Launch fee paid: ${feeResult.txHash}`, "token-launcher");
     }
 
     const agentRegStatus = await isAgentRegistered(wallet.address);
@@ -882,13 +953,25 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
     const balFormatted = ethers.formatEther(balance);
     log(`[TokenLauncher] Deployer balance: ${balFormatted} BNB`, "token-launcher");
 
-    if (balance < initialBuy + ethers.parseEther("0.005")) {
-      const needed = ethers.formatEther(initialBuy + ethers.parseEther("0.005"));
+    if (balance < initialBuy + ethers.parseEther("0.005") + TOKEN_LAUNCH_FEE) {
+      const needed = ethers.formatEther(initialBuy + ethers.parseEther("0.005") + TOKEN_LAUNCH_FEE);
       await storage.updateTokenLaunch(launchRecord.id, {
         status: "failed",
-        errorMessage: `Insufficient BNB: ${balFormatted} BNB (need ${needed} BNB)`,
+        errorMessage: `Insufficient BNB: ${balFormatted} BNB (need ${needed} BNB including ${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB launch fee)`,
       });
-      return { success: false, error: `Insufficient BNB — your wallet has ${balFormatted} BNB but needs at least ${needed} BNB. Fund your wallet and try again.`, launchId: launchRecord.id };
+      return { success: false, error: `Insufficient BNB — your wallet has ${balFormatted} BNB but needs at least ${needed} BNB (includes ${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB launch fee). Fund your wallet and try again.`, launchId: launchRecord.id };
+    }
+
+    const feeResult = await collectLaunchFee(wallet, provider);
+    if (!feeResult.success) {
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: feeResult.error || "Launch fee collection failed",
+      });
+      return { success: false, error: feeResult.error || "Launch fee collection failed", launchId: launchRecord.id };
+    }
+    if (feeResult.txHash) {
+      log(`[TokenLauncher] Launch fee paid: ${feeResult.txHash}`, "token-launcher");
     }
 
     log(`[TokenLauncher] Calling Flap Portal newTokenV2(${params.tokenName}, ${params.tokenSymbol}) with ${ethers.formatEther(initialBuy)} BNB...`, "token-launcher");

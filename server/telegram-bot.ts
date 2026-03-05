@@ -2461,11 +2461,13 @@ async function showLaunchPreview(chatId: number, state: TokenLaunchState) {
   if (!bot) return;
   const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : state.platform === "bankr" ? `Bankr (${state.bankrChain === "solana" ? "Solana" : "Base"})` : "Flap.sh (BNB Chain)";
   const liquidity = state.platform === "bankr" ? "Managed by Bankr" : state.platform === "four_meme" ? "0.01 BNB" : "0.001 BNB";
+  const launchFee = state.platform === "bankr" ? "Free" : "0.01 BNB (~$7)";
 
   let preview = `🚀 LAUNCH PREVIEW\n\n` +
     `Token: ${state.tokenName} ($${state.tokenSymbol})\n` +
     `Platform: ${platformName}\n` +
     `Liquidity: ${liquidity}\n` +
+    `Launch Fee: ${launchFee}\n` +
     `Agent: ${state.agentName}\n`;
 
   if (state.tokenDescription) preview += `Description: ${state.tokenDescription}\n`;
