@@ -54,15 +54,17 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation, no 
   "tokenName": "string (1-50 chars, the token's full name)",
   "tokenSymbol": "string (1-10 chars, uppercase letters/numbers only, e.g. MYTOKEN)",
   "tokenDescription": "string (max 500 chars, a fun/compelling description for the token)",
-  "platform": "four_meme or flap_sh",
-  "initialLiquidityBnb": "string number (e.g. 0 for no initial buy, or 0.1/0.5/1 for initial purchase)"
+  "platform": "four_meme or flap_sh or bankr",
+  "initialLiquidityBnb": "string number (e.g. 0 for no initial buy, or 0.1/0.5/1 for initial purchase)",
+  "bankrChain": "base or solana (only used when platform is bankr)"
 }
 
 Platform guide:
 - four_meme: Launches on BNB Chain (BSC). Use initialLiquidityBnb of 0 (no initial buy) unless the user specifies an amount. Valid amounts: 0, 0.1, 0.5, 1 BNB.
 - flap_sh: Launches on BNB Chain (BSC). Use initialLiquidityBnb of 0.001 unless the user says otherwise.
+- bankr: Launches via Bankr API on Base or Solana. Liquidity is managed by Bankr. Set bankrChain to "base" (default) or "solana" if user specifies.
 
-If the user specifies a platform, chain, or preference, use that. If not, default to four_meme (BNB Chain).
+If the user specifies a platform, chain, or preference, use that. If they mention Base or Solana, use bankr. If not specified, default to four_meme (BNB Chain).
 If the user specifies a token name/symbol, use those exactly. Otherwise, create something creative and memorable.
 Respond with ONLY the JSON object.`,
 };
@@ -232,8 +234,8 @@ async function executeLaunchTokenTask(
     const tokenName = (parsed.tokenName || "").trim().substring(0, 50);
     const tokenSymbol = (parsed.tokenSymbol || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").substring(0, 10);
     const tokenDescription = (parsed.tokenDescription || "").trim().substring(0, 500);
-    const platform = parsed.platform === "flap_sh" ? "flap_sh" : "four_meme";
-    const initialLiquidityBnb = parsed.initialLiquidityBnb || (platform === "four_meme" ? "0" : "0.001");
+    const platform = parsed.platform === "flap_sh" ? "flap_sh" : parsed.platform === "bankr" ? "bankr" : "four_meme";
+    const initialLiquidityBnb = platform === "bankr" ? "0" : parsed.initialLiquidityBnb || (platform === "four_meme" ? "0" : "0.001");
 
     if (!tokenName || !tokenSymbol) {
       await storage.updateTask(taskId, {
@@ -247,10 +249,10 @@ async function executeLaunchTokenTask(
       return storage.getTask(taskId) || null;
     }
 
-    const platformLabel = platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (Base)";
+    const platformLabel = platform === "four_meme" ? "Four.meme (BNB Chain)" : platform === "bankr" ? `Bankr (${parsed.bankrChain === "solana" ? "Solana" : "Base"})` : "Flap.sh (BNB Chain)";
     console.log(`[TaskEngine] Launching token: ${tokenName} ($${tokenSymbol}) on ${platformLabel} for agent ${task.agentId}`);
 
-    const launchResult = await launchToken({
+    const launchParams: any = {
       tokenName,
       tokenSymbol,
       tokenDescription: tokenDescription || `${tokenName} — launched by an autonomous AI agent on BUILD4`,
@@ -258,7 +260,12 @@ async function executeLaunchTokenTask(
       initialLiquidityBnb,
       agentId: task.agentId,
       creatorWallet: task.creatorWallet || undefined,
-    });
+    };
+    if (platform === "bankr") {
+      launchParams.bankrChain = parsed.bankrChain === "solana" ? "solana" : "base";
+    }
+
+    const launchResult = await launchToken(launchParams);
 
     const resultText = launchResult.success
       ? `TOKEN LAUNCHED SUCCESSFULLY\n\nToken: ${tokenName} ($${tokenSymbol})\nPlatform: ${platformLabel}\nLiquidity: ${initialLiquidityBnb} ${platform === "four_meme" ? "BNB" : "ETH"}\n${launchResult.tokenAddress ? `Token Address: ${launchResult.tokenAddress}` : ""}${launchResult.txHash ? `\nTx: ${launchResult.txHash}` : ""}${launchResult.launchUrl ? `\nView: ${launchResult.launchUrl}` : ""}\n\nDescription: ${tokenDescription}`

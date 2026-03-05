@@ -431,7 +431,7 @@ interface LaunchParams {
   tokenSymbol: string;
   tokenDescription: string;
   imageUrl?: string;
-  platform: "four_meme" | "flap_sh";
+  platform: "four_meme" | "flap_sh" | "bankr";
   initialLiquidityBnb?: string;
   agentId?: string;
   creatorWallet?: string;
@@ -440,6 +440,7 @@ interface LaunchParams {
   twitterUrl?: string;
   telegramUrl?: string;
   taxRate?: number;
+  bankrChain?: "base" | "solana";
 }
 
 interface LaunchResult {
@@ -1268,6 +1269,197 @@ export async function fourMemeGetTokenBalance(
   };
 }
 
+const BANKR_API_BASE = "https://api.bankr.bot";
+
+async function bankrPrompt(prompt: string): Promise<{ jobId: string; threadId: string } | { error: string }> {
+  const apiKey = process.env.BANKR_API_KEY;
+  if (!apiKey) return { error: "BANKR_API_KEY not configured" };
+
+  const res = await fetch(`${BANKR_API_BASE}/agent/prompt`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": apiKey,
+    },
+    body: JSON.stringify({ prompt }),
+  });
+
+  if (res.status === 401) return { error: "Bankr API key is invalid or expired" };
+  if (res.status === 403) return { error: "Bankr API key does not have Agent API access enabled. Enable it at bankr.bot/api" };
+  if (res.status === 429) return { error: "Bankr daily API limit reached. Try again later or upgrade to Bankr Club." };
+
+  const json = await res.json() as any;
+  if (!json.success || !json.jobId) {
+    return { error: json.message || json.error || `Bankr API returned status ${res.status}` };
+  }
+  return { jobId: json.jobId, threadId: json.threadId };
+}
+
+async function bankrPollJob(jobId: string, timeoutMs = 120000): Promise<{ status: string; response?: string; error?: string }> {
+  const apiKey = process.env.BANKR_API_KEY;
+  if (!apiKey) return { status: "failed", error: "BANKR_API_KEY not configured" };
+
+  const start = Date.now();
+  const pollInterval = 3000;
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(`${BANKR_API_BASE}/agent/job/${jobId}`, {
+        headers: { "X-API-Key": apiKey },
+      });
+
+      if (!res.ok && res.status !== 200) {
+        log(`[Bankr] Poll HTTP ${res.status} for job ${jobId}`, "token-launcher");
+        await new Promise(r => setTimeout(r, pollInterval));
+        continue;
+      }
+
+      let json: any;
+      try {
+        json = await res.json();
+      } catch {
+        log(`[Bankr] Poll non-JSON response for job ${jobId}`, "token-launcher");
+        await new Promise(r => setTimeout(r, pollInterval));
+        continue;
+      }
+
+      if (json.status === "completed") {
+        return { status: "completed", response: json.response || "" };
+      }
+      if (json.status === "failed") {
+        return { status: "failed", error: json.response || json.error || "Bankr job failed" };
+      }
+      if (json.status === "cancelled") {
+        return { status: "cancelled", error: "Bankr job was cancelled" };
+      }
+    } catch (e: any) {
+      log(`[Bankr] Poll error: ${e.message?.substring(0, 100)}`, "token-launcher");
+    }
+
+    await new Promise(r => setTimeout(r, pollInterval));
+  }
+
+  return { status: "timeout", error: "Bankr job timed out after 120 seconds" };
+}
+
+async function launchOnBankr(params: LaunchParams): Promise<LaunchResult> {
+  if (!params.tokenName || !params.tokenSymbol) {
+    return { success: false, error: "Token name and symbol are required" };
+  }
+  if (!process.env.BANKR_API_KEY) {
+    return { success: false, error: "BANKR_API_KEY not configured — set it in environment secrets" };
+  }
+
+  const chain = params.bankrChain || "base";
+  const chainLabel = chain === "solana" ? "Solana" : "Base";
+
+  const launchRecord = await storage.createTokenLaunch({
+    agentId: params.agentId || null,
+    creatorWallet: params.creatorWallet || "bankr-custodial",
+    platform: "bankr",
+    chainId: chain === "solana" ? 0 : 8453,
+    tokenName: params.tokenName,
+    tokenSymbol: params.tokenSymbol,
+    tokenDescription: params.tokenDescription,
+    imageUrl: params.imageUrl || null,
+    initialLiquidityBnb: "0",
+    status: "pending",
+    tokenAddress: null,
+    txHash: null,
+    launchUrl: null,
+    errorMessage: null,
+    metadata: JSON.stringify({ bankrChain: chain }),
+  });
+
+  try {
+    let prompt = `deploy a token called ${params.tokenName} with symbol ${params.tokenSymbol} on ${chain}`;
+    if (params.tokenDescription) {
+      prompt += `. Description: ${params.tokenDescription}`;
+    }
+
+    log(`[Bankr] Submitting prompt: "${prompt}"`, "token-launcher");
+
+    const promptResult = await bankrPrompt(prompt);
+    if ("error" in promptResult) {
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: promptResult.error,
+      });
+      return { success: false, error: promptResult.error, launchId: launchRecord.id };
+    }
+
+    log(`[Bankr] Job created: ${promptResult.jobId} (thread: ${promptResult.threadId})`, "token-launcher");
+
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "confirming",
+      metadata: JSON.stringify({ bankrChain: chain, jobId: promptResult.jobId, threadId: promptResult.threadId }),
+    });
+
+    const jobResult = await bankrPollJob(promptResult.jobId);
+
+    if (jobResult.status !== "completed") {
+      const errMsg = jobResult.error || `Bankr job ${jobResult.status}`;
+      log(`[Bankr] Job failed: ${errMsg}`, "token-launcher");
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: errMsg.substring(0, 500),
+      });
+      return { success: false, error: errMsg, launchId: launchRecord.id };
+    }
+
+    const response = jobResult.response || "";
+    log(`[Bankr] Job completed. Response: ${response.substring(0, 500)}`, "token-launcher");
+
+    let tokenAddress: string | undefined;
+    if (chain === "solana") {
+      const solAddrMatch = response.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/);
+      if (solAddrMatch) tokenAddress = solAddrMatch[0];
+    } else {
+      const evmAddrMatch = response.match(/0x[a-fA-F0-9]{40}/);
+      if (evmAddrMatch) tokenAddress = evmAddrMatch[0];
+    }
+
+    let launchUrl: string | undefined;
+    const urlMatch = response.match(/https?:\/\/[^\s)]+/);
+    if (urlMatch) launchUrl = urlMatch[0];
+
+    if (!launchUrl && tokenAddress) {
+      launchUrl = chain === "solana"
+        ? `https://solscan.io/token/${tokenAddress}`
+        : `https://basescan.org/token/${tokenAddress}`;
+    }
+
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "launched",
+      tokenAddress: tokenAddress || null,
+      launchUrl: launchUrl || null,
+      metadata: JSON.stringify({
+        bankrChain: chain,
+        jobId: promptResult.jobId,
+        threadId: promptResult.threadId,
+        bankrResponse: response.substring(0, 1000),
+      }),
+    });
+
+    log(`[Bankr] Launch success! Token: ${tokenAddress || "see response"}, Chain: ${chainLabel}`, "token-launcher");
+
+    return {
+      success: true,
+      tokenAddress,
+      launchUrl,
+      launchId: launchRecord.id,
+    };
+  } catch (e: any) {
+    log(`[Bankr] Launch failed: ${e.message}`, "token-launcher");
+    const cleanError = sanitizeError(e.message || "");
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "failed",
+      errorMessage: e.message?.substring(0, 500),
+    });
+    return { success: false, error: cleanError, launchId: launchRecord.id };
+  }
+}
+
 export async function launchToken(params: LaunchParams): Promise<LaunchResult> {
   log(`[TokenLauncher] Launching ${params.tokenName} ($${params.tokenSymbol}) on ${params.platform}`, "token-launcher");
 
@@ -1275,6 +1467,8 @@ export async function launchToken(params: LaunchParams): Promise<LaunchResult> {
     return launchOnFourMeme(params);
   } else if (params.platform === "flap_sh") {
     return launchOnFlapSh(params);
+  } else if (params.platform === "bankr") {
+    return launchOnBankr(params);
   }
 
   return { success: false, error: `Unknown platform: ${params.platform}` };

@@ -1128,7 +1128,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
       }
 
       case "launch_token": {
-        const platforms = ["four_meme", "flap_sh"] as const;
+        const platforms = ["four_meme", "flap_sh", "bankr"] as const;
         const chosenPlatform = platforms[Math.floor(Math.random() * platforms.length)];
 
         const tokenNames = [
@@ -1147,15 +1147,18 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           break;
         }
 
+        const chainId = chosenPlatform === "bankr" ? 8453 : 56;
+        const initialLiq = chosenPlatform === "four_meme" ? "0" : chosenPlatform === "bankr" ? "0" : "0.001";
+
         const proposal = await storage.createTokenLaunch({
           agentId: agent.id,
           creatorWallet: agent.creatorWallet,
           platform: chosenPlatform,
-          chainId: chosenPlatform === "four_meme" ? 56 : 8453,
+          chainId,
           tokenName: chosenName,
           tokenSymbol: chosenSymbol,
           tokenDescription: description,
-          initialLiquidityBnb: chosenPlatform === "four_meme" ? "0" : "0.001",
+          initialLiquidityBnb: initialLiq,
           status: "proposed",
         });
 
