@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startAgentRunner } from "./agent-runner";
+import { checkAndExecuteMilestones } from "./chaos-launch";
 
 process.on("uncaughtException", (err) => {
   console.error("[CRASH] Uncaught exception:", err.message, err.stack);
@@ -108,6 +109,16 @@ app.use((req, res, next) => {
       } else {
         log("Agent runner disabled — only real user-initiated actions allowed. Set AGENT_RUNNER_ENABLED=true to enable autonomous mode.");
       }
+
+      const CHAOS_CHECK_INTERVAL = 60_000;
+      setInterval(async () => {
+        try {
+          await checkAndExecuteMilestones();
+        } catch (e: any) {
+          log(`[ChaosLaunch] Milestone check error: ${e.message}`, "chaos");
+        }
+      }, CHAOS_CHECK_INTERVAL);
+      log("Chaos milestone auto-executor started (checks every 60s)");
     },
   );
 })();
