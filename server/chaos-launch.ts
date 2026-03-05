@@ -54,6 +54,7 @@ async function getWalletForLaunch(provider: ethers.JsonRpcProvider, launch: Toke
 }
 
 const BSCSCAN_API = "https://api.bscscan.com/api";
+const BSCSCAN_KEY = () => process.env.BSCSCAN_API_KEY || "YourApiKeyToken";
 
 async function fetchRealHolders(tokenAddress: string, count: number, excludeWallet?: string): Promise<string[]> {
   const excludeAddresses = new Set([
@@ -63,7 +64,7 @@ async function fetchRealHolders(tokenAddress: string, count: number, excludeWall
   if (excludeWallet) excludeAddresses.add(excludeWallet.toLowerCase());
 
   try {
-    const url = `${BSCSCAN_API}?module=token&action=tokentx&contractaddress=${tokenAddress}&page=1&offset=200&sort=desc&apikey=YourApiKeyToken`;
+    const url = `${BSCSCAN_API}?module=account&action=tokentx&contractaddress=${tokenAddress}&page=1&offset=200&sort=desc&apikey=${BSCSCAN_KEY()}`;
     const res = await fetch(url);
     const data = await res.json();
     if (data.status === "1" && Array.isArray(data.result)) {
@@ -85,7 +86,7 @@ async function fetchRealHolders(tokenAddress: string, count: number, excludeWall
   }
 
   try {
-    const url = `${BSCSCAN_API}?module=token&action=getTokenHolders&contractaddress=${tokenAddress}&page=1&offset=${count + 10}&apikey=YourApiKeyToken`;
+    const url = `${BSCSCAN_API}?module=token&action=getTokenHolders&contractaddress=${tokenAddress}&page=1&offset=${count + 10}&apikey=${BSCSCAN_KEY()}`;
     const res = await fetch(url);
     const data = await res.json();
     if (data.status === "1" && Array.isArray(data.result)) {
