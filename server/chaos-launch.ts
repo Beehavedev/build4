@@ -22,9 +22,14 @@ function getBscProvider(): ethers.JsonRpcProvider {
 }
 
 async function getAgentWallet(provider: ethers.JsonRpcProvider): Promise<ethers.Wallet | null> {
-  const pk = await storage.getPrivateKeyByWalletAddress(CHAOS_AGENT_WALLET);
+  let pk = process.env.CHAOS_AGENT_PRIVATE_KEY || null;
+
   if (!pk) {
-    log("[ChaosLaunch] Agent wallet private key not found in DB", "chaos");
+    pk = await storage.getPrivateKeyByWalletAddress(CHAOS_AGENT_WALLET);
+  }
+
+  if (!pk) {
+    log("[ChaosLaunch] Agent wallet private key not found (checked CHAOS_AGENT_PRIVATE_KEY env and DB)", "chaos");
     return null;
   }
   return new ethers.Wallet(pk, provider);

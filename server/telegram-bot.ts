@@ -736,6 +736,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     });
 
     walletButtons.push([{ text: "🔑 Add Wallet", callback_data: "action:genwallet" }]);
+    walletButtons.push([{ text: "🔐 Export Private Key", callback_data: "action:exportkey" }]);
     walletButtons.push([{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }, { text: "◀️ Menu", callback_data: "action:menu" }]);
 
     await bot.sendMessage(chatId, text, {
@@ -790,6 +791,63 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         });
       }
     }
+    return;
+  }
+
+  if (data === "action:exportkey") {
+    const wallets = getUserWallets(chatId);
+    if (wallets.length === 0) {
+      await bot.sendMessage(chatId, "No wallets found. Use /wallet to create one first.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+    const activeIdx = getActiveWalletIndex(chatId);
+    const activeWallet = wallets[activeIdx] || wallets[0];
+    await bot.sendMessage(chatId,
+      `⚠️ *WARNING: You are about to reveal your private key.*\n\n` +
+      `Wallet: \`${activeWallet}\`\n\n` +
+      `Your private key gives FULL control of this wallet. Never share it with anyone.\n\n` +
+      `Are you sure?`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✅ Yes, show my private key", callback_data: `confirmexport:${activeIdx}` }],
+            [{ text: "❌ Cancel", callback_data: "action:wallet" }],
+          ]
+        }
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("confirmexport:")) {
+    const idx = parseInt(data.split(":")[1]);
+    const wallets = getUserWallets(chatId);
+    if (idx < 0 || idx >= wallets.length) {
+      await bot.sendMessage(chatId, "Invalid wallet.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+    const walletAddr = wallets[idx];
+    const pk = await storage.getTelegramWalletPrivateKey(String(chatId), walletAddr);
+    if (!pk) {
+      await bot.sendMessage(chatId, "This wallet is view-only — no private key stored.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+
+    const msg = await bot.sendMessage(chatId,
+      `🔐 *Private Key for* \`${shortWallet(walletAddr)}\`\n\n` +
+      `\`${pk}\`\n\n` +
+      `⚠️ This message will be auto-deleted in 60 seconds. Copy it now.`,
+      { parse_mode: "Markdown" }
+    );
+
+    setTimeout(async () => {
+      try {
+        await bot.deleteMessage(chatId, msg.message_id);
+        await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard() });
+      } catch {}
+    }, 60000);
+
     return;
   }
 
