@@ -16,10 +16,22 @@ const ERC20_ABI = [
   "function totalSupply() view returns (uint256)",
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
+  "event Transfer(address indexed from, address indexed to, uint256 value)",
 ];
 
+const BSC_RPCS = [
+  "https://bsc-dataseed1.binance.org",
+  "https://bsc-dataseed2.binance.org",
+  "https://bsc-dataseed3.binance.org",
+  "https://bsc-dataseed4.binance.org",
+  "https://rpc.ankr.com/bsc",
+];
+let bscRpcIndex = 0;
+
 function getBscProvider(): ethers.JsonRpcProvider {
-  return new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+  const rpc = BSC_RPCS[bscRpcIndex % BSC_RPCS.length];
+  bscRpcIndex++;
+  return new ethers.JsonRpcProvider(rpc);
 }
 
 async function getWalletForLaunch(provider: ethers.JsonRpcProvider, launch: TokenLaunch): Promise<ethers.Wallet | null> {
@@ -51,6 +63,28 @@ async function fetchRealHolders(tokenAddress: string, count: number, excludeWall
   if (excludeWallet) excludeAddresses.add(excludeWallet.toLowerCase());
 
   try {
+    const url = `${BSCSCAN_API}?module=token&action=tokentx&contractaddress=${tokenAddress}&page=1&offset=200&sort=desc&apikey=YourApiKeyToken`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.status === "1" && Array.isArray(data.result)) {
+      const holderSet = new Set<string>();
+      for (const tx of data.result) {
+        const to = tx.to;
+        if (to && !excludeAddresses.has(to.toLowerCase())) {
+          holderSet.add(to);
+        }
+      }
+      const holders = Array.from(holderSet);
+      log(`[ChaosLaunch] BSCScan tokentx found ${holders.length} unique recipients`, "chaos");
+      if (holders.length > 0) {
+        return holders.slice(0, count);
+      }
+    }
+  } catch (e: any) {
+    log(`[ChaosLaunch] BSCScan tokentx fetch failed: ${e.message}`, "chaos");
+  }
+
+  try {
     const url = `${BSCSCAN_API}?module=token&action=getTokenHolders&contractaddress=${tokenAddress}&page=1&offset=${count + 10}&apikey=YourApiKeyToken`;
     const res = await fetch(url);
     const data = await res.json();
@@ -65,25 +99,11 @@ async function fetchRealHolders(tokenAddress: string, count: number, excludeWall
   }
 
   try {
-    const url = `${BSCSCAN_API}?module=token&action=tokenholderlist&contractaddress=${tokenAddress}&page=1&offset=${count + 10}&apikey=YourApiKeyToken`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data.status === "1" && Array.isArray(data.result)) {
-      return data.result
-        .map((h: any) => h.TokenHolderAddress || h.address)
-        .filter((addr: string) => addr && !excludeAddresses.has(addr.toLowerCase()))
-        .slice(0, count);
-    }
-  } catch (e: any) {
-    log(`[ChaosLaunch] BSCScan holder list fallback failed: ${e.message}`, "chaos");
-  }
-
-  try {
     const provider = getBscProvider();
     const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
     const filter = tokenContract.filters.Transfer();
     const latestBlock = await provider.getBlockNumber();
-    const fromBlock = Math.max(0, latestBlock - 50000);
+    const fromBlock = Math.max(0, latestBlock - 5000);
     const events = await tokenContract.queryFilter(filter, fromBlock, latestBlock);
 
     const holderSet = new Set<string>();
