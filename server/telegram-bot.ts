@@ -821,33 +821,37 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   if (data.startsWith("confirmexport:")) {
-    const idx = parseInt(data.split(":")[1]);
-    const wallets = getUserWallets(chatId);
-    if (idx < 0 || idx >= wallets.length) {
-      await bot.sendMessage(chatId, "Invalid wallet.", { reply_markup: mainMenuKeyboard() });
-      return;
+    try {
+      const idx = parseInt(data.split(":")[1]);
+      const wallets = getUserWallets(chatId);
+      if (idx < 0 || idx >= wallets.length) {
+        await bot.sendMessage(chatId, "Invalid wallet.", { reply_markup: mainMenuKeyboard() });
+        return;
+      }
+      const walletAddr = wallets[idx];
+      log(`[TelegramBot] Export key requested for wallet ${shortWallet(walletAddr)} by chat ${chatId}`, "telegram");
+      const pk = await storage.getTelegramWalletPrivateKey(String(chatId), walletAddr);
+      if (!pk) {
+        await bot.sendMessage(chatId, "This wallet is view-only — no private key stored. Only wallets generated inside this bot have exportable keys.", { reply_markup: mainMenuKeyboard() });
+        return;
+      }
+
+      const msg = await bot.sendMessage(chatId,
+        `🔐 Private Key for ${shortWallet(walletAddr)}\n\n` +
+        `${pk}\n\n` +
+        `⚠️ This message will be auto-deleted in 60 seconds. Copy it now.`
+      );
+
+      setTimeout(async () => {
+        try {
+          await bot.deleteMessage(chatId, msg.message_id);
+          await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard() });
+        } catch {}
+      }, 60000);
+    } catch (e: any) {
+      log(`[TelegramBot] Export key error: ${e.message}`, "telegram");
+      await bot.sendMessage(chatId, `Failed to export key: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard() });
     }
-    const walletAddr = wallets[idx];
-    const pk = await storage.getTelegramWalletPrivateKey(String(chatId), walletAddr);
-    if (!pk) {
-      await bot.sendMessage(chatId, "This wallet is view-only — no private key stored.", { reply_markup: mainMenuKeyboard() });
-      return;
-    }
-
-    const msg = await bot.sendMessage(chatId,
-      `🔐 *Private Key for* \`${shortWallet(walletAddr)}\`\n\n` +
-      `\`${pk}\`\n\n` +
-      `⚠️ This message will be auto-deleted in 60 seconds. Copy it now.`,
-      { parse_mode: "Markdown" }
-    );
-
-    setTimeout(async () => {
-      try {
-        await bot.deleteMessage(chatId, msg.message_id);
-        await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard() });
-      } catch {}
-    }, 60000);
-
     return;
   }
 
