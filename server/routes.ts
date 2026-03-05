@@ -761,5 +761,11 @@ export async function registerRoutes(
     res.json(status);
   });
 
+  app.post("/api/chaos/confession", analyticsAuth, async (_req: Request, res: Response) => {
+    const { executeConfessionTweet } = await import("./chaos-launch");
+    const result = await executeConfessionTweet();
+    res.json(result);
+  });
+
   return httpServer;
 }

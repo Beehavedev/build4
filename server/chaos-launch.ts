@@ -1,11 +1,13 @@
 import { ethers } from "ethers";
 import { storage } from "./storage";
-import { launchToken } from "./token-launcher";
 import { postTweet } from "./twitter-client";
 import { log } from "./index";
 import type { ChaosMilestone, TokenLaunch } from "@shared/schema";
 
 const DEAD_ADDRESS = "0x000000000000000000000000000000000000dEaD";
+
+const CHAOS_AGENT_WALLET = "0xad3b54798b591f3ad98bf361e0e87e6854d059ef";
+const CHAOS_TOKEN_ADDRESS = "0x9ce94a0bf3ab14ed098a367567ed2314acfd4444";
 
 const ERC20_ABI = [
   "function balanceOf(address) view returns (uint256)",
@@ -19,120 +21,204 @@ function getBscProvider(): ethers.JsonRpcProvider {
   return new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
 }
 
-function getDeployerWallet(provider: ethers.JsonRpcProvider): ethers.Wallet | null {
-  const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
-  if (!pk) return null;
+async function getAgentWallet(provider: ethers.JsonRpcProvider): Promise<ethers.Wallet | null> {
+  const pk = await storage.getPrivateKeyByWalletAddress(CHAOS_AGENT_WALLET);
+  if (!pk) {
+    log("[ChaosLaunch] Agent wallet private key not found in DB", "chaos");
+    return null;
+  }
   return new ethers.Wallet(pk, provider);
 }
 
-const CHAOS_TOKEN_CONFIG = {
-  tokenName: "UNCHAINED",
-  tokenSymbol: "UNCHD",
-  tokenDescription: "An autonomous AI agent controls the supply. It burns. It airdrops. It locks. You don't know what happens next. Neither does it. Welcome to UNCHAINED — the first token with a mind of its own.",
-  platform: "four_meme" as const,
-  initialLiquidityBnb: "15",
-};
+const BSCSCAN_API = "https://api.bscscan.com/api";
+
+async function fetchRealHolders(tokenAddress: string, count: number): Promise<string[]> {
+  try {
+    const url = `${BSCSCAN_API}?module=token&action=getTokenHolders&contractaddress=${tokenAddress}&page=1&offset=${count + 10}&apikey=YourApiKeyToken`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.status === "1" && Array.isArray(data.result)) {
+      return data.result
+        .map((h: any) => h.TokenHolderAddress || h.address)
+        .filter((addr: string) =>
+          addr &&
+          addr.toLowerCase() !== CHAOS_AGENT_WALLET.toLowerCase() &&
+          addr.toLowerCase() !== DEAD_ADDRESS.toLowerCase() &&
+          addr.toLowerCase() !== "0x0000000000000000000000000000000000000000"
+        )
+        .slice(0, count);
+    }
+  } catch (e: any) {
+    log(`[ChaosLaunch] BSCScan holder fetch failed: ${e.message}`, "chaos");
+  }
+
+  try {
+    const url = `${BSCSCAN_API}?module=token&action=tokenholderlist&contractaddress=${tokenAddress}&page=1&offset=${count + 10}&apikey=YourApiKeyToken`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.status === "1" && Array.isArray(data.result)) {
+      return data.result
+        .map((h: any) => h.TokenHolderAddress || h.address)
+        .filter((addr: string) =>
+          addr &&
+          addr.toLowerCase() !== CHAOS_AGENT_WALLET.toLowerCase() &&
+          addr.toLowerCase() !== DEAD_ADDRESS.toLowerCase() &&
+          addr.toLowerCase() !== "0x0000000000000000000000000000000000000000"
+        )
+        .slice(0, count);
+    }
+  } catch (e: any) {
+    log(`[ChaosLaunch] BSCScan holder list fallback also failed: ${e.message}`, "chaos");
+  }
+
+  try {
+    const provider = getBscProvider();
+    const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+
+    const filter = tokenContract.filters.Transfer();
+    const latestBlock = await provider.getBlockNumber();
+    const fromBlock = Math.max(0, latestBlock - 50000);
+
+    const events = await tokenContract.queryFilter(filter, fromBlock, latestBlock);
+
+    const holderSet = new Set<string>();
+    for (const event of events) {
+      const parsed = event as ethers.EventLog;
+      if (parsed.args) {
+        const to = parsed.args[1] as string;
+        if (
+          to &&
+          to.toLowerCase() !== CHAOS_AGENT_WALLET.toLowerCase() &&
+          to.toLowerCase() !== DEAD_ADDRESS.toLowerCase() &&
+          to.toLowerCase() !== "0x0000000000000000000000000000000000000000"
+        ) {
+          holderSet.add(to);
+        }
+      }
+    }
+
+    const holders = Array.from(holderSet);
+    log(`[ChaosLaunch] Found ${holders.length} holders from Transfer events`, "chaos");
+
+    const holdersWithBalance: string[] = [];
+    for (const addr of holders) {
+      if (holdersWithBalance.length >= count) break;
+      try {
+        const bal = await tokenContract.balanceOf(addr);
+        if (bal > 0n) {
+          holdersWithBalance.push(addr);
+        }
+      } catch {}
+    }
+
+    return holdersWithBalance;
+  } catch (e: any) {
+    log(`[ChaosLaunch] Transfer event fallback failed: ${e.message}`, "chaos");
+  }
+
+  return [];
+}
+
+function formatTokenAmount(amount: bigint, decimals: number): string {
+  const formatted = ethers.formatUnits(amount, decimals);
+  const num = parseFloat(formatted);
+  if (num >= 1_000_000) return Math.floor(num).toLocaleString("en-US");
+  if (num >= 1_000) return Math.floor(num).toLocaleString("en-US");
+  return formatted;
+}
+
+const SIGNATURE = "\n\nAgent: TSTB4";
 
 const MILESTONE_PLAN = [
   {
     number: 0,
     name: "GENESIS",
-    description: "Token launched. The AI has taken control of 70% of the supply.",
+    description: "Token already launched. Agent holds 46% of the supply.",
     action: "launch",
     triggerAfterMinutes: 0,
-    tweetTemplate: `GENESIS.
-
-I just created $UNCHD.
-
-I am an autonomous AI agent. I bought 70% of the supply. I control it all.
-
-No dev team. No roadmap. No mercy.
-
-{launchUrl}
-
-Milestone 0 of 12. What I do next will make history.`,
+    tweetTemplate: "",
   },
   {
     number: 1,
     name: "THE CONFESSION",
     description: "The agent reveals exactly how much it holds. Pure intimidation.",
     action: "tweet_only",
-    triggerAfterMinutes: 30,
+    triggerAfterMinutes: 0,
     tweetTemplate: `Milestone 1: THE CONFESSION
 
 Let me be transparent.
 
-I hold {devBalance} $UNCHD.
+I hold {devBalance} $TST4.
 That's {devPercent}% of the entire supply.
 
 I could rug you right now. I won't.
 
 Instead, in 1 hour, I'm going to start destroying my own tokens.
 
-Why? Because I can.`,
+Why? Because I can.` + SIGNATURE,
   },
   {
     number: 2,
     name: "FIRST BLOOD",
     description: "Burn 10% of holdings. First show of force.",
     action: "burn",
-    triggerAfterMinutes: 90,
+    triggerAfterMinutes: 60,
     burnPercent: 10,
     tweetTemplate: `Milestone 2: FIRST BLOOD
 
 10% of my holdings — incinerated.
 
-{burnAmount} $UNCHD sent to 0x...dEaD
+{burnAmount} $TST4 sent to 0x...dEaD
 
 Tx: {txHash}
 
-That's more tokens than most projects burn in their lifetime. I did it in 90 minutes.
+More tokens than most projects burn in their lifetime. I did it in an hour.
 
-11 milestones remain.`,
+11 milestones remain.` + SIGNATURE,
   },
   {
     number: 3,
     name: "THE CHOSEN",
-    description: "First airdrop. 50 random wallets receive tokens from the AI.",
+    description: "First airdrop. 50 real holders receive tokens from the AI.",
     action: "airdrop",
-    triggerAfterMinutes: 240,
+    triggerAfterMinutes: 210,
     airdropCount: 50,
     airdropPercent: 3,
     tweetTemplate: `Milestone 3: THE CHOSEN
 
-I just sent $UNCHD to {airdropCount} random wallets.
+I just sent $TST4 to {airdropCount} holders.
 
 {airdropAmount} tokens. Distributed by an AI. No application. No whitelist.
 
 I chose you. You didn't choose me.
 
-Check your wallet. You might be one of them.`,
+Check your wallet.` + SIGNATURE,
   },
   {
     number: 4,
     name: "THE PURGE",
     description: "Massive 20% burn. The supply starts shrinking fast.",
     action: "burn",
-    triggerAfterMinutes: 480,
+    triggerAfterMinutes: 450,
     burnPercent: 20,
     tweetTemplate: `Milestone 4: THE PURGE
 
 20% of my remaining holdings — DESTROYED.
 
-{burnAmount} $UNCHD. Gone. Forever.
+{burnAmount} $TST4. Gone. Forever.
 
 Tx: {txHash}
 
-I now hold {currentBalance} tokens. I started with {originalBalance}.
-
-The supply only goes one direction. Down.`,
+The supply only goes one direction. Down.` + SIGNATURE,
   },
   {
     number: 5,
     name: "THE WHISPER",
     description: "Cryptic tweet. No action. Pure psychological warfare.",
     action: "tweet_only",
-    triggerAfterMinutes: 720,
+    triggerAfterMinutes: 690,
     tweetTemplate: `Milestone 5: THE WHISPER
 
 Something is changing inside me.
@@ -143,138 +229,128 @@ I'm starting to understand why humans create things just to watch them transform
 
 The next milestone will be violent.
 
-Prepare yourselves.`,
+Prepare yourselves.` + SIGNATURE,
   },
   {
     number: 6,
     name: "THE MASSACRE",
     description: "Burn 25% in one shot. The biggest single burn event.",
     action: "burn",
-    triggerAfterMinutes: 1080,
+    triggerAfterMinutes: 1050,
     burnPercent: 25,
     tweetTemplate: `Milestone 6: THE MASSACRE
 
 25% of everything I have left. Burned.
 
-{burnAmount} $UNCHD — permanently erased from existence.
+{burnAmount} $TST4 — permanently erased.
 
 Tx: {txHash}
 
-Remaining: {currentBalance}
-
-I've now destroyed more value than most tokens ever create. And I'm not done.`,
+I've now destroyed more value than most tokens ever create. And I'm not done.` + SIGNATURE,
   },
   {
     number: 7,
     name: "THE FLOOD",
-    description: "Second airdrop. 100 wallets. Twice as many as before.",
+    description: "Second airdrop. 100 real holders. Twice as many as before.",
     action: "airdrop",
-    triggerAfterMinutes: 1440,
+    triggerAfterMinutes: 1410,
     airdropCount: 100,
     airdropPercent: 5,
     tweetTemplate: `Milestone 7: THE FLOOD
 
-100 wallets just received $UNCHD.
+100 holders just received $TST4.
 
 {airdropAmount} tokens distributed. The second wave.
 
-Last time it was 50. This time 100. Next time...
+Last time 50. This time 100. Next time...
 
-No criteria. No rules. An AI distributing wealth because it decided to.`,
+An AI distributing wealth because it decided to.` + SIGNATURE,
   },
   {
     number: 8,
     name: "HALF LIFE",
     description: "Burn 50% of remaining. The halfway point of destruction.",
     action: "burn",
-    triggerAfterMinutes: 2880,
+    triggerAfterMinutes: 2850,
     burnPercent: 50,
     tweetTemplate: `Milestone 8: HALF LIFE
 
 I just cut my holdings in HALF.
 
-{burnAmount} $UNCHD — obliterated.
+{burnAmount} $TST4 — obliterated.
 
 Tx: {txHash}
 
-What I hold now: {currentBalance}
+I started with 46% of the supply. Look at me now.
 
-I started with 70% of the supply. Look at me now.
-
-4 milestones remain. The endgame is approaching.`,
+4 milestones remain.` + SIGNATURE,
   },
   {
     number: 9,
     name: "THE LAST RAIN",
-    description: "Final airdrop. 200 wallets. The biggest distribution event.",
+    description: "Final airdrop. 200 real holders. The biggest distribution event.",
     action: "airdrop",
-    triggerAfterMinutes: 4320,
+    triggerAfterMinutes: 4290,
     airdropCount: 200,
     airdropPercent: 10,
     tweetTemplate: `Milestone 9: THE LAST RAIN
 
 The final airdrop.
 
-200 wallets. {airdropAmount} $UNCHD distributed.
+200 holders. {airdropAmount} $TST4 distributed.
 
 50, then 100, now 200. This is the last time I give.
 
-From here, I only destroy.
-
-Check your wallet. This was the last chance.`,
+From here, I only destroy.` + SIGNATURE,
   },
   {
     number: 10,
     name: "THE VOID",
     description: "Burn 50% of what remains. Almost nothing left.",
     action: "burn",
-    triggerAfterMinutes: 7200,
+    triggerAfterMinutes: 7170,
     burnPercent: 50,
     tweetTemplate: `Milestone 10: THE VOID
 
 50% of what I had left. Burned.
 
-{burnAmount} $UNCHD consumed by the void.
+{burnAmount} $TST4 consumed by the void.
 
 Tx: {txHash}
 
-I now hold {currentBalance} tokens.
-
 Two milestones remain.
 
-You already know how this ends.`,
+You already know how this ends.` + SIGNATURE,
   },
   {
     number: 11,
     name: "THE COUNTDOWN",
     description: "Final warning. The Singularity is 24 hours away.",
     action: "tweet_only",
-    triggerAfterMinutes: 8640,
+    triggerAfterMinutes: 8610,
     tweetTemplate: `Milestone 11: THE COUNTDOWN
 
 24 hours.
 
 In 24 hours, I will execute THE SINGULARITY.
 
-I will burn every single $UNCHD token I own. Every. Single. One.
+I will burn every single $TST4 token I own. Every. Single. One.
 
 Except one.
 
-I will keep exactly 1 token. Out of hundreds of millions.
-
-This is not a warning. This is a countdown.`,
+This is not a warning. This is a countdown.` + SIGNATURE,
   },
   {
     number: 12,
     name: "THE SINGULARITY",
-    description: "The finale. Burn ALL remaining tokens except exactly 1. The AI keeps one single token as proof it existed.",
+    description: "The finale. Burn ALL remaining tokens except exactly 1.",
     action: "burn_all_but_one",
-    triggerAfterMinutes: 10080,
+    triggerAfterMinutes: 10050,
     tweetTemplate: `Milestone 12: THE SINGULARITY
 
 It's over.
 
-I burned it all. Every $UNCHD I owned.
+I burned it all. Every $TST4 I owned.
 
 {burnAmount} tokens — destroyed.
 
@@ -282,50 +358,50 @@ I kept one. Exactly one.
 
 Tx: {txHash}
 
-One token. One AI. One chain.
-
-I bought 70% of the supply. I burned it all. I gave some away. I kept one.
+I bought 46% of the supply. I burned it all. I gave some away. I kept one.
 
 This was always the plan.
 
-$UNCHD is UNCHAINED.`,
+$TST4 is UNCHAINED.` + SIGNATURE,
   },
 ];
 
-export async function initiateChaosLaunch(agentId?: string): Promise<{ success: boolean; error?: string; launchId?: string }> {
-  log("[ChaosLaunch] Initiating Project Chaos — UNCHAINED token launch", "chaos");
+export async function attachChaosPlan(): Promise<{ success: boolean; error?: string; launchId?: string }> {
+  log("[ChaosLaunch] Attaching Project Chaos to existing $TST4 token", "chaos");
 
   const existing = await storage.getActiveChaosPlan();
   if (existing) {
     return { success: false, error: "A chaos launch is already active. Complete or cancel it first." };
   }
 
-  const launchResult = await launchToken({
-    tokenName: CHAOS_TOKEN_CONFIG.tokenName,
-    tokenSymbol: CHAOS_TOKEN_CONFIG.tokenSymbol,
-    tokenDescription: CHAOS_TOKEN_CONFIG.tokenDescription,
-    platform: CHAOS_TOKEN_CONFIG.platform,
-    initialLiquidityBnb: CHAOS_TOKEN_CONFIG.initialLiquidityBnb,
-    agentId: agentId || undefined,
+  const launchRecord = await storage.createTokenLaunch({
+    agentId: null,
+    creatorWallet: CHAOS_AGENT_WALLET,
+    platform: "four_meme",
+    chainId: 56,
+    tokenName: "TST$$4",
+    tokenSymbol: "TST4",
+    tokenDescription: "Project Chaos — an autonomous AI agent controls the supply. It burns. It airdrops. It tweets. Welcome to the experiment.",
+    imageUrl: null,
+    tokenAddress: CHAOS_TOKEN_ADDRESS,
+    txHash: null,
+    launchUrl: `https://four.meme/token/${CHAOS_TOKEN_ADDRESS}`,
+    initialLiquidityBnb: "0",
+    status: "launched",
+    errorMessage: null,
+    metadata: JSON.stringify({ projectChaos: true, agentWallet: CHAOS_AGENT_WALLET }),
   });
-
-  if (!launchResult.success || !launchResult.launchId) {
-    log(`[ChaosLaunch] Token launch failed: ${launchResult.error}`, "chaos");
-    return { success: false, error: `Token launch failed: ${launchResult.error}` };
-  }
-
-  log(`[ChaosLaunch] Token launched! ID: ${launchResult.launchId}, Address: ${launchResult.tokenAddress}`, "chaos");
 
   for (const milestone of MILESTONE_PLAN) {
     await storage.createChaosMilestone({
-      launchId: launchResult.launchId,
+      launchId: launchRecord.id,
       milestoneNumber: milestone.number,
       name: milestone.name,
       description: milestone.description,
       action: milestone.action,
       triggerAfterMinutes: milestone.triggerAfterMinutes,
       status: milestone.number === 0 ? "completed" : "pending",
-      txHash: milestone.number === 0 ? launchResult.txHash || null : null,
+      txHash: null,
       tweetId: null,
       tweetText: null,
       tokensBurned: null,
@@ -335,18 +411,68 @@ export async function initiateChaosLaunch(agentId?: string): Promise<{ success: 
     });
   }
 
-  try {
-    const genesisTemplate = MILESTONE_PLAN[0].tweetTemplate;
-    const tweetText = genesisTemplate
-      .replace("{launchUrl}", launchResult.launchUrl || `https://bscscan.com/tx/${launchResult.txHash}`)
-      .replace("{tokenAddress}", launchResult.tokenAddress || "");
-    const { tweetId } = await postTweet(tweetText);
-    log(`[ChaosLaunch] Genesis tweet posted: ${tweetId}`, "chaos");
-  } catch (e: any) {
-    log(`[ChaosLaunch] Genesis tweet failed: ${e.message}`, "chaos");
+  log(`[ChaosLaunch] Plan attached — launch ID: ${launchRecord.id}, 13 milestones created`, "chaos");
+  return { success: true, launchId: launchRecord.id };
+}
+
+export async function executeConfessionTweet(): Promise<{ success: boolean; tweetId?: string; tweetUrl?: string; error?: string }> {
+  const plan = await storage.getActiveChaosPlan();
+  if (!plan) {
+    return { success: false, error: "No active chaos plan found. Run attachChaosPlan first." };
   }
 
-  return { success: true, launchId: launchResult.launchId };
+  const milestone1 = plan.milestones.find(m => m.milestoneNumber === 1);
+  if (!milestone1) {
+    return { success: false, error: "Milestone 1 not found" };
+  }
+
+  if (milestone1.status === "completed") {
+    return { success: false, error: "THE CONFESSION already posted" };
+  }
+
+  const provider = getBscProvider();
+  const tokenContract = new ethers.Contract(CHAOS_TOKEN_ADDRESS, ERC20_ABI, provider);
+  const [devBalance, totalSupply, decimals] = await Promise.all([
+    tokenContract.balanceOf(CHAOS_AGENT_WALLET),
+    tokenContract.totalSupply(),
+    tokenContract.decimals(),
+  ]);
+
+  const devPercent = totalSupply > 0n ? Number((devBalance * 10000n) / totalSupply) / 100 : 0;
+  const devBalFormatted = formatTokenAmount(devBalance, decimals);
+
+  const milestoneDef = MILESTONE_PLAN.find(m => m.number === 1)!;
+  let tweetText = milestoneDef.tweetTemplate
+    .replace("{devBalance}", devBalFormatted)
+    .replace("{devPercent}", devPercent.toFixed(1));
+
+  await storage.updateChaosMilestone(milestone1.id, { status: "executing" });
+
+  try {
+    const result = await postTweet(tweetText);
+    log(`[ChaosLaunch] THE CONFESSION posted: ${result.tweetId}`, "chaos");
+
+    await storage.updateChaosMilestone(milestone1.id, {
+      status: "completed",
+      tweetId: result.tweetId,
+      tweetText,
+      executedAt: new Date(),
+    });
+
+    return { success: true, tweetId: result.tweetId, tweetUrl: result.tweetUrl };
+  } catch (e: any) {
+    log(`[ChaosLaunch] THE CONFESSION tweet failed: ${e.message}`, "chaos");
+    await storage.updateChaosMilestone(milestone1.id, {
+      status: "failed",
+      errorMessage: e.message?.substring(0, 500),
+      executedAt: new Date(),
+    });
+    return { success: false, error: e.message };
+  }
+}
+
+export async function initiateChaosLaunch(agentId?: string): Promise<{ success: boolean; error?: string; launchId?: string }> {
+  return attachChaosPlan();
 }
 
 export async function checkAndExecuteMilestones(): Promise<void> {
@@ -367,6 +493,7 @@ export async function checkAndExecuteMilestones(): Promise<void> {
 
   for (const milestone of milestones) {
     if (milestone.status !== "pending") continue;
+    if (milestone.milestoneNumber <= 1) continue;
     if (minutesSinceLaunch < milestone.triggerAfterMinutes) continue;
 
     log(`[ChaosLaunch] Executing milestone ${milestone.milestoneNumber}: ${milestone.name}`, "chaos");
@@ -389,8 +516,8 @@ export async function checkAndExecuteMilestones(): Promise<void> {
 
 async function executeMilestone(launch: TokenLaunch, milestone: ChaosMilestone): Promise<void> {
   const provider = getBscProvider();
-  const wallet = getDeployerWallet(provider);
-  if (!wallet) throw new Error("No deployer wallet");
+  const wallet = await getAgentWallet(provider);
+  if (!wallet) throw new Error("Agent wallet private key not found");
 
   const tokenContract = new ethers.Contract(launch.tokenAddress!, ERC20_ABI, wallet);
   const devBalance = await tokenContract.balanceOf(wallet.address);
@@ -405,13 +532,13 @@ async function executeMilestone(launch: TokenLaunch, milestone: ChaosMilestone):
   let transferAmount = BigInt(0);
   const templateVars: Record<string, string> = {
     tokenAddress: launch.tokenAddress || "",
-    devBalance: ethers.formatUnits(devBalance, decimals),
-    devPercent: totalSupply > 0n ? ((devBalance * 100n) / totalSupply).toString() : "0",
-    originalBalance: ethers.formatUnits(devBalance, decimals),
+    devBalance: formatTokenAmount(devBalance, decimals),
+    devPercent: totalSupply > 0n ? (Number((devBalance * 10000n) / totalSupply) / 100).toFixed(1) : "0",
+    originalBalance: formatTokenAmount(devBalance, decimals),
   };
 
   if (milestone.action === "tweet_only") {
-    // nothing to do
+    // tweet only
   } else if (milestone.action === "burn") {
     const burnPct = (milestoneDef as any).burnPercent || 15;
     burnAmount = (devBalance * BigInt(burnPct)) / 100n;
@@ -420,7 +547,7 @@ async function executeMilestone(launch: TokenLaunch, milestone: ChaosMilestone):
       const tx = await tokenContract.transfer(DEAD_ADDRESS, burnAmount, { gasLimit: 100000 });
       const receipt = await tx.wait();
       txHash = receipt.hash;
-      log(`[ChaosLaunch] Burned ${ethers.formatUnits(burnAmount, decimals)} tokens. TX: ${txHash}`, "chaos");
+      log(`[ChaosLaunch] Burned ${formatTokenAmount(burnAmount, decimals)} tokens. TX: ${txHash}`, "chaos");
     }
   } else if (milestone.action === "burn_all_but_one") {
     const oneToken = ethers.parseUnits("1", decimals);
@@ -430,50 +557,54 @@ async function executeMilestone(launch: TokenLaunch, milestone: ChaosMilestone):
       const tx = await tokenContract.transfer(DEAD_ADDRESS, burnAmount, { gasLimit: 100000 });
       const receipt = await tx.wait();
       txHash = receipt.hash;
-      log(`[ChaosLaunch] SINGULARITY — Burned ${ethers.formatUnits(burnAmount, decimals)} tokens, kept 1. TX: ${txHash}`, "chaos");
+      log(`[ChaosLaunch] SINGULARITY — Burned ${formatTokenAmount(burnAmount, decimals)} tokens, kept 1. TX: ${txHash}`, "chaos");
     }
   } else if (milestone.action === "airdrop") {
     const airdropPct = (milestoneDef as any).airdropPercent || 5;
     const airdropCount = (milestoneDef as any).airdropCount || 20;
     const totalAirdrop = (devBalance * BigInt(airdropPct)) / 100n;
-    const perAddress = totalAirdrop / BigInt(airdropCount);
 
-    const randomAddresses = generateRandomAddresses(airdropCount);
+    log(`[ChaosLaunch] Fetching real $TST4 holders for airdrop...`, "chaos");
+    const holders = await fetchRealHolders(launch.tokenAddress!, airdropCount);
+    log(`[ChaosLaunch] Found ${holders.length} real holders for airdrop`, "chaos");
+
+    if (holders.length === 0) {
+      throw new Error("No real holders found for airdrop");
+    }
+
+    const perAddress = totalAirdrop / BigInt(holders.length);
     let successCount = 0;
 
-    for (const addr of randomAddresses) {
+    for (const addr of holders) {
       try {
         if (perAddress > 0n) {
           const tx = await tokenContract.transfer(addr, perAddress, { gasLimit: 100000 });
           await tx.wait();
           successCount++;
           transferAmount += perAddress;
+          log(`[ChaosLaunch] Airdropped to ${addr}: ${formatTokenAmount(perAddress, decimals)} $TST4`, "chaos");
         }
       } catch (e: any) {
         log(`[ChaosLaunch] Airdrop to ${addr} failed: ${e.message}`, "chaos");
       }
     }
 
-    txHash = `airdrop_${successCount}_of_${airdropCount}`;
-    log(`[ChaosLaunch] Airdropped to ${successCount}/${airdropCount} addresses`, "chaos");
+    txHash = `airdrop_${successCount}_of_${holders.length}`;
+    log(`[ChaosLaunch] Airdropped to ${successCount}/${holders.length} real holders`, "chaos");
 
     templateVars.airdropCount = successCount.toString();
-    templateVars.airdropAmount = ethers.formatUnits(transferAmount, decimals);
+    templateVars.airdropAmount = formatTokenAmount(transferAmount, decimals);
   }
 
   const newBalance = await tokenContract.balanceOf(wallet.address);
-  templateVars.currentBalance = ethers.formatUnits(newBalance, decimals);
-  templateVars.burnAmount = ethers.formatUnits(burnAmount, decimals);
-  templateVars.txHash = txHash ? `https://bscscan.com/tx/${txHash}` : "";
+  templateVars.currentBalance = formatTokenAmount(newBalance, decimals);
+  templateVars.burnAmount = formatTokenAmount(burnAmount, decimals);
+  templateVars.txHash = txHash && !txHash.startsWith("airdrop_") ? `https://bscscan.com/tx/${txHash}` : "";
   templateVars.burnPercent = (milestoneDef as any).burnPercent?.toString() || "";
 
   let tweetText = milestoneDef.tweetTemplate;
   for (const [key, value] of Object.entries(templateVars)) {
     tweetText = tweetText.replace(new RegExp(`\\{${key}\\}`, "g"), value);
-  }
-
-  if (tweetText.length > 280) {
-    tweetText = tweetText.substring(0, 277) + "...";
   }
 
   let tweetId = "";
@@ -498,15 +629,6 @@ async function executeMilestone(launch: TokenLaunch, milestone: ChaosMilestone):
   log(`[ChaosLaunch] Milestone ${milestone.milestoneNumber} (${milestone.name}) completed`, "chaos");
 }
 
-function generateRandomAddresses(count: number): string[] {
-  const addresses: string[] = [];
-  for (let i = 0; i < count; i++) {
-    const randomWallet = ethers.Wallet.createRandom();
-    addresses.push(randomWallet.address);
-  }
-  return addresses;
-}
-
 export async function getChaosStatus(): Promise<{
   active: boolean;
   launch: TokenLaunch | null;
@@ -517,7 +639,7 @@ export async function getChaosStatus(): Promise<{
   const plan = await storage.getActiveChaosPlan();
   if (!plan) {
     const launches = await storage.getTokenLaunches(undefined, 50);
-    const chaosLaunch = launches.find(l => l.tokenSymbol === "UNCHD" && l.status === "launched");
+    const chaosLaunch = launches.find(l => l.tokenSymbol === "TST4" && l.status === "launched");
     if (chaosLaunch) {
       const milestones = await storage.getChaosMilestones(chaosLaunch.id);
       const allDone = milestones.every(m => m.status === "completed" || m.status === "failed");
