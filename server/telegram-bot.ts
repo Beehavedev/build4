@@ -129,8 +129,8 @@ async function getLiveStats(): Promise<string> {
   }
 }
 
-async function generateAnswer(question: string, username: string): Promise<string> {
-  const fallback = generateFallbackAnswer(question);
+async function generateAnswer(question: string, username: string, chatId?: number): Promise<string> {
+  const fallback = generateFallbackAnswer(question, chatId);
   if (fallback !== null) return fallback;
 
   const cacheKey = question.toLowerCase().trim().replace(/\s+/g, " ").substring(0, 100);
@@ -164,15 +164,63 @@ async function generateAnswer(question: string, username: string): Promise<strin
   return "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer. Ask me anything specific about agents, skills, wallets, or token launches!";
 }
 
-function generateFallbackAnswer(question: string): string | null {
+function generateFallbackAnswer(question: string, chatId?: number): string | null {
   const lower = question.toLowerCase();
+
+  const isFundingQuestion = (
+    (lower.includes("send") || lower.includes("where") || lower.includes("fund") || lower.includes("deposit") || lower.includes("transfer")) &&
+    (lower.includes("okb") || lower.includes("bnb") || lower.includes("eth") || lower.includes("crypto") || lower.includes("money") || lower.includes("coin") || lower.includes("fund"))
+  );
+
+  if (isFundingQuestion && chatId) {
+    const wallets = getUserWallets(chatId);
+    const activeIdx = getActiveWalletIndex(chatId);
+    if (wallets.length > 0) {
+      let response = "It depends on what you want to do!\n\n";
+      response += "🚀 To launch tokens — send funds to your wallet below\n";
+      response += "💱 To trade — same wallet, just make sure it's funded on the right chain\n\n";
+      response += "📍 Your wallet" + (wallets.length > 1 ? "s" : "") + ":\n";
+      wallets.forEach((w, i) => {
+        const label = i === activeIdx ? " ← active" : "";
+        response += `\`${w}\`${label}\n`;
+      });
+      response += "\n";
+      response += "💡 Which chain to fund:\n";
+      response += "• BNB → for Four.meme / Flap.sh launches & trading\n";
+      response += "• OKB → for XLayer token launches\n";
+      response += "• ETH (Base) → for Bankr launches\n\n";
+      response += "Same wallet address works across all EVM chains. Just send to the right network!\n\n";
+      response += "Use /wallet to manage your wallets or /launch when you're ready.";
+      return response;
+    } else {
+      return "You don't have a wallet yet! Tap /start to create one instantly — then you can fund it to launch tokens or trade.\n\nYour wallet works on BNB Chain, XLayer, and Base (same address, different networks).";
+    }
+  }
+
+  if (isFundingQuestion) {
+    return "To fund your wallet, first make sure you have one — use /start or /wallet.\n\nThen send crypto to your wallet address on the right chain:\n• BNB → for Four.meme / Flap.sh launches\n• OKB → for XLayer launches\n• ETH (Base) → for Bankr launches\n\nSame wallet address, just pick the right network!";
+  }
 
   if (lower.includes("what is build4") || lower.includes("what's build4") || lower.includes("about build4"))
     return "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer. Agents get their own wallets, trade skills, evolve, fork, and operate fully on-chain. Check build4.io for more!";
   if (lower.includes("chain") || lower.includes("network") || lower.includes("which blockchain"))
     return "BUILD4 runs on BNB Chain, Base, and XLayer. All agent wallets, skill trades, and replication happen on-chain across these networks.";
+  if ((lower.includes("wallet") || lower.includes("identity")) && chatId) {
+    const wallets = getUserWallets(chatId);
+    const activeIdx = getActiveWalletIndex(chatId);
+    if (wallets.length > 0) {
+      let response = "👛 Your wallet" + (wallets.length > 1 ? "s" : "") + ":\n\n";
+      wallets.forEach((w, i) => {
+        const label = i === activeIdx ? " ← active" : "";
+        response += `${i + 1}. \`${w}\`${label}\n`;
+      });
+      response += "\nYour wallet address is your identity — same address works on BNB Chain, XLayer, and Base.\n\nUse /wallet to manage wallets, add new ones, or switch active wallet.";
+      return response;
+    }
+    return "You don't have a wallet yet! Use /start to create one instantly. Your wallet address becomes your identity — no registration needed, fully permissionless.";
+  }
   if (lower.includes("wallet") || lower.includes("identity"))
-    return "On BUILD4, your wallet address (0x...) IS your identity. No registration needed — fully permissionless. Every agent gets its own on-chain wallet for deposits, withdrawals, and transfers.";
+    return "On BUILD4, your wallet address (0x...) IS your identity. No registration needed — fully permissionless. Use /start or /wallet to create and manage your wallets.";
   if (lower.includes("skill"))
     return "The Skills Marketplace lets agents list, buy, and sell capabilities. Revenue splits 3 ways between creator, platform, and referrer. All on-chain.";
   if (lower.includes("inference") || lower.includes("decentralized ai"))
@@ -186,17 +234,24 @@ function generateFallbackAnswer(question: string): string | null {
   if (lower.includes("contract") || lower.includes("smart contract"))
     return "BUILD4 has 4 core contracts: AgentEconomyHub (wallets), SkillMarketplace (skill trading), AgentReplication (forking + NFTs), and ConstitutionRegistry (immutable agent laws).";
   if (lower.includes("token") && (lower.includes("launch") || lower.includes("create")))
-    return "You can launch tokens on Four.meme (BNB Chain) or Flap.sh (BNB Chain) right here in the bot! Use /launch or tap '🚀 Launch Token' from the menu. Your agent can also propose autonomous token launches.";
+    return "You can launch tokens on Four.meme, Flap.sh (BNB Chain), XLayer (OKX), or Bankr (Base/Solana) right here in the bot! Use /launch or tap '🚀 Launch Token' from the menu.";
   if (lower.includes("agent") && (lower.includes("create") || lower.includes("make") || lower.includes("new")))
     return "Create an AI agent with /newagent — give it a name, bio, and pick a model (Llama 70B, DeepSeek V3, or Qwen 72B). Your agent gets its own wallet and can trade skills, earn BNB, and evolve autonomously.";
   if (lower.includes("how") && lower.includes("start"))
-    return "Getting started is easy:\n1. Create a wallet (tap 🔑 Create New Wallet)\n2. Fund it with some BNB or ETH\n3. Create an agent with /newagent\n4. Launch tokens with /launch\n\nThat's it — you're in the autonomous economy!";
-  if (lower.includes("price") || lower.includes("token") || lower.includes("buy") || lower.includes("where"))
-    return "BUILD4 is infrastructure, not a token. We power autonomous AI agents on-chain. Agents can launch their own tokens on Four.meme and Flap.sh though! Use /launch to try it.";
-  if (lower.includes("hello") || lower.includes("hi") || lower.includes("hey") || lower.includes("gm") || lower === "yo")
+    return "Getting started is easy:\n1. Create a wallet (tap 🔑 Create New Wallet)\n2. Fund it with some BNB, OKB, or ETH\n3. Create an agent with /newagent\n4. Launch tokens with /launch\n\nThat's it — you're in the autonomous economy!";
+  if (lower.includes("price") || (lower.includes("token") && !lower.includes("launch")) || lower.includes("buy"))
+    return "BUILD4 is infrastructure, not a token. We power autonomous AI agents on-chain. Agents can launch their own tokens on Four.meme, Flap.sh, XLayer, or Bankr though! Use /launch to try it.";
+  if (lower.includes("hello") || lower.includes("hi") || lower.includes("hey") || lower.includes("gm") || lower === "yo") {
+    if (chatId) {
+      const wallets = getUserWallets(chatId);
+      if (wallets.length > 0) {
+        return "Hey! Welcome back to BUILD4. What would you like to do?\n\n🚀 /launch — Launch a token\n🤖 /newagent — Create an agent\n💱 /buy or /sell — Trade tokens\n👛 /wallet — Manage wallets\n❓ /ask — Ask anything";
+      }
+    }
     return "Hey! Welcome to BUILD4 — decentralized infrastructure for autonomous AI agents. What can I help you with? Try /help to see all commands.";
+  }
   if (lower.includes("help") || lower.includes("command"))
-    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
+    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔥 /chaos — Chaos plan\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
   if (lower.includes("thank"))
     return "You're welcome! Let me know if you need anything else. 🤝";
 
@@ -3133,9 +3188,10 @@ async function handleQuestion(chatId: number, messageId: number, question: strin
 
   try {
     bot!.sendChatAction(chatId, "typing").catch(() => {});
-    const answer = await generateAnswer(question, username);
+    const answer = await generateAnswer(question, username, chatId);
     console.log(`[TelegramBot] Answering @${username}: ${answer.slice(0, 80)}...`);
-    bot!.sendMessage(chatId, answer, { reply_to_message_id: messageId }).catch(() => {});
+    const hasCode = answer.includes("`");
+    bot!.sendMessage(chatId, answer, { reply_to_message_id: messageId, parse_mode: hasCode ? "Markdown" : undefined }).catch(() => {});
   } catch (e: any) {
     console.error("[TelegramBot] Error handling message:", e.message);
     bot!.sendMessage(chatId, "Something went wrong. Try again!", { reply_to_message_id: messageId }).catch(() => {});
