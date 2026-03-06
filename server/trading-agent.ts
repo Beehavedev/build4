@@ -121,9 +121,12 @@ export function getUserTradingStatus(chatId: number): { config: TradingConfig; p
 
 async function fetchNewTokens(): Promise<Array<{ address: string; name: string; symbol: string; launchTime: number }>> {
   try {
-    const res = await fetch(`${FOUR_MEME_API}/meme-api/v1/public/token/list?pageNum=1&pageSize=20&orderBy=launchTime&direction=desc`, {
-      headers: { "Accept": "application/json", "User-Agent": "BUILD4/1.0" },
-    });
+    const res = await Promise.race([
+      fetch(`${FOUR_MEME_API}/meme-api/v1/public/token/list?pageNum=1&pageSize=20&orderBy=launchTime&direction=desc`, {
+        headers: { "Accept": "application/json", "User-Agent": "BUILD4/1.0" },
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Four.meme API timeout")), 15000)),
+    ]);
     if (!res.ok) {
       const searchRes = await fetch(`${FOUR_MEME_API}/meme-api/v1/public/token/search?keyword=&pageNum=1&pageSize=20`, {
         headers: { "Accept": "application/json", "User-Agent": "BUILD4/1.0" },
@@ -745,39 +748,69 @@ export async function manualClosePosition(positionId: string, notifyFn: (chatId:
 }
 
 async function scanAndTrade(notifyFn: (chatId: number, message: string) => void): Promise<void> {
-  const enabledUsers: Array<{ chatId: number; agentId: string; privateKey: string }> = [];
+  const enabledCount = Array.from(userTradingConfig.values()).filter(c => c.enabled).length;
+  if (enabledCount === 0) return;
+
+  log(`[TradingAgent] Scan cycle — ${enabledCount} users enabled`, "trading");
+
+  const enabledUsers: Array<{ chatId: number; agentId: string; privateKey: string; walletAddress: string }> = [];
 
   for (const [chatId, config] of userTradingConfig.entries()) {
     if (!config.enabled) continue;
 
     const openCount = Array.from(activePositions.values()).filter(p => p.chatId === chatId && p.status === "open").length;
-    if (openCount >= config.maxPositions) continue;
+    if (openCount >= config.maxPositions) {
+      log(`[TradingAgent] User ${chatId} at max positions (${openCount}/${config.maxPositions})`, "trading");
+      continue;
+    }
 
     try {
       const chatIdStr = chatId.toString();
       const wallets = await storage.getTelegramWalletLinks(chatIdStr);
-      if (wallets.length === 0) continue;
+      if (wallets.length === 0) {
+        log(`[TradingAgent] User ${chatId} has no wallets`, "trading");
+        continue;
+      }
 
       const activeWallet = wallets.find(w => w.isActive) || wallets[0];
       const pk = await storage.getTelegramWalletPrivateKey(chatIdStr, activeWallet.walletAddress);
-      if (!pk) continue;
+      if (!pk) {
+        log(`[TradingAgent] User ${chatId} wallet has no private key`, "trading");
+        continue;
+      }
 
       const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
-      const balance = await provider.getBalance(activeWallet.walletAddress);
+      const balance = await Promise.race([
+        provider.getBalance(activeWallet.walletAddress),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("RPC timeout")), 15000)),
+      ]);
       const balBnb = parseFloat(ethers.formatEther(balance));
-      if (balBnb < MIN_WALLET_BALANCE_BNB) continue;
+      if (balBnb < MIN_WALLET_BALANCE_BNB) {
+        log(`[TradingAgent] User ${chatId} low balance: ${balBnb.toFixed(4)} BNB (need ${MIN_WALLET_BALANCE_BNB})`, "trading");
+        continue;
+      }
 
       const agents = await storage.getAgentsByOwner(chatIdStr);
       const agentId = agents.length > 0 ? agents[0].id : "auto-trader";
 
       enabledUsers.push({ chatId, agentId, privateKey: pk, walletAddress: activeWallet.walletAddress });
-    } catch {}
+      log(`[TradingAgent] User ${chatId} ready to trade (${balBnb.toFixed(4)} BNB)`, "trading");
+    } catch (e: any) {
+      log(`[TradingAgent] User ${chatId} setup error: ${e.message?.substring(0, 100)}`, "trading");
+    }
   }
 
-  if (enabledUsers.length === 0) return;
+  if (enabledUsers.length === 0) {
+    log(`[TradingAgent] No users ready to trade this cycle`, "trading");
+    return;
+  }
 
   const tokens = await fetchNewTokens();
-  if (tokens.length === 0) return;
+  if (tokens.length === 0) {
+    log(`[TradingAgent] No tokens fetched from Four.meme`, "trading");
+    return;
+  }
+  log(`[TradingAgent] Fetched ${tokens.length} tokens from Four.meme`, "trading");
 
   const newTokens = tokens.filter(t => !recentlyScannedTokens.has(t.address));
   for (const t of tokens) recentlyScannedTokens.add(t.address);
@@ -799,7 +832,12 @@ async function scanAndTrade(notifyFn: (chatId: number, message: string) => void)
     } catch {}
   }
 
-  if (candidatesWithInfo.length === 0) return;
+  if (candidatesWithInfo.length === 0) {
+    log(`[TradingAgent] No viable candidates after filtering (${newTokens.length} new tokens checked)`, "trading");
+    return;
+  }
+
+  log(`[TradingAgent] ${candidatesWithInfo.length} candidates for AI evaluation`, "trading");
 
   const bestSignal = await aiEvaluateBuy(candidatesWithInfo);
   if (!bestSignal) return;
