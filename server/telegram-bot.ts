@@ -1051,7 +1051,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
-              [{ text: "0.005 BNB", callback_data: "tradeset:buy:0.005" }, { text: "0.01 BNB", callback_data: "tradeset:buy:0.01" }, { text: "0.05 BNB", callback_data: "tradeset:buy:0.05" }],
+              [{ text: "0.1 BNB", callback_data: "tradeset:buy:0.1" }, { text: "0.25 BNB", callback_data: "tradeset:buy:0.25" }, { text: "0.5 BNB", callback_data: "tradeset:buy:0.5" }],
               [{ text: "TP 1.5x", callback_data: "tradeset:tp:1.5" }, { text: "TP 2x", callback_data: "tradeset:tp:2" }, { text: "TP 3x", callback_data: "tradeset:tp:3" }],
               [{ text: "SL 50%", callback_data: "tradeset:sl:0.5" }, { text: "SL 70%", callback_data: "tradeset:sl:0.7" }, { text: "SL 85%", callback_data: "tradeset:sl:0.85" }],
               [{ text: "Max 3", callback_data: "tradeset:max:3" }, { text: "Max 5", callback_data: "tradeset:max:5" }, { text: "Max 10", callback_data: "tradeset:max:10" }],
