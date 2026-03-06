@@ -522,6 +522,7 @@ function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.I
     inline_keyboard: [
       [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
       [{ text: "💰 Buy Token", callback_data: "action:buy" }, { text: "💸 Sell Token", callback_data: "action:sell" }],
+      [{ text: "💎 Make Me Rich", callback_data: "action:trade" }],
       [{ text: "🤖 Create Agent", callback_data: "action:newagent" }, { text: "📋 My Agents", callback_data: "action:myagents" }],
       [{ text: "📝 New Task", callback_data: "action:task" }, { text: "📊 My Tasks", callback_data: "action:mytasks" }],
       [{ text: "👛 My Wallet", callback_data: "action:wallet" }],
@@ -959,6 +960,35 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     }
     pendingFourMemeSell.set(chatId, { step: "token" });
     await bot.sendMessage(chatId, "Enter the token contract address you want to sell (0x...):");
+    return;
+  }
+
+  if (data === "action:trade") {
+    if (!walletsWithKey.has(`${chatId}:${wallet}`)) {
+      await bot.sendMessage(chatId, "You need a wallet with a private key to use the trading agent. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+    await bot.sendMessage(chatId,
+      "💎 *Make Me Rich — Autonomous Trading Agent*\n\n" +
+      "The agent scans Four.meme for new token launches, evaluates momentum signals, and trades automatically from your wallet.\n\n" +
+      "Settings:\n" +
+      "• Buy amount per trade\n" +
+      "• Take-profit target (auto-sell)\n" +
+      "• Stop-loss protection\n" +
+      "• Max open positions\n\n" +
+      "Choose an action:",
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "▶️ Enable Trading", callback_data: "trade:enable" }, { text: "⏸ Disable", callback_data: "trade:disable" }],
+            [{ text: "📊 Status", callback_data: "trade:status" }, { text: "⚙️ Settings", callback_data: "trade:settings" }],
+            [{ text: "📜 History", callback_data: "trade:history" }, { text: "🔴 Close All", callback_data: "trade:closeall" }],
+            [{ text: "« Back", callback_data: "action:menu" }],
+          ],
+        },
+      }
+    );
     return;
   }
 
