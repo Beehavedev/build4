@@ -1021,21 +1021,16 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     }
 
     if (tradeAction === "status") {
-      const { config, positions, history } = getUserTradingStatus(chatId);
-      let msg = `📊 *Trading Agent Status*\n\n`;
+      const { config, positions } = getUserTradingStatus(chatId);
+      let msg = `📊 *Trading Agent*\n\n`;
       msg += `Status: ${config.enabled ? "✅ ACTIVE" : "⏸ DISABLED"}\n`;
-      msg += `Buy Size: ${config.buyAmountBnb} BNB\n`;
-      msg += `Take Profit: ${config.takeProfitMultiple}x\n`;
-      msg += `Stop Loss: ${(config.stopLossMultiple * 100).toFixed(0)}%\n`;
-      msg += `Max Positions: ${config.maxPositions}\n\n`;
+      msg += `Open Positions: ${positions.length}\n`;
       if (positions.length > 0) {
-        msg += `*Open Positions (${positions.length}):*\n`;
+        msg += `\n`;
         for (const p of positions) {
           const age = Math.floor((Date.now() - p.entryTime) / 60000);
           msg += `  • $${p.tokenSymbol} — ${p.entryPriceBnb} BNB (${age}m ago)\n`;
         }
-      } else {
-        msg += `No open positions.\n`;
       }
       await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
       return;
@@ -2103,29 +2098,17 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     if (cmd === "tradestatus") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for trade status!"); return; }
       const { getUserTradingStatus } = await import("./trading-agent");
-      const { config, positions, history } = getUserTradingStatus(chatId);
+      const { config, positions } = getUserTradingStatus(chatId);
 
-      let msg = `📊 *Trading Agent Status*\n\n`;
+      let msg = `📊 *Trading Agent*\n\n`;
       msg += `Status: ${config.enabled ? "✅ ACTIVE" : "⏸ DISABLED"}\n`;
-      msg += `Buy Size: ${config.buyAmountBnb} BNB\n`;
-      msg += `Take Profit: ${config.takeProfitMultiple}x\n`;
-      msg += `Stop Loss: ${(config.stopLossMultiple * 100).toFixed(0)}%\n`;
-      msg += `Max Positions: ${config.maxPositions}\n\n`;
-
+      msg += `Open Positions: ${positions.length}\n`;
       if (positions.length > 0) {
-        msg += `*Open Positions (${positions.length}):*\n`;
+        msg += `\n`;
         for (const p of positions) {
           const age = Math.floor((Date.now() - p.entryTime) / 60000);
           msg += `  • $${p.tokenSymbol} — ${p.entryPriceBnb} BNB (${age}m ago)\n`;
         }
-      } else {
-        msg += `No open positions.\n`;
-      }
-
-      const wins = history.filter(h => h.status === "closed_profit").length;
-      const losses = history.filter(h => h.status === "closed_loss").length;
-      if (history.length > 0) {
-        msg += `\n*Recent: ${wins}W / ${losses}L (${history.length} total)*`;
       }
 
       await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
