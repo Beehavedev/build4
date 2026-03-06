@@ -76,6 +76,7 @@ The project utilizes a monorepo containing `client/` for the React frontend, `se
 - **AI Sell Analysis**: Each open position is evaluated by AI every 30s — considers momentum changes, curve velocity, hold time, PnL, and whether to let winners run or cut losers. Hard safety limits (1.5x TP overshoot, 0.8x SL breach) bypass AI.
 - **Trade Memory**: Agent remembers last 20 trade outcomes (win/loss, PnL, reasoning) and feeds this history into future decisions, enabling self-improvement.
 - **Fallback**: If AI inference times out or fails, falls back to rule-based scoring (curve progress, age, volume, velocity).
+- **Whale Copy Trading**: Monitors high-alpha wallets (GMGN Whale: `0xd59b6a5dc9126ea0ebacd2d8560584b3ce48f62f`) via BSCScan API every 30s. When whale buys a Four.meme token, auto-copies the trade for all enabled users. First scan initializes TX history without trading, subsequent scans detect new buys within 5 minutes.
 - **Risk Management**: Configurable take-profit, stop-loss, max positions, and buy size.
 - **User Control**: Enable/disable per user via Telegram, with AI reasoning shown in trade notifications.
 

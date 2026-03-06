@@ -14,6 +14,11 @@ const FOUR_MEME_API = "https://four.meme";
 const AI_NETWORKS = ["hyperbolic", "akash", "ritual"];
 const AI_MODEL = "deepseek-ai/DeepSeek-V3";
 
+const COPY_TRADE_WALLETS = [
+  { address: "0xd59b6a5dc9126ea0ebacd2d8560584b3ce48f62f", label: "GMGN Whale" },
+];
+const COPY_TRADE_SCAN_INTERVAL_MS = 30_000;
+
 const SCAN_INTERVAL_MS = 60_000;
 const POSITION_CHECK_INTERVAL_MS = 30_000;
 const MAX_POSITIONS_PER_USER = 5;
@@ -64,7 +69,13 @@ const tradeHistory: TradingPosition[] = [];
 
 let scanTimer: ReturnType<typeof setInterval> | null = null;
 let positionTimer: ReturnType<typeof setInterval> | null = null;
+let copyTradeTimer: ReturnType<typeof setInterval> | null = null;
 let running = false;
+
+const lastSeenWhaleTxs = new Map<string, Set<string>>();
+const whaleTokensCopied = new Set<string>();
+const whaleTokensFailed = new Map<string, number>();
+let copyTradeRunning = false;
 
 function getUserConfig(chatId: number): TradingConfig {
   return userTradingConfig.get(chatId) || {
@@ -661,6 +672,205 @@ async function scanAndTrade(notifyFn: (chatId: number, message: string) => void)
   }
 }
 
+async function fetchWhaleTokenBuys(walletAddress: string): Promise<Array<{ tokenAddress: string; tokenSymbol: string; tokenName: string; txHash: string; value: string; timeStamp: number }>> {
+  try {
+    const apiKey = process.env.BSCSCAN_API_KEY || "";
+    const walletLower = walletAddress.toLowerCase();
+    const url = `https://api.etherscan.io/v2/api?chainid=56&module=account&action=tokentx&address=${walletAddress}&page=1&offset=50&sort=desc&apikey=${apiKey}`;
+
+    const res = await Promise.race([
+      fetch(url),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("BSCScan timeout")), 15000)),
+    ]);
+
+    const data = await res.json();
+    if (data.status !== "1" || !Array.isArray(data.result)) return [];
+
+    const incomingTokens = data.result.filter((tx: any) => tx.to?.toLowerCase() === walletLower);
+    const outgoingTokens = data.result.filter((tx: any) => tx.from?.toLowerCase() === walletLower);
+    const outgoingWBNB = new Set(
+      outgoingTokens
+        .filter((tx: any) => tx.tokenSymbol === "WBNB" || tx.contractAddress?.toLowerCase() === "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c")
+        .map((tx: any) => tx.hash)
+    );
+
+    return incomingTokens
+      .filter((tx: any) => {
+        if (tx.from?.toLowerCase() === "0x0000000000000000000000000000000000000000") return false;
+        if (tx.tokenSymbol === "WBNB") return false;
+        const hasOutgoingBnbSameTx = outgoingWBNB.has(tx.hash);
+        const fromRouter = tx.from?.toLowerCase() !== walletLower;
+        return hasOutgoingBnbSameTx || fromRouter;
+      })
+      .map((tx: any) => ({
+        tokenAddress: tx.contractAddress?.toLowerCase(),
+        tokenSymbol: tx.tokenSymbol || "UNKNOWN",
+        tokenName: tx.tokenName || "Unknown",
+        txHash: tx.hash,
+        value: tx.value || "0",
+        timeStamp: parseInt(tx.timeStamp || "0"),
+      }))
+      .filter((tx: any) => tx.tokenAddress);
+  } catch (e: any) {
+    log(`[CopyTrade] BSCScan fetch error: ${e.message?.substring(0, 100)}`, "trading");
+    return [];
+  }
+}
+
+async function copyTradeFromWhales(notifyFn: (chatId: number, message: string) => void): Promise<void> {
+  if (copyTradeRunning) return;
+  copyTradeRunning = true;
+
+  try {
+    await _copyTradeFromWhalesInner(notifyFn);
+  } finally {
+    copyTradeRunning = false;
+  }
+}
+
+async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: string) => void): Promise<void> {
+  const enabledUsers: Array<{ chatId: number; agentId: string; privateKey: string; walletAddress: string }> = [];
+
+  for (const [chatId, config] of userTradingConfig.entries()) {
+    if (!config.enabled) continue;
+    const openCount = Array.from(activePositions.values()).filter(p => p.chatId === chatId && p.status === "open").length;
+    if (openCount >= config.maxPositions) continue;
+
+    try {
+      const chatIdStr = chatId.toString();
+      const wallets = await storage.getTelegramWalletLinks(chatIdStr);
+      if (wallets.length === 0) continue;
+      const activeWallet = wallets.find(w => w.isActive) || wallets[0];
+      const pk = await storage.getTelegramWalletPrivateKey(chatIdStr, activeWallet.walletAddress);
+      if (!pk) continue;
+
+      const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+      const balance = await Promise.race([
+        provider.getBalance(activeWallet.walletAddress),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("RPC timeout")), 30000)),
+      ]);
+      const balBnb = parseFloat(ethers.formatEther(balance));
+      if (balBnb < MIN_WALLET_BALANCE_BNB) continue;
+
+      const agents = await storage.getAgentsByOwner(chatIdStr);
+      const agentId = agents.length > 0 ? agents[0].id : "auto-trader";
+      enabledUsers.push({ chatId, agentId, privateKey: pk, walletAddress: activeWallet.walletAddress });
+    } catch {}
+  }
+
+  if (enabledUsers.length === 0) return;
+
+  for (const whale of COPY_TRADE_WALLETS) {
+    const whaleLower = whale.address.toLowerCase();
+    if (!lastSeenWhaleTxs.has(whaleLower)) {
+      const initialTxs = await fetchWhaleTokenBuys(whaleLower);
+      const initialSet = new Set(initialTxs.map(tx => tx.txHash));
+      lastSeenWhaleTxs.set(whaleLower, initialSet);
+      log(`[CopyTrade] Initialized ${whale.label} tracker with ${initialSet.size} existing TXs`, "trading");
+      continue;
+    }
+
+    const recentBuys = await fetchWhaleTokenBuys(whaleLower);
+    if (recentBuys.length === 0) continue;
+
+    const seenTxs = lastSeenWhaleTxs.get(whaleLower)!;
+    const newBuys = recentBuys.filter(tx => !seenTxs.has(tx.txHash));
+
+    for (const tx of recentBuys) seenTxs.add(tx.txHash);
+    if (seenTxs.size > 500) {
+      const arr = Array.from(seenTxs);
+      for (let i = 0; i < arr.length - 300; i++) seenTxs.delete(arr[i]);
+    }
+
+    if (newBuys.length === 0) continue;
+
+    const fiveMinAgo = Math.floor(Date.now() / 1000) - 300;
+    const freshBuys = newBuys.filter(tx => tx.timeStamp > fiveMinAgo);
+    if (freshBuys.length === 0) continue;
+
+    const uniqueTokens = new Map<string, typeof freshBuys[0]>();
+    for (const buy of freshBuys) {
+      if (!uniqueTokens.has(buy.tokenAddress) && !whaleTokensCopied.has(buy.tokenAddress)) {
+        uniqueTokens.set(buy.tokenAddress, buy);
+      }
+    }
+
+    for (const [tokenAddr, buy] of uniqueTokens) {
+      log(`[CopyTrade] ${whale.label} bought $${buy.tokenSymbol} (${tokenAddr}) — copying!`, "trading");
+
+      if (whaleTokensCopied.has(tokenAddr)) continue;
+
+      let info: FourMemeTokenInfo;
+      try {
+        info = await fourMemeGetTokenInfo(tokenAddr);
+      } catch {
+        const failCount = (whaleTokensFailed.get(tokenAddr) || 0) + 1;
+        whaleTokensFailed.set(tokenAddr, failCount);
+        if (failCount >= 3) {
+          log(`[CopyTrade] ${buy.tokenSymbol} failed 3x — not on Four.meme, skipping permanently`, "trading");
+          whaleTokensCopied.add(tokenAddr);
+          whaleTokensFailed.delete(tokenAddr);
+        } else {
+          log(`[CopyTrade] ${buy.tokenSymbol} info fetch failed (attempt ${failCount}/3) — will retry`, "trading");
+        }
+        continue;
+      }
+
+      whaleTokensFailed.delete(tokenAddr);
+
+      if (info.liquidityAdded) {
+        log(`[CopyTrade] ${buy.tokenSymbol} already graduated to DEX — skipping`, "trading");
+        whaleTokensCopied.add(tokenAddr);
+        continue;
+      }
+
+      whaleTokensCopied.add(tokenAddr);
+
+      const signal: TokenSignal = {
+        address: tokenAddr,
+        name: buy.tokenName,
+        symbol: buy.tokenSymbol,
+        score: 90,
+        reasons: [
+          `🐋 ${whale.label} copy trade`,
+          `Curve: ${info.progressPercent.toFixed(1)}%`,
+          `Raised: ${parseFloat(info.funds).toFixed(3)} BNB`,
+        ],
+        info,
+        aiAnalysis: `Copying ${whale.label} — this wallet's buys historically pump.`,
+        aiDecision: "BUY",
+      };
+
+      for (const user of enabledUsers) {
+        const openCount = Array.from(activePositions.values()).filter(p => p.chatId === user.chatId && p.status === "open").length;
+        const config = getUserConfig(user.chatId);
+        if (openCount >= config.maxPositions) continue;
+
+        const alreadyHolding = Array.from(activePositions.values()).some(
+          p => p.chatId === user.chatId && p.tokenAddress === tokenAddr && p.status === "open"
+        );
+        if (alreadyHolding) continue;
+
+        const position = await executeBuy(user.chatId, user.agentId, signal, user.privateKey, user.walletAddress);
+        if (position) {
+          let msg = `🐋 COPY TRADE: ${whale.label} bought $${buy.tokenSymbol}!\n\n`;
+          msg += `Amount: ${config.buyAmountBnb} BNB\n`;
+          msg += `Whale TX: https://bscscan.com/tx/${buy.txHash}\n`;
+          msg += `Curve: ${info.progressPercent.toFixed(1)}% | Raised: ${parseFloat(info.funds).toFixed(3)} BNB\n`;
+          msg += `\nTP: ${config.takeProfitMultiple}x | SL: ${(config.stopLossMultiple * 100).toFixed(0)}%\n`;
+          if (position.buyTxHash) msg += `Your TX: https://bscscan.com/tx/${position.buyTxHash}`;
+          notifyFn(user.chatId, msg);
+        }
+      }
+    }
+  }
+
+  if (whaleTokensCopied.size > 200) {
+    const arr = Array.from(whaleTokensCopied);
+    for (let i = 0; i < arr.length - 100; i++) whaleTokensCopied.delete(arr[i]);
+  }
+}
+
 let notifyCallback: ((chatId: number, message: string) => void) | null = null;
 
 export function startTradingAgent(notifyFn: (chatId: number, message: string) => void): void {
@@ -677,13 +887,21 @@ export function startTradingAgent(notifyFn: (chatId: number, message: string) =>
   positionTimer = setInterval(() => {
     checkAndClosePositions(notifyFn).catch(e => log(`[TradingAgent] Position check error: ${e.message?.substring(0, 100)}`, "trading"));
   }, POSITION_CHECK_INTERVAL_MS);
+
+  copyTradeTimer = setInterval(() => {
+    copyTradeFromWhales(notifyFn).catch(e => log(`[CopyTrade] Error: ${e.message?.substring(0, 100)}`, "trading"));
+  }, COPY_TRADE_SCAN_INTERVAL_MS);
+
+  log(`[CopyTrade] Whale copy-trading active — tracking ${COPY_TRADE_WALLETS.map(w => w.label).join(", ")}`, "trading");
 }
 
 export function stopTradingAgent(): void {
   if (scanTimer) clearInterval(scanTimer);
   if (positionTimer) clearInterval(positionTimer);
+  if (copyTradeTimer) clearInterval(copyTradeTimer);
   scanTimer = null;
   positionTimer = null;
+  copyTradeTimer = null;
   running = false;
   log("[TradingAgent] Stopped", "trading");
 }
