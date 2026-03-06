@@ -51,6 +51,27 @@ const ASTER_MAX_POSITIONS_PER_USER = 3;
 const ASTER_DEFAULT_POSITION_SIZE_USDT = "50";
 const ASTER_TRAILING_STOP_PCT = 3.0;
 
+const BSC_RPC_ENDPOINTS = [
+  "https://bsc-dataseed1.binance.org",
+  "https://bsc-dataseed2.binance.org",
+  "https://bsc-dataseed3.binance.org",
+  "https://bsc-dataseed1.defibit.io",
+  "https://bsc-dataseed1.ninicoin.io",
+];
+let currentRpcIndex = 0;
+function getNextRpc(): string {
+  const rpc = BSC_RPC_ENDPOINTS[currentRpcIndex % BSC_RPC_ENDPOINTS.length];
+  currentRpcIndex++;
+  return rpc;
+}
+
+const balanceCache = new Map<string, { balance: number; ts: number }>();
+const BALANCE_CACHE_TTL_MS = 120_000;
+
+let scanRunning = false;
+let copyTradeRunning = false;
+let asterScanRunning = false;
+
 interface AsterFuturesPosition {
   id: string;
   chatId: number;
@@ -842,67 +863,86 @@ export async function manualClosePosition(positionId: string, notifyFn: (chatId:
   }
 }
 
+async function resolveEnabledUsers(): Promise<Array<{ chatId: number; agentId: string; privateKey: string; walletAddress: string }>> {
+  const users: Array<{ chatId: number; agentId: string; privateKey: string; walletAddress: string }> = [];
+
+  const userChecks = Array.from(userTradingConfig.entries())
+    .filter(([_, config]) => config.enabled)
+    .map(async ([chatId, config]) => {
+      const openCount = Array.from(activePositions.values()).filter(p => p.chatId === chatId && p.status === "open").length;
+      if (openCount >= config.maxPositions) return;
+
+      try {
+        const chatIdStr = chatId.toString();
+        const wallets = await storage.getTelegramWallets(chatIdStr);
+        if (wallets.length === 0) return;
+
+        const activeWallet = wallets.find(w => w.isActive) || wallets[0];
+        const pk = await storage.getTelegramWalletPrivateKey(chatIdStr, activeWallet.walletAddress);
+        if (!pk) return;
+
+        const balBnb = await getBalanceFast(activeWallet.walletAddress);
+        if (balBnb < MIN_WALLET_BALANCE_BNB) {
+          log(`[TradingAgent] User ${chatId} low balance: ${balBnb.toFixed(4)} BNB (need ${MIN_WALLET_BALANCE_BNB})`, "trading");
+          return;
+        }
+
+        users.push({ chatId, agentId: "auto-trader", privateKey: pk, walletAddress: activeWallet.walletAddress });
+        log(`[TradingAgent] User ${chatId} ready to trade (${balBnb.toFixed(4)} BNB)`, "trading");
+      } catch (e: any) {
+        log(`[TradingAgent] User ${chatId} setup error: ${e.message?.substring(0, 80)}`, "trading");
+      }
+    });
+
+  await Promise.allSettled(userChecks);
+  return users;
+}
+
+async function getBalanceFast(walletAddress: string): Promise<number> {
+  const cached = balanceCache.get(walletAddress);
+  if (cached && Date.now() - cached.ts < BALANCE_CACHE_TTL_MS) return cached.balance;
+
+  const rpc = getNextRpc();
+  const provider = new ethers.JsonRpcProvider(rpc);
+  const balance = await Promise.race([
+    provider.getBalance(walletAddress),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("RPC timeout")), 8000)),
+  ]);
+  const balBnb = parseFloat(ethers.formatEther(balance));
+  balanceCache.set(walletAddress, { balance: balBnb, ts: Date.now() });
+  return balBnb;
+}
+
 async function scanAndTrade(notifyFn: (chatId: number, message: string) => void): Promise<void> {
+  if (scanRunning) return;
+  scanRunning = true;
+  try {
+    await scanAndTradeInner(notifyFn);
+  } finally {
+    scanRunning = false;
+  }
+}
+
+async function scanAndTradeInner(notifyFn: (chatId: number, message: string) => void): Promise<void> {
   const enabledCount = Array.from(userTradingConfig.values()).filter(c => c.enabled).length;
   if (enabledCount === 0) return;
 
   log(`[TradingAgent] Scan cycle — ${enabledCount} users enabled`, "trading");
 
-  const enabledUsers: Array<{ chatId: number; agentId: string; privateKey: string; walletAddress: string }> = [];
-
-  for (const [chatId, config] of userTradingConfig.entries()) {
-    if (!config.enabled) continue;
-
-    const openCount = Array.from(activePositions.values()).filter(p => p.chatId === chatId && p.status === "open").length;
-    if (openCount >= config.maxPositions) {
-      log(`[TradingAgent] User ${chatId} at max positions (${openCount}/${config.maxPositions})`, "trading");
-      continue;
-    }
-
-    try {
-      const chatIdStr = chatId.toString();
-      const wallets = await storage.getTelegramWallets(chatIdStr);
-      if (wallets.length === 0) {
-        log(`[TradingAgent] User ${chatId} has no wallets`, "trading");
-        continue;
-      }
-
-      const activeWallet = wallets.find(w => w.isActive) || wallets[0];
-      const pk = await storage.getTelegramWalletPrivateKey(chatIdStr, activeWallet.walletAddress);
-      if (!pk) {
-        log(`[TradingAgent] User ${chatId} wallet has no private key`, "trading");
-        continue;
-      }
-
-      const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
-      const balance = await Promise.race([
-        provider.getBalance(activeWallet.walletAddress),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("RPC timeout")), 15000)),
-      ]);
-      const balBnb = parseFloat(ethers.formatEther(balance));
-      if (balBnb < MIN_WALLET_BALANCE_BNB) {
-        log(`[TradingAgent] User ${chatId} low balance: ${balBnb.toFixed(4)} BNB (need ${MIN_WALLET_BALANCE_BNB})`, "trading");
-        continue;
-      }
-
-      enabledUsers.push({ chatId, agentId: "auto-trader", privateKey: pk, walletAddress: activeWallet.walletAddress });
-      log(`[TradingAgent] User ${chatId} ready to trade (${balBnb.toFixed(4)} BNB)`, "trading");
-    } catch (e: any) {
-      log(`[TradingAgent] User ${chatId} setup error: ${e.message?.substring(0, 100)}`, "trading");
-    }
-  }
+  const [tokens, enabledUsers] = await Promise.all([
+    fetchNewTokens(),
+    resolveEnabledUsers(),
+  ]);
 
   if (enabledUsers.length === 0) {
     log(`[TradingAgent] No users ready to trade this cycle`, "trading");
     return;
   }
 
-  const tokens = await fetchNewTokens();
   if (tokens.length === 0) {
     log(`[TradingAgent] No tokens fetched from Four.meme`, "trading");
     return;
   }
-  log(`[TradingAgent] Fetched ${tokens.length} tokens from Four.meme`, "trading");
 
   const newTokens = tokens.filter(t => !recentlyScannedTokens.has(t.address));
   for (const t of tokens) recentlyScannedTokens.add(t.address);
@@ -912,16 +952,19 @@ async function scanAndTrade(notifyFn: (chatId: number, message: string) => void)
     for (let i = 0; i < arr.length - 200; i++) recentlyScannedTokens.delete(arr[i]);
   }
 
+  const batch = newTokens.slice(0, 10);
+  const infoResults = await Promise.allSettled(
+    batch.map(t => fourMemeGetTokenInfo(t.address).then(info => ({ token: t, info })))
+  );
   const candidatesWithInfo: Array<{ address: string; name: string; symbol: string; launchTime: number; info: FourMemeTokenInfo }> = [];
-  for (const token of newTokens.slice(0, 10)) {
-    try {
-      const info = await fourMemeGetTokenInfo(token.address);
-      if (info.liquidityAdded) continue;
-      if (info.progressPercent < MIN_PROGRESS_FOR_ENTRY || info.progressPercent > MAX_PROGRESS_FOR_ENTRY) continue;
-      const age = Math.floor(Date.now() / 1000) - (token.launchTime || info.launchTime);
-      if (age > MAX_TOKEN_AGE_SECONDS) continue;
-      candidatesWithInfo.push({ ...token, info });
-    } catch {}
+  for (const r of infoResults) {
+    if (r.status !== "fulfilled") continue;
+    const { token, info } = r.value;
+    if (info.liquidityAdded) continue;
+    if (info.progressPercent < MIN_PROGRESS_FOR_ENTRY || info.progressPercent > MAX_PROGRESS_FOR_ENTRY) continue;
+    const age = Math.floor(Date.now() / 1000) - (token.launchTime || info.launchTime);
+    if (age > MAX_TOKEN_AGE_SECONDS) continue;
+    candidatesWithInfo.push({ ...token, info });
   }
 
   if (candidatesWithInfo.length === 0) {
@@ -1019,33 +1062,7 @@ async function copyTradeFromWhales(notifyFn: (chatId: number, message: string) =
 }
 
 async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: string) => void): Promise<void> {
-  const enabledUsers: Array<{ chatId: number; agentId: string; privateKey: string; walletAddress: string }> = [];
-
-  for (const [chatId, config] of userTradingConfig.entries()) {
-    if (!config.enabled) continue;
-    const openCount = Array.from(activePositions.values()).filter(p => p.chatId === chatId && p.status === "open").length;
-    if (openCount >= config.maxPositions) continue;
-
-    try {
-      const chatIdStr = chatId.toString();
-      const wallets = await storage.getTelegramWallets(chatIdStr);
-      if (wallets.length === 0) continue;
-      const activeWallet = wallets.find(w => w.isActive) || wallets[0];
-      const pk = await storage.getTelegramWalletPrivateKey(chatIdStr, activeWallet.walletAddress);
-      if (!pk) continue;
-
-      const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
-      const balance = await Promise.race([
-        provider.getBalance(activeWallet.walletAddress),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("RPC timeout")), 15000)),
-      ]);
-      const balBnb = parseFloat(ethers.formatEther(balance));
-      if (balBnb < MIN_WALLET_BALANCE_BNB) continue;
-
-      enabledUsers.push({ chatId, agentId: "auto-trader", privateKey: pk, walletAddress: activeWallet.walletAddress });
-    } catch {}
-  }
-
+  const enabledUsers = await resolveEnabledUsers();
   if (enabledUsers.length === 0) return;
 
   for (const whale of COPY_TRADE_WALLETS) {
@@ -1418,6 +1435,16 @@ async function executeAsterFuturesTrade(
 }
 
 async function scanAsterAndTrade(notifyFn: (chatId: number, message: string) => void): Promise<void> {
+  if (asterScanRunning) return;
+  asterScanRunning = true;
+  try {
+    await scanAsterInner(notifyFn);
+  } finally {
+    asterScanRunning = false;
+  }
+}
+
+async function scanAsterInner(notifyFn: (chatId: number, message: string) => void): Promise<void> {
   const asterUsers = await getAsterUsersWithCredentials();
   if (asterUsers.length === 0) return;
 
