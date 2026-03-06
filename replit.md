@@ -69,12 +69,15 @@ The project utilizes a monorepo containing `client/` for the React frontend, `se
 - **Commands**: Comprehensive set of commands for agent creation, task management, token launching, trading, wallet management, and information retrieval.
 - **Multi-Wallet Support**: Users can add and switch between multiple wallets, with private keys encrypted in the database.
 
-### Autonomous Trading Agent
-- **Purpose**: Automatically scans Four.meme for new token launches, evaluates momentum signals, and executes trades from user wallets.
-- **Engine**: Independent scan and position monitor loops.
-- **Signal Scoring**: Evaluates tokens based on bonding curve progress, age, volume, and velocity.
+### Autonomous AI Trading Agent
+- **Purpose**: AI-powered autonomous trading on Four.meme — agents think and decide on buys/sells dynamically.
+- **Engine**: Independent scan and position monitor loops with AI inference on each cycle.
+- **AI Buy Analysis**: Feeds batch of candidate tokens (with on-chain metrics) to DeepSeek-V3 via decentralized inference. AI evaluates momentum, token naming, velocity, and risk/reward to pick the best entry or skip all.
+- **AI Sell Analysis**: Each open position is evaluated by AI every 30s — considers momentum changes, curve velocity, hold time, PnL, and whether to let winners run or cut losers. Hard safety limits (1.5x TP overshoot, 0.8x SL breach) bypass AI.
+- **Trade Memory**: Agent remembers last 20 trade outcomes (win/loss, PnL, reasoning) and feeds this history into future decisions, enabling self-improvement.
+- **Fallback**: If AI inference times out or fails, falls back to rule-based scoring (curve progress, age, volume, velocity).
 - **Risk Management**: Configurable take-profit, stop-loss, max positions, and buy size.
-- **User Control**: Enable/disable per user via Telegram, with notifications for all trades.
+- **User Control**: Enable/disable per user via Telegram, with AI reasoning shown in trade notifications.
 
 ### Performance Optimizations
 - **API Logging**: Lightweight, timing-only logs for API routes.

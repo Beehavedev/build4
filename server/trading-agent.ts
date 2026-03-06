@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import { storage } from "./storage";
 import { log } from "./index";
+import { runInferenceWithFallback } from "./inference";
 import {
   fourMemeGetTokenInfo,
   fourMemeBuyToken,
@@ -10,6 +11,8 @@ import {
 } from "./token-launcher";
 
 const FOUR_MEME_API = "https://four.meme";
+const AI_NETWORKS = ["hyperbolic", "akash", "ritual"];
+const AI_MODEL = "deepseek-ai/DeepSeek-V3";
 
 const SCAN_INTERVAL_MS = 60_000;
 const POSITION_CHECK_INTERVAL_MS = 30_000;
@@ -127,74 +130,243 @@ interface TokenSignal {
   score: number;
   reasons: string[];
   info: FourMemeTokenInfo;
+  aiAnalysis?: string;
+  aiDecision?: "BUY" | "SKIP";
 }
 
-async function evaluateToken(token: { address: string; name: string; symbol: string; launchTime: number }): Promise<TokenSignal | null> {
+const tradeMemory: Array<{ symbol: string; result: string; pnl: number; reasoning: string }> = [];
+
+function buildTradeMemoryContext(): string {
+  if (tradeMemory.length === 0) return "No previous trades yet.";
+  const recent = tradeMemory.slice(-10);
+  const wins = recent.filter(t => t.pnl > 0).length;
+  const losses = recent.filter(t => t.pnl <= 0).length;
+  let ctx = `Recent trade history (${wins}W/${losses}L):\n`;
+  for (const t of recent) {
+    ctx += `  ${t.symbol}: ${t.result} (${t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(4)} BNB) — ${t.reasoning}\n`;
+  }
+  return ctx;
+}
+
+async function aiEvaluateBuy(tokens: Array<{ address: string; name: string; symbol: string; launchTime: number; info: FourMemeTokenInfo }>): Promise<TokenSignal | null> {
+  if (tokens.length === 0) return null;
+
+  const tokenDataLines = tokens.map((t, i) => {
+    const age = Math.floor(Date.now() / 1000) - (t.launchTime || t.info.launchTime);
+    const ageMin = Math.floor(age / 60);
+    const velocity = age > 0 ? (t.info.progressPercent / (age / 60)).toFixed(2) : "0";
+    return `${i + 1}. $${t.symbol} (${t.name}) — Curve: ${t.info.progressPercent.toFixed(1)}%, Age: ${ageMin}m, Raised: ${parseFloat(t.info.funds).toFixed(3)} BNB / ${parseFloat(t.info.maxFunds).toFixed(1)} BNB, Velocity: ${velocity}%/min, Price: ${t.info.lastPrice}`;
+  }).join("\n");
+
+  const memoryCtx = buildTradeMemoryContext();
+
+  const prompt = `You are an expert meme token trader on Four.meme (BNB Chain bonding curve platform). Analyze these new tokens and decide which ONE to buy, or NONE if none look good.
+
+TOKENS:
+${tokenDataLines}
+
+YOUR TRADE MEMORY:
+${memoryCtx}
+
+KEY METRICS TO CONSIDER:
+- Curve progress: 10-30% is early momentum (best entry), 30-50% is mid (riskier), >50% is late
+- Age: Under 10 min = very fresh (higher risk/reward), 10-30 min = ideal, >30 min with low progress = dying
+- Velocity (%/min): >1.0 = parabolic, 0.3-1.0 = healthy, <0.3 = sluggish
+- Funds raised: More BNB = more real buyers
+- Token name/symbol: Memes with trending themes or clever names attract more buyers
+
+THINK THROUGH:
+1. Which token has the best momentum signals?
+2. Is the risk/reward favorable given current data?
+3. Have similar tokens worked or failed in your trade history?
+4. Would a skilled degen trader buy this?
+
+RESPOND IN EXACTLY THIS FORMAT:
+DECISION: BUY or SKIP
+TOKEN: [number from list, or 0 if SKIP]
+CONFIDENCE: [1-100]
+REASONING: [1-2 sentences explaining your thinking]`;
+
   try {
-    const info = await fourMemeGetTokenInfo(token.address);
-    const score = 0;
-    const reasons: string[] = [];
+    const result = await Promise.race([
+      runInferenceWithFallback(AI_NETWORKS, AI_MODEL, prompt, {
+        systemPrompt: "You are a sharp, data-driven meme token trader. You analyze on-chain metrics to find profitable entries. Be selective — only buy tokens with strong signals. Respond concisely.",
+        temperature: 0.3,
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI timeout")), 20000)),
+    ]);
 
-    if (info.liquidityAdded) return null;
+    const output = result.text.trim();
+    log(`[TradingAgent] AI buy analysis: ${output.substring(0, 200)}`, "trading");
 
-    const progress = info.progressPercent;
-    if (progress < MIN_PROGRESS_FOR_ENTRY) return null;
-    if (progress > MAX_PROGRESS_FOR_ENTRY) return null;
-
-    let tokenScore = 0;
-
-    if (progress >= 10 && progress <= 30) {
-      tokenScore += 40;
-      reasons.push(`Sweet spot curve: ${progress.toFixed(1)}%`);
-    } else if (progress > 30 && progress <= 50) {
-      tokenScore += 25;
-      reasons.push(`Filling curve: ${progress.toFixed(1)}%`);
-    } else {
-      tokenScore += 10;
-      reasons.push(`Early curve: ${progress.toFixed(1)}%`);
+    if (!output || output.includes("[NO_PROVIDER]") || output.length < 10) {
+      log(`[TradingAgent] AI response empty/unavailable, falling back to rules`, "trading");
+      return fallbackEvaluateTokens(tokens);
     }
 
-    const age = Math.floor(Date.now() / 1000) - (token.launchTime || info.launchTime);
-    if (age > 0 && age < MAX_TOKEN_AGE_SECONDS) {
-      if (age < 600) {
-        tokenScore += 30;
-        reasons.push(`Very fresh: ${Math.floor(age / 60)}m old`);
-      } else if (age < 1800) {
-        tokenScore += 20;
-        reasons.push(`Fresh: ${Math.floor(age / 60)}m old`);
-      } else {
-        tokenScore += 10;
-        reasons.push(`Recent: ${Math.floor(age / 60)}m old`);
-      }
-    } else if (age > MAX_TOKEN_AGE_SECONDS) {
+    const decisionMatch = output.match(/DECISION:\s*(BUY|SKIP)/i);
+    const tokenMatch = output.match(/TOKEN:\s*(\d+)/i);
+    const confidenceMatch = output.match(/CONFIDENCE:\s*(\d+)/i);
+    const reasoningMatch = output.match(/REASONING:\s*(.+)/i);
+
+    if (!decisionMatch) {
+      log(`[TradingAgent] AI response malformed (no DECISION found), falling back to rules`, "trading");
+      return fallbackEvaluateTokens(tokens);
+    }
+
+    const decision = decisionMatch[1].toUpperCase();
+    const tokenIdx = parseInt(tokenMatch?.[1] || "0") - 1;
+    const confidence = parseInt(confidenceMatch?.[1] || "0");
+    const reasoning = reasoningMatch?.[1]?.trim() || "AI analysis";
+
+    if (decision !== "BUY" || tokenIdx < 0 || tokenIdx >= tokens.length || confidence < 50) {
+      log(`[TradingAgent] AI says SKIP (decision=${decision}, confidence=${confidence})`, "trading");
       return null;
     }
 
+    const chosen = tokens[tokenIdx];
+    const age = Math.floor(Date.now() / 1000) - (chosen.launchTime || chosen.info.launchTime);
+    const velocity = age > 0 ? chosen.info.progressPercent / (age / 60) : 0;
+
+    const reasons: string[] = [
+      `AI confidence: ${confidence}%`,
+      `Curve: ${chosen.info.progressPercent.toFixed(1)}%`,
+      `Age: ${Math.floor(age / 60)}m`,
+      `Velocity: ${velocity.toFixed(1)}%/min`,
+      `Raised: ${parseFloat(chosen.info.funds).toFixed(3)} BNB`,
+    ];
+
+    return {
+      address: chosen.address,
+      name: chosen.name,
+      symbol: chosen.symbol,
+      score: confidence,
+      reasons,
+      info: chosen.info,
+      aiAnalysis: reasoning,
+      aiDecision: "BUY",
+    };
+  } catch (e: any) {
+    log(`[TradingAgent] AI buy analysis failed, falling back to rules: ${e.message?.substring(0, 100)}`, "trading");
+    return fallbackEvaluateTokens(tokens);
+  }
+}
+
+function fallbackEvaluateTokens(tokens: Array<{ address: string; name: string; symbol: string; launchTime: number; info: FourMemeTokenInfo }>): TokenSignal | null {
+  let best: TokenSignal | null = null;
+
+  for (const token of tokens) {
+    const info = token.info;
+    if (info.liquidityAdded) continue;
+    const progress = info.progressPercent;
+    if (progress < MIN_PROGRESS_FOR_ENTRY || progress > MAX_PROGRESS_FOR_ENTRY) continue;
+
+    let tokenScore = 0;
+    const reasons: string[] = [];
+
+    if (progress >= 10 && progress <= 30) { tokenScore += 40; reasons.push(`Curve: ${progress.toFixed(1)}%`); }
+    else if (progress > 30 && progress <= 50) { tokenScore += 25; reasons.push(`Curve: ${progress.toFixed(1)}%`); }
+    else { tokenScore += 10; reasons.push(`Curve: ${progress.toFixed(1)}%`); }
+
+    const age = Math.floor(Date.now() / 1000) - (token.launchTime || info.launchTime);
+    if (age > MAX_TOKEN_AGE_SECONDS) continue;
+    if (age < 600) { tokenScore += 30; reasons.push(`${Math.floor(age / 60)}m old`); }
+    else if (age < 1800) { tokenScore += 20; reasons.push(`${Math.floor(age / 60)}m old`); }
+    else { tokenScore += 10; reasons.push(`${Math.floor(age / 60)}m old`); }
+
     const fundsNum = parseFloat(info.funds);
-    if (fundsNum >= 1.0) {
-      tokenScore += 20;
-      reasons.push(`Good volume: ${fundsNum.toFixed(2)} BNB raised`);
-    } else if (fundsNum >= 0.3) {
-      tokenScore += 10;
-      reasons.push(`Some volume: ${fundsNum.toFixed(2)} BNB raised`);
-    }
+    if (fundsNum >= 1.0) { tokenScore += 20; reasons.push(`${fundsNum.toFixed(2)} BNB raised`); }
+    else if (fundsNum >= 0.3) { tokenScore += 10; reasons.push(`${fundsNum.toFixed(2)} BNB raised`); }
 
     if (progress > 0 && age > 0) {
-      const velocityPerMin = progress / (age / 60);
-      if (velocityPerMin > 1.0) {
-        tokenScore += 20;
-        reasons.push(`High velocity: ${velocityPerMin.toFixed(1)}%/min`);
-      } else if (velocityPerMin > 0.3) {
-        tokenScore += 10;
-        reasons.push(`Good velocity: ${velocityPerMin.toFixed(1)}%/min`);
-      }
+      const v = progress / (age / 60);
+      if (v > 1.0) { tokenScore += 20; reasons.push(`${v.toFixed(1)}%/min velocity`); }
+      else if (v > 0.3) { tokenScore += 10; reasons.push(`${v.toFixed(1)}%/min velocity`); }
     }
 
-    if (tokenScore < 40) return null;
+    if (tokenScore >= 40 && (!best || tokenScore > best.score)) {
+      best = { address: token.address, name: token.name, symbol: token.symbol, score: tokenScore, reasons, info };
+    }
+  }
 
-    return { address: token.address, name: token.name, symbol: token.symbol, score: tokenScore, reasons, info };
+  return best;
+}
+
+async function aiEvaluateSell(position: TradingPosition, info: FourMemeTokenInfo, multiple: number, ageMinutes: number): Promise<{ decision: "HOLD" | "SELL"; reasoning: string }> {
+  const memoryCtx = buildTradeMemoryContext();
+  const velocity = info.progressPercent > 0 && ageMinutes > 0 ? (info.progressPercent / ageMinutes).toFixed(2) : "unknown";
+  const fundsRaised = parseFloat(info.funds).toFixed(3);
+  const maxFunds = parseFloat(info.maxFunds).toFixed(1);
+  const pnlPct = ((multiple - 1) * 100).toFixed(1);
+
+  const prompt = `You are managing an open meme token position. Decide whether to HOLD or SELL.
+
+POSITION:
+- Token: $${position.tokenSymbol}
+- Entry: ${position.entryPriceBnb} BNB
+- Current multiple: ${multiple.toFixed(3)}x (${pnlPct}% PnL)
+- Hold time: ${ageMinutes.toFixed(0)} minutes
+- Tokens held: ${parseFloat(position.tokenAmount).toFixed(2)}
+
+CURRENT TOKEN STATE:
+- Curve progress: ${info.progressPercent.toFixed(1)}% (of ${maxFunds} BNB)
+- Current velocity: ${velocity}%/min
+- Funds raised: ${fundsRaised} BNB
+- Liquidity added (graduated to DEX): ${info.liquidityAdded}
+- Take-profit target: ${position.takeProfitMultiple}x
+- Stop-loss target: ${((1 - position.stopLossMultiple) * 100).toFixed(0)}% loss
+
+YOUR TRADE MEMORY:
+${memoryCtx}
+
+THINK THROUGH:
+1. Is momentum accelerating, stable, or fading?
+2. Is the curve filling fast enough to expect more upside?
+3. Are we near TP/SL targets? Should we let it ride or lock in profits?
+4. If graduated to DEX — should we sell immediately or hold for DEX pump?
+5. Would a skilled trader hold or take profits here?
+
+RESPOND IN EXACTLY THIS FORMAT:
+DECISION: HOLD or SELL
+REASONING: [1-2 sentences]`;
+
+  try {
+    const result = await Promise.race([
+      runInferenceWithFallback(AI_NETWORKS, AI_MODEL, prompt, {
+        systemPrompt: "You are a disciplined crypto trader managing live positions. Protect capital, take profits when momentum fades, let winners run when momentum is strong. Be decisive.",
+        temperature: 0.2,
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI timeout")), 15000)),
+    ]);
+
+    const output = result.text.trim();
+    log(`[TradingAgent] AI sell analysis for ${position.tokenSymbol}: ${output.substring(0, 200)}`, "trading");
+
+    if (!output || output.includes("[NO_PROVIDER]") || output.length < 10) {
+      log(`[TradingAgent] AI sell response unavailable, using rules`, "trading");
+      if (multiple >= position.takeProfitMultiple) return { decision: "SELL", reasoning: "Hit take-profit target (fallback)" };
+      if (multiple <= position.stopLossMultiple) return { decision: "SELL", reasoning: "Hit stop-loss target (fallback)" };
+      return { decision: "HOLD", reasoning: "Within TP/SL range (fallback)" };
+    }
+
+    const decisionMatch = output.match(/DECISION:\s*(HOLD|SELL)/i);
+    const reasoningMatch = output.match(/REASONING:\s*(.+)/i);
+
+    if (!decisionMatch) {
+      if (multiple >= position.takeProfitMultiple) return { decision: "SELL", reasoning: "Hit take-profit target (AI malformed)" };
+      if (multiple <= position.stopLossMultiple) return { decision: "SELL", reasoning: "Hit stop-loss target (AI malformed)" };
+      return { decision: "HOLD", reasoning: "AI response malformed, holding" };
+    }
+
+    return {
+      decision: decisionMatch[1].toUpperCase() === "SELL" ? "SELL" : "HOLD",
+      reasoning: reasoningMatch?.[1]?.trim() || "AI decision",
+    };
   } catch (e: any) {
-    return null;
+    log(`[TradingAgent] AI sell analysis failed, using rules: ${e.message?.substring(0, 80)}`, "trading");
+    if (multiple >= position.takeProfitMultiple) return { decision: "SELL", reasoning: "Hit take-profit target" };
+    if (multiple <= position.stopLossMultiple) return { decision: "SELL", reasoning: "Hit stop-loss target" };
+    return { decision: "HOLD", reasoning: "Rules: within TP/SL range" };
   }
 }
 
@@ -268,28 +440,38 @@ async function checkAndClosePositions(notifyFn: (chatId: number, message: string
       const entryBnb = parseFloat(position.entryPriceBnb);
       const multiple = entryBnb > 0 ? currentValueBnb / entryBnb : 0;
 
-      if (info.liquidityAdded) {
-        log(`[TradingAgent] ${position.tokenSymbol} hit DEX — selling at ${multiple.toFixed(2)}x`, "trading");
-        await closePosition(position, "closed_profit", notifyFn, multiple, currentValueBnb);
-        continue;
-      }
-
-      if (multiple >= position.takeProfitMultiple) {
-        log(`[TradingAgent] ${position.tokenSymbol} hit take-profit at ${multiple.toFixed(2)}x`, "trading");
-        await closePosition(position, "closed_profit", notifyFn, multiple, currentValueBnb);
-        continue;
-      }
-
-      if (multiple <= position.stopLossMultiple) {
-        log(`[TradingAgent] ${position.tokenSymbol} hit stop-loss at ${multiple.toFixed(2)}x`, "trading");
-        await closePosition(position, "closed_loss", notifyFn, multiple, currentValueBnb);
-        continue;
-      }
-
       const ageMinutes = (Date.now() - position.entryTime) / 60000;
+
+      if (info.liquidityAdded) {
+        log(`[TradingAgent] ${position.tokenSymbol} graduated to DEX — selling at ${multiple.toFixed(2)}x`, "trading");
+        await closePosition(position, "closed_profit", notifyFn, multiple, currentValueBnb, "Token graduated to DEX — auto-sell");
+        continue;
+      }
+
+      if (multiple >= position.takeProfitMultiple * 1.5) {
+        log(`[TradingAgent] ${position.tokenSymbol} hard TP at ${multiple.toFixed(2)}x — selling`, "trading");
+        await closePosition(position, "closed_profit", notifyFn, multiple, currentValueBnb, "Exceeded 1.5x take-profit target");
+        continue;
+      }
+
+      if (multiple <= position.stopLossMultiple * 0.8) {
+        log(`[TradingAgent] ${position.tokenSymbol} hard SL at ${multiple.toFixed(2)}x — selling`, "trading");
+        await closePosition(position, "closed_loss", notifyFn, multiple, currentValueBnb, "Exceeded stop-loss safety limit");
+        continue;
+      }
+
       if (ageMinutes > 120 && multiple < 1.1) {
         log(`[TradingAgent] ${position.tokenSymbol} stale (${ageMinutes.toFixed(0)}m, ${multiple.toFixed(2)}x) — closing`, "trading");
-        await closePosition(position, multiple >= 1 ? "closed_profit" : "closed_loss", notifyFn, multiple, currentValueBnb);
+        await closePosition(position, multiple >= 1 ? "closed_profit" : "closed_loss", notifyFn, multiple, currentValueBnb, "Stale position — no momentum after 2h");
+        continue;
+      }
+
+      const aiSell = await aiEvaluateSell(position, info, multiple, ageMinutes);
+      log(`[TradingAgent] AI says ${aiSell.decision} for ${position.tokenSymbol}: ${aiSell.reasoning}`, "trading");
+
+      if (aiSell.decision === "SELL") {
+        const reason = multiple >= 1 ? "closed_profit" : "closed_loss";
+        await closePosition(position, reason, notifyFn, multiple, currentValueBnb, aiSell.reasoning);
         continue;
       }
     } catch (e: any) {
@@ -304,6 +486,7 @@ async function closePosition(
   notifyFn: (chatId: number, message: string) => void,
   multiple: number,
   currentValueBnb: number,
+  aiReasoning?: string,
 ): Promise<void> {
   try {
     const chatIdStr = position.chatId.toString();
@@ -342,6 +525,14 @@ async function closePosition(
     activePositions.delete(position.id);
     tradeHistory.push(position);
 
+    tradeMemory.push({
+      symbol: position.tokenSymbol,
+      result: reason === "closed_profit" ? "WIN" : "LOSS",
+      pnl,
+      reasoning: aiReasoning || reason,
+    });
+    if (tradeMemory.length > 20) tradeMemory.splice(0, tradeMemory.length - 20);
+
     const emoji = reason === "closed_profit" ? "💰" : "📉";
     const pnlStr = pnl >= 0 ? `+${pnl.toFixed(4)}` : pnl.toFixed(4);
     const holdTime = Math.floor((Date.now() - position.entryTime) / 60000);
@@ -351,6 +542,7 @@ async function closePosition(
     msg += `Exit: ~${currentValueBnb.toFixed(4)} BNB\n`;
     msg += `PnL: ${pnlStr} BNB (${multiple.toFixed(2)}x)\n`;
     msg += `Hold: ${holdTime}m\n`;
+    if (aiReasoning) msg += `🧠 AI: ${aiReasoning}\n`;
     if (sellResult.txHash) msg += `TX: https://bscscan.com/tx/${sellResult.txHash}`;
 
     if (!sellResult.success) {
@@ -424,18 +616,24 @@ async function scanAndTrade(notifyFn: (chatId: number, message: string) => void)
     for (let i = 0; i < arr.length - 200; i++) recentlyScannedTokens.delete(arr[i]);
   }
 
-  const signals: TokenSignal[] = [];
+  const candidatesWithInfo: Array<{ address: string; name: string; symbol: string; launchTime: number; info: FourMemeTokenInfo }> = [];
   for (const token of newTokens.slice(0, 10)) {
-    const signal = await evaluateToken(token);
-    if (signal) signals.push(signal);
+    try {
+      const info = await fourMemeGetTokenInfo(token.address);
+      if (info.liquidityAdded) continue;
+      if (info.progressPercent < MIN_PROGRESS_FOR_ENTRY || info.progressPercent > MAX_PROGRESS_FOR_ENTRY) continue;
+      const age = Math.floor(Date.now() / 1000) - (token.launchTime || info.launchTime);
+      if (age > MAX_TOKEN_AGE_SECONDS) continue;
+      candidatesWithInfo.push({ ...token, info });
+    } catch {}
   }
 
-  if (signals.length === 0) return;
+  if (candidatesWithInfo.length === 0) return;
 
-  signals.sort((a, b) => b.score - a.score);
-  const bestSignal = signals[0];
+  const bestSignal = await aiEvaluateBuy(candidatesWithInfo);
+  if (!bestSignal) return;
 
-  log(`[TradingAgent] Best signal: ${bestSignal.symbol} (score: ${bestSignal.score}) — ${bestSignal.reasons.join(", ")}`, "trading");
+  log(`[TradingAgent] AI picked: ${bestSignal.symbol} (confidence: ${bestSignal.score}) — ${bestSignal.aiAnalysis || bestSignal.reasons.join(", ")}`, "trading");
 
   for (const user of enabledUsers) {
     const openCount = Array.from(activePositions.values()).filter(p => p.chatId === user.chatId && p.status === "open").length;
@@ -449,12 +647,13 @@ async function scanAndTrade(notifyFn: (chatId: number, message: string) => void)
 
     const position = await executeBuy(user.chatId, user.agentId, bestSignal, user.privateKey, user.walletAddress);
     if (position) {
-      let msg = `🤖 AGENT TRADE: Bought $${bestSignal.symbol}\n\n`;
+      let msg = `🤖 AI TRADE: Bought $${bestSignal.symbol}\n\n`;
       msg += `Amount: ${config.buyAmountBnb} BNB\n`;
-      msg += `Score: ${bestSignal.score}/100\n`;
-      msg += `Reasons:\n`;
+      msg += `Confidence: ${bestSignal.score}%\n`;
+      if (bestSignal.aiAnalysis) msg += `🧠 AI: ${bestSignal.aiAnalysis}\n\n`;
+      msg += `Signals:\n`;
       bestSignal.reasons.forEach(r => msg += `  • ${r}\n`);
-      msg += `\nTake Profit: ${config.takeProfitMultiple}x | Stop Loss: ${(config.stopLossMultiple * 100).toFixed(0)}%\n`;
+      msg += `\nTP: ${config.takeProfitMultiple}x | SL: ${(config.stopLossMultiple * 100).toFixed(0)}%\n`;
       if (position.buyTxHash) msg += `TX: https://bscscan.com/tx/${position.buyTxHash}`;
 
       notifyFn(user.chatId, msg);
