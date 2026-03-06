@@ -774,5 +774,14 @@ export async function registerRoutes(
     res.json(result);
   });
 
+  app.get("/api/trading/status", analyticsAuth, async (_req: Request, res: Response) => {
+    const { getAllActivePositions, isTradingAgentRunning } = await import("./trading-agent");
+    res.json({
+      running: isTradingAgentRunning(),
+      activePositions: getAllActivePositions().length,
+      positions: getAllActivePositions(),
+    });
+  });
+
   return httpServer;
 }

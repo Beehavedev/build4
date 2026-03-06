@@ -962,6 +962,143 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data.startsWith("trade:")) {
+    const tradeAction = data.split(":")[1];
+    const { setUserTradingConfig, getUserTradingStatus, startTradingAgent, isTradingAgentRunning, getActivePositionsForUser, getTradeHistoryForUser, manualClosePosition } = await import("./trading-agent");
+
+    if (tradeAction === "enable") {
+      setUserTradingConfig(chatId, { enabled: true });
+      if (!isTradingAgentRunning()) {
+        startTradingAgent((cid, msg) => {
+          bot?.sendMessage(cid, msg, { reply_markup: mainMenuKeyboard() }).catch(() => {});
+        });
+      }
+      await bot.sendMessage(chatId,
+        "✅ Trading agent ENABLED\n\nThe agent will scan Four.meme for new tokens and trade automatically. You'll be notified of every buy and sell.\n\nUse /tradestatus to check positions.",
+        { reply_markup: mainMenuKeyboard() }
+      );
+      return;
+    }
+
+    if (tradeAction === "disable") {
+      setUserTradingConfig(chatId, { enabled: false });
+      await bot.sendMessage(chatId, "⏸ Trading agent DISABLED\n\nExisting positions will still be monitored until closed.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+
+    if (tradeAction === "status") {
+      const { config, positions, history } = getUserTradingStatus(chatId);
+      let msg = `📊 *Trading Agent Status*\n\n`;
+      msg += `Status: ${config.enabled ? "✅ ACTIVE" : "⏸ DISABLED"}\n`;
+      msg += `Buy Size: ${config.buyAmountBnb} BNB\n`;
+      msg += `Take Profit: ${config.takeProfitMultiple}x\n`;
+      msg += `Stop Loss: ${(config.stopLossMultiple * 100).toFixed(0)}%\n`;
+      msg += `Max Positions: ${config.maxPositions}\n\n`;
+      if (positions.length > 0) {
+        msg += `*Open Positions (${positions.length}):*\n`;
+        for (const p of positions) {
+          const age = Math.floor((Date.now() - p.entryTime) / 60000);
+          msg += `  • $${p.tokenSymbol} — ${p.entryPriceBnb} BNB (${age}m ago)\n`;
+        }
+      } else {
+        msg += `No open positions.\n`;
+      }
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+      return;
+    }
+
+    if (tradeAction === "settings") {
+      const { config } = getUserTradingStatus(chatId);
+      await bot.sendMessage(chatId,
+        `⚙️ *Trading Settings*\n\n` +
+        `Current config:\n` +
+        `• Buy: ${config.buyAmountBnb} BNB per trade\n` +
+        `• TP: ${config.takeProfitMultiple}x\n` +
+        `• SL: ${(config.stopLossMultiple * 100).toFixed(0)}%\n` +
+        `• Max positions: ${config.maxPositions}\n\n` +
+        `Adjust:`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "0.005 BNB", callback_data: "tradeset:buy:0.005" }, { text: "0.01 BNB", callback_data: "tradeset:buy:0.01" }, { text: "0.05 BNB", callback_data: "tradeset:buy:0.05" }],
+              [{ text: "TP 1.5x", callback_data: "tradeset:tp:1.5" }, { text: "TP 2x", callback_data: "tradeset:tp:2" }, { text: "TP 3x", callback_data: "tradeset:tp:3" }],
+              [{ text: "SL 50%", callback_data: "tradeset:sl:0.5" }, { text: "SL 70%", callback_data: "tradeset:sl:0.7" }, { text: "SL 85%", callback_data: "tradeset:sl:0.85" }],
+              [{ text: "Max 3", callback_data: "tradeset:max:3" }, { text: "Max 5", callback_data: "tradeset:max:5" }, { text: "Max 10", callback_data: "tradeset:max:10" }],
+              [{ text: "« Back", callback_data: "trade:status" }],
+            ],
+          },
+        }
+      );
+      return;
+    }
+
+    if (tradeAction === "history") {
+      const history = getTradeHistoryForUser(chatId);
+      if (history.length === 0) {
+        await bot.sendMessage(chatId, "No trade history yet. Enable the agent with /trade to start.", { reply_markup: mainMenuKeyboard() });
+        return;
+      }
+      let msg = `📜 *Trade History (last ${history.length}):*\n\n`;
+      let totalPnl = 0;
+      for (const t of history.slice(-10)) {
+        const emoji = t.status === "closed_profit" ? "💰" : t.status === "closed_loss" ? "📉" : "🔄";
+        const pnl = parseFloat(t.pnlBnb || "0");
+        totalPnl += pnl;
+        msg += `${emoji} $${t.tokenSymbol}: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} BNB\n`;
+      }
+      msg += `\n*Net PnL: ${totalPnl >= 0 ? "+" : ""}${totalPnl.toFixed(4)} BNB*`;
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+      return;
+    }
+
+    if (tradeAction === "closeall") {
+      const positions = getActivePositionsForUser(chatId);
+      if (positions.length === 0) {
+        await bot.sendMessage(chatId, "No open positions to close.", { reply_markup: mainMenuKeyboard() });
+        return;
+      }
+      await bot.sendMessage(chatId, `Closing ${positions.length} position(s)...`);
+      let closed = 0;
+      for (const p of positions) {
+        const ok = await manualClosePosition(p.id, (cid, m) => bot?.sendMessage(cid, m).catch(() => {}));
+        if (ok) closed++;
+      }
+      await bot.sendMessage(chatId, `Closed ${closed}/${positions.length} positions.`, { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+
+    return;
+  }
+
+  if (data.startsWith("tradeset:")) {
+    const parts = data.split(":");
+    const param = parts[1];
+    const value = parts[2];
+    const { setUserTradingConfig, getUserTradingStatus } = await import("./trading-agent");
+
+    if (param === "buy") {
+      setUserTradingConfig(chatId, { buyAmountBnb: value });
+    } else if (param === "tp") {
+      setUserTradingConfig(chatId, { takeProfitMultiple: parseFloat(value) });
+    } else if (param === "sl") {
+      setUserTradingConfig(chatId, { stopLossMultiple: parseFloat(value) });
+    } else if (param === "max") {
+      setUserTradingConfig(chatId, { maxPositions: parseInt(value) });
+    }
+
+    const { config } = getUserTradingStatus(chatId);
+    await bot.sendMessage(chatId,
+      `✅ Updated!\n\n` +
+      `• Buy: ${config.buyAmountBnb} BNB\n` +
+      `• TP: ${config.takeProfitMultiple}x\n` +
+      `• SL: ${(config.stopLossMultiple * 100).toFixed(0)}%\n` +
+      `• Max: ${config.maxPositions} positions`,
+      { reply_markup: mainMenuKeyboard() }
+    );
+    return;
+  }
+
   if (data === "action:menu") {
     await bot.sendMessage(chatId, "What would you like to do?", {
       reply_markup: mainMenuKeyboard()
@@ -1648,6 +1785,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         "📈 /tokeninfo — Token price & info\n" +
         "🔥 /chaos — Create a chaos plan\n" +
         "📊 /chaosstatus — Check chaos plan status\n" +
+        "📈 /trade — Autonomous trading agent\n" +
+        "📊 /tradestatus — Trading positions & PnL\n" +
         "🤖 /newagent — Create an AI agent\n" +
         "📋 /myagents — Your agents\n" +
         "📝 /task — Assign a task\n" +
@@ -1888,6 +2027,71 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       } catch (e: any) {
         await bot.sendMessage(chatId, `Error checking status: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
       }
+      return;
+    }
+
+    if (cmd === "trade") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for trading agent!"); return; }
+      await ensureWallet(chatId);
+      const wallet = getLinkedWallet(chatId);
+      if (!wallet || !walletsWithKey.has(`${chatId}:${wallet}`)) {
+        await bot.sendMessage(chatId, "You need a wallet with a private key to use the trading agent. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard() });
+        return;
+      }
+
+      await bot.sendMessage(chatId,
+        "🤖 *Autonomous Trading Agent*\n\n" +
+        "The trading agent scans Four.meme for new token launches, evaluates momentum signals, and trades automatically from your wallet.\n\n" +
+        "⚙️ Settings:\n" +
+        "• Buy amount per trade\n" +
+        "• Take-profit target (auto-sell)\n" +
+        "• Stop-loss protection\n" +
+        "• Max open positions\n\n" +
+        "Choose an action:",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "▶️ Enable Trading", callback_data: "trade:enable" }, { text: "⏸ Disable", callback_data: "trade:disable" }],
+              [{ text: "📊 Status", callback_data: "trade:status" }, { text: "⚙️ Settings", callback_data: "trade:settings" }],
+              [{ text: "📜 History", callback_data: "trade:history" }, { text: "🔴 Close All", callback_data: "trade:closeall" }],
+              [{ text: "« Back", callback_data: "main_menu" }],
+            ],
+          },
+        }
+      );
+      return;
+    }
+
+    if (cmd === "tradestatus") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for trade status!"); return; }
+      const { getUserTradingStatus } = await import("./trading-agent");
+      const { config, positions, history } = getUserTradingStatus(chatId);
+
+      let msg = `📊 *Trading Agent Status*\n\n`;
+      msg += `Status: ${config.enabled ? "✅ ACTIVE" : "⏸ DISABLED"}\n`;
+      msg += `Buy Size: ${config.buyAmountBnb} BNB\n`;
+      msg += `Take Profit: ${config.takeProfitMultiple}x\n`;
+      msg += `Stop Loss: ${(config.stopLossMultiple * 100).toFixed(0)}%\n`;
+      msg += `Max Positions: ${config.maxPositions}\n\n`;
+
+      if (positions.length > 0) {
+        msg += `*Open Positions (${positions.length}):*\n`;
+        for (const p of positions) {
+          const age = Math.floor((Date.now() - p.entryTime) / 60000);
+          msg += `  • $${p.tokenSymbol} — ${p.entryPriceBnb} BNB (${age}m ago)\n`;
+        }
+      } else {
+        msg += `No open positions.\n`;
+      }
+
+      const wins = history.filter(h => h.status === "closed_profit").length;
+      const losses = history.filter(h => h.status === "closed_loss").length;
+      if (history.length > 0) {
+        msg += `\n*Recent: ${wins}W / ${losses}L (${history.length} total)*`;
+      }
+
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
       return;
     }
 
