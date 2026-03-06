@@ -16,11 +16,13 @@ const AI_MODEL = "deepseek-ai/DeepSeek-V3";
 
 const COPY_TRADE_WALLETS = [
   { address: "0xd59b6a5dc9126ea0ebacd2d8560584b3ce48f62f", label: "GMGN Whale" },
+  { address: "0x52e09b0ce502e8e1e7b4d46b10c67b1b2adc3a3a", label: "Smart Money 1" },
+  { address: "0x3a0b5541e20cb8789307b8012b1e0e9e5bcd6072", label: "Smart Money 2" },
 ];
-const COPY_TRADE_SCAN_INTERVAL_MS = 30_000;
+const COPY_TRADE_SCAN_INTERVAL_MS = 20_000;
 
-const SCAN_INTERVAL_MS = 60_000;
-const POSITION_CHECK_INTERVAL_MS = 30_000;
+const SCAN_INTERVAL_MS = 30_000;
+const POSITION_CHECK_INTERVAL_MS = 15_000;
 const MAX_POSITIONS_PER_USER = 5;
 const DEFAULT_BUY_AMOUNT_BNB = "0.1";
 const DEFAULT_TAKE_PROFIT = 2.0;
@@ -30,6 +32,8 @@ const MIN_PROGRESS_FOR_ENTRY = 5;
 const MAX_PROGRESS_FOR_ENTRY = 60;
 const MIN_WALLET_BALANCE_BNB = 0.15;
 const MAX_TOKEN_AGE_SECONDS = 3600;
+const TRAILING_STOP_ACTIVATION = 1.3;
+const TRAILING_STOP_DISTANCE = 0.15;
 
 interface TradingPosition {
   id: string;
@@ -48,7 +52,21 @@ interface TradingPosition {
   sellTxHash?: string;
   pnlBnb?: string;
   closedAt?: number;
+  peakMultiple: number;
+  trailingStopActive: boolean;
+  confidenceScore: number;
+  source: "ai_scan" | "whale_copy" | "consensus" | "manual";
 }
+
+interface PriceSnapshot {
+  multiple: number;
+  timestamp: number;
+  progressPercent: number;
+}
+
+const priceHistory = new Map<string, PriceSnapshot[]>();
+const creatorRugScores = new Map<string, number>();
+const whaleConsensus = new Map<string, Set<string>>();
 
 function sanitizeMarkdown(text: string): string {
   return text.replace(/[_*\[\]()~`>#+=|{}.!\\-]/g, "\\$&");
@@ -157,6 +175,93 @@ function buildTradeMemoryContext(): string {
     ctx += `  ${t.symbol}: ${t.result} (${t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(4)} BNB) — ${t.reasoning}\n`;
   }
   return ctx;
+}
+
+async function checkCreatorHistory(tokenAddress: string): Promise<{ rugRisk: number; reasons: string[] }> {
+  try {
+    const apiKey = process.env.BSCSCAN_API_KEY || "";
+    const cachedScore = creatorRugScores.get(tokenAddress);
+    if (cachedScore !== undefined) return { rugRisk: cachedScore, reasons: [] };
+
+    const url = `https://api.etherscan.io/v2/api?chainid=56&module=account&action=tokentx&address=${tokenAddress}&page=1&offset=5&sort=desc&apikey=${apiKey}`;
+    const res = await Promise.race([
+      fetch(url),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 10000)),
+    ]);
+    const data = await res.json();
+
+    let rugRisk = 0;
+    const reasons: string[] = [];
+
+    if (data.status === "1" && Array.isArray(data.result)) {
+      const txCount = data.result.length;
+      if (txCount === 0) {
+        rugRisk += 20;
+        reasons.push("No creator TX history");
+      }
+    }
+
+    creatorRugScores.set(tokenAddress, rugRisk);
+    if (creatorRugScores.size > 200) {
+      const keys = Array.from(creatorRugScores.keys());
+      for (let i = 0; i < keys.length - 100; i++) creatorRugScores.delete(keys[i]);
+    }
+
+    return { rugRisk, reasons };
+  } catch {
+    return { rugRisk: 0, reasons: [] };
+  }
+}
+
+function analyzeMomentum(positionId: string, currentMultiple: number, progressPercent: number): { trend: "accelerating" | "stable" | "decelerating" | "unknown"; velocityChange: number; description: string } {
+  const snapshots = priceHistory.get(positionId) || [];
+  snapshots.push({ multiple: currentMultiple, timestamp: Date.now(), progressPercent });
+  if (snapshots.length > 30) snapshots.splice(0, snapshots.length - 30);
+  priceHistory.set(positionId, snapshots);
+
+  if (snapshots.length < 3) return { trend: "unknown", velocityChange: 0, description: "Not enough data" };
+
+  const recent = snapshots.slice(-5);
+  const older = snapshots.slice(-10, -5);
+
+  if (older.length < 2) return { trend: "unknown", velocityChange: 0, description: "Warming up" };
+
+  const recentVelocity = (recent[recent.length - 1].multiple - recent[0].multiple) / ((recent[recent.length - 1].timestamp - recent[0].timestamp) / 60000 || 1);
+  const olderVelocity = (older[older.length - 1].multiple - older[0].multiple) / ((older[older.length - 1].timestamp - older[0].timestamp) / 60000 || 1);
+
+  const velocityChange = recentVelocity - olderVelocity;
+
+  if (velocityChange > 0.01) return { trend: "accelerating", velocityChange, description: `Momentum rising: ${recentVelocity.toFixed(4)}x/min vs ${olderVelocity.toFixed(4)}x/min` };
+  if (velocityChange < -0.01) return { trend: "decelerating", velocityChange, description: `Momentum fading: ${recentVelocity.toFixed(4)}x/min vs ${olderVelocity.toFixed(4)}x/min` };
+  return { trend: "stable", velocityChange, description: `Steady: ${recentVelocity.toFixed(4)}x/min` };
+}
+
+function calculateDynamicBuyAmount(baseBnb: string, confidenceScore: number, source: string): string {
+  const base = parseFloat(baseBnb);
+  let multiplier = 1.0;
+
+  if (source === "consensus") {
+    multiplier = 1.5;
+  } else if (source === "whale_copy") {
+    multiplier = 1.3;
+  } else if (confidenceScore >= 85) {
+    multiplier = 1.4;
+  } else if (confidenceScore >= 70) {
+    multiplier = 1.0;
+  } else if (confidenceScore >= 50) {
+    multiplier = 0.7;
+  } else {
+    multiplier = 0.5;
+  }
+
+  const amount = Math.max(0.01, Math.min(base * multiplier, base * 2));
+  return amount.toFixed(4);
+}
+
+function getWinRate(): { rate: number; total: number } {
+  if (tradeMemory.length === 0) return { rate: 0, total: 0 };
+  const wins = tradeMemory.filter(t => t.pnl > 0).length;
+  return { rate: (wins / tradeMemory.length) * 100, total: tradeMemory.length };
 }
 
 async function aiEvaluateBuy(tokens: Array<{ address: string; name: string; symbol: string; launchTime: number; info: FourMemeTokenInfo }>): Promise<TokenSignal | null> {
