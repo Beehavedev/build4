@@ -616,6 +616,24 @@ export async function registerRoutes(
         console.error("[MultiTwitter] Auto-start failed:", err.message);
       });
     }, 12000);
+
+    setTimeout(async () => {
+      try {
+        const { restoreTradingPreferences, startTradingAgent, isTradingAgentRunning } = await import("./trading-agent");
+        const { getBotInstance } = await import("./telegram-bot");
+        const restored = await restoreTradingPreferences();
+        if (restored > 0 && !isTradingAgentRunning()) {
+          startTradingAgent((cid, msg) => {
+            getBotInstance()?.sendMessage(cid, msg).catch(() => {});
+          });
+          console.log(`[TradingAgent] Auto-started on boot — ${restored} users restored`);
+        } else if (restored === 0) {
+          console.log("[TradingAgent] No enabled users to restore — agent idle until user enables");
+        }
+      } catch (err: any) {
+        console.error("[TradingAgent] Auto-start failed:", err.message);
+      }
+    }, 15000);
   }
 
   app.get("/api/telegram/status", analyticsAuth, (req: Request, res: Response) => {

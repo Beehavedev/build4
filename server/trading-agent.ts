@@ -109,7 +109,31 @@ export function setUserTradingConfig(chatId: number, config: Partial<TradingConf
   const current = getUserConfig(chatId);
   const updated = { ...current, ...config };
   userTradingConfig.set(chatId, updated);
+  storage.saveTradingPreference(chatId.toString(), updated).catch(e => {
+    log(`[TradingAgent] Failed to persist config for ${chatId}: ${e.message}`, "trading");
+  });
   return updated;
+}
+
+export async function restoreTradingPreferences(): Promise<number> {
+  try {
+    const prefs = await storage.getEnabledTradingPreferences();
+    for (const pref of prefs) {
+      const chatId = parseInt(pref.chatId, 10);
+      if (isNaN(chatId)) continue;
+      userTradingConfig.set(chatId, {
+        enabled: true,
+        buyAmountBnb: pref.buyAmountBnb,
+        takeProfitMultiple: pref.takeProfitMultiple,
+        stopLossMultiple: pref.stopLossMultiple,
+        maxPositions: pref.maxPositions,
+      });
+    }
+    return prefs.length;
+  } catch (e: any) {
+    log(`[TradingAgent] Failed to restore preferences: ${e.message}`, "trading");
+    return 0;
+  }
 }
 
 export function getUserTradingStatus(chatId: number): { config: TradingConfig; positions: TradingPosition[]; history: TradingPosition[] } {

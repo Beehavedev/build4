@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, integer, timestamp, doublePrecision } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -1026,6 +1026,17 @@ export const telegramWallets = pgTable("telegram_wallets", {
 export const insertTelegramWalletSchema = createInsertSchema(telegramWallets).omit({ id: true, createdAt: true });
 export type InsertTelegramWallet = z.infer<typeof insertTelegramWalletSchema>;
 export type TelegramWallet = typeof telegramWallets.$inferSelect;
+
+export const tradingPreferences = pgTable("trading_preferences", {
+  chatId: text("chat_id").primaryKey(),
+  enabled: boolean("enabled").notNull().default(false),
+  buyAmountBnb: text("buy_amount_bnb").notNull().default("0.1"),
+  takeProfitMultiple: doublePrecision("take_profit_multiple").notNull().default(2.0),
+  stopLossMultiple: doublePrecision("stop_loss_multiple").notNull().default(0.7),
+  maxPositions: integer("max_positions").notNull().default(5),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type TradingPreference = typeof tradingPreferences.$inferSelect;
 export type InsertAgentTwitterAccount = z.infer<typeof insertAgentTwitterAccountSchema>;
 export type AgentTwitterAccount = typeof agentTwitterAccounts.$inferSelect;
 

@@ -7,6 +7,10 @@ import { registerAgentOnchain, registerAgentERC8004, registerAgentBAP578, isOnch
 let bot: TelegramBot | null = null;
 let isRunning = false;
 let botUsername: string | null = null;
+
+export function getBotInstance(): TelegramBot | null {
+  return bot;
+}
 let appBaseUrl: string | null = null;
 
 interface UserWallets { wallets: string[]; active: number }

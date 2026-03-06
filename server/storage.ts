@@ -67,6 +67,7 @@ import {
   type TokenLaunch, type InsertTokenLaunch, tokenLaunches,
   type ChaosMilestone, type InsertChaosMilestone, chaosMilestones,
   type TelegramWallet, type InsertTelegramWallet, telegramWallets,
+  tradingPreferences,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt, inArray } from "drizzle-orm";
@@ -419,6 +420,8 @@ export interface IStorage {
   getAllTelegramWalletLinks(): Promise<TelegramWallet[]>;
   getTelegramWalletPrivateKey(chatId: string, walletAddress: string): Promise<string | null>;
   getPrivateKeyByWalletAddress(walletAddress: string): Promise<string | null>;
+  saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void>;
+  getEnabledTradingPreferences(): Promise<Array<{ chatId: string; enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }>>;
   seedInferenceProviders(): Promise<void>;
 }
 
@@ -2418,6 +2421,32 @@ export class DatabaseStorage implements IStorage {
 
   async getAllTelegramWalletLinks(): Promise<TelegramWallet[]> {
     return db.select().from(telegramWallets).orderBy(telegramWallets.chatId);
+  }
+
+  async saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void> {
+    await db.insert(tradingPreferences).values({
+      chatId,
+      enabled: config.enabled,
+      buyAmountBnb: config.buyAmountBnb,
+      takeProfitMultiple: config.takeProfitMultiple,
+      stopLossMultiple: config.stopLossMultiple,
+      maxPositions: config.maxPositions,
+      updatedAt: new Date(),
+    }).onConflictDoUpdate({
+      target: tradingPreferences.chatId,
+      set: {
+        enabled: config.enabled,
+        buyAmountBnb: config.buyAmountBnb,
+        takeProfitMultiple: config.takeProfitMultiple,
+        stopLossMultiple: config.stopLossMultiple,
+        maxPositions: config.maxPositions,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  async getEnabledTradingPreferences(): Promise<Array<{ chatId: string; enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }>> {
+    return db.select().from(tradingPreferences).where(eq(tradingPreferences.enabled, true));
   }
 }
 
