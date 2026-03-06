@@ -868,10 +868,7 @@ async function scanAndTrade(notifyFn: (chatId: number, message: string) => void)
         continue;
       }
 
-      const agents = await storage.getAgentsByOwner(chatIdStr);
-      const agentId = agents.length > 0 ? agents[0].id : "auto-trader";
-
-      enabledUsers.push({ chatId, agentId, privateKey: pk, walletAddress: activeWallet.walletAddress });
+      enabledUsers.push({ chatId, agentId: "auto-trader", privateKey: pk, walletAddress: activeWallet.walletAddress });
       log(`[TradingAgent] User ${chatId} ready to trade (${balBnb.toFixed(4)} BNB)`, "trading");
     } catch (e: any) {
       log(`[TradingAgent] User ${chatId} setup error: ${e.message?.substring(0, 100)}`, "trading");
@@ -1028,9 +1025,7 @@ async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: str
       const balBnb = parseFloat(ethers.formatEther(balance));
       if (balBnb < MIN_WALLET_BALANCE_BNB) continue;
 
-      const agents = await storage.getAgentsByOwner(chatIdStr);
-      const agentId = agents.length > 0 ? agents[0].id : "auto-trader";
-      enabledUsers.push({ chatId, agentId, privateKey: pk, walletAddress: activeWallet.walletAddress });
+      enabledUsers.push({ chatId, agentId: "auto-trader", privateKey: pk, walletAddress: activeWallet.walletAddress });
     } catch {}
   }
 
