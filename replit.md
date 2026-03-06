@@ -72,13 +72,19 @@ The project utilizes a monorepo containing `client/` for the React frontend, `se
 ### Autonomous AI Trading Agent
 - **Purpose**: AI-powered autonomous trading on Four.meme — agents think and decide on buys/sells dynamically.
 - **Engine**: Independent scan and position monitor loops with AI inference on each cycle.
-- **AI Buy Analysis**: Feeds batch of candidate tokens (with on-chain metrics) to DeepSeek-V3 via decentralized inference. AI evaluates momentum, token naming, velocity, and risk/reward to pick the best entry or skip all.
-- **AI Sell Analysis**: Each open position is evaluated by AI every 30s — considers momentum changes, curve velocity, hold time, PnL, and whether to let winners run or cut losers. Hard safety limits (1.5x TP overshoot, 0.8x SL breach) bypass AI.
-- **Trade Memory**: Agent remembers last 20 trade outcomes (win/loss, PnL, reasoning) and feeds this history into future decisions, enabling self-improvement.
+- **AI Buy Analysis**: Feeds batch of candidate tokens (with on-chain metrics, rug-check scores, whale interest flags) to DeepSeek-V3. AI evaluates momentum, token naming, velocity, risk/reward, and overall win rate to pick the best entry or skip all. Enhanced with adaptive selectivity — lowers confidence threshold when winning, raises it when losing.
+- **AI Sell Analysis**: Each open position is evaluated by AI every 15s with full momentum analysis — peak tracking, drawdown from peak, trend acceleration/deceleration, source confidence, and trailing stop status. AI uses explicit decision framework: let winners run when accelerating, cut losers when decelerating.
+- **Trade Memory**: Agent remembers last 20 trade outcomes (win/loss, PnL, reasoning) and feeds this history into future decisions, enabling self-improvement. Win rate tracking adjusts aggression — below 40% = more selective, above 60% = more aggressive.
+- **Trailing Stop-Loss**: Activates at 1.3x, then tracks peak price. If price drops 15% from peak, auto-sells to lock in profits. Prevents the classic "watched a 2x become a 0.8x" scenario.
+- **Dynamic Position Sizing**: AI confidence score and trade source determine buy size. Consensus trades (multiple whales) = 1.5x base, whale copies = 1.3x, high-confidence AI picks = 1.4x, low-confidence = 0.5x. Never bets the same on a weak signal vs a strong one.
+- **Price Momentum Tracker**: Stores rolling price snapshots per position. Compares recent vs older velocity to detect acceleration, deceleration, or stability. Fed directly into AI sell decisions.
+- **Creator Rug-Check**: Checks token contract creator's BSCScan history before buying. Tokens with suspicious creator patterns get flagged for the AI to factor into decisions.
 - **Fallback**: If AI inference times out or fails, falls back to rule-based scoring (curve progress, age, volume, velocity).
-- **Whale Copy Trading**: Monitors high-alpha wallets (GMGN Whale: `0xd59b6a5dc9126ea0ebacd2d8560584b3ce48f62f`) via BSCScan API every 30s. When whale buys a Four.meme token, auto-copies the trade for all enabled users. First scan initializes TX history without trading, subsequent scans detect new buys within 5 minutes.
-- **Risk Management**: Configurable take-profit, stop-loss, max positions, and buy size.
-- **User Control**: Enable/disable per user via Telegram, with AI reasoning shown in trade notifications.
+- **Multi-Whale Copy Trading**: Monitors 3 high-alpha wallets (GMGN Whale + 2 Smart Money wallets) via BSCScan API every 20s. Smart buy detection filters airdrops/transfers. Reentrancy guard prevents duplicate trades. 3-retry mechanism for transient API failures.
+- **Consensus Detection**: When 2+ tracked whales buy the same token, triggers a consensus signal (confidence 95%, position size 1.5x). Consensus buys are the highest-conviction trades.
+- **Risk Management**: Configurable take-profit, stop-loss, max positions, and buy size. Hard safety limits bypass AI for extreme cases.
+- **User Control**: Enable/disable per user via Telegram, with AI reasoning, peak tracking, source, and confidence shown in trade notifications.
+- **Scan Intervals**: Token scan every 30s (was 60s), position monitoring every 15s (was 30s), whale monitoring every 20s. Faster detection = better entries.
 
 ### Performance Optimizations
 - **API Logging**: Lightweight, timing-only logs for API routes.

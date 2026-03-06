@@ -267,35 +267,47 @@ function getWinRate(): { rate: number; total: number } {
 async function aiEvaluateBuy(tokens: Array<{ address: string; name: string; symbol: string; launchTime: number; info: FourMemeTokenInfo }>): Promise<TokenSignal | null> {
   if (tokens.length === 0) return null;
 
+  const rugChecks = await Promise.all(tokens.slice(0, 5).map(t => checkCreatorHistory(t.address).catch(() => ({ rugRisk: 0, reasons: [] }))));
+
   const tokenDataLines = tokens.map((t, i) => {
     const age = Math.floor(Date.now() / 1000) - (t.launchTime || t.info.launchTime);
     const ageMin = Math.floor(age / 60);
     const velocity = age > 0 ? (t.info.progressPercent / (age / 60)).toFixed(2) : "0";
-    return `${i + 1}. $${t.symbol} (${t.name}) — Curve: ${t.info.progressPercent.toFixed(1)}%, Age: ${ageMin}m, Raised: ${parseFloat(t.info.funds).toFixed(3)} BNB / ${parseFloat(t.info.maxFunds).toFixed(1)} BNB, Velocity: ${velocity}%/min, Price: ${t.info.lastPrice}`;
+    const rug = i < rugChecks.length ? rugChecks[i] : null;
+    const rugLabel = rug && rug.rugRisk > 0 ? ` ⚠️ RUG RISK: ${rug.rugRisk}%` : "";
+    const whaleInterest = whaleConsensus.has(t.address.toLowerCase()) ? ` 🐋 WHALE INTEREST (${whaleConsensus.get(t.address.toLowerCase())!.size} wallets)` : "";
+    return `${i + 1}. $${t.symbol} (${t.name}) — Curve: ${t.info.progressPercent.toFixed(1)}%, Age: ${ageMin}m, Raised: ${parseFloat(t.info.funds).toFixed(3)} BNB / ${parseFloat(t.info.maxFunds).toFixed(1)} BNB, Velocity: ${velocity}%/min, Price: ${t.info.lastPrice}${rugLabel}${whaleInterest}`;
   }).join("\n");
 
   const memoryCtx = buildTradeMemoryContext();
+  const winRate = getWinRate();
 
   const prompt = `You are an expert meme token trader on Four.meme (BNB Chain bonding curve platform). Analyze these new tokens and decide which ONE to buy, or NONE if none look good.
 
 TOKENS:
 ${tokenDataLines}
 
+YOUR PERFORMANCE: ${winRate.total > 0 ? `${winRate.rate.toFixed(0)}% win rate over ${winRate.total} trades` : "No history yet"}
+
 YOUR TRADE MEMORY:
 ${memoryCtx}
 
-KEY METRICS TO CONSIDER:
+SCORING GUIDE:
 - Curve progress: 10-30% is early momentum (best entry), 30-50% is mid (riskier), >50% is late
 - Age: Under 10 min = very fresh (higher risk/reward), 10-30 min = ideal, >30 min with low progress = dying
 - Velocity (%/min): >1.0 = parabolic, 0.3-1.0 = healthy, <0.3 = sluggish
-- Funds raised: More BNB = more real buyers
-- Token name/symbol: Memes with trending themes or clever names attract more buyers
+- Funds raised: More BNB = more real buyers, proves demand is real
+- Token name/symbol: Memes with trending themes, clever names, or cultural references attract more buyers. Generic/low-effort names usually fail
+- ⚠️ RUG RISK flags = avoid or reduce confidence
+- 🐋 WHALE INTEREST = multiple tracked wallets bought this token, very strong signal
 
-THINK THROUGH:
-1. Which token has the best momentum signals?
-2. Is the risk/reward favorable given current data?
-3. Have similar tokens worked or failed in your trade history?
-4. Would a skilled degen trader buy this?
+DECISION RULES:
+1. Which token has the best momentum + lowest risk combination?
+2. If your recent win rate is below 40%, be MORE selective (confidence threshold higher)
+3. If multiple whales bought the same token, that's the strongest signal
+4. Velocity >1%/min with a good name = high conviction play
+5. Avoid tokens with RUG RISK flags unless momentum is exceptional
+6. SKIP if nothing stands out — waiting for a better setup IS the smart play
 
 RESPOND IN EXACTLY THIS FORMAT:
 DECISION: BUY or SKIP
@@ -400,20 +412,23 @@ function fallbackEvaluateTokens(tokens: Array<{ address: string; name: string; s
       else if (v > 0.3) { tokenScore += 10; reasons.push(`${v.toFixed(1)}%/min velocity`); }
     }
 
+    const normalizedScore = Math.min(100, Math.round((tokenScore / 110) * 100));
+
     if (tokenScore >= 40 && (!best || tokenScore > best.score)) {
-      best = { address: token.address, name: token.name, symbol: token.symbol, score: tokenScore, reasons, info };
+      best = { address: token.address, name: token.name, symbol: token.symbol, score: normalizedScore, reasons, info };
     }
   }
 
   return best;
 }
 
-async function aiEvaluateSell(position: TradingPosition, info: FourMemeTokenInfo, multiple: number, ageMinutes: number): Promise<{ decision: "HOLD" | "SELL"; reasoning: string }> {
+async function aiEvaluateSell(position: TradingPosition, info: FourMemeTokenInfo, multiple: number, ageMinutes: number, momentum?: { trend: string; velocityChange: number; description: string }): Promise<{ decision: "HOLD" | "SELL"; reasoning: string }> {
   const memoryCtx = buildTradeMemoryContext();
   const velocity = info.progressPercent > 0 && ageMinutes > 0 ? (info.progressPercent / ageMinutes).toFixed(2) : "unknown";
   const fundsRaised = parseFloat(info.funds).toFixed(3);
   const maxFunds = parseFloat(info.maxFunds).toFixed(1);
   const pnlPct = ((multiple - 1) * 100).toFixed(1);
+  const winRate = getWinRate();
 
   const prompt = `You are managing an open meme token position. Decide whether to HOLD or SELL.
 
@@ -421,26 +436,39 @@ POSITION:
 - Token: $${position.tokenSymbol}
 - Entry: ${position.entryPriceBnb} BNB
 - Current multiple: ${multiple.toFixed(3)}x (${pnlPct}% PnL)
+- Peak multiple: ${position.peakMultiple.toFixed(3)}x
+- Drawdown from peak: ${position.peakMultiple > 0 ? ((1 - multiple / position.peakMultiple) * 100).toFixed(1) : "0.0"}%
 - Hold time: ${ageMinutes.toFixed(0)} minutes
-- Tokens held: ${parseFloat(position.tokenAmount).toFixed(2)}
+- Source: ${position.source} (confidence: ${position.confidenceScore}%)
+- Trailing stop: ${position.trailingStopActive ? `ACTIVE (triggers at ${(position.peakMultiple * (1 - TRAILING_STOP_DISTANCE)).toFixed(2)}x)` : "inactive"}
 
 CURRENT TOKEN STATE:
 - Curve progress: ${info.progressPercent.toFixed(1)}% (of ${maxFunds} BNB)
 - Current velocity: ${velocity}%/min
 - Funds raised: ${fundsRaised} BNB
 - Liquidity added (graduated to DEX): ${info.liquidityAdded}
+
+MOMENTUM ANALYSIS:
+- Trend: ${momentum?.trend || "unknown"}
+- Detail: ${momentum?.description || "No data yet"}
+
+RISK TARGETS:
 - Take-profit target: ${position.takeProfitMultiple}x
 - Stop-loss target: ${((1 - position.stopLossMultiple) * 100).toFixed(0)}% loss
+
+OVERALL PERFORMANCE: ${winRate.total > 0 ? `${winRate.rate.toFixed(0)}% win rate over ${winRate.total} trades` : "No history yet"}
 
 YOUR TRADE MEMORY:
 ${memoryCtx}
 
-THINK THROUGH:
-1. Is momentum accelerating, stable, or fading?
-2. Is the curve filling fast enough to expect more upside?
-3. Are we near TP/SL targets? Should we let it ride or lock in profits?
-4. If graduated to DEX — should we sell immediately or hold for DEX pump?
-5. Would a skilled trader hold or take profits here?
+DECISION FRAMEWORK:
+1. Momentum ACCELERATING + profitable = HOLD (let winners run)
+2. Momentum DECELERATING + profitable = consider SELL (lock in gains before reversal)
+3. Momentum DECELERATING + losing = SELL (cut losses fast)
+4. Near TP target + accelerating = HOLD (could go higher)
+5. Significant drawdown from peak (>15%) + decelerating = SELL
+6. Whale/consensus trades: give more patience, these have stronger conviction
+7. If overall win rate is low, be more aggressive about taking profits early
 
 RESPOND IN EXACTLY THIS FORMAT:
 DECISION: HOLD or SELL
@@ -486,14 +514,16 @@ REASONING: [1-2 sentences]`;
   }
 }
 
-async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, privateKey: string, walletAddress: string): Promise<TradingPosition | null> {
+async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, privateKey: string, walletAddress: string, source: "ai_scan" | "whale_copy" | "consensus" = "ai_scan"): Promise<TradingPosition | null> {
   const config = getUserConfig(chatId);
   const positionId = `trade_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
-  try {
-    log(`[TradingAgent] Buying ${signal.symbol} for ${config.buyAmountBnb} BNB (score: ${signal.score})`, "trading");
+  const dynamicAmount = calculateDynamicBuyAmount(config.buyAmountBnb, signal.score, source);
 
-    const result = await fourMemeBuyToken(signal.address, config.buyAmountBnb, DEFAULT_SLIPPAGE, privateKey);
+  try {
+    log(`[TradingAgent] Buying ${signal.symbol} for ${dynamicAmount} BNB (confidence: ${signal.score}, source: ${source})`, "trading");
+
+    const result = await fourMemeBuyToken(signal.address, dynamicAmount, DEFAULT_SLIPPAGE, privateKey);
 
     if (!result.success) {
       log(`[TradingAgent] Buy failed for ${signal.symbol}: ${result.error}`, "trading");
@@ -514,13 +544,17 @@ async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, 
       walletAddress,
       tokenAddress: signal.address,
       tokenSymbol: signal.symbol,
-      entryPriceBnb: config.buyAmountBnb,
+      entryPriceBnb: dynamicAmount,
       tokenAmount: tokenBalance,
       buyTxHash: result.txHash || "",
       entryTime: Date.now(),
       takeProfitMultiple: config.takeProfitMultiple,
       stopLossMultiple: config.stopLossMultiple,
       status: "open",
+      peakMultiple: 1.0,
+      trailingStopActive: false,
+      confidenceScore: signal.score,
+      source,
     };
 
     activePositions.set(positionId, position);
@@ -555,13 +589,32 @@ async function checkAndClosePositions(notifyFn: (chatId: number, message: string
       const currentValueBnb = currentPrice * tokenAmountNum;
       const entryBnb = parseFloat(position.entryPriceBnb);
       const multiple = entryBnb > 0 ? currentValueBnb / entryBnb : 0;
-
       const ageMinutes = (Date.now() - position.entryTime) / 60000;
+
+      if (multiple > position.peakMultiple) {
+        position.peakMultiple = multiple;
+      }
+
+      if (!position.trailingStopActive && multiple >= TRAILING_STOP_ACTIVATION) {
+        position.trailingStopActive = true;
+        log(`[TradingAgent] ${position.tokenSymbol} trailing stop activated at ${multiple.toFixed(2)}x (peak: ${position.peakMultiple.toFixed(2)}x)`, "trading");
+      }
+
+      const momentum = analyzeMomentum(posId, multiple, info.progressPercent);
 
       if (info.liquidityAdded) {
         log(`[TradingAgent] ${position.tokenSymbol} graduated to DEX — selling at ${multiple.toFixed(2)}x`, "trading");
         await closePosition(position, "closed_profit", notifyFn, multiple, currentValueBnb, "Token graduated to DEX — auto-sell");
         continue;
+      }
+
+      if (position.trailingStopActive) {
+        const trailingStopLevel = position.peakMultiple * (1 - TRAILING_STOP_DISTANCE);
+        if (multiple <= trailingStopLevel) {
+          log(`[TradingAgent] ${position.tokenSymbol} trailing stop hit: ${multiple.toFixed(2)}x (peak: ${position.peakMultiple.toFixed(2)}x, trail: ${trailingStopLevel.toFixed(2)}x)`, "trading");
+          await closePosition(position, "closed_profit", notifyFn, multiple, currentValueBnb, `Trailing stop: dropped from ${position.peakMultiple.toFixed(2)}x peak to ${multiple.toFixed(2)}x`);
+          continue;
+        }
       }
 
       if (multiple >= position.takeProfitMultiple * 1.5) {
@@ -582,7 +635,7 @@ async function checkAndClosePositions(notifyFn: (chatId: number, message: string
         continue;
       }
 
-      const aiSell = await aiEvaluateSell(position, info, multiple, ageMinutes);
+      const aiSell = await aiEvaluateSell(position, info, multiple, ageMinutes, momentum);
       log(`[TradingAgent] AI says ${aiSell.decision} for ${position.tokenSymbol}: ${aiSell.reasoning}`, "trading");
 
       if (aiSell.decision === "SELL") {
@@ -639,6 +692,7 @@ async function closePosition(
     position.pnlBnb = pnl.toFixed(6);
 
     activePositions.delete(position.id);
+    priceHistory.delete(position.id);
     tradeHistory.push(position);
 
     tradeMemory.push({
@@ -657,7 +711,8 @@ async function closePosition(
     msg += `Entry: ${position.entryPriceBnb} BNB\n`;
     msg += `Exit: ~${currentValueBnb.toFixed(4)} BNB\n`;
     msg += `PnL: ${pnlStr} BNB (${multiple.toFixed(2)}x)\n`;
-    msg += `Hold: ${holdTime}m\n`;
+    msg += `Peak: ${position.peakMultiple.toFixed(2)}x | Hold: ${holdTime}m\n`;
+    msg += `Source: ${position.source} | Confidence: ${position.confidenceScore}%\n`;
     if (aiReasoning) msg += `🧠 AI: ${aiReasoning}\n`;
     if (sellResult.txHash) msg += `TX: https://bscscan.com/tx/${sellResult.txHash}`;
 
@@ -761,10 +816,10 @@ async function scanAndTrade(notifyFn: (chatId: number, message: string) => void)
     );
     if (alreadyHolding) continue;
 
-    const position = await executeBuy(user.chatId, user.agentId, bestSignal, user.privateKey, user.walletAddress);
+    const position = await executeBuy(user.chatId, user.agentId, bestSignal, user.privateKey, user.walletAddress, "ai_scan");
     if (position) {
       let msg = `🤖 AI TRADE: Bought $${bestSignal.symbol}\n\n`;
-      msg += `Amount: ${config.buyAmountBnb} BNB\n`;
+      msg += `Amount: ${position.entryPriceBnb} BNB (dynamic sizing)\n`;
       msg += `Confidence: ${bestSignal.score}%\n`;
       if (bestSignal.aiAnalysis) msg += `🧠 AI: ${bestSignal.aiAnalysis}\n\n`;
       msg += `Signals:\n`;
@@ -929,20 +984,29 @@ async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: str
         continue;
       }
 
+      if (!whaleConsensus.has(tokenAddr)) whaleConsensus.set(tokenAddr, new Set());
+      whaleConsensus.get(tokenAddr)!.add(whale.label);
+      const consensusCount = whaleConsensus.get(tokenAddr)!.size;
+      const isConsensus = consensusCount >= 2;
+      const tradeSource = isConsensus ? "consensus" as const : "whale_copy" as const;
+
       whaleTokensCopied.add(tokenAddr);
 
+      const confidenceBase = isConsensus ? 95 : 85;
       const signal: TokenSignal = {
         address: tokenAddr,
         name: buy.tokenName,
         symbol: buy.tokenSymbol,
-        score: 90,
+        score: confidenceBase,
         reasons: [
-          `🐋 ${whale.label} copy trade`,
+          isConsensus ? `🔥 CONSENSUS: ${consensusCount} whales bought` : `🐋 ${whale.label} copy trade`,
           `Curve: ${info.progressPercent.toFixed(1)}%`,
           `Raised: ${parseFloat(info.funds).toFixed(3)} BNB`,
         ],
         info,
-        aiAnalysis: `Copying ${whale.label} — this wallet's buys historically pump.`,
+        aiAnalysis: isConsensus
+          ? `${consensusCount} tracked wallets bought the same token — high conviction consensus signal.`
+          : `Copying ${whale.label} — this wallet's buys historically pump.`,
         aiDecision: "BUY",
       };
 
@@ -956,10 +1020,12 @@ async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: str
         );
         if (alreadyHolding) continue;
 
-        const position = await executeBuy(user.chatId, user.agentId, signal, user.privateKey, user.walletAddress);
+        const position = await executeBuy(user.chatId, user.agentId, signal, user.privateKey, user.walletAddress, tradeSource);
         if (position) {
-          let msg = `🐋 COPY TRADE: ${whale.label} bought $${buy.tokenSymbol}!\n\n`;
-          msg += `Amount: ${config.buyAmountBnb} BNB\n`;
+          const emoji = isConsensus ? "🔥" : "🐋";
+          const label = isConsensus ? `CONSENSUS TRADE (${consensusCount} whales)` : `COPY TRADE: ${whale.label}`;
+          let msg = `${emoji} ${label}: $${buy.tokenSymbol}!\n\n`;
+          msg += `Amount: ${position.entryPriceBnb} BNB (dynamic sizing)\n`;
           msg += `Whale TX: https://bscscan.com/tx/${buy.txHash}\n`;
           msg += `Curve: ${info.progressPercent.toFixed(1)}% | Raised: ${parseFloat(info.funds).toFixed(3)} BNB\n`;
           msg += `\nTP: ${config.takeProfitMultiple}x | SL: ${(config.stopLossMultiple * 100).toFixed(0)}%\n`;
@@ -973,6 +1039,11 @@ async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: str
   if (whaleTokensCopied.size > 200) {
     const arr = Array.from(whaleTokensCopied);
     for (let i = 0; i < arr.length - 100; i++) whaleTokensCopied.delete(arr[i]);
+  }
+
+  if (whaleConsensus.size > 200) {
+    const keys = Array.from(whaleConsensus.keys());
+    for (let i = 0; i < keys.length - 100; i++) whaleConsensus.delete(keys[i]);
   }
 }
 
