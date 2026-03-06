@@ -1014,6 +1014,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           inline_keyboard: [
             [{ text: "Four.meme (BNB Chain)", callback_data: `launchplatform:${agentId}:four_meme` }],
             [{ text: "Flap.sh (BNB Chain)", callback_data: `launchplatform:${agentId}:flap_sh` }],
+            [{ text: "XLayer (OKX)", callback_data: `launchplatform:${agentId}:xlayer` }],
             [{ text: "Bankr (Base/Solana)", callback_data: `launchplatform:${agentId}:bankr` }],
             [{ text: "Cancel", callback_data: "action:menu" }],
           ]
@@ -1029,7 +1030,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const platform = parts[2];
     const state = pendingTokenLaunch.get(chatId);
     if (!state || state.agentId !== agentId) return;
-    if (platform !== "four_meme" && platform !== "flap_sh" && platform !== "bankr") {
+    if (platform !== "four_meme" && platform !== "flap_sh" && platform !== "bankr" && platform !== "xlayer") {
       await bot.sendMessage(chatId, "Invalid platform. Please try again.");
       return;
     }
@@ -1057,7 +1058,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     state.step = "name";
     pendingTokenLaunch.set(chatId, state);
 
-    const platformName = platform === "four_meme" ? "Four.meme (BNB Chain)" : "Flap.sh (BNB Chain)";
+    const platformName = platform === "four_meme" ? "Four.meme (BNB Chain)" : platform === "xlayer" ? "XLayer (OKX)" : "Flap.sh (BNB Chain)";
     await bot.sendMessage(chatId,
       `Platform: ${platformName}\n\nWhat's the token name? (1-50 chars)\n\nExample: DogeBrain, MoonCat, AgentX`
     );
@@ -2491,6 +2492,7 @@ async function startTokenLaunchFlow(chatId: number, wallet: string): Promise<voi
             inline_keyboard: [
               [{ text: "Four.meme (BNB Chain)", callback_data: `launchplatform:${agent.id}:four_meme` }],
               [{ text: "Flap.sh (BNB Chain)", callback_data: `launchplatform:${agent.id}:flap_sh` }],
+              [{ text: "XLayer (OKX)", callback_data: `launchplatform:${agent.id}:xlayer` }],
               [{ text: "Bankr (Base/Solana)", callback_data: `launchplatform:${agent.id}:bankr` }],
               [{ text: "Cancel", callback_data: "action:menu" }],
             ]
@@ -2636,9 +2638,9 @@ async function handleTokenLaunchFlow(chatId: number, text: string): Promise<void
 
 async function showLaunchPreview(chatId: number, state: TokenLaunchState) {
   if (!bot) return;
-  const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : state.platform === "bankr" ? `Bankr (${state.bankrChain === "solana" ? "Solana" : "Base"})` : "Flap.sh (BNB Chain)";
-  const liquidity = state.platform === "bankr" ? "Managed by Bankr" : state.platform === "four_meme" ? "0.01 BNB" : "0.001 BNB";
-  const launchFee = state.platform === "bankr" ? "Free" : "0.01 BNB (~$7)";
+  const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : state.platform === "bankr" ? `Bankr (${state.bankrChain === "solana" ? "Solana" : "Base"})` : state.platform === "xlayer" ? "XLayer (OKX)" : "Flap.sh (BNB Chain)";
+  const liquidity = state.platform === "bankr" ? "Managed by Bankr" : state.platform === "xlayer" ? "N/A (direct deploy)" : state.platform === "four_meme" ? "0.01 BNB" : "0.001 BNB";
+  const launchFee = state.platform === "bankr" ? "Free" : state.platform === "xlayer" ? "Gas only (~0.005 OKB)" : "0.01 BNB (~$7)";
 
   let preview = `🚀 LAUNCH PREVIEW\n\n` +
     `Token: ${state.tokenName} ($${state.tokenSymbol})\n` +
@@ -2673,7 +2675,74 @@ async function showLaunchPreview(chatId: number, state: TokenLaunchState) {
 async function executeTelegramTokenLaunch(chatId: number, wallet: string, state: TokenLaunchState): Promise<void> {
   if (!bot) return;
 
-  const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : state.platform === "bankr" ? `Bankr (${state.bankrChain === "solana" ? "Solana" : "Base"})` : "Flap.sh (BNB Chain)";
+  const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : state.platform === "bankr" ? `Bankr (${state.bankrChain === "solana" ? "Solana" : "Base"})` : state.platform === "xlayer" ? "XLayer (OKX)" : "Flap.sh (BNB Chain)";
+
+  if (state.platform === "xlayer") {
+    await bot.sendMessage(chatId, `🌐 Deploying ${state.tokenName} ($${state.tokenSymbol}) as ERC-20 on XLayer...\n\nThis may take a minute.`);
+    await bot.sendChatAction(chatId, "typing");
+
+    let userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+    if (!userPk) {
+      const newWallet = await regenerateWalletWithKey(chatId);
+      if (newWallet) {
+        userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), newWallet);
+        wallet = newWallet;
+      }
+      if (!userPk) {
+        await bot.sendMessage(chatId, "⚠️ Could not access wallet keys. Try /start to create a fresh wallet.", { reply_markup: mainMenuKeyboard() });
+        return;
+      }
+    }
+
+    try {
+      const { launchToken } = await import("./token-launcher");
+      const result = await launchToken({
+        tokenName: state.tokenName!,
+        tokenSymbol: state.tokenSymbol!,
+        tokenDescription: state.tokenDescription || `${state.tokenName} — launched by ${state.agentName} on BUILD4`,
+        platform: "xlayer",
+        agentId: state.agentId,
+        creatorWallet: wallet,
+        userPrivateKey: userPk,
+      });
+
+      if (result.success) {
+        const lines = [
+          `✅ TOKEN DEPLOYED ON XLAYER!\n`,
+          `Token: ${state.tokenName} ($${state.tokenSymbol})`,
+          `Chain: XLayer (OKX)`,
+          `Supply: 1,000,000,000 tokens`,
+        ];
+        if (result.tokenAddress) lines.push(`Address: ${result.tokenAddress}`);
+        if (result.txHash) lines.push(`Tx: https://www.oklink.com/xlayer/tx/${result.txHash}`);
+        if (result.launchUrl) lines.push(`\nView: ${result.launchUrl}`);
+
+        await bot.sendMessage(chatId, lines.join("\n"), {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🚀 Launch another", callback_data: "action:launchtoken" }],
+              [{ text: "Menu", callback_data: "action:menu" }],
+            ]
+          }
+        });
+      } else {
+        await bot.sendMessage(chatId,
+          `❌ XLayer launch failed: ${(result.error || "Unknown error").substring(0, 300)}`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "Try again", callback_data: "action:launchtoken" }],
+                [{ text: "Menu", callback_data: "action:menu" }],
+              ]
+            }
+          }
+        );
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `❌ Error: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+    }
+    return;
+  }
 
   if (state.platform === "bankr") {
     await bot.sendMessage(chatId, `🏦 Launching ${state.tokenName} ($${state.tokenSymbol}) on ${platformName} via Bankr API...\n\nThis may take up to 2 minutes.`);

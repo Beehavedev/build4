@@ -431,7 +431,7 @@ interface LaunchParams {
   tokenSymbol: string;
   tokenDescription: string;
   imageUrl?: string;
-  platform: "four_meme" | "flap_sh" | "bankr";
+  platform: "four_meme" | "flap_sh" | "bankr" | "xlayer";
   initialLiquidityBnb?: string;
   agentId?: string;
   creatorWallet?: string;
@@ -1108,6 +1108,204 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
   }
 }
 
+const XLAYER_RPC = "https://rpc.xlayer.tech";
+const XLAYER_CHAIN_ID = 196;
+const XLAYER_EXPLORER = "https://www.oklink.com/xlayer";
+
+let compiledErc20Cache: { abi: any[]; bytecode: string } | null = null;
+
+async function compileSimpleERC20(): Promise<{ abi: any[]; bytecode: string }> {
+  if (compiledErc20Cache) return compiledErc20Cache;
+
+  const solc = require("solc");
+
+  const source = `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
+
+contract SimpleToken {
+    string public name;
+    string public symbol;
+    uint8 public constant decimals = 18;
+    uint256 public totalSupply;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+
+    constructor(string memory _name, string memory _symbol, address _recipient) {
+        name = _name;
+        symbol = _symbol;
+        uint256 supply = 1000000000 * 10**18;
+        totalSupply = supply;
+        balanceOf[_recipient] = supply;
+        emit Transfer(address(0), _recipient, supply);
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        require(to != address(0), "zero address");
+        require(balanceOf[msg.sender] >= amount, "insufficient balance");
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        emit Transfer(msg.sender, to, amount);
+        return true;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        emit Approval(msg.sender, spender, amount);
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        require(to != address(0), "zero address");
+        require(balanceOf[from] >= amount, "insufficient balance");
+        require(allowance[from][msg.sender] >= amount, "insufficient allowance");
+        allowance[from][msg.sender] -= amount;
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+        emit Transfer(from, to, amount);
+        return true;
+    }
+}`;
+
+  const input = JSON.stringify({
+    language: "Solidity",
+    sources: { "SimpleToken.sol": { content: source } },
+    settings: {
+      optimizer: { enabled: true, runs: 200 },
+      outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } },
+    },
+  });
+
+  const output = JSON.parse(solc.compile(input));
+  if (output.errors?.some((e: any) => e.severity === "error")) {
+    throw new Error("Solidity compilation failed: " + output.errors.map((e: any) => e.message).join("; "));
+  }
+
+  const contract = output.contracts["SimpleToken.sol"]["SimpleToken"];
+  compiledErc20Cache = {
+    abi: contract.abi,
+    bytecode: "0x" + contract.evm.bytecode.object,
+  };
+  return compiledErc20Cache;
+}
+
+function getXLayerProvider(): ethers.JsonRpcProvider {
+  return new ethers.JsonRpcProvider(XLAYER_RPC);
+}
+
+async function launchOnXLayer(params: LaunchParams): Promise<LaunchResult> {
+  const provider = getXLayerProvider();
+  let wallet: ethers.Wallet | null = null;
+  if (params.userPrivateKey) {
+    wallet = new ethers.Wallet(params.userPrivateKey, provider);
+    log(`[TokenLauncher] Using user wallet ${wallet.address.substring(0, 10)}... for XLayer launch`, "token-launcher");
+  } else {
+    const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
+    if (pk) wallet = new ethers.Wallet(pk, provider);
+  }
+  if (!wallet) {
+    return { success: false, error: "No wallet available — generate or import a wallet first" };
+  }
+
+  const launchRecord = await storage.createTokenLaunch({
+    agentId: params.agentId || null,
+    creatorWallet: params.creatorWallet || wallet.address,
+    platform: "xlayer",
+    chainId: XLAYER_CHAIN_ID,
+    tokenName: params.tokenName,
+    tokenSymbol: params.tokenSymbol,
+    tokenDescription: params.tokenDescription,
+    imageUrl: params.imageUrl || null,
+    initialLiquidityBnb: "0",
+    status: "pending",
+    tokenAddress: null,
+    txHash: null,
+    launchUrl: null,
+    errorMessage: null,
+    metadata: null,
+  });
+
+  try {
+    const balance = await provider.getBalance(wallet.address);
+    const balFormatted = ethers.formatEther(balance);
+    log(`[TokenLauncher] XLayer wallet balance: ${balFormatted} OKB`, "token-launcher");
+
+    const minBalance = ethers.parseEther("0.005");
+    if (balance < minBalance) {
+      const needed = ethers.formatEther(minBalance);
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: `Insufficient OKB: ${balFormatted} OKB (need at least ${needed} OKB for gas)`,
+      });
+      return { success: false, error: `Insufficient OKB — your wallet has ${balFormatted} OKB but needs at least ${needed} OKB for gas. Fund your wallet with OKB on XLayer and try again.`, launchId: launchRecord.id };
+    }
+
+    log(`[TokenLauncher] Compiling & deploying ERC-20 token ${params.tokenName} ($${params.tokenSymbol}) on XLayer...`, "token-launcher");
+
+    const { abi, bytecode } = await compileSimpleERC20();
+    const factory = new ethers.ContractFactory(abi, bytecode, wallet);
+
+    let deployTx;
+    try {
+      deployTx = await factory.deploy(params.tokenName, params.tokenSymbol, wallet.address, {
+        gasLimit: 2000000,
+      });
+    } catch (txError: any) {
+      const rawMsg = txError.message || String(txError);
+      log(`[TokenLauncher] XLayer deploy TX error: ${rawMsg.substring(0, 500)}`, "token-launcher");
+      const userError = sanitizeError(rawMsg);
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "failed",
+        errorMessage: rawMsg.substring(0, 500),
+      });
+      return { success: false, error: userError, launchId: launchRecord.id };
+    }
+
+    const deployedContract = deployTx as ethers.BaseContract;
+    const txResponse = deployedContract.deploymentTransaction();
+    if (txResponse) {
+      log(`[TokenLauncher] XLayer deploy TX sent: ${txResponse.hash}`, "token-launcher");
+      await storage.updateTokenLaunch(launchRecord.id, {
+        txHash: txResponse.hash,
+        status: "confirming",
+      });
+    }
+
+    await deployedContract.waitForDeployment();
+    const tokenAddress = await deployedContract.getAddress();
+
+    const txHash = txResponse?.hash || "";
+    const launchUrl = `${XLAYER_EXPLORER}/address/${tokenAddress}`;
+
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "launched",
+      tokenAddress,
+      txHash: txHash || null,
+      launchUrl,
+    });
+
+    log(`[TokenLauncher] XLayer launch success! Token: ${tokenAddress}, TX: ${txHash}`, "token-launcher");
+
+    return {
+      success: true,
+      tokenAddress,
+      txHash,
+      launchUrl,
+      launchId: launchRecord.id,
+    };
+  } catch (e: any) {
+    log(`[TokenLauncher] XLayer launch failed: ${e.message}`, "token-launcher");
+    const cleanError = sanitizeError(e.message || "");
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "failed",
+      errorMessage: e.message?.substring(0, 500),
+    });
+    return { success: false, error: cleanError, launchId: launchRecord.id };
+  }
+}
+
 export interface FourMemeTokenInfo {
   version: number;
   tokenManager: string;
@@ -1552,6 +1750,8 @@ export async function launchToken(params: LaunchParams): Promise<LaunchResult> {
     return launchOnFlapSh(params);
   } else if (params.platform === "bankr") {
     return launchOnBankr(params);
+  } else if (params.platform === "xlayer") {
+    return launchOnXLayer(params);
   }
 
   return { success: false, error: `Unknown platform: ${params.platform}` };
