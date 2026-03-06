@@ -972,20 +972,25 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       await bot.sendMessage(chatId, "You need a wallet with a private key to use the trading agent. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard() });
       return;
     }
+    const { getUserTradingStatus } = await import("./trading-agent");
+    const { config, positions } = getUserTradingStatus(chatId);
+    const isEnabled = config.enabled;
+
+    let statusLine = isEnabled
+      ? `Status: ✅ ACTIVE | Open Positions: ${positions.length}`
+      : `Status: ⏸ DISABLED`;
+
+    const toggleBtn = isEnabled
+      ? { text: "⏸ Disable Trading", callback_data: "trade:disable" }
+      : { text: "▶️ Enable Trading", callback_data: "trade:enable" };
+
     await bot.sendMessage(chatId,
-      "💎 *Make Me Rich — Autonomous Trading Agent*\n\n" +
-      "The agent scans Four.meme for new token launches, evaluates momentum signals, and trades automatically from your wallet.\n\n" +
-      "Settings:\n" +
-      "• Buy amount per trade\n" +
-      "• Take-profit target (auto-sell)\n" +
-      "• Stop-loss protection\n" +
-      "• Max open positions\n\n" +
-      "Choose an action:",
+      `💎 *Make Me Rich — Autonomous Trading Agent*\n\n${statusLine}\n\nThe agent scans Four.meme for new token launches, evaluates momentum signals, and trades automatically from your wallet.`,
       {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "▶️ Enable Trading", callback_data: "trade:enable" }, { text: "⏸ Disable", callback_data: "trade:disable" }],
+            [toggleBtn],
             [{ text: "📊 Status", callback_data: "trade:status" }, { text: "⚙️ Settings", callback_data: "trade:settings" }],
             [{ text: "📜 History", callback_data: "trade:history" }, { text: "🔴 Close All", callback_data: "trade:closeall" }],
             [{ text: "« Back", callback_data: "action:menu" }],
@@ -2071,20 +2076,25 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         return;
       }
 
+      const { getUserTradingStatus } = await import("./trading-agent");
+      const { config, positions } = getUserTradingStatus(chatId);
+      const isEnabled = config.enabled;
+
+      let statusLine = isEnabled
+        ? `Status: ✅ ACTIVE | Open Positions: ${positions.length}`
+        : `Status: ⏸ DISABLED`;
+
+      const toggleBtn = isEnabled
+        ? { text: "⏸ Disable Trading", callback_data: "trade:disable" }
+        : { text: "▶️ Enable Trading", callback_data: "trade:enable" };
+
       await bot.sendMessage(chatId,
-        "🤖 *Autonomous Trading Agent*\n\n" +
-        "The trading agent scans Four.meme for new token launches, evaluates momentum signals, and trades automatically from your wallet.\n\n" +
-        "⚙️ Settings:\n" +
-        "• Buy amount per trade\n" +
-        "• Take-profit target (auto-sell)\n" +
-        "• Stop-loss protection\n" +
-        "• Max open positions\n\n" +
-        "Choose an action:",
+        `💎 *Make Me Rich — Autonomous Trading Agent*\n\n${statusLine}\n\nThe agent scans Four.meme for new token launches, evaluates momentum signals, and trades automatically from your wallet.`,
         {
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
-              [{ text: "▶️ Enable Trading", callback_data: "trade:enable" }, { text: "⏸ Disable", callback_data: "trade:disable" }],
+              [toggleBtn],
               [{ text: "📊 Status", callback_data: "trade:status" }, { text: "⚙️ Settings", callback_data: "trade:settings" }],
               [{ text: "📜 History", callback_data: "trade:history" }, { text: "🔴 Close All", callback_data: "trade:closeall" }],
               [{ text: "« Back", callback_data: "main_menu" }],
