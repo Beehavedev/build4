@@ -198,39 +198,56 @@ export function getUserTradingStatus(chatId: number): { config: TradingConfig; p
 }
 
 async function fetchNewTokens(): Promise<Array<{ address: string; name: string; symbol: string; launchTime: number }>> {
+  const headers = { "Accept": "application/json", "Origin": "https://four.meme", "Referer": "https://four.meme/" };
+  const results: Array<{ address: string; name: string; symbol: string; launchTime: number }> = [];
+  const seen = new Set<string>();
+
+  const addTokens = (tokens: any[]) => {
+    for (const t of tokens) {
+      const addr = t.address || t.tokenAddress || t.contractAddress;
+      if (!addr || seen.has(addr)) continue;
+      seen.add(addr);
+      results.push({
+        address: addr,
+        name: t.name || t.tokenName || t.shortName || "Unknown",
+        symbol: t.symbol || t.tokenSymbol || t.shortName || "???",
+        launchTime: t.launchTime || parseInt(t.createDate) || 0,
+      });
+    }
+  };
+
   try {
-    const res = await Promise.race([
-      fetch(`${FOUR_MEME_API}/meme-api/v1/public/token/list?pageNum=1&pageSize=20&orderBy=launchTime&direction=desc`, {
-        headers: { "Accept": "application/json", "User-Agent": "BUILD4/1.0" },
-      }),
+    const queryRes = await Promise.race([
+      fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?orderBy=MarketCapDesc&pageIndex=1&pageSize=30`, { headers }),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Four.meme API timeout")), 15000)),
     ]);
-    if (!res.ok) {
-      const searchRes = await fetch(`${FOUR_MEME_API}/meme-api/v1/public/token/search?keyword=&pageNum=1&pageSize=20`, {
-        headers: { "Accept": "application/json", "User-Agent": "BUILD4/1.0" },
-      });
-      if (!searchRes.ok) return [];
-      const searchData = await searchRes.json();
-      if (searchData.code !== 0 || !Array.isArray(searchData.data?.records)) return [];
-      return searchData.data.records.map((t: any) => ({
-        address: t.address || t.tokenAddress,
-        name: t.name || t.tokenName,
-        symbol: t.symbol || t.tokenSymbol,
-        launchTime: t.launchTime || 0,
-      })).filter((t: any) => t.address);
+    if (queryRes.ok) {
+      const data = await queryRes.json();
+      if (data.code === 0 && Array.isArray(data.data?.records)) {
+        addTokens(data.data.records);
+      }
     }
-    const data = await res.json();
-    if (data.code !== 0 || !Array.isArray(data.data?.records)) return [];
-    return data.data.records.map((t: any) => ({
-      address: t.address || t.tokenAddress,
-      name: t.name || t.tokenName,
-      symbol: t.symbol || t.tokenSymbol,
-      launchTime: t.launchTime || 0,
-    })).filter((t: any) => t.address);
   } catch (e: any) {
-    log(`[TradingAgent] Token fetch error: ${e.message?.substring(0, 100)}`, "trading");
-    return [];
+    log(`[TradingAgent] Token query error: ${e.message?.substring(0, 80)}`, "trading");
   }
+
+  try {
+    const rankRes = await Promise.race([
+      fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/ranking/exclusive`, { headers }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Four.meme ranking timeout")), 10000)),
+    ]);
+    if (rankRes.ok) {
+      const rankData = await rankRes.json();
+      if (rankData.code === 0 && Array.isArray(rankData.data)) {
+        addTokens(rankData.data);
+      }
+    }
+  } catch {}
+
+  if (results.length > 0) {
+    log(`[TradingAgent] Fetched ${results.length} tokens from Four.meme`, "trading");
+  }
+  return results;
 }
 
 interface TokenSignal {
