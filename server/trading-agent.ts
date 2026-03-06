@@ -766,7 +766,7 @@ async function scanAndTrade(notifyFn: (chatId: number, message: string) => void)
 
     try {
       const chatIdStr = chatId.toString();
-      const wallets = await storage.getTelegramWalletLinks(chatIdStr);
+      const wallets = await storage.getTelegramWallets(chatIdStr);
       if (wallets.length === 0) {
         log(`[TradingAgent] User ${chatId} has no wallets`, "trading");
         continue;
@@ -936,7 +936,7 @@ async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: str
 
     try {
       const chatIdStr = chatId.toString();
-      const wallets = await storage.getTelegramWalletLinks(chatIdStr);
+      const wallets = await storage.getTelegramWallets(chatIdStr);
       if (wallets.length === 0) continue;
       const activeWallet = wallets.find(w => w.isActive) || wallets[0];
       const pk = await storage.getTelegramWalletPrivateKey(chatIdStr, activeWallet.walletAddress);
@@ -945,7 +945,7 @@ async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: str
       const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
       const balance = await Promise.race([
         provider.getBalance(activeWallet.walletAddress),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("RPC timeout")), 30000)),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("RPC timeout")), 15000)),
       ]);
       const balBnb = parseFloat(ethers.formatEther(balance));
       if (balBnb < MIN_WALLET_BALANCE_BNB) continue;
