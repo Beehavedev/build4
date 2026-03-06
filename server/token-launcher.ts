@@ -103,6 +103,13 @@ const FOUR_MEME_CONTRACT = "0x5c952063c7fc8610FFDB798152D69F0B9550762b";
 const FOUR_MEME_HELPER3 = "0xF251F83e40a78868FcfA3FA4599Dad6494E46034";
 const FOUR_MEME_API = "https://four.meme";
 
+const PANCAKE_V2_ROUTER = "0x10ED43C718714eb63d5aA57B78B54704E256024E";
+const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
+const PANCAKE_ROUTER_ABI = [
+  "function swapExactTokensForETHSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external",
+  "function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)",
+];
+
 const ERC8004_IDENTITY_REGISTRY_BSC = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432";
 
 const registeredAgentWallets = new Set<string>();
@@ -1391,8 +1398,29 @@ export async function fourMemeEstimateSell(
 ): Promise<FourMemeSellEstimate> {
   const provider = getBscProvider();
   const helper = new ethers.Contract(FOUR_MEME_HELPER3, FOUR_MEME_HELPER3_ABI, provider);
-
   const amountWei = ethers.parseEther(tokenAmount);
+
+  const info = await helper.getTokenInfo(tokenAddress);
+  if (info.liquidityAdded) {
+    try {
+      const router = new ethers.Contract(PANCAKE_V2_ROUTER, PANCAKE_ROUTER_ABI, provider);
+      const amounts = await router.getAmountsOut(amountWei, [tokenAddress, WBNB_ADDRESS]);
+      return {
+        tokenManager: PANCAKE_V2_ROUTER,
+        quote: WBNB_ADDRESS,
+        fundsReceived: ethers.formatEther(amounts[1]),
+        fee: "0",
+      };
+    } catch {
+      return {
+        tokenManager: PANCAKE_V2_ROUTER,
+        quote: WBNB_ADDRESS,
+        fundsReceived: "0",
+        fee: "0",
+      };
+    }
+  }
+
   const result = await helper.trySell(tokenAddress, amountWei);
 
   return {
@@ -1495,6 +1523,12 @@ export async function fourMemeSellToken(
     const info = await helper.getTokenInfo(tokenAddress);
     const version = Number(info.version);
     const tokenManager = info.tokenManager;
+    const liquidityAdded = info.liquidityAdded;
+
+    if (liquidityAdded) {
+      log(`[FourMeme] Token ${tokenAddress.substring(0, 10)} has graduated to DEX — routing sell via PancakeSwap`, "token-launcher");
+      return await sellViaPancakeSwap(tokenAddress, tokenAmount, amountWei, wallet);
+    }
 
     log(`[FourMeme] V${version} token — approving ${tokenAmount} tokens for TokenManager ${tokenManager.substring(0, 10)}...`, "token-launcher");
     const token = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
@@ -1528,6 +1562,61 @@ export async function fourMemeSellToken(
     return { success: true, txHash: receipt.hash };
   } catch (e: any) {
     log(`[FourMeme] Sell failed: ${e.message?.substring(0, 300)}`, "token-launcher");
+    return { success: false, error: sanitizeError(e.message || "") };
+  }
+}
+
+async function sellViaPancakeSwap(
+  tokenAddress: string,
+  tokenAmount: string,
+  amountWei: bigint,
+  wallet: ethers.Wallet,
+): Promise<FourMemeTradeResult> {
+  try {
+    const token = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
+    log(`[PancakeSwap] Approving ${tokenAmount} tokens for PancakeSwap Router...`, "token-launcher");
+    const approveTx = await token.approve(PANCAKE_V2_ROUTER, amountWei, { gasLimit: 100000 });
+    await approveTx.wait();
+    log(`[PancakeSwap] Approval confirmed`, "token-launcher");
+
+    const router = new ethers.Contract(PANCAKE_V2_ROUTER, PANCAKE_ROUTER_ABI, wallet);
+    const path = [tokenAddress, WBNB_ADDRESS];
+    const deadline = Math.floor(Date.now() / 1000) + 300;
+
+    let amountOutMin = BigInt(0);
+    try {
+      const amounts = await router.getAmountsOut(amountWei, path);
+      amountOutMin = (amounts[1] * BigInt(85)) / BigInt(100);
+      log(`[PancakeSwap] Estimated output: ${ethers.formatEther(amounts[1])} BNB (min: ${ethers.formatEther(amountOutMin)})`, "token-launcher");
+    } catch {
+      log(`[PancakeSwap] Could not estimate output — using 0 min (max slippage)`, "token-launcher");
+    }
+
+    log(`[PancakeSwap] Selling ${tokenAmount} tokens via swapExactTokensForETH...`, "token-launcher");
+    const tx = await router.swapExactTokensForETHSupportingFeeOnTransferTokens(
+      amountWei,
+      amountOutMin,
+      path,
+      wallet.address,
+      deadline,
+      { gasLimit: 500000 }
+    );
+
+    log(`[PancakeSwap] Sell TX sent: ${tx.hash}`, "token-launcher");
+
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("TX timeout (90s)")), 90000)),
+    ]);
+
+    if (!receipt || receipt.status !== 1) {
+      return { success: false, error: "PancakeSwap sell transaction reverted on-chain" };
+    }
+
+    log(`[PancakeSwap] Sell confirmed: ${receipt.hash}`, "token-launcher");
+    return { success: true, txHash: receipt.hash };
+  } catch (e: any) {
+    log(`[PancakeSwap] Sell failed: ${e.message?.substring(0, 300)}`, "token-launcher");
     return { success: false, error: sanitizeError(e.message || "") };
   }
 }
