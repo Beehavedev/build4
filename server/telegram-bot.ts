@@ -1426,7 +1426,10 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
     try {
       const { fourMemeGetTokenBalance } = await import("./token-launcher");
-      const balInfo = await fourMemeGetTokenBalance(tokenAddress, wallet);
+      const balInfo = await Promise.race([
+        fourMemeGetTokenBalance(tokenAddress, wallet),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Balance check timed out. Try again.")), 30000)),
+      ]);
       const bal = parseFloat(balInfo.balance);
       const sellAmount = (bal * pct / 100).toString();
 
@@ -3144,7 +3147,10 @@ async function handleTokenInfo(chatId: number, tokenAddress: string): Promise<vo
   await bot.sendChatAction(chatId, "typing");
   try {
     const { fourMemeGetTokenInfo, fourMemeGetTokenBalance } = await import("./token-launcher");
-    const info = await fourMemeGetTokenInfo(tokenAddress);
+    const info = await Promise.race([
+      fourMemeGetTokenInfo(tokenAddress),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Token info timed out (30s). Try again.")), 30000)),
+    ]);
 
     const quoteName = info.quote === "0x0000000000000000000000000000000000000000" ? "BNB" : "BEP20";
     const progressBar = "█".repeat(Math.floor(info.progressPercent / 10)) + "░".repeat(10 - Math.floor(info.progressPercent / 10));
@@ -3190,7 +3196,10 @@ async function showSellAmountPrompt(chatId: number, tokenAddress: string): Promi
 
   try {
     const { fourMemeGetTokenBalance } = await import("./token-launcher");
-    const balInfo = await fourMemeGetTokenBalance(tokenAddress, wallet);
+    const balInfo = await Promise.race([
+      fourMemeGetTokenBalance(tokenAddress, wallet),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Balance check timed out (30s). BSC RPC may be slow — try again.")), 30000)),
+    ]);
     const bal = parseFloat(balInfo.balance);
 
     if (bal <= 0) {
@@ -3276,7 +3285,10 @@ async function executeFourMemeBuyConfirm(chatId: number, state: FourMemeBuyState
 
   try {
     const { fourMemeEstimateBuy } = await import("./token-launcher");
-    const estimate = await fourMemeEstimateBuy(state.tokenAddress, state.bnbAmount);
+    const estimate = await Promise.race([
+      fourMemeEstimateBuy(state.tokenAddress, state.bnbAmount),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Estimate timed out (30s). BSC RPC may be slow — try again.")), 30000)),
+    ]);
 
     state.estimate = estimate;
     state.step = "confirm";
@@ -3343,7 +3355,10 @@ async function executeFourMemeSellConfirm(chatId: number, state: FourMemeSellSta
 
   try {
     const { fourMemeEstimateSell } = await import("./token-launcher");
-    const estimate = await fourMemeEstimateSell(state.tokenAddress, state.tokenAmount);
+    const estimate = await Promise.race([
+      fourMemeEstimateSell(state.tokenAddress, state.tokenAmount),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Estimate timed out (30s). BSC RPC may be slow — try again.")), 30000)),
+    ]);
 
     state.estimate = estimate;
     state.step = "confirm";
