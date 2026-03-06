@@ -9,6 +9,13 @@ import {
   fourMemeGetTokenBalance,
   type FourMemeTokenInfo,
 } from "./token-launcher";
+import {
+  createAsterFuturesClient,
+  type AsterFuturesClient,
+  type AsterTicker,
+  type AsterFundingRate,
+  type AsterPosition,
+} from "./aster-client";
 
 const FOUR_MEME_API = "https://four.meme";
 const AI_NETWORKS = ["hyperbolic", "akash", "ritual"];
@@ -34,6 +41,53 @@ const MIN_WALLET_BALANCE_BNB = 0.15;
 const MAX_TOKEN_AGE_SECONDS = 3600;
 const TRAILING_STOP_ACTIVATION = 1.3;
 const TRAILING_STOP_DISTANCE = 0.15;
+
+const ASTER_SCAN_INTERVAL_MS = 60_000;
+const ASTER_POSITION_CHECK_INTERVAL_MS = 30_000;
+const ASTER_DEFAULT_LEVERAGE = 5;
+const ASTER_DEFAULT_MARGIN_TYPE = "CROSSED" as const;
+const ASTER_MIN_VOLUME_USDT = 100_000;
+const ASTER_MAX_POSITIONS_PER_USER = 3;
+const ASTER_DEFAULT_POSITION_SIZE_USDT = "50";
+const ASTER_TRAILING_STOP_PCT = 3.0;
+
+interface AsterFuturesPosition {
+  id: string;
+  chatId: number;
+  symbol: string;
+  side: "LONG" | "SHORT";
+  entryPrice: string;
+  quantity: string;
+  leverage: number;
+  stopOrderId?: number;
+  entryTime: number;
+  status: "open" | "closed_profit" | "closed_loss" | "closed_manual";
+  pnlUsdt?: string;
+  closedAt?: number;
+  peakPnlPct: number;
+  trailingStopActive: boolean;
+  confidenceScore: number;
+  reasoning: string;
+}
+
+interface AsterMarketSignal {
+  symbol: string;
+  side: "LONG" | "SHORT";
+  confidence: number;
+  reasoning: string;
+  fundingRate: number;
+  volume24h: number;
+  priceChangePct: number;
+  markPrice: string;
+}
+
+const activeAsterPositions = new Map<string, AsterFuturesPosition>();
+const asterTradeHistory: AsterFuturesPosition[] = [];
+const recentlyScannedAsterSymbols = new Set<string>();
+const asterTradeMemory: Array<{ symbol: string; side: string; result: string; pnl: number; reasoning: string }> = [];
+
+let asterScanTimer: ReturnType<typeof setInterval> | null = null;
+let asterPositionTimer: ReturnType<typeof setInterval> | null = null;
 
 interface TradingPosition {
   id: string;
@@ -1109,6 +1163,500 @@ async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: str
   }
 }
 
+async function getAsterUsersWithCredentials(): Promise<Array<{ chatId: number; client: AsterFuturesClient }>> {
+  const result: Array<{ chatId: number; client: AsterFuturesClient }> = [];
+  for (const [chatId, config] of Array.from(userTradingConfig.entries())) {
+    if (!config.enabled) continue;
+    try {
+      const creds = await storage.getAsterCredentials(chatId.toString());
+      if (!creds) continue;
+      const client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+      result.push({ chatId, client });
+    } catch (e: any) {
+      log(`[AsterAgent] Failed to get credentials for ${chatId}: ${e.message?.substring(0, 80)}`, "trading");
+    }
+  }
+  return result;
+}
+
+async function fetchAsterMarketData(client: AsterFuturesClient): Promise<Array<{ ticker: AsterTicker; fundingRate: AsterFundingRate }>> {
+  try {
+    const [tickers, fundingRates] = await Promise.all([
+      client.ticker().then(t => Array.isArray(t) ? t : [t]),
+      client.fundingRate(undefined, 100).catch(() => [] as AsterFundingRate[]),
+    ]);
+
+    const fundingMap = new Map<string, AsterFundingRate>();
+    for (const fr of fundingRates) {
+      fundingMap.set(fr.symbol, fr);
+    }
+
+    const combined: Array<{ ticker: AsterTicker; fundingRate: AsterFundingRate }> = [];
+    for (const t of tickers) {
+      const vol = parseFloat(t.quoteVolume || "0");
+      if (vol < ASTER_MIN_VOLUME_USDT) continue;
+      const fr = fundingMap.get(t.symbol);
+      if (!fr) continue;
+      combined.push({ ticker: t, fundingRate: fr });
+    }
+
+    combined.sort((a, b) => parseFloat(b.ticker.quoteVolume) - parseFloat(a.ticker.quoteVolume));
+    return combined.slice(0, 20);
+  } catch (e: any) {
+    log(`[AsterAgent] Market data fetch error: ${e.message?.substring(0, 100)}`, "trading");
+    return [];
+  }
+}
+
+function buildAsterTradeMemoryContext(): string {
+  if (asterTradeMemory.length === 0) return "No previous Aster futures trades yet.";
+  const recent = asterTradeMemory.slice(-10);
+  const wins = recent.filter(t => t.pnl > 0).length;
+  const losses = recent.filter(t => t.pnl <= 0).length;
+  let ctx = `Recent Aster futures trade history (${wins}W/${losses}L):\n`;
+  for (const t of recent) {
+    ctx += `  ${t.symbol} ${t.side}: ${t.result} (${t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(2)} USDT) — ${t.reasoning}\n`;
+  }
+  return ctx;
+}
+
+async function aiEvaluateAsterMarkets(markets: Array<{ ticker: AsterTicker; fundingRate: AsterFundingRate }>): Promise<AsterMarketSignal | null> {
+  if (markets.length === 0) return null;
+
+  const memoryCtx = buildAsterTradeMemoryContext();
+  const winCount = asterTradeMemory.filter(t => t.pnl > 0).length;
+  const totalCount = asterTradeMemory.length;
+  const winRate = totalCount > 0 ? ((winCount / totalCount) * 100).toFixed(0) : "N/A";
+
+  const marketLines = markets.map((m, i) => {
+    const fr = parseFloat(m.fundingRate.fundingRate);
+    const frDir = fr > 0 ? "positive (longs pay shorts)" : fr < 0 ? "negative (shorts pay longs)" : "neutral";
+    const pctChange = parseFloat(m.ticker.priceChangePercent || "0");
+    const vol = parseFloat(m.ticker.quoteVolume || "0");
+    return `${i + 1}. ${m.ticker.symbol} — Price: ${m.ticker.price}, 24h Change: ${pctChange.toFixed(2)}%, Vol: ${(vol / 1000).toFixed(0)}K USDT, Funding: ${(fr * 100).toFixed(4)}% (${frDir}), High: ${m.ticker.high}, Low: ${m.ticker.low}`;
+  }).join("\n");
+
+  const prompt = `You are an expert crypto futures trader analyzing Aster DEX perpetual futures markets. Pick the BEST trade opportunity, or SKIP if nothing looks good.
+
+MARKETS:
+${marketLines}
+
+YOUR PERFORMANCE: ${totalCount > 0 ? `${winRate}% win rate over ${totalCount} trades` : "No history yet"}
+
+YOUR TRADE MEMORY:
+${memoryCtx}
+
+STRATEGY GUIDE:
+- FUNDING RATE ARBITRAGE: When funding rate is highly positive (>0.05%), shorts get paid — look for SHORT entries if price is also overbought. When highly negative, longs get paid.
+- MOMENTUM: Strong 24h price moves with high volume signal continuation. Look for entries in the direction of momentum on pullbacks.
+- MEAN REVERSION: Extreme 24h moves (>5%) on declining volume may signal exhaustion — trade against the move.
+- VOLUME: Higher volume = more liquid, safer to trade. Prefer symbols with >500K USDT daily volume.
+- Risk: Only trade setups with clear edge. If nothing stands out, SKIP.
+
+DECISION RULES:
+1. Strong funding rate signal + momentum alignment = highest conviction
+2. If your win rate is below 40%, be MORE selective
+3. Prefer liquid markets with tight spreads
+4. SKIP if nothing has a clear edge
+
+RESPOND IN EXACTLY THIS FORMAT:
+DECISION: BUY or SELL or SKIP
+SYMBOL: [symbol from list, or NONE if SKIP]
+CONFIDENCE: [1-100]
+REASONING: [1-2 sentences]`;
+
+  try {
+    const result = await Promise.race([
+      runInferenceWithFallback(AI_NETWORKS, AI_MODEL, prompt, {
+        systemPrompt: "You are a disciplined futures trader. You analyze funding rates, volume, and price momentum to find high-probability trades. Be selective — only trade when there's a clear edge.",
+        temperature: 0.3,
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI timeout")), 20000)),
+    ]);
+
+    const output = result.text.trim();
+    log(`[AsterAgent] AI futures analysis: ${output.substring(0, 200)}`, "trading");
+
+    if (!output || output.includes("[NO_PROVIDER]") || output.length < 10) {
+      log(`[AsterAgent] AI response empty/unavailable`, "trading");
+      return null;
+    }
+
+    const decisionMatch = output.match(/DECISION:\s*(BUY|SELL|SKIP)/i);
+    const symbolMatch = output.match(/SYMBOL:\s*(\S+)/i);
+    const confidenceMatch = output.match(/CONFIDENCE:\s*(\d+)/i);
+    const reasoningMatch = output.match(/REASONING:\s*(.+)/i);
+
+    if (!decisionMatch) return null;
+
+    const decision = decisionMatch[1].toUpperCase();
+    if (decision === "SKIP") return null;
+
+    const symbolStr = symbolMatch?.[1]?.toUpperCase() || "";
+    const confidence = parseInt(confidenceMatch?.[1] || "0");
+    const reasoning = reasoningMatch?.[1]?.trim() || "AI analysis";
+
+    if (confidence < 55) return null;
+
+    const market = markets.find(m => m.ticker.symbol === symbolStr);
+    if (!market) return null;
+
+    const side: "LONG" | "SHORT" = decision === "BUY" ? "LONG" : "SHORT";
+
+    return {
+      symbol: market.ticker.symbol,
+      side,
+      confidence,
+      reasoning,
+      fundingRate: parseFloat(market.fundingRate.fundingRate),
+      volume24h: parseFloat(market.ticker.quoteVolume || "0"),
+      priceChangePct: parseFloat(market.ticker.priceChangePercent || "0"),
+      markPrice: market.fundingRate.markPrice || market.ticker.price,
+    };
+  } catch (e: any) {
+    log(`[AsterAgent] AI evaluation failed: ${e.message?.substring(0, 100)}`, "trading");
+    return null;
+  }
+}
+
+async function executeAsterFuturesTrade(
+  chatId: number,
+  client: AsterFuturesClient,
+  signal: AsterMarketSignal,
+  notifyFn: (chatId: number, message: string) => void,
+): Promise<AsterFuturesPosition | null> {
+  const positionId = `aster_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+  try {
+    try {
+      await client.setMarginType(signal.symbol, ASTER_DEFAULT_MARGIN_TYPE);
+    } catch {}
+
+    try {
+      await client.setLeverage(signal.symbol, ASTER_DEFAULT_LEVERAGE);
+    } catch {}
+
+    const markPrice = parseFloat(signal.markPrice);
+    if (markPrice <= 0) {
+      log(`[AsterAgent] Invalid mark price for ${signal.symbol}`, "trading");
+      return null;
+    }
+
+    const positionSizeUsdt = parseFloat(ASTER_DEFAULT_POSITION_SIZE_USDT) * ASTER_DEFAULT_LEVERAGE;
+    const quantity = (positionSizeUsdt / markPrice).toFixed(6);
+
+    const orderSide = signal.side === "LONG" ? "BUY" as const : "SELL" as const;
+
+    log(`[AsterAgent] Placing ${signal.side} ${signal.symbol} — qty: ${quantity}, leverage: ${ASTER_DEFAULT_LEVERAGE}x`, "trading");
+
+    const order = await client.createOrder({
+      symbol: signal.symbol,
+      side: orderSide,
+      type: "MARKET",
+      quantity,
+      positionSide: "BOTH",
+    });
+
+    const stopSide = signal.side === "LONG" ? "SELL" as const : "BUY" as const;
+    const stopPrice = signal.side === "LONG"
+      ? (markPrice * (1 - ASTER_TRAILING_STOP_PCT / 100)).toFixed(6)
+      : (markPrice * (1 + ASTER_TRAILING_STOP_PCT / 100)).toFixed(6);
+
+    let stopOrderId: number | undefined;
+    try {
+      const stopOrder = await client.createOrder({
+        symbol: signal.symbol,
+        side: stopSide,
+        type: "STOP_MARKET",
+        stopPrice,
+        closePosition: true,
+        positionSide: "BOTH",
+      });
+      stopOrderId = stopOrder.orderId;
+    } catch (e: any) {
+      log(`[AsterAgent] Stop order failed for ${signal.symbol}: ${e.message?.substring(0, 80)}`, "trading");
+    }
+
+    const position: AsterFuturesPosition = {
+      id: positionId,
+      chatId,
+      symbol: signal.symbol,
+      side: signal.side,
+      entryPrice: signal.markPrice,
+      quantity,
+      leverage: ASTER_DEFAULT_LEVERAGE,
+      stopOrderId,
+      entryTime: Date.now(),
+      status: "open",
+      peakPnlPct: 0,
+      trailingStopActive: false,
+      confidenceScore: signal.confidence,
+      reasoning: signal.reasoning,
+    };
+
+    activeAsterPositions.set(positionId, position);
+
+    log(`[AsterAgent] Position opened: ${signal.side} ${signal.symbol} @ ${signal.markPrice} | Order: ${order.orderId}`, "trading");
+
+    return position;
+  } catch (e: any) {
+    log(`[AsterAgent] Trade execution error: ${e.message?.substring(0, 200)}`, "trading");
+    return null;
+  }
+}
+
+async function scanAsterAndTrade(notifyFn: (chatId: number, message: string) => void): Promise<void> {
+  const asterUsers = await getAsterUsersWithCredentials();
+  if (asterUsers.length === 0) return;
+
+  log(`[AsterAgent] Scan cycle — ${asterUsers.length} users with Aster credentials`, "trading");
+
+  const firstClient = asterUsers[0].client;
+  const markets = await fetchAsterMarketData(firstClient);
+  if (markets.length === 0) {
+    log(`[AsterAgent] No qualifying Aster markets found`, "trading");
+    return;
+  }
+
+  log(`[AsterAgent] ${markets.length} markets qualifying for analysis`, "trading");
+
+  const signal = await aiEvaluateAsterMarkets(markets);
+  if (!signal) {
+    log(`[AsterAgent] AI found no trade opportunity this cycle`, "trading");
+    return;
+  }
+
+  log(`[AsterAgent] AI signal: ${signal.side} ${signal.symbol} (confidence: ${signal.confidence}%) — ${signal.reasoning}`, "trading");
+
+  for (const user of asterUsers) {
+    const userAsterPositions = Array.from(activeAsterPositions.values()).filter(
+      p => p.chatId === user.chatId && p.status === "open"
+    );
+    if (userAsterPositions.length >= ASTER_MAX_POSITIONS_PER_USER) continue;
+
+    const alreadyInSymbol = userAsterPositions.some(p => p.symbol === signal.symbol);
+    if (alreadyInSymbol) continue;
+
+    const position = await executeAsterFuturesTrade(user.chatId, user.client, signal, notifyFn);
+    if (position) {
+      const frLabel = signal.fundingRate > 0 ? `+${(signal.fundingRate * 100).toFixed(4)}%` : `${(signal.fundingRate * 100).toFixed(4)}%`;
+      let msg = `📊 ASTER FUTURES TRADE: ${signal.side} ${signal.symbol}\n\n`;
+      msg += `Entry: ~${signal.markPrice} USDT\n`;
+      msg += `Leverage: ${ASTER_DEFAULT_LEVERAGE}x\n`;
+      msg += `Size: ${position.quantity} (${ASTER_DEFAULT_POSITION_SIZE_USDT} USDT margin)\n`;
+      msg += `Confidence: ${signal.confidence}%\n`;
+      msg += `Funding Rate: ${frLabel}\n`;
+      msg += `24h Change: ${signal.priceChangePct.toFixed(2)}%\n`;
+      msg += `24h Volume: ${(signal.volume24h / 1000).toFixed(0)}K USDT\n`;
+      msg += `\nAI: ${signal.reasoning}\n`;
+      msg += `\nTrailing stop: ${ASTER_TRAILING_STOP_PCT}% from peak`;
+
+      notifyFn(user.chatId, msg);
+    }
+  }
+}
+
+async function checkAsterPositions(notifyFn: (chatId: number, message: string) => void): Promise<void> {
+  const positionsByUser = new Map<number, AsterFuturesPosition[]>();
+  for (const pos of Array.from(activeAsterPositions.values())) {
+    if (pos.status !== "open") continue;
+    if (!positionsByUser.has(pos.chatId)) positionsByUser.set(pos.chatId, []);
+    positionsByUser.get(pos.chatId)!.push(pos);
+  }
+
+  for (const [chatId, positions] of Array.from(positionsByUser.entries())) {
+    let client: AsterFuturesClient;
+    try {
+      const creds = await storage.getAsterCredentials(chatId.toString());
+      if (!creds) {
+        for (const pos of positions) {
+          pos.status = "closed_manual";
+          pos.closedAt = Date.now();
+          activeAsterPositions.delete(pos.id);
+          asterTradeHistory.push(pos);
+        }
+        continue;
+      }
+      client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+    } catch {
+      continue;
+    }
+
+    let livePositions: AsterPosition[];
+    try {
+      livePositions = await client.positions();
+    } catch (e: any) {
+      log(`[AsterAgent] Failed to fetch positions for ${chatId}: ${e.message?.substring(0, 80)}`, "trading");
+      continue;
+    }
+
+    for (const pos of positions) {
+      try {
+        const livePos = livePositions.find(
+          lp => lp.symbol === pos.symbol && (lp.positionSide === "BOTH" || lp.positionSide === pos.side)
+        );
+
+        if (!livePos || parseFloat(livePos.positionAmt) === 0) {
+          const unrealized = livePos ? parseFloat(livePos.unRealizedProfit) : 0;
+          pos.status = unrealized >= 0 ? "closed_profit" : "closed_loss";
+          pos.pnlUsdt = unrealized.toFixed(4);
+          pos.closedAt = Date.now();
+          activeAsterPositions.delete(pos.id);
+          asterTradeHistory.push(pos);
+
+          asterTradeMemory.push({
+            symbol: pos.symbol,
+            side: pos.side,
+            result: pos.status === "closed_profit" ? "WIN" : "LOSS",
+            pnl: unrealized,
+            reasoning: "Position closed on exchange",
+          });
+          if (asterTradeMemory.length > 20) asterTradeMemory.splice(0, asterTradeMemory.length - 20);
+
+          const emoji = unrealized >= 0 ? "💰" : "📉";
+          let msg = `${emoji} ASTER POSITION CLOSED: ${pos.side} ${pos.symbol}\n\n`;
+          msg += `Entry: ${pos.entryPrice} USDT\n`;
+          msg += `PnL: ${unrealized >= 0 ? "+" : ""}${unrealized.toFixed(4)} USDT\n`;
+          msg += `Hold time: ${Math.floor((Date.now() - pos.entryTime) / 60000)}m\n`;
+          msg += `Leverage: ${pos.leverage}x`;
+          notifyFn(chatId, msg);
+          continue;
+        }
+
+        const unrealizedPnl = parseFloat(livePos.unRealizedProfit);
+        const entryPrice = parseFloat(livePos.entryPrice);
+        const notional = Math.abs(parseFloat(livePos.notional || "0"));
+        const margin = notional > 0 ? notional / pos.leverage : parseFloat(ASTER_DEFAULT_POSITION_SIZE_USDT);
+        const pnlPct = margin > 0 ? (unrealizedPnl / margin) * 100 : 0;
+
+        if (pnlPct > pos.peakPnlPct) {
+          pos.peakPnlPct = pnlPct;
+        }
+
+        if (pnlPct > 2.0 && !pos.trailingStopActive) {
+          pos.trailingStopActive = true;
+          log(`[AsterAgent] ${pos.symbol} trailing stop activated at ${pnlPct.toFixed(2)}% PnL`, "trading");
+
+          const markPrice = parseFloat(livePos.markPrice);
+          const newStopPrice = pos.side === "LONG"
+            ? (markPrice * (1 - ASTER_TRAILING_STOP_PCT / 100)).toFixed(6)
+            : (markPrice * (1 + ASTER_TRAILING_STOP_PCT / 100)).toFixed(6);
+
+          try {
+            if (pos.stopOrderId) {
+              await client.cancelOrder(pos.symbol, pos.stopOrderId).catch(() => {});
+            }
+
+            const stopSide = pos.side === "LONG" ? "SELL" as const : "BUY" as const;
+            const newStop = await client.createOrder({
+              symbol: pos.symbol,
+              side: stopSide,
+              type: "STOP_MARKET",
+              stopPrice: newStopPrice,
+              closePosition: true,
+              positionSide: "BOTH",
+            });
+            pos.stopOrderId = newStop.orderId;
+            log(`[AsterAgent] Updated trailing stop for ${pos.symbol} to ${newStopPrice}`, "trading");
+          } catch (e: any) {
+            log(`[AsterAgent] Failed to update trailing stop: ${e.message?.substring(0, 80)}`, "trading");
+          }
+        }
+
+        if (pos.trailingStopActive && pos.peakPnlPct - pnlPct > ASTER_TRAILING_STOP_PCT) {
+          log(`[AsterAgent] ${pos.symbol} trailing stop triggered: peak ${pos.peakPnlPct.toFixed(2)}%, current ${pnlPct.toFixed(2)}%`, "trading");
+
+          try {
+            const closeSide = pos.side === "LONG" ? "SELL" as const : "BUY" as const;
+            await client.createOrder({
+              symbol: pos.symbol,
+              side: closeSide,
+              type: "MARKET",
+              quantity: pos.quantity,
+              positionSide: "BOTH",
+              reduceOnly: true,
+            });
+          } catch (e: any) {
+            log(`[AsterAgent] Failed to close position via trailing stop: ${e.message?.substring(0, 80)}`, "trading");
+          }
+
+          pos.status = unrealizedPnl >= 0 ? "closed_profit" : "closed_loss";
+          pos.pnlUsdt = unrealizedPnl.toFixed(4);
+          pos.closedAt = Date.now();
+          activeAsterPositions.delete(pos.id);
+          asterTradeHistory.push(pos);
+
+          asterTradeMemory.push({
+            symbol: pos.symbol,
+            side: pos.side,
+            result: pos.status === "closed_profit" ? "WIN" : "LOSS",
+            pnl: unrealizedPnl,
+            reasoning: `Trailing stop: peak ${pos.peakPnlPct.toFixed(2)}% → ${pnlPct.toFixed(2)}%`,
+          });
+          if (asterTradeMemory.length > 20) asterTradeMemory.splice(0, asterTradeMemory.length - 20);
+
+          const emoji = unrealizedPnl >= 0 ? "💰" : "📉";
+          const holdMin = Math.floor((Date.now() - pos.entryTime) / 60000);
+          let msg = `${emoji} ASTER TRAILING STOP: ${pos.side} ${pos.symbol}\n\n`;
+          msg += `Entry: ${pos.entryPrice} USDT\n`;
+          msg += `Exit Mark: ${livePos.markPrice} USDT\n`;
+          msg += `PnL: ${unrealizedPnl >= 0 ? "+" : ""}${unrealizedPnl.toFixed(4)} USDT (${pnlPct.toFixed(2)}%)\n`;
+          msg += `Peak PnL: ${pos.peakPnlPct.toFixed(2)}%\n`;
+          msg += `Hold: ${holdMin}m | Leverage: ${pos.leverage}x`;
+          notifyFn(chatId, msg);
+        }
+
+        if (pnlPct <= -10) {
+          log(`[AsterAgent] ${pos.symbol} hard stop loss at ${pnlPct.toFixed(2)}% PnL`, "trading");
+          try {
+            const closeSide = pos.side === "LONG" ? "SELL" as const : "BUY" as const;
+            await client.createOrder({
+              symbol: pos.symbol,
+              side: closeSide,
+              type: "MARKET",
+              quantity: pos.quantity,
+              positionSide: "BOTH",
+              reduceOnly: true,
+            });
+          } catch {}
+
+          pos.status = "closed_loss";
+          pos.pnlUsdt = unrealizedPnl.toFixed(4);
+          pos.closedAt = Date.now();
+          activeAsterPositions.delete(pos.id);
+          asterTradeHistory.push(pos);
+
+          asterTradeMemory.push({
+            symbol: pos.symbol,
+            side: pos.side,
+            result: "LOSS",
+            pnl: unrealizedPnl,
+            reasoning: "Hard stop loss at -10%",
+          });
+          if (asterTradeMemory.length > 20) asterTradeMemory.splice(0, asterTradeMemory.length - 20);
+
+          const holdMin = Math.floor((Date.now() - pos.entryTime) / 60000);
+          let msg = `📉 ASTER STOP LOSS: ${pos.side} ${pos.symbol}\n\n`;
+          msg += `Entry: ${pos.entryPrice} USDT\n`;
+          msg += `PnL: ${unrealizedPnl.toFixed(4)} USDT (${pnlPct.toFixed(2)}%)\n`;
+          msg += `Hold: ${holdMin}m | Leverage: ${pos.leverage}x`;
+          notifyFn(chatId, msg);
+        }
+      } catch (e: any) {
+        log(`[AsterAgent] Position check error for ${pos.symbol}: ${e.message?.substring(0, 100)}`, "trading");
+      }
+    }
+  }
+}
+
+export function getActiveAsterPositionsForUser(chatId: number): AsterFuturesPosition[] {
+  return Array.from(activeAsterPositions.values()).filter(p => p.chatId === chatId && p.status === "open");
+}
+
+export function getAsterTradeHistoryForUser(chatId: number): AsterFuturesPosition[] {
+  return asterTradeHistory.filter(p => p.chatId === chatId).slice(-20);
+}
+
 let notifyCallback: ((chatId: number, message: string) => void) | null = null;
 
 export function startTradingAgent(notifyFn: (chatId: number, message: string) => void): void {
@@ -1130,16 +1678,29 @@ export function startTradingAgent(notifyFn: (chatId: number, message: string) =>
     copyTradeFromWhales(notifyFn).catch(e => log(`[CopyTrade] Error: ${e.message?.substring(0, 100)}`, "trading"));
   }, COPY_TRADE_SCAN_INTERVAL_MS);
 
+  asterScanTimer = setInterval(() => {
+    scanAsterAndTrade(notifyFn).catch(e => log(`[AsterAgent] Scan error: ${e.message?.substring(0, 100)}`, "trading"));
+  }, ASTER_SCAN_INTERVAL_MS);
+
+  asterPositionTimer = setInterval(() => {
+    checkAsterPositions(notifyFn).catch(e => log(`[AsterAgent] Position check error: ${e.message?.substring(0, 100)}`, "trading"));
+  }, ASTER_POSITION_CHECK_INTERVAL_MS);
+
   log(`[CopyTrade] Whale copy-trading active — tracking ${COPY_TRADE_WALLETS.map(w => w.label).join(", ")}`, "trading");
+  log(`[AsterAgent] Aster futures auto-trading active`, "trading");
 }
 
 export function stopTradingAgent(): void {
   if (scanTimer) clearInterval(scanTimer);
   if (positionTimer) clearInterval(positionTimer);
   if (copyTradeTimer) clearInterval(copyTradeTimer);
+  if (asterScanTimer) clearInterval(asterScanTimer);
+  if (asterPositionTimer) clearInterval(asterPositionTimer);
   scanTimer = null;
   positionTimer = null;
   copyTradeTimer = null;
+  asterScanTimer = null;
+  asterPositionTimer = null;
   running = false;
   log("[TradingAgent] Stopped", "trading");
 }

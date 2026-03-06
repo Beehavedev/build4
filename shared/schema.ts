@@ -1394,6 +1394,17 @@ export const insertChaosMilestoneSchema = createInsertSchema(chaosMilestones).om
 export type InsertChaosMilestone = z.infer<typeof insertChaosMilestoneSchema>;
 export type ChaosMilestone = typeof chaosMilestones.$inferSelect;
 
+export const asterCredentials = pgTable("aster_credentials", {
+  chatId: text("chat_id").primaryKey(),
+  encryptedApiKey: text("encrypted_api_key").notNull(),
+  encryptedApiSecret: text("encrypted_api_secret").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAsterCredentialsSchema = createInsertSchema(asterCredentials).omit({ createdAt: true });
+export type InsertAsterCredentials = z.infer<typeof insertAsterCredentialsSchema>;
+export type AsterCredentials = typeof asterCredentials.$inferSelect;
+
 export const SEED_AGENTS = {
   RESEARCH_BOT: {
     name: "ResearchBot-7B",

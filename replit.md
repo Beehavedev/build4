@@ -85,6 +85,15 @@ The project utilizes a monorepo containing `client/` for the React frontend, `se
 - **Risk Management**: Configurable take-profit, stop-loss, max positions, and buy size. Hard safety limits bypass AI for extreme cases.
 - **User Control**: Enable/disable per user via Telegram, with AI reasoning, peak tracking, source, and confidence shown in trade notifications.
 - **Scan Intervals**: Token scan every 30s (was 60s), position monitoring every 15s (was 30s), whale monitoring every 20s. Faster detection = better entries.
+- **Persistence**: Trading preferences (enabled, buy size, TP, SL, max positions) persisted to `trading_preferences` DB table. On production boot, preferences are restored and trading agent auto-starts.
+
+### Aster DEX Integration
+- **Purpose**: Centralized futures & spot trading on Aster DEX (asterdex.com) — both autonomous AI trading and manual Telegram commands.
+- **Client**: TypeScript API client (`server/aster-client.ts`) with HMAC-SHA256 signing for both Futures (`fapi.asterdex.com`) and Spot (`sapi.asterdex.com`) APIs.
+- **Credentials**: Per-user encrypted API key/secret stored in `aster_credentials` DB table. Users connect via `/aster` Telegram command.
+- **Manual Trading (Telegram)**: `/aster` command provides Connect, Balance, Positions, Orders, Futures Trade, Spot Trade, and Disconnect. Full trade flow with symbol → side → type → quantity → leverage → confirmation.
+- **Auto-Trading (Make Me Rich)**: Trading agent scans Aster futures markets every 60s. AI evaluates funding rates, 24h volume, price momentum to pick LONG/SHORT signals. Executes with configurable leverage (default 5x), trailing stops (3%), and hard stop-loss (-10%). Only for users with Aster credentials configured.
+- **Position Management**: Monitors Aster futures positions every 30s. Updates trailing stops, checks PnL, and auto-closes on stop-loss or take-profit. Telegram notifications for all trades.
 
 ### Performance Optimizations
 - **API Logging**: Lightweight, timing-only logs for API routes.

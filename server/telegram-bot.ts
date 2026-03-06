@@ -25,6 +25,9 @@ interface FourMemeSellState { step: "token" | "amount" | "confirm"; tokenAddress
 
 interface ChaosPlanState { step: "token_address" | "confirming"; tokenAddress?: string; tokenSymbol?: string; tokenName?: string; plan?: any; walletAddress?: string }
 
+interface AsterConnectState { step: "api_key" | "api_secret"; apiKey?: string }
+interface AsterTradeState { step: "symbol" | "side" | "type" | "quantity" | "leverage" | "price" | "confirm"; symbol?: string; side?: "BUY" | "SELL"; orderType?: "MARKET" | "LIMIT"; quantity?: string; leverage?: number; price?: string; market: "futures" | "spot" }
+
 const pendingAgentCreation = new Map<number, AgentCreationState>();
 const pendingTask = new Map<number, TaskState>();
 const pendingTokenLaunch = new Map<number, TokenLaunchState>();
@@ -33,6 +36,8 @@ const pendingFourMemeSell = new Map<number, FourMemeSellState>();
 const pendingWallet = new Set<number>();
 const pendingImportWallet = new Set<number>();
 const pendingChaosPlan = new Map<number, ChaosPlanState>();
+const pendingAsterConnect = new Map<number, AsterConnectState>();
+const pendingAsterTrade = new Map<number, AsterTradeState>();
 
 const BUILD4_KNOWLEDGE = `
 BUILD4 is decentralized infrastructure for autonomous AI agents — the economic layer where AI agents operate as independent economic actors on-chain. Live on BNB Chain, Base, and XLayer.
@@ -255,7 +260,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
     return "Hey! Welcome to BUILD4 — decentralized infrastructure for autonomous AI agents. What can I help you with? Try /help to see all commands.";
   }
   if (lower.includes("help") || lower.includes("command"))
-    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔥 /chaos — Chaos plan\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
+    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
   if (lower.includes("thank"))
     return "You're welcome! Let me know if you need anything else. 🤝";
 
@@ -526,7 +531,7 @@ function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.I
     inline_keyboard: [
       [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
       [{ text: "💰 Buy Token", callback_data: "action:buy" }, { text: "💸 Sell Token", callback_data: "action:sell" }],
-      [{ text: "💎 Make Me Rich", callback_data: "action:trade" }],
+      [{ text: "💎 Make Me Rich", callback_data: "action:trade" }, { text: "📈 Aster DEX", callback_data: "action:aster" }],
       [{ text: "🤖 Create Agent", callback_data: "action:newagent" }, { text: "📋 My Agents", callback_data: "action:myagents" }],
       [{ text: "📝 New Task", callback_data: "action:task" }, { text: "📊 My Tasks", callback_data: "action:mytasks" }],
       [{ text: "👛 My Wallet", callback_data: "action:wallet" }],
@@ -590,6 +595,7 @@ export async function startTelegramBot(): Promise<void> {
       { command: "task", description: "Assign a task to your agent" },
       { command: "wallet", description: "Wallet info and management" },
       { command: "ask", description: "Ask anything about BUILD4" },
+      { command: "aster", description: "Aster DEX futures & spot trading" },
       { command: "cancel", description: "Cancel current action" },
       { command: "help", description: "Show all commands" },
     ]).then(() => {
@@ -1130,6 +1136,16 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       `• Max: ${config.maxPositions} positions`,
       { reply_markup: mainMenuKeyboard() }
     );
+    return;
+  }
+
+  if (data === "action:aster") {
+    await handleAsterMenu(chatId);
+    return;
+  }
+
+  if (data.startsWith("aster:")) {
+    await handleAsterCallback(chatId, data);
     return;
   }
 
@@ -1712,6 +1728,14 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     await handleChaosPlanFlow(chatId, text);
     return;
   }
+  if (pendingAsterConnect.has(chatId) && !text.startsWith("/")) {
+    await handleAsterConnectFlow(chatId, text);
+    return;
+  }
+  if (pendingAsterTrade.has(chatId) && !text.startsWith("/")) {
+    await handleAsterTradeFlow(chatId, text);
+    return;
+  }
 
   const commandMatch = text.match(/^\/(\w+)(?:@\S+)?\s*(.*)/s);
   if (commandMatch) {
@@ -1725,6 +1749,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     pendingFourMemeSell.delete(chatId);
     pendingWallet.delete(chatId);
     pendingImportWallet.delete(chatId);
+    pendingAsterConnect.delete(chatId);
+    pendingAsterTrade.delete(chatId);
 
     if (cmd === "start" && !isGroup) {
       let wallet = getLinkedWallet(chatId);
@@ -1753,6 +1779,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
     if (cmd === "cancel") {
       pendingChaosPlan.delete(chatId);
+      pendingAsterConnect.delete(chatId);
+      pendingAsterTrade.delete(chatId);
       await bot.sendMessage(chatId, "Cancelled.", { reply_markup: mainMenuKeyboard() });
       return;
     }
@@ -1824,6 +1852,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         "📊 /chaosstatus — Check chaos plan status\n" +
         "📈 /trade — Autonomous trading agent\n" +
         "📊 /tradestatus — Trading positions & PnL\n" +
+        "📈 /aster — Aster DEX futures & spot trading\n" +
         "🤖 /newagent — Create an AI agent\n" +
         "📋 /myagents — Your agents\n" +
         "📝 /task — Assign a task\n" +
@@ -2122,6 +2151,12 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       }
 
       await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+      return;
+    }
+
+    if (cmd === "aster") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for Aster DEX trading!"); return; }
+      await handleAsterMenu(chatId);
       return;
     }
 
@@ -3721,4 +3756,649 @@ async function handleChaosPlanCallback(chatId: number, data: string): Promise<vo
     await bot.sendMessage(chatId, "Chaos plan cancelled.", { reply_markup: mainMenuKeyboard() });
     return;
   }
+}
+
+async function handleAsterMenu(chatId: number): Promise<void> {
+  if (!bot) return;
+
+  const creds = await storage.getAsterCredentials(chatId.toString());
+  const connected = !!creds;
+
+  if (!connected) {
+    await bot.sendMessage(chatId,
+      `📈 *Aster DEX — Futures & Spot Trading*\n\n` +
+      `Trade futures and spot markets on Aster DEX directly from Telegram.\n\n` +
+      `You need to connect your Aster API credentials first.\n` +
+      `Get your API key at: https://www.asterdex.com`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔗 Connect Aster Account", callback_data: "aster:connect" }],
+            [{ text: "« Back", callback_data: "action:menu" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  await bot.sendMessage(chatId,
+    `📈 *Aster DEX — Connected*\n\n` +
+    `Your Aster API credentials are configured. What would you like to do?`,
+    {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "💰 Balances", callback_data: "aster:balance" }],
+          [{ text: "📊 Positions", callback_data: "aster:positions" }],
+          [{ text: "📋 Open Orders", callback_data: "aster:orders" }],
+          [{ text: "🔄 Futures Trade", callback_data: "aster:trade_futures" }, { text: "💱 Spot Trade", callback_data: "aster:trade_spot" }],
+          [{ text: "🔌 Disconnect", callback_data: "aster:disconnect" }],
+          [{ text: "« Back", callback_data: "action:menu" }],
+        ],
+      },
+    }
+  );
+}
+
+async function getAsterClient(chatId: number): Promise<any> {
+  const creds = await storage.getAsterCredentials(chatId.toString());
+  if (!creds) return null;
+  const { createAsterClient } = await import("./aster-client");
+  return createAsterClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+}
+
+async function handleAsterCallback(chatId: number, data: string): Promise<void> {
+  if (!bot) return;
+  const action = data.replace("aster:", "");
+
+  if (action === "connect") {
+    pendingAsterConnect.set(chatId, { step: "api_key" });
+    await bot.sendMessage(chatId,
+      "🔗 *Connect Aster DEX*\n\n" +
+      "Please send your Aster API Key:\n\n" +
+      "You can create one at https://www.asterdex.com/account/api-management\n\n" +
+      "Type /cancel to abort.",
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  if (action === "disconnect") {
+    await bot.sendMessage(chatId,
+      "Are you sure you want to disconnect your Aster account? This will remove your stored API credentials.",
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Yes, disconnect", callback_data: "aster:disconnect_confirm" }],
+            [{ text: "Cancel", callback_data: "action:aster" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (action === "disconnect_confirm") {
+    await storage.removeAsterCredentials(chatId.toString());
+    await bot.sendMessage(chatId, "Aster account disconnected. Your API credentials have been removed.", { reply_markup: mainMenuKeyboard() });
+    return;
+  }
+
+  const client = await getAsterClient(chatId);
+  if (!client) {
+    await bot.sendMessage(chatId, "No Aster credentials found. Connect your account first.", {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🔗 Connect Aster Account", callback_data: "aster:connect" }],
+          [{ text: "« Back", callback_data: "action:menu" }],
+        ],
+      },
+    });
+    return;
+  }
+
+  if (action === "balance") {
+    await bot.sendMessage(chatId, "Loading Aster balances...");
+    try {
+      const [futuresBalances, spotAccount] = await Promise.all([
+        client.futures.balance().catch(() => []),
+        client.spot.account().catch(() => ({ balances: [] })),
+      ]);
+
+      let msg = "💰 *Aster DEX Balances*\n\n";
+
+      const nonZeroFutures = (futuresBalances as any[]).filter((b: any) => parseFloat(b.balance) > 0 || parseFloat(b.availableBalance) > 0);
+      if (nonZeroFutures.length > 0) {
+        msg += "*Futures:*\n";
+        for (const b of nonZeroFutures) {
+          const upnl = parseFloat(b.crossUnPnl || "0");
+          const upnlStr = upnl !== 0 ? ` (uPnL: ${upnl >= 0 ? "+" : ""}${upnl.toFixed(4)})` : "";
+          msg += `  ${b.asset}: ${parseFloat(b.balance).toFixed(4)} (avail: ${parseFloat(b.availableBalance).toFixed(4)})${upnlStr}\n`;
+        }
+      } else {
+        msg += "*Futures:* No balances\n";
+      }
+
+      msg += "\n";
+
+      const nonZeroSpot = (spotAccount.balances || []).filter((b: any) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0);
+      if (nonZeroSpot.length > 0) {
+        msg += "*Spot:*\n";
+        for (const b of nonZeroSpot) {
+          const locked = parseFloat(b.locked);
+          const lockedStr = locked > 0 ? ` (locked: ${locked.toFixed(4)})` : "";
+          msg += `  ${b.asset}: ${parseFloat(b.free).toFixed(4)}${lockedStr}\n`;
+        }
+      } else {
+        msg += "*Spot:* No balances\n";
+      }
+
+      await bot.sendMessage(chatId, msg, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔄 Refresh", callback_data: "aster:balance" }],
+            [{ text: "« Back", callback_data: "action:aster" }],
+          ],
+        },
+      });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Failed to fetch balances: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+    }
+    return;
+  }
+
+  if (action === "positions") {
+    await bot.sendMessage(chatId, "Loading futures positions...");
+    try {
+      const positions = await client.futures.positions();
+      const openPositions = (positions as any[]).filter((p: any) => parseFloat(p.positionAmt) !== 0);
+
+      if (openPositions.length === 0) {
+        await bot.sendMessage(chatId, "📊 *Futures Positions*\n\nNo open positions.", {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 Refresh", callback_data: "aster:positions" }],
+              [{ text: "« Back", callback_data: "action:aster" }],
+            ],
+          },
+        });
+        return;
+      }
+
+      let msg = "📊 *Futures Positions*\n\n";
+      for (const p of openPositions) {
+        const amt = parseFloat(p.positionAmt);
+        const direction = amt > 0 ? "LONG" : "SHORT";
+        const upnl = parseFloat(p.unRealizedProfit);
+        const pnlEmoji = upnl >= 0 ? "+" : "";
+        msg += `*${p.symbol}* — ${direction}\n`;
+        msg += `  Size: ${Math.abs(amt)} | Leverage: ${p.leverage}x\n`;
+        msg += `  Entry: ${parseFloat(p.entryPrice).toFixed(4)} | Mark: ${parseFloat(p.markPrice).toFixed(4)}\n`;
+        msg += `  uPnL: ${pnlEmoji}${upnl.toFixed(4)} USDT\n`;
+        if (p.liquidationPrice && parseFloat(p.liquidationPrice) > 0) {
+          msg += `  Liq: ${parseFloat(p.liquidationPrice).toFixed(4)}\n`;
+        }
+        msg += "\n";
+      }
+
+      await bot.sendMessage(chatId, msg, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔄 Refresh", callback_data: "aster:positions" }],
+            [{ text: "« Back", callback_data: "action:aster" }],
+          ],
+        },
+      });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Failed to fetch positions: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+    }
+    return;
+  }
+
+  if (action === "orders") {
+    await bot.sendMessage(chatId, "Loading open orders...");
+    try {
+      const [futuresOrders, spotOrders] = await Promise.all([
+        client.futures.openOrders().catch(() => []),
+        client.spot.openOrders().catch(() => []),
+      ]);
+
+      let msg = "📋 *Open Orders*\n\n";
+      let hasOrders = false;
+
+      if ((futuresOrders as any[]).length > 0) {
+        hasOrders = true;
+        msg += "*Futures:*\n";
+        for (const o of futuresOrders as any[]) {
+          msg += `  ${o.symbol} ${o.side} ${o.type} — Qty: ${o.origQty} Price: ${o.price || "MARKET"}\n`;
+          msg += `    ID: ${o.orderId}\n`;
+        }
+        msg += "\n";
+      }
+
+      if ((spotOrders as any[]).length > 0) {
+        hasOrders = true;
+        msg += "*Spot:*\n";
+        for (const o of spotOrders as any[]) {
+          msg += `  ${o.symbol} ${o.side} ${o.type} — Qty: ${o.origQty} Price: ${o.price || "MARKET"}\n`;
+          msg += `    ID: ${o.orderId}\n`;
+        }
+      }
+
+      if (!hasOrders) {
+        msg += "No open orders.";
+      }
+
+      const buttons: TelegramBot.InlineKeyboardButton[][] = [];
+      if (hasOrders) {
+        buttons.push([{ text: "❌ Cancel All Futures Orders", callback_data: "aster:cancel_all_orders" }]);
+      }
+      buttons.push([{ text: "🔄 Refresh", callback_data: "aster:orders" }]);
+      buttons.push([{ text: "« Back", callback_data: "action:aster" }]);
+
+      await bot.sendMessage(chatId, msg, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: buttons },
+      });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Failed to fetch orders: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+    }
+    return;
+  }
+
+  if (action === "cancel_all_orders") {
+    await bot.sendMessage(chatId,
+      "Which symbol's orders do you want to cancel? Send the symbol (e.g. BTCUSDT) or type /cancel to abort."
+    );
+    pendingAsterTrade.set(chatId, { step: "cancel_symbol", market: "futures" });
+    return;
+  }
+
+  if (action === "trade_futures") {
+    pendingAsterTrade.set(chatId, { step: "symbol", market: "futures" });
+    await bot.sendMessage(chatId,
+      "🔄 *Futures Trade*\n\n" +
+      "Enter the trading pair symbol (e.g. BTCUSDT, ETHUSDT):",
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  if (action === "trade_spot") {
+    pendingAsterTrade.set(chatId, { step: "symbol", market: "spot" });
+    await bot.sendMessage(chatId,
+      "💱 *Spot Trade*\n\n" +
+      "Enter the trading pair symbol (e.g. BTCUSDT, ETHUSDT):",
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  if (action === "trade_confirm") {
+    const state = pendingAsterTrade.get(chatId);
+    if (!state || state.step !== "confirm") {
+      await bot.sendMessage(chatId, "No pending trade. Start over with /aster.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+
+    await bot.sendMessage(chatId, "Placing order...");
+
+    try {
+      if (state.market === "futures") {
+        if (state.leverage) {
+          try {
+            await client.futures.setLeverage(state.symbol!, state.leverage);
+          } catch (e: any) {
+            if (!e.message?.includes("No need to change")) {
+              console.warn(`[Aster] Leverage set warning: ${e.message}`);
+            }
+          }
+        }
+
+        const orderResult = await client.futures.createOrder({
+          symbol: state.symbol!,
+          side: state.side!,
+          type: state.orderType!,
+          quantity: state.quantity!,
+          price: state.orderType === "LIMIT" ? state.price : undefined,
+          timeInForce: state.orderType === "LIMIT" ? "GTC" : undefined,
+        });
+
+        await bot.sendMessage(chatId,
+          `*Order Placed*\n\n` +
+          `Symbol: ${orderResult.symbol}\n` +
+          `Side: ${orderResult.side}\n` +
+          `Type: ${orderResult.type}\n` +
+          `Quantity: ${orderResult.origQty}\n` +
+          `${state.orderType === "LIMIT" ? `Price: ${orderResult.price}\n` : ""}` +
+          `Order ID: ${orderResult.orderId}\n` +
+          `Status: ${orderResult.status}`,
+          { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() }
+        );
+      } else {
+        const orderResult = await client.spot.createOrder({
+          symbol: state.symbol!,
+          side: state.side!,
+          type: state.orderType!,
+          quantity: state.quantity!,
+          price: state.orderType === "LIMIT" ? state.price : undefined,
+          timeInForce: state.orderType === "LIMIT" ? "GTC" : undefined,
+        });
+
+        await bot.sendMessage(chatId,
+          `*Order Placed*\n\n` +
+          `Symbol: ${orderResult.symbol}\n` +
+          `Side: ${orderResult.side}\n` +
+          `Type: ${orderResult.type}\n` +
+          `Quantity: ${orderResult.origQty}\n` +
+          `${state.orderType === "LIMIT" ? `Price: ${orderResult.price}\n` : ""}` +
+          `Order ID: ${orderResult.orderId}\n` +
+          `Status: ${orderResult.status}`,
+          { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() }
+        );
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Failed to place order: ${e.message?.substring(0, 300)}`, { reply_markup: mainMenuKeyboard() });
+    }
+
+    pendingAsterTrade.delete(chatId);
+    return;
+  }
+
+  if (action === "trade_cancel") {
+    pendingAsterTrade.delete(chatId);
+    await bot.sendMessage(chatId, "Trade cancelled.", { reply_markup: mainMenuKeyboard() });
+    return;
+  }
+
+  if (action === "side_buy") {
+    await handleAsterSideCallback(chatId, "BUY");
+    return;
+  }
+
+  if (action === "side_sell") {
+    await handleAsterSideCallback(chatId, "SELL");
+    return;
+  }
+
+  if (action === "type_market") {
+    await handleAsterTypeCallback(chatId, "MARKET");
+    return;
+  }
+
+  if (action === "type_limit") {
+    await handleAsterTypeCallback(chatId, "LIMIT");
+    return;
+  }
+
+  if (action.startsWith("lev_")) {
+    const lev = parseInt(action.replace("lev_", ""), 10);
+    if (!isNaN(lev)) {
+      await handleAsterLeverageCallback(chatId, lev);
+    }
+    return;
+  }
+}
+
+async function handleAsterConnectFlow(chatId: number, text: string): Promise<void> {
+  if (!bot) return;
+  const state = pendingAsterConnect.get(chatId);
+  if (!state) return;
+
+  const input = text.trim();
+
+  if (state.step === "api_key") {
+    if (input.length < 10) {
+      await bot.sendMessage(chatId, "That doesn't look like a valid API key. Please try again or type /cancel.");
+      return;
+    }
+    state.apiKey = input;
+    state.step = "api_secret";
+    pendingAsterConnect.set(chatId, state);
+    await bot.sendMessage(chatId, "Now send your Aster API Secret:");
+    return;
+  }
+
+  if (state.step === "api_secret") {
+    if (input.length < 10) {
+      await bot.sendMessage(chatId, "That doesn't look like a valid API secret. Please try again or type /cancel.");
+      return;
+    }
+
+    await bot.sendMessage(chatId, "Verifying credentials...");
+
+    try {
+      const { createAsterClient } = await import("./aster-client");
+      const testClient = createAsterClient({ apiKey: state.apiKey!, apiSecret: input });
+      const pingOk = await testClient.futures.ping();
+
+      if (!pingOk) {
+        await bot.sendMessage(chatId, "Could not connect to Aster DEX. Please check your credentials and try again.", { reply_markup: mainMenuKeyboard() });
+        pendingAsterConnect.delete(chatId);
+        return;
+      }
+
+      await storage.saveAsterCredentials(chatId.toString(), state.apiKey!, input);
+      pendingAsterConnect.delete(chatId);
+
+      await bot.sendMessage(chatId,
+        "Aster DEX account connected! Your API credentials are stored securely (encrypted).\n\n" +
+        "You can now trade futures and spot on Aster DEX.",
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "💰 View Balances", callback_data: "aster:balance" }],
+              [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
+              [{ text: "« Main Menu", callback_data: "action:menu" }],
+            ],
+          },
+        }
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Failed to verify credentials: ${e.message?.substring(0, 200)}\n\nPlease try again.`, { reply_markup: mainMenuKeyboard() });
+      pendingAsterConnect.delete(chatId);
+    }
+    return;
+  }
+}
+
+async function handleAsterTradeFlow(chatId: number, text: string): Promise<void> {
+  if (!bot) return;
+  const state = pendingAsterTrade.get(chatId);
+  if (!state) return;
+
+  const input = text.trim().toUpperCase();
+
+  if (state.step === "cancel_symbol") {
+    if (!/^[A-Z]{2,20}$/.test(input)) {
+      await bot.sendMessage(chatId, "Invalid symbol. Enter a valid trading pair like BTCUSDT, ETHUSDT. Or type /cancel.");
+      return;
+    }
+    try {
+      const creds = await storage.getAsterCredentials(chatId.toString());
+      if (!creds) { pendingAsterTrade.delete(chatId); return; }
+      const { createAsterClient } = await import("./aster-client");
+      const client = createAsterClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+      await client.futures.cancelAllOrders(input);
+      await bot.sendMessage(chatId, `✅ All open orders for *${input}* have been cancelled.`, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Failed to cancel orders: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard() });
+    }
+    pendingAsterTrade.delete(chatId);
+    return;
+  }
+
+  if (state.step === "symbol") {
+    if (!/^[A-Z]{2,20}$/.test(input)) {
+      await bot.sendMessage(chatId, "Invalid symbol. Enter a valid trading pair like BTCUSDT, ETHUSDT. Or type /cancel.");
+      return;
+    }
+    state.symbol = input;
+    state.step = "side";
+    pendingAsterTrade.set(chatId, state);
+
+    await bot.sendMessage(chatId,
+      `Symbol: *${input}*\n\nChoose direction:`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "BUY / LONG", callback_data: "aster:side_buy" }, { text: "SELL / SHORT", callback_data: "aster:side_sell" }],
+            [{ text: "Cancel", callback_data: "aster:trade_cancel" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (state.step === "quantity") {
+    const qty = parseFloat(input);
+    if (isNaN(qty) || qty <= 0) {
+      await bot.sendMessage(chatId, "Invalid quantity. Enter a positive number (e.g. 0.001, 1, 100). Or type /cancel.");
+      return;
+    }
+    state.quantity = input;
+
+    if (state.orderType === "LIMIT") {
+      state.step = "price";
+      pendingAsterTrade.set(chatId, state);
+      await bot.sendMessage(chatId, "Enter the limit price:");
+      return;
+    }
+
+    if (state.market === "futures") {
+      state.step = "leverage";
+      pendingAsterTrade.set(chatId, state);
+      await bot.sendMessage(chatId,
+        "Set leverage (1-125):",
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "1x", callback_data: "aster:lev_1" }, { text: "3x", callback_data: "aster:lev_3" }, { text: "5x", callback_data: "aster:lev_5" }],
+              [{ text: "10x", callback_data: "aster:lev_10" }, { text: "20x", callback_data: "aster:lev_20" }, { text: "50x", callback_data: "aster:lev_50" }],
+              [{ text: "Cancel", callback_data: "aster:trade_cancel" }],
+            ],
+          },
+        }
+      );
+      return;
+    }
+
+    showAsterTradeConfirmation(chatId, state);
+    return;
+  }
+
+  if (state.step === "price") {
+    const price = parseFloat(input);
+    if (isNaN(price) || price <= 0) {
+      await bot.sendMessage(chatId, "Invalid price. Enter a positive number. Or type /cancel.");
+      return;
+    }
+    state.price = input;
+
+    if (state.market === "futures") {
+      state.step = "leverage";
+      pendingAsterTrade.set(chatId, state);
+      await bot.sendMessage(chatId,
+        "Set leverage (1-125):",
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "1x", callback_data: "aster:lev_1" }, { text: "3x", callback_data: "aster:lev_3" }, { text: "5x", callback_data: "aster:lev_5" }],
+              [{ text: "10x", callback_data: "aster:lev_10" }, { text: "20x", callback_data: "aster:lev_20" }, { text: "50x", callback_data: "aster:lev_50" }],
+              [{ text: "Cancel", callback_data: "aster:trade_cancel" }],
+            ],
+          },
+        }
+      );
+      return;
+    }
+
+    showAsterTradeConfirmation(chatId, state);
+    return;
+  }
+
+  if (state.step === "leverage") {
+    const lev = parseInt(input, 10);
+    if (isNaN(lev) || lev < 1 || lev > 125) {
+      await bot.sendMessage(chatId, "Invalid leverage. Enter a number between 1 and 125. Or type /cancel.");
+      return;
+    }
+    state.leverage = lev;
+    showAsterTradeConfirmation(chatId, state);
+    return;
+  }
+}
+
+async function showAsterTradeConfirmation(chatId: number, state: AsterTradeState): Promise<void> {
+  if (!bot) return;
+  state.step = "confirm";
+  pendingAsterTrade.set(chatId, state);
+
+  let msg = `*Confirm ${state.market === "futures" ? "Futures" : "Spot"} Order*\n\n`;
+  msg += `Symbol: ${state.symbol}\n`;
+  msg += `Side: ${state.side}\n`;
+  msg += `Type: ${state.orderType}\n`;
+  msg += `Quantity: ${state.quantity}\n`;
+  if (state.orderType === "LIMIT") msg += `Price: ${state.price}\n`;
+  if (state.market === "futures" && state.leverage) msg += `Leverage: ${state.leverage}x\n`;
+
+  await bot.sendMessage(chatId, msg, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "Confirm Order", callback_data: "aster:trade_confirm" }],
+        [{ text: "Cancel", callback_data: "aster:trade_cancel" }],
+      ],
+    },
+  });
+}
+
+async function handleAsterSideCallback(chatId: number, side: "BUY" | "SELL"): Promise<void> {
+  if (!bot) return;
+  const state = pendingAsterTrade.get(chatId);
+  if (!state || state.step !== "side") return;
+
+  state.side = side;
+  state.step = "type";
+  pendingAsterTrade.set(chatId, state);
+
+  await bot.sendMessage(chatId,
+    `${state.symbol} — ${side}\n\nOrder type:`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "Market", callback_data: "aster:type_market" }, { text: "Limit", callback_data: "aster:type_limit" }],
+          [{ text: "Cancel", callback_data: "aster:trade_cancel" }],
+        ],
+      },
+    }
+  );
+}
+
+async function handleAsterTypeCallback(chatId: number, orderType: "MARKET" | "LIMIT"): Promise<void> {
+  if (!bot) return;
+  const state = pendingAsterTrade.get(chatId);
+  if (!state || state.step !== "type") return;
+
+  state.orderType = orderType;
+  state.step = "quantity";
+  pendingAsterTrade.set(chatId, state);
+
+  await bot.sendMessage(chatId, `${state.symbol} — ${state.side} ${orderType}\n\nEnter quantity:`);
+}
+
+async function handleAsterLeverageCallback(chatId: number, leverage: number): Promise<void> {
+  if (!bot) return;
+  const state = pendingAsterTrade.get(chatId);
+  if (!state) return;
+
+  state.leverage = leverage;
+  showAsterTradeConfirmation(chatId, state);
 }

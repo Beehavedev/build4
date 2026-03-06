@@ -68,6 +68,7 @@ import {
   type ChaosMilestone, type InsertChaosMilestone, chaosMilestones,
   type TelegramWallet, type InsertTelegramWallet, telegramWallets,
   tradingPreferences,
+  type AsterCredentials, asterCredentials,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt, inArray } from "drizzle-orm";
@@ -422,6 +423,10 @@ export interface IStorage {
   getPrivateKeyByWalletAddress(walletAddress: string): Promise<string | null>;
   saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void>;
   getEnabledTradingPreferences(): Promise<Array<{ chatId: string; enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }>>;
+  saveAsterCredentials(chatId: string, apiKey: string, apiSecret: string): Promise<AsterCredentials>;
+  getAsterCredentials(chatId: string): Promise<{ chatId: string; apiKey: string; apiSecret: string } | null>;
+  removeAsterCredentials(chatId: string): Promise<void>;
+
   seedInferenceProviders(): Promise<void>;
 }
 
@@ -2447,6 +2452,39 @@ export class DatabaseStorage implements IStorage {
 
   async getEnabledTradingPreferences(): Promise<Array<{ chatId: string; enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }>> {
     return db.select().from(tradingPreferences).where(eq(tradingPreferences.enabled, true));
+  }
+
+  async saveAsterCredentials(chatId: string, apiKey: string, apiSecret: string): Promise<AsterCredentials> {
+    const encryptedApiKey = encryptPrivateKey(apiKey);
+    const encryptedApiSecret = encryptPrivateKey(apiSecret);
+    const [row] = await db.insert(asterCredentials).values({
+      chatId,
+      encryptedApiKey,
+      encryptedApiSecret,
+    }).onConflictDoUpdate({
+      target: asterCredentials.chatId,
+      set: {
+        encryptedApiKey,
+        encryptedApiSecret,
+        createdAt: new Date(),
+      },
+    }).returning();
+    return row;
+  }
+
+  async getAsterCredentials(chatId: string): Promise<{ chatId: string; apiKey: string; apiSecret: string } | null> {
+    const rows = await db.select().from(asterCredentials).where(eq(asterCredentials.chatId, chatId));
+    if (!rows.length) return null;
+    const row = rows[0];
+    return {
+      chatId: row.chatId,
+      apiKey: decryptPrivateKey(row.encryptedApiKey),
+      apiSecret: decryptPrivateKey(row.encryptedApiSecret),
+    };
+  }
+
+  async removeAsterCredentials(chatId: string): Promise<void> {
+    await db.delete(asterCredentials).where(eq(asterCredentials.chatId, chatId));
   }
 }
 
