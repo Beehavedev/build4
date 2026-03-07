@@ -270,21 +270,25 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
 async function loadWalletsFromDb(): Promise<void> {
   try {
     const allLinks = await storage.getAllTelegramWalletLinks();
-    telegramWalletMap.clear();
-    walletsWithKey.clear();
+    const newWalletMap = new Map<number, { wallets: string[]; active: number }>();
+    const newWalletsWithKey = new Set<string>();
     for (const link of allLinks) {
       const chatId = parseInt(link.chatId, 10);
-      const existing = telegramWalletMap.get(chatId);
+      const existing = newWalletMap.get(chatId);
       if (existing) {
         existing.wallets.push(link.walletAddress);
         if (link.isActive) existing.active = existing.wallets.length - 1;
       } else {
-        telegramWalletMap.set(chatId, { wallets: [link.walletAddress], active: link.isActive ? 0 : 0 });
+        newWalletMap.set(chatId, { wallets: [link.walletAddress], active: link.isActive ? 0 : 0 });
       }
       if (link.encryptedPrivateKey) {
-        walletsWithKey.add(`${link.chatId}:${link.walletAddress}`);
+        newWalletsWithKey.add(`${link.chatId}:${link.walletAddress}`);
       }
     }
+    telegramWalletMap.clear();
+    for (const [k, v] of newWalletMap) telegramWalletMap.set(k, v);
+    walletsWithKey.clear();
+    for (const v of newWalletsWithKey) walletsWithKey.add(v);
     console.log(`[TelegramBot] Loaded ${allLinks.length} wallet links from DB for ${telegramWalletMap.size} chats`);
   } catch (e) {
     console.error("[TelegramBot] Failed to load wallets from DB:", e);
@@ -307,6 +311,9 @@ async function ensureWalletsLoaded(chatId: number): Promise<void> {
       for (let i = 0; i < rows.length; i++) {
         wallets.push(rows[i].walletAddress);
         if (rows[i].isActive) activeIdx = i;
+        if (rows[i].encryptedPrivateKey) {
+          walletsWithKey.add(`${chatId}:${rows[i].walletAddress}`);
+        }
       }
       telegramWalletMap.set(chatId, { wallets, active: activeIdx });
       console.log(`[TelegramBot] Loaded ${rows.length} wallets from DB for chatId ${chatId}`);
@@ -455,6 +462,19 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
   );
 
   return addr;
+}
+
+async function checkWalletHasKey(chatId: number, wallet: string | undefined): Promise<boolean> {
+  if (!wallet) return false;
+  if (walletsWithKey.has(`${chatId}:${wallet}`)) return true;
+  try {
+    const pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+    if (pk) {
+      walletsWithKey.add(`${chatId}:${wallet}`);
+      return true;
+    }
+  } catch {}
+  return false;
 }
 
 async function ensureWallet(chatId: number): Promise<string> {
@@ -954,7 +974,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   if (data === "action:buy") {
-    if (!walletsWithKey.has(`${chatId}:${wallet}`)) {
+    if (!await checkWalletHasKey(chatId, wallet)) {
       await bot.sendMessage(chatId, "Your active wallet is view-only. Import a wallet with a private key first (/linkwallet).");
       return;
     }
@@ -964,7 +984,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   if (data === "action:sell") {
-    if (!walletsWithKey.has(`${chatId}:${wallet}`)) {
+    if (!await checkWalletHasKey(chatId, wallet)) {
       await bot.sendMessage(chatId, "Your active wallet is view-only. Import a wallet with a private key first (/linkwallet).");
       return;
     }
@@ -974,7 +994,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   if (data === "action:trade") {
-    if (!walletsWithKey.has(`${chatId}:${wallet}`)) {
+    if (!await checkWalletHasKey(chatId, wallet)) {
       await bot.sendMessage(chatId, "You need a wallet with a private key to use the trading agent. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard() });
       return;
     }
@@ -1380,7 +1400,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   if (data.startsWith("fmbuy:")) {
     const tokenAddress = data.split(":")[1];
     const wallet = getLinkedWallet(chatId);
-    if (!wallet || !walletsWithKey.has(`${chatId}:${wallet}`)) {
+    if (!await checkWalletHasKey(chatId, wallet)) {
       await bot.sendMessage(chatId, "Import a wallet with a private key first (/linkwallet).");
       return;
     }
@@ -1458,7 +1478,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   if (data.startsWith("fmsell:")) {
     const tokenAddress = data.split(":")[1];
     const wallet = getLinkedWallet(chatId);
-    if (!wallet || !walletsWithKey.has(`${chatId}:${wallet}`)) {
+    if (!await checkWalletHasKey(chatId, wallet)) {
       await bot.sendMessage(chatId, "Import a wallet with a private key first (/linkwallet).");
       return;
     }
@@ -1976,7 +1996,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     if (cmd === "buy") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me to buy tokens!"); return; }
       const wallet = await ensureWallet(chatId);
-      if (!walletsWithKey.has(`${chatId}:${wallet}`)) {
+      if (!await checkWalletHasKey(chatId, wallet)) {
         await bot.sendMessage(chatId, "Your active wallet is view-only. Import a wallet with a private key first (/linkwallet).");
         return;
       }
@@ -1993,7 +2013,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     if (cmd === "sell") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me to sell tokens!"); return; }
       const wallet = await ensureWallet(chatId);
-      if (!walletsWithKey.has(`${chatId}:${wallet}`)) {
+      if (!await checkWalletHasKey(chatId, wallet)) {
         await bot.sendMessage(chatId, "Your active wallet is view-only. Import a wallet with a private key first (/linkwallet).");
         return;
       }
@@ -2100,7 +2120,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for trading agent!"); return; }
       await ensureWallet(chatId);
       const wallet = getLinkedWallet(chatId);
-      if (!wallet || !walletsWithKey.has(`${chatId}:${wallet}`)) {
+      if (!await checkWalletHasKey(chatId, wallet)) {
         await bot.sendMessage(chatId, "You need a wallet with a private key to use the trading agent. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard() });
         return;
       }
