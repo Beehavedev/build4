@@ -398,24 +398,48 @@ async function fetchNewTokens(): Promise<FourMemeListingToken[]> {
     }
   };
 
+  const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  const fullHeaders = { ...headers, "User-Agent": userAgent };
+
+  const fetchEndpoint = async (url: string, label: string) => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const r = await fetch(url, { headers: fullHeaders, signal: AbortSignal.timeout(15000) });
+        if (!r.ok) {
+          log(`[TradingAgent] ${label}: HTTP ${r.status} (attempt ${attempt + 1})`, "trading");
+          if (attempt === 0) { await new Promise(r => setTimeout(r, 1000)); continue; }
+          return;
+        }
+        const text = await r.text();
+        let d: any;
+        try { d = JSON.parse(text); } catch { log(`[TradingAgent] ${label}: invalid JSON (${text.substring(0, 100)})`, "trading"); return; }
+        if (d.code === 0 && Array.isArray(d.data)) {
+          addTokens(d.data);
+          return;
+        } else if (d.code === 0 && d.data?.list && Array.isArray(d.data.list)) {
+          addTokens(d.data.list);
+          return;
+        } else {
+          log(`[TradingAgent] ${label}: unexpected format code=${d.code} keys=${Object.keys(d).join(",")}`, "trading");
+          return;
+        }
+      } catch (e: any) {
+        log(`[TradingAgent] ${label}: ${e.message?.substring(0, 80)} (attempt ${attempt + 1})`, "trading");
+        if (attempt === 0) await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+  };
+
   const fetches = [
-    fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=funding&pageIndex=1&pageSize=30`, { headers, signal: AbortSignal.timeout(10000) })
-      .then(async r => { if (r.ok) { const d = await r.json(); if (d.code === 0 && Array.isArray(d.data)) addTokens(d.data); } })
-      .catch(() => {}),
-    fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=new&pageIndex=1&pageSize=30`, { headers, signal: AbortSignal.timeout(10000) })
-      .then(async r => { if (r.ok) { const d = await r.json(); if (d.code === 0 && Array.isArray(d.data)) addTokens(d.data); } })
-      .catch(() => {}),
-    fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=trending&pageIndex=1&pageSize=20`, { headers, signal: AbortSignal.timeout(10000) })
-      .then(async r => { if (r.ok) { const d = await r.json(); if (d.code === 0 && Array.isArray(d.data)) addTokens(d.data); } })
-      .catch(() => {}),
-    fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/ranking/exclusive`, { headers, signal: AbortSignal.timeout(10000) })
-      .then(async r => { if (r.ok) { const d = await r.json(); if (d.code === 0 && Array.isArray(d.data)) addTokens(d.data); } })
-      .catch(() => {}),
+    fetchEndpoint(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=funding&pageIndex=1&pageSize=30`, "funding"),
+    fetchEndpoint(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=new&pageIndex=1&pageSize=30`, "new"),
+    fetchEndpoint(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=trending&pageIndex=1&pageSize=20`, "trending"),
+    fetchEndpoint(`${FOUR_MEME_API}/meme-api/v1/private/token/ranking/exclusive`, "exclusive"),
   ];
 
   await Promise.race([
     Promise.all(fetches),
-    new Promise<void>(resolve => setTimeout(resolve, 12000)),
+    new Promise<void>(resolve => setTimeout(resolve, 35000)),
   ]);
 
   log(`[TradingAgent] Fetched ${results.length} tokens (${results.filter(t => t.hasApiData).length} with price data)`, "trading");
@@ -1061,15 +1085,22 @@ async function sniperScanInner(notifyFn: (chatId: number, message: string) => vo
   const enabledUsers = await resolveEnabledUsers();
   if (enabledUsers.length === 0) return;
 
-  const headers = { "Accept": "application/json", "Origin": "https://four.meme", "Referer": "https://four.meme/" };
+  const headers = { "Accept": "application/json", "Origin": "https://four.meme", "Referer": "https://four.meme/", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" };
+
+  const sniperFetch = async (url: string): Promise<any[]> => {
+    try {
+      const r = await fetch(url, { headers, signal: AbortSignal.timeout(6000) });
+      if (!r.ok) return [];
+      const d = await r.json();
+      if (d.code === 0 && Array.isArray(d.data)) return d.data;
+      if (d.code === 0 && d.data?.list && Array.isArray(d.data.list)) return d.data.list;
+      return [];
+    } catch { return []; }
+  };
 
   const fetches = [
-    fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=funding&pageIndex=1&pageSize=30`, { headers, signal: AbortSignal.timeout(6000) })
-      .then(async r => { if (r.ok) { const d = await r.json(); return (d.code === 0 && Array.isArray(d.data)) ? d.data : []; } return []; })
-      .catch(() => []),
-    fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=new&pageIndex=1&pageSize=20`, { headers, signal: AbortSignal.timeout(6000) })
-      .then(async r => { if (r.ok) { const d = await r.json(); return (d.code === 0 && Array.isArray(d.data)) ? d.data : []; } return []; })
-      .catch(() => []),
+    sniperFetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=funding&pageIndex=1&pageSize=30`),
+    sniperFetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=new&pageIndex=1&pageSize=20`),
   ];
 
   const rawResults = await Promise.race([
