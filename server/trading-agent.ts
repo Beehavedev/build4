@@ -52,6 +52,8 @@ const MIN_WALLET_BALANCE_BNB = 0.15;
 const MAX_TOKEN_AGE_SECONDS = 3600;
 const TRAILING_STOP_ACTIVATION = 1.25;
 const TRAILING_STOP_DISTANCE = 0.12;
+const EMERGENCY_MAX_HOLD_MINUTES = 240;
+const MAX_CONSECUTIVE_CHECK_FAILURES = 10;
 
 const ASTER_SCAN_INTERVAL_MS = 45_000;
 const ASTER_POSITION_CHECK_INTERVAL_MS = 20_000;
@@ -282,16 +284,24 @@ export function getUserTradingStatus(chatId: number): { config: TradingConfig; p
 async function getCachedTokenInfo(address: string): Promise<FourMemeTokenInfo> {
   const cached = tokenInfoCache.get(address);
   if (cached && Date.now() - cached.ts < TOKEN_INFO_CACHE_TTL_MS) return cached.info;
-  const info = await Promise.race([
-    fourMemeGetTokenInfo(address),
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Token info timeout")), 10000)),
-  ]);
-  tokenInfoCache.set(address, { info, ts: Date.now() });
-  if (tokenInfoCache.size > 300) {
-    const keys = Array.from(tokenInfoCache.keys());
-    for (let i = 0; i < keys.length - 150; i++) tokenInfoCache.delete(keys[i]);
+  try {
+    const info = await Promise.race([
+      fourMemeGetTokenInfo(address),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Token info timeout")), 12000)),
+    ]);
+    tokenInfoCache.set(address, { info, ts: Date.now() });
+    if (tokenInfoCache.size > 300) {
+      const keys = Array.from(tokenInfoCache.keys());
+      for (let i = 0; i < keys.length - 150; i++) tokenInfoCache.delete(keys[i]);
+    }
+    return info;
+  } catch (e: any) {
+    if (cached) {
+      log(`[TradingAgent] Token info fetch failed for ${address.substring(0, 10)}, using stale cache (${Math.round((Date.now() - cached.ts) / 1000)}s old)`, "trading");
+      return cached.info;
+    }
+    throw e;
   }
-  return info;
 }
 
 interface FourMemeListingToken {
@@ -955,18 +965,16 @@ REASONING: [1 sentence]`;
     log(`[TradingAgent] AI sell ${position.tokenSymbol}: ${output.substring(0, 150)}`, "trading");
 
     if (!output || output.includes("[NO_PROVIDER]") || output.length < 10) {
-      if (multiple >= position.takeProfitMultiple) return { decision: "SELL", reasoning: "Hit TP (fallback)" };
-      if (multiple <= position.stopLossMultiple) return { decision: "SELL", reasoning: "Hit SL (fallback)" };
-      return { decision: "HOLD", reasoning: "Within range (fallback)" };
+      log(`[TradingAgent] AI sell empty/no-provider for ${position.tokenSymbol}, using fallback`, "trading");
+      return aiTimeoutFallback(position, multiple, ageMinutes, momentum);
     }
 
-    const decisionMatch = output.match(/DECISION:\s*(HOLD|SELL)/i);
+    const decisionMatch = output.match(/DECISION:\s*(HOLD|SELL)/i) || output.match(/\b(SELL|HOLD)\b/i);
     const reasoningMatch = output.match(/REASONING:\s*(.+)/i);
 
     if (!decisionMatch) {
-      if (multiple >= position.takeProfitMultiple) return { decision: "SELL", reasoning: "Hit TP" };
-      if (multiple <= position.stopLossMultiple) return { decision: "SELL", reasoning: "Hit SL" };
-      return { decision: "HOLD", reasoning: "AI malformed, holding" };
+      log(`[TradingAgent] AI sell malformed for ${position.tokenSymbol}, using fallback`, "trading");
+      return aiTimeoutFallback(position, multiple, ageMinutes, momentum);
     }
 
     return {
@@ -975,10 +983,42 @@ REASONING: [1 sentence]`;
     };
   } catch (e: any) {
     log(`[TradingAgent] AI sell failed: ${e.message?.substring(0, 60)}`, "trading");
-    if (multiple >= position.takeProfitMultiple) return { decision: "SELL", reasoning: "Hit TP" };
-    if (multiple <= position.stopLossMultiple) return { decision: "SELL", reasoning: "Hit SL" };
-    return { decision: "HOLD", reasoning: "Within range" };
+    return aiTimeoutFallback(position, multiple, ageMinutes, momentum);
   }
+}
+
+function aiTimeoutFallback(
+  position: TradingPosition,
+  multiple: number,
+  ageMinutes: number,
+  momentum?: { trend: string; velocityChange: number; description: string },
+): { decision: "HOLD" | "SELL"; reasoning: string } {
+  if (multiple >= position.takeProfitMultiple) return { decision: "SELL", reasoning: "Hit TP (fallback)" };
+  if (multiple <= position.stopLossMultiple) return { decision: "SELL", reasoning: "Hit SL (fallback)" };
+
+  const drawdownFromPeak = position.peakMultiple > 0 ? (1 - multiple / position.peakMultiple) : 0;
+
+  if (drawdownFromPeak > 0.20) {
+    return { decision: "SELL", reasoning: `Drawdown ${(drawdownFromPeak * 100).toFixed(0)}% from peak (fallback)` };
+  }
+
+  if (ageMinutes > 60 && multiple < 1.0) {
+    return { decision: "SELL", reasoning: `Losing position held ${ageMinutes.toFixed(0)}m (fallback)` };
+  }
+
+  if (ageMinutes > 45 && multiple >= 1.05 && momentum?.trend === "decelerating") {
+    return { decision: "SELL", reasoning: `Decelerating profit after ${ageMinutes.toFixed(0)}m (fallback)` };
+  }
+
+  if (ageMinutes > 90 && multiple < 1.10) {
+    return { decision: "SELL", reasoning: `Stale position after ${ageMinutes.toFixed(0)}m (fallback)` };
+  }
+
+  if (multiple >= 1.3 && drawdownFromPeak > 0.12) {
+    return { decision: "SELL", reasoning: `Profitable but trailing ${(drawdownFromPeak * 100).toFixed(0)}% (fallback)` };
+  }
+
+  return { decision: "HOLD", reasoning: "Within range (fallback)" };
 }
 
 async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, privateKey: string, walletAddress: string, source: "ai_scan" | "whale_copy" | "consensus" = "ai_scan", execMods?: import("./agent-skills").ExecutionModifier): Promise<TradingPosition | null> {
@@ -1063,6 +1103,30 @@ async function checkAndClosePositions(notifyFn: (chatId: number, message: string
 
     const checks = openPositions.map(async ([posId, position]) => {
       try {
+        const ageMinutes = (Date.now() - position.entryTime) / 60000;
+        const consecutiveFailures = (position as any)._checkFailures || 0;
+
+        if (ageMinutes > EMERGENCY_MAX_HOLD_MINUTES || consecutiveFailures >= MAX_CONSECUTIVE_CHECK_FAILURES) {
+          const reason = ageMinutes > EMERGENCY_MAX_HOLD_MINUTES
+            ? `Emergency: held ${ageMinutes.toFixed(0)}m past ${EMERGENCY_MAX_HOLD_MINUTES}m max`
+            : `Emergency: ${consecutiveFailures} consecutive check failures`;
+          log(`[TradingAgent] EMERGENCY force-sell ${position.tokenSymbol}: ${reason}`, "trading");
+
+          let emergencyMultiple = 0.5;
+          let emergencyValue = parseFloat(position.entryPriceBnb) * 0.5;
+          try {
+            const info = await getCachedTokenInfo(position.tokenAddress);
+            const tokenAmountNum = parseFloat(position.tokenAmount);
+            if (tokenAmountNum > 0) {
+              emergencyValue = parseFloat(info.lastPrice) * tokenAmountNum;
+              emergencyMultiple = parseFloat(position.entryPriceBnb) > 0 ? emergencyValue / parseFloat(position.entryPriceBnb) : 0.5;
+            }
+          } catch {}
+
+          await closePosition(position, "closed_loss", notifyFn, emergencyMultiple, emergencyValue, reason);
+          return;
+        }
+
         const info = await getCachedTokenInfo(position.tokenAddress);
         const currentPrice = parseFloat(info.lastPrice);
         let tokenAmountNum = parseFloat(position.tokenAmount);
@@ -1079,9 +1143,10 @@ async function checkAndClosePositions(notifyFn: (chatId: number, message: string
         const currentValueBnb = currentPrice * tokenAmountNum;
         const entryBnb = parseFloat(position.entryPriceBnb);
         const multiple = entryBnb > 0 ? currentValueBnb / entryBnb : 0;
-        const ageMinutes = (Date.now() - position.entryTime) / 60000;
 
         if (multiple > position.peakMultiple) position.peakMultiple = multiple;
+
+        (position as any)._checkFailures = 0;
 
         const tsActivation = (position as any)._trailingStopActivation || TRAILING_STOP_ACTIVATION;
         const tsDistance = (position as any)._trailingStopDistance || TRAILING_STOP_DISTANCE;
@@ -1135,7 +1200,9 @@ async function checkAndClosePositions(notifyFn: (chatId: number, message: string
           }
         }
       } catch (e: any) {
-        log(`[TradingAgent] Check error ${position.tokenSymbol}: ${e.message?.substring(0, 80)}`, "trading");
+        const failures = ((position as any)._checkFailures || 0) + 1;
+        (position as any)._checkFailures = failures;
+        log(`[TradingAgent] Check error ${position.tokenSymbol} (fail ${failures}/${MAX_CONSECUTIVE_CHECK_FAILURES}): ${e.message?.substring(0, 80)}`, "trading");
       }
     });
 
@@ -1175,7 +1242,9 @@ async function closePosition(
       return;
     }
 
-    const SELL_MAX_RETRIES = 3;
+    const ageMinutes = (Date.now() - position.entryTime) / 60000;
+    const isUrgent = ageMinutes > 120 || aiReasoning?.includes("Emergency");
+    const SELL_MAX_RETRIES = isUrgent ? 5 : 3;
     let sellResult: { success: boolean; txHash?: string; error?: string } = { success: false, error: "Not attempted" };
 
     for (let attempt = 1; attempt <= SELL_MAX_RETRIES; attempt++) {
@@ -1186,7 +1255,7 @@ async function closePosition(
         log(`[TradingAgent] Sell attempt ${attempt}/${SELL_MAX_RETRIES} failed for ${position.tokenSymbol}: ${sellResult.error?.substring(0, 100)}`, "trading");
 
         if (attempt < SELL_MAX_RETRIES) {
-          const backoffMs = 3000 * attempt;
+          const backoffMs = (isUrgent ? 2000 : 3000) * attempt;
           log(`[TradingAgent] Retrying sell in ${backoffMs / 1000}s...`, "trading");
           await new Promise(r => setTimeout(r, backoffMs));
 
@@ -1203,7 +1272,7 @@ async function closePosition(
         log(`[TradingAgent] Sell attempt ${attempt}/${SELL_MAX_RETRIES} threw for ${position.tokenSymbol}: ${sellResult.error}`, "trading");
 
         if (attempt < SELL_MAX_RETRIES) {
-          await new Promise(r => setTimeout(r, 3000 * attempt));
+          await new Promise(r => setTimeout(r, (isUrgent ? 2000 : 3000) * attempt));
         }
       }
     }
@@ -1211,16 +1280,17 @@ async function closePosition(
     if (!sellResult.success) {
       const retryCount = ((position as any)._sellRetries || 0) + 1;
       (position as any)._sellRetries = retryCount;
+      const maxCycles = isUrgent ? 8 : 5;
 
-      if (retryCount < 5) {
-        log(`[TradingAgent] All ${SELL_MAX_RETRIES} sell attempts failed for ${position.tokenSymbol}, keeping position open for retry (cycle ${retryCount}/5)`, "trading");
+      if (retryCount < maxCycles) {
+        log(`[TradingAgent] All ${SELL_MAX_RETRIES} sell attempts failed for ${position.tokenSymbol}, keeping position open for retry (cycle ${retryCount}/${maxCycles})`, "trading");
         notifyFn(position.chatId,
-          `⚠️ Sell failed for $${position.tokenSymbol} — retrying automatically next cycle (attempt ${retryCount}/5)\nError: ${sellResult.error?.substring(0, 80)}`
+          `⚠️ Sell failed for $${position.tokenSymbol} — retrying automatically next cycle (attempt ${retryCount}/${maxCycles})\nError: ${sellResult.error?.substring(0, 80)}`
         );
         return;
       }
 
-      log(`[TradingAgent] Exhausted all sell retries for ${position.tokenSymbol} after 5 cycles, force-closing position`, "trading");
+      log(`[TradingAgent] Exhausted all sell retries for ${position.tokenSymbol} after ${maxCycles} cycles, force-closing position`, "trading");
       notifyFn(position.chatId,
         `❌ Failed to sell $${position.tokenSymbol} after multiple retries.\nTokens may still be in your wallet — use manual sell to try again.\nLast error: ${sellResult.error?.substring(0, 80)}`
       );

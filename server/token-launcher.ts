@@ -1520,7 +1520,10 @@ export async function fourMemeSellToken(
     const helper = new ethers.Contract(FOUR_MEME_HELPER3, FOUR_MEME_HELPER3_ABI, provider);
     const amountWei = ethers.parseEther(tokenAmount);
 
-    const info = await helper.getTokenInfo(tokenAddress);
+    const info = await Promise.race([
+      helper.getTokenInfo(tokenAddress),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("getTokenInfo timeout (15s)")), 15000)),
+    ]);
     const version = Number(info.version);
     const tokenManager = info.tokenManager;
     const liquidityAdded = info.liquidityAdded;
