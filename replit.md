@@ -96,6 +96,12 @@ The project utilizes a monorepo containing `client/` for the React frontend, `se
 - **Position Management**: Monitors Aster futures positions every 30s. Updates trailing stops, checks PnL, and auto-closes on stop-loss or take-profit. Telegram notifications for all trades.
 
 ### Performance Optimizations
+- **Telegram Webhook Mode**: In production, Telegram bot uses webhooks (`/api/telegram/webhook/:token`) for sub-100ms response times. Falls back to polling in development or if webhook setup fails.
+- **Task Queue System**: `server/task-queue.ts` — priority-based in-memory task queue with 8 concurrent workers, 3 retry attempts, and automatic cleanup. Supports `enqueueTask()` (fire-and-forget) and `enqueueAndWait()` (blocking with timeout). Registered handlers for heavy operations like AI inference.
+- **Performance Monitor**: `server/performance-monitor.ts` — tracks request latency (avg/p95), Telegram message/callback processing times, trading scan duration, memory usage, and error rates.
+- **System Health Dashboard**: `GET /api/system/health` — real-time performance snapshot including uptime, memory, request stats, Telegram metrics, trading metrics, and task queue status.
+- **Rate Limiting**: Per-user rate limits for Telegram messages (30/min) and callbacks (60/min). Generic `checkRateLimit()` for any key-based limiting.
+- **Request Timing Middleware**: All API requests are timed and recorded for performance analysis.
 - **API Logging**: Lightweight, timing-only logs for API routes.
 - **Visitor Tracking**: Batched database writes.
 - **SEO Prerender**: Cached HTML pages for bots.

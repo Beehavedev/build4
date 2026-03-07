@@ -3,10 +3,13 @@ import { ethers } from "ethers";
 import { runInferenceWithFallback } from "./inference";
 import { storage } from "./storage";
 import { registerAgentOnchain, registerAgentERC8004, registerAgentBAP578, isOnchainReady, getExplorerUrl } from "./onchain";
+import { recordTelegramMessage, recordTelegramCallback, checkRateLimit } from "./performance-monitor";
+import { enqueueTask, registerTaskHandler } from "./task-queue";
 
 let bot: TelegramBot | null = null;
 let isRunning = false;
 let botUsername: string | null = null;
+let webhookMode = false;
 
 export function getBotInstance(): TelegramBot | null {
   return bot;
@@ -574,38 +577,81 @@ async function clearTelegramPolling(token: string): Promise<void> {
   }
 }
 
-export async function startTelegramBot(): Promise<void> {
+async function setTelegramWebhook(token: string, webhookUrl: string): Promise<boolean> {
+  try {
+    const resp = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: webhookUrl,
+        max_connections: 100,
+        allowed_updates: ["message", "callback_query"],
+        drop_pending_updates: false,
+      }),
+    });
+    const data = await resp.json() as any;
+    if (data.ok) {
+      console.log(`[TelegramBot] Webhook set to ${webhookUrl}`);
+      return true;
+    }
+    console.error("[TelegramBot] Failed to set webhook:", data.description);
+    return false;
+  } catch (e: any) {
+    console.error("[TelegramBot] Webhook setup error:", e.message);
+    return false;
+  }
+}
+
+export function processWebhookUpdate(update: any): void {
+  if (!bot || !isRunning) return;
+  if (!update || typeof update !== "object" || (!update.message && !update.callback_query)) return;
+  try {
+    bot.processUpdate(update);
+  } catch (e: any) {
+    console.error("[TelegramBot] Webhook processUpdate error:", e.message);
+  }
+}
+
+export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
   if (isRunning || startingBot || !isTelegramConfigured()) return;
   startingBot = true;
 
   const token = process.env.TELEGRAM_BOT_TOKEN!;
+  const useWebhook = !!webhookBaseUrl;
 
   try {
     if (bot) {
-      try { bot.stopPolling(); } catch {}
+      try { if (!webhookMode) bot.stopPolling(); } catch {}
       bot = null;
       isRunning = false;
     }
 
-    await clearTelegramPolling(token);
-    console.log("[TelegramBot] Cleared webhook and flushed pending updates");
-
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    bot = new TelegramBot(token, {
-      polling: {
-        interval: 300,
-        autoStart: true,
-        params: { timeout: 30 }
+    if (useWebhook) {
+      bot = new TelegramBot(token, { polling: false });
+      const webhookUrl = `${webhookBaseUrl}/api/telegram/webhook/${token}`;
+      const ok = await setTelegramWebhook(token, webhookUrl);
+      if (!ok) {
+        console.warn("[TelegramBot] Webhook failed, falling back to polling");
+        return startTelegramBotPolling(token);
       }
-    });
+      webhookMode = true;
+    } else {
+      await clearTelegramPolling(token);
+      console.log("[TelegramBot] Cleared webhook and flushed pending updates");
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      bot = new TelegramBot(token, {
+        polling: { interval: 300, autoStart: true, params: { timeout: 30 } }
+      });
+      webhookMode = false;
+    }
+
     isRunning = true;
 
     loadWalletsFromDb().catch(e => console.error("[TelegramBot] Wallet load error:", e.message));
 
     const me = await bot.getMe();
     botUsername = me.username || null;
-    console.log(`[TelegramBot] Started with polling as @${botUsername}`);
+    console.log(`[TelegramBot] Started ${webhookMode ? "with webhook" : "with polling"} as @${botUsername}`);
 
     bot.setMyCommands([
       { command: "start", description: "Start BUILD4 and create a wallet" },
@@ -633,19 +679,85 @@ export async function startTelegramBot(): Promise<void> {
     }).catch(() => {});
 
     bot.on("message", async (msg) => {
+      const start = Date.now();
       try {
         await handleMessage(msg);
       } catch (e: any) {
         console.error("[TelegramBot] Unhandled error in message handler:", e.message);
       }
+      recordTelegramMessage(Date.now() - start);
     });
 
     bot.on("callback_query", async (query) => {
+      const start = Date.now();
       try {
         await handleCallbackQuery(query);
       } catch (e: any) {
         console.error("[TelegramBot] Callback query error:", e.message);
       }
+      recordTelegramCallback(Date.now() - start);
+    });
+
+    if (!webhookMode) {
+      let conflictCount = 0;
+      bot.on("polling_error", (error) => {
+        if (error.message?.includes("409 Conflict")) {
+          conflictCount++;
+          if (conflictCount <= 3) {
+            console.warn(`[TelegramBot] 409 Conflict (${conflictCount}) — waiting for old instance to stop`);
+          }
+          return;
+        }
+        console.error("[TelegramBot] Polling error:", error.message);
+      });
+    }
+
+    registerTaskHandler("ai_inference", async (data: { chatId: number; question: string; context: string }) => {
+      const answer = await runInferenceWithFallback(data.question, data.context, "llama3");
+      return answer;
+    });
+
+  } catch (e: any) {
+    console.error("[TelegramBot] Failed to start:", e.message);
+    isRunning = false;
+  } finally {
+    startingBot = false;
+  }
+}
+
+async function startTelegramBotPolling(token: string): Promise<void> {
+  try {
+    await clearTelegramPolling(token);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    bot = new TelegramBot(token, {
+      polling: { interval: 300, autoStart: true, params: { timeout: 30 } }
+    });
+    webhookMode = false;
+    isRunning = true;
+
+    loadWalletsFromDb().catch(e => console.error("[TelegramBot] Wallet load error:", e.message));
+    const me = await bot.getMe();
+    botUsername = me.username || null;
+    console.log(`[TelegramBot] Fallback started with polling as @${botUsername}`);
+
+    bot.on("message", async (msg) => {
+      const start = Date.now();
+      try {
+        await handleMessage(msg);
+      } catch (e: any) {
+        console.error("[TelegramBot] Unhandled error in message handler:", e.message);
+      }
+      recordTelegramMessage(Date.now() - start);
+    });
+
+    bot.on("callback_query", async (query) => {
+      const start = Date.now();
+      try {
+        await handleCallbackQuery(query);
+      } catch (e: any) {
+        console.error("[TelegramBot] Callback query error:", e.message);
+      }
+      recordTelegramCallback(Date.now() - start);
     });
 
     let conflictCount = 0;
@@ -660,8 +772,11 @@ export async function startTelegramBot(): Promise<void> {
       console.error("[TelegramBot] Polling error:", error.message);
     });
 
+    registerTaskHandler("ai_inference", async (data: { chatId: number; question: string; context: string }) => {
+      return await runInferenceWithFallback(data.question, data.context, "llama3");
+    });
   } catch (e: any) {
-    console.error("[TelegramBot] Failed to start:", e.message);
+    console.error("[TelegramBot] Polling fallback failed:", e.message);
     isRunning = false;
   } finally {
     startingBot = false;
@@ -672,6 +787,11 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   if (!bot || !query.data || !query.message) return;
   const chatId = query.message.chat.id;
   const data = query.data;
+
+  if (!checkRateLimit(`tg_cb:${chatId}`, 60, 60000)) {
+    bot.answerCallbackQuery(query.id, { text: "Too many requests, slow down" }).catch(() => {});
+    return;
+  }
 
   bot.answerCallbackQuery(query.id).catch(() => {});
   await ensureWalletsLoaded(chatId);
@@ -1569,6 +1689,10 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
   const chatType = msg.chat.type;
   const isGroup = chatType === "group" || chatType === "supergroup";
   const username = msg.from?.username || msg.from?.first_name || "user";
+
+  if (!checkRateLimit(`tg_msg:${chatId}`, 30, 60000)) {
+    return;
+  }
 
   if ((msg as any).web_app_data) {
     try {
@@ -3555,10 +3679,18 @@ export async function sendTelegramMessage(chatId: string | number, text: string)
 
 export function stopTelegramBot(): void {
   if (bot) {
-    bot.stopPolling();
+    if (webhookMode) {
+      const token = process.env.TELEGRAM_BOT_TOKEN;
+      if (token) {
+        fetch(`https://api.telegram.org/bot${token}/deleteWebhook`).catch(() => {});
+      }
+    } else {
+      bot.stopPolling();
+    }
     bot = null;
   }
   isRunning = false;
+  webhookMode = false;
   console.log("[TelegramBot] Stopped");
 }
 

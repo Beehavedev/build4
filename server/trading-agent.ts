@@ -2,6 +2,7 @@ import { ethers } from "ethers";
 import { storage } from "./storage";
 import { log } from "./index";
 import { runInferenceWithFallback } from "./inference";
+import { recordTradingScan, recordTrade } from "./performance-monitor";
 import {
   fourMemeGetTokenInfo,
   fourMemeBuyToken,
@@ -781,6 +782,7 @@ async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, 
 
     activePositions.set(positionId, position);
     balanceCache.delete(walletAddress);
+    recordTrade();
     log(`[TradingAgent] Position OPEN: ${signal.symbol} | ${tokenBalance} tokens for ${dynamicAmount} BNB | TX: ${result.txHash}`, "trading");
     return position;
   } catch (e: any) {
@@ -1014,10 +1016,12 @@ async function getBalanceFast(walletAddress: string): Promise<number> {
 async function scanAndTrade(notifyFn: (chatId: number, message: string) => void): Promise<void> {
   if (scanRunning) return;
   scanRunning = true;
+  const scanStart = Date.now();
   try {
     await scanAndTradeInner(notifyFn);
   } finally {
     scanRunning = false;
+    recordTradingScan(Date.now() - scanStart);
   }
 }
 

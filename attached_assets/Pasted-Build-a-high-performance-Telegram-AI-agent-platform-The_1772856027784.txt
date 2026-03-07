@@ -1,0 +1,147 @@
+Build a high-performance Telegram AI agent platform.
+
+The bot will power a system where users can create autonomous agents that can trade, launch tokens, interact with blockchain, and perform tasks.
+
+The architecture must support tens of thousands of agents and scale to millions.
+
+SYSTEM REQUIREMENTS:
+
+1. Use webhook-based Telegram updates (NOT polling).
+2. The Telegram layer must be extremely lightweight and respond in under 100ms.
+3. Heavy operations must run in background workers.
+4. Implement a Redis queue system to distribute tasks.
+5. Use asynchronous programming so nothing blocks the main thread.
+6. Implement caching for frequently accessed data.
+7. Allow horizontal scaling with multiple worker instances.
+8. Log all requests and measure execution time.
+9. Structure code for production deployment.
+
+TECH STACK:
+
+Use one of these high-performance stacks:
+
+Option A:
+Node.js + Fastify + Redis
+
+Option B:
+Python + FastAPI + Redis
+
+Redis must handle:
+- job queue
+- caching
+- agent state
+- rate limiting
+
+SYSTEM ARCHITECTURE:
+
+Telegram Webhook Layer
+    |
+API Server (FastAPI or Fastify)
+    |
+Redis Queue
+    |
+Worker Cluster
+    |
+Agent Engine
+    |
+Blockchain Executor
+    |
+RPC Nodes
+
+COMPONENTS TO BUILD:
+
+1. Telegram Bot Interface
+- Create agents
+- Start / stop agents
+- View agent status
+- Send tasks to agents
+
+2. Agent Engine
+Each agent should be able to:
+- perform automated tasks
+- interact with APIs
+- analyze data
+- trade tokens
+- launch tokens
+
+Agents must run as independent processes or tasks.
+
+3. Task Queue System
+Use Redis queues to process:
+- AI tasks
+- blockchain transactions
+- trading strategies
+- token launches
+
+Workers should pull tasks from the queue.
+
+4. Blockchain Interaction Layer
+Optimized for crypto operations including:
+- token creation
+- wallet transactions
+- RPC interaction
+- mempool monitoring
+
+Implement batching and retry logic for reliability.
+
+5. Caching Layer
+Use Redis caching for:
+- agent states
+- wallet balances
+- token metadata
+- frequently requested API responses
+
+6. Worker Cluster
+Workers should handle:
+- AI reasoning tasks
+- blockchain interactions
+- data analysis
+- automated trading
+
+Workers must scale horizontally.
+
+7. Monitoring
+Add logs for:
+- request latency
+- queue size
+- worker execution time
+- errors
+
+Create a simple dashboard endpoint to view system health.
+
+FOLDER STRUCTURE:
+
+/bot
+/agents
+/workers
+/queue
+/blockchain
+/cache
+/api
+/utils
+/config
+
+PERFORMANCE TARGETS:
+
+- Telegram response < 100ms
+- Handle 10k+ concurrent users
+- Support 100k+ agents running tasks
+- Minimal blocking operations
+
+SECURITY:
+
+- Rate limit user actions
+- Validate all inputs
+- Protect private keys
+- Implement environment variable secrets
+
+OUTPUT:
+
+Provide:
+1. Full project structure
+2. Production-ready code
+3. Setup instructions
+4. Deployment instructions
+5. Explanation of how each component improves performance
+
+The system must be optimized for speed, scalability, and reliability

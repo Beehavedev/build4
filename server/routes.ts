@@ -11,7 +11,9 @@ import { startBountyEngine } from "./bounty-engine";
 import { startTwitterAgent, stopTwitterAgent, getTwitterAgentStatus, runTwitterAgentCycle, postBountyTweet, generateBountyTweetText } from "./twitter-agent";
 import { startSupportAgent, stopSupportAgent, getSupportAgentStatus, runSupportAgentCycle } from "./twitter-support-agent";
 import { isTwitterConfigured } from "./twitter-client";
-import { startTelegramBot, stopTelegramBot, getTelegramBotStatus } from "./telegram-bot";
+import { startTelegramBot, stopTelegramBot, getTelegramBotStatus, processWebhookUpdate } from "./telegram-bot";
+import { getPerformanceSnapshot, recordRequest } from "./performance-monitor";
+import { getQueueStats } from "./task-queue";
 import { autoStartAllAgents } from "./multi-twitter-agent";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
 import { registerSeoPrerender } from "./seo-prerender";
@@ -23,9 +25,44 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const start = Date.now();
+    res.on("finish", () => {
+      recordRequest(req.path, req.method, res.statusCode, Date.now() - start);
+    });
+    next();
+  });
+
   app.use(visitorTrackingMiddleware());
   app.use("/uploads", express.static(path.resolve(process.cwd(), "public/uploads")));
   registerSeoPrerender(app);
+
+  app.post("/api/telegram/webhook/:token", express.json(), (req: Request, res: Response) => {
+    const token = req.params.token;
+    if (token !== process.env.TELEGRAM_BOT_TOKEN) {
+      res.sendStatus(403);
+      return;
+    }
+    res.sendStatus(200);
+    processWebhookUpdate(req.body);
+  });
+
+  app.get("/api/system/health", (req: Request, res: Response) => {
+    const perf = getPerformanceSnapshot();
+    const queue = getQueueStats();
+    const telegramStatus = getTelegramBotStatus();
+
+    res.json({
+      status: "ok",
+      timestamp: Date.now(),
+      uptime: perf.uptime,
+      memory: perf.memoryMB,
+      requests: perf.requests,
+      telegram: { ...perf.telegram, running: telegramStatus.running },
+      trading: perf.trading,
+      taskQueue: queue,
+    });
+  });
 
   registerWeb4Routes(app);
   registerServicesRoutes(app);
@@ -585,7 +622,16 @@ export async function registerRoutes(
   } else {
     setTimeout(() => {
       if (process.env.TELEGRAM_BOT_TOKEN) {
-        startTelegramBot();
+        const replSlug = process.env.REPL_SLUG;
+        const replOwner = process.env.REPL_OWNER;
+        const replitDev = process.env.REPLIT_DEV_DOMAIN;
+        let webhookBase: string | undefined;
+        if (replitDev) {
+          webhookBase = `https://${replitDev}`;
+        } else if (replSlug && replOwner) {
+          webhookBase = `https://${replSlug}.${replOwner}.repl.co`;
+        }
+        startTelegramBot(webhookBase);
       }
     }, 2000);
 
@@ -657,7 +703,9 @@ export async function registerRoutes(
   });
 
   app.post("/api/telegram/start", analyticsAuth, (req: Request, res: Response) => {
-    startTelegramBot();
+    const replitDev = process.env.REPLIT_DEV_DOMAIN;
+    const webhookBase = replitDev ? `https://${replitDev}` : undefined;
+    startTelegramBot(webhookBase);
     res.json({ success: true, message: "Telegram bot started" });
   });
 
