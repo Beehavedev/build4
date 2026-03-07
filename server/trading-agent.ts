@@ -150,6 +150,12 @@ interface TradingPosition {
   trailingStopActive: boolean;
   confidenceScore: number;
   source: "ai_scan" | "whale_copy" | "consensus" | "manual";
+  entryProgressPercent?: number;
+  entryAgeMinutes?: number;
+  entryVelocity?: number;
+  entryHolderCount?: number;
+  entryRaisedBnb?: number;
+  entryRugRisk?: number;
 }
 
 interface PriceSnapshot {
@@ -223,6 +229,10 @@ export async function restoreTradingPreferences(): Promise<number> {
         maxPositions: pref.maxPositions,
       });
     }
+
+    restoreTradeMemoryFromDb().catch(() => {});
+    buildLearnedPatterns().catch(() => {});
+
     return prefs.length;
   } catch (e: any) {
     log(`[TradingAgent] Failed to restore preferences: ${e.message}`, "trading");
@@ -357,9 +367,151 @@ interface TokenSignal {
   listing?: FourMemeListingToken;
   aiAnalysis?: string;
   aiDecision?: "BUY" | "SKIP";
+  progressPercent?: number;
+  ageMinutes?: number;
+  velocity?: number;
+  holderCount?: number;
+  raisedBnb?: number;
+  rugRisk?: number;
 }
 
 const tradeMemory: Array<{ symbol: string; result: string; pnl: number; reasoning: string; tokenAddress: string }> = [];
+
+interface LearnedPatterns {
+  bestProgressRange: { min: number; max: number; winRate: number };
+  bestAgeRange: { min: number; max: number; winRate: number };
+  bestVelocityRange: { min: number; max: number; winRate: number };
+  bestHolderRange: { min: number; max: number; winRate: number };
+  bestHours: number[];
+  worstHours: number[];
+  avgWinHoldMinutes: number;
+  avgLossHoldMinutes: number;
+  totalPnl: number;
+  profitFactor: number;
+  bestSource: string;
+  avgWinPeak: number;
+  avgLossPeak: number;
+  lastAnalyzed: number;
+  sampleSize: number;
+}
+
+let learnedPatterns: LearnedPatterns | null = null;
+let patternsLastBuilt = 0;
+const PATTERN_REBUILD_INTERVAL_MS = 300_000;
+
+async function buildLearnedPatterns(): Promise<void> {
+  if (Date.now() - patternsLastBuilt < PATTERN_REBUILD_INTERVAL_MS && learnedPatterns) return;
+
+  try {
+    const outcomes = await storage.getRecentTradeOutcomes(200);
+    if (outcomes.length < 5) {
+      learnedPatterns = null;
+      return;
+    }
+
+    const wins = outcomes.filter((o: any) => o.pnlBnb > 0);
+    const losses = outcomes.filter((o: any) => o.pnlBnb <= 0);
+
+    const winProgressValues = wins.map((o: any) => o.entryProgressPercent).filter((v: number) => v > 0);
+    const lossProgressValues = losses.map((o: any) => o.entryProgressPercent).filter((v: number) => v > 0);
+    const winAgeValues = wins.map((o: any) => o.entryAgeMinutes).filter((v: number) => v > 0);
+    const lossAgeValues = losses.map((o: any) => o.entryAgeMinutes).filter((v: number) => v > 0);
+    const winVelocityValues = wins.map((o: any) => o.entryVelocity).filter((v: number) => v > 0);
+    const winHolderValues = wins.map((o: any) => o.entryHolderCount).filter((v: number) => v > 0);
+
+    function findBestRange(values: number[]): { min: number; max: number } {
+      if (values.length === 0) return { min: 0, max: 100 };
+      values.sort((a, b) => a - b);
+      const p25 = values[Math.floor(values.length * 0.25)] || values[0];
+      const p75 = values[Math.floor(values.length * 0.75)] || values[values.length - 1];
+      return { min: p25, max: p75 };
+    }
+
+    const progressRange = findBestRange(winProgressValues);
+    const progressWins = wins.filter((o: any) => o.entryProgressPercent >= progressRange.min && o.entryProgressPercent <= progressRange.max).length;
+    const progressTotal = outcomes.filter((o: any) => o.entryProgressPercent >= progressRange.min && o.entryProgressPercent <= progressRange.max).length;
+
+    const ageRange = findBestRange(winAgeValues);
+    const ageWins = wins.filter((o: any) => o.entryAgeMinutes >= ageRange.min && o.entryAgeMinutes <= ageRange.max).length;
+    const ageTotal = outcomes.filter((o: any) => o.entryAgeMinutes >= ageRange.min && o.entryAgeMinutes <= ageRange.max).length;
+
+    const velRange = findBestRange(winVelocityValues);
+    const holderRange = findBestRange(winHolderValues);
+
+    const hourBuckets = new Map<number, { wins: number; total: number }>();
+    for (const o of outcomes) {
+      const h = (o as any).hourOfDay ?? 0;
+      const bucket = hourBuckets.get(h) || { wins: 0, total: 0 };
+      bucket.total++;
+      if ((o as any).pnlBnb > 0) bucket.wins++;
+      hourBuckets.set(h, bucket);
+    }
+
+    const hourRates = Array.from(hourBuckets.entries())
+      .filter(([, b]) => b.total >= 2)
+      .map(([h, b]) => ({ hour: h, rate: b.wins / b.total }))
+      .sort((a, b) => b.rate - a.rate);
+
+    const bestHours = hourRates.slice(0, 4).map(h => h.hour);
+    const worstHours = hourRates.slice(-3).filter(h => h.rate < 0.3).map(h => h.hour);
+
+    const sourcePerf = new Map<string, { wins: number; total: number }>();
+    for (const o of outcomes) {
+      const s = (o as any).source || "ai_scan";
+      const sp = sourcePerf.get(s) || { wins: 0, total: 0 };
+      sp.total++;
+      if ((o as any).pnlBnb > 0) sp.wins++;
+      sourcePerf.set(s, sp);
+    }
+    const bestSource = Array.from(sourcePerf.entries())
+      .filter(([, v]) => v.total >= 2)
+      .sort((a, b) => (b[1].wins / b[1].total) - (a[1].wins / a[1].total))[0]?.[0] || "ai_scan";
+
+    const totalWinPnl = wins.reduce((s: number, o: any) => s + o.pnlBnb, 0);
+    const totalLossPnl = Math.abs(losses.reduce((s: number, o: any) => s + o.pnlBnb, 0));
+
+    learnedPatterns = {
+      bestProgressRange: { ...progressRange, winRate: progressTotal > 0 ? (progressWins / progressTotal) * 100 : 50 },
+      bestAgeRange: { ...ageRange, winRate: ageTotal > 0 ? (ageWins / ageTotal) * 100 : 50 },
+      bestVelocityRange: { ...velRange, winRate: 0 },
+      bestHolderRange: { ...holderRange, winRate: 0 },
+      bestHours,
+      worstHours,
+      avgWinHoldMinutes: wins.length > 0 ? wins.reduce((s: number, o: any) => s + (o.holdTimeMinutes || 0), 0) / wins.length : 5,
+      avgLossHoldMinutes: losses.length > 0 ? losses.reduce((s: number, o: any) => s + (o.holdTimeMinutes || 0), 0) / losses.length : 3,
+      totalPnl: outcomes.reduce((s: number, o: any) => s + o.pnlBnb, 0),
+      profitFactor: totalLossPnl > 0 ? totalWinPnl / totalLossPnl : totalWinPnl > 0 ? 99 : 0,
+      bestSource,
+      avgWinPeak: wins.length > 0 ? wins.reduce((s: number, o: any) => s + (o.peakMultiple || 1), 0) / wins.length : 1,
+      avgLossPeak: losses.length > 0 ? losses.reduce((s: number, o: any) => s + (o.peakMultiple || 1), 0) / losses.length : 1,
+      lastAnalyzed: Date.now(),
+      sampleSize: outcomes.length,
+    };
+
+    patternsLastBuilt = Date.now();
+    log(`[TradingAgent] Learned patterns from ${outcomes.length} trades: PF=${learnedPatterns.profitFactor.toFixed(2)}, best progress=${progressRange.min.toFixed(0)}-${progressRange.max.toFixed(0)}%, best age=${ageRange.min}-${ageRange.max}m`, "trading");
+  } catch (e: any) {
+    log(`[TradingAgent] Pattern analysis error: ${e.message?.substring(0, 100)}`, "trading");
+  }
+}
+
+function buildLearnedInsights(): string {
+  if (!learnedPatterns || learnedPatterns.sampleSize < 5) return "";
+
+  const p = learnedPatterns;
+  let insights = `\nLEARNED PATTERNS (from ${p.sampleSize} trades, PnL: ${p.totalPnl >= 0 ? "+" : ""}${p.totalPnl.toFixed(4)} BNB, PF: ${p.profitFactor.toFixed(2)}):\n`;
+  insights += `• Best curve entry: ${p.bestProgressRange.min.toFixed(0)}-${p.bestProgressRange.max.toFixed(0)}% (${p.bestProgressRange.winRate.toFixed(0)}% win rate in this range)\n`;
+  insights += `• Best token age: ${p.bestAgeRange.min}-${p.bestAgeRange.max}m (${p.bestAgeRange.winRate.toFixed(0)}% win rate)\n`;
+  insights += `• Best velocity: ${p.bestVelocityRange.min.toFixed(1)}-${p.bestVelocityRange.max.toFixed(1)}%/min\n`;
+  if (p.bestHolderRange.max > 0) insights += `• Best holder count: ${p.bestHolderRange.min}-${p.bestHolderRange.max}\n`;
+  insights += `• Winning trades peak avg: ${p.avgWinPeak.toFixed(2)}x, losing trades peak avg: ${p.avgLossPeak.toFixed(2)}x\n`;
+  insights += `• Best source: ${p.bestSource}\n`;
+  if (p.bestHours.length > 0) insights += `• Best hours (UTC): ${p.bestHours.join(", ")}\n`;
+  if (p.worstHours.length > 0) insights += `• Avoid hours (UTC): ${p.worstHours.join(", ")}\n`;
+  insights += `• Winners hold avg ${p.avgWinHoldMinutes.toFixed(0)}m, losers hold avg ${p.avgLossHoldMinutes.toFixed(0)}m\n`;
+  insights += `USE THESE PATTERNS: Favor tokens matching winning ranges. Be more selective outside these ranges. If current hour is in "avoid" list, raise confidence requirement.\n`;
+  return insights;
+}
 
 function buildTradeMemoryContext(): string {
   if (tradeMemory.length === 0) return "No previous trades yet.";
@@ -373,6 +525,27 @@ function buildTradeMemoryContext(): string {
     ctx += `  ${t.symbol}: ${t.result} (${t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(4)} BNB) — ${t.reasoning}\n`;
   }
   return ctx;
+}
+
+async function restoreTradeMemoryFromDb(): Promise<void> {
+  try {
+    const outcomes = await storage.getRecentTradeOutcomes(30);
+    if (outcomes.length === 0) return;
+
+    tradeMemory.length = 0;
+    for (const o of outcomes.reverse()) {
+      tradeMemory.push({
+        symbol: (o as any).tokenSymbol,
+        result: (o as any).pnlBnb > 0 ? "WIN" : "LOSS",
+        pnl: (o as any).pnlBnb,
+        reasoning: (o as any).reasoning || (o as any).result,
+        tokenAddress: (o as any).tokenAddress,
+      });
+    }
+    log(`[TradingAgent] Restored ${tradeMemory.length} trades from DB into memory`, "trading");
+  } catch (e: any) {
+    log(`[TradingAgent] Failed to restore trade memory: ${e.message?.substring(0, 100)}`, "trading");
+  }
 }
 
 async function checkCreatorHistory(tokenAddress: string): Promise<{ rugRisk: number; reasons: string[] }> {
@@ -475,11 +648,24 @@ function getWinRate(): { rate: number; total: number } {
 
 function getAdaptiveConfidenceThreshold(): number {
   const { rate, total } = getWinRate();
-  if (total < 3) return 50;
-  if (rate >= 60) return 40;
-  if (rate >= 45) return 50;
-  if (rate >= 30) return 60;
-  return 70;
+  let base: number;
+  if (total < 3) base = 50;
+  else if (rate >= 60) base = 40;
+  else if (rate >= 45) base = 50;
+  else if (rate >= 30) base = 60;
+  else base = 70;
+
+  if (learnedPatterns && learnedPatterns.sampleSize >= 10) {
+    const currentHour = new Date().getUTCHours();
+    if (learnedPatterns.worstHours.includes(currentHour)) {
+      base = Math.min(base + 10, 85);
+    }
+    if (learnedPatterns.profitFactor < 0.8 && learnedPatterns.sampleSize >= 15) {
+      base = Math.min(base + 5, 85);
+    }
+  }
+
+  return base;
 }
 
 function computeTokenScoreFromListing(token: FourMemeListingToken): { score: number; reasons: string[] } {
@@ -571,6 +757,8 @@ async function aiEvaluateBuy(tokens: FourMemeListingToken[]): Promise<TokenSigna
   const memoryCtx = buildTradeMemoryContext();
   const winRate = getWinRate();
   const threshold = getAdaptiveConfidenceThreshold();
+  await buildLearnedPatterns();
+  const learnedInsights = buildLearnedInsights();
 
   const prompt = `You are a PROFESSIONAL meme token sniper on Four.meme (BNB Chain bonding curve). You are FAST, DECISIVE, and AGGRESSIVE when the signals are right. Analyze and decide which ONE to buy, or NONE.
 
@@ -581,7 +769,7 @@ PERFORMANCE: ${winRate.total > 0 ? `${winRate.rate.toFixed(0)}% win rate over ${
 
 TRADE MEMORY:
 ${memoryCtx}
-
+${learnedInsights}
 CRITICAL SIGNALS (ranked by importance):
 1. WHALE INTEREST = multiple smart money wallets bought this. HIGHEST PRIORITY
 2. VELOCITY >1%/min + Age <15min = parabolic early entry, STRONG BUY
@@ -640,6 +828,8 @@ REASONING: [1 sentence]`;
     const age = Math.floor(Date.now() / 1000) - chosen.launchTime;
     const velocity = age > 60 ? chosen.progressPercent / (age / 60) : 0;
 
+    const ageMin = Math.max(1, Math.floor(age / 60));
+    const rugCheck = rugChecks[tokenIdx] || { rugRisk: 0 };
     return {
       address: chosen.address,
       name: chosen.name,
@@ -648,7 +838,7 @@ REASONING: [1 sentence]`;
       reasons: [
         `AI: ${confidence}%`,
         `Curve: ${chosen.progressPercent.toFixed(1)}%`,
-        `Age: ${Math.max(1, Math.floor(age / 60))}m`,
+        `Age: ${ageMin}m`,
         `Vel: ${velocity.toFixed(1)}%/min`,
         `Raised: ${chosen.raisedAmount.toFixed(3)} BNB`,
         chosen.holderCount > 0 ? `Holders: ${chosen.holderCount}` : "",
@@ -657,6 +847,12 @@ REASONING: [1 sentence]`;
       listing: chosen,
       aiAnalysis: reasoning,
       aiDecision: "BUY",
+      progressPercent: chosen.progressPercent,
+      ageMinutes: ageMin,
+      velocity,
+      holderCount: chosen.holderCount,
+      raisedBnb: chosen.raisedAmount,
+      rugRisk: rugCheck.rugRisk,
     };
   } catch (e: any) {
     log(`[TradingAgent] AI failed, using rules: ${e.message?.substring(0, 80)}`, "trading");
@@ -702,8 +898,8 @@ STATE: Curve ${info.progressPercent.toFixed(1)}%/${maxFunds} BNB, Vel: ${velocit
 MOMENTUM: ${momentum?.trend || "unknown"} — ${momentum?.description || "N/A"}
 TARGETS: TP ${position.takeProfitMultiple}x | SL ${((1 - position.stopLossMultiple) * 100).toFixed(0)}%
 WIN RATE: ${winRate.total > 0 ? `${winRate.rate.toFixed(0)}% over ${winRate.total}` : "N/A"}
-
-Rules: Accelerating+profitable=HOLD. Decelerating+profitable=SELL. Drawdown>15%+decelerating=SELL. Near TP+accelerating=HOLD (let run). Low win rate=take profits earlier.
+${learnedPatterns ? `LEARNED: Winners hold avg ${learnedPatterns.avgWinHoldMinutes.toFixed(0)}m (peak ${learnedPatterns.avgWinPeak.toFixed(2)}x), losers hold avg ${learnedPatterns.avgLossHoldMinutes.toFixed(0)}m (peak ${learnedPatterns.avgLossPeak.toFixed(2)}x). PF: ${learnedPatterns.profitFactor.toFixed(2)}` : ""}
+Rules: Accelerating+profitable=HOLD. Decelerating+profitable=SELL. Drawdown>15%+decelerating=SELL. Near TP+accelerating=HOLD (let run). Low win rate=take profits earlier. Use LEARNED data to optimize hold time.
 
 DECISION: HOLD or SELL
 REASONING: [1 sentence]`;
@@ -778,6 +974,12 @@ async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, 
       takeProfitMultiple: config.takeProfitMultiple, stopLossMultiple: config.stopLossMultiple,
       status: "open", peakMultiple: 1.0, trailingStopActive: false,
       confidenceScore: signal.score, source,
+      entryProgressPercent: signal.progressPercent,
+      entryAgeMinutes: signal.ageMinutes,
+      entryVelocity: signal.velocity,
+      entryHolderCount: signal.holderCount,
+      entryRaisedBnb: signal.raisedBnb,
+      entryRugRisk: signal.rugRisk,
     };
 
     activePositions.set(positionId, position);
@@ -969,6 +1171,28 @@ async function closePosition(
 
     tradeMemory.push({ symbol: position.tokenSymbol, result: reason === "closed_profit" ? "WIN" : "LOSS", pnl, reasoning: aiReasoning || reason, tokenAddress: position.tokenAddress });
     if (tradeMemory.length > 30) tradeMemory.splice(0, tradeMemory.length - 30);
+
+    const holdTimeMinutes = Math.floor((Date.now() - position.entryTime) / 60000);
+    storage.saveTradeOutcome({
+      chatId: position.chatId.toString(),
+      tokenAddress: position.tokenAddress,
+      tokenSymbol: position.tokenSymbol,
+      result: reason,
+      pnlBnb: pnl,
+      peakMultiple: position.peakMultiple,
+      entryPriceBnb: entryBnb,
+      holdTimeMinutes,
+      confidenceScore: position.confidenceScore,
+      source: position.source,
+      entryProgressPercent: position.entryProgressPercent,
+      entryAgeMinutes: position.entryAgeMinutes,
+      entryVelocity: position.entryVelocity,
+      entryHolderCount: position.entryHolderCount,
+      entryRaisedBnb: position.entryRaisedBnb,
+      entryRugRisk: position.entryRugRisk,
+      reasoning: aiReasoning || reason,
+      hourOfDay: new Date().getUTCHours(),
+    }).catch(e => log(`[TradingAgent] Save outcome error: ${e.message}`, "trading"));
 
     if (pnl < 0) failedTokenCooldown.set(position.tokenAddress, Date.now());
 
@@ -1291,6 +1515,8 @@ async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: str
     const tradeSource = isConsensus ? "consensus" as const : "whale_copy" as const;
     whaleTokensCopied.add(tokenAddr);
 
+    const whaleAge = Math.floor(Date.now() / 1000) - (info.launchTime || Math.floor(Date.now() / 1000));
+    const whaleAgeMin = Math.max(1, Math.floor(whaleAge / 60));
     const signal: TokenSignal = {
       address: tokenAddr,
       name: buy.tokenName,
@@ -1304,6 +1530,12 @@ async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: str
       info,
       aiAnalysis: isConsensus ? `${consensusCount} whales bought — high conviction consensus.` : `Copying ${buy.whale.label}`,
       aiDecision: "BUY",
+      progressPercent: info.progressPercent,
+      ageMinutes: whaleAgeMin,
+      velocity: whaleAgeMin > 0 ? info.progressPercent / whaleAgeMin : 0,
+      holderCount: 0,
+      raisedBnb: parseFloat(info.funds) || 0,
+      rugRisk: 0,
     };
 
     const buyPromises = enabledUsers.map(async user => {

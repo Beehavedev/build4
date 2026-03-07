@@ -69,6 +69,7 @@ import {
   type TelegramWallet, type InsertTelegramWallet, telegramWallets,
   tradingPreferences,
   type AsterCredentials, asterCredentials,
+  tradeOutcomes,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt, inArray } from "drizzle-orm";
@@ -423,6 +424,14 @@ export interface IStorage {
   getPrivateKeyByWalletAddress(walletAddress: string): Promise<string | null>;
   saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void>;
   getEnabledTradingPreferences(): Promise<Array<{ chatId: string; enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }>>;
+  saveTradeOutcome(outcome: {
+    chatId: string; tokenAddress: string; tokenSymbol: string; result: string;
+    pnlBnb: number; peakMultiple: number; entryPriceBnb: number; holdTimeMinutes: number;
+    confidenceScore: number; source: string; entryProgressPercent?: number; entryAgeMinutes?: number;
+    entryVelocity?: number; entryHolderCount?: number; entryRaisedBnb?: number; entryRugRisk?: number;
+    reasoning?: string; hourOfDay?: number;
+  }): Promise<void>;
+  getRecentTradeOutcomes(limit?: number): Promise<Array<any>>;
   saveAsterCredentials(chatId: string, apiKey: string, apiSecret: string): Promise<AsterCredentials>;
   getAsterCredentials(chatId: string): Promise<{ chatId: string; apiKey: string; apiSecret: string } | null>;
   removeAsterCredentials(chatId: string): Promise<void>;
@@ -2485,6 +2494,47 @@ export class DatabaseStorage implements IStorage {
 
   async removeAsterCredentials(chatId: string): Promise<void> {
     await db.delete(asterCredentials).where(eq(asterCredentials.chatId, chatId));
+  }
+
+  async saveTradeOutcome(outcome: {
+    chatId: string; tokenAddress: string; tokenSymbol: string; result: string;
+    pnlBnb: number; peakMultiple: number; entryPriceBnb: number; holdTimeMinutes: number;
+    confidenceScore: number; source: string; entryProgressPercent?: number; entryAgeMinutes?: number;
+    entryVelocity?: number; entryHolderCount?: number; entryRaisedBnb?: number; entryRugRisk?: number;
+    reasoning?: string; hourOfDay?: number;
+  }): Promise<void> {
+    try {
+      await db.insert(tradeOutcomes).values({
+        chatId: outcome.chatId,
+        tokenAddress: outcome.tokenAddress,
+        tokenSymbol: outcome.tokenSymbol,
+        result: outcome.result,
+        pnlBnb: outcome.pnlBnb,
+        peakMultiple: outcome.peakMultiple,
+        entryPriceBnb: outcome.entryPriceBnb,
+        holdTimeMinutes: outcome.holdTimeMinutes,
+        confidenceScore: outcome.confidenceScore,
+        source: outcome.source,
+        entryProgressPercent: outcome.entryProgressPercent ?? 0,
+        entryAgeMinutes: outcome.entryAgeMinutes ?? 0,
+        entryVelocity: outcome.entryVelocity ?? 0,
+        entryHolderCount: outcome.entryHolderCount ?? 0,
+        entryRaisedBnb: outcome.entryRaisedBnb ?? 0,
+        entryRugRisk: outcome.entryRugRisk ?? 0,
+        reasoning: outcome.reasoning,
+        hourOfDay: outcome.hourOfDay ?? new Date().getUTCHours(),
+      });
+    } catch (e: any) {
+      console.error("[Storage] Failed to save trade outcome:", e.message);
+    }
+  }
+
+  async getRecentTradeOutcomes(limit: number = 100): Promise<Array<any>> {
+    try {
+      return await db.select().from(tradeOutcomes).orderBy(desc(tradeOutcomes.createdAt)).limit(limit);
+    } catch {
+      return [];
+    }
   }
 }
 

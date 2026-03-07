@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, integer, timestamp, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, integer, timestamp, doublePrecision, serial } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -1037,6 +1037,31 @@ export const tradingPreferences = pgTable("trading_preferences", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 export type TradingPreference = typeof tradingPreferences.$inferSelect;
+
+export const tradeOutcomes = pgTable("trade_outcomes", {
+  id: serial("id").primaryKey(),
+  chatId: text("chat_id").notNull(),
+  tokenAddress: text("token_address").notNull(),
+  tokenSymbol: text("token_symbol").notNull(),
+  result: text("result").notNull(),
+  pnlBnb: doublePrecision("pnl_bnb").notNull(),
+  peakMultiple: doublePrecision("peak_multiple").notNull().default(1.0),
+  entryPriceBnb: doublePrecision("entry_price_bnb").notNull(),
+  holdTimeMinutes: integer("hold_time_minutes").notNull().default(0),
+  confidenceScore: integer("confidence_score").notNull().default(50),
+  source: text("source").notNull().default("ai_scan"),
+  entryProgressPercent: doublePrecision("entry_progress_percent").default(0),
+  entryAgeMinutes: integer("entry_age_minutes").default(0),
+  entryVelocity: doublePrecision("entry_velocity").default(0),
+  entryHolderCount: integer("entry_holder_count").default(0),
+  entryRaisedBnb: doublePrecision("entry_raised_bnb").default(0),
+  entryRugRisk: integer("entry_rug_risk").default(0),
+  reasoning: text("reasoning"),
+  hourOfDay: integer("hour_of_day"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type TradeOutcome = typeof tradeOutcomes.$inferSelect;
+
 export type InsertAgentTwitterAccount = z.infer<typeof insertAgentTwitterAccountSchema>;
 export type AgentTwitterAccount = typeof agentTwitterAccounts.$inferSelect;
 
