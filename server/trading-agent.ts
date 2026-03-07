@@ -903,7 +903,56 @@ async function closePosition(
       return;
     }
 
-    const sellResult = await fourMemeSellToken(position.tokenAddress, sellAmount, pk);
+    const SELL_MAX_RETRIES = 3;
+    let sellResult: { success: boolean; txHash?: string; error?: string } = { success: false, error: "Not attempted" };
+
+    for (let attempt = 1; attempt <= SELL_MAX_RETRIES; attempt++) {
+      try {
+        sellResult = await fourMemeSellToken(position.tokenAddress, sellAmount, pk);
+        if (sellResult.success) break;
+
+        log(`[TradingAgent] Sell attempt ${attempt}/${SELL_MAX_RETRIES} failed for ${position.tokenSymbol}: ${sellResult.error?.substring(0, 100)}`, "trading");
+
+        if (attempt < SELL_MAX_RETRIES) {
+          const backoffMs = 3000 * attempt;
+          log(`[TradingAgent] Retrying sell in ${backoffMs / 1000}s...`, "trading");
+          await new Promise(r => setTimeout(r, backoffMs));
+
+          try {
+            const freshBal = await fourMemeGetTokenBalance(position.tokenAddress, position.walletAddress);
+            if (parseFloat(freshBal.balance) > 0) {
+              sellAmount = freshBal.balance;
+              position.tokenAmount = sellAmount;
+            }
+          } catch {}
+        }
+      } catch (e: any) {
+        sellResult = { success: false, error: e.message?.substring(0, 150) || "Unknown error" };
+        log(`[TradingAgent] Sell attempt ${attempt}/${SELL_MAX_RETRIES} threw for ${position.tokenSymbol}: ${sellResult.error}`, "trading");
+
+        if (attempt < SELL_MAX_RETRIES) {
+          await new Promise(r => setTimeout(r, 3000 * attempt));
+        }
+      }
+    }
+
+    if (!sellResult.success) {
+      const retryCount = ((position as any)._sellRetries || 0) + 1;
+      (position as any)._sellRetries = retryCount;
+
+      if (retryCount < 5) {
+        log(`[TradingAgent] All ${SELL_MAX_RETRIES} sell attempts failed for ${position.tokenSymbol}, keeping position open for retry (cycle ${retryCount}/5)`, "trading");
+        notifyFn(position.chatId,
+          `⚠️ Sell failed for $${position.tokenSymbol} — retrying automatically next cycle (attempt ${retryCount}/5)\nError: ${sellResult.error?.substring(0, 80)}`
+        );
+        return;
+      }
+
+      log(`[TradingAgent] Exhausted all sell retries for ${position.tokenSymbol} after 5 cycles, force-closing position`, "trading");
+      notifyFn(position.chatId,
+        `❌ Failed to sell $${position.tokenSymbol} after multiple retries.\nTokens may still be in your wallet — use manual sell to try again.\nLast error: ${sellResult.error?.substring(0, 80)}`
+      );
+    }
 
     position.status = reason;
     position.closedAt = Date.now();
@@ -923,18 +972,18 @@ async function closePosition(
 
     if (pnl < 0) failedTokenCooldown.set(position.tokenAddress, Date.now());
 
-    const emoji = reason === "closed_profit" ? "💰" : "📉";
-    const pnlStr = pnl >= 0 ? `+${pnl.toFixed(4)}` : pnl.toFixed(4);
-    const holdTime = Math.floor((Date.now() - position.entryTime) / 60000);
+    if (sellResult.success) {
+      const emoji = reason === "closed_profit" ? "💰" : "📉";
+      const pnlStr = pnl >= 0 ? `+${pnl.toFixed(4)}` : pnl.toFixed(4);
+      const holdTime = Math.floor((Date.now() - position.entryTime) / 60000);
 
-    let msg = `${emoji} CLOSED: $${position.tokenSymbol}\n`;
-    msg += `Entry: ${position.entryPriceBnb} BNB → Exit: ~${currentValueBnb.toFixed(4)} BNB\n`;
-    msg += `PnL: ${pnlStr} BNB (${multiple.toFixed(2)}x) | Peak: ${position.peakMultiple.toFixed(2)}x | ${holdTime}m\n`;
-    if (aiReasoning) msg += `🧠 ${aiReasoning}\n`;
-    if (sellResult.txHash) msg += `TX: https://bscscan.com/tx/${sellResult.txHash}`;
-    if (!sellResult.success) msg += `\n⚠️ Sell may have failed: ${sellResult.error?.substring(0, 80)}`;
-
-    notifyFn(position.chatId, msg);
+      let msg = `${emoji} CLOSED: $${position.tokenSymbol}\n`;
+      msg += `Entry: ${position.entryPriceBnb} BNB → Exit: ~${currentValueBnb.toFixed(4)} BNB\n`;
+      msg += `PnL: ${pnlStr} BNB (${multiple.toFixed(2)}x) | Peak: ${position.peakMultiple.toFixed(2)}x | ${holdTime}m\n`;
+      if (aiReasoning) msg += `🧠 ${aiReasoning}\n`;
+      if (sellResult.txHash) msg += `TX: https://bscscan.com/tx/${sellResult.txHash}`;
+      notifyFn(position.chatId, msg);
+    }
   } catch (e: any) {
     log(`[TradingAgent] Close error: ${e.message?.substring(0, 150)}`, "trading");
   }
