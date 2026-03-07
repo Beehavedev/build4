@@ -251,30 +251,88 @@ async function getCachedTokenInfo(address: string): Promise<FourMemeTokenInfo> {
   return info;
 }
 
-async function fetchNewTokens(): Promise<Array<{ address: string; name: string; symbol: string; launchTime: number }>> {
+interface FourMemeListingToken {
+  address: string;
+  name: string;
+  symbol: string;
+  launchTime: number;
+  status: string;
+  progressPercent: number;
+  raisedAmount: number;
+  maxFunds: number;
+  lastPrice: string;
+  holderCount: number;
+  tradingVolume: number;
+  marketCap: number;
+  minuteIncrease: number;
+  hourIncrease: number;
+  dayIncrease: number;
+  hasApiData: boolean;
+}
+
+function parseListingToken(t: any): FourMemeListingToken | null {
+  const addr = t.address || t.tokenAddress || t.contractAddress;
+  if (!addr) return null;
+
+  const tp = t.tokenPrice || {};
+  const progress = parseFloat(tp.progress || "0") * 100;
+  const raised = parseFloat(tp.raisedAmount || t.raisedAmount || "0");
+  const b0 = parseFloat(t.b0 || "0");
+  const maxFunds = b0 > 0 ? b0 : parseFloat(tp.bamount || "0");
+  const price = tp.price || "0";
+  const holders = parseInt(tp.holderCount || "0");
+  const trading = parseFloat(tp.trading || t.trading || "0");
+  const mcap = parseFloat(tp.marketCap || t.marketCap || "0");
+  const minuteInc = parseFloat(tp.minuteIncrease || tp.oneMinuteIncrease || "0");
+  const hourInc = parseFloat(tp.hourIncrease || "0");
+  const dayInc = parseFloat(tp.dayIncrease || "0");
+  const launchTime = t.launchTime ? (typeof t.launchTime === "number" && t.launchTime > 1e12 ? Math.floor(t.launchTime / 1000) : t.launchTime) : (t.createDate ? Math.floor(parseInt(t.createDate) / 1000) : 0);
+
+  return {
+    address: addr,
+    name: t.name || t.tokenName || t.shortName || "Unknown",
+    symbol: t.shortName || t.symbol || "???",
+    launchTime,
+    status: t.status || "PUBLISH",
+    progressPercent: progress,
+    raisedAmount: raised,
+    maxFunds,
+    lastPrice: price,
+    holderCount: holders,
+    tradingVolume: trading,
+    marketCap: mcap,
+    minuteIncrease: minuteInc,
+    hourIncrease: hourInc,
+    dayIncrease: dayInc,
+    hasApiData: !!tp.price,
+  };
+}
+
+async function fetchNewTokens(): Promise<FourMemeListingToken[]> {
   const headers = { "Accept": "application/json", "Origin": "https://four.meme", "Referer": "https://four.meme/" };
-  const results: Array<{ address: string; name: string; symbol: string; launchTime: number }> = [];
+  const results: FourMemeListingToken[] = [];
   const seen = new Set<string>();
 
   const addTokens = (tokens: any[]) => {
     for (const t of tokens) {
-      const addr = t.address || t.tokenAddress || t.contractAddress;
-      if (!addr || seen.has(addr)) continue;
-      seen.add(addr);
-      results.push({
-        address: addr,
-        name: t.name || t.tokenName || t.shortName || "Unknown",
-        symbol: t.symbol || t.tokenSymbol || t.shortName || "???",
-        launchTime: t.launchTime || parseInt(t.createDate) || 0,
-      });
+      const parsed = parseListingToken(t);
+      if (!parsed || seen.has(parsed.address)) continue;
+      seen.add(parsed.address);
+      results.push(parsed);
     }
   };
 
   const fetches = [
-    fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?orderBy=MarketCapDesc&pageIndex=1&pageSize=30`, { headers })
-      .then(async r => { if (r.ok) { const d = await r.json(); if (d.code === 0 && Array.isArray(d.data?.records)) addTokens(d.data.records); } })
+    fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=funding&pageIndex=1&pageSize=30`, { headers, signal: AbortSignal.timeout(10000) })
+      .then(async r => { if (r.ok) { const d = await r.json(); if (d.code === 0 && Array.isArray(d.data)) addTokens(d.data); } })
       .catch(() => {}),
-    fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/ranking/exclusive`, { headers })
+    fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=new&pageIndex=1&pageSize=30`, { headers, signal: AbortSignal.timeout(10000) })
+      .then(async r => { if (r.ok) { const d = await r.json(); if (d.code === 0 && Array.isArray(d.data)) addTokens(d.data); } })
+      .catch(() => {}),
+    fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=trending&pageIndex=1&pageSize=20`, { headers, signal: AbortSignal.timeout(10000) })
+      .then(async r => { if (r.ok) { const d = await r.json(); if (d.code === 0 && Array.isArray(d.data)) addTokens(d.data); } })
+      .catch(() => {}),
+    fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/ranking/exclusive`, { headers, signal: AbortSignal.timeout(10000) })
       .then(async r => { if (r.ok) { const d = await r.json(); if (d.code === 0 && Array.isArray(d.data)) addTokens(d.data); } })
       .catch(() => {}),
   ];
@@ -284,6 +342,7 @@ async function fetchNewTokens(): Promise<Array<{ address: string; name: string; 
     new Promise<void>(resolve => setTimeout(resolve, 12000)),
   ]);
 
+  log(`[TradingAgent] Fetched ${results.length} tokens (${results.filter(t => t.hasApiData).length} with price data)`, "trading");
   return results;
 }
 
@@ -294,6 +353,7 @@ interface TokenSignal {
   score: number;
   reasons: string[];
   info: FourMemeTokenInfo;
+  listing?: FourMemeListingToken;
   aiAnalysis?: string;
   aiDecision?: "BUY" | "SKIP";
 }
@@ -421,14 +481,14 @@ function getAdaptiveConfidenceThreshold(): number {
   return 70;
 }
 
-function computeTokenScore(token: { address: string; name: string; symbol: string; launchTime: number }, info: FourMemeTokenInfo): { score: number; reasons: string[] } {
+function computeTokenScoreFromListing(token: FourMemeListingToken): { score: number; reasons: string[] } {
   let score = 0;
   const reasons: string[] = [];
-  const progress = info.progressPercent;
-  const age = Math.floor(Date.now() / 1000) - (token.launchTime || info.launchTime);
-  const ageMin = Math.floor(age / 60);
-  const fundsNum = parseFloat(info.funds);
-  const maxFundsNum = parseFloat(info.maxFunds);
+  const progress = token.progressPercent;
+  const age = Math.floor(Date.now() / 1000) - token.launchTime;
+  const ageMin = Math.max(1, Math.floor(age / 60));
+  const fundsNum = token.raisedAmount;
+  const maxFundsNum = token.maxFunds;
   const velocity = ageMin > 0 ? progress / ageMin : 0;
   const fundsVelocity = ageMin > 0 ? fundsNum / ageMin : 0;
 
@@ -470,21 +530,41 @@ function computeTokenScore(token: { address: string; name: string; symbol: strin
   return { score: Math.min(100, Math.round((score / 140) * 100)), reasons };
 }
 
-async function aiEvaluateBuy(tokens: Array<{ address: string; name: string; symbol: string; launchTime: number; info: FourMemeTokenInfo }>): Promise<TokenSignal | null> {
+function listingToTokenInfo(t: FourMemeListingToken): FourMemeTokenInfo {
+  return {
+    version: 0,
+    tokenManager: "",
+    quote: "",
+    lastPrice: t.lastPrice,
+    tradingFeeRate: 0,
+    minTradingFee: "0",
+    launchTime: t.launchTime,
+    offers: "0",
+    maxOffers: "0",
+    funds: t.raisedAmount.toString(),
+    maxFunds: t.maxFunds.toString(),
+    liquidityAdded: t.status === "TRADE",
+    progressPercent: t.progressPercent,
+  };
+}
+
+async function aiEvaluateBuy(tokens: FourMemeListingToken[]): Promise<TokenSignal | null> {
   if (tokens.length === 0) return null;
 
   const rugChecks = await Promise.all(tokens.slice(0, 5).map(t => checkCreatorHistory(t.address).catch(() => ({ rugRisk: 0, reasons: [] }))));
 
   const tokenDataLines = tokens.map((t, i) => {
-    const age = Math.floor(Date.now() / 1000) - (t.launchTime || t.info.launchTime);
-    const ageMin = Math.floor(age / 60);
-    const velocity = age > 0 ? (t.info.progressPercent / (age / 60)).toFixed(2) : "0";
-    const fundsVelocity = age > 60 ? (parseFloat(t.info.funds) / (age / 60)).toFixed(4) : "N/A";
+    const age = Math.floor(Date.now() / 1000) - t.launchTime;
+    const ageMin = Math.max(1, Math.floor(age / 60));
+    const velocity = ageMin > 0 ? (t.progressPercent / ageMin).toFixed(2) : "0";
+    const fundsVelocity = ageMin > 0 ? (t.raisedAmount / ageMin).toFixed(4) : "N/A";
     const rug = i < rugChecks.length ? rugChecks[i] : null;
-    const rugLabel = rug && rug.rugRisk > 0 ? ` ⚠️ RUG=${rug.rugRisk}%` : "";
-    const whaleInterest = whaleConsensus.has(t.address.toLowerCase()) ? ` 🐋 WHALES=${whaleConsensus.get(t.address.toLowerCase())!.size}` : "";
-    const { score: heuristicScore } = computeTokenScore(t, t.info);
-    return `${i + 1}. $${t.symbol} (${t.name}) — Curve: ${t.info.progressPercent.toFixed(1)}%, Age: ${ageMin}m, Raised: ${parseFloat(t.info.funds).toFixed(3)}/${parseFloat(t.info.maxFunds).toFixed(1)} BNB, Vel: ${velocity}%/min, BNBflow: ${fundsVelocity}/min, Price: ${t.info.lastPrice}, Heuristic: ${heuristicScore}%${rugLabel}${whaleInterest}`;
+    const rugLabel = rug && rug.rugRisk > 0 ? ` RUG=${rug.rugRisk}%` : "";
+    const whaleInterest = whaleConsensus.has(t.address.toLowerCase()) ? ` WHALES=${whaleConsensus.get(t.address.toLowerCase())!.size}` : "";
+    const { score: heuristicScore } = computeTokenScoreFromListing(t);
+    const holdersLabel = t.holderCount > 0 ? `, Holders: ${t.holderCount}` : "";
+    const minIncLabel = t.minuteIncrease > 0 ? `, 1mChg: +${(t.minuteIncrease * 100).toFixed(1)}%` : "";
+    return `${i + 1}. $${t.symbol} (${t.name}) — Curve: ${t.progressPercent.toFixed(1)}%, Age: ${ageMin}m, Raised: ${t.raisedAmount.toFixed(3)}/${t.maxFunds.toFixed(1)} BNB, Vel: ${velocity}%/min, BNBflow: ${fundsVelocity}/min, Vol: ${t.tradingVolume.toFixed(2)} BNB${holdersLabel}${minIncLabel}, Heuristic: ${heuristicScore}%${rugLabel}${whaleInterest}`;
   }).join("\n");
 
   const memoryCtx = buildTradeMemoryContext();
@@ -502,37 +582,37 @@ TRADE MEMORY:
 ${memoryCtx}
 
 CRITICAL SIGNALS (ranked by importance):
-1. 🐋 WHALE INTEREST = multiple smart money wallets bought this. HIGHEST PRIORITY — almost always buy
-2. VELOCITY >1%/min + Age <15min = parabolic early entry, STRONG BUY signal
-3. BNB INFLOW >0.05/min = real buyers are flooding in, not just paper momentum
-4. Curve 8-25% + Velocity >0.5%/min = ideal entry zone with confirmed momentum  
-5. Raised >1 BNB with <10min age = explosive demand, very bullish
-6. Heuristic score >65% = multiple signals converging, high probability
-7. Name/theme with trending meme relevance = better chance of viral pump
+1. WHALE INTEREST = multiple smart money wallets bought this. HIGHEST PRIORITY
+2. VELOCITY >1%/min + Age <15min = parabolic early entry, STRONG BUY
+3. BNB INFLOW >0.05/min = real buyers flooding in
+4. Curve 8-25% + Velocity >0.5%/min = ideal entry with momentum
+5. Raised >1 BNB with <10min age = explosive demand
+6. Heuristic >65% = multiple signals converging
+7. High holder count + fresh age = organic interest
 
 RED FLAGS:
-- ⚠️ RUG RISK > 20% = skip unless whale consensus
-- Age >30min + Velocity <0.3%/min = dying token
-- Curve >50% = late entry, reduced upside
-- Recently failed trade on same token = avoid
+- RUG RISK > 20% = skip unless whale consensus
+- Age >30min + Velocity <0.3%/min = dying
+- Curve >50% = late entry
+- 0 holders + 0 volume = dead token
 
 RESPOND EXACTLY:
 DECISION: BUY or SKIP
 TOKEN: [number]
 CONFIDENCE: [1-100]
-REASONING: [1 sentence, be specific about what signal drove the decision]`;
+REASONING: [1 sentence]`;
 
   try {
     const result = await Promise.race([
       runInferenceWithFallback(AI_NETWORKS, AI_MODEL, prompt, {
-        systemPrompt: "You are an elite meme token sniper. You scan metrics and pull the trigger FAST when signals align. You prefer to trade rather than wait — the best opportunities vanish in seconds. Be aggressive but not reckless. Respond concisely.",
+        systemPrompt: "Elite meme token sniper. Scan metrics, pull trigger FAST when signals align. Prefer trading over waiting. Be aggressive but not reckless. Respond concisely in 4 lines.",
         temperature: 0.4,
       }),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI timeout")), 12000)),
     ]);
 
     const output = result.text.trim();
-    log(`[TradingAgent] AI analysis: ${output.substring(0, 200)}`, "trading");
+    log(`[TradingAgent] AI: ${output.substring(0, 200)}`, "trading");
 
     if (!output || output.includes("[NO_PROVIDER]") || output.length < 10) {
       return fallbackEvaluateTokens(tokens);
@@ -556,8 +636,8 @@ REASONING: [1 sentence, be specific about what signal drove the decision]`;
     }
 
     const chosen = tokens[tokenIdx];
-    const age = Math.floor(Date.now() / 1000) - (chosen.launchTime || chosen.info.launchTime);
-    const velocity = age > 0 ? chosen.info.progressPercent / (age / 60) : 0;
+    const age = Math.floor(Date.now() / 1000) - chosen.launchTime;
+    const velocity = age > 60 ? chosen.progressPercent / (age / 60) : 0;
 
     return {
       address: chosen.address,
@@ -566,12 +646,14 @@ REASONING: [1 sentence, be specific about what signal drove the decision]`;
       score: confidence,
       reasons: [
         `AI: ${confidence}%`,
-        `Curve: ${chosen.info.progressPercent.toFixed(1)}%`,
-        `Age: ${Math.floor(age / 60)}m`,
+        `Curve: ${chosen.progressPercent.toFixed(1)}%`,
+        `Age: ${Math.max(1, Math.floor(age / 60))}m`,
         `Vel: ${velocity.toFixed(1)}%/min`,
-        `Raised: ${parseFloat(chosen.info.funds).toFixed(3)} BNB`,
-      ],
-      info: chosen.info,
+        `Raised: ${chosen.raisedAmount.toFixed(3)} BNB`,
+        chosen.holderCount > 0 ? `Holders: ${chosen.holderCount}` : "",
+      ].filter(Boolean),
+      info: listingToTokenInfo(chosen),
+      listing: chosen,
       aiAnalysis: reasoning,
       aiDecision: "BUY",
     };
@@ -581,25 +663,24 @@ REASONING: [1 sentence, be specific about what signal drove the decision]`;
   }
 }
 
-function fallbackEvaluateTokens(tokens: Array<{ address: string; name: string; symbol: string; launchTime: number; info: FourMemeTokenInfo }>): TokenSignal | null {
+function fallbackEvaluateTokens(tokens: FourMemeListingToken[]): TokenSignal | null {
   let best: TokenSignal | null = null;
   let bestRawScore = 0;
 
   for (const token of tokens) {
-    const info = token.info;
-    if (info.liquidityAdded) continue;
-    const progress = info.progressPercent;
+    if (token.status === "TRADE") continue;
+    const progress = token.progressPercent;
     if (progress < MIN_PROGRESS_FOR_ENTRY || progress > MAX_PROGRESS_FOR_ENTRY) continue;
 
-    const age = Math.floor(Date.now() / 1000) - (token.launchTime || info.launchTime);
+    const age = Math.floor(Date.now() / 1000) - token.launchTime;
     if (age > MAX_TOKEN_AGE_SECONDS) continue;
 
-    const { score, reasons } = computeTokenScore(token, info);
+    const { score, reasons } = computeTokenScoreFromListing(token);
 
     const threshold = getAdaptiveConfidenceThreshold();
     if (score >= threshold && score > bestRawScore) {
       bestRawScore = score;
-      best = { address: token.address, name: token.name, symbol: token.symbol, score, reasons, info };
+      best = { address: token.address, name: token.name, symbol: token.symbol, score, reasons, info: listingToTokenInfo(token), listing: token };
     }
   }
 
@@ -944,8 +1025,6 @@ async function scanAndTradeInner(notifyFn: (chatId: number, message: string) => 
   const enabledCount = Array.from(userTradingConfig.values()).filter(c => c.enabled).length;
   if (enabledCount === 0) return;
 
-  log(`[TradingAgent] Scan — ${enabledCount} users`, "trading");
-
   const [tokens, enabledUsers] = await Promise.all([
     fetchNewTokens(),
     resolveEnabledUsers(),
@@ -956,43 +1035,33 @@ async function scanAndTradeInner(notifyFn: (chatId: number, message: string) => 
     return;
   }
 
-  const newTokens = tokens.filter(t => !recentlyScannedTokens.has(t.address));
+  const candidates = tokens.filter(t => {
+    if (recentlyScannedTokens.has(t.address)) return false;
+    if (t.status === "TRADE") return false;
+    if (t.hasApiData && (t.progressPercent < MIN_PROGRESS_FOR_ENTRY || t.progressPercent > MAX_PROGRESS_FOR_ENTRY)) return false;
+    const age = Math.floor(Date.now() / 1000) - t.launchTime;
+    if (t.launchTime > 0 && age > MAX_TOKEN_AGE_SECONDS) return false;
+    if (failedTokenCooldown.has(t.address) && Date.now() - failedTokenCooldown.get(t.address)! < FAILED_COOLDOWN_MS) return false;
+    return true;
+  });
+
   for (const t of tokens) recentlyScannedTokens.add(t.address);
   if (recentlyScannedTokens.size > 500) {
     const arr = Array.from(recentlyScannedTokens);
     for (let i = 0; i < arr.length - 200; i++) recentlyScannedTokens.delete(arr[i]);
   }
 
-  if (newTokens.length === 0) return;
-
-  const batch = newTokens.slice(0, 12);
-  const infoResults = await Promise.allSettled(
-    batch.map(t => getCachedTokenInfo(t.address).then(info => ({ token: t, info })))
-  );
-
-  const candidatesWithInfo: Array<{ address: string; name: string; symbol: string; launchTime: number; info: FourMemeTokenInfo }> = [];
-  for (const r of infoResults) {
-    if (r.status !== "fulfilled") continue;
-    const { token, info } = r.value;
-    if (info.liquidityAdded) continue;
-    if (info.progressPercent < MIN_PROGRESS_FOR_ENTRY || info.progressPercent > MAX_PROGRESS_FOR_ENTRY) continue;
-    const age = Math.floor(Date.now() / 1000) - (token.launchTime || info.launchTime);
-    if (age > MAX_TOKEN_AGE_SECONDS) continue;
-    if (failedTokenCooldown.has(token.address) && Date.now() - failedTokenCooldown.get(token.address)! < FAILED_COOLDOWN_MS) continue;
-    candidatesWithInfo.push({ ...token, info });
-  }
-
-  if (candidatesWithInfo.length === 0) {
-    if (newTokens.length > 0) log(`[TradingAgent] ${newTokens.length} new tokens — none pass filters`, "trading");
+  if (candidates.length === 0) {
+    log(`[TradingAgent] Scan: ${tokens.length} tokens, ${candidates.length} candidates`, "trading");
     return;
   }
 
-  log(`[TradingAgent] ${candidatesWithInfo.length} candidates → AI`, "trading");
+  log(`[TradingAgent] ${candidates.length} candidates from ${tokens.length} tokens → AI`, "trading");
 
-  const bestSignal = await aiEvaluateBuy(candidatesWithInfo);
+  const bestSignal = await aiEvaluateBuy(candidates.slice(0, 15));
   if (!bestSignal) return;
 
-  log(`[TradingAgent] 🎯 SIGNAL: $${bestSignal.symbol} (${bestSignal.score}%) — ${bestSignal.aiAnalysis}`, "trading");
+  log(`[TradingAgent] SIGNAL: $${bestSignal.symbol} (${bestSignal.score}%) — ${bestSignal.aiAnalysis}`, "trading");
 
   const buyPromises = enabledUsers.map(async user => {
     const openCount = Array.from(activePositions.values()).filter(p => p.chatId === user.chatId && p.status === "open").length;
@@ -1006,10 +1075,10 @@ async function scanAndTradeInner(notifyFn: (chatId: number, message: string) => 
 
     const position = await executeBuy(user.chatId, user.agentId, bestSignal, user.privateKey, user.walletAddress, "ai_scan");
     if (position) {
-      let msg = `🤖 AI TRADE: $${bestSignal.symbol}\n`;
+      let msg = `AI TRADE: $${bestSignal.symbol}\n`;
       msg += `Amount: ${position.entryPriceBnb} BNB | Confidence: ${bestSignal.score}%\n`;
-      if (bestSignal.aiAnalysis) msg += `🧠 ${bestSignal.aiAnalysis}\n`;
-      bestSignal.reasons.forEach(r => msg += `• ${r}\n`);
+      if (bestSignal.aiAnalysis) msg += `${bestSignal.aiAnalysis}\n`;
+      bestSignal.reasons.forEach(r => { if (r) msg += `• ${r}\n`; });
       msg += `TP: ${config.takeProfitMultiple}x | SL: ${(config.stopLossMultiple * 100).toFixed(0)}%\n`;
       if (position.buyTxHash) msg += `TX: https://bscscan.com/tx/${position.buyTxHash}`;
       notifyFn(user.chatId, msg);
