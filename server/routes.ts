@@ -621,14 +621,30 @@ export async function registerRoutes(
       try {
         const { restoreTradingPreferences, startTradingAgent, isTradingAgentRunning } = await import("./trading-agent");
         const { getBotInstance } = await import("./telegram-bot");
-        const restored = await restoreTradingPreferences();
-        if (restored > 0 && !isTradingAgentRunning()) {
-          startTradingAgent((cid, msg) => {
-            getBotInstance()?.sendMessage(cid, msg).catch(() => {});
-          });
-          console.log(`[TradingAgent] Auto-started on boot — ${restored} users restored`);
-        } else if (restored === 0) {
-          console.log("[TradingAgent] No enabled users to restore — agent idle until user enables");
+
+        const notifyFn = (cid: number, msg: string) => {
+          getBotInstance()?.sendMessage(cid, msg).catch(() => {});
+        };
+
+        if (!isTradingAgentRunning()) {
+          startTradingAgent(notifyFn);
+          console.log("[TradingAgent] Agent started on boot");
+        }
+
+        let restored = 0;
+        for (let attempt = 1; attempt <= 5; attempt++) {
+          try {
+            restored = await restoreTradingPreferences();
+            console.log(`[TradingAgent] Restored ${restored} user preferences (attempt ${attempt})`);
+            break;
+          } catch (dbErr: any) {
+            console.error(`[TradingAgent] Preference restore attempt ${attempt}/5 failed: ${dbErr.message?.substring(0, 80)}`);
+            if (attempt < 5) await new Promise(r => setTimeout(r, attempt * 5000));
+          }
+        }
+
+        if (restored === 0) {
+          console.log("[TradingAgent] No enabled users restored — agent running, will pick up users via Telegram");
         }
       } catch (err: any) {
         console.error("[TradingAgent] Auto-start failed:", err.message);

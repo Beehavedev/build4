@@ -1021,8 +1021,25 @@ async function scanAndTrade(notifyFn: (chatId: number, message: string) => void)
   }
 }
 
+let lastPreferenceRetry = 0;
+const PREFERENCE_RETRY_INTERVAL_MS = 60_000;
+
 async function scanAndTradeInner(notifyFn: (chatId: number, message: string) => void): Promise<void> {
-  const enabledCount = Array.from(userTradingConfig.values()).filter(c => c.enabled).length;
+  let enabledCount = Array.from(userTradingConfig.values()).filter(c => c.enabled).length;
+
+  if (enabledCount === 0 && Date.now() - lastPreferenceRetry > PREFERENCE_RETRY_INTERVAL_MS) {
+    lastPreferenceRetry = Date.now();
+    try {
+      const restored = await restoreTradingPreferences();
+      if (restored > 0) {
+        log(`[TradingAgent] Retry restored ${restored} users from DB`, "trading");
+        enabledCount = restored;
+      }
+    } catch (e: any) {
+      log(`[TradingAgent] Preference retry failed: ${e.message?.substring(0, 60)}`, "trading");
+    }
+  }
+
   if (enabledCount === 0) return;
 
   const [tokens, enabledUsers] = await Promise.all([
@@ -1030,8 +1047,13 @@ async function scanAndTradeInner(notifyFn: (chatId: number, message: string) => 
     resolveEnabledUsers(),
   ]);
 
-  if (enabledUsers.length === 0 || tokens.length === 0) {
-    if (tokens.length === 0) log(`[TradingAgent] No tokens from Four.meme`, "trading");
+  if (tokens.length === 0) {
+    log(`[TradingAgent] No tokens from Four.meme API`, "trading");
+    return;
+  }
+
+  if (enabledUsers.length === 0) {
+    log(`[TradingAgent] ${enabledCount} enabled configs but 0 valid users (low balance or no wallet)`, "trading");
     return;
   }
 
