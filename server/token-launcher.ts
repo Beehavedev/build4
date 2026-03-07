@@ -1442,19 +1442,21 @@ export async function fourMemeBuyToken(
   bnbAmount: string,
   slippagePct: number,
   userPrivateKey: string,
+  priorityGas: boolean = false,
 ): Promise<FourMemeTradeResult> {
   try {
     const provider = getBscProvider();
     const wallet = new ethers.Wallet(userPrivateKey, provider);
 
-    log(`[FourMeme] Estimating buy for ${bnbAmount} BNB on token ${tokenAddress.substring(0, 10)}...`, "token-launcher");
+    log(`[FourMeme] ${priorityGas ? "⚡ SNIPER " : ""}Estimating buy for ${bnbAmount} BNB on token ${tokenAddress.substring(0, 10)}...`, "token-launcher");
 
     const helper = new ethers.Contract(FOUR_MEME_HELPER3, FOUR_MEME_HELPER3_ABI, provider);
     const fundsWei = ethers.parseEther(bnbAmount);
 
-    const [estimate, info] = await Promise.all([
+    const [estimate, info, feeData] = await Promise.all([
       helper.tryBuy(tokenAddress, 0, fundsWei),
       helper.getTokenInfo(tokenAddress),
+      priorityGas ? provider.getFeeData() : Promise.resolve(null),
     ]);
 
     const version = Number(info.version);
@@ -1470,19 +1472,23 @@ export async function fourMemeBuyToken(
 
     log(`[FourMeme] V${version} token — buying ~${ethers.formatEther(estimate.estimatedAmount)} tokens for ${bnbAmount} BNB (slippage ${slippagePct}%)`, "token-launcher");
 
+    const txOverrides: any = {
+      value: estimate.amountMsgValue,
+      gasLimit: 500000,
+    };
+
+    if (priorityGas && feeData?.gasPrice) {
+      txOverrides.gasPrice = (feeData.gasPrice * 130n) / 100n;
+      log(`[FourMeme] ⚡ Priority gas: ${ethers.formatUnits(txOverrides.gasPrice, "gwei")} gwei (+30%)`, "token-launcher");
+    }
+
     let tx;
     if (version === 1) {
       const tm = new ethers.Contract(tokenManager, FOUR_MEME_V1_ABI, wallet);
-      tx = await tm.purchaseTokenAMAP(tokenAddress, fundsWei, minAmount, {
-        value: estimate.amountMsgValue,
-        gasLimit: 500000,
-      });
+      tx = await tm.purchaseTokenAMAP(tokenAddress, fundsWei, minAmount, txOverrides);
     } else {
       const tm = new ethers.Contract(tokenManager, FOUR_MEME_ABI, wallet);
-      tx = await tm.buyTokenAMAP(tokenAddress, fundsWei, minAmount, {
-        value: estimate.amountMsgValue,
-        gasLimit: 500000,
-      });
+      tx = await tm.buyTokenAMAP(tokenAddress, fundsWei, minAmount, txOverrides);
     }
 
     log(`[FourMeme] Buy TX sent: ${tx.hash}`, "token-launcher");

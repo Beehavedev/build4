@@ -39,6 +39,7 @@ const COPY_TRADE_WALLETS = [
 ];
 
 const SCAN_INTERVAL_MS = 15_000;
+const SNIPER_SCAN_INTERVAL_MS = 5_000;
 const POSITION_CHECK_INTERVAL_MS = 10_000;
 const COPY_TRADE_SCAN_INTERVAL_MS = 15_000;
 const MAX_POSITIONS_PER_USER = 5;
@@ -161,7 +162,7 @@ interface TradingPosition {
   peakMultiple: number;
   trailingStopActive: boolean;
   confidenceScore: number;
-  source: "ai_scan" | "whale_copy" | "consensus" | "manual";
+  source: "ai_scan" | "whale_copy" | "consensus" | "sniper" | "manual";
   entryProgressPercent?: number;
   entryAgeMinutes?: number;
   entryVelocity?: number;
@@ -220,6 +221,7 @@ export { SKILL_REGISTRY, getSkillById, mergeSkillStates };
 export type { UserSkillState };
 
 let scanTimer: ReturnType<typeof setInterval> | null = null;
+let sniperTimer: ReturnType<typeof setInterval> | null = null;
 let positionTimer: ReturnType<typeof setInterval> | null = null;
 let copyTradeTimer: ReturnType<typeof setInterval> | null = null;
 let running = false;
@@ -663,6 +665,8 @@ function calculateDynamicBuyAmount(baseBnb: string, confidenceScore: number, sou
 
   if (source === "consensus") {
     multiplier = 1.8;
+  } else if (source === "sniper") {
+    multiplier = 1.5;
   } else if (source === "whale_copy") {
     multiplier = 1.4;
   } else if (confidenceScore >= 90) {
@@ -933,6 +937,182 @@ function fallbackEvaluateTokens(tokens: FourMemeListingToken[]): TokenSignal | n
   return best;
 }
 
+const SNIPER_SCORE_THRESHOLD = 75;
+const SNIPER_SLIPPAGE = 20;
+
+function sniperEvaluate(token: FourMemeListingToken): { score: number; reasons: string[]; isSniper: boolean } {
+  const progress = token.progressPercent;
+  const age = Math.floor(Date.now() / 1000) - token.launchTime;
+  const ageMin = Math.max(1, Math.floor(age / 60));
+  const velocity = ageMin > 0 ? progress / ageMin : 0;
+  const fundsVelocity = ageMin > 0 ? token.raisedAmount / ageMin : 0;
+
+  let score = 0;
+  const reasons: string[] = [];
+
+  if (velocity > 2.0 && ageMin <= 10) {
+    score += 40;
+    reasons.push(`⚡ Parabolic ${velocity.toFixed(1)}%/min @ ${ageMin}m`);
+  } else if (velocity > 1.0 && ageMin <= 15) {
+    score += 30;
+    reasons.push(`🔥 Strong ${velocity.toFixed(1)}%/min @ ${ageMin}m`);
+  } else if (velocity > 0.5 && ageMin <= 10) {
+    score += 20;
+    reasons.push(`Fast ${velocity.toFixed(1)}%/min @ ${ageMin}m`);
+  }
+
+  if (progress >= 8 && progress <= 30) {
+    score += 20;
+    reasons.push(`Sweet curve ${progress.toFixed(1)}%`);
+  } else if (progress > 30 && progress <= 50) {
+    score += 10;
+  }
+
+  if (token.raisedAmount >= 2.0) {
+    score += 15;
+    reasons.push(`${token.raisedAmount.toFixed(2)} BNB raised`);
+  } else if (token.raisedAmount >= 0.8) {
+    score += 10;
+  }
+
+  if (fundsVelocity > 0.1) {
+    score += 15;
+    reasons.push(`BNB inflow ${fundsVelocity.toFixed(3)}/min`);
+  } else if (fundsVelocity > 0.05) {
+    score += 8;
+  }
+
+  const whaleInterest = whaleConsensus.get(token.address.toLowerCase());
+  if (whaleInterest && whaleInterest.size >= 2) {
+    score += 30;
+    reasons.push(`🐋 ${whaleInterest.size} whale consensus`);
+  } else if (whaleInterest && whaleInterest.size >= 1) {
+    score += 15;
+    reasons.push(`🐋 Whale spotted`);
+  }
+
+  if (token.holderCount >= 20) { score += 5; }
+  if (token.minuteIncrease > 0.05) { score += 5; reasons.push(`+${(token.minuteIncrease * 100).toFixed(1)}% 1m`); }
+
+  const finalScore = Math.min(100, score);
+  return { score: finalScore, reasons, isSniper: finalScore >= SNIPER_SCORE_THRESHOLD };
+}
+
+const sniperScannedTokens = new Set<string>();
+let sniperScanRunning = false;
+
+async function sniperScan(notifyFn: (chatId: number, message: string) => void): Promise<void> {
+  if (sniperScanRunning) return;
+  sniperScanRunning = true;
+  try {
+    await sniperScanInner(notifyFn);
+  } finally {
+    sniperScanRunning = false;
+  }
+}
+
+async function sniperScanInner(notifyFn: (chatId: number, message: string) => void): Promise<void> {
+  const enabledUsers = await resolveEnabledUsers();
+  if (enabledUsers.length === 0) return;
+
+  const headers = { "Accept": "application/json", "Origin": "https://four.meme", "Referer": "https://four.meme/" };
+
+  const fetches = [
+    fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=funding&pageIndex=1&pageSize=30`, { headers, signal: AbortSignal.timeout(6000) })
+      .then(async r => { if (r.ok) { const d = await r.json(); return (d.code === 0 && Array.isArray(d.data)) ? d.data : []; } return []; })
+      .catch(() => []),
+    fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=new&pageIndex=1&pageSize=20`, { headers, signal: AbortSignal.timeout(6000) })
+      .then(async r => { if (r.ok) { const d = await r.json(); return (d.code === 0 && Array.isArray(d.data)) ? d.data : []; } return []; })
+      .catch(() => []),
+  ];
+
+  const rawResults = await Promise.race([
+    Promise.all(fetches),
+    new Promise<any[][]>(resolve => setTimeout(() => resolve([[], []]), 7000)),
+  ]);
+
+  const seen = new Set<string>();
+  const tokens: FourMemeListingToken[] = [];
+  for (const batch of rawResults) {
+    for (const t of batch) {
+      const parsed = parseListingToken(t);
+      if (!parsed || seen.has(parsed.address)) continue;
+      seen.add(parsed.address);
+      tokens.push(parsed);
+    }
+  }
+
+  if (tokens.length === 0) return;
+
+  let sniperHit: { token: FourMemeListingToken; score: number; reasons: string[] } | null = null;
+
+  for (const t of tokens) {
+    if (sniperScannedTokens.has(t.address)) continue;
+    if (t.status === "TRADE") continue;
+    if (t.hasApiData && (t.progressPercent < MIN_PROGRESS_FOR_ENTRY || t.progressPercent > MAX_PROGRESS_FOR_ENTRY)) continue;
+    const age = Math.floor(Date.now() / 1000) - t.launchTime;
+    if (t.launchTime > 0 && age > MAX_TOKEN_AGE_SECONDS) continue;
+    if (failedTokenCooldown.has(t.address) && Date.now() - failedTokenCooldown.get(t.address)! < FAILED_COOLDOWN_MS) continue;
+
+    const result = sniperEvaluate(t);
+    if (result.isSniper && (!sniperHit || result.score > sniperHit.score)) {
+      sniperHit = { token: t, score: result.score, reasons: result.reasons };
+    }
+  }
+
+  for (const t of tokens) sniperScannedTokens.add(t.address);
+  if (sniperScannedTokens.size > 300) {
+    const arr = Array.from(sniperScannedTokens);
+    for (let i = 0; i < arr.length - 150; i++) sniperScannedTokens.delete(arr[i]);
+  }
+
+  if (!sniperHit) return;
+
+  const signal: TokenSignal = {
+    address: sniperHit.token.address,
+    name: sniperHit.token.name,
+    symbol: sniperHit.token.symbol,
+    score: sniperHit.score,
+    reasons: sniperHit.reasons,
+    info: listingToTokenInfo(sniperHit.token),
+    listing: sniperHit.token,
+    aiAnalysis: "⚡ SNIPER MODE — instant entry",
+    progressPercent: sniperHit.token.progressPercent,
+    holderCount: sniperHit.token.holderCount,
+    raisedBnb: sniperHit.token.raisedAmount,
+    maxFunds: sniperHit.token.maxFunds,
+  };
+
+  log(`[SNIPER] ⚡ HIT: $${signal.symbol} (${signal.score}%) — ${sniperHit.reasons.join(" | ")}`, "trading");
+
+  recentlyScannedTokens.add(signal.address);
+
+  const buyPromises = enabledUsers.map(async user => {
+    const openCount = Array.from(activePositions.values()).filter(p => p.chatId === user.chatId && p.status === "open").length;
+    const config = getUserConfig(user.chatId);
+    if (openCount >= config.maxPositions) return;
+
+    const alreadyHolding = Array.from(activePositions.values()).some(
+      p => p.chatId === user.chatId && p.tokenAddress === signal.address && p.status === "open"
+    );
+    if (alreadyHolding) return;
+
+    const execMods = getExecutionModifiers(await getUserSkills(user.chatId));
+
+    const position = await executeBuy(user.chatId, user.agentId, signal, user.privateKey, user.walletAddress, "sniper", execMods, true);
+    if (position) {
+      let msg = `⚡ SNIPER TRADE: $${signal.symbol}\n`;
+      msg += `Amount: ${position.entryPriceBnb} BNB | Score: ${signal.score}%\n`;
+      sniperHit!.reasons.forEach(r => { msg += `• ${r}\n`; });
+      msg += `TP: ${config.takeProfitMultiple}x | SL: ${(config.stopLossMultiple * 100).toFixed(0)}%\n`;
+      if (position.buyTxHash) msg += `TX: https://bscscan.com/tx/${position.buyTxHash}`;
+      notifyFn(user.chatId, msg);
+    }
+  });
+
+  await Promise.allSettled(buyPromises);
+}
+
 async function aiEvaluateSell(position: TradingPosition, info: FourMemeTokenInfo, multiple: number, ageMinutes: number, momentum?: { trend: string; velocityChange: number; description: string }): Promise<{ decision: "HOLD" | "SELL"; reasoning: string }> {
   const velocity = info.progressPercent > 0 && ageMinutes > 0 ? (info.progressPercent / ageMinutes).toFixed(2) : "unknown";
   const fundsRaised = parseFloat(info.funds).toFixed(3);
@@ -1021,7 +1201,7 @@ function aiTimeoutFallback(
   return { decision: "HOLD", reasoning: "Within range (fallback)" };
 }
 
-async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, privateKey: string, walletAddress: string, source: "ai_scan" | "whale_copy" | "consensus" = "ai_scan", execMods?: import("./agent-skills").ExecutionModifier): Promise<TradingPosition | null> {
+async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, privateKey: string, walletAddress: string, source: "ai_scan" | "whale_copy" | "consensus" | "sniper" = "ai_scan", execMods?: import("./agent-skills").ExecutionModifier, priorityGas: boolean = false): Promise<TradingPosition | null> {
   const config = getUserConfig(chatId);
   const positionId = `trade_${Date.now()}_${Math.random().toString(36).substring(7)}`;
   let dynamicAmount = calculateDynamicBuyAmount(config.buyAmountBnb, signal.score, source);
@@ -1035,7 +1215,8 @@ async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, 
   try {
     log(`[TradingAgent] BUYING ${signal.symbol} for ${dynamicAmount} BNB (conf: ${signal.score}, src: ${source})`, "trading");
 
-    const result = await fourMemeBuyToken(signal.address, dynamicAmount, DEFAULT_SLIPPAGE, privateKey);
+    const slippage = priorityGas ? SNIPER_SLIPPAGE : DEFAULT_SLIPPAGE;
+    const result = await fourMemeBuyToken(signal.address, dynamicAmount, slippage, privateKey, priorityGas);
 
     if (!result.success) {
       log(`[TradingAgent] Buy FAILED ${signal.symbol}: ${result.error}`, "trading");
@@ -1045,7 +1226,7 @@ async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, 
 
     let tokenBalance = "0";
     try {
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, priorityGas ? 500 : 2000));
       const bal = await fourMemeGetTokenBalance(signal.address, walletAddress);
       tokenBalance = bal.balance;
     } catch {}
@@ -2142,6 +2323,11 @@ export function startTradingAgent(notifyFn: (chatId: number, message: string) =>
 
   scanAndTrade(notifyFn).catch(() => {});
   copyTradeFromWhales(notifyFn).catch(() => {});
+  sniperScan(notifyFn).catch(() => {});
+
+  sniperTimer = setInterval(() => {
+    sniperScan(notifyFn).catch(e => log(`[SNIPER] Scan error: ${e.message?.substring(0, 80)}`, "trading"));
+  }, SNIPER_SCAN_INTERVAL_MS);
 
   scanTimer = setInterval(() => {
     scanAndTrade(notifyFn).catch(e => log(`[TradingAgent] Scan error: ${e.message?.substring(0, 80)}`, "trading"));
@@ -2163,17 +2349,19 @@ export function startTradingAgent(notifyFn: (chatId: number, message: string) =>
     checkAsterPositions(notifyFn).catch(e => log(`[AsterAgent] Check error: ${e.message?.substring(0, 80)}`, "trading"));
   }, ASTER_POSITION_CHECK_INTERVAL_MS);
 
+  log(`[SNIPER] ⚡ Sniper mode active — scanning every ${SNIPER_SCAN_INTERVAL_MS / 1000}s, threshold ${SNIPER_SCORE_THRESHOLD}%`, "trading");
   log(`[CopyTrade] Tracking ${COPY_TRADE_WALLETS.map(w => w.label).join(", ")}`, "trading");
   log(`[AsterAgent] Aster futures active`, "trading");
 }
 
 export function stopTradingAgent(): void {
   if (scanTimer) clearInterval(scanTimer);
+  if (sniperTimer) clearInterval(sniperTimer);
   if (positionTimer) clearInterval(positionTimer);
   if (copyTradeTimer) clearInterval(copyTradeTimer);
   if (asterScanTimer) clearInterval(asterScanTimer);
   if (asterPositionTimer) clearInterval(asterPositionTimer);
-  scanTimer = null; positionTimer = null; copyTradeTimer = null;
+  scanTimer = null; sniperTimer = null; positionTimer = null; copyTradeTimer = null;
   asterScanTimer = null; asterPositionTimer = null;
   running = false;
   log("[TradingAgent] Stopped", "trading");
