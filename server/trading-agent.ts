@@ -51,8 +51,8 @@ const MIN_PROGRESS_FOR_ENTRY = 3;
 const MAX_PROGRESS_FOR_ENTRY = 65;
 const MIN_WALLET_BALANCE_BNB = 0.15;
 const MAX_TOKEN_AGE_SECONDS = 3600;
-const TRAILING_STOP_ACTIVATION = 1.25;
-const TRAILING_STOP_DISTANCE = 0.12;
+const TRAILING_STOP_ACTIVATION = 1.15;
+const TRAILING_STOP_DISTANCE = 0.10;
 const EMERGENCY_MAX_HOLD_MINUTES = 240;
 const MAX_CONSECUTIVE_CHECK_FAILURES = 10;
 
@@ -97,7 +97,8 @@ const walletCache = new Map<string, { pk: string; address: string; ts: number }>
 const WALLET_CACHE_TTL_MS = 300_000;
 
 const failedTokenCooldown = new Map<string, number>();
-const FAILED_COOLDOWN_MS = 300_000;
+const FAILED_COOLDOWN_MS = 3_600_000;
+const sessionBlacklist = new Set<string>();
 
 let scanRunning = false;
 let copyTradeRunning = false;
@@ -589,7 +590,13 @@ async function restoreTradeMemoryFromDb(): Promise<void> {
         tokenAddress: (o as any).tokenAddress,
       });
     }
-    log(`[TradingAgent] Restored ${tradeMemory.length} trades from DB into memory`, "trading");
+    for (const o of outcomes) {
+      if ((o as any).pnlBnb < 0 && (o as any).tokenAddress) {
+        sessionBlacklist.add((o as any).tokenAddress.toLowerCase());
+        failedTokenCooldown.set((o as any).tokenAddress, Date.now());
+      }
+    }
+    log(`[TradingAgent] Restored ${tradeMemory.length} trades from DB into memory, ${sessionBlacklist.size} blacklisted tokens`, "trading");
   } catch (e: any) {
     log(`[TradingAgent] Failed to restore trade memory: ${e.message?.substring(0, 100)}`, "trading");
   }
@@ -698,19 +705,20 @@ function getWinRate(): { rate: number; total: number } {
 function getAdaptiveConfidenceThreshold(): number {
   const { rate, total } = getWinRate();
   let base: number;
-  if (total < 3) base = 50;
-  else if (rate >= 60) base = 40;
-  else if (rate >= 45) base = 50;
-  else if (rate >= 30) base = 60;
-  else base = 70;
+  if (total < 3) base = 55;
+  else if (rate >= 60) base = 45;
+  else if (rate >= 45) base = 55;
+  else if (rate >= 30) base = 65;
+  else if (rate >= 20) base = 75;
+  else base = 80;
 
   if (learnedPatterns && learnedPatterns.sampleSize >= 10) {
     const currentHour = new Date().getUTCHours();
     if (learnedPatterns.worstHours.includes(currentHour)) {
-      base = Math.min(base + 10, 85);
+      base = Math.min(base + 10, 90);
     }
     if (learnedPatterns.profitFactor < 0.8 && learnedPatterns.sampleSize >= 15) {
-      base = Math.min(base + 5, 85);
+      base = Math.min(base + 10, 90);
     }
   }
 
@@ -763,7 +771,20 @@ function computeTokenScoreFromListing(token: FourMemeListingToken): { score: num
     reasons.push("⚠️ Recently failed trade — cooldown");
   }
 
-  return { score: Math.min(100, Math.round((score / 140) * 100)), reasons };
+  if (learnedPatterns && learnedPatterns.sampleSize >= 15) {
+    const lp = learnedPatterns;
+    const inProgressRange = progress >= lp.bestProgressRange.min && progress <= lp.bestProgressRange.max;
+    const inAgeRange = ageMin >= lp.bestAgeRange.min && ageMin <= lp.bestAgeRange.max;
+    if (inProgressRange && inAgeRange) {
+      score += 15;
+      reasons.push("✅ In winning range");
+    } else if (!inProgressRange && !inAgeRange) {
+      score -= 20;
+      reasons.push("⚠️ Outside winning ranges");
+    }
+  }
+
+  return { score: Math.min(90, Math.round((score / 140) * 100)), reasons };
 }
 
 function listingToTokenInfo(t: FourMemeListingToken): FourMemeTokenInfo {
@@ -865,7 +886,8 @@ REASONING: [1 sentence]`;
 
     const decision = decisionMatch[1].toUpperCase();
     const tokenIdx = parseInt(tokenMatch?.[1] || "0") - 1;
-    const confidence = parseInt(confidenceMatch?.[1] || "0");
+    const rawConfidence = parseInt(confidenceMatch?.[1] || "0");
+    const confidence = Math.min(rawConfidence, 90);
     const reasoning = reasoningMatch?.[1]?.trim() || "AI analysis";
 
     if (decision !== "BUY" || tokenIdx < 0 || tokenIdx >= tokens.length || confidence < threshold) {
@@ -1048,6 +1070,7 @@ async function sniperScanInner(notifyFn: (chatId: number, message: string) => vo
 
   for (const t of tokens) {
     if (sniperScannedTokens.has(t.address)) continue;
+    if (sessionBlacklist.has(t.address.toLowerCase())) continue;
     if (t.status === "TRADE") continue;
     if (t.hasApiData && (t.progressPercent < MIN_PROGRESS_FOR_ENTRY || t.progressPercent > MAX_PROGRESS_FOR_ENTRY)) continue;
     const age = Math.floor(Date.now() / 1000) - t.launchTime;
@@ -1515,7 +1538,10 @@ async function closePosition(
       hourOfDay: new Date().getUTCHours(),
     }).catch(e => log(`[TradingAgent] Save outcome error: ${e.message}`, "trading"));
 
-    if (pnl < 0) failedTokenCooldown.set(position.tokenAddress, Date.now());
+    if (pnl < 0) {
+      failedTokenCooldown.set(position.tokenAddress, Date.now());
+      sessionBlacklist.add(position.tokenAddress.toLowerCase());
+    }
 
     if (sellResult.success) {
       const emoji = reason === "closed_profit" ? "💰" : "📉";
@@ -1657,6 +1683,7 @@ async function scanAndTradeInner(notifyFn: (chatId: number, message: string) => 
 
   const candidates = tokens.filter(t => {
     if (recentlyScannedTokens.has(t.address)) return false;
+    if (sessionBlacklist.has(t.address.toLowerCase())) return false;
     if (t.status === "TRADE") return false;
     if (t.hasApiData && (t.progressPercent < MIN_PROGRESS_FOR_ENTRY || t.progressPercent > MAX_PROGRESS_FOR_ENTRY)) return false;
     const age = Math.floor(Date.now() / 1000) - t.launchTime;
