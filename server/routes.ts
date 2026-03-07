@@ -622,15 +622,7 @@ export async function registerRoutes(
   } else {
     setTimeout(() => {
       if (process.env.TELEGRAM_BOT_TOKEN) {
-        const replSlug = process.env.REPL_SLUG;
-        const replOwner = process.env.REPL_OWNER;
-        const replitDev = process.env.REPLIT_DEV_DOMAIN;
-        let webhookBase: string | undefined;
-        if (replitDev) {
-          webhookBase = `https://${replitDev}`;
-        } else if (replSlug && replOwner) {
-          webhookBase = `https://${replSlug}.${replOwner}.repl.co`;
-        }
+        const webhookBase = process.env.TELEGRAM_WEBHOOK_URL || undefined;
         startTelegramBot(webhookBase);
       }
     }, 2000);
@@ -703,8 +695,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/telegram/start", analyticsAuth, (req: Request, res: Response) => {
-    const replitDev = process.env.REPLIT_DEV_DOMAIN;
-    const webhookBase = replitDev ? `https://${replitDev}` : undefined;
+    const webhookBase = process.env.TELEGRAM_WEBHOOK_URL || undefined;
     startTelegramBot(webhookBase);
     res.json({ success: true, message: "Telegram bot started" });
   });
