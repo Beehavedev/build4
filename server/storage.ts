@@ -70,6 +70,7 @@ import {
   tradingPreferences,
   type AsterCredentials, asterCredentials,
   tradeOutcomes,
+  agentSkillConfigs,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt, inArray } from "drizzle-orm";
@@ -435,6 +436,9 @@ export interface IStorage {
   saveAsterCredentials(chatId: string, apiKey: string, apiSecret: string): Promise<AsterCredentials>;
   getAsterCredentials(chatId: string): Promise<{ chatId: string; apiKey: string; apiSecret: string } | null>;
   removeAsterCredentials(chatId: string): Promise<void>;
+
+  getUserSkillConfigs(chatId: string): Promise<Array<{ skillId: string; enabled: boolean; config: Record<string, any> }>>;
+  setUserSkillConfig(chatId: string, skillId: string, enabled: boolean, config: Record<string, any>): Promise<void>;
 
   seedInferenceProviders(): Promise<void>;
 }
@@ -2534,6 +2538,40 @@ export class DatabaseStorage implements IStorage {
       return await db.select().from(tradeOutcomes).orderBy(desc(tradeOutcomes.createdAt)).limit(limit);
     } catch {
       return [];
+    }
+  }
+
+  async getUserSkillConfigs(chatId: string): Promise<Array<{ skillId: string; enabled: boolean; config: Record<string, any> }>> {
+    try {
+      const rows = await db.select().from(agentSkillConfigs).where(eq(agentSkillConfigs.chatId, chatId));
+      return rows.map(r => ({
+        skillId: r.skillId,
+        enabled: r.enabled,
+        config: JSON.parse(r.config || "{}"),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  async setUserSkillConfig(chatId: string, skillId: string, enabled: boolean, config: Record<string, any>): Promise<void> {
+    try {
+      const existing = await db.select().from(agentSkillConfigs)
+        .where(and(eq(agentSkillConfigs.chatId, chatId), eq(agentSkillConfigs.skillId, skillId)));
+      if (existing.length > 0) {
+        await db.update(agentSkillConfigs)
+          .set({ enabled, config: JSON.stringify(config), updatedAt: new Date() })
+          .where(and(eq(agentSkillConfigs.chatId, chatId), eq(agentSkillConfigs.skillId, skillId)));
+      } else {
+        await db.insert(agentSkillConfigs).values({
+          chatId,
+          skillId,
+          enabled,
+          config: JSON.stringify(config),
+        });
+      }
+    } catch (e: any) {
+      console.error("[Storage] Failed to save skill config:", e.message);
     }
   }
 }

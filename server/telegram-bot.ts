@@ -1138,6 +1138,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           inline_keyboard: [
             [toggleBtn],
             [{ text: "📊 Status", callback_data: "trade:status" }, { text: "⚙️ Settings", callback_data: "trade:settings" }],
+            [{ text: "🧩 Agent Skills", callback_data: "trade:skills" }],
             [{ text: "📜 History", callback_data: "trade:history" }, { text: "🔴 Close All", callback_data: "trade:closeall" }],
             [{ text: "« Back", callback_data: "action:menu" }],
           ],
@@ -1248,6 +1249,40 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       return;
     }
 
+    if (tradeAction === "skills") {
+      const { SKILL_REGISTRY } = await import("./agent-skills");
+      const { getSkillsByCategory } = await import("./agent-skills");
+      const strategies = getSkillsByCategory("strategy");
+      const analysis = getSkillsByCategory("analysis");
+      const execution = getSkillsByCategory("execution");
+      const dbConfigs = await storage.getUserSkillConfigs(chatId.toString());
+      const enabledSet = new Set(dbConfigs.filter(c => c.enabled).map(c => c.skillId));
+      const defaultEnabled = new Set(SKILL_REGISTRY.filter(s => s.defaultEnabled).map(s => s.id));
+      const isEnabled = (id: string) => dbConfigs.some(c => c.skillId === id) ? enabledSet.has(id) : defaultEnabled.has(id);
+
+      const countEnabled = (skills: typeof SKILL_REGISTRY) => skills.filter(s => isEnabled(s.id)).length;
+
+      await bot.sendMessage(chatId,
+        `🧩 *Agent Skills*\n\n` +
+        `Customize your trading agent with modular skills. Toggle them on/off to match your strategy.\n\n` +
+        `🎯 *Strategies* — ${countEnabled(strategies)}/${strategies.length} active\n` +
+        `🔍 *Analysis* — ${countEnabled(analysis)}/${analysis.length} active\n` +
+        `⚡ *Execution* — ${countEnabled(execution)}/${execution.length} active`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: `🎯 Strategies (${countEnabled(strategies)})`, callback_data: "skills:cat:strategy" }],
+              [{ text: `🔍 Analysis (${countEnabled(analysis)})`, callback_data: "skills:cat:analysis" }],
+              [{ text: `⚡ Execution (${countEnabled(execution)})`, callback_data: "skills:cat:execution" }],
+              [{ text: "« Back to Trading", callback_data: "action:trade" }],
+            ],
+          },
+        }
+      );
+      return;
+    }
+
     return;
   }
 
@@ -1276,6 +1311,154 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       `• Max: ${config.maxPositions} positions`,
       { reply_markup: mainMenuKeyboard() }
     );
+    return;
+  }
+
+  if (data.startsWith("skills:")) {
+    const { SKILL_REGISTRY, getSkillsByCategory, getSkillById } = await import("./agent-skills");
+    const { invalidateSkillsCache } = await import("./trading-agent");
+    const skillParts = data.split(":");
+
+    if (skillParts[1] === "cat") {
+      const category = skillParts[2] as "strategy" | "analysis" | "execution";
+      const categoryLabels: Record<string, string> = { strategy: "🎯 Strategy Skills", analysis: "🔍 Analysis Skills", execution: "⚡ Execution Skills" };
+      const skills = getSkillsByCategory(category);
+      const dbConfigs = await storage.getUserSkillConfigs(chatId.toString());
+      const enabledSet = new Set(dbConfigs.filter(c => c.enabled).map(c => c.skillId));
+      const defaultEnabled = new Set(SKILL_REGISTRY.filter(s => s.defaultEnabled).map(s => s.id));
+      const isEnabled = (id: string) => dbConfigs.some(c => c.skillId === id) ? enabledSet.has(id) : defaultEnabled.has(id);
+
+      let msg = `${categoryLabels[category] || category}\n\n`;
+      for (const s of skills) {
+        const on = isEnabled(s.id);
+        msg += `${s.icon} *${s.name}* ${on ? "✅" : "❌"}\n${s.shortDesc}\n\n`;
+      }
+      msg += `Tap a skill to toggle it on/off:`;
+
+      const buttons = skills.map(s => {
+        const on = isEnabled(s.id);
+        return [{ text: `${s.icon} ${s.name} ${on ? "✅" : "❌"}`, callback_data: `skills:toggle:${s.id}` }];
+      });
+      buttons.push([{ text: "« Back to Skills", callback_data: "trade:skills" }]);
+
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+      return;
+    }
+
+    if (skillParts[1] === "toggle") {
+      const skillId = skillParts[2];
+      const skill = getSkillById(skillId);
+      if (!skill) {
+        await bot.sendMessage(chatId, "Unknown skill.", { reply_markup: mainMenuKeyboard() });
+        return;
+      }
+
+      const dbConfigs = await storage.getUserSkillConfigs(chatId.toString());
+      const existing = dbConfigs.find(c => c.skillId === skillId);
+      const wasEnabled = existing ? existing.enabled : skill.defaultEnabled;
+      const newEnabled = !wasEnabled;
+      const config = existing?.config || { ...skill.defaultConfig };
+
+      await storage.setUserSkillConfig(chatId.toString(), skillId, newEnabled, config);
+      invalidateSkillsCache(chatId);
+
+      const statusEmoji = newEnabled ? "✅" : "❌";
+      let msg = `${skill.icon} *${skill.name}* — ${newEnabled ? "ENABLED" : "DISABLED"} ${statusEmoji}\n\n${skill.description}`;
+
+      const buttons: any[][] = [];
+      if (newEnabled && skill.configSchema && skill.configSchema.length > 0) {
+        buttons.push([{ text: "⚙️ Configure", callback_data: `skills:config:${skillId}` }]);
+      }
+      buttons.push([{ text: `« Back to ${skill.category}`, callback_data: `skills:cat:${skill.category}` }]);
+
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+      return;
+    }
+
+    if (skillParts[1] === "config") {
+      const skillId = skillParts[2];
+      const skill = getSkillById(skillId);
+      if (!skill || !skill.configSchema) {
+        await bot.sendMessage(chatId, "No configurable options for this skill.", { reply_markup: mainMenuKeyboard() });
+        return;
+      }
+
+      const dbConfigs = await storage.getUserSkillConfigs(chatId.toString());
+      const existing = dbConfigs.find(c => c.skillId === skillId);
+      const config = existing?.config || { ...skill.defaultConfig };
+
+      let msg = `⚙️ *${skill.icon} ${skill.name} Config*\n\n`;
+      const buttons: any[][] = [];
+
+      for (const param of skill.configSchema) {
+        const currentVal = config[param.key] ?? skill.defaultConfig[param.key];
+        msg += `*${param.label}:* ${currentVal}\n`;
+
+        if (param.type === "select" && param.options) {
+          const row = param.options.map(opt => ({
+            text: `${opt.label}${String(currentVal) === opt.value ? " ✓" : ""}`,
+            callback_data: `skills:set:${skillId}:${param.key}:${opt.value}`,
+          }));
+          buttons.push(row);
+        } else if (param.type === "boolean") {
+          buttons.push([
+            { text: `${currentVal ? "✅ On" : "❌ Off"} — Toggle`, callback_data: `skills:set:${skillId}:${param.key}:${currentVal ? "false" : "true"}` },
+          ]);
+        } else if (param.type === "number") {
+          const step = param.step || 1;
+          const min = param.min ?? 0;
+          const max = param.max ?? 100;
+          const down = Math.max(min, Number(currentVal) - step);
+          const up = Math.min(max, Number(currentVal) + step);
+          buttons.push([
+            { text: `⬇ ${down}`, callback_data: `skills:set:${skillId}:${param.key}:${down}` },
+            { text: `${param.label}: ${currentVal}`, callback_data: `skills:config:${skillId}` },
+            { text: `⬆ ${up}`, callback_data: `skills:set:${skillId}:${param.key}:${up}` },
+          ]);
+        }
+      }
+      buttons.push([{ text: `« Back to ${skill.category}`, callback_data: `skills:cat:${skill.category}` }]);
+
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+      return;
+    }
+
+    if (skillParts[1] === "set") {
+      const skillId = skillParts[2];
+      const paramKey = skillParts[3];
+      const rawValue = skillParts.slice(4).join(":");
+      const skill = getSkillById(skillId);
+      if (!skill) return;
+
+      const dbConfigs = await storage.getUserSkillConfigs(chatId.toString());
+      const existing = dbConfigs.find(c => c.skillId === skillId);
+      const config = existing?.config || { ...skill.defaultConfig };
+
+      const paramDef = skill.configSchema?.find(p => p.key === paramKey);
+      if (paramDef?.type === "number") {
+        config[paramKey] = parseFloat(rawValue);
+      } else if (paramDef?.type === "boolean") {
+        config[paramKey] = rawValue === "true";
+      } else {
+        config[paramKey] = rawValue;
+      }
+
+      const isEnabled = existing?.enabled ?? skill.defaultEnabled;
+      await storage.setUserSkillConfig(chatId.toString(), skillId, isEnabled, config);
+      invalidateSkillsCache(chatId);
+
+      await bot.sendMessage(chatId, `✅ Updated *${skill.name}* — ${paramDef?.label || paramKey}: ${rawValue}`, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "⚙️ More Options", callback_data: `skills:config:${skillId}` }],
+            [{ text: `« Back to ${skill.category}`, callback_data: `skills:cat:${skill.category}` }],
+          ],
+        },
+      });
+      return;
+    }
+
     return;
   }
 
@@ -2269,6 +2452,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             inline_keyboard: [
               [toggleBtn],
               [{ text: "📊 Status", callback_data: "trade:status" }, { text: "⚙️ Settings", callback_data: "trade:settings" }],
+              [{ text: "🧩 Agent Skills", callback_data: "trade:skills" }],
               [{ text: "📜 History", callback_data: "trade:history" }, { text: "🔴 Close All", callback_data: "trade:closeall" }],
               [{ text: "« Back", callback_data: "main_menu" }],
             ],

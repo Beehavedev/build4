@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, integer, timestamp, doublePrecision, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, integer, timestamp, doublePrecision, serial, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -1061,6 +1061,18 @@ export const tradeOutcomes = pgTable("trade_outcomes", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 export type TradeOutcome = typeof tradeOutcomes.$inferSelect;
+
+export const agentSkillConfigs = pgTable("agent_skill_configs", {
+  id: serial("id").primaryKey(),
+  chatId: text("chat_id").notNull(),
+  skillId: text("skill_id").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  config: text("config").notNull().default("{}"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  chatSkillUnique: uniqueIndex("agent_skill_configs_chat_skill_idx").on(table.chatId, table.skillId),
+}));
+export type AgentSkillConfig = typeof agentSkillConfigs.$inferSelect;
 
 export type InsertAgentTwitterAccount = z.infer<typeof insertAgentTwitterAccountSchema>;
 export type AgentTwitterAccount = typeof agentTwitterAccounts.$inferSelect;

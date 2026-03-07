@@ -84,8 +84,12 @@ The project utilizes a monorepo containing `client/` for the React frontend, `se
 - **Fallback**: If AI inference times out or fails, falls back to rule-based scoring (curve progress, age, volume, velocity).
 - **Multi-Whale Copy Trading**: Monitors 3 high-alpha wallets (GMGN Whale + 2 Smart Money wallets) via BSCScan API every 20s. Smart buy detection filters airdrops/transfers. Reentrancy guard prevents duplicate trades. 3-retry mechanism for transient API failures.
 - **Consensus Detection**: When 2+ tracked whales buy the same token, triggers a consensus signal (confidence 95%, position size 1.5x). Consensus buys are the highest-conviction trades.
-- **Risk Management**: Configurable take-profit, stop-loss, max positions, and buy size. Hard safety limits bypass AI for extreme cases.
-- **User Control**: Enable/disable per user via Telegram, with AI reasoning, peak tracking, source, and confidence shown in trade notifications.
+- **Agent Skills System**: Modular skill framework (`server/agent-skills.ts`) with 12 built-in skills across 3 categories. Users enable/disable/configure skills via Telegram (`🧩 Agent Skills` button in trading menu). Skills stored per-user in `agent_skill_configs` DB table. Cached in-memory with 60s TTL for performance.
+  - **Strategy Skills**: Whale Copier (copy smart money), Momentum Sniper (high velocity entries), Dip Buyer (buy dips on strong tokens), Volume Surge (detect volume spikes). Modify token evaluation scoring.
+  - **Analysis Skills**: Rug Detector (block suspicious creators — can veto buys), Liquidity Analyzer (check liquidity depth), Holder Distribution (whale concentration check), Smart Money Tracker (follow profitable wallets). Run pre-buy checks with pass/fail + score modifiers.
+  - **Execution Skills**: DCA Entry (split buys over time), Scaled Exit (sell in portions at targets — conservative/balanced/aggressive presets), Trailing Stop Pro (configurable activation + trail distance), Time Exit (auto-close after N minutes). Modify position parameters after buy decision.
+- **Risk Management**: Configurable take-profit, stop-loss, max positions, and buy size. Hard safety limits bypass AI for extreme cases. Skills can override trailing stop parameters and add time-based exits.
+- **User Control**: Enable/disable per user via Telegram, with AI reasoning, peak tracking, source, and confidence shown in trade notifications. Full skills customization via inline keyboards.
 - **Scan Intervals**: Token scan every 30s (was 60s), position monitoring every 15s (was 30s), whale monitoring every 20s. Faster detection = better entries.
 - **Persistence**: Trading preferences (enabled, buy size, TP, SL, max positions) persisted to `trading_preferences` DB table. On production boot, preferences are restored and trading agent auto-starts.
 

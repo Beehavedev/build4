@@ -17,6 +17,16 @@ import {
   type AsterFundingRate,
   type AsterPosition,
 } from "./aster-client";
+import {
+  type UserSkillState,
+  mergeSkillStates,
+  evaluateStrategySkills,
+  evaluateAnalysisSkills,
+  getExecutionModifiers,
+  buildSkillsPromptContext,
+  getSkillById,
+  SKILL_REGISTRY,
+} from "./agent-skills";
 
 const FOUR_MEME_API = "https://four.meme";
 const AI_NETWORKS = ["hyperbolic", "akash", "ritual"];
@@ -184,6 +194,28 @@ const activePositions = new Map<string, TradingPosition>();
 const userTradingConfig = new Map<number, TradingConfig>();
 const recentlyScannedTokens = new Set<string>();
 const tradeHistory: TradingPosition[] = [];
+const userSkillsCache = new Map<number, { skills: UserSkillState[]; loadedAt: number }>();
+const SKILL_CACHE_TTL_MS = 60_000;
+
+async function getUserSkills(chatId: number): Promise<UserSkillState[]> {
+  const cached = userSkillsCache.get(chatId);
+  if (cached && Date.now() - cached.loadedAt < SKILL_CACHE_TTL_MS) return cached.skills;
+  try {
+    const dbConfigs = await storage.getUserSkillConfigs(chatId.toString());
+    const skills = mergeSkillStates(dbConfigs);
+    userSkillsCache.set(chatId, { skills, loadedAt: Date.now() });
+    return skills;
+  } catch {
+    return mergeSkillStates([]);
+  }
+}
+
+export function invalidateSkillsCache(chatId: number): void {
+  userSkillsCache.delete(chatId);
+}
+
+export { SKILL_REGISTRY, getSkillById, mergeSkillStates };
+export type { UserSkillState };
 
 let scanTimer: ReturnType<typeof setInterval> | null = null;
 let positionTimer: ReturnType<typeof setInterval> | null = null;
@@ -373,6 +405,9 @@ interface TokenSignal {
   holderCount?: number;
   raisedBnb?: number;
   rugRisk?: number;
+  whaleCount?: number;
+  maxFunds?: number;
+  tradingVolume?: number;
 }
 
 const tradeMemory: Array<{ symbol: string; result: string; pnl: number; reasoning: string; tokenAddress: string }> = [];
@@ -853,6 +888,9 @@ REASONING: [1 sentence]`;
       holderCount: chosen.holderCount,
       raisedBnb: chosen.raisedAmount,
       rugRisk: rugCheck.rugRisk,
+      whaleCount: whaleConsensus.has(chosen.address.toLowerCase()) ? whaleConsensus.get(chosen.address.toLowerCase())!.size : 0,
+      maxFunds: chosen.maxFunds,
+      tradingVolume: chosen.tradingVolume,
     };
   } catch (e: any) {
     log(`[TradingAgent] AI failed, using rules: ${e.message?.substring(0, 80)}`, "trading");
@@ -943,10 +981,16 @@ REASONING: [1 sentence]`;
   }
 }
 
-async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, privateKey: string, walletAddress: string, source: "ai_scan" | "whale_copy" | "consensus" = "ai_scan"): Promise<TradingPosition | null> {
+async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, privateKey: string, walletAddress: string, source: "ai_scan" | "whale_copy" | "consensus" = "ai_scan", execMods?: import("./agent-skills").ExecutionModifier): Promise<TradingPosition | null> {
   const config = getUserConfig(chatId);
   const positionId = `trade_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-  const dynamicAmount = calculateDynamicBuyAmount(config.buyAmountBnb, signal.score, source);
+  let dynamicAmount = calculateDynamicBuyAmount(config.buyAmountBnb, signal.score, source);
+
+  if (execMods?.sizeMultiplier && execMods.sizeMultiplier !== 1.0) {
+    const adjusted = (parseFloat(dynamicAmount) * execMods.sizeMultiplier).toFixed(4);
+    log(`[TradingAgent] Skill size modifier: ${dynamicAmount} → ${adjusted} BNB (${execMods.sizeMultiplier}x)`, "trading");
+    dynamicAmount = adjusted;
+  }
 
   try {
     log(`[TradingAgent] BUYING ${signal.symbol} for ${dynamicAmount} BNB (conf: ${signal.score}, src: ${source})`, "trading");
@@ -966,12 +1010,15 @@ async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, 
       tokenBalance = bal.balance;
     } catch {}
 
+    const tp = execMods?.takeProfitOverride || config.takeProfitMultiple;
+    const sl = execMods?.stopLossOverride || config.stopLossMultiple;
+
     const position: TradingPosition = {
       id: positionId, chatId, agentId, walletAddress,
       tokenAddress: signal.address, tokenSymbol: signal.symbol,
       entryPriceBnb: dynamicAmount, tokenAmount: tokenBalance,
       buyTxHash: result.txHash || "", entryTime: Date.now(),
-      takeProfitMultiple: config.takeProfitMultiple, stopLossMultiple: config.stopLossMultiple,
+      takeProfitMultiple: tp, stopLossMultiple: sl,
       status: "open", peakMultiple: 1.0, trailingStopActive: false,
       confidenceScore: signal.score, source,
       entryProgressPercent: signal.progressPercent,
@@ -981,6 +1028,19 @@ async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, 
       entryRaisedBnb: signal.raisedBnb,
       entryRugRisk: signal.rugRisk,
     };
+
+    if (execMods?.scaledExitLevels) {
+      (position as any)._scaledExitLevels = execMods.scaledExitLevels;
+      (position as any)._scaledExitSold = [];
+    }
+    if (execMods?.maxHoldMinutes) {
+      (position as any)._maxHoldMinutes = execMods.maxHoldMinutes;
+      (position as any)._timeExitOnlyLosers = execMods.maxHoldOnlyLosers || false;
+    }
+    if (execMods?.trailingStopActivation) {
+      (position as any)._trailingStopActivation = execMods.trailingStopActivation;
+      (position as any)._trailingStopDistance = execMods.trailingStopDistance || 0.12;
+    }
 
     activePositions.set(positionId, position);
     balanceCache.delete(walletAddress);
@@ -1023,7 +1083,10 @@ async function checkAndClosePositions(notifyFn: (chatId: number, message: string
 
         if (multiple > position.peakMultiple) position.peakMultiple = multiple;
 
-        if (!position.trailingStopActive && multiple >= TRAILING_STOP_ACTIVATION) {
+        const tsActivation = (position as any)._trailingStopActivation || TRAILING_STOP_ACTIVATION;
+        const tsDistance = (position as any)._trailingStopDistance || TRAILING_STOP_DISTANCE;
+
+        if (!position.trailingStopActive && multiple >= tsActivation) {
           position.trailingStopActive = true;
           log(`[TradingAgent] ${position.tokenSymbol} trailing ACTIVE at ${multiple.toFixed(2)}x`, "trading");
         }
@@ -1036,7 +1099,7 @@ async function checkAndClosePositions(notifyFn: (chatId: number, message: string
         }
 
         if (position.trailingStopActive) {
-          const trailingStopLevel = position.peakMultiple * (1 - TRAILING_STOP_DISTANCE);
+          const trailingStopLevel = position.peakMultiple * (1 - tsDistance);
           if (multiple <= trailingStopLevel) {
             await closePosition(position, "closed_profit", notifyFn, multiple, currentValueBnb, `Trail stop: peak ${position.peakMultiple.toFixed(2)}x → ${multiple.toFixed(2)}x`);
             return;
@@ -1053,8 +1116,15 @@ async function checkAndClosePositions(notifyFn: (chatId: number, message: string
           return;
         }
 
-        if (ageMinutes > 90 && multiple < 1.05) {
-          await closePosition(position, multiple >= 1 ? "closed_profit" : "closed_loss", notifyFn, multiple, currentValueBnb, "Stale — no movement after 90m");
+        const maxHold = (position as any)._maxHoldMinutes;
+        const onlyLosers = (position as any)._timeExitOnlyLosers;
+        const staleLimit = maxHold || 90;
+        const timeExitApplies = maxHold
+          ? (onlyLosers ? multiple < 1.0 : true)
+          : multiple < 1.05;
+        if (ageMinutes > staleLimit && timeExitApplies) {
+          const reason = maxHold ? `⏰ Time exit (${maxHold}m limit)` : "Stale — no movement after 90m";
+          await closePosition(position, multiple >= 1 ? "closed_profit" : "closed_loss", notifyFn, multiple, currentValueBnb, reason);
           return;
         }
 
@@ -1357,8 +1427,36 @@ async function scanAndTradeInner(notifyFn: (chatId: number, message: string) => 
 
   log(`[TradingAgent] ${candidates.length} candidates from ${tokens.length} tokens → AI`, "trading");
 
-  const bestSignal = await aiEvaluateBuy(candidates.slice(0, 15));
+  const firstUser = enabledUsers[0];
+  const stratSkills = await getUserSkills(firstUser.chatId);
+  const scoredCandidates = candidates.map(t => {
+    const age = Math.floor(Date.now() / 1000) - t.launchTime;
+    const ageMin = Math.max(1, Math.floor(age / 60));
+    const velocity = ageMin > 0 ? t.progressPercent / ageMin : 0;
+    const whaleCount = whaleConsensus.has(t.address.toLowerCase()) ? whaleConsensus.get(t.address.toLowerCase())!.size : 0;
+    const stratResult = evaluateStrategySkills(stratSkills, {
+      velocity,
+      ageMinutes: ageMin,
+      progressPercent: t.progressPercent,
+      raisedBnb: t.raisedAmount,
+      holderCount: t.holderCount,
+      tradingVolume: t.tradingVolume,
+      whaleCount,
+    });
+    return { token: t, stratBoost: stratResult.scoreModifier, stratReason: stratResult.reason };
+  });
+
+  scoredCandidates.sort((a, b) => b.stratBoost - a.stratBoost);
+  const sortedTokens = scoredCandidates.map(c => c.token);
+
+  const bestSignal = await aiEvaluateBuy(sortedTokens.slice(0, 15));
   if (!bestSignal) return;
+
+  const matchedStrat = scoredCandidates.find(c => c.token.address === bestSignal.address);
+  if (matchedStrat && matchedStrat.stratBoost > 0) {
+    bestSignal.score = Math.min(100, bestSignal.score + matchedStrat.stratBoost);
+    bestSignal.reasons.push(matchedStrat.stratReason);
+  }
 
   log(`[TradingAgent] SIGNAL: $${bestSignal.symbol} (${bestSignal.score}%) — ${bestSignal.aiAnalysis}`, "trading");
 
@@ -1372,12 +1470,32 @@ async function scanAndTradeInner(notifyFn: (chatId: number, message: string) => 
     );
     if (alreadyHolding) return;
 
-    const position = await executeBuy(user.chatId, user.agentId, bestSignal, user.privateKey, user.walletAddress, "ai_scan");
+    const userSkills = await getUserSkills(user.chatId);
+
+    const analysisResult = evaluateAnalysisSkills(userSkills, {
+      rugRisk: bestSignal.rugRisk || 0,
+      holderCount: bestSignal.holderCount || 0,
+      raisedBnb: bestSignal.raisedBnb || 0,
+      progressPercent: bestSignal.progressPercent || 0,
+      whaleCount: bestSignal.whaleCount || 0,
+      maxFunds: bestSignal.maxFunds || 100,
+    });
+
+    if (!analysisResult.pass) {
+      log(`[TradingAgent] Skills BLOCKED $${bestSignal.symbol} for user ${user.chatId}: ${analysisResult.reason}`, "trading");
+      notifyFn(user.chatId, `🛡️ Skills blocked $${bestSignal.symbol}: ${analysisResult.reason}`);
+      return;
+    }
+
+    const execMods = getExecutionModifiers(userSkills);
+
+    const position = await executeBuy(user.chatId, user.agentId, bestSignal, user.privateKey, user.walletAddress, "ai_scan", execMods);
     if (position) {
       let msg = `AI TRADE: $${bestSignal.symbol}\n`;
       msg += `Amount: ${position.entryPriceBnb} BNB | Confidence: ${bestSignal.score}%\n`;
       if (bestSignal.aiAnalysis) msg += `${bestSignal.aiAnalysis}\n`;
       bestSignal.reasons.forEach(r => { if (r) msg += `• ${r}\n`; });
+      if (analysisResult.reason) msg += `📊 ${analysisResult.reason}\n`;
       msg += `TP: ${config.takeProfitMultiple}x | SL: ${(config.stopLossMultiple * 100).toFixed(0)}%\n`;
       if (position.buyTxHash) msg += `TX: https://bscscan.com/tx/${position.buyTxHash}`;
       notifyFn(user.chatId, msg);
