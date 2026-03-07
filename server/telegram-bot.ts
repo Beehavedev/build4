@@ -2482,6 +2482,25 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "smartmoney") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for smart money info!"); return; }
+      const { getDiscoveredSmartWallets } = await import("./trading-agent");
+      const wallets = getDiscoveredSmartWallets();
+      if (wallets.length === 0) {
+        await bot.sendMessage(chatId, "🧠 *Smart Money Discovery*\n\nNo smart wallets discovered yet. The system analyzes graduated Four.meme tokens every 5 minutes to find consistently profitable early buyers.\n\nCheck back soon!", { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+        return;
+      }
+      let msg = `🧠 *Smart Money Discovery*\n\nTracking ${wallets.length} discovered wallets:\n\n`;
+      for (const w of wallets.slice(0, 15)) {
+        const shortAddr = w.address.substring(0, 6) + "..." + w.address.substring(38);
+        const winRate = w.totalTrades > 0 ? Math.round((w.winCount / w.totalTrades) * 100) : 0;
+        msg += `• \`${shortAddr}\` — ${winRate}% win (${w.winCount}/${w.totalTrades}) score: ${w.score}\n`;
+      }
+      msg += `\nTheir new buys are automatically tracked and boost token scores.`;
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+      return;
+    }
+
     if (cmd === "aster") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for Aster DEX trading!"); return; }
       await handleAsterMenu(chatId);

@@ -104,6 +104,26 @@ let scanRunning = false;
 let copyTradeRunning = false;
 let asterScanRunning = false;
 let positionCheckRunning = false;
+let smartMoneyDiscoveryRunning = false;
+
+interface SmartWallet {
+  address: string;
+  label: string;
+  winCount: number;
+  totalTrades: number;
+  totalPnlBnb: number;
+  avgEntryAge: number;
+  discoveredAt: number;
+  lastSeen: number;
+  score: number;
+}
+
+const discoveredSmartWallets = new Map<string, SmartWallet>();
+const SMART_MONEY_SCAN_INTERVAL_MS = 300_000;
+const MIN_SMART_WALLET_TRADES = 3;
+const MIN_SMART_WALLET_WIN_RATE = 50;
+const MAX_TRACKED_SMART_WALLETS = 20;
+let smartMoneyTimer: ReturnType<typeof setInterval> | null = null;
 
 interface AsterFuturesPosition {
   id: string;
@@ -764,6 +784,10 @@ function computeTokenScoreFromListing(token: FourMemeListingToken): { score: num
   const whaleInterest = whaleConsensus.get(token.address.toLowerCase());
   if (whaleInterest && whaleInterest.size >= 2) { score += 30; reasons.push(`🐋 ${whaleInterest.size} whale consensus`); }
   else if (whaleInterest && whaleInterest.size >= 1) { score += 15; reasons.push(`🐋 Whale interest`); }
+
+  const smartBuyers = getSmartBuyersForToken(token.address);
+  if (smartBuyers.length >= 2) { score += 25; reasons.push(`🧠 ${smartBuyers.length} smart wallets buying`); }
+  else if (smartBuyers.length === 1) { score += 12; reasons.push(`🧠 Smart money: ${smartBuyers[0]}`); }
 
   const recentFail = failedTokenCooldown.get(token.address);
   if (recentFail && Date.now() - recentFail < FAILED_COOLDOWN_MS) {
@@ -1783,6 +1807,228 @@ async function scanAndTradeInner(notifyFn: (chatId: number, message: string) => 
   await Promise.allSettled(buyPromises);
 }
 
+async function discoverSmartWallets(): Promise<void> {
+  if (smartMoneyDiscoveryRunning) return;
+  smartMoneyDiscoveryRunning = true;
+  try {
+    await _discoverSmartWalletsInner();
+  } finally {
+    smartMoneyDiscoveryRunning = false;
+  }
+}
+
+const KNOWN_ROUTERS = new Set([
+  "0x10ed43c718714eb63d5aa57b78b54704e256024e",
+  "0x13f4ea83d0bd40e75c8222255bc855a974568dd4",
+  "0x1b81d678ffb9c0263b24a97847620c99d213eb14",
+  "0x3a0b5541e20cb8789307b8012b1e0e9e5bcd6072",
+]);
+
+let lastBscScanCall = 0;
+async function rateLimitedBscScan(url: string): Promise<any> {
+  const now = Date.now();
+  const wait = Math.max(0, 220 - (now - lastBscScanCall));
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  lastBscScanCall = Date.now();
+
+  const res = await Promise.race([
+    fetch(url),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("BSCScan timeout")), 12000)),
+  ]);
+  const data = await res.json();
+  if (data.message === "NOTOK" && data.result?.includes("rate limit")) {
+    log(`[SmartMoney] BSCScan rate limited, backing off`, "trading");
+    await new Promise(r => setTimeout(r, 2000));
+    return null;
+  }
+  return data;
+}
+
+const discoveryTokenCache = new Map<string, { transfers: any[]; ts: number }>();
+const DISCOVERY_CACHE_TTL = 600_000;
+
+async function _discoverSmartWalletsInner(): Promise<void> {
+  const apiKey = process.env.BSCSCAN_API_KEY || "";
+  if (!apiKey) return;
+
+  try {
+    const res = await Promise.race([
+      fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/query?type=trade&pageIndex=1&pageSize=20`, {
+        headers: { "Origin": "https://four.meme", "Referer": "https://four.meme/", "User-Agent": "Mozilla/5.0" },
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 10000)),
+    ]);
+    const body = await res.json();
+    const graduated = (body?.data?.list || []).slice(0, 10);
+    if (graduated.length === 0) {
+      log(`[SmartMoney] No graduated tokens found`, "trading");
+      return;
+    }
+
+    log(`[SmartMoney] Analyzing ${graduated.length} graduated tokens for smart wallets...`, "trading");
+
+    const walletStats = new Map<string, { wins: number; losses: number; tokens: string[]; earlyBuys: number }>();
+
+    for (const token of graduated.slice(0, 4)) {
+      const tokenAddr = token.address?.toLowerCase();
+      if (!tokenAddr) continue;
+
+      try {
+        let transfers: any[];
+        const cached = discoveryTokenCache.get(tokenAddr);
+        if (cached && Date.now() - cached.ts < DISCOVERY_CACHE_TTL) {
+          transfers = cached.transfers;
+        } else {
+          const txUrl = `https://api.etherscan.io/v2/api?chainid=56&module=account&action=tokentx&contractaddress=${tokenAddr}&page=1&offset=100&sort=asc&apikey=${apiKey}`;
+          const txData = await rateLimitedBscScan(txUrl);
+          if (!txData || txData.status !== "1" || !Array.isArray(txData.result)) continue;
+          transfers = txData.result;
+          discoveryTokenCache.set(tokenAddr, { transfers, ts: Date.now() });
+        }
+
+        const mintAddr = "0x0000000000000000000000000000000000000000";
+        const buyWallets = new Map<string, number>();
+        const sellWallets = new Map<string, number>();
+
+        for (const tx of transfers) {
+          const to = tx.to?.toLowerCase();
+          const from = tx.from?.toLowerCase();
+          const ts = parseInt(tx.timeStamp || "0");
+          const isMint = from === mintAddr;
+          const isFromRouter = KNOWN_ROUTERS.has(from || "");
+          const isToRouter = KNOWN_ROUTERS.has(to || "");
+
+          if (to && !isMint && (isFromRouter || from !== to) && !KNOWN_ROUTERS.has(to)) {
+            if (!buyWallets.has(to)) buyWallets.set(to, ts);
+          }
+
+          if (from && from !== mintAddr && !KNOWN_ROUTERS.has(from) && (isToRouter || to !== from)) {
+            if (!sellWallets.has(from)) sellWallets.set(from, ts);
+            else sellWallets.set(from, Math.max(sellWallets.get(from)!, ts));
+          }
+        }
+
+        const firstTransferTime = transfers[0] ? parseInt(transfers[0].timeStamp || "0") : 0;
+        if (firstTransferTime === 0) continue;
+        const tokenPumped = parseFloat(token.priceChange24h || "0") > 0 || token.status === "TRADE";
+
+        for (const [wallet, buyTime] of buyWallets) {
+          if (wallet.startsWith("0x000000")) continue;
+          const entryAge = buyTime - firstTransferTime;
+          if (entryAge < 0 || entryAge > 600) continue;
+
+          const sellTime = sellWallets.get(wallet);
+          const didSell = sellTime !== undefined && sellTime > buyTime;
+
+          const stats = walletStats.get(wallet) || { wins: 0, losses: 0, tokens: [], earlyBuys: 0 };
+          if (stats.tokens.includes(tokenAddr)) continue;
+          stats.tokens.push(tokenAddr);
+          stats.earlyBuys++;
+
+          if (tokenPumped && didSell) {
+            stats.wins++;
+          } else if (!tokenPumped && didSell) {
+            stats.losses++;
+          } else if (!tokenPumped && !didSell) {
+            stats.losses++;
+          }
+          walletStats.set(wallet, stats);
+        }
+      } catch (e: any) {
+        log(`[SmartMoney] Token analysis error: ${e.message?.substring(0, 60)}`, "trading");
+      }
+    }
+
+    let newDiscovered = 0;
+    for (const [wallet, stats] of walletStats) {
+      const totalTrades = stats.wins + stats.losses;
+      if (totalTrades < MIN_SMART_WALLET_TRADES) continue;
+      const winRate = (stats.wins / totalTrades) * 100;
+      if (winRate < MIN_SMART_WALLET_WIN_RATE) continue;
+
+      const existing = discoveredSmartWallets.get(wallet);
+      const score = Math.round(winRate * (1 + Math.log2(totalTrades)));
+
+      if (existing) {
+        existing.winCount = Math.max(existing.winCount, stats.wins);
+        existing.totalTrades = Math.max(existing.totalTrades, totalTrades);
+        existing.score = Math.max(existing.score, score);
+        existing.lastSeen = Date.now();
+      } else {
+        discoveredSmartWallets.set(wallet, {
+          address: wallet,
+          label: `Smart${discoveredSmartWallets.size + 1} (${winRate.toFixed(0)}%W/${totalTrades}T)`,
+          winCount: stats.wins,
+          totalTrades,
+          totalPnlBnb: 0,
+          avgEntryAge: 0,
+          discoveredAt: Date.now(),
+          lastSeen: Date.now(),
+          score,
+        });
+        newDiscovered++;
+      }
+    }
+
+    if (discoveredSmartWallets.size > MAX_TRACKED_SMART_WALLETS) {
+      const sorted = Array.from(discoveredSmartWallets.entries())
+        .sort((a, b) => b[1].score - a[1].score);
+      discoveredSmartWallets.clear();
+      for (const [k, v] of sorted.slice(0, MAX_TRACKED_SMART_WALLETS)) {
+        discoveredSmartWallets.set(k, v);
+      }
+    }
+
+    if (discoveryTokenCache.size > 30) {
+      const keys = Array.from(discoveryTokenCache.keys());
+      for (let i = 0; i < keys.length - 20; i++) discoveryTokenCache.delete(keys[i]);
+    }
+
+    log(`[SmartMoney] Discovery: ${newDiscovered} new, ${discoveredSmartWallets.size} total tracked wallets`, "trading");
+
+  } catch (e: any) {
+    log(`[SmartMoney] Discovery error: ${e.message?.substring(0, 100)}`, "trading");
+  }
+}
+
+function getSmartWalletList(): Array<{ address: string; label: string }> {
+  const hardcoded = COPY_TRADE_WALLETS.map(w => ({ address: w.address.toLowerCase(), label: w.label }));
+  const discovered = Array.from(discoveredSmartWallets.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10)
+    .map(w => ({ address: w.address, label: w.label }));
+  const all = [...hardcoded];
+  for (const d of discovered) {
+    if (!all.some(a => a.address === d.address)) {
+      all.push(d);
+    }
+  }
+  return all;
+}
+
+const smartMoneyTokenBuys = new Map<string, Set<string>>();
+
+function trackSmartBuy(tokenAddress: string, walletLabel: string): void {
+  const key = tokenAddress.toLowerCase();
+  if (!smartMoneyTokenBuys.has(key)) smartMoneyTokenBuys.set(key, new Set());
+  smartMoneyTokenBuys.get(key)!.add(walletLabel);
+  if (smartMoneyTokenBuys.size > 500) {
+    const keys = Array.from(smartMoneyTokenBuys.keys());
+    for (let i = 0; i < keys.length - 300; i++) smartMoneyTokenBuys.delete(keys[i]);
+  }
+}
+
+function getSmartBuyersForToken(tokenAddress: string): string[] {
+  const buyers = smartMoneyTokenBuys.get(tokenAddress.toLowerCase());
+  return buyers ? Array.from(buyers) : [];
+}
+
+export function getDiscoveredSmartWallets(): Array<{ address: string; label: string; winCount: number; totalTrades: number; score: number }> {
+  return Array.from(discoveredSmartWallets.values())
+    .sort((a, b) => b.score - a.score)
+    .map(w => ({ address: w.address, label: w.label, winCount: w.winCount, totalTrades: w.totalTrades, score: w.score }));
+}
+
 async function fetchWhaleTokenBuys(walletAddress: string): Promise<Array<{ tokenAddress: string; tokenSymbol: string; tokenName: string; txHash: string; value: string; timeStamp: number }>> {
   try {
     const apiKey = process.env.BSCSCAN_API_KEY || "";
@@ -1842,7 +2088,9 @@ async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: str
   const enabledUsers = await resolveEnabledUsers();
   if (enabledUsers.length === 0) return;
 
-  const whaleChecks = COPY_TRADE_WALLETS.map(async whale => {
+  const allWallets = getSmartWalletList();
+
+  const whaleChecks = allWallets.map(async whale => {
     const whaleLower = whale.address.toLowerCase();
     if (!lastSeenWhaleTxs.has(whaleLower)) {
       const initialTxs = await fetchWhaleTokenBuys(whaleLower);
@@ -1870,7 +2118,7 @@ async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: str
   });
 
   const whaleResults = await Promise.allSettled(whaleChecks);
-  const allNewBuys: Array<{ tokenAddress: string; tokenSymbol: string; tokenName: string; txHash: string; value: string; timeStamp: number; whale: typeof COPY_TRADE_WALLETS[0] }> = [];
+  const allNewBuys: Array<{ tokenAddress: string; tokenSymbol: string; tokenName: string; txHash: string; value: string; timeStamp: number; whale: { address: string; label: string } }> = [];
   for (const r of whaleResults) {
     if (r.status === "fulfilled") allNewBuys.push(...r.value);
   }
@@ -1906,6 +2154,7 @@ async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: str
 
     if (!whaleConsensus.has(tokenAddr)) whaleConsensus.set(tokenAddr, new Set());
     whaleConsensus.get(tokenAddr)!.add(buy.whale.label);
+    trackSmartBuy(tokenAddr, buy.whale.label);
     const consensusCount = whaleConsensus.get(tokenAddr)!.size;
     const isConsensus = consensusCount >= 2;
     const tradeSource = isConsensus ? "consensus" as const : "whale_copy" as const;
@@ -2351,6 +2600,7 @@ export function startTradingAgent(notifyFn: (chatId: number, message: string) =>
   scanAndTrade(notifyFn).catch(() => {});
   copyTradeFromWhales(notifyFn).catch(() => {});
   sniperScan(notifyFn).catch(() => {});
+  discoverSmartWallets().catch(() => {});
 
   sniperTimer = setInterval(() => {
     sniperScan(notifyFn).catch(e => log(`[SNIPER] Scan error: ${e.message?.substring(0, 80)}`, "trading"));
@@ -2376,8 +2626,13 @@ export function startTradingAgent(notifyFn: (chatId: number, message: string) =>
     checkAsterPositions(notifyFn).catch(e => log(`[AsterAgent] Check error: ${e.message?.substring(0, 80)}`, "trading"));
   }, ASTER_POSITION_CHECK_INTERVAL_MS);
 
+  smartMoneyTimer = setInterval(() => {
+    discoverSmartWallets().catch(e => log(`[SmartMoney] Error: ${e.message?.substring(0, 80)}`, "trading"));
+  }, SMART_MONEY_SCAN_INTERVAL_MS);
+
   log(`[SNIPER] ⚡ Sniper mode active — scanning every ${SNIPER_SCAN_INTERVAL_MS / 1000}s, threshold ${SNIPER_SCORE_THRESHOLD}%`, "trading");
-  log(`[CopyTrade] Tracking ${COPY_TRADE_WALLETS.map(w => w.label).join(", ")}`, "trading");
+  log(`[CopyTrade] Tracking ${COPY_TRADE_WALLETS.map(w => w.label).join(", ")} + auto-discovered wallets`, "trading");
+  log(`[SmartMoney] Discovery active — scanning every ${SMART_MONEY_SCAN_INTERVAL_MS / 1000}s for top traders`, "trading");
   log(`[AsterAgent] Aster futures active`, "trading");
 }
 
@@ -2388,8 +2643,9 @@ export function stopTradingAgent(): void {
   if (copyTradeTimer) clearInterval(copyTradeTimer);
   if (asterScanTimer) clearInterval(asterScanTimer);
   if (asterPositionTimer) clearInterval(asterPositionTimer);
+  if (smartMoneyTimer) clearInterval(smartMoneyTimer);
   scanTimer = null; sniperTimer = null; positionTimer = null; copyTradeTimer = null;
-  asterScanTimer = null; asterPositionTimer = null;
+  asterScanTimer = null; asterPositionTimer = null; smartMoneyTimer = null;
   running = false;
   log("[TradingAgent] Stopped", "trading");
 }
