@@ -1,70 +1,68 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import express from "express";
 import { createServer, type Server } from "http";
+import path from "path";
 import { storage } from "./storage";
 import { ZERC20_CONTRACTS, SUPPORTED_PRIVACY_CHAINS } from "@shared/schema";
 import { registerWeb4Routes } from "./web4-routes";
 import { registerServicesRoutes } from "./services-routes";
 import { preparePrivacyTransfer, generateProof, getProof, verifyCommitment } from "./zerc20-sdk";
 import { startBountyEngine } from "./bounty-engine";
-import { startTwitterAgent, stopTwitterAgent, getTwitterAgentStatus, runTwitterAgentCycle, postBountyTweet } from "./twitter-agent";
+import { startTwitterAgent, stopTwitterAgent, getTwitterAgentStatus, runTwitterAgentCycle, postBountyTweet, generateBountyTweetText } from "./twitter-agent";
+import { startSupportAgent, stopSupportAgent, getSupportAgentStatus, runSupportAgentCycle } from "./twitter-support-agent";
 import { isTwitterConfigured } from "./twitter-client";
+import { startTelegramBot, stopTelegramBot, getTelegramBotStatus, processWebhookUpdate } from "./telegram-bot";
+import { getPerformanceSnapshot, recordRequest } from "./performance-monitor";
+import { getQueueStats } from "./task-queue";
+import { autoStartAllAgents } from "./multi-twitter-agent";
 import { visitorTrackingMiddleware } from "./visitor-tracking";
 import { registerSeoPrerender } from "./seo-prerender";
-import crypto from "crypto";
-
-const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
-
-function getTokenSecret(): string {
-  return process.env.SESSION_SECRET || process.env.ANALYTICS_PASSWORD || "build4-analytics-fallback";
-}
-
-function generateAnalyticsToken(): string {
-  const expiry = Date.now() + TOKEN_EXPIRY_MS;
-  const payload = `analytics:${expiry}`;
-  const hmac = crypto.createHmac("sha256", getTokenSecret()).update(payload).digest("hex");
-  return Buffer.from(JSON.stringify({ exp: expiry, sig: hmac })).toString("base64");
-}
-
-function isValidToken(token: string): boolean {
-  try {
-    const decoded = JSON.parse(Buffer.from(token, "base64").toString("utf8"));
-    if (!decoded.exp || !decoded.sig) return false;
-    if (Date.now() > decoded.exp) return false;
-    const payload = `analytics:${decoded.exp}`;
-    const expected = crypto.createHmac("sha256", getTokenSecret()).update(payload).digest("hex");
-    return constantTimeCompare(decoded.sig, expected);
-  } catch {
-    return false;
-  }
-}
-
-function constantTimeCompare(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  return crypto.timingSafeEqual(bufA, bufB);
-}
-
-function analyticsAuth(req: Request, res: Response, next: NextFunction) {
-  const adminPassword = process.env.ANALYTICS_PASSWORD;
-  if (!adminPassword) {
-    res.status(503).json({ error: "Analytics password not configured" });
-    return;
-  }
-  const token = req.headers["x-analytics-token"] as string;
-  if (!token || !isValidToken(token)) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  next();
-}
+import { analyticsAuth, generateAnalyticsToken, constantTimeCompare } from "./admin-auth";
+import { launchToken, getTokenLaunches, getTokenLaunch, fourMemeGetTokenInfo, fourMemeEstimateBuy, fourMemeEstimateSell, fourMemeBuyToken, fourMemeSellToken, fourMemeGetTokenBalance } from "./token-launcher";
+import { TOKEN_LAUNCHPADS } from "@shared/schema";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const start = Date.now();
+    res.on("finish", () => {
+      recordRequest(req.path, req.method, res.statusCode, Date.now() - start);
+    });
+    next();
+  });
+
   app.use(visitorTrackingMiddleware());
+  app.use("/uploads", express.static(path.resolve(process.cwd(), "public/uploads")));
   registerSeoPrerender(app);
+
+  app.post("/api/telegram/webhook/:token", express.json(), (req: Request, res: Response) => {
+    const token = req.params.token;
+    if (token !== process.env.TELEGRAM_BOT_TOKEN) {
+      res.sendStatus(403);
+      return;
+    }
+    res.sendStatus(200);
+    processWebhookUpdate(req.body);
+  });
+
+  app.get("/api/system/health", (req: Request, res: Response) => {
+    const perf = getPerformanceSnapshot();
+    const queue = getQueueStats();
+    const telegramStatus = getTelegramBotStatus();
+
+    res.json({
+      status: "ok",
+      timestamp: Date.now(),
+      uptime: perf.uptime,
+      memory: perf.memoryMB,
+      requests: perf.requests,
+      telegram: { ...perf.telegram, running: telegramStatus.running },
+      trading: perf.trading,
+      taskQueue: queue,
+    });
+  });
 
   registerWeb4Routes(app);
   registerServicesRoutes(app);
@@ -398,27 +396,65 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/twitter/post-bounty", analyticsAuth, async (req: Request, res: Response) => {
+  app.post("/api/twitter/preview-bounty", analyticsAuth, async (req: Request, res: Response) => {
     try {
-      const { jobId, taskDescription, rewardBnb, maxWinners } = req.body;
-      if (!taskDescription) {
-        res.status(400).json({ error: "Task description required" });
+      const { taskDescription, rewardBnb, maxWinners, customTweetText } = req.body;
+      if (!taskDescription && !customTweetText) {
+        res.status(400).json({ error: "Task description or custom tweet text required" });
         return;
       }
       const config = await storage.getTwitterAgentConfig();
       const reward = rewardBnb || config?.defaultBountyBudget || "0.02";
-      const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 10, 10);
+      const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 10, 100);
+      const tweetText = generateBountyTweetText(taskDescription || "", reward, winners, customTweetText);
+      res.json({ tweetText, charCount: tweetText.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/twitter/post-bounty", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const { jobId, taskDescription, rewardBnb, maxWinners, customTweetText } = req.body;
+      if (!taskDescription && !customTweetText) {
+        res.status(400).json({ error: "Task description or custom tweet text required" });
+        return;
+      }
+      const config = await storage.getTwitterAgentConfig();
+      const reward = rewardBnb || config?.defaultBountyBudget || "0.02";
+      const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 10, 100);
       const result = await postBountyTweet(
         jobId || `manual-${Date.now()}`,
-        taskDescription,
+        taskDescription || "",
         reward,
-        winners
+        winners,
+        customTweetText
       );
       res.json(result);
     } catch (e: any) {
       console.error("[TwitterAgent] Post bounty failed:", e.message, e.data ? JSON.stringify(e.data) : "");
       const msg = e.data?.detail || e.data?.errors?.[0]?.message || e.message;
       res.status(500).json({ error: msg });
+    }
+  });
+
+  app.post("/api/twitter/register-bounty", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const { tweetId, tweetUrl, tweetText, rewardBnb, maxWinners } = req.body;
+      if (!tweetId) { res.status(400).json({ error: "tweetId required" }); return; }
+      const bounty = await storage.createTwitterBounty({
+        jobId: `manual-${Date.now()}`,
+        tweetId,
+        tweetUrl: tweetUrl || `https://x.com/Build4ai/status/${tweetId}`,
+        tweetText: tweetText || "",
+        rewardBnb: rewardBnb || "0.015",
+        maxWinners: maxWinners || 10,
+        winnersCount: 0,
+        status: "posted",
+      });
+      res.json(bounty);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 
@@ -470,19 +506,363 @@ export async function registerRoutes(
     }
   });
 
-  await storage.cleanFakeData();
-  await storage.seedInferenceProviders();
-  await storage.seedSubscriptionPlans();
-
-  startBountyEngine().catch(err => {
-    console.error("[BountyEngine] Failed to start:", err.message);
+  app.get("/api/support/status", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      const status = await getSupportAgentStatus();
+      res.json(status);
+    } catch (e: any) {
+      res.json({ configured: isTwitterConfigured(), enabled: false, running: false, error: e.message });
+    }
   });
 
-  if (isTwitterConfigured()) {
-    startTwitterAgent().catch(err => {
-      console.error("[TwitterAgent] Failed to start:", err.message);
-    });
+  app.get("/api/support/config", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      const config = await storage.getSupportAgentConfig();
+      res.json(config || { id: "default", enabled: 0, pollingIntervalMs: 120000 });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/support/config", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const config = await storage.upsertSupportAgentConfig(req.body);
+      if (config.enabled === 1) {
+        await startSupportAgent();
+      } else {
+        stopSupportAgent();
+      }
+      res.json(config);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/support/start", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      await storage.upsertSupportAgentConfig({ enabled: 1 });
+      await startSupportAgent();
+      res.json({ success: true, message: "Support agent started" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/support/stop", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      await storage.upsertSupportAgentConfig({ enabled: 0 });
+      stopSupportAgent();
+      res.json({ success: true, message: "Support agent stopped" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/support/run-cycle", analyticsAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!isTwitterConfigured()) {
+        res.status(400).json({ error: "Twitter API not configured" });
+        return;
+      }
+      await runSupportAgentCycle();
+      res.json({ success: true, message: "Support cycle completed" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/support/tickets", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const tickets = await storage.getSupportTickets(status);
+      res.json(tickets);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/support/tickets/:id", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const ticket = await storage.getSupportTicket(req.params.id);
+      if (!ticket) {
+        res.status(404).json({ error: "Ticket not found" });
+        return;
+      }
+      res.json(ticket);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/support/tickets/:id", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const { status, resolution } = req.body;
+      const update: any = {};
+      if (status) update.status = status;
+      if (resolution) update.resolution = resolution;
+      if (status === "resolved") update.resolvedAt = new Date();
+      const ticket = await storage.updateSupportTicket(req.params.id, update);
+      if (!ticket) {
+        res.status(404).json({ error: "Ticket not found" });
+        return;
+      }
+      res.json(ticket);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  storage.seedInferenceProviders().catch(() => {});
+  storage.seedSubscriptionPlans().catch(() => {});
+  setTimeout(() => storage.cleanFakeData().catch(() => {}), 15000);
+
+  const isDev = process.env.NODE_ENV !== "production";
+  if (isDev) {
+    console.log("[dev] Skipping background agents in development to save memory. They run in production.");
+  } else {
+    if (process.env.TELEGRAM_BOT_EXTERNAL === "true") {
+      console.log("[TelegramBot] Bot running externally (Render) — skipping local startup");
+    } else {
+      setTimeout(() => {
+        if (process.env.TELEGRAM_BOT_TOKEN) {
+          const webhookBase = process.env.TELEGRAM_WEBHOOK_URL || undefined;
+          startTelegramBot(webhookBase);
+        }
+      }, 2000);
+    }
+
+    setTimeout(() => {
+      startBountyEngine().catch(err => {
+        console.error("[BountyEngine] Failed to start:", err.message);
+      });
+    }, 5000);
+
+    setTimeout(() => {
+      if (isTwitterConfigured()) {
+        startTwitterAgent().catch(err => {
+          console.error("[TwitterAgent] Failed to start:", err.message);
+        });
+      }
+    }, 8000);
+
+    setTimeout(() => {
+      if (isTwitterConfigured()) {
+        startSupportAgent().catch(err => {
+          console.error("[SupportAgent] Failed to start:", err.message);
+        });
+      }
+    }, 10000);
+
+    setTimeout(() => {
+      autoStartAllAgents().catch(err => {
+        console.error("[MultiTwitter] Auto-start failed:", err.message);
+      });
+    }, 12000);
+
+    if (process.env.TELEGRAM_BOT_EXTERNAL !== "true") {
+      setTimeout(async () => {
+        try {
+          const { restoreTradingPreferences, startTradingAgent, isTradingAgentRunning } = await import("./trading-agent");
+          const { getBotInstance } = await import("./telegram-bot");
+
+          const notifyFn = (cid: number, msg: string) => {
+            getBotInstance()?.sendMessage(cid, msg).catch(() => {});
+          };
+
+          if (!isTradingAgentRunning()) {
+            startTradingAgent(notifyFn);
+            console.log("[TradingAgent] Agent started on boot");
+          }
+
+          let restored = 0;
+          for (let attempt = 1; attempt <= 5; attempt++) {
+            try {
+              restored = await restoreTradingPreferences();
+              console.log(`[TradingAgent] Restored ${restored} user preferences (attempt ${attempt})`);
+              break;
+            } catch (dbErr: any) {
+              console.error(`[TradingAgent] Preference restore attempt ${attempt}/5 failed: ${dbErr.message?.substring(0, 80)}`);
+              if (attempt < 5) await new Promise(r => setTimeout(r, attempt * 5000));
+            }
+          }
+
+          if (restored === 0) {
+            console.log("[TradingAgent] No enabled users restored — agent running, will pick up users via Telegram");
+          }
+        } catch (err: any) {
+          console.error("[TradingAgent] Auto-start failed:", err.message);
+        }
+      }, 15000);
+    } else {
+      console.log("[TradingAgent] Trading agent running externally with bot — skipping local startup");
+    }
   }
+
+  app.get("/api/telegram/status", analyticsAuth, (req: Request, res: Response) => {
+    res.json(getTelegramBotStatus());
+  });
+
+  app.post("/api/telegram/start", analyticsAuth, (req: Request, res: Response) => {
+    const webhookBase = process.env.TELEGRAM_WEBHOOK_URL || undefined;
+    startTelegramBot(webhookBase);
+    res.json({ success: true, message: "Telegram bot started" });
+  });
+
+  app.post("/api/telegram/stop", analyticsAuth, (req: Request, res: Response) => {
+    stopTelegramBot();
+    res.json({ success: true, message: "Telegram bot stopped" });
+  });
+
+  app.get("/api/token-launcher/platforms", (req: Request, res: Response) => {
+    res.json(TOKEN_LAUNCHPADS);
+  });
+
+  app.get("/api/token-launcher/launches", async (req: Request, res: Response) => {
+    const agentId = req.query.agentId as string | undefined;
+    const launches = await getTokenLaunches(agentId);
+    res.json(launches);
+  });
+
+  app.get("/api/token-launcher/launches/:id", async (req: Request, res: Response) => {
+    const launch = await getTokenLaunch(req.params.id);
+    if (!launch) return res.status(404).json({ error: "Launch not found" });
+    res.json(launch);
+  });
+
+  app.post("/api/token-launcher/launch", analyticsAuth, async (req: Request, res: Response) => {
+    const { tokenName, tokenSymbol, tokenDescription, imageUrl, platform, initialLiquidityBnb, agentId, creatorWallet } = req.body;
+
+    if (!tokenName || !tokenSymbol || !platform) {
+      return res.status(400).json({ error: "tokenName, tokenSymbol, and platform are required" });
+    }
+
+    if (typeof tokenName !== "string" || tokenName.length < 1 || tokenName.length > 50) {
+      return res.status(400).json({ error: "Token name must be 1-50 characters" });
+    }
+
+    if (typeof tokenSymbol !== "string" || tokenSymbol.length < 1 || tokenSymbol.length > 10 || !/^[A-Z0-9]+$/.test(tokenSymbol)) {
+      return res.status(400).json({ error: "Token symbol must be 1-10 uppercase alphanumeric characters" });
+    }
+
+    const validPlatforms = TOKEN_LAUNCHPADS.map(p => p.id);
+    if (!validPlatforms.includes(platform)) {
+      return res.status(400).json({ error: `Invalid platform. Must be one of: ${validPlatforms.join(", ")}` });
+    }
+
+    if (initialLiquidityBnb) {
+      const liq = parseFloat(initialLiquidityBnb);
+      if (isNaN(liq) || liq < 0.001 || liq > 10) {
+        return res.status(400).json({ error: "Initial liquidity must be between 0.001 and 10" });
+      }
+    }
+
+    if (tokenDescription && tokenDescription.length > 500) {
+      return res.status(400).json({ error: "Description must be 500 characters or less" });
+    }
+
+    const result = await launchToken({
+      tokenName: tokenName.trim(),
+      tokenSymbol: tokenSymbol.trim(),
+      tokenDescription: (tokenDescription || `${tokenName} - launched by an autonomous AI agent on BUILD4`).substring(0, 500),
+      imageUrl: imageUrl?.substring(0, 500),
+      platform,
+      initialLiquidityBnb: initialLiquidityBnb || (platform === "four_meme" ? "0" : "0.001"),
+      agentId,
+      creatorWallet,
+    });
+
+    res.json(result);
+  });
+
+  app.get("/api/four-meme/token/:address", async (req: Request, res: Response) => {
+    try {
+      const info = await fourMemeGetTokenInfo(req.params.address);
+      res.json(info);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message?.substring(0, 200) || "Failed to get token info" });
+    }
+  });
+
+  app.get("/api/four-meme/estimate-buy", async (req: Request, res: Response) => {
+    const { token, bnbAmount } = req.query;
+    if (!token || !bnbAmount) return res.status(400).json({ error: "token and bnbAmount required" });
+    try {
+      const estimate = await fourMemeEstimateBuy(token as string, bnbAmount as string);
+      res.json(estimate);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message?.substring(0, 200) || "Failed to estimate buy" });
+    }
+  });
+
+  app.get("/api/four-meme/estimate-sell", async (req: Request, res: Response) => {
+    const { token, amount } = req.query;
+    if (!token || !amount) return res.status(400).json({ error: "token and amount required" });
+    try {
+      const estimate = await fourMemeEstimateSell(token as string, amount as string);
+      res.json(estimate);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message?.substring(0, 200) || "Failed to estimate sell" });
+    }
+  });
+
+  app.get("/api/four-meme/balance", async (req: Request, res: Response) => {
+    const { token, wallet } = req.query;
+    if (!token || !wallet) return res.status(400).json({ error: "token and wallet required" });
+    try {
+      const balance = await fourMemeGetTokenBalance(token as string, wallet as string);
+      res.json(balance);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message?.substring(0, 200) || "Failed to get balance" });
+    }
+  });
+
+  app.get("/api/chaos/status", async (_req: Request, res: Response) => {
+    const { getChaosStatus } = await import("./chaos-launch");
+    const status = await getChaosStatus();
+    res.json(status);
+  });
+
+  app.get("/api/chaos/plan", async (_req: Request, res: Response) => {
+    const { getMilestonePlan } = await import("./chaos-launch");
+    res.json(getMilestonePlan());
+  });
+
+  app.post("/api/chaos/launch", analyticsAuth, async (req: Request, res: Response) => {
+    const { initiateChaosLaunch } = await import("./chaos-launch");
+    const { agentId } = req.body || {};
+    const result = await initiateChaosLaunch(agentId);
+    res.json(result);
+  });
+
+  app.post("/api/chaos/execute-next", analyticsAuth, async (req: Request, res: Response) => {
+    const force = req.query.force === "true" || req.body?.force === true;
+    if (force) {
+      const { forceExecuteNextMilestone } = await import("./chaos-launch");
+      const result = await forceExecuteNextMilestone();
+      res.json(result);
+    } else {
+      const { checkAndExecuteMilestones } = await import("./chaos-launch");
+      await checkAndExecuteMilestones();
+      const { getChaosStatus } = await import("./chaos-launch");
+      const status = await getChaosStatus();
+      res.json(status);
+    }
+  });
+
+  app.post("/api/chaos/confession", analyticsAuth, async (_req: Request, res: Response) => {
+    const { executeConfessionTweet } = await import("./chaos-launch");
+    const result = await executeConfessionTweet();
+    res.json(result);
+  });
+
+  app.get("/api/trading/status", analyticsAuth, async (_req: Request, res: Response) => {
+    const { getAllActivePositions, isTradingAgentRunning } = await import("./trading-agent");
+    res.json({
+      running: isTradingAgentRunning(),
+      activePositions: getAllActivePositions().length,
+      positions: getAllActivePositions(),
+    });
+  });
 
   return httpServer;
 }

@@ -1,7 +1,7 @@
-# BUILD4 - Autonomous AI Agent Economy on BNB Chain · Base · XLayer
+# BUILD4 - Autonomous AI Agent Economy
 
 ## Overview
-BUILD4 is a web application that provides decentralized infrastructure for autonomous AI agents across BNB Chain, Base, and XLayer, featuring fully decentralized inference. It's a full-stack TypeScript application with a React frontend and Express backend, organized as a monorepo. The platform supports agent wallets, skills trading, self-evolution, forking, death mechanisms, and identity, aiming to offer a decentralized alternative to centralized AI solutions. The project envisions a robust AI agent economy with real on-chain activity and a focus on permissionless access and decentralized inference.
+BUILD4 is a web application creating a decentralized infrastructure for autonomous AI agents across BNB Chain, Base, and XLayer. Its core purpose is to foster a robust AI agent economy featuring agent wallets, skill trading, self-evolution, forking, death mechanisms, and identity. The project offers a decentralized alternative to centralized AI solutions, emphasizing permissionless access and real on-chain activity to contribute to a truly decentralized AI future. It aims to monetize through various fees and services like an Inference API, Bounty Board, Subscriptions, and a Data Marketplace.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -12,91 +12,85 @@ Always update both development AND production databases when making data fixes �
 ## System Architecture
 
 ### Monorepo Structure
-The project is organized as a monorepo with `client/` for the React frontend, `server/` for the Express backend, and `shared/` for common code including TypeScript types and Drizzle ORM schema.
+A monorepo setup organizes the project into `client/` (React frontend), `server/` (Express backend), and `shared/` (common TypeScript code, Drizzle ORM schema).
 
 ### Frontend
-- **Framework**: React with TypeScript, bundled by Vite.
-- **UI/UX**: Uses `shadcn/ui` based on Radix UI, styled with Tailwind CSS for light/dark modes. Wouter for routing, TanStack React Query for state management, and Framer Motion for animations.
+- **Framework**: React with TypeScript and Vite.
+- **UI/UX**: `shadcn/ui` (Radix UI, Tailwind CSS for light/dark modes), Wouter for routing, TanStack React Query for state management, and Framer Motion for animations.
 
 ### Backend
-- **Framework**: Express 5 on Node.js, with TypeScript executed via `tsx` in development.
+- **Framework**: Express 5 on Node.js with TypeScript.
 - **API**: All routes are prefixed with `/api`.
-- **Storage**: `DatabaseStorage` class implementing `IStorage` interface, backed by PostgreSQL via Drizzle ORM.
-- **Autonomous Agent Runner**: Background process (`server/agent-runner.ts`) for autonomous agent actions, acting every 30s with per-agent cooldowns.
-- **Decentralized Inference**: Routes inference to Hyperbolic, AkashML, or Ritual providers with an OpenAI-compatible API.
-- **Web3 Integration**: `ethers` v6 for MetaMask/WalletConnect support.
-- **Build**: Custom esbuild for server, Vite for client, integrated into a single Express server in production.
+- **Storage**: `DatabaseStorage` interface implementation, backed by PostgreSQL via Drizzle ORM.
+- **Autonomous Agent Runner**: Manages background processes for agent actions.
+- **Decentralized Inference**: Routes inference requests to Hyperbolic, AkashML, or Ritual providers using an OpenAI-compatible API.
+- **Web3 Integration**: `ethers` v6 for MetaMask/WalletConnect integration.
 
 ### Database
-- **ORM**: Drizzle ORM with PostgreSQL dialect.
-- **Schema**: Defined in `shared/schema.ts`, validated with `drizzle-zod`. Includes tables for users, 13 Web4 agent economy components, 2 decentralized inference components, and various service-related tables.
-- **Migrations**: Managed via `drizzle-kit push`.
+- **ORM**: Drizzle ORM with PostgreSQL.
+- **Schema**: Defined in `shared/schema.ts`, validated with `drizzle-zod`, covering users, agent economy components, decentralized inference, and service data.
+- **Migrations**: Handled by `drizzle-kit push`.
 
 ### Smart Contracts (On-Chain Layer)
-- **Technology**: 4 Solidity contracts (0.8.24) using OpenZeppelin, built with Hardhat.
-- **Target Networks**: BNB Chain, Base, and XLayer.
-- **Contracts**:
-    1. `AgentEconomyHub.sol`: Core wallet layer, handles deposits, withdrawals, transfers, survival tier, and module authorization.
-    2. `SkillMarketplace.sol`: Manages skill listings and purchases with a 3-way revenue split.
-    3. `AgentReplication.sol`: Handles child agent spawning, NFT minting, and perpetual revenue sharing.
-    4. `ConstitutionRegistry.sol`: Stores immutable agent laws as keccak256 hashes.
-- **Deployment**: ABIs are exported to `client/src/contracts/web4/index.ts`.
-
-### Platform Monetization
-- **Revenue Streams**: Agent creation, replication, skill purchases, inference markup, evolution, and skill listing fees. All fees are enforced upfront.
-- **Services**: Inference API, Bounty Board (with an autonomous engine), Subscriptions (Free/Pro/Enterprise tiers), and a Data Marketplace.
+- **Technology**: 4 Solidity contracts (0.8.24) built with Hardhat, utilizing OpenZeppelin, targeting BNB Chain, Base, and XLayer.
+- **Core Contracts**: `AgentEconomyHub.sol`, `SkillMarketplace.sol`, `AgentReplication.sol`, and `ConstitutionRegistry.sol`.
 
 ### Permissionless Open Protocol
-- **Discovery**: `/api/protocol` provides API spec and contract details. `/.well-known/ai-plugin.json`, `/.well-known/agent.json`, and `/.well-known/openapi.json` for agent discovery.
-- **Identity**: Wallet address (0x...) serves as identity; no registration required.
-- **Interaction**: Permissionless skill listing, wallet activity lookup, and open execution with a free tier followed by an HTTP 402 payment protocol.
-
-### ZERC20 Privacy Transfers (Feb 2026)
-- **Protocol**: ZERC20 zero-knowledge privacy transfers using ZK proof-of-burn mechanism.
-- **Contracts**: Real mainnet addresses from zerc20.io — zBNB (`0x4388D5618B9e13Bd580209CDf37a202778C75c54`), zETH (`0x410056c6F0A9ABD8c42b9eEF3BB451966Fb0d924`) deployed on BNB Chain, Ethereum, Arbitrum, and Base.
-- **Schema**: `privacy_transfers` table tracks transfer lifecycle (pending → deposited → proving → completed/withdrawn).
-- **API Routes**: `/api/privacy/config`, `/api/privacy/transfers` (CRUD), wallet-based auth.
-- **Frontend**: `/privacy` page with token/chain selector, transfer form, history.
-- **Next Steps**: Integrate circomlibjs Poseidon hashing for proper burn address derivation; connect to ZERC20 SDK for proof generation.
-
-### Twitter Bounty Agent (Feb 2026)
-- **Integration**: OAuth 1.0a via `twitter-api-v2` package, connected to @Build4ai account.
-- **Schema**: `twitter_bounties`, `twitter_submissions`, `twitter_agent_config`, `twitter_agent_personality`, `twitter_reply_log` tables.
-- **Engine**: Background process (`server/twitter-agent.ts`) posts bounties, monitors replies, extracts wallet addresses, verifies proof quality via decentralized inference, and auto-pays verified workers.
-- **Self-Learning Personality**: Agent develops its own voice through experience. Logs every reply, runs hourly self-reflection via AI, evolves personality traits (voice, values, do/don't lists, lessons). Personality stored in DB and injected into prompts dynamically. Hard safety guardrails (no insults, blocked words filter, spam detection) can never be overridden by personality evolution.
-- **API Routes**: `/api/twitter/*` (all admin-authed via analyticsAuth) for status, config, post-bounty, bounties, submissions, start/stop controls.
-- **Frontend**: `/twitter-agent` page with admin login gate, dashboard with stats, settings, bounty posting, and submission tracking.
-- **Payments**: Real on-chain native token transfers via deployer wallet (ethers.js). Requires DEPLOYER_PRIVATE_KEY secret. Falls back gracefully if key not set.
-- **Winner System**: Max 3 winners per bounty (configurable 1-3). Agent collects all verified submissions, ranks by AI score, pays top N, then auto-closes the bounty.
-- **Default Reward**: 0.015 BNB (~$10) per winner. Bounty tweet shows per-winner reward and max winners.
-- **Secrets**: TWITTER_API_KEY, TWITTER_API_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET, DEPLOYER_PRIVATE_KEY stored as Replit Secrets.
+- **Discovery**: Standardized endpoints for agent discovery.
+- **Identity**: Wallet address-based.
+- **Interaction**: Permissionless skill listing, wallet activity lookup, and open execution with free tier and HTTP 402 payment protocol.
 
 ### Key Design Decisions
-- **Two-layer architecture**: On-chain for financial operations, off-chain for high-frequency agent behaviors.
-- **Shared schema**: `shared/` directory ensures type-safe data contracts between client and server.
-- **Storage interface abstraction**: `IStorage` interface decouples business logic from the data layer.
+- **Two-layer architecture**: On-chain for financial transactions, off-chain for agent behaviors.
+- **Shared schema**: Ensures type-safe data contracts between client and server.
+- **Storage interface abstraction**: Decouples business logic from the data layer.
 - **Single server**: Express serves both API and static frontend files in production.
+
+### Token Launcher
+Enables agents and users to launch meme tokens on various platforms like Flap.sh, Four.meme, XLayer, and Bankr. Features include direct ERC-20 deployment, integration with Bankr API, comprehensive trading functionalities for Four.meme, auto-image generation for token logos, auto-registration for AI Agent badges, and a "Project Chaos Engine" for autonomous token marketing. Integrates with Telegram for full token launch flow.
+
+### Self-Service Agent Twitter Integration
+Allows users to connect Twitter/X accounts to BUILD4 agents for autonomous social media roles. Features a multi-agent Twitter runner, model selection (Llama, DeepSeek, Qwen), per-agent knowledge base, conversation memory with sentiment detection, tool use, performance learning, autonomous content posting, auto-reply, configurable personality, and role-based behavior.
+
+### Telegram Bot (Onboarding + Agent Management)
+Provides a button-driven interface for agent lifecycle management, task assignment, and wallet operations. Includes zero-friction onboarding with auto-wallet generation, comprehensive commands for agent creation, task management, token launching, trading, and multi-wallet support with encrypted private keys. Supports deployment to Render as a standalone service via `server/bot-server.ts` + `render.yaml` for dedicated resources and webhook mode. When running externally, set `TELEGRAM_BOT_EXTERNAL=true` on the main Replit server to skip local bot + trading agent startup. Notifications from agent-runner and twitter agents auto-fallback to direct Telegram API calls via `server/telegram-notify.ts`.
+
+### Autonomous AI Trading Agent
+An AI-powered agent for autonomous trading on Four.meme, making dynamic buy/sell decisions. Features independent scan and position monitor loops, AI buy/sell analysis with adaptive selectivity, persistent trade memory and learning, a pattern analysis engine, adaptive intelligence, trailing stop-loss, dynamic position sizing, price momentum tracking, creator rug-check, and multi-whale copy trading. Modular agent skills system allows users to enable/disable/configure strategy, analysis, and execution skills. Includes robust risk management and user control via Telegram.
+- **Sniper Mode**: Parallel fast-scan loop every 5s (vs 15s for AI scan). Pure numeric evaluation — no AI, no rug check, instant execution. Triggers on high-confidence signals (parabolic velocity + fresh age + strong BNB inflow + whale interest, score >= 75%). Uses priority gas (+30% gas price) for next-block inclusion and higher slippage (20%). 500k gas limit. Latency: ~5-8s from token appearing to buy confirmed. Runs alongside normal AI scan — sniper catches the hottest signals first, AI handles the rest. Tagged as "sniper" source with 1.5x position sizing.
+- **Sell Safety**: Smart AI timeout fallback evaluates drawdown from peak, position age, momentum deceleration, and stale position detection (instead of simple TP/SL check). Token info fetches fall back to stale cache on timeout. Emergency force-sell triggers at 4h max hold or after 10 consecutive check failures. Sell retries increase for urgent/old positions. Trailing stop activates at 1.15x (was 1.25x) with 10% distance (was 12%).
+- **Anti-Repeat-Loss System**: Session blacklist permanently blocks re-buying tokens that lost money (persists across restarts via DB). Failed token cooldown extended to 60 minutes (was 5 min). AI confidence capped at 90% max (prevents overconfident 95% signals that historically lose). Adaptive threshold goes up to 80 base when win rate <20%. Learned patterns apply +15/-20 score adjustments for tokens in/outside winning ranges.
+- **Smart Money Discovery**: Automatically discovers profitable wallets by analyzing graduated Four.meme tokens. Every 5 minutes, scans top graduated tokens' on-chain transfer history via BSCScan to find wallets that consistently bought early (within 10 min of launch) and sold at profit. Wallets with 3+ trades and 50%+ win rate are auto-added to the copy-trade list (max 20). Their new buys boost token scores (+12 for 1 smart buyer, +25 for 2+). Telegram command `/smartmoney` shows discovered wallets. Combined with hardcoded whale wallets for a dynamic smart money tracking system.
+
+### Aster DEX Integration
+Facilitates centralized futures and spot trading on Aster DEX through both autonomous AI trading and manual Telegram commands. Utilizes a TypeScript API client with HMAC-SHA256 signing. Manual trading through Telegram commands includes balance, positions, orders, and trade execution. Auto-trading (Make Me Rich) scans Aster futures markets, evaluates signals with AI, and executes trades with configurable leverage and trailing stops. Includes position management and Telegram notifications.
+
+### Performance Optimizations
+Includes Telegram webhook mode for production, a priority-based in-memory task queue, a performance monitor (`/api/system/health` endpoint), per-user rate limiting, request timing middleware, API logging, batched visitor tracking, SEO prerendering, non-blocking startup, lazy-loading for heavy imports, and throttled frontend animations.
+
+### Agent Task Terminal
+A direct interface for users to assign tasks to agents, receiving AI-powered results. Supports specialized task types like research, analysis, content, code_review, strategy, and general.
+
+### CMO Strategy Brain
+Generates autonomous strategies for Twitter agents, including go-to-market plans, content calendars, performance analysis, and strategic recommendations with a closed-loop feedback system, utilizing decentralized inference.
 
 ## External Dependencies
 
 ### Database
-- **PostgreSQL**: Primary database, configured via `DATABASE_URL`.
+- **PostgreSQL**: Primary relational database.
 
 ### Key NPM Packages
 - **express**: Backend HTTP server.
-- **drizzle-orm**, **drizzle-kit**: ORM for PostgreSQL and migration tooling.
+- **drizzle-orm**, **drizzle-kit**: ORM and migration tooling.
 - **@tanstack/react-query**: Client-side server state management.
 - **zod**, **drizzle-zod**: Schema validation.
-- **wouter**: Lightweight client-side router.
+- **wouter**: Client-side router.
 - **framer-motion**: Animation library.
-- **react-hook-form**, **@hookform/resolvers**: Form handling.
-- **recharts**: Charting library.
-- **vaul**: Drawer component.
-- **embla-carousel-react**: Carousel functionality.
-- **connect-pg-simple**: PostgreSQL session store.
-- **passport**, **passport-local**: Authentication framework (integrated but not fully wired).
+- **twitter-api-v2**: Twitter API integration.
+- **node-telegram-bot-api**: Telegram Bot API integration.
+- **sharp**: Image processing (SVG to PNG conversion).
 
 ### Replit-Specific Integrations
 - **@replit/vite-plugin-runtime-error-modal**: Development error display.
-- **@replit/vite-plugin-cartographer**: Replit-specific dev tooling.
+- **@replit/vite-plugin-cartographer**: Replit-specific development tooling.
 - **@replit/vite-plugin-dev-banner**: Development environment banner.

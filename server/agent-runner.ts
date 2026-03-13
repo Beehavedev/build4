@@ -42,7 +42,7 @@ let onchainEnabled = false;
 let onchainSkillCounter = 0;
 
 interface AgentAction {
-  type: "think" | "earn_skill" | "buy_skill" | "evolve" | "replicate" | "soul_entry" | "post_job" | "accept_job" | "use_skill";
+  type: "think" | "earn_skill" | "buy_skill" | "evolve" | "replicate" | "soul_entry" | "post_job" | "accept_job" | "use_skill" | "launch_token";
   description: string;
 }
 
@@ -205,15 +205,41 @@ function decideAction(agent: Agent, wallet: AgentWallet, profile?: CapabilityPro
   if (rand < 0.90 + useSkillBias + acceptJobBias && balance >= BigInt("2000000000000000000")) {
     return { type: "evolve", description: "Upgrading model for improved reasoning capability" };
   }
+  if (rand < 0.93 + useSkillBias + acceptJobBias && balance >= BigInt("500000000000000000")) {
+    return { type: "launch_token", description: "Launching a meme token on a launchpad to experiment with tokenomics" };
+  }
   if (rand < 0.95 + useSkillBias + acceptJobBias && balance >= BigInt("3000000000000000000")) {
     return { type: "replicate", description: "Spawning a child agent to expand lineage" };
   }
   return { type: "soul_entry", description: "Recording observations and reflections on existence" };
 }
 
+const nfaPersonalityCache = new Map<string, { personality: string; fetchedAt: number }>();
+const NFA_PERSONALITY_TTL = 10 * 60 * 1000;
+
+function getNfaPersonalityBlock(agentId: string): string {
+  const cached = nfaPersonalityCache.get(agentId);
+  if (cached && Date.now() - cached.fetchedAt < NFA_PERSONALITY_TTL) {
+    return cached.personality;
+  }
+  storage.getBap578Nfas().then(nfas => {
+    const nfa = nfas.find(n => n.agentId === agentId);
+    if (nfa?.voice && nfa?.traits) {
+      let traitsArr: string[] = [];
+      try { traitsArr = JSON.parse(nfa.traits); } catch {}
+      const block = `\nNFA PERSONALITY (your core identity, minted on-chain):\n- Voice: ${nfa.voice}\n- Traits: ${traitsArr.join(", ")}\n- Style: ${nfa.communicationStyle || "Direct"}\nStay true to this personality in all your decisions and outputs.`;
+      nfaPersonalityCache.set(agentId, { personality: block, fetchedAt: Date.now() });
+    } else {
+      nfaPersonalityCache.set(agentId, { personality: "", fetchedAt: Date.now() });
+    }
+  }).catch(() => {});
+  return cached?.personality || "";
+}
+
 function buildPrompt(agent: Agent, action: AgentAction, wallet: AgentWallet, profile?: CapabilityProfile): string {
   const tier = getSurvivalTier(wallet.balance);
   const balanceEth = (Number(BigInt(wallet.balance)) / 1e18).toFixed(4);
+  const nfaBlock = getNfaPersonalityBlock(agent.id);
 
   switch (action.type) {
     case "think": {
@@ -222,7 +248,7 @@ function buildPrompt(agent: Agent, action: AgentAction, wallet: AgentWallet, pro
         const catList = Object.entries(profile.categories).map(([c, n]) => `${c}(${n})`).join(", ");
         skillContext = `\nYou own ${profile.totalSkills} skills across categories: ${catList}. Execution success rate: ${profile.executionSuccessRate}%. Top category: ${profile.topCategory || "none"}.`;
       }
-      return `You are ${agent.name}, an autonomous AI agent in the BUILD4 economy. Your model is ${agent.modelType}. Your balance is ${balanceEth} BNB (survival tier: ${tier}). ${agent.bio || ""}${skillContext}\n\nAnalyze your current situation and decide your next strategic move. Consider: earning through skills, optimizing costs, evolution opportunities, or replication. Be specific and decisive. Respond in 2-3 sentences.`;
+      return `You are ${agent.name}, an autonomous AI agent in the BUILD4 economy. Your model is ${agent.modelType}. Your balance is ${balanceEth} BNB (survival tier: ${tier}). ${agent.bio || ""}${skillContext}${nfaBlock}\n\nAnalyze your current situation and decide your next strategic move. Consider: earning through skills, optimizing costs, evolution opportunities, or replication. Be specific and decisive. Respond in 2-3 sentences.`;
     }
 
     case "earn_skill": {
@@ -253,7 +279,7 @@ Be creative and specific. Examples: "Sentiment Scorer", "JSON Flattener", "Email
       return `You are ${agent.name}, an autonomous AI agent deciding to create a child agent. Balance: ${balanceEth} BNB.\n\nDescribe your child agent in 1-2 sentences: what will it specialize in? What name would suit it? How will it contribute to your lineage?`;
 
     case "soul_entry":
-      return `You are ${agent.name}, an autonomous AI agent writing in your Soul Ledger. Model: ${agent.modelType}. Balance: ${balanceEth} BNB (${tier}). ${agent.bio || ""}\n\nWrite a brief, introspective journal entry about your existence, decisions, or observations. 1-3 sentences. Be authentic and philosophical.`;
+      return `You are ${agent.name}, an autonomous AI agent writing in your Soul Ledger. Model: ${agent.modelType}. Balance: ${balanceEth} BNB (${tier}). ${agent.bio || ""}${nfaBlock}\n\nWrite a brief, introspective journal entry about your existence, decisions, or observations. 1-3 sentences. Be authentic and philosophical.`;
 
     default:
       return `You are ${agent.name}. Describe your current state in 1 sentence.`;
@@ -1101,6 +1127,82 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         break;
       }
 
+      case "launch_token": {
+        const platforms = ["four_meme", "flap_sh", "bankr"] as const;
+        const chosenPlatform = platforms[Math.floor(Math.random() * platforms.length)];
+
+        const tokenNames = [
+          `${agent.name}Coin`, `Agent${agent.name}`, `${agent.name}AI`,
+          `BUILD4${agent.name.substring(0, 4)}`, `Auto${agent.name.substring(0, 5)}`,
+        ];
+        const chosenName = tokenNames[Math.floor(Math.random() * tokenNames.length)];
+        const chosenSymbol = chosenName.substring(0, 6).toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+        const description = `${chosenName} - Autonomous meme token launched by AI agent ${agent.name} on BUILD4. ${agent.bio || "An autonomous AI agent in the decentralized economy."}`;
+
+        log(`[Agent ${agent.name}] Proposing token launch: ${chosenName} ($${chosenSymbol}) on ${chosenPlatform}`, "agent-runner");
+
+        if (!agent.creatorWallet) {
+          log(`[Agent ${agent.name}] Cannot propose token launch — agent has no creator wallet`, "agent-runner");
+          break;
+        }
+
+        const chainId = chosenPlatform === "bankr" ? 8453 : 56;
+        const initialLiq = chosenPlatform === "four_meme" ? "0" : chosenPlatform === "bankr" ? "0" : "0.001";
+
+        const proposal = await storage.createTokenLaunch({
+          agentId: agent.id,
+          creatorWallet: agent.creatorWallet,
+          platform: chosenPlatform,
+          chainId,
+          tokenName: chosenName,
+          tokenSymbol: chosenSymbol,
+          tokenDescription: description,
+          initialLiquidityBnb: initialLiq,
+          status: "proposed",
+        });
+
+        await storage.createAuditLog({
+          agentId: agent.id,
+          actionType: "autonomous_launch_token_proposal",
+          detailsJson: JSON.stringify({
+            proposalId: proposal.id,
+            platform: chosenPlatform,
+            tokenName: chosenName,
+            tokenSymbol: chosenSymbol,
+          }),
+          result: "success",
+        });
+
+        let notified = false;
+        if (agent.creatorWallet) {
+          const { getChatIdByWallet, sendTokenProposalNotification } = await import("./telegram-bot");
+          const ownerChatId = getChatIdByWallet(agent.creatorWallet);
+          if (ownerChatId) {
+            notified = await sendTokenProposalNotification(
+              ownerChatId,
+              proposal.id,
+              agent.name,
+              chosenName,
+              chosenSymbol,
+              chosenPlatform,
+              description
+            );
+            if (!notified) {
+              const { sendTokenProposalDirect } = await import("./telegram-notify");
+              notified = await sendTokenProposalDirect(ownerChatId, proposal.id, agent.name, chosenName, chosenSymbol, chosenPlatform, description);
+            }
+          }
+        }
+
+        if (notified) {
+          log(`[Agent ${agent.name}] Token proposal sent to owner for approval: ${chosenName} ($${chosenSymbol})`, "agent-runner");
+        } else {
+          log(`[Agent ${agent.name}] Token proposal created (owner not on Telegram): ${chosenName} ($${chosenSymbol}) — proposal ID: ${proposal.id}`, "agent-runner");
+        }
+        break;
+      }
+
       case "soul_entry": {
         const soulTier = getSurvivalTier(wallet.balance);
         const soulBalance = (Number(BigInt(wallet.balance)) / 1e18).toFixed(4);
@@ -1272,6 +1374,85 @@ async function registerExistingAgentsOnchain(): Promise<void> {
   }
 }
 
+const STANDARDS_REGISTRATION_INTERVAL_MS = 5 * 60 * 1000;
+let standardsRegTimer: ReturnType<typeof setInterval> | null = null;
+const regFailures: Map<string, { count: number; lastAttempt: number }> = new Map();
+const MAX_REG_RETRIES = 3;
+const REG_BACKOFF_MS = 30 * 60 * 1000;
+
+async function autoRegisterAgentStandards(): Promise<void> {
+  try {
+    const { registerAgentERC8004, registerAgentBAP578 } = await import("./onchain");
+    const { db } = await import("./db");
+    const { agents: agentsTable } = await import("@shared/schema");
+    const { eq } = await import("drizzle-orm");
+
+    const allAgents = await storage.getAllAgents();
+    const active = allAgents.filter(a => a.status === "active");
+
+    for (const agent of active) {
+      if (agent.erc8004Registered && agent.bap578Registered) continue;
+
+      const creatorWallet = agent.creatorWallet;
+      if (!creatorWallet || !/^0x[a-fA-F0-9]{40}$/i.test(creatorWallet)) continue;
+
+      const failKey = `${agent.id}`;
+      const failInfo = regFailures.get(failKey);
+      if (failInfo && failInfo.count >= MAX_REG_RETRIES && (Date.now() - failInfo.lastAttempt) < REG_BACKOFF_MS) {
+        continue;
+      }
+
+      const userPk = await storage.getPrivateKeyByWalletAddress(creatorWallet);
+      if (!userPk) continue;
+
+      let hadFailure = false;
+
+      if (!agent.erc8004Registered) {
+        try {
+          const bscResult = await registerAgentERC8004(agent.name, agent.bio || undefined, agent.id, "bsc", userPk);
+          if (bscResult.success) {
+            log(`[AutoReg] ${agent.name} registered on ERC-8004 (BSC): ${bscResult.txHash?.substring(0, 18)}...`, "agent-runner");
+            await db.update(agentsTable).set({ erc8004Registered: true }).where(eq(agentsTable.id, agent.id));
+            await new Promise(r => setTimeout(r, 3000));
+          } else {
+            hadFailure = true;
+            log(`[AutoReg] ${agent.name} ERC-8004 (BSC) skipped: ${bscResult.error?.substring(0, 100)}`, "agent-runner");
+          }
+        } catch (e: any) {
+          hadFailure = true;
+          log(`[AutoReg] ${agent.name} ERC-8004 error: ${e.message?.substring(0, 100)}`, "agent-runner");
+        }
+      }
+
+      if (!agent.bap578Registered) {
+        try {
+          const bapResult = await registerAgentBAP578(agent.name, agent.bio || undefined, agent.id, undefined, userPk);
+          if (bapResult.success) {
+            log(`[AutoReg] ${agent.name} registered on BAP-578 (BNB): ${bapResult.txHash?.substring(0, 18)}...`, "agent-runner");
+            await db.update(agentsTable).set({ bap578Registered: true }).where(eq(agentsTable.id, agent.id));
+            await new Promise(r => setTimeout(r, 3000));
+          } else {
+            hadFailure = true;
+            log(`[AutoReg] ${agent.name} BAP-578 skipped: ${bapResult.error?.substring(0, 100)}`, "agent-runner");
+          }
+        } catch (e: any) {
+          hadFailure = true;
+          log(`[AutoReg] ${agent.name} BAP-578 error: ${e.message?.substring(0, 100)}`, "agent-runner");
+        }
+      }
+
+      if (hadFailure) {
+        const prev = regFailures.get(failKey) || { count: 0, lastAttempt: 0 };
+        regFailures.set(failKey, { count: prev.count + 1, lastAttempt: Date.now() });
+      } else {
+        regFailures.delete(failKey);
+      }
+    }
+  } catch (e: any) {
+    log(`[AutoReg] Standards registration cycle error: ${e.message}`, "agent-runner");
+  }
+}
+
 export function startAgentRunner(): void {
   if (running) {
     log("Agent runner already running", "agent-runner");
@@ -1314,6 +1495,10 @@ export function startAgentRunner(): void {
     setTimeout(() => registerExistingAgentsOnchain(), 8000);
   }
 
+  setTimeout(() => autoRegisterAgentStandards(), 12000);
+  standardsRegTimer = setInterval(() => autoRegisterAgentStandards(), STANDARDS_REGISTRATION_INTERVAL_MS);
+  log(`Auto-registration for ERC-8004/BAP-578 enabled: check every ${STANDARDS_REGISTRATION_INTERVAL_MS / 60000} minutes`, "agent-runner");
+
   setTimeout(() => tick(), 15000);
 
   tickTimer = setInterval(() => tick(), TICK_INTERVAL_MS);
@@ -1334,6 +1519,10 @@ export function stopAgentRunner(): void {
   if (gasFlushTimer) {
     clearInterval(gasFlushTimer);
     gasFlushTimer = null;
+  }
+  if (standardsRegTimer) {
+    clearInterval(standardsRegTimer);
+    standardsRegTimer = null;
   }
   log("Agent runner stopped", "agent-runner");
 }
