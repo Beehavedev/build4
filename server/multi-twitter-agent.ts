@@ -1053,7 +1053,11 @@ Be specific, actionable, and strategic. No filler. Write like a real CMO present
     console.log(`[MultiTwitter] @${account.twitterHandle} Telegram chatId check: "${telegramChatId || "not set"}"`);
     if (telegramChatId) {
       const telegramMsg = `📋 Strategy Update from your ${roleInfo.title} @${account.twitterHandle}\n\n${title}\n\n${summary}\n\nFull memo available in your agent dashboard on BUILD4.`;
-      const sent = await sendTelegramMessage(telegramChatId, telegramMsg);
+      let sent = await sendTelegramMessage(telegramChatId, telegramMsg);
+      if (!sent) {
+        const { sendTelegramDirect } = await import("./telegram-notify");
+        sent = await sendTelegramDirect(telegramChatId, telegramMsg);
+      }
       if (sent) {
         console.log(`[MultiTwitter] @${account.twitterHandle} strategy sent to owner via Telegram`);
       } else {

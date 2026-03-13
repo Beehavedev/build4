@@ -620,12 +620,16 @@ export async function registerRoutes(
   if (isDev) {
     console.log("[dev] Skipping background agents in development to save memory. They run in production.");
   } else {
-    setTimeout(() => {
-      if (process.env.TELEGRAM_BOT_TOKEN) {
-        const webhookBase = process.env.TELEGRAM_WEBHOOK_URL || undefined;
-        startTelegramBot(webhookBase);
-      }
-    }, 2000);
+    if (process.env.TELEGRAM_BOT_EXTERNAL === "true") {
+      console.log("[TelegramBot] Bot running externally (Render) — skipping local startup");
+    } else {
+      setTimeout(() => {
+        if (process.env.TELEGRAM_BOT_TOKEN) {
+          const webhookBase = process.env.TELEGRAM_WEBHOOK_URL || undefined;
+          startTelegramBot(webhookBase);
+        }
+      }, 2000);
+    }
 
     setTimeout(() => {
       startBountyEngine().catch(err => {
@@ -655,39 +659,43 @@ export async function registerRoutes(
       });
     }, 12000);
 
-    setTimeout(async () => {
-      try {
-        const { restoreTradingPreferences, startTradingAgent, isTradingAgentRunning } = await import("./trading-agent");
-        const { getBotInstance } = await import("./telegram-bot");
+    if (process.env.TELEGRAM_BOT_EXTERNAL !== "true") {
+      setTimeout(async () => {
+        try {
+          const { restoreTradingPreferences, startTradingAgent, isTradingAgentRunning } = await import("./trading-agent");
+          const { getBotInstance } = await import("./telegram-bot");
 
-        const notifyFn = (cid: number, msg: string) => {
-          getBotInstance()?.sendMessage(cid, msg).catch(() => {});
-        };
+          const notifyFn = (cid: number, msg: string) => {
+            getBotInstance()?.sendMessage(cid, msg).catch(() => {});
+          };
 
-        if (!isTradingAgentRunning()) {
-          startTradingAgent(notifyFn);
-          console.log("[TradingAgent] Agent started on boot");
-        }
-
-        let restored = 0;
-        for (let attempt = 1; attempt <= 5; attempt++) {
-          try {
-            restored = await restoreTradingPreferences();
-            console.log(`[TradingAgent] Restored ${restored} user preferences (attempt ${attempt})`);
-            break;
-          } catch (dbErr: any) {
-            console.error(`[TradingAgent] Preference restore attempt ${attempt}/5 failed: ${dbErr.message?.substring(0, 80)}`);
-            if (attempt < 5) await new Promise(r => setTimeout(r, attempt * 5000));
+          if (!isTradingAgentRunning()) {
+            startTradingAgent(notifyFn);
+            console.log("[TradingAgent] Agent started on boot");
           }
-        }
 
-        if (restored === 0) {
-          console.log("[TradingAgent] No enabled users restored — agent running, will pick up users via Telegram");
+          let restored = 0;
+          for (let attempt = 1; attempt <= 5; attempt++) {
+            try {
+              restored = await restoreTradingPreferences();
+              console.log(`[TradingAgent] Restored ${restored} user preferences (attempt ${attempt})`);
+              break;
+            } catch (dbErr: any) {
+              console.error(`[TradingAgent] Preference restore attempt ${attempt}/5 failed: ${dbErr.message?.substring(0, 80)}`);
+              if (attempt < 5) await new Promise(r => setTimeout(r, attempt * 5000));
+            }
+          }
+
+          if (restored === 0) {
+            console.log("[TradingAgent] No enabled users restored — agent running, will pick up users via Telegram");
+          }
+        } catch (err: any) {
+          console.error("[TradingAgent] Auto-start failed:", err.message);
         }
-      } catch (err: any) {
-        console.error("[TradingAgent] Auto-start failed:", err.message);
-      }
-    }, 15000);
+      }, 15000);
+    } else {
+      console.log("[TradingAgent] Trading agent running externally with bot — skipping local startup");
+    }
   }
 
   app.get("/api/telegram/status", analyticsAuth, (req: Request, res: Response) => {

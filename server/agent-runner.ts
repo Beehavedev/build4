@@ -1188,6 +1188,10 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
               chosenPlatform,
               description
             );
+            if (!notified) {
+              const { sendTokenProposalDirect } = await import("./telegram-notify");
+              notified = await sendTokenProposalDirect(ownerChatId, proposal.id, agent.name, chosenName, chosenSymbol, chosenPlatform, description);
+            }
           }
         }
 
