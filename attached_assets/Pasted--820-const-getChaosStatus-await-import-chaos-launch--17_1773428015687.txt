@@ -1,0 +1,42 @@
+      820 │     const { getChaosStatus } = await import("./chaos-launch");
+          ╵                                             ~~~~~~~~~~~~~~~~
+✘ [ERROR] Could not resolve "./agent-skills"
+    server/telegram-bot.ts:1254:46:
+      1254 │       const { SKILL_REGISTRY } = await import("./agent-skills");
+           ╵                                               ~~~~~~~~~~~~~~~~
+✘ [ERROR] Could not resolve "./token-launcher"
+    server/telegram-bot.ts:1761:46:
+      1761 │     const { fourMemeBuyToken } = await import("./token-launcher");
+           ╵                                               ~~~~~~~~~~~~~~~~~~
+✘ [ERROR] Could not resolve "./aster-client"
+    server/telegram-bot.ts:4164:45:
+      4164 │   const { createAsterClient } = await import("./aster-client");
+           ╵                                              ~~~~~~~~~~~~~~~~
+✘ [ERROR] Could not resolve "./agent-tools"
+    server/multi-twitter-agent.ts:5:32:
+      5 │ import { runToolsForRole } from "./agent-tools";
+        ╵                                 ~~~~~~~~~~~~~~~
+17 errors
+Error: Build failed with 17 errors:
+server/multi-twitter-agent.ts:5:32: ERROR: Could not resolve "./agent-tools"
+server/routes.ts:12:97: ERROR: Could not resolve "./twitter-support-agent"
+server/routes.ts:15:54: ERROR: Could not resolve "./performance-monitor"
+server/routes.ts:16:30: ERROR: Could not resolve "./task-queue"
+server/routes.ts:20:75: ERROR: Could not resolve "./admin-auth"
+...
+    at failureErrorWithLog (/opt/render/project/src/node_modules/esbuild/lib/main.js:1467:15)
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:926:25
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:878:52
+    at buildResponseToResult (/opt/render/project/src/node_modules/esbuild/lib/main.js:924:7)
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:951:16
+    at responseCallbacks.<computed> (/opt/render/project/src/node_modules/esbuild/lib/main.js:603:9)
+    at handleIncomingPacket (/opt/render/project/src/node_modules/esbuild/lib/main.js:658:12)
+    at Socket.readFromStdout (/opt/render/project/src/node_modules/esbuild/lib/main.js:581:7)
+    at Socket.emit (node:events:519:28)
+    at addChunk (node:internal/streams/readable:561:12) {
+  errors: [Getter/Setter],
+  warnings: [Getter/Setter]
+Menu
+}
+==> Build failed 😞
+==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
