@@ -2,11 +2,6 @@ import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
 
-if (process.env.RENDER === "true") {
-  console.log("Render detected — skipping full build (bot uses tsx directly)");
-  process.exit(0);
-}
-
 const allowlist = [
   "@google/generative-ai",
   "axios",
@@ -34,6 +29,28 @@ const allowlist = [
   "zod",
   "zod-validation-error",
 ];
+
+async function buildForRender() {
+  console.log("Render detected — building bot server only (no frontend)");
+  const pkg = JSON.parse(await readFile("package.json", "utf-8"));
+  const allDeps = [
+    ...Object.keys(pkg.dependencies || {}),
+    ...Object.keys(pkg.devDependencies || {}),
+  ];
+  await rm("dist", { recursive: true, force: true });
+  await esbuild({
+    entryPoints: ["server/bot-server.ts"],
+    platform: "node",
+    bundle: true,
+    format: "cjs",
+    outfile: "dist/index.cjs",
+    define: { "process.env.NODE_ENV": '"production"' },
+    minify: true,
+    external: allDeps,
+    logLevel: "info",
+  });
+  console.log("Bot server built successfully → dist/index.cjs");
+}
 
 async function buildAll() {
   await rm("dist", { recursive: true, force: true });
@@ -64,7 +81,9 @@ async function buildAll() {
   });
 }
 
-buildAll().catch((err) => {
+const buildFn = process.env.RENDER === "true" ? buildForRender : buildAll;
+
+buildFn().catch((err) => {
   console.error(err);
   process.exit(1);
 });
