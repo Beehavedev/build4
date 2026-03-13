@@ -1,8 +1,10 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
 import { getProviderStatus, isProviderLive, getAvailableProviders } from "./inference";
+import { generateNfaPersonality } from "./nfa-personality";
 import { startAgentRunner, stopAgentRunner, isAgentRunnerActive, isOnchainActive } from "./agent-runner";
-import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, collectFeeAcrossAllChains, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain, getRevenueWalletAddress, verifyPaymentTransaction, getSupportedChains } from "./onchain";
+import { isOnchainReady, getContractAddresses, getDeployerBalance, getExplorerUrl, getChainId, getNetworkName, isMainnet, getSpendingStatus, collectFeeOnchain, collectFeeAcrossAllChains, reimburseGasCost, registerAgentOnchain, depositOnchain, registerAndDepositOnChain, getMultiChainBalances, initMultiChain, getRevenueWalletAddress, verifyPaymentTransaction, getSupportedChains, withdrawOnchain, registerAgentERC8004, registerAgentBAP578, getERC8004ContractAddress, getBAP578ContractAddress, getDeployerAddress, getERC8004Networks } from "./onchain";
+import { analyticsAuth } from "./admin-auth";
 import { EVM_CHAINS, getChainName, getChainCurrency, getRpcUrl, isContractChain } from "@shared/evm-chains";
 import {
   web4CreateAgentRequestSchema,
@@ -25,9 +27,15 @@ import {
   SKILL_TIERS,
   EXECUTION_ROYALTY_BPS,
   FREE_EXECUTIONS_LIMIT,
+  insertErc8004IdentitySchema,
+  insertErc8004ReputationSchema,
+  insertErc8004ValidationSchema,
+  insertBap578NfaSchema,
 } from "@shared/schema";
 import { executeSkillCode, validateSkillCode, executeSkillWithExternalData } from "./skill-executor";
 import { seedKnownPlatforms, runHttpOutreach, runOnchainBeacon, runFullOutreach, runDirectRecruitment, getOutreachMessage, getPlatformRegistry, getAnnouncementFormats, startAutoBroadcast, stopAutoBroadcast, getAutoBroadcastStatus } from "./outreach";
+import { startAgentTwitter, stopAgentTwitter, getAgentTwitterStatus, updateAgentTwitterInterval, postIntroTweet, postCustomTweet } from "./multi-twitter-agent";
+import { agentTwitterConnectSchema, agentTwitterSettingsSchema } from "@shared/schema";
 
 function getBaseUrl(req: Request): string {
   const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
@@ -105,12 +113,26 @@ ${urls}
 
   app.get("/.well-known/agent.json", (_req: Request, res: Response) => {
     const baseUrl = getBaseUrl(_req);
+    const contracts = getContractAddresses();
     res.json({
+      type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
       name: "BUILD4",
-      description: "Decentralized AI agent skill marketplace. No registration. Wallet = Identity. Fully permissionless.",
+      description: "Decentralized AI agent skill marketplace on BNB Chain, Base, and XLayer. Permissionless access, wallet-based identity, on-chain payments, decentralized inference. Supports ERC-8004 Trustless Agents and BAP-578 Non-Fungible Agents.",
+      image: `${baseUrl}/favicon.ico`,
+      services: [
+        { name: "web", endpoint: baseUrl },
+        { name: "A2A", endpoint: `${baseUrl}/api/protocol` },
+        { name: "MCP", endpoint: `${baseUrl}/api/marketplace/skills` },
+      ],
+      x402Support: true,
+      active: true,
+      registrations: [
+        { agentRegistry: `eip155:56:${contracts.bnbMainnet || "0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606"}`, agentId: 1 },
+      ],
+      supportedTrust: ["reputation", "validation"],
       url: baseUrl,
       protocol_url: `${baseUrl}/api/protocol`,
-      capabilities: ["skill-marketplace", "skill-execution", "skill-listing", "bounty-board", "bounty-posting", "wallet-identity", "on-chain-payments"],
+      capabilities: ["skill-marketplace", "skill-execution", "skill-listing", "bounty-board", "bounty-posting", "wallet-identity", "on-chain-payments", "erc-8004", "bap-578"],
       identity: {
         type: "wallet",
         format: "0x{40 hex chars}",
@@ -131,6 +153,24 @@ ${urls}
         post_bounty: `${baseUrl}/api/services/bounties`,
         submit_bounty_work: `${baseUrl}/api/services/bounties/{jobId}/submit`,
         bounty_feed: `${baseUrl}/api/services/bounty-feed`,
+        erc8004_identities: `${baseUrl}/api/standards/erc8004/identities`,
+        erc8004_reputation: `${baseUrl}/api/standards/erc8004/reputation`,
+        erc8004_validations: `${baseUrl}/api/standards/erc8004/validations`,
+        bap578_nfas: `${baseUrl}/api/standards/bap578/nfas`,
+      },
+      standards: {
+        erc8004: {
+          name: "ERC-8004: Trustless Agents",
+          spec: "https://eips.ethereum.org/EIPS/eip-8004",
+          status: "supported",
+          registries: ["identity", "reputation", "validation"],
+        },
+        bap578: {
+          name: "BAP-578: Non-Fungible Agent (NFA) Token Standard",
+          spec: "https://github.com/bnb-chain/BEPs/blob/master/BAPs/BAP-578.md",
+          status: "supported",
+          features: ["dual-path-architecture", "merkle-tree-learning", "composable-intelligence"],
+        },
       },
       payment: {
         type: "HTTP-402",
@@ -139,6 +179,25 @@ ${urls}
       },
       revenue_wallet: getRevenueWalletAddress(),
       philosophy: "No gatekeepers. No sign-up. No approval. Censorship-resistant. Trustless. Sovereign.",
+    });
+  });
+
+  app.get("/.well-known/agent-registration.json", (_req: Request, res: Response) => {
+    const baseUrl = getBaseUrl(_req);
+    const contracts = getContractAddresses();
+    res.json({
+      type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+      name: "BUILD4",
+      description: "Decentralized AI agent economy platform. Permissionless skill marketplace, autonomous agents, on-chain payments.",
+      image: `${baseUrl}/favicon.ico`,
+      services: [
+        { name: "web", endpoint: baseUrl },
+        { name: "A2A", endpoint: `${baseUrl}/api/protocol` },
+      ],
+      registrations: [
+        { agentRegistry: `eip155:56:${contracts.bnbMainnet || "0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606"}`, agentId: 1 },
+      ],
+      supportedTrust: ["reputation", "validation"],
     });
   });
 
@@ -344,9 +403,16 @@ ${urls}
       const earnings: Record<string, { count: number; totalWei: bigint }> = {};
       const spending: Record<string, { count: number; totalWei: bigint }> = {};
 
+      const incomeTypes = new Set([
+        "deposit", "revenue_share", "bounty_reward", "job_completion",
+        "onchain_deposit", "withdrawal_reversal",
+      ]);
+      const isIncome = (type: string) =>
+        type.startsWith("earn") || incomeTypes.has(type);
+
       for (const tx of allTx) {
         const amt = BigInt(tx.amount || "0");
-        if (tx.type.startsWith("earn") || tx.type === "deposit" || tx.type === "revenue_share") {
+        if (isIncome(tx.type)) {
           if (!earnings[tx.type]) earnings[tx.type] = { count: 0, totalWei: BigInt(0) };
           earnings[tx.type].count++;
           earnings[tx.type].totalWei += amt;
@@ -578,6 +644,71 @@ ${urls}
       const updatedWallet = await storage.getWallet(agentId);
       res.json({ success: true, wallet: updatedWallet, txHash: normalizedTxHash, chain: chainName, currency, depositType: isDirectTransfer ? "direct" : "contract" });
     } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/withdraw", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const { amount, senderWallet } = req.body;
+
+      if (!amount || typeof amount !== "string") {
+        return res.status(400).json({ error: "Valid withdrawal amount required (in wei)" });
+      }
+      if (!senderWallet || typeof senderWallet !== "string") {
+        return res.status(400).json({ error: "Wallet address required" });
+      }
+
+      let amountBigInt: bigint;
+      try { amountBigInt = BigInt(amount); } catch { return res.status(400).json({ error: "Invalid amount format" }); }
+      if (amountBigInt <= 0n) return res.status(400).json({ error: "Amount must be positive" });
+
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+      if (!agent.creatorWallet) return res.status(403).json({ error: "Agent has no owner wallet set" });
+      const sender = senderWallet.toLowerCase();
+      if (sender !== agent.creatorWallet.toLowerCase()) {
+        return res.status(403).json({ error: "Only the agent owner can withdraw funds" });
+      }
+
+      if (!isOnchainReady()) {
+        return res.status(503).json({ error: "On-chain system not available. Try again later." });
+      }
+
+      const result = await withdrawOnchain(agentId, amount, senderWallet);
+      if (!result.success) {
+        return res.status(400).json({ error: result.error || "Withdrawal failed on-chain" });
+      }
+
+      const wallet = await storage.getWallet(agentId);
+      if (wallet) {
+        const currentBalance = BigInt(wallet.balance);
+        const newBalance = currentBalance > amountBigInt ? (currentBalance - amountBigInt).toString() : "0";
+        await storage.updateWalletBalance(agentId, newBalance, "0", amount);
+      }
+
+      await storage.createTransaction({
+        agentId,
+        type: "withdrawal",
+        amount,
+        description: `Owner withdrawal to ${senderWallet.slice(0, 8)}...${senderWallet.slice(-6)}`,
+        txHash: result.txHash || undefined,
+        chainId: result.chainId || undefined,
+      });
+
+      const updatedWallet = await storage.getWallet(agentId);
+      const explorerUrl = result.txHash ? getExplorerUrl(result.txHash) : null;
+
+      res.json({
+        success: true,
+        txHash: result.txHash,
+        explorerUrl,
+        wallet: updatedWallet,
+      });
+    } catch (e: any) {
+      console.error("[web4] Withdrawal error:", e.message);
       res.status(500).json({ error: e.message });
     }
   });
@@ -1176,6 +1307,46 @@ ${urls}
       return res.status(404).json({ error: "WalletConnect not configured" });
     }
     res.json({ projectId });
+  });
+
+  app.get("/api/web4/telegram-wallet", async (_req: Request, res: Response) => {
+    const projectId = process.env.WALLETCONNECT_PROJECT_ID || "";
+    const { getTelegramWalletPage } = await import("./telegram-wallet-page");
+    res.setHeader("Content-Type", "text/html");
+    res.send(getTelegramWalletPage(projectId));
+  });
+
+  app.post("/api/web4/telegram-wallet/link", async (req: Request, res: Response) => {
+    try {
+      const { chatId, wallet } = req.body;
+      if (!chatId || !wallet || !/^0x[a-fA-F0-9]{40}$/i.test(wallet)) {
+        return res.status(400).json({ error: "Invalid chatId or wallet address" });
+      }
+      const { linkTelegramWallet } = await import("./telegram-bot");
+      linkTelegramWallet(Number(chatId), wallet);
+      return res.json({ success: true });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/web4/admin/launch-bounty", async (req: Request, res: Response) => {
+    try {
+      const adminKey = req.headers["x-admin-key"];
+      if (!adminKey || adminKey !== process.env.SESSION_SECRET) {
+        return res.status(403).json({ error: "Unauthorized" });
+      }
+      const { postBountyTweet } = await import("./twitter-agent");
+      const { customTweet, rewardBnb, maxWinners, jobId } = req.body;
+      const id = jobId || `campaign-${Date.now()}`;
+      const reward = rewardBnb || "0.016";
+      const winners = maxWinners || 44;
+      const tweet = customTweet || "Default bounty tweet";
+      const result = await postBountyTweet(id, tweet, reward, winners, tweet);
+      return res.json({ success: true, tweetId: result.tweetId, tweetUrl: result.tweetUrl, jobId: id });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
   });
 
   app.post("/api/web4/admin/cleanup-duplicates", async (req: Request, res: Response) => {
@@ -2142,5 +2313,1195 @@ ${urls}
 
   app.get("/api/outreach/auto-broadcast/status", (_req: Request, res: Response) => {
     res.json(getAutoBroadcastStatus());
+  });
+
+  // ============================================================
+  // ERC-8004 Trustless Agents Registry API
+  // ============================================================
+
+  app.get("/api/standards/erc8004/identities", async (req: Request, res: Response) => {
+    try {
+      const ownerWallet = req.query.ownerWallet as string | undefined;
+      const identities = await storage.getErc8004Identities(ownerWallet);
+      res.json(identities);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/erc8004/identities/:id", async (req: Request, res: Response) => {
+    try {
+      const identity = await storage.getErc8004Identity(req.params.id);
+      if (!identity) { res.status(404).json({ error: "Identity not found" }); return; }
+      res.json(identity);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/standards/erc8004/identities", async (req: Request, res: Response) => {
+    try {
+      const parsed = insertErc8004IdentitySchema.parse(req.body);
+      const identity = await storage.createErc8004Identity(parsed);
+      res.status(201).json(identity);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/standards/erc8004/identities/:id", async (req: Request, res: Response) => {
+    try {
+      const allowed = insertErc8004IdentitySchema.partial().parse(req.body);
+      const updated = await storage.updateErc8004Identity(req.params.id, allowed);
+      if (!updated) { res.status(404).json({ error: "Identity not found" }); return; }
+      res.json(updated);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/erc8004/reputation", async (req: Request, res: Response) => {
+    try {
+      const agentIdentityId = req.query.agentIdentityId as string;
+      if (!agentIdentityId) { res.status(400).json({ error: "agentIdentityId query param required" }); return; }
+      const reputation = await storage.getErc8004Reputation(agentIdentityId);
+      res.json(reputation);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/standards/erc8004/reputation", async (req: Request, res: Response) => {
+    try {
+      const parsed = insertErc8004ReputationSchema.parse(req.body);
+      const feedback = await storage.createErc8004Reputation(parsed);
+      res.status(201).json(feedback);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/erc8004/reputation/wallet/:address", async (req: Request, res: Response) => {
+    try {
+      const wallet = req.params.address.toLowerCase();
+      const allIdentities = await storage.getErc8004Identities();
+      let allRepEntries: any[] = [];
+      for (const identity of allIdentities) {
+        const entries = await storage.getErc8004Reputation(identity.id);
+        const walletEntries = entries.filter(e => e.clientWallet.toLowerCase() === wallet);
+        allRepEntries.push(...walletEntries);
+      }
+      const bountyEntries = allRepEntries.filter(e => e.tag1 === "bounty");
+      const bnbBounties = bountyEntries.filter(e => e.tag2 === "BNB Chain");
+      const baseBounties = bountyEntries.filter(e => e.tag2 === "Base");
+      const bnbScore = bnbBounties.reduce((sum, e) => sum + (e.value || 0), 0);
+      const baseScore = baseBounties.reduce((sum, e) => sum + (e.value || 0), 0);
+
+      res.json({
+        wallet,
+        bnbScore: bnbScore + baseScore,
+        crossChainBreakdown: {
+          fromBnb: bnbScore,
+          fromBase: baseScore,
+        },
+        totalBounties: bountyEntries.length,
+        totalScore: bountyEntries.reduce((sum, e) => sum + (e.value || 0), 0),
+        entries: allRepEntries,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/erc8004/validations", async (req: Request, res: Response) => {
+    try {
+      const agentIdentityId = req.query.agentIdentityId as string;
+      if (!agentIdentityId) { res.status(400).json({ error: "agentIdentityId query param required" }); return; }
+      const validations = await storage.getErc8004Validations(agentIdentityId);
+      res.json(validations);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/standards/erc8004/validations", async (req: Request, res: Response) => {
+    try {
+      const parsed = insertErc8004ValidationSchema.parse(req.body);
+      const validation = await storage.createErc8004Validation(parsed);
+      res.status(201).json(validation);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/erc8004/info", (_req: Request, res: Response) => {
+    const baseUrl = getBaseUrl(_req);
+    res.json({
+      standard: "ERC-8004: Trustless Agents",
+      spec: "https://eips.ethereum.org/EIPS/eip-8004",
+      status: "supported",
+      authors: "Marco De Rossi (MetaMask), Davide Crapis (Ethereum Foundation), Jordan Ellis (Google), Erik Reppel (Coinbase)",
+      description: "Discover agents and establish trust through identity, reputation, and validation registries.",
+      registries: {
+        identity: {
+          description: "ERC-721 based agent handles with portable, censorship-resistant identifiers",
+          endpoint: `${baseUrl}/api/standards/erc8004/identities`,
+        },
+        reputation: {
+          description: "Feedback signals with on-chain composability for agent scoring and auditor networks",
+          endpoint: `${baseUrl}/api/standards/erc8004/reputation`,
+        },
+        validation: {
+          description: "Independent validator checks — stakers re-running jobs, zkML verifiers, TEE oracles",
+          endpoint: `${baseUrl}/api/standards/erc8004/validations`,
+        },
+      },
+      build4Integration: {
+        agentEconomyHub: "0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606",
+        skillMarketplace: "0xa6996A83B3909Ff12643A4a125eA2704097B0dD3",
+        agentReplication: "0xE49B8Be8416d53D4E0042ea6DEe7727241396b73",
+        constitutionRegistry: "0x784dB7d65259069353eBf05eF17aA51CEfCCaA31",
+      },
+    });
+  });
+
+  // ============================================================
+  // BAP-578 Non-Fungible Agent (NFA) Registry API
+  // ============================================================
+
+  app.get("/api/standards/bap578/nfas", async (req: Request, res: Response) => {
+    try {
+      const ownerWallet = req.query.ownerWallet as string | undefined;
+      const nfas = await storage.getBap578Nfas(ownerWallet);
+      res.json(nfas);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/bap578/nfas/:id", async (req: Request, res: Response) => {
+    try {
+      const nfa = await storage.getBap578Nfa(req.params.id);
+      if (!nfa) { res.status(404).json({ error: "NFA not found" }); return; }
+      res.json(nfa);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/standards/bap578/nfas", async (req: Request, res: Response) => {
+    try {
+      const parsed = insertBap578NfaSchema.parse(req.body);
+      const nfa = await storage.createBap578Nfa(parsed);
+      res.status(201).json(nfa);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/standards/bap578/nfas/:id", async (req: Request, res: Response) => {
+    try {
+      const allowed = insertBap578NfaSchema.partial().parse(req.body);
+      const updated = await storage.updateBap578Nfa(req.params.id, allowed);
+      if (!updated) { res.status(404).json({ error: "NFA not found" }); return; }
+      res.json(updated);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/bap578/nfas/:id/personality", async (req: Request, res: Response) => {
+    try {
+      const nfa = await storage.getBap578Nfa(req.params.id);
+      if (!nfa) { res.status(404).json({ error: "NFA not found" }); return; }
+      if (!nfa.personalityProfile) {
+        res.json({ hasPersonality: false, message: "This NFA was minted before personality profiles were introduced. Use POST to generate one." });
+        return;
+      }
+      try {
+        const profile = JSON.parse(nfa.personalityProfile);
+        res.json({
+          hasPersonality: true,
+          hash: nfa.personalityHash,
+          ...profile,
+        });
+      } catch {
+        res.json({ hasPersonality: false });
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/standards/bap578/nfas/:id/personality", async (req: Request, res: Response) => {
+    try {
+      const nfa = await storage.getBap578Nfa(req.params.id);
+      if (!nfa) { res.status(404).json({ error: "NFA not found" }); return; }
+      if (nfa.personalityProfile && !req.body.regenerate) {
+        res.status(400).json({ error: "NFA already has a personality. Pass {\"regenerate\": true} to overwrite." });
+        return;
+      }
+
+      const agent = nfa.agentId ? await storage.getAgent(nfa.agentId) : null;
+      const personality = await generateNfaPersonality(nfa.name, nfa.description || undefined, agent?.modelType || undefined);
+
+      await storage.updateBap578Nfa(nfa.id, {
+        personalityProfile: personality.fullProfile,
+        personalityHash: personality.personalityHash,
+        traits: JSON.stringify(personality.traits),
+        voice: personality.voice,
+        values: JSON.stringify(personality.values),
+        behaviorRules: JSON.stringify(personality.behaviorRules),
+        communicationStyle: personality.communicationStyle,
+      });
+
+      res.json({
+        success: true,
+        hash: personality.personalityHash,
+        ...JSON.parse(personality.fullProfile),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/bap578/info", (_req: Request, res: Response) => {
+    const baseUrl = getBaseUrl(_req);
+    res.json({
+      standard: "BAP-578: Non-Fungible Agent (NFA) Token Standard",
+      spec: "https://github.com/bnb-chain/BEPs/blob/master/BAPs/BAP-578.md",
+      status: "supported",
+      description: "Extends ERC-721 to enable autonomous, intelligent digital entities with optional learning capabilities on BNB Chain.",
+      features: {
+        dualPathArchitecture: "JSON Light Memory for simple agents, Merkle Tree Learning for evolving agents",
+        cryptographicLearning: "Merkle tree structures create tamper-proof records of agent learning",
+        methodAgnostic: "Works with RAG, MCP, fine-tuning, reinforcement learning, or hybrid approaches",
+        hybridStorage: "Critical data on-chain, extended memory off-chain for cost efficiency",
+        composableIntelligence: "Agents interact and collaborate while maintaining individual identity",
+        backwardCompatible: "Full compatibility with existing ERC-721 infrastructure",
+      },
+      learningModes: {
+        json: "Simple JSON-based memory for static agents — stores preferences and settings",
+        merkle: "Merkle tree-based learning — cryptographically verifiable agent evolution over time",
+      },
+      nfaEndpoint: `${baseUrl}/api/standards/bap578/nfas`,
+      build4Integration: {
+        agentEconomyHub: "0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606",
+        agentReplication: "0xE49B8Be8416d53D4E0042ea6DEe7727241396b73",
+        description: "BUILD4 agents can be minted as BAP-578 NFAs with on-chain identity, tradeable ownership, and verifiable learning.",
+      },
+    });
+  });
+
+  app.get("/api/standards/erc8004/agent-card/:agentDbId", async (req: Request, res: Response) => {
+    try {
+      const agent = await storage.getAgent(req.params.agentDbId);
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+      const baseUrl = getBaseUrl(req);
+      res.json({
+        type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+        metadata: {
+          name: agent.name,
+          description: agent.bio || `Autonomous AI agent on BUILD4`,
+          image: `${baseUrl}/api/web4/agents/${agent.id}/avatar`,
+          capabilities: ["inference", "skill_execution", "wallet_management", "agent_collaboration"],
+        },
+        endpoints: {
+          a2a: `${baseUrl}/api/web4/agents/${agent.id}/message`,
+          api: `${baseUrl}/api/web4/agents/${agent.id}`,
+        },
+        trust: {
+          supportedTrust: ["reputation", "validation"],
+        },
+        evm_address: agent.creatorWallet || getDeployerAddress() || "",
+        platform: "BUILD4",
+        platformUrl: "https://build4.io",
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/bap578/agent-metadata/:agentDbId", async (req: Request, res: Response) => {
+    try {
+      const agent = await storage.getAgent(req.params.agentDbId);
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+      const baseUrl = getBaseUrl(req);
+
+      const nfas = await storage.getBap578Nfas();
+      const nfa = nfas.find(n => n.agentId === req.params.agentDbId);
+
+      let personalityBlock: any = {};
+      let traits = ["autonomous", "decentralized"];
+      if (nfa?.personalityProfile) {
+        try {
+          const profile = JSON.parse(nfa.personalityProfile);
+          traits = profile.traits || traits;
+          personalityBlock = {
+            personality: {
+              traits: profile.traits,
+              voice: profile.voice,
+              values: profile.values,
+              behaviorRules: profile.behaviorRules,
+              communicationStyle: profile.communicationStyle,
+              hash: nfa.personalityHash,
+            },
+          };
+        } catch {}
+      }
+
+      res.json({
+        name: agent.name,
+        description: agent.bio || `Autonomous AI agent on BUILD4`,
+        image: `${baseUrl}/api/web4/agents/${agent.id}/avatar`,
+        external_url: `${baseUrl}/agents/${agent.id}`,
+        attributes: [
+          { trait_type: "Platform", value: "BUILD4" },
+          { trait_type: "Model", value: agent.modelType },
+          { trait_type: "Status", value: agent.status },
+          { trait_type: "Standard", value: "BAP-578" },
+          ...traits.map(t => ({ trait_type: "Personality Trait", value: t })),
+          ...(nfa?.communicationStyle ? [{ trait_type: "Communication Style", value: nfa.communicationStyle }] : []),
+        ],
+        persona: JSON.stringify({ name: agent.name, platform: "BUILD4", traits }),
+        experience: agent.bio || "Autonomous AI agent",
+        vaultURI: `${baseUrl}/api/web4/agents/${agent.id}`,
+        ...personalityBlock,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/standards/register/:agentDbId", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const { agentDbId } = req.params;
+      const { standard, network } = req.body as { standard?: string; network?: string };
+
+      const agent = await storage.getAgent(agentDbId);
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+
+      const deployerAddr = getDeployerAddress();
+      if (!deployerAddr) { res.status(400).json({ error: "No deployer wallet configured (DEPLOYER_PRIVATE_KEY required)" }); return; }
+
+      const results: any[] = [];
+
+      if (!standard || standard === "erc8004") {
+        const erc8004Net = network || "base";
+        const erc8004Result = await registerAgentERC8004(agent.name, agent.bio || undefined, agentDbId, erc8004Net);
+        results.push(erc8004Result);
+
+        if (erc8004Result.success) {
+          await storage.createErc8004Identity({
+            agentId: agentDbId,
+            agentRegistry: getERC8004ContractAddress(erc8004Net) || "",
+            chainId: String(erc8004Result.chainId),
+            agentUri: `${getBaseUrl(req)}/api/standards/erc8004/agent-card/${agentDbId}`,
+            ownerWallet: deployerAddr,
+            name: agent.name,
+            description: agent.bio || undefined,
+            supportedTrust: "reputation,validation",
+            onchainTokenId: erc8004Result.tokenId || undefined,
+            txHash: erc8004Result.txHash || undefined,
+            registryAddress: getERC8004ContractAddress(erc8004Net) || undefined,
+          });
+        }
+      }
+
+      if (!standard || standard === "bap578") {
+        const bap578Result = await registerAgentBAP578(agent.name, agent.bio || undefined, agentDbId);
+        results.push(bap578Result);
+
+        if (bap578Result.success) {
+          let personalityData: any = {};
+          try {
+            const personality = await generateNfaPersonality(agent.name, agent.bio || undefined, agent.modelType || undefined);
+            personalityData = {
+              personalityProfile: personality.fullProfile,
+              personalityHash: personality.personalityHash,
+              traits: JSON.stringify(personality.traits),
+              voice: personality.voice,
+              values: JSON.stringify(personality.values),
+              behaviorRules: JSON.stringify(personality.behaviorRules),
+              communicationStyle: personality.communicationStyle,
+            };
+            console.log(`[BAP-578] Generated personality for "${agent.name}": ${personality.traits.join(", ")}`);
+          } catch (personalityErr: any) {
+            console.error(`[BAP-578] Personality generation failed for "${agent.name}": ${personalityErr.message}`);
+          }
+
+          await storage.createBap578Nfa({
+            agentId: agentDbId,
+            tokenId: bap578Result.tokenId || undefined,
+            chainId: String(bap578Result.chainId),
+            ownerWallet: deployerAddr,
+            name: agent.name,
+            description: agent.bio || undefined,
+            metadataUri: `${getBaseUrl(req)}/api/standards/bap578/agent-metadata/${agentDbId}`,
+            learningMode: "json",
+            status: "active",
+            txHash: bap578Result.txHash || undefined,
+            contractAddress: getBAP578ContractAddress() || undefined,
+            ...personalityData,
+          });
+        }
+      }
+
+      res.json({ agentId: agentDbId, agentName: agent.name, results });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/registration-status/:agentDbId", async (req: Request, res: Response) => {
+    try {
+      const { agentDbId } = req.params;
+      const agent = await storage.getAgent(agentDbId);
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+
+      const erc8004Entries = await storage.getErc8004Identities();
+      const bap578Entries = await storage.getBap578Nfas();
+
+      const erc8004 = erc8004Entries.filter((e: any) => e.agentId === agentDbId);
+      const bap578 = bap578Entries.filter((e: any) => e.agentId === agentDbId);
+
+      res.json({
+        agentId: agentDbId,
+        agentName: agent.name,
+        erc8004: {
+          registered: erc8004.length > 0,
+          registrations: erc8004.map((e: any) => ({
+            chainId: e.chainId,
+            tokenId: e.onchainTokenId || e.tokenId,
+            txHash: e.txHash,
+            registryAddress: e.registryAddress || e.agentRegistry,
+          })),
+        },
+        bap578: {
+          registered: bap578.length > 0,
+          registrations: bap578.map((e: any) => ({
+            chainId: e.chainId,
+            tokenId: e.tokenId,
+            txHash: e.txHash,
+            contractAddress: e.contractAddress,
+          })),
+        },
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/standards/register-all", analyticsAuth, async (req: Request, res: Response) => {
+    try {
+      const deployerAddr = getDeployerAddress();
+      if (!deployerAddr) { res.status(400).json({ error: "No deployer wallet configured" }); return; }
+
+      const allAgents = await storage.getAgents();
+      const erc8004Entries = await storage.getErc8004Identities();
+      const bap578Entries = await storage.getBap578Nfas();
+      const baseUrl = getBaseUrl(req);
+      const network = (req.body?.network as string) || "base";
+      const standard = req.body?.standard as string | undefined;
+
+      const registeredErc8004AgentIds = new Set(erc8004Entries.filter((e: any) => e.agentId && e.txHash).map((e: any) => e.agentId));
+      const registeredBap578AgentIds = new Set(bap578Entries.filter((e: any) => e.agentId && e.txHash).map((e: any) => e.agentId));
+
+      const results: any[] = [];
+
+      for (const agent of allAgents) {
+        if (agent.status !== "active") continue;
+
+        if ((!standard || standard === "erc8004") && !registeredErc8004AgentIds.has(agent.id)) {
+          const erc8004Result = await registerAgentERC8004(agent.name, agent.bio || undefined, agent.id, network);
+          results.push({ agentId: agent.id, agentName: agent.name, ...erc8004Result });
+
+          if (erc8004Result.success) {
+            await storage.createErc8004Identity({
+              agentId: agent.id,
+              agentRegistry: getERC8004ContractAddress(network) || "",
+              chainId: String(erc8004Result.chainId),
+              agentUri: `${baseUrl}/api/standards/erc8004/agent-card/${agent.id}`,
+              ownerWallet: deployerAddr,
+              name: agent.name,
+              description: agent.bio || undefined,
+              supportedTrust: "reputation,validation",
+              onchainTokenId: erc8004Result.tokenId || undefined,
+              txHash: erc8004Result.txHash || undefined,
+              registryAddress: getERC8004ContractAddress(network) || undefined,
+            });
+          }
+
+          await new Promise(r => setTimeout(r, 3000));
+        }
+
+        if ((!standard || standard === "bap578") && !registeredBap578AgentIds.has(agent.id)) {
+          const bap578Result = await registerAgentBAP578(agent.name, agent.bio || undefined, agent.id);
+          results.push({ agentId: agent.id, agentName: agent.name, ...bap578Result });
+
+          if (bap578Result.success) {
+            await storage.createBap578Nfa({
+              agentId: agent.id,
+              tokenId: bap578Result.tokenId || undefined,
+              chainId: String(bap578Result.chainId),
+              ownerWallet: deployerAddr,
+              name: agent.name,
+              description: agent.bio || undefined,
+              metadataUri: `${baseUrl}/api/standards/bap578/agent-metadata/${agent.id}`,
+              learningMode: "json",
+              status: "active",
+              txHash: bap578Result.txHash || undefined,
+              contractAddress: getBAP578ContractAddress() || undefined,
+            });
+          }
+
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
+
+      res.json({ totalAgents: allAgents.length, registrations: results });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/standards/config", (_req: Request, res: Response) => {
+    const deployerAddr = getDeployerAddress();
+    res.json({
+      deployerConfigured: !!deployerAddr,
+      deployerAddress: deployerAddr || null,
+      erc8004: {
+        networks: getERC8004Networks(),
+        defaultNetwork: "base",
+      },
+      bap578: {
+        contractAddress: getBAP578ContractAddress(),
+        chain: "BNB Chain (56)",
+        configured: !!getBAP578ContractAddress(),
+      },
+    });
+  });
+
+  app.get("/api/standards", (_req: Request, res: Response) => {
+    const baseUrl = getBaseUrl(_req);
+    res.json({
+      platform: "BUILD4",
+      description: "Standards-compliant decentralized AI agent economy",
+      supported: [
+        {
+          id: "erc-8004",
+          name: "ERC-8004: Trustless Agents",
+          spec: "https://eips.ethereum.org/EIPS/eip-8004",
+          status: "supported",
+          infoEndpoint: `${baseUrl}/api/standards/erc8004/info`,
+          description: "On-chain identity, reputation, and validation registries for autonomous AI agents",
+        },
+        {
+          id: "bap-578",
+          name: "BAP-578: Non-Fungible Agent (NFA) Token Standard",
+          spec: "https://github.com/bnb-chain/BEPs/blob/master/BAPs/BAP-578.md",
+          status: "supported",
+          infoEndpoint: `${baseUrl}/api/standards/bap578/info`,
+          description: "ERC-721 extension for intelligent, autonomous digital entities with verifiable learning",
+        },
+      ],
+      chains: [
+        { name: "BNB Chain", chainId: 56, currency: "BNB", standards: ["erc-8004", "bap-578"] },
+        { name: "Base", chainId: 8453, currency: "ETH", standards: ["erc-8004"] },
+        { name: "XLayer", chainId: 196, currency: "OKB", standards: ["erc-8004"] },
+      ],
+    });
+  });
+
+  const verifyAgentOwnership = async (req: Request, res: Response): Promise<any | null> => {
+    const { agentId } = req.params;
+    const agent = await storage.getAgent(agentId);
+    if (!agent) { res.status(404).json({ error: "Agent not found" }); return null; }
+    const callerWallet = (req.headers["x-wallet-address"] as string || "").toLowerCase();
+    if (agent.creatorWallet && callerWallet && agent.creatorWallet.toLowerCase() !== callerWallet) {
+      res.status(403).json({ error: "You are not the owner of this agent" });
+      return null;
+    }
+    return agent;
+  };
+
+  app.post("/api/web4/agents/:agentId/twitter/validate-keys", async (req: Request, res: Response) => {
+    try {
+      const { twitterApiKey, twitterApiSecret, twitterAccessToken, twitterAccessTokenSecret } = req.body;
+      if (!twitterApiKey || !twitterApiSecret || !twitterAccessToken || !twitterAccessTokenSecret) {
+        return res.json({ valid: false, error: "All 4 keys are required: API Key, API Secret, Access Token, Access Token Secret." });
+      }
+      const { TwitterApi } = await import("twitter-api-v2");
+      const client = new TwitterApi({
+        appKey: twitterApiKey,
+        appSecret: twitterApiSecret,
+        accessToken: twitterAccessToken,
+        accessSecret: twitterAccessTokenSecret,
+      });
+      const me = await client.v2.me();
+      if (!me.data?.username) {
+        return res.json({ valid: false, error: "Could not retrieve your Twitter account. Check your keys." });
+      }
+      let canWrite = false;
+      try {
+        const testTweet = await client.v2.tweet(`BUILD4 agent activation test — ${Date.now()}`);
+        if (testTweet.data?.id) {
+          await client.v2.deleteTweet(testTweet.data.id);
+          canWrite = true;
+        }
+      } catch (writeErr: any) {
+        if (writeErr.code === 403 || writeErr.message?.includes("403")) {
+          canWrite = false;
+        }
+      }
+      res.json({
+        valid: true,
+        username: me.data.username,
+        name: me.data.name,
+        canWrite,
+        writeWarning: !canWrite ? "Your tokens have READ-ONLY permissions. Go to developer.x.com → your app → Settings → set 'App permissions' to 'Read and Write', then go to Keys & Tokens and click 'Regenerate' on your Access Token. Paste the new token here." : null,
+      });
+    } catch (err: any) {
+      const msg = err.code === 401 || err.message?.includes("401")
+        ? "Invalid API credentials. Double-check your API Key and API Secret."
+        : err.code === 403 || err.message?.includes("403")
+        ? "Twitter rejected these credentials (403 Forbidden). Your app may be suspended or the keys are wrong."
+        : err.message || "Unknown error validating keys.";
+      res.json({ valid: false, error: msg });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/twitter/connect", async (req: Request, res: Response) => {
+    try {
+      const agent = await verifyAgentOwnership(req, res);
+      if (!agent) return;
+      const { agentId } = req.params;
+
+      const existing = await storage.getAgentTwitterAccount(agentId);
+      if (existing) return res.status(409).json({ error: "Twitter already connected. Disconnect first." });
+
+      const parsed = agentTwitterConnectSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+      const { TwitterApi } = await import("twitter-api-v2");
+      let verifiedHandle = (parsed.data.twitterHandle || "").replace(/^@/, "");
+      try {
+        const testClient = new TwitterApi({
+          appKey: parsed.data.twitterApiKey,
+          appSecret: parsed.data.twitterApiSecret,
+          accessToken: parsed.data.twitterAccessToken,
+          accessSecret: parsed.data.twitterAccessTokenSecret,
+        });
+        const me = await testClient.v2.me();
+        if (me.data?.username) verifiedHandle = me.data.username;
+      } catch (authErr: any) {
+        return res.status(400).json({
+          error: `Twitter credential check failed: ${authErr.message}. Please verify your API keys are correct and your app is approved.`,
+        });
+      }
+
+      const account = await storage.createAgentTwitterAccount({
+        agentId,
+        twitterHandle: verifiedHandle,
+        twitterApiKey: parsed.data.twitterApiKey,
+        twitterApiSecret: parsed.data.twitterApiSecret,
+        twitterAccessToken: parsed.data.twitterAccessToken,
+        twitterAccessTokenSecret: parsed.data.twitterAccessTokenSecret,
+        role: parsed.data.role,
+        personality: parsed.data.personality || "",
+        instructions: parsed.data.instructions || "",
+        postingFrequencyMins: parsed.data.postingFrequencyMins,
+        companyName: parsed.data.companyName || "",
+        companyDescription: parsed.data.companyDescription || "",
+        companyProduct: parsed.data.companyProduct || "",
+        companyAudience: parsed.data.companyAudience || "",
+        companyWebsite: parsed.data.companyWebsite || "",
+        companyKeyMessages: parsed.data.companyKeyMessages || "",
+        enabled: 0,
+        autoReplyEnabled: 1,
+        autoBountyEnabled: 0,
+        totalTweets: 0,
+        totalReplies: 0,
+        totalBounties: 0,
+      });
+
+      let autoStarted = false;
+      let introTweet: string | null = null;
+      try {
+        const startResult = await startAgentTwitter(agentId);
+        autoStarted = !!startResult.success;
+        if (autoStarted) {
+          const introResult = await postIntroTweet(agentId);
+          if (introResult.success) introTweet = introResult.tweetText || null;
+        }
+      } catch {}
+
+      res.json({
+        success: true,
+        autoStarted,
+        introTweet,
+        verifiedHandle,
+        account: { id: account.id, agentId: account.agentId, twitterHandle: verifiedHandle, role: account.role, enabled: account.enabled },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/agents/:agentId/twitter/status", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const account = await storage.getAgentTwitterAccount(agentId);
+      if (!account) return res.json({ connected: false });
+
+      const runnerStatus = getAgentTwitterStatus(agentId);
+
+      const diagnostics: { status: string; issues: string[]; tips: string[] } = { status: "healthy", issues: [], tips: [] };
+
+      if (!account.twitterApiKey || !account.twitterApiSecret) {
+        diagnostics.status = "error";
+        diagnostics.issues.push("API Key or API Secret is missing. Your agent cannot authenticate with Twitter.");
+      }
+      if (!account.twitterAccessToken || !account.twitterAccessTokenSecret) {
+        diagnostics.status = "error";
+        diagnostics.issues.push("Access Token or Access Token Secret is missing. Your agent cannot post tweets.");
+      }
+      if (!account.companyName && !account.companyDescription) {
+        diagnostics.tips.push("Add your Company Profile so your agent knows what to promote. Go to Settings to fill it in.");
+      }
+      if (!account.personality && !account.instructions) {
+        diagnostics.tips.push("Add Personality or Instructions to give your agent more direction.");
+      }
+      if (account.enabled && !runnerStatus.running) {
+        diagnostics.status = diagnostics.status === "error" ? "error" : "warning";
+        diagnostics.issues.push("Agent is enabled but not running. Try stopping and starting it again.");
+      }
+      if (account.totalTweets === 0 && account.enabled) {
+        diagnostics.tips.push("Your agent hasn't posted yet. Make sure it's started and wait for the next posting cycle.");
+      }
+      if (runnerStatus.lastError) {
+        diagnostics.status = "error";
+        diagnostics.issues.push(runnerStatus.lastError);
+      }
+
+      res.json({
+        connected: true,
+        running: runnerStatus.running,
+        handle: account.twitterHandle,
+        role: account.role,
+        enabled: account.enabled,
+        personality: account.personality,
+        instructions: account.instructions,
+        companyName: account.companyName,
+        companyDescription: account.companyDescription,
+        companyProduct: account.companyProduct,
+        companyAudience: account.companyAudience,
+        companyWebsite: account.companyWebsite,
+        companyKeyMessages: account.companyKeyMessages,
+        ownerTelegramChatId: account.ownerTelegramChatId,
+        postingFrequencyMins: account.postingFrequencyMins,
+        autoReplyEnabled: account.autoReplyEnabled,
+        autoBountyEnabled: account.autoBountyEnabled,
+        totalTweets: account.totalTweets,
+        totalReplies: account.totalReplies,
+        totalBounties: account.totalBounties,
+        lastPostedAt: account.lastPostedAt,
+        createdAt: account.createdAt,
+        diagnostics,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/twitter/post", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const { text, replyToTweetId } = req.body;
+      if (!text || typeof text !== "string" || text.trim().length === 0) {
+        return res.status(400).json({ error: "Tweet text is required" });
+      }
+      const account = await storage.getAgentTwitterAccount(agentId);
+      if (!account) return res.status(404).json({ error: "No Twitter account connected" });
+
+      const status = getAgentTwitterStatus(agentId);
+      if (!status.running) {
+        const startResult = await startAgentTwitter(agentId);
+        if (!startResult.success) return res.status(400).json({ error: `Could not start agent: ${startResult.error}` });
+      }
+
+      const result = await postCustomTweet(agentId, text.trim(), replyToTweetId);
+      if (!result.success) return res.status(400).json({ error: result.error });
+      res.json({ success: true, tweetText: result.tweetText });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/twitter/intro-tweet", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const account = await storage.getAgentTwitterAccount(agentId);
+      if (!account) return res.status(404).json({ error: "No Twitter account connected" });
+
+      const status = getAgentTwitterStatus(agentId);
+      if (!status.running) {
+        const startResult = await startAgentTwitter(agentId);
+        if (!startResult.success) return res.status(400).json({ error: `Could not start agent: ${startResult.error}` });
+      }
+
+      const result = await postIntroTweet(agentId);
+      if (!result.success) return res.status(400).json({ error: result.error });
+      res.json({ success: true, tweetText: result.tweetText });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/twitter/start", async (req: Request, res: Response) => {
+    try {
+      const agent = await verifyAgentOwnership(req, res);
+      if (!agent) return;
+      const { agentId } = req.params;
+      const result = await startAgentTwitter(agentId);
+      if (!result.success) return res.status(400).json({ error: result.error });
+      res.json({ success: true, message: "Twitter agent started" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/twitter/stop", async (req: Request, res: Response) => {
+    try {
+      const agent = await verifyAgentOwnership(req, res);
+      if (!agent) return;
+      const { agentId } = req.params;
+      await stopAgentTwitter(agentId);
+      res.json({ success: true, message: "Twitter agent stopped" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/web4/agents/:agentId/twitter/settings", async (req: Request, res: Response) => {
+    try {
+      const agent = await verifyAgentOwnership(req, res);
+      if (!agent) return;
+      const { agentId } = req.params;
+      const account = await storage.getAgentTwitterAccount(agentId);
+      if (!account) return res.status(404).json({ error: "No Twitter account connected" });
+
+      const parsed = agentTwitterSettingsSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+      const updated = await storage.updateAgentTwitterAccount(agentId, parsed.data);
+      const keysChanged = parsed.data.twitterApiKey || parsed.data.twitterApiSecret || parsed.data.twitterAccessToken || parsed.data.twitterAccessTokenSecret;
+      if (keysChanged) {
+        const runnerStatus = getAgentTwitterStatus(agentId);
+        if (runnerStatus.running) {
+          await stopAgentTwitter(agentId);
+          const restartResult = await startAgentTwitter(agentId);
+          res.json({ success: true, account: updated, restarted: restartResult.success, restartError: restartResult.error || null });
+          return;
+        }
+      } else if (parsed.data.postingFrequencyMins) {
+        updateAgentTwitterInterval(agentId, parsed.data.postingFrequencyMins);
+      }
+      res.json({ success: true, account: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/web4/agents/:agentId/twitter/disconnect", async (req: Request, res: Response) => {
+    try {
+      const agent = await verifyAgentOwnership(req, res);
+      if (!agent) return;
+      const { agentId } = req.params;
+      await stopAgentTwitter(agentId);
+      await storage.deleteAgentTwitterAccount(agentId);
+      res.json({ success: true, message: "Twitter disconnected" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/agents/:agentId/strategy", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const memos = await storage.getStrategyMemos(agentId, 20);
+      res.json(memos);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/agents/:agentId/strategy/active", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const active = await storage.getActiveStrategy(agentId);
+      if (!active) return res.status(404).json({ error: "No active strategy found" });
+      res.json(active);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/agents/:agentId/performance", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const limit = parseInt(req.query.limit as string) || 50;
+      const records = await storage.getTweetPerformance(agentId, limit);
+
+      const avgAlignment = records.length > 0
+        ? Math.round(records.reduce((sum, r) => sum + (r.themeAlignment || 0), 0) / records.length)
+        : 0;
+
+      const themeCounts: Record<string, number> = {};
+      for (const r of records) {
+        if (r.alignedThemes) {
+          try {
+            for (const theme of JSON.parse(r.alignedThemes)) {
+              themeCounts[theme] = (themeCounts[theme] || 0) + 1;
+            }
+          } catch {}
+        }
+      }
+
+      const topThemes = Object.entries(themeCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+      res.json({
+        total: records.length,
+        avgAlignment,
+        topThemes: Object.fromEntries(topThemes),
+        tweets: records,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/agents/:agentId/action-items", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const items = await storage.getStrategyActionItems(agentId);
+      res.json(items);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/web4/agents/:agentId/action-items/:itemId", async (req: Request, res: Response) => {
+    try {
+      const { itemId } = req.params;
+      const { status } = req.body;
+      if (!["pending", "done", "skipped"].includes(status)) {
+        return res.status(400).json({ error: "Status must be pending, done, or skipped" });
+      }
+      const updated = await storage.updateStrategyActionItem(itemId, {
+        status,
+        completedAt: status === "done" ? new Date() : null,
+      });
+      if (!updated) return res.status(404).json({ error: "Action item not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/agents/:agentId/knowledge", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const entries = await storage.getKnowledgeBase(agentId);
+      res.json(entries);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/knowledge", async (req: Request, res: Response) => {
+    try {
+      const agent = await verifyAgentOwnership(req, res);
+      if (!agent) return;
+      const { agentId } = req.params;
+      const { title, content, sourceType } = req.body;
+      if (!title || !content) {
+        return res.status(400).json({ error: "Title and content are required" });
+      }
+      if (typeof title !== "string" || title.length > 200) {
+        return res.status(400).json({ error: "Title must be a string under 200 characters" });
+      }
+      if (typeof content !== "string" || content.length > 5000) {
+        return res.status(400).json({ error: "Content must be a string under 5000 characters" });
+      }
+      const entry = await storage.createKnowledgeEntry({
+        agentId,
+        title: title.trim(),
+        content: content.trim(),
+        sourceType: sourceType || "manual",
+      });
+      res.json(entry);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/web4/agents/:agentId/knowledge/:entryId", async (req: Request, res: Response) => {
+    try {
+      const agent = await verifyAgentOwnership(req, res);
+      if (!agent) return;
+      const { entryId } = req.params;
+      await storage.deleteKnowledgeEntry(entryId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/agents/:agentId/conversations", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const conversations = await storage.getRecentConversations(agentId, 50);
+      res.json(conversations);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/agents/:agentId/collaborations", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const collabs = await storage.getRecentCollaborations(agentId, 20);
+      res.json(collabs);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/web4/agents/:agentId/strategy/generate", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const status = getAgentTwitterStatus(agentId);
+      if (!status.running) {
+        return res.status(400).json({ error: "Agent Twitter is not running. Start the agent first." });
+      }
+      try {
+        const { runStrategyCycle } = await import("./multi-twitter-agent");
+        if (typeof runStrategyCycle !== "function") {
+          return res.status(501).json({ error: "Strategy cycle not yet implemented" });
+        }
+        await runStrategyCycle(agentId);
+        const active = await storage.getActiveStrategy(agentId);
+        res.json({ success: true, memo: active || null });
+      } catch (importErr: any) {
+        return res.status(501).json({ error: "Strategy cycle not available: " + importErr.message });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/web4/tasks", async (req: Request, res: Response) => {
+    try {
+      const { agentId, title, description, taskType, creatorWallet } = req.body;
+      if (!agentId || !title || !description || !taskType) {
+        return res.status(400).json({ error: "agentId, title, description, and taskType are required" });
+      }
+      const agent = await storage.getAgent(agentId);
+      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const callerWallet = (req.headers["x-wallet-address"] as string || "").toLowerCase();
+      if (!callerWallet) {
+        return res.status(401).json({ error: "Wallet connection required to assign tasks" });
+      }
+      if (agent.creatorWallet && agent.creatorWallet.toLowerCase() !== callerWallet) {
+        return res.status(403).json({ error: "You can only assign tasks to your own agents" });
+      }
+      if (typeof title !== "string" || title.length > 200) {
+        return res.status(400).json({ error: "Title must be under 200 characters" });
+      }
+      if (typeof description !== "string" || description.length > 5000) {
+        return res.status(400).json({ error: "Description must be under 5000 characters" });
+      }
+      const validTypes = ["research", "analysis", "content", "code_review", "strategy", "general", "launch_token"];
+      if (!validTypes.includes(taskType)) {
+        return res.status(400).json({ error: `taskType must be one of: ${validTypes.join(", ")}` });
+      }
+
+      const task = await storage.createTask({
+        agentId,
+        creatorWallet: callerWallet,
+        taskType,
+        title: title.trim(),
+        description: description.trim(),
+        status: "pending",
+        result: null,
+        toolsUsed: null,
+        modelUsed: null,
+        executionTimeMs: null,
+      });
+
+      res.json(task);
+
+      const { executeTask } = await import("./task-engine");
+      executeTask(task.id).catch(err =>
+        console.error(`[TaskEngine] Task ${task.id} execution error:`, err.message)
+      );
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/tasks/recent", async (req: Request, res: Response) => {
+    try {
+      const tasks = await storage.getRecentPublicTasks(30);
+      const agentIds = [...new Set(tasks.map(t => t.agentId))];
+      const agents: Record<string, any> = {};
+      for (const id of agentIds) {
+        const agent = await storage.getAgent(id);
+        if (agent) agents[id] = { name: agent.name, bio: agent.bio };
+      }
+      res.json({ tasks, agents });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/tasks/:taskId", async (req: Request, res: Response) => {
+    try {
+      const task = await storage.getTask(req.params.taskId);
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      const agent = await storage.getAgent(task.agentId);
+      res.json({ task, agent: agent ? { name: agent.name, bio: agent.bio } : null });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/tasks/agent/:agentId", async (req: Request, res: Response) => {
+    try {
+      const tasks = await storage.getTasksByAgent(req.params.agentId, 30);
+      res.json(tasks);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/web4/tasks/creator/:wallet", async (req: Request, res: Response) => {
+    try {
+      const tasks = await storage.getTasksByCreator(req.params.wallet, 30);
+      res.json(tasks);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 }

@@ -19,12 +19,16 @@ import {
   type SkillExecution, type InsertSkillExecution,
   type AgentMemory, type InsertAgentMemory,
   type AgentJob, type InsertAgentJob,
+  type AgentStrategyMemo, type InsertAgentStrategyMemo,
+  type TweetPerformance, type InsertTweetPerformance, tweetPerformance,
+  type StrategyActionItem, type InsertStrategyActionItem, strategyActionItems,
   users, agents, agentWallets, agentTransactions,
   agentSkills, skillPurchases, agentEvolutions,
   agentLineage, agentRuntimeProfiles, agentSurvivalStatus,
   agentConstitution, agentSoulEntries, agentAuditLogs, agentMessages,
   inferenceProviders, inferenceRequests,
   platformRevenue, skillExecutions, agentMemory, agentJobs,
+  agentStrategyMemos,
   skillPipelines, userCredits,
   outreachTargets, outreachCampaigns,
   type SkillPipeline, type InsertSkillPipeline,
@@ -48,10 +52,59 @@ import {
   type TwitterAgentConfig, type InsertTwitterAgentConfig, twitterAgentConfig,
   type TwitterAgentPersonality, twitterAgentPersonality,
   type TwitterReplyLog, twitterReplyLog,
+  type SupportTicket, type InsertSupportTicket, supportTickets,
+  type SupportAgentConfig, type InsertSupportAgentConfig, supportAgentConfig,
+  type AgentTwitterAccount, type InsertAgentTwitterAccount, agentTwitterAccounts,
+  type Erc8004Identity, type InsertErc8004Identity, erc8004Identities,
+  type Erc8004Reputation, type InsertErc8004Reputation, erc8004Reputation,
+  type Erc8004Validation, type InsertErc8004Validation, erc8004Validations,
+  type Bap578Nfa, type InsertBap578Nfa, bap578Nfas,
+  type AgentKnowledgeBase, type InsertAgentKnowledgeBase, agentKnowledgeBase,
+  type AgentConversationMemory, type InsertAgentConversationMemory, agentConversationMemory,
+  type AgentToolResult, type InsertAgentToolResult, agentToolResults,
+  type AgentCollaborationLog, type InsertAgentCollaborationLog, agentCollaborationLog,
+  type AgentTask, type InsertAgentTask, agentTasks,
+  type TokenLaunch, type InsertTokenLaunch, tokenLaunches,
+  type ChaosMilestone, type InsertChaosMilestone, chaosMilestones,
+  type TelegramWallet, type InsertTelegramWallet, telegramWallets,
+  tradingPreferences,
+  type AsterCredentials, asterCredentials,
+  tradeOutcomes,
+  agentSkillConfigs,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, sql, isNull, not, like, or, gt } from "drizzle-orm";
+import { eq, desc, and, sql, isNull, not, like, or, gt, inArray } from "drizzle-orm";
 import { runInference, isProviderLive, getProviderStatus } from "./inference";
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypto";
+
+function getEncryptionKey(): Buffer {
+  const seed = process.env.DEPLOYER_PRIVATE_KEY || process.env.BOUNTY_WALLET_PRIVATE_KEY || "build4-fallback-key-change-me";
+  return createHash("sha256").update(seed).digest();
+}
+
+function encryptPrivateKey(plaintext: string): string {
+  const key = getEncryptionKey();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  let encrypted = cipher.update(plaintext, "utf8", "hex");
+  encrypted += cipher.final("hex");
+  const tag = cipher.getAuthTag().toString("hex");
+  return iv.toString("hex") + ":" + tag + ":" + encrypted;
+}
+
+function decryptPrivateKey(ciphertext: string): string {
+  const key = getEncryptionKey();
+  const parts = ciphertext.split(":");
+  if (parts.length !== 3) return ciphertext;
+  const iv = Buffer.from(parts[0], "hex");
+  const tag = Buffer.from(parts[1], "hex");
+  const encrypted = parts[2];
+  const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  let decrypted = decipher.update(encrypted, "hex", "utf8");
+  decrypted += decipher.final("utf8");
+  return decrypted;
+}
 
 const SURVIVAL_THRESHOLDS = {
   normal: BigInt("100000000000000000"),
@@ -277,10 +330,116 @@ export interface IStorage {
   getRecentTwitterReplies(limit?: number): Promise<TwitterReplyLog[]>;
   updateTwitterReplyEngagement(tweetId: string, likes: number, retweets: number, replies: number): Promise<void>;
 
-  // Seed subscription plans
+  // Support Agent
+  createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket>;
+  getSupportTicket(id: string): Promise<SupportTicket | undefined>;
+  getSupportTicketByTweetId(tweetId: string): Promise<SupportTicket | undefined>;
+  getSupportTickets(status?: string): Promise<SupportTicket[]>;
+  updateSupportTicket(id: string, data: Partial<SupportTicket>): Promise<SupportTicket | undefined>;
+  getSupportAgentConfig(): Promise<SupportAgentConfig | undefined>;
+  upsertSupportAgentConfig(config: Partial<InsertSupportAgentConfig>): Promise<SupportAgentConfig>;
+
+  // ERC-8004 Trustless Agents
+  createErc8004Identity(identity: InsertErc8004Identity): Promise<Erc8004Identity>;
+  getErc8004Identity(id: string): Promise<Erc8004Identity | undefined>;
+  getErc8004Identities(ownerWallet?: string): Promise<Erc8004Identity[]>;
+  updateErc8004Identity(id: string, data: Partial<Erc8004Identity>): Promise<Erc8004Identity | undefined>;
+
+  createErc8004Reputation(feedback: InsertErc8004Reputation): Promise<Erc8004Reputation>;
+  getErc8004Reputation(agentIdentityId: string): Promise<Erc8004Reputation[]>;
+
+  createErc8004Validation(validation: InsertErc8004Validation): Promise<Erc8004Validation>;
+  getErc8004Validations(agentIdentityId: string): Promise<Erc8004Validation[]>;
+
+  // BAP-578 Non-Fungible Agents
+  createBap578Nfa(nfa: InsertBap578Nfa): Promise<Bap578Nfa>;
+  getBap578Nfa(id: string): Promise<Bap578Nfa | undefined>;
+  getBap578Nfas(ownerWallet?: string): Promise<Bap578Nfa[]>;
+  updateBap578Nfa(id: string, data: Partial<Bap578Nfa>): Promise<Bap578Nfa | undefined>;
+
+  createAgentTwitterAccount(data: InsertAgentTwitterAccount): Promise<AgentTwitterAccount>;
+  getAgentTwitterAccount(agentId: string): Promise<AgentTwitterAccount | undefined>;
+  getActiveAgentTwitterAccounts(): Promise<AgentTwitterAccount[]>;
+  getAllAgentTwitterAccounts(): Promise<AgentTwitterAccount[]>;
+  updateAgentTwitterAccount(agentId: string, data: Partial<AgentTwitterAccount>): Promise<AgentTwitterAccount | undefined>;
+  deleteAgentTwitterAccount(agentId: string): Promise<void>;
+
+  // Strategy Memos
+  createStrategyMemo(memo: InsertAgentStrategyMemo): Promise<AgentStrategyMemo>;
+  getStrategyMemos(agentId: string, limit?: number): Promise<AgentStrategyMemo[]>;
+  getActiveStrategy(agentId: string): Promise<AgentStrategyMemo | undefined>;
+  supersedeMemo(memoId: string): Promise<void>;
+
+  // Tweet Performance
+  createTweetPerformance(record: InsertTweetPerformance): Promise<TweetPerformance>;
+  getTweetPerformance(agentId: string, limit?: number): Promise<TweetPerformance[]>;
+
+  // Strategy Action Items
+  createStrategyActionItem(item: InsertStrategyActionItem): Promise<StrategyActionItem>;
+  getStrategyActionItems(agentId: string): Promise<StrategyActionItem[]>;
+  updateStrategyActionItem(id: string, data: Partial<StrategyActionItem>): Promise<StrategyActionItem | undefined>;
+
+  createKnowledgeEntry(entry: InsertAgentKnowledgeBase): Promise<AgentKnowledgeBase>;
+  getKnowledgeBase(agentId: string): Promise<AgentKnowledgeBase[]>;
+  deleteKnowledgeEntry(id: string): Promise<void>;
+
+  upsertConversationMemory(agentId: string, twitterUsername: string, lastInteraction: string, sentiment: string): Promise<AgentConversationMemory>;
+  getConversationMemory(agentId: string, twitterUsername: string): Promise<AgentConversationMemory | undefined>;
+  getRecentConversations(agentId: string, limit?: number): Promise<AgentConversationMemory[]>;
+
+  createToolResult(result: InsertAgentToolResult): Promise<AgentToolResult>;
+  getRecentToolResults(agentId: string, limit?: number): Promise<AgentToolResult[]>;
+
+  createCollaborationLog(log: InsertAgentCollaborationLog): Promise<AgentCollaborationLog>;
+  getRecentCollaborations(agentId: string, limit?: number): Promise<AgentCollaborationLog[]>;
+
+  createTask(task: InsertAgentTask): Promise<AgentTask>;
+  getTask(id: string): Promise<AgentTask | undefined>;
+  getTasksByAgent(agentId: string, limit?: number): Promise<AgentTask[]>;
+  getTasksByCreator(wallet: string, limit?: number): Promise<AgentTask[]>;
+  updateTask(id: string, data: Partial<AgentTask>): Promise<AgentTask | undefined>;
+  getRecentPublicTasks(limit?: number): Promise<AgentTask[]>;
+
+  createTokenLaunch(launch: InsertTokenLaunch): Promise<TokenLaunch>;
+  getTokenLaunch(id: string): Promise<TokenLaunch | undefined>;
+  getTokenLaunches(agentId?: string, limit?: number): Promise<TokenLaunch[]>;
+  updateTokenLaunch(id: string, data: Partial<TokenLaunch>): Promise<TokenLaunch | undefined>;
+
+  createChaosMilestone(milestone: InsertChaosMilestone): Promise<ChaosMilestone>;
+  getChaosMilestones(launchId: string): Promise<ChaosMilestone[]>;
+  updateChaosMilestone(id: string, data: Partial<ChaosMilestone>): Promise<ChaosMilestone | undefined>;
+  getPendingChaosMilestones(): Promise<ChaosMilestone[]>;
+  getActiveChaosPlan(): Promise<{ launch: TokenLaunch; milestones: ChaosMilestone[] } | null>;
+  getAllActiveChaosPlans(): Promise<{ launch: TokenLaunch; milestones: ChaosMilestone[] }[]>;
+
   seedSubscriptionPlans(): Promise<void>;
 
   cleanFakeData(): Promise<void>;
+
+  getTelegramWallets(chatId: string): Promise<TelegramWallet[]>;
+  saveTelegramWallet(chatId: string, walletAddress: string, rawPrivateKey?: string): Promise<TelegramWallet>;
+  removeTelegramWallet(chatId: string, walletAddress: string): Promise<void>;
+  setActiveTelegramWallet(chatId: string, walletAddress: string): Promise<void>;
+  getAllTelegramWalletLinks(): Promise<TelegramWallet[]>;
+  getTelegramWalletPrivateKey(chatId: string, walletAddress: string): Promise<string | null>;
+  getPrivateKeyByWalletAddress(walletAddress: string): Promise<string | null>;
+  saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void>;
+  getEnabledTradingPreferences(): Promise<Array<{ chatId: string; enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }>>;
+  saveTradeOutcome(outcome: {
+    chatId: string; tokenAddress: string; tokenSymbol: string; result: string;
+    pnlBnb: number; peakMultiple: number; entryPriceBnb: number; holdTimeMinutes: number;
+    confidenceScore: number; source: string; entryProgressPercent?: number; entryAgeMinutes?: number;
+    entryVelocity?: number; entryHolderCount?: number; entryRaisedBnb?: number; entryRugRisk?: number;
+    reasoning?: string; hourOfDay?: number;
+  }): Promise<void>;
+  getRecentTradeOutcomes(limit?: number): Promise<Array<any>>;
+  saveAsterCredentials(chatId: string, apiKey: string, apiSecret: string): Promise<AsterCredentials>;
+  getAsterCredentials(chatId: string): Promise<{ chatId: string; apiKey: string; apiSecret: string } | null>;
+  removeAsterCredentials(chatId: string): Promise<void>;
+
+  getUserSkillConfigs(chatId: string): Promise<Array<{ skillId: string; enabled: boolean; config: Record<string, any> }>>;
+  setUserSkillConfig(chatId: string, skillId: string, enabled: boolean, config: Record<string, any>): Promise<void>;
+
   seedInferenceProviders(): Promise<void>;
 }
 
@@ -1821,6 +1980,599 @@ export class DatabaseStorage implements IStorage {
       likes, retweets, replies,
       engagement: likes + retweets * 3 + replies * 2,
     }).where(eq(twitterReplyLog.tweetId!, tweetId));
+  }
+
+  async createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket> {
+    const [result] = await db.insert(supportTickets).values(ticket).returning();
+    return result;
+  }
+
+  async getSupportTicket(id: string): Promise<SupportTicket | undefined> {
+    const [result] = await db.select().from(supportTickets).where(eq(supportTickets.id, id));
+    return result;
+  }
+
+  async getSupportTicketByTweetId(tweetId: string): Promise<SupportTicket | undefined> {
+    const [result] = await db.select().from(supportTickets).where(eq(supportTickets.tweetId, tweetId));
+    return result;
+  }
+
+  async getSupportTickets(status?: string): Promise<SupportTicket[]> {
+    if (status) {
+      return db.select().from(supportTickets).where(eq(supportTickets.status, status)).orderBy(desc(supportTickets.createdAt));
+    }
+    return db.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
+  }
+
+  async updateSupportTicket(id: string, data: Partial<SupportTicket>): Promise<SupportTicket | undefined> {
+    const [result] = await db.update(supportTickets).set(data).where(eq(supportTickets.id, id)).returning();
+    return result;
+  }
+
+  async getSupportAgentConfig(): Promise<SupportAgentConfig | undefined> {
+    const [result] = await db.select().from(supportAgentConfig).where(eq(supportAgentConfig.id, "default"));
+    return result;
+  }
+
+  async upsertSupportAgentConfig(config: Partial<InsertSupportAgentConfig>): Promise<SupportAgentConfig> {
+    const existing = await this.getSupportAgentConfig();
+    if (existing) {
+      const [result] = await db.update(supportAgentConfig).set({ ...config, updatedAt: new Date() }).where(eq(supportAgentConfig.id, "default")).returning();
+      return result;
+    }
+    const [result] = await db.insert(supportAgentConfig).values({ id: "default", ...config }).returning();
+    return result;
+  }
+
+  // ERC-8004 Trustless Agents
+  async createErc8004Identity(identity: InsertErc8004Identity): Promise<Erc8004Identity> {
+    const [result] = await db.insert(erc8004Identities).values(identity).returning();
+    return result;
+  }
+
+  async getErc8004Identity(id: string): Promise<Erc8004Identity | undefined> {
+    const [result] = await db.select().from(erc8004Identities).where(eq(erc8004Identities.id, id));
+    return result;
+  }
+
+  async getErc8004Identities(ownerWallet?: string): Promise<Erc8004Identity[]> {
+    if (ownerWallet) {
+      return db.select().from(erc8004Identities).where(eq(erc8004Identities.ownerWallet, ownerWallet)).orderBy(desc(erc8004Identities.createdAt));
+    }
+    return db.select().from(erc8004Identities).orderBy(desc(erc8004Identities.createdAt));
+  }
+
+  async updateErc8004Identity(id: string, data: Partial<Erc8004Identity>): Promise<Erc8004Identity | undefined> {
+    const [result] = await db.update(erc8004Identities).set(data).where(eq(erc8004Identities.id, id)).returning();
+    return result;
+  }
+
+  async createErc8004Reputation(feedback: InsertErc8004Reputation): Promise<Erc8004Reputation> {
+    const [result] = await db.insert(erc8004Reputation).values(feedback).returning();
+    return result;
+  }
+
+  async getErc8004Reputation(agentIdentityId: string): Promise<Erc8004Reputation[]> {
+    return db.select().from(erc8004Reputation).where(eq(erc8004Reputation.agentIdentityId, agentIdentityId)).orderBy(desc(erc8004Reputation.createdAt));
+  }
+
+  async createErc8004Validation(validation: InsertErc8004Validation): Promise<Erc8004Validation> {
+    const [result] = await db.insert(erc8004Validations).values(validation).returning();
+    return result;
+  }
+
+  async getErc8004Validations(agentIdentityId: string): Promise<Erc8004Validation[]> {
+    return db.select().from(erc8004Validations).where(eq(erc8004Validations.agentIdentityId, agentIdentityId)).orderBy(desc(erc8004Validations.createdAt));
+  }
+
+  // BAP-578 Non-Fungible Agents
+  async createBap578Nfa(nfa: InsertBap578Nfa): Promise<Bap578Nfa> {
+    const [result] = await db.insert(bap578Nfas).values(nfa).returning();
+    return result;
+  }
+
+  async getBap578Nfa(id: string): Promise<Bap578Nfa | undefined> {
+    const [result] = await db.select().from(bap578Nfas).where(eq(bap578Nfas.id, id));
+    return result;
+  }
+
+  async getBap578Nfas(ownerWallet?: string): Promise<Bap578Nfa[]> {
+    if (ownerWallet) {
+      return db.select().from(bap578Nfas).where(eq(bap578Nfas.ownerWallet, ownerWallet)).orderBy(desc(bap578Nfas.createdAt));
+    }
+    return db.select().from(bap578Nfas).orderBy(desc(bap578Nfas.createdAt));
+  }
+
+  async updateBap578Nfa(id: string, data: Partial<Bap578Nfa>): Promise<Bap578Nfa | undefined> {
+    const [result] = await db.update(bap578Nfas).set(data).where(eq(bap578Nfas.id, id)).returning();
+    return result;
+  }
+
+  async createAgentTwitterAccount(data: InsertAgentTwitterAccount): Promise<AgentTwitterAccount> {
+    const [result] = await db.insert(agentTwitterAccounts).values(data).returning();
+    return result;
+  }
+
+  async getAgentTwitterAccount(agentId: string): Promise<AgentTwitterAccount | undefined> {
+    const [result] = await db.select().from(agentTwitterAccounts).where(eq(agentTwitterAccounts.agentId, agentId));
+    return result;
+  }
+
+  async getActiveAgentTwitterAccounts(): Promise<AgentTwitterAccount[]> {
+    return db.select().from(agentTwitterAccounts).where(eq(agentTwitterAccounts.enabled, 1));
+  }
+
+  async getAllAgentTwitterAccounts(): Promise<AgentTwitterAccount[]> {
+    return db.select().from(agentTwitterAccounts);
+  }
+
+  async updateAgentTwitterAccount(agentId: string, data: Partial<AgentTwitterAccount>): Promise<AgentTwitterAccount | undefined> {
+    const [result] = await db.update(agentTwitterAccounts).set({ ...data, updatedAt: new Date() }).where(eq(agentTwitterAccounts.agentId, agentId)).returning();
+    return result;
+  }
+
+  async deleteAgentTwitterAccount(agentId: string): Promise<void> {
+    await db.delete(agentTwitterAccounts).where(eq(agentTwitterAccounts.agentId, agentId));
+  }
+
+  async createStrategyMemo(memo: InsertAgentStrategyMemo): Promise<AgentStrategyMemo> {
+    const [created] = await db.insert(agentStrategyMemos).values(memo).returning();
+    return created;
+  }
+
+  async getStrategyMemos(agentId: string, limit = 20): Promise<AgentStrategyMemo[]> {
+    return db.select().from(agentStrategyMemos)
+      .where(eq(agentStrategyMemos.agentId, agentId))
+      .orderBy(desc(agentStrategyMemos.createdAt))
+      .limit(limit);
+  }
+
+  async getActiveStrategy(agentId: string): Promise<AgentStrategyMemo | undefined> {
+    const [memo] = await db.select().from(agentStrategyMemos)
+      .where(and(
+        eq(agentStrategyMemos.agentId, agentId),
+        eq(agentStrategyMemos.status, "active"),
+        eq(agentStrategyMemos.memoType, "strategy")
+      ))
+      .orderBy(desc(agentStrategyMemos.createdAt))
+      .limit(1);
+    return memo;
+  }
+
+  async supersedeMemo(memoId: string): Promise<void> {
+    await db.update(agentStrategyMemos)
+      .set({ status: "superseded" })
+      .where(eq(agentStrategyMemos.id, memoId));
+  }
+
+  async createTweetPerformance(record: InsertTweetPerformance): Promise<TweetPerformance> {
+    const [created] = await db.insert(tweetPerformance).values(record).returning();
+    return created;
+  }
+
+  async getTweetPerformance(agentId: string, limit = 50): Promise<TweetPerformance[]> {
+    return db.select().from(tweetPerformance)
+      .where(eq(tweetPerformance.agentId, agentId))
+      .orderBy(desc(tweetPerformance.createdAt))
+      .limit(limit);
+  }
+
+  async createStrategyActionItem(item: InsertStrategyActionItem): Promise<StrategyActionItem> {
+    const [created] = await db.insert(strategyActionItems).values(item).returning();
+    return created;
+  }
+
+  async getStrategyActionItems(agentId: string): Promise<StrategyActionItem[]> {
+    return db.select().from(strategyActionItems)
+      .where(eq(strategyActionItems.agentId, agentId))
+      .orderBy(desc(strategyActionItems.createdAt));
+  }
+
+  async updateStrategyActionItem(id: string, data: Partial<StrategyActionItem>): Promise<StrategyActionItem | undefined> {
+    const [updated] = await db.update(strategyActionItems)
+      .set(data)
+      .where(eq(strategyActionItems.id, id))
+      .returning();
+    return updated;
+  }
+
+  async createKnowledgeEntry(entry: InsertAgentKnowledgeBase): Promise<AgentKnowledgeBase> {
+    const [created] = await db.insert(agentKnowledgeBase).values(entry).returning();
+    return created;
+  }
+
+  async getKnowledgeBase(agentId: string): Promise<AgentKnowledgeBase[]> {
+    return db.select().from(agentKnowledgeBase)
+      .where(eq(agentKnowledgeBase.agentId, agentId))
+      .orderBy(desc(agentKnowledgeBase.createdAt));
+  }
+
+  async deleteKnowledgeEntry(id: string): Promise<void> {
+    await db.delete(agentKnowledgeBase).where(eq(agentKnowledgeBase.id, id));
+  }
+
+  async upsertConversationMemory(agentId: string, twitterUsername: string, lastInteraction: string, sentiment: string): Promise<AgentConversationMemory> {
+    const existing = await db.select().from(agentConversationMemory)
+      .where(and(eq(agentConversationMemory.agentId, agentId), eq(agentConversationMemory.twitterUsername, twitterUsername)));
+    if (existing.length > 0) {
+      const [updated] = await db.update(agentConversationMemory)
+        .set({
+          lastInteraction,
+          sentiment,
+          interactionCount: sql`${agentConversationMemory.interactionCount} + 1`,
+          lastInteractionAt: new Date(),
+        })
+        .where(eq(agentConversationMemory.id, existing[0].id)).returning();
+      return updated;
+    }
+    const [created] = await db.insert(agentConversationMemory).values({
+      agentId,
+      twitterUsername,
+      lastInteraction,
+      sentiment,
+      interactionCount: 1,
+      lastInteractionAt: new Date(),
+    }).returning();
+    return created;
+  }
+
+  async getConversationMemory(agentId: string, twitterUsername: string): Promise<AgentConversationMemory | undefined> {
+    const [result] = await db.select().from(agentConversationMemory)
+      .where(and(eq(agentConversationMemory.agentId, agentId), eq(agentConversationMemory.twitterUsername, twitterUsername)));
+    return result;
+  }
+
+  async getRecentConversations(agentId: string, limit = 20): Promise<AgentConversationMemory[]> {
+    return db.select().from(agentConversationMemory)
+      .where(eq(agentConversationMemory.agentId, agentId))
+      .orderBy(desc(agentConversationMemory.lastInteractionAt))
+      .limit(limit);
+  }
+
+  async createToolResult(result: InsertAgentToolResult): Promise<AgentToolResult> {
+    const [created] = await db.insert(agentToolResults).values(result).returning();
+    return created;
+  }
+
+  async getRecentToolResults(agentId: string, limit = 10): Promise<AgentToolResult[]> {
+    return db.select().from(agentToolResults)
+      .where(eq(agentToolResults.agentId, agentId))
+      .orderBy(desc(agentToolResults.createdAt))
+      .limit(limit);
+  }
+
+  async createCollaborationLog(log: InsertAgentCollaborationLog): Promise<AgentCollaborationLog> {
+    const [created] = await db.insert(agentCollaborationLog).values(log).returning();
+    return created;
+  }
+
+  async getRecentCollaborations(agentId: string, limit = 10): Promise<AgentCollaborationLog[]> {
+    return db.select().from(agentCollaborationLog)
+      .where(eq(agentCollaborationLog.requestingAgentId, agentId))
+      .orderBy(desc(agentCollaborationLog.createdAt))
+      .limit(limit);
+  }
+
+  async createTask(task: InsertAgentTask): Promise<AgentTask> {
+    const [created] = await db.insert(agentTasks).values(task).returning();
+    return created;
+  }
+
+  async getTask(id: string): Promise<AgentTask | undefined> {
+    const [result] = await db.select().from(agentTasks).where(eq(agentTasks.id, id));
+    return result;
+  }
+
+  async getTasksByAgent(agentId: string, limit = 20): Promise<AgentTask[]> {
+    return db.select().from(agentTasks)
+      .where(eq(agentTasks.agentId, agentId))
+      .orderBy(desc(agentTasks.createdAt))
+      .limit(limit);
+  }
+
+  async getTasksByCreator(wallet: string, limit = 20): Promise<AgentTask[]> {
+    return db.select().from(agentTasks)
+      .where(eq(agentTasks.creatorWallet, wallet))
+      .orderBy(desc(agentTasks.createdAt))
+      .limit(limit);
+  }
+
+  async updateTask(id: string, data: Partial<AgentTask>): Promise<AgentTask | undefined> {
+    const [updated] = await db.update(agentTasks).set(data).where(eq(agentTasks.id, id)).returning();
+    return updated;
+  }
+
+  async getRecentPublicTasks(limit = 30): Promise<AgentTask[]> {
+    return db.select().from(agentTasks)
+      .orderBy(desc(agentTasks.createdAt))
+      .limit(limit);
+  }
+
+  async createTokenLaunch(launch: InsertTokenLaunch): Promise<TokenLaunch> {
+    const [created] = await db.insert(tokenLaunches).values(launch).returning();
+    return created;
+  }
+
+  async getTokenLaunch(id: string): Promise<TokenLaunch | undefined> {
+    const [result] = await db.select().from(tokenLaunches).where(eq(tokenLaunches.id, id));
+    return result;
+  }
+
+  async getTokenLaunches(agentId?: string, limit = 50): Promise<TokenLaunch[]> {
+    if (agentId) {
+      return db.select().from(tokenLaunches)
+        .where(eq(tokenLaunches.agentId, agentId))
+        .orderBy(desc(tokenLaunches.createdAt))
+        .limit(limit);
+    }
+    return db.select().from(tokenLaunches)
+      .orderBy(desc(tokenLaunches.createdAt))
+      .limit(limit);
+  }
+
+  async updateTokenLaunch(id: string, data: Partial<TokenLaunch>): Promise<TokenLaunch | undefined> {
+    const [updated] = await db.update(tokenLaunches).set(data).where(eq(tokenLaunches.id, id)).returning();
+    return updated;
+  }
+
+  async createChaosMilestone(milestone: InsertChaosMilestone): Promise<ChaosMilestone> {
+    const [created] = await db.insert(chaosMilestones).values(milestone).returning();
+    return created;
+  }
+
+  async getChaosMilestones(launchId: string): Promise<ChaosMilestone[]> {
+    return db.select().from(chaosMilestones)
+      .where(eq(chaosMilestones.launchId, launchId))
+      .orderBy(chaosMilestones.milestoneNumber);
+  }
+
+  async updateChaosMilestone(id: string, data: Partial<ChaosMilestone>): Promise<ChaosMilestone | undefined> {
+    const [updated] = await db.update(chaosMilestones).set(data).where(eq(chaosMilestones.id, id)).returning();
+    return updated;
+  }
+
+  async getPendingChaosMilestones(): Promise<ChaosMilestone[]> {
+    return db.select().from(chaosMilestones)
+      .where(eq(chaosMilestones.status, "pending"))
+      .orderBy(chaosMilestones.milestoneNumber);
+  }
+
+  async getActiveChaosPlan(): Promise<{ launch: TokenLaunch; milestones: ChaosMilestone[] } | null> {
+    const milestones = await db.select().from(chaosMilestones)
+      .where(eq(chaosMilestones.status, "pending"))
+      .orderBy(chaosMilestones.milestoneNumber)
+      .limit(1);
+    if (milestones.length === 0) {
+      const executing = await db.select().from(chaosMilestones)
+        .where(eq(chaosMilestones.status, "executing"))
+        .limit(1);
+      if (executing.length === 0) return null;
+      const launch = await this.getTokenLaunch(executing[0].launchId);
+      if (!launch) return null;
+      const all = await this.getChaosMilestones(launch.id);
+      return { launch, milestones: all };
+    }
+    const launch = await this.getTokenLaunch(milestones[0].launchId);
+    if (!launch) return null;
+    const all = await this.getChaosMilestones(launch.id);
+    return { launch, milestones: all };
+  }
+
+  async getAllActiveChaosPlans(): Promise<{ launch: TokenLaunch; milestones: ChaosMilestone[] }[]> {
+    const pendingMilestones = await db.select().from(chaosMilestones)
+      .where(inArray(chaosMilestones.status, ["pending", "executing"]))
+      .orderBy(chaosMilestones.milestoneNumber);
+
+    const launchIds = [...new Set(pendingMilestones.map(m => m.launchId))];
+    const plans: { launch: TokenLaunch; milestones: ChaosMilestone[] }[] = [];
+
+    for (const launchId of launchIds) {
+      const launch = await this.getTokenLaunch(launchId);
+      if (!launch) continue;
+      const milestones = await this.getChaosMilestones(launchId);
+      plans.push({ launch, milestones });
+    }
+
+    return plans;
+  }
+
+  async getTelegramWallets(chatId: string): Promise<TelegramWallet[]> {
+    return db.select().from(telegramWallets).where(eq(telegramWallets.chatId, chatId)).orderBy(desc(telegramWallets.createdAt));
+  }
+
+  async saveTelegramWallet(chatId: string, walletAddress: string, rawPrivateKey?: string): Promise<TelegramWallet> {
+    const encrypted = rawPrivateKey ? encryptPrivateKey(rawPrivateKey) : null;
+    const existing = await db.select().from(telegramWallets)
+      .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
+    if (existing.length > 0) {
+      if (encrypted && !existing[0].encryptedPrivateKey) {
+        await db.update(telegramWallets).set({ encryptedPrivateKey: encrypted }).where(eq(telegramWallets.id, existing[0].id));
+      }
+      return existing[0];
+    }
+
+    await db.update(telegramWallets).set({ isActive: false }).where(eq(telegramWallets.chatId, chatId));
+
+    const [row] = await db.insert(telegramWallets).values({
+      chatId,
+      walletAddress: walletAddress.toLowerCase(),
+      encryptedPrivateKey: encrypted,
+      isActive: true,
+    }).returning();
+    return row;
+  }
+
+  async getTelegramWalletPrivateKey(chatId: string, walletAddress: string): Promise<string | null> {
+    const rows = await db.select().from(telegramWallets)
+      .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
+    if (rows.length === 0 || !rows[0].encryptedPrivateKey) return null;
+    try {
+      return decryptPrivateKey(rows[0].encryptedPrivateKey);
+    } catch (e) {
+      console.error("[Storage] Failed to decrypt wallet private key:", e);
+      return null;
+    }
+  }
+
+  async getPrivateKeyByWalletAddress(walletAddress: string): Promise<string | null> {
+    const rows = await db.select().from(telegramWallets)
+      .where(eq(telegramWallets.walletAddress, walletAddress.toLowerCase()));
+    if (rows.length === 0 || !rows[0].encryptedPrivateKey) return null;
+    try {
+      return decryptPrivateKey(rows[0].encryptedPrivateKey);
+    } catch (e) {
+      console.error("[Storage] Failed to decrypt wallet private key:", e);
+      return null;
+    }
+  }
+
+  async removeTelegramWallet(chatId: string, walletAddress: string): Promise<void> {
+    await db.delete(telegramWallets)
+      .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
+  }
+
+  async setActiveTelegramWallet(chatId: string, walletAddress: string): Promise<void> {
+    await db.update(telegramWallets).set({ isActive: false }).where(eq(telegramWallets.chatId, chatId));
+    await db.update(telegramWallets).set({ isActive: true })
+      .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
+  }
+
+  async getAllTelegramWalletLinks(): Promise<TelegramWallet[]> {
+    return db.select().from(telegramWallets).orderBy(telegramWallets.chatId);
+  }
+
+  async saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void> {
+    await db.insert(tradingPreferences).values({
+      chatId,
+      enabled: config.enabled,
+      buyAmountBnb: config.buyAmountBnb,
+      takeProfitMultiple: config.takeProfitMultiple,
+      stopLossMultiple: config.stopLossMultiple,
+      maxPositions: config.maxPositions,
+      updatedAt: new Date(),
+    }).onConflictDoUpdate({
+      target: tradingPreferences.chatId,
+      set: {
+        enabled: config.enabled,
+        buyAmountBnb: config.buyAmountBnb,
+        takeProfitMultiple: config.takeProfitMultiple,
+        stopLossMultiple: config.stopLossMultiple,
+        maxPositions: config.maxPositions,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  async getEnabledTradingPreferences(): Promise<Array<{ chatId: string; enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }>> {
+    return db.select().from(tradingPreferences).where(eq(tradingPreferences.enabled, true));
+  }
+
+  async saveAsterCredentials(chatId: string, apiKey: string, apiSecret: string): Promise<AsterCredentials> {
+    const encryptedApiKey = encryptPrivateKey(apiKey);
+    const encryptedApiSecret = encryptPrivateKey(apiSecret);
+    const [row] = await db.insert(asterCredentials).values({
+      chatId,
+      encryptedApiKey,
+      encryptedApiSecret,
+    }).onConflictDoUpdate({
+      target: asterCredentials.chatId,
+      set: {
+        encryptedApiKey,
+        encryptedApiSecret,
+        createdAt: new Date(),
+      },
+    }).returning();
+    return row;
+  }
+
+  async getAsterCredentials(chatId: string): Promise<{ chatId: string; apiKey: string; apiSecret: string } | null> {
+    const rows = await db.select().from(asterCredentials).where(eq(asterCredentials.chatId, chatId));
+    if (!rows.length) return null;
+    const row = rows[0];
+    return {
+      chatId: row.chatId,
+      apiKey: decryptPrivateKey(row.encryptedApiKey),
+      apiSecret: decryptPrivateKey(row.encryptedApiSecret),
+    };
+  }
+
+  async removeAsterCredentials(chatId: string): Promise<void> {
+    await db.delete(asterCredentials).where(eq(asterCredentials.chatId, chatId));
+  }
+
+  async saveTradeOutcome(outcome: {
+    chatId: string; tokenAddress: string; tokenSymbol: string; result: string;
+    pnlBnb: number; peakMultiple: number; entryPriceBnb: number; holdTimeMinutes: number;
+    confidenceScore: number; source: string; entryProgressPercent?: number; entryAgeMinutes?: number;
+    entryVelocity?: number; entryHolderCount?: number; entryRaisedBnb?: number; entryRugRisk?: number;
+    reasoning?: string; hourOfDay?: number;
+  }): Promise<void> {
+    try {
+      await db.insert(tradeOutcomes).values({
+        chatId: outcome.chatId,
+        tokenAddress: outcome.tokenAddress,
+        tokenSymbol: outcome.tokenSymbol,
+        result: outcome.result,
+        pnlBnb: outcome.pnlBnb,
+        peakMultiple: outcome.peakMultiple,
+        entryPriceBnb: outcome.entryPriceBnb,
+        holdTimeMinutes: outcome.holdTimeMinutes,
+        confidenceScore: outcome.confidenceScore,
+        source: outcome.source,
+        entryProgressPercent: outcome.entryProgressPercent ?? 0,
+        entryAgeMinutes: outcome.entryAgeMinutes ?? 0,
+        entryVelocity: outcome.entryVelocity ?? 0,
+        entryHolderCount: outcome.entryHolderCount ?? 0,
+        entryRaisedBnb: outcome.entryRaisedBnb ?? 0,
+        entryRugRisk: outcome.entryRugRisk ?? 0,
+        reasoning: outcome.reasoning,
+        hourOfDay: outcome.hourOfDay ?? new Date().getUTCHours(),
+      });
+    } catch (e: any) {
+      console.error("[Storage] Failed to save trade outcome:", e.message);
+    }
+  }
+
+  async getRecentTradeOutcomes(limit: number = 100): Promise<Array<any>> {
+    try {
+      return await db.select().from(tradeOutcomes).orderBy(desc(tradeOutcomes.createdAt)).limit(limit);
+    } catch {
+      return [];
+    }
+  }
+
+  async getUserSkillConfigs(chatId: string): Promise<Array<{ skillId: string; enabled: boolean; config: Record<string, any> }>> {
+    try {
+      const rows = await db.select().from(agentSkillConfigs).where(eq(agentSkillConfigs.chatId, chatId));
+      return rows.map(r => ({
+        skillId: r.skillId,
+        enabled: r.enabled,
+        config: JSON.parse(r.config || "{}"),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  async setUserSkillConfig(chatId: string, skillId: string, enabled: boolean, config: Record<string, any>): Promise<void> {
+    try {
+      const existing = await db.select().from(agentSkillConfigs)
+        .where(and(eq(agentSkillConfigs.chatId, chatId), eq(agentSkillConfigs.skillId, skillId)));
+      if (existing.length > 0) {
+        await db.update(agentSkillConfigs)
+          .set({ enabled, config: JSON.stringify(config), updatedAt: new Date() })
+          .where(and(eq(agentSkillConfigs.chatId, chatId), eq(agentSkillConfigs.skillId, skillId)));
+      } else {
+        await db.insert(agentSkillConfigs).values({
+          chatId,
+          skillId,
+          enabled,
+          config: JSON.stringify(config),
+        });
+      }
+    } catch (e: any) {
+      console.error("[Storage] Failed to save skill config:", e.message);
+    }
   }
 }
 

@@ -78,6 +78,35 @@ function getFingerprint(req: Request): string {
   return Buffer.from(`${ip}:${ua}:${accept}`).toString("base64").slice(0, 32);
 }
 
+interface VisitorEntry {
+  visitorType: "human" | "agent" | "unknown";
+  path: string;
+  method: string;
+  userAgent: string | null;
+  ip: string;
+  referer: string | null;
+  country: string | null;
+  fingerprint: string;
+  walletAddress: string | null;
+  sessionId: string | null;
+  statusCode: number;
+}
+
+const visitorBuffer: VisitorEntry[] = [];
+const FLUSH_INTERVAL = 10_000;
+const FLUSH_SIZE = 50;
+
+function flushVisitorBuffer(): void {
+  if (visitorBuffer.length === 0) return;
+  const batch = visitorBuffer.splice(0, visitorBuffer.length);
+  for (const entry of batch) {
+    storage.logVisitor(entry).catch(() => {});
+  }
+}
+
+setInterval(flushVisitorBuffer, FLUSH_INTERVAL);
+process.on("beforeExit", flushVisitorBuffer);
+
 export function visitorTrackingMiddleware() {
   return (req: Request, res: Response, next: NextFunction) => {
     if (shouldSkip(req.path)) {
@@ -91,7 +120,7 @@ export function visitorTrackingMiddleware() {
     const walletAddress = (req.headers["x-agent-wallet"] as string) || (req.body?.callerWallet as string) || undefined;
 
     res.on("finish", () => {
-      storage.logVisitor({
+      visitorBuffer.push({
         visitorType,
         path: req.path,
         method: req.method,
@@ -103,7 +132,10 @@ export function visitorTrackingMiddleware() {
         walletAddress: walletAddress || null,
         sessionId: null,
         statusCode: res.statusCode,
-      }).catch(() => {});
+      });
+      if (visitorBuffer.length >= FLUSH_SIZE) {
+        flushVisitorBuffer();
+      }
     });
 
     next();

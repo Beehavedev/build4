@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, integer, timestamp, doublePrecision, serial, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -25,6 +25,8 @@ export const agents = pgTable("agents", {
   status: text("status").notNull().default("active"),
   onchainId: text("onchain_id"),
   onchainRegistered: boolean("onchain_registered").notNull().default(false),
+  erc8004Registered: boolean("erc8004_registered").notNull().default(false),
+  bap578Registered: boolean("bap578_registered").notNull().default(false),
   creatorWallet: text("creator_wallet"),
   preferredChain: text("preferred_chain").default("bnbMainnet"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -395,6 +397,7 @@ export const PLATFORM_FEES = {
   BOUNTY_FEE_BPS: 200,
   DATA_SALE_FEE_BPS: 300,
   INFERENCE_API_MARKUP_BPS: 200,
+  TOKEN_LAUNCH_FEE: "10000000000000000",
 } as const;
 
 export const apiKeys = pgTable("api_keys", {
@@ -974,6 +977,470 @@ export const twitterReplyLog = pgTable("twitter_reply_log", {
 });
 
 export type TwitterReplyLog = typeof twitterReplyLog.$inferSelect;
+
+export const agentTwitterAccounts = pgTable("agent_twitter_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  twitterHandle: text("twitter_handle").notNull(),
+  twitterApiKey: text("twitter_api_key").notNull(),
+  twitterApiSecret: text("twitter_api_secret").notNull(),
+  twitterAccessToken: text("twitter_access_token").notNull(),
+  twitterAccessTokenSecret: text("twitter_access_token_secret").notNull(),
+  role: text("role").notNull().default("cmo"),
+  enabled: integer("enabled").notNull().default(0),
+  companyName: text("company_name").default(""),
+  companyDescription: text("company_description").default(""),
+  companyProduct: text("company_product").default(""),
+  companyAudience: text("company_audience").default(""),
+  companyWebsite: text("company_website").default(""),
+  companyKeyMessages: text("company_key_messages").default(""),
+  personality: text("personality").default(""),
+  instructions: text("instructions").default(""),
+  postingFrequencyMins: integer("posting_frequency_mins").default(60),
+  autoReplyEnabled: integer("auto_reply_enabled").notNull().default(1),
+  autoBountyEnabled: integer("auto_bounty_enabled").notNull().default(0),
+  defaultRewardBnb: text("default_reward_bnb").default("0.015"),
+  lastPostedAt: timestamp("last_posted_at"),
+  lastMentionId: text("last_mention_id"),
+  repliedTweetIds: text("replied_tweet_ids").default(""),
+  totalTweets: integer("total_tweets").notNull().default(0),
+  totalReplies: integer("total_replies").notNull().default(0),
+  totalBounties: integer("total_bounties").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  ownerTelegramChatId: text("owner_telegram_chat_id"),
+  preferredModel: text("preferred_model"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAgentTwitterAccountSchema = createInsertSchema(agentTwitterAccounts).omit({ id: true, createdAt: true, updatedAt: true });
+
+export const telegramWallets = pgTable("telegram_wallets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  chatId: text("chat_id").notNull(),
+  walletAddress: text("wallet_address").notNull(),
+  encryptedPrivateKey: text("encrypted_private_key"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTelegramWalletSchema = createInsertSchema(telegramWallets).omit({ id: true, createdAt: true });
+export type InsertTelegramWallet = z.infer<typeof insertTelegramWalletSchema>;
+export type TelegramWallet = typeof telegramWallets.$inferSelect;
+
+export const tradingPreferences = pgTable("trading_preferences", {
+  chatId: text("chat_id").primaryKey(),
+  enabled: boolean("enabled").notNull().default(false),
+  buyAmountBnb: text("buy_amount_bnb").notNull().default("0.1"),
+  takeProfitMultiple: doublePrecision("take_profit_multiple").notNull().default(2.0),
+  stopLossMultiple: doublePrecision("stop_loss_multiple").notNull().default(0.7),
+  maxPositions: integer("max_positions").notNull().default(5),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type TradingPreference = typeof tradingPreferences.$inferSelect;
+
+export const tradeOutcomes = pgTable("trade_outcomes", {
+  id: serial("id").primaryKey(),
+  chatId: text("chat_id").notNull(),
+  tokenAddress: text("token_address").notNull(),
+  tokenSymbol: text("token_symbol").notNull(),
+  result: text("result").notNull(),
+  pnlBnb: doublePrecision("pnl_bnb").notNull(),
+  peakMultiple: doublePrecision("peak_multiple").notNull().default(1.0),
+  entryPriceBnb: doublePrecision("entry_price_bnb").notNull(),
+  holdTimeMinutes: integer("hold_time_minutes").notNull().default(0),
+  confidenceScore: integer("confidence_score").notNull().default(50),
+  source: text("source").notNull().default("ai_scan"),
+  entryProgressPercent: doublePrecision("entry_progress_percent").default(0),
+  entryAgeMinutes: integer("entry_age_minutes").default(0),
+  entryVelocity: doublePrecision("entry_velocity").default(0),
+  entryHolderCount: integer("entry_holder_count").default(0),
+  entryRaisedBnb: doublePrecision("entry_raised_bnb").default(0),
+  entryRugRisk: integer("entry_rug_risk").default(0),
+  reasoning: text("reasoning"),
+  hourOfDay: integer("hour_of_day"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type TradeOutcome = typeof tradeOutcomes.$inferSelect;
+
+export const agentSkillConfigs = pgTable("agent_skill_configs", {
+  id: serial("id").primaryKey(),
+  chatId: text("chat_id").notNull(),
+  skillId: text("skill_id").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  config: text("config").notNull().default("{}"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  chatSkillUnique: uniqueIndex("agent_skill_configs_chat_skill_idx").on(table.chatId, table.skillId),
+}));
+export type AgentSkillConfig = typeof agentSkillConfigs.$inferSelect;
+
+export type InsertAgentTwitterAccount = z.infer<typeof insertAgentTwitterAccountSchema>;
+export type AgentTwitterAccount = typeof agentTwitterAccounts.$inferSelect;
+
+export const agentTwitterConnectSchema = z.object({
+  twitterHandle: z.string().max(50).optional().default(""),
+  twitterApiKey: z.string().min(1),
+  twitterApiSecret: z.string().min(1),
+  twitterAccessToken: z.string().min(1),
+  twitterAccessTokenSecret: z.string().min(1),
+  role: z.enum(["cmo", "ceo", "cto", "cfo", "bounty_hunter", "support", "community_manager", "content_creator", "researcher", "sales", "partnerships", "developer_relations", "brand_ambassador", "analyst", "trader"]).default("cmo"),
+  companyName: z.string().max(200).optional(),
+  companyDescription: z.string().max(1000).optional(),
+  companyProduct: z.string().max(500).optional(),
+  companyAudience: z.string().max(500).optional(),
+  companyWebsite: z.string().max(200).optional(),
+  companyKeyMessages: z.string().max(2000).optional(),
+  personality: z.string().max(2000).optional(),
+  instructions: z.string().max(3000).optional(),
+  postingFrequencyMins: z.number().min(15).max(1440).default(60),
+});
+
+export const agentTwitterSettingsSchema = z.object({
+  companyName: z.string().max(200).optional(),
+  companyDescription: z.string().max(2000).optional(),
+  companyProduct: z.string().max(1000).optional(),
+  companyAudience: z.string().max(1000).optional(),
+  companyWebsite: z.string().max(200).optional(),
+  companyKeyMessages: z.string().max(2000).optional(),
+  personality: z.string().max(2000).optional(),
+  instructions: z.string().max(3000).optional(),
+  postingFrequencyMins: z.number().min(15).max(1440).optional(),
+  autoReplyEnabled: z.number().min(0).max(1).optional(),
+  autoBountyEnabled: z.number().min(0).max(1).optional(),
+  defaultRewardBnb: z.string().optional(),
+  twitterApiKey: z.string().min(1).optional(),
+  twitterApiSecret: z.string().min(1).optional(),
+  twitterAccessToken: z.string().min(1).optional(),
+  twitterAccessTokenSecret: z.string().min(1).optional(),
+  ownerTelegramChatId: z.string().optional(),
+  preferredModel: z.string().optional(),
+});
+
+export const agentStrategyMemos = pgTable("agent_strategy_memos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  memoType: text("memo_type").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  summary: text("summary").notNull(),
+  metrics: text("metrics"),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentStrategyMemoSchema = createInsertSchema(agentStrategyMemos).omit({ id: true, createdAt: true });
+export type InsertAgentStrategyMemo = z.infer<typeof insertAgentStrategyMemoSchema>;
+export type AgentStrategyMemo = typeof agentStrategyMemos.$inferSelect;
+
+export const tweetPerformance = pgTable("tweet_performance", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  tweetId: text("tweet_id"),
+  tweetText: text("tweet_text").notNull(),
+  strategyMemoId: varchar("strategy_memo_id"),
+  themeAlignment: integer("theme_alignment"),
+  alignedThemes: text("aligned_themes"),
+  engagementScore: integer("engagement_score"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTweetPerformanceSchema = createInsertSchema(tweetPerformance).omit({ id: true, createdAt: true });
+export type InsertTweetPerformance = z.infer<typeof insertTweetPerformanceSchema>;
+export type TweetPerformance = typeof tweetPerformance.$inferSelect;
+
+export const strategyActionItems = pgTable("strategy_action_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  memoId: varchar("memo_id").notNull(),
+  action: text("action").notNull(),
+  priority: text("priority").notNull().default("medium"),
+  status: text("status").notNull().default("pending"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertStrategyActionItemSchema = createInsertSchema(strategyActionItems).omit({ id: true, createdAt: true, completedAt: true });
+export type InsertStrategyActionItem = z.infer<typeof insertStrategyActionItemSchema>;
+export type StrategyActionItem = typeof strategyActionItems.$inferSelect;
+
+export const supportTickets = pgTable("support_tickets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tweetId: text("tweet_id").notNull(),
+  tweetUrl: text("tweet_url"),
+  twitterHandle: text("twitter_handle").notNull(),
+  twitterUserId: text("twitter_user_id"),
+  userMessage: text("user_message").notNull(),
+  category: text("category").notNull().default("general"),
+  priority: text("priority").notNull().default("normal"),
+  aiSummary: text("ai_summary"),
+  aiReplyText: text("ai_reply_text"),
+  replyTweetId: text("reply_tweet_id"),
+  status: text("status").notNull().default("open"),
+  resolution: text("resolution"),
+  createdAt: timestamp("created_at").defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+});
+
+export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit({ id: true, createdAt: true, resolvedAt: true });
+export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
+export type SupportTicket = typeof supportTickets.$inferSelect;
+
+export const supportAgentConfig = pgTable("support_agent_config", {
+  id: varchar("id").primaryKey().default("default"),
+  enabled: integer("enabled").default(0),
+  pollingIntervalMs: integer("polling_interval_ms").default(120000),
+  lastMentionId: text("last_mention_id"),
+  repliedTweetIds: text("replied_tweet_ids"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertSupportAgentConfigSchema = createInsertSchema(supportAgentConfig).omit({ updatedAt: true });
+export type InsertSupportAgentConfig = z.infer<typeof insertSupportAgentConfigSchema>;
+export type SupportAgentConfig = typeof supportAgentConfig.$inferSelect;
+
+export const erc8004Identities = pgTable("erc8004_identities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id"),
+  agentRegistry: text("agent_registry"),
+  chainId: text("chain_id").notNull().default("56"),
+  agentUri: text("agent_uri"),
+  ownerWallet: text("owner_wallet").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  image: text("image"),
+  servicesJson: text("services_json"),
+  supportedTrust: text("supported_trust"),
+  onchainTokenId: text("onchain_token_id"),
+  txHash: text("tx_hash"),
+  registryAddress: text("registry_address"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertErc8004IdentitySchema = createInsertSchema(erc8004Identities).omit({ id: true, createdAt: true });
+export type InsertErc8004Identity = z.infer<typeof insertErc8004IdentitySchema>;
+export type Erc8004Identity = typeof erc8004Identities.$inferSelect;
+
+export const erc8004Reputation = pgTable("erc8004_reputation", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentIdentityId: varchar("agent_identity_id").notNull(),
+  clientWallet: text("client_wallet").notNull(),
+  value: integer("value").notNull(),
+  valueDecimals: integer("value_decimals").notNull().default(0),
+  tag1: text("tag1"),
+  tag2: text("tag2"),
+  endpoint: text("endpoint"),
+  feedbackUri: text("feedback_uri"),
+  feedbackHash: text("feedback_hash"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertErc8004ReputationSchema = createInsertSchema(erc8004Reputation).omit({ id: true, createdAt: true });
+export type InsertErc8004Reputation = z.infer<typeof insertErc8004ReputationSchema>;
+export type Erc8004Reputation = typeof erc8004Reputation.$inferSelect;
+
+export const erc8004Validations = pgTable("erc8004_validations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentIdentityId: varchar("agent_identity_id").notNull(),
+  validatorWallet: text("validator_wallet").notNull(),
+  method: text("method").notNull().default("reputation"),
+  result: text("result").notNull().default("pass"),
+  score: integer("score"),
+  proofUri: text("proof_uri"),
+  proofHash: text("proof_hash"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertErc8004ValidationSchema = createInsertSchema(erc8004Validations).omit({ id: true, createdAt: true });
+export type InsertErc8004Validation = z.infer<typeof insertErc8004ValidationSchema>;
+export type Erc8004Validation = typeof erc8004Validations.$inferSelect;
+
+export const bap578Nfas = pgTable("bap578_nfas", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id"),
+  tokenId: text("token_id"),
+  chainId: text("chain_id").notNull().default("56"),
+  ownerWallet: text("owner_wallet").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  logicAddress: text("logic_address"),
+  metadataUri: text("metadata_uri"),
+  learningRoot: text("learning_root"),
+  learningMode: text("learning_mode").notNull().default("json"),
+  status: text("status").notNull().default("active"),
+  templateId: text("template_id"),
+  vaultPermissions: text("vault_permissions"),
+  txHash: text("tx_hash"),
+  contractAddress: text("contract_address"),
+  personalityProfile: text("personality_profile"),
+  personalityHash: text("personality_hash"),
+  traits: text("traits"),
+  voice: text("voice"),
+  values: text("values_text"),
+  behaviorRules: text("behavior_rules"),
+  communicationStyle: text("communication_style"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertBap578NfaSchema = createInsertSchema(bap578Nfas).omit({ id: true, createdAt: true });
+export type InsertBap578Nfa = z.infer<typeof insertBap578NfaSchema>;
+export type Bap578Nfa = typeof bap578Nfas.$inferSelect;
+
+export const agentKnowledgeBase = pgTable("agent_knowledge_base", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  sourceType: text("source_type").notNull().default("custom"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentKnowledgeBaseSchema = createInsertSchema(agentKnowledgeBase).omit({ id: true, createdAt: true });
+export type InsertAgentKnowledgeBase = z.infer<typeof insertAgentKnowledgeBaseSchema>;
+export type AgentKnowledgeBase = typeof agentKnowledgeBase.$inferSelect;
+
+export const agentConversationMemory = pgTable("agent_conversation_memory", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  twitterUsername: text("twitter_username").notNull(),
+  lastInteraction: text("last_interaction"),
+  sentiment: text("sentiment").notNull().default("neutral"),
+  interactionCount: integer("interaction_count").notNull().default(1),
+  lastInteractionAt: timestamp("last_interaction_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentConversationMemorySchema = createInsertSchema(agentConversationMemory).omit({ id: true, createdAt: true });
+export type InsertAgentConversationMemory = z.infer<typeof insertAgentConversationMemorySchema>;
+export type AgentConversationMemory = typeof agentConversationMemory.$inferSelect;
+
+export const agentToolResults = pgTable("agent_tool_results", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  toolType: text("tool_type").notNull(),
+  result: text("result").notNull(),
+  usedInTweetId: text("used_in_tweet_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentToolResultSchema = createInsertSchema(agentToolResults).omit({ id: true, createdAt: true });
+export type InsertAgentToolResult = z.infer<typeof insertAgentToolResultSchema>;
+export type AgentToolResult = typeof agentToolResults.$inferSelect;
+
+export const agentCollaborationLog = pgTable("agent_collaboration_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  requestingAgentId: varchar("requesting_agent_id").notNull(),
+  consultedAgentId: varchar("consulted_agent_id").notNull(),
+  question: text("question").notNull(),
+  answer: text("answer").notNull(),
+  usedInContext: text("used_in_context"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentCollaborationLogSchema = createInsertSchema(agentCollaborationLog).omit({ id: true, createdAt: true });
+export type InsertAgentCollaborationLog = z.infer<typeof insertAgentCollaborationLogSchema>;
+export type AgentCollaborationLog = typeof agentCollaborationLog.$inferSelect;
+
+export const agentTasks = pgTable("agent_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  creatorWallet: varchar("creator_wallet"),
+  taskType: text("task_type").notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  status: text("status").notNull().default("pending"),
+  result: text("result"),
+  toolsUsed: text("tools_used"),
+  modelUsed: text("model_used"),
+  executionTimeMs: integer("execution_time_ms"),
+  createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const insertAgentTaskSchema = createInsertSchema(agentTasks).omit({ id: true, createdAt: true, completedAt: true });
+export type InsertAgentTask = z.infer<typeof insertAgentTaskSchema>;
+export type AgentTask = typeof agentTasks.$inferSelect;
+
+export const tokenLaunches = pgTable("token_launches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id"),
+  creatorWallet: text("creator_wallet"),
+  platform: text("platform").notNull(),
+  chainId: integer("chain_id").notNull(),
+  tokenName: text("token_name").notNull(),
+  tokenSymbol: text("token_symbol").notNull(),
+  tokenDescription: text("token_description"),
+  imageUrl: text("image_url"),
+  tokenAddress: text("token_address"),
+  txHash: text("tx_hash"),
+  launchUrl: text("launch_url"),
+  initialLiquidityBnb: text("initial_liquidity_bnb"),
+  status: text("status").notNull().default("pending"),
+  errorMessage: text("error_message"),
+  metadata: text("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTokenLaunchSchema = createInsertSchema(tokenLaunches).omit({ id: true, createdAt: true });
+export type InsertTokenLaunch = z.infer<typeof insertTokenLaunchSchema>;
+export type TokenLaunch = typeof tokenLaunches.$inferSelect;
+
+export const TOKEN_LAUNCHPADS = [
+  { id: "four_meme", name: "Four.meme", chain: "BNB Chain", chainId: 56, url: "https://four.meme" },
+  { id: "flap_sh", name: "Flap.sh", chain: "BNB Chain", chainId: 56, url: "https://flap.sh" },
+] as const;
+
+export const TASK_TYPES = [
+  { id: "research", name: "Research", description: "Deep analysis with sources and methodology" },
+  { id: "analysis", name: "Market Analysis", description: "Data-driven market or protocol analysis" },
+  { id: "content", name: "Content", description: "Write tweets, threads, articles, or copy" },
+  { id: "code_review", name: "Code Review", description: "Review code snippets and suggest improvements" },
+  { id: "strategy", name: "Strategy", description: "Marketing, business, or trading strategy" },
+  { id: "general", name: "General", description: "Open-ended tasks" },
+] as const;
+
+export const AVAILABLE_MODELS = [
+  { id: "meta-llama/Meta-Llama-3.1-70B-Instruct", name: "Llama 3.1 70B", provider: "hyperbolic" },
+  { id: "meta-llama/Llama-3.3-70B-Instruct", name: "Llama 3.3 70B", provider: "akash" },
+  { id: "deepseek-ai/DeepSeek-V3", name: "DeepSeek V3", provider: "hyperbolic" },
+  { id: "deepseek-ai/DeepSeek-V3.2", name: "DeepSeek V3.2", provider: "akash" },
+  { id: "Qwen/Qwen2.5-72B-Instruct", name: "Qwen 2.5 72B", provider: "hyperbolic" },
+  { id: "Qwen/Qwen3-30B-A3B", name: "Qwen3 30B", provider: "akash" },
+] as const;
+
+export const chaosMilestones = pgTable("chaos_milestones", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  launchId: varchar("launch_id").notNull(),
+  milestoneNumber: integer("milestone_number").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  action: text("action").notNull(),
+  triggerAfterMinutes: integer("trigger_after_minutes").notNull(),
+  status: text("status").notNull().default("pending"),
+  txHash: text("tx_hash"),
+  tweetId: text("tweet_id"),
+  tweetText: text("tweet_text"),
+  tokensBurned: text("tokens_burned"),
+  tokensTransferred: text("tokens_transferred"),
+  executedAt: timestamp("executed_at"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertChaosMilestoneSchema = createInsertSchema(chaosMilestones).omit({ id: true, createdAt: true });
+export type InsertChaosMilestone = z.infer<typeof insertChaosMilestoneSchema>;
+export type ChaosMilestone = typeof chaosMilestones.$inferSelect;
+
+export const asterCredentials = pgTable("aster_credentials", {
+  chatId: text("chat_id").primaryKey(),
+  encryptedApiKey: text("encrypted_api_key").notNull(),
+  encryptedApiSecret: text("encrypted_api_secret").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAsterCredentialsSchema = createInsertSchema(asterCredentials).omit({ createdAt: true });
+export type InsertAsterCredentials = z.infer<typeof insertAsterCredentialsSchema>;
+export type AsterCredentials = typeof asterCredentials.$inferSelect;
 
 export const SEED_AGENTS = {
   RESEARCH_BOT: {

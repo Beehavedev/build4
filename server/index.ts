@@ -3,6 +3,17 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startAgentRunner } from "./agent-runner";
+import { checkAndExecuteMilestones } from "./chaos-launch";
+
+process.on("uncaughtException", (err) => {
+  console.error("[CRASH] Uncaught exception:", err.message, err.stack);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[CRASH] Unhandled rejection:", reason);
+});
+process.on("SIGTERM", () => console.log("[SIGNAL] SIGTERM received"));
+process.on("SIGINT", () => console.log("[SIGNAL] SIGINT received"));
+process.on("exit", (code) => console.log(`[EXIT] Process exiting with code ${code}`));
 
 const app = express();
 const httpServer = createServer(app);
@@ -12,6 +23,13 @@ declare module "http" {
     rawBody: unknown;
   }
 }
+
+app.get("/", (_req, res, next) => {
+  if (_req.headers["user-agent"]?.includes("health") || _req.headers["x-healthcheck"]) {
+    return res.status(200).send("OK");
+  }
+  next();
+});
 
 app.use(
   express.json({
@@ -35,28 +53,12 @@ export function log(message: string, source = "express") {
 }
 
 app.use((req, res, next) => {
+  if (!req.path.startsWith("/api")) return next();
   const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
   res.on("finish", () => {
     const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      log(logLine);
-    }
+    log(`${req.method} ${req.path} ${res.statusCode} in ${duration}ms`);
   });
-
   next();
 });
 
@@ -100,11 +102,23 @@ app.use((req, res, next) => {
     () => {
       log(`serving on port ${port}`);
 
-      if (process.env.AGENT_RUNNER_ENABLED === "true") {
+      if (process.env.NODE_ENV === "production" && process.env.AGENT_RUNNER_ENABLED === "true") {
         setTimeout(() => startAgentRunner(), 3000);
+      } else if (process.env.NODE_ENV !== "production") {
+        log("Agent runner skipped in development to save memory. Runs in production.");
       } else {
         log("Agent runner disabled — only real user-initiated actions allowed. Set AGENT_RUNNER_ENABLED=true to enable autonomous mode.");
       }
+
+      const CHAOS_CHECK_INTERVAL = 60_000;
+      setInterval(async () => {
+        try {
+          await checkAndExecuteMilestones();
+        } catch (e: any) {
+          log(`[ChaosLaunch] Milestone check error: ${e.message}`, "chaos");
+        }
+      }, CHAOS_CHECK_INTERVAL);
+      log("Chaos milestone auto-executor started (checks every 60s)");
     },
   );
 })();

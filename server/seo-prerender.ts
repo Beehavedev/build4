@@ -399,6 +399,9 @@ async function getEconomyDynamicContent(): Promise<string> {
 
 const PRERENDER_PATHS = new Set(Object.keys(PAGE_CONTENT));
 
+const prerenderCache = new Map<string, { html: string; ts: number }>();
+const CACHE_TTL = 5 * 60 * 1000;
+
 export function registerSeoPrerender(app: Express): void {
   app.use(async (req: Request, res: Response, next: NextFunction) => {
     const ua = req.headers["user-agent"] || "";
@@ -410,6 +413,12 @@ export function registerSeoPrerender(app: Express): void {
     const meta = PAGE_CONTENT[path];
     if (!meta) return next();
 
+    const cached = prerenderCache.get(path);
+    if (cached && Date.now() - cached.ts < CACHE_TTL) {
+      res.status(200).set({ "Content-Type": "text/html", "X-Prerender": "bot-cached" }).send(cached.html);
+      return;
+    }
+
     let dynamicContent: string | undefined;
     if (path === "/marketplace") {
       dynamicContent = await getMarketplaceDynamicContent();
@@ -418,6 +427,7 @@ export function registerSeoPrerender(app: Express): void {
     }
 
     const html = buildBotHtml(req, meta, dynamicContent);
+    prerenderCache.set(path, { html, ts: Date.now() });
     res.status(200).set({ "Content-Type": "text/html", "X-Prerender": "bot" }).send(html);
   });
 }

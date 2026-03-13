@@ -190,6 +190,7 @@ let rateLimitBackoff = 0;
 let consecutiveErrors = 0;
 let lastMentionId: string | undefined = undefined;
 const repliedToMentions = new Set<string>();
+const pendingMentions: TweetReply[] = [];
 let stateLoaded = false;
 
 async function loadPersistedState() {
@@ -267,19 +268,14 @@ function getChainLabel(chainKey: string): string {
   return "BNB Chain";
 }
 
-const BOUNTY_CHAINS = ["bnbMainnet", "baseMainnet", "xlayerMainnet"];
-let nextBountyChainIdx = 0;
-
 function getNextBountyChain(): string {
-  const chain = BOUNTY_CHAINS[nextBountyChainIdx % BOUNTY_CHAINS.length];
-  nextBountyChainIdx++;
-  return chain;
+  return "bnbMainnet";
 }
 
 async function sendNativePayment(toAddress: string, amountBnb: string, chainKey?: string): Promise<{ success: boolean; txHash?: string; error?: string; chainKey?: string }> {
-  const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
+  const privateKey = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
   if (!privateKey) {
-    return { success: false, error: "DEPLOYER_PRIVATE_KEY not configured" };
+    return { success: false, error: "Bounty wallet private key not configured" };
   }
 
   const targetChain = chainKey || process.env.ONCHAIN_NETWORK || "bnbMainnet";
@@ -299,6 +295,10 @@ async function sendNativePayment(toAddress: string, amountBnb: string, chainKey?
 
     if (balance < amountWei + estimatedGas) {
       const balNative = ethers.formatEther(balance);
+      if (targetChain !== "bnbMainnet") {
+        console.log(`[TwitterAgent] Balance too low on ${getChainLabel(targetChain)} (${balNative} ${getChainCurrency(targetChain)}), falling back to BNB Chain`);
+        return sendNativePayment(toAddress, amountBnb, "bnbMainnet");
+      }
       return { success: false, error: `Deployer balance too low on ${getChainLabel(targetChain)}: ${balNative} ${getChainCurrency(targetChain)} (need ${amountBnb} + gas)` };
     }
 
@@ -329,6 +329,35 @@ async function sendNativePayment(toAddress: string, amountBnb: string, chainKey?
   }
 }
 
+async function recordBountyReputation(
+  winnerWallet: string,
+  verificationScore: number,
+  paymentChain: string,
+  bountyJobId: string,
+  txHash: string
+): Promise<void> {
+  const chainLabel = getChainLabel(paymentChain);
+  const identities = await storage.getErc8004Identities();
+  const bountyAgentIdentity = identities.find(id =>
+    id.name?.toLowerCase().includes("researchbot") || id.name?.toLowerCase().includes("bounty")
+  );
+  const agentIdentityId = bountyAgentIdentity?.id || "bounty-engine";
+
+  await storage.createErc8004Reputation({
+    agentIdentityId,
+    clientWallet: winnerWallet.toLowerCase(),
+    value: verificationScore,
+    valueDecimals: 0,
+    tag1: "bounty",
+    tag2: chainLabel,
+    endpoint: `bounty:${bountyJobId}`,
+    feedbackUri: `tx:${txHash}`,
+    feedbackHash: txHash,
+  });
+
+  console.log(`[TwitterAgent] Reputation +${verificationScore} recorded for ${winnerWallet.slice(0, 8)}... (bounty on ${chainLabel}, maps to BNB score)`);
+}
+
 export async function startTwitterAgent() {
   if (!isTwitterConfigured()) {
     console.log("[TwitterAgent] API credentials not configured, skipping start");
@@ -341,7 +370,7 @@ export async function startTwitterAgent() {
     return;
   }
 
-  const interval = config.pollingIntervalMs || 30000;
+  const interval = config.pollingIntervalMs || 300000;
   console.log(`[TwitterAgent] Starting with ${interval / 1000}s interval`);
 
   if (pollingInterval) {
@@ -623,51 +652,71 @@ JSON only:`;
   return `@${reply.authorUsername} Appreciate you jumping in. BUILD4 agents operate fully on-chain — real payments, real verification, no middlemen. Check build4.io to see it live.`;
 }
 
-const MAX_MENTION_REPLIES_PER_CYCLE = 3;
+const MAX_MENTION_REPLIES_PER_CYCLE = 5;
 const MAX_REPLIES_PER_USER_PER_CYCLE = 1;
 const userReplyCooldowns = new Map<string, number>();
 const USER_COOLDOWN_MS = 10 * 60 * 1000;
+const repliedConversations = new Set<string>();
 
 async function processMentions() {
-  const mentions = await getMentions(lastMentionId);
-  if (mentions.length === 0) return;
+  const freshMentions = await getMentions(lastMentionId);
+
+  for (const m of freshMentions) {
+    if (!repliedToMentions.has(m.id) && !pendingMentions.some(p => p.id === m.id)) {
+      pendingMentions.push(m);
+    }
+    if (BigInt(m.id) > BigInt(lastMentionId || "0")) {
+      lastMentionId = m.id;
+    }
+  }
+
+  if (pendingMentions.length === 0) return;
 
   const activeBounties = await storage.getTwitterBounties("posted");
   const bountyTweetIds = new Set(activeBounties.map(b => b.tweetId).filter(Boolean));
 
-  let newMaxId = lastMentionId || "0";
+  const supportConfig = await storage.getSupportAgentConfig();
+  const supportRepliedIds = new Set<string>(
+    supportConfig?.repliedTweetIds ? supportConfig.repliedTweetIds.split(",").filter(Boolean) : []
+  );
+
   let repliesSent = 0;
   const usersRepliedThisCycle = new Map<string, number>();
   const now = Date.now();
+  const processed: string[] = [];
 
-  for (const mention of mentions) {
-    if (BigInt(mention.id) > BigInt(newMaxId)) {
-      newMaxId = mention.id;
+  for (const mention of pendingMentions) {
+    if (repliedToMentions.has(mention.id) || supportRepliedIds.has(mention.id)) {
+      processed.push(mention.id);
+      continue;
     }
 
-    if (repliedToMentions.has(mention.id)) continue;
+    if (mention.conversationId && repliedConversations.has(mention.conversationId)) {
+      console.log(`[TwitterAgent] Skipping mention ${mention.id} — already replied in conversation ${mention.conversationId}`);
+      repliedToMentions.add(mention.id);
+      processed.push(mention.id);
+      continue;
+    }
 
     if (repliesSent >= MAX_MENTION_REPLIES_PER_CYCLE) {
-      repliedToMentions.add(mention.id);
-      continue;
+      break;
     }
 
     const userKey = mention.authorId || mention.authorUsername;
     const userCount = usersRepliedThisCycle.get(userKey) || 0;
     if (userCount >= MAX_REPLIES_PER_USER_PER_CYCLE) {
-      repliedToMentions.add(mention.id);
       continue;
     }
 
     const lastReplyTime = userReplyCooldowns.get(userKey);
     if (lastReplyTime && now - lastReplyTime < USER_COOLDOWN_MS) {
-      repliedToMentions.add(mention.id);
       continue;
     }
 
     const existingSub = await storage.getTwitterSubmissionByTweetId(mention.id);
     if (existingSub) {
       repliedToMentions.add(mention.id);
+      processed.push(mention.id);
       continue;
     }
 
@@ -676,6 +725,7 @@ async function processMentions() {
       if (!replyText) {
         console.log(`[TwitterAgent] Skipping mention from @${mention.authorUsername} — empty reply (spam/ignore)`);
         repliedToMentions.add(mention.id);
+        processed.push(mention.id);
         continue;
       }
       const replyId = await safeReply(mention.id, replyText);
@@ -685,13 +735,32 @@ async function processMentions() {
         usersRepliedThisCycle.set(userKey, userCount + 1);
         userReplyCooldowns.set(userKey, now);
         logReplyForLearning(replyId, mention.authorUsername, mention.text, replyText);
+        if (mention.conversationId) {
+          repliedConversations.add(mention.conversationId);
+        }
       }
       repliedToMentions.add(mention.id);
+      processed.push(mention.id);
     } catch (e: any) {
       if (e.code === 429 || e.message?.includes("429")) throw e;
       console.error(`[TwitterAgent] Failed to reply to mention ${mention.id}:`, e.message);
       repliedToMentions.add(mention.id);
+      processed.push(mention.id);
     }
+  }
+
+  for (const id of processed) {
+    const idx = pendingMentions.findIndex(m => m.id === id);
+    if (idx !== -1) pendingMentions.splice(idx, 1);
+  }
+
+  if (pendingMentions.length > 0) {
+    console.log(`[TwitterAgent] ${pendingMentions.length} mentions still pending — will process in next cycle`);
+  }
+
+  if (pendingMentions.length > 200) {
+    const overflow = pendingMentions.splice(0, pendingMentions.length - 200);
+    console.log(`[TwitterAgent] Trimmed ${overflow.length} oldest pending mentions to prevent unbounded growth`);
   }
 
   if (userReplyCooldowns.size > 500) {
@@ -701,7 +770,12 @@ async function processMentions() {
     }
   }
 
-  lastMentionId = newMaxId;
+  if (repliedConversations.size > 1000) {
+    const arr = Array.from(repliedConversations);
+    const toRemove = arr.slice(0, arr.length - 500);
+    toRemove.forEach(id => repliedConversations.delete(id));
+  }
+
 }
 
 async function generateMentionReply(mention: TweetReply): Promise<string> {
@@ -786,9 +860,13 @@ JSON only:`;
 async function processReplies(bounty: any) {
   const replies = await getReplies(bounty.tweetId!, bounty.sinceId || undefined);
 
-  if (replies.length === 0) return;
-
   let maxId = bounty.sinceId || "0";
+
+  if (replies.length === 0) {
+    await retryPendingVerifications(bounty);
+    await selectAndPayWinners(bounty);
+    return;
+  }
   const currency = getChainCurrency();
 
   const pendingVerifications: Array<{ submission: any; reply: TweetReply }> = [];
@@ -823,6 +901,29 @@ async function processReplies(bounty: any) {
         continue;
       }
 
+      if (walletAddress) {
+        const linkedWallet = allSubmissions.find(
+          s => s.walletAddress?.toLowerCase() === walletAddress.toLowerCase() &&
+               s.twitterUserId !== reply.authorId &&
+               !["rejected"].includes(s.status)
+        );
+        if (linkedWallet) {
+          await storage.createTwitterSubmission({
+            twitterBountyId: bounty.id,
+            jobId: bounty.jobId,
+            twitterUserId: reply.authorId,
+            twitterHandle: reply.authorUsername,
+            tweetId: reply.id,
+            tweetText: reply.text,
+            walletAddress,
+            status: "rejected",
+          });
+          await safeReply(reply.id, `@${reply.authorUsername} This wallet is linked to another account. Duplicate wallets are disqualified.`);
+          console.log(`[TwitterAgent] Disqualified @${reply.authorUsername} — wallet ${walletAddress} linked to @${linkedWallet.twitterHandle}`);
+          continue;
+        }
+      }
+
       const submission = await storage.createTwitterSubmission({
         twitterBountyId: bounty.id,
         jobId: bounty.jobId,
@@ -854,6 +955,8 @@ async function processReplies(bounty: any) {
     await verifySubmission(submission, bounty, reply);
   }
 
+  await retryPendingVerifications(bounty);
+
   await selectAndPayWinners(bounty);
 
   await storage.updateTwitterBounty(bounty.id, {
@@ -861,6 +964,30 @@ async function processReplies(bounty: any) {
     lastCheckedAt: new Date(),
     repliesChecked: (bounty.repliesChecked || 0) + replies.length,
   });
+}
+
+async function retryPendingVerifications(bounty: any) {
+  const allSubmissions = await storage.getTwitterSubmissions(bounty.id);
+  const pending = allSubmissions.filter(
+    s => s.status === "pending_verification" && s.walletAddress && s.verificationScore == null
+  );
+
+  if (pending.length === 0) return;
+
+  console.log(`[TwitterAgent] Retrying ${pending.length} stuck pending_verification submissions`);
+
+  for (const sub of pending) {
+    const syntheticReply: TweetReply = {
+      id: sub.tweetId,
+      text: sub.tweetText || "",
+      authorId: sub.twitterUserId,
+      authorUsername: sub.twitterHandle,
+      conversationId: bounty.tweetId!,
+      createdAt: sub.createdAt?.toISOString?.() || new Date().toISOString(),
+    };
+
+    await verifySubmission(sub, bounty, syntheticReply);
+  }
 }
 
 async function verifySubmission(submission: any, bounty: any, reply: TweetReply) {
@@ -925,7 +1052,7 @@ async function selectAndPayWinners(bounty: any) {
   );
 
   const verified = allSubmissions
-    .filter(s => s.status === "verified" && s.walletAddress && s.verificationScore != null)
+    .filter(s => (s.status === "verified" || s.status === "payment_failed") && s.walletAddress && s.verificationScore != null)
     .filter(s => !paidUserIds.has(s.twitterUserId))
     .sort((a, b) => (b.verificationScore || 0) - (a.verificationScore || 0));
 
@@ -933,7 +1060,7 @@ async function selectAndPayWinners(bounty: any) {
 
   const distinctVerifiedAccounts = new Set(
     allSubmissions
-      .filter(s => ["verified", "paid"].includes(s.status) && s.verificationScore != null)
+      .filter(s => ["verified", "paid", "payment_failed"].includes(s.status) && s.verificationScore != null)
       .map(s => s.twitterUserId)
   ).size;
 
@@ -997,6 +1124,10 @@ async function selectAndPayWinners(bounty: any) {
       }
 
       console.log(`[TwitterAgent] Paid @${winner.twitterHandle} ${rewardBnb} ${paidCurrency} on ${getChainLabel(paidChain)} for bounty ${bounty.jobId} (${newPaidCount}/${maxWinners} winners, TX: ${paymentResult.txHash})`);
+
+      recordBountyReputation(winner.walletAddress!, winner.verificationScore || 50, paidChain, bounty.jobId, paymentResult.txHash!).catch(e => {
+        console.error(`[TwitterAgent] Reputation record failed for @${winner.twitterHandle}:`, e.message);
+      });
     } else {
       console.error(`[TwitterAgent] Payment failed for @${winner.twitterHandle}: ${paymentResult.error}`);
       await storage.updateTwitterSubmission(winner.id, {
@@ -1079,17 +1210,27 @@ Score this submission. JSON only.`;
   };
 }
 
-export async function postBountyTweet(jobId: string, taskDescription: string, rewardBnb: string, maxWinners: number = MAX_WINNERS_DEFAULT): Promise<{ tweetId: string; tweetUrl: string }> {
+const TWEET_CHAR_LIMIT = 25000;
+
+export function generateBountyTweetText(taskDescription: string, rewardBnb: string, maxWinners: number = MAX_WINNERS_DEFAULT, customTweetText?: string): string {
   const currency = getChainCurrency();
   const reward = rewardBnb || DEFAULT_REWARD_BNB;
 
+  if (customTweetText) {
+    return customTweetText.length > TWEET_CHAR_LIMIT ? customTweetText.substring(0, TWEET_CHAR_LIMIT - 3) + "..." : customTweetText;
+  }
+
   const header = `BOUNTY [${reward} ${currency} x ${maxWinners} winners]`;
   const footer = `Reply with proof + 0x wallet. AI verifies, top scorers get paid on-chain.\n\n#BUILD4 #BNBChain`;
-  const maxTaskLen = 280 - header.length - footer.length - 4;
+  const maxTaskLen = TWEET_CHAR_LIMIT - header.length - footer.length - 4;
   const trimmedTask = taskDescription.length > maxTaskLen
     ? taskDescription.substring(0, maxTaskLen - 3) + "..."
     : taskDescription;
-  const tweetText = `${header}\n\n${trimmedTask}\n\n${footer}`;
+  return `${header}\n\n${trimmedTask}\n\n${footer}`;
+}
+
+export async function postBountyTweet(jobId: string, taskDescription: string, rewardBnb: string, maxWinners: number = MAX_WINNERS_DEFAULT, customTweetText?: string, verificationCriteria?: string): Promise<{ tweetId: string; tweetUrl: string }> {
+  const tweetText = generateBountyTweetText(taskDescription, rewardBnb, maxWinners, customTweetText);
 
   const result = await postTweet(tweetText);
 
