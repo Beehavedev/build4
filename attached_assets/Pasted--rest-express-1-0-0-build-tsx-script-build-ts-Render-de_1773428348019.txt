@@ -1,0 +1,42 @@
+
+> rest-express@1.0.0 build
+> tsx script/build.ts
+Render detected — building bot server only (no frontend)
+✘ [ERROR] No matching export in "server/twitter-agent.ts" for import "generateBountyTweetText"
+    server/routes.ts:11:108:
+      11 │ ...e, postBountyTweet, generateBountyTweetText } from "./twitter-a...
+         ╵                        ~~~~~~~~~~~~~~~~~~~~~~~
+✘ [ERROR] No matching export in "shared/schema.ts" for import "TOKEN_LAUNCHPADS"
+    server/routes.ts:22:9:
+      22 │ import { TOKEN_LAUNCHPADS } from "@shared/schema";
+         ╵          ~~~~~~~~~~~~~~~~
+✘ [ERROR] No matching export in "server/onchain.ts" for import "registerAgentERC8004"
+    server/telegram-bot.ts:5:31:
+      5 │ ...registerAgentOnchain, registerAgentERC8004, registerAgentBAP578,...
+        ╵                          ~~~~~~~~~~~~~~~~~~~~
+✘ [ERROR] No matching export in "server/onchain.ts" for import "registerAgentBAP578"
+    server/telegram-bot.ts:5:53:
+      5 │ ... registerAgentERC8004, registerAgentBAP578, isOnchainReady, getE...
+        ╵                           ~~~~~~~~~~~~~~~~~~~
+4 errors
+Error: Build failed with 4 errors:
+server/routes.ts:11:108: ERROR: No matching export in "server/twitter-agent.ts" for import "generateBountyTweetText"
+server/routes.ts:22:9: ERROR: No matching export in "shared/schema.ts" for import "TOKEN_LAUNCHPADS"
+server/telegram-bot.ts:5:31: ERROR: No matching export in "server/onchain.ts" for import "registerAgentERC8004"
+server/telegram-bot.ts:5:53: ERROR: No matching export in "server/onchain.ts" for import "registerAgentBAP578"
+    at failureErrorWithLog (/opt/render/project/src/node_modules/esbuild/lib/main.js:1467:15)
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:926:25
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:878:52
+    at buildResponseToResult (/opt/render/project/src/node_modules/esbuild/lib/main.js:924:7)
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:951:16
+    at responseCallbacks.<computed> (/opt/render/project/src/node_modules/esbuild/lib/main.js:603:9)
+    at handleIncomingPacket (/opt/render/project/src/node_modules/esbuild/lib/main.js:658:12)
+    at Socket.readFromStdout (/opt/render/project/src/node_modules/esbuild/lib/main.js:581:7)
+    at Socket.emit (node:events:519:28)
+    at addChunk (node:internal/streams/readable:561:12) {
+Menu
+  errors: [Getter/Setter],
+  warnings: [Getter/Setter]
+}
+==> Build failed 😞
+==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
