@@ -1138,6 +1138,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         reply_markup: {
           inline_keyboard: [
             [toggleBtn],
+            [{ text: "🎯 Instant Sniper", callback_data: "trade:instantsniper" }],
             [{ text: "📊 Status", callback_data: "trade:status" }, { text: "⚙️ Settings", callback_data: "trade:settings" }],
             [{ text: "🧩 Agent Skills", callback_data: "trade:skills" }],
             [{ text: "📜 History", callback_data: "trade:history" }, { text: "🔴 Close All", callback_data: "trade:closeall" }],
@@ -1152,6 +1153,26 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   if (data.startsWith("trade:")) {
     const tradeAction = data.split(":")[1];
     const { setUserTradingConfig, getUserTradingStatus, startTradingAgent, isTradingAgentRunning, getActivePositionsForUser, getTradeHistoryForUser, manualClosePosition } = await import("./trading-agent");
+
+    if (tradeAction === "instantsniper") {
+      const { isInstantSniperEnabled, setInstantSniperEnabled } = await import("./trading-agent");
+      const currentlyEnabled = isInstantSniperEnabled();
+      const newState = !currentlyEnabled;
+      setInstantSniperEnabled(newState);
+      const statusText = newState
+        ? "🎯 *Instant Sniper ENABLED*\n\nThe bot will now automatically buy EVERY new token on Four.meme within seconds of launch.\n\n⚡ Scan interval: 1.5s\n💰 Buy amount: 0.05 BNB per snipe\n🎯 Max age: 60s after launch\n⚠️ High risk — trades happen with NO AI analysis"
+        : "⏸ *Instant Sniper DISABLED*\n\nThe bot will no longer auto-buy new launches. The regular sniper (score-based) is still active.";
+      await bot.sendMessage(chatId, statusText, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: newState ? "⏸ Disable Instant Sniper" : "🎯 Enable Instant Sniper", callback_data: "trade:instantsniper" }],
+            [{ text: "« Back to Trading", callback_data: "action:trade" }],
+          ],
+        },
+      });
+      return;
+    }
 
     if (tradeAction === "enable") {
       setUserTradingConfig(chatId, { enabled: true });
