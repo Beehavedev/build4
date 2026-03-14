@@ -55,6 +55,13 @@ async function buildForRender() {
   });
   console.log("Bot server built successfully → dist/index.cjs");
 
+  const { copyFile } = await import("fs/promises");
+  try {
+    await copyFile("server/schema-init.sql", "dist/schema-init.sql");
+    console.log("Copied schema-init.sql → dist/schema-init.sql");
+  } catch {}
+
+
   console.log("Running database schema migration...");
   const { execSync } = await import("child_process");
   try {
