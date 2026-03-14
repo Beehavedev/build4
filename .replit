@@ -52,6 +52,7 @@ outputType = "webview"
 ONCHAIN_NETWORK = "bnbMainnet"
 AGENT_RUNNER_ENABLED = "true"
 BAP578_CONTRACT_ADDRESS = "0xd7Deb29ddBB13607375Ce50405A574AC2f7d978d"
+TELEGRAM_BOT_EXTERNAL = "true"
 
 [agent]
 integrations = ["github:1.0.0"]
