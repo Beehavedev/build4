@@ -55,6 +55,7 @@ const TRAILING_STOP_ACTIVATION = 1.15;
 const TRAILING_STOP_DISTANCE = 0.10;
 const EMERGENCY_MAX_HOLD_MINUTES = 240;
 const MAX_CONSECUTIVE_CHECK_FAILURES = 10;
+const PROFIT_FEE_PERCENT = 20;
 
 const ASTER_SCAN_INTERVAL_MS = 45_000;
 const ASTER_POSITION_CHECK_INTERVAL_MS = 20_000;
@@ -1472,6 +1473,71 @@ async function checkAndClosePositions(notifyFn: (chatId: number, message: string
   }
 }
 
+function getTreasuryWallet(): string | null {
+  const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY || process.env.CHAOS_AGENT_PRIVATE_KEY;
+  if (!pk) return null;
+  try {
+    return new ethers.Wallet(pk).address;
+  } catch {
+    return null;
+  }
+}
+
+async function collectProfitFee(
+  userPrivateKey: string,
+  profitBnb: number,
+  tokenSymbol: string,
+): Promise<{ success: boolean; feeBnb: number; txHash?: string; error?: string }> {
+  const treasury = getTreasuryWallet();
+  if (!treasury) {
+    log(`[ProfitFee] No treasury wallet configured — skipping fee`, "trading");
+    return { success: false, feeBnb: 0, error: "No treasury wallet" };
+  }
+
+  const feeBnb = profitBnb * (PROFIT_FEE_PERCENT / 100);
+  if (feeBnb < 0.0001) {
+    log(`[ProfitFee] Fee too small (${feeBnb.toFixed(6)} BNB) for $${tokenSymbol} — skipping`, "trading");
+    return { success: true, feeBnb: 0 };
+  }
+
+  try {
+    const provider = getProvider();
+    const wallet = new ethers.Wallet(userPrivateKey, provider);
+
+    if (wallet.address.toLowerCase() === treasury.toLowerCase()) {
+      return { success: true, feeBnb: 0 };
+    }
+
+    const balance = await provider.getBalance(wallet.address);
+    const feeWei = ethers.parseEther(feeBnb.toFixed(8));
+    const gasBuffer = ethers.parseEther("0.0005");
+
+    if (balance < feeWei + gasBuffer) {
+      log(`[ProfitFee] Insufficient balance for fee (${ethers.formatEther(balance)} BNB vs ${feeBnb.toFixed(6)} fee)`, "trading");
+      return { success: false, feeBnb, error: "Insufficient balance for fee" };
+    }
+
+    log(`[ProfitFee] Collecting ${PROFIT_FEE_PERCENT}% fee: ${feeBnb.toFixed(6)} BNB from $${tokenSymbol} profit → ${treasury.substring(0, 10)}...`, "trading");
+
+    const tx = await wallet.sendTransaction({
+      to: treasury,
+      value: feeWei,
+      gasLimit: 21000,
+    });
+
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) {
+      return { success: false, feeBnb, error: "Fee transaction reverted" };
+    }
+
+    log(`[ProfitFee] Fee collected: ${feeBnb.toFixed(6)} BNB | TX: ${receipt.hash}`, "trading");
+    return { success: true, feeBnb, txHash: receipt.hash };
+  } catch (e: any) {
+    log(`[ProfitFee] Fee collection failed: ${e.message?.substring(0, 150)}`, "trading");
+    return { success: false, feeBnb, error: e.message?.substring(0, 100) };
+  }
+}
+
 async function closePosition(
   position: TradingPosition,
   reason: "closed_profit" | "closed_loss" | "closed_manual",
@@ -1599,14 +1665,25 @@ async function closePosition(
       sessionBlacklist.add(position.tokenAddress.toLowerCase());
     }
 
+    let feeResult: { success: boolean; feeBnb: number; txHash?: string } = { success: false, feeBnb: 0 };
+    if (sellResult.success && pnl > 0 && pk) {
+      try {
+        feeResult = await collectProfitFee(pk, pnl, position.tokenSymbol);
+      } catch (e: any) {
+        log(`[ProfitFee] Error collecting fee for ${position.tokenSymbol}: ${e.message?.substring(0, 100)}`, "trading");
+      }
+    }
+
     if (sellResult.success) {
       const emoji = reason === "closed_profit" ? "💰" : "📉";
-      const pnlStr = pnl >= 0 ? `+${pnl.toFixed(4)}` : pnl.toFixed(4);
+      const netPnl = pnl > 0 && feeResult.feeBnb > 0 ? pnl - feeResult.feeBnb : pnl;
+      const pnlStr = netPnl >= 0 ? `+${netPnl.toFixed(4)}` : netPnl.toFixed(4);
       const holdTime = Math.floor((Date.now() - position.entryTime) / 60000);
 
       let msg = `${emoji} CLOSED: $${position.tokenSymbol}\n`;
       msg += `Entry: ${position.entryPriceBnb} BNB → Exit: ~${currentValueBnb.toFixed(4)} BNB\n`;
       msg += `PnL: ${pnlStr} BNB (${multiple.toFixed(2)}x) | Peak: ${position.peakMultiple.toFixed(2)}x | ${holdTime}m\n`;
+      if (feeResult.feeBnb > 0) msg += `📋 Platform fee: ${feeResult.feeBnb.toFixed(4)} BNB (${PROFIT_FEE_PERCENT}% of profit)\n`;
       if (aiReasoning) msg += `🧠 ${aiReasoning}\n`;
       if (sellResult.txHash) msg += `TX: https://bscscan.com/tx/${sellResult.txHash}`;
       notifyFn(position.chatId, msg);
