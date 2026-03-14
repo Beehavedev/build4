@@ -245,6 +245,7 @@ let scanTimer: ReturnType<typeof setInterval> | null = null;
 let sniperTimer: ReturnType<typeof setInterval> | null = null;
 let positionTimer: ReturnType<typeof setInterval> | null = null;
 let copyTradeTimer: ReturnType<typeof setInterval> | null = null;
+let instantSniperTimer: ReturnType<typeof setInterval> | null = null;
 let running = false;
 
 const lastSeenWhaleTxs = new Map<string, Set<string>>();
@@ -2621,6 +2622,158 @@ export function getAsterTradeHistoryForUser(chatId: number): AsterFuturesPositio
 
 let notifyCallback: ((chatId: number, message: string) => void) | null = null;
 
+const INSTANT_SNIPER_INTERVAL_MS = 1_500;
+const INSTANT_SNIPER_MAX_AGE_SECONDS = 60;
+const INSTANT_SNIPER_BUY_AMOUNT_BNB = "0.05";
+const INSTANT_SNIPER_SLIPPAGE = 25;
+const instantSniperSeen = new Set<string>();
+let instantSniperRunning = false;
+let instantSniperEnabled = true;
+
+export function setInstantSniperEnabled(enabled: boolean): void {
+  instantSniperEnabled = enabled;
+  log(`[INSTANT-SNIPER] ${enabled ? "ENABLED" : "DISABLED"}`, "trading");
+}
+
+export function isInstantSniperEnabled(): boolean {
+  return instantSniperEnabled;
+}
+
+async function instantSniperScan(notifyFn: (chatId: number, message: string) => void): Promise<void> {
+  if (instantSniperRunning || !instantSniperEnabled) return;
+  instantSniperRunning = true;
+  try {
+    await instantSniperScanInner(notifyFn);
+  } catch (e: any) {
+    log(`[INSTANT-SNIPER] Error: ${e.message?.substring(0, 100)}`, "trading");
+  } finally {
+    instantSniperRunning = false;
+  }
+}
+
+async function instantSniperScanInner(notifyFn: (chatId: number, message: string) => void): Promise<void> {
+  const enabledUsers = await resolveEnabledUsers();
+  if (enabledUsers.length === 0) return;
+
+  const headers = {
+    "Accept": "application/json",
+    "Origin": "https://four.meme",
+    "Referer": "https://four.meme/",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  };
+
+  let rawTokens: any[] = [];
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    const resp = await fetch(
+      `${FOUR_MEME_API}/meme-api/v1/private/token/query?type=new&pageIndex=1&pageSize=50`,
+      { headers, signal: controller.signal }
+    );
+    clearTimeout(timeout);
+    if (!resp.ok) return;
+    const text = await resp.text();
+    try {
+      const d = JSON.parse(text);
+      if (d.code === 0 && Array.isArray(d.data)) rawTokens = d.data;
+      else if (d.code === 0 && d.data?.list) rawTokens = d.data.list;
+    } catch {
+      return;
+    }
+  } catch {
+    return;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const freshTokens: FourMemeListingToken[] = [];
+
+  for (const t of rawTokens) {
+    const parsed = parseListingToken(t);
+    if (!parsed) continue;
+    if (instantSniperSeen.has(parsed.address)) continue;
+    if (sessionBlacklist.has(parsed.address.toLowerCase())) continue;
+    if (parsed.status === "TRADE") continue;
+
+    const age = now - parsed.launchTime;
+    if (parsed.launchTime <= 0 || age > INSTANT_SNIPER_MAX_AGE_SECONDS || age < 0) continue;
+
+    freshTokens.push(parsed);
+  }
+
+  if (freshTokens.length === 0) return;
+
+  freshTokens.sort((a, b) => b.launchTime - a.launchTime);
+
+  for (const token of freshTokens) {
+    instantSniperSeen.add(token.address);
+    sniperScannedTokens.add(token.address);
+
+    const age = now - token.launchTime;
+
+    log(`[INSTANT-SNIPER] 🎯 NEW LAUNCH DETECTED: $${token.symbol} (${token.name}) — ${age}s old, ${token.raisedAmount.toFixed(3)} BNB raised, ${token.progressPercent.toFixed(1)}% curve`, "trading");
+
+    const signal: TokenSignal = {
+      address: token.address,
+      name: token.name,
+      symbol: token.symbol,
+      score: 95,
+      reasons: [`🎯 Instant snipe — ${age}s after launch`, `Raised: ${token.raisedAmount.toFixed(3)} BNB`, `Curve: ${token.progressPercent.toFixed(1)}%`],
+      info: listingToTokenInfo(token),
+      listing: token,
+      aiAnalysis: `🎯 INSTANT SNIPE — token launched ${age}s ago`,
+      progressPercent: token.progressPercent,
+      holderCount: token.holderCount,
+      raisedBnb: token.raisedAmount,
+      maxFunds: token.maxFunds,
+    };
+
+    recentlyScannedTokens.add(signal.address);
+
+    const buyPromises = enabledUsers.map(async (user) => {
+      const openCount = Array.from(activePositions.values()).filter(
+        (p) => p.chatId === user.chatId && p.status === "open"
+      ).length;
+      const config = getUserConfig(user.chatId);
+      if (openCount >= config.maxPositions) return;
+
+      const alreadyHolding = Array.from(activePositions.values()).some(
+        (p) => p.chatId === user.chatId && p.tokenAddress === signal.address && p.status === "open"
+      );
+      if (alreadyHolding) return;
+
+      const buyAmount = INSTANT_SNIPER_BUY_AMOUNT_BNB;
+
+      const overrideSignal = { ...signal, score: 95 };
+
+      log(`[INSTANT-SNIPER] ⚡ EXECUTING BUY: $${token.symbol} for ${buyAmount} BNB — user ${user.chatId}`, "trading");
+
+      const position = await executeBuy(
+        user.chatId, user.agentId, overrideSignal,
+        user.privateKey, user.walletAddress, "sniper",
+        { sizeMultiplier: parseFloat(buyAmount) / parseFloat(config.buyAmountBnb || DEFAULT_BUY_AMOUNT_BNB) },
+        true
+      );
+
+      if (position) {
+        let msg = `🎯 INSTANT SNIPE: $${token.symbol}\n`;
+        msg += `⚡ Bought ${age}s after launch!\n`;
+        msg += `💰 Amount: ${position.entryPriceBnb} BNB\n`;
+        msg += `📊 Curve: ${token.progressPercent.toFixed(1)}% | Raised: ${token.raisedAmount.toFixed(3)} BNB\n`;
+        msg += `🎯 TP: ${config.takeProfitMultiple}x | SL: ${(config.stopLossMultiple * 100).toFixed(0)}%\n`;
+        if (position.buyTxHash) msg += `🔗 TX: https://bscscan.com/tx/${position.buyTxHash}`;
+        notifyFn(user.chatId, msg);
+      }
+    });
+
+    await Promise.allSettled(buyPromises);
+  }
+
+  if (instantSniperSeen.size > 500) {
+    const arr = Array.from(instantSniperSeen);
+    for (let i = 0; i < arr.length - 250; i++) instantSniperSeen.delete(arr[i]);
+  }
+}
+
 export function startTradingAgent(notifyFn: (chatId: number, message: string) => void): void {
   if (running) return;
   running = true;
@@ -2636,6 +2789,11 @@ export function startTradingAgent(notifyFn: (chatId: number, message: string) =>
   sniperTimer = setInterval(() => {
     sniperScan(notifyFn).catch(e => log(`[SNIPER] Scan error: ${e.message?.substring(0, 80)}`, "trading"));
   }, SNIPER_SCAN_INTERVAL_MS);
+
+  instantSniperScan(notifyFn).catch(() => {});
+  instantSniperTimer = setInterval(() => {
+    instantSniperScan(notifyFn).catch(e => log(`[INSTANT-SNIPER] Error: ${e.message?.substring(0, 80)}`, "trading"));
+  }, INSTANT_SNIPER_INTERVAL_MS);
 
   scanTimer = setInterval(() => {
     scanAndTrade(notifyFn).catch(e => log(`[TradingAgent] Scan error: ${e.message?.substring(0, 80)}`, "trading"));
@@ -2662,6 +2820,7 @@ export function startTradingAgent(notifyFn: (chatId: number, message: string) =>
   }, SMART_MONEY_SCAN_INTERVAL_MS);
 
   log(`[SNIPER] ⚡ Sniper mode active — scanning every ${SNIPER_SCAN_INTERVAL_MS / 1000}s, threshold ${SNIPER_SCORE_THRESHOLD}%`, "trading");
+  log(`[INSTANT-SNIPER] 🎯 Instant launch sniper active — scanning every ${INSTANT_SNIPER_INTERVAL_MS / 1000}s, buying tokens < ${INSTANT_SNIPER_MAX_AGE_SECONDS}s old`, "trading");
   log(`[CopyTrade] Tracking ${COPY_TRADE_WALLETS.map(w => w.label).join(", ")} + auto-discovered wallets`, "trading");
   log(`[SmartMoney] Discovery active — scanning every ${SMART_MONEY_SCAN_INTERVAL_MS / 1000}s for top traders`, "trading");
   log(`[AsterAgent] Aster futures active`, "trading");
@@ -2672,11 +2831,12 @@ export function stopTradingAgent(): void {
   if (sniperTimer) clearInterval(sniperTimer);
   if (positionTimer) clearInterval(positionTimer);
   if (copyTradeTimer) clearInterval(copyTradeTimer);
+  if (instantSniperTimer) clearInterval(instantSniperTimer);
   if (asterScanTimer) clearInterval(asterScanTimer);
   if (asterPositionTimer) clearInterval(asterPositionTimer);
   if (smartMoneyTimer) clearInterval(smartMoneyTimer);
   scanTimer = null; sniperTimer = null; positionTimer = null; copyTradeTimer = null;
-  asterScanTimer = null; asterPositionTimer = null; smartMoneyTimer = null;
+  instantSniperTimer = null; asterScanTimer = null; asterPositionTimer = null; smartMoneyTimer = null;
   running = false;
   log("[TradingAgent] Stopped", "trading");
 }
