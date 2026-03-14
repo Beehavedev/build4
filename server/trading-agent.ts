@@ -56,6 +56,8 @@ const TRAILING_STOP_DISTANCE = 0.10;
 const EMERGENCY_MAX_HOLD_MINUTES = 240;
 const MAX_CONSECUTIVE_CHECK_FAILURES = 10;
 const PROFIT_FEE_PERCENT = 20;
+const MOONBAG_SELL_PERCENT = 60;
+const MOONBAG_TRIGGER_MULTIPLE = 2.0;
 
 const ASTER_SCAN_INTERVAL_MS = 45_000;
 const ASTER_POSITION_CHECK_INTERVAL_MS = 20_000;
@@ -1454,6 +1456,85 @@ async function checkAndClosePositions(notifyFn: (chatId: number, message: string
 
         if (info.liquidityAdded) {
           await closePosition(position, "closed_profit", notifyFn, multiple, currentValueBnb, "Token graduated to DEX");
+          return;
+        }
+
+        if (!(position as any)._moonbagSold && multiple >= MOONBAG_TRIGGER_MULTIPLE) {
+          const sellPercent = MOONBAG_SELL_PERCENT / 100;
+          const sellAmount = (tokenAmountNum * sellPercent).toString();
+          const keepAmount = tokenAmountNum * (1 - sellPercent);
+          const chatIdStr = position.chatId.toString();
+          const pk = await storage.getTelegramWalletPrivateKey(chatIdStr, position.walletAddress);
+
+          if (pk && parseFloat(sellAmount) > 0) {
+            log(`[TradingAgent] 🌙 MOONBAG: Selling ${MOONBAG_SELL_PERCENT}% of $${position.tokenSymbol} at ${multiple.toFixed(2)}x — keeping ${(100 - MOONBAG_SELL_PERCENT)}% as moonbag`, "trading");
+
+            try {
+              const sellResult = await fourMemeSellToken(position.tokenAddress, sellAmount, pk);
+
+              if (sellResult.success) {
+                (position as any)._moonbagSold = true;
+                const soldValueBnb = currentValueBnb * sellPercent;
+                const profitOnSold = soldValueBnb - (entryBnb * sellPercent);
+
+                position.tokenAmount = keepAmount.toFixed(6);
+
+                let feeMsg = "";
+                if (profitOnSold > 0) {
+                  try {
+                    const feeResult = await collectProfitFee(pk, profitOnSold, position.tokenSymbol);
+                    if (feeResult.feeBnb > 0) feeMsg = `\n📋 Platform fee: ${feeResult.feeBnb.toFixed(4)} BNB (${PROFIT_FEE_PERCENT}% of profit)`;
+                  } catch {}
+                }
+
+                notifyFn(position.chatId,
+                  `🌙 MOONBAG: Sold ${MOONBAG_SELL_PERCENT}% of $${position.tokenSymbol} at ${multiple.toFixed(2)}x\n` +
+                  `💰 Sold: ~${soldValueBnb.toFixed(4)} BNB | Keeping ${(100 - MOONBAG_SELL_PERCENT)}% as moonbag\n` +
+                  `🎒 Remaining: ${keepAmount.toFixed(2)} tokens — letting it ride!${feeMsg}\n` +
+                  (sellResult.txHash ? `TX: https://bscscan.com/tx/${sellResult.txHash}` : "")
+                );
+
+                position.entryPriceBnb = (entryBnb * (1 - sellPercent)).toFixed(6);
+
+                recordTrade();
+
+                storage.saveTradeOutcome({
+                  chatId: position.chatId.toString(),
+                  tokenAddress: position.tokenAddress,
+                  tokenSymbol: position.tokenSymbol,
+                  result: "closed_profit",
+                  pnlBnb: profitOnSold,
+                  peakMultiple: position.peakMultiple,
+                  entryPriceBnb: entryBnb * sellPercent,
+                  holdTimeMinutes: Math.floor((Date.now() - position.entryTime) / 60000),
+                  confidenceScore: position.confidenceScore,
+                  source: position.source + "_moonbag_partial",
+                  reasoning: `Moonbag: sold ${MOONBAG_SELL_PERCENT}% at ${multiple.toFixed(2)}x`,
+                }).catch(() => {});
+
+                return;
+              } else {
+                log(`[TradingAgent] Moonbag partial sell failed: ${sellResult.error}`, "trading");
+              }
+            } catch (e: any) {
+              log(`[TradingAgent] Moonbag sell error: ${e.message?.substring(0, 100)}`, "trading");
+            }
+          }
+        }
+
+        if ((position as any)._moonbagSold && position.trailingStopActive) {
+          const trailingStopLevel = position.peakMultiple * (1 - tsDistance);
+          if (multiple <= trailingStopLevel) {
+            await closePosition(position, "closed_profit", notifyFn, multiple, currentValueBnb, `🌙 Moonbag trail stop: peak ${position.peakMultiple.toFixed(2)}x → ${multiple.toFixed(2)}x`);
+            return;
+          }
+        }
+
+        if ((position as any)._moonbagSold) {
+          if (multiple <= 0.5) {
+            await closePosition(position, "closed_loss", notifyFn, multiple, currentValueBnb, "🌙 Moonbag emergency exit — price collapsed");
+            return;
+          }
           return;
         }
 
