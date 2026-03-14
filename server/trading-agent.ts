@@ -2813,12 +2813,11 @@ export function getAsterTradeHistoryForUser(chatId: number): AsterFuturesPositio
 
 let notifyCallback: ((chatId: number, message: string) => void) | null = null;
 
-const INSTANT_SNIPER_INTERVAL_MS = 1_500;
-const INSTANT_SNIPER_MAX_AGE_SECONDS = 60;
+const INSTANT_SNIPER_INTERVAL_MS = 1_000;
+const INSTANT_SNIPER_MAX_AGE_SECONDS = 300;
 const INSTANT_SNIPER_BUY_AMOUNT_BNB = "0.05";
 const INSTANT_SNIPER_SLIPPAGE = 25;
 const instantSniperSeen = new Set<string>();
-let instantSniperRunning = false;
 let instantSniperEnabled = true;
 
 export function setInstantSniperEnabled(enabled: boolean): void {
@@ -2830,15 +2829,17 @@ export function isInstantSniperEnabled(): boolean {
   return instantSniperEnabled;
 }
 
+let instantSniperScanning = false;
+
 async function instantSniperScan(notifyFn: (chatId: number, message: string) => void): Promise<void> {
-  if (instantSniperRunning || !instantSniperEnabled) return;
-  instantSniperRunning = true;
+  if (instantSniperScanning || !instantSniperEnabled) return;
+  instantSniperScanning = true;
   try {
     await instantSniperScanInner(notifyFn);
   } catch (e: any) {
     log(`[INSTANT-SNIPER] Error: ${e.message?.substring(0, 100)}`, "trading");
   } finally {
-    instantSniperRunning = false;
+    instantSniperScanning = false;
   }
 }
 
@@ -2858,7 +2859,7 @@ async function instantSniperScanInner(notifyFn: (chatId: number, message: string
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4000);
     const resp = await fetch(
-      `${FOUR_MEME_API}/meme-api/v1/private/token/query?type=new&pageIndex=1&pageSize=50`,
+      `${FOUR_MEME_API}/meme-api/v1/private/token/query?type=new&pageIndex=1&pageSize=100`,
       { headers, signal: controller.signal }
     );
     clearTimeout(timeout);
@@ -2920,43 +2921,32 @@ async function instantSniperScanInner(notifyFn: (chatId: number, message: string
 
     recentlyScannedTokens.add(signal.address);
 
-    const buyPromises = enabledUsers.map(async (user) => {
-      const openCount = Array.from(activePositions.values()).filter(
-        (p) => p.chatId === user.chatId && p.status === "open"
-      ).length;
+    for (const user of enabledUsers) {
       const config = getUserConfig(user.chatId);
-      if (openCount >= config.maxPositions) return;
-
-      const alreadyHolding = Array.from(activePositions.values()).some(
-        (p) => p.chatId === user.chatId && p.tokenAddress === signal.address && p.status === "open"
-      );
-      if (alreadyHolding) return;
-
       const buyAmount = INSTANT_SNIPER_BUY_AMOUNT_BNB;
-
       const overrideSignal = { ...signal, score: 95 };
 
       log(`[INSTANT-SNIPER] ⚡ EXECUTING BUY: $${token.symbol} for ${buyAmount} BNB — user ${user.chatId}`, "trading");
 
-      const position = await executeBuy(
+      executeBuy(
         user.chatId, user.agentId, overrideSignal,
         user.privateKey, user.walletAddress, "sniper",
         { sizeMultiplier: parseFloat(buyAmount) / parseFloat(config.buyAmountBnb || DEFAULT_BUY_AMOUNT_BNB) },
         true
-      );
-
-      if (position) {
-        let msg = `🎯 INSTANT SNIPE: $${token.symbol}\n`;
-        msg += `⚡ Bought ${age}s after launch!\n`;
-        msg += `💰 Amount: ${position.entryPriceBnb} BNB\n`;
-        msg += `📊 Curve: ${token.progressPercent.toFixed(1)}% | Raised: ${token.raisedAmount.toFixed(3)} BNB\n`;
-        msg += `🎯 TP: ${config.takeProfitMultiple}x | SL: ${(config.stopLossMultiple * 100).toFixed(0)}%\n`;
-        if (position.buyTxHash) msg += `🔗 TX: https://bscscan.com/tx/${position.buyTxHash}`;
-        notifyFn(user.chatId, msg);
-      }
-    });
-
-    await Promise.allSettled(buyPromises);
+      ).then((position) => {
+        if (position) {
+          let msg = `🎯 INSTANT SNIPE: $${token.symbol}\n`;
+          msg += `⚡ Bought ${age}s after launch!\n`;
+          msg += `💰 Amount: ${position.entryPriceBnb} BNB\n`;
+          msg += `📊 Curve: ${token.progressPercent.toFixed(1)}% | Raised: ${token.raisedAmount.toFixed(3)} BNB\n`;
+          msg += `🌙 Strategy: Sell 60% at 2x, keep 40% moonbag\n`;
+          if (position.buyTxHash) msg += `🔗 TX: https://bscscan.com/tx/${position.buyTxHash}`;
+          notifyFn(user.chatId, msg);
+        }
+      }).catch((e) => {
+        log(`[INSTANT-SNIPER] Buy error for ${token.symbol}: ${e.message?.substring(0, 80)}`, "trading");
+      });
+    }
   }
 
   if (instantSniperSeen.size > 500) {
