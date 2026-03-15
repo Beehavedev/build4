@@ -45,7 +45,7 @@ const COPY_TRADE_SCAN_INTERVAL_MS = 15_000;
 const MAX_POSITIONS_PER_USER = 5;
 const DEFAULT_BUY_AMOUNT_BNB = "0.1";
 const DEFAULT_TAKE_PROFIT = 2.0;
-const DEFAULT_STOP_LOSS = 0.7;
+const DEFAULT_STOP_LOSS = 0.8;
 const DEFAULT_SLIPPAGE = 15;
 const MIN_PROGRESS_FOR_ENTRY = 3;
 const MAX_PROGRESS_FOR_ENTRY = 65;
@@ -53,7 +53,7 @@ const MIN_WALLET_BALANCE_BNB = 0.15;
 const MAX_TOKEN_AGE_SECONDS = 3600;
 const TRAILING_STOP_ACTIVATION = 1.15;
 const TRAILING_STOP_DISTANCE = 0.10;
-const EMERGENCY_MAX_HOLD_MINUTES = 240;
+const EMERGENCY_MAX_HOLD_MINUTES = 60;
 const MAX_CONSECUTIVE_CHECK_FAILURES = 10;
 const PROFIT_FEE_PERCENT = 20;
 const MOONBAG_SELL_PERCENT = 60;
@@ -1558,17 +1558,17 @@ async function checkAndClosePositions(notifyFn: (chatId: number, message: string
 
         const maxHold = (position as any)._maxHoldMinutes;
         const onlyLosers = (position as any)._timeExitOnlyLosers;
-        const staleLimit = maxHold || 90;
+        const staleLimit = maxHold || 30;
         const timeExitApplies = maxHold
           ? (onlyLosers ? multiple < 1.0 : true)
-          : multiple < 1.05;
+          : multiple < 1.1;
         if (ageMinutes > staleLimit && timeExitApplies) {
           const reason = maxHold ? `⏰ Time exit (${maxHold}m limit)` : "Stale — no movement after 90m";
           await closePosition(position, multiple >= 1 ? "closed_profit" : "closed_loss", notifyFn, multiple, currentValueBnb, reason);
           return;
         }
 
-        if (multiple >= 1.15 || multiple <= 0.85 || ageMinutes > 30) {
+        if (multiple >= 1.10 || multiple <= 0.90 || ageMinutes > 15) {
           const aiSell = await aiEvaluateSell(position, info, multiple, ageMinutes, momentum);
           if (aiSell.decision === "SELL") {
             await closePosition(position, multiple >= 1 ? "closed_profit" : "closed_loss", notifyFn, multiple, currentValueBnb, aiSell.reasoning);
@@ -2817,6 +2817,9 @@ const INSTANT_SNIPER_INTERVAL_MS = 1_000;
 const INSTANT_SNIPER_MAX_AGE_SECONDS = 300;
 const INSTANT_SNIPER_BUY_AMOUNT_BNB = "0.05";
 const INSTANT_SNIPER_SLIPPAGE = 25;
+const INSTANT_SNIPER_MIN_RAISED_BNB = 0.5;
+const INSTANT_SNIPER_MIN_HOLDERS = 3;
+const INSTANT_SNIPER_MIN_PROGRESS = 1.0;
 const instantSniperSeen = new Set<string>();
 let instantSniperEnabled = true;
 
@@ -2888,6 +2891,24 @@ async function instantSniperScanInner(notifyFn: (chatId: number, message: string
 
     const age = now - parsed.launchTime;
     if (parsed.launchTime <= 0 || age > INSTANT_SNIPER_MAX_AGE_SECONDS || age < 0) continue;
+
+    if (parsed.raisedAmount < INSTANT_SNIPER_MIN_RAISED_BNB) {
+      instantSniperSeen.add(parsed.address);
+      log(`[INSTANT-SNIPER] SKIP $${parsed.symbol} — raised ${parsed.raisedAmount.toFixed(3)} BNB < ${INSTANT_SNIPER_MIN_RAISED_BNB} min`, "trading");
+      continue;
+    }
+
+    if (parsed.holderCount < INSTANT_SNIPER_MIN_HOLDERS) {
+      instantSniperSeen.add(parsed.address);
+      log(`[INSTANT-SNIPER] SKIP $${parsed.symbol} — only ${parsed.holderCount} holders < ${INSTANT_SNIPER_MIN_HOLDERS} min`, "trading");
+      continue;
+    }
+
+    if (parsed.progressPercent < INSTANT_SNIPER_MIN_PROGRESS) {
+      instantSniperSeen.add(parsed.address);
+      log(`[INSTANT-SNIPER] SKIP $${parsed.symbol} — curve ${parsed.progressPercent.toFixed(1)}% < ${INSTANT_SNIPER_MIN_PROGRESS}% min`, "trading");
+      continue;
+    }
 
     freshTokens.push(parsed);
   }
