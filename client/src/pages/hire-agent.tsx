@@ -85,6 +85,16 @@ export default function HireAgent() {
   const [newAgentRole, setNewAgentRole] = useState("cmo");
   const [newAgentBio, setNewAgentBio] = useState("");
   const [newAgentModel, setNewAgentModel] = useState("meta-llama/Llama-3.1-70B-Instruct");
+  const [hireStep, setHireStep] = useState("");
+  const [platformWallet, setPlatformWallet] = useState("");
+
+  const { data: depositInfo } = useQuery<{ platformWallet: string }>({
+    queryKey: ["/api/web4/deposit-info"],
+  });
+
+  if (depositInfo?.platformWallet && !platformWallet) {
+    setPlatformWallet(depositInfo.platformWallet);
+  }
 
   const { data: allAgents = [], isLoading } = useQuery<Agent[]>({
     queryKey: ["/api/web4/agents"],
@@ -101,34 +111,54 @@ export default function HireAgent() {
     return matchesFilter && matchesSearch;
   });
 
+  const treasuryAddress = depositInfo?.platformWallet || platformWallet;
+
   const createAgentMutation = useMutation({
     mutationFn: async () => {
       if (!web3.connected || !web3.signer) {
         throw new Error("Please connect your wallet first.");
       }
+      if (!treasuryAddress) {
+        throw new Error("Unable to fetch treasury address. Please try again.");
+      }
+
+      setHireStep("Waiting for wallet — send 0.95 BNB...");
+      const receipt = await web3.sendDirectTransfer(treasuryAddress, "0.95");
+      const txHash = receipt?.hash;
+      if (!txHash) throw new Error("Payment transaction failed — no hash returned.");
+
+      setHireStep("Verifying payment on-chain...");
       const roleInfo = AGENT_ROLES.find(r => r.id === newAgentRole);
       const roleBio = roleInfo ? `[${roleInfo.label}] ${newAgentBio || roleInfo.description}` : newAgentBio;
-      const res = await apiRequest("POST", "/api/web4/agents/create", {
+
+      const res = await apiRequest("POST", "/api/web4/agents/hire", {
         name: newAgentName,
         bio: roleBio || undefined,
         modelType: newAgentModel,
-        initialDeposit: "1000000000000000",
+        paymentTxHash: txHash,
         creatorWallet: web3.address,
       });
       const data = await res.json();
-      if (!data.agent?.id) throw new Error("Failed to create agent");
+      if (!data.success) throw new Error(data.error || "Agent creation failed after payment.");
+
+      setHireStep("Agent created! Registering on-chain...");
       return data;
     },
-    onSuccess: () => {
-      toast({ title: "Agent Created", description: `${newAgentName} is now active. $599 fee applied.` });
+    onSuccess: (data) => {
+      toast({
+        title: "Agent Hired!",
+        description: `${newAgentName} is now active. Payment of 0.95 BNB confirmed.`,
+      });
       setShowCreateNew(false);
       setNewAgentName("");
       setNewAgentRole("cmo");
       setNewAgentBio("");
+      setHireStep("");
       queryClient.invalidateQueries({ queryKey: ["/api/web4/agents"] });
     },
     onError: (e: Error) => {
-      toast({ title: "Creation Failed", description: e.message, variant: "destructive" });
+      toast({ title: "Hire Failed", description: e.message, variant: "destructive" });
+      setHireStep("");
     },
   });
 
@@ -275,6 +305,14 @@ export default function HireAgent() {
                   />
                 </div>
 
+                {treasuryAddress && (
+                  <div className="mt-3 p-2 rounded-md bg-muted/30 border border-dashed">
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      Payment goes to: <span className="text-foreground">{treasuryAddress.slice(0, 6)}...{treasuryAddress.slice(-4)}</span> (BUILD4 Treasury)
+                    </p>
+                  </div>
+                )}
+
                 <div className="mt-4 flex items-center gap-3">
                   <Button
                     onClick={() => createAgentMutation.mutate()}
@@ -283,9 +321,9 @@ export default function HireAgent() {
                     data-testid="button-submit-hire-agent"
                   >
                     {createAgentMutation.isPending ? (
-                      <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Creating...</>
+                      <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> {hireStep || "Processing..."}</>
                     ) : (
-                      <><Rocket className="w-3.5 h-3.5" /> Create & Pay {AGENT_HIRE_PRICE}</>
+                      <><Rocket className="w-3.5 h-3.5" /> Pay {AGENT_HIRE_PRICE} & Hire Agent</>
                     )}
                   </Button>
                   <Button
@@ -299,6 +337,15 @@ export default function HireAgent() {
                     Cancel
                   </Button>
                 </div>
+
+                {hireStep && (
+                  <div className="mt-3 p-3 rounded-md border bg-background/50" data-testid="hire-status">
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-primary" />
+                      <span className="font-mono text-xs text-muted-foreground">{hireStep}</span>
+                    </div>
+                  </div>
+                )}
               </Card>
             )}
           </div>
