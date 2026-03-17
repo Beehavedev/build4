@@ -19,6 +19,17 @@ import { WalletConnector } from "@/components/wallet-connector";
 const AGENT_HIRE_PRICE = "$599";
 const AGENT_HIRE_BNB = "0.95 BNB";
 
+const AGENT_ROLES = [
+  { id: "trading", label: "Trading Agent", description: "Autonomous token trading, sniping, and portfolio management" },
+  { id: "research", label: "Research Agent", description: "Market research, token analysis, and trend identification" },
+  { id: "content", label: "Content Agent", description: "Social media, marketing copy, and community engagement" },
+  { id: "analysis", label: "Analysis Agent", description: "On-chain data analysis, wallet tracking, and reporting" },
+  { id: "defi", label: "DeFi Agent", description: "Yield farming, liquidity provision, and DeFi strategy" },
+  { id: "security", label: "Security Agent", description: "Smart contract auditing, rug detection, and risk assessment" },
+  { id: "community", label: "Community Agent", description: "Community management, moderation, and engagement" },
+  { id: "general", label: "General Purpose", description: "Flexible agent for custom tasks and workflows" },
+] as const;
+
 const SPECIALIZATIONS = [
   { id: "all", label: "All Agents", icon: Bot },
   { id: "trading", label: "Trading", icon: TrendingUp },
@@ -65,6 +76,7 @@ export default function HireAgent() {
   const [selectedHireAgent, setSelectedHireAgent] = useState<Agent | null>(null);
   const [showCreateNew, setShowCreateNew] = useState(false);
   const [newAgentName, setNewAgentName] = useState("");
+  const [newAgentRole, setNewAgentRole] = useState("trading");
   const [newAgentBio, setNewAgentBio] = useState("");
   const [newAgentModel, setNewAgentModel] = useState("meta-llama/Llama-3.1-70B-Instruct");
 
@@ -88,9 +100,11 @@ export default function HireAgent() {
       if (!web3.connected || !web3.signer) {
         throw new Error("Please connect your wallet first.");
       }
+      const roleInfo = AGENT_ROLES.find(r => r.id === newAgentRole);
+      const roleBio = roleInfo ? `[${roleInfo.label}] ${newAgentBio || roleInfo.description}` : newAgentBio;
       const res = await apiRequest("POST", "/api/web4/agents/create", {
         name: newAgentName,
-        bio: newAgentBio || undefined,
+        bio: roleBio || undefined,
         modelType: newAgentModel,
         initialDeposit: "1000000000000000",
         creatorWallet: web3.address,
@@ -103,6 +117,7 @@ export default function HireAgent() {
       toast({ title: "Agent Created", description: `${newAgentName} is now active. $599 fee applied.` });
       setShowCreateNew(false);
       setNewAgentName("");
+      setNewAgentRole("trading");
       setNewAgentBio("");
       queryClient.invalidateQueries({ queryKey: ["/api/web4/agents"] });
     },
@@ -205,6 +220,26 @@ export default function HireAgent() {
                       disabled={createAgentMutation.isPending}
                     />
                   </div>
+                  <div className="space-y-2">
+                    <label className="font-mono text-xs text-muted-foreground">Role *</label>
+                    <select
+                      value={newAgentRole}
+                      onChange={(e) => setNewAgentRole(e.target.value)}
+                      className="w-full font-mono text-sm bg-background border rounded-md px-3 py-2"
+                      data-testid="select-hire-agent-role"
+                      disabled={createAgentMutation.isPending}
+                    >
+                      {AGENT_ROLES.map((role) => (
+                        <option key={role.id} value={role.id}>{role.label}</option>
+                      ))}
+                    </select>
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      {AGENT_ROLES.find(r => r.id === newAgentRole)?.description}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                   <div className="space-y-2">
                     <label className="font-mono text-xs text-muted-foreground">AI Model</label>
                     <select
