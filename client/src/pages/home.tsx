@@ -193,6 +193,7 @@ export default function Home() {
             <div className="hidden md:flex items-center gap-4">
               <a href="#lifecycle" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-lifecycle">{t("nav.lifecycle")}</a>
               <Link href="/manifesto" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-manifesto">{t("nav.manifesto")}</Link>
+              <Link href="/hire-agent" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-hire-agent">Hire Agent</Link>
               <Link href="/tasks" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-tasks">Tasks</Link>
               <Link href="/privacy" className="text-xs text-purple-400 font-mono tracking-wide transition-colors hover:text-purple-300" data-testid="link-privacy">Privacy</Link>
               <LanguageSwitcher />
@@ -220,6 +221,7 @@ export default function Home() {
             <div className="md:hidden border-t bg-background/95 backdrop-blur-xl px-4 py-3 space-y-1">
               <a href="#lifecycle" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-lifecycle-mobile">{t("nav.lifecycle")}</a>
               <Link href="/manifesto" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-manifesto-mobile">{t("nav.manifesto")}</Link>
+              <Link href="/hire-agent" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-hire-agent-mobile">Hire Agent</Link>
               <Link href="/tasks" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-tasks-mobile">Tasks</Link>
               <Link href="/privacy" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-purple-400 font-mono" data-testid="link-privacy-mobile">Privacy</Link>
             </div>

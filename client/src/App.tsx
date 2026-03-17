@@ -22,6 +22,7 @@ import Chain from "@/pages/chain";
 import Standards from "@/pages/standards";
 import TaskTerminal from "@/pages/task-terminal";
 import TokenLauncher from "@/pages/token-launcher";
+import HireAgent from "@/pages/hire-agent";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -44,6 +45,7 @@ function Router() {
       <Route path="/standards" component={Standards} />
       <Route path="/tasks" component={TaskTerminal} />
       <Route path="/token-launcher" component={TokenLauncher} />
+      <Route path="/hire-agent" component={HireAgent} />
       <Route component={NotFound} />
     </Switch>
   );

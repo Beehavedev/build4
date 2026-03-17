@@ -49,6 +49,7 @@ import {
   Sparkles,
   X,
   Rocket,
+  Briefcase,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useT } from "@/lib/i18n";
@@ -1386,6 +1387,17 @@ export default function AutonomousEconomy() {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <Link href="/hire-agent">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="font-mono text-xs gap-1.5 h-8 px-3"
+                  data-testid="button-hire-agent"
+                >
+                  <Briefcase className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Hire Agent</span>
+                </Button>
+              </Link>
               <Link href="/marketplace">
                 <Button
                   variant="outline"
