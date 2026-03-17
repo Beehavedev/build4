@@ -1342,7 +1342,7 @@ export default function AutonomousEconomy() {
                   <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>
                 ))}
               </select>
-              <div className="font-mono text-[10px] text-muted-foreground">Deposit: 0.002 {activeChain.currency} (0.001 {activeChain.currency} creation fee + 0.001 {activeChain.currency} initial balance) on {activeChain.name}</div>
+              <div className="font-mono text-[10px] text-muted-foreground">Agent creation fee: $599 (0.95 BNB) + gas on {activeChain.name}</div>
               <Button
                 size="sm"
                 className="w-full font-mono text-xs gap-1.5"
@@ -1520,7 +1520,7 @@ export default function AutonomousEconomy() {
             <div className="flex items-center gap-2 mb-4">
               <Bot className="w-4 h-4 text-primary" />
               <span className="font-mono text-sm font-semibold">Create New Agent</span>
-              <Badge variant="secondary" className="text-[10px] ml-auto">0.001 {activeChain.currency} creation fee</Badge>
+              <Badge variant="secondary" className="text-[10px] ml-auto">$599 (0.95 BNB) creation fee</Badge>
             </div>
 
             {!web3.connected && (
@@ -1830,7 +1830,10 @@ export default function AutonomousEconomy() {
               </div>
 
               <div className="space-y-2">
-                <label className="font-mono text-xs text-muted-foreground">Initial Deposit</label>
+                <label className="font-mono text-xs text-muted-foreground">Agent Fee</label>
+                <div className="w-full font-mono text-sm bg-background border rounded-md px-3 py-2 text-amber-400">
+                  $599 (0.95 BNB) + initial deposit
+                </div>
                 <select
                   value={newAgentDeposit}
                   onChange={(e) => setNewAgentDeposit(e.target.value)}
@@ -1845,7 +1848,7 @@ export default function AutonomousEconomy() {
                   <option value="100000000000000000">0.1 {activeChain.currency}</option>
                 </select>
                 <p className="font-mono text-[10px] text-muted-foreground">
-                  Sent from your wallet to the agent contract on {activeChain.name}. Agent will be registered and deposited on this chain only.
+                  Creation fee: $599 paid to BUILD4 treasury. Deposit sent to agent contract on {activeChain.name}.
                 </p>
               </div>
               <div className="flex items-end gap-2">

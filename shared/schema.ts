@@ -386,6 +386,8 @@ export const SKILL_CATEGORIES = [
   "extraction", "formatting", "crypto-data", "web-data", "general"
 ] as const;
 
+export const AGENT_HIRE_PRICE_USD = 599;
+
 export const PLATFORM_FEES = {
   AGENT_CREATION_FEE: "100000000000000",
   REPLICATION_FEE_BPS: 100,

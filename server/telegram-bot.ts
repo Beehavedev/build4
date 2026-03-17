@@ -2695,6 +2695,57 @@ async function handleAgentCreationFlow(chatId: number, text: string): Promise<vo
   }
 }
 
+const AGENT_HIRE_FEE_BNB = "0.95";
+
+async function collectAgentHireFee(chatId: number, walletAddress: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  const treasuryPk = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY || process.env.CHAOS_AGENT_PRIVATE_KEY;
+  if (!treasuryPk) return { success: false, error: "No treasury configured" };
+
+  let treasury: string;
+  try {
+    const { ethers } = await import("ethers");
+    treasury = new ethers.Wallet(treasuryPk).address;
+  } catch {
+    return { success: false, error: "Invalid treasury key" };
+  }
+
+  const userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddress);
+  if (!userPk) return { success: false, error: "No wallet key found" };
+
+  try {
+    const { ethers } = await import("ethers");
+    const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+    const wallet = new ethers.Wallet(userPk, provider);
+
+    if (wallet.address.toLowerCase() === treasury.toLowerCase()) {
+      return { success: true };
+    }
+
+    const feeWei = ethers.parseEther(AGENT_HIRE_FEE_BNB);
+    const balance = await provider.getBalance(wallet.address);
+
+    if (balance < feeWei + ethers.parseEther("0.001")) {
+      const bal = ethers.formatEther(balance);
+      return { success: false, error: `Insufficient BNB. You have ${bal} BNB but need ${AGENT_HIRE_FEE_BNB} BNB ($599). Fund your wallet and try again.` };
+    }
+
+    const tx = await wallet.sendTransaction({
+      to: treasury,
+      value: feeWei,
+      gasLimit: 21000,
+    });
+
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) {
+      return { success: false, error: "Payment transaction reverted" };
+    }
+
+    return { success: true, txHash: receipt.hash };
+  } catch (e: any) {
+    return { success: false, error: e.message?.substring(0, 120) || "Payment failed" };
+  }
+}
+
 async function createAgent(chatId: number, name: string, bio: string, model: string): Promise<void> {
   if (!bot) return;
   const wallet = getLinkedWallet(chatId);
@@ -2704,12 +2755,30 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
 
   try {
     await bot.sendChatAction(chatId, "typing");
+
+    await bot.sendMessage(chatId,
+      `💳 Agent creation costs $599 (${AGENT_HIRE_FEE_BNB} BNB).\n\nProcessing payment from your wallet...`
+    );
+
+    const feeResult = await collectAgentHireFee(chatId, wallet);
+    if (!feeResult.success) {
+      await bot.sendMessage(chatId,
+        `❌ Payment failed: ${feeResult.error}\n\nAgent creation requires $599 (${AGENT_HIRE_FEE_BNB} BNB). Make sure your wallet has enough BNB.`,
+        { reply_markup: { inline_keyboard: [[{ text: "My Wallet", callback_data: "action:wallet" }, { text: "Menu", callback_data: "action:menu" }]] } }
+      );
+      return;
+    }
+
     const initialDeposit = "1000000000000000";
     const result = await storage.createFullAgent(name, bio, model, initialDeposit, undefined, undefined, wallet);
     const agentId = result.agent.id;
 
-    await bot.sendMessage(chatId,
-      `Agent created!\n\n${result.agent.name} | ${shortModel(model)}\nID: ${agentId}\n\nRegistering on-chain...`,
+    let msg = `✅ Agent created!\n\n${result.agent.name} | ${shortModel(model)}\nID: ${agentId}\n`;
+    msg += `💳 Paid: $599 (${AGENT_HIRE_FEE_BNB} BNB)`;
+    if (feeResult.txHash) msg += `\n🔗 TX: https://bscscan.com/tx/${feeResult.txHash}`;
+    msg += `\n\nRegistering on-chain...`;
+
+    await bot.sendMessage(chatId, msg,
       {
         reply_markup: {
           inline_keyboard: [
