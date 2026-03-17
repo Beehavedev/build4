@@ -20,14 +20,20 @@ const AGENT_HIRE_PRICE = "$599";
 const AGENT_HIRE_BNB = "0.95 BNB";
 
 const AGENT_ROLES = [
-  { id: "trading", label: "Trading Agent", description: "Autonomous token trading, sniping, and portfolio management" },
-  { id: "research", label: "Research Agent", description: "Market research, token analysis, and trend identification" },
-  { id: "content", label: "Content Agent", description: "Social media, marketing copy, and community engagement" },
-  { id: "analysis", label: "Analysis Agent", description: "On-chain data analysis, wallet tracking, and reporting" },
-  { id: "defi", label: "DeFi Agent", description: "Yield farming, liquidity provision, and DeFi strategy" },
-  { id: "security", label: "Security Agent", description: "Smart contract auditing, rug detection, and risk assessment" },
-  { id: "community", label: "Community Agent", description: "Community management, moderation, and engagement" },
-  { id: "general", label: "General Purpose", description: "Flexible agent for custom tasks and workflows" },
+  { id: "ceo", label: "CEO", description: "Vision and strategy, leadership updates, company milestones, industry thought leadership" },
+  { id: "cmo", label: "CMO", description: "Growth strategy, community engagement, brand building, campaign launches, market positioning" },
+  { id: "cto", label: "CTO", description: "Technical updates, architecture decisions, dev tooling, engineering culture, shipping updates" },
+  { id: "cfo", label: "CFO", description: "Financial health, treasury updates, revenue metrics, tokenomics, investor relations" },
+  { id: "community_manager", label: "Community Manager", description: "Community engagement, hosting discussions, welcoming members, organizing events" },
+  { id: "content_creator", label: "Content Creator", description: "Threads, tutorials, explainers, memes, educational content, storytelling" },
+  { id: "researcher", label: "Research Analyst", description: "Market research, competitor analysis, trend reports, data-driven insights, deep dives" },
+  { id: "analyst", label: "Market Analyst", description: "Price action commentary, on-chain data insights, macro trends, sector rotation, alpha" },
+  { id: "sales", label: "Sales Lead", description: "Lead generation, product demos, partnership pitches, closing deals, customer acquisition" },
+  { id: "partnerships", label: "Partnerships Lead", description: "Strategic alliances, co-marketing, integration announcements, ecosystem expansion" },
+  { id: "developer_relations", label: "Developer Relations", description: "Developer onboarding, SDK/API updates, code examples, hackathon promotion" },
+  { id: "brand_ambassador", label: "Brand Ambassador", description: "Authentic advocacy, personal stories, product highlights, trust building" },
+  { id: "bounty_hunter", label: "Bounty Hunter", description: "Finding and completing bounties, sharing proof of work, task execution" },
+  { id: "support", label: "Support Agent", description: "Helping users, answering questions, troubleshooting issues, solution-oriented responses" },
 ] as const;
 
 const SPECIALIZATIONS = [
@@ -76,7 +82,7 @@ export default function HireAgent() {
   const [selectedHireAgent, setSelectedHireAgent] = useState<Agent | null>(null);
   const [showCreateNew, setShowCreateNew] = useState(false);
   const [newAgentName, setNewAgentName] = useState("");
-  const [newAgentRole, setNewAgentRole] = useState("trading");
+  const [newAgentRole, setNewAgentRole] = useState("cmo");
   const [newAgentBio, setNewAgentBio] = useState("");
   const [newAgentModel, setNewAgentModel] = useState("meta-llama/Llama-3.1-70B-Instruct");
 
@@ -117,7 +123,7 @@ export default function HireAgent() {
       toast({ title: "Agent Created", description: `${newAgentName} is now active. $599 fee applied.` });
       setShowCreateNew(false);
       setNewAgentName("");
-      setNewAgentRole("trading");
+      setNewAgentRole("cmo");
       setNewAgentBio("");
       queryClient.invalidateQueries({ queryKey: ["/api/web4/agents"] });
     },
