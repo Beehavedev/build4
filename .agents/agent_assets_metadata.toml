@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "JBjCUwiEHNM3bqg5OGXfp"
+uri = "file://attached_assets/generated_images/build4_xlayer_banner.png"
+type = "image"
+title = "BUILD4 x XLayer Partnership Banner"
