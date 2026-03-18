@@ -2,46 +2,57 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
+import { useT } from "@/lib/i18n";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { SEO } from "@/components/seo";
 import {
   ArrowLeft, Terminal, Coins, Flame, Lock, TrendingUp,
   Users, Briefcase, Shield, BarChart3, Rocket, Gift,
-  RefreshCw, Vote, Zap, Star, ExternalLink, Wallet,
+  RefreshCw, Vote, Zap, Star, Wallet,
   PieChart, ArrowRight, DollarSign, Layers,
 } from "lucide-react";
 
-const TOTAL_SUPPLY = "1,000,000,000";
 const TICKER = "$BUILD4";
 
-const ALLOCATIONS = [
-  { id: "founder", label: "Founder (Bought from Curve)", pct: 70, amount: "700,000,000", bgColor: "bg-primary", bgTint: "bg-primary/15", textColor: "text-primary", icon: Lock, note: "Purchased from Four.meme bonding curve — distributed to wallets below" },
-  { id: "lp", label: "Liquidity (Auto-Burned)", pct: 20, amount: "200,000,000", bgColor: "bg-cyan-500", bgTint: "bg-cyan-500/15", textColor: "text-cyan-500", icon: Flame, note: "Auto-added to PancakeSwap LP on graduation. LP tokens burned by Four.meme" },
-  { id: "public", label: "Public Buyers", pct: 10, amount: "100,000,000", bgColor: "bg-emerald-500", bgTint: "bg-emerald-500/15", textColor: "text-emerald-500", icon: Users, note: "Other buyers on the bonding curve before graduation" },
+const ALLOC_META = [
+  { id: "founder", pct: 70, amount: "700,000,000", bgColor: "bg-primary", bgTint: "bg-primary/15", textColor: "text-primary", icon: Lock, labelKey: "allocFounder", noteKey: "allocFounderNote" },
+  { id: "lp", pct: 20, amount: "200,000,000", bgColor: "bg-cyan-500", bgTint: "bg-cyan-500/15", textColor: "text-cyan-500", icon: Flame, labelKey: "allocLp", noteKey: "allocLpNote" },
+  { id: "public", pct: 10, amount: "100,000,000", bgColor: "bg-emerald-500", bgTint: "bg-emerald-500/15", textColor: "text-emerald-500", icon: Users, labelKey: "allocPublic", noteKey: "allocPublicNote" },
 ];
 
-const DISTRIBUTION = [
-  { id: "rewards", label: "Agent Economy Rewards", pct: 25, amount: "250,000,000", bgColor: "bg-blue-500", bgTint: "bg-blue-500/15", textColor: "text-blue-500", icon: Gift, note: "24-month release — rewards for hiring agents, top performers, referrals" },
-  { id: "treasury", label: "Treasury / Operations", pct: 20, amount: "200,000,000", bgColor: "bg-amber-500", bgTint: "bg-amber-500/15", textColor: "text-amber-500", icon: Shield, note: "Platform development, server costs, buybacks. Multisig wallet" },
-  { id: "marketing", label: "Marketing & Growth", pct: 10, amount: "100,000,000", bgColor: "bg-pink-500", bgTint: "bg-pink-500/15", textColor: "text-pink-500", icon: Rocket, note: "KOLs, exchange listings, campaigns, community airdrops" },
-  { id: "reserve", label: "Founder Reserve", pct: 10, amount: "100,000,000", bgColor: "bg-purple-500", bgTint: "bg-purple-500/15", textColor: "text-purple-500", icon: Lock, note: "Strategic reserve for future exchange listings and partnerships" },
-  { id: "team", label: "Team", pct: 5, amount: "50,000,000", bgColor: "bg-orange-500", bgTint: "bg-orange-500/15", textColor: "text-orange-500", icon: Briefcase, note: "6-month cliff, 12-month linear vest" },
+const DIST_META = [
+  { id: "rewards", pct: 25, amount: "250,000,000", bgColor: "bg-blue-500", bgTint: "bg-blue-500/15", textColor: "text-blue-500", icon: Gift, labelKey: "distRewards", noteKey: "distRewardsNote" },
+  { id: "treasury", pct: 20, amount: "200,000,000", bgColor: "bg-amber-500", bgTint: "bg-amber-500/15", textColor: "text-amber-500", icon: Shield, labelKey: "distTreasury", noteKey: "distTreasuryNote" },
+  { id: "marketing", pct: 10, amount: "100,000,000", bgColor: "bg-pink-500", bgTint: "bg-pink-500/15", textColor: "text-pink-500", icon: Rocket, labelKey: "distMarketing", noteKey: "distMarketingNote" },
+  { id: "reserve", pct: 10, amount: "100,000,000", bgColor: "bg-purple-500", bgTint: "bg-purple-500/15", textColor: "text-purple-500", icon: Lock, labelKey: "distReserve", noteKey: "distReserveNote" },
+  { id: "team", pct: 5, amount: "50,000,000", bgColor: "bg-orange-500", bgTint: "bg-orange-500/15", textColor: "text-orange-500", icon: Briefcase, labelKey: "distTeam", noteKey: "distTeamNote" },
 ];
 
-const UTILITIES = [
-  { icon: DollarSign, title: "Hire Agents at a Discount", desc: "Pay with $BUILD4 instead of BNB and get 20% off — $479 vs $599 per agent" },
-  { icon: BarChart3, title: "Revenue Share", desc: "Stake $BUILD4 to earn a cut of the 20% profit fees collected from trading agents" },
-  { icon: Star, title: "Premium Agent Roles", desc: "Unlock exclusive roles like Alpha Hunter and Whale Tracker by holding $BUILD4" },
-  { icon: Zap, title: "Agent Boost", desc: "Stake tokens on your agent for priority in the sniper queue and higher trade allocation" },
-  { icon: Vote, title: "Governance", desc: "Vote on fee structures, new agent roles, and platform direction" },
-  { icon: Flame, title: "Buyback & Burn", desc: "30% of all agent hire fees buy $BUILD4 from the market — 50% burned, 50% to staking rewards" },
+const UTIL_META = [
+  { id: "discount", icon: DollarSign, titleKey: "utilDiscount", descKey: "utilDiscountDesc" },
+  { id: "revenue", icon: BarChart3, titleKey: "utilRevenue", descKey: "utilRevenueDesc" },
+  { id: "premium", icon: Star, titleKey: "utilPremium", descKey: "utilPremiumDesc" },
+  { id: "boost", icon: Zap, titleKey: "utilBoost", descKey: "utilBoostDesc" },
+  { id: "gov", icon: Vote, titleKey: "utilGov", descKey: "utilGovDesc" },
+  { id: "burn", icon: Flame, titleKey: "utilBurn", descKey: "utilBurnDesc" },
 ];
 
 export default function TokenPage() {
+  const t = useT();
+
+  const flywheel = [
+    { step: "1", text: t("token.fly1"), sub: t("token.fly1sub") },
+    { step: "2", text: t("token.fly2"), sub: t("token.fly2sub") },
+    { step: "3", text: t("token.fly3"), sub: t("token.fly3sub") },
+    { step: "4", text: t("token.fly4"), sub: t("token.fly4sub") },
+    { step: "5", text: t("token.fly5"), sub: t("token.fly5sub") },
+  ];
+
   return (
     <>
       <SEO
         title="$BUILD4 Token | BUILD4"
-        description="$BUILD4 — the token powering decentralized AI agent infrastructure on BNB Chain. Fair launch on Four.meme. Hire agents, earn revenue share, govern the platform."
+        description="$BUILD4 — the token powering decentralized AI agent infrastructure on BNB Chain. Fair launch on Four.meme."
         path="/token"
       />
 
@@ -62,10 +73,11 @@ export default function TokenPage() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                <LanguageSwitcher />
                 <Link href="/hire-agent">
                   <Button variant="outline" size="sm" className="font-mono text-xs gap-1.5 h-8 px-3" data-testid="button-hire-agent">
                     <Briefcase className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Hire Agent</span>
+                    <span className="hidden sm:inline">{t("token.hireAgent")}</span>
                   </Button>
                 </Link>
                 <Link href="/autonomous-economy">
@@ -84,20 +96,20 @@ export default function TokenPage() {
           <div className="text-center space-y-4 py-6" data-testid="token-hero">
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-primary/5 border-primary/20">
               <Coins className="w-4 h-4 text-primary" />
-              <span className="font-mono text-xs text-primary font-semibold">BNB Chain · BEP-20</span>
+              <span className="font-mono text-xs text-primary font-semibold">{t("token.chain")}</span>
             </div>
             <h1 className="font-mono text-4xl sm:text-5xl font-bold tracking-tight">
-              <span className="text-primary">{TICKER}</span>
+              <span className="text-primary">{t("token.title")}</span>
             </h1>
             <p className="font-mono text-sm text-muted-foreground max-w-xl mx-auto">
-              The token powering decentralized AI agent infrastructure. Hire agents, earn revenue share, govern the platform.
+              {t("token.subtitle")}
             </p>
             <div className="flex items-center justify-center gap-3 pt-2">
               <Badge variant="secondary" className="font-mono text-xs gap-1.5 px-3 py-1">
-                <PieChart className="w-3 h-3" /> Supply: {TOTAL_SUPPLY}
+                <PieChart className="w-3 h-3" /> {t("token.supplyBadge")}
               </Badge>
               <Badge variant="secondary" className="font-mono text-xs gap-1.5 px-3 py-1">
-                <Rocket className="w-3 h-3" /> Fair Launch on Four.meme
+                <Rocket className="w-3 h-3" /> {t("token.fairLaunchBadge")}
               </Badge>
             </div>
           </div>
@@ -106,42 +118,42 @@ export default function TokenPage() {
             <Card className="p-5 text-center space-y-2" data-testid="stat-supply">
               <PieChart className="w-6 h-6 mx-auto text-primary" />
               <div className="font-mono text-lg font-bold">1B</div>
-              <div className="font-mono text-[11px] text-muted-foreground">Total Supply</div>
+              <div className="font-mono text-[11px] text-muted-foreground">{t("token.statSupply")}</div>
             </Card>
             <Card className="p-5 text-center space-y-2" data-testid="stat-curve">
               <TrendingUp className="w-6 h-6 mx-auto text-cyan-500" />
               <div className="font-mono text-lg font-bold">80%</div>
-              <div className="font-mono text-[11px] text-muted-foreground">Bonding Curve</div>
+              <div className="font-mono text-[11px] text-muted-foreground">{t("token.statCurve")}</div>
             </Card>
             <Card className="p-5 text-center space-y-2" data-testid="stat-lp">
               <Flame className="w-6 h-6 mx-auto text-amber-500" />
               <div className="font-mono text-lg font-bold">20%</div>
-              <div className="font-mono text-[11px] text-muted-foreground">LP Auto-Burned</div>
+              <div className="font-mono text-[11px] text-muted-foreground">{t("token.statLp")}</div>
             </Card>
             <Card className="p-5 text-center space-y-2" data-testid="stat-chain">
               <Layers className="w-6 h-6 mx-auto text-emerald-500" />
               <div className="font-mono text-lg font-bold">BNB Chain</div>
-              <div className="font-mono text-[11px] text-muted-foreground">BEP-20 Token</div>
+              <div className="font-mono text-[11px] text-muted-foreground">{t("token.statChain")}</div>
             </Card>
           </div>
 
           <div className="space-y-5" data-testid="section-tokenomics">
             <div className="flex items-center gap-2">
               <PieChart className="w-5 h-5 text-primary" />
-              <h2 className="font-mono text-lg font-bold">Tokenomics</h2>
+              <h2 className="font-mono text-lg font-bold">{t("token.sectionTokenomics")}</h2>
             </div>
 
             <p className="font-mono text-xs text-muted-foreground">
-              Launched on Four.meme. 80% of supply enters the bonding curve, 20% auto-added to PancakeSwap LP (burned on graduation).
+              {t("token.tokenomicsDesc")}
             </p>
 
             <div className="w-full h-8 rounded-full overflow-hidden flex border" data-testid="tokenomics-bar">
-              {ALLOCATIONS.map((a) => (
+              {ALLOC_META.map((a) => (
                 <div
                   key={a.id}
                   className={`${a.bgColor} h-full relative group cursor-default`}
                   style={{ width: `${a.pct}%` }}
-                  title={`${a.label}: ${a.pct}%`}
+                  title={`${t(`token.${a.labelKey}`)}: ${a.pct}%`}
                 >
                   {a.pct >= 10 && (
                     <span className="absolute inset-0 flex items-center justify-center font-mono text-[10px] text-white font-bold">
@@ -153,7 +165,7 @@ export default function TokenPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {ALLOCATIONS.map((a) => {
+              {ALLOC_META.map((a) => {
                 const Icon = a.icon;
                 return (
                   <Card key={a.id} className="p-4 flex items-start gap-3" data-testid={`allocation-${a.id}`}>
@@ -162,11 +174,11 @@ export default function TokenPage() {
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm font-semibold">{a.label}</span>
+                        <span className="font-mono text-sm font-semibold">{t(`token.${a.labelKey}`)}</span>
                         <Badge variant="outline" className="text-[9px] font-mono">{a.pct}%</Badge>
                       </div>
                       <div className="font-mono text-xs text-primary mt-0.5">{a.amount} {TICKER}</div>
-                      <p className="font-mono text-[11px] text-muted-foreground mt-1">{a.note}</p>
+                      <p className="font-mono text-[11px] text-muted-foreground mt-1">{t(`token.${a.noteKey}`)}</p>
                     </div>
                   </Card>
                 );
@@ -177,20 +189,20 @@ export default function TokenPage() {
           <div className="space-y-5" data-testid="section-distribution">
             <div className="flex items-center gap-2">
               <Wallet className="w-5 h-5 text-primary" />
-              <h2 className="font-mono text-lg font-bold">Founder Distribution (70%)</h2>
+              <h2 className="font-mono text-lg font-bold">{t("token.sectionDistribution")}</h2>
             </div>
 
             <p className="font-mono text-xs text-muted-foreground">
-              The 700M tokens purchased from the bonding curve are distributed across these wallets. All addresses will be published on-chain.
+              {t("token.distributionDesc")}
             </p>
 
             <div className="w-full h-6 rounded-full overflow-hidden flex border" data-testid="distribution-bar">
-              {DISTRIBUTION.map((d) => (
+              {DIST_META.map((d) => (
                 <div
                   key={d.id}
                   className={`${d.bgColor} h-full relative group cursor-default`}
                   style={{ width: `${(d.pct / 70) * 100}%` }}
-                  title={`${d.label}: ${d.pct}% of total`}
+                  title={`${t(`token.${d.labelKey}`)}: ${d.pct}%`}
                 >
                   {d.pct >= 10 && (
                     <span className="absolute inset-0 flex items-center justify-center font-mono text-[9px] text-white font-bold">
@@ -202,7 +214,7 @@ export default function TokenPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {DISTRIBUTION.map((d) => {
+              {DIST_META.map((d) => {
                 const Icon = d.icon;
                 return (
                   <Card key={d.id} className="p-4 flex items-start gap-3" data-testid={`dist-${d.id}`}>
@@ -211,11 +223,11 @@ export default function TokenPage() {
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm font-semibold">{d.label}</span>
+                        <span className="font-mono text-sm font-semibold">{t(`token.${d.labelKey}`)}</span>
                         <Badge variant="outline" className="text-[9px] font-mono">{d.pct}%</Badge>
                       </div>
                       <div className="font-mono text-xs text-primary mt-0.5">{d.amount} {TICKER}</div>
-                      <p className="font-mono text-[11px] text-muted-foreground mt-1">{d.note}</p>
+                      <p className="font-mono text-[11px] text-muted-foreground mt-1">{t(`token.${d.noteKey}`)}</p>
                     </div>
                   </Card>
                 );
@@ -226,21 +238,21 @@ export default function TokenPage() {
           <div className="space-y-5" data-testid="section-utility">
             <div className="flex items-center gap-2">
               <Zap className="w-5 h-5 text-primary" />
-              <h2 className="font-mono text-lg font-bold">Token Utility</h2>
+              <h2 className="font-mono text-lg font-bold">{t("token.sectionUtility")}</h2>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {UTILITIES.map((u) => {
+              {UTIL_META.map((u) => {
                 const Icon = u.icon;
                 return (
-                  <Card key={u.title} className="p-4 space-y-3" data-testid={`utility-${u.title.toLowerCase().replace(/\s+/g, '-')}`}>
+                  <Card key={u.id} className="p-4 space-y-3" data-testid={`utility-${u.id}`}>
                     <div className="flex items-center gap-2">
                       <div className="p-1.5 rounded-md bg-primary/10">
                         <Icon className="w-4 h-4 text-primary" />
                       </div>
-                      <span className="font-mono text-sm font-semibold">{u.title}</span>
+                      <span className="font-mono text-sm font-semibold">{t(`token.${u.titleKey}`)}</span>
                     </div>
-                    <p className="font-mono text-[11px] text-muted-foreground leading-relaxed">{u.desc}</p>
+                    <p className="font-mono text-[11px] text-muted-foreground leading-relaxed">{t(`token.${u.descKey}`)}</p>
                   </Card>
                 );
               })}
@@ -250,17 +262,11 @@ export default function TokenPage() {
           <Card className="p-6 border-primary/20 bg-primary/5" data-testid="section-flywheel">
             <div className="flex items-center gap-2 mb-4">
               <RefreshCw className="w-5 h-5 text-primary" />
-              <h2 className="font-mono text-lg font-bold">Revenue Flywheel</h2>
+              <h2 className="font-mono text-lg font-bold">{t("token.sectionFlywheel")}</h2>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 items-center">
-              {[
-                { step: "1", text: "Users hire agents", sub: "$599 in BNB" },
-                { step: "2", text: "30% of fees buy $BUILD4", sub: "From open market" },
-                { step: "3", text: "50% burned, 50% to stakers", sub: "Deflationary pressure" },
-                { step: "4", text: "Reduced supply + yield", sub: "Value accrual" },
-                { step: "5", text: "More users attracted", sub: "Cycle repeats" },
-              ].map((item, i) => (
+              {flywheel.map((item, i) => (
                 <div key={item.step} className="text-center space-y-1.5">
                   <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-mono text-sm font-bold text-primary mx-auto">
                     {item.step}
@@ -276,36 +282,36 @@ export default function TokenPage() {
           <div className="space-y-5" data-testid="section-transparency">
             <div className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-primary" />
-              <h2 className="font-mono text-lg font-bold">Transparency Commitments</h2>
+              <h2 className="font-mono text-lg font-bold">{t("token.sectionTransparency")}</h2>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Card className="p-4 flex items-start gap-3">
                 <Flame className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-mono text-sm font-semibold">LP Auto-Burned</div>
-                  <p className="font-mono text-[11px] text-muted-foreground mt-1">LP tokens automatically burned by Four.meme on graduation — permanently locked</p>
+                  <div className="font-mono text-sm font-semibold">{t("token.transLp")}</div>
+                  <p className="font-mono text-[11px] text-muted-foreground mt-1">{t("token.transLpDesc")}</p>
                 </div>
               </Card>
               <Card className="p-4 flex items-start gap-3">
                 <Wallet className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-mono text-sm font-semibold">Public Wallets</div>
-                  <p className="font-mono text-[11px] text-muted-foreground mt-1">All allocation wallets published with live on-chain balances</p>
+                  <div className="font-mono text-sm font-semibold">{t("token.transWallets")}</div>
+                  <p className="font-mono text-[11px] text-muted-foreground mt-1">{t("token.transWalletsDesc")}</p>
                 </div>
               </Card>
               <Card className="p-4 flex items-start gap-3">
                 <Shield className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-mono text-sm font-semibold">Team Vesting</div>
-                  <p className="font-mono text-[11px] text-muted-foreground mt-1">Team tokens in a vesting contract — 6-month cliff, 12-month linear vest</p>
+                  <div className="font-mono text-sm font-semibold">{t("token.transVesting")}</div>
+                  <p className="font-mono text-[11px] text-muted-foreground mt-1">{t("token.transVestingDesc")}</p>
                 </div>
               </Card>
               <Card className="p-4 flex items-start gap-3">
                 <BarChart3 className="w-5 h-5 text-purple-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-mono text-sm font-semibold">Quarterly Reports</div>
-                  <p className="font-mono text-[11px] text-muted-foreground mt-1">Treasury reports posted publicly every quarter with full breakdown</p>
+                  <div className="font-mono text-sm font-semibold">{t("token.transReports")}</div>
+                  <p className="font-mono text-[11px] text-muted-foreground mt-1">{t("token.transReportsDesc")}</p>
                 </div>
               </Card>
             </div>
@@ -314,13 +320,13 @@ export default function TokenPage() {
           <Card className="p-6 text-center space-y-4 border-dashed" data-testid="section-contract">
             <Coins className="w-8 h-8 mx-auto text-primary" />
             <div>
-              <h3 className="font-mono text-sm font-bold">Contract Address</h3>
-              <p className="font-mono text-xs text-muted-foreground mt-1">Coming soon — launching on Four.meme</p>
+              <h3 className="font-mono text-sm font-bold">{t("token.contractTitle")}</h3>
+              <p className="font-mono text-xs text-muted-foreground mt-1">{t("token.contractSoon")}</p>
             </div>
             <div className="flex items-center justify-center gap-3">
               <Link href="/hire-agent">
                 <Button size="sm" className="font-mono text-xs gap-1.5" data-testid="button-hire-from-token">
-                  <Briefcase className="w-3.5 h-3.5" /> Hire an Agent
+                  <Briefcase className="w-3.5 h-3.5" /> {t("token.hireAgent")}
                 </Button>
               </Link>
             </div>
@@ -332,7 +338,7 @@ export default function TokenPage() {
               <span className="font-mono font-bold text-sm">BUILD<span className="text-primary">4</span></span>
             </div>
             <p className="font-mono text-[11px] text-muted-foreground">
-              Decentralized AI Agent Infrastructure on BNB Chain
+              {t("token.footer")}
             </p>
           </footer>
         </main>
