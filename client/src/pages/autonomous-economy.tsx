@@ -1398,6 +1398,17 @@ export default function AutonomousEconomy() {
                   <span className="hidden sm:inline">Hire Agent</span>
                 </Button>
               </Link>
+              <Link href="/token">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="font-mono text-xs gap-1.5 h-8 px-3 border-primary/30 text-primary"
+                  data-testid="button-token"
+                >
+                  <Coins className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">$BUILD4</span>
+                </Button>
+              </Link>
               <Link href="/marketplace">
                 <Button
                   variant="outline"

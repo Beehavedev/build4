@@ -23,6 +23,7 @@ import Standards from "@/pages/standards";
 import TaskTerminal from "@/pages/task-terminal";
 import TokenLauncher from "@/pages/token-launcher";
 import HireAgent from "@/pages/hire-agent";
+import TokenPage from "@/pages/token";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -46,6 +47,7 @@ function Router() {
       <Route path="/tasks" component={TaskTerminal} />
       <Route path="/token-launcher" component={TokenLauncher} />
       <Route path="/hire-agent" component={HireAgent} />
+      <Route path="/token" component={TokenPage} />
       <Route component={NotFound} />
     </Switch>
   );
