@@ -281,10 +281,10 @@ export default function TokenPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Card className="p-4 flex items-start gap-3">
-                <Lock className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                <Flame className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-mono text-sm font-semibold">Locked Liquidity</div>
-                  <p className="font-mono text-[11px] text-muted-foreground mt-1">LP tokens locked for 12+ months, verifiable on-chain</p>
+                  <div className="font-mono text-sm font-semibold">LP Auto-Burned</div>
+                  <p className="font-mono text-[11px] text-muted-foreground mt-1">LP tokens automatically burned by Four.meme on graduation — permanently locked</p>
                 </div>
               </Card>
               <Card className="p-4 flex items-start gap-3">
