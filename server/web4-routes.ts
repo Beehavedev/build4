@@ -36,6 +36,26 @@ import { executeSkillCode, validateSkillCode, executeSkillWithExternalData } fro
 import { seedKnownPlatforms, runHttpOutreach, runOnchainBeacon, runFullOutreach, runDirectRecruitment, getOutreachMessage, getPlatformRegistry, getAnnouncementFormats, startAutoBroadcast, stopAutoBroadcast, getAutoBroadcastStatus } from "./outreach";
 import { startAgentTwitter, stopAgentTwitter, getAgentTwitterStatus, updateAgentTwitterInterval, postIntroTweet, postCustomTweet } from "./multi-twitter-agent";
 import { agentTwitterConnectSchema, agentTwitterSettingsSchema } from "@shared/schema";
+import {
+  isOKXConfigured,
+  getSwapQuote,
+  getSwapData,
+  getApproveTransaction,
+  getSupportedTokens,
+  getTokenPrice,
+  getTokenMarketData,
+  getTopTokens,
+  getTrendingTokens,
+  getTokenHolders,
+  getCrossChainQuote,
+  getCrossChainSwap,
+  getCrossChainStatus,
+  getSupportedBridgeChains,
+  getWalletTokenBalances,
+  SUPPORTED_CHAIN_IDS,
+  NATIVE_TOKEN_ADDRESS,
+  okxRateLimit,
+} from "./okx-onchainos";
 
 function getBaseUrl(req: Request): string {
   const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
@@ -3580,6 +3600,188 @@ ${urls}
     try {
       const tasks = await storage.getTasksByCreator(req.params.wallet, 30);
       res.json(tasks);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/status", (_req: Request, res: Response) => {
+    res.json({
+      configured: isOKXConfigured(),
+      supportedChains: SUPPORTED_CHAIN_IDS,
+      nativeTokenAddress: NATIVE_TOKEN_ADDRESS,
+      features: {
+        dexAggregator: true,
+        marketData: true,
+        crossChainBridge: true,
+        walletApi: true,
+      },
+    });
+  });
+
+  app.use("/api/okx", okxRateLimit);
+
+  app.get("/api/okx/dex/quote", async (req: Request, res: Response) => {
+    try {
+      if (!isOKXConfigured()) return res.status(503).json({ error: "OKX API not configured. Add OKX_API_KEY, OKX_SECRET_KEY, OKX_API_PASSPHRASE env vars." });
+      const { chainId, fromToken, toToken, amount, slippage } = req.query as Record<string, string>;
+      if (!chainId || !fromToken || !toToken || !amount) return res.status(400).json({ error: "Missing required params: chainId, fromToken, toToken, amount" });
+      const data = await getSwapQuote({ chainId, fromTokenAddress: fromToken, toTokenAddress: toToken, amount, slippage });
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/dex/swap", async (req: Request, res: Response) => {
+    try {
+      if (!isOKXConfigured()) return res.status(503).json({ error: "OKX API not configured" });
+      const { chainId, fromToken, toToken, amount, slippage, userWalletAddress } = req.query as Record<string, string>;
+      if (!chainId || !fromToken || !toToken || !amount || !userWalletAddress) return res.status(400).json({ error: "Missing required params" });
+      const data = await getSwapData({ chainId, fromTokenAddress: fromToken, toTokenAddress: toToken, amount, slippage, userWalletAddress });
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/dex/approve", async (req: Request, res: Response) => {
+    try {
+      if (!isOKXConfigured()) return res.status(503).json({ error: "OKX API not configured" });
+      const { chainId, tokenAddress, amount } = req.query as Record<string, string>;
+      if (!chainId || !tokenAddress || !amount) return res.status(400).json({ error: "Missing required params" });
+      const data = await getApproveTransaction({ chainId, tokenContractAddress: tokenAddress, approveAmount: amount });
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/dex/tokens", async (req: Request, res: Response) => {
+    try {
+      if (!isOKXConfigured()) return res.status(503).json({ error: "OKX API not configured" });
+      const { chainId } = req.query as Record<string, string>;
+      if (!chainId) return res.status(400).json({ error: "Missing chainId" });
+      const data = await getSupportedTokens(chainId);
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/market/token", async (req: Request, res: Response) => {
+    try {
+      if (!isOKXConfigured()) return res.status(503).json({ error: "OKX API not configured" });
+      const { chainId, tokenAddress } = req.query as Record<string, string>;
+      if (!chainId || !tokenAddress) return res.status(400).json({ error: "Missing chainId or tokenAddress" });
+      const data = await getTokenPrice({ chainId, tokenAddress });
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/market/trading-data", async (req: Request, res: Response) => {
+    try {
+      if (!isOKXConfigured()) return res.status(503).json({ error: "OKX API not configured" });
+      const { chainId, tokenAddress } = req.query as Record<string, string>;
+      if (!chainId || !tokenAddress) return res.status(400).json({ error: "Missing chainId or tokenAddress" });
+      const data = await getTokenMarketData({ chainId, tokenAddress });
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/market/top-tokens", async (req: Request, res: Response) => {
+    try {
+      if (!isOKXConfigured()) return res.status(503).json({ error: "OKX API not configured" });
+      const { chainId } = req.query as Record<string, string>;
+      if (!chainId) return res.status(400).json({ error: "Missing chainId" });
+      const data = await getTopTokens(chainId);
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/market/trending", async (req: Request, res: Response) => {
+    try {
+      if (!isOKXConfigured()) return res.status(503).json({ error: "OKX API not configured" });
+      const { chainId } = req.query as Record<string, string>;
+      if (!chainId) return res.status(400).json({ error: "Missing chainId" });
+      const data = await getTrendingTokens(chainId);
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/market/holders", async (req: Request, res: Response) => {
+    try {
+      if (!isOKXConfigured()) return res.status(503).json({ error: "OKX API not configured" });
+      const { chainId, tokenAddress } = req.query as Record<string, string>;
+      if (!chainId || !tokenAddress) return res.status(400).json({ error: "Missing chainId or tokenAddress" });
+      const data = await getTokenHolders({ chainId, tokenAddress });
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/bridge/quote", async (req: Request, res: Response) => {
+    try {
+      if (!isOKXConfigured()) return res.status(503).json({ error: "OKX API not configured" });
+      const { fromChainId, toChainId, fromToken, toToken, amount, slippage } = req.query as Record<string, string>;
+      if (!fromChainId || !toChainId || !fromToken || !toToken || !amount) return res.status(400).json({ error: "Missing required params" });
+      const data = await getCrossChainQuote({ fromChainId, toChainId, fromTokenAddress: fromToken, toTokenAddress: toToken, amount, slippage });
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/bridge/swap", async (req: Request, res: Response) => {
+    try {
+      if (!isOKXConfigured()) return res.status(503).json({ error: "OKX API not configured" });
+      const { fromChainId, toChainId, fromToken, toToken, amount, userWalletAddress, slippage } = req.query as Record<string, string>;
+      if (!fromChainId || !toChainId || !fromToken || !toToken || !amount || !userWalletAddress) return res.status(400).json({ error: "Missing required params" });
+      const data = await getCrossChainSwap({ fromChainId, toChainId, fromTokenAddress: fromToken, toTokenAddress: toToken, amount, userWalletAddress, slippage });
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/bridge/status", async (req: Request, res: Response) => {
+    try {
+      if (!isOKXConfigured()) return res.status(503).json({ error: "OKX API not configured" });
+      const { chainId, txHash } = req.query as Record<string, string>;
+      if (!chainId || !txHash) return res.status(400).json({ error: "Missing chainId or txHash" });
+      const data = await getCrossChainStatus({ chainId, txHash });
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/bridge/chains", async (_req: Request, res: Response) => {
+    try {
+      if (!isOKXConfigured()) return res.status(503).json({ error: "OKX API not configured" });
+      const data = await getSupportedBridgeChains();
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/wallet/balances", async (req: Request, res: Response) => {
+    try {
+      if (!isOKXConfigured()) return res.status(503).json({ error: "OKX API not configured" });
+      const { address, chainId } = req.query as Record<string, string>;
+      if (!address || !chainId) return res.status(400).json({ error: "Missing address or chainId" });
+      const data = await getWalletTokenBalances({ address, chainId });
+      res.json(data);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

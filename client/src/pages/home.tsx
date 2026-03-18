@@ -195,6 +195,7 @@ export default function Home() {
               <Link href="/manifesto" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-manifesto">{t("nav.manifesto")}</Link>
               <Link href="/hire-agent" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-hire-agent">Hire Agent</Link>
               <Link href="/token" className="text-xs text-primary font-mono tracking-wide font-semibold transition-colors" data-testid="link-token">$BUILD4</Link>
+              <Link href="/onchainos" className="text-xs text-violet-400 font-mono tracking-wide transition-colors hover:text-violet-300" data-testid="link-onchainos">OnchainOS</Link>
               <Link href="/tasks" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-tasks">Tasks</Link>
               <Link href="/privacy" className="text-xs text-purple-400 font-mono tracking-wide transition-colors hover:text-purple-300" data-testid="link-privacy">Privacy</Link>
               <LanguageSwitcher />
@@ -224,6 +225,7 @@ export default function Home() {
               <Link href="/manifesto" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-manifesto-mobile">{t("nav.manifesto")}</Link>
               <Link href="/hire-agent" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-hire-agent-mobile">Hire Agent</Link>
               <Link href="/token" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-primary font-mono font-semibold" data-testid="link-token-mobile">$BUILD4</Link>
+              <Link href="/onchainos" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-violet-400 font-mono" data-testid="link-onchainos-mobile">OnchainOS</Link>
               <Link href="/tasks" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-tasks-mobile">Tasks</Link>
               <Link href="/privacy" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-purple-400 font-mono" data-testid="link-privacy-mobile">Privacy</Link>
             </div>

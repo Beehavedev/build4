@@ -12,7 +12,7 @@ interface WalletState {
   provider: BrowserProvider | null;
   error: string | null;
   connecting: boolean;
-  walletType: "metamask" | "walletconnect" | null;
+  walletType: "metamask" | "walletconnect" | "okxwallet" | null;
 }
 
 interface ContractAddresses {
@@ -114,7 +114,7 @@ function useWalletInternal() {
     }
   }, [state.chainId, allDeployments]);
 
-  const setupFromProvider = useCallback(async (rawProvider: any, walletType: "metamask" | "walletconnect") => {
+  const setupFromProvider = useCallback(async (rawProvider: any, walletType: "metamask" | "walletconnect" | "okxwallet") => {
     const provider = new BrowserProvider(rawProvider);
     const signer = await provider.getSigner();
     const address = await signer.getAddress();
@@ -273,15 +273,40 @@ function useWalletInternal() {
     }
   }, [wcProjectId, setupFromProvider]);
 
-  const connect = useCallback(async (type?: "metamask" | "walletconnect") => {
+  const connectOKXWallet = useCallback(async () => {
+    const okxProvider = (window as any).okxwallet;
+    if (!okxProvider) {
+      setState(s => ({ ...s, error: "OKX Wallet not detected. Install the OKX Wallet extension." }));
+      return;
+    }
+
+    setState(s => ({ ...s, connecting: true, error: null }));
+
+    try {
+      await okxProvider.request({ method: "eth_requestAccounts" });
+      await setupFromProvider(okxProvider, "okxwallet");
+    } catch (err: any) {
+      const raw = err.message || "";
+      let friendly = "Failed to connect OKX Wallet. Please try again.";
+      if (raw.includes("user rejected") || raw.includes("User denied")) {
+        friendly = "Connection cancelled. Click Connect Wallet to try again.";
+      }
+      setState(s => ({ ...s, error: friendly, connecting: false }));
+    }
+  }, [setupFromProvider]);
+
+  const connect = useCallback(async (type?: "metamask" | "walletconnect" | "okxwallet") => {
     if (type === "walletconnect") {
       return connectWalletConnect();
+    }
+    if (type === "okxwallet") {
+      return connectOKXWallet();
     }
     if (type === "metamask") {
       return connectMetaMask();
     }
     return connectMetaMask();
-  }, [connectMetaMask, connectWalletConnect]);
+  }, [connectMetaMask, connectWalletConnect, connectOKXWallet]);
 
   const disconnect = useCallback(async () => {
     try { localStorage.removeItem("build4_wallet_type"); } catch {}
@@ -534,6 +559,7 @@ function useWalletInternal() {
     connect,
     connectMetaMask,
     connectWalletConnect,
+    connectOKXWallet,
     disconnect,
     switchChain,
     getHubContract,

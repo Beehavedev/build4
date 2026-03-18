@@ -24,6 +24,7 @@ import TaskTerminal from "@/pages/task-terminal";
 import TokenLauncher from "@/pages/token-launcher";
 import HireAgent from "@/pages/hire-agent";
 import TokenPage from "@/pages/token";
+import OnchainOS from "@/pages/onchainos";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -48,6 +49,7 @@ function Router() {
       <Route path="/token-launcher" component={TokenLauncher} />
       <Route path="/hire-agent" component={HireAgent} />
       <Route path="/token" component={TokenPage} />
+      <Route path="/onchainos" component={OnchainOS} />
       <Route component={NotFound} />
     </Switch>
   );

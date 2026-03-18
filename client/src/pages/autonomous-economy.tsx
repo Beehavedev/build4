@@ -1409,6 +1409,17 @@ export default function AutonomousEconomy() {
                   <span className="hidden sm:inline">$BUILD4</span>
                 </Button>
               </Link>
+              <Link href="/onchainos">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="font-mono text-xs gap-1.5 h-8 px-3 border-violet-500/30 text-violet-400"
+                  data-testid="button-onchainos"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">OnchainOS</span>
+                </Button>
+              </Link>
               <Link href="/marketplace">
                 <Button
                   variant="outline"

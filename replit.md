@@ -68,6 +68,18 @@ An AI-powered agent for autonomous trading on Four.meme, making dynamic buy/sell
 ### Aster DEX Integration
 Facilitates centralized futures and spot trading on Aster DEX through both autonomous AI trading and manual Telegram commands. Utilizes a TypeScript API client with HMAC-SHA256 signing. Manual trading through Telegram commands includes balance, positions, orders, and trade execution. Auto-trading (Make Me Rich) scans Aster futures markets, evaluates signals with AI, and executes trades with configurable leverage and trailing stops. Includes position management and Telegram notifications.
 
+### OKX OnchainOS Integration
+Multi-chain infrastructure powered by OKX OnchainOS. Features:
+- **DEX Aggregator**: Swap tokens across 500+ DEXs on 60+ chains via `/api/okx/dex/*` routes. Smart routing for best price.
+- **Market Intelligence**: Real-time token data, trending tokens, holder distribution via `/api/okx/market/*`.
+- **Cross-Chain Bridge**: 18 bridge aggregators for seamless BNB Chain ↔ XLayer ↔ other chain transfers via `/api/okx/bridge/*`.
+- **Wallet API**: Multi-chain token balance queries via `/api/okx/wallet/*`.
+- **OKX Wallet Connect**: Native OKX Wallet connection option alongside MetaMask and WalletConnect.
+- **Rate Limited**: 30 req/min per IP on all OKX proxy routes.
+- **Required env vars**: `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_API_PASSPHRASE`, `OKX_PROJECT_ID`.
+- **Files**: `server/okx-onchainos.ts` (API wrapper), OnchainOS routes in `server/web4-routes.ts`, frontend at `client/src/pages/onchainos.tsx`.
+- **Page**: `/onchainos` — tabbed UI with DEX Swap, Market Data, Bridge, and Wallet panels.
+
 ### Performance Optimizations
 Includes Telegram webhook mode for production, a priority-based in-memory task queue, a performance monitor (`/api/system/health` endpoint), per-user rate limiting, request timing middleware, API logging, batched visitor tracking, SEO prerendering, non-blocking startup, lazy-loading for heavy imports, and throttled frontend animations.
 

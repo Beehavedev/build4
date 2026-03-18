@@ -1,11 +1,12 @@
 import { useWallet } from "@/hooks/use-wallet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Wallet, ExternalLink, ChevronDown, Smartphone, Globe } from "lucide-react";
+import { Wallet, ExternalLink, ChevronDown, Smartphone, Globe, Hexagon } from "lucide-react";
 import { useState, useEffect } from "react";
 
 const isMobile = () => /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
 const hasInjectedWallet = () => typeof window !== "undefined" && !!(window as any).ethereum;
+const hasOKXWallet = () => typeof window !== "undefined" && !!(window as any).okxwallet;
 
 export function WalletConnector() {
   const {
@@ -98,6 +99,27 @@ export function WalletConnector() {
                 </div>
               </button>
             )}
+            <div className="border-t my-1" />
+            <button
+              onClick={() => {
+                setShowOptions(false);
+                if (hasOKXWallet()) {
+                  connect("okxwallet" as any);
+                } else {
+                  window.open("https://www.okx.com/web3", "_blank");
+                }
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md hover:bg-accent transition-colors text-left"
+              data-testid="button-connect-okx"
+            >
+              <Hexagon className="w-4 h-4 text-violet-500" />
+              <div>
+                <div className="font-mono text-xs font-medium">OKX Wallet</div>
+                <div className="font-mono text-[10px] text-muted-foreground">
+                  {hasOKXWallet() ? "Connect OKX Wallet" : "Get OKX Wallet"}
+                </div>
+              </div>
+            </button>
           </div>
         )}
 
@@ -132,7 +154,7 @@ export function WalletConnector() {
             <span className="font-mono text-xs text-muted-foreground">Wallet</span>
             <div className="flex items-center gap-1.5">
               <Badge variant="secondary" className="text-[10px]">
-                {walletType === "walletconnect" ? "WalletConnect" : "Browser"}
+                {walletType === "walletconnect" ? "WalletConnect" : walletType === "okxwallet" ? "OKX" : "Browser"}
               </Badge>
               <Badge variant="default" className="text-[10px]">Connected</Badge>
             </div>
