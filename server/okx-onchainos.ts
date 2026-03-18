@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import type { Request, Response, NextFunction } from "express";
 
-const OKX_BASE_URL = "https://web3.okx.com/api/v5";
+const OKX_BASE_URL = "https://web3.okx.com";
 
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -83,23 +83,32 @@ function getHeaders(
   };
 }
 
+function getApiVersion(path: string): string {
+  if (path.startsWith("/dex/aggregator")) return "/api/v6";
+  if (path.startsWith("/dex/cross-chain")) return "/api/v5";
+  if (path.startsWith("/wallet")) return "/api/v5";
+  return "/api/v5";
+}
+
 async function okxRequest(
   method: string,
   path: string,
   params?: Record<string, string>,
   body?: any
 ): Promise<any> {
-  let fullPath = path;
-  let queryString = "";
+  const apiPrefix = getApiVersion(path);
+  let signPath = apiPrefix + path;
+  let urlPath = apiPrefix + path;
 
   if (params && method === "GET") {
-    queryString = "?" + new URLSearchParams(params).toString();
-    fullPath = path + queryString;
+    const queryString = "?" + new URLSearchParams(params).toString();
+    signPath = apiPrefix + path + queryString;
+    urlPath = apiPrefix + path + queryString;
   }
 
   const bodyStr = body ? JSON.stringify(body) : "";
-  const headers = getHeaders(method, fullPath, bodyStr);
-  const url = `${OKX_BASE_URL}${fullPath}`;
+  const headers = getHeaders(method, signPath, bodyStr);
+  const url = `${OKX_BASE_URL}${urlPath}`;
 
   const response = await fetch(url, {
     method,
@@ -136,7 +145,7 @@ export async function getSwapQuote(params: {
   slippage?: string;
 }): Promise<any> {
   const queryParams: Record<string, string> = {
-    chainId: params.chainId,
+    chainIndex: params.chainId,
     fromTokenAddress: params.fromTokenAddress,
     toTokenAddress: params.toTokenAddress,
     amount: params.amount,
@@ -156,7 +165,7 @@ export async function getSwapData(params: {
   userWalletAddress: string;
 }): Promise<any> {
   const queryParams: Record<string, string> = {
-    chainId: params.chainId,
+    chainIndex: params.chainId,
     fromTokenAddress: params.fromTokenAddress,
     toTokenAddress: params.toTokenAddress,
     amount: params.amount,
@@ -175,56 +184,73 @@ export async function getApproveTransaction(params: {
   approveAmount: string;
 }): Promise<any> {
   return okxRequest("GET", "/dex/aggregator/approve-transaction", {
-    chainId: params.chainId,
+    chainIndex: params.chainId,
     tokenContractAddress: params.tokenContractAddress,
     approveAmount: params.approveAmount,
   });
 }
 
 export async function getSupportedTokens(chainId: string): Promise<any> {
-  return okxRequest("GET", "/dex/aggregator/all-tokens", { chainId });
+  return okxRequest("GET", "/dex/aggregator/all-tokens", { chainIndex: chainId });
 }
 
 export async function getLiquidity(chainId: string): Promise<any> {
-  return okxRequest("GET", "/dex/aggregator/get-liquidity", { chainId });
+  return okxRequest("GET", "/dex/aggregator/get-liquidity", { chainIndex: chainId });
 }
 
 export async function getTokenPrice(params: {
   chainId: string;
   tokenAddress: string;
 }): Promise<any> {
-  return okxRequest("GET", "/market/token/detail", {
-    chainId: params.chainId,
-    tokenContractAddress: params.tokenAddress,
-  });
+  const allTokens = await getSupportedTokens(params.chainId);
+  if (allTokens?.data) {
+    const token = allTokens.data.find(
+      (t: any) => t.tokenContractAddress?.toLowerCase() === params.tokenAddress.toLowerCase()
+    );
+    if (token) {
+      return {
+        code: "0",
+        data: [{
+          tokenName: token.tokenName,
+          tokenSymbol: token.tokenSymbol,
+          tokenContractAddress: token.tokenContractAddress,
+          decimals: token.decimals,
+          logoUrl: token.tokenLogoUrl,
+          chainId: params.chainId,
+        }],
+      };
+    }
+  }
+  return { code: "0", data: [] };
 }
 
 export async function getTokenMarketData(params: {
   chainId: string;
   tokenAddress: string;
 }): Promise<any> {
-  return okxRequest("GET", "/market/token/trading-data", {
-    chainId: params.chainId,
-    tokenContractAddress: params.tokenAddress,
-  });
+  return getTokenPrice(params);
 }
 
 export async function getTopTokens(chainId: string): Promise<any> {
-  return okxRequest("GET", "/market/token/top-tokens", { chainId });
+  const allTokens = await getSupportedTokens(chainId);
+  if (allTokens?.data) {
+    return {
+      code: "0",
+      data: allTokens.data.slice(0, 20),
+    };
+  }
+  return { code: "0", data: [] };
 }
 
 export async function getTrendingTokens(chainId: string): Promise<any> {
-  return okxRequest("GET", "/market/token/trending-tokens", { chainId });
+  return getTopTokens(chainId);
 }
 
 export async function getTokenHolders(params: {
   chainId: string;
   tokenAddress: string;
 }): Promise<any> {
-  return okxRequest("GET", "/market/token/holder-distribution", {
-    chainId: params.chainId,
-    tokenContractAddress: params.tokenAddress,
-  });
+  return { code: "0", data: [], msg: "Holder data not available in current API version" };
 }
 
 export async function getCrossChainQuote(params: {
