@@ -497,6 +497,7 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
   const [fromToken, setFromToken] = useState(NATIVE_TOKEN);
   const [toToken, setToToken] = useState(NATIVE_TOKEN);
   const [amount, setAmount] = useState("");
+  const [receiverAddress, setReceiverAddress] = useState(address || "");
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [bridgeQuote, setBridgeQuote] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -672,11 +673,36 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
               </span>
             </div>
           )}
+          <div className="pt-2">
+            <label className="font-mono text-[10px] text-muted-foreground block mb-1">Receiving Wallet Address</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={receiverAddress}
+                onChange={(e) => setReceiverAddress(e.target.value)}
+                placeholder="0x... wallet address to receive tokens"
+                className="w-full bg-background border rounded-md px-3 py-2.5 font-mono text-xs"
+                data-testid="input-bridge-receiver"
+              />
+              {address && receiverAddress !== address && (
+                <button
+                  onClick={() => setReceiverAddress(address)}
+                  className="shrink-0 px-3 py-2 bg-background border rounded-md font-mono text-[10px] text-muted-foreground hover:bg-muted transition-colors"
+                  data-testid="button-use-connected-wallet"
+                >
+                  Use Mine
+                </button>
+              )}
+            </div>
+            {receiverAddress && !/^0x[a-fA-F0-9]{40}$/.test(receiverAddress) && (
+              <p className="font-mono text-[10px] text-destructive mt-1">Invalid wallet address</p>
+            )}
+          </div>
         </div>
 
         <Button
           onClick={handleBridgeQuote}
-          disabled={!isActive || !amount || quoteLoading}
+          disabled={!isActive || !amount || !receiverAddress || !/^0x[a-fA-F0-9]{40}$/.test(receiverAddress) || quoteLoading}
           className="w-full font-mono text-sm h-11"
           data-testid="button-bridge-quote"
         >
@@ -725,6 +751,12 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
               <span className="font-mono text-xs text-muted-foreground">Route</span>
               <span className="font-mono text-[10px] text-muted-foreground">
                 {fromChainInfo?.name} ({selectedFromToken.symbol}) → {toChainInfo?.name} ({selectedToToken.symbol})
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs text-muted-foreground">Deliver To</span>
+              <span className="font-mono text-[10px] text-muted-foreground" data-testid="text-bridge-deliver-to">
+                {receiverAddress.slice(0, 6)}...{receiverAddress.slice(-4)}
               </span>
             </div>
           </div>
