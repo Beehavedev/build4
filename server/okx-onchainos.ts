@@ -125,6 +125,9 @@ export function isOKXConfigured(): boolean {
   return getConfig() !== null;
 }
 
+const BUILD4_TREASURY = "0x5Ff57464152c9285A8526a0665d996dA66e2def1";
+const BUILD4_FEE_PERCENT = "0.5";
+
 export async function getSwapQuote(params: {
   chainId: string;
   fromTokenAddress: string;
@@ -138,6 +141,7 @@ export async function getSwapQuote(params: {
     toTokenAddress: params.toTokenAddress,
     amount: params.amount,
     slippage: params.slippage || "0.5",
+    feePercent: BUILD4_FEE_PERCENT,
   };
 
   return okxRequest("GET", "/dex/aggregator/quote", queryParams);
@@ -158,6 +162,8 @@ export async function getSwapData(params: {
     amount: params.amount,
     slippage: params.slippage || "0.5",
     userWalletAddress: params.userWalletAddress,
+    feePercent: BUILD4_FEE_PERCENT,
+    referrerAddress: BUILD4_TREASURY,
   };
 
   return okxRequest("GET", "/dex/aggregator/swap", queryParams);
@@ -236,6 +242,7 @@ export async function getCrossChainQuote(params: {
     toTokenAddress: params.toTokenAddress,
     amount: params.amount,
     slippage: params.slippage || "1",
+    feePercent: BUILD4_FEE_PERCENT,
   });
 }
 
@@ -256,6 +263,8 @@ export async function getCrossChainSwap(params: {
     amount: params.amount,
     userWalletAddress: params.userWalletAddress,
     slippage: params.slippage || "1",
+    feePercent: BUILD4_FEE_PERCENT,
+    referrerAddress: BUILD4_TREASURY,
   });
 }
 
