@@ -34,6 +34,69 @@ const CHAIN_OPTIONS = [
 
 const NATIVE_TOKEN = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
+interface BridgeToken {
+  address: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+}
+
+const BRIDGE_TOKENS: Record<string, BridgeToken[]> = {
+  "1": [
+    { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", symbol: "USDC", name: "USD Coin", decimals: 6 },
+    { address: "0x6B175474E89094C44Da98b954EedeAC495271d0F", symbol: "DAI", name: "Dai Stablecoin", decimals: 18 },
+    { address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", symbol: "WBTC", name: "Wrapped Bitcoin", decimals: 8 },
+  ],
+  "56": [
+    { address: NATIVE_TOKEN, symbol: "BNB", name: "BNB", decimals: 18 },
+    { address: "0x55d398326f99059fF775485246999027B3197955", symbol: "USDT", name: "Tether USD", decimals: 18 },
+    { address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", symbol: "USDC", name: "USD Coin", decimals: 18 },
+    { address: "0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3", symbol: "DAI", name: "Dai Stablecoin", decimals: 18 },
+    { address: "0x2170Ed0880ac9A755fd29B2688956BD959F933F8", symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c", symbol: "BTCB", name: "Bitcoin BEP20", decimals: 18 },
+    { address: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", symbol: "WBNB", name: "Wrapped BNB", decimals: 18 },
+  ],
+  "196": [
+    { address: NATIVE_TOKEN, symbol: "OKB", name: "OKB", decimals: 18 },
+    { address: "0x1E4a5963aBFD975d8c9021ce480b42188849D41d", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0x74b7F16337b8972027F6196A17a631aC6dE26d22", symbol: "USDC", name: "USD Coin", decimals: 6 },
+    { address: "0x5A77f1443D16ee5761d310e38b62f77f726bC71c", symbol: "WETH", name: "Wrapped ETH", decimals: 18 },
+  ],
+  "137": [
+    { address: NATIVE_TOKEN, symbol: "POL", name: "Polygon", decimals: 18 },
+    { address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", symbol: "USDC", name: "USD Coin", decimals: 6 },
+    { address: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", symbol: "WETH", name: "Wrapped ETH", decimals: 18 },
+  ],
+  "42161": [
+    { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", symbol: "USDC", name: "USD Coin", decimals: 6 },
+    { address: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f", symbol: "WBTC", name: "Wrapped Bitcoin", decimals: 8 },
+  ],
+  "8453": [
+    { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", symbol: "USDC", name: "USD Coin", decimals: 6 },
+    { address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb", symbol: "DAI", name: "Dai Stablecoin", decimals: 18 },
+  ],
+  "43114": [
+    { address: NATIVE_TOKEN, symbol: "AVAX", name: "Avalanche", decimals: 18 },
+    { address: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "10": [
+    { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+};
+
+function getTokensForChain(chainId: string): BridgeToken[] {
+  return BRIDGE_TOKENS[chainId] || [{ address: NATIVE_TOKEN, symbol: "Native", name: "Native Token", decimals: 18 }];
+}
+
 type Tab = "swap" | "market" | "bridge" | "wallet";
 
 export default function OnchainOS() {
@@ -438,17 +501,60 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
   const [bridgeQuote, setBridgeQuote] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const fromTokens = getTokensForChain(fromChain);
+  const toTokens = getTokensForChain(toChain);
+
+  const selectedFromToken = fromTokens.find(t => t.address === fromToken) || fromTokens[0];
+  const selectedToToken = toTokens.find(t => t.address === toToken) || toTokens[0];
+
+  const handleFromChainChange = (newChain: string) => {
+    setFromChain(newChain);
+    const tokens = getTokensForChain(newChain);
+    setFromToken(tokens[0].address);
+    setBridgeQuote(null);
+  };
+
+  const handleToChainChange = (newChain: string) => {
+    setToChain(newChain);
+    const tokens = getTokensForChain(newChain);
+    setToToken(tokens[0].address);
+    setBridgeQuote(null);
+  };
+
+  const swapChains = () => {
+    const prevFrom = fromChain;
+    const prevTo = toChain;
+    setFromChain(prevTo);
+    setToChain(prevFrom);
+    const newFromTokens = getTokensForChain(prevTo);
+    const newToTokens = getTokensForChain(prevFrom);
+    setFromToken(newFromTokens[0].address);
+    setToToken(newToTokens[0].address);
+    setBridgeQuote(null);
+  };
+
+  const parseHumanAmount = (humanAmount: string, decimals: number): string => {
+    if (!humanAmount || isNaN(Number(humanAmount))) return "0";
+    const parts = humanAmount.split(".");
+    const whole = parts[0] || "0";
+    let frac = parts[1] || "";
+    frac = frac.padEnd(decimals, "0").slice(0, decimals);
+    const raw = whole + frac;
+    return raw.replace(/^0+/, "") || "0";
+  };
+
   const handleBridgeQuote = async () => {
     if (!amount) return;
     setQuoteLoading(true);
     setError(null);
     try {
+      const rawAmount = parseHumanAmount(amount, selectedFromToken.decimals);
       const params = new URLSearchParams({
         fromChainId: fromChain,
         toChainId: toChain,
         fromToken,
         toToken,
-        amount,
+        amount: rawAmount,
         slippage: "1",
       });
       const res = await fetch(`/api/okx/bridge/quote?${params}`);
@@ -462,8 +568,15 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
     }
   };
 
-  const fromChainName = CHAIN_OPTIONS.find(c => c.id === fromChain)?.name || fromChain;
-  const toChainName = CHAIN_OPTIONS.find(c => c.id === toChain)?.name || toChain;
+  const fromChainInfo = CHAIN_OPTIONS.find(c => c.id === fromChain);
+  const toChainInfo = CHAIN_OPTIONS.find(c => c.id === toChain);
+
+  const formatReceiveAmount = (raw: string, decimals: number): string => {
+    if (!raw) return "—";
+    const num = Number(raw) / Math.pow(10, decimals);
+    if (num < 0.000001) return raw;
+    return num.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  };
 
   return (
     <div className="bg-card border rounded-lg p-6" data-testid="panel-bridge">
@@ -472,93 +585,105 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
           <Layers className="w-5 h-5 text-blue-500" />
           <h2 className="font-mono text-lg font-bold">Cross-Chain Bridge</h2>
         </div>
-        <Badge variant="outline" className="text-[10px]">18 Bridges</Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-[10px]">0.5% fee</Badge>
+          <Badge variant="outline" className="text-[10px]">18 Bridges</Badge>
+        </div>
       </div>
       <p className="text-xs text-muted-foreground mb-4">
         Bridge assets between BNB Chain, XLayer, and 60+ chains. Aggregates 18 bridge protocols for best rates.
       </p>
 
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="font-mono text-xs text-muted-foreground block mb-1">From Chain</label>
+        <div className="bg-muted/50 rounded-lg p-4 space-y-1">
+          <label className="font-mono text-[10px] text-muted-foreground">From</label>
+          <div className="flex gap-2">
             <select
               value={fromChain}
-              onChange={(e) => setFromChain(e.target.value)}
-              className="w-full bg-muted border rounded-md px-3 py-2 font-mono text-sm"
+              onChange={(e) => handleFromChainChange(e.target.value)}
+              className="w-1/2 bg-background border rounded-md px-3 py-2.5 font-mono text-sm"
               data-testid="select-bridge-from-chain"
             >
               {CHAIN_OPTIONS.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
+            <select
+              value={fromToken}
+              onChange={(e) => { setFromToken(e.target.value); setBridgeQuote(null); }}
+              className="w-1/2 bg-background border rounded-md px-3 py-2.5 font-mono text-sm"
+              data-testid="select-bridge-from-token"
+            >
+              {fromTokens.map((t) => (
+                <option key={t.address} value={t.address}>{t.symbol} — {t.name}</option>
+              ))}
+            </select>
           </div>
-          <div>
-            <label className="font-mono text-xs text-muted-foreground block mb-1">To Chain</label>
+          <div className="pt-2">
+            <input
+              type="text"
+              value={amount}
+              onChange={(e) => { setAmount(e.target.value); setBridgeQuote(null); }}
+              placeholder={`Amount in ${selectedFromToken.symbol}`}
+              className="w-full bg-background border rounded-md px-3 py-2.5 font-mono text-lg"
+              data-testid="input-bridge-amount"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-center">
+          <button
+            onClick={swapChains}
+            className="w-9 h-9 rounded-full bg-background border-2 flex items-center justify-center hover:bg-muted transition-colors"
+            data-testid="button-swap-chains"
+          >
+            <ArrowDown className="w-4 h-4 text-blue-500" />
+          </button>
+        </div>
+
+        <div className="bg-muted/50 rounded-lg p-4 space-y-1">
+          <label className="font-mono text-[10px] text-muted-foreground">To</label>
+          <div className="flex gap-2">
             <select
               value={toChain}
-              onChange={(e) => setToChain(e.target.value)}
-              className="w-full bg-muted border rounded-md px-3 py-2 font-mono text-sm"
+              onChange={(e) => handleToChainChange(e.target.value)}
+              className="w-1/2 bg-background border rounded-md px-3 py-2.5 font-mono text-sm"
               data-testid="select-bridge-to-chain"
             >
               {CHAIN_OPTIONS.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
-          </div>
-        </div>
-
-        <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-          <div>
-            <label className="font-mono text-[10px] text-muted-foreground block mb-1">From Token</label>
-            <input
-              type="text"
-              value={fromToken}
-              onChange={(e) => setFromToken(e.target.value)}
-              placeholder="Token address"
-              className="w-full bg-background border rounded-md px-3 py-2 font-mono text-xs"
-              data-testid="input-bridge-from-token"
-            />
-          </div>
-          <div className="flex justify-center">
-            <div className="w-8 h-8 rounded-full bg-background border flex items-center justify-center">
-              <Layers className="w-4 h-4 text-blue-500" />
-            </div>
-          </div>
-          <div>
-            <label className="font-mono text-[10px] text-muted-foreground block mb-1">To Token</label>
-            <input
-              type="text"
+            <select
               value={toToken}
-              onChange={(e) => setToToken(e.target.value)}
-              placeholder="Token address"
-              className="w-full bg-background border rounded-md px-3 py-2 font-mono text-xs"
-              data-testid="input-bridge-to-token"
-            />
+              onChange={(e) => { setToToken(e.target.value); setBridgeQuote(null); }}
+              className="w-1/2 bg-background border rounded-md px-3 py-2.5 font-mono text-sm"
+              data-testid="select-bridge-to-token"
+            >
+              {toTokens.map((t) => (
+                <option key={t.address} value={t.address}>{t.symbol} — {t.name}</option>
+              ))}
+            </select>
           </div>
-          <div>
-            <label className="font-mono text-[10px] text-muted-foreground block mb-1">Amount (smallest unit)</label>
-            <input
-              type="text"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="e.g. 1000000000000000000"
-              className="w-full bg-background border rounded-md px-3 py-2 font-mono text-xs"
-              data-testid="input-bridge-amount"
-            />
-          </div>
+          {bridgeQuote && bridgeQuote.data && bridgeQuote.data[0] && (
+            <div className="pt-2 px-1">
+              <span className="font-mono text-lg text-foreground" data-testid="text-bridge-receive">
+                {formatReceiveAmount(bridgeQuote.data[0].toTokenAmount, selectedToToken.decimals)} {selectedToToken.symbol}
+              </span>
+            </div>
+          )}
         </div>
 
         <Button
           onClick={handleBridgeQuote}
           disabled={!isActive || !amount || quoteLoading}
-          className="w-full font-mono text-xs"
+          className="w-full font-mono text-sm h-11"
           data-testid="button-bridge-quote"
         >
           {quoteLoading ? (
-            <><RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin" /> Getting Bridge Quote...</>
+            <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Getting Quote...</>
           ) : (
-            <><Layers className="w-3.5 h-3.5 mr-2" /> Quote {fromChainName} → {toChainName}</>
+            <><Layers className="w-4 h-4 mr-2" /> Bridge {fromChainInfo?.name} → {toChainInfo?.name}</>
           )}
         </Button>
 
@@ -568,24 +693,40 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
           </div>
         )}
 
-        {bridgeQuote && bridgeQuote.data && (
+        {bridgeQuote && bridgeQuote.data && bridgeQuote.data[0] && (
           <div className="bg-muted/50 rounded-lg p-4 space-y-2" data-testid="bridge-quote-result">
             <div className="flex items-center justify-between">
-              <span className="font-mono text-xs text-muted-foreground">Est. Receive</span>
-              <span className="font-mono text-sm font-bold">{bridgeQuote.data[0]?.toTokenAmount || "—"}</span>
+              <span className="font-mono text-xs text-muted-foreground">You Send</span>
+              <span className="font-mono text-sm">{amount} {selectedFromToken.symbol}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs text-muted-foreground">You Receive</span>
+              <span className="font-mono text-sm font-bold text-emerald-500">
+                {formatReceiveAmount(bridgeQuote.data[0].toTokenAmount, selectedToToken.decimals)} {selectedToToken.symbol}
+              </span>
             </div>
             {bridgeQuote.data[0]?.estimatedTime && (
               <div className="flex items-center justify-between">
                 <span className="font-mono text-xs text-muted-foreground">Est. Time</span>
-                <span className="font-mono text-xs">{bridgeQuote.data[0].estimatedTime}s</span>
+                <span className="font-mono text-xs">
+                  {Number(bridgeQuote.data[0].estimatedTime) < 60
+                    ? `${bridgeQuote.data[0].estimatedTime}s`
+                    : `~${Math.ceil(Number(bridgeQuote.data[0].estimatedTime) / 60)} min`}
+                </span>
               </div>
             )}
             {bridgeQuote.data[0]?.bridgeName && (
               <div className="flex items-center justify-between">
-                <span className="font-mono text-xs text-muted-foreground">Bridge</span>
+                <span className="font-mono text-xs text-muted-foreground">Via</span>
                 <Badge variant="secondary" className="text-[10px]">{bridgeQuote.data[0].bridgeName}</Badge>
               </div>
             )}
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs text-muted-foreground">Route</span>
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {fromChainInfo?.name} ({selectedFromToken.symbol}) → {toChainInfo?.name} ({selectedToToken.symbol})
+              </span>
+            </div>
           </div>
         )}
       </div>
