@@ -14,12 +14,16 @@ const TOTAL_SUPPLY = "1,000,000,000";
 const TICKER = "$BUILD4";
 
 const ALLOCATIONS = [
-  { id: "public", label: "Public (Bonding Curve Buyers)", pct: 30, amount: "300,000,000", bgColor: "bg-emerald-500", bgTint: "bg-emerald-500/15", textColor: "text-emerald-500", icon: Users, note: "Open market buyers on Four.meme before graduation" },
-  { id: "rewards", label: "Agent Economy Rewards", pct: 20, amount: "200,000,000", bgColor: "bg-blue-500", bgTint: "bg-blue-500/15", textColor: "text-blue-500", icon: Gift, note: "24-month release — rewards for hiring agents, top performers, referrals" },
-  { id: "treasury", label: "Treasury / Operations", pct: 15, amount: "150,000,000", bgColor: "bg-amber-500", bgTint: "bg-amber-500/15", textColor: "text-amber-500", icon: Shield, note: "Platform development, server costs, buybacks. Multisig wallet" },
-  { id: "founder", label: "Founder Reserve", pct: 10, amount: "100,000,000", bgColor: "bg-purple-500", bgTint: "bg-purple-500/15", textColor: "text-purple-500", icon: Lock, note: "Strategic reserve for exchange listings, partnerships, emergency LP" },
-  { id: "liquidity", label: "Liquidity (PancakeSwap)", pct: 10, amount: "100,000,000", bgColor: "bg-cyan-500", bgTint: "bg-cyan-500/15", textColor: "text-cyan-500", icon: Layers, note: "Paired with BNB, LP tokens locked 12+ months" },
+  { id: "founder", label: "Founder (Bought from Curve)", pct: 70, amount: "700,000,000", bgColor: "bg-primary", bgTint: "bg-primary/15", textColor: "text-primary", icon: Lock, note: "Purchased from Four.meme bonding curve — distributed to wallets below" },
+  { id: "lp", label: "Liquidity (Auto-Burned)", pct: 20, amount: "200,000,000", bgColor: "bg-cyan-500", bgTint: "bg-cyan-500/15", textColor: "text-cyan-500", icon: Flame, note: "Auto-added to PancakeSwap LP on graduation. LP tokens burned by Four.meme" },
+  { id: "public", label: "Public Buyers", pct: 10, amount: "100,000,000", bgColor: "bg-emerald-500", bgTint: "bg-emerald-500/15", textColor: "text-emerald-500", icon: Users, note: "Other buyers on the bonding curve before graduation" },
+];
+
+const DISTRIBUTION = [
+  { id: "rewards", label: "Agent Economy Rewards", pct: 25, amount: "250,000,000", bgColor: "bg-blue-500", bgTint: "bg-blue-500/15", textColor: "text-blue-500", icon: Gift, note: "24-month release — rewards for hiring agents, top performers, referrals" },
+  { id: "treasury", label: "Treasury / Operations", pct: 20, amount: "200,000,000", bgColor: "bg-amber-500", bgTint: "bg-amber-500/15", textColor: "text-amber-500", icon: Shield, note: "Platform development, server costs, buybacks. Multisig wallet" },
   { id: "marketing", label: "Marketing & Growth", pct: 10, amount: "100,000,000", bgColor: "bg-pink-500", bgTint: "bg-pink-500/15", textColor: "text-pink-500", icon: Rocket, note: "KOLs, exchange listings, campaigns, community airdrops" },
+  { id: "reserve", label: "Founder Reserve", pct: 10, amount: "100,000,000", bgColor: "bg-purple-500", bgTint: "bg-purple-500/15", textColor: "text-purple-500", icon: Lock, note: "Strategic reserve for future exchange listings and partnerships" },
   { id: "team", label: "Team", pct: 5, amount: "50,000,000", bgColor: "bg-orange-500", bgTint: "bg-orange-500/15", textColor: "text-orange-500", icon: Briefcase, note: "6-month cliff, 12-month linear vest" },
 ];
 
@@ -98,16 +102,21 @@ export default function TokenPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <Card className="p-5 text-center space-y-2" data-testid="stat-supply">
               <PieChart className="w-6 h-6 mx-auto text-primary" />
               <div className="font-mono text-lg font-bold">1B</div>
               <div className="font-mono text-[11px] text-muted-foreground">Total Supply</div>
             </Card>
-            <Card className="p-5 text-center space-y-2" data-testid="stat-launch">
-              <Rocket className="w-6 h-6 mx-auto text-amber-500" />
-              <div className="font-mono text-lg font-bold">Four.meme</div>
-              <div className="font-mono text-[11px] text-muted-foreground">Fair Launch Platform</div>
+            <Card className="p-5 text-center space-y-2" data-testid="stat-curve">
+              <TrendingUp className="w-6 h-6 mx-auto text-cyan-500" />
+              <div className="font-mono text-lg font-bold">80%</div>
+              <div className="font-mono text-[11px] text-muted-foreground">Bonding Curve</div>
+            </Card>
+            <Card className="p-5 text-center space-y-2" data-testid="stat-lp">
+              <Flame className="w-6 h-6 mx-auto text-amber-500" />
+              <div className="font-mono text-lg font-bold">20%</div>
+              <div className="font-mono text-[11px] text-muted-foreground">LP Auto-Burned</div>
             </Card>
             <Card className="p-5 text-center space-y-2" data-testid="stat-chain">
               <Layers className="w-6 h-6 mx-auto text-emerald-500" />
@@ -121,6 +130,10 @@ export default function TokenPage() {
               <PieChart className="w-5 h-5 text-primary" />
               <h2 className="font-mono text-lg font-bold">Tokenomics</h2>
             </div>
+
+            <p className="font-mono text-xs text-muted-foreground">
+              Launched on Four.meme. 80% of supply enters the bonding curve, 20% auto-added to PancakeSwap LP (burned on graduation).
+            </p>
 
             <div className="w-full h-8 rounded-full overflow-hidden flex border" data-testid="tokenomics-bar">
               {ALLOCATIONS.map((a) => (
@@ -139,7 +152,7 @@ export default function TokenPage() {
               ))}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {ALLOCATIONS.map((a) => {
                 const Icon = a.icon;
                 return (
@@ -154,6 +167,55 @@ export default function TokenPage() {
                       </div>
                       <div className="font-mono text-xs text-primary mt-0.5">{a.amount} {TICKER}</div>
                       <p className="font-mono text-[11px] text-muted-foreground mt-1">{a.note}</p>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-5" data-testid="section-distribution">
+            <div className="flex items-center gap-2">
+              <Wallet className="w-5 h-5 text-primary" />
+              <h2 className="font-mono text-lg font-bold">Founder Distribution (70%)</h2>
+            </div>
+
+            <p className="font-mono text-xs text-muted-foreground">
+              The 700M tokens purchased from the bonding curve are distributed across these wallets. All addresses will be published on-chain.
+            </p>
+
+            <div className="w-full h-6 rounded-full overflow-hidden flex border" data-testid="distribution-bar">
+              {DISTRIBUTION.map((d) => (
+                <div
+                  key={d.id}
+                  className={`${d.bgColor} h-full relative group cursor-default`}
+                  style={{ width: `${(d.pct / 70) * 100}%` }}
+                  title={`${d.label}: ${d.pct}% of total`}
+                >
+                  {d.pct >= 10 && (
+                    <span className="absolute inset-0 flex items-center justify-center font-mono text-[9px] text-white font-bold">
+                      {d.pct}%
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {DISTRIBUTION.map((d) => {
+                const Icon = d.icon;
+                return (
+                  <Card key={d.id} className="p-4 flex items-start gap-3" data-testid={`dist-${d.id}`}>
+                    <div className={`w-8 h-8 rounded-md ${d.bgTint} flex items-center justify-center flex-shrink-0`}>
+                      <Icon className={`w-4 h-4 ${d.textColor}`} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-semibold">{d.label}</span>
+                        <Badge variant="outline" className="text-[9px] font-mono">{d.pct}%</Badge>
+                      </div>
+                      <div className="font-mono text-xs text-primary mt-0.5">{d.amount} {TICKER}</div>
+                      <p className="font-mono text-[11px] text-muted-foreground mt-1">{d.note}</p>
                     </div>
                   </Card>
                 );
