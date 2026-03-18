@@ -18,7 +18,6 @@ import {
   TrendingUp,
   Shield,
   Zap,
-  AlertTriangle,
   ChevronDown,
 } from "lucide-react";
 
@@ -42,14 +41,14 @@ export default function OnchainOS() {
   const [activeTab, setActiveTab] = useState<Tab>("swap");
 
   const { data: okxStatus } = useQuery<{
-    configured: boolean;
+    active: boolean;
     supportedChains: Record<string, string>;
     features: Record<string, boolean>;
   }>({
     queryKey: ["/api/okx/status"],
   });
 
-  const isConfigured = okxStatus?.configured ?? false;
+  const isActive = okxStatus?.active ?? false;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -83,19 +82,6 @@ export default function OnchainOS() {
           </p>
         </div>
 
-        {!isConfigured && (
-          <div className="mb-6 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-yellow-500 mt-0.5 shrink-0" />
-            <div>
-              <p className="font-mono text-sm font-medium text-yellow-500">API Keys Required</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                OKX OnchainOS requires API credentials. Add <code className="bg-muted px-1 rounded">OKX_API_KEY</code>, <code className="bg-muted px-1 rounded">OKX_SECRET_KEY</code>, <code className="bg-muted px-1 rounded">OKX_API_PASSPHRASE</code>, and <code className="bg-muted px-1 rounded">OKX_PROJECT_ID</code> to your environment variables.
-                Create keys at <a href="https://web3.okx.com/onchainos" target="_blank" rel="noopener" className="text-violet-400 hover:underline">web3.okx.com/onchainos</a>.
-              </p>
-            </div>
-          </div>
-        )}
-
         <div className="flex items-center gap-1 mb-6 bg-muted/50 rounded-lg p-1 w-fit">
           {[
             { id: "swap" as Tab, icon: ArrowLeftRight, label: "DEX Swap" },
@@ -121,10 +107,10 @@ export default function OnchainOS() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
-            {activeTab === "swap" && <SwapPanel isConfigured={isConfigured} address={address} chainId={chainId} />}
-            {activeTab === "market" && <MarketPanel isConfigured={isConfigured} />}
-            {activeTab === "bridge" && <BridgePanel isConfigured={isConfigured} address={address} />}
-            {activeTab === "wallet" && <WalletPanel isConfigured={isConfigured} address={address} connected={connected} />}
+            {activeTab === "swap" && <SwapPanel isActive={isActive} address={address} chainId={chainId} />}
+            {activeTab === "market" && <MarketPanel isActive={isActive} />}
+            {activeTab === "bridge" && <BridgePanel isActive={isActive} address={address} />}
+            {activeTab === "wallet" && <WalletPanel isActive={isActive} address={address} connected={connected} />}
           </div>
           <div className="space-y-4">
             <FeatureCard />
@@ -136,7 +122,7 @@ export default function OnchainOS() {
   );
 }
 
-function SwapPanel({ isConfigured, address, chainId }: { isConfigured: boolean; address: string | null; chainId: number | null }) {
+function SwapPanel({ isActive, address, chainId }: { isActive: boolean; address: string | null; chainId: number | null }) {
   const [selectedChain, setSelectedChain] = useState(chainId?.toString() || "56");
   const [fromToken, setFromToken] = useState(NATIVE_TOKEN);
   const [toToken, setToToken] = useState("");
@@ -239,7 +225,7 @@ function SwapPanel({ isConfigured, address, chainId }: { isConfigured: boolean; 
 
         <Button
           onClick={handleGetQuote}
-          disabled={!isConfigured || !amount || !toToken || quoteLoading}
+          disabled={!isActive || !amount || !toToken || quoteLoading}
           className="w-full font-mono text-xs"
           data-testid="button-get-quote"
         >
@@ -287,7 +273,7 @@ function SwapPanel({ isConfigured, address, chainId }: { isConfigured: boolean; 
   );
 }
 
-function MarketPanel({ isConfigured }: { isConfigured: boolean }) {
+function MarketPanel({ isActive }: { isActive: boolean }) {
   const [selectedChain, setSelectedChain] = useState("56");
   const [tokenAddress, setTokenAddress] = useState("");
   const [tokenData, setTokenData] = useState<any>(null);
@@ -361,7 +347,7 @@ function MarketPanel({ isConfigured }: { isConfigured: boolean }) {
               variant="outline"
               size="sm"
               onClick={handleTrending}
-              disabled={!isConfigured || trendingLoading}
+              disabled={!isActive || trendingLoading}
               className="w-full font-mono text-xs"
               data-testid="button-trending"
             >
@@ -382,7 +368,7 @@ function MarketPanel({ isConfigured }: { isConfigured: boolean }) {
           />
           <Button
             onClick={handleLookup}
-            disabled={!isConfigured || !tokenAddress || loading}
+            disabled={!isActive || !tokenAddress || loading}
             size="sm"
             className="font-mono text-xs"
             data-testid="button-lookup-token"
@@ -442,7 +428,7 @@ function MarketPanel({ isConfigured }: { isConfigured: boolean }) {
   );
 }
 
-function BridgePanel({ isConfigured, address }: { isConfigured: boolean; address: string | null }) {
+function BridgePanel({ isActive, address }: { isActive: boolean; address: string | null }) {
   const [fromChain, setFromChain] = useState("56");
   const [toChain, setToChain] = useState("196");
   const [fromToken, setFromToken] = useState(NATIVE_TOKEN);
@@ -565,7 +551,7 @@ function BridgePanel({ isConfigured, address }: { isConfigured: boolean; address
 
         <Button
           onClick={handleBridgeQuote}
-          disabled={!isConfigured || !amount || quoteLoading}
+          disabled={!isActive || !amount || quoteLoading}
           className="w-full font-mono text-xs"
           data-testid="button-bridge-quote"
         >
@@ -607,7 +593,7 @@ function BridgePanel({ isConfigured, address }: { isConfigured: boolean; address
   );
 }
 
-function WalletPanel({ isConfigured, address, connected }: { isConfigured: boolean; address: string | null; connected: boolean }) {
+function WalletPanel({ isActive, address, connected }: { isActive: boolean; address: string | null; connected: boolean }) {
   const [selectedChain, setSelectedChain] = useState("56");
   const [lookupAddress, setLookupAddress] = useState(address || "");
   const [balances, setBalances] = useState<any>(null);
@@ -671,7 +657,7 @@ function WalletPanel({ isConfigured, address, connected }: { isConfigured: boole
           />
           <Button
             onClick={handleLookup}
-            disabled={!isConfigured || (!lookupAddress && !address) || loading}
+            disabled={!isActive || (!lookupAddress && !address) || loading}
             size="sm"
             className="font-mono text-xs"
             data-testid="button-lookup-balances"
