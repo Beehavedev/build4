@@ -30,6 +30,26 @@ const CHAIN_OPTIONS = [
   { id: "8453", name: "Base", symbol: "ETH" },
   { id: "43114", name: "Avalanche", symbol: "AVAX" },
   { id: "10", name: "Optimism", symbol: "ETH" },
+  { id: "324", name: "zkSync Era", symbol: "ETH" },
+  { id: "59144", name: "Linea", symbol: "ETH" },
+  { id: "534352", name: "Scroll", symbol: "ETH" },
+  { id: "250", name: "Fantom", symbol: "FTM" },
+  { id: "1101", name: "Polygon zkEVM", symbol: "ETH" },
+  { id: "169", name: "Manta Pacific", symbol: "ETH" },
+  { id: "5000", name: "Mantle", symbol: "MNT" },
+  { id: "81457", name: "Blast", symbol: "ETH" },
+  { id: "34443", name: "Mode", symbol: "ETH" },
+  { id: "7777777", name: "Zora", symbol: "ETH" },
+  { id: "100", name: "Gnosis", symbol: "xDAI" },
+  { id: "1284", name: "Moonbeam", symbol: "GLMR" },
+  { id: "1285", name: "Moonriver", symbol: "MOVR" },
+  { id: "42220", name: "Celo", symbol: "CELO" },
+  { id: "1088", name: "Metis", symbol: "METIS" },
+  { id: "25", name: "Cronos", symbol: "CRO" },
+  { id: "288", name: "Boba Network", symbol: "ETH" },
+  { id: "1313161554", name: "Aurora", symbol: "ETH" },
+  { id: "66", name: "OKT Chain", symbol: "OKT" },
+  { id: "128", name: "HECO", symbol: "HT" },
 ];
 
 const NATIVE_TOKEN = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
@@ -90,6 +110,102 @@ const BRIDGE_TOKENS: Record<string, BridgeToken[]> = {
     { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
     { address: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58", symbol: "USDT", name: "Tether USD", decimals: 6 },
     { address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "324": [
+    { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: "0x493257fD37EDB34451f62EDf8D2a0C418852bA4C", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "59144": [
+    { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: "0xA219439258ca9da29E9Cc4cE5596924745e12B93", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0x176211869cA2b568f2A7D4EE941E073a821EE1ff", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "534352": [
+    { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: "0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "250": [
+    { address: NATIVE_TOKEN, symbol: "FTM", name: "Fantom", decimals: 18 },
+    { address: "0x049d68029688eAbF473097a2fC38ef61633A3C7A", symbol: "fUSDT", name: "Frapped USDT", decimals: 6 },
+    { address: "0x04068DA6C83AFCFA0e13ba15A6696662335D5B75", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "1101": [
+    { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: "0x1E4a5963aBFD975d8c9021ce480b42188849D41d", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0xA8CE8aee21bC2A48a5EF670afCc9274C7bbbC035", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "169": [
+    { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: "0xf417F5A458eC102B90352F697D6e2Ac3A3d2851f", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0xb73603C5d87fA094B7314C74ACE2e64D165016fb", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "5000": [
+    { address: NATIVE_TOKEN, symbol: "MNT", name: "Mantle", decimals: 18 },
+    { address: "0x201EBa5CC46D216Ce6DC03F6a759e8E766e956aE", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0x09Bc4E0D864854c6aFB6eB9A9cdF58aC190D0dF9", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "81457": [
+    { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: "0x4300000000000000000000000000000000000003", symbol: "USDB", name: "USDB", decimals: 18 },
+  ],
+  "34443": [
+    { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: "0xd988097fb8612cc24eeC14542bC03424c656005f", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "7777777": [
+    { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
+  ],
+  "100": [
+    { address: NATIVE_TOKEN, symbol: "xDAI", name: "xDAI", decimals: 18 },
+    { address: "0x4ECaBa5870353805a9F068101A40E0f32ed605C6", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "1284": [
+    { address: NATIVE_TOKEN, symbol: "GLMR", name: "Moonbeam", decimals: 18 },
+    { address: "0xeFAeeE334F0Fd1712f9a8cc375f427D9Cdd40d73", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0x931715FEE2d06333043d11F658C8CE934aC61D0c", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "1285": [
+    { address: NATIVE_TOKEN, symbol: "MOVR", name: "Moonriver", decimals: 18 },
+    { address: "0xB44a9B6905aF7c801311e8F4E76932ee959c663C", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0xE3F5a90F9cb311505cd691a46596599aA1A0AD7D", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "42220": [
+    { address: NATIVE_TOKEN, symbol: "CELO", name: "Celo", decimals: 18 },
+    { address: "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0xcebA9300f2b948710d2653dD7B07f33A8B32118C", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "1088": [
+    { address: NATIVE_TOKEN, symbol: "METIS", name: "Metis", decimals: 18 },
+    { address: "0xbB06DCA3AE6887fAbF931640f67cab3e3a16F4dC", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0xEA32A96608495e54156Ae48931A7c20f0dcc1a21", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "25": [
+    { address: NATIVE_TOKEN, symbol: "CRO", name: "Cronos", decimals: 18 },
+    { address: "0x66e428c3f67a68878562e79A0234c1F83c208770", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0xc21223249CA28397B4B6541dfFaEcC539BfF0c59", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "288": [
+    { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: "0x5DE1677344D3Cb0D7D465c10b72A8f60699C062d", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0x66a2A913e447d6b4BF33EFbec43aAeF87890FBbc", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "1313161554": [
+    { address: NATIVE_TOKEN, symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: "0x4988a896b1227218e4A686fdE5EabdcAbd91571f", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0xB12BFcA5A55806AaF64E99521918A4bf0fC40802", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  ],
+  "66": [
+    { address: NATIVE_TOKEN, symbol: "OKT", name: "OKT Chain", decimals: 18 },
+    { address: "0x382bB369d343125BfB2117af9c149795C6C65C50", symbol: "USDT", name: "Tether USD", decimals: 18 },
+    { address: "0xc946DAf81b08146B1C7A8Da2A851Ddf2B3EAaf85", symbol: "USDC", name: "USD Coin", decimals: 18 },
+  ],
+  "128": [
+    { address: NATIVE_TOKEN, symbol: "HT", name: "Huobi Token", decimals: 18 },
+    { address: "0xa71EdC38d189767582C38A3145b5873052c3e47a", symbol: "USDT", name: "Tether USD", decimals: 18 },
+    { address: "0x9362Bbef4B8313A8Aa9f0c9808B80577Aa26B73B", symbol: "USDC", name: "USD Coin", decimals: 18 },
   ],
 };
 
@@ -588,7 +704,7 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="text-[10px]">0.5% fee</Badge>
-          <Badge variant="outline" className="text-[10px]">18 Bridges</Badge>
+          <Badge variant="outline" className="text-[10px]">{CHAIN_OPTIONS.length} Chains</Badge>
         </div>
       </div>
       <p className="text-xs text-muted-foreground mb-4">
