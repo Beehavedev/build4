@@ -114,7 +114,7 @@ export default function TokenPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
             <Card className="p-5 text-center space-y-2" data-testid="stat-supply">
               <PieChart className="w-6 h-6 mx-auto text-primary" />
               <div className="font-mono text-lg font-bold">1B</div>
@@ -130,10 +130,15 @@ export default function TokenPage() {
               <div className="font-mono text-lg font-bold">20%</div>
               <div className="font-mono text-[11px] text-muted-foreground">{t("token.statLp")}</div>
             </Card>
-            <Card className="p-5 text-center space-y-2" data-testid="stat-chain">
-              <Layers className="w-6 h-6 mx-auto text-emerald-500" />
+            <Card className="p-5 text-center space-y-2 border-primary/20" data-testid="stat-bnb">
+              <Layers className="w-6 h-6 mx-auto text-amber-400" />
               <div className="font-mono text-lg font-bold">BNB Chain</div>
-              <div className="font-mono text-[11px] text-muted-foreground">{t("token.statChain")}</div>
+              <div className="font-mono text-[11px] text-muted-foreground">Four.meme</div>
+            </Card>
+            <Card className="p-5 text-center space-y-2 border-primary/20" data-testid="stat-xlayer">
+              <Layers className="w-6 h-6 mx-auto text-violet-500" />
+              <div className="font-mono text-lg font-bold">XLayer</div>
+              <div className="font-mono text-[11px] text-muted-foreground">Flap.sh</div>
             </Card>
           </div>
 
@@ -317,20 +322,39 @@ export default function TokenPage() {
             </div>
           </div>
 
-          <Card className="p-6 text-center space-y-4 border-dashed" data-testid="section-contract">
-            <Coins className="w-8 h-8 mx-auto text-primary" />
-            <div>
-              <h3 className="font-mono text-sm font-bold">{t("token.contractTitle")}</h3>
-              <p className="font-mono text-xs text-muted-foreground mt-1">{t("token.contractSoon")}</p>
+          <div className="space-y-5" data-testid="section-contract">
+            <div className="flex items-center gap-2">
+              <Coins className="w-5 h-5 text-primary" />
+              <h2 className="font-mono text-lg font-bold">{t("token.contractTitle")}</h2>
             </div>
-            <div className="flex items-center justify-center gap-3">
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Card className="p-5 text-center space-y-3 border-dashed">
+                <div className="flex items-center justify-center gap-2">
+                  <Layers className="w-5 h-5 text-amber-400" />
+                  <span className="font-mono text-sm font-bold">BNB Chain</span>
+                </div>
+                <Badge variant="outline" className="font-mono text-[10px]">Four.meme</Badge>
+                <p className="font-mono text-xs text-muted-foreground">{t("token.contractSoon")}</p>
+              </Card>
+              <Card className="p-5 text-center space-y-3 border-dashed">
+                <div className="flex items-center justify-center gap-2">
+                  <Layers className="w-5 h-5 text-violet-500" />
+                  <span className="font-mono text-sm font-bold">XLayer</span>
+                </div>
+                <Badge variant="outline" className="font-mono text-[10px]">Flap.sh</Badge>
+                <p className="font-mono text-xs text-muted-foreground">{t("token.contractSoon")}</p>
+              </Card>
+            </div>
+
+            <div className="flex items-center justify-center pt-2">
               <Link href="/hire-agent">
                 <Button size="sm" className="font-mono text-xs gap-1.5" data-testid="button-hire-from-token">
                   <Briefcase className="w-3.5 h-3.5" /> {t("token.hireAgent")}
                 </Button>
               </Link>
             </div>
-          </Card>
+          </div>
 
           <footer className="text-center py-6 border-t">
             <div className="flex items-center justify-center gap-2 mb-2">
