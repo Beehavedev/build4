@@ -1008,25 +1008,25 @@ function WalletPanel({ isActive, address, connected }: { isActive: boolean; addr
           <div className="space-y-2" data-testid="wallet-balances-result">
             <h3 className="font-mono text-xs font-bold text-muted-foreground">Token Balances</h3>
             <div className="space-y-1 max-h-72 overflow-y-auto">
-              {(balances.data || []).map((token: any, i: number) => (
-                <div key={i} className="flex items-center justify-between bg-muted/50 rounded-md px-3 py-2">
-                  <div>
-                    <span className="font-mono text-xs font-medium">{token.tokenSymbol || token.symbol || "?"}</span>
-                    {token.tokenName && (
-                      <span className="font-mono text-[10px] text-muted-foreground ml-2">{token.tokenName}</span>
-                    )}
+              {(() => {
+                const tokens = balances.data?.[0]?.tokenAssets || balances.data || [];
+                return tokens.map((token: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between bg-muted/50 rounded-md px-3 py-2">
+                    <div>
+                      <span className="font-mono text-xs font-medium">{token.symbol || token.tokenSymbol || "?"}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-mono text-xs">{token.balance || token.holdingAmount || "0"}</span>
+                      {token.tokenPrice && Number(token.tokenPrice) > 0 && (
+                        <span className="font-mono text-[10px] text-muted-foreground ml-2">
+                          ${(Number(token.balance || token.holdingAmount || 0) * Number(token.tokenPrice)).toFixed(2)}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="font-mono text-xs">{token.balance || token.holdingAmount || "0"}</span>
-                    {token.tokenPrice && (
-                      <span className="font-mono text-[10px] text-muted-foreground ml-2">
-                        ${(Number(token.balance || token.holdingAmount || 0) * Number(token.tokenPrice)).toFixed(2)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {(!balances.data || balances.data.length === 0) && (
+                ));
+              })()}
+              {(!balances.data || balances.data.length === 0 || (balances.data[0]?.tokenAssets && balances.data[0].tokenAssets.length === 0)) && (
                 <p className="font-mono text-xs text-muted-foreground text-center py-4">No tokens found</p>
               )}
             </div>
