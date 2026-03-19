@@ -370,7 +370,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
     return "Hey! Welcome to BUILD4 — decentralized infrastructure for autonomous AI agents. What can I help you with? Try /help to see all commands.";
   }
   if (lower.includes("help") || lower.includes("command"))
-    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
+    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — OKX DEX swap (multi-chain)\n🌉 /bridge — OKX cross-chain bridge\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
   if (lower.includes("thank"))
     return "You're welcome! Let me know if you need anything else. 🤝";
 
@@ -819,6 +819,8 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
       { command: "task", description: "Assign a task to your agent" },
       { command: "wallet", description: "Wallet info and management" },
       { command: "ask", description: "Ask anything about BUILD4" },
+      { command: "swap", description: "OKX DEX swap on any chain" },
+      { command: "bridge", description: "OKX cross-chain bridge" },
       { command: "aster", description: "Aster DEX futures & spot trading" },
       { command: "cancel", description: "Cancel current action" },
       { command: "help", description: "Show all commands" },
@@ -2475,6 +2477,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         "📊 /chaosstatus — Check chaos plan status\n" +
         "📈 /trade — Autonomous trading agent\n" +
         "📊 /tradestatus — Trading positions & PnL\n" +
+        "🔄 /swap — OKX DEX swap (multi-chain)\n" +
+        "🌉 /bridge — OKX cross-chain bridge\n" +
         "📈 /aster — Aster DEX futures & spot trading\n" +
         "🤖 /newagent — Create an AI agent\n" +
         "📋 /myagents — Your agents\n" +
@@ -2794,6 +2798,32 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       }
       msg += `\nTheir new buys are automatically tracked and boost token scores.`;
       await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+      return;
+    }
+
+    if (cmd === "swap") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for OKX DEX swap!"); return; }
+      pendingOKXSwap.set(chatId, { step: "chain" });
+      pendingOKXBridge.delete(chatId);
+      const chainButtons = OKX_CHAINS.map(c => [{ text: `${c.name} (${c.symbol})`, callback_data: `okxswap_chain:${c.id}` }]);
+      chainButtons.push([{ text: "« Back", callback_data: "action:menu" }]);
+      await bot.sendMessage(chatId,
+        "🔄 *OKX DEX Swap*\n\nSwap tokens on any chain using OKX DEX Aggregator.\nSupported: BNB Chain, XLayer, Ethereum, Base, Polygon, Arbitrum, Avalanche, Optimism & more.\n0.5% fee to BUILD4 treasury.\n\nSelect a chain:",
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } }
+      );
+      return;
+    }
+
+    if (cmd === "bridge") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for OKX Bridge!"); return; }
+      pendingOKXBridge.set(chatId, { step: "from_chain" });
+      pendingOKXSwap.delete(chatId);
+      const chainButtons = OKX_CHAINS.map(c => [{ text: `${c.name} (${c.symbol})`, callback_data: `okxbridge_from:${c.id}` }]);
+      chainButtons.push([{ text: "« Back", callback_data: "action:menu" }]);
+      await bot.sendMessage(chatId,
+        "🌉 *OKX Cross-Chain Bridge*\n\nBridge tokens between chains using OKX OnchainOS.\nSupported: BNB Chain ↔ XLayer ↔ Ethereum ↔ Base ↔ Polygon ↔ Arbitrum & more.\n0.5% fee to BUILD4 treasury.\n\nSelect source chain:",
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } }
+      );
       return;
     }
 
