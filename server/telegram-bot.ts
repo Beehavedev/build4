@@ -46,6 +46,9 @@ interface ChaosPlanState { step: "token_address" | "confirming"; tokenAddress?: 
 interface AsterConnectState { step: "api_key" | "api_secret"; apiKey?: string }
 interface AsterTradeState { step: "symbol" | "side" | "type" | "quantity" | "leverage" | "price" | "confirm"; symbol?: string; side?: "BUY" | "SELL"; orderType?: "MARKET" | "LIMIT"; quantity?: string; leverage?: number; price?: string; market: "futures" | "spot" }
 
+interface OKXSwapState { step: "chain" | "from_token" | "to_token" | "amount" | "confirm"; chainId?: string; chainName?: string; fromToken?: string; fromSymbol?: string; toToken?: string; toSymbol?: string; amount?: string; quoteData?: any }
+interface OKXBridgeState { step: "from_chain" | "to_chain" | "from_token" | "to_token" | "amount" | "receiver" | "confirm"; fromChainId?: string; fromChainName?: string; toChainId?: string; toChainName?: string; fromToken?: string; fromSymbol?: string; fromDecimals?: number; toToken?: string; toSymbol?: string; toDecimals?: number; amount?: string; receiver?: string; quoteData?: any }
+
 const pendingAgentCreation = new Map<number, AgentCreationState>();
 const pendingTask = new Map<number, TaskState>();
 const pendingTokenLaunch = new Map<number, TokenLaunchState>();
@@ -56,6 +59,95 @@ const pendingImportWallet = new Set<number>();
 const pendingChaosPlan = new Map<number, ChaosPlanState>();
 const pendingAsterConnect = new Map<number, AsterConnectState>();
 const pendingAsterTrade = new Map<number, AsterTradeState>();
+const pendingOKXSwap = new Map<number, OKXSwapState>();
+const pendingOKXBridge = new Map<number, OKXBridgeState>();
+
+const OKX_CHAINS = [
+  { id: "56", name: "BNB Chain", symbol: "BNB" },
+  { id: "1", name: "Ethereum", symbol: "ETH" },
+  { id: "196", name: "XLayer", symbol: "OKB" },
+  { id: "137", name: "Polygon", symbol: "POL" },
+  { id: "42161", name: "Arbitrum", symbol: "ETH" },
+  { id: "8453", name: "Base", symbol: "ETH" },
+  { id: "43114", name: "Avalanche", symbol: "AVAX" },
+  { id: "10", name: "Optimism", symbol: "ETH" },
+  { id: "324", name: "zkSync Era", symbol: "ETH" },
+  { id: "59144", name: "Linea", symbol: "ETH" },
+  { id: "534352", name: "Scroll", symbol: "ETH" },
+  { id: "250", name: "Fantom", symbol: "FTM" },
+  { id: "5000", name: "Mantle", symbol: "MNT" },
+  { id: "81457", name: "Blast", symbol: "ETH" },
+  { id: "100", name: "Gnosis", symbol: "xDAI" },
+  { id: "25", name: "Cronos", symbol: "CRO" },
+];
+
+const OKX_NATIVE_TOKEN = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+
+interface OKXToken { address: string; symbol: string; decimals: number }
+const OKX_POPULAR_TOKENS: Record<string, OKXToken[]> = {
+  "56": [
+    { address: OKX_NATIVE_TOKEN, symbol: "BNB", decimals: 18 },
+    { address: "0x55d398326f99059fF775485246999027B3197955", symbol: "USDT", decimals: 18 },
+    { address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", symbol: "USDC", decimals: 18 },
+    { address: "0x2170Ed0880ac9A755fd29B2688956BD959F933F8", symbol: "ETH", decimals: 18 },
+    { address: "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c", symbol: "BTCB", decimals: 18 },
+  ],
+  "1": [
+    { address: OKX_NATIVE_TOKEN, symbol: "ETH", decimals: 18 },
+    { address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", symbol: "USDT", decimals: 6 },
+    { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", symbol: "USDC", decimals: 6 },
+    { address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", symbol: "WBTC", decimals: 8 },
+  ],
+  "196": [
+    { address: OKX_NATIVE_TOKEN, symbol: "OKB", decimals: 18 },
+    { address: "0x1E4a5963aBFD975d8c9021ce480b42188849D41d", symbol: "USDT", decimals: 6 },
+    { address: "0x74b7F16337b8972027F6196A17a631aC6dE26d22", symbol: "USDC", decimals: 6 },
+  ],
+  "137": [
+    { address: OKX_NATIVE_TOKEN, symbol: "POL", decimals: 18 },
+    { address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F", symbol: "USDT", decimals: 6 },
+    { address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", symbol: "USDC", decimals: 6 },
+  ],
+  "42161": [
+    { address: OKX_NATIVE_TOKEN, symbol: "ETH", decimals: 18 },
+    { address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", symbol: "USDT", decimals: 6 },
+    { address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", symbol: "USDC", decimals: 6 },
+  ],
+  "8453": [
+    { address: OKX_NATIVE_TOKEN, symbol: "ETH", decimals: 18 },
+    { address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", symbol: "USDC", decimals: 6 },
+  ],
+  "43114": [
+    { address: OKX_NATIVE_TOKEN, symbol: "AVAX", decimals: 18 },
+    { address: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7", symbol: "USDT", decimals: 6 },
+    { address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", symbol: "USDC", decimals: 6 },
+  ],
+  "10": [
+    { address: OKX_NATIVE_TOKEN, symbol: "ETH", decimals: 18 },
+    { address: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58", symbol: "USDT", decimals: 6 },
+    { address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", symbol: "USDC", decimals: 6 },
+  ],
+};
+
+function getOKXTokensForChain(chainId: string): OKXToken[] {
+  return OKX_POPULAR_TOKENS[chainId] || [{ address: OKX_NATIVE_TOKEN, symbol: OKX_CHAINS.find(c => c.id === chainId)?.symbol || "Native", decimals: 18 }];
+}
+
+function parseHumanAmount(humanAmount: string, decimals: number): string {
+  if (!humanAmount || isNaN(Number(humanAmount))) return "0";
+  const parts = humanAmount.split(".");
+  const whole = parts[0] || "0";
+  let frac = parts[1] || "";
+  frac = frac.padEnd(decimals, "0").slice(0, decimals);
+  const raw = whole + frac;
+  return raw.replace(/^0+/, "") || "0";
+}
+
+function formatTokenAmount(raw: string, decimals: number): string {
+  const num = Number(raw) / Math.pow(10, decimals);
+  if (num < 0.000001) return raw;
+  return num.toLocaleString(undefined, { maximumFractionDigits: 6 });
+}
 
 const BUILD4_KNOWLEDGE = `
 BUILD4 is decentralized infrastructure for autonomous AI agents — the economic layer where AI agents operate as independent economic actors on-chain. Live on BNB Chain, Base, and XLayer.
@@ -575,6 +667,7 @@ function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.I
     inline_keyboard: [
       [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
       [{ text: "💰 Buy Token", callback_data: "action:buy" }, { text: "💸 Sell Token", callback_data: "action:sell" }],
+      [{ text: "🔄 OKX Swap", callback_data: "action:okxswap" }, { text: "🌉 OKX Bridge", callback_data: "action:okxbridge" }],
       [{ text: "💎 Make Me Rich", callback_data: "action:trade" }, { text: "📈 Aster DEX", callback_data: "action:aster" }],
       [{ text: "🤖 Create Agent", callback_data: "action:newagent" }, { text: "📋 My Agents", callback_data: "action:myagents" }],
       [{ text: "📝 New Task", callback_data: "action:task" }, { text: "📊 My Tasks", callback_data: "action:mytasks" }],
@@ -1111,6 +1204,177 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     }
     pendingFourMemeSell.set(chatId, { step: "token" });
     await bot.sendMessage(chatId, "Enter the token contract address you want to sell (0x...):");
+    return;
+  }
+
+  if (data === "action:okxswap") {
+    pendingOKXSwap.set(chatId, { step: "chain" });
+    pendingOKXBridge.delete(chatId);
+    const chainButtons = OKX_CHAINS.map(c => [{ text: `${c.name} (${c.symbol})`, callback_data: `okxswap_chain:${c.id}` }]);
+    chainButtons.push([{ text: "« Back", callback_data: "action:menu" }]);
+    await bot.sendMessage(chatId,
+      "🔄 *OKX DEX Swap*\n\nSwap tokens on any chain using OKX DEX Aggregator.\n0.5% fee to BUILD4 treasury.\n\nSelect a chain:",
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } }
+    );
+    return;
+  }
+
+  if (data.startsWith("okxswap_chain:")) {
+    const chainId = data.replace("okxswap_chain:", "");
+    const chain = OKX_CHAINS.find(c => c.id === chainId);
+    if (!chain) return;
+    const tokens = getOKXTokensForChain(chainId);
+    pendingOKXSwap.set(chatId, { step: "from_token", chainId, chainName: chain.name });
+    const tokenButtons = tokens.map(t => [{ text: t.symbol, callback_data: `okxswap_from:${t.address}:${t.symbol}` }]);
+    tokenButtons.push([{ text: "📝 Custom Address", callback_data: "okxswap_from_custom" }]);
+    tokenButtons.push([{ text: "« Back", callback_data: "action:okxswap" }]);
+    await bot.sendMessage(chatId,
+      `🔄 *Swap on ${chain.name}*\n\nSelect token to sell:`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: tokenButtons } }
+    );
+    return;
+  }
+
+  if (data.startsWith("okxswap_from:")) {
+    const parts = data.replace("okxswap_from:", "").split(":");
+    const [address, symbol] = parts;
+    const state = pendingOKXSwap.get(chatId);
+    if (!state) return;
+    state.fromToken = address;
+    state.fromSymbol = symbol;
+    state.step = "to_token";
+    const tokens = getOKXTokensForChain(state.chainId!).filter(t => t.address !== address);
+    const tokenButtons = tokens.map(t => [{ text: t.symbol, callback_data: `okxswap_to:${t.address}:${t.symbol}` }]);
+    tokenButtons.push([{ text: "📝 Custom Address", callback_data: "okxswap_to_custom" }]);
+    tokenButtons.push([{ text: "« Back", callback_data: `okxswap_chain:${state.chainId}` }]);
+    await bot.sendMessage(chatId,
+      `🔄 *Swap ${symbol} on ${state.chainName}*\n\nSelect token to buy:`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: tokenButtons } }
+    );
+    return;
+  }
+
+  if (data === "okxswap_from_custom") {
+    const state = pendingOKXSwap.get(chatId);
+    if (!state) return;
+    state.step = "from_token";
+    await bot.sendMessage(chatId, "Enter the contract address of the token you want to sell (0x...):");
+    return;
+  }
+
+  if (data === "okxswap_to_custom") {
+    const state = pendingOKXSwap.get(chatId);
+    if (!state) return;
+    state.step = "to_token";
+    await bot.sendMessage(chatId, "Enter the contract address of the token you want to buy (0x...):");
+    return;
+  }
+
+  if (data.startsWith("okxswap_to:")) {
+    const parts = data.replace("okxswap_to:", "").split(":");
+    const [address, symbol] = parts;
+    const state = pendingOKXSwap.get(chatId);
+    if (!state) return;
+    state.toToken = address;
+    state.toSymbol = symbol;
+    state.step = "amount";
+    await bot.sendMessage(chatId,
+      `🔄 *Swap on ${state.chainName}*\n\n` +
+      `From: ${state.fromSymbol}\nTo: ${symbol}\n\n` +
+      `Enter the amount of ${state.fromSymbol} to swap:`,
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  if (data === "action:okxbridge") {
+    pendingOKXBridge.set(chatId, { step: "from_chain" });
+    pendingOKXSwap.delete(chatId);
+    const chainButtons = OKX_CHAINS.map(c => [{ text: `${c.name} (${c.symbol})`, callback_data: `okxbridge_from:${c.id}` }]);
+    chainButtons.push([{ text: "« Back", callback_data: "action:menu" }]);
+    await bot.sendMessage(chatId,
+      "🌉 *OKX Cross-Chain Bridge*\n\nBridge tokens between chains. 0.5% fee to BUILD4 treasury.\n\nSelect source chain:",
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } }
+    );
+    return;
+  }
+
+  if (data.startsWith("okxbridge_from:")) {
+    const chainId = data.replace("okxbridge_from:", "");
+    const chain = OKX_CHAINS.find(c => c.id === chainId);
+    if (!chain) return;
+    pendingOKXBridge.set(chatId, { step: "to_chain", fromChainId: chainId, fromChainName: chain.name });
+    const destChains = OKX_CHAINS.filter(c => c.id !== chainId);
+    const chainButtons = destChains.map(c => [{ text: `${c.name} (${c.symbol})`, callback_data: `okxbridge_to:${c.id}` }]);
+    chainButtons.push([{ text: "« Back", callback_data: "action:okxbridge" }]);
+    await bot.sendMessage(chatId,
+      `🌉 *Bridge from ${chain.name}*\n\nSelect destination chain:`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } }
+    );
+    return;
+  }
+
+  if (data.startsWith("okxbridge_to:")) {
+    const chainId = data.replace("okxbridge_to:", "");
+    const chain = OKX_CHAINS.find(c => c.id === chainId);
+    const state = pendingOKXBridge.get(chatId);
+    if (!state || !chain) return;
+    state.toChainId = chainId;
+    state.toChainName = chain.name;
+    state.step = "from_token";
+    const tokens = getOKXTokensForChain(state.fromChainId!);
+    const tokenButtons = tokens.map(t => [{ text: t.symbol, callback_data: `okxbridge_ftoken:${t.address}:${t.symbol}:${t.decimals}` }]);
+    tokenButtons.push([{ text: "« Back", callback_data: `okxbridge_from:${state.fromChainId}` }]);
+    await bot.sendMessage(chatId,
+      `🌉 *${state.fromChainName} → ${chain.name}*\n\nSelect token to bridge:`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: tokenButtons } }
+    );
+    return;
+  }
+
+  if (data.startsWith("okxbridge_ftoken:")) {
+    const parts = data.replace("okxbridge_ftoken:", "").split(":");
+    const [address, symbol, decimalsStr] = parts;
+    const state = pendingOKXBridge.get(chatId);
+    if (!state) return;
+    state.fromToken = address;
+    state.fromSymbol = symbol;
+    state.fromDecimals = parseInt(decimalsStr);
+    state.step = "to_token";
+    const tokens = getOKXTokensForChain(state.toChainId!);
+    const tokenButtons = tokens.map(t => [{ text: t.symbol, callback_data: `okxbridge_ttoken:${t.address}:${t.symbol}:${t.decimals}` }]);
+    tokenButtons.push([{ text: "« Back", callback_data: `okxbridge_to:${state.toChainId}` }]);
+    await bot.sendMessage(chatId,
+      `🌉 *${state.fromChainName} → ${state.toChainName}*\nToken: ${symbol}\n\nSelect token to receive:`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: tokenButtons } }
+    );
+    return;
+  }
+
+  if (data.startsWith("okxbridge_ttoken:")) {
+    const parts = data.replace("okxbridge_ttoken:", "").split(":");
+    const [address, symbol, decimalsStr] = parts;
+    const state = pendingOKXBridge.get(chatId);
+    if (!state) return;
+    state.toToken = address;
+    state.toSymbol = symbol;
+    state.toDecimals = parseInt(decimalsStr);
+    state.step = "amount";
+    await bot.sendMessage(chatId,
+      `🌉 *${state.fromChainName} → ${state.toChainName}*\n` +
+      `Send: ${state.fromSymbol}\nReceive: ${symbol}\n\n` +
+      `Enter the amount of ${state.fromSymbol} to bridge:`,
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  if (data.startsWith("okxbridge_usewallet:")) {
+    const addr = data.replace("okxbridge_usewallet:", "");
+    const state = pendingOKXBridge.get(chatId);
+    if (!state) return;
+    state.receiver = addr;
+    await executeBridgeQuote(chatId, state);
     return;
   }
 
@@ -2085,6 +2349,14 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     await handleAsterTradeFlow(chatId, text);
     return;
   }
+  if (pendingOKXSwap.has(chatId) && !text.startsWith("/")) {
+    await handleOKXSwapFlow(chatId, text);
+    return;
+  }
+  if (pendingOKXBridge.has(chatId) && !text.startsWith("/")) {
+    await handleOKXBridgeFlow(chatId, text);
+    return;
+  }
 
   const commandMatch = text.match(/^\/(\w+)(?:@\S+)?\s*(.*)/s);
   if (commandMatch) {
@@ -2100,6 +2372,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     pendingImportWallet.delete(chatId);
     pendingAsterConnect.delete(chatId);
     pendingAsterTrade.delete(chatId);
+    pendingOKXSwap.delete(chatId);
+    pendingOKXBridge.delete(chatId);
 
     if (cmd === "start" && !isGroup) {
       let wallet = getLinkedWallet(chatId);
@@ -4847,4 +5121,211 @@ async function handleAsterLeverageCallback(chatId: number, leverage: number): Pr
 
   state.leverage = leverage;
   showAsterTradeConfirmation(chatId, state);
+}
+
+async function handleOKXSwapFlow(chatId: number, text: string): Promise<void> {
+  if (!bot) return;
+  const state = pendingOKXSwap.get(chatId);
+  if (!state) return;
+
+  if (state.step === "from_token") {
+    if (!text.startsWith("0x") || text.length < 42) {
+      await bot.sendMessage(chatId, "Invalid address. Enter a valid token contract address (0x...):");
+      return;
+    }
+    state.fromToken = text.trim();
+    state.fromSymbol = text.trim().substring(0, 8) + "...";
+    state.step = "to_token";
+    const tokens = getOKXTokensForChain(state.chainId!);
+    const tokenButtons = tokens.map(t => [{ text: t.symbol, callback_data: `okxswap_to:${t.address}:${t.symbol}` }]);
+    tokenButtons.push([{ text: "📝 Custom Address", callback_data: "okxswap_to_custom" }]);
+    await bot.sendMessage(chatId,
+      `Token to sell: ${state.fromSymbol}\n\nSelect token to buy:`,
+      { reply_markup: { inline_keyboard: tokenButtons } }
+    );
+    return;
+  }
+
+  if (state.step === "to_token") {
+    if (!text.startsWith("0x") || text.length < 42) {
+      await bot.sendMessage(chatId, "Invalid address. Enter a valid token contract address (0x...):");
+      return;
+    }
+    state.toToken = text.trim();
+    state.toSymbol = text.trim().substring(0, 8) + "...";
+    state.step = "amount";
+    await bot.sendMessage(chatId, `Enter the amount of ${state.fromSymbol} to swap:`);
+    return;
+  }
+
+  if (state.step === "amount") {
+    const num = Number(text);
+    if (isNaN(num) || num <= 0) {
+      await bot.sendMessage(chatId, "Invalid amount. Enter a positive number:");
+      return;
+    }
+    state.amount = text.trim();
+    state.step = "confirm";
+
+    const fromTokenInfo = getOKXTokensForChain(state.chainId!).find(t => t.address === state.fromToken);
+    const decimals = fromTokenInfo?.decimals || 18;
+    const rawAmount = parseHumanAmount(state.amount, decimals);
+
+    await bot.sendMessage(chatId, "Getting quote from OKX DEX Aggregator...");
+    sendTyping(chatId);
+
+    try {
+      const { getSwapQuote } = await import("./okx-onchainos");
+      const quote = await getSwapQuote({
+        chainId: state.chainId!,
+        fromTokenAddress: state.fromToken!,
+        toTokenAddress: state.toToken!,
+        amount: rawAmount,
+        slippage: "1",
+      });
+
+      state.quoteData = quote;
+      const toTokenInfo = getOKXTokensForChain(state.chainId!).find(t => t.address === state.toToken);
+      const toDecimals = toTokenInfo?.decimals || 18;
+      const receiveAmount = quote?.data?.[0]?.toTokenAmount
+        ? formatTokenAmount(quote.data[0].toTokenAmount, toDecimals)
+        : "—";
+
+      await bot.sendMessage(chatId,
+        `🔄 *OKX Swap Quote*\n\n` +
+        `Chain: ${state.chainName}\n` +
+        `Sell: ${state.amount} ${state.fromSymbol}\n` +
+        `Buy: ~${receiveAmount} ${state.toSymbol}\n` +
+        `Fee: 0.5% to BUILD4 treasury\n\n` +
+        `_To execute this swap, connect your wallet on the BUILD4 dashboard._`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 New Swap", callback_data: "action:okxswap" }],
+              [{ text: "« Menu", callback_data: "action:menu" }],
+            ]
+          }
+        }
+      );
+      pendingOKXSwap.delete(chatId);
+    } catch (err: any) {
+      await bot.sendMessage(chatId,
+        `Failed to get quote: ${err.message}\n\nTry again or go back to menu.`,
+        { reply_markup: { inline_keyboard: [[{ text: "🔄 Try Again", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+      pendingOKXSwap.delete(chatId);
+    }
+    return;
+  }
+}
+
+async function handleOKXBridgeFlow(chatId: number, text: string): Promise<void> {
+  if (!bot) return;
+  const state = pendingOKXBridge.get(chatId);
+  if (!state) return;
+
+  if (state.step === "amount") {
+    const num = Number(text);
+    if (isNaN(num) || num <= 0) {
+      await bot.sendMessage(chatId, "Invalid amount. Enter a positive number:");
+      return;
+    }
+    state.amount = text.trim();
+    state.step = "receiver";
+
+    const wallets = getUserWallets(chatId);
+    const activeIdx = getActiveWalletIndex(chatId);
+    const currentWallet = wallets[activeIdx];
+
+    if (currentWallet) {
+      const shortAddr = currentWallet.substring(0, 8) + "..." + currentWallet.slice(-6);
+      await bot.sendMessage(chatId,
+        `Enter the wallet address to receive tokens on ${state.toChainName}:\n\n` +
+        `Or tap below to use your current wallet:`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: `Use ${shortAddr}`, callback_data: `okxbridge_usewallet:${currentWallet}` }],
+            ]
+          }
+        }
+      );
+    } else {
+      await bot.sendMessage(chatId, `Enter the wallet address to receive tokens on ${state.toChainName} (0x...):`);
+    }
+    return;
+  }
+
+  if (state.step === "receiver") {
+    const addr = text.trim();
+    if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) {
+      await bot.sendMessage(chatId, "Invalid wallet address. Enter a valid 0x address:");
+      return;
+    }
+    state.receiver = addr;
+    await executeBridgeQuote(chatId, state);
+    return;
+  }
+}
+
+async function executeBridgeQuote(chatId: number, state: OKXBridgeState): Promise<void> {
+  if (!bot) return;
+
+  const rawAmount = parseHumanAmount(state.amount!, state.fromDecimals || 18);
+
+  await bot.sendMessage(chatId, "Getting bridge quote from OKX...");
+  sendTyping(chatId);
+
+  try {
+    const { getCrossChainQuote } = await import("./okx-onchainos");
+    const quote = await getCrossChainQuote({
+      fromChainId: state.fromChainId!,
+      toChainId: state.toChainId!,
+      fromTokenAddress: state.fromToken!,
+      toTokenAddress: state.toToken!,
+      amount: rawAmount,
+      slippage: "1",
+    });
+
+    state.quoteData = quote;
+    const receiveAmount = quote?.data?.[0]?.toTokenAmount
+      ? formatTokenAmount(quote.data[0].toTokenAmount, state.toDecimals || 18)
+      : "—";
+
+    const estTime = quote?.data?.[0]?.estimatedTime;
+    const timeStr = estTime
+      ? (Number(estTime) < 60 ? `${estTime}s` : `~${Math.ceil(Number(estTime) / 60)} min`)
+      : "—";
+    const bridgeName = quote?.data?.[0]?.bridgeName || "—";
+    const shortReceiver = state.receiver!.substring(0, 8) + "..." + state.receiver!.slice(-6);
+
+    await bot.sendMessage(chatId,
+      `🌉 *OKX Bridge Quote*\n\n` +
+      `Route: ${state.fromChainName} → ${state.toChainName}\n` +
+      `Send: ${state.amount} ${state.fromSymbol}\n` +
+      `Receive: ~${receiveAmount} ${state.toSymbol}\n` +
+      `Via: ${bridgeName}\n` +
+      `Est. Time: ${timeStr}\n` +
+      `Deliver To: ${shortReceiver}\n` +
+      `Fee: 0.5% to BUILD4 treasury\n\n` +
+      `_To execute this bridge, connect your wallet on the BUILD4 dashboard._`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🌉 New Bridge", callback_data: "action:okxbridge" }],
+            [{ text: "« Menu", callback_data: "action:menu" }],
+          ]
+        }
+      }
+    );
+    pendingOKXBridge.delete(chatId);
+  } catch (err: any) {
+    await bot.sendMessage(chatId,
+      `Failed to get bridge quote: ${err.message}\n\nTry again or go back to menu.`,
+      { reply_markup: { inline_keyboard: [[{ text: "🌉 Try Again", callback_data: "action:okxbridge" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+    );
+    pendingOKXBridge.delete(chatId);
+  }
 }
