@@ -608,8 +608,8 @@ function MarketPanel({ isActive }: { isActive: boolean }) {
 }
 
 function BridgePanel({ isActive, address }: { isActive: boolean; address: string | null }) {
-  const [fromChain, setFromChain] = useState("56");
-  const [toChain, setToChain] = useState("196");
+  const [fromChain, setFromChain] = useState("196");
+  const [toChain, setToChain] = useState("56");
   const [fromToken, setFromToken] = useState(NATIVE_TOKEN);
   const [toToken, setToToken] = useState(NATIVE_TOKEN);
   const [amount, setAmount] = useState("");
@@ -617,6 +617,11 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [bridgeQuote, setBridgeQuote] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const { data: bridgeChains } = useQuery<any>({
+    queryKey: ["/api/okx/bridge/chains"],
+    staleTime: 60000,
+  });
 
   const fromTokens = getTokensForChain(fromChain);
   const toTokens = getTokensForChain(toChain);
@@ -626,16 +631,30 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
 
   const handleFromChainChange = (newChain: string) => {
     setFromChain(newChain);
+    if (newChain === toChain) {
+      const alt = CHAIN_OPTIONS.find(c => c.id !== newChain);
+      if (alt) {
+        setToChain(alt.id);
+        const tokens = getTokensForChain(alt.id);
+        setToToken(tokens[0].address);
+      }
+    }
     const tokens = getTokensForChain(newChain);
     setFromToken(tokens[0].address);
     setBridgeQuote(null);
+    setError(null);
   };
 
   const handleToChainChange = (newChain: string) => {
+    if (newChain === fromChain) {
+      setError("Source and destination chains must be different");
+      return;
+    }
     setToChain(newChain);
     const tokens = getTokensForChain(newChain);
     setToToken(tokens[0].address);
     setBridgeQuote(null);
+    setError(null);
   };
 
   const swapChains = () => {
@@ -648,6 +667,7 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
     setFromToken(newFromTokens[0].address);
     setToToken(newToTokens[0].address);
     setBridgeQuote(null);
+    setError(null);
   };
 
   const parseHumanAmount = (humanAmount: string, decimals: number): string => {
@@ -662,6 +682,10 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
 
   const handleBridgeQuote = async () => {
     if (!amount) return;
+    if (fromChain === toChain) {
+      setError("Source and destination chains must be different. Please select a different destination chain.");
+      return;
+    }
     setQuoteLoading(true);
     setError(null);
     try {
@@ -672,7 +696,7 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
         fromToken,
         toToken,
         amount: rawAmount,
-        slippage: "1",
+        slippage: "0.01",
       });
       const res = await fetch(`/api/okx/bridge/quote?${params}`);
       const data = await res.json();
@@ -695,6 +719,8 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
     return num.toLocaleString(undefined, { maximumFractionDigits: 6 });
   };
 
+  const bridgeServiceDown = bridgeChains?.msg?.includes("temporarily unavailable");
+
   return (
     <div className="bg-card border rounded-lg p-6" data-testid="panel-bridge">
       <div className="flex items-center justify-between mb-4">
@@ -703,10 +729,21 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
           <h2 className="font-mono text-lg font-bold">Cross-Chain Bridge</h2>
         </div>
         <div className="flex items-center gap-2">
+          {bridgeServiceDown && (
+            <Badge variant="destructive" className="text-[10px]" data-testid="badge-bridge-status">Service Degraded</Badge>
+          )}
           <Badge variant="outline" className="text-[10px]">0.5% fee</Badge>
           <Badge variant="outline" className="text-[10px]">{CHAIN_OPTIONS.length} Chains</Badge>
         </div>
       </div>
+      {bridgeServiceDown && (
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-md p-3 mb-4" data-testid="alert-bridge-unavailable">
+          <p className="font-mono text-xs text-yellow-600 dark:text-yellow-400">
+            <Shield className="w-3 h-3 inline mr-1" />
+            OKX cross-chain bridge API is temporarily unavailable. Bridge quotes may fail. You can still use DEX swap on a single chain.
+          </p>
+        </div>
+      )}
       <p className="text-xs text-muted-foreground mb-4">
         Bridge assets between BNB Chain, XLayer, and 60+ chains. Aggregates 18 bridge protocols for best rates.
       </p>
@@ -767,7 +804,7 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
               className="w-1/2 bg-background border rounded-md px-3 py-2.5 font-mono text-sm"
               data-testid="select-bridge-to-chain"
             >
-              {CHAIN_OPTIONS.map((c) => (
+              {CHAIN_OPTIONS.filter((c) => c.id !== fromChain).map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>

@@ -3735,6 +3735,7 @@ ${urls}
       if (!isOKXConfigured()) return res.status(503).json({ error: "OnchainOS service is currently unavailable. Please try again later." });
       const { fromChainId, toChainId, fromToken, toToken, amount, slippage } = req.query as Record<string, string>;
       if (!fromChainId || !toChainId || !fromToken || !toToken || !amount) return res.status(400).json({ error: "Missing required params" });
+      if (fromChainId === toChainId) return res.status(400).json({ error: "Source and destination chains must be different. Use DEX swap for same-chain trades." });
       const data = await getCrossChainQuote({ fromChainId, toChainId, fromTokenAddress: fromToken, toTokenAddress: toToken, amount, slippage });
       res.json(data);
     } catch (err: any) {
@@ -3747,6 +3748,7 @@ ${urls}
       if (!isOKXConfigured()) return res.status(503).json({ error: "OnchainOS service is currently unavailable. Please try again later." });
       const { fromChainId, toChainId, fromToken, toToken, amount, userWalletAddress, slippage } = req.query as Record<string, string>;
       if (!fromChainId || !toChainId || !fromToken || !toToken || !amount || !userWalletAddress) return res.status(400).json({ error: "Missing required params" });
+      if (fromChainId === toChainId) return res.status(400).json({ error: "Source and destination chains must be different. Use DEX swap for same-chain trades." });
       const data = await getCrossChainSwap({ fromChainId, toChainId, fromTokenAddress: fromToken, toTokenAddress: toToken, amount, userWalletAddress, slippage });
       res.json(data);
     } catch (err: any) {

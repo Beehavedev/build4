@@ -118,7 +118,7 @@ async function okxRequest(
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`OKX API error ${response.status}: ${text}`);
+    throw new Error(`OKX API error ${response.status}: ${text.slice(0, 200)}`);
   }
 
   const result = await response.json();
@@ -269,7 +269,7 @@ export async function getCrossChainQuote(params: {
       fromTokenAddress: params.fromTokenAddress,
       toTokenAddress: params.toTokenAddress,
       amount: params.amount,
-      slippage: params.slippage || "1",
+      slippage: params.slippage || "0.01",
       feePercent: BUILD4_FEE_PERCENT,
     });
   } catch (err: any) {
@@ -297,7 +297,7 @@ export async function getCrossChainSwap(params: {
       toTokenAddress: params.toTokenAddress,
       amount: params.amount,
       userWalletAddress: params.userWalletAddress,
-      slippage: params.slippage || "1",
+      slippage: params.slippage || "0.01",
       feePercent: BUILD4_FEE_PERCENT,
       referrerAddress: BUILD4_TREASURY,
     });
