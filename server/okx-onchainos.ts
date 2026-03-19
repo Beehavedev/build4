@@ -341,9 +341,9 @@ export async function getWalletTokenBalances(params: {
   address: string;
   chainId: string;
 }): Promise<any> {
-  return okxRequest("GET", "/wallet/asset/all-token-balances-by-address", {
+  return okxRequest("POST", "/wallet/asset/all-token-balances-by-address", undefined, {
     address: params.address,
-    chains: params.chainId,
+    chains: [params.chainId],
   });
 }
 
@@ -352,7 +352,7 @@ export async function getWalletTransactionHistory(params: {
   chainId: string;
   limit?: string;
 }): Promise<any> {
-  return okxRequest("GET", "/wallet/post-transaction/transactions-by-address", {
+  return okxRequest("POST", "/wallet/post-transaction/transactions-by-address", undefined, {
     address: params.address,
     chainIndex: params.chainId,
     limit: params.limit || "20",
