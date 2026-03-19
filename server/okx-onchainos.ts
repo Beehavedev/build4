@@ -149,8 +149,9 @@ export async function getSwapQuote(params: {
     fromTokenAddress: params.fromTokenAddress,
     toTokenAddress: params.toTokenAddress,
     amount: params.amount,
-    slippage: params.slippage || "0.5",
+    slippagePercent: params.slippage || "0.5",
     feePercent: BUILD4_FEE_PERCENT,
+    toTokenReferrerWalletAddress: BUILD4_TREASURY,
   };
 
   return okxRequest("GET", "/dex/aggregator/quote", queryParams);
@@ -169,10 +170,10 @@ export async function getSwapData(params: {
     fromTokenAddress: params.fromTokenAddress,
     toTokenAddress: params.toTokenAddress,
     amount: params.amount,
-    slippage: params.slippage || "0.5",
+    slippagePercent: params.slippage || "0.5",
     userWalletAddress: params.userWalletAddress,
     feePercent: BUILD4_FEE_PERCENT,
-    referrerAddress: BUILD4_TREASURY,
+    toTokenReferrerWalletAddress: BUILD4_TREASURY,
   };
 
   return okxRequest("GET", "/dex/aggregator/swap", queryParams);
@@ -261,15 +262,22 @@ export async function getCrossChainQuote(params: {
   amount: string;
   slippage?: string;
 }): Promise<any> {
-  return okxRequest("GET", "/dex/cross-chain/quote", {
-    fromChainId: params.fromChainId,
-    toChainId: params.toChainId,
-    fromTokenAddress: params.fromTokenAddress,
-    toTokenAddress: params.toTokenAddress,
-    amount: params.amount,
-    slippage: params.slippage || "1",
-    feePercent: BUILD4_FEE_PERCENT,
-  });
+  try {
+    return await okxRequest("GET", "/dex/cross-chain/quote", {
+      fromChainId: params.fromChainId,
+      toChainId: params.toChainId,
+      fromTokenAddress: params.fromTokenAddress,
+      toTokenAddress: params.toTokenAddress,
+      amount: params.amount,
+      slippage: params.slippage || "1",
+      feePercent: BUILD4_FEE_PERCENT,
+    });
+  } catch (err: any) {
+    if (err.message?.includes("50050")) {
+      throw new Error("Cross-chain bridge is temporarily unavailable on OKX. Please try again later or use the DEX swap on a single chain.");
+    }
+    throw err;
+  }
 }
 
 export async function getCrossChainSwap(params: {
@@ -281,17 +289,24 @@ export async function getCrossChainSwap(params: {
   userWalletAddress: string;
   slippage?: string;
 }): Promise<any> {
-  return okxRequest("GET", "/dex/cross-chain/build-tx", {
-    fromChainId: params.fromChainId,
-    toChainId: params.toChainId,
-    fromTokenAddress: params.fromTokenAddress,
-    toTokenAddress: params.toTokenAddress,
-    amount: params.amount,
-    userWalletAddress: params.userWalletAddress,
-    slippage: params.slippage || "1",
-    feePercent: BUILD4_FEE_PERCENT,
-    referrerAddress: BUILD4_TREASURY,
-  });
+  try {
+    return await okxRequest("GET", "/dex/cross-chain/build-tx", {
+      fromChainId: params.fromChainId,
+      toChainId: params.toChainId,
+      fromTokenAddress: params.fromTokenAddress,
+      toTokenAddress: params.toTokenAddress,
+      amount: params.amount,
+      userWalletAddress: params.userWalletAddress,
+      slippage: params.slippage || "1",
+      feePercent: BUILD4_FEE_PERCENT,
+      referrerAddress: BUILD4_TREASURY,
+    });
+  } catch (err: any) {
+    if (err.message?.includes("50050")) {
+      throw new Error("Cross-chain bridge is temporarily unavailable on OKX. Please try again later or use the DEX swap on a single chain.");
+    }
+    throw err;
+  }
 }
 
 export async function getCrossChainStatus(params: {
@@ -305,16 +320,30 @@ export async function getCrossChainStatus(params: {
 }
 
 export async function getSupportedBridgeChains(): Promise<any> {
-  return okxRequest("GET", "/dex/cross-chain/supported/chain");
+  try {
+    return await okxRequest("GET", "/dex/cross-chain/supported/chain");
+  } catch (err: any) {
+    if (err.message?.includes("50050")) {
+      return {
+        code: "0",
+        data: Object.entries(SUPPORTED_CHAIN_IDS).map(([id, name]) => ({
+          chainId: id,
+          chainName: name,
+        })),
+        msg: "Using local chain list (OKX cross-chain API temporarily unavailable)",
+      };
+    }
+    throw err;
+  }
 }
 
 export async function getWalletTokenBalances(params: {
   address: string;
   chainId: string;
 }): Promise<any> {
-  return okxRequest("GET", "/wallet/asset/token-balances", {
+  return okxRequest("GET", "/wallet/asset/all-token-balances-by-address", {
     address: params.address,
-    chainIndex: params.chainId,
+    chains: params.chainId,
   });
 }
 
@@ -323,7 +352,7 @@ export async function getWalletTransactionHistory(params: {
   chainId: string;
   limit?: string;
 }): Promise<any> {
-  return okxRequest("GET", "/wallet/transaction/get-transactions", {
+  return okxRequest("GET", "/wallet/post-transaction/transactions-by-address", {
     address: params.address,
     chainIndex: params.chainId,
     limit: params.limit || "20",
