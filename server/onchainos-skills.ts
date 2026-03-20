@@ -1,6 +1,17 @@
 import { execFile } from "child_process";
 import path from "path";
 import { log } from "./index";
+import {
+  getSmartMoneySignalsAPI,
+  getLeaderboardAPI,
+  securityTokenScanAPI,
+  getGasPriceAPI,
+  getTrendingTokensAPI,
+  getHotTokensAPI,
+  getMemeTokensAPI,
+  getTokenPriceAPI,
+  isOKXConfigured,
+} from "./okx-onchainos";
 
 const ONCHAINOS_BIN = path.join(process.env.HOME || "/home/runner", ".local/bin/onchainos");
 
@@ -262,17 +273,50 @@ export async function executeTokenSearch(query: string, chains?: string): Promis
   return runOnchainOSCommand("okx_dex_token", "token search", params);
 }
 
+async function cliAvailable(): Promise<boolean> {
+  try {
+    const result = await execOnchainos(["--version"], 3000);
+    return result.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
 export async function executeSecurityScan(address: string, chain: string): Promise<any> {
+  if (isOKXConfigured()) {
+    try {
+      const result = await securityTokenScanAPI(address, chain);
+      return { success: true, data: result };
+    } catch (err: any) {
+      log(`[OnchainOS] API security scan failed: ${err.message}`, "onchainos");
+    }
+  }
   return runOnchainOSCommand("okx_security", "security token-scan", { address, chain });
 }
 
 export async function getSmartMoneySignals(chain: string, walletType?: string): Promise<any> {
+  if (isOKXConfigured()) {
+    try {
+      const result = await getSmartMoneySignalsAPI(chain, walletType);
+      return { success: true, data: result };
+    } catch (err: any) {
+      log(`[OnchainOS] API signals failed: ${err.message}`, "onchainos");
+    }
+  }
   const params: Record<string, string> = { chain };
   if (walletType) params["wallet-type"] = walletType;
   return runOnchainOSCommand("okx_dex_signal", "signal list", params);
 }
 
 export async function getLeaderboard(chain: string, timeFrame?: string, sortBy?: string): Promise<any> {
+  if (isOKXConfigured()) {
+    try {
+      const result = await getLeaderboardAPI(chain, timeFrame, sortBy);
+      return { success: true, data: result };
+    } catch (err: any) {
+      log(`[OnchainOS] API leaderboard failed: ${err.message}`, "onchainos");
+    }
+  }
   const params: Record<string, string> = { chain };
   if (timeFrame) params["time-frame"] = timeFrame;
   if (sortBy) params["sort-by"] = sortBy;
@@ -280,10 +324,26 @@ export async function getLeaderboard(chain: string, timeFrame?: string, sortBy?:
 }
 
 export async function getTokenPrice(address: string, chain: string): Promise<any> {
+  if (isOKXConfigured()) {
+    try {
+      const result = await getTokenPriceAPI(address, chain);
+      return { success: true, data: result };
+    } catch (err: any) {
+      log(`[OnchainOS] API token price failed: ${err.message}`, "onchainos");
+    }
+  }
   return runOnchainOSCommand("okx_dex_market", "market price", { address, chain });
 }
 
 export async function getGasPrice(chain: string): Promise<any> {
+  if (isOKXConfigured()) {
+    try {
+      const result = await getGasPriceAPI(chain);
+      return { success: true, data: result };
+    } catch (err: any) {
+      log(`[OnchainOS] API gas price failed: ${err.message}`, "onchainos");
+    }
+  }
   return runOnchainOSCommand("okx_onchain_gateway", "gateway gas", { chain });
 }
 
@@ -292,6 +352,14 @@ export async function getPortfolioValue(address: string, chains: string): Promis
 }
 
 export async function getTrendingTokens(chains: string, sortBy?: string, timeFrame?: string): Promise<any> {
+  if (isOKXConfigured()) {
+    try {
+      const result = await getTrendingTokensAPI(chains);
+      return { success: true, data: result };
+    } catch (err: any) {
+      log(`[OnchainOS] API trending failed: ${err.message}`, "onchainos");
+    }
+  }
   const params: Record<string, string> = { chains };
   if (sortBy) params["sort-by"] = sortBy;
   if (timeFrame) params["time-frame"] = timeFrame;
@@ -299,12 +367,28 @@ export async function getTrendingTokens(chains: string, sortBy?: string, timeFra
 }
 
 export async function getMemeTokens(chain: string, stage?: string): Promise<any> {
+  if (isOKXConfigured()) {
+    try {
+      const result = await getMemeTokensAPI(chain, stage);
+      return { success: true, data: result };
+    } catch (err: any) {
+      log(`[OnchainOS] API meme tokens failed: ${err.message}`, "onchainos");
+    }
+  }
   const params: Record<string, string> = { chain };
   if (stage) params.stage = stage;
   return runOnchainOSCommand("okx_dex_trenches", "memepump tokens", params);
 }
 
 export async function getHotTokens(rankingType: string, chain?: string): Promise<any> {
+  if (isOKXConfigured()) {
+    try {
+      const result = await getHotTokensAPI(rankingType, chain);
+      return { success: true, data: result };
+    } catch (err: any) {
+      log(`[OnchainOS] API hot tokens failed: ${err.message}`, "onchainos");
+    }
+  }
   const params: Record<string, string> = { "ranking-type": rankingType };
   if (chain) params.chain = chain;
   return runOnchainOSCommand("okx_dex_token", "token hot-tokens", params);

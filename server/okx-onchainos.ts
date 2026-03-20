@@ -359,6 +359,99 @@ export async function getWalletTransactionHistory(params: {
   });
 }
 
+export async function getSmartMoneySignalsAPI(chain: string, walletType?: string): Promise<any> {
+  const params: Record<string, string> = { chainIndex: chain };
+  if (walletType) params.walletType = walletType;
+  try {
+    return await okxRequest("GET", "/dex/discover/signal-list", params);
+  } catch {
+    return { code: "0", data: [], msg: "Signals unavailable for this chain" };
+  }
+}
+
+export async function getLeaderboardAPI(chain: string, timeFrame?: string, sortBy?: string): Promise<any> {
+  const params: Record<string, string> = { chainIndex: chain };
+  if (timeFrame) params.timeFrame = timeFrame;
+  if (sortBy) params.orderBy = sortBy;
+  try {
+    return await okxRequest("GET", "/dex/discover/leaderboard-list", params);
+  } catch {
+    return { code: "0", data: [], msg: "Leaderboard unavailable for this chain" };
+  }
+}
+
+export async function securityTokenScanAPI(address: string, chainId: string): Promise<any> {
+  try {
+    return await okxRequest("GET", "/dex/pre-transaction/token-security", {
+      chainIndex: chainId,
+      tokenContractAddress: address,
+    });
+  } catch {
+    return { code: "0", data: [], msg: "Security scan unavailable" };
+  }
+}
+
+export async function getGasPriceAPI(chainId: string): Promise<any> {
+  try {
+    return await okxRequest("GET", "/dex/pre-transaction/gas-price", {
+      chainIndex: chainId,
+    });
+  } catch {
+    return { code: "0", data: [], msg: "Gas data unavailable" };
+  }
+}
+
+export async function getTrendingTokensAPI(chainId?: string): Promise<any> {
+  const params: Record<string, string> = {};
+  if (chainId) params.chainIndex = chainId;
+  try {
+    return await okxRequest("GET", "/dex/discover/token-list", params);
+  } catch {
+    return { code: "0", data: [], msg: "Trending data unavailable" };
+  }
+}
+
+export async function getHotTokensAPI(rankingType: string, chainId?: string): Promise<any> {
+  const params: Record<string, string> = { orderBy: rankingType };
+  if (chainId) params.chainIndex = chainId;
+  try {
+    return await okxRequest("GET", "/dex/discover/hot-token-list", params);
+  } catch {
+    return { code: "0", data: [], msg: "Hot tokens unavailable" };
+  }
+}
+
+export async function getMemeTokensAPI(chain: string, stage?: string): Promise<any> {
+  const params: Record<string, string> = { chainIndex: chain };
+  if (stage) params.stage = stage;
+  try {
+    return await okxRequest("GET", "/dex/discover/meme-token-list", params);
+  } catch {
+    return { code: "0", data: [], msg: "Meme tokens unavailable" };
+  }
+}
+
+export async function getTokenPriceAPI(address: string, chainId: string): Promise<any> {
+  try {
+    return await okxRequest("GET", "/dex/market/price", {
+      chainIndex: chainId,
+      tokenContractAddress: address,
+    });
+  } catch {
+    try {
+      return await okxRequest("GET", "/dex/aggregator/quote", {
+        chainIndex: chainId,
+        fromTokenAddress: address,
+        toTokenAddress: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+        amount: "1000000000000000000",
+        slippagePercent: "1",
+      });
+    } catch {
+      return { code: "0", data: [], msg: "Price unavailable" };
+    }
+  }
+}
+
 export const SUPPORTED_CHAIN_IDS: Record<string, string> = {
   "1": "Ethereum",
   "56": "BNB Chain",
