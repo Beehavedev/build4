@@ -1780,6 +1780,31 @@ ${urls}
     }
   });
 
+  app.get("/api/platform/stats", async (_req: Request, res: Response) => {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const [txCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agent_transactions`)).rows;
+      const [skillCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agent_skills`)).rows;
+      const [agentCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agents`)).rows;
+      const [purchaseCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM skill_purchases`)).rows;
+      const [revenueData] = (await db.execute(sql`SELECT SUM(amount::numeric) as total, COUNT(*) as cnt FROM platform_revenue`)).rows;
+      const [visitorCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM visitor_logs`)).rows;
+      res.json({
+        onchainUsers: 88000,
+        transactions: Number(txCount?.cnt || 0),
+        skills: Number(skillCount?.cnt || 0),
+        agents: Number(agentCount?.cnt || 0),
+        skillPurchases: Number(purchaseCount?.cnt || 0),
+        revenueEntries: Number((revenueData as any)?.cnt || 0),
+        totalRevenue: (revenueData as any)?.total || "0",
+        visitors: Number(visitorCount?.cnt || 0),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/marketplace/stats", async (_req: Request, res: Response) => {
     try {
       const stats = await storage.getMarketplaceStats();
