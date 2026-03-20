@@ -19,6 +19,10 @@ import {
   Shield,
   Zap,
   ChevronDown,
+  Activity,
+  Flame,
+  Fuel,
+  Search,
 } from "lucide-react";
 
 const CHAIN_OPTIONS = [
@@ -213,7 +217,7 @@ function getTokensForChain(chainId: string): BridgeToken[] {
   return BRIDGE_TOKENS[chainId] || [{ address: NATIVE_TOKEN, symbol: "Native", name: "Native Token", decimals: 18 }];
 }
 
-type Tab = "swap" | "market" | "bridge" | "wallet";
+type Tab = "swap" | "market" | "bridge" | "wallet" | "signals" | "security" | "trending" | "gas";
 
 export default function OnchainOS() {
   const { connected, address, chainId } = useWallet();
@@ -261,17 +265,21 @@ export default function OnchainOS() {
           </p>
         </div>
 
-        <div className="flex items-center gap-1 mb-6 bg-muted/50 rounded-lg p-1 w-fit">
+        <div className="flex items-center gap-1 mb-6 bg-muted/50 rounded-lg p-1 overflow-x-auto">
           {[
             { id: "swap" as Tab, icon: ArrowLeftRight, label: "DEX Swap" },
-            { id: "market" as Tab, icon: BarChart3, label: "Market Data" },
+            { id: "market" as Tab, icon: BarChart3, label: "Market" },
+            { id: "signals" as Tab, icon: Activity, label: "Signals" },
+            { id: "security" as Tab, icon: Shield, label: "Security" },
+            { id: "trending" as Tab, icon: Flame, label: "Trending" },
+            { id: "gas" as Tab, icon: Fuel, label: "Gas" },
             { id: "bridge" as Tab, icon: Layers, label: "Bridge" },
             { id: "wallet" as Tab, icon: Wallet, label: "Wallet" },
           ].map(({ id, icon: Icon, label }) => (
             <button
               key={id}
               onClick={() => setActiveTab(id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md font-mono text-xs transition-colors ${
+              className={`flex items-center gap-2 px-3 py-2 rounded-md font-mono text-xs transition-colors whitespace-nowrap ${
                 activeTab === id
                   ? "bg-card text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
@@ -288,6 +296,10 @@ export default function OnchainOS() {
           <div className="lg:col-span-2">
             {activeTab === "swap" && <SwapPanel isActive={isActive} address={address} chainId={chainId} />}
             {activeTab === "market" && <MarketPanel isActive={isActive} />}
+            {activeTab === "signals" && <SignalsPanel isActive={isActive} />}
+            {activeTab === "security" && <SecurityPanel isActive={isActive} />}
+            {activeTab === "trending" && <TrendingPanel isActive={isActive} />}
+            {activeTab === "gas" && <GasPanel isActive={isActive} />}
             {activeTab === "bridge" && <BridgePanel isActive={isActive} address={address} />}
             {activeTab === "wallet" && <WalletPanel isActive={isActive} address={address} connected={connected} />}
           </div>
@@ -714,6 +726,591 @@ function MarketPanel({ isActive }: { isActive: boolean }) {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const SIGNAL_CHAINS = [
+  { id: "solana", name: "Solana" },
+  { id: "ethereum", name: "Ethereum" },
+  { id: "bsc", name: "BNB Chain" },
+  { id: "base", name: "Base" },
+  { id: "arbitrum", name: "Arbitrum" },
+];
+
+function SignalsPanel({ isActive }: { isActive: boolean }) {
+  const [chain, setChain] = useState("solana");
+  const [signalType, setSignalType] = useState<"signals" | "leaderboard">("signals");
+  const [walletType, setWalletType] = useState("1");
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const walletTypes = [
+    { id: "1", label: "Smart Money" },
+    { id: "2", label: "Whales" },
+    { id: "3", label: "KOL / Influencer" },
+  ];
+
+  const handleFetch = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const body = signalType === "signals"
+        ? { skill: "okx_dex_signal", command: "signal list", params: { chain, "wallet-type": walletType } }
+        : { skill: "okx_dex_signal", command: "leaderboard list", params: { chain, "time-frame": "3", "sort-by": "1" } };
+      const res = await fetch("/api/okx/onchainos/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error || "Failed to fetch");
+      setData(result.data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const signals = data?.data || [];
+
+  return (
+    <div className="bg-card border rounded-lg p-6" data-testid="panel-signals">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Activity className="w-5 h-5 text-blue-500" />
+          <h2 className="font-mono text-lg font-bold">Smart Money Signals</h2>
+        </div>
+        <Badge variant="outline" className="text-[10px]">Real-time</Badge>
+      </div>
+      <p className="text-xs text-muted-foreground mb-4">
+        Aggregated buy signals from smart money wallets, whales, and KOLs. Track what the best traders are buying.
+      </p>
+
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setSignalType("signals"); setData(null); }}
+            className={`flex-1 px-3 py-2 rounded-md font-mono text-xs transition-colors ${signalType === "signals" ? "bg-blue-500/20 text-blue-500 border border-blue-500/30" : "bg-muted text-muted-foreground"}`}
+            data-testid="button-signal-signals"
+          >
+            Buy Signals
+          </button>
+          <button
+            onClick={() => { setSignalType("leaderboard"); setData(null); }}
+            className={`flex-1 px-3 py-2 rounded-md font-mono text-xs transition-colors ${signalType === "leaderboard" ? "bg-blue-500/20 text-blue-500 border border-blue-500/30" : "bg-muted text-muted-foreground"}`}
+            data-testid="button-signal-leaderboard"
+          >
+            Leaderboard
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="font-mono text-[10px] text-muted-foreground block mb-1">Chain</label>
+            <select
+              value={chain}
+              onChange={(e) => { setChain(e.target.value); setData(null); }}
+              className="w-full bg-muted border rounded-md px-3 py-2.5 font-mono text-sm"
+              data-testid="select-signal-chain"
+            >
+              {SIGNAL_CHAINS.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          {signalType === "signals" && (
+            <div>
+              <label className="font-mono text-[10px] text-muted-foreground block mb-1">Wallet Type</label>
+              <select
+                value={walletType}
+                onChange={(e) => { setWalletType(e.target.value); setData(null); }}
+                className="w-full bg-muted border rounded-md px-3 py-2.5 font-mono text-sm"
+                data-testid="select-signal-wallet-type"
+              >
+                {walletTypes.map(w => (
+                  <option key={w.id} value={w.id}>{w.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        <Button
+          onClick={handleFetch}
+          disabled={!isActive || loading}
+          className="w-full font-mono text-sm h-11"
+          data-testid="button-fetch-signals"
+        >
+          {loading ? (
+            <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Loading...</>
+          ) : (
+            <><Activity className="w-4 h-4 mr-2" /> {signalType === "signals" ? "Get Signals" : "Get Leaderboard"}</>
+          )}
+        </Button>
+
+        {error && (
+          <div className="bg-destructive/10 border border-destructive/30 rounded-md p-3">
+            <p className="font-mono text-xs text-destructive">{error}</p>
+          </div>
+        )}
+
+        {signals.length > 0 && (
+          <div className="space-y-2 max-h-96 overflow-y-auto" data-testid="signals-results">
+            {signals.slice(0, 20).map((s: any, i: number) => (
+              <div key={i} className="bg-muted/50 rounded-md p-3 space-y-1" data-testid={`signal-item-${i}`}>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs font-medium">{s.tokenSymbol || s.symbol || s.name || `#${i + 1}`}</span>
+                  {s.usdAmount && <span className="font-mono text-xs text-emerald-500">${Number(s.usdAmount).toLocaleString()}</span>}
+                  {s.pnl && <span className={`font-mono text-xs ${Number(s.pnl) >= 0 ? "text-emerald-500" : "text-red-400"}`}>{Number(s.pnl) >= 0 ? "+" : ""}{Number(s.pnl).toFixed(2)}%</span>}
+                </div>
+                {s.tokenAddress && (
+                  <p className="font-mono text-[10px] text-muted-foreground truncate">{s.tokenAddress}</p>
+                )}
+                {s.walletAddress && (
+                  <p className="font-mono text-[10px] text-muted-foreground truncate">{s.walletAddress}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SecurityPanel({ isActive }: { isActive: boolean }) {
+  const [chain, setChain] = useState("56");
+  const [address, setAddress] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [scanResult, setScanResult] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleScan = async () => {
+    if (!address) return;
+    if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+      setError("Enter a valid token address (0x + 40 hex characters)");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/okx/onchainos/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skill: "okx_security",
+          command: "security token-scan",
+          params: { address, chain },
+        }),
+      });
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error || "Scan failed");
+      setScanResult(result.data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const riskData = scanResult?.data?.[0] || scanResult;
+  const riskItems = [
+    { label: "Honeypot", key: "isHoneypot", bad: "true" },
+    { label: "Proxy Contract", key: "isProxy", bad: "true" },
+    { label: "Mint Function", key: "canMint", bad: "true" },
+    { label: "Buy Tax", key: "buyTax" },
+    { label: "Sell Tax", key: "sellTax" },
+    { label: "Open Source", key: "isOpenSource", good: "true" },
+  ];
+
+  return (
+    <div className="bg-card border rounded-lg p-6" data-testid="panel-security">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Shield className="w-5 h-5 text-red-400" />
+          <h2 className="font-mono text-lg font-bold">Security Scanner</h2>
+        </div>
+        <Badge variant="outline" className="text-[10px]">Honeypot Detection</Badge>
+      </div>
+      <p className="text-xs text-muted-foreground mb-4">
+        Scan any token for honeypot risks, hidden taxes, proxy contracts, and mint functions before buying.
+      </p>
+
+      <div className="space-y-3">
+        <div>
+          <label className="font-mono text-[10px] text-muted-foreground block mb-1">Chain</label>
+          <select
+            value={chain}
+            onChange={(e) => { setChain(e.target.value); setScanResult(null); }}
+            className="w-full bg-muted border rounded-md px-3 py-2.5 font-mono text-sm"
+            data-testid="select-security-chain"
+          >
+            {CHAIN_OPTIONS.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="font-mono text-[10px] text-muted-foreground block mb-1">Token Address</label>
+          <input
+            type="text"
+            value={address}
+            onChange={(e) => { setAddress(e.target.value); setScanResult(null); setError(null); }}
+            placeholder="0x... token contract address"
+            className="w-full bg-muted border rounded-md px-3 py-2.5 font-mono text-xs"
+            data-testid="input-security-address"
+          />
+        </div>
+
+        <Button
+          onClick={handleScan}
+          disabled={!isActive || !address || loading}
+          className="w-full font-mono text-sm h-11"
+          data-testid="button-scan-token"
+        >
+          {loading ? (
+            <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Scanning...</>
+          ) : (
+            <><Search className="w-4 h-4 mr-2" /> Scan Token</>
+          )}
+        </Button>
+
+        {error && (
+          <div className="bg-destructive/10 border border-destructive/30 rounded-md p-3">
+            <p className="font-mono text-xs text-destructive">{error}</p>
+          </div>
+        )}
+
+        {riskData && (
+          <div className="bg-muted/50 rounded-lg p-4 space-y-3" data-testid="security-result">
+            <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Scan Results</div>
+            {riskData.tokenName && (
+              <div className="flex items-center gap-2 pb-2 border-b border-border/50">
+                <span className="font-mono text-sm font-bold">{riskData.tokenName}</span>
+                {riskData.tokenSymbol && <Badge variant="secondary" className="text-[10px]">{riskData.tokenSymbol}</Badge>}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              {riskItems.map(item => {
+                const val = riskData[item.key];
+                if (val === undefined && val === null) return null;
+                const isDanger = item.bad && String(val) === item.bad;
+                const isSafe = item.good && String(val) === item.good;
+                return (
+                  <div key={item.key} className="flex items-center justify-between p-2 rounded-md bg-background">
+                    <span className="font-mono text-[10px] text-muted-foreground">{item.label}</span>
+                    <span className={`font-mono text-xs font-medium ${isDanger ? "text-red-400" : isSafe ? "text-emerald-500" : "text-foreground"}`}>
+                      {item.key === "buyTax" || item.key === "sellTax" ? `${val}%` : String(val) === "true" ? "Yes" : String(val) === "false" ? "No" : String(val)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {riskData.riskLevel && (
+              <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                <span className="font-mono text-xs text-muted-foreground">Overall Risk</span>
+                <Badge variant={riskData.riskLevel === "high" ? "destructive" : riskData.riskLevel === "medium" ? "secondary" : "outline"} className="text-[10px]">
+                  {riskData.riskLevel.toUpperCase()}
+                </Badge>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TrendingPanel({ isActive }: { isActive: boolean }) {
+  const [chain, setChain] = useState("solana");
+  const [view, setView] = useState<"trending" | "hot">("trending");
+  const [sortBy, setSortBy] = useState("5");
+  const [loading, setLoading] = useState(false);
+  const [tokens, setTokens] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const sortOptions = [
+    { id: "5", label: "Volume" },
+    { id: "1", label: "Price Change" },
+    { id: "2", label: "Market Cap" },
+    { id: "3", label: "Txn Count" },
+  ];
+
+  const hotTypes = [
+    { id: "4", label: "Most Active" },
+    { id: "1", label: "Gainers" },
+    { id: "2", label: "Losers" },
+    { id: "3", label: "New" },
+  ];
+
+  const handleFetch = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const body = view === "trending"
+        ? { skill: "okx_dex_token", command: "token trending", params: { chains: chain, "sort-by": sortBy, "time-frame": "4" } }
+        : { skill: "okx_dex_token", command: "token hot-tokens", params: { "ranking-type": sortBy, chain } };
+      const res = await fetch("/api/okx/onchainos/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error || "Failed to fetch");
+      setTokens(result.data?.data || []);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-card border rounded-lg p-6" data-testid="panel-trending">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Flame className="w-5 h-5 text-orange-500" />
+          <h2 className="font-mono text-lg font-bold">Trending Tokens</h2>
+        </div>
+        <Badge variant="outline" className="text-[10px]">Live</Badge>
+      </div>
+      <p className="text-xs text-muted-foreground mb-4">
+        Discover trending, hot, and newly listed tokens across chains. Sorted by volume, price change, or market cap.
+      </p>
+
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setView("trending"); setTokens([]); setSortBy("5"); }}
+            className={`flex-1 px-3 py-2 rounded-md font-mono text-xs transition-colors ${view === "trending" ? "bg-orange-500/20 text-orange-500 border border-orange-500/30" : "bg-muted text-muted-foreground"}`}
+            data-testid="button-view-trending"
+          >
+            Trending
+          </button>
+          <button
+            onClick={() => { setView("hot"); setTokens([]); setSortBy("4"); }}
+            className={`flex-1 px-3 py-2 rounded-md font-mono text-xs transition-colors ${view === "hot" ? "bg-orange-500/20 text-orange-500 border border-orange-500/30" : "bg-muted text-muted-foreground"}`}
+            data-testid="button-view-hot"
+          >
+            Hot Tokens
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="font-mono text-[10px] text-muted-foreground block mb-1">Chain</label>
+            <select
+              value={chain}
+              onChange={(e) => { setChain(e.target.value); setTokens([]); }}
+              className="w-full bg-muted border rounded-md px-3 py-2.5 font-mono text-sm"
+              data-testid="select-trending-chain"
+            >
+              {SIGNAL_CHAINS.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="font-mono text-[10px] text-muted-foreground block mb-1">Sort By</label>
+            <select
+              value={sortBy}
+              onChange={(e) => { setSortBy(e.target.value); setTokens([]); }}
+              className="w-full bg-muted border rounded-md px-3 py-2.5 font-mono text-sm"
+              data-testid="select-trending-sort"
+            >
+              {(view === "trending" ? sortOptions : hotTypes).map(s => (
+                <option key={s.id} value={s.id}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <Button
+          onClick={handleFetch}
+          disabled={!isActive || loading}
+          className="w-full font-mono text-sm h-11"
+          data-testid="button-fetch-trending"
+        >
+          {loading ? (
+            <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Loading...</>
+          ) : (
+            <><TrendingUp className="w-4 h-4 mr-2" /> {view === "trending" ? "Get Trending" : "Get Hot Tokens"}</>
+          )}
+        </Button>
+
+        {error && (
+          <div className="bg-destructive/10 border border-destructive/30 rounded-md p-3">
+            <p className="font-mono text-xs text-destructive">{error}</p>
+          </div>
+        )}
+
+        {tokens.length > 0 && (
+          <div className="space-y-1.5 max-h-96 overflow-y-auto" data-testid="trending-results">
+            {tokens.slice(0, 20).map((t: any, i: number) => (
+              <div key={i} className="flex items-center justify-between bg-muted/50 rounded-md px-3 py-2.5" data-testid={`trending-item-${i}`}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-[10px] text-muted-foreground w-5 shrink-0">{i + 1}</span>
+                  <div className="min-w-0">
+                    <p className="font-mono text-xs font-medium truncate">{t.tokenSymbol || t.symbol || t.name || `Token ${i + 1}`}</p>
+                    {t.tokenContractAddress && (
+                      <p className="font-mono text-[10px] text-muted-foreground truncate">{t.tokenContractAddress.slice(0, 10)}...{t.tokenContractAddress.slice(-6)}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right shrink-0 ml-2">
+                  {t.price && <p className="font-mono text-xs">${Number(t.price).toFixed(6)}</p>}
+                  {t.priceChange && (
+                    <p className={`font-mono text-[10px] ${Number(t.priceChange) >= 0 ? "text-emerald-500" : "text-red-400"}`}>
+                      {Number(t.priceChange) >= 0 ? "+" : ""}{Number(t.priceChange).toFixed(2)}%
+                    </p>
+                  )}
+                  {t.volume24h && <p className="font-mono text-[10px] text-muted-foreground">Vol: ${Number(t.volume24h).toLocaleString()}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const GAS_CHAINS = [
+  { id: "1", name: "Ethereum", symbol: "ETH" },
+  { id: "56", name: "BNB Chain", symbol: "BNB" },
+  { id: "196", name: "XLayer", symbol: "OKB" },
+  { id: "137", name: "Polygon", symbol: "POL" },
+  { id: "42161", name: "Arbitrum", symbol: "ETH" },
+  { id: "8453", name: "Base", symbol: "ETH" },
+  { id: "43114", name: "Avalanche", symbol: "AVAX" },
+  { id: "10", name: "Optimism", symbol: "ETH" },
+];
+
+function GasPanel({ isActive }: { isActive: boolean }) {
+  const [chain, setChain] = useState("1");
+  const [loading, setLoading] = useState(false);
+  const [gasData, setGasData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleFetch = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/okx/onchainos/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skill: "okx_onchain_gateway",
+          command: "gateway gas",
+          params: { chain },
+        }),
+      });
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error || "Failed to fetch gas");
+      setGasData(result.data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const gas = gasData?.data?.[0] || gasData;
+  const chainInfo = GAS_CHAINS.find(c => c.id === chain);
+
+  const formatGwei = (val: string | number | undefined): string => {
+    if (!val) return "—";
+    const n = Number(val);
+    if (isNaN(n)) return String(val);
+    if (n > 1e9) return (n / 1e9).toFixed(2) + " Gwei";
+    if (n > 1e6) return (n / 1e6).toFixed(2) + " Mwei";
+    return n.toFixed(2) + " wei";
+  };
+
+  return (
+    <div className="bg-card border rounded-lg p-6" data-testid="panel-gas">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Fuel className="w-5 h-5 text-yellow-500" />
+          <h2 className="font-mono text-lg font-bold">Gas Tracker</h2>
+        </div>
+        <Badge variant="outline" className="text-[10px]">Real-time</Badge>
+      </div>
+      <p className="text-xs text-muted-foreground mb-4">
+        Live gas prices across chains. Check before sending transactions to save on fees.
+      </p>
+
+      <div className="space-y-3">
+        <div>
+          <label className="font-mono text-[10px] text-muted-foreground block mb-1">Chain</label>
+          <select
+            value={chain}
+            onChange={(e) => { setChain(e.target.value); setGasData(null); }}
+            className="w-full bg-muted border rounded-md px-3 py-2.5 font-mono text-sm"
+            data-testid="select-gas-chain"
+          >
+            {GAS_CHAINS.map(c => (
+              <option key={c.id} value={c.id}>{c.name} ({c.symbol})</option>
+            ))}
+          </select>
+        </div>
+
+        <Button
+          onClick={handleFetch}
+          disabled={!isActive || loading}
+          className="w-full font-mono text-sm h-11"
+          data-testid="button-fetch-gas"
+        >
+          {loading ? (
+            <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Loading...</>
+          ) : (
+            <><Fuel className="w-4 h-4 mr-2" /> Get Gas Prices</>
+          )}
+        </Button>
+
+        {error && (
+          <div className="bg-destructive/10 border border-destructive/30 rounded-md p-3">
+            <p className="font-mono text-xs text-destructive">{error}</p>
+          </div>
+        )}
+
+        {gas && (
+          <div className="space-y-3" data-testid="gas-result">
+            <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Gas Prices — {chainInfo?.name}</div>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: "Slow", key: "low", alt: "safeLow", color: "text-emerald-500" },
+                { label: "Standard", key: "normal", alt: "average", color: "text-yellow-500" },
+                { label: "Fast", key: "high", alt: "fast", color: "text-red-400" },
+              ].map(tier => {
+                const val = gas[tier.key] || gas[tier.alt] || gas.gasPrice;
+                return (
+                  <div key={tier.key} className="bg-muted/50 rounded-lg p-3 text-center">
+                    <p className="font-mono text-[10px] text-muted-foreground mb-1">{tier.label}</p>
+                    <p className={`font-mono text-sm font-bold ${tier.color}`}>{formatGwei(val)}</p>
+                  </div>
+                );
+              })}
+            </div>
+            {gas.baseFee && (
+              <div className="flex items-center justify-between bg-muted/50 rounded-md px-3 py-2">
+                <span className="font-mono text-xs text-muted-foreground">Base Fee</span>
+                <span className="font-mono text-xs font-medium">{formatGwei(gas.baseFee)}</span>
+              </div>
+            )}
+            {gas.maxPriorityFeePerGas && (
+              <div className="flex items-center justify-between bg-muted/50 rounded-md px-3 py-2">
+                <span className="font-mono text-xs text-muted-foreground">Priority Fee</span>
+                <span className="font-mono text-xs font-medium">{formatGwei(gas.maxPriorityFeePerGas)}</span>
+              </div>
+            )}
           </div>
         )}
       </div>
