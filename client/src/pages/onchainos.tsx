@@ -734,15 +734,15 @@ function MarketPanel({ isActive }: { isActive: boolean }) {
 }
 
 const SIGNAL_CHAINS = [
-  { id: "solana", name: "Solana" },
-  { id: "ethereum", name: "Ethereum" },
-  { id: "bsc", name: "BNB Chain" },
-  { id: "base", name: "Base" },
-  { id: "arbitrum", name: "Arbitrum" },
+  { id: "501", name: "Solana" },
+  { id: "1", name: "Ethereum" },
+  { id: "56", name: "BNB Chain" },
+  { id: "8453", name: "Base" },
+  { id: "42161", name: "Arbitrum" },
 ];
 
 function SignalsPanel({ isActive }: { isActive: boolean }) {
-  const [chain, setChain] = useState("solana");
+  const [chain, setChain] = useState("501");
   const [signalType, setSignalType] = useState<"signals" | "leaderboard">("signals");
   const [walletType, setWalletType] = useState("1");
   const [loading, setLoading] = useState(false);
@@ -1029,7 +1029,7 @@ function SecurityPanel({ isActive }: { isActive: boolean }) {
 }
 
 function TrendingPanel({ isActive }: { isActive: boolean }) {
-  const [chain, setChain] = useState("solana");
+  const [chain, setChain] = useState("501");
   const [view, setView] = useState<"trending" | "hot">("trending");
   const [sortBy, setSortBy] = useState("5");
   const [loading, setLoading] = useState(false);

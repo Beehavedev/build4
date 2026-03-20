@@ -32,8 +32,16 @@ export interface OnchainOSCommand {
 }
 
 function execOnchainos(args: string[], timeoutMs = 15000): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const passphrase = process.env.OKX_PASSPHRASE || process.env.OKX_API_PASSPHRASE || "";
   return new Promise((resolve) => {
-    execFile(ONCHAINOS_BIN, args, { timeout: timeoutMs, env: { ...process.env, ONCHAINOS_HOME: path.join(process.env.HOME || "/home/runner", ".onchainos") } }, (error, stdout, stderr) => {
+    execFile(ONCHAINOS_BIN, args, {
+      timeout: timeoutMs,
+      env: {
+        ...process.env,
+        ONCHAINOS_HOME: path.join(process.env.HOME || "/home/runner", ".onchainos"),
+        OKX_PASSPHRASE: passphrase,
+      },
+    }, (error, stdout, stderr) => {
       resolve({
         stdout: stdout?.toString() || "",
         stderr: stderr?.toString() || "",
@@ -62,6 +70,53 @@ export function isDangerousCommand(command: string): boolean {
   return DANGEROUS_COMMANDS.has(command);
 }
 
+async function tryRESTApiFallback(skill: string, command: string, params: Record<string, string>): Promise<{ success: boolean; data: any; error?: string } | null> {
+  if (!isOKXConfigured()) return null;
+
+  try {
+    let result: any = null;
+    const key = `${skill}/${command}`;
+
+    switch (key) {
+      case "okx_dex_signal/signal list":
+        result = await getSmartMoneySignalsAPI(params.chain || params.chainIndex || "56", params["wallet-type"] || params.walletType);
+        break;
+      case "okx_dex_signal/leaderboard list":
+        result = await getLeaderboardAPI(params.chain || params.chainIndex || "56", params["time-frame"] || params.timeFrame, params["sort-by"] || params.orderBy);
+        break;
+      case "okx_security/security token-scan":
+        result = await securityTokenScanAPI(params.address || params.tokenContractAddress || "", params.chain || params.chainIndex || "1");
+        break;
+      case "okx_onchain_gateway/gateway gas":
+        result = await getGasPriceAPI(params.chain || params.chainIndex || "1");
+        break;
+      case "okx_dex_token/token trending":
+        result = await getTrendingTokensAPI(params.chains || params.chain || params.chainIndex);
+        break;
+      case "okx_dex_token/token hot-tokens":
+        result = await getHotTokensAPI(params["ranking-type"] || params.orderBy || "1", params.chain || params.chainIndex);
+        break;
+      case "okx_dex_trenches/memepump tokens":
+        result = await getMemeTokensAPI(params.chain || params.chainIndex || "56", params.stage);
+        break;
+      case "okx_dex_market/market price":
+        result = await getTokenPriceAPI(params.address || params.tokenContractAddress || "", params.chain || params.chainIndex || "1");
+        break;
+      default:
+        return null;
+    }
+
+    if (result) {
+      const data = Array.isArray(result.data) ? result.data : result.data?.data || result.data || [];
+      return { success: true, data: { code: result.code || "0", data, msg: result.msg || "" } };
+    }
+    return null;
+  } catch (err: any) {
+    log(`[OnchainOS] REST API fallback for ${skill}/${command} failed: ${err.message}`, "onchainos");
+    return null;
+  }
+}
+
 export async function runOnchainOSCommand(skill: string, command: string, params: Record<string, string> = {}): Promise<{ success: boolean; data: any; error?: string }> {
   const commandParts = command.split(" ");
   const args = [...commandParts];
@@ -77,7 +132,9 @@ export async function runOnchainOSCommand(skill: string, command: string, params
     const result = await execOnchainos(args);
 
     if (result.exitCode !== 0) {
-      log(`[OnchainOS] ${skill}/${command} failed: ${result.stderr || result.stdout}`, "onchainos");
+      log(`[OnchainOS] CLI ${skill}/${command} failed, trying REST API fallback...`, "onchainos");
+      const apiFallback = await tryRESTApiFallback(skill, command, params);
+      if (apiFallback) return apiFallback;
       return { success: false, data: null, error: result.stderr || result.stdout || "Command failed" };
     }
 
@@ -90,7 +147,9 @@ export async function runOnchainOSCommand(skill: string, command: string, params
 
     return { success: true, data: parsed };
   } catch (err: any) {
-    log(`[OnchainOS] ${skill}/${command} error: ${err.message}`, "onchainos");
+    log(`[OnchainOS] CLI ${skill}/${command} error: ${err.message}, trying REST API fallback...`, "onchainos");
+    const apiFallback = await tryRESTApiFallback(skill, command, params);
+    if (apiFallback) return apiFallback;
     return { success: false, data: null, error: err.message };
   }
 }
