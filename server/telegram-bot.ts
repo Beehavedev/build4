@@ -5,6 +5,19 @@ import { storage } from "./storage";
 import { registerAgentOnchain, registerAgentERC8004, registerAgentBAP578, isOnchainReady, getExplorerUrl } from "./onchain";
 import { recordTelegramMessage, recordTelegramCallback, checkRateLimit } from "./performance-monitor";
 import { enqueueTask, registerTaskHandler } from "./task-queue";
+import {
+  getSmartMoneySignals,
+  getLeaderboard,
+  executeSecurityScan,
+  getTrendingTokens,
+  getHotTokens,
+  getMemeTokens,
+  getTokenPrice,
+  getGasPrice,
+  getPortfolioValue,
+  getOnchainOSSkillDefs,
+  isOnchainOSInstalled,
+} from "./onchainos-skills";
 
 let bot: TelegramBot | null = null;
 let isRunning = false;
@@ -61,6 +74,8 @@ const pendingAsterConnect = new Map<number, AsterConnectState>();
 const pendingAsterTrade = new Map<number, AsterTradeState>();
 const pendingOKXSwap = new Map<number, OKXSwapState>();
 const pendingOKXBridge = new Map<number, OKXBridgeState>();
+const pendingOKXScan = new Map<number, { step: "address"; chain?: string }>();
+const pendingOKXPrice = new Map<number, { step: "address"; chain?: string }>();
 
 const OKX_CHAINS = [
   { id: "56", name: "BNB Chain", symbol: "BNB" },
@@ -668,6 +683,9 @@ function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.I
       [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
       [{ text: "💰 Buy Token", callback_data: "action:buy" }, { text: "💸 Sell Token", callback_data: "action:sell" }],
       [{ text: "🔄 OKX Swap", callback_data: "action:okxswap" }, { text: "🌉 OKX Bridge", callback_data: "action:okxbridge" }],
+      [{ text: "🐋 Signals", callback_data: "action:okxsignals" }, { text: "🔒 Security", callback_data: "action:okxsecurity" }],
+      [{ text: "🔥 Trending", callback_data: "action:okxtrending" }, { text: "🐸 Meme Scanner", callback_data: "action:okxmeme" }],
+      [{ text: "📊 Token Price", callback_data: "action:okxprice" }, { text: "⛽ Gas", callback_data: "action:okxgas" }],
       [{ text: "💎 Make Me Rich", callback_data: "action:trade" }, { text: "📈 Aster DEX", callback_data: "action:aster" }],
       [{ text: "🤖 Create Agent", callback_data: "action:newagent" }, { text: "📋 My Agents", callback_data: "action:myagents" }],
       [{ text: "📝 New Task", callback_data: "action:task" }, { text: "📊 My Tasks", callback_data: "action:mytasks" }],
@@ -814,15 +832,17 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
     bot.setMyCommands([
       { command: "start", description: "Start BUILD4 and create a wallet" },
       { command: "launch", description: "Launch a token on Four.meme or Flap.sh" },
-      { command: "newagent", description: "Create an AI agent" },
-      { command: "myagents", description: "View your agents" },
-      { command: "task", description: "Assign a task to your agent" },
-      { command: "wallet", description: "Wallet info and management" },
-      { command: "ask", description: "Ask anything about BUILD4" },
       { command: "swap", description: "OKX DEX swap on any chain" },
       { command: "bridge", description: "OKX cross-chain bridge" },
+      { command: "signals", description: "Smart money & whale buy signals" },
+      { command: "scan", description: "Security scanner (honeypot check)" },
+      { command: "trending", description: "Hot & trending tokens" },
+      { command: "meme", description: "Meme token scanner" },
+      { command: "price", description: "Token price lookup" },
+      { command: "gas", description: "Gas prices by chain" },
+      { command: "newagent", description: "Create an AI agent" },
+      { command: "wallet", description: "Wallet info and management" },
       { command: "aster", description: "Aster DEX futures & spot trading" },
-      { command: "cancel", description: "Cancel current action" },
       { command: "help", description: "Show all commands" },
     ]).then(() => {
       console.log("[TelegramBot] Registered bot commands");
@@ -1760,6 +1780,319 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data === "action:okxsignals") {
+    await bot.sendMessage(chatId,
+      "🐋 *Smart Money Signals*\n\nSelect signal type:",
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🐋 Whale Buys", callback_data: "okxsig:whale" }],
+            [{ text: "🎤 KOL Buys", callback_data: "okxsig:kol" }],
+            [{ text: "💰 Smart Money", callback_data: "okxsig:smart" }],
+            [{ text: "🏆 Leaderboard", callback_data: "okxsig:leaderboard" }],
+            [{ text: "« Back", callback_data: "action:menu" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("okxsig:")) {
+    const sigType = data.replace("okxsig:", "");
+    if (sigType === "leaderboard") {
+      await bot.sendMessage(chatId, "Loading leaderboard...");
+      try {
+        const result = await getLeaderboard("solana", "3", "1");
+        if (result.success && result.data) {
+          const entries = Array.isArray(result.data) ? result.data.slice(0, 10) : result.data?.data?.slice(0, 10) || [];
+          if (entries.length === 0) {
+            await bot.sendMessage(chatId, "No leaderboard data available right now.", { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+          } else {
+            let text = "🏆 *Top Traders Leaderboard*\n\n";
+            entries.forEach((e: any, i: number) => {
+              const addr = e.walletAddress || e.address || "Unknown";
+              const short = `${addr.substring(0, 6)}...${addr.slice(-4)}`;
+              const pnl = e.pnl ? `$${parseFloat(e.pnl).toFixed(0)}` : "N/A";
+              const winRate = e.winRate ? `${(parseFloat(e.winRate) * 100).toFixed(0)}%` : "N/A";
+              text += `${i + 1}. \`${short}\` — PnL: ${pnl} | Win: ${winRate}\n`;
+            });
+            await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: "okxsig:leaderboard" }], [{ text: "« Back", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+          }
+        } else {
+          await bot.sendMessage(chatId, `Leaderboard unavailable: ${result.error || "try again later"}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxsignals" }]] } });
+        }
+      } catch (e: any) {
+        await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxsignals" }]] } });
+      }
+      return;
+    }
+
+    const walletTypeMap: Record<string, string> = { whale: "1", kol: "2", smart: "3" };
+    const labelMap: Record<string, string> = { whale: "🐋 Whale", kol: "🎤 KOL", smart: "💰 Smart Money" };
+    const wType = walletTypeMap[sigType] || "1";
+    const label = labelMap[sigType] || "Smart Money";
+    await bot.sendMessage(chatId, `Loading ${label} signals...`);
+    try {
+      const result = await getSmartMoneySignals("solana", wType);
+      if (result.success && result.data) {
+        const signals = Array.isArray(result.data) ? result.data.slice(0, 8) : result.data?.data?.slice(0, 8) || [];
+        if (signals.length === 0) {
+          await bot.sendMessage(chatId, `No ${label} signals right now.`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxsig:${sigType}` }], [{ text: "« Back", callback_data: "action:okxsignals" }]] } });
+        } else {
+          let text = `${label} *Buy Signals*\n\n`;
+          signals.forEach((s: any, i: number) => {
+            const name = s.tokenSymbol || s.symbol || "Unknown";
+            const addr = s.tokenAddress || s.address || "";
+            const short = addr ? `\`${addr.substring(0, 8)}...\`` : "";
+            const amount = s.amountUsd ? `$${parseFloat(s.amountUsd).toFixed(0)}` : s.amount || "";
+            const count = s.buyCount || s.count || "";
+            text += `${i + 1}. *${name}* ${short}\n   Buy: ${amount}${count ? ` | ${count} txns` : ""}\n\n`;
+          });
+          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxsig:${sigType}` }], [{ text: "« Back", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+        }
+      } else {
+        await bot.sendMessage(chatId, `${label} signals unavailable: ${result.error || "try again later"}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxsignals" }]] } });
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxsignals" }]] } });
+    }
+    return;
+  }
+
+  if (data === "action:okxsecurity") {
+    await bot.sendMessage(chatId,
+      "🔒 *Security Scanner*\n\nScan a token for honeypot risks, rug-pull indicators, and contract safety.\n\nSelect chain:",
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "BNB Chain", callback_data: "okxscan_chain:56" }, { text: "Ethereum", callback_data: "okxscan_chain:1" }],
+            [{ text: "Base", callback_data: "okxscan_chain:8453" }, { text: "XLayer", callback_data: "okxscan_chain:196" }],
+            [{ text: "Solana", callback_data: "okxscan_chain:501" }, { text: "Polygon", callback_data: "okxscan_chain:137" }],
+            [{ text: "« Back", callback_data: "action:menu" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("okxscan_chain:")) {
+    const chain = data.replace("okxscan_chain:", "");
+    pendingOKXScan.set(chatId, { step: "address", chain });
+    await bot.sendMessage(chatId, "Enter the token contract address to scan (0x...):");
+    return;
+  }
+
+  if (data === "action:okxtrending") {
+    await bot.sendMessage(chatId,
+      "🔥 *Trending & Hot Tokens*\n\nSelect view:",
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔥 Hot Tokens (Volume)", callback_data: "okxtrend:hot:4" }],
+            [{ text: "📈 Price Gainers", callback_data: "okxtrend:hot:1" }],
+            [{ text: "📉 Price Losers", callback_data: "okxtrend:hot:2" }],
+            [{ text: "🆕 Newly Listed", callback_data: "okxtrend:hot:3" }],
+            [{ text: "🌊 Trending (Solana)", callback_data: "okxtrend:chain:solana" }],
+            [{ text: "🌊 Trending (BNB)", callback_data: "okxtrend:chain:bsc" }],
+            [{ text: "🌊 Trending (Base)", callback_data: "okxtrend:chain:base" }],
+            [{ text: "« Back", callback_data: "action:menu" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("okxtrend:hot:")) {
+    const rankingType = data.replace("okxtrend:hot:", "");
+    const labelMap: Record<string, string> = { "1": "📈 Price Gainers", "2": "📉 Price Losers", "3": "🆕 Newly Listed", "4": "🔥 Hot by Volume" };
+    const label = labelMap[rankingType] || "Hot Tokens";
+    await bot.sendMessage(chatId, `Loading ${label}...`);
+    try {
+      const result = await getHotTokens(rankingType);
+      if (result.success && result.data) {
+        const tokens = Array.isArray(result.data) ? result.data.slice(0, 10) : result.data?.data?.slice(0, 10) || [];
+        if (tokens.length === 0) {
+          await bot.sendMessage(chatId, "No data available.", { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxtrending" }]] } });
+        } else {
+          let text = `${label}\n\n`;
+          tokens.forEach((t: any, i: number) => {
+            const name = t.tokenSymbol || t.symbol || "Unknown";
+            const price = t.price ? `$${parseFloat(t.price) < 0.01 ? parseFloat(t.price).toExponential(2) : parseFloat(t.price).toFixed(4)}` : "";
+            const change = t.priceChange24h || t.change24h || t.priceChange;
+            const changeStr = change ? ` (${parseFloat(change) >= 0 ? "+" : ""}${(parseFloat(change) * 100).toFixed(1)}%)` : "";
+            const vol = t.volume24h ? ` | Vol: $${(parseFloat(t.volume24h) / 1e6).toFixed(1)}M` : "";
+            text += `${i + 1}. *${name}* — ${price}${changeStr}${vol}\n`;
+          });
+          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxtrend:hot:${rankingType}` }], [{ text: "« Back", callback_data: "action:okxtrending" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+        }
+      } else {
+        await bot.sendMessage(chatId, `Unavailable: ${result.error || "try again later"}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxtrending" }]] } });
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxtrending" }]] } });
+    }
+    return;
+  }
+
+  if (data.startsWith("okxtrend:chain:")) {
+    const chain = data.replace("okxtrend:chain:", "");
+    const chainLabel = chain === "solana" ? "Solana" : chain === "bsc" ? "BNB Chain" : chain === "base" ? "Base" : chain;
+    await bot.sendMessage(chatId, `Loading trending on ${chainLabel}...`);
+    try {
+      const result = await getTrendingTokens(chain);
+      if (result.success && result.data) {
+        const tokens = Array.isArray(result.data) ? result.data.slice(0, 10) : result.data?.data?.slice(0, 10) || [];
+        if (tokens.length === 0) {
+          await bot.sendMessage(chatId, `No trending tokens on ${chainLabel} right now.`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxtrending" }]] } });
+        } else {
+          let text = `🌊 *Trending on ${chainLabel}*\n\n`;
+          tokens.forEach((t: any, i: number) => {
+            const name = t.tokenSymbol || t.symbol || "Unknown";
+            const price = t.price ? `$${parseFloat(t.price) < 0.01 ? parseFloat(t.price).toExponential(2) : parseFloat(t.price).toFixed(4)}` : "";
+            const change = t.priceChange24h || t.change24h || t.priceChange;
+            const changeStr = change ? ` (${parseFloat(change) >= 0 ? "+" : ""}${(parseFloat(change) * 100).toFixed(1)}%)` : "";
+            text += `${i + 1}. *${name}* — ${price}${changeStr}\n`;
+          });
+          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxtrend:chain:${chain}` }], [{ text: "« Back", callback_data: "action:okxtrending" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+        }
+      } else {
+        await bot.sendMessage(chatId, `Unavailable: ${result.error || "try again later"}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxtrending" }]] } });
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxtrending" }]] } });
+    }
+    return;
+  }
+
+  if (data === "action:okxmeme") {
+    await bot.sendMessage(chatId,
+      "🐸 *Meme Token Scanner*\n\nScan new meme token launches for alpha.\n\nSelect filter:",
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🆕 New Launches", callback_data: "okxmeme:NEW" }],
+            [{ text: "🎓 Graduated", callback_data: "okxmeme:GRADUATED" }],
+            [{ text: "🔥 Bonding (Active)", callback_data: "okxmeme:BONDING" }],
+            [{ text: "« Back", callback_data: "action:menu" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("okxmeme:")) {
+    const stage = data.replace("okxmeme:", "");
+    const stageLabel = stage === "NEW" ? "🆕 New" : stage === "GRADUATED" ? "🎓 Graduated" : "🔥 Bonding";
+    await bot.sendMessage(chatId, `Loading ${stageLabel} meme tokens...`);
+    try {
+      const result = await getMemeTokens("solana", stage);
+      if (result.success && result.data) {
+        const tokens = Array.isArray(result.data) ? result.data.slice(0, 8) : result.data?.data?.slice(0, 8) || [];
+        if (tokens.length === 0) {
+          await bot.sendMessage(chatId, `No ${stageLabel} tokens found.`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxmeme" }]] } });
+        } else {
+          let text = `🐸 *Meme Tokens — ${stageLabel}*\n\n`;
+          tokens.forEach((t: any, i: number) => {
+            const name = t.tokenSymbol || t.symbol || t.name || "Unknown";
+            const addr = t.tokenAddress || t.address || "";
+            const short = addr ? `\`${addr.substring(0, 8)}...\`` : "";
+            const mcap = t.marketCap ? `MC: $${(parseFloat(t.marketCap) / 1e3).toFixed(0)}K` : "";
+            const holders = t.holderCount || t.holders || "";
+            const holdersStr = holders ? ` | ${holders} holders` : "";
+            const hasX = t.hasTwitter || t.hasX ? " 🐦" : "";
+            const hasTg = t.hasTelegram ? " 📱" : "";
+            text += `${i + 1}. *${name}*${hasX}${hasTg} ${short}\n   ${mcap}${holdersStr}\n\n`;
+          });
+          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxmeme:${stage}` }], [{ text: "« Back", callback_data: "action:okxmeme" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+        }
+      } else {
+        await bot.sendMessage(chatId, `Unavailable: ${result.error || "try again later"}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxmeme" }]] } });
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxmeme" }]] } });
+    }
+    return;
+  }
+
+  if (data === "action:okxprice") {
+    await bot.sendMessage(chatId,
+      "📊 *Token Price Lookup*\n\nSelect chain, then enter the token address:",
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "BNB Chain", callback_data: "okxprice_chain:56" }, { text: "Ethereum", callback_data: "okxprice_chain:1" }],
+            [{ text: "Base", callback_data: "okxprice_chain:8453" }, { text: "XLayer", callback_data: "okxprice_chain:196" }],
+            [{ text: "Solana", callback_data: "okxprice_chain:501" }, { text: "Polygon", callback_data: "okxprice_chain:137" }],
+            [{ text: "« Back", callback_data: "action:menu" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("okxprice_chain:")) {
+    const chain = data.replace("okxprice_chain:", "");
+    pendingOKXPrice.set(chatId, { step: "address", chain });
+    await bot.sendMessage(chatId, "Enter the token contract address (0x...):");
+    return;
+  }
+
+  if (data === "action:okxgas") {
+    await bot.sendMessage(chatId,
+      "⛽ *Gas Prices*\n\nSelect chain:",
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "BNB Chain", callback_data: "okxgas:56" }, { text: "Ethereum", callback_data: "okxgas:1" }],
+            [{ text: "Base", callback_data: "okxgas:8453" }, { text: "XLayer", callback_data: "okxgas:196" }],
+            [{ text: "Polygon", callback_data: "okxgas:137" }, { text: "Arbitrum", callback_data: "okxgas:42161" }],
+            [{ text: "« Back", callback_data: "action:menu" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("okxgas:")) {
+    const chain = data.replace("okxgas:", "");
+    const chainNames: Record<string, string> = { "56": "BNB Chain", "1": "Ethereum", "8453": "Base", "196": "XLayer", "137": "Polygon", "42161": "Arbitrum" };
+    const chainName = chainNames[chain] || chain;
+    await bot.sendMessage(chatId, `Loading gas prices for ${chainName}...`);
+    try {
+      const result = await getGasPrice(chain);
+      if (result.success && result.data) {
+        const gas = result.data;
+        let text = `⛽ *Gas Prices — ${chainName}*\n\n`;
+        if (gas.gasPrice) text += `Gas Price: ${gas.gasPrice} Gwei\n`;
+        if (gas.baseFee) text += `Base Fee: ${gas.baseFee} Gwei\n`;
+        if (gas.priorityFee) text += `Priority Fee: ${gas.priorityFee} Gwei\n`;
+        if (gas.slow) text += `🐢 Slow: ${gas.slow} Gwei\n`;
+        if (gas.standard) text += `🚗 Standard: ${gas.standard} Gwei\n`;
+        if (gas.fast) text += `🚀 Fast: ${gas.fast} Gwei\n`;
+        if (gas.instant) text += `⚡ Instant: ${gas.instant} Gwei\n`;
+        if (text.endsWith("\n\n")) text += "Gas data not available for this chain.";
+        await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxgas:${chain}` }], [{ text: "« Back", callback_data: "action:okxgas" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      } else {
+        await bot.sendMessage(chatId, `Gas data unavailable: ${result.error || "try again later"}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxgas" }]] } });
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxgas" }]] } });
+    }
+    return;
+  }
+
   if (data === "action:menu") {
     await bot.sendMessage(chatId, "What would you like to do?", {
       reply_markup: mainMenuKeyboard()
@@ -2359,6 +2692,70 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     await handleOKXBridgeFlow(chatId, text);
     return;
   }
+  if (pendingOKXScan.has(chatId) && !text.startsWith("/")) {
+    const state = pendingOKXScan.get(chatId)!;
+    pendingOKXScan.delete(chatId);
+    const addr = text.trim();
+    if (!addr.startsWith("0x") && addr.length < 30) {
+      await bot.sendMessage(chatId, "Invalid address. Enter a valid contract address (0x...).", { reply_markup: { inline_keyboard: [[{ text: "🔒 Try Again", callback_data: "action:okxsecurity" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+    await bot.sendMessage(chatId, `🔒 Scanning token \`${addr.substring(0, 12)}...\` for risks...`, { parse_mode: "Markdown" });
+    try {
+      const result = await executeSecurityScan(addr, state.chain || "56");
+      if (result.success && result.data) {
+        const d = result.data;
+        let text = "🔒 *Security Scan Results*\n\n";
+        text += `Address: \`${addr}\`\n\n`;
+        if (d.isHoneypot !== undefined) text += `Honeypot: ${d.isHoneypot ? "⚠️ YES" : "✅ No"}\n`;
+        if (d.riskLevel) text += `Risk Level: ${d.riskLevel === "high" ? "🔴 HIGH" : d.riskLevel === "medium" ? "🟡 MEDIUM" : "🟢 LOW"}\n`;
+        if (d.buyTax) text += `Buy Tax: ${d.buyTax}%\n`;
+        if (d.sellTax) text += `Sell Tax: ${d.sellTax}%\n`;
+        if (d.isOpenSource !== undefined) text += `Open Source: ${d.isOpenSource ? "✅" : "❌"}\n`;
+        if (d.isProxy !== undefined) text += `Proxy Contract: ${d.isProxy ? "⚠️ Yes" : "✅ No"}\n`;
+        if (d.ownerCanMint !== undefined) text += `Can Mint: ${d.ownerCanMint ? "⚠️ Yes" : "✅ No"}\n`;
+        if (d.risks && d.risks.length > 0) {
+          text += `\nRisks:\n`;
+          d.risks.slice(0, 5).forEach((r: string) => { text += `• ${r}\n`; });
+        }
+        await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔒 Scan Another", callback_data: "action:okxsecurity" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      } else {
+        await bot.sendMessage(chatId, `Scan failed: ${result.error || "try again"}`, { reply_markup: { inline_keyboard: [[{ text: "🔒 Try Again", callback_data: "action:okxsecurity" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
+    return;
+  }
+  if (pendingOKXPrice.has(chatId) && !text.startsWith("/")) {
+    const state = pendingOKXPrice.get(chatId)!;
+    pendingOKXPrice.delete(chatId);
+    const addr = text.trim();
+    if (!addr.startsWith("0x") && addr.length < 30) {
+      await bot.sendMessage(chatId, "Invalid address. Enter a valid contract address.", { reply_markup: { inline_keyboard: [[{ text: "📊 Try Again", callback_data: "action:okxprice" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+    await bot.sendMessage(chatId, `📊 Looking up price for \`${addr.substring(0, 12)}...\``, { parse_mode: "Markdown" });
+    try {
+      const result = await getTokenPrice(addr, state.chain || "56");
+      if (result.success && result.data) {
+        const d = result.data;
+        let text = "📊 *Token Price*\n\n";
+        text += `Address: \`${addr}\`\n\n`;
+        if (d.price) text += `Price: $${parseFloat(d.price) < 0.01 ? parseFloat(d.price).toExponential(3) : parseFloat(d.price).toFixed(6)}\n`;
+        if (d.priceChange24h) text += `24h Change: ${parseFloat(d.priceChange24h) >= 0 ? "+" : ""}${(parseFloat(d.priceChange24h) * 100).toFixed(2)}%\n`;
+        if (d.volume24h) text += `24h Volume: $${(parseFloat(d.volume24h) / 1e6).toFixed(2)}M\n`;
+        if (d.marketCap) text += `Market Cap: $${(parseFloat(d.marketCap) / 1e6).toFixed(2)}M\n`;
+        if (d.liquidity) text += `Liquidity: $${(parseFloat(d.liquidity) / 1e3).toFixed(0)}K\n`;
+        await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "📊 Another Token", callback_data: "action:okxprice" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      } else {
+        await bot.sendMessage(chatId, `Price lookup failed: ${result.error || "token not found"}`, { reply_markup: { inline_keyboard: [[{ text: "📊 Try Again", callback_data: "action:okxprice" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
+    return;
+  }
 
   const commandMatch = text.match(/^\/(\w+)(?:@\S+)?\s*(.*)/s);
   if (commandMatch) {
@@ -2376,6 +2773,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     pendingAsterTrade.delete(chatId);
     pendingOKXSwap.delete(chatId);
     pendingOKXBridge.delete(chatId);
+    pendingOKXScan.delete(chatId);
+    pendingOKXPrice.delete(chatId);
 
     if (cmd === "start" && !isGroup) {
       let wallet = getLinkedWallet(chatId);
@@ -2479,6 +2878,12 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         "📊 /tradestatus — Trading positions & PnL\n" +
         "🔄 /swap — OKX DEX swap (multi-chain)\n" +
         "🌉 /bridge — OKX cross-chain bridge\n" +
+        "🐋 /signals — Smart money & whale signals\n" +
+        "🔒 /scan — Security scanner (honeypot check)\n" +
+        "🔥 /trending — Hot & trending tokens\n" +
+        "🐸 /meme — Meme token scanner\n" +
+        "📊 /price — Token price lookup\n" +
+        "⛽ /gas — Gas prices by chain\n" +
         "📈 /aster — Aster DEX futures & spot trading\n" +
         "🤖 /newagent — Create an AI agent\n" +
         "📋 /myagents — Your agents\n" +
@@ -2823,6 +3228,118 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       await bot.sendMessage(chatId,
         "🌉 *OKX Cross-Chain Bridge*\n\nBridge tokens between chains using OKX OnchainOS.\nSupported: BNB Chain ↔ XLayer ↔ Ethereum ↔ Base ↔ Polygon ↔ Arbitrum & more.\n0.5% fee to BUILD4 treasury.\n\nSelect source chain:",
         { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } }
+      );
+      return;
+    }
+
+    if (cmd === "signals") {
+      await bot.sendMessage(chatId,
+        "🐋 *Smart Money Signals*\n\nSelect signal type:",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🐋 Whale Buys", callback_data: "okxsig:whale" }],
+              [{ text: "🎤 KOL Buys", callback_data: "okxsig:kol" }],
+              [{ text: "💰 Smart Money", callback_data: "okxsig:smart" }],
+              [{ text: "🏆 Leaderboard", callback_data: "okxsig:leaderboard" }],
+              [{ text: "« Back", callback_data: "action:menu" }],
+            ],
+          },
+        }
+      );
+      return;
+    }
+
+    if (cmd === "scan") {
+      await bot.sendMessage(chatId,
+        "🔒 *Security Scanner*\n\nScan a token for honeypot risks and contract safety.\n\nSelect chain:",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "BNB Chain", callback_data: "okxscan_chain:56" }, { text: "Ethereum", callback_data: "okxscan_chain:1" }],
+              [{ text: "Base", callback_data: "okxscan_chain:8453" }, { text: "XLayer", callback_data: "okxscan_chain:196" }],
+              [{ text: "Solana", callback_data: "okxscan_chain:501" }, { text: "Polygon", callback_data: "okxscan_chain:137" }],
+              [{ text: "« Back", callback_data: "action:menu" }],
+            ],
+          },
+        }
+      );
+      return;
+    }
+
+    if (cmd === "trending") {
+      await bot.sendMessage(chatId,
+        "🔥 *Trending & Hot Tokens*\n\nSelect view:",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔥 Hot Tokens (Volume)", callback_data: "okxtrend:hot:4" }],
+              [{ text: "📈 Price Gainers", callback_data: "okxtrend:hot:1" }],
+              [{ text: "📉 Price Losers", callback_data: "okxtrend:hot:2" }],
+              [{ text: "🆕 Newly Listed", callback_data: "okxtrend:hot:3" }],
+              [{ text: "🌊 Trending (Solana)", callback_data: "okxtrend:chain:solana" }],
+              [{ text: "🌊 Trending (BNB)", callback_data: "okxtrend:chain:bsc" }],
+              [{ text: "« Back", callback_data: "action:menu" }],
+            ],
+          },
+        }
+      );
+      return;
+    }
+
+    if (cmd === "meme") {
+      await bot.sendMessage(chatId,
+        "🐸 *Meme Token Scanner*\n\nScan new meme token launches.\n\nSelect filter:",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🆕 New Launches", callback_data: "okxmeme:NEW" }],
+              [{ text: "🎓 Graduated", callback_data: "okxmeme:GRADUATED" }],
+              [{ text: "🔥 Bonding (Active)", callback_data: "okxmeme:BONDING" }],
+              [{ text: "« Back", callback_data: "action:menu" }],
+            ],
+          },
+        }
+      );
+      return;
+    }
+
+    if (cmd === "gas") {
+      await bot.sendMessage(chatId,
+        "⛽ *Gas Prices*\n\nSelect chain:",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "BNB Chain", callback_data: "okxgas:56" }, { text: "Ethereum", callback_data: "okxgas:1" }],
+              [{ text: "Base", callback_data: "okxgas:8453" }, { text: "XLayer", callback_data: "okxgas:196" }],
+              [{ text: "Polygon", callback_data: "okxgas:137" }, { text: "Arbitrum", callback_data: "okxgas:42161" }],
+              [{ text: "« Back", callback_data: "action:menu" }],
+            ],
+          },
+        }
+      );
+      return;
+    }
+
+    if (cmd === "price") {
+      await bot.sendMessage(chatId,
+        "📊 *Token Price Lookup*\n\nSelect chain:",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "BNB Chain", callback_data: "okxprice_chain:56" }, { text: "Ethereum", callback_data: "okxprice_chain:1" }],
+              [{ text: "Base", callback_data: "okxprice_chain:8453" }, { text: "XLayer", callback_data: "okxprice_chain:196" }],
+              [{ text: "Solana", callback_data: "okxprice_chain:501" }, { text: "Polygon", callback_data: "okxprice_chain:137" }],
+              [{ text: "« Back", callback_data: "action:menu" }],
+            ],
+          },
+        }
       );
       return;
     }
