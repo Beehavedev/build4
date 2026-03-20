@@ -1807,26 +1807,65 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
-  if (data.startsWith("okxsig:")) {
+  if (data.startsWith("okxsig:") && !data.includes(":chain:")) {
     const sigType = data.replace("okxsig:", "");
     if (sigType === "leaderboard") {
-      await bot.sendMessage(chatId, "Loading leaderboard...");
+      await bot.sendMessage(chatId,
+        "🏆 *Leaderboard*\n\nSelect chain:",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "Solana", callback_data: "okxsig:leaderboard:chain:501" }, { text: "BNB Chain", callback_data: "okxsig:leaderboard:chain:56" }],
+              [{ text: "Base", callback_data: "okxsig:leaderboard:chain:8453" }, { text: "Ethereum", callback_data: "okxsig:leaderboard:chain:1" }],
+              [{ text: "« Back", callback_data: "action:okxsignals" }],
+            ],
+          },
+        }
+      );
+      return;
+    }
+    await bot.sendMessage(chatId,
+      `${sigType === "whale" ? "🐋" : sigType === "kol" ? "🎤" : "💰"} *${sigType === "whale" ? "Whale" : sigType === "kol" ? "KOL" : "Smart Money"} Signals*\n\nSelect chain:`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Solana", callback_data: `okxsig:${sigType}:chain:501` }, { text: "BNB Chain", callback_data: `okxsig:${sigType}:chain:56` }],
+            [{ text: "Base", callback_data: `okxsig:${sigType}:chain:8453` }, { text: "Ethereum", callback_data: `okxsig:${sigType}:chain:1` }],
+            [{ text: "« Back", callback_data: "action:okxsignals" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("okxsig:") && data.includes(":chain:")) {
+    const parts = data.replace("okxsig:", "").split(":chain:");
+    const sigType = parts[0];
+    const chain = parts[1] || "501";
+    const chainLabel = chain === "501" ? "Solana" : chain === "56" ? "BNB Chain" : chain === "8453" ? "Base" : "Ethereum";
+
+    if (sigType === "leaderboard") {
+      await bot.sendMessage(chatId, `Loading leaderboard on ${chainLabel}...`);
       try {
-        const result = await getLeaderboard("501", "3", "1");
+        const result = await getLeaderboard(chain, "3", "1");
         if (result.success && result.data) {
           const entries = Array.isArray(result.data) ? result.data.slice(0, 10) : result.data?.data?.slice(0, 10) || [];
           if (entries.length === 0) {
             await bot.sendMessage(chatId, "No leaderboard data available right now.", { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
           } else {
-            let text = "🏆 *Top Traders Leaderboard*\n\n";
+            let text = `🏆 *Top Traders — ${chainLabel}*\n\n`;
             entries.forEach((e: any, i: number) => {
               const addr = e.walletAddress || e.address || "Unknown";
               const short = `${addr.substring(0, 6)}...${addr.slice(-4)}`;
-              const pnl = e.pnl ? `$${parseFloat(e.pnl).toFixed(0)}` : "N/A";
-              const winRate = e.winRate ? `${(parseFloat(e.winRate) * 100).toFixed(0)}%` : "N/A";
-              text += `${i + 1}. \`${short}\` — PnL: ${pnl} | Win: ${winRate}\n`;
+              const pnl = e.realizedPnlUsd ? `$${parseFloat(e.realizedPnlUsd).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : e.pnl ? `$${parseFloat(e.pnl).toFixed(0)}` : "N/A";
+              const winRate = e.winRatePercent ? `${parseFloat(e.winRatePercent).toFixed(0)}%` : e.winRate ? `${(parseFloat(e.winRate) * 100).toFixed(0)}%` : "N/A";
+              const txs = e.txs ? ` | ${Number(e.txs).toLocaleString()} txs` : "";
+              text += `${i + 1}. \`${short}\` — PnL: ${pnl} | Win: ${winRate}${txs}\n`;
             });
-            await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: "okxsig:leaderboard" }], [{ text: "« Back", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+            await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxsig:leaderboard:chain:${chain}` }], [{ text: "« Back", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
           }
         } else {
           await bot.sendMessage(chatId, `Leaderboard unavailable: ${result.error || "try again later"}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxsignals" }]] } });
@@ -1841,15 +1880,15 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const labelMap: Record<string, string> = { whale: "🐋 Whale", kol: "🎤 KOL", smart: "💰 Smart Money" };
     const wType = walletTypeMap[sigType] || "1";
     const label = labelMap[sigType] || "Smart Money";
-    await bot.sendMessage(chatId, `Loading ${label} signals...`);
+    await bot.sendMessage(chatId, `Loading ${label} signals on ${chainLabel}...`);
     try {
-      const result = await getSmartMoneySignals("501", wType);
+      const result = await getSmartMoneySignals(chain, wType);
       if (result.success && result.data) {
         const signals = Array.isArray(result.data) ? result.data.slice(0, 8) : result.data?.data?.slice(0, 8) || [];
         if (signals.length === 0) {
-          await bot.sendMessage(chatId, `No ${label} signals right now.`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxsig:${sigType}` }], [{ text: "« Back", callback_data: "action:okxsignals" }]] } });
+          await bot.sendMessage(chatId, `No ${label} signals on ${chainLabel} right now.`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxsig:${sigType}:chain:${chain}` }], [{ text: "« Back", callback_data: "action:okxsignals" }]] } });
         } else {
-          let text = `${label} *Buy Signals*\n\n`;
+          let text = `${label} *Buy Signals — ${chainLabel}*\n\n`;
           signals.forEach((s: any, i: number) => {
             const tok = s.token || {};
             const name = tok.symbol || tok.name || s.tokenSymbol || s.symbol || "Unknown";
@@ -1862,7 +1901,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
             const extras = [wallets ? `${wallets} wallets` : "", sold, mcap].filter(Boolean).join(" | ");
             text += `${i + 1}. *${name}* ${short}\n   Buy: ${amount}${extras ? `\n   ${extras}` : ""}\n\n`;
           });
-          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxsig:${sigType}` }], [{ text: "« Back", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxsig:${sigType}:chain:${chain}` }], [{ text: "« Back", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
         }
       } else {
         await bot.sendMessage(chatId, `${label} signals unavailable: ${result.error || "try again later"}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxsignals" }]] } });
