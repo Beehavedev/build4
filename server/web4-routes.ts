@@ -3695,7 +3695,7 @@ ${urls}
       if (!isOKXConfigured()) return res.status(503).json({ error: "OnchainOS service is currently unavailable. Please try again later." });
       const { chainId, tokenAddress } = req.query as Record<string, string>;
       if (!chainId || !tokenAddress) return res.status(400).json({ error: "Missing chainId or tokenAddress" });
-      const data = await getTokenPrice({ chainId, tokenAddress });
+      const data = await getTokenPrice(tokenAddress, chainId);
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
