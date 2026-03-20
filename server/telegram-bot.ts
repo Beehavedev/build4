@@ -14,9 +14,6 @@ import {
   getMemeTokens,
   getTokenPrice,
   getGasPrice,
-  getPortfolioValue,
-  getOnchainOSSkillDefs,
-  isOnchainOSInstalled,
 } from "./onchainos-skills";
 
 let bot: TelegramBot | null = null;
@@ -1006,14 +1003,19 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId,
       "Commands:\n\n" +
       "🚀 /launch — Launch a token\n" +
+      "🔄 /swap — OKX DEX swap\n" +
+      "🌉 /bridge — Cross-chain bridge\n" +
+      "🐋 /signals — Smart money signals\n" +
+      "🔒 /scan — Security scanner\n" +
+      "🔥 /trending — Hot & trending tokens\n" +
+      "🐸 /meme — Meme token scanner\n" +
+      "📊 /price — Token price lookup\n" +
+      "⛽ /gas — Gas prices\n" +
       "🤖 /newagent — Create an AI agent\n" +
       "📋 /myagents — Your agents\n" +
       "📝 /task — Assign a task\n" +
-      "📊 /mytasks — Recent tasks\n" +
       "👛 /wallet — Wallet info\n" +
-      "🔗 /linkwallet — Connect wallet\n" +
       "❓ /ask <question> — Ask anything\n" +
-      "🔔 /mychatid — Chat ID for notifications\n" +
       "❌ /cancel — Cancel current action\n\n" +
       "Or just type any question!",
       { reply_markup: mainMenuKeyboard() }
@@ -1882,6 +1884,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   if (data.startsWith("okxscan_chain:")) {
     const chain = data.replace("okxscan_chain:", "");
     pendingOKXScan.set(chatId, { step: "address", chain });
+    pendingOKXPrice.delete(chatId);
     await bot.sendMessage(chatId, "Enter the token contract address to scan (0x...):");
     return;
   }
@@ -2043,6 +2046,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   if (data.startsWith("okxprice_chain:")) {
     const chain = data.replace("okxprice_chain:", "");
     pendingOKXPrice.set(chatId, { step: "address", chain });
+    pendingOKXScan.delete(chatId);
     await bot.sendMessage(chatId, "Enter the token contract address (0x...):");
     return;
   }
