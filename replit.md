@@ -69,16 +69,29 @@ An AI-powered agent for autonomous trading on Four.meme, making dynamic buy/sell
 Facilitates centralized futures and spot trading on Aster DEX through both autonomous AI trading and manual Telegram commands. Utilizes a TypeScript API client with HMAC-SHA256 signing. Manual trading through Telegram commands includes balance, positions, orders, and trade execution. Auto-trading (Make Me Rich) scans Aster futures markets, evaluates signals with AI, and executes trades with configurable leverage and trailing stops. Includes position management and Telegram notifications.
 
 ### OKX OnchainOS Integration
-Multi-chain infrastructure powered by OKX OnchainOS. Features:
-- **DEX Aggregator**: Swap tokens across 500+ DEXs on 60+ chains via `/api/okx/dex/*` routes. Smart routing for best price.
+Multi-chain infrastructure powered by OKX OnchainOS v2.1.0. Features:
+- **DEX Aggregator**: Swap tokens across 500+ DEXs on 60+ chains via `/api/okx/dex/*` routes. Smart routing, MEV protection, trade-specific presets.
 - **Market Intelligence**: Real-time token data, trending tokens, holder distribution via `/api/okx/market/*`.
 - **Cross-Chain Bridge**: 18 bridge aggregators for seamless BNB Chain ↔ XLayer ↔ other chain transfers via `/api/okx/bridge/*`.
 - **Wallet API**: Multi-chain token balance queries via `/api/okx/wallet/*`.
 - **OKX Wallet Connect**: Native OKX Wallet connection option alongside MetaMask and WalletConnect.
+- **OnchainOS CLI Skills (v2.1.0)**: 10 integrated skills via `onchainos` CLI binary at `~/.local/bin/onchainos`:
+  - `okx_dex_swap` — Multi-chain token swapping with MEV protection & smart slippage
+  - `okx_dex_market` — Token prices, K-line charts, wallet PnL analysis
+  - `okx_dex_signal` — Smart money/whale/KOL buy signals & leaderboards
+  - `okx_dex_trenches` — Meme token scanning, dev reputation, bundle/sniper detection
+  - `okx_dex_token` — Token search, trending, holders, liquidity analytics
+  - `okx_agentic_wallet` — Wallet auth, balance, transfers, contract calls
+  - `okx_wallet_portfolio` — Read any wallet on-chain, total value, DeFi positions
+  - `okx_onchain_gateway` — Gas estimation, tx simulation, broadcast, order tracking
+  - `okx_security` — Token honeypot detection, DApp phishing, tx pre-execution safety
+  - `okx_x402_payment` — Gas-free stablecoin payments on XLayer
+- **Agent Skill Registry**: All 10 OnchainOS skills registered in `SKILL_REGISTRY` under categories: `onchain-swap`, `onchain-market`, `onchain-signal`, `onchain-security`, `onchain-wallet`, `onchain-infra`.
+- **API Routes**: `/api/okx/onchainos/skills` (list skills), `/api/okx/onchainos/execute` (execute CLI commands).
 - **Rate Limited**: 30 req/min per IP on all OKX proxy routes.
 - **Required env vars**: `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_API_PASSPHRASE`, `OKX_PROJECT_ID`.
-- **Files**: `server/okx-onchainos.ts` (API wrapper), OnchainOS routes in `server/web4-routes.ts`, frontend at `client/src/pages/onchainos.tsx`.
-- **Page**: `/onchainos` — tabbed UI with DEX Swap, Market Data, Bridge, and Wallet panels.
+- **Files**: `server/okx-onchainos.ts` (API wrapper), `server/onchainos-skills.ts` (CLI skill integration), OnchainOS routes in `server/web4-routes.ts`, frontend at `client/src/pages/onchainos.tsx`.
+- **Page**: `/onchainos` — tabbed UI with DEX Swap, Market Data, Bridge, and Wallet panels. Skills sidebar shows all integrated OnchainOS capabilities with version info.
 
 ### Performance Optimizations
 Includes Telegram webhook mode for production, a priority-based in-memory task queue, a performance monitor (`/api/system/health` endpoint), per-user rate limiting, request timing middleware, API logging, batched visitor tracking, SEO prerendering, non-blocking startup, lazy-loading for heavy imports, and throttled frontend animations.

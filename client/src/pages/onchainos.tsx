@@ -257,7 +257,7 @@ export default function OnchainOS() {
             OKX OnchainOS Integration
           </h1>
           <p className="text-sm text-muted-foreground max-w-2xl">
-            Multi-chain DEX aggregation, real-time market data, cross-chain bridges, and wallet intelligence — powered by OKX OnchainOS across 60+ chains.
+            Multi-chain DEX aggregation, smart money signals, security scanning, meme token research, wallet intelligence, and gas-free payments — powered by OKX OnchainOS v2.1.0 across 60+ chains.
           </p>
         </div>
 
@@ -1038,30 +1038,94 @@ function WalletPanel({ isActive, address, connected }: { isActive: boolean; addr
 }
 
 function FeatureCard() {
-  const features = [
-    { icon: ArrowLeftRight, title: "DEX Aggregator", desc: "500+ DEXs, best routing, 60+ chains", color: "text-violet-500" },
-    { icon: BarChart3, title: "Market Data", desc: "Real-time prices, trending, holder data", color: "text-emerald-500" },
-    { icon: Layers, title: "Cross-Chain Bridge", desc: "18 bridge aggregators, seamless transfers", color: "text-blue-500" },
-    { icon: Wallet, title: "Wallet API", desc: "Multi-chain balances and tx history", color: "text-orange-500" },
-    { icon: Shield, title: "AI Agent Ready", desc: "MCP Server + AI Skills for agent trading", color: "text-pink-500" },
-    { icon: Zap, title: "Sub-100ms", desc: "Ultra-fast API response times", color: "text-yellow-500" },
-  ];
+  const { data: skillsData, isLoading: skillsLoading, isError: skillsError } = useQuery<{
+    installed: boolean;
+    version: string;
+    skills: { id: string; name: string; icon: string; category: string; commands: { name: string; description: string }[] }[];
+  }>({
+    queryKey: ["/api/okx/onchainos/skills"],
+  });
+
+  const categoryColors: Record<string, string> = {
+    "onchain-swap": "text-violet-500",
+    "onchain-market": "text-emerald-500",
+    "onchain-signal": "text-blue-500",
+    "onchain-security": "text-red-400",
+    "onchain-wallet": "text-orange-500",
+    "onchain-infra": "text-yellow-500",
+  };
+
+  const categoryLabels: Record<string, string> = {
+    "onchain-swap": "Swap",
+    "onchain-market": "Market",
+    "onchain-signal": "Signal",
+    "onchain-security": "Security",
+    "onchain-wallet": "Wallet",
+    "onchain-infra": "Infra",
+  };
 
   return (
     <div className="bg-card border rounded-lg p-4">
-      <h3 className="font-mono text-sm font-bold mb-3">OnchainOS Features</h3>
-      <div className="space-y-2">
-        {features.map((f, i) => (
-          <div key={i} className="flex items-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors">
-            <f.icon className={`w-4 h-4 mt-0.5 ${f.color}`} />
-            <div>
-              <p className="font-mono text-xs font-medium">{f.title}</p>
-              <p className="font-mono text-[10px] text-muted-foreground">{f.desc}</p>
-            </div>
-          </div>
-        ))}
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-mono text-sm font-bold">OnchainOS Skills</h3>
+        {skillsData?.installed && (
+          <Badge variant="secondary" className="text-[10px]" data-testid="badge-onchainos-version">{skillsData.version}</Badge>
+        )}
       </div>
-      <div className="mt-4 pt-3 border-t">
+      {skillsLoading ? (
+        <div className="space-y-2 animate-pulse">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-2 p-2">
+              <div className="w-5 h-5 bg-muted rounded" />
+              <div className="flex-1 space-y-1">
+                <div className="h-3 bg-muted rounded w-24" />
+                <div className="h-2 bg-muted rounded w-16" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : skillsError ? (
+        <div className="p-3 rounded-md bg-red-500/10 border border-red-500/20">
+          <p className="font-mono text-xs text-red-400" data-testid="text-skills-error">Failed to load OnchainOS skills</p>
+        </div>
+      ) : skillsData?.skills ? (
+        <div className="space-y-1.5">
+          {skillsData.skills.map((s) => (
+            <div key={s.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid={`skill-${s.id}`}>
+              <div className="flex items-center gap-2">
+                <span className="text-sm">{s.icon}</span>
+                <div>
+                  <p className="font-mono text-xs font-medium">{s.name}</p>
+                  <p className="font-mono text-[10px] text-muted-foreground">{s.commands.length} commands</p>
+                </div>
+              </div>
+              <Badge variant="outline" className={`text-[9px] ${categoryColors[s.category] || ""}`}>
+                {categoryLabels[s.category] || s.category}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {[
+            { icon: ArrowLeftRight, title: "DEX Aggregator", desc: "500+ DEXs, best routing, 60+ chains", color: "text-violet-500" },
+            { icon: BarChart3, title: "Market Data", desc: "Real-time prices, trending, holder data", color: "text-emerald-500" },
+            { icon: Layers, title: "Cross-Chain Bridge", desc: "18 bridge aggregators, seamless transfers", color: "text-blue-500" },
+            { icon: Wallet, title: "Wallet API", desc: "Multi-chain balances and tx history", color: "text-orange-500" },
+            { icon: Shield, title: "AI Agent Ready", desc: "MCP Server + AI Skills for agent trading", color: "text-pink-500" },
+            { icon: Zap, title: "Sub-100ms", desc: "Ultra-fast API response times", color: "text-yellow-500" },
+          ].map((f, i) => (
+            <div key={i} className="flex items-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors">
+              <f.icon className={`w-4 h-4 mt-0.5 ${f.color}`} />
+              <div>
+                <p className="font-mono text-xs font-medium">{f.title}</p>
+                <p className="font-mono text-[10px] text-muted-foreground">{f.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mt-4 pt-3 border-t flex items-center justify-between">
         <a
           href="https://web3.okx.com/onchainos"
           target="_blank"
@@ -1071,6 +1135,16 @@ function FeatureCard() {
         >
           <ExternalLink className="w-3.5 h-3.5" />
           OKX OnchainOS Docs
+        </a>
+        <a
+          href="https://github.com/okx/onchainos-skills"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors"
+          data-testid="link-onchainos-github"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          GitHub
         </a>
       </div>
     </div>

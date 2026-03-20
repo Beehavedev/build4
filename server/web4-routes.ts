@@ -56,6 +56,14 @@ import {
   NATIVE_TOKEN_ADDRESS,
   okxRateLimit,
 } from "./okx-onchainos";
+import {
+  isOnchainOSInstalled,
+  getOnchainOSVersion,
+  getOnchainOSSkillDefs,
+  runOnchainOSCommand,
+  validateOnchainOSCommand,
+  isDangerousCommand,
+} from "./onchainos-skills";
 
 function getBaseUrl(req: Request): string {
   const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
@@ -3605,8 +3613,14 @@ ${urls}
     }
   });
 
-  app.get("/api/okx/status", (_req: Request, res: Response) => {
+  app.get("/api/okx/status", async (_req: Request, res: Response) => {
     const configured = isOKXConfigured();
+    const cliInstalled = await isOnchainOSInstalled();
+    let cliVersion = "";
+    if (cliInstalled) {
+      try { cliVersion = await getOnchainOSVersion(); } catch {}
+    }
+    const onchainOSSkills = getOnchainOSSkillDefs();
     res.json({
       active: configured,
       supportedChains: SUPPORTED_CHAIN_IDS,
@@ -3616,6 +3630,12 @@ ${urls}
         marketData: configured,
         crossChainBridge: configured,
         walletApi: configured,
+      },
+      onchainOS: {
+        cliInstalled,
+        cliVersion,
+        skillCount: onchainOSSkills.length,
+        skills: onchainOSSkills.map(s => ({ id: s.id, name: s.name, icon: s.icon, category: s.category, commandCount: s.commands.length })),
       },
     });
   });
@@ -3785,6 +3805,38 @@ ${urls}
       if (!address || !chainId) return res.status(400).json({ error: "Missing address or chainId" });
       const data = await getWalletTokenBalances({ address, chainId });
       res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/okx/onchainos/skills", async (_req: Request, res: Response) => {
+    try {
+      const installed = await isOnchainOSInstalled();
+      const skills = getOnchainOSSkillDefs();
+      let version = "";
+      if (installed) { try { version = await getOnchainOSVersion(); } catch {} }
+      res.json({ installed, version, skills });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/okx/onchainos/execute", async (req: Request, res: Response) => {
+    try {
+      const { skill, command, params } = req.body;
+      if (!skill || !command) return res.status(400).json({ error: "Missing skill or command" });
+
+      if (!validateOnchainOSCommand(skill, command)) {
+        return res.status(400).json({ error: `Unknown skill/command: ${skill}/${command}` });
+      }
+
+      if (isDangerousCommand(command)) {
+        return res.status(403).json({ error: "Write operations (send, approve, broadcast, contract-call) are restricted to agent-only execution" });
+      }
+
+      const result = await runOnchainOSCommand(skill, command, params || {});
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
