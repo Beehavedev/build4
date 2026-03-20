@@ -304,27 +304,79 @@ export default function OnchainOS() {
 function SwapPanel({ isActive, address, chainId }: { isActive: boolean; address: string | null; chainId: number | null }) {
   const [selectedChain, setSelectedChain] = useState(chainId?.toString() || "56");
   const [fromToken, setFromToken] = useState(NATIVE_TOKEN);
-  const [toToken, setToToken] = useState("");
+  const initTokens = getTokensForChain(chainId?.toString() || "56");
+  const [toToken, setToToken] = useState(initTokens.length > 1 ? initTokens[1].address : "");
+  const [customToToken, setCustomToToken] = useState("");
+  const [useCustomTo, setUseCustomTo] = useState(false);
   const [amount, setAmount] = useState("");
+  const [slippage, setSlippage] = useState("0.5");
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quote, setQuote] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const tokens = getTokensForChain(selectedChain);
+  const fromTokenInfo = tokens.find(t => t.address === fromToken) || tokens[0];
+  const toTokenInfo = tokens.find(t => t.address === toToken);
+  const resolvedToToken = useCustomTo ? customToToken : toToken;
+
+  const isValidAmount = (v: string): boolean => /^\d+\.?\d*$/.test(v) && Number(v) > 0;
+  const isValidAddress = (v: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(v);
+
+  const toWei = (value: string, decimals: number): string => {
+    if (!value || !isValidAmount(value)) return "0";
+    const parts = value.split(".");
+    const whole = parts[0] || "0";
+    const frac = (parts[1] || "").padEnd(decimals, "0").slice(0, decimals);
+    const raw = whole + frac;
+    return raw.replace(/^0+/, "") || "0";
+  };
+
+  const fromWei = (value: string, decimals: number): string => {
+    if (!value || value === "0") return "0";
+    const padded = value.padStart(decimals + 1, "0");
+    const whole = padded.slice(0, padded.length - decimals) || "0";
+    const frac = padded.slice(padded.length - decimals);
+    const trimmed = frac.replace(/0+$/, "");
+    return trimmed ? `${whole}.${trimmed}` : whole;
+  };
+
+  const handleChainChange = (newChain: string) => {
+    setSelectedChain(newChain);
+    const newTokens = getTokensForChain(newChain);
+    setFromToken(newTokens[0]?.address || NATIVE_TOKEN);
+    setToToken(newTokens.length > 1 ? newTokens[1].address : "");
+    setQuote(null);
+    setError(null);
+  };
+
+  const handleSwapDirection = () => {
+    if (useCustomTo || !toToken || toToken === fromToken) return;
+    const prev = fromToken;
+    setFromToken(toToken);
+    setToToken(prev);
+    setQuote(null);
+  };
+
   const handleGetQuote = async () => {
-    if (!amount || !toToken) return;
+    if (!amount || !resolvedToToken) return;
+    if (!isValidAmount(amount)) { setError("Enter a valid number greater than 0"); return; }
+    if (useCustomTo && !isValidAddress(customToToken)) { setError("Enter a valid token address (0x + 40 hex characters)"); return; }
+    if (fromToken === resolvedToToken) { setError("From and To tokens must be different"); return; }
     setQuoteLoading(true);
     setError(null);
     try {
+      const weiAmount = toWei(amount, fromTokenInfo.decimals);
+      if (weiAmount === "0") throw new Error("Amount must be greater than 0");
       const params = new URLSearchParams({
         chainId: selectedChain,
         fromToken,
-        toToken,
-        amount,
-        slippage: "0.5",
+        toToken: resolvedToToken,
+        amount: weiAmount,
+        slippage,
       });
       const res = await fetch(`/api/okx/dex/quote?${params}`);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) throw new Error(data.error || "Failed to get quote");
       setQuote(data);
     } catch (err: any) {
       setError(err.message);
@@ -333,6 +385,10 @@ function SwapPanel({ isActive, address, chainId }: { isActive: boolean; address:
     }
   };
 
+  const quoteData = quote?.data?.[0];
+  const toDecimals = toTokenInfo?.decimals || (quoteData?.toToken?.decimals ? Number(quoteData.toToken.decimals) : 18);
+  const toSymbol = toTokenInfo?.symbol || quoteData?.toToken?.tokenSymbol || "Token";
+
   return (
     <div className="bg-card border rounded-lg p-6" data-testid="panel-swap">
       <div className="flex items-center justify-between mb-4">
@@ -340,19 +396,31 @@ function SwapPanel({ isActive, address, chainId }: { isActive: boolean; address:
           <ArrowLeftRight className="w-5 h-5 text-violet-500" />
           <h2 className="font-mono text-lg font-bold">DEX Aggregator</h2>
         </div>
-        <Badge variant="outline" className="text-[10px]">500+ DEXs</Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-[10px]">500+ DEXs</Badge>
+          <div className="flex items-center gap-1">
+            <span className="font-mono text-[10px] text-muted-foreground">Slippage:</span>
+            {["0.1", "0.5", "1.0"].map(s => (
+              <button
+                key={s}
+                onClick={() => setSlippage(s)}
+                className={`px-1.5 py-0.5 rounded font-mono text-[10px] transition-colors ${slippage === s ? "bg-violet-500/20 text-violet-500 border border-violet-500/30" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                data-testid={`button-slippage-${s}`}
+              >
+                {s}%
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
-      <p className="text-xs text-muted-foreground mb-4">
-        Smart routing across 500+ decentralized exchanges. Best price, lowest slippage, optimized gas.
-      </p>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         <div>
-          <label className="font-mono text-xs text-muted-foreground block mb-1">Chain</label>
+          <label className="font-mono text-[10px] text-muted-foreground block mb-1">Network</label>
           <select
             value={selectedChain}
-            onChange={(e) => setSelectedChain(e.target.value)}
-            className="w-full bg-muted border rounded-md px-3 py-2 font-mono text-sm"
+            onChange={(e) => handleChainChange(e.target.value)}
+            className="w-full bg-muted border rounded-md px-3 py-2.5 font-mono text-sm"
             data-testid="select-swap-chain"
           >
             {CHAIN_OPTIONS.map((c) => (
@@ -361,57 +429,96 @@ function SwapPanel({ isActive, address, chainId }: { isActive: boolean; address:
           </select>
         </div>
 
-        <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-          <div>
-            <label className="font-mono text-[10px] text-muted-foreground block mb-1">From Token (address)</label>
-            <input
-              type="text"
+        <div className="bg-muted/50 rounded-lg p-4">
+          <label className="font-mono text-[10px] text-muted-foreground block mb-2">You Pay</label>
+          <div className="flex gap-3 items-center">
+            <select
               value={fromToken}
-              onChange={(e) => setFromToken(e.target.value)}
-              placeholder="0xEee... (native token)"
-              className="w-full bg-background border rounded-md px-3 py-2 font-mono text-xs"
-              data-testid="input-from-token"
-            />
-          </div>
-          <div className="flex justify-center">
-            <div className="w-8 h-8 rounded-full bg-background border flex items-center justify-center">
-              <ArrowDown className="w-4 h-4 text-muted-foreground" />
-            </div>
-          </div>
-          <div>
-            <label className="font-mono text-[10px] text-muted-foreground block mb-1">To Token (address)</label>
-            <input
-              type="text"
-              value={toToken}
-              onChange={(e) => setToToken(e.target.value)}
-              placeholder="Paste token contract address"
-              className="w-full bg-background border rounded-md px-3 py-2 font-mono text-xs"
-              data-testid="input-to-token"
-            />
-          </div>
-          <div>
-            <label className="font-mono text-[10px] text-muted-foreground block mb-1">Amount (in smallest unit)</label>
+              onChange={(e) => { setFromToken(e.target.value); setQuote(null); }}
+              className="w-[140px] bg-background border rounded-md px-3 py-2.5 font-mono text-sm font-medium"
+              data-testid="select-from-token"
+            >
+              {tokens.map((t) => (
+                <option key={t.address} value={t.address}>{t.symbol}</option>
+              ))}
+            </select>
             <input
               type="text"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="e.g. 1000000000000000000 for 1 token"
-              className="w-full bg-background border rounded-md px-3 py-2 font-mono text-xs"
+              onChange={(e) => { setAmount(e.target.value); setQuote(null); }}
+              placeholder="0.00"
+              className="flex-1 bg-background border rounded-md px-3 py-2.5 font-mono text-lg text-right"
               data-testid="input-swap-amount"
             />
           </div>
+          <p className="font-mono text-[10px] text-muted-foreground mt-1.5">{fromTokenInfo.name}</p>
+        </div>
+
+        <div className="flex justify-center -my-1">
+          <button
+            onClick={handleSwapDirection}
+            disabled={useCustomTo}
+            className="w-9 h-9 rounded-full bg-background border-2 flex items-center justify-center hover:bg-muted transition-colors disabled:opacity-30"
+            data-testid="button-swap-direction"
+          >
+            <ArrowDown className="w-4 h-4 text-violet-500" />
+          </button>
+        </div>
+
+        <div className="bg-muted/50 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <label className="font-mono text-[10px] text-muted-foreground">You Receive</label>
+            <button
+              onClick={() => { setUseCustomTo(!useCustomTo); setQuote(null); }}
+              className="font-mono text-[10px] text-violet-500 hover:text-violet-400 transition-colors"
+              data-testid="button-toggle-custom-token"
+            >
+              {useCustomTo ? "← Pick from list" : "Custom address →"}
+            </button>
+          </div>
+          {useCustomTo ? (
+            <input
+              type="text"
+              value={customToToken}
+              onChange={(e) => { setCustomToToken(e.target.value); setQuote(null); }}
+              placeholder="Paste token contract address (0x...)"
+              className="w-full bg-background border rounded-md px-3 py-2.5 font-mono text-xs"
+              data-testid="input-custom-to-token"
+            />
+          ) : (
+            <select
+              value={toToken}
+              onChange={(e) => { setToToken(e.target.value); setQuote(null); }}
+              className="w-full bg-background border rounded-md px-3 py-2.5 font-mono text-sm font-medium"
+              data-testid="select-to-token"
+            >
+              <option value="">Select token...</option>
+              {tokens.filter(t => t.address !== fromToken).map((t) => (
+                <option key={t.address} value={t.address}>{t.symbol} — {t.name}</option>
+              ))}
+            </select>
+          )}
+
+          {quoteData && (
+            <div className="mt-3 pt-3 border-t border-border/50">
+              <span className="font-mono text-2xl font-bold" data-testid="text-swap-output">
+                {fromWei(quoteData.toTokenAmount || "0", toDecimals)}
+              </span>
+              <span className="font-mono text-sm text-muted-foreground ml-2">{toSymbol}</span>
+            </div>
+          )}
         </div>
 
         <Button
           onClick={handleGetQuote}
-          disabled={!isActive || !amount || !toToken || quoteLoading}
-          className="w-full font-mono text-xs"
+          disabled={!isActive || !amount || !resolvedToToken || quoteLoading}
+          className="w-full font-mono text-sm h-11"
           data-testid="button-get-quote"
         >
           {quoteLoading ? (
-            <><RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin" /> Getting Quote...</>
+            <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Getting Best Quote...</>
           ) : (
-            <><Zap className="w-3.5 h-3.5 mr-2" /> Get Best Quote</>
+            <><Zap className="w-4 h-4 mr-2" /> Get Quote</>
           )}
         </Button>
 
@@ -421,25 +528,32 @@ function SwapPanel({ isActive, address, chainId }: { isActive: boolean; address:
           </div>
         )}
 
-        {quote && quote.data && (
+        {quoteData && (
           <div className="bg-muted/50 rounded-lg p-4 space-y-2" data-testid="swap-quote-result">
+            <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-2">Quote Details</div>
             <div className="flex items-center justify-between">
-              <span className="font-mono text-xs text-muted-foreground">Est. Output</span>
-              <span className="font-mono text-sm font-bold">{quote.data[0]?.toTokenAmount || "—"}</span>
+              <span className="font-mono text-xs text-muted-foreground">Rate</span>
+              <span className="font-mono text-xs font-medium" data-testid="text-swap-rate">
+                1 {fromTokenInfo.symbol} ≈ {amount && Number(amount) > 0 ? (Number(fromWei(quoteData.toTokenAmount || "0", toDecimals)) / Number(amount)).toFixed(6) : "—"} {toSymbol}
+              </span>
             </div>
-            {quote.data[0]?.estimateGasFee && (
+            {quoteData.estimateGasFee && (
               <div className="flex items-center justify-between">
-                <span className="font-mono text-xs text-muted-foreground">Gas Estimate</span>
-                <span className="font-mono text-xs">{quote.data[0].estimateGasFee}</span>
+                <span className="font-mono text-xs text-muted-foreground">Est. Gas</span>
+                <span className="font-mono text-xs">{fromWei(quoteData.estimateGasFee, 18).slice(0, 10)} {CHAIN_OPTIONS.find(c => c.id === selectedChain)?.symbol}</span>
               </div>
             )}
-            {quote.data[0]?.dexRouterList && (
-              <div className="mt-2">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs text-muted-foreground">Slippage</span>
+              <span className="font-mono text-xs">{slippage}%</span>
+            </div>
+            {quoteData.dexRouterList && quoteData.dexRouterList.length > 0 && (
+              <div className="pt-2 border-t border-border/50">
                 <span className="font-mono text-[10px] text-muted-foreground">Route</span>
                 <div className="flex flex-wrap gap-1 mt-1">
-                  {quote.data[0].dexRouterList.map((r: any, i: number) => (
+                  {quoteData.dexRouterList.map((r: any, i: number) => (
                     <Badge key={i} variant="secondary" className="text-[10px]">
-                      {r.dexName || `DEX ${i + 1}`}
+                      {r.dexName || r.router || `DEX ${i + 1}`} {r.percent ? `(${r.percent}%)` : ""}
                     </Badge>
                   ))}
                 </div>
