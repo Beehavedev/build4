@@ -1312,13 +1312,19 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   if (data === "action:okxbridge") {
-    pendingOKXBridge.set(chatId, { step: "from_chain" });
-    pendingOKXSwap.delete(chatId);
-    const chainButtons = OKX_CHAINS.map(c => [{ text: `${c.name} (${c.symbol})`, callback_data: `okxbridge_from:${c.id}` }]);
-    chainButtons.push([{ text: "« Back", callback_data: "action:menu" }]);
     await bot.sendMessage(chatId,
-      "🌉 *OKX Cross-Chain Bridge*\n\nBridge tokens between chains. 0.5% fee to BUILD4 treasury.\n\nSelect source chain:",
-      { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } }
+      "🌉 *OKX Cross-Chain Bridge*\n\n" +
+      "⚠️ Cross-chain bridge is temporarily unavailable on OKX. Please try again later.\n\n" +
+      "You can still use *DEX Swap* to trade tokens on a single chain.",
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔄 Use DEX Swap Instead", callback_data: "action:okxswap" }],
+            [{ text: "« Back", callback_data: "action:menu" }],
+          ],
+        },
+      }
     );
     return;
   }
@@ -3224,14 +3230,19 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
 
     if (cmd === "bridge") {
-      if (isGroup) { await bot.sendMessage(chatId, "DM me for OKX Bridge!"); return; }
-      pendingOKXBridge.set(chatId, { step: "from_chain" });
-      pendingOKXSwap.delete(chatId);
-      const chainButtons = OKX_CHAINS.map(c => [{ text: `${c.name} (${c.symbol})`, callback_data: `okxbridge_from:${c.id}` }]);
-      chainButtons.push([{ text: "« Back", callback_data: "action:menu" }]);
       await bot.sendMessage(chatId,
-        "🌉 *OKX Cross-Chain Bridge*\n\nBridge tokens between chains using OKX OnchainOS.\nSupported: BNB Chain ↔ XLayer ↔ Ethereum ↔ Base ↔ Polygon ↔ Arbitrum & more.\n0.5% fee to BUILD4 treasury.\n\nSelect source chain:",
-        { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } }
+        "🌉 *OKX Cross-Chain Bridge*\n\n" +
+        "⚠️ Cross-chain bridge is temporarily unavailable on OKX. Please try again later.\n\n" +
+        "You can still use *DEX Swap* to trade tokens on a single chain.",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 Use DEX Swap Instead", callback_data: "action:okxswap" }],
+              [{ text: "« Back", callback_data: "action:menu" }],
+            ],
+          },
+        }
       );
       return;
     }

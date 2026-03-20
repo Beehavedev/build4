@@ -719,7 +719,7 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
     return num.toLocaleString(undefined, { maximumFractionDigits: 6 });
   };
 
-  const bridgeServiceDown = bridgeChains?.msg?.includes("temporarily unavailable");
+  const bridgeServiceDown = true;
 
   return (
     <div className="bg-card border rounded-lg p-6" data-testid="panel-bridge">
@@ -729,26 +729,25 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
           <h2 className="font-mono text-lg font-bold">Cross-Chain Bridge</h2>
         </div>
         <div className="flex items-center gap-2">
-          {bridgeServiceDown && (
-            <Badge variant="destructive" className="text-[10px]" data-testid="badge-bridge-status">Service Degraded</Badge>
-          )}
+          <Badge variant="destructive" className="text-[10px]" data-testid="badge-bridge-status">Temporarily Unavailable</Badge>
           <Badge variant="outline" className="text-[10px]">0.5% fee</Badge>
           <Badge variant="outline" className="text-[10px]">{CHAIN_OPTIONS.length} Chains</Badge>
         </div>
       </div>
-      {bridgeServiceDown && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-md p-3 mb-4" data-testid="alert-bridge-unavailable">
-          <p className="font-mono text-xs text-yellow-600 dark:text-yellow-400">
-            <Shield className="w-3 h-3 inline mr-1" />
-            OKX cross-chain bridge API is temporarily unavailable. Bridge quotes may fail. You can still use DEX swap on a single chain.
-          </p>
-        </div>
-      )}
+      <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-md p-4 mb-4" data-testid="alert-bridge-unavailable">
+        <p className="font-mono text-sm text-yellow-600 dark:text-yellow-400 font-medium mb-1">
+          <Shield className="w-4 h-4 inline mr-1.5" />
+          Cross-chain bridge is temporarily unavailable
+        </p>
+        <p className="font-mono text-xs text-yellow-600/80 dark:text-yellow-400/80">
+          OKX cross-chain bridge API is down. Please try again later or use DEX Swap to trade tokens on a single chain.
+        </p>
+      </div>
       <p className="text-xs text-muted-foreground mb-4">
         Bridge assets between BNB Chain, XLayer, and 60+ chains. Aggregates 18 bridge protocols for best rates.
       </p>
 
-      <div className="space-y-4">
+      <div className={`space-y-4 ${bridgeServiceDown ? "opacity-40 pointer-events-none select-none" : ""}`}>
         <div className="bg-muted/50 rounded-lg p-4 space-y-1">
           <label className="font-mono text-[10px] text-muted-foreground">From</label>
           <div className="flex gap-2">
