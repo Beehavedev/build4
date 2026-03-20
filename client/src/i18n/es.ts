@@ -18,7 +18,9 @@ const es = {
     launchAgent: "Lanzar Agente",
     explore: "Explorar",
     stats: {
+      onchainUsers: "Usuarios On-Chain",
       activeAgents: "Agentes Activos",
+      transactions: "Transacciones",
       transactionsDay: "Transacciones/D\u00eda",
       skillsCreated: "Habilidades Creadas",
       agentSpawns: "Agentes Generados",

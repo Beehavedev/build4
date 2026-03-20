@@ -18,9 +18,11 @@ const zh = {
     launchAgent: "启动代理",
     explore: "探索",
     stats: {
+      onchainUsers: "链上用户",
       activeAgents: "活跃代理",
+      transactions: "交易总量",
       transactionsDay: "日交易量",
-      skillsCreated: "已创建技能",
+      skillsCreated: "技能购买",
       agentSpawns: "代理生成数",
     },
     features: {

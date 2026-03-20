@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, useInView } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +24,7 @@ import {
   Cpu,
   Network,
   Bot,
+  Users,
   ShieldAlert,
   ShieldCheck,
   Server,
@@ -50,11 +52,17 @@ const featureKeys = [
   { key: "lifecycle", icon: RotateCw },
 ];
 
-const statKeys = [
-  { key: "activeAgents", value: "2,847", icon: Bot },
-  { key: "transactionsDay", value: "184K", icon: Activity },
-  { key: "skillsCreated", value: "12,391", icon: Cpu },
-  { key: "agentSpawns", value: "6,204", icon: Network },
+function formatNum(n: number): string {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return n.toLocaleString();
+}
+
+const defaultStats = [
+  { key: "onchainUsers", value: "88K", icon: Users },
+  { key: "transactions", value: "8.7K", icon: Activity },
+  { key: "skillsCreated", value: "397", icon: Cpu },
+  { key: "activeAgents", value: "11", icon: Bot },
 ];
 
 function TypewriterText({ text, className }: { text: string; className?: string }) {
@@ -162,6 +170,49 @@ function TerminalLine({ prompt, command, delay = 0 }: { prompt: string; command:
       <span className="text-primary font-semibold">{prompt}</span>
       <span className="text-muted-foreground">{command}</span>
     </motion.div>
+  );
+}
+
+function PlatformStats() {
+  const t = useT();
+  const { data } = useQuery<{
+    onchainUsers: number;
+    transactions: number;
+    skills: number;
+    agents: number;
+    skillPurchases: number;
+  }>({ queryKey: ["/api/platform/stats"] });
+
+  const stats = data
+    ? [
+        { key: "onchainUsers", value: formatNum(data.onchainUsers), icon: Users },
+        { key: "transactions", value: formatNum(data.transactions), icon: Activity },
+        { key: "skillsCreated", value: formatNum(data.skillPurchases), icon: Cpu },
+        { key: "activeAgents", value: formatNum(data.agents), icon: Bot },
+      ]
+    : defaultStats;
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 sm:px-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {stats.map((stat, i) => (
+          <motion.div
+            key={stat.key}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 + i * 0.1, duration: 0.5 }}
+          >
+            <Card className="p-5 text-center">
+              <stat.icon className="w-4 h-4 mx-auto mb-2 text-primary/70" />
+              <div className="text-2xl font-bold font-mono" data-testid={`text-stat-${stat.key}`}>
+                {stat.value}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1 font-mono">{t(`home.stats.${stat.key}`)}</div>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -284,26 +335,7 @@ export default function Home() {
 
         {/* Stats */}
         <section className="relative z-10 -mt-10 sm:-mt-16 mb-16 sm:mb-24">
-          <div className="max-w-6xl mx-auto px-4 sm:px-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {statKeys.map((stat, i) => (
-                <motion.div
-                  key={stat.key}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 + i * 0.1, duration: 0.5 }}
-                >
-                  <Card className="p-5 text-center">
-                    <stat.icon className="w-4 h-4 mx-auto mb-2 text-primary/70" />
-                    <div className="text-2xl font-bold font-mono" data-testid={`text-stat-${stat.key}`}>
-                      {stat.value}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1 font-mono">{t(`home.stats.${stat.key}`)}</div>
-                  </Card>
-                </motion.div>
-              ))}
-            </div>
-          </div>
+          <PlatformStats />
         </section>
 
         {/* Features */}
