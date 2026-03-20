@@ -85,6 +85,9 @@ function getHeaders(
 
 function getApiVersion(path: string): string {
   if (path.startsWith("/dex/aggregator")) return "/api/v6";
+  if (path.startsWith("/dex/market")) return "/api/v6";
+  if (path.startsWith("/dex/pre-transaction")) return "/api/v6";
+  if (path.startsWith("/dex/post-transaction")) return "/api/v6";
   if (path.startsWith("/dex/cross-chain")) return "/api/v5";
   if (path.startsWith("/wallet")) return "/api/v5";
   return "/api/v5";
@@ -360,83 +363,50 @@ export async function getWalletTransactionHistory(params: {
 }
 
 export async function getSmartMoneySignalsAPI(chain: string, walletType?: string): Promise<any> {
-  const params: Record<string, string> = { chainIndex: chain };
-  if (walletType) params.walletType = walletType;
-  try {
-    return await okxRequest("GET", "/dex/discover/signal-list", params);
-  } catch {
-    return { code: "0", data: [], msg: "Signals unavailable for this chain" };
-  }
+  const body: Record<string, string> = { chainIndex: chain };
+  if (walletType) body.walletType = walletType;
+  return await okxRequest("POST", "/dex/market/signal/list", undefined, body);
 }
 
 export async function getLeaderboardAPI(chain: string, timeFrame?: string, sortBy?: string): Promise<any> {
-  const params: Record<string, string> = { chainIndex: chain };
-  if (timeFrame) params.timeFrame = timeFrame;
-  if (sortBy) params.orderBy = sortBy;
-  try {
-    return await okxRequest("GET", "/dex/discover/leaderboard-list", params);
-  } catch {
-    return { code: "0", data: [], msg: "Leaderboard unavailable for this chain" };
-  }
+  const params: Record<string, string> = { chainIndex: chain, timeFrame: timeFrame || "3", sortBy: sortBy || "1" };
+  return await okxRequest("GET", "/dex/market/leaderboard/list", params);
 }
 
 export async function securityTokenScanAPI(address: string, chainId: string): Promise<any> {
-  try {
-    return await okxRequest("GET", "/dex/pre-transaction/token-security", {
-      chainIndex: chainId,
-      tokenContractAddress: address,
-    });
-  } catch {
-    return { code: "0", data: [], msg: "Security scan unavailable" };
-  }
+  return await okxRequest("GET", "/dex/market/token/advanced-info", {
+    chainIndex: chainId,
+    tokenContractAddress: address,
+  });
 }
 
 export async function getGasPriceAPI(chainId: string): Promise<any> {
-  try {
-    return await okxRequest("GET", "/dex/pre-transaction/gas-price", {
-      chainIndex: chainId,
-    });
-  } catch {
-    return { code: "0", data: [], msg: "Gas data unavailable" };
-  }
+  return await okxRequest("GET", "/dex/pre-transaction/gas-price", {
+    chainIndex: chainId,
+  });
 }
 
 export async function getTrendingTokensAPI(chainId?: string): Promise<any> {
-  const params: Record<string, string> = {};
-  if (chainId) params.chainIndex = chainId;
-  try {
-    return await okxRequest("GET", "/dex/discover/token-list", params);
-  } catch {
-    return { code: "0", data: [], msg: "Trending data unavailable" };
-  }
+  const params: Record<string, string> = { chains: chainId || "56", sortBy: "5", timeFrame: "4" };
+  return await okxRequest("GET", "/dex/market/token/toplist", params);
 }
 
 export async function getHotTokensAPI(rankingType: string, chainId?: string): Promise<any> {
-  const params: Record<string, string> = { orderBy: rankingType };
-  if (chainId) params.chainIndex = chainId;
-  try {
-    return await okxRequest("GET", "/dex/discover/hot-token-list", params);
-  } catch {
-    return { code: "0", data: [], msg: "Hot tokens unavailable" };
-  }
+  const sortBy = ["2", "5", "6"].includes(rankingType) ? rankingType : "5";
+  const params: Record<string, string> = { chains: chainId || "56", sortBy, timeFrame: "4" };
+  return await okxRequest("GET", "/dex/market/token/toplist", params);
 }
 
 export async function getMemeTokensAPI(chain: string, stage?: string): Promise<any> {
-  const params: Record<string, string> = { chainIndex: chain };
-  if (stage) params.stage = stage;
-  try {
-    return await okxRequest("GET", "/dex/discover/meme-token-list", params);
-  } catch {
-    return { code: "0", data: [], msg: "Meme tokens unavailable" };
-  }
+  const params: Record<string, string> = { chainIndex: chain, stage: stage || "NEW" };
+  return await okxRequest("GET", "/dex/market/memepump/tokenList", params);
 }
 
 export async function getTokenPriceAPI(address: string, chainId: string): Promise<any> {
   try {
-    return await okxRequest("GET", "/dex/market/price", {
-      chainIndex: chainId,
-      tokenContractAddress: address,
-    });
+    return await okxRequest("POST", "/dex/market/price-info", undefined, [
+      { chainIndex: chainId, tokenContractAddress: address },
+    ]);
   } catch {
     try {
       return await okxRequest("GET", "/dex/aggregator/quote", {

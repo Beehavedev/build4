@@ -1812,7 +1812,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     if (sigType === "leaderboard") {
       await bot.sendMessage(chatId, "Loading leaderboard...");
       try {
-        const result = await getLeaderboard("solana", "3", "1");
+        const result = await getLeaderboard("501", "3", "1");
         if (result.success && result.data) {
           const entries = Array.isArray(result.data) ? result.data.slice(0, 10) : result.data?.data?.slice(0, 10) || [];
           if (entries.length === 0) {
@@ -1843,7 +1843,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const label = labelMap[sigType] || "Smart Money";
     await bot.sendMessage(chatId, `Loading ${label} signals...`);
     try {
-      const result = await getSmartMoneySignals("solana", wType);
+      const result = await getSmartMoneySignals("501", wType);
       if (result.success && result.data) {
         const signals = Array.isArray(result.data) ? result.data.slice(0, 8) : result.data?.data?.slice(0, 8) || [];
         if (signals.length === 0) {
@@ -1906,9 +1906,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
             [{ text: "📈 Price Gainers", callback_data: "okxtrend:hot:1" }],
             [{ text: "📉 Price Losers", callback_data: "okxtrend:hot:2" }],
             [{ text: "🆕 Newly Listed", callback_data: "okxtrend:hot:3" }],
-            [{ text: "🌊 Trending (Solana)", callback_data: "okxtrend:chain:solana" }],
-            [{ text: "🌊 Trending (BNB)", callback_data: "okxtrend:chain:bsc" }],
-            [{ text: "🌊 Trending (Base)", callback_data: "okxtrend:chain:base" }],
+            [{ text: "🌊 Trending (Solana)", callback_data: "okxtrend:chain:501" }],
+            [{ text: "🌊 Trending (BNB)", callback_data: "okxtrend:chain:56" }],
+            [{ text: "🌊 Trending (Base)", callback_data: "okxtrend:chain:8453" }],
             [{ text: "« Back", callback_data: "action:menu" }],
           ],
         },
@@ -1951,7 +1951,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data.startsWith("okxtrend:chain:")) {
     const chain = data.replace("okxtrend:chain:", "");
-    const chainLabel = chain === "solana" ? "Solana" : chain === "bsc" ? "BNB Chain" : chain === "base" ? "Base" : chain;
+    const chainLabel = chain === "501" ? "Solana" : chain === "56" ? "BNB Chain" : chain === "8453" ? "Base" : chain;
     await bot.sendMessage(chatId, `Loading trending on ${chainLabel}...`);
     try {
       const result = await getTrendingTokens(chain);
@@ -2002,7 +2002,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const stageLabel = stage === "NEW" ? "🆕 New" : stage === "GRADUATED" ? "🎓 Graduated" : "🔥 Bonding";
     await bot.sendMessage(chatId, `Loading ${stageLabel} meme tokens...`);
     try {
-      const result = await getMemeTokens("solana", stage);
+      const result = await getMemeTokens("501", stage);
       if (result.success && result.data) {
         const tokens = Array.isArray(result.data) ? result.data.slice(0, 8) : result.data?.data?.slice(0, 8) || [];
         if (tokens.length === 0) {
