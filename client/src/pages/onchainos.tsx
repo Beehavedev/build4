@@ -688,29 +688,49 @@ function MarketPanel({ isActive }: { isActive: boolean }) {
           </div>
         )}
 
-        {tokenData && tokenData.data && (
-          <div className="bg-muted/50 rounded-lg p-4 space-y-2" data-testid="token-data-result">
-            <h3 className="font-mono text-sm font-bold">{tokenData.data[0]?.tokenSymbol || "Token"}</h3>
-            {tokenData.data[0]?.price && (
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs text-muted-foreground">Price</span>
-                <span className="font-mono text-sm">${tokenData.data[0].price}</span>
+        {tokenData && tokenData.data && (() => {
+          const td = Array.isArray(tokenData.data) ? tokenData.data[0] : tokenData.data;
+          if (!td) return null;
+          return (
+            <div className="bg-muted/50 rounded-lg p-4 space-y-2" data-testid="token-data-result">
+              <div className="flex items-center gap-2">
+                {td.tokenLogoUrl && <img src={td.tokenLogoUrl} alt="" className="w-5 h-5 rounded-full" />}
+                <h3 className="font-mono text-sm font-bold">{td.tokenSymbol || td.symbol || "Token"}</h3>
+                {td.tokenName && <span className="font-mono text-[10px] text-muted-foreground">{td.tokenName}</span>}
               </div>
-            )}
-            {tokenData.data[0]?.marketCap && (
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs text-muted-foreground">Market Cap</span>
-                <span className="font-mono text-xs">${Number(tokenData.data[0].marketCap).toLocaleString()}</span>
-              </div>
-            )}
-            {tokenData.data[0]?.volume24h && (
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs text-muted-foreground">24h Volume</span>
-                <span className="font-mono text-xs">${Number(tokenData.data[0].volume24h).toLocaleString()}</span>
-              </div>
-            )}
-          </div>
-        )}
+              {(td.price || td.tokenPrice) && (
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs text-muted-foreground">Price</span>
+                  <span className="font-mono text-sm">${Number(td.price || td.tokenPrice) < 0.01 ? Number(td.price || td.tokenPrice).toPrecision(4) : Number(td.price || td.tokenPrice).toFixed(4)}</span>
+                </div>
+              )}
+              {td.marketCap && (
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs text-muted-foreground">Market Cap</span>
+                  <span className="font-mono text-xs">${Number(td.marketCap).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                </div>
+              )}
+              {td.liquidity && (
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs text-muted-foreground">Liquidity</span>
+                  <span className="font-mono text-xs">${Number(td.liquidity).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                </div>
+              )}
+              {td.holders && (
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs text-muted-foreground">Holders</span>
+                  <span className="font-mono text-xs">{Number(td.holders).toLocaleString()}</span>
+                </div>
+              )}
+              {(td.volume24h || td.volume) && (
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs text-muted-foreground">24h Volume</span>
+                  <span className="font-mono text-xs">${Number(td.volume24h || td.volume).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {trendingData && trendingData.data && (
           <div className="space-y-2" data-testid="trending-result">
@@ -720,9 +740,17 @@ function MarketPanel({ isActive }: { isActive: boolean }) {
                 <div key={i} className="flex items-center justify-between bg-muted/50 rounded-md px-3 py-2">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-[10px] text-muted-foreground w-4">{i + 1}</span>
+                    {t.tokenLogoUrl && <img src={t.tokenLogoUrl} alt="" className="w-4 h-4 rounded-full" />}
                     <span className="font-mono text-xs font-medium">{t.tokenSymbol || t.symbol || `Token ${i + 1}`}</span>
                   </div>
-                  {t.price && <span className="font-mono text-xs">${Number(t.price).toFixed(6)}</span>}
+                  <div className="flex items-center gap-3">
+                    {t.price && <span className="font-mono text-xs">${Number(t.price) < 0.01 ? Number(t.price).toPrecision(4) : Number(t.price).toFixed(4)}</span>}
+                    {t.change != null && (
+                      <span className={`font-mono text-[10px] ${Number(t.change) >= 0 ? "text-emerald-500" : "text-red-400"}`}>
+                        {Number(t.change) >= 0 ? "+" : ""}{Number(t.change).toFixed(1)}%
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -860,20 +888,62 @@ function SignalsPanel({ isActive }: { isActive: boolean }) {
           </div>
         )}
 
-        {signals.length > 0 && (
+        {signals.length > 0 && signalType === "signals" && (
           <div className="space-y-2 max-h-96 overflow-y-auto" data-testid="signals-results">
-            {signals.slice(0, 20).map((s: any, i: number) => (
-              <div key={i} className="bg-muted/50 rounded-md p-3 space-y-1" data-testid={`signal-item-${i}`}>
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs font-medium">{s.tokenSymbol || s.symbol || s.name || `#${i + 1}`}</span>
-                  {s.usdAmount && <span className="font-mono text-xs text-emerald-500">${Number(s.usdAmount).toLocaleString()}</span>}
-                  {s.pnl && <span className={`font-mono text-xs ${Number(s.pnl) >= 0 ? "text-emerald-500" : "text-red-400"}`}>{Number(s.pnl) >= 0 ? "+" : ""}{Number(s.pnl).toFixed(2)}%</span>}
+            {signals.slice(0, 20).map((s: any, i: number) => {
+              const tok = s.token || {};
+              const symbol = tok.symbol || s.tokenSymbol || s.symbol || "";
+              const name = tok.name || s.name || "";
+              const addr = tok.tokenAddress || s.tokenAddress || "";
+              const logo = tok.logo || s.tokenLogoUrl || "";
+              const amt = s.amountUsd || s.usdAmount || "";
+              const mcap = tok.marketCapUsd || "";
+              const wallets = s.triggerWalletCount || "";
+              const sold = s.soldRatioPercent || "";
+              return (
+                <div key={i} className="bg-muted/50 rounded-md p-3 space-y-1.5" data-testid={`signal-item-${i}`}>
+                  <div className="flex items-center gap-2">
+                    {logo && <img src={logo} alt={symbol} className="w-5 h-5 rounded-full" />}
+                    <span className="font-mono text-xs font-bold">{symbol || name || `#${i + 1}`}</span>
+                    {name && symbol && <span className="font-mono text-[10px] text-muted-foreground">{name}</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    {amt && <span className="font-mono text-[11px] text-emerald-500">${Number(amt).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>}
+                    {mcap && <span className="font-mono text-[10px] text-muted-foreground">MCap: ${Number(mcap).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>}
+                    {wallets && <span className="font-mono text-[10px] text-muted-foreground">{wallets} wallets</span>}
+                    {sold && <span className="font-mono text-[10px] text-orange-400">{sold}% sold</span>}
+                  </div>
+                  {addr && <p className="font-mono text-[10px] text-muted-foreground truncate">{addr}</p>}
                 </div>
-                {s.tokenAddress && (
-                  <p className="font-mono text-[10px] text-muted-foreground truncate">{s.tokenAddress}</p>
-                )}
-                {s.walletAddress && (
-                  <p className="font-mono text-[10px] text-muted-foreground truncate">{s.walletAddress}</p>
+              );
+            })}
+          </div>
+        )}
+
+        {signals.length > 0 && signalType === "leaderboard" && (
+          <div className="space-y-2 max-h-96 overflow-y-auto" data-testid="leaderboard-results">
+            {signals.slice(0, 20).map((s: any, i: number) => (
+              <div key={i} className="bg-muted/50 rounded-md p-3 space-y-1.5" data-testid={`leaderboard-item-${i}`}>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs font-bold">#{i + 1}</span>
+                  <span className={`font-mono text-xs font-bold ${Number(s.realizedPnlUsd) >= 0 ? "text-emerald-500" : "text-red-400"}`}>
+                    {Number(s.realizedPnlUsd) >= 0 ? "+" : ""}${Number(s.realizedPnlUsd || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {s.winRatePercent && <span className="font-mono text-[10px] text-muted-foreground">Win: {Number(s.winRatePercent).toFixed(1)}%</span>}
+                  {s.txs && <span className="font-mono text-[10px] text-muted-foreground">{Number(s.txs).toLocaleString()} txs</span>}
+                  {s.txVolume && <span className="font-mono text-[10px] text-muted-foreground">Vol: ${Number(s.txVolume).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>}
+                </div>
+                {s.walletAddress && <p className="font-mono text-[10px] text-muted-foreground truncate">{s.walletAddress}</p>}
+                {s.topPnlTokenList?.length > 0 && (
+                  <div className="flex gap-1 flex-wrap">
+                    {s.topPnlTokenList.slice(0, 3).map((t: any, j: number) => (
+                      <span key={j} className="font-mono text-[9px] bg-muted px-1.5 py-0.5 rounded text-emerald-400">
+                        {t.tokenSymbol} +${Number(t.tokenPnLUsd || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
             ))}
@@ -919,15 +989,9 @@ function SecurityPanel({ isActive }: { isActive: boolean }) {
     }
   };
 
-  const riskData = scanResult?.data?.[0] || scanResult;
-  const riskItems = [
-    { label: "Honeypot", key: "isHoneypot", bad: "true" },
-    { label: "Proxy Contract", key: "isProxy", bad: "true" },
-    { label: "Mint Function", key: "canMint", bad: "true" },
-    { label: "Buy Tax", key: "buyTax" },
-    { label: "Sell Tax", key: "sellTax" },
-    { label: "Open Source", key: "isOpenSource", good: "true" },
-  ];
+  const riskData = scanResult?.data || (Array.isArray(scanResult) ? scanResult[0] : scanResult);
+  const riskLevel = riskData?.riskControlLevel;
+  const riskLevelLabel = riskLevel === "1" ? "Low" : riskLevel === "2" ? "Medium" : riskLevel === "3" ? "High" : riskLevel || "Unknown";
 
   return (
     <div className="bg-card border rounded-lg p-6" data-testid="panel-security">
@@ -990,35 +1054,70 @@ function SecurityPanel({ isActive }: { isActive: boolean }) {
 
         {riskData && (
           <div className="bg-muted/50 rounded-lg p-4 space-y-3" data-testid="security-result">
-            <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Scan Results</div>
-            {riskData.tokenName && (
-              <div className="flex items-center gap-2 pb-2 border-b border-border/50">
-                <span className="font-mono text-sm font-bold">{riskData.tokenName}</span>
-                {riskData.tokenSymbol && <Badge variant="secondary" className="text-[10px]">{riskData.tokenSymbol}</Badge>}
-              </div>
+            <div className="flex items-center justify-between">
+              <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Scan Results</div>
+              <Badge variant={riskLevel === "3" ? "destructive" : riskLevel === "2" ? "secondary" : "outline"} className="text-[10px]">
+                Risk: {riskLevelLabel}
+              </Badge>
+            </div>
+            {riskData.tokenContractAddress && (
+              <p className="font-mono text-[10px] text-muted-foreground truncate">{riskData.tokenContractAddress}</p>
             )}
             <div className="grid grid-cols-2 gap-2">
-              {riskItems.map(item => {
-                const val = riskData[item.key];
-                if (val === undefined && val === null) return null;
-                const isDanger = item.bad && String(val) === item.bad;
-                const isSafe = item.good && String(val) === item.good;
-                return (
-                  <div key={item.key} className="flex items-center justify-between p-2 rounded-md bg-background">
-                    <span className="font-mono text-[10px] text-muted-foreground">{item.label}</span>
-                    <span className={`font-mono text-xs font-medium ${isDanger ? "text-red-400" : isSafe ? "text-emerald-500" : "text-foreground"}`}>
-                      {item.key === "buyTax" || item.key === "sellTax" ? `${val}%` : String(val) === "true" ? "Yes" : String(val) === "false" ? "No" : String(val)}
-                    </span>
-                  </div>
-                );
-              })}
+              {riskData.devHoldingPercent && (
+                <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                  <span className="font-mono text-[10px] text-muted-foreground">Dev Holding</span>
+                  <span className={`font-mono text-xs font-medium ${Number(riskData.devHoldingPercent) > 10 ? "text-red-400" : "text-emerald-500"}`}>{riskData.devHoldingPercent}%</span>
+                </div>
+              )}
+              {riskData.top10HoldPercent && (
+                <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                  <span className="font-mono text-[10px] text-muted-foreground">Top 10 Hold</span>
+                  <span className={`font-mono text-xs font-medium ${Number(riskData.top10HoldPercent) > 50 ? "text-orange-400" : "text-foreground"}`}>{riskData.top10HoldPercent}%</span>
+                </div>
+              )}
+              {riskData.bundleHoldingPercent && (
+                <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                  <span className="font-mono text-[10px] text-muted-foreground">Bundle Hold</span>
+                  <span className={`font-mono text-xs font-medium ${Number(riskData.bundleHoldingPercent) > 10 ? "text-red-400" : "text-foreground"}`}>{riskData.bundleHoldingPercent}%</span>
+                </div>
+              )}
+              {riskData.sniperHoldingPercent && (
+                <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                  <span className="font-mono text-[10px] text-muted-foreground">Sniper Hold</span>
+                  <span className={`font-mono text-xs font-medium ${Number(riskData.sniperHoldingPercent) > 10 ? "text-red-400" : "text-foreground"}`}>{riskData.sniperHoldingPercent}%</span>
+                </div>
+              )}
+              {riskData.suspiciousHoldingPercent && (
+                <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                  <span className="font-mono text-[10px] text-muted-foreground">Suspicious</span>
+                  <span className={`font-mono text-xs font-medium ${Number(riskData.suspiciousHoldingPercent) > 5 ? "text-red-400" : "text-foreground"}`}>{riskData.suspiciousHoldingPercent}%</span>
+                </div>
+              )}
+              {riskData.lpBurnedPercent && (
+                <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                  <span className="font-mono text-[10px] text-muted-foreground">LP Burned</span>
+                  <span className={`font-mono text-xs font-medium ${Number(riskData.lpBurnedPercent) > 50 ? "text-emerald-500" : "text-orange-400"}`}>{riskData.lpBurnedPercent}%</span>
+                </div>
+              )}
+              {riskData.totalFee && (
+                <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                  <span className="font-mono text-[10px] text-muted-foreground">Total Fee</span>
+                  <span className={`font-mono text-xs font-medium ${Number(riskData.totalFee) > 5 ? "text-red-400" : "text-foreground"}`}>{riskData.totalFee}%</span>
+                </div>
+              )}
+              {riskData.devLaunchedTokenCount && (
+                <div className="flex items-center justify-between p-2 rounded-md bg-background">
+                  <span className="font-mono text-[10px] text-muted-foreground">Dev Launches</span>
+                  <span className="font-mono text-xs font-medium">{riskData.devLaunchedTokenCount}</span>
+                </div>
+              )}
             </div>
-            {riskData.riskLevel && (
-              <div className="flex items-center justify-between pt-2 border-t border-border/50">
-                <span className="font-mono text-xs text-muted-foreground">Overall Risk</span>
-                <Badge variant={riskData.riskLevel === "high" ? "destructive" : riskData.riskLevel === "medium" ? "secondary" : "outline"} className="text-[10px]">
-                  {riskData.riskLevel.toUpperCase()}
-                </Badge>
+            {riskData.tokenTags?.length > 0 && (
+              <div className="flex gap-1 flex-wrap pt-2 border-t border-border/50">
+                {riskData.tokenTags.map((tag: string, j: number) => (
+                  <Badge key={j} variant="secondary" className="text-[9px]">{tag.replace(/([A-Z])/g, ' $1').trim()}</Badge>
+                ))}
               </div>
             )}
           </div>
@@ -1038,16 +1137,14 @@ function TrendingPanel({ isActive }: { isActive: boolean }) {
 
   const sortOptions = [
     { id: "5", label: "Volume" },
-    { id: "1", label: "Price Change" },
-    { id: "2", label: "Market Cap" },
-    { id: "3", label: "Txn Count" },
+    { id: "2", label: "Price Change" },
+    { id: "6", label: "Market Cap" },
   ];
 
   const hotTypes = [
-    { id: "4", label: "Most Active" },
-    { id: "1", label: "Gainers" },
-    { id: "2", label: "Losers" },
-    { id: "3", label: "New" },
+    { id: "5", label: "Most Active" },
+    { id: "2", label: "Gainers" },
+    { id: "6", label: "Market Cap" },
   ];
 
   const handleFetch = async () => {
@@ -1153,28 +1250,36 @@ function TrendingPanel({ isActive }: { isActive: boolean }) {
 
         {tokens.length > 0 && (
           <div className="space-y-1.5 max-h-96 overflow-y-auto" data-testid="trending-results">
-            {tokens.slice(0, 20).map((t: any, i: number) => (
-              <div key={i} className="flex items-center justify-between bg-muted/50 rounded-md px-3 py-2.5" data-testid={`trending-item-${i}`}>
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-mono text-[10px] text-muted-foreground w-5 shrink-0">{i + 1}</span>
-                  <div className="min-w-0">
-                    <p className="font-mono text-xs font-medium truncate">{t.tokenSymbol || t.symbol || t.name || `Token ${i + 1}`}</p>
-                    {t.tokenContractAddress && (
-                      <p className="font-mono text-[10px] text-muted-foreground truncate">{t.tokenContractAddress.slice(0, 10)}...{t.tokenContractAddress.slice(-6)}</p>
+            {tokens.slice(0, 20).map((t: any, i: number) => {
+              const symbol = t.tokenSymbol || t.symbol || t.name || `Token ${i + 1}`;
+              const logo = t.tokenLogoUrl || "";
+              const pChange = t.change ?? t.priceChange;
+              const vol = t.volume || t.volume24h || "";
+              const mcap = t.marketCap || "";
+              return (
+                <div key={i} className="flex items-center justify-between bg-muted/50 rounded-md px-3 py-2.5" data-testid={`trending-item-${i}`}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono text-[10px] text-muted-foreground w-5 shrink-0">{i + 1}</span>
+                    {logo && <img src={logo} alt={symbol} className="w-5 h-5 rounded-full shrink-0" />}
+                    <div className="min-w-0">
+                      <p className="font-mono text-xs font-medium truncate">{symbol}</p>
+                      {t.tokenContractAddress && (
+                        <p className="font-mono text-[10px] text-muted-foreground truncate">{t.tokenContractAddress.slice(0, 10)}...{t.tokenContractAddress.slice(-6)}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 ml-2">
+                    {t.price && <p className="font-mono text-xs">${Number(t.price) < 0.01 ? Number(t.price).toPrecision(4) : Number(t.price).toFixed(4)}</p>}
+                    {pChange != null && (
+                      <p className={`font-mono text-[10px] ${Number(pChange) >= 0 ? "text-emerald-500" : "text-red-400"}`}>
+                        {Number(pChange) >= 0 ? "+" : ""}{Number(pChange).toFixed(2)}%
+                      </p>
                     )}
+                    {vol && <p className="font-mono text-[10px] text-muted-foreground">Vol: ${Number(vol).toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>}
                   </div>
                 </div>
-                <div className="text-right shrink-0 ml-2">
-                  {t.price && <p className="font-mono text-xs">${Number(t.price).toFixed(6)}</p>}
-                  {t.priceChange && (
-                    <p className={`font-mono text-[10px] ${Number(t.priceChange) >= 0 ? "text-emerald-500" : "text-red-400"}`}>
-                      {Number(t.priceChange) >= 0 ? "+" : ""}{Number(t.priceChange).toFixed(2)}%
-                    </p>
-                  )}
-                  {t.volume24h && <p className="font-mono text-[10px] text-muted-foreground">Vol: ${Number(t.volume24h).toLocaleString()}</p>}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
