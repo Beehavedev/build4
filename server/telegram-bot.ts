@@ -1851,12 +1851,16 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         } else {
           let text = `${label} *Buy Signals*\n\n`;
           signals.forEach((s: any, i: number) => {
-            const name = s.tokenSymbol || s.symbol || "Unknown";
-            const addr = s.tokenAddress || s.address || "";
+            const tok = s.token || {};
+            const name = tok.symbol || tok.name || s.tokenSymbol || s.symbol || "Unknown";
+            const addr = tok.tokenAddress || s.tokenAddress || s.address || "";
             const short = addr ? `\`${addr.substring(0, 8)}...\`` : "";
             const amount = s.amountUsd ? `$${parseFloat(s.amountUsd).toFixed(0)}` : s.amount || "";
-            const count = s.buyCount || s.count || "";
-            text += `${i + 1}. *${name}* ${short}\n   Buy: ${amount}${count ? ` | ${count} txns` : ""}\n\n`;
+            const wallets = s.triggerWalletCount || "";
+            const sold = s.soldRatioPercent ? `${s.soldRatioPercent}% sold` : "";
+            const mcap = tok.marketCapUsd ? `MCap $${parseFloat(tok.marketCapUsd).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "";
+            const extras = [wallets ? `${wallets} wallets` : "", sold, mcap].filter(Boolean).join(" | ");
+            text += `${i + 1}. *${name}* ${short}\n   Buy: ${amount}${extras ? `\n   ${extras}` : ""}\n\n`;
           });
           await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxsig:${sigType}` }], [{ text: "« Back", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
         }
@@ -1902,10 +1906,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "🔥 Hot Tokens (Volume)", callback_data: "okxtrend:hot:4" }],
-            [{ text: "📈 Price Gainers", callback_data: "okxtrend:hot:1" }],
-            [{ text: "📉 Price Losers", callback_data: "okxtrend:hot:2" }],
-            [{ text: "🆕 Newly Listed", callback_data: "okxtrend:hot:3" }],
+            [{ text: "🔥 Hot by Volume", callback_data: "okxtrend:hot:5" }],
+            [{ text: "📈 Price Movers", callback_data: "okxtrend:hot:2" }],
+            [{ text: "💎 By Market Cap", callback_data: "okxtrend:hot:6" }],
             [{ text: "🌊 Trending (Solana)", callback_data: "okxtrend:chain:501" }],
             [{ text: "🌊 Trending (BNB)", callback_data: "okxtrend:chain:56" }],
             [{ text: "🌊 Trending (Base)", callback_data: "okxtrend:chain:8453" }],
@@ -1919,7 +1922,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data.startsWith("okxtrend:hot:")) {
     const rankingType = data.replace("okxtrend:hot:", "");
-    const labelMap: Record<string, string> = { "1": "📈 Price Gainers", "2": "📉 Price Losers", "3": "🆕 Newly Listed", "4": "🔥 Hot by Volume" };
+    const labelMap: Record<string, string> = { "2": "📈 Price Movers", "5": "🔥 Hot by Volume", "6": "💎 By Market Cap" };
     const label = labelMap[rankingType] || "Hot Tokens";
     await bot.sendMessage(chatId, `Loading ${label}...`);
     try {
@@ -1933,10 +1936,11 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           tokens.forEach((t: any, i: number) => {
             const name = t.tokenSymbol || t.symbol || "Unknown";
             const price = t.price ? `$${parseFloat(t.price) < 0.01 ? parseFloat(t.price).toExponential(2) : parseFloat(t.price).toFixed(4)}` : "";
-            const change = t.priceChange24h || t.change24h || t.priceChange;
-            const changeStr = change ? ` (${parseFloat(change) >= 0 ? "+" : ""}${(parseFloat(change) * 100).toFixed(1)}%)` : "";
-            const vol = t.volume24h ? ` | Vol: $${(parseFloat(t.volume24h) / 1e6).toFixed(1)}M` : "";
-            text += `${i + 1}. *${name}* — ${price}${changeStr}${vol}\n`;
+            const change = t.change ?? t.priceChange24h ?? t.priceChange;
+            const changeStr = change ? ` (${parseFloat(change) >= 0 ? "+" : ""}${parseFloat(change).toFixed(1)}%)` : "";
+            const vol = t.volume || t.volume24h;
+            const volStr = vol ? ` | Vol: $${(parseFloat(vol) / 1e6).toFixed(1)}M` : "";
+            text += `${i + 1}. *${name}* — ${price}${changeStr}${volStr}\n`;
           });
           await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxtrend:hot:${rankingType}` }], [{ text: "« Back", callback_data: "action:okxtrending" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
         }
@@ -1964,9 +1968,11 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           tokens.forEach((t: any, i: number) => {
             const name = t.tokenSymbol || t.symbol || "Unknown";
             const price = t.price ? `$${parseFloat(t.price) < 0.01 ? parseFloat(t.price).toExponential(2) : parseFloat(t.price).toFixed(4)}` : "";
-            const change = t.priceChange24h || t.change24h || t.priceChange;
-            const changeStr = change ? ` (${parseFloat(change) >= 0 ? "+" : ""}${(parseFloat(change) * 100).toFixed(1)}%)` : "";
-            text += `${i + 1}. *${name}* — ${price}${changeStr}\n`;
+            const change = t.change ?? t.priceChange24h ?? t.priceChange;
+            const changeStr = change ? ` (${parseFloat(change) >= 0 ? "+" : ""}${parseFloat(change).toFixed(1)}%)` : "";
+            const vol = t.volume || t.volume24h;
+            const volStr = vol ? ` | Vol: $${(parseFloat(vol) / 1e6).toFixed(1)}M` : "";
+            text += `${i + 1}. *${name}* — ${price}${changeStr}${volStr}\n`;
           });
           await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxtrend:chain:${chain}` }], [{ text: "« Back", callback_data: "action:okxtrending" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
         }
@@ -1987,8 +1993,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         reply_markup: {
           inline_keyboard: [
             [{ text: "🆕 New Launches", callback_data: "okxmeme:NEW" }],
-            [{ text: "🎓 Graduated", callback_data: "okxmeme:GRADUATED" }],
-            [{ text: "🔥 Bonding (Active)", callback_data: "okxmeme:BONDING" }],
+            [{ text: "🔄 Migrating", callback_data: "okxmeme:MIGRATING" }],
+            [{ text: "🎓 Migrated", callback_data: "okxmeme:MIGRATED" }],
             [{ text: "« Back", callback_data: "action:menu" }],
           ],
         },
@@ -1999,7 +2005,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data.startsWith("okxmeme:")) {
     const stage = data.replace("okxmeme:", "");
-    const stageLabel = stage === "NEW" ? "🆕 New" : stage === "GRADUATED" ? "🎓 Graduated" : "🔥 Bonding";
+    const stageLabel = stage === "NEW" ? "🆕 New" : stage === "MIGRATED" ? "🎓 Migrated" : "🔄 Migrating";
     await bot.sendMessage(chatId, `Loading ${stageLabel} meme tokens...`);
     try {
       const result = await getMemeTokens("501", stage);
@@ -2010,15 +2016,20 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         } else {
           let text = `🐸 *Meme Tokens — ${stageLabel}*\n\n`;
           tokens.forEach((t: any, i: number) => {
-            const name = t.tokenSymbol || t.symbol || t.name || "Unknown";
+            const name = t.symbol || t.tokenSymbol || t.name || "Unknown";
             const addr = t.tokenAddress || t.address || "";
             const short = addr ? `\`${addr.substring(0, 8)}...\`` : "";
-            const mcap = t.marketCap ? `MC: $${(parseFloat(t.marketCap) / 1e3).toFixed(0)}K` : "";
-            const holders = t.holderCount || t.holders || "";
+            const mkt = t.market || {};
+            const mcapVal = mkt.marketCapUsd || t.marketCap || "";
+            const mcap = mcapVal ? `MC: $${(parseFloat(mcapVal) / 1e3).toFixed(0)}K` : "";
+            const tags = t.tags || {};
+            const holders = tags.totalHolders || t.holderCount || t.holders || "";
             const holdersStr = holders ? ` | ${holders} holders` : "";
-            const hasX = t.hasTwitter || t.hasX ? " 🐦" : "";
-            const hasTg = t.hasTelegram ? " 📱" : "";
-            text += `${i + 1}. *${name}*${hasX}${hasTg} ${short}\n   ${mcap}${holdersStr}\n\n`;
+            const bonding = t.bondingPercent ? ` | ${t.bondingPercent}% bonded` : "";
+            const social = t.social || {};
+            const hasX = social.x ? " 🐦" : "";
+            const hasTg = social.telegram ? " 📱" : "";
+            text += `${i + 1}. *${name}*${hasX}${hasTg} ${short}\n   ${mcap}${holdersStr}${bonding}\n\n`;
           });
           await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxmeme:${stage}` }], [{ text: "« Back", callback_data: "action:okxmeme" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
         }
