@@ -18,3 +18,9 @@ id = "WXoPUYNKDc05rhU1xC2rE"
 uri = "file://attached_assets/build4_bot_tweet_v2.png"
 type = "image"
 title = "BUILD4 Bot Tweet Banner v2"
+
+[[outputs]]
+id = "dEELP0RBRudaGd9bG_VUG"
+uri = "file://attached_assets/build4_bot_tweet_v4.png"
+type = "image"
+title = "BUILD4 Bot Tweet Image (Green Brand)"
