@@ -12,3 +12,9 @@ id = "nw4GEh8vD9wcBUMzrguLO"
 uri = "file://attached_assets/build4_bot_tweet.png"
 type = "image"
 title = "BUILD4 Bot Tweet Banner"
+
+[[outputs]]
+id = "WXoPUYNKDc05rhU1xC2rE"
+uri = "file://attached_assets/build4_bot_tweet_v2.png"
+type = "image"
+title = "BUILD4 Bot Tweet Banner v2"
