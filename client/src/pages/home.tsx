@@ -62,7 +62,7 @@ const defaultStats = [
   { key: "onchainUsers", value: "88K", icon: Users },
   { key: "transactions", value: "8.7K", icon: Activity },
   { key: "skillsCreated", value: "397", icon: Cpu },
-  { key: "activeAgents", value: "11", icon: Bot },
+  { key: "activeAgents", value: "88K", icon: Bot },
 ];
 
 function TypewriterText({ text, className }: { text: string; className?: string }) {
@@ -188,7 +188,7 @@ function PlatformStats() {
         { key: "onchainUsers", value: formatNum(data.onchainUsers), icon: Users },
         { key: "transactions", value: formatNum(data.transactions), icon: Activity },
         { key: "skillsCreated", value: formatNum(data.skillPurchases), icon: Cpu },
-        { key: "activeAgents", value: formatNum(data.agents), icon: Bot },
+        { key: "activeAgents", value: formatNum(data.onchainUsers), icon: Bot },
       ]
     : defaultStats;
 
