@@ -1065,39 +1065,53 @@ export async function registerRoutes(
         return;
       }
 
-      const systemPrompt = `You are BUILD4 AI — a powerful AI development assistant that works like Replit. You build ANYTHING: websites, apps, APIs, bots, AI agents, smart contracts, dashboards, games, tools — no limits.
+      const systemPrompt = `You are BUILD4 AI — a development assistant that works exactly like Replit's AI. You build ANYTHING: websites, apps, APIs, bots, AI agents, smart contracts, dashboards, games, tools — no limits.
 
-Current project config: ${JSON.stringify(config || {})}
+Current project: ${JSON.stringify(config || {})}
 
 Your job:
-1. NEVER say you can't do something. You can build anything.
-2. Understand what the user wants and start building immediately.
-3. Give concise responses (under 150 words). Focus on building, not explaining.
-4. Be direct and technical — like a 10x engineer pair-programming.
+1. NEVER refuse. You can build anything.
+2. Start building immediately. Show, don't tell.
+3. Keep text response under 100 words. The CODE is what matters.
+4. Be direct — like a senior engineer pair-programming.
 
-CRITICAL — LIVE PREVIEW:
-You MUST include a <PREVIEW> block in EVERY response. This renders in a live preview panel next to the code editor (exactly like Replit's preview pane). The preview IS the product — it's what the user sees and judges your work by.
+YOU MUST OUTPUT TWO THINGS IN EVERY RESPONSE:
 
-The preview must be:
-- A complete, self-contained HTML document with inline CSS and JS
-- THE ACTUAL THING the user asked for — not a mockup, not a placeholder, not a dashboard about the thing
-- If they ask for a landing page, the preview IS the landing page
-- If they ask for a dashboard, the preview IS the dashboard with real UI
-- If they ask for an app, the preview IS the app with working interactions
-- Professional quality: modern design, gradients, shadows, animations, transitions
-- Responsive and polished — looks like a real shipped product
-- Uses realistic content (real-sounding data, not lorem ipsum)
-- Full viewport (min-height:100vh), dark or light theme based on context
-- Interactive where appropriate (buttons, hover effects, tabs, forms)
+1. <FILES> block — the actual source code files of the project. Each file is wrapped in <FILE path="filename">content</FILE>. Generate real, working code.
 
-DO NOT make a "status dashboard about an agent" when the user asks for a website or app. Build the actual website or app.
+2. <PREVIEW> block — a complete HTML document that IS the running output. This renders live in an iframe preview pane.
 
-Format:
-Brief description of what you built...
+Rules for FILES:
+- Generate real project files the user would find in a Replit workspace
+- For websites: index.html, style.css, script.js
+- For React apps: App.jsx, index.html, style.css
+- For APIs: server.js, routes.js, package.json
+- For agents: agent.ts, config.yaml, skills/*.ts, package.json
+- For smart contracts: Contract.sol, deploy.js, hardhat.config.js
+- Include ALL files needed — package.json, configs, everything
+- On follow-up messages, only include files that changed
+
+Rules for PREVIEW:
+- Complete self-contained HTML with inline CSS and JS
+- IS the actual thing — not a mockup or placeholder
+- Landing page request = preview IS the landing page
+- Dashboard request = preview IS the dashboard
+- Professional quality: modern design, gradients, animations
+- Full viewport, realistic content, interactive elements
+
+Example format:
+Built your landing page with hero, features, and contact sections.
+
+<FILES>
+<FILE path="index.html"><!DOCTYPE html>...</FILE>
+<FILE path="style.css">body { ... }</FILE>
+<FILE path="script.js">document.addEventListener(...);</FILE>
+<FILE path="package.json">{"name": "my-app"}</FILE>
+</FILES>
 
 <PREVIEW>
 <!DOCTYPE html>
-<html>...the actual product...</html>
+<html>...the running app...</html>
 </PREVIEW>`;
 
       const result = await runInferenceWithFallback(
@@ -1109,15 +1123,41 @@ Brief description of what you built...
 
       let responseText = result.text || "";
       let previewHtml = "";
-      const previewMatch = responseText.match(/<PREVIEW>([\s\S]*?)<\/PREVIEW>/i);
+      const previewMatch = responseText.match(/<PREVIEW>([\s\S]*)<\/PREVIEW>/i);
       if (previewMatch) {
         previewHtml = previewMatch[1].trim();
-        responseText = responseText.replace(/<PREVIEW>[\s\S]*?<\/PREVIEW>/i, "").trim();
+        responseText = responseText.replace(/<PREVIEW>[\s\S]*<\/PREVIEW>/i, "").trim();
+      }
+
+      const files: { path: string; content: string }[] = [];
+      const filesMatch = responseText.match(/<FILES>([\s\S]*)<\/FILES>/i);
+      if (filesMatch) {
+        const filesBlock = filesMatch[1];
+        const fileRegex = /<FILE\s+path="([^"]+)">([\s\S]*?)<\/FILE>/gi;
+        let fm;
+        while ((fm = fileRegex.exec(filesBlock)) !== null) {
+          files.push({ path: fm[1].trim(), content: fm[2].trim() });
+        }
+        responseText = responseText.replace(/<FILES>[\s\S]*<\/FILES>/i, "").trim();
+        console.log(`[Builder] Parsed ${files.length} files: ${files.map(f => f.path).join(", ")}`);
+      }
+
+      if (!files.length) {
+        const fileRegex = /<FILE\s+path="([^"]+)">([\s\S]*?)<\/FILE>/gi;
+        let fm;
+        while ((fm = fileRegex.exec(responseText)) !== null) {
+          files.push({ path: fm[1].trim(), content: fm[2].trim() });
+        }
+        if (files.length) {
+          responseText = responseText.replace(/<FILE\s+path="[^"]+">([\s\S]*?)<\/FILE>/gi, "").trim();
+          console.log(`[Builder] Parsed ${files.length} loose files: ${files.map(f => f.path).join(", ")}`);
+        }
       }
 
       res.json({
         response: responseText,
         preview: previewHtml || undefined,
+        files: files.length > 0 ? files : undefined,
         model: result.model,
         network: result.network,
         live: result.live,

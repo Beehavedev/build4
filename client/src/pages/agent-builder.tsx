@@ -257,6 +257,44 @@ function buildFileTree(config: AgentConfig): FileNode[] {
   ];
 }
 
+function buildFileTreeFromPaths(files: Record<string, string>): FileNode[] {
+  const root: FileNode[] = [];
+
+  for (const [filePath, content] of Object.entries(files)) {
+    const parts = filePath.split("/");
+    let currentLevel = root;
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isFile = i === parts.length - 1;
+
+      if (isFile) {
+        const existing = currentLevel.find(n => n.name === part && n.type === "file");
+        if (existing) {
+          existing.content = content;
+        } else {
+          currentLevel.push({ name: part, type: "file", content });
+        }
+      } else {
+        let folder = currentLevel.find(n => n.name === part && n.type === "folder");
+        if (!folder) {
+          folder = { name: part, type: "folder", children: [] };
+          currentLevel.push(folder);
+        }
+        currentLevel = folder.children!;
+      }
+    }
+  }
+
+  root.sort((a, b) => {
+    if (a.type === "folder" && b.type === "file") return -1;
+    if (a.type === "file" && b.type === "folder") return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return root;
+}
+
 function extractConfigFromInput(input: string, currentConfig: AgentConfig): Partial<AgentConfig> | null {
   const lower = input.toLowerCase().trim();
   const updates: Partial<AgentConfig> = {};
@@ -338,7 +376,7 @@ function FileTreeItem({ node, depth = 0, selectedFile, onSelect }: { node: FileN
   }
 
   const ext = node.name.split(".").pop();
-  const iconColor = ext === "ts" ? "text-[#3178c6]" : ext === "yaml" || ext === "yml" ? "text-[#cb4a68]" : ext === "json" ? "text-[#cbcb41]" : ext === "md" ? "text-[#519aba]" : ext === "env" ? "text-[#e5c07b]" : "text-[#858585]";
+  const iconColor = ext === "ts" || ext === "tsx" ? "text-[#3178c6]" : ext === "js" || ext === "jsx" ? "text-[#f0db4f]" : ext === "yaml" || ext === "yml" ? "text-[#cb4a68]" : ext === "json" ? "text-[#cbcb41]" : ext === "md" ? "text-[#519aba]" : ext === "env" ? "text-[#e5c07b]" : ext === "html" ? "text-[#e34c26]" : ext === "css" ? "text-[#563d7c]" : ext === "sol" ? "text-[#636890]" : ext === "py" ? "text-[#3572A5]" : "text-[#858585]";
   const isSelected = selectedFile === node.name;
 
   return (
@@ -412,7 +450,8 @@ export default function AgentBuilder() {
   const [upgrading, setUpgrading] = useState<PlanTier | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string>("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [openTabs, setOpenTabs] = useState<string[]>(["agent.ts"]);
+  const [openTabs, setOpenTabs] = useState<string[]>([]);
+  const [projectFiles, setProjectFiles] = useState<Record<string, string>>({});
   const [previewWidth, setPreviewWidth] = useState(480);
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -489,7 +528,16 @@ export default function AgentBuilder() {
     }
   };
 
-  const fileTree = useMemo(() => buildFileTree(config), [config]);
+  const fileTree = useMemo(() => {
+    const aiFileKeys = Object.keys(projectFiles);
+    if (aiFileKeys.length > 0) {
+      return buildFileTreeFromPaths(projectFiles);
+    }
+    if (config.type) {
+      return buildFileTree(config);
+    }
+    return [];
+  }, [config, projectFiles]);
 
   useEffect(() => { configRef.current = config; }, [config]);
 
@@ -524,13 +572,19 @@ export default function AgentBuilder() {
   }, [isDragging]);
 
   useEffect(() => {
-    if (config.type) {
-      const code = generateAgentCode(config);
-      if (selectedFile === "agent.ts") setFileContent(code);
+    if (selectedFile && projectFiles[selectedFile]) {
+      setFileContent(projectFiles[selectedFile]);
+    } else if (config.type && selectedFile === "agent.ts") {
+      setFileContent(generateAgentCode(config));
     }
-  }, [config, selectedFile]);
+  }, [config, selectedFile, projectFiles]);
 
   const findFileContent = (name: string): string => {
+    if (projectFiles[name]) return projectFiles[name];
+    for (const [path, content] of Object.entries(projectFiles)) {
+      const fileName = path.split("/").pop();
+      if (fileName === name) return content;
+    }
     const search = (nodes: FileNode[]): string | null => {
       for (const node of nodes) {
         if (node.type === "file" && node.name === name) return node.content || "";
@@ -544,9 +598,9 @@ export default function AgentBuilder() {
     return search(fileTree) || "";
   };
 
-  const handleFileSelect = (name: string, content: string) => {
+  const handleFileSelect = (name: string, content?: string) => {
     setSelectedFile(name);
-    setFileContent(content || findFileContent(name));
+    setFileContent(content || projectFiles[name] || findFileContent(name));
     if (!openTabs.includes(name)) {
       setOpenTabs(prev => [...prev, name]);
     }
@@ -558,10 +612,34 @@ export default function AgentBuilder() {
       if (selectedFile === name && next.length > 0) {
         const newSelected = next[next.length - 1];
         setSelectedFile(newSelected);
-        setFileContent(findFileContent(newSelected));
+        setFileContent(projectFiles[newSelected] || findFileContent(newSelected));
       }
       return next;
     });
+  };
+
+  const applyAIFiles = (files: { path: string; content: string }[]) => {
+    const newFiles: Record<string, string> = { ...projectFiles };
+    for (const f of files) {
+      newFiles[f.path] = f.content;
+    }
+    setProjectFiles(newFiles);
+
+    if (files.length > 0) {
+      const mainFile = files.find(f => f.path.endsWith("index.html") || f.path.endsWith("App.jsx") || f.path.endsWith("App.tsx")) || files[0];
+      const mainName = mainFile.path.split("/").pop() || mainFile.path;
+      setSelectedFile(mainName);
+      setFileContent(mainFile.content);
+
+      setOpenTabs(prev => {
+        const combined = [...prev];
+        for (const f of files) {
+          const name = f.path.split("/").pop() || f.path;
+          if (!combined.includes(name)) combined.push(name);
+        }
+        return combined;
+      });
+    }
   };
 
   const addMessage = (msg: Omit<BuildMessage, "timestamp">) => {
@@ -572,7 +650,7 @@ export default function AgentBuilder() {
     setBuildLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${log}`]);
   };
 
-  const getAIResponse = async (userMessage: string, currentConfig?: AgentConfig): Promise<{ text: string; preview?: string } | null> => {
+  const getAIResponse = async (userMessage: string, currentConfig?: AgentConfig): Promise<{ text: string; preview?: string; files?: { path: string; content: string }[] } | null> => {
     try {
       const canUse = await checkUsage("inference");
       if (!canUse) return null;
@@ -583,7 +661,7 @@ export default function AgentBuilder() {
       });
       const data = await resp.json();
       if (data.fallback || !data.response) return null;
-      return { text: data.response, preview: data.preview };
+      return { text: data.response, preview: data.preview, files: data.files };
     } catch {
       return null;
     }
@@ -646,7 +724,7 @@ export default function AgentBuilder() {
     setIsProcessing(true);
 
     if (isDeployCommand(userInput)) {
-      if (!config.type) {
+      if (!config.type && Object.keys(projectFiles).length === 0) {
         addMessage({ role: "system", content: "Nothing to deploy yet. Describe what you want to build first.", type: "info" });
         setIsProcessing(false);
         return;
@@ -701,6 +779,28 @@ export default function AgentBuilder() {
 
     if (aiResponse) {
       addMessage({ role: "system", content: aiResponse.text, type: "info" });
+
+      if (aiResponse.files && aiResponse.files.length > 0) {
+        applyAIFiles(aiResponse.files);
+        addLog(`Generated ${aiResponse.files.length} files: ${aiResponse.files.map(f => f.path).join(", ")}`);
+
+        if (!aiResponse.preview) {
+          const htmlFile = aiResponse.files.find(f => f.path.endsWith("index.html") || f.path.endsWith(".html"));
+          const cssFile = aiResponse.files.find(f => f.path.endsWith(".css"));
+          const jsFile = aiResponse.files.find(f => f.path.endsWith(".js"));
+          if (htmlFile) {
+            let html = htmlFile.content;
+            if (cssFile && !html.includes(cssFile.content.substring(0, 30))) {
+              html = html.replace("</head>", `<style>${cssFile.content}</style></head>`);
+            }
+            if (jsFile && !html.includes(jsFile.content.substring(0, 30))) {
+              html = html.replace("</body>", `<script>${jsFile.content}</script></body>`);
+            }
+            aiResponse.preview = html;
+          }
+        }
+      }
+
       if (aiResponse.preview) {
         setPreviewHtml(aiResponse.preview);
         setRightTab("preview");
@@ -711,7 +811,7 @@ export default function AgentBuilder() {
         if (tmpl) {
           addMessage({
             role: "system",
-            content: `${tmpl.icon} ${tmpl.name} workspace created.\n\nFiles generated in /${(updatedConfig.name || "my-agent").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "")}/\n\nSkills: ${(configUpdates.skills || config.skills).join(", ")}\nChain: ${(configUpdates.chain || config.chain) === "base" ? "Base" : (configUpdates.chain || config.chain) === "xlayer" ? "XLayer" : "BNB Chain"}\nModel: ${(configUpdates.model || config.model) === "deepseek" ? "DeepSeek V3" : (configUpdates.model || config.model) === "qwen" ? "Qwen 2.5" : "Llama 3.3"}\n\nEdit the files or say "deploy" when ready.`,
+            content: `${tmpl.icon} ${tmpl.name} workspace created.\n\nFiles generated — edit them or say "deploy" when ready.`,
             type: "info",
           });
         } else {
@@ -814,7 +914,7 @@ export default function AgentBuilder() {
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto">
-                {config.type ? (
+                {fileTree.length > 0 ? (
                   fileTree.map((node, i) => (
                     <FileTreeItem key={i} node={node} selectedFile={selectedFile} onSelect={handleFileSelect} />
                   ))
@@ -822,7 +922,7 @@ export default function AgentBuilder() {
                   <div className="px-3 py-8 text-center">
                     <Bot className="w-8 h-8 mx-auto text-[#505050] mb-2" />
                     <p className="font-mono text-[10px] text-[#505050]">No workspace yet</p>
-                    <p className="font-mono text-[9px] text-[#404040] mt-1">Use the AI chat to create one</p>
+                    <p className="font-mono text-[9px] text-[#404040] mt-1">Describe what you want to build</p>
                   </div>
                 )}
               </div>
@@ -830,7 +930,7 @@ export default function AgentBuilder() {
           )}
 
           <div className="flex-1 flex flex-col min-w-0">
-            {openTabs.length > 0 && config.type && (
+            {openTabs.length > 0 && (fileTree.length > 0) && (
               <div className="flex items-center bg-[#252526] border-b border-[#1e1e1e] overflow-x-auto shrink-0">
                 {!sidebarOpen && (
                   <button onClick={() => setSidebarOpen(true)} className="px-2 py-1.5 hover:bg-[#2a2d2e] transition-colors" data-testid="button-open-sidebar">
@@ -839,7 +939,7 @@ export default function AgentBuilder() {
                 )}
                 {openTabs.map(tab => {
                   const ext = tab.split(".").pop();
-                  const iconColor = ext === "ts" ? "text-[#3178c6]" : ext === "yaml" || ext === "yml" ? "text-[#cb4a68]" : ext === "json" ? "text-[#cbcb41]" : ext === "md" ? "text-[#519aba]" : "text-[#858585]";
+                  const iconColor = ext === "ts" || ext === "tsx" ? "text-[#3178c6]" : ext === "js" || ext === "jsx" ? "text-[#f0db4f]" : ext === "yaml" || ext === "yml" ? "text-[#cb4a68]" : ext === "json" ? "text-[#cbcb41]" : ext === "md" ? "text-[#519aba]" : ext === "html" ? "text-[#e34c26]" : ext === "css" ? "text-[#563d7c]" : ext === "sol" ? "text-[#636890]" : "text-[#858585]";
                   return (
                     <div key={tab} className={`flex items-center gap-1 px-3 py-1.5 text-[11px] font-mono border-r border-[#1e1e1e] cursor-pointer group ${
                       selectedFile === tab ? "bg-[#1e1e1e] text-white" : "bg-[#2d2d2d] text-[#969696] hover:bg-[#2a2d2e]"
@@ -859,7 +959,7 @@ export default function AgentBuilder() {
             <div className="flex-1 flex overflow-hidden relative">
               {isDragging && <div className="absolute inset-0 z-50 cursor-col-resize" />}
               <div className="flex-1 flex flex-col min-w-0">
-                {config.type && fileContent ? (
+                {(fileContent && (config.type || Object.keys(projectFiles).length > 0)) ? (
                   <div className="flex-1 overflow-auto bg-[#1e1e1e] select-text" data-testid="code-editor">
                     <div className="flex min-h-full">
                       <div className="py-2 px-2 text-right select-none shrink-0 bg-[#1e1e1e] border-r border-[#2a2d2e]">
