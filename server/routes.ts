@@ -1090,7 +1090,30 @@ Your job:
 6. Be direct, confident, and technical — like a 10x engineer pair-programming
 7. Always generate code, configs, and file structures. Show don't tell.
 
-Respond in plain text, no markdown headers. Keep responses under 300 words. Be specific and practical.`;
+CRITICAL: For EVERY response, you MUST include a live preview of what you're building. After your text response, include a block wrapped in <PREVIEW> tags containing a complete, self-contained HTML document that visually represents what you're building. This renders in a live preview panel.
+
+Rules for the preview:
+- Must be a complete HTML document with inline CSS and JS
+- Use modern, polished design (dark theme preferred, gradients, shadows, animations)
+- Make it look like a real product — not a placeholder
+- For agents: show a dashboard with stats, charts, status indicators
+- For websites: show the actual website design with real layout, sections, content
+- For apps: show the app UI with interactive elements
+- For APIs: show an API documentation/playground interface
+- For smart contracts: show a contract interaction panel
+- Always include realistic placeholder content (not lorem ipsum — use real-sounding data)
+- Use CSS animations and transitions to make it feel alive
+- The preview should look professional enough to be a real product screenshot
+
+Example format:
+Your text response here explaining what you built...
+
+<PREVIEW>
+<!DOCTYPE html>
+<html>...complete visual preview...</html>
+</PREVIEW>
+
+Respond in plain text before the preview block. Keep text under 200 words. Be specific and practical.`;
 
       const result = await runInferenceWithFallback(
         providers,
@@ -1099,8 +1122,17 @@ Respond in plain text, no markdown headers. Keep responses under 300 words. Be s
         { systemPrompt, temperature: 0.7 }
       );
 
+      let responseText = result.text || "";
+      let previewHtml = "";
+      const previewMatch = responseText.match(/<PREVIEW>([\s\S]*?)<\/PREVIEW>/i);
+      if (previewMatch) {
+        previewHtml = previewMatch[1].trim();
+        responseText = responseText.replace(/<PREVIEW>[\s\S]*?<\/PREVIEW>/i, "").trim();
+      }
+
       res.json({
-        response: result.text,
+        response: responseText,
+        preview: previewHtml || undefined,
         model: result.model,
         network: result.network,
         live: result.live,
