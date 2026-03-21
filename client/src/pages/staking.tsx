@@ -12,11 +12,11 @@ import {
 } from "lucide-react";
 
 const LOCK_TIERS = [
-  { days: 7, label: "7 Days", multiplier: "1x", apy: "12%", color: "border-zinc-500", active: "border-zinc-400 bg-zinc-500/10" },
-  { days: 30, label: "30 Days", multiplier: "1.25x", apy: "15%", color: "border-blue-500", active: "border-blue-400 bg-blue-500/10" },
-  { days: 90, label: "90 Days", multiplier: "1.75x", apy: "21%", color: "border-cyan-500", active: "border-cyan-400 bg-cyan-500/10" },
-  { days: 180, label: "180 Days", multiplier: "2.5x", apy: "30%", color: "border-purple-500", active: "border-purple-400 bg-purple-500/10" },
-  { days: 365, label: "365 Days", multiplier: "4x", apy: "48%", color: "border-primary", active: "border-primary bg-primary/10" },
+  { days: 7, label: "7 Days", multiplier: "1x", color: "border-zinc-500", active: "border-zinc-400 bg-zinc-500/10" },
+  { days: 30, label: "30 Days", multiplier: "1.25x", color: "border-blue-500", active: "border-blue-400 bg-blue-500/10" },
+  { days: 90, label: "90 Days", multiplier: "1.75x", color: "border-cyan-500", active: "border-cyan-400 bg-cyan-500/10" },
+  { days: 180, label: "180 Days", multiplier: "2.5x", color: "border-purple-500", active: "border-purple-400 bg-purple-500/10" },
+  { days: 365, label: "365 Days", multiplier: "4x", color: "border-primary", active: "border-primary bg-primary/10" },
 ];
 
 const TOKEN_NOT_LAUNCHED = true;
@@ -96,8 +96,8 @@ export default function StakingPage() {
             </Card>
             <Card className="p-4 text-center space-y-1">
               <TrendingUp className="w-5 h-5 mx-auto text-amber-500" />
-              <div className="font-mono text-xl font-bold" data-testid="text-current-apy">{tier.apy}</div>
-              <div className="font-mono text-[10px] text-muted-foreground">Current APY</div>
+              <div className="font-mono text-xl font-bold" data-testid="text-current-multiplier">{tier.multiplier}</div>
+              <div className="font-mono text-[10px] text-muted-foreground">Your Multiplier</div>
             </Card>
           </div>
 
@@ -137,8 +137,7 @@ export default function StakingPage() {
                         data-testid={`button-tier-${t.days}`}
                       >
                         <div className="font-mono text-xs font-bold">{t.label}</div>
-                        <div className="font-mono text-[10px] text-muted-foreground mt-1">{t.multiplier}</div>
-                        <div className="font-mono text-[10px] text-primary font-semibold mt-0.5">{t.apy}</div>
+                        <div className="font-mono text-sm text-primary font-semibold mt-1">{t.multiplier}</div>
                       </button>
                     ))}
                   </div>
@@ -182,16 +181,11 @@ export default function StakingPage() {
                     <span className="font-semibold text-primary">{tier.multiplier}</span>
                   </div>
                   <div className="flex justify-between font-mono text-xs">
-                    <span className="text-muted-foreground">Estimated APY</span>
-                    <span className="font-semibold text-emerald-500">{tier.apy}</span>
+                    <span className="text-muted-foreground">APY</span>
+                    <span className="font-semibold text-emerald-500">Variable</span>
                   </div>
-                  <div className="flex justify-between font-mono text-xs">
-                    <span className="text-muted-foreground">Estimated Earnings</span>
-                    <span className="font-semibold">
-                      {stakeAmount && parseFloat(stakeAmount) > 0
-                        ? `${(parseFloat(stakeAmount) * parseFloat(tier.apy) / 100 * tier.days / 365).toFixed(2)} BUILD4`
-                        : "0 BUILD4"}
-                    </span>
+                  <div className="font-mono text-[10px] text-muted-foreground pt-1">
+                    APY depends on total staked and platform revenue. Higher multiplier = bigger share of rewards.
                   </div>
                 </div>
 
@@ -319,13 +313,13 @@ export default function StakingPage() {
                         <Clock className="w-3.5 h-3.5 text-muted-foreground" />
                         <span className="font-mono text-xs">{t.label}</span>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <Badge variant="secondary" className="font-mono text-[10px]">{t.multiplier}</Badge>
-                        <span className="font-mono text-xs font-bold text-emerald-500">{t.apy}</span>
-                      </div>
+                      <Badge variant="secondary" className="font-mono text-xs font-bold">{t.multiplier} rewards</Badge>
                     </div>
                   ))}
                 </div>
+                <p className="font-mono text-[10px] text-muted-foreground">
+                  APY is variable and depends on total tokens staked and platform revenue. Multipliers are guaranteed by the smart contract.
+                </p>
               </Card>
 
               <Card className="p-6 space-y-4" data-testid="revenue-source">
