@@ -178,10 +178,67 @@ function parseUserIntent(input: string, currentConfig: AgentConfig): { config: P
     };
   }
 
+  if (lower.includes("store") || lower.includes("browse agent") || lower.includes("show me agent") || lower.includes("community agent") || lower.includes("marketplace") || lower.includes("discover")) {
+    return {
+      config: {},
+      response: `Here are the top community agents you can fork and customize:\n\n📈 Alpha Hunter v3 — Multi-chain trading, whale tracking, social sentiment (★4.8, 2.8K users)\n🛡️ Sentinel Security — Real-time contract auditing and rug detection (★4.9, 1.9K users)\n🏦 YieldMax Pro — Auto yield farming and rebalancing (★4.6, 1.4K users)\n💬 Social Pulse — Twitter/Telegram/Discord intelligence (★4.5, 892 users)\n🔒 MEV Shield — Transaction protection from sandwich attacks (★4.7, 673 users)\n🔍 ResearchGPT — Deep token research with risk scoring (★4.4, 1.2K users)\n👁️ CopyTrader AI — Follow top PnL wallets automatically (★4.3, 2.1K users)\n⚡ GasMaster — Gas optimization and tx batching (★4.2, 534 users)\n\nSay "fork Alpha Hunter" or "fork Sentinel" to start from any of these. Or describe what you need and I'll build from scratch.`,
+    };
+  }
+
+  if (lower.includes("fork")) {
+    const forkMap: Record<string, { type: string; name: string; bio: string; skills: string[] }> = {
+      "alpha": { type: "trading", name: "Alpha Hunter v3 (fork)", bio: "Multi-chain trading agent — whale tracking, social sentiment, alpha detection", skills: ["Market Scanner", "Whale Tracker", "Signal Detector", "Trade Executor", "Social Sentiment"] },
+      "sentinel": { type: "security", name: "Sentinel Security (fork)", bio: "Real-time contract auditing, honeypot detection, rug pull analysis", skills: ["Contract Scanner", "Honeypot Detector", "Rug Analyzer", "Wallet Monitor", "Alert System"] },
+      "yield": { type: "defi", name: "YieldMax Pro (fork)", bio: "Automated yield farming with auto-compounding and rebalancing", skills: ["Yield Scanner", "LP Manager", "Auto Compounder", "Gas Optimizer", "Position Tracker"] },
+      "social": { type: "social", name: "Social Pulse (fork)", bio: "Social media intelligence across Twitter, Telegram, Discord", skills: ["Content Writer", "Trend Monitor", "Sentiment Analyzer", "Alert Bot"] },
+      "mev": { type: "security", name: "MEV Shield (fork)", bio: "Transaction protection from sandwich attacks and front-running", skills: ["TX Router", "Mempool Monitor", "Gas Optimizer", "Private Pool"] },
+      "research": { type: "research", name: "ResearchGPT (fork)", bio: "Deep token research with on-chain metrics and risk scoring", skills: ["Token Analyzer", "Contract Auditor", "Whale Tracker", "Report Generator", "Risk Scorer"] },
+      "copy": { type: "trading", name: "CopyTrader AI (fork)", bio: "Follow top PnL wallets with configurable position sizing", skills: ["Wallet Tracker", "Trade Copier", "Position Sizer", "Risk Manager"] },
+      "gas": { type: "defi", name: "GasMaster (fork)", bio: "Transaction optimization — batching, gas timing, cheapest routes", skills: ["TX Batcher", "Gas Monitor", "Route Optimizer"] },
+    };
+
+    for (const [key, fork] of Object.entries(forkMap)) {
+      if (lower.includes(key)) {
+        return {
+          config: { ...fork, status: "configuring" },
+          response: `Forked! Starting from ${fork.name}.\n\n🔧 Skills: ${fork.skills.join(", ")}\n📝 ${fork.bio}\n\nCustomize it or say "deploy" to launch.`,
+        };
+      }
+    }
+  }
+
+  if (lower.includes("sdk") || lower.includes("api") || lower.includes("docs") || lower.includes("developer") || lower.includes("code example") || lower.includes("integrate")) {
+    return {
+      config: {},
+      response: `BUILD4 SDK — TypeScript-first agent development.\n\n$ npm install @build4/sdk\n\nQuick start:\n  import { BUILD4SDK } from '@build4/sdk'\n  const sdk = new BUILD4SDK({ apiKey: 'key', chain: 'bnb' })\n  const agent = await sdk.agents.create({ name: 'Bot', template: 'trading' })\n\nKey APIs:\n  POST /api/v1/agents — Create agent\n  GET  /api/v1/agents — List agents\n  POST /api/v1/trade/swap — Execute swap\n  GET  /api/v1/market/signals — Market signals\n  GET  /api/v1/market/trending — Trending tokens\n  POST /api/v1/skills — Create skill\n  POST /api/v1/webhooks — Register webhook\n  POST /api/v1/staking/stake — Stake BUILD4\n\nSay "show me trading api", "show me webhooks", or "show me agent management" for detailed code examples.`,
+    };
+  }
+
+  if (lower.includes("show me trading api") || lower.includes("trading code") || lower.includes("swap code")) {
+    return {
+      config: {},
+      response: `Trading API examples:\n\n// Get market signals\nconst signals = await sdk.market.signals({\n  chain: 'bnb',\n  type: 'whale', // whale | kol | smart\n});\n\n// Get trending tokens\nconst trending = await sdk.market.trending({\n  chain: 'bnb',\n  timeFrame: '24h',\n  sortBy: 'volume',\n});\n\n// Execute a swap\nconst tx = await sdk.trade.swap({\n  agentId: 'your-agent-id',\n  fromToken: 'BNB',\n  toToken: '0x...tokenAddress',\n  amount: '0.05',\n  slippage: 1,\n});\n\n// Token security scan\nconst security = await sdk.market.security({\n  chain: 'bnb',\n  token: '0x...tokenAddress',\n});`,
+    };
+  }
+
+  if (lower.includes("show me webhook") || lower.includes("event") || lower.includes("webhook code")) {
+    return {
+      config: {},
+      response: `Webhooks & Events:\n\n// Register a webhook\nawait sdk.webhooks.create({\n  url: 'https://your-server.com/webhook',\n  events: [\n    'agent.trade.executed',\n    'agent.skill.purchased',\n    'agent.reward.earned',\n    'agent.status.changed',\n  ],\n});\n\n// Real-time event listeners\nsdk.events.on('trade.executed', (event) => {\n  console.log('Trade:', event.token, event.amount);\n  console.log('PnL:', event.pnl);\n});\n\nsdk.events.on('reward.earned', (event) => {\n  console.log('Reward:', event.amount, 'BUILD4');\n});`,
+    };
+  }
+
+  if (lower.includes("show me agent management") || lower.includes("manage code") || lower.includes("agent api")) {
+    return {
+      config: {},
+      response: `Agent Management API:\n\n// List your agents\nconst agents = await sdk.agents.list();\n\n// Get agent details\nconst agent = await sdk.agents.get('agent-id');\n\n// Update agent config\nawait sdk.agents.update('agent-id', {\n  config: { maxTradeSize: '0.5' },\n});\n\n// Fund agent wallet\nawait sdk.agents.fund('agent-id', {\n  amount: '0.1',\n  token: 'BNB',\n});\n\n// Get activity log\nconst logs = await sdk.agents.logs('agent-id', {\n  limit: 50,\n  type: 'trade',\n});\n\n// Pause / resume\nawait sdk.agents.pause('agent-id');\nawait sdk.agents.resume('agent-id');`,
+    };
+  }
+
   if (lower.includes("help") || lower === "?" || lower.includes("what can")) {
     return {
       config: {},
-      response: `Here's what you can do:\n\n• Tell me what agent to build: "build a trading agent", "I need a security scanner"\n• Change the name: "name it AlphaBot"\n• Pick a chain: "use Base" or "deploy on BNB"\n• Pick a model: "use DeepSeek" or "use Llama"\n• Add skills: "add whale tracker"\n• Set autonomy: "make it fully autonomous"\n• Deploy: "deploy" or "ship it"\n\nOr just describe what you want in plain English and I'll configure it.`,
+      response: `Here's what you can do:\n\n🔨 BUILD\n• "build a trading agent" — create from template\n• "I need a security scanner" — describe what you need\n• Change name: "name it AlphaBot"\n• Pick chain: "use Base" or "deploy on BNB"\n• Pick model: "use DeepSeek" or "use Llama"\n• Add skills: "add whale tracker"\n• Set autonomy: "make it fully autonomous"\n• Deploy: "deploy" or "ship it"\n\n🏪 STORE\n• "show me agents" — browse community agents\n• "fork Alpha Hunter" — start from a community agent\n\n💻 SDK\n• "show me the SDK" — API reference and code examples\n• "show me trading api" — trading code examples\n• "show me webhooks" — event/webhook examples\n\nOr just describe what you want in plain English.`,
     };
   }
 
@@ -247,7 +304,7 @@ export default function AgentBuilder() {
   const [messages, setMessages] = useState<BuildMessage[]>([
     {
       role: "system",
-      content: "Welcome to BUILD4 Agent Builder. Tell me what you want to build and I'll create it for you.\n\nExamples:\n• \"Build me a trading agent\"\n• \"I need an agent that scans for rug pulls\"\n• \"Create a DeFi yield optimizer on Base\"\n\nJust describe it. I'll handle the rest.",
+      content: "Welcome to BUILD4. Tell me what you want to build and I'll create it.\n\nExamples:\n• \"Build me a trading agent\"\n• \"I need a security scanner\"\n• \"Show me community agents\" — browse and fork\n• \"Show me the SDK\" — API docs and code\n\nJust describe it. I'll handle the rest.",
       timestamp: new Date(),
       type: "info",
     },
@@ -388,14 +445,9 @@ export default function AgentBuilder() {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <Link href="/agent-store">
-                  <Button variant="ghost" size="sm" className="font-mono text-[10px] gap-1 h-7 px-2" data-testid="button-store">
-                    <Globe className="w-3 h-3" /> Store
-                  </Button>
-                </Link>
-                <Link href="/sdk">
-                  <Button variant="ghost" size="sm" className="font-mono text-[10px] gap-1 h-7 px-2" data-testid="button-sdk">
-                    <Code className="w-3 h-3" /> SDK
+                <Link href="/autonomous-economy">
+                  <Button variant="ghost" size="sm" className="font-mono text-[10px] gap-1 h-7 px-2" data-testid="button-dashboard">
+                    <Activity className="w-3 h-3" /> Dashboard
                   </Button>
                 </Link>
               </div>
@@ -514,8 +566,11 @@ export default function AgentBuilder() {
                         <button onClick={() => handleQuickAction("build a security agent")} className="flex items-center gap-1 px-2 py-1 rounded bg-muted font-mono text-[10px] hover:bg-muted/80 transition-colors whitespace-nowrap" data-testid="quick-security-btn">
                           <Shield className="w-3 h-3" /> Security
                         </button>
-                        <button onClick={() => handleQuickAction("build a sniper agent")} className="flex items-center gap-1 px-2 py-1 rounded bg-muted font-mono text-[10px] hover:bg-muted/80 transition-colors whitespace-nowrap" data-testid="quick-sniper-btn">
-                          <Zap className="w-3 h-3" /> Sniper
+                        <button onClick={() => handleQuickAction("show me agents")} className="flex items-center gap-1 px-2 py-1 rounded bg-cyan-500/10 text-cyan-500 font-mono text-[10px] hover:bg-cyan-500/20 transition-colors whitespace-nowrap" data-testid="quick-store-btn">
+                          <Globe className="w-3 h-3" /> Browse Agents
+                        </button>
+                        <button onClick={() => handleQuickAction("show me the SDK")} className="flex items-center gap-1 px-2 py-1 rounded bg-violet-500/10 text-violet-500 font-mono text-[10px] hover:bg-violet-500/20 transition-colors whitespace-nowrap" data-testid="quick-sdk-btn">
+                          <Code className="w-3 h-3" /> SDK
                         </button>
                         <button onClick={() => handleQuickAction("help")} className="flex items-center gap-1 px-2 py-1 rounded bg-muted font-mono text-[10px] hover:bg-muted/80 transition-colors whitespace-nowrap" data-testid="quick-help-btn">
                           <MessageSquare className="w-3 h-3" /> Help

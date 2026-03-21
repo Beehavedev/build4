@@ -95,12 +95,15 @@ Multi-chain infrastructure powered by OKX OnchainOS v2.1.0. Features:
 - **Page**: `/onchainos` — tabbed UI with DEX Swap, Market Data, Bridge, and Wallet panels. Skills sidebar shows all integrated OnchainOS capabilities with version info.
 
 ### Developer Platform ("Replit for AI Agents")
-Three core pages that turn BUILD4 into a developer platform where others can build, deploy, and monetize AI agents:
-- **Agent Builder Studio** (`/build`, `client/src/pages/agent-builder.tsx`): Visual agent creation with 6 templates (Trading, Research, Social, DeFi, Security, Custom), 5-step build flow (Template → Skills → Strategy → Fund → Deploy), autonomy level selector, chain picker, and skill configuration.
-- **Agent Store** (`/agent-store`, `client/src/pages/agent-store.tsx`): Community marketplace with 8 listed agents, category filtering (Trading, Security, DeFi, Social, Research, Utility), search, ratings, deploy/fork buttons. Creators earn revenue from agent deployments.
-- **Developer SDK** (`/sdk`, `client/src/pages/sdk.tsx`): TypeScript SDK docs with 6 code sections (Quick Start, Agent Management, Skill Marketplace, Trading API, Webhooks, On-Chain Operations), 17 API endpoints reference, copy-to-clipboard code blocks. Package: `@build4/sdk`.
-- Homepage "Build on BUILD4" section added with cards linking to all three pages.
-- Navigation updated with Build, Store, SDK links in desktop and mobile menus.
+Unified chat-driven Agent Builder at `/build` (`client/src/pages/agent-builder.tsx`) — the single entry point for the entire developer platform:
+- **Chat-Driven Creation**: Users describe what they want in natural language ("build me a trading agent") and BUILD4 configures and deploys it. Parses intent to select templates, chains, models, skills, and autonomy level.
+- **6 Templates**: Trading, Research, Social, DeFi, Security, Sniper — each with pre-configured skills.
+- **Agent Store (inline)**: "show me agents" or "browse agents" displays 8 community agents in chat. "fork Alpha Hunter" clones an agent's config into the builder for customization.
+- **SDK/API Docs (inline)**: "show me the SDK" displays API reference inline. Sub-commands: "show me trading api", "show me webhooks", "show me agent management" for detailed code examples.
+- **Real Deployment**: "deploy" or "ship it" calls `POST /api/web4/agents/create` to create a real agent with wallet, on-chain identity, and runtime profile.
+- **Live Config Sidebar**: Shows name, type, chain, model, autonomy, skills, and status updating in real-time.
+- `/agent-store` and `/sdk` routes redirect to `/build` for backward compatibility.
+- Homepage "Build on BUILD4" section links to the unified builder. Nav has single "Build" link (green).
 
 ### Performance Optimizations
 Includes Telegram webhook mode for production, a priority-based in-memory task queue, a performance monitor (`/api/system/health` endpoint), per-user rate limiting, request timing middleware, API logging, batched visitor tracking, SEO prerendering, non-blocking startup, lazy-loading for heavy imports, and throttled frontend animations.
