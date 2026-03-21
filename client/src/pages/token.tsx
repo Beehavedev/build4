@@ -347,9 +347,14 @@ export default function TokenPage() {
               </Card>
             </div>
 
-            <div className="flex items-center justify-center pt-2">
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <Link href="/staking">
+                <Button size="sm" className="font-mono text-xs gap-1.5" data-testid="button-stake-from-token">
+                  <Lock className="w-3.5 h-3.5" /> Stake $BUILD4
+                </Button>
+              </Link>
               <Link href="/hire-agent">
-                <Button size="sm" className="font-mono text-xs gap-1.5" data-testid="button-hire-from-token">
+                <Button size="sm" variant="outline" className="font-mono text-xs gap-1.5" data-testid="button-hire-from-token">
                   <Briefcase className="w-3.5 h-3.5" /> {t("token.hireAgent")}
                 </Button>
               </Link>
