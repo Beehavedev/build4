@@ -604,7 +604,7 @@ export default function AgentBuilder() {
 
       addMessage({
         role: "build",
-        content: `Agent deployed successfully.\n\nAgent ID: ${agent.id}\nWallet: ${agent.wallet?.walletAddress || "Generated"}\nChain: ${config.chain === "base" ? "Base" : config.chain === "xlayer" ? "XLayer" : "BNB Chain"}\nModel: ${config.model === "deepseek" ? "DeepSeek V3" : config.model === "qwen" ? "Qwen 2.5" : "Llama 3.1"}\nStatus: Running\n\nManage from the dashboard or build another.`,
+        content: `Your project is live!\n\nAgent ID: ${agent.id}\nWallet: ${agent.wallet?.walletAddress || "Generated"}\nChain: ${config.chain === "base" ? "Base" : config.chain === "xlayer" ? "XLayer" : "BNB Chain"}\nModel: ${config.model === "deepseek" ? "DeepSeek V3" : config.model === "qwen" ? "Qwen 2.5" : "Llama 3.1"}\nStatus: Running\n\nYour agent is now autonomous and executing on-chain. You can:\n• Monitor its activity in the preview panel\n• Copy its Agent ID to interact via the SDK\n• Say "build another" to start a new project`,
         type: "success",
       });
 
@@ -965,28 +965,42 @@ export default function AgentBuilder() {
                           </div>
                         )}
                         {deployedAgentId && (
-                          <div className="shrink-0 px-2 py-1 bg-[#1a2e1a] border-t border-emerald-500/20 flex items-center justify-between">
-                            <code className="font-mono text-[8px] text-emerald-300 truncate flex-1">{deployedAgentId}</code>
-                            <div className="flex gap-1 ml-1">
-                              <Link href="/autonomous-economy">
-                                <button className="px-1.5 py-0.5 rounded bg-[#252526] hover:bg-[#2a2d2e] font-mono text-[8px] text-[#cccccc] transition-colors" data-testid="button-manage">
-                                  Dashboard
+                          <div className="shrink-0 px-2 py-1 bg-[#1a2e1a] border-t border-emerald-500/20 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-[8px] text-emerald-400/70">Agent ID</span>
+                              <div className="flex gap-1">
+                                <button
+                                  className="px-1.5 py-0.5 rounded bg-[#252526] hover:bg-[#2a2d2e] font-mono text-[8px] text-[#cccccc] transition-colors"
+                                  data-testid="button-copy-id"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(deployedAgentId);
+                                    toast({ title: "Copied", description: "Agent ID copied to clipboard" });
+                                  }}>
+                                  Copy ID
                                 </button>
-                              </Link>
-                              <button className="px-1.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 font-mono text-[8px] text-white transition-colors"
-                                data-testid="button-build-another"
-                                onClick={() => {
-                                  setConfig({ name: "", bio: "", type: "", chain: "bnb", model: "llama", skills: [], autonomy: "semi", status: "idle" });
-                                  setDeployedAgentId(null);
-                                  setBuildLogs([]);
-                                  setOpenTabs([]);
-                                  setSelectedFile("agent.ts");
-                                  setFileContent("");
-                                  setMessages([{ role: "system", content: "Ready. What do you want to build?", timestamp: new Date(), type: "info" }]);
-                                }}>
-                                + New
-                              </button>
+                                <Link href="/autonomous-economy">
+                                  <button
+                                    className="px-1.5 py-0.5 rounded bg-[#252526] hover:bg-[#2a2d2e] font-mono text-[8px] text-[#cccccc] transition-colors"
+                                    data-testid="button-view-agent">
+                                    View Live
+                                  </button>
+                                </Link>
+                                <button className="px-1.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 font-mono text-[8px] text-white transition-colors"
+                                  data-testid="button-build-another"
+                                  onClick={() => {
+                                    setConfig({ name: "", bio: "", type: "", chain: "bnb", model: "llama", skills: [], autonomy: "semi", status: "idle" });
+                                    setDeployedAgentId(null);
+                                    setBuildLogs([]);
+                                    setOpenTabs([]);
+                                    setSelectedFile("agent.ts");
+                                    setFileContent("");
+                                    setMessages([{ role: "system", content: "Ready. What do you want to build?", timestamp: new Date(), type: "info" }]);
+                                  }}>
+                                  + New
+                                </button>
+                              </div>
                             </div>
+                            <code className="font-mono text-[8px] text-emerald-300 block truncate">{deployedAgentId}</code>
                           </div>
                         )}
                       </>
