@@ -20,7 +20,7 @@ import TwitterAgent from "@/pages/twitter-agent";
 import SupportAgent from "@/pages/support-agent";
 import Chain from "@/pages/chain";
 import Standards from "@/pages/standards";
-import TaskTerminal from "@/pages/task-terminal";
+
 import TokenLauncher from "@/pages/token-launcher";
 import HireAgent from "@/pages/hire-agent";
 import TokenPage from "@/pages/token";
@@ -48,7 +48,7 @@ function Router() {
       <Route path="/support-agent" component={SupportAgent} />
       <Route path="/chain" component={Chain} />
       <Route path="/standards" component={Standards} />
-      <Route path="/tasks" component={TaskTerminal} />
+      <Route path="/tasks">{() => { window.location.href = "/build"; return null; }}</Route>
       <Route path="/token-launcher" component={TokenLauncher} />
       <Route path="/hire-agent" component={HireAgent} />
       <Route path="/token" component={TokenPage} />

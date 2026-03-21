@@ -251,7 +251,6 @@ export default function Home() {
               <Link href="/onchainos" className="text-xs text-violet-400 font-mono tracking-wide transition-colors hover:text-violet-300" data-testid="link-onchainos">OnchainOS</Link>
               <Link href="/build" className="text-xs text-emerald-400 font-mono tracking-wide transition-colors hover:text-emerald-300" data-testid="link-build">Build</Link>
               <Link href="/pricing" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors hover:text-foreground" data-testid="link-pricing">Pricing</Link>
-              <Link href="/tasks" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-tasks">Tasks</Link>
               <LanguageSwitcher />
               <Button size="sm" asChild data-testid="button-connect">
                 <Link href="/autonomous-economy">
@@ -282,7 +281,6 @@ export default function Home() {
               <Link href="/onchainos" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-violet-400 font-mono" data-testid="link-onchainos-mobile">OnchainOS</Link>
               <Link href="/build" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-emerald-400 font-mono" data-testid="link-build-mobile">Build</Link>
               <Link href="/pricing" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-pricing-mobile">Pricing</Link>
-              <Link href="/tasks" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-tasks-mobile">Tasks</Link>
             </div>
           )}
         </nav>
