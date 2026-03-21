@@ -86,6 +86,16 @@ A unified chat-driven Agent Builder at `/build` for creating and deploying agent
 - **SDK/API Docs (inline)**: Provides API references and code examples.
 - **Real Deployment**: Deploys agents with wallet, on-chain identity, and runtime profile.
 
+### Workspace Pricing & Subscriptions
+Tiered pricing system at `/pricing` for the agent builder workspace. Plans tracked by wallet address in `workspace_subscriptions` table.
+- **Starter (Free)**: 1 agent, 2 deploys/month, 50 AI credits, BNB Chain only.
+- **Pro (0.15 BNB/30 days ≈ $89)**: 10 agents, 50 deploys/month, 2,000 AI credits, all chains.
+- **Enterprise (0.5 BNB/30 days ≈ $299)**: Unlimited agents/deploys/credits, dedicated node, white-label.
+- **Payment**: BNB sent on-chain to treasury wallet `0x5Ff57464152c9285A8526a0665d996dA66e2def1`, verified via `verifyPaymentTransaction()`.
+- **Usage Tracking**: `POST /api/workspace/usage` tracks deploys, inference, and agent creation against plan limits. Returns 403 when limits exceeded.
+- **API**: `GET /api/workspace/plan/:wallet`, `POST /api/workspace/upgrade`, `POST /api/workspace/usage`.
+- **Builder Integration**: Status bar shows current plan, deploy and AI chat check usage limits, upgrade prompts link to `/pricing`.
+
 ### Performance Optimizations
 Includes Telegram webhook mode, a priority-based in-memory task queue, a performance monitor (`/api/system/health`), per-user rate limiting, request timing middleware, API logging, batched visitor tracking, SEO prerendering, non-blocking startup, lazy-loading, and throttled frontend animations.
 

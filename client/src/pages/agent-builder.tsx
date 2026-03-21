@@ -7,6 +7,10 @@ import { Link } from "wouter";
 import { SEO } from "@/components/seo";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { useWallet } from "@/hooks/use-wallet";
+import { useQuery } from "@tanstack/react-query";
+import { WORKSPACE_PLANS } from "@shared/schema";
+import type { PlanTier } from "@shared/schema";
 import {
   ArrowLeft, Terminal, Bot, Brain, Zap, Shield,
   Plus, Layers, Settings, Wallet, Code, Rocket,
@@ -349,6 +353,7 @@ function FileTreeItem({ node, depth = 0, selectedFile, onSelect }: { node: FileN
 }
 
 export default function AgentBuilder() {
+  const { address, isConnected } = useWallet();
   const [messages, setMessages] = useState<BuildMessage[]>([
     {
       role: "system",
@@ -373,6 +378,38 @@ export default function AgentBuilder() {
   const inputRef = useRef<HTMLInputElement>(null);
   const configRef = useRef(config);
   const { toast } = useToast();
+
+  const { data: planData } = useQuery({
+    queryKey: ["/api/workspace/plan", address],
+    queryFn: async () => {
+      if (!address) return null;
+      const resp = await fetch(`/api/workspace/plan/${address}`);
+      return resp.json();
+    },
+    enabled: !!address,
+  });
+
+  const userPlan = (planData?.plan || "free") as PlanTier;
+  const planConfig = WORKSPACE_PLANS[userPlan];
+
+  const checkUsage = async (type: "deploy" | "inference" | "agent"): Promise<boolean> => {
+    if (!address) return true;
+    try {
+      const resp = await apiRequest("POST", "/api/workspace/usage", { walletAddress: address, type });
+      if (resp.status === 403) {
+        const data = await resp.json();
+        addMessage({
+          role: "system",
+          content: `${data.error}\n\nUpgrade at /pricing to continue.`,
+          type: "error",
+        });
+        return false;
+      }
+      return true;
+    } catch {
+      return true;
+    }
+  };
 
   const fileTree = useMemo(() => buildFileTree(config), [config]);
 
@@ -433,6 +470,9 @@ export default function AgentBuilder() {
 
   const getAIResponse = async (userMessage: string, currentConfig?: AgentConfig): Promise<string | null> => {
     try {
+      const canUse = await checkUsage("inference");
+      if (!canUse) return null;
+
       const resp = await apiRequest("POST", "/api/builder/chat", {
         message: userMessage,
         config: currentConfig || configRef.current,
@@ -504,6 +544,11 @@ export default function AgentBuilder() {
     if (isDeployCommand(userInput)) {
       if (!config.type) {
         addMessage({ role: "system", content: "Nothing to deploy yet. Describe what you want to build first.", type: "info" });
+        setIsProcessing(false);
+        return;
+      }
+      const canDeploy = await checkUsage("deploy");
+      if (!canDeploy) {
         setIsProcessing(false);
         return;
       }
@@ -960,6 +1005,11 @@ export default function AgentBuilder() {
             )}
           </div>
           <div className="flex items-center gap-3">
+            <Link href="/pricing">
+              <span className="font-mono text-[9px] text-white/80 hover:text-white cursor-pointer" data-testid="status-plan">
+                {userPlan === "enterprise" ? "Enterprise" : userPlan === "pro" ? "Pro" : "Free"} Plan
+              </span>
+            </Link>
             {config.type && (
               <>
                 <span className="font-mono text-[9px] text-white/80">{chainLabel}</span>

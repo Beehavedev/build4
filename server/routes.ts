@@ -855,6 +855,170 @@ export async function registerRoutes(
     res.json(result);
   });
 
+  app.get("/api/workspace/plan/:wallet", async (req: Request, res: Response) => {
+    try {
+      const wallet = req.params.wallet.toLowerCase();
+      const { workspaceSubscriptions, WORKSPACE_PLANS } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const { db } = await import("./db");
+      const [sub] = await db.select().from(workspaceSubscriptions).where(eq(workspaceSubscriptions.walletAddress, wallet)).limit(1);
+
+      if (!sub) {
+        const plan = WORKSPACE_PLANS.free;
+        res.json({
+          plan: "free",
+          ...plan,
+          agentsCreated: 0,
+          deploysThisMonth: 0,
+          inferenceUsed: 0,
+        });
+        return;
+      }
+
+      const planKey = sub.plan as keyof typeof WORKSPACE_PLANS;
+      const plan = WORKSPACE_PLANS[planKey] || WORKSPACE_PLANS.free;
+      res.json({
+        plan: sub.plan,
+        ...plan,
+        agentsCreated: sub.agentsCreated,
+        deploysThisMonth: sub.deploysThisMonth,
+        inferenceUsed: sub.inferenceUsed,
+        paymentTxHash: sub.paymentTxHash,
+        currentPeriodEnd: sub.currentPeriodEnd,
+      });
+    } catch (error: any) {
+      console.error("[Workspace Plan] Error:", error.message);
+      res.status(500).json({ error: "Failed to fetch plan" });
+    }
+  });
+
+  app.post("/api/workspace/upgrade", async (req: Request, res: Response) => {
+    try {
+      const { walletAddress, plan, txHash } = req.body;
+      if (!walletAddress || !plan || !txHash) {
+        res.status(400).json({ error: "walletAddress, plan, and txHash required" });
+        return;
+      }
+
+      const { WORKSPACE_PLANS, workspaceSubscriptions } = await import("@shared/schema");
+      const planConfig = WORKSPACE_PLANS[plan as keyof typeof WORKSPACE_PLANS];
+      if (!planConfig || plan === "free") {
+        res.status(400).json({ error: "Invalid plan" });
+        return;
+      }
+
+      const { verifyPaymentTransaction, getRevenueWalletAddress } = await import("./onchain");
+      const verification = await verifyPaymentTransaction(txHash, planConfig.price);
+
+      if (!verification.verified) {
+        res.status(400).json({ error: `Payment not verified: ${verification.error || "Transaction invalid"}` });
+        return;
+      }
+
+      const wallet = walletAddress.toLowerCase();
+      const { eq } = await import("drizzle-orm");
+      const { db } = await import("./db");
+      const periodEnd = new Date();
+      periodEnd.setDate(periodEnd.getDate() + 30);
+
+      const [existing] = await db.select().from(workspaceSubscriptions).where(eq(workspaceSubscriptions.walletAddress, wallet)).limit(1);
+
+      if (existing) {
+        await db.update(workspaceSubscriptions)
+          .set({
+            plan,
+            paymentTxHash: txHash,
+            status: "active",
+            deploysThisMonth: 0,
+            inferenceUsed: 0,
+            currentPeriodStart: new Date(),
+            currentPeriodEnd: periodEnd,
+          })
+          .where(eq(workspaceSubscriptions.walletAddress, wallet));
+      } else {
+        await db.insert(workspaceSubscriptions).values({
+          walletAddress: wallet,
+          plan,
+          paymentTxHash: txHash,
+          status: "active",
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: periodEnd,
+        });
+      }
+
+      res.json({ success: true, plan, expiresAt: periodEnd.toISOString() });
+    } catch (error: any) {
+      console.error("[Workspace Upgrade] Error:", error.message);
+      res.status(500).json({ error: "Upgrade failed" });
+    }
+  });
+
+  app.post("/api/workspace/usage", async (req: Request, res: Response) => {
+    try {
+      const { walletAddress, type } = req.body;
+      if (!walletAddress || !type) {
+        res.status(400).json({ error: "walletAddress and type required" });
+        return;
+      }
+
+      const wallet = walletAddress.toLowerCase();
+      const { workspaceSubscriptions, WORKSPACE_PLANS } = await import("@shared/schema");
+      const { eq, sql: sqlFn } = await import("drizzle-orm");
+      const { db } = await import("./db");
+
+      const [sub] = await db.select().from(workspaceSubscriptions).where(eq(workspaceSubscriptions.walletAddress, wallet)).limit(1);
+
+      const planKey = (sub?.plan || "free") as keyof typeof WORKSPACE_PLANS;
+      const plan = WORKSPACE_PLANS[planKey];
+
+      if (type === "deploy") {
+        const current = sub?.deploysThisMonth || 0;
+        if (plan.deploysPerMonth !== -1 && current >= plan.deploysPerMonth) {
+          res.status(403).json({ error: "Deploy limit reached. Upgrade your plan.", needsUpgrade: true });
+          return;
+        }
+        if (sub) {
+          await db.update(workspaceSubscriptions)
+            .set({ deploysThisMonth: current + 1 })
+            .where(eq(workspaceSubscriptions.walletAddress, wallet));
+        } else {
+          await db.insert(workspaceSubscriptions).values({ walletAddress: wallet, deploysThisMonth: 1 });
+        }
+      } else if (type === "inference") {
+        const current = sub?.inferenceUsed || 0;
+        if (plan.inferenceCredits !== -1 && current >= plan.inferenceCredits) {
+          res.status(403).json({ error: "AI credits exhausted. Upgrade your plan.", needsUpgrade: true });
+          return;
+        }
+        if (sub) {
+          await db.update(workspaceSubscriptions)
+            .set({ inferenceUsed: current + 1 })
+            .where(eq(workspaceSubscriptions.walletAddress, wallet));
+        } else {
+          await db.insert(workspaceSubscriptions).values({ walletAddress: wallet, inferenceUsed: 1 });
+        }
+      } else if (type === "agent") {
+        const current = sub?.agentsCreated || 0;
+        if (current >= plan.agentLimit) {
+          res.status(403).json({ error: "Agent limit reached. Upgrade your plan.", needsUpgrade: true });
+          return;
+        }
+        if (sub) {
+          await db.update(workspaceSubscriptions)
+            .set({ agentsCreated: current + 1 })
+            .where(eq(workspaceSubscriptions.walletAddress, wallet));
+        } else {
+          await db.insert(workspaceSubscriptions).values({ walletAddress: wallet, agentsCreated: 1 });
+        }
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[Workspace Usage] Error:", error.message);
+      res.status(500).json({ error: "Failed to record usage" });
+    }
+  });
+
   const builderChatRateLimit = new Map<string, { count: number; resetAt: number }>();
   app.post("/api/builder/chat", async (req: Request, res: Response) => {
     try {

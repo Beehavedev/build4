@@ -402,6 +402,58 @@ export const PLATFORM_FEES = {
   TOKEN_LAUNCH_FEE: "10000000000000000",
 } as const;
 
+export const WORKSPACE_PLANS = {
+  free: {
+    name: "Starter",
+    price: "0",
+    priceLabel: "Free",
+    agentLimit: 1,
+    deploysPerMonth: 2,
+    inferenceCredits: 50,
+    features: ["1 agent workspace", "2 deploys/month", "50 AI chat credits", "Community templates", "BNB Chain only"],
+  },
+  pro: {
+    name: "Pro",
+    price: "150000000000000000",
+    priceLabel: "0.15 BNB",
+    priceFiat: "$89/mo",
+    agentLimit: 10,
+    deploysPerMonth: 50,
+    inferenceCredits: 2000,
+    features: ["10 agent workspaces", "50 deploys/month", "2,000 AI chat credits", "All templates", "All chains (BNB, Base, XLayer)", "Priority inference", "Agent forking"],
+  },
+  enterprise: {
+    name: "Enterprise",
+    price: "500000000000000000",
+    priceLabel: "0.5 BNB",
+    priceFiat: "$299/mo",
+    agentLimit: 100,
+    deploysPerMonth: -1,
+    inferenceCredits: -1,
+    features: ["Unlimited workspaces", "Unlimited deploys", "Unlimited AI credits", "All templates & chains", "Dedicated inference node", "Custom skills SDK", "Priority support", "White-label option"],
+  },
+} as const;
+
+export type PlanTier = keyof typeof WORKSPACE_PLANS;
+
+export const workspaceSubscriptions = pgTable("workspace_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  walletAddress: text("wallet_address").notNull(),
+  plan: text("plan").notNull().default("free"),
+  status: text("status").notNull().default("active"),
+  paymentTxHash: text("payment_tx_hash"),
+  agentsCreated: integer("agents_created").notNull().default(0),
+  deploysThisMonth: integer("deploys_this_month").notNull().default(0),
+  inferenceUsed: integer("inference_used").notNull().default(0),
+  currentPeriodStart: timestamp("current_period_start").defaultNow(),
+  currentPeriodEnd: timestamp("current_period_end"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertWorkspaceSubscriptionSchema = createInsertSchema(workspaceSubscriptions).omit({ id: true, createdAt: true });
+export type InsertWorkspaceSubscription = z.infer<typeof insertWorkspaceSubscriptionSchema>;
+export type WorkspaceSubscription = typeof workspaceSubscriptions.$inferSelect;
+
 export const apiKeys = pgTable("api_keys", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   walletAddress: text("wallet_address").notNull(),
