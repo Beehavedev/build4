@@ -820,7 +820,7 @@ export default function AgentBuilder() {
                   <button onClick={() => setRightTab("preview")}
                     className={`font-mono text-[10px] px-2 py-0.5 rounded transition-colors ${rightTab === "preview" ? "bg-[#1e1e1e] text-white" : "text-[#858585] hover:text-[#cccccc]"}`}
                     data-testid="tab-preview">
-                    <Eye className="w-3 h-3 inline mr-1" />Agent
+                    <Eye className="w-3 h-3 inline mr-1" />Preview
                   </button>
                   <button onClick={() => setRightTab("terminal")}
                     className={`font-mono text-[10px] px-2 py-0.5 rounded transition-colors ${rightTab === "terminal" ? "bg-[#1e1e1e] text-white" : "text-[#858585] hover:text-[#cccccc]"}`}
@@ -835,89 +835,182 @@ export default function AgentBuilder() {
                 </div>
 
                 {rightTab === "preview" ? (
-                  <div className="flex-1 overflow-y-auto p-3" data-testid="preview-panel">
-                    {config.status === "idle" ? (
-                      <div className="flex flex-col items-center justify-center h-full text-center">
-                        <Bot className="w-10 h-10 text-[#404040] mb-3" />
-                        <p className="font-mono text-[10px] text-[#505050]">Agent preview will appear here</p>
+                  <div className="flex-1 flex flex-col overflow-hidden" data-testid="preview-panel">
+                    {config.status === "idle" && !fileContent ? (
+                      <div className="flex-1 flex flex-col items-center justify-center text-center p-4">
+                        <div className="w-14 h-14 rounded-xl bg-[#252526] flex items-center justify-center mb-3">
+                          <Monitor className="w-7 h-7 text-[#404040]" />
+                        </div>
+                        <p className="font-mono text-[10px] text-[#606060] mb-1">Live Preview</p>
+                        <p className="font-mono text-[9px] text-[#404040] leading-relaxed max-w-[200px]">
+                          Start building to see a live preview of your project here
+                        </p>
                       </div>
                     ) : (
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl ${
-                            config.status === "live" ? "bg-emerald-500/10" : "bg-[#252526]"
-                          }`}>
-                            {TEMPLATES[config.type]?.icon || "🤖"}
+                      <>
+                        <div className="flex items-center gap-1.5 px-2 py-1 bg-[#1a1a2e] border-b border-[#252526] shrink-0">
+                          <div className="flex gap-1">
+                            <div className="w-2 h-2 rounded-full bg-[#ff5f57]" />
+                            <div className="w-2 h-2 rounded-full bg-[#febc2e]" />
+                            <div className="w-2 h-2 rounded-full bg-[#28c840]" />
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-mono text-xs font-bold text-white truncate" data-testid="preview-name">{config.name || "Unnamed"}</div>
-                            <div className="font-mono text-[9px] text-[#858585] truncate mt-0.5">{config.type}</div>
+                          <div className="flex-1 mx-2 px-2 py-0.5 rounded bg-[#0e0e1a] flex items-center gap-1">
+                            <Globe className="w-2.5 h-2.5 text-[#505050] shrink-0" />
+                            <span className="font-mono text-[8px] text-[#606060] truncate">
+                              {config.name ? `${config.name.toLowerCase().replace(/\s+/g, "-")}.build4.io` : "preview.build4.io"}
+                            </span>
                           </div>
-                          <div className={`w-2 h-2 rounded-full shrink-0 ${
-                            config.status === "live" ? "bg-emerald-400 animate-pulse" :
-                            config.status === "building" ? "bg-amber-400 animate-pulse" : "bg-blue-400"
-                          }`} />
+                          <button
+                            onClick={() => {
+                              const iframe = document.getElementById("preview-iframe") as HTMLIFrameElement;
+                              if (iframe) iframe.srcdoc = iframe.srcdoc;
+                            }}
+                            className="p-0.5 hover:bg-[#383838] rounded transition-colors"
+                            data-testid="button-refresh-preview">
+                            <RotateCcw className="w-2.5 h-2.5 text-[#606060]" />
+                          </button>
                         </div>
-
-                        <div className="font-mono text-[10px] text-[#858585] leading-relaxed">{config.bio}</div>
-
-                        <div className="grid grid-cols-2 gap-1.5">
-                          {[
-                            { label: "Chain", value: chainLabel },
-                            { label: "Model", value: modelLabel },
-                            { label: "Autonomy", value: config.autonomy === "full" ? "Full Auto" : config.autonomy === "supervised" ? "Supervised" : "Semi-Auto" },
-                            { label: "Skills", value: `${config.skills.length} installed` },
-                          ].map(item => (
-                            <div key={item.label} className="p-1.5 rounded bg-[#252526]">
-                              <div className="font-mono text-[8px] text-[#505050] uppercase">{item.label}</div>
-                              <div className="font-mono text-[10px] text-[#cccccc] mt-0.5">{item.value}</div>
+                        <div className="flex-1 bg-white overflow-hidden relative">
+                          {config.type && TEMPLATES[config.type] ? (
+                            <iframe
+                              id="preview-iframe"
+                              className="w-full h-full border-0"
+                              data-testid="preview-iframe"
+                              sandbox="allow-scripts"
+                              srcDoc={`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0f;color:#e0e0e0;min-height:100vh;display:flex;flex-direction:column}
+.header{background:linear-gradient(135deg,#0d1117,#161b22);border-bottom:1px solid #21262d;padding:12px 16px;display:flex;align-items:center;gap:8px}
+.header .dot{width:8px;height:8px;border-radius:50%;background:#10b981;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.header h1{font-size:13px;font-weight:700;color:#fff}
+.header .badge{font-size:8px;padding:2px 6px;border-radius:4px;background:#10b98120;color:#10b981;text-transform:uppercase;letter-spacing:.5px}
+.content{flex:1;padding:16px;display:flex;flex-direction:column;gap:12px}
+.card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:12px}
+.card-title{font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{background:#0d1117;border-radius:6px;padding:8px}
+.stat-value{font-size:16px;font-weight:700;color:#fff}
+.stat-label{font-size:9px;color:#8b949e;margin-top:2px}
+.skill-list{display:flex;flex-wrap:wrap;gap:4px}
+.skill{font-size:9px;padding:3px 8px;border-radius:4px;background:#10b98115;color:#10b981;border:1px solid #10b98130}
+.chart{height:60px;background:#0d1117;border-radius:6px;display:flex;align-items:end;padding:4px;gap:2px}
+.bar{flex:1;background:linear-gradient(to top,#10b981,#10b98160);border-radius:2px 2px 0 0;animation:grow .8s ease-out}
+@keyframes grow{from{height:0}}
+.status-bar{background:#10b981;padding:6px 16px;display:flex;justify-content:space-between;font-size:9px;color:#fff;font-weight:600}
+</style></head><body>
+<div class="header">
+<div class="dot"></div>
+<h1>${config.name || "My Agent"}</h1>
+<span class="badge">${config.status === "live" ? "Live" : config.status === "building" ? "Building" : "Ready"}</span>
+</div>
+<div class="content">
+<div class="card">
+<div class="card-title">Performance</div>
+<div class="stat-grid">
+<div class="stat"><div class="stat-value">$${(Math.random()*10000).toFixed(0)}</div><div class="stat-label">Total Volume</div></div>
+<div class="stat"><div class="stat-value">${(Math.random()*100).toFixed(1)}%</div><div class="stat-label">Win Rate</div></div>
+<div class="stat"><div class="stat-value">${Math.floor(Math.random()*500)}</div><div class="stat-label">Transactions</div></div>
+<div class="stat"><div class="stat-value">${(Math.random()*5).toFixed(2)} BNB</div><div class="stat-label">Revenue</div></div>
+</div>
+</div>
+<div class="card">
+<div class="card-title">Activity (24h)</div>
+<div class="chart">
+${Array.from({length:24},(_,i)=>`<div class="bar" style="height:${10+Math.random()*90}%;animation-delay:${i*30}ms"></div>`).join("")}
+</div>
+</div>
+<div class="card">
+<div class="card-title">Active Skills</div>
+<div class="skill-list">
+${(config.skills.length > 0 ? config.skills : ["monitoring","execution"]).map(s=>`<span class="skill">${s}</span>`).join("")}
+</div>
+</div>
+</div>
+<div class="status-bar">
+<span>${config.chain === "base" ? "Base" : config.chain === "xlayer" ? "XLayer" : "BNB Chain"} · ${config.model === "deepseek" ? "DeepSeek V3" : config.model === "qwen" ? "Qwen 2.5" : "Llama 3.1"}</span>
+<span>${config.autonomy === "full" ? "Full Auto" : config.autonomy === "supervised" ? "Supervised" : "Semi-Auto"}</span>
+</div>
+</body></html>`}
+                            />
+                          ) : fileContent ? (
+                            <iframe
+                              id="preview-iframe"
+                              className="w-full h-full border-0"
+                              data-testid="preview-iframe"
+                              sandbox="allow-scripts"
+                              srcDoc={`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0f;color:#e0e0e0;min-height:100vh;padding:16px}
+.file-preview{background:#161b22;border:1px solid #21262d;border-radius:8px;overflow:hidden}
+.file-header{background:#0d1117;padding:8px 12px;border-bottom:1px solid #21262d;font-size:11px;color:#8b949e;display:flex;align-items:center;gap:6px}
+.file-header .icon{color:#10b981}
+pre{padding:12px;font-size:10px;line-height:1.6;color:#c9d1d9;overflow:auto;max-height:calc(100vh - 80px);white-space:pre-wrap;word-break:break-all}
+.badge{display:inline-block;font-size:8px;padding:2px 6px;border-radius:4px;background:#10b98120;color:#10b981;margin-left:auto}
+</style></head><body>
+<div class="file-preview">
+<div class="file-header"><span class="icon">&#9679;</span> ${selectedFile} <span class="badge">Generated</span></div>
+<pre>${fileContent.replace(/</g,"&lt;").replace(/>/g,"&gt;").substring(0,3000)}</pre>
+</div>
+</body></html>`}
+                            />
+                          ) : (
+                            <div className="flex-1 flex items-center justify-center bg-[#0a0a0f]">
+                              <p className="font-mono text-[9px] text-[#404040]">No preview available</p>
                             </div>
-                          ))}
+                          )}
                         </div>
-
-                        {config.skills.length > 0 && (
-                          <div className="space-y-1">
-                            <div className="font-mono text-[8px] text-[#505050] uppercase tracking-wider">Skills</div>
-                            <div className="flex flex-wrap gap-1">
-                              {config.skills.map((s, i) => (
-                                <span key={i} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-[#252526] font-mono text-[9px] text-[#cccccc]">
-                                  <CheckCircle2 className="w-2 h-2 text-emerald-400" />{s}
-                                </span>
-                              ))}
+                        {config.type && (
+                          <div className="shrink-0 px-2 py-1.5 bg-[#252526] border-t border-[#1e1e1e] flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-lg">{TEMPLATES[config.type]?.icon || "🤖"}</span>
+                              <div>
+                                <div className="font-mono text-[9px] font-bold text-white" data-testid="preview-name">{config.name || "Unnamed"}</div>
+                                <div className="font-mono text-[7px] text-[#858585]">{config.type} · {chainLabel}</div>
+                              </div>
+                            </div>
+                            <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-mono ${
+                              config.status === "live" ? "bg-emerald-500/15 text-emerald-400" :
+                              config.status === "building" ? "bg-amber-500/15 text-amber-400" : "bg-blue-500/15 text-blue-400"
+                            }`}>
+                              <div className={`w-1.5 h-1.5 rounded-full ${
+                                config.status === "live" ? "bg-emerald-400 animate-pulse" :
+                                config.status === "building" ? "bg-amber-400 animate-pulse" : "bg-blue-400"
+                              }`} />
+                              {config.status === "live" ? "LIVE" : config.status === "building" ? "BUILDING" : "READY"}
                             </div>
                           </div>
                         )}
-
                         {deployedAgentId && (
-                          <div className="p-2 rounded bg-emerald-500/5 border border-emerald-500/20">
-                            <div className="font-mono text-[8px] text-emerald-400 uppercase">Agent ID</div>
-                            <code className="font-mono text-[9px] text-emerald-300 block mt-0.5 break-all">{deployedAgentId}</code>
-                          </div>
-                        )}
-
-                        {config.status === "live" && (
-                          <div className="flex gap-1.5 pt-1">
-                            <Link href="/autonomous-economy" className="flex-1">
-                              <button className="w-full py-1.5 rounded bg-[#252526] hover:bg-[#2a2d2e] font-mono text-[9px] text-[#cccccc] transition-colors flex items-center justify-center gap-1" data-testid="button-manage">
-                                <Activity className="w-3 h-3" /> Dashboard
+                          <div className="shrink-0 px-2 py-1 bg-[#1a2e1a] border-t border-emerald-500/20 flex items-center justify-between">
+                            <code className="font-mono text-[8px] text-emerald-300 truncate flex-1">{deployedAgentId}</code>
+                            <div className="flex gap-1 ml-1">
+                              <Link href="/autonomous-economy">
+                                <button className="px-1.5 py-0.5 rounded bg-[#252526] hover:bg-[#2a2d2e] font-mono text-[8px] text-[#cccccc] transition-colors" data-testid="button-manage">
+                                  Dashboard
+                                </button>
+                              </Link>
+                              <button className="px-1.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 font-mono text-[8px] text-white transition-colors"
+                                data-testid="button-build-another"
+                                onClick={() => {
+                                  setConfig({ name: "", bio: "", type: "", chain: "bnb", model: "llama", skills: [], autonomy: "semi", status: "idle" });
+                                  setDeployedAgentId(null);
+                                  setBuildLogs([]);
+                                  setOpenTabs([]);
+                                  setSelectedFile("agent.ts");
+                                  setFileContent("");
+                                  setMessages([{ role: "system", content: "Ready. What do you want to build?", timestamp: new Date(), type: "info" }]);
+                                }}>
+                                + New
                               </button>
-                            </Link>
-                            <button className="flex-1 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 font-mono text-[9px] text-white transition-colors flex items-center justify-center gap-1"
-                              data-testid="button-build-another"
-                              onClick={() => {
-                                setConfig({ name: "", bio: "", type: "", chain: "bnb", model: "llama", skills: [], autonomy: "semi", status: "idle" });
-                                setDeployedAgentId(null);
-                                setBuildLogs([]);
-                                setOpenTabs([]);
-                                setSelectedFile("agent.ts");
-                                setFileContent("");
-                                setMessages([{ role: "system", content: "Ready. What do you want to build?", timestamp: new Date(), type: "info" }]);
-                              }}>
-                              <Plus className="w-3 h-3" /> New
-                            </button>
+                            </div>
                           </div>
                         )}
-                      </div>
+                      </>
                     )}
                   </div>
                 ) : (
