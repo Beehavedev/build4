@@ -360,6 +360,35 @@ function generateLoadingPreview(message: string): string {
 </style></head><body><div class="container"><div class="spinner"></div><p>${message}</p></div></body></html>`;
 }
 
+function generateDefaultPreview(config: AgentConfig): string {
+  const skills = config.skills.length > 0 ? config.skills : ["monitoring", "execution"];
+  const chainName = config.chain === "base" ? "Base" : config.chain === "xlayer" ? "XLayer" : "BNB Chain";
+  const modelName = config.model === "deepseek" ? "DeepSeek V3" : config.model === "qwen" ? "Qwen 2.5" : "Llama 3.3";
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0f;color:#e0e0e0;min-height:100vh;display:flex;flex-direction:column}
+.header{background:linear-gradient(135deg,#0d1117,#161b22);border-bottom:1px solid #21262d;padding:12px 16px;display:flex;align-items:center;gap:8px}
+.header .dot{width:8px;height:8px;border-radius:50%;background:#10b981;animation:pulse 2s infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.header h1{font-size:13px;font-weight:700;color:#fff}.header .badge{font-size:8px;padding:2px 6px;border-radius:4px;background:#10b98120;color:#10b981;text-transform:uppercase;letter-spacing:.5px}
+.content{flex:1;padding:16px;display:flex;flex-direction:column;gap:12px}
+.card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:12px}
+.card-title{font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.stat{background:#0d1117;border-radius:6px;padding:8px}
+.stat-value{font-size:16px;font-weight:700;color:#fff}.stat-label{font-size:9px;color:#8b949e;margin-top:2px}
+.skill-list{display:flex;flex-wrap:wrap;gap:4px}.skill{font-size:9px;padding:3px 8px;border-radius:4px;background:#10b98115;color:#10b981;border:1px solid #10b98130}
+.chart{height:60px;background:#0d1117;border-radius:6px;display:flex;align-items:end;padding:4px;gap:2px}
+.bar{flex:1;background:linear-gradient(to top,#10b981,#10b98160);border-radius:2px 2px 0 0;animation:grow .8s ease-out}@keyframes grow{from{height:0}}
+.status-bar{background:#10b981;padding:6px 16px;display:flex;justify-content:space-between;font-size:9px;color:#fff;font-weight:600}
+</style></head><body>
+<div class="header"><div class="dot"></div><h1>${config.name || "My Agent"}</h1><span class="badge">${config.status === "live" ? "Live" : config.status === "building" ? "Building" : "Ready"}</span></div>
+<div class="content">
+<div class="card"><div class="card-title">Performance</div><div class="stat-grid"><div class="stat"><div class="stat-value">$12,847</div><div class="stat-label">Total Volume</div></div><div class="stat"><div class="stat-value">73.2%</div><div class="stat-label">Win Rate</div></div><div class="stat"><div class="stat-value">341</div><div class="stat-label">Transactions</div></div><div class="stat"><div class="stat-value">2.18 BNB</div><div class="stat-label">Revenue</div></div></div></div>
+<div class="card"><div class="card-title">Activity (24h)</div><div class="chart">${Array.from({length:24},(_,i)=>`<div class="bar" style="height:${10+Math.random()*90}%;animation-delay:${i*30}ms"></div>`).join("")}</div></div>
+<div class="card"><div class="card-title">Active Skills</div><div class="skill-list">${skills.map(s=>`<span class="skill">${s}</span>`).join("")}</div></div>
+</div>
+<div class="status-bar"><span>${chainName} · ${modelName}</span><span>${config.autonomy === "full" ? "Full Auto" : config.autonomy === "supervised" ? "Supervised" : "Semi-Auto"}</span></div>
+</body></html>`;
+}
+
 export default function AgentBuilder() {
   const { address, connected: isConnected, signer } = useWallet();
   const [messages, setMessages] = useState<BuildMessage[]>([
@@ -647,6 +676,7 @@ export default function AgentBuilder() {
 
     const configUpdates = extractConfigFromInput(userInput, config);
     let updatedConfig = config;
+    const isTemplateMatch = configUpdates?.type ? true : false;
     if (configUpdates) {
       updatedConfig = { ...config, ...configUpdates };
       setConfig(updatedConfig);
@@ -655,10 +685,17 @@ export default function AgentBuilder() {
       if (!openTabs.includes("agent.ts")) setOpenTabs(prev => [...prev, "agent.ts"]);
       setSelectedFile("agent.ts");
       setFileContent(generateAgentCode(updatedConfig));
+
+      if (isTemplateMatch) {
+        setPreviewHtml(generateDefaultPreview(updatedConfig));
+        setRightTab("preview");
+      }
     }
 
-    setPreviewHtml(generateLoadingPreview("Generating your project..."));
-    setRightTab("preview");
+    if (!isTemplateMatch) {
+      setPreviewHtml(generateLoadingPreview("Generating your project..."));
+      setRightTab("preview");
+    }
 
     const aiResponse = await getAIResponse(userInput, updatedConfig);
 
@@ -666,12 +703,9 @@ export default function AgentBuilder() {
       addMessage({ role: "system", content: aiResponse.text, type: "info" });
       if (aiResponse.preview) {
         setPreviewHtml(aiResponse.preview);
-      } else {
-        setPreviewHtml("");
+        setRightTab("preview");
       }
-      setRightTab("preview");
     } else {
-      setPreviewHtml("");
       if (configUpdates) {
         const tmpl = configUpdates.type ? TEMPLATES[configUpdates.type] : null;
         if (tmpl) {
