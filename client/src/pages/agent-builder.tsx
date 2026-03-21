@@ -357,7 +357,7 @@ export default function AgentBuilder() {
   const [messages, setMessages] = useState<BuildMessage[]>([
     {
       role: "system",
-      content: "Welcome to BUILD4 Workspace. Describe the agent you want to build and I'll set everything up.\n\nTry: \"Build me a trading agent on Base\" or \"I need a sniper bot\"",
+      content: "Welcome to BUILD4 Workspace. Describe what you want to build — anything from AI agents to websites, APIs, smart contracts, or tools.\n\nTry: \"Build me a trading bot\" or \"I need a landing page\" or \"Create a DeFi dashboard\"",
       timestamp: new Date(),
       type: "info",
     },
@@ -644,7 +644,7 @@ export default function AgentBuilder() {
       } else {
         addMessage({
           role: "system",
-          content: `I can set up any agent workspace. Try:\n\n• "Build a trading agent" — autonomous DEX trader\n• "I need a security scanner" — audit contracts\n• "Create a sniper bot" — catch new launches\n• "Show me agents" — browse community agents\n\nOr describe what you need in your own words.`,
+          content: `I can build anything you need. Try:\n\n• "Build a trading bot" — autonomous DEX trader\n• "Create a landing page" — responsive website\n• "I need a DeFi dashboard" — real-time analytics\n• "Make an API for my app" — backend service\n• "Build a smart contract" — Solidity on BNB/Base\n\nOr describe what you want in your own words.`,
           type: "info",
         });
       }
@@ -672,7 +672,7 @@ export default function AgentBuilder() {
 
   return (
     <>
-      <SEO title="Workspace | BUILD4" description="Build and deploy autonomous AI agents." path="/build" />
+      <SEO title="Workspace | BUILD4" description="Build anything — AI agents, websites, apps, APIs, smart contracts, and more." path="/build" />
 
       <div className="h-screen flex flex-col bg-[#1e1e1e] text-[#cccccc] overflow-hidden" data-testid="page-agent-builder">
         <div className="flex items-center justify-between h-9 bg-[#323233] border-b border-[#252526] px-2 shrink-0 select-none" style={{ WebkitAppRegion: "drag" } as any}>
@@ -798,7 +798,7 @@ export default function AgentBuilder() {
                       <h2 className="font-mono text-lg font-bold text-white">BUILD<span className="text-emerald-400">4</span> Workspace</h2>
                       <p className="font-mono text-[11px] text-[#858585] leading-relaxed">
                         Describe what you want to build in the AI panel below.
-                        <br />Your agent's code and config will appear here.
+                        <br />Your project's code and config will appear here.
                       </p>
                       <div className="grid grid-cols-3 gap-2 pt-2">
                         {Object.entries(TEMPLATES).slice(0, 6).map(([key, tmpl]) => (
@@ -1043,7 +1043,7 @@ export default function AgentBuilder() {
           <div className="px-3 pb-2 pt-1">
             <form id="build-form" onSubmit={handleSubmit} className="flex gap-1.5">
               <Input ref={inputRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)}
-                placeholder={config.status === "idle" ? "Describe your agent..." : config.status === "live" ? "Build another..." : "Configure or type 'deploy'..."}
+                placeholder={config.status === "idle" ? "Describe what you want to build..." : config.status === "live" ? "Build something new..." : "Configure or type 'deploy'..."}
                 className="font-mono text-[10px] flex-1 h-7 bg-[#3c3c3c] border-[#505050] text-[#cccccc] placeholder:text-[#505050] focus-visible:ring-emerald-500/30"
                 disabled={isProcessing}
                 data-testid="input-command" />
