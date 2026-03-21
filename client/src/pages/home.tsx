@@ -844,9 +844,9 @@ export default function Home() {
                   <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center">
                     <Bot className="w-6 h-6 text-emerald-500" />
                   </div>
-                  <h3 className="font-mono text-base font-bold">Agent Builder Studio</h3>
+                  <h3 className="font-mono text-base font-bold">Agent Builder</h3>
                   <p className="font-mono text-xs text-muted-foreground">
-                    Visual agent builder with templates. Pick a type, add skills, configure strategy, deploy on-chain. Zero code required.
+                    Describe what you want and BUILD4 creates it. Chat-driven agent creation. Templates, skills, on-chain deploy. Zero code.
                   </p>
                   <div className="flex items-center gap-1 text-emerald-500 font-mono text-xs font-semibold">
                     Start Building <ArrowRight className="w-3 h-3" />
