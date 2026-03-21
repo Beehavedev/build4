@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -398,6 +398,9 @@ export default function AgentBuilder() {
   const [previewHtml, setPreviewHtml] = useState<string>("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [openTabs, setOpenTabs] = useState<string[]>(["agent.ts"]);
+  const [previewWidth, setPreviewWidth] = useState(480);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const configRef = useRef(config);
@@ -478,6 +481,32 @@ export default function AgentBuilder() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = { startX: e.clientX, startWidth: previewWidth };
+    setIsDragging(true);
+  }, [previewWidth]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!dragRef.current) return;
+      const delta = dragRef.current.startX - e.clientX;
+      const newWidth = Math.max(200, Math.min(800, dragRef.current.startWidth + delta));
+      setPreviewWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      dragRef.current = null;
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging]);
 
   useEffect(() => {
     if (config.type) {
@@ -801,7 +830,8 @@ export default function AgentBuilder() {
               </div>
             )}
 
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex overflow-hidden relative">
+              {isDragging && <div className="absolute inset-0 z-50 cursor-col-resize" />}
               <div className="flex-1 flex flex-col min-w-0">
                 {config.type && fileContent ? (
                   <div className="flex-1 overflow-auto bg-[#1e1e1e] select-text" data-testid="code-editor">
@@ -842,7 +872,14 @@ export default function AgentBuilder() {
                 )}
               </div>
 
-              <div className="hidden lg:flex flex-col w-[340px] border-l border-[#1e1e1e] shrink-0 bg-[#1e1e1e]">
+              <div
+                onMouseDown={handleDragStart}
+                className={`hidden lg:flex items-center justify-center w-[5px] shrink-0 cursor-col-resize group hover:bg-emerald-500/30 transition-colors ${isDragging ? "bg-emerald-500/40" : "bg-[#1e1e1e]"}`}
+                data-testid="resize-handle">
+                <div className={`w-[1px] h-8 rounded-full transition-colors ${isDragging ? "bg-emerald-400" : "bg-[#383838] group-hover:bg-emerald-400/60"}`} />
+              </div>
+
+              <div className="hidden lg:flex flex-col shrink-0 bg-[#1e1e1e]" style={{ width: `${previewWidth}px` }}>
                 <div className="flex items-center gap-1 px-2 h-8 bg-[#252526] border-b border-[#1e1e1e] shrink-0">
                   <button onClick={() => setRightTab("preview")}
                     className={`font-mono text-[10px] px-2 py-0.5 rounded transition-colors ${rightTab === "preview" ? "bg-[#1e1e1e] text-white" : "text-[#858585] hover:text-[#cccccc]"}`}
