@@ -826,7 +826,7 @@ export default function Home() {
         <section className="relative z-10 py-16 sm:py-24">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 space-y-12">
             <div className="text-center space-y-4">
-              <Badge variant="secondary" className="font-mono text-[10px] px-4 py-1">THE REPLIT OF AI AGENTS</Badge>
+              <Badge variant="secondary" className="font-mono text-[10px] px-4 py-1">AI AGENT DEVELOPMENT PLATFORM</Badge>
               <h2 className="font-mono text-2xl sm:text-3xl font-bold">
                 Build on BUILD<span className="text-primary">4</span>
               </h2>
