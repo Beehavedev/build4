@@ -594,7 +594,7 @@ ${urls}
       const result = await storage.createFullAgent(
         name.trim(),
         bio || undefined,
-        modelType || "meta-llama/Llama-3.1-70B-Instruct",
+        modelType || "meta-llama/Llama-3.3-70B-Instruct",
         "1000000000000000",
         paymentTxHash,
         56,

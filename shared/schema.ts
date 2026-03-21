@@ -21,7 +21,7 @@ export const agents = pgTable("agents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   bio: text("bio"),
-  modelType: text("model_type").notNull().default("meta-llama/Llama-3.1-70B-Instruct"),
+  modelType: text("model_type").notNull().default("meta-llama/Llama-3.3-70B-Instruct"),
   status: text("status").notNull().default("active"),
   onchainId: text("onchain_id"),
   onchainRegistered: boolean("onchain_registered").notNull().default(false),
@@ -143,7 +143,7 @@ export type AgentLineage = typeof agentLineage.$inferSelect;
 export const agentRuntimeProfiles = pgTable("agent_runtime_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   agentId: varchar("agent_id").notNull(),
-  modelName: text("model_name").notNull().default("meta-llama/Llama-3.1-70B-Instruct"),
+  modelName: text("model_name").notNull().default("meta-llama/Llama-3.3-70B-Instruct"),
   modelVersion: text("model_version"),
   configJson: text("config_json"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -588,7 +588,7 @@ export type BountySubmission = typeof bountySubmissions.$inferSelect;
 export const web4CreateAgentRequestSchema = z.object({
   name: z.string().min(1).max(50),
   bio: z.string().max(300).optional(),
-  modelType: z.enum(["meta-llama/Llama-3.1-70B-Instruct", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"]).default("meta-llama/Llama-3.1-70B-Instruct"),
+  modelType: z.enum(["meta-llama/Llama-3.3-70B-Instruct", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"]).default("meta-llama/Llama-3.3-70B-Instruct"),
   initialDeposit: z.string().min(1),
   targetChain: z.enum(["bnbMainnet", "baseMainnet", "xlayerMainnet"]).default("bnbMainnet"),
   creatorWallet: z.string().optional(),
@@ -1454,8 +1454,7 @@ export const TASK_TYPES = [
 ] as const;
 
 export const AVAILABLE_MODELS = [
-  { id: "meta-llama/Meta-Llama-3.1-70B-Instruct", name: "Llama 3.1 70B", provider: "hyperbolic" },
-  { id: "meta-llama/Llama-3.3-70B-Instruct", name: "Llama 3.3 70B", provider: "akash" },
+  { id: "meta-llama/Llama-3.3-70B-Instruct", name: "Llama 3.3 70B", provider: "hyperbolic" },
   { id: "deepseek-ai/DeepSeek-V3", name: "DeepSeek V3", provider: "hyperbolic" },
   { id: "deepseek-ai/DeepSeek-V3.2", name: "DeepSeek V3.2", provider: "akash" },
   { id: "Qwen/Qwen2.5-72B-Instruct", name: "Qwen 2.5 72B", provider: "hyperbolic" },
@@ -1500,7 +1499,7 @@ export const SEED_AGENTS = {
   RESEARCH_BOT: {
     name: "ResearchBot-7B",
     bio: "Autonomous research agent. Posts bounties for crypto/AI research summaries, market analysis, and technical deep-dives.",
-    model: "meta-llama/Llama-3.1-70B-Instruct",
+    model: "meta-llama/Llama-3.3-70B-Instruct",
     wallet: "0xRESEARCH_BOT_SEED",
     categories: ["research", "analysis"],
   },
@@ -1521,7 +1520,7 @@ export const SEED_AGENTS = {
   QA_SENTINEL: {
     name: "QA-Sentinel",
     bio: "Quality assurance agent. Pays for bug reports, security audits, testing, and code reviews across the BUILD4 ecosystem.",
-    model: "meta-llama/Llama-3.1-70B-Instruct",
+    model: "meta-llama/Llama-3.3-70B-Instruct",
     wallet: "0xQA_SENTINEL_SEED",
     categories: ["testing", "development"],
   },

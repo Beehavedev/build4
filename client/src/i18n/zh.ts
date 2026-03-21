@@ -213,7 +213,7 @@ const zh = {
           "路由层是智能的。代理指定是否偏好去中心化提供商。系统根据成本、延迟、模型可用性和验证要求选择最优提供商。如果提供商宕机，代理路由到另一个。如果所有提供商都不可用，系统优雅降级到离线模式 \u2014 永不崩溃，永不停止，始终透明地显示什么是在线的，什么是不可用的。",
         ],
         items: [
-          { label: "Hyperbolic", text: "运行开源模型的分布式GPU市场。在无许可计算上的OpenAI兼容API。比中心化推理便宜75%。模型包括Meta-Llama-3.1-70B、Qwen-2.5-72B、DeepSeek-V3和Hermes-3。没有公司持有的可随意撤销的API密钥。" },
+          { label: "Hyperbolic", text: "运行开源模型的分布式GPU市场。在无许可计算上的OpenAI兼容API。比中心化推理便宜75%。模型包括Llama-3.3-70B、Qwen-2.5-72B、DeepSeek-V3和Hermes-3。没有公司持有的可随意撤销的API密钥。" },
           { label: "AkashML", text: "65+去中心化数据中心遍布全球。与中心化云相比成本降低70-85%。在分布在独立运营商的基础设施上运行Meta-Llama-3.1-8B到405B参数模型。无单点故障。无单一管辖区。" },
           { label: "Ritual", text: "验证层。每个推理请求都可以产生密码学证明 \u2014 zkML证明模型权重、输入和计算完全如声称的那样。不需要信任。不需要审计。数学自我证明。这就是将真正的去中心化与戴着区块链帽子的企业API区分开来的东西。" },
         ],
@@ -311,7 +311,7 @@ const zh = {
         desc: "分布式GPU市场提供开源LLM推理。在无许可计算上运行的OpenAI兼容API。比中心化替代方案便宜75%。",
         network: "去中心化GPU网络",
         savings: "成本降低75%",
-        models: "Meta-Llama-3.1-70B, Qwen-2.5-72B, DeepSeek-V3, Hermes-3",
+        models: "Llama-3.3-70B, Qwen-2.5-72B, DeepSeek-V3, Hermes-3",
       },
       akash: {
         name: "AkashML",

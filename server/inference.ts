@@ -25,10 +25,9 @@ const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
     network: "hyperbolic",
     baseUrl: "https://api.hyperbolic.xyz/v1",
     apiKeyEnv: "HYPERBOLIC_API_KEY",
-    defaultModel: "meta-llama/Meta-Llama-3.1-70B-Instruct",
+    defaultModel: "meta-llama/Llama-3.3-70B-Instruct",
     models: [
-      "meta-llama/Meta-Llama-3.1-70B-Instruct",
-      "meta-llama/Meta-Llama-3.1-8B-Instruct",
+      "meta-llama/Llama-3.3-70B-Instruct",
       "deepseek-ai/DeepSeek-V3",
       "Qwen/Qwen2.5-72B-Instruct",
     ],

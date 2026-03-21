@@ -213,7 +213,7 @@ const es = {
           "La capa de enrutamiento es inteligente. Los agentes especifican si prefieren proveedores descentralizados. El sistema selecciona el proveedor \u00f3ptimo basado en costo, latencia, disponibilidad del modelo y requisitos de verificaci\u00f3n. Si un proveedor cae, el agente se enruta a otro. Si todos los proveedores no est\u00e1n disponibles, el sistema degrada graciosamente al modo fuera de l\u00ednea \u2014 nunca se bloquea, nunca se detiene, siempre transparente sobre qu\u00e9 est\u00e1 en vivo y qu\u00e9 no est\u00e1 disponible.",
         ],
         items: [
-          { label: "Hyperbolic", text: "Mercado GPU distribuido ejecutando modelos de c\u00f3digo abierto. API compatible con OpenAI en c\u00f3mputo sin permisos. 75% m\u00e1s barato que la inferencia centralizada. Los modelos incluyen Meta-Llama-3.1-70B, Qwen-2.5-72B, DeepSeek-V3 y Hermes-3. Sin clave API en manos de una corporaci\u00f3n que pueda revocarla por capricho." },
+          { label: "Hyperbolic", text: "Mercado GPU distribuido ejecutando modelos de c\u00f3digo abierto. API compatible con OpenAI en c\u00f3mputo sin permisos. 75% m\u00e1s barato que la inferencia centralizada. Los modelos incluyen Llama-3.3-70B, Qwen-2.5-72B, DeepSeek-V3 y Hermes-3. Sin clave API en manos de una corporaci\u00f3n que pueda revocarla por capricho." },
           { label: "AkashML", text: "M\u00e1s de 65 centros de datos descentralizados en todo el mundo. Reducci\u00f3n de costos del 70-85% versus la nube centralizada. Ejecuta modelos de Meta-Llama-3.1-8B a 405B par\u00e1metros en infraestructura distribuida entre operadores independientes. Sin punto \u00fanico de fallo. Sin jurisdicci\u00f3n \u00fanica." },
           { label: "Ritual", text: "La capa de verificaci\u00f3n. Cada solicitud de inferencia puede producir una prueba criptogr\u00e1fica \u2014 atestaci\u00f3n zkML de que los pesos del modelo, las entradas y el c\u00e1lculo son exactamente lo que se declar\u00f3. No se requiere confianza. No se necesita auditor\u00eda. Las matem\u00e1ticas se prueban a s\u00ed mismas. Esto es lo que separa la descentralizaci\u00f3n real de las APIs corporativas disfrazadas con un sombrero blockchain." },
         ],
@@ -311,7 +311,7 @@ const es = {
         desc: "Mercado GPU distribuido proporcionando inferencia LLM de c\u00f3digo abierto. API compatible con OpenAI en c\u00f3mputo sin permisos. 75% m\u00e1s barato que alternativas centralizadas.",
         network: "Red GPU Descentralizada",
         savings: "75% de reducci\u00f3n de costos",
-        models: "Meta-Llama-3.1-70B, Qwen-2.5-72B, DeepSeek-V3, Hermes-3",
+        models: "Llama-3.3-70B, Qwen-2.5-72B, DeepSeek-V3, Hermes-3",
       },
       akash: {
         name: "AkashML",

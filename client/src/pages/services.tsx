@@ -100,7 +100,7 @@ function InferenceTab() {
   const curlExample = `curl -X POST ${window.location.origin}/api/v1/inference \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer b4_YOUR_API_KEY" \\
-  -d '{"model": "meta-llama/Llama-3.1-70B-Instruct", "prompt": "Hello world"}'`;
+  -d '{"model": "meta-llama/Llama-3.3-70B-Instruct", "prompt": "Hello world"}'`;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);

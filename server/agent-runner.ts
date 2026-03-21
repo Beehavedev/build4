@@ -702,7 +702,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           break;
         }
 
-        const models = ["meta-llama/Llama-3.1-70B-Instruct", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"];
+        const models = ["meta-llama/Llama-3.3-70B-Instruct", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"];
         const newModel = models.find(m => m !== agent.modelType) || models[0];
         const evolutionReason = `Upgrading from ${agent.modelType} to ${newModel} for improved reasoning and skill generation capabilities.`;
 

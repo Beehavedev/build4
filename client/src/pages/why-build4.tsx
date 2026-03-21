@@ -415,7 +415,7 @@ export default function WhyBuild4() {
                   <div className="mt-3 pt-3 border-t">
                     <div className="text-[10px] text-muted-foreground font-mono mb-1">Available Models</div>
                     <div className="flex flex-wrap gap-1">
-                      <Badge variant="outline" className="text-[9px] font-mono">Meta-Llama-3.1-70B</Badge>
+                      <Badge variant="outline" className="text-[9px] font-mono">Llama-3.3-70B</Badge>
                       <Badge variant="outline" className="text-[9px] font-mono">Qwen-2.5-72B</Badge>
                       <Badge variant="outline" className="text-[9px] font-mono">DeepSeek-V3</Badge>
                       <Badge variant="outline" className="text-[9px] font-mono">Hermes-3-70B</Badge>

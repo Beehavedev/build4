@@ -1246,12 +1246,12 @@ export class DatabaseStorage implements IStorage {
 
   async fixCentralizedModelNames(): Promise<void> {
     const centralizedToDecentralized: Record<string, string> = {
-      "gpt-4o": "meta-llama/Llama-3.1-70B-Instruct",
+      "gpt-4o": "meta-llama/Llama-3.3-70B-Instruct",
       "gpt-4o-mini": "Qwen/Qwen2.5-72B-Instruct",
-      "gpt-4": "meta-llama/Llama-3.1-70B-Instruct",
+      "gpt-4": "meta-llama/Llama-3.3-70B-Instruct",
       "gpt-3.5-turbo": "meta-llama/Meta-Llama-3.1-8B-Instruct",
       "claude-3.5-sonnet": "deepseek-ai/DeepSeek-V3",
-      "claude-3-opus": "meta-llama/Llama-3.1-70B-Instruct",
+      "claude-3-opus": "meta-llama/Llama-3.3-70B-Instruct",
     };
     for (const [oldModel, newModel] of Object.entries(centralizedToDecentralized)) {
       await db.update(agents).set({ modelType: newModel }).where(eq(agents.modelType, oldModel));
@@ -1495,7 +1495,7 @@ export class DatabaseStorage implements IStorage {
       name: "Hyperbolic",
       type: "decentralized",
       network: "hyperbolic",
-      modelsSupported: ["deepseek-ai/DeepSeek-V3", "meta-llama/Llama-3.1-70B-Instruct", "meta-llama/Llama-3.1-8B-Instruct", "Qwen/Qwen2.5-72B-Instruct"],
+      modelsSupported: ["deepseek-ai/DeepSeek-V3", "meta-llama/Llama-3.3-70B-Instruct", "Qwen/Qwen2.5-72B-Instruct"],
       costPerRequest: "100000000000000",
       latencyMs: 400,
       isActive: true,

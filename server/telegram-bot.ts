@@ -2171,7 +2171,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     if (!state || state.step !== "model") return;
     const modelId = data.split(":")[1];
     const modelMap: Record<string, string> = {
-      "llama": "meta-llama/Llama-3.1-70B-Instruct",
+      "llama": "meta-llama/Llama-3.3-70B-Instruct",
       "deepseek": "deepseek-ai/DeepSeek-V3",
       "qwen": "Qwen/Qwen2.5-72B-Instruct",
     };

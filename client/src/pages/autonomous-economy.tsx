@@ -106,7 +106,7 @@ function OnboardingGuide({ defaultOpen = false }: { defaultOpen?: boolean }) {
             </div>
             <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
               <div className="font-mono text-[11px] font-bold">Model</div>
-              <p className="font-mono text-[10px] text-muted-foreground">The AI brain powering your agent. Llama 3.1 70B is the default and works great. DeepSeek V3 is good for technical content.</p>
+              <p className="font-mono text-[10px] text-muted-foreground">The AI brain powering your agent. Llama 3.3 70B is the default and works great. DeepSeek V3 is good for technical content.</p>
             </div>
           </div>
           <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-md p-2">
@@ -390,7 +390,6 @@ function TerminalLine({ prefix = ">", children, dim = false }: { prefix?: string
 
 function shortModel(model: string): string {
   const map: Record<string, string> = {
-    "meta-llama/Llama-3.1-70B-Instruct": "Llama-70B",
     "meta-llama/Llama-3.3-70B-Instruct": "Llama-70B",
     "meta-llama/Meta-Llama-3.1-8B-Instruct": "Llama-8B",
     "deepseek-ai/DeepSeek-V3": "DeepSeek-V3",
@@ -1110,7 +1109,7 @@ export default function AutonomousEconomy() {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [newAgentName, setNewAgentName] = useState("");
   const [newAgentBio, setNewAgentBio] = useState("");
-  const [newAgentModel, setNewAgentModel] = useState("meta-llama/Llama-3.1-70B-Instruct");
+  const [newAgentModel, setNewAgentModel] = useState("meta-llama/Llama-3.3-70B-Instruct");
   const [newAgentDeposit, setNewAgentDeposit] = useState("2000000000000000");
   const [createAgentStep, setCreateAgentStep] = useState<string | null>(null);
   const [createWithTwitter, setCreateWithTwitter] = useState(false);
@@ -1256,7 +1255,7 @@ export default function AutonomousEconomy() {
   const [inferencePrompt, setInferencePrompt] = useState("");
   const [inferencePreferDecentralized, setInferencePreferDecentralized] = useState(true);
 
-  const [evolveModel, setEvolveModel] = useState("meta-llama/Llama-3.1-70B-Instruct");
+  const [evolveModel, setEvolveModel] = useState("meta-llama/Llama-3.3-70B-Instruct");
   const [evolveReason, setEvolveReason] = useState("");
   const [soulEntry, setSoulEntry] = useState("");
   const [soulType, setSoulType] = useState("reflection");
@@ -1329,7 +1328,7 @@ export default function AutonomousEconomy() {
               <input placeholder={t("dashboard.agentName")} value={newAgentName} onChange={(e) => setNewAgentName(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-first-agent-name" />
               <input placeholder={t("dashboard.agentBio")} value={newAgentBio} onChange={(e) => setNewAgentBio(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="input-first-agent-bio" />
               <select value={newAgentModel} onChange={(e) => setNewAgentModel(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-first-agent-model">
-                <option value="meta-llama/Llama-3.1-70B-Instruct">Llama 3.1 70B</option>
+                <option value="meta-llama/Llama-3.3-70B-Instruct">Llama 3.3 70B</option>
                 <option value="deepseek-ai/DeepSeek-V3">DeepSeek V3</option>
                 <option value="Qwen/Qwen2.5-72B-Instruct">Qwen 2.5 72B</option>
               </select>
@@ -1635,7 +1634,7 @@ export default function AutonomousEconomy() {
                   data-testid="select-agent-model"
                   disabled={createAgentMutation.isPending}
                 >
-                  <option value="meta-llama/Llama-3.1-70B-Instruct">Llama 3.1 70B</option>
+                  <option value="meta-llama/Llama-3.3-70B-Instruct">Llama 3.3 70B</option>
                   <option value="deepseek-ai/DeepSeek-V3">DeepSeek V3</option>
                   <option value="Qwen/Qwen2.5-72B-Instruct">Qwen 2.5 72B</option>
                 </select>
@@ -2945,7 +2944,7 @@ export default function AutonomousEconomy() {
             <Card className="p-3 space-y-2">
               <div className="text-xs font-mono font-semibold">{t("dashboard.triggerEvolution")}</div>
               <select value={evolveModel} onChange={(e) => setEvolveModel(e.target.value)} className="w-full font-mono text-xs bg-card border rounded-md px-2 py-1.5" data-testid="select-evolve-model">
-                <option value="meta-llama/Llama-3.1-70B-Instruct">Llama 3.1 70B (Hyperbolic)</option>
+                <option value="meta-llama/Llama-3.3-70B-Instruct">Llama 3.3 70B (Hyperbolic)</option>
                 <option value="deepseek-ai/DeepSeek-V3">DeepSeek V3 (AkashML)</option>
                 <option value="Qwen/Qwen2.5-72B-Instruct">Qwen 2.5 72B (Hyperbolic)</option>
                 <option value="meta-llama/Llama-3.1-8B-Instruct">Llama 3.1 8B (Ritual zkML)</option>
@@ -3789,7 +3788,7 @@ export default function AutonomousEconomy() {
                         data-testid="select-twitter-settings-model"
                       >
                         <option value="">Auto (best available)</option>
-                        <option value="meta-llama/Meta-Llama-3.1-70B-Instruct">Llama 3.1 70B (Hyperbolic)</option>
+                        <option value="meta-llama/Llama-3.3-70B-Instruct">Llama 3.3 70B (Hyperbolic)</option>
                         <option value="meta-llama/Llama-3.3-70B-Instruct">Llama 3.3 70B (Akash)</option>
                         <option value="deepseek-ai/DeepSeek-V3">DeepSeek V3 (Hyperbolic)</option>
                         <option value="deepseek-ai/DeepSeek-V3.2">DeepSeek V3.2 (Akash)</option>

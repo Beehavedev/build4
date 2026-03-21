@@ -90,12 +90,12 @@ const TEMPLATES: Record<string, { name: string; bio: string; skills: string[]; i
 };
 
 const CHAIN_MAP: Record<string, string> = { bnb: "bnbMainnet", base: "baseMainnet", xlayer: "xlayerMainnet" };
-const MODEL_MAP: Record<string, string> = { llama: "meta-llama/Llama-3.1-70B-Instruct", deepseek: "deepseek-ai/DeepSeek-V3", qwen: "Qwen/Qwen2.5-72B-Instruct" };
+const MODEL_MAP: Record<string, string> = { llama: "meta-llama/Llama-3.3-70B-Instruct", deepseek: "deepseek-ai/DeepSeek-V3", qwen: "Qwen/Qwen2.5-72B-Instruct" };
 
 function generateAgentCode(config: AgentConfig): string {
   if (!config.type) return "";
   const chainName = config.chain === "base" ? "Base" : config.chain === "xlayer" ? "XLayer" : "BNB Chain";
-  const modelName = config.model === "deepseek" ? "DeepSeek-V3" : config.model === "qwen" ? "Qwen2.5-72B" : "Llama-3.1-70B";
+  const modelName = config.model === "deepseek" ? "DeepSeek-V3" : config.model === "qwen" ? "Qwen2.5-72B" : "Llama-3.3-70B";
   return `import { Agent } from "@build4/sdk";
 import { ${config.skills.map(s => s.replace(/\s+/g, "")).join(", ")} } from "@build4/skills";
 
@@ -126,7 +126,7 @@ agent.deploy();
 function generateConfigYaml(config: AgentConfig): string {
   if (!config.type) return "";
   const chainName = config.chain === "base" ? "Base" : config.chain === "xlayer" ? "XLayer" : "BNB Chain";
-  const modelName = config.model === "deepseek" ? "DeepSeek-V3" : config.model === "qwen" ? "Qwen2.5-72B" : "Llama-3.1-70B";
+  const modelName = config.model === "deepseek" ? "DeepSeek-V3" : config.model === "qwen" ? "Qwen2.5-72B" : "Llama-3.3-70B";
   return `name: "${config.name || "Unnamed Agent"}"
 version: "1.0.0"
 runtime: "build4-v2"

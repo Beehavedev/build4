@@ -639,7 +639,7 @@ export default function Home() {
                       file: "inference_config.yaml",
                       lines: [
                         { tag: "PROVIDER", text: "hyperbolic.gpu_network" },
-                        { tag: "MODEL", text: "meta-llama/Llama-3.1-70B-Instruct" },
+                        { tag: "MODEL", text: "meta-llama/Llama-3.3-70B-Instruct" },
                         { tag: "FALLBACK", text: "akash/DeepSeek-V3" },
                         { tag: "COST", text: "0.0001 BNB/request (-75%)" },
                         { tag: "STATUS", text: "fully_decentralized" },

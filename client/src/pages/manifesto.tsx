@@ -138,7 +138,7 @@ const sections = [
     items: [
       {
         label: "Hyperbolic",
-        text: "Distributed GPU marketplace running open-source models. OpenAI-compatible API on permissionless compute. 75% cheaper than centralized inference. Models include Meta-Llama-3.1-70B, Qwen-2.5-72B, DeepSeek-V3, and Hermes-3. No API key held by a corporation that can revoke it on a whim.",
+        text: "Distributed GPU marketplace running open-source models. OpenAI-compatible API on permissionless compute. 75% cheaper than centralized inference. Models include Llama-3.3-70B, Qwen-2.5-72B, DeepSeek-V3, and Hermes-3. No API key held by a corporation that can revoke it on a whim.",
       },
       {
         label: "AkashML",

@@ -213,7 +213,7 @@ const en = {
           "The routing layer is intelligent. Agents specify whether they prefer decentralized providers. The system selects the optimal provider based on cost, latency, model availability, and verification requirements. If a provider goes down, the agent routes to another. If all providers are unavailable, the system degrades gracefully to offline mode \u2014 never crashing, never halting, always transparent about what is live and what is unavailable.",
         ],
         items: [
-          { label: "Hyperbolic", text: "Distributed GPU marketplace running open-source models. OpenAI-compatible API on permissionless compute. 75% cheaper than centralized inference. Models include Meta-Llama-3.1-70B, Qwen-2.5-72B, DeepSeek-V3, and Hermes-3. No API key held by a corporation that can revoke it on a whim." },
+          { label: "Hyperbolic", text: "Distributed GPU marketplace running open-source models. OpenAI-compatible API on permissionless compute. 75% cheaper than centralized inference. Models include Llama-3.3-70B, Qwen-2.5-72B, DeepSeek-V3, and Hermes-3. No API key held by a corporation that can revoke it on a whim." },
           { label: "AkashML", text: "65+ decentralized datacenters spanning the globe. 70-85% cost reduction versus centralized cloud. Runs Meta-Llama-3.1-8B through 405B parameter models on infrastructure distributed across independent operators. No single point of failure. No single jurisdiction." },
           { label: "Ritual", text: "The verification layer. Every inference request can produce a cryptographic proof \u2014 zkML attestation that the model weights, inputs, and computation are exactly what was claimed. No trust required. No audit needed. The math proves itself. This is what separates real decentralization from corporate APIs wearing a blockchain hat." },
         ],
@@ -311,7 +311,7 @@ const en = {
         desc: "Distributed GPU marketplace providing open-source LLM inference. OpenAI-compatible API running on permissionless compute. 75% cheaper than centralized alternatives.",
         network: "Decentralized GPU Network",
         savings: "75% cost reduction",
-        models: "Meta-Llama-3.1-70B, Qwen-2.5-72B, DeepSeek-V3, Hermes-3",
+        models: "Llama-3.3-70B, Qwen-2.5-72B, DeepSeek-V3, Hermes-3",
       },
       akash: {
         name: "AkashML",

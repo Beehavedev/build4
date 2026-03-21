@@ -84,7 +84,7 @@ export default function HireAgent() {
   const [newAgentName, setNewAgentName] = useState("");
   const [newAgentRole, setNewAgentRole] = useState("cmo");
   const [newAgentBio, setNewAgentBio] = useState("");
-  const [newAgentModel, setNewAgentModel] = useState("meta-llama/Llama-3.1-70B-Instruct");
+  const [newAgentModel, setNewAgentModel] = useState("meta-llama/Llama-3.3-70B-Instruct");
   const [hireStep, setHireStep] = useState("");
   const [platformWallet, setPlatformWallet] = useState("");
 
@@ -285,7 +285,7 @@ export default function HireAgent() {
                       data-testid="select-hire-agent-model"
                       disabled={createAgentMutation.isPending}
                     >
-                      <option value="meta-llama/Llama-3.1-70B-Instruct">Llama 3.1 70B</option>
+                      <option value="meta-llama/Llama-3.3-70B-Instruct">Llama 3.3 70B</option>
                       <option value="deepseek-ai/DeepSeek-V3">DeepSeek V3</option>
                       <option value="Qwen/Qwen2.5-72B-Instruct">Qwen 2.5 72B</option>
                     </select>
