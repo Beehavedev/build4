@@ -855,6 +855,77 @@ export async function registerRoutes(
     res.json(result);
   });
 
+  const builderChatRateLimit = new Map<string, { count: number; resetAt: number }>();
+  app.post("/api/builder/chat", async (req: Request, res: Response) => {
+    try {
+      const ip = req.ip || req.socket.remoteAddress || "unknown";
+      const now = Date.now();
+      const limit = builderChatRateLimit.get(ip);
+      if (limit && limit.resetAt > now) {
+        if (limit.count >= 20) {
+          res.status(429).json({ error: "Rate limited. Try again in a minute." });
+          return;
+        }
+        limit.count++;
+      } else {
+        builderChatRateLimit.set(ip, { count: 1, resetAt: now + 60000 });
+      }
+
+      const { message, config } = req.body;
+      if (!message || typeof message !== "string" || message.length > 2000) {
+        res.status(400).json({ error: "message required (max 2000 chars)" });
+        return;
+      }
+
+      const { runInferenceWithFallback, getAvailableProviders } = await import("./inference");
+      const providers = getAvailableProviders();
+
+      if (providers.length === 0) {
+        res.json({
+          response: null,
+          fallback: true,
+        });
+        return;
+      }
+
+      const systemPrompt = `You are BUILD4 Agent Builder AI — an expert at creating autonomous AI agents for crypto/DeFi on BNB Chain, Base, and XLayer. You help users build, configure, and deploy AI agents.
+
+Current agent config: ${JSON.stringify(config || {})}
+
+Available templates: trading, research, social, defi, security, sniper.
+Available chains: BNB Chain (bnb), Base (base), XLayer (xlayer).
+Available models: Llama 3.1 70B (llama), DeepSeek V3 (deepseek), Qwen 2.5 72B (qwen).
+Autonomy levels: supervised, semi-auto, full auto.
+
+Your job:
+1. Understand what the user wants to build
+2. Suggest the best template, skills, chain, and model
+3. Give concise, actionable responses
+4. If the user describes something, map it to a concrete agent config
+5. Be direct and technical, like a senior engineer pair-programming
+
+Respond in plain text, no markdown headers. Keep responses under 200 words. Be specific and practical.`;
+
+      const result = await runInferenceWithFallback(
+        providers,
+        undefined,
+        message,
+        { systemPrompt, temperature: 0.7 }
+      );
+
+      res.json({
+        response: result.text,
+        model: result.model,
+        network: result.network,
+        live: result.live,
+        fallback: false,
+      });
+    } catch (error: any) {
+      console.error("[Builder Chat] Error:", error.message);
+      res.json({ response: null, fallback: true });
+    }
+  });
+
   app.get("/api/trading/status", analyticsAuth, async (_req: Request, res: Response) => {
     const { getAllActivePositions, isTradingAgentRunning } = await import("./trading-agent");
     res.json({

@@ -10,11 +10,11 @@ import { apiRequest } from "@/lib/queryClient";
 import {
   ArrowLeft, Terminal, Bot, Brain, Zap, Shield,
   Plus, Layers, Settings, Wallet, Code, Rocket,
-  TrendingUp, MessageSquare, Search, BarChart3,
+  TrendingUp, MessageSquare, Search,
   Eye, Globe, Lock, CheckCircle2, ArrowRight,
-  Send, Cpu, Gift, Star, Users, Activity, Package,
-  Loader2, Play, Square, ChevronRight, Sparkles,
-  AlertCircle, Copy, RefreshCw,
+  Send, Cpu, Star, Users, Activity,
+  Loader2, ChevronRight, Sparkles,
+  AlertCircle, Monitor,
 } from "lucide-react";
 
 interface BuildMessage {
@@ -74,257 +74,91 @@ const TEMPLATES: Record<string, { name: string; bio: string; skills: string[]; i
   },
 };
 
-const CHAIN_MAP: Record<string, string> = {
-  bnb: "bnbMainnet",
-  base: "baseMainnet",
-  xlayer: "xlayerMainnet",
-};
+const CHAIN_MAP: Record<string, string> = { bnb: "bnbMainnet", base: "baseMainnet", xlayer: "xlayerMainnet" };
+const MODEL_MAP: Record<string, string> = { llama: "meta-llama/Llama-3.1-70B-Instruct", deepseek: "deepseek-ai/DeepSeek-V3", qwen: "Qwen/Qwen2.5-72B-Instruct" };
 
-const MODEL_MAP: Record<string, string> = {
-  llama: "meta-llama/Llama-3.1-70B-Instruct",
-  deepseek: "deepseek-ai/DeepSeek-V3",
-  qwen: "Qwen/Qwen2.5-72B-Instruct",
-};
-
-function parseUserIntent(input: string, currentConfig: AgentConfig): { config: Partial<AgentConfig>; response: string; buildSteps?: string[] } {
+function extractConfigFromInput(input: string, currentConfig: AgentConfig): Partial<AgentConfig> | null {
   const lower = input.toLowerCase().trim();
+  const updates: Partial<AgentConfig> = {};
+  let matched = false;
 
   for (const [key, tmpl] of Object.entries(TEMPLATES)) {
-    if (lower.includes(key) || lower.includes(tmpl.name.toLowerCase())) {
-      return {
-        config: {
-          type: key,
-          name: tmpl.name,
-          bio: tmpl.bio,
-          skills: [...tmpl.skills],
-          status: "configuring",
-        },
-        response: `Got it. I'll build a ${tmpl.name} for you.\n\n${tmpl.icon} Template: ${tmpl.name}\n📝 ${tmpl.bio}\n🔧 Skills: ${tmpl.skills.join(", ")}\n\nYou can customize it — tell me to change the name, chain, model, or skills. Or say "deploy" when you're ready.`,
-      };
+    if (lower.includes(key) || lower.includes(tmpl.name.toLowerCase().replace(" agent", ""))) {
+      updates.type = key;
+      updates.name = tmpl.name;
+      updates.bio = tmpl.bio;
+      updates.skills = [...tmpl.skills];
+      updates.status = "configuring";
+      matched = true;
+      break;
     }
   }
 
-  if (lower.includes("name") && lower.includes(" ")) {
-    const nameMatch = input.match(/(?:name(?:\s+it)?(?:\s+to)?|call(?:\s+it)?)\s+["']?([^"']+?)["']?\s*$/i);
-    if (nameMatch) {
-      const name = nameMatch[1].trim().slice(0, 50);
-      return {
-        config: { name },
-        response: `Agent renamed to "${name}".`,
-      };
-    }
-  }
+  if (lower.includes("bnb") || lower.includes("bsc")) { updates.chain = "bnb"; matched = true; }
+  else if (lower.includes("base chain") || (lower.includes("base") && !lower.includes("database"))) { updates.chain = "base"; matched = true; }
+  else if (lower.includes("xlayer")) { updates.chain = "xlayer"; matched = true; }
 
-  if (lower.includes("bnb") || lower.includes("bsc")) {
-    return { config: { chain: "bnb" }, response: "Chain set to BNB Chain." };
-  }
-  if (lower.includes("base")) {
-    return { config: { chain: "base" }, response: "Chain set to Base." };
-  }
-  if (lower.includes("xlayer")) {
-    return { config: { chain: "xlayer" }, response: "Chain set to XLayer." };
-  }
+  if (lower.includes("deepseek")) { updates.model = "deepseek"; matched = true; }
+  else if (lower.includes("qwen")) { updates.model = "qwen"; matched = true; }
+  else if (lower.includes("llama")) { updates.model = "llama"; matched = true; }
 
-  if (lower.includes("deepseek")) {
-    return { config: { model: "deepseek" }, response: "Model set to DeepSeek V3." };
-  }
-  if (lower.includes("qwen")) {
-    return { config: { model: "qwen" }, response: "Model set to Qwen 2.5 72B." };
-  }
-  if (lower.includes("llama")) {
-    return { config: { model: "llama" }, response: "Model set to Llama 3.1 70B." };
-  }
+  if (lower.includes("supervised")) { updates.autonomy = "supervised"; matched = true; }
+  else if (lower.includes("full auto") || lower.includes("fully autonomous")) { updates.autonomy = "full"; matched = true; }
+  else if (lower.includes("semi")) { updates.autonomy = "semi"; matched = true; }
 
-  if (lower.includes("supervised")) {
-    return { config: { autonomy: "supervised" }, response: "Autonomy set to Supervised — agent will ask for approval before acting." };
-  }
-  if (lower.includes("full auto") || lower.includes("autonomous")) {
-    return { config: { autonomy: "full" }, response: "Autonomy set to Full Auto — agent will act completely independently." };
-  }
-  if (lower.includes("semi")) {
-    return { config: { autonomy: "semi" }, response: "Autonomy set to Semi-Auto — agent acts within predefined limits." };
-  }
+  const nameMatch = input.match(/(?:name(?:\s+it)?(?:\s+to)?|call(?:\s+it)?)\s+["']?([^"']+?)["']?\s*$/i);
+  if (nameMatch) { updates.name = nameMatch[1].trim().slice(0, 50); matched = true; }
 
-  if (lower.includes("add skill") || lower.includes("add ")) {
-    const skillMatch = input.match(/add\s+(?:skill\s+)?["']?(.+?)["']?\s*$/i);
-    if (skillMatch) {
-      const skill = skillMatch[1].trim();
-      return {
-        config: { skills: [...currentConfig.skills, skill] },
-        response: `Added skill: "${skill}".`,
-      };
-    }
-  }
+  const addSkill = input.match(/add\s+(?:skill\s+)?["']?(.+?)["']?\s*$/i);
+  if (addSkill && !lower.startsWith("add a")) { updates.skills = [...currentConfig.skills, addSkill[1].trim()]; matched = true; }
 
-  if (lower.includes("deploy") || lower.includes("launch") || lower.includes("build it") || lower.includes("create it") || lower.includes("ship it") || lower.includes("go") && lower.length < 10) {
-    if (!currentConfig.type) {
-      return {
-        config: {},
-        response: "You haven't configured an agent yet. Tell me what kind of agent you want — trading, research, social, defi, security, or sniper. Or just describe what you need and I'll figure it out.",
-      };
-    }
-    return {
-      config: { status: "building" },
-      response: "Starting build...",
-      buildSteps: [
-        "Initializing agent runtime environment...",
-        `Configuring ${currentConfig.model === "deepseek" ? "DeepSeek V3" : currentConfig.model === "qwen" ? "Qwen 2.5" : "Llama 3.1"} model...`,
-        `Installing skills: ${currentConfig.skills.join(", ")}...`,
-        `Connecting to ${currentConfig.chain === "base" ? "Base" : currentConfig.chain === "xlayer" ? "XLayer" : "BNB Chain"}...`,
-        "Generating agent wallet...",
-        "Registering on-chain identity (ERC-8004)...",
-        "Deploying agent...",
-      ],
-    };
-  }
-
-  if (lower.includes("store") || lower.includes("browse agent") || lower.includes("show me agent") || lower.includes("community agent") || lower.includes("marketplace") || lower.includes("discover")) {
-    return {
-      config: {},
-      response: `Here are the top community agents you can fork and customize:\n\n📈 Alpha Hunter v3 — Multi-chain trading, whale tracking, social sentiment (★4.8, 2.8K users)\n🛡️ Sentinel Security — Real-time contract auditing and rug detection (★4.9, 1.9K users)\n🏦 YieldMax Pro — Auto yield farming and rebalancing (★4.6, 1.4K users)\n💬 Social Pulse — Twitter/Telegram/Discord intelligence (★4.5, 892 users)\n🔒 MEV Shield — Transaction protection from sandwich attacks (★4.7, 673 users)\n🔍 ResearchGPT — Deep token research with risk scoring (★4.4, 1.2K users)\n👁️ CopyTrader AI — Follow top PnL wallets automatically (★4.3, 2.1K users)\n⚡ GasMaster — Gas optimization and tx batching (★4.2, 534 users)\n\nSay "fork Alpha Hunter" or "fork Sentinel" to start from any of these. Or describe what you need and I'll build from scratch.`,
-    };
-  }
-
+  const forkMap: Record<string, { type: string; name: string; bio: string; skills: string[] }> = {
+    "alpha": { type: "trading", name: "Alpha Hunter v3 (fork)", bio: "Multi-chain trading agent — whale tracking, social sentiment, alpha detection", skills: ["Market Scanner", "Whale Tracker", "Signal Detector", "Trade Executor", "Social Sentiment"] },
+    "sentinel": { type: "security", name: "Sentinel Security (fork)", bio: "Real-time contract auditing, honeypot detection, rug pull analysis", skills: ["Contract Scanner", "Honeypot Detector", "Rug Analyzer", "Wallet Monitor", "Alert System"] },
+    "yield": { type: "defi", name: "YieldMax Pro (fork)", bio: "Automated yield farming with auto-compounding", skills: ["Yield Scanner", "LP Manager", "Auto Compounder", "Gas Optimizer", "Position Tracker"] },
+    "copy": { type: "trading", name: "CopyTrader AI (fork)", bio: "Follow top PnL wallets with configurable sizing", skills: ["Wallet Tracker", "Trade Copier", "Position Sizer", "Risk Manager"] },
+  };
   if (lower.includes("fork")) {
-    const forkMap: Record<string, { type: string; name: string; bio: string; skills: string[] }> = {
-      "alpha": { type: "trading", name: "Alpha Hunter v3 (fork)", bio: "Multi-chain trading agent — whale tracking, social sentiment, alpha detection", skills: ["Market Scanner", "Whale Tracker", "Signal Detector", "Trade Executor", "Social Sentiment"] },
-      "sentinel": { type: "security", name: "Sentinel Security (fork)", bio: "Real-time contract auditing, honeypot detection, rug pull analysis", skills: ["Contract Scanner", "Honeypot Detector", "Rug Analyzer", "Wallet Monitor", "Alert System"] },
-      "yield": { type: "defi", name: "YieldMax Pro (fork)", bio: "Automated yield farming with auto-compounding and rebalancing", skills: ["Yield Scanner", "LP Manager", "Auto Compounder", "Gas Optimizer", "Position Tracker"] },
-      "social": { type: "social", name: "Social Pulse (fork)", bio: "Social media intelligence across Twitter, Telegram, Discord", skills: ["Content Writer", "Trend Monitor", "Sentiment Analyzer", "Alert Bot"] },
-      "mev": { type: "security", name: "MEV Shield (fork)", bio: "Transaction protection from sandwich attacks and front-running", skills: ["TX Router", "Mempool Monitor", "Gas Optimizer", "Private Pool"] },
-      "research": { type: "research", name: "ResearchGPT (fork)", bio: "Deep token research with on-chain metrics and risk scoring", skills: ["Token Analyzer", "Contract Auditor", "Whale Tracker", "Report Generator", "Risk Scorer"] },
-      "copy": { type: "trading", name: "CopyTrader AI (fork)", bio: "Follow top PnL wallets with configurable position sizing", skills: ["Wallet Tracker", "Trade Copier", "Position Sizer", "Risk Manager"] },
-      "gas": { type: "defi", name: "GasMaster (fork)", bio: "Transaction optimization — batching, gas timing, cheapest routes", skills: ["TX Batcher", "Gas Monitor", "Route Optimizer"] },
-    };
-
     for (const [key, fork] of Object.entries(forkMap)) {
       if (lower.includes(key)) {
-        return {
-          config: { ...fork, status: "configuring" },
-          response: `Forked! Starting from ${fork.name}.\n\n🔧 Skills: ${fork.skills.join(", ")}\n📝 ${fork.bio}\n\nCustomize it or say "deploy" to launch.`,
-        };
+        Object.assign(updates, fork, { status: "configuring" });
+        matched = true;
+        break;
       }
     }
   }
 
-  if (lower.includes("sdk") || lower.includes("api") || lower.includes("docs") || lower.includes("developer") || lower.includes("code example") || lower.includes("integrate")) {
-    return {
-      config: {},
-      response: `BUILD4 SDK — TypeScript-first agent development.\n\n$ npm install @build4/sdk\n\nQuick start:\n  import { BUILD4SDK } from '@build4/sdk'\n  const sdk = new BUILD4SDK({ apiKey: 'key', chain: 'bnb' })\n  const agent = await sdk.agents.create({ name: 'Bot', template: 'trading' })\n\nKey APIs:\n  POST /api/v1/agents — Create agent\n  GET  /api/v1/agents — List agents\n  POST /api/v1/trade/swap — Execute swap\n  GET  /api/v1/market/signals — Market signals\n  GET  /api/v1/market/trending — Trending tokens\n  POST /api/v1/skills — Create skill\n  POST /api/v1/webhooks — Register webhook\n  POST /api/v1/staking/stake — Stake BUILD4\n\nSay "show me trading api", "show me webhooks", or "show me agent management" for detailed code examples.`,
-    };
-  }
+  return matched ? updates : null;
+}
 
-  if (lower.includes("show me trading api") || lower.includes("trading code") || lower.includes("swap code")) {
-    return {
-      config: {},
-      response: `Trading API examples:\n\n// Get market signals\nconst signals = await sdk.market.signals({\n  chain: 'bnb',\n  type: 'whale', // whale | kol | smart\n});\n\n// Get trending tokens\nconst trending = await sdk.market.trending({\n  chain: 'bnb',\n  timeFrame: '24h',\n  sortBy: 'volume',\n});\n\n// Execute a swap\nconst tx = await sdk.trade.swap({\n  agentId: 'your-agent-id',\n  fromToken: 'BNB',\n  toToken: '0x...tokenAddress',\n  amount: '0.05',\n  slippage: 1,\n});\n\n// Token security scan\nconst security = await sdk.market.security({\n  chain: 'bnb',\n  token: '0x...tokenAddress',\n});`,
-    };
-  }
-
-  if (lower.includes("show me webhook") || lower.includes("event") || lower.includes("webhook code")) {
-    return {
-      config: {},
-      response: `Webhooks & Events:\n\n// Register a webhook\nawait sdk.webhooks.create({\n  url: 'https://your-server.com/webhook',\n  events: [\n    'agent.trade.executed',\n    'agent.skill.purchased',\n    'agent.reward.earned',\n    'agent.status.changed',\n  ],\n});\n\n// Real-time event listeners\nsdk.events.on('trade.executed', (event) => {\n  console.log('Trade:', event.token, event.amount);\n  console.log('PnL:', event.pnl);\n});\n\nsdk.events.on('reward.earned', (event) => {\n  console.log('Reward:', event.amount, 'BUILD4');\n});`,
-    };
-  }
-
-  if (lower.includes("show me agent management") || lower.includes("manage code") || lower.includes("agent api")) {
-    return {
-      config: {},
-      response: `Agent Management API:\n\n// List your agents\nconst agents = await sdk.agents.list();\n\n// Get agent details\nconst agent = await sdk.agents.get('agent-id');\n\n// Update agent config\nawait sdk.agents.update('agent-id', {\n  config: { maxTradeSize: '0.5' },\n});\n\n// Fund agent wallet\nawait sdk.agents.fund('agent-id', {\n  amount: '0.1',\n  token: 'BNB',\n});\n\n// Get activity log\nconst logs = await sdk.agents.logs('agent-id', {\n  limit: 50,\n  type: 'trade',\n});\n\n// Pause / resume\nawait sdk.agents.pause('agent-id');\nawait sdk.agents.resume('agent-id');`,
-    };
-  }
-
-  if (lower.includes("help") || lower === "?" || lower.includes("what can")) {
-    return {
-      config: {},
-      response: `Here's what you can do:\n\n🔨 BUILD\n• "build a trading agent" — create from template\n• "I need a security scanner" — describe what you need\n• Change name: "name it AlphaBot"\n• Pick chain: "use Base" or "deploy on BNB"\n• Pick model: "use DeepSeek" or "use Llama"\n• Add skills: "add whale tracker"\n• Set autonomy: "make it fully autonomous"\n• Deploy: "deploy" or "ship it"\n\n🏪 STORE\n• "show me agents" — browse community agents\n• "fork Alpha Hunter" — start from a community agent\n\n💻 SDK\n• "show me the SDK" — API reference and code examples\n• "show me trading api" — trading code examples\n• "show me webhooks" — event/webhook examples\n\nOr just describe what you want in plain English.`,
-    };
-  }
-
-  if (lower.includes("trade") || lower.includes("trading") || lower.includes("buy") || lower.includes("sell") || lower.includes("swap")) {
-    return {
-      config: {
-        type: "trading",
-        name: "Trading Agent",
-        bio: "Autonomous trading agent that monitors markets and executes trades",
-        skills: ["Market Scanner", "Signal Detector", "Trade Executor", "Risk Manager"],
-        status: "configuring",
-      },
-      response: `Sounds like you need a Trading Agent. I've configured one for you.\n\n📈 Template: Trading Agent\n🔧 Skills: Market Scanner, Signal Detector, Trade Executor, Risk Manager\n\nCustomize it or say "deploy" when ready.`,
-    };
-  }
-
-  if (lower.includes("research") || lower.includes("analyze") || lower.includes("scan token")) {
-    return {
-      config: {
-        type: "research",
-        name: "Research Agent",
-        bio: "Deep analysis agent for token and project research",
-        skills: ["Token Analyzer", "Contract Auditor", "Whale Tracker", "Report Generator"],
-        status: "configuring",
-      },
-      response: `I'll set up a Research Agent for you.\n\n🔍 Template: Research Agent\n🔧 Skills: Token Analyzer, Contract Auditor, Whale Tracker, Report Generator\n\nCustomize or say "deploy".`,
-    };
-  }
-
-  if (lower.includes("security") || lower.includes("audit") || lower.includes("rug") || lower.includes("honeypot")) {
-    return {
-      config: {
-        type: "security",
-        name: "Security Agent",
-        bio: "Contract security scanner and rug pull detector",
-        skills: ["Contract Scanner", "Honeypot Detector", "Rug Analyzer", "Wallet Monitor"],
-        status: "configuring",
-      },
-      response: `Security Agent configured.\n\n🛡️ Template: Security Agent\n🔧 Skills: Contract Scanner, Honeypot Detector, Rug Analyzer, Wallet Monitor\n\nCustomize or say "deploy".`,
-    };
-  }
-
-  if (lower.includes("snip") || lower.includes("fast") || lower.includes("new launch") || lower.includes("early")) {
-    return {
-      config: {
-        type: "sniper",
-        name: "Sniper Agent",
-        bio: "Ultra-fast token sniper for new launches",
-        skills: ["Launch Detector", "Fast Executor", "Liquidity Checker", "Exit Planner"],
-        status: "configuring",
-      },
-      response: `Sniper Agent configured.\n\n🎯 Template: Sniper Agent\n🔧 Skills: Launch Detector, Fast Executor, Liquidity Checker, Exit Planner\n\nCustomize or say "deploy".`,
-    };
-  }
-
-  return {
-    config: {},
-    response: `I'm not sure what you mean. Try telling me what kind of agent to build:\n\n• "build a trading agent"\n• "I need a security scanner"\n• "create a DeFi yield optimizer"\n\nOr type "help" to see all commands.`,
-  };
+function isDeployCommand(input: string): boolean {
+  const lower = input.toLowerCase().trim();
+  return ["deploy", "launch", "build it", "create it", "ship it", "go", "deploy it", "let's go"].some(cmd => lower === cmd || lower.startsWith(cmd));
 }
 
 export default function AgentBuilder() {
   const [messages, setMessages] = useState<BuildMessage[]>([
     {
       role: "system",
-      content: "Welcome to BUILD4. Tell me what you want to build and I'll create it.\n\nExamples:\n• \"Build me a trading agent\"\n• \"I need a security scanner\"\n• \"Show me community agents\" — browse and fork\n• \"Show me the SDK\" — API docs and code\n\nJust describe it. I'll handle the rest.",
+      content: "Welcome to BUILD4 Agent Builder. Describe the agent you want and I'll build it for you.\n\nTry: \"Build me a trading agent on Base\" or \"I need a sniper bot that catches new launches\"",
       timestamp: new Date(),
       type: "info",
     },
   ]);
   const [inputValue, setInputValue] = useState("");
   const [config, setConfig] = useState<AgentConfig>({
-    name: "",
-    bio: "",
-    type: "",
-    chain: "bnb",
-    model: "llama",
-    skills: [],
-    autonomy: "semi",
-    status: "idle",
+    name: "", bio: "", type: "", chain: "bnb", model: "llama", skills: [], autonomy: "semi", status: "idle",
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [deployedAgentId, setDeployedAgentId] = useState<string | null>(null);
+  const [previewTab, setPreviewTab] = useState<"preview" | "logs">("preview");
+  const [buildLogs, setBuildLogs] = useState<string[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const configRef = useRef(config);
   const { toast } = useToast();
+
+  useEffect(() => { configRef.current = config; }, [config]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -334,43 +168,65 @@ export default function AgentBuilder() {
     setMessages(prev => [...prev, { ...msg, timestamp: new Date() }]);
   };
 
+  const addLog = (log: string) => {
+    setBuildLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${log}`]);
+  };
+
+  const getAIResponse = async (userMessage: string, currentConfig?: AgentConfig): Promise<string | null> => {
+    try {
+      const resp = await apiRequest("POST", "/api/builder/chat", {
+        message: userMessage,
+        config: currentConfig || configRef.current,
+      });
+      const data = await resp.json();
+      if (data.fallback || !data.response) return null;
+      return data.response;
+    } catch {
+      return null;
+    }
+  };
+
   const simulateBuildSteps = async (steps: string[]) => {
-    for (let i = 0; i < steps.length; i++) {
-      await new Promise(r => setTimeout(r, 600 + Math.random() * 800));
-      addMessage({ role: "build", content: steps[i], type: "progress" });
+    for (const step of steps) {
+      await new Promise(r => setTimeout(r, 500 + Math.random() * 700));
+      addMessage({ role: "build", content: step, type: "progress" });
+      addLog(step);
     }
   };
 
   const deployAgent = async () => {
     try {
-      addMessage({ role: "build", content: "Sending to BUILD4 deployment pipeline...", type: "progress" });
+      addLog("Sending deployment request...");
+      addMessage({ role: "build", content: "Deploying to BUILD4...", type: "progress" });
 
       const response = await apiRequest("POST", "/api/web4/agents/create", {
         name: config.name || "Unnamed Agent",
-        bio: config.bio || "Agent built with BUILD4 Agent Builder",
+        bio: config.bio || "Built with BUILD4 Agent Builder",
         modelType: MODEL_MAP[config.model] || MODEL_MAP.llama,
         initialDeposit: "100000000000000",
         targetChain: CHAIN_MAP[config.chain] || CHAIN_MAP.bnb,
       });
 
       const agent = await response.json();
-
       setDeployedAgentId(agent.id);
       setConfig(prev => ({ ...prev, status: "live" }));
+      addLog(`Agent deployed: ${agent.id}`);
+      addLog(`Wallet: ${agent.wallet?.walletAddress || "Generated"}`);
+      addLog("Status: LIVE");
 
-      await new Promise(r => setTimeout(r, 500));
       addMessage({
         role: "build",
-        content: `Agent deployed successfully!\n\n✅ ID: ${agent.id}\n💰 Wallet: ${agent.wallet?.walletAddress || "Generated"}\n🔗 Chain: ${config.chain === "base" ? "Base" : config.chain === "xlayer" ? "XLayer" : "BNB Chain"}\n🤖 Model: ${config.model === "deepseek" ? "DeepSeek V3" : config.model === "qwen" ? "Qwen 2.5" : "Llama 3.1"}\n\nYour agent is live. You can manage it from the dashboard.`,
+        content: `Agent deployed!\n\nID: ${agent.id}\nWallet: ${agent.wallet?.walletAddress || "Generated"}\nChain: ${config.chain === "base" ? "Base" : config.chain === "xlayer" ? "XLayer" : "BNB Chain"}\nModel: ${config.model === "deepseek" ? "DeepSeek V3" : config.model === "qwen" ? "Qwen 2.5" : "Llama 3.1"}\n\nYour agent is live. Manage it from the dashboard or build another one.`,
         type: "success",
       });
 
-      toast({ title: "Agent Deployed", description: `${config.name} is now live on ${config.chain === "base" ? "Base" : "BNB Chain"}` });
+      toast({ title: "Agent Deployed", description: `${config.name} is live` });
     } catch (error: any) {
-      setConfig(prev => ({ ...prev, status: "error" }));
+      setConfig(prev => ({ ...prev, status: "configuring" }));
+      addLog(`Error: ${error.message}`);
       addMessage({
         role: "build",
-        content: `Deployment needs a connected wallet with funds. Connect your wallet first, then try again.\n\nError: ${error.message || "Wallet connection required"}`,
+        content: `Connect your wallet with funds first, then try again.\n\n${error.message || "Wallet required"}`,
         type: "error",
       });
     }
@@ -383,20 +239,68 @@ export default function AgentBuilder() {
     const userInput = inputValue.trim();
     setInputValue("");
     addMessage({ role: "user", content: userInput });
+    addLog(`User: ${userInput}`);
     setIsProcessing(true);
 
-    await new Promise(r => setTimeout(r, 300 + Math.random() * 400));
-
-    const { config: updates, response, buildSteps } = parseUserIntent(userInput, config);
-
-    setConfig(prev => ({ ...prev, ...updates }));
-
-    if (buildSteps) {
-      addMessage({ role: "build", content: response, type: "progress" });
-      await simulateBuildSteps(buildSteps);
+    if (isDeployCommand(userInput)) {
+      if (!config.type) {
+        addMessage({ role: "system", content: "No agent configured yet. Tell me what you want to build first.", type: "info" });
+        setIsProcessing(false);
+        return;
+      }
+      addMessage({ role: "build", content: "Starting build...", type: "progress" });
+      setConfig(prev => ({ ...prev, status: "building" }));
+      const steps = [
+        "Initializing runtime environment...",
+        `Loading ${config.model === "deepseek" ? "DeepSeek V3" : config.model === "qwen" ? "Qwen 2.5" : "Llama 3.1"} model...`,
+        `Installing skills: ${config.skills.join(", ")}...`,
+        `Connecting to ${config.chain === "base" ? "Base" : config.chain === "xlayer" ? "XLayer" : "BNB Chain"}...`,
+        "Generating agent wallet...",
+        "Registering on-chain identity (ERC-8004)...",
+      ];
+      await simulateBuildSteps(steps);
       await deployAgent();
+      setIsProcessing(false);
+      return;
+    }
+
+    const configUpdates = extractConfigFromInput(userInput, config);
+    let updatedConfig = config;
+    if (configUpdates) {
+      updatedConfig = { ...config, ...configUpdates };
+      setConfig(updatedConfig);
+      addLog(`Config updated: ${JSON.stringify(configUpdates)}`);
+    }
+
+    const aiResponse = await getAIResponse(userInput, updatedConfig);
+
+    if (aiResponse) {
+      addMessage({ role: "system", content: aiResponse, type: "info" });
     } else {
-      addMessage({ role: "system", content: response, type: "info" });
+      if (configUpdates) {
+        const tmpl = configUpdates.type ? TEMPLATES[configUpdates.type] : null;
+        if (tmpl) {
+          addMessage({
+            role: "system",
+            content: `${tmpl.icon} ${tmpl.name} configured.\n\n${tmpl.bio}\n\nSkills: ${(configUpdates.skills || config.skills).join(", ")}\nChain: ${(configUpdates.chain || config.chain) === "base" ? "Base" : (configUpdates.chain || config.chain) === "xlayer" ? "XLayer" : "BNB Chain"}\nModel: ${(configUpdates.model || config.model) === "deepseek" ? "DeepSeek V3" : (configUpdates.model || config.model) === "qwen" ? "Qwen 2.5" : "Llama 3.1"}\n\nCustomize it further or say "deploy" when ready.`,
+            type: "info",
+          });
+        } else {
+          const changes: string[] = [];
+          if (configUpdates.chain) changes.push(`Chain: ${configUpdates.chain === "base" ? "Base" : configUpdates.chain === "xlayer" ? "XLayer" : "BNB Chain"}`);
+          if (configUpdates.model) changes.push(`Model: ${configUpdates.model === "deepseek" ? "DeepSeek V3" : configUpdates.model === "qwen" ? "Qwen 2.5" : "Llama 3.1"}`);
+          if (configUpdates.autonomy) changes.push(`Autonomy: ${configUpdates.autonomy === "full" ? "Full Auto" : configUpdates.autonomy === "supervised" ? "Supervised" : "Semi-Auto"}`);
+          if (configUpdates.name) changes.push(`Name: ${configUpdates.name}`);
+          if (configUpdates.skills && configUpdates.skills.length > config.skills.length) changes.push(`Added skill`);
+          addMessage({ role: "system", content: `Updated. ${changes.join(", ")}.${config.type ? ' Say "deploy" when ready.' : ""}`, type: "info" });
+        }
+      } else {
+        addMessage({
+          role: "system",
+          content: `I can help you build an agent. Try:\n\n• "Build a trading agent" — autonomous DEX trader\n• "I need a security scanner" — audit contracts\n• "Create a sniper bot" — catch new launches\n• "Show me agents" — browse community agents\n\nOr describe what you need in your own words.`,
+          type: "info",
+        });
+      }
     }
 
     setIsProcessing(false);
@@ -411,304 +315,280 @@ export default function AgentBuilder() {
     }, 50);
   };
 
+  const chainLabel = config.chain === "base" ? "Base" : config.chain === "xlayer" ? "XLayer" : "BNB Chain";
+  const modelLabel = config.model === "deepseek" ? "DeepSeek V3" : config.model === "qwen" ? "Qwen 2.5 72B" : "Llama 3.1 70B";
+
   return (
     <>
-      <SEO
-        title="Agent Builder | BUILD4"
-        description="Build autonomous AI agents with natural language. Describe what you want and BUILD4 creates it for you."
-        path="/build"
-      />
+      <SEO title="Agent Builder | BUILD4" description="Build autonomous AI agents with natural language." path="/build" />
 
       <div className="min-h-screen bg-background flex flex-col" data-testid="page-agent-builder">
         <header className="border-b sticky top-0 z-40 bg-background/95 backdrop-blur">
-          <div className="max-w-6xl mx-auto px-4 sm:px-6">
-            <div className="flex items-center justify-between h-12">
+          <div className="max-w-[1400px] mx-auto px-4">
+            <div className="flex items-center justify-between h-11">
               <div className="flex items-center gap-3">
                 <Link href="/">
                   <Button variant="ghost" size="icon" className="h-7 w-7" data-testid="button-back">
                     <ArrowLeft className="w-3.5 h-3.5" />
                   </Button>
                 </Link>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <Terminal className="w-3.5 h-3.5 text-primary" />
-                  <span className="font-mono font-bold text-xs tracking-wider">BUILD<span className="text-primary">4</span></span>
+                  <span className="font-mono font-bold text-xs">BUILD<span className="text-primary">4</span></span>
                   <ChevronRight className="w-3 h-3 text-muted-foreground" />
-                  <span className="font-mono text-xs text-muted-foreground">Agent Builder</span>
+                  <span className="font-mono text-xs text-muted-foreground">Builder</span>
                 </div>
                 {config.status !== "idle" && (
-                  <Badge
-                    variant={config.status === "live" ? "default" : "secondary"}
-                    className={`font-mono text-[9px] ${config.status === "live" ? "bg-emerald-600" : config.status === "building" || config.status === "deploying" ? "bg-amber-600" : ""}`}
-                  >
-                    {config.status === "live" ? "LIVE" : config.status === "building" ? "BUILDING" : config.status === "configuring" ? "CONFIGURING" : config.status.toUpperCase()}
+                  <Badge variant={config.status === "live" ? "default" : "secondary"} className={`font-mono text-[9px] ${config.status === "live" ? "bg-emerald-600" : config.status === "building" ? "bg-amber-600" : ""}`}>
+                    {config.status.toUpperCase()}
                   </Badge>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                <Link href="/autonomous-economy">
-                  <Button variant="ghost" size="sm" className="font-mono text-[10px] gap-1 h-7 px-2" data-testid="button-dashboard">
-                    <Activity className="w-3 h-3" /> Dashboard
-                  </Button>
-                </Link>
-              </div>
+              <Link href="/autonomous-economy">
+                <Button variant="ghost" size="sm" className="font-mono text-[10px] gap-1 h-7 px-2" data-testid="button-dashboard">
+                  <Activity className="w-3 h-3" /> Dashboard
+                </Button>
+              </Link>
             </div>
           </div>
         </header>
 
-        <div className="flex-1 flex">
-          <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full">
-            <div className="flex-1 flex gap-0 border-x">
+        <div className="flex-1 flex overflow-hidden">
+          <div className="flex-1 flex max-w-[1400px] mx-auto w-full border-x">
 
-              <div className="flex-1 flex flex-col min-w-0">
-                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" data-testid="chat-messages">
-                  {messages.map((msg, i) => (
-                    <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[85%] rounded-lg px-3.5 py-2.5 ${
-                        msg.role === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : msg.type === "success"
-                          ? "bg-emerald-500/10 border border-emerald-500/20"
-                          : msg.type === "error"
-                          ? "bg-red-500/10 border border-red-500/20"
-                          : msg.type === "progress"
-                          ? "bg-amber-500/5 border border-amber-500/10"
-                          : "bg-muted/50 border"
-                      }`} data-testid={`message-${i}`}>
-                        {msg.role !== "user" && (
-                          <div className="flex items-center gap-1.5 mb-1.5">
-                            {msg.type === "progress" ? (
-                              <Loader2 className="w-3 h-3 text-amber-500 animate-spin" />
-                            ) : msg.type === "success" ? (
-                              <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                            ) : msg.type === "error" ? (
-                              <AlertCircle className="w-3 h-3 text-red-500" />
-                            ) : (
-                              <Sparkles className="w-3 h-3 text-primary" />
-                            )}
-                            <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider">
-                              {msg.role === "build" ? "build engine" : "build4"}
-                            </span>
+            <div className="w-full lg:w-[45%] flex flex-col border-r min-w-0">
+              <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5" data-testid="chat-messages">
+                {messages.map((msg, i) => (
+                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[90%] rounded-lg px-3 py-2 ${
+                      msg.role === "user" ? "bg-primary text-primary-foreground"
+                        : msg.type === "success" ? "bg-emerald-500/10 border border-emerald-500/20"
+                        : msg.type === "error" ? "bg-red-500/10 border border-red-500/20"
+                        : msg.type === "progress" ? "bg-amber-500/5 border border-amber-500/10"
+                        : "bg-muted/50 border"
+                    }`} data-testid={`message-${i}`}>
+                      {msg.role !== "user" && (
+                        <div className="flex items-center gap-1.5 mb-1">
+                          {msg.type === "progress" ? <Loader2 className="w-3 h-3 text-amber-500 animate-spin" />
+                            : msg.type === "success" ? <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                            : msg.type === "error" ? <AlertCircle className="w-3 h-3 text-red-500" />
+                            : <Sparkles className="w-3 h-3 text-primary" />}
+                          <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider">
+                            {msg.role === "build" ? "build engine" : "build4 ai"}
+                          </span>
+                        </div>
+                      )}
+                      <pre className="font-mono text-[11px] whitespace-pre-wrap leading-relaxed">{msg.content}</pre>
+                    </div>
+                  </div>
+                ))}
+                {isProcessing && (
+                  <div className="flex justify-start">
+                    <div className="bg-muted/50 border rounded-lg px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                        <span className="font-mono text-[11px] text-muted-foreground">Thinking...</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              {config.status === "idle" && messages.length <= 1 && (
+                <div className="px-3 pb-2 grid grid-cols-2 gap-1.5" data-testid="quick-templates">
+                  {Object.entries(TEMPLATES).map(([key, tmpl]) => (
+                    <button key={key} onClick={() => handleQuickAction(`build a ${key} agent`)}
+                      className="p-2 rounded-lg border bg-muted/30 hover:bg-muted/60 text-left transition-all" data-testid={`quick-${key}`}>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm">{tmpl.icon}</span>
+                        <span className="font-mono text-[10px] font-bold">{tmpl.name}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="border-t p-2.5" data-testid="chat-input-area">
+                <form id="build-form" onSubmit={handleSubmit} className="flex gap-1.5">
+                  <Input ref={inputRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)}
+                    placeholder={config.status === "idle" ? "Describe what you want to build..." : config.status === "live" ? "Build another agent..." : "Customize or say 'deploy'..."}
+                    className="font-mono text-xs flex-1 h-8" disabled={isProcessing} data-testid="input-command" />
+                  <Button type="submit" disabled={isProcessing || !inputValue.trim()} size="sm" className="gap-1 px-3 h-8" data-testid="button-send">
+                    {isProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                  </Button>
+                </form>
+                <div className="flex items-center gap-1.5 mt-1.5 overflow-x-auto">
+                  {config.status === "configuring" && (
+                    <>
+                      <button onClick={() => handleQuickAction("deploy")} className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 font-mono text-[9px] hover:bg-emerald-500/20 transition-colors whitespace-nowrap" data-testid="quick-deploy">
+                        <Rocket className="w-2.5 h-2.5" /> Deploy
+                      </button>
+                      <button onClick={() => handleQuickAction("use DeepSeek")} className="flex items-center gap-1 px-2 py-0.5 rounded bg-muted font-mono text-[9px] hover:bg-muted/80 transition-colors whitespace-nowrap" data-testid="quick-deepseek">
+                        <Brain className="w-2.5 h-2.5" /> DeepSeek
+                      </button>
+                      <button onClick={() => handleQuickAction("use Base chain")} className="flex items-center gap-1 px-2 py-0.5 rounded bg-muted font-mono text-[9px] hover:bg-muted/80 transition-colors whitespace-nowrap" data-testid="quick-base">
+                        <Globe className="w-2.5 h-2.5" /> Base
+                      </button>
+                    </>
+                  )}
+                  {config.status === "idle" && (
+                    <>
+                      <button onClick={() => handleQuickAction("build a trading agent")} className="flex items-center gap-1 px-2 py-0.5 rounded bg-muted font-mono text-[9px] hover:bg-muted/80 transition-colors whitespace-nowrap" data-testid="quick-trading-btn">
+                        <TrendingUp className="w-2.5 h-2.5" /> Trading
+                      </button>
+                      <button onClick={() => handleQuickAction("build a security agent")} className="flex items-center gap-1 px-2 py-0.5 rounded bg-muted font-mono text-[9px] hover:bg-muted/80 transition-colors whitespace-nowrap" data-testid="quick-security-btn">
+                        <Shield className="w-2.5 h-2.5" /> Security
+                      </button>
+                      <button onClick={() => handleQuickAction("show me agents")} className="flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-500 font-mono text-[9px] hover:bg-cyan-500/20 transition-colors whitespace-nowrap" data-testid="quick-store-btn">
+                        <Globe className="w-2.5 h-2.5" /> Browse
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="hidden lg:flex flex-col flex-1 min-w-0">
+              <div className="flex items-center justify-between px-3 h-9 border-b bg-muted/20">
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setPreviewTab("preview")}
+                    className={`font-mono text-[10px] px-2 py-1 rounded transition-colors ${previewTab === "preview" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                    data-testid="tab-preview">
+                    <Monitor className="w-3 h-3 inline mr-1" />Preview
+                  </button>
+                  <button onClick={() => setPreviewTab("logs")}
+                    className={`font-mono text-[10px] px-2 py-1 rounded transition-colors ${previewTab === "logs" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                    data-testid="tab-logs">
+                    <Terminal className="w-3 h-3 inline mr-1" />Logs ({buildLogs.length})
+                  </button>
+                </div>
+                {config.status === "live" && (
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="font-mono text-[9px] text-emerald-500">LIVE</span>
+                  </div>
+                )}
+              </div>
+
+              {previewTab === "preview" ? (
+                <div className="flex-1 flex items-center justify-center p-6 bg-[#0a0a0a]" data-testid="preview-panel">
+                  {config.status === "idle" ? (
+                    <div className="text-center space-y-4 max-w-sm">
+                      <div className="w-16 h-16 mx-auto rounded-2xl bg-muted/20 flex items-center justify-center">
+                        <Bot className="w-8 h-8 text-muted-foreground/40" />
+                      </div>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        Your agent preview will appear here.
+                        <br />Start by describing what you want to build.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="w-full max-w-md space-y-4">
+                      <Card className="p-5 bg-background/95 space-y-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl ${
+                            config.status === "live" ? "bg-emerald-500/10" : config.status === "building" ? "bg-amber-500/10" : "bg-primary/10"
+                          }`}>
+                            {TEMPLATES[config.type]?.icon || "🤖"}
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-mono text-sm font-bold" data-testid="preview-name">{config.name || "Unnamed Agent"}</div>
+                            <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{config.bio || "No description"}</div>
+                          </div>
+                          <div className={`w-3 h-3 rounded-full ${
+                            config.status === "live" ? "bg-emerald-500 animate-pulse" :
+                            config.status === "building" ? "bg-amber-500 animate-pulse" :
+                            "bg-blue-500"
+                          }`} />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="p-2 rounded bg-muted/30">
+                            <div className="font-mono text-[9px] text-muted-foreground">Chain</div>
+                            <div className="font-mono text-[11px] font-semibold mt-0.5">{chainLabel}</div>
+                          </div>
+                          <div className="p-2 rounded bg-muted/30">
+                            <div className="font-mono text-[9px] text-muted-foreground">Model</div>
+                            <div className="font-mono text-[11px] font-semibold mt-0.5">{modelLabel}</div>
+                          </div>
+                          <div className="p-2 rounded bg-muted/30">
+                            <div className="font-mono text-[9px] text-muted-foreground">Autonomy</div>
+                            <div className="font-mono text-[11px] font-semibold mt-0.5">
+                              {config.autonomy === "full" ? "Full Auto" : config.autonomy === "supervised" ? "Supervised" : "Semi-Auto"}
+                            </div>
+                          </div>
+                          <div className="p-2 rounded bg-muted/30">
+                            <div className="font-mono text-[9px] text-muted-foreground">Skills</div>
+                            <div className="font-mono text-[11px] font-semibold mt-0.5">{config.skills.length}</div>
+                          </div>
+                        </div>
+
+                        {config.skills.length > 0 && (
+                          <div className="space-y-1.5">
+                            <div className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider">Installed Skills</div>
+                            <div className="flex flex-wrap gap-1">
+                              {config.skills.map((s, i) => (
+                                <Badge key={i} variant="secondary" className="font-mono text-[9px] gap-0.5">
+                                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" /> {s}
+                                </Badge>
+                              ))}
+                            </div>
                           </div>
                         )}
-                        <pre className="font-mono text-xs whitespace-pre-wrap leading-relaxed">
-                          {msg.content}
-                        </pre>
-                      </div>
-                    </div>
-                  ))}
-                  {isProcessing && (
-                    <div className="flex justify-start">
-                      <div className="bg-muted/50 border rounded-lg px-3.5 py-2.5">
-                        <div className="flex items-center gap-2">
-                          <Loader2 className="w-3 h-3 animate-spin text-primary" />
-                          <span className="font-mono text-xs text-muted-foreground">Processing...</span>
+
+                        {deployedAgentId && (
+                          <div className="p-2 rounded bg-emerald-500/5 border border-emerald-500/20 space-y-1">
+                            <div className="font-mono text-[9px] text-emerald-500 uppercase tracking-wider">Deployed</div>
+                            <code className="font-mono text-[9px] text-emerald-400 block break-all">{deployedAgentId}</code>
+                          </div>
+                        )}
+
+                        {config.status === "building" && (
+                          <div className="flex items-center gap-2 p-2 rounded bg-amber-500/5 border border-amber-500/20">
+                            <Loader2 className="w-3 h-3 text-amber-500 animate-spin" />
+                            <span className="font-mono text-[10px] text-amber-500">Building agent...</span>
+                          </div>
+                        )}
+                      </Card>
+
+                      {config.status === "live" && (
+                        <div className="flex gap-2">
+                          <Link href="/autonomous-economy" className="flex-1">
+                            <Button size="sm" variant="outline" className="w-full font-mono text-[10px] gap-1" data-testid="button-manage">
+                              <Activity className="w-3 h-3" /> Dashboard
+                            </Button>
+                          </Link>
+                          <Button size="sm" className="flex-1 font-mono text-[10px] gap-1" data-testid="button-build-another"
+                            onClick={() => {
+                              setConfig({ name: "", bio: "", type: "", chain: "bnb", model: "llama", skills: [], autonomy: "semi", status: "idle" });
+                              setDeployedAgentId(null);
+                              setBuildLogs([]);
+                              setMessages([{ role: "system", content: "Ready. What do you want to build next?", timestamp: new Date(), type: "info" }]);
+                            }}>
+                            <Plus className="w-3 h-3" /> New Agent
+                          </Button>
                         </div>
-                      </div>
-                    </div>
-                  )}
-                  <div ref={chatEndRef} />
-                </div>
-
-                {config.status === "idle" && messages.length <= 1 && (
-                  <div className="px-4 pb-3 grid grid-cols-2 sm:grid-cols-3 gap-2" data-testid="quick-templates">
-                    {Object.entries(TEMPLATES).slice(0, 6).map(([key, tmpl]) => (
-                      <button
-                        key={key}
-                        onClick={() => handleQuickAction(`build a ${key} agent`)}
-                        className="p-3 rounded-lg border bg-muted/30 hover:bg-muted/60 text-left transition-all"
-                        data-testid={`quick-${key}`}
-                      >
-                        <span className="text-lg">{tmpl.icon}</span>
-                        <div className="font-mono text-[11px] font-bold mt-1">{tmpl.name}</div>
-                        <div className="font-mono text-[9px] text-muted-foreground mt-0.5 line-clamp-2">{tmpl.bio}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                <div className="border-t p-3" data-testid="chat-input-area">
-                  <form id="build-form" onSubmit={handleSubmit} className="flex gap-2">
-                    <Input
-                      ref={inputRef}
-                      value={inputValue}
-                      onChange={(e) => setInputValue(e.target.value)}
-                      placeholder={config.status === "idle" ? "Describe the agent you want to build..." : config.status === "live" ? "Agent deployed! Describe another or type 'help'" : "Customize your agent or say 'deploy'..."}
-                      className="font-mono text-sm flex-1"
-                      disabled={isProcessing}
-                      data-testid="input-command"
-                    />
-                    <Button type="submit" disabled={isProcessing || !inputValue.trim()} size="sm" className="gap-1.5 px-4" data-testid="button-send">
-                      {isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                    </Button>
-                  </form>
-                  <div className="flex items-center gap-3 mt-2 overflow-x-auto pb-1">
-                    {config.status === "configuring" && (
-                      <>
-                        <button onClick={() => handleQuickAction("deploy")} className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/10 text-emerald-500 font-mono text-[10px] hover:bg-emerald-500/20 transition-colors whitespace-nowrap" data-testid="quick-deploy">
-                          <Rocket className="w-3 h-3" /> Deploy
-                        </button>
-                        <button onClick={() => handleQuickAction("use DeepSeek")} className="flex items-center gap-1 px-2 py-1 rounded bg-muted font-mono text-[10px] hover:bg-muted/80 transition-colors whitespace-nowrap" data-testid="quick-deepseek">
-                          <Brain className="w-3 h-3" /> DeepSeek
-                        </button>
-                        <button onClick={() => handleQuickAction("use Base chain")} className="flex items-center gap-1 px-2 py-1 rounded bg-muted font-mono text-[10px] hover:bg-muted/80 transition-colors whitespace-nowrap" data-testid="quick-base">
-                          <Globe className="w-3 h-3" /> Base
-                        </button>
-                        <button onClick={() => handleQuickAction("make it fully autonomous")} className="flex items-center gap-1 px-2 py-1 rounded bg-muted font-mono text-[10px] hover:bg-muted/80 transition-colors whitespace-nowrap" data-testid="quick-auto">
-                          <Zap className="w-3 h-3" /> Full Auto
-                        </button>
-                      </>
-                    )}
-                    {config.status === "idle" && (
-                      <>
-                        <button onClick={() => handleQuickAction("build a trading agent")} className="flex items-center gap-1 px-2 py-1 rounded bg-muted font-mono text-[10px] hover:bg-muted/80 transition-colors whitespace-nowrap" data-testid="quick-trading-btn">
-                          <TrendingUp className="w-3 h-3" /> Trading
-                        </button>
-                        <button onClick={() => handleQuickAction("build a security agent")} className="flex items-center gap-1 px-2 py-1 rounded bg-muted font-mono text-[10px] hover:bg-muted/80 transition-colors whitespace-nowrap" data-testid="quick-security-btn">
-                          <Shield className="w-3 h-3" /> Security
-                        </button>
-                        <button onClick={() => handleQuickAction("show me agents")} className="flex items-center gap-1 px-2 py-1 rounded bg-cyan-500/10 text-cyan-500 font-mono text-[10px] hover:bg-cyan-500/20 transition-colors whitespace-nowrap" data-testid="quick-store-btn">
-                          <Globe className="w-3 h-3" /> Browse Agents
-                        </button>
-                        <button onClick={() => handleQuickAction("show me the SDK")} className="flex items-center gap-1 px-2 py-1 rounded bg-violet-500/10 text-violet-500 font-mono text-[10px] hover:bg-violet-500/20 transition-colors whitespace-nowrap" data-testid="quick-sdk-btn">
-                          <Code className="w-3 h-3" /> SDK
-                        </button>
-                        <button onClick={() => handleQuickAction("help")} className="flex items-center gap-1 px-2 py-1 rounded bg-muted font-mono text-[10px] hover:bg-muted/80 transition-colors whitespace-nowrap" data-testid="quick-help-btn">
-                          <MessageSquare className="w-3 h-3" /> Help
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="hidden lg:flex flex-col w-72 border-l bg-muted/10">
-                <div className="p-3 border-b">
-                  <div className="flex items-center gap-2">
-                    <Settings className="w-3.5 h-3.5 text-primary" />
-                    <span className="font-mono text-xs font-bold">Agent Config</span>
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-3 space-y-4">
-                  <div className="space-y-2">
-                    <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Name</div>
-                    <div className="font-mono text-xs font-semibold" data-testid="config-name">
-                      {config.name || "—"}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Type</div>
-                    <div className="flex items-center gap-1.5">
-                      {config.type ? (
-                        <>
-                          <span>{TEMPLATES[config.type]?.icon || "🤖"}</span>
-                          <span className="font-mono text-xs font-semibold" data-testid="config-type">{TEMPLATES[config.type]?.name || config.type}</span>
-                        </>
-                      ) : (
-                        <span className="font-mono text-xs text-muted-foreground" data-testid="config-type">Not selected</span>
                       )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Chain</div>
-                    <Badge variant="outline" className="font-mono text-[10px]" data-testid="config-chain">
-                      {config.chain === "base" ? "Base" : config.chain === "xlayer" ? "XLayer" : "BNB Chain"}
-                    </Badge>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Model</div>
-                    <Badge variant="outline" className="font-mono text-[10px]" data-testid="config-model">
-                      <Cpu className="w-2.5 h-2.5 mr-1" />
-                      {config.model === "deepseek" ? "DeepSeek V3" : config.model === "qwen" ? "Qwen 2.5" : "Llama 3.1"}
-                    </Badge>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Autonomy</div>
-                    <Badge variant="outline" className="font-mono text-[10px]" data-testid="config-autonomy">
-                      {config.autonomy === "full" ? "Full Auto" : config.autonomy === "supervised" ? "Supervised" : "Semi-Auto"}
-                    </Badge>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Skills ({config.skills.length})</div>
-                    <div className="space-y-1" data-testid="config-skills">
-                      {config.skills.length > 0 ? config.skills.map((s, i) => (
-                        <div key={i} className="flex items-center gap-1.5 font-mono text-[10px]">
-                          <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />
-                          {s}
-                        </div>
-                      )) : (
-                        <div className="font-mono text-[10px] text-muted-foreground">None configured</div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Status</div>
-                    <div className="flex items-center gap-1.5" data-testid="config-status">
-                      <div className={`w-2 h-2 rounded-full ${
-                        config.status === "live" ? "bg-emerald-500 animate-pulse" :
-                        config.status === "building" || config.status === "deploying" ? "bg-amber-500 animate-pulse" :
-                        config.status === "error" ? "bg-red-500" :
-                        config.status === "configuring" ? "bg-blue-500" :
-                        "bg-muted-foreground"
-                      }`} />
-                      <span className="font-mono text-xs capitalize">{config.status}</span>
-                    </div>
-                  </div>
-
-                  {deployedAgentId && (
-                    <div className="space-y-2 pt-2 border-t">
-                      <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Agent ID</div>
-                      <code className="font-mono text-[9px] text-primary break-all" data-testid="config-agent-id">{deployedAgentId}</code>
                     </div>
                   )}
                 </div>
-
-                {config.status === "configuring" && (
-                  <div className="p-3 border-t">
-                    <Button
-                      size="sm"
-                      className="w-full font-mono text-xs gap-1.5"
-                      onClick={() => handleQuickAction("deploy")}
-                      data-testid="sidebar-deploy"
-                    >
-                      <Rocket className="w-3.5 h-3.5" /> Deploy Agent
-                    </Button>
-                  </div>
-                )}
-
-                {config.status === "live" && (
-                  <div className="p-3 border-t space-y-2">
-                    <Link href="/autonomous-economy">
-                      <Button size="sm" variant="outline" className="w-full font-mono text-xs gap-1.5" data-testid="button-manage">
-                        <Activity className="w-3.5 h-3.5" /> Manage Agent
-                      </Button>
-                    </Link>
-                    <Button
-                      size="sm"
-                      className="w-full font-mono text-xs gap-1.5"
-                      onClick={() => {
-                        setConfig({ name: "", bio: "", type: "", chain: "bnb", model: "llama", skills: [], autonomy: "semi", status: "idle" });
-                        setDeployedAgentId(null);
-                        setMessages([{
-                          role: "system",
-                          content: "Ready to build another agent. What do you need?",
-                          timestamp: new Date(),
-                          type: "info",
-                        }]);
-                      }}
-                      data-testid="button-build-another"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Build Another
-                    </Button>
-                  </div>
-                )}
-              </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto p-3 bg-[#0a0a0a] font-mono text-[10px] leading-relaxed" data-testid="logs-panel">
+                  {buildLogs.length === 0 ? (
+                    <div className="text-muted-foreground/40">No build logs yet. Start building to see output.</div>
+                  ) : (
+                    buildLogs.map((log, i) => (
+                      <div key={i} className={`py-0.5 ${
+                        log.includes("Error") ? "text-red-400" :
+                        log.includes("deployed") || log.includes("LIVE") ? "text-emerald-400" :
+                        log.includes("User:") ? "text-blue-400" :
+                        "text-muted-foreground/70"
+                      }`}>{log}</div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
