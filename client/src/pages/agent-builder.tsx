@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { SEO } from "@/components/seo";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useWallet } from "@/hooks/use-wallet";
 import { useQuery } from "@tanstack/react-query";
 import { WORKSPACE_PLANS } from "@shared/schema";
@@ -21,7 +21,7 @@ import {
   AlertCircle, Monitor, File, Folder, FolderOpen,
   Play, Square, RotateCcw, Package, Hash,
   Circle, ChevronDown, Grip, PanelLeftClose,
-  PanelLeft, X, Copy, ExternalLink,
+  PanelLeft, X, Copy, ExternalLink, Crown,
 } from "lucide-react";
 
 interface BuildMessage {
@@ -353,7 +353,7 @@ function FileTreeItem({ node, depth = 0, selectedFile, onSelect }: { node: FileN
 }
 
 export default function AgentBuilder() {
-  const { address, isConnected } = useWallet();
+  const { address, connected: isConnected, signer } = useWallet();
   const [messages, setMessages] = useState<BuildMessage[]>([
     {
       role: "system",
@@ -371,7 +371,8 @@ export default function AgentBuilder() {
   const [buildLogs, setBuildLogs] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState("agent.ts");
   const [fileContent, setFileContent] = useState("");
-  const [rightTab, setRightTab] = useState<"preview" | "terminal">("preview");
+  const [rightTab, setRightTab] = useState<"preview" | "terminal" | "plans">("preview");
+  const [upgrading, setUpgrading] = useState<PlanTier | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [openTabs, setOpenTabs] = useState<string[]>(["agent.ts"]);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -408,6 +409,42 @@ export default function AgentBuilder() {
       return true;
     } catch {
       return true;
+    }
+  };
+
+  const TREASURY_WALLET = "0x5Ff57464152c9285A8526a0665d996dA66e2def1";
+
+  const handleUpgrade = async (tier: PlanTier) => {
+    if (!isConnected || !address || !signer) {
+      addMessage({ role: "system", content: "Connect your wallet first to upgrade.", type: "error" });
+      return;
+    }
+    const plan = WORKSPACE_PLANS[tier];
+    if (plan.price === "0") return;
+    setUpgrading(tier);
+    try {
+      const tx = await signer.sendTransaction({
+        to: TREASURY_WALLET,
+        value: BigInt(plan.price),
+      });
+      addMessage({ role: "system", content: `Payment sent! TX: ${tx.hash}\nVerifying on-chain...` });
+      const resp = await apiRequest("POST", "/api/workspace/upgrade", {
+        walletAddress: address,
+        plan: tier,
+        txHash: tx.hash,
+        chainId: 56,
+      });
+      const data = await resp.json();
+      if (data.success) {
+        addMessage({ role: "system", content: `Upgraded to ${plan.name}! Your new limits are now active.` });
+        queryClient.invalidateQueries({ queryKey: ["/api/workspace/plan", address] });
+      } else {
+        addMessage({ role: "system", content: data.error || "Upgrade failed. Please try again.", type: "error" });
+      }
+    } catch (err: any) {
+      addMessage({ role: "system", content: `Payment failed: ${err.message || "Transaction rejected"}`, type: "error" });
+    } finally {
+      setUpgrading(null);
     }
   };
 
@@ -790,6 +827,11 @@ export default function AgentBuilder() {
                     data-testid="tab-terminal">
                     <Terminal className="w-3 h-3 inline mr-1" />Output
                   </button>
+                  <button onClick={() => setRightTab("plans")}
+                    className={`font-mono text-[10px] px-2 py-0.5 rounded transition-colors ${rightTab === "plans" ? "bg-[#1e1e1e] text-white" : "text-[#858585] hover:text-[#cccccc]"}`}
+                    data-testid="tab-plans">
+                    <Crown className="w-3 h-3 inline mr-1" />Plans
+                  </button>
                 </div>
 
                 {rightTab === "preview" ? (
@@ -879,6 +921,7 @@ export default function AgentBuilder() {
                     )}
                   </div>
                 ) : (
+                  rightTab === "terminal" ? (
                   <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] leading-relaxed bg-[#0e0e0e]" data-testid="terminal-panel">
                     <div className="text-[#505050] mb-1">BUILD4 Cloud Terminal</div>
                     {buildLogs.length === 0 ? (
@@ -895,7 +938,70 @@ export default function AgentBuilder() {
                     )}
                     <div className="text-[#404040] mt-1">$</div>
                   </div>
-                )}
+                ) : (
+                  <div className="flex-1 overflow-y-auto p-3" data-testid="plans-panel">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-1.5 mb-3">
+                        <Crown className="w-3.5 h-3.5 text-amber-400" />
+                        <span className="font-mono text-[11px] font-bold text-white">Workspace Plans</span>
+                      </div>
+                      <div className="p-2 rounded bg-emerald-500/10 border border-emerald-500/20 mb-3">
+                        <div className="font-mono text-[9px] text-emerald-400 uppercase tracking-wider">Current Plan</div>
+                        <div className="font-mono text-sm font-bold text-white mt-0.5">{planConfig.name}</div>
+                        <div className="font-mono text-[9px] text-[#858585] mt-1">
+                          {planConfig.agentLimit === -1 || planConfig.agentLimit >= 100 ? "Unlimited" : planConfig.agentLimit} agents · {planConfig.deploysPerMonth === -1 ? "Unlimited" : planConfig.deploysPerMonth} deploys · {planConfig.inferenceCredits === -1 ? "Unlimited" : planConfig.inferenceCredits} AI credits
+                        </div>
+                      </div>
+                      {(["free", "pro", "enterprise"] as PlanTier[]).map(tier => {
+                        const p = WORKSPACE_PLANS[tier];
+                        const isCurrent = userPlan === tier;
+                        const isUpgrade = tier !== "free" && !isCurrent && (tier === "enterprise" || userPlan === "free");
+                        return (
+                          <div key={tier} className={`p-2.5 rounded border transition-all ${
+                            isCurrent ? "border-emerald-500/40 bg-emerald-500/5" : "border-[#383838] bg-[#252526] hover:border-[#505050]"
+                          }`} data-testid={`builder-plan-${tier}`}>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div>
+                                <span className="font-mono text-[11px] font-bold text-white">{p.name}</span>
+                                {tier === "pro" && <span className="ml-1.5 font-mono text-[7px] px-1 py-0.5 rounded bg-violet-500/20 text-violet-300 uppercase">Popular</span>}
+                              </div>
+                              <span className="font-mono text-[10px] text-emerald-400 font-semibold">
+                                {p.priceLabel}
+                              </span>
+                            </div>
+                            <div className="space-y-1 mb-2">
+                              {p.features.slice(0, 5).map((f, i) => (
+                                <div key={i} className="flex items-center gap-1">
+                                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                                  <span className="font-mono text-[9px] text-[#cccccc]">{f}</span>
+                                </div>
+                              ))}
+                            </div>
+                            {isCurrent ? (
+                              <div className="w-full py-1 rounded bg-[#383838] font-mono text-[9px] text-[#858585] text-center">Current Plan</div>
+                            ) : isUpgrade ? (
+                              <button
+                                onClick={() => handleUpgrade(tier)}
+                                disabled={!!upgrading}
+                                className="w-full py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 font-mono text-[9px] text-white font-semibold transition-colors flex items-center justify-center gap-1"
+                                data-testid={`builder-upgrade-${tier}`}>
+                                {upgrading === tier ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                                {upgrading === tier ? "Processing..." : `Upgrade · ${p.priceLabel}`}
+                              </button>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                      <div className="text-center pt-2">
+                        <Link href="/pricing">
+                          <span className="font-mono text-[9px] text-emerald-400 hover:text-emerald-300 cursor-pointer" data-testid="link-full-pricing">
+                            View full comparison →
+                          </span>
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -1005,11 +1111,12 @@ export default function AgentBuilder() {
             )}
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/pricing">
-              <span className="font-mono text-[9px] text-white/80 hover:text-white cursor-pointer" data-testid="status-plan">
+            <button onClick={() => setRightTab("plans")} className="flex items-center gap-1 hover:bg-white/10 px-1 rounded transition-colors" data-testid="status-plan">
+              <Crown className="w-2.5 h-2.5 text-amber-400" />
+              <span className="font-mono text-[9px] text-white/80 hover:text-white cursor-pointer">
                 {userPlan === "enterprise" ? "Enterprise" : userPlan === "pro" ? "Pro" : "Free"} Plan
               </span>
-            </Link>
+            </button>
             {config.type && (
               <>
                 <span className="font-mono text-[9px] text-white/80">{chainLabel}</span>

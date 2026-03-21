@@ -915,9 +915,22 @@ export async function registerRoutes(
         return;
       }
 
+      if (verification.from && verification.from.toLowerCase() !== walletAddress.toLowerCase()) {
+        res.status(400).json({ error: "Payment sender does not match wallet address" });
+        return;
+      }
+
       const wallet = walletAddress.toLowerCase();
       const { eq } = await import("drizzle-orm");
       const { db } = await import("./db");
+
+      const [existingTx] = await db.select().from(workspaceSubscriptions)
+        .where(eq(workspaceSubscriptions.paymentTxHash, txHash)).limit(1);
+      if (existingTx) {
+        res.status(400).json({ error: "This transaction has already been used for an upgrade" });
+        return;
+      }
+
       const periodEnd = new Date();
       periodEnd.setDate(periodEnd.getDate() + 30);
 
