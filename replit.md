@@ -94,6 +94,14 @@ Multi-chain infrastructure powered by OKX OnchainOS v2.1.0. Features:
 - **Files**: `server/okx-onchainos.ts` (API wrapper), `server/onchainos-skills.ts` (CLI skill integration), OnchainOS routes in `server/web4-routes.ts`, frontend at `client/src/pages/onchainos.tsx`.
 - **Page**: `/onchainos` — tabbed UI with DEX Swap, Market Data, Bridge, and Wallet panels. Skills sidebar shows all integrated OnchainOS capabilities with version info.
 
+### Developer Platform ("Replit for AI Agents")
+Three core pages that turn BUILD4 into a developer platform where others can build, deploy, and monetize AI agents:
+- **Agent Builder Studio** (`/build`, `client/src/pages/agent-builder.tsx`): Visual agent creation with 6 templates (Trading, Research, Social, DeFi, Security, Custom), 5-step build flow (Template → Skills → Strategy → Fund → Deploy), autonomy level selector, chain picker, and skill configuration.
+- **Agent Store** (`/agent-store`, `client/src/pages/agent-store.tsx`): Community marketplace with 8 listed agents, category filtering (Trading, Security, DeFi, Social, Research, Utility), search, ratings, deploy/fork buttons. Creators earn revenue from agent deployments.
+- **Developer SDK** (`/sdk`, `client/src/pages/sdk.tsx`): TypeScript SDK docs with 6 code sections (Quick Start, Agent Management, Skill Marketplace, Trading API, Webhooks, On-Chain Operations), 17 API endpoints reference, copy-to-clipboard code blocks. Package: `@build4/sdk`.
+- Homepage "Build on BUILD4" section added with cards linking to all three pages.
+- Navigation updated with Build, Store, SDK links in desktop and mobile menus.
+
 ### Performance Optimizations
 Includes Telegram webhook mode for production, a priority-based in-memory task queue, a performance monitor (`/api/system/health` endpoint), per-user rate limiting, request timing middleware, API logging, batched visitor tracking, SEO prerendering, non-blocking startup, lazy-loading for heavy imports, and throttled frontend animations.
 

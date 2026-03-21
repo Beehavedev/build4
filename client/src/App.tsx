@@ -26,6 +26,9 @@ import HireAgent from "@/pages/hire-agent";
 import TokenPage from "@/pages/token";
 import OnchainOS from "@/pages/onchainos";
 import Staking from "@/pages/staking";
+import AgentBuilder from "@/pages/agent-builder";
+import AgentStore from "@/pages/agent-store";
+import SDKPage from "@/pages/sdk";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -52,6 +55,9 @@ function Router() {
       <Route path="/token" component={TokenPage} />
       <Route path="/onchainos" component={OnchainOS} />
       <Route path="/staking" component={Staking} />
+      <Route path="/build" component={AgentBuilder} />
+      <Route path="/agent-store" component={AgentStore} />
+      <Route path="/sdk" component={SDKPage} />
       <Route component={NotFound} />
     </Switch>
   );

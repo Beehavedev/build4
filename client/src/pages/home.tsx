@@ -39,6 +39,7 @@ import {
   Milestone,
   Menu,
   X,
+  Code,
 } from "lucide-react";
 
 const featureKeys = [
@@ -247,8 +248,10 @@ export default function Home() {
               <Link href="/hire-agent" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-hire-agent">Hire Agent</Link>
               <Link href="/token" className="text-xs text-primary font-mono tracking-wide font-semibold transition-colors" data-testid="link-token">$BUILD4</Link>
               <Link href="/onchainos" className="text-xs text-violet-400 font-mono tracking-wide transition-colors hover:text-violet-300" data-testid="link-onchainos">OnchainOS</Link>
+              <Link href="/build" className="text-xs text-emerald-400 font-mono tracking-wide transition-colors hover:text-emerald-300" data-testid="link-build">Build</Link>
+              <Link href="/agent-store" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-agent-store">Store</Link>
+              <Link href="/sdk" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-sdk">SDK</Link>
               <Link href="/tasks" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors" data-testid="link-tasks">Tasks</Link>
-              <Link href="/privacy" className="text-xs text-purple-400 font-mono tracking-wide transition-colors hover:text-purple-300" data-testid="link-privacy">Privacy</Link>
               <LanguageSwitcher />
               <Button size="sm" asChild data-testid="button-connect">
                 <Link href="/autonomous-economy">
@@ -277,8 +280,10 @@ export default function Home() {
               <Link href="/hire-agent" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-hire-agent-mobile">Hire Agent</Link>
               <Link href="/token" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-primary font-mono font-semibold" data-testid="link-token-mobile">$BUILD4</Link>
               <Link href="/onchainos" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-violet-400 font-mono" data-testid="link-onchainos-mobile">OnchainOS</Link>
+              <Link href="/build" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-emerald-400 font-mono" data-testid="link-build-mobile">Build</Link>
+              <Link href="/agent-store" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-agent-store-mobile">Store</Link>
+              <Link href="/sdk" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-sdk-mobile">SDK</Link>
               <Link href="/tasks" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-tasks-mobile">Tasks</Link>
-              <Link href="/privacy" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-purple-400 font-mono" data-testid="link-privacy-mobile">Privacy</Link>
             </div>
           )}
         </nav>
@@ -817,6 +822,68 @@ export default function Home() {
                 </div>
               </div>
             </Card>
+          </div>
+        </section>
+
+        {/* Developer Platform Section */}
+        <section className="relative z-10 py-16 sm:py-24">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 space-y-12">
+            <div className="text-center space-y-4">
+              <Badge variant="secondary" className="font-mono text-[10px] px-4 py-1">THE REPLIT OF AI AGENTS</Badge>
+              <h2 className="font-mono text-2xl sm:text-3xl font-bold">
+                Build on BUILD<span className="text-primary">4</span>
+              </h2>
+              <p className="font-mono text-sm text-muted-foreground max-w-lg mx-auto">
+                A full platform for developers and creators to build, deploy, and monetize autonomous AI agents. No infrastructure needed.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+              <Link href="/build">
+                <Card className="p-6 space-y-4 hover:shadow-lg hover:border-emerald-500/30 transition-all cursor-pointer h-full" data-testid="card-builder-cta">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                    <Bot className="w-6 h-6 text-emerald-500" />
+                  </div>
+                  <h3 className="font-mono text-base font-bold">Agent Builder Studio</h3>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    Visual agent builder with templates. Pick a type, add skills, configure strategy, deploy on-chain. Zero code required.
+                  </p>
+                  <div className="flex items-center gap-1 text-emerald-500 font-mono text-xs font-semibold">
+                    Start Building <ArrowRight className="w-3 h-3" />
+                  </div>
+                </Card>
+              </Link>
+
+              <Link href="/agent-store">
+                <Card className="p-6 space-y-4 hover:shadow-lg hover:border-cyan-500/30 transition-all cursor-pointer h-full" data-testid="card-store-cta">
+                  <div className="w-12 h-12 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+                    <Globe className="w-6 h-6 text-cyan-500" />
+                  </div>
+                  <h3 className="font-mono text-base font-bold">Agent Store</h3>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    Browse community-built agents. Trading bots, security scanners, DeFi optimizers. Deploy instantly or fork and customize.
+                  </p>
+                  <div className="flex items-center gap-1 text-cyan-500 font-mono text-xs font-semibold">
+                    Browse Agents <ArrowRight className="w-3 h-3" />
+                  </div>
+                </Card>
+              </Link>
+
+              <Link href="/sdk">
+                <Card className="p-6 space-y-4 hover:shadow-lg hover:border-violet-500/30 transition-all cursor-pointer h-full" data-testid="card-sdk-cta">
+                  <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center">
+                    <Code className="w-6 h-6 text-violet-500" />
+                  </div>
+                  <h3 className="font-mono text-base font-bold">Developer SDK</h3>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    TypeScript SDK with full API access. Create agents, trade, manage skills, and earn revenue programmatically.
+                  </p>
+                  <div className="flex items-center gap-1 text-violet-500 font-mono text-xs font-semibold">
+                    View Docs <ArrowRight className="w-3 h-3" />
+                  </div>
+                </Card>
+              </Link>
+            </div>
           </div>
         </section>
 
