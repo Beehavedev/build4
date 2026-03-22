@@ -257,6 +257,59 @@ export async function getTokenHolders(params: {
   return { code: "0", data: [], msg: "Holder data not available in current API version" };
 }
 
+const LIFI_BASE_URL = "https://li.quest/v1";
+const LIFI_NATIVE_TOKEN = "0x0000000000000000000000000000000000000000";
+
+function normalizeLifiTokenAddress(addr: string): string {
+  if (addr.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee") return LIFI_NATIVE_TOKEN;
+  return addr;
+}
+
+async function getLifiQuote(params: {
+  fromChainId: string;
+  toChainId: string;
+  fromTokenAddress: string;
+  toTokenAddress: string;
+  amount: string;
+  fromAddress?: string;
+}): Promise<any> {
+  const url = new URL(`${LIFI_BASE_URL}/quote`);
+  url.searchParams.set("fromChain", params.fromChainId);
+  url.searchParams.set("toChain", params.toChainId);
+  url.searchParams.set("fromToken", normalizeLifiTokenAddress(params.fromTokenAddress));
+  url.searchParams.set("toToken", normalizeLifiTokenAddress(params.toTokenAddress));
+  url.searchParams.set("fromAmount", params.amount);
+  url.searchParams.set("fromAddress", params.fromAddress || BUILD4_TREASURY);
+  url.searchParams.set("integrator", "build4");
+
+  const resp = await fetch(url.toString(), { headers: { "Accept": "application/json" } });
+  if (!resp.ok) throw new Error(`Li.Fi API error: ${resp.status}`);
+  return resp.json();
+}
+
+async function getLifiBuildTx(params: {
+  fromChainId: string;
+  toChainId: string;
+  fromTokenAddress: string;
+  toTokenAddress: string;
+  amount: string;
+  fromAddress: string;
+}): Promise<any> {
+  const url = new URL(`${LIFI_BASE_URL}/quote`);
+  url.searchParams.set("fromChain", params.fromChainId);
+  url.searchParams.set("toChain", params.toChainId);
+  url.searchParams.set("fromToken", normalizeLifiTokenAddress(params.fromTokenAddress));
+  url.searchParams.set("toToken", normalizeLifiTokenAddress(params.toTokenAddress));
+  url.searchParams.set("fromAmount", params.amount);
+  url.searchParams.set("fromAddress", params.fromAddress);
+  url.searchParams.set("integrator", "build4");
+
+  const resp = await fetch(url.toString(), { headers: { "Accept": "application/json" } });
+  if (!resp.ok) throw new Error(`Li.Fi API error: ${resp.status}`);
+  const data = await resp.json();
+  return data;
+}
+
 export async function getCrossChainQuote(params: {
   fromChainId: string;
   toChainId: string;
@@ -276,10 +329,36 @@ export async function getCrossChainQuote(params: {
       feePercent: BUILD4_FEE_PERCENT,
     });
   } catch (err: any) {
-    if (err.message?.includes("50050")) {
-      throw new Error("Cross-chain bridge is temporarily unavailable on OKX. Please try again later or use the DEX swap on a single chain.");
+    console.log("[OKX Bridge] OKX cross-chain failed, trying Li.Fi fallback...");
+    try {
+      const lifiQuote = await getLifiQuote({
+        fromChainId: params.fromChainId,
+        toChainId: params.toChainId,
+        fromTokenAddress: params.fromTokenAddress,
+        toTokenAddress: params.toTokenAddress,
+        amount: params.amount,
+      });
+
+      if (lifiQuote?.estimate?.toAmount) {
+        return {
+          code: "0",
+          data: [{
+            toTokenAmount: lifiQuote.estimate.toAmount,
+            fromTokenAmount: params.amount,
+            bridgeName: lifiQuote.tool || "Li.Fi",
+            bridgeProvider: lifiQuote.toolDetails?.name || lifiQuote.tool || "Li.Fi",
+            estimatedTime: lifiQuote.estimate?.executionDuration || 0,
+            _lifiQuote: lifiQuote,
+            _provider: "lifi",
+          }],
+          msg: "",
+        };
+      }
+      throw new Error("No Li.Fi quote available");
+    } catch (lifiErr: any) {
+      console.log("[OKX Bridge] Li.Fi fallback also failed:", lifiErr.message);
+      throw new Error("Cross-chain bridge temporarily unavailable. Please try again later.");
     }
-    throw err;
   }
 }
 
@@ -305,10 +384,39 @@ export async function getCrossChainSwap(params: {
       referrerAddress: BUILD4_TREASURY,
     });
   } catch (err: any) {
-    if (err.message?.includes("50050")) {
-      throw new Error("Cross-chain bridge is temporarily unavailable on OKX. Please try again later or use the DEX swap on a single chain.");
+    console.log("[OKX Bridge] OKX build-tx failed, trying Li.Fi fallback...");
+    try {
+      const lifiData = await getLifiBuildTx({
+        fromChainId: params.fromChainId,
+        toChainId: params.toChainId,
+        fromTokenAddress: params.fromTokenAddress,
+        toTokenAddress: params.toTokenAddress,
+        amount: params.amount,
+        fromAddress: params.userWalletAddress,
+      });
+
+      if (lifiData?.transactionRequest) {
+        return {
+          code: "0",
+          data: [{
+            tx: {
+              to: lifiData.transactionRequest.to,
+              data: lifiData.transactionRequest.data,
+              value: lifiData.transactionRequest.value || "0",
+              gasLimit: lifiData.transactionRequest.gasLimit || "300000",
+              chainId: parseInt(params.fromChainId),
+            },
+            toTokenAmount: lifiData.estimate?.toAmount || "0",
+            _provider: "lifi",
+          }],
+          msg: "",
+        };
+      }
+      throw new Error("No Li.Fi transaction data available");
+    } catch (lifiErr: any) {
+      console.log("[OKX Bridge] Li.Fi build-tx fallback also failed:", lifiErr.message);
+      throw new Error("Cross-chain bridge temporarily unavailable. Please try again later.");
     }
-    throw err;
   }
 }
 

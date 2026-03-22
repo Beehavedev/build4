@@ -3015,6 +3015,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
             if (receiveAmt) {
               crossChainSuccess = true;
+              const bridgeProvider = bestRoute?._provider === "lifi" ? (bestRoute?.bridgeProvider || "Li.Fi") : "OKX";
               pendingOKXBridge.set(chatId, {
                 step: "confirm", fromChainId: srcChainId, fromChainName: srcChain.name,
                 toChainId: dstChainId, toChainName: dstChain.name,
@@ -3023,7 +3024,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
                 amount: rawAmt, receiveAddress: "", quoteData: bestRoute,
               });
               await bot.sendMessage(chatId,
-                `🌉 *Cross-Chain Swap Quote*\n\n` +
+                `🌉 *Cross-Chain Swap Quote* (via ${bridgeProvider})\n\n` +
                 `💰 ${amount} ${fromUpper} (${srcChain.name}) → ${receiveAmt} ${toUpper} (${dstChain.name})\n\n` +
                 `Confirm this cross-chain swap?`,
                 { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Cross-Chain Swap", callback_data: "okxbridge_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } }
