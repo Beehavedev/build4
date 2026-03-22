@@ -1237,7 +1237,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const chainButtons = OKX_CHAINS.map(c => [{ text: `${c.name} (${c.symbol})`, callback_data: `okxswap_chain:${c.id}` }]);
     chainButtons.push([{ text: "« Back", callback_data: "action:menu" }]);
     await bot.sendMessage(chatId,
-      "🔄 *OKX DEX Swap*\n\nSwap tokens on any chain using OKX DEX Aggregator.\n0.5% fee to BUILD4 treasury.\n\nSelect a chain:",
+      "🔄 *OKX DEX Swap*\n\nSwap tokens on any chain using OKX DEX Aggregator.\n\nSelect a chain:",
       { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } }
     );
     return;
@@ -3279,7 +3279,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       const chainButtons = OKX_CHAINS.map(c => [{ text: `${c.name} (${c.symbol})`, callback_data: `okxswap_chain:${c.id}` }]);
       chainButtons.push([{ text: "« Back", callback_data: "action:menu" }]);
       await bot.sendMessage(chatId,
-        "🔄 *OKX DEX Swap*\n\nSwap tokens on any chain using OKX DEX Aggregator.\nSupported: BNB Chain, XLayer, Ethereum, Base, Polygon, Arbitrum, Avalanche, Optimism & more.\n0.5% fee to BUILD4 treasury.\n\nSelect a chain:",
+        "🔄 *OKX DEX Swap*\n\nSwap tokens on any chain using OKX DEX Aggregator.\nSupported: BNB Chain, XLayer, Ethereum, Base, Polygon, Arbitrum, Avalanche, Optimism & more.\n\nSelect a chain:",
         { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } }
       );
       return;
@@ -5814,7 +5814,6 @@ async function handleOKXSwapFlow(chatId: number, text: string): Promise<void> {
         `Chain: ${state.chainName}\n` +
         `Sell: ${state.amount} ${state.fromSymbol}\n` +
         `Buy: ~${receiveAmount} ${state.toSymbol}\n` +
-        `Fee: 0.5% to BUILD4 treasury\n\n` +
         `_To execute this swap, connect your wallet on the BUILD4 dashboard._`,
         {
           parse_mode: "Markdown",
@@ -5926,7 +5925,6 @@ async function executeBridgeQuote(chatId: number, state: OKXBridgeState): Promis
       `Via: ${bridgeName}\n` +
       `Est. Time: ${timeStr}\n` +
       `Deliver To: ${shortReceiver}\n` +
-      `Fee: 0.5% to BUILD4 treasury\n\n` +
       `_To execute this bridge, connect your wallet on the BUILD4 dashboard._`,
       {
         parse_mode: "Markdown",

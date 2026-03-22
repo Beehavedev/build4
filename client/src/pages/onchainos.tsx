@@ -1546,7 +1546,6 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="destructive" className="text-[10px]" data-testid="badge-bridge-status">Temporarily Unavailable</Badge>
-          <Badge variant="outline" className="text-[10px]">0.5% fee</Badge>
           <Badge variant="outline" className="text-[10px]">{CHAIN_OPTIONS.length} Chains</Badge>
         </div>
       </div>
