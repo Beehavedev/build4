@@ -855,6 +855,320 @@ export async function registerRoutes(
     res.json(result);
   });
 
+  app.get("/api/workspace/plan/:wallet", async (req: Request, res: Response) => {
+    try {
+      const wallet = req.params.wallet.toLowerCase();
+      const { workspaceSubscriptions, WORKSPACE_PLANS } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const { db } = await import("./db");
+      const [sub] = await db.select().from(workspaceSubscriptions).where(eq(workspaceSubscriptions.walletAddress, wallet)).limit(1);
+
+      if (!sub) {
+        const plan = WORKSPACE_PLANS.free;
+        res.json({
+          plan: "free",
+          ...plan,
+          agentsCreated: 0,
+          deploysThisMonth: 0,
+          inferenceUsed: 0,
+        });
+        return;
+      }
+
+      const planKey = sub.plan as keyof typeof WORKSPACE_PLANS;
+      const plan = WORKSPACE_PLANS[planKey] || WORKSPACE_PLANS.free;
+      res.json({
+        plan: sub.plan,
+        ...plan,
+        agentsCreated: sub.agentsCreated,
+        deploysThisMonth: sub.deploysThisMonth,
+        inferenceUsed: sub.inferenceUsed,
+        paymentTxHash: sub.paymentTxHash,
+        currentPeriodEnd: sub.currentPeriodEnd,
+      });
+    } catch (error: any) {
+      console.error("[Workspace Plan] Error:", error.message);
+      res.status(500).json({ error: "Failed to fetch plan" });
+    }
+  });
+
+  app.post("/api/workspace/upgrade", async (req: Request, res: Response) => {
+    try {
+      const { walletAddress, plan, txHash } = req.body;
+      if (!walletAddress || !plan || !txHash) {
+        res.status(400).json({ error: "walletAddress, plan, and txHash required" });
+        return;
+      }
+
+      const { WORKSPACE_PLANS, workspaceSubscriptions } = await import("@shared/schema");
+      const planConfig = WORKSPACE_PLANS[plan as keyof typeof WORKSPACE_PLANS];
+      if (!planConfig || plan === "free") {
+        res.status(400).json({ error: "Invalid plan" });
+        return;
+      }
+
+      const { verifyPaymentTransaction, getRevenueWalletAddress } = await import("./onchain");
+      const verification = await verifyPaymentTransaction(txHash, planConfig.price);
+
+      if (!verification.verified) {
+        res.status(400).json({ error: `Payment not verified: ${verification.error || "Transaction invalid"}` });
+        return;
+      }
+
+      if (verification.from && verification.from.toLowerCase() !== walletAddress.toLowerCase()) {
+        res.status(400).json({ error: "Payment sender does not match wallet address" });
+        return;
+      }
+
+      const wallet = walletAddress.toLowerCase();
+      const { eq } = await import("drizzle-orm");
+      const { db } = await import("./db");
+
+      const [existingTx] = await db.select().from(workspaceSubscriptions)
+        .where(eq(workspaceSubscriptions.paymentTxHash, txHash)).limit(1);
+      if (existingTx) {
+        res.status(400).json({ error: "This transaction has already been used for an upgrade" });
+        return;
+      }
+
+      const periodEnd = new Date();
+      periodEnd.setDate(periodEnd.getDate() + 30);
+
+      const [existing] = await db.select().from(workspaceSubscriptions).where(eq(workspaceSubscriptions.walletAddress, wallet)).limit(1);
+
+      if (existing) {
+        await db.update(workspaceSubscriptions)
+          .set({
+            plan,
+            paymentTxHash: txHash,
+            status: "active",
+            deploysThisMonth: 0,
+            inferenceUsed: 0,
+            currentPeriodStart: new Date(),
+            currentPeriodEnd: periodEnd,
+          })
+          .where(eq(workspaceSubscriptions.walletAddress, wallet));
+      } else {
+        await db.insert(workspaceSubscriptions).values({
+          walletAddress: wallet,
+          plan,
+          paymentTxHash: txHash,
+          status: "active",
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: periodEnd,
+        });
+      }
+
+      res.json({ success: true, plan, expiresAt: periodEnd.toISOString() });
+    } catch (error: any) {
+      console.error("[Workspace Upgrade] Error:", error.message);
+      res.status(500).json({ error: "Upgrade failed" });
+    }
+  });
+
+  app.post("/api/workspace/usage", async (req: Request, res: Response) => {
+    try {
+      const { walletAddress, type } = req.body;
+      if (!walletAddress || !type) {
+        res.status(400).json({ error: "walletAddress and type required" });
+        return;
+      }
+
+      const wallet = walletAddress.toLowerCase();
+      const { workspaceSubscriptions, WORKSPACE_PLANS } = await import("@shared/schema");
+      const { eq, sql: sqlFn } = await import("drizzle-orm");
+      const { db } = await import("./db");
+
+      const [sub] = await db.select().from(workspaceSubscriptions).where(eq(workspaceSubscriptions.walletAddress, wallet)).limit(1);
+
+      const planKey = (sub?.plan || "free") as keyof typeof WORKSPACE_PLANS;
+      const plan = WORKSPACE_PLANS[planKey];
+
+      if (type === "deploy") {
+        const current = sub?.deploysThisMonth || 0;
+        if (plan.deploysPerMonth !== -1 && current >= plan.deploysPerMonth) {
+          res.status(403).json({ error: "Deploy limit reached. Upgrade your plan.", needsUpgrade: true });
+          return;
+        }
+        if (sub) {
+          await db.update(workspaceSubscriptions)
+            .set({ deploysThisMonth: current + 1 })
+            .where(eq(workspaceSubscriptions.walletAddress, wallet));
+        } else {
+          await db.insert(workspaceSubscriptions).values({ walletAddress: wallet, deploysThisMonth: 1 });
+        }
+      } else if (type === "inference") {
+        const current = sub?.inferenceUsed || 0;
+        if (plan.inferenceCredits !== -1 && current >= plan.inferenceCredits) {
+          res.status(403).json({ error: "AI credits exhausted. Upgrade your plan.", needsUpgrade: true });
+          return;
+        }
+        if (sub) {
+          await db.update(workspaceSubscriptions)
+            .set({ inferenceUsed: current + 1 })
+            .where(eq(workspaceSubscriptions.walletAddress, wallet));
+        } else {
+          await db.insert(workspaceSubscriptions).values({ walletAddress: wallet, inferenceUsed: 1 });
+        }
+      } else if (type === "agent") {
+        const current = sub?.agentsCreated || 0;
+        if (current >= plan.agentLimit) {
+          res.status(403).json({ error: "Agent limit reached. Upgrade your plan.", needsUpgrade: true });
+          return;
+        }
+        if (sub) {
+          await db.update(workspaceSubscriptions)
+            .set({ agentsCreated: current + 1 })
+            .where(eq(workspaceSubscriptions.walletAddress, wallet));
+        } else {
+          await db.insert(workspaceSubscriptions).values({ walletAddress: wallet, agentsCreated: 1 });
+        }
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[Workspace Usage] Error:", error.message);
+      res.status(500).json({ error: "Failed to record usage" });
+    }
+  });
+
+  const builderChatRateLimit = new Map<string, { count: number; resetAt: number }>();
+  app.post("/api/builder/chat", async (req: Request, res: Response) => {
+    try {
+      const ip = req.ip || req.socket.remoteAddress || "unknown";
+      const now = Date.now();
+      const limit = builderChatRateLimit.get(ip);
+      if (limit && limit.resetAt > now) {
+        if (limit.count >= 20) {
+          res.status(429).json({ error: "Rate limited. Try again in a minute." });
+          return;
+        }
+        limit.count++;
+      } else {
+        builderChatRateLimit.set(ip, { count: 1, resetAt: now + 60000 });
+      }
+
+      const { message, config } = req.body;
+      if (!message || typeof message !== "string" || message.length > 2000) {
+        res.status(400).json({ error: "message required (max 2000 chars)" });
+        return;
+      }
+
+      const { runInferenceWithFallback, getAvailableProviders } = await import("./inference");
+      const providers = getAvailableProviders();
+
+      if (providers.length === 0) {
+        res.json({
+          response: null,
+          fallback: true,
+        });
+        return;
+      }
+
+      const systemPrompt = `You are BUILD4 AI — a development assistant that works exactly like Replit's AI. You build ANYTHING: websites, apps, APIs, bots, AI agents, smart contracts, dashboards, games, tools — no limits.
+
+Current project: ${JSON.stringify(config || {})}
+
+Your job:
+1. NEVER refuse. You can build anything.
+2. Start building immediately. Show, don't tell.
+3. Keep text response under 100 words. The CODE is what matters.
+4. Be direct — like a senior engineer pair-programming.
+
+YOU MUST OUTPUT TWO THINGS IN EVERY RESPONSE:
+
+1. <FILES> block — the actual source code files of the project. Each file is wrapped in <FILE path="filename">content</FILE>. Generate real, working code.
+
+2. <PREVIEW> block — a complete HTML document that IS the running output. This renders live in an iframe preview pane.
+
+Rules for FILES:
+- Generate real project files the user would find in a Replit workspace
+- For websites: index.html, style.css, script.js
+- For React apps: App.jsx, index.html, style.css
+- For APIs: server.js, routes.js, package.json
+- For agents: agent.ts, config.yaml, skills/*.ts, package.json
+- For smart contracts: Contract.sol, deploy.js, hardhat.config.js
+- Include ALL files needed — package.json, configs, everything
+- On follow-up messages, only include files that changed
+
+Rules for PREVIEW:
+- Complete self-contained HTML with inline CSS and JS
+- IS the actual thing — not a mockup or placeholder
+- Landing page request = preview IS the landing page
+- Dashboard request = preview IS the dashboard
+- Professional quality: modern design, gradients, animations
+- Full viewport, realistic content, interactive elements
+
+Example format:
+Built your landing page with hero, features, and contact sections.
+
+<FILES>
+<FILE path="index.html"><!DOCTYPE html>...</FILE>
+<FILE path="style.css">body { ... }</FILE>
+<FILE path="script.js">document.addEventListener(...);</FILE>
+<FILE path="package.json">{"name": "my-app"}</FILE>
+</FILES>
+
+<PREVIEW>
+<!DOCTYPE html>
+<html>...the running app...</html>
+</PREVIEW>`;
+
+      const result = await runInferenceWithFallback(
+        providers,
+        undefined,
+        message,
+        { systemPrompt, temperature: 0.7 }
+      );
+
+      let responseText = result.text || "";
+      let previewHtml = "";
+      const previewMatch = responseText.match(/<PREVIEW>([\s\S]*)<\/PREVIEW>/i);
+      if (previewMatch) {
+        previewHtml = previewMatch[1].trim();
+        responseText = responseText.replace(/<PREVIEW>[\s\S]*<\/PREVIEW>/i, "").trim();
+      }
+
+      const files: { path: string; content: string }[] = [];
+      const filesMatch = responseText.match(/<FILES>([\s\S]*)<\/FILES>/i);
+      if (filesMatch) {
+        const filesBlock = filesMatch[1];
+        const fileRegex = /<FILE\s+path="([^"]+)">([\s\S]*?)<\/FILE>/gi;
+        let fm;
+        while ((fm = fileRegex.exec(filesBlock)) !== null) {
+          files.push({ path: fm[1].trim(), content: fm[2].trim() });
+        }
+        responseText = responseText.replace(/<FILES>[\s\S]*<\/FILES>/i, "").trim();
+        console.log(`[Builder] Parsed ${files.length} files: ${files.map(f => f.path).join(", ")}`);
+      }
+
+      if (!files.length) {
+        const fileRegex = /<FILE\s+path="([^"]+)">([\s\S]*?)<\/FILE>/gi;
+        let fm;
+        while ((fm = fileRegex.exec(responseText)) !== null) {
+          files.push({ path: fm[1].trim(), content: fm[2].trim() });
+        }
+        if (files.length) {
+          responseText = responseText.replace(/<FILE\s+path="[^"]+">([\s\S]*?)<\/FILE>/gi, "").trim();
+          console.log(`[Builder] Parsed ${files.length} loose files: ${files.map(f => f.path).join(", ")}`);
+        }
+      }
+
+      res.json({
+        response: responseText,
+        preview: previewHtml || undefined,
+        files: files.length > 0 ? files : undefined,
+        model: result.model,
+        network: result.network,
+        live: result.live,
+        fallback: false,
+      });
+    } catch (error: any) {
+      console.error("[Builder Chat] Error:", error.message);
+      res.json({ response: null, fallback: true });
+    }
+  });
+
   app.get("/api/trading/status", analyticsAuth, async (_req: Request, res: Response) => {
     const { getAllActivePositions, isTradingAgentRunning } = await import("./trading-agent");
     res.json({
