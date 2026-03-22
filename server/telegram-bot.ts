@@ -2980,64 +2980,102 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     const fromToken = tokens.find(t => t.symbol.toLowerCase() === fromSymbol.toLowerCase());
     const toToken = tokens.find(t => t.symbol.toLowerCase() === toSymbol.toLowerCase());
 
-    if (!fromToken) {
+    if (!fromToken || !toToken) {
       const fromUpper = fromSymbol.toUpperCase();
-      const homeChainId = Object.entries(OKX_POPULAR_TOKENS).find(([cid, toks]) => toks.some(t => t.symbol === fromUpper))?.[0];
-      const homeChain = homeChainId ? OKX_CHAINS.find(c => c.id === homeChainId) : null;
-
-      if (homeChain && homeChainId !== chainId) {
-        const toUpper = toSymbol.toUpperCase();
-        const toAvailableOnTarget = tokens.some(t => t.symbol === toUpper);
-        const toAvailableOnHome = getOKXTokensForChain(homeChainId).some(t => t.symbol === toUpper);
-
-        let msg = `💡 ${fromUpper} is a ${homeChain.name} token, not available on ${chain.name}.\n\nHere's what I can do:\n\n`;
-        const buttons: any[][] = [];
-
-        if (toAvailableOnHome) {
-          msg += `1️⃣ *Swap on ${homeChain.name}* — swap ${amount} ${fromUpper} → ${toUpper} on its home chain\n`;
-          buttons.push([{ text: `🔄 Swap on ${homeChain.name}`, callback_data: `smart_swap:${amount}:${fromSymbol}:${toSymbol}:${homeChainId}` }]);
-        }
-
-        msg += `2️⃣ *Bridge first* — bridge your ${fromUpper} from ${homeChain.name} to ${chain.name}, then swap\n`;
-        buttons.push([{ text: `🌉 Bridge ${fromUpper} to ${chain.name}`, callback_data: `smart_bridge:${fromSymbol}:${homeChainId}:${chainId}:${amount}` }]);
-
-        if (toAvailableOnTarget && !toAvailableOnHome) {
-          const stableOnHome = getOKXTokensForChain(homeChainId).find(t => t.symbol === "USDT" || t.symbol === "USDC");
-          if (stableOnHome) {
-            msg += `3️⃣ *Swap to ${stableOnHome.symbol} first* — convert ${fromUpper} → ${stableOnHome.symbol} on ${homeChain.name}, then bridge to ${chain.name}\n`;
-          }
-        }
-
-        buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
-        await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
-      } else {
-        await bot.sendMessage(chatId, `Token "${fromUpper}" not found on ${chain.name}.\n\nAvailable: ${tokens.map(t => t.symbol).join(", ")}`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
-      }
-      return;
-    }
-    if (!toToken) {
       const toUpper = toSymbol.toUpperCase();
-      const homeChainId = Object.entries(OKX_POPULAR_TOKENS).find(([cid, toks]) => toks.some(t => t.symbol === toUpper))?.[0];
-      const homeChain = homeChainId ? OKX_CHAINS.find(c => c.id === homeChainId) : null;
+      const fromHomeChainId = Object.entries(OKX_POPULAR_TOKENS).find(([cid, toks]) => toks.some(t => t.symbol === fromUpper))?.[0];
+      const toHomeChainId = Object.entries(OKX_POPULAR_TOKENS).find(([cid, toks]) => toks.some(t => t.symbol === toUpper))?.[0];
 
-      if (homeChain && homeChainId !== chainId) {
-        let msg = `💡 ${toUpper} is native to ${homeChain.name}, not available on ${chain.name}.\n\nHere's what I'd suggest:\n\n`;
-        const buttons: any[][] = [];
+      const isCrossChain = (fromHomeChainId && fromHomeChainId !== chainId) || (toHomeChainId && toHomeChainId !== chainId);
 
-        const stableOnCurrent = tokens.find(t => t.symbol === "USDT" || t.symbol === "USDC");
-        if (stableOnCurrent) {
-          msg += `1️⃣ *Swap to ${stableOnCurrent.symbol}* on ${chain.name} instead — it's available here\n`;
-          buttons.push([{ text: `🔄 Swap to ${stableOnCurrent.symbol}`, callback_data: `smart_swap:${amount}:${fromSymbol}:${stableOnCurrent.symbol}:${chainId}` }]);
+      if (isCrossChain && fromHomeChainId) {
+        const srcChainId = fromHomeChainId;
+        const dstChainId = toHomeChainId && toHomeChainId !== srcChainId ? toHomeChainId : chainId!;
+        const srcChain = OKX_CHAINS.find(c => c.id === srcChainId);
+        const dstChain = OKX_CHAINS.find(c => c.id === dstChainId);
+        const srcTokens = getOKXTokensForChain(srcChainId);
+        const dstTokens = getOKXTokensForChain(dstChainId);
+        const srcToken = srcTokens.find(t => t.symbol === fromUpper);
+        const dstToken = dstTokens.find(t => t.symbol === toUpper);
+
+        if (srcToken && dstToken && srcChain && dstChain && srcChainId !== dstChainId) {
+          await bot.sendMessage(chatId, `🔄 Cross-chain detected! Getting quote: ${amount} ${fromUpper} on ${srcChain.name} → ${toUpper} on ${dstChain.name}...`);
+          sendTyping(chatId);
+          try {
+            const { getCrossChainQuote } = await import("./okx-onchainos");
+            const rawAmt = parseHumanAmount(amount, srcToken.decimals);
+            const quote = await getCrossChainQuote({
+              fromChainId: srcChainId, toChainId: dstChainId,
+              fromTokenAddress: srcToken.address, toTokenAddress: dstToken.address,
+              amount: rawAmt, slippage: "1",
+            });
+            const routerList = quote?.data?.routerList || quote?.data;
+            const bestRoute = Array.isArray(routerList) ? routerList[0] : null;
+            const receiveAmt = bestRoute?.toTokenAmount ? formatTokenAmount(bestRoute.toTokenAmount, dstToken.decimals) : null;
+
+            if (receiveAmt) {
+              pendingOKXBridge.set(chatId, {
+                step: "confirm", fromChainId: srcChainId, fromChainName: srcChain.name,
+                toChainId: dstChainId, toChainName: dstChain.name,
+                fromToken: srcToken.address, fromSymbol: srcToken.symbol,
+                toToken: dstToken.address, toSymbol: dstToken.symbol,
+                amount: rawAmt, receiveAddress: "", quoteData: bestRoute,
+              });
+              await bot.sendMessage(chatId,
+                `🌉 *Cross-Chain Swap Quote*\n\n` +
+                `💰 ${amount} ${fromUpper} (${srcChain.name}) → ${receiveAmt} ${toUpper} (${dstChain.name})\n\n` +
+                `Confirm this cross-chain swap?`,
+                { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Cross-Chain Swap", callback_data: "okxbridge_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } }
+              );
+            } else {
+              let msg = `💡 Cross-chain quote unavailable for ${fromUpper} → ${toUpper}.\n\nHere's the best route:\n\n`;
+              msg += `1️⃣ *Swap ${fromUpper} → USDT* on ${srcChain.name}\n`;
+              msg += `2️⃣ *Bridge USDT* from ${srcChain.name} → ${dstChain.name}\n`;
+              const buttons: any[][] = [];
+              const stableOnSrc = srcTokens.find(t => t.symbol === "USDT" || t.symbol === "USDC");
+              if (stableOnSrc) {
+                buttons.push([{ text: `🔄 Swap ${fromUpper} → ${stableOnSrc.symbol} on ${srcChain.name}`, callback_data: `smart_swap:${amount}:${fromSymbol}:${stableOnSrc.symbol}:${srcChainId}` }]);
+              }
+              buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
+              await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+            }
+          } catch (e: any) {
+            let msg = `💡 Cross-chain bridge temporarily unavailable.\n\nBest route for ${fromUpper} → ${toUpper}:\n\n`;
+            msg += `1️⃣ *Swap ${fromUpper} → USDT* on ${srcChain.name}\n`;
+            msg += `2️⃣ *Bridge USDT* from ${srcChain.name} → ${dstChain.name}\n`;
+            const buttons: any[][] = [];
+            const stableOnSrc = srcTokens.find(t => t.symbol === "USDT" || t.symbol === "USDC");
+            if (stableOnSrc) {
+              buttons.push([{ text: `🔄 Swap ${fromUpper} → ${stableOnSrc.symbol} on ${srcChain.name}`, callback_data: `smart_swap:${amount}:${fromSymbol}:${stableOnSrc.symbol}:${srcChainId}` }]);
+            }
+            buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
+            await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+          }
+          return;
         }
 
-        msg += `2️⃣ *Swap on ${homeChain.name}* — where ${toUpper} is available\n`;
-        buttons.push([{ text: `🔄 Swap on ${homeChain.name}`, callback_data: `smart_swap:${amount}:${fromSymbol}:${toSymbol}:${homeChainId}` }]);
-
-        buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
-        await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
-      } else {
-        await bot.sendMessage(chatId, `Token "${toUpper}" not found on ${chain.name}.\n\nAvailable: ${tokens.map(t => t.symbol).join(", ")}`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+        if (srcToken && srcChain) {
+          let msg = `💡 ${fromUpper} is on ${srcChain.name}. `;
+          const buttons: any[][] = [];
+          const toOnSrc = srcTokens.find(t => t.symbol === toUpper);
+          if (toOnSrc) {
+            msg += `Both tokens are available there!\n`;
+            buttons.push([{ text: `🔄 Swap on ${srcChain.name}`, callback_data: `smart_swap:${amount}:${fromSymbol}:${toSymbol}:${srcChainId}` }]);
+          } else {
+            const stableOnSrc = srcTokens.find(t => t.symbol === "USDT" || t.symbol === "USDC");
+            if (stableOnSrc) {
+              msg += `Try swapping to ${stableOnSrc.symbol} first:\n`;
+              buttons.push([{ text: `🔄 Swap to ${stableOnSrc.symbol} on ${srcChain.name}`, callback_data: `smart_swap:${amount}:${fromSymbol}:${stableOnSrc.symbol}:${srcChainId}` }]);
+            }
+          }
+          buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
+          await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+          return;
+        }
       }
+
+      const missing = !fromToken ? fromUpper : toUpper;
+      await bot.sendMessage(chatId, `Token "${missing}" not found on ${chain.name}.\n\nAvailable: ${tokens.map(t => t.symbol).join(", ")}`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
       return;
     }
 
