@@ -1322,6 +1322,120 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data === "okxswap_confirm") {
+    const state = pendingOKXSwap.get(chatId);
+    if (!state || state.step !== "confirm") {
+      await bot.sendMessage(chatId, "Swap session expired. Try again.", { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+    const walletAddr = getLinkedWallet(chatId);
+    if (!walletAddr || !await checkWalletHasKey(chatId, walletAddr)) {
+      await bot.sendMessage(chatId, "You need a wallet with a private key to execute swaps. Use /wallet to set one up.", { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+    await bot.sendMessage(chatId, `⏳ Executing swap: ${state.fromSymbol} → ${state.toSymbol} on ${state.chainName}...`);
+    sendTyping(chatId);
+    try {
+      const { getSwapData } = await import("./okx-onchainos");
+      const swapTx = await getSwapData({
+        chainId: state.chainId!, fromTokenAddress: state.fromToken!, toTokenAddress: state.toToken!,
+        amount: state.amount!, slippage: "1", userWalletAddress: walletAddr,
+      });
+      const txData = swapTx?.data?.[0]?.tx;
+      if (!txData) throw new Error("No transaction data returned");
+      const pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
+      if (!pk) throw new Error("Wallet key not found");
+      const CHAIN_RPCS: Record<string, string> = { "56": "https://bsc-dataseed1.binance.org", "1": "https://eth.llamarpc.com", "8453": "https://mainnet.base.org", "42161": "https://arb1.arbitrum.io/rpc", "137": "https://polygon-rpc.com", "10": "https://mainnet.optimism.io", "43114": "https://api.avax.network/ext/bc/C/rpc", "196": "https://rpc.xlayer.tech", "250": "https://rpc.ftm.tools", "5000": "https://rpc.mantle.xyz" };
+      const rpcUrl = CHAIN_RPCS[state.chainId!] || "https://bsc-dataseed1.binance.org";
+      const { ethers } = await import("ethers");
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const wallet = new ethers.Wallet(pk, provider);
+      const tx = await wallet.sendTransaction({
+        to: txData.to, data: txData.data, value: txData.value ? BigInt(txData.value) : 0n,
+        gasLimit: txData.gasLimit ? BigInt(txData.gasLimit) : undefined,
+      });
+      const receipt = await tx.wait();
+      if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
+      const chain = OKX_CHAINS.find(c => c.id === state.chainId);
+      const explorerUrls: Record<string, string> = { "56": "https://bscscan.com/tx/", "1": "https://etherscan.io/tx/", "8453": "https://basescan.org/tx/", "42161": "https://arbiscan.io/tx/", "137": "https://polygonscan.com/tx/", "10": "https://optimistic.etherscan.io/tx/", "43114": "https://snowtrace.io/tx/", "196": "https://www.okx.com/explorer/xlayer/tx/" };
+      const explorer = explorerUrls[state.chainId!] || "https://bscscan.com/tx/";
+      await bot.sendMessage(chatId,
+        `✅ *Swap Executed!*\n\n${state.fromSymbol} → ${state.toSymbol} on ${chain?.name || state.chainName}\n\n` +
+        `[View Transaction](${explorer}${receipt.hash})`,
+        { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "🔄 New Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `❌ Swap failed: ${e.message?.substring(0, 150)}\n\nTry again or check your balance.`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
+    pendingOKXSwap.delete(chatId);
+    return;
+  }
+
+  if (data === "okxbridge_confirm") {
+    const state = pendingOKXBridge.get(chatId);
+    if (!state || state.step !== "confirm") {
+      await bot.sendMessage(chatId, "Bridge session expired. Try again.", { reply_markup: { inline_keyboard: [[{ text: "🌉 Open Bridge", callback_data: "action:okxbridge" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+    const walletAddr = getLinkedWallet(chatId);
+    if (!walletAddr || !await checkWalletHasKey(chatId, walletAddr)) {
+      await bot.sendMessage(chatId, "You need a wallet with a private key to execute bridges. Use /wallet to set one up.", { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+    const isLifi = state.quoteData?._provider === "lifi";
+    const bridgeProvider = isLifi ? (state.quoteData?.bridgeProvider || "Li.Fi") : "OKX";
+    await bot.sendMessage(chatId, `⏳ Executing cross-chain swap via ${bridgeProvider}: ${state.fromSymbol} (${state.fromChainName}) → ${state.toSymbol} (${state.toChainName})...`);
+    sendTyping(chatId);
+    try {
+      const pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
+      if (!pk) throw new Error("Wallet key not found");
+      const CHAIN_RPCS: Record<string, string> = { "56": "https://bsc-dataseed1.binance.org", "1": "https://eth.llamarpc.com", "8453": "https://mainnet.base.org", "42161": "https://arb1.arbitrum.io/rpc", "137": "https://polygon-rpc.com", "10": "https://mainnet.optimism.io", "43114": "https://api.avax.network/ext/bc/C/rpc", "196": "https://rpc.xlayer.tech", "250": "https://rpc.ftm.tools", "5000": "https://rpc.mantle.xyz" };
+      const rpcUrl = CHAIN_RPCS[state.fromChainId!] || "https://bsc-dataseed1.binance.org";
+      const { ethers } = await import("ethers");
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const wallet = new ethers.Wallet(pk, provider);
+
+      let txData: any;
+      if (isLifi) {
+        const lifiQuote = state.quoteData?._lifiQuote;
+        if (lifiQuote?.transactionRequest) {
+          txData = lifiQuote.transactionRequest;
+        } else {
+          const lifiResp = await fetch(`https://li.quest/v1/quote?fromChain=${state.fromChainId}&toChain=${state.toChainId}&fromToken=${state.fromToken === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" ? "0x0000000000000000000000000000000000000000" : state.fromToken}&toToken=${state.toToken === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" ? "0x0000000000000000000000000000000000000000" : state.toToken}&fromAmount=${state.amount}&fromAddress=${walletAddr}`, { headers: { "Accept": "application/json" } });
+          const lifiData = await lifiResp.json();
+          txData = lifiData?.transactionRequest;
+        }
+      } else {
+        const { getCrossChainSwap } = await import("./okx-onchainos");
+        const swapResult = await getCrossChainSwap({
+          fromChainId: state.fromChainId!, toChainId: state.toChainId!,
+          fromTokenAddress: state.fromToken!, toTokenAddress: state.toToken!,
+          amount: state.amount!, userWalletAddress: walletAddr, slippage: "1",
+        });
+        txData = swapResult?.data?.[0]?.tx;
+      }
+
+      if (!txData) throw new Error("No transaction data returned");
+      const tx = await wallet.sendTransaction({
+        to: txData.to, data: txData.data, value: txData.value ? BigInt(txData.value) : 0n,
+        gasLimit: txData.gasLimit ? BigInt(txData.gasLimit) : 300000n,
+      });
+      const receipt = await tx.wait();
+      if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
+      const explorerUrls: Record<string, string> = { "56": "https://bscscan.com/tx/", "1": "https://etherscan.io/tx/", "8453": "https://basescan.org/tx/", "42161": "https://arbiscan.io/tx/", "137": "https://polygonscan.com/tx/", "10": "https://optimistic.etherscan.io/tx/", "43114": "https://snowtrace.io/tx/", "196": "https://www.okx.com/explorer/xlayer/tx/" };
+      const explorer = explorerUrls[state.fromChainId!] || "https://bscscan.com/tx/";
+      await bot.sendMessage(chatId,
+        `✅ *Cross-Chain Swap Executed!*\n\n${state.fromSymbol} (${state.fromChainName}) → ${state.toSymbol} (${state.toChainName})\nVia: ${bridgeProvider}\n\n` +
+        `[View Transaction](${explorer}${receipt.hash})`,
+        { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "🔄 New Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `❌ Cross-chain swap failed: ${e.message?.substring(0, 150)}\n\nCheck your balance and try again.`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
+    pendingOKXBridge.delete(chatId);
+    return;
+  }
+
   if (data === "action:okxswap") {
     pendingOKXSwap.set(chatId, { step: "chain" });
     pendingOKXBridge.delete(chatId);
