@@ -2823,6 +2823,123 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     return;
   }
 
+  const swapMatch = text.match(/^swap\s+([\d.]+)\s*(\w+)\s+(?:for|to|into|->|→)\s+(\w+)(?:\s+(?:on|@)\s+(.+))?$/i);
+  if (swapMatch && !text.startsWith("/")) {
+    const [, amount, fromSymbol, toSymbol, chainHint] = swapMatch;
+
+    const chainAliases: Record<string, string> = {
+      bnb: "56", bsc: "56", "bnb chain": "56", binance: "56",
+      eth: "1", ethereum: "1",
+      base: "8453",
+      polygon: "137", matic: "137", pol: "137",
+      arbitrum: "42161", arb: "42161",
+      optimism: "10", op: "10",
+      avalanche: "43114", avax: "43114",
+      xlayer: "196", okb: "196",
+      zksync: "324",
+      linea: "59144",
+      scroll: "534352",
+      fantom: "250", ftm: "250",
+      mantle: "5000", mnt: "5000",
+      blast: "81457",
+      gnosis: "100",
+      cronos: "25", cro: "25",
+    };
+
+    let chainId: string | undefined;
+    if (chainHint) {
+      chainId = chainAliases[chainHint.toLowerCase().trim()];
+    }
+
+    if (!chainId) {
+      const fromUpper = fromSymbol.toUpperCase();
+      const allTokens = Object.entries(OKX_POPULAR_TOKENS);
+      for (const [cid, tokens] of allTokens) {
+        if (tokens.some(t => t.symbol === fromUpper)) {
+          if (fromUpper === "ETH" || fromUpper === "USDT" || fromUpper === "USDC") {
+            const nativeSymbol = OKX_CHAINS.find(c => c.id === cid)?.symbol;
+            if (nativeSymbol === fromUpper) { chainId = cid; break; }
+          } else {
+            chainId = cid; break;
+          }
+        }
+      }
+      if (!chainId) {
+        if (fromUpper === "BNB" || toSymbol.toUpperCase() === "BNB") chainId = "56";
+        else if (fromUpper === "ETH" || toSymbol.toUpperCase() === "ETH") chainId = "1";
+        else if (fromUpper === "AVAX" || toSymbol.toUpperCase() === "AVAX") chainId = "43114";
+        else if (fromUpper === "POL" || toSymbol.toUpperCase() === "POL") chainId = "137";
+        else if (fromUpper === "OKB" || toSymbol.toUpperCase() === "OKB") chainId = "196";
+        else if (fromUpper === "FTM" || toSymbol.toUpperCase() === "FTM") chainId = "250";
+        else if (fromUpper === "MNT" || toSymbol.toUpperCase() === "MNT") chainId = "5000";
+        else if (fromUpper === "CRO" || toSymbol.toUpperCase() === "CRO") chainId = "25";
+        else chainId = "56";
+      }
+    }
+
+    const chain = OKX_CHAINS.find(c => c.id === chainId);
+    if (!chain) {
+      await bot.sendMessage(chatId, `Couldn't find that chain. Try: swap 1 BNB for USDT on BSC`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+
+    const tokens = getOKXTokensForChain(chainId!);
+    const fromToken = tokens.find(t => t.symbol.toLowerCase() === fromSymbol.toLowerCase());
+    const toToken = tokens.find(t => t.symbol.toLowerCase() === toSymbol.toLowerCase());
+
+    if (!fromToken) {
+      await bot.sendMessage(chatId, `Token "${fromSymbol.toUpperCase()}" not found on ${chain.name}.\n\nAvailable: ${tokens.map(t => t.symbol).join(", ")}`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+    if (!toToken) {
+      await bot.sendMessage(chatId, `Token "${toSymbol.toUpperCase()}" not found on ${chain.name}.\n\nAvailable: ${tokens.map(t => t.symbol).join(", ")}`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+
+    const rawAmount = parseHumanAmount(amount, fromToken.decimals);
+
+    await bot.sendMessage(chatId, `🔄 Getting quote: ${amount} ${fromToken.symbol} → ${toToken.symbol} on ${chain.name}...`);
+    sendTyping(chatId);
+
+    try {
+      const { getSwapQuote } = await import("./okx-onchainos");
+      const quote = await getSwapQuote({
+        chainId: chainId!,
+        fromTokenAddress: fromToken.address,
+        toTokenAddress: toToken.address,
+        amount: rawAmount,
+        slippage: "1",
+      });
+
+      const receiveAmount = quote?.data?.[0]?.toTokenAmount
+        ? formatTokenAmount(quote.data[0].toTokenAmount, toToken.decimals)
+        : "—";
+
+      await bot.sendMessage(chatId,
+        `🔄 *Swap Quote*\n\n` +
+        `Chain: ${chain.name}\n` +
+        `Sell: ${amount} ${fromToken.symbol}\n` +
+        `Buy: ~${receiveAmount} ${toToken.symbol}\n\n` +
+        `_To execute, connect your wallet on the BUILD4 dashboard._`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 New Swap", callback_data: "action:okxswap" }],
+              [{ text: "« Menu", callback_data: "action:menu" }],
+            ]
+          }
+        }
+      );
+    } catch (err: any) {
+      await bot.sendMessage(chatId,
+        `Failed to get quote: ${err.message?.substring(0, 100)}\n\nTry again or use the swap menu.`,
+        { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+    }
+    return;
+  }
+
   const commandMatch = text.match(/^\/(\w+)(?:@\S+)?\s*(.*)/s);
   if (commandMatch) {
     const cmd = commandMatch[1].toLowerCase();
