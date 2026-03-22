@@ -55,6 +55,7 @@ Allows users to connect Twitter/X accounts to BUILD4 agents for autonomous socia
 ### Telegram Bot (Onboarding + Agent Management)
 Provides a button-driven interface for agent lifecycle management, task assignment, and wallet operations. Includes zero-friction onboarding, agent creation, task management, token launching, trading, and multi-wallet support. Supports deployment to Render as a standalone service.
 - **OnchainOS Commands**: `/signals`, `/scan`, `/trending`, `/meme`, `/price`, `/gas` powered by `onchainos` CLI v2.1.0.
+- **Solana Wallet Support**: Auto-generates Solana wallets (Ed25519 Keypair via `@solana/web3.js`), stored as `sol:${chatId}` in DB. Used as bridge destination for cross-chain swaps to Solana via Li.Fi.
 
 ### Agent Hiring Fee
 Agent creation costs $599 (0.95 BNB), paid to the BUILD4 treasury wallet. This fee is collected on-chain via the Telegram bot or shown in the web dashboard.

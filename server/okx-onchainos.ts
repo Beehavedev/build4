@@ -260,9 +260,15 @@ export async function getTokenHolders(params: {
 const LIFI_BASE_URL = "https://li.quest/v1";
 const LIFI_NATIVE_TOKEN = "0x0000000000000000000000000000000000000000";
 
-function normalizeLifiTokenAddress(addr: string): string {
+function normalizeLifiTokenAddress(addr: string, chainId?: string): string {
+  if (chainId === "501") return addr;
   if (addr.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee") return LIFI_NATIVE_TOKEN;
   return addr;
+}
+
+function normalizeLifiChainId(chainId: string): string {
+  if (chainId === "501") return "SOL";
+  return chainId;
 }
 
 async function getLifiQuote(params: {
@@ -272,15 +278,17 @@ async function getLifiQuote(params: {
   toTokenAddress: string;
   amount: string;
   fromAddress?: string;
+  toAddress?: string;
 }): Promise<any> {
   const url = new URL(`${LIFI_BASE_URL}/quote`);
-  url.searchParams.set("fromChain", params.fromChainId);
-  url.searchParams.set("toChain", params.toChainId);
-  url.searchParams.set("fromToken", normalizeLifiTokenAddress(params.fromTokenAddress));
-  url.searchParams.set("toToken", normalizeLifiTokenAddress(params.toTokenAddress));
+  url.searchParams.set("fromChain", normalizeLifiChainId(params.fromChainId));
+  url.searchParams.set("toChain", normalizeLifiChainId(params.toChainId));
+  url.searchParams.set("fromToken", normalizeLifiTokenAddress(params.fromTokenAddress, params.fromChainId));
+  url.searchParams.set("toToken", normalizeLifiTokenAddress(params.toTokenAddress, params.toChainId));
   url.searchParams.set("fromAmount", params.amount);
   url.searchParams.set("fromAddress", params.fromAddress || BUILD4_TREASURY);
   url.searchParams.set("integrator", "build4");
+  if (params.toAddress) url.searchParams.set("toAddress", params.toAddress);
 
   const resp = await fetch(url.toString(), { headers: { "Accept": "application/json" } });
   if (!resp.ok) throw new Error(`Li.Fi API error: ${resp.status}`);
@@ -294,15 +302,17 @@ async function getLifiBuildTx(params: {
   toTokenAddress: string;
   amount: string;
   fromAddress: string;
+  toAddress?: string;
 }): Promise<any> {
   const url = new URL(`${LIFI_BASE_URL}/quote`);
-  url.searchParams.set("fromChain", params.fromChainId);
-  url.searchParams.set("toChain", params.toChainId);
-  url.searchParams.set("fromToken", normalizeLifiTokenAddress(params.fromTokenAddress));
-  url.searchParams.set("toToken", normalizeLifiTokenAddress(params.toTokenAddress));
+  url.searchParams.set("fromChain", normalizeLifiChainId(params.fromChainId));
+  url.searchParams.set("toChain", normalizeLifiChainId(params.toChainId));
+  url.searchParams.set("fromToken", normalizeLifiTokenAddress(params.fromTokenAddress, params.fromChainId));
+  url.searchParams.set("toToken", normalizeLifiTokenAddress(params.toTokenAddress, params.toChainId));
   url.searchParams.set("fromAmount", params.amount);
   url.searchParams.set("fromAddress", params.fromAddress);
   url.searchParams.set("integrator", "build4");
+  if (params.toAddress) url.searchParams.set("toAddress", params.toAddress);
 
   const resp = await fetch(url.toString(), { headers: { "Accept": "application/json" } });
   if (!resp.ok) throw new Error(`Li.Fi API error: ${resp.status}`);
