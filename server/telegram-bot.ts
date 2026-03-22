@@ -91,6 +91,7 @@ const OKX_CHAINS = [
   { id: "81457", name: "Blast", symbol: "ETH" },
   { id: "100", name: "Gnosis", symbol: "xDAI" },
   { id: "25", name: "Cronos", symbol: "CRO" },
+  { id: "501", name: "Solana", symbol: "SOL" },
 ];
 
 const OKX_NATIVE_TOKEN = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
@@ -141,7 +142,15 @@ const OKX_POPULAR_TOKENS: Record<string, OKXToken[]> = {
   ],
 };
 
+const SOLANA_NATIVE_TOKEN = "11111111111111111111111111111111";
+const OKX_SOLANA_TOKENS: OKXToken[] = [
+  { address: SOLANA_NATIVE_TOKEN, symbol: "SOL", decimals: 9 },
+  { address: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", symbol: "USDT", decimals: 6 },
+  { address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", symbol: "USDC", decimals: 6 },
+];
+
 function getOKXTokensForChain(chainId: string): OKXToken[] {
+  if (chainId === "501") return OKX_SOLANA_TOKENS;
   return OKX_POPULAR_TOKENS[chainId] || [{ address: OKX_NATIVE_TOKEN, symbol: OKX_CHAINS.find(c => c.id === chainId)?.symbol || "Native", decimals: 18 }];
 }
 
@@ -579,6 +588,33 @@ async function getMyAgents(wallet: string) {
   return agents;
 }
 
+const solanaWalletMap = new Map<number, { address: string; privateKey: string }>();
+
+async function getOrCreateSolanaWallet(chatId: number): Promise<{ address: string; privateKey: string }> {
+  const cached = solanaWalletMap.get(chatId);
+  if (cached) return cached;
+
+  try {
+    const existing = await storage.getTelegramWalletPrivateKey(chatId.toString(), `sol:${chatId}`);
+    if (existing) {
+      const [addr, pk] = existing.split(":");
+      const entry = { address: addr, privateKey: pk };
+      solanaWalletMap.set(chatId, entry);
+      return entry;
+    }
+  } catch {}
+
+  const { Keypair } = await import("@solana/web3.js");
+  const keypair = Keypair.generate();
+  const address = keypair.publicKey.toBase58();
+  const privateKey = Buffer.from(keypair.secretKey).toString("hex");
+
+  await storage.saveTelegramWallet(chatId.toString(), `sol:${chatId}`, `${address}:${privateKey}`);
+  const entry = { address, privateKey };
+  solanaWalletMap.set(chatId, entry);
+  return entry;
+}
+
 async function autoGenerateWallet(chatId: number): Promise<string> {
   if (!bot) throw new Error("Bot not initialized");
   const wallet = ethers.Wallet.createRandom();
@@ -931,6 +967,21 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   await ensureWalletsLoaded(chatId);
 
+  if (data === "action:gensolwallet") {
+    await bot.sendMessage(chatId, "🟣 Generating Solana wallet...");
+    sendTyping(chatId);
+    const solWallet = await getOrCreateSolanaWallet(chatId);
+    await bot.sendMessage(chatId,
+      `🟣 *Solana Wallet Created!*\n\n` +
+      `Address:\n\`${solWallet.address}\`\n\n` +
+      `Private Key:\n\`${solWallet.privateKey}\`\n\n` +
+      `⚠️ *SAVE YOUR PRIVATE KEY* — it won't be shown again.\n\n` +
+      `This wallet is used for cross-chain bridges to Solana.`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "👛 My Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+    );
+    return;
+  }
+
   if (data === "action:linkwallet" || data === "action:genwallet") {
     try {
       await ensureWallet(chatId);
@@ -1072,6 +1123,11 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       }
       text += `${marker} \`${w}\`${i === activeIdx ? " ← active" : ""}${keyTag}\n    ${balText}\n\n`;
     });
+    const solWallet = solanaWalletMap.get(chatId);
+    if (solWallet) {
+      text += `🟣 *Solana Wallet*\n\`${solWallet.address}\`\n\n`;
+    }
+
     text += `Send BNB to your active wallet address to fund it.`;
 
     const walletButtons: TelegramBot.InlineKeyboardButton[][] = updatedWallets.map((w, i) => {
@@ -1085,6 +1141,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     });
 
     walletButtons.push([{ text: "🔑 Add Wallet", callback_data: "action:genwallet" }]);
+    if (!solWallet) {
+      walletButtons.push([{ text: "🟣 Generate SOL Wallet", callback_data: "action:gensolwallet" }]);
+    }
     walletButtons.push([{ text: "🔐 Export Private Key", callback_data: "action:exportkey" }]);
     walletButtons.push([{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }, { text: "◀️ Menu", callback_data: "action:menu" }]);
 
@@ -1322,6 +1381,46 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data.startsWith("sol_bridge_use:")) {
+    const solAddr = data.replace("sol_bridge_use:", "");
+    const state = pendingOKXBridge.get(chatId);
+    if (!state) return;
+    state.receiveAddress = solAddr;
+    state.step = "confirm";
+    await bot.sendMessage(chatId,
+      `✅ SOL wallet set: \`${solAddr.substring(0, 8)}...${solAddr.slice(-6)}\`\n\nConfirm this cross-chain swap?`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Cross-Chain Swap", callback_data: "okxbridge_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } }
+    );
+    return;
+  }
+
+  if (data === "sol_bridge_generate") {
+    const state = pendingOKXBridge.get(chatId);
+    if (!state) return;
+    await bot.sendMessage(chatId, "🔑 Generating Solana wallet...");
+    sendTyping(chatId);
+    const solWallet = await getOrCreateSolanaWallet(chatId);
+    state.receiveAddress = solWallet.address;
+    state.step = "confirm";
+    await bot.sendMessage(chatId,
+      `🔑 *Solana Wallet Created!*\n\n` +
+      `Address:\n\`${solWallet.address}\`\n\n` +
+      `Private Key:\n\`${solWallet.privateKey}\`\n\n` +
+      `⚠️ *SAVE YOUR PRIVATE KEY* — it won't be shown again.\n\n` +
+      `Confirm this cross-chain swap?`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Cross-Chain Swap", callback_data: "okxbridge_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } }
+    );
+    return;
+  }
+
+  if (data === "sol_bridge_custom") {
+    const state = pendingOKXBridge.get(chatId);
+    if (!state) return;
+    state.step = "sol_address" as any;
+    await bot.sendMessage(chatId, "📝 Enter your Solana wallet address:");
+    return;
+  }
+
   if (data === "okxswap_confirm") {
     const state = pendingOKXSwap.get(chatId);
     if (!state || state.step !== "confirm") {
@@ -1401,7 +1500,11 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         if (lifiQuote?.transactionRequest) {
           txData = lifiQuote.transactionRequest;
         } else {
-          const lifiResp = await fetch(`https://li.quest/v1/quote?fromChain=${state.fromChainId}&toChain=${state.toChainId}&fromToken=${state.fromToken === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" ? "0x0000000000000000000000000000000000000000" : state.fromToken}&toToken=${state.toToken === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" ? "0x0000000000000000000000000000000000000000" : state.toToken}&fromAmount=${state.amount}&fromAddress=${walletAddr}`, { headers: { "Accept": "application/json" } });
+          const toAddr = state.toChainId === "501" && state.receiveAddress ? `&toAddress=${state.receiveAddress}` : "";
+          const normFromToken = state.fromToken === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" ? "0x0000000000000000000000000000000000000000" : state.fromToken;
+          const normToToken = state.toChainId === "501" ? state.toToken : (state.toToken === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" ? "0x0000000000000000000000000000000000000000" : state.toToken);
+          const toChainParam = state.toChainId === "501" ? "SOL" : state.toChainId;
+          const lifiResp = await fetch(`https://li.quest/v1/quote?fromChain=${state.fromChainId}&toChain=${toChainParam}&fromToken=${normFromToken}&toToken=${normToToken}&fromAmount=${state.amount}&fromAddress=${walletAddr}${toAddr}`, { headers: { "Accept": "application/json" } });
           const lifiData = await lifiResp.json();
           txData = lifiData?.transactionRequest;
         }
@@ -3051,6 +3154,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       blast: "81457",
       gnosis: "100",
       cronos: "25", cro: "25",
+      solana: "501", sol: "501",
     };
 
     let chainId: string | undefined;
@@ -3071,9 +3175,13 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           }
         }
       }
+      if (!chainId && OKX_SOLANA_TOKENS.some(t => t.symbol === fromUpper)) {
+        chainId = "501";
+      }
       if (!chainId) {
         if (fromUpper === "BNB" || toSymbol.toUpperCase() === "BNB") chainId = "56";
         else if (fromUpper === "ETH" || toSymbol.toUpperCase() === "ETH") chainId = "1";
+        else if (fromUpper === "SOL" || toSymbol.toUpperCase() === "SOL") chainId = "501";
         else if (fromUpper === "AVAX" || toSymbol.toUpperCase() === "AVAX") chainId = "43114";
         else if (fromUpper === "POL" || toSymbol.toUpperCase() === "POL") chainId = "137";
         else if (fromUpper === "OKB" || toSymbol.toUpperCase() === "OKB") chainId = "196";
@@ -3137,12 +3245,29 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
                 toToken: dstToken.address, toSymbol: dstToken.symbol,
                 amount: rawAmt, receiveAddress: "", quoteData: bestRoute,
               });
-              await bot.sendMessage(chatId,
-                `🌉 *Cross-Chain Swap Quote* (via ${bridgeProvider})\n\n` +
-                `💰 ${amount} ${fromUpper} (${srcChain.name}) → ${receiveAmt} ${toUpper} (${dstChain.name})\n\n` +
-                `Confirm this cross-chain swap?`,
-                { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Cross-Chain Swap", callback_data: "okxbridge_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } }
-              );
+
+              if (dstChainId === "501") {
+                const existingSol = solanaWalletMap.get(chatId);
+                let msg = `🌉 *Cross-Chain Swap Quote* (via ${bridgeProvider})\n\n` +
+                  `💰 ${amount} ${fromUpper} (${srcChain.name}) → ${receiveAmt} ${toUpper} (Solana)\n\n` +
+                  `Solana uses a different wallet. Where should your ${toUpper} go?\n`;
+                const buttons: any[][] = [];
+                if (existingSol) {
+                  const shortSol = existingSol.address.substring(0, 8) + "..." + existingSol.address.slice(-6);
+                  buttons.push([{ text: `📱 Use my SOL wallet (${shortSol})`, callback_data: `sol_bridge_use:${existingSol.address}` }]);
+                }
+                buttons.push([{ text: "🔑 Generate new SOL wallet", callback_data: "sol_bridge_generate" }]);
+                buttons.push([{ text: "📝 Enter my own SOL address", callback_data: "sol_bridge_custom" }]);
+                buttons.push([{ text: "❌ Cancel", callback_data: "action:menu" }]);
+                await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+              } else {
+                await bot.sendMessage(chatId,
+                  `🌉 *Cross-Chain Swap Quote* (via ${bridgeProvider})\n\n` +
+                  `💰 ${amount} ${fromUpper} (${srcChain.name}) → ${receiveAmt} ${toUpper} (${dstChain.name})\n\n` +
+                  `Confirm this cross-chain swap?`,
+                  { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Cross-Chain Swap", callback_data: "okxbridge_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } }
+                );
+              }
             }
           } catch (e: any) {
           }
@@ -3274,6 +3399,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       blast: "81457",
       gnosis: "100",
       cronos: "25", cro: "25",
+      solana: "501", sol: "501",
     };
 
     const fromChainId = chainAliases[fromChainHint.toLowerCase().trim()];
@@ -6361,6 +6487,21 @@ async function handleOKXBridgeFlow(chatId: number, text: string): Promise<void> 
   const state = pendingOKXBridge.get(chatId);
   if (!state) return;
 
+  if ((state.step as any) === "sol_address") {
+    const addr = text.trim();
+    if (addr.length < 32 || addr.length > 44 || !/^[1-9A-HJ-NP-Za-km-z]+$/.test(addr)) {
+      await bot.sendMessage(chatId, "❌ Invalid Solana address. Please enter a valid base58 Solana wallet address:");
+      return;
+    }
+    state.receiveAddress = addr;
+    state.step = "confirm";
+    await bot.sendMessage(chatId,
+      `✅ SOL wallet set: \`${addr.substring(0, 8)}...${addr.slice(-6)}\`\n\nConfirm this cross-chain swap?`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Cross-Chain Swap", callback_data: "okxbridge_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } }
+    );
+    return;
+  }
+
   if (state.step === "amount") {
     const num = Number(text);
     if (isNaN(num) || num <= 0) {
@@ -6368,27 +6509,43 @@ async function handleOKXBridgeFlow(chatId: number, text: string): Promise<void> 
       return;
     }
     state.amount = text.trim();
-    state.step = "receiver";
 
-    const wallets = getUserWallets(chatId);
-    const activeIdx = getActiveWalletIndex(chatId);
-    const currentWallet = wallets[activeIdx];
-
-    if (currentWallet) {
-      const shortAddr = currentWallet.substring(0, 8) + "..." + currentWallet.slice(-6);
+    if (state.toChainId === "501") {
+      state.step = "sol_address" as any;
+      const existingSol = solanaWalletMap.get(chatId);
+      const buttons: any[][] = [];
+      if (existingSol) {
+        const shortSol = existingSol.address.substring(0, 8) + "..." + existingSol.address.slice(-6);
+        buttons.push([{ text: `📱 Use my SOL wallet (${shortSol})`, callback_data: `sol_bridge_use:${existingSol.address}` }]);
+      }
+      buttons.push([{ text: "🔑 Generate new SOL wallet", callback_data: "sol_bridge_generate" }]);
+      buttons.push([{ text: "📝 Enter my own SOL address", callback_data: "sol_bridge_custom" }]);
       await bot.sendMessage(chatId,
-        `Enter the wallet address to receive tokens on ${state.toChainName}:\n\n` +
-        `Or tap below to use your current wallet:`,
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: `Use ${shortAddr}`, callback_data: `okxbridge_usewallet:${currentWallet}` }],
-            ]
-          }
-        }
+        `Where should your tokens go on Solana?`,
+        { reply_markup: { inline_keyboard: buttons } }
       );
     } else {
-      await bot.sendMessage(chatId, `Enter the wallet address to receive tokens on ${state.toChainName} (0x...):`);
+      state.step = "receiver";
+      const wallets = getUserWallets(chatId);
+      const activeIdx = getActiveWalletIndex(chatId);
+      const currentWallet = wallets[activeIdx];
+
+      if (currentWallet) {
+        const shortAddr = currentWallet.substring(0, 8) + "..." + currentWallet.slice(-6);
+        await bot.sendMessage(chatId,
+          `Enter the wallet address to receive tokens on ${state.toChainName}:\n\n` +
+          `Or tap below to use your current wallet:`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: `Use ${shortAddr}`, callback_data: `okxbridge_usewallet:${currentWallet}` }],
+              ]
+            }
+          }
+        );
+      } else {
+        await bot.sendMessage(chatId, `Enter the wallet address to receive tokens on ${state.toChainName} (0x...):`);
+      }
     }
     return;
   }
