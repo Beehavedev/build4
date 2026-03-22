@@ -1253,6 +1253,75 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data.startsWith("smart_swap:")) {
+    const parts = data.replace("smart_swap:", "").split(":");
+    const [sAmount, sFrom, sTo, sChainId] = parts;
+    const sChain = OKX_CHAINS.find(c => c.id === sChainId);
+    if (!sChain) return;
+    const sTokens = getOKXTokensForChain(sChainId);
+    const sFromToken = sTokens.find(t => t.symbol.toLowerCase() === sFrom.toLowerCase());
+    const sToToken = sTokens.find(t => t.symbol.toLowerCase() === sTo.toLowerCase());
+    if (!sFromToken || !sToToken) {
+      await bot.sendMessage(chatId, `Could not find tokens on ${sChain.name}. Try /swap to start fresh.`);
+      return;
+    }
+    const sRawAmount = parseHumanAmount(sAmount, sFromToken.decimals);
+    await bot.sendMessage(chatId, `🔄 Getting quote: ${sAmount} ${sFromToken.symbol} → ${sToToken.symbol} on ${sChain.name}...`);
+    sendTyping(chatId);
+    try {
+      const { getSwapQuote } = await import("./okx-onchainos");
+      const quote = await getSwapQuote({ chainId: sChainId, fromTokenAddress: sFromToken.address, toTokenAddress: sToToken.address, amount: sRawAmount, slippage: "1" });
+      const receiveAmt = quote?.data?.[0]?.toTokenAmount ? formatTokenAmount(quote.data[0].toTokenAmount, sToToken.decimals) : null;
+      if (receiveAmt) {
+        pendingOKXSwap.set(chatId, { step: "confirm", chainId: sChainId, chainName: sChain.name, fromToken: sFromToken.address, fromSymbol: sFromToken.symbol, toToken: sToToken.address, toSymbol: sToToken.symbol, amount: sRawAmount, quoteData: quote.data[0] });
+        await bot.sendMessage(chatId, `🔄 *Swap Quote on ${sChain.name}*\n\n💰 ${sAmount} ${sFromToken.symbol} → ${receiveAmt} ${sToToken.symbol}\n\nConfirm this swap?`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Swap", callback_data: "okxswap_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } });
+      } else {
+        await bot.sendMessage(chatId, "No quote available for this pair. Try different tokens or amounts.", { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Quote error: ${e.message}`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
+    return;
+  }
+
+  if (data.startsWith("smart_bridge:")) {
+    const parts = data.replace("smart_bridge:", "").split(":");
+    const [bToken, bFromChainId, bToChainId, bAmount] = parts;
+    const bFromChain = OKX_CHAINS.find(c => c.id === bFromChainId);
+    const bToChain = OKX_CHAINS.find(c => c.id === bToChainId);
+    if (!bFromChain || !bToChain) return;
+    const wallets = getUserWallets(chatId);
+    const activeIdx = getActiveWalletIndex(chatId);
+    const wallet = wallets[activeIdx];
+    if (!wallet) {
+      await bot.sendMessage(chatId, "You need a wallet first! Tap /start to create one.");
+      return;
+    }
+    await bot.sendMessage(chatId, `🌉 Getting bridge quote: ${bAmount} ${bToken.toUpperCase()} from ${bFromChain.name} → ${bToChain.name}...`);
+    sendTyping(chatId);
+    try {
+      const { getBridgeQuote } = await import("./okx-onchainos");
+      const fromTokens = getOKXTokensForChain(bFromChainId);
+      const bridgeToken = fromTokens.find(t => t.symbol.toLowerCase() === bToken.toLowerCase());
+      if (!bridgeToken) {
+        await bot.sendMessage(chatId, `Token ${bToken.toUpperCase()} not found on ${bFromChain.name}. Try /bridge to start fresh.`);
+        return;
+      }
+      const rawAmt = parseHumanAmount(bAmount, bridgeToken.decimals);
+      const quote = await getBridgeQuote({ fromChainId: bFromChainId, toChainId: bToChainId, fromTokenAddress: bridgeToken.address, toTokenAddress: bridgeToken.address, amount: rawAmt, slippage: "1", userWalletAddress: wallet.address });
+      const receiveAmt = quote?.data?.[0]?.toTokenAmount ? formatTokenAmount(quote.data[0].toTokenAmount, bridgeToken.decimals) : null;
+      if (receiveAmt) {
+        pendingOKXBridge.set(chatId, { step: "confirm", fromChainId: bFromChainId, fromChainName: bFromChain.name, toChainId: bToChainId, toChainName: bToChain.name, fromToken: bridgeToken.address, fromSymbol: bridgeToken.symbol, toToken: bridgeToken.address, toSymbol: bridgeToken.symbol, amount: rawAmt, receiveAddress: wallet.address, quoteData: quote.data[0] });
+        await bot.sendMessage(chatId, `🌉 *Bridge Quote*\n\n${bAmount} ${bridgeToken.symbol} on ${bFromChain.name} → ${receiveAmt} ${bridgeToken.symbol} on ${bToChain.name}\n\nConfirm this bridge?`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Bridge", callback_data: "okxbridge_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } });
+      } else {
+        await bot.sendMessage(chatId, "No bridge route available for this pair. Try /bridge for more options.", { reply_markup: { inline_keyboard: [[{ text: "🌉 Open Bridge", callback_data: "action:okxbridge" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Bridge quote error: ${e.message}`, { reply_markup: { inline_keyboard: [[{ text: "🌉 Retry", callback_data: "action:okxbridge" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
+    return;
+  }
+
   if (data === "action:okxswap") {
     pendingOKXSwap.set(chatId, { step: "chain" });
     pendingOKXBridge.delete(chatId);
@@ -2912,11 +2981,63 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     const toToken = tokens.find(t => t.symbol.toLowerCase() === toSymbol.toLowerCase());
 
     if (!fromToken) {
-      await bot.sendMessage(chatId, `Token "${fromSymbol.toUpperCase()}" not found on ${chain.name}.\n\nAvailable: ${tokens.map(t => t.symbol).join(", ")}`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      const fromUpper = fromSymbol.toUpperCase();
+      const homeChainId = Object.entries(OKX_POPULAR_TOKENS).find(([cid, toks]) => toks.some(t => t.symbol === fromUpper))?.[0];
+      const homeChain = homeChainId ? OKX_CHAINS.find(c => c.id === homeChainId) : null;
+
+      if (homeChain && homeChainId !== chainId) {
+        const toUpper = toSymbol.toUpperCase();
+        const toAvailableOnTarget = tokens.some(t => t.symbol === toUpper);
+        const toAvailableOnHome = getOKXTokensForChain(homeChainId).some(t => t.symbol === toUpper);
+
+        let msg = `💡 ${fromUpper} is a ${homeChain.name} token, not available on ${chain.name}.\n\nHere's what I can do:\n\n`;
+        const buttons: any[][] = [];
+
+        if (toAvailableOnHome) {
+          msg += `1️⃣ *Swap on ${homeChain.name}* — swap ${amount} ${fromUpper} → ${toUpper} on its home chain\n`;
+          buttons.push([{ text: `🔄 Swap on ${homeChain.name}`, callback_data: `smart_swap:${amount}:${fromSymbol}:${toSymbol}:${homeChainId}` }]);
+        }
+
+        msg += `2️⃣ *Bridge first* — bridge your ${fromUpper} from ${homeChain.name} to ${chain.name}, then swap\n`;
+        buttons.push([{ text: `🌉 Bridge ${fromUpper} to ${chain.name}`, callback_data: `smart_bridge:${fromSymbol}:${homeChainId}:${chainId}:${amount}` }]);
+
+        if (toAvailableOnTarget && !toAvailableOnHome) {
+          const stableOnHome = getOKXTokensForChain(homeChainId).find(t => t.symbol === "USDT" || t.symbol === "USDC");
+          if (stableOnHome) {
+            msg += `3️⃣ *Swap to ${stableOnHome.symbol} first* — convert ${fromUpper} → ${stableOnHome.symbol} on ${homeChain.name}, then bridge to ${chain.name}\n`;
+          }
+        }
+
+        buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
+        await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+      } else {
+        await bot.sendMessage(chatId, `Token "${fromUpper}" not found on ${chain.name}.\n\nAvailable: ${tokens.map(t => t.symbol).join(", ")}`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      }
       return;
     }
     if (!toToken) {
-      await bot.sendMessage(chatId, `Token "${toSymbol.toUpperCase()}" not found on ${chain.name}.\n\nAvailable: ${tokens.map(t => t.symbol).join(", ")}`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      const toUpper = toSymbol.toUpperCase();
+      const homeChainId = Object.entries(OKX_POPULAR_TOKENS).find(([cid, toks]) => toks.some(t => t.symbol === toUpper))?.[0];
+      const homeChain = homeChainId ? OKX_CHAINS.find(c => c.id === homeChainId) : null;
+
+      if (homeChain && homeChainId !== chainId) {
+        let msg = `💡 ${toUpper} is native to ${homeChain.name}, not available on ${chain.name}.\n\nHere's what I'd suggest:\n\n`;
+        const buttons: any[][] = [];
+
+        const stableOnCurrent = tokens.find(t => t.symbol === "USDT" || t.symbol === "USDC");
+        if (stableOnCurrent) {
+          msg += `1️⃣ *Swap to ${stableOnCurrent.symbol}* on ${chain.name} instead — it's available here\n`;
+          buttons.push([{ text: `🔄 Swap to ${stableOnCurrent.symbol}`, callback_data: `smart_swap:${amount}:${fromSymbol}:${stableOnCurrent.symbol}:${chainId}` }]);
+        }
+
+        msg += `2️⃣ *Swap on ${homeChain.name}* — where ${toUpper} is available\n`;
+        buttons.push([{ text: `🔄 Swap on ${homeChain.name}`, callback_data: `smart_swap:${amount}:${fromSymbol}:${toSymbol}:${homeChainId}` }]);
+
+        buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
+        await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+      } else {
+        await bot.sendMessage(chatId, `Token "${toUpper}" not found on ${chain.name}.\n\nAvailable: ${tokens.map(t => t.symbol).join(", ")}`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      }
       return;
     }
 
