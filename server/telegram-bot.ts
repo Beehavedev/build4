@@ -306,6 +306,20 @@ async function generateAnswer(question: string, username: string, chatId?: numbe
 function generateFallbackAnswer(question: string, chatId?: number): string | null {
   const lower = question.toLowerCase();
 
+  const isSwapQuestion = (lower.includes("swap") || lower.includes("exchange") || lower.includes("convert")) &&
+    (lower.includes("token") || lower.includes("bnb") || lower.includes("eth") || lower.includes("usdt") || lower.includes("usdc") || lower.includes("coin") || lower.includes("crypto"));
+  const isTradeQuestion = (lower.includes("trade") || lower.includes("buy") || lower.includes("sell")) &&
+    (lower.includes("token") || lower.includes("bnb") || lower.includes("eth") || lower.includes("usdt") || lower.includes("crypto"));
+  const isBridgeQuestion = lower.includes("bridge") && (lower.includes("chain") || lower.includes("cross") || lower.includes("transfer") || lower.includes("move"));
+
+  if (isSwapQuestion || isTradeQuestion || isBridgeQuestion) {
+    let response = "You can do that right here! 🔥\n\n";
+    response += "🔄 *Swap tokens* — just type:\n`swap 1 BNB for USDT`\n`swap 0.5 ETH for USDC on Base`\n\n";
+    response += "🌉 *Bridge across chains* — just type:\n`bridge 1 ETH from Ethereum to Base`\n`bridge 100 USDT from BSC to Arbitrum`\n\n";
+    response += "Or use the menu buttons: /swap or /bridge";
+    return response;
+  }
+
   const isFundingQuestion = (
     (lower.includes("send") || lower.includes("where") || lower.includes("fund") || lower.includes("deposit") || lower.includes("transfer")) &&
     (lower.includes("okb") || lower.includes("bnb") || lower.includes("eth") || lower.includes("crypto") || lower.includes("money") || lower.includes("coin") || lower.includes("fund"))
