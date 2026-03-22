@@ -2823,7 +2823,9 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     return;
   }
 
-  const swapMatch = text.match(/^swap\s+([\d.]+)\s*(\w+)\s+(?:for|to|into|->|→)\s+(\w+)(?:\s+(?:on|@)\s+(.+))?$/i);
+  const swapNorm = text.replace(/\s+/g, " ").trim();
+  const swapMatch = swapNorm.match(/^swap\s+([\d.]+)\s*(\w+)\s+(?:for|to|into|->|→)\s+(\w+)(?:\s+(?:on|@)\s+(.+))?$/i)
+    || swapNorm.match(/^swap\s+([\d.]+)\s*(\w+)\s+(?:for|to|into|->|→)\s+(\w+)\s+(\w+)$/i);
   if (swapMatch && !text.startsWith("/")) {
     const [, amount, fromSymbol, toSymbol, chainHint] = swapMatch;
 
