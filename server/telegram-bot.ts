@@ -2940,6 +2940,95 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     return;
   }
 
+  const bridgeMatch = text.match(/^bridge\s+([\d.]+)\s*(\w+)\s+(?:from\s+)?(\w+[\w\s]*?)\s+(?:to)\s+(\w+[\w\s]*?)(?:\s+(?:as|receive|get)\s+(\w+))?$/i);
+  if (bridgeMatch && !text.startsWith("/")) {
+    const [, amount, fromSymbol, fromChainHint, toChainHint, toSymbolHint] = bridgeMatch;
+
+    const chainAliases: Record<string, string> = {
+      bnb: "56", bsc: "56", "bnb chain": "56", binance: "56",
+      eth: "1", ethereum: "1",
+      base: "8453",
+      polygon: "137", matic: "137", pol: "137",
+      arbitrum: "42161", arb: "42161",
+      optimism: "10", op: "10",
+      avalanche: "43114", avax: "43114",
+      xlayer: "196", okb: "196",
+      zksync: "324",
+      linea: "59144",
+      scroll: "534352",
+      fantom: "250", ftm: "250",
+      mantle: "5000", mnt: "5000",
+      blast: "81457",
+      gnosis: "100",
+      cronos: "25", cro: "25",
+    };
+
+    const fromChainId = chainAliases[fromChainHint.toLowerCase().trim()];
+    const toChainId = chainAliases[toChainHint.toLowerCase().trim()];
+
+    if (!fromChainId || !toChainId) {
+      const supported = Object.keys(chainAliases).filter(k => !k.includes(" ")).join(", ");
+      await bot.sendMessage(chatId,
+        `Couldn't identify the chains. Try:\n\nbridge 1 BNB from BSC to Ethereum\nbridge 0.5 ETH from Ethereum to Base\n\nSupported: ${supported}`,
+        { reply_markup: { inline_keyboard: [[{ text: "🌉 Open Bridge", callback_data: "action:okxbridge" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+      return;
+    }
+
+    if (fromChainId === toChainId) {
+      await bot.sendMessage(chatId, `Source and destination chain can't be the same. Did you mean swap?\n\nTry: swap ${amount} ${fromSymbol} for USDT`,
+        { reply_markup: { inline_keyboard: [[{ text: "🔄 Swap Instead", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+      return;
+    }
+
+    const fromChain = OKX_CHAINS.find(c => c.id === fromChainId);
+    const toChain = OKX_CHAINS.find(c => c.id === toChainId);
+    if (!fromChain || !toChain) {
+      await bot.sendMessage(chatId, `Chain not supported. Try: bridge 1 BNB from BSC to Ethereum`,
+        { reply_markup: { inline_keyboard: [[{ text: "🌉 Open Bridge", callback_data: "action:okxbridge" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+      return;
+    }
+
+    const fromTokens = getOKXTokensForChain(fromChainId);
+    const fromToken = fromTokens.find(t => t.symbol.toLowerCase() === fromSymbol.toLowerCase());
+    if (!fromToken) {
+      await bot.sendMessage(chatId,
+        `Token "${fromSymbol.toUpperCase()}" not found on ${fromChain.name}.\n\nAvailable: ${fromTokens.map(t => t.symbol).join(", ")}`,
+        { reply_markup: { inline_keyboard: [[{ text: "🌉 Open Bridge", callback_data: "action:okxbridge" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+      return;
+    }
+
+    const toTokens = getOKXTokensForChain(toChainId);
+    const toSymbol = toSymbolHint || fromSymbol;
+    let toToken = toTokens.find(t => t.symbol.toLowerCase() === toSymbol.toLowerCase());
+    if (!toToken) {
+      toToken = toTokens.find(t => t.symbol === "USDT" || t.symbol === "USDC") || toTokens[0];
+    }
+
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) {
+      await bot.sendMessage(chatId, "You need a wallet first. Setting one up...");
+      await autoGenerateWallet(chatId);
+    }
+    const receiver = getLinkedWallet(chatId) || "";
+
+    const bridgeState: OKXBridgeState = {
+      step: "confirm",
+      fromChainId, fromChainName: fromChain.name,
+      toChainId, toChainName: toChain.name,
+      fromToken: fromToken.address, fromSymbol: fromToken.symbol, fromDecimals: fromToken.decimals,
+      toToken: toToken.address, toSymbol: toToken.symbol, toDecimals: toToken.decimals,
+      amount: amount, receiver,
+    };
+
+    pendingOKXBridge.set(chatId, bridgeState);
+    await executeBridgeQuote(chatId, bridgeState);
+    return;
+  }
+
   const commandMatch = text.match(/^\/(\w+)(?:@\S+)?\s*(.*)/s);
   if (commandMatch) {
     const cmd = commandMatch[1].toLowerCase();
