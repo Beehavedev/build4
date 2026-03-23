@@ -77,15 +77,16 @@ Multi-chain infrastructure powered by OKX OnchainOS v2.1.0, providing:
 - **API Routes**: `/api/okx/onchainos/skills` and `/api/okx/onchainos/execute` for CLI command execution.
 - **Frontend Page**: `/onchainos` provides a tabbed UI for DEX Swap, Market Data, Bridge, and Wallet panels.
 
-### Developer Platform ("Replit for AI Agents")
-A unified chat-driven Agent Builder at `/build` for creating and deploying agents.
-- **Chat-Driven Creation**: Users describe agents in natural language; BUILD4 configures and deploys.
-- **AI-Powered Chat**: `POST /api/builder/chat` endpoint uses `runInferenceWithFallback()` (Hyperbolic/Akash/Ritual) for intelligent responses, with local intent parsing fallback when no providers are available. Rate-limited (20 req/min per IP).
-- **Live Preview Panel**: Right-side panel (desktop) shows real-time agent card preview (name, chain, model, autonomy, skills) updating as user configures. Includes Preview and Logs tabs.
-- **Templates**: 6 pre-configured templates (Trading, Research, Social, DeFi, Security, Sniper).
-- **Agent Store (inline)**: Allows browsing and forking community agents.
-- **SDK/API Docs (inline)**: Provides API references and code examples.
-- **Real Deployment**: Deploys agents with wallet, on-chain identity, and runtime profile.
+### General-Purpose AI Builder ("/build")
+A full general-purpose AI builder at `/build` competing with Replit/Bolt/v0. Builds anything: websites, apps, dashboards, landing pages, tools, games, and AI agents.
+- **Split-Screen Layout**: Chat on left, live preview panel (iframe) + code viewer on right. Preview/Code tabs.
+- **Live Preview**: AI generates complete HTML documents rendered in a sandboxed iframe. Supports desktop/tablet/mobile viewport sizing with refresh controls.
+- **Code Viewer**: Tabbed file browser showing all generated source files (HTML, CSS, JS, JSX, etc.) with syntax-highlighted code.
+- **Iterative Building**: Conversation-based iteration — "make it darker", "add a contact form", "change the header" — with file context sent back to AI for updates.
+- **AI-Powered Chat**: `POST /api/builder/chat` endpoint uses `runInferenceWithFallback()` (Hyperbolic/Akash/Ritual). System prompt generates `<PREVIEW>` (full HTML doc) and `<FILES>` (individual source files) blocks. Rate-limited (20 req/min per IP).
+- **Web Templates**: Landing Page, Dashboard, Web App, Portfolio quick-start templates.
+- **Agent Templates**: 6 pre-configured agent types (Trading, Research, Social, DeFi, Security, Sniper) with interactive config cards.
+- **Agent Deployment**: Deploys agents with wallet, on-chain identity, and runtime profile ($20 / 0.032 BNB).
 
 ### Workspace Pricing & Subscriptions
 Tiered pricing system at `/pricing` for the agent builder workspace. Plans tracked by wallet address in `workspace_subscriptions` table.
