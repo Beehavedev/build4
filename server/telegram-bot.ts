@@ -989,12 +989,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:linkwallet" || data === "action:genwallet") {
     try {
-      await ensureWallet(chatId);
+      await autoGenerateWallet(chatId);
       pendingImportWallet.delete(chatId);
-      await bot.sendMessage(chatId,
-        `Your wallet is ready. What would you like to do?`,
-        { reply_markup: mainMenuKeyboard() }
-      );
     } catch (e: any) {
       console.error("[TelegramBot] Wallet generation error:", e.message);
       await bot.sendMessage(chatId, "Failed to generate wallet. Please try again.");
@@ -3358,18 +3354,30 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         ? formatTokenAmount(quote.data[0].toTokenAmount, toToken.decimals)
         : "—";
 
+      pendingOKXSwap.set(chatId, {
+        step: "confirm",
+        chainId: chainId!,
+        chainName: chain.name,
+        fromToken: fromToken.address,
+        fromSymbol: fromToken.symbol,
+        toToken: toToken.address,
+        toSymbol: toToken.symbol,
+        amount: rawAmount,
+        quoteData: quote?.data?.[0],
+      });
+
       await bot.sendMessage(chatId,
         `🔄 *Swap Quote*\n\n` +
         `Chain: ${chain.name}\n` +
         `Sell: ${amount} ${fromToken.symbol}\n` +
         `Buy: ~${receiveAmount} ${toToken.symbol}\n\n` +
-        `_To execute, connect your wallet on the BUILD4 dashboard._`,
+        `Confirm this swap?`,
         {
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🔄 New Swap", callback_data: "action:okxswap" }],
-              [{ text: "« Menu", callback_data: "action:menu" }],
+              [{ text: "✅ Confirm Swap", callback_data: "okxswap_confirm" }],
+              [{ text: "❌ Cancel", callback_data: "action:menu" }],
             ]
           }
         }
@@ -6452,7 +6460,8 @@ async function handleOKXSwapFlow(chatId: number, text: string): Promise<void> {
         slippage: "1",
       });
 
-      state.quoteData = quote;
+      state.quoteData = quote?.data?.[0];
+      state.step = "confirm";
       const toTokenInfo = getOKXTokensForChain(state.chainId!).find(t => t.address === state.toToken);
       const toDecimals = toTokenInfo?.decimals || 18;
       const receiveAmount = quote?.data?.[0]?.toTokenAmount
@@ -6460,22 +6469,21 @@ async function handleOKXSwapFlow(chatId: number, text: string): Promise<void> {
         : "—";
 
       await bot.sendMessage(chatId,
-        `🔄 *OKX Swap Quote*\n\n` +
+        `🔄 *Swap Quote*\n\n` +
         `Chain: ${state.chainName}\n` +
         `Sell: ${state.amount} ${state.fromSymbol}\n` +
-        `Buy: ~${receiveAmount} ${state.toSymbol}\n` +
-        `_To execute this swap, connect your wallet on the BUILD4 dashboard._`,
+        `Buy: ~${receiveAmount} ${state.toSymbol}\n\n` +
+        `Confirm this swap?`,
         {
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🔄 New Swap", callback_data: "action:okxswap" }],
-              [{ text: "« Menu", callback_data: "action:menu" }],
+              [{ text: "✅ Confirm Swap", callback_data: "okxswap_confirm" }],
+              [{ text: "❌ Cancel", callback_data: "action:menu" }],
             ]
           }
         }
       );
-      pendingOKXSwap.delete(chatId);
     } catch (err: any) {
       await bot.sendMessage(chatId,
         `Failed to get quote: ${err.message}\n\nTry again or go back to menu.`,
@@ -6598,26 +6606,26 @@ async function executeBridgeQuote(chatId: number, state: OKXBridgeState): Promis
     const bridgeName = quote?.data?.[0]?.bridgeName || "—";
     const shortReceiver = state.receiver!.substring(0, 8) + "..." + state.receiver!.slice(-6);
 
+    state.step = "confirm";
     await bot.sendMessage(chatId,
-      `🌉 *OKX Bridge Quote*\n\n` +
+      `🌉 *Bridge Quote*\n\n` +
       `Route: ${state.fromChainName} → ${state.toChainName}\n` +
       `Send: ${state.amount} ${state.fromSymbol}\n` +
       `Receive: ~${receiveAmount} ${state.toSymbol}\n` +
       `Via: ${bridgeName}\n` +
       `Est. Time: ${timeStr}\n` +
-      `Deliver To: ${shortReceiver}\n` +
-      `_To execute this bridge, connect your wallet on the BUILD4 dashboard._`,
+      `Deliver To: ${shortReceiver}\n\n` +
+      `Confirm this bridge?`,
       {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "🌉 New Bridge", callback_data: "action:okxbridge" }],
-            [{ text: "« Menu", callback_data: "action:menu" }],
+            [{ text: "✅ Confirm Bridge", callback_data: "okxbridge_confirm" }],
+            [{ text: "❌ Cancel", callback_data: "action:menu" }],
           ]
         }
       }
     );
-    pendingOKXBridge.delete(chatId);
   } catch (err: any) {
     await bot.sendMessage(chatId,
       `Failed to get bridge quote: ${err.message}\n\nTry again or go back to menu.`,
