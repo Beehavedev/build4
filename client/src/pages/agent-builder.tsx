@@ -169,8 +169,9 @@ function AgentCard({ config, onDeploy, onUpdate, deploying }: {
   );
 }
 
-function DeployResult({ result }: { result: { agentId: string; wallet: string; chain: string } }) {
-  const { toast } = useToast();
+function DeployResult({ result, onCopy }: { result: { agentId: string; wallet: string; chain: string }; onCopy: (text: string) => void }) {
+  const agentIdDisplay = result.agentId ? result.agentId.substring(0, Math.min(24, result.agentId.length)) : "—";
+  const walletDisplay = result.wallet ? result.wallet.substring(0, Math.min(20, result.wallet.length)) : "—";
   return (
     <div className="mt-3 rounded-xl border border-primary/30 bg-primary/5 overflow-hidden" data-testid="deploy-result">
       <div className="p-4">
@@ -187,9 +188,9 @@ function DeployResult({ result }: { result: { agentId: string; wallet: string; c
           <div className="flex items-center justify-between p-2 rounded-lg bg-background/50">
             <div>
               <div className="text-[10px] text-muted-foreground uppercase">Agent ID</div>
-              <code className="text-[12px] text-foreground font-mono">{result.agentId.substring(0, 24)}...</code>
+              <code className="text-[12px] text-foreground font-mono">{agentIdDisplay}{result.agentId && result.agentId.length > 24 ? "..." : ""}</code>
             </div>
-            <button onClick={() => { navigator.clipboard.writeText(result.agentId); toast({ title: "Copied" }); }}
+            <button onClick={() => onCopy(result.agentId || "")}
               className="p-1.5 rounded hover:bg-accent transition-colors" data-testid="button-copy-id">
               <Copy className="w-3.5 h-3.5 text-muted-foreground" />
             </button>
@@ -197,9 +198,9 @@ function DeployResult({ result }: { result: { agentId: string; wallet: string; c
           <div className="flex items-center justify-between p-2 rounded-lg bg-background/50">
             <div>
               <div className="text-[10px] text-muted-foreground uppercase">Wallet</div>
-              <code className="text-[12px] text-foreground font-mono">{result.wallet.substring(0, 20)}...</code>
+              <code className="text-[12px] text-foreground font-mono">{walletDisplay}{result.wallet && result.wallet.length > 20 ? "..." : ""}</code>
             </div>
-            <button onClick={() => { navigator.clipboard.writeText(result.wallet); toast({ title: "Copied" }); }}
+            <button onClick={() => onCopy(result.wallet || "")}
               className="p-1.5 rounded hover:bg-accent transition-colors" data-testid="button-copy-wallet">
               <Copy className="w-3.5 h-3.5 text-muted-foreground" />
             </button>
@@ -420,7 +421,7 @@ export default function AgentBuilder() {
                       )}
                       {msg.deployResult && (
                         <div className="ml-[34px]">
-                          <DeployResult result={msg.deployResult} />
+                          <DeployResult result={msg.deployResult} onCopy={(text) => { navigator.clipboard.writeText(text); toast({ title: "Copied" }); }} />
                         </div>
                       )}
                     </div>
