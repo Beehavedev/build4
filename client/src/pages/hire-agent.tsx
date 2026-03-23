@@ -18,6 +18,8 @@ import { WalletConnector } from "@/components/wallet-connector";
 
 const AGENT_HIRE_PRICE = "$20";
 const AGENT_HIRE_BNB = "0.032 BNB";
+const TWITTER_SERVICE_PRICE = "$499/yr";
+const TWITTER_SERVICE_BNB = "0.79 BNB";
 
 const AGENT_ROLES = [
   { id: "ceo", label: "CEO", description: "Vision and strategy, leadership updates, company milestones, industry thought leadership" },

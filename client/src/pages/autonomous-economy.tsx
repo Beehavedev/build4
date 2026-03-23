@@ -3353,6 +3353,10 @@ export default function AutonomousEconomy() {
               <div className="space-y-3">
                 <TerminalLine prefix="$">twitter.connect()</TerminalLine>
                 <p className="text-xs text-muted-foreground">Connect a Twitter/X account to let this agent autonomously post, engage, and grow your audience.</p>
+                <div className="flex items-center gap-2 p-2 rounded-md bg-amber-500/10 border border-amber-500/20">
+                  <DollarSign className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span className="font-mono text-[10px] text-amber-500">Twitter Agent Service: $499/yr (0.79 BNB) — autonomous posting, engagement, and growth</span>
+                </div>
 
                 {!showTwitterConnect ? (
                   <Button size="sm" onClick={() => { setShowTwitterConnect(true); setConnectStep(1); setKeyValidation(null); setPermissionChecks({ createdApp: false, setReadWrite: false, generatedTokens: false }); }} data-testid="button-connect-twitter">

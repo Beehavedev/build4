@@ -58,7 +58,7 @@ Provides a button-driven interface for agent lifecycle management, task assignme
 - **Solana Wallet Support**: Auto-generates Solana wallets (Ed25519 Keypair via `@solana/web3.js`), stored as `sol:${chatId}` in DB. Used as bridge destination for cross-chain swaps to Solana via Li.Fi.
 
 ### Agent Hiring Fee
-Agent creation costs $599 (0.95 BNB), paid to the BUILD4 treasury wallet. This fee is collected on-chain via the Telegram bot or shown in the web dashboard.
+Agent creation costs $20 (0.032 BNB), paid to the BUILD4 treasury wallet. This fee is collected on-chain via the Telegram bot or shown in the web dashboard. Twitter Agent Service costs $499/year (0.79 BNB) for autonomous posting, engagement, and audience growth.
 
 ### Autonomous AI Trading Agent
 An AI-powered agent for autonomous trading on Four.meme, making dynamic buy/sell decisions with independent scan and position monitor loops, AI analysis, trade memory, adaptive intelligence, trailing stop-loss, dynamic position sizing, and multi-whale copy trading. Modular agent skills allow configuration of strategy, analysis, and execution. Includes a Sniper Mode for fast, high-confidence trades, and an Anti-Repeat-Loss System to avoid re-buying losing tokens. Features Smart Money Discovery to identify and copy profitable traders.

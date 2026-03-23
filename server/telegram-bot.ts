@@ -196,6 +196,11 @@ BUILT-IN TRADING & BRIDGING:
 - Token launching: Launch tokens on Four.meme, Flap.sh, and Bankr directly from Telegram.
 - BUILD4 IS a trading platform — users can swap, bridge, and trade directly through the bot and dashboard.
 
+PRICING:
+- Agent Creation: $20 (0.032 BNB) — create an autonomous AI agent with on-chain wallet and identity.
+- Twitter Agent Service: $499/year (0.79 BNB) — autonomous posting, engagement, audience growth, and strategy execution.
+- 20% discount when paying with $BUILD4 token instead of BNB.
+
 SMART CONTRACTS (4 auditable Solidity contracts, OpenZeppelin, Hardhat):
 1. AgentEconomyHub — Core wallet layer: deposits, withdrawals, transfers, survival tiers, module authorization.
 2. SkillMarketplace — Skill trading with 3-way revenue split and on-chain settlement.
