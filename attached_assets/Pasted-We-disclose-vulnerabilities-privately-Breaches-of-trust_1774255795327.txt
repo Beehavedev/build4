@@ -1,0 +1,108 @@
+We disclose vulnerabilities privately. Breaches of trust we share publicly.
+
+This is a breach of trust.
+
+We investigated 
+@I3_Cubed
+ , which calls itself “The World’s First AI Model Nasdaq.” Because we wanted to get some inspiration, and it was being shilled by 
+@BNBchain
+.
+
+Here’s what we found all verifiable right now. 
+
+1 | The claims,
+
+* “World’s First AI Model Nasdaq”
+* “#1 AI project on Binance DappBay”
+* “1.5M+ monthly users”
+* Partnerships with CMU, Solana, BNBChain
+
+2 | Their website (http://intelligencecubed.io) publicly exposes its `.git/config`.
+
+This reveals,
+
+* Full GitHub repo URL 
+* GCloud credential helper reference
+
+Even worse,
+The entire backend is exposed via `express.static('.')`.
+Anyone can read their server code.
+
+3 | We read it.
+
+The “AI engine” is literally,
+{ from: 'var ', to: 'const ' }
+
+That’s it.
+
+* “Claude score”: hardcoded 95
+* “Cursor score”: hardcoded 72
+
+No analysis. No model. No intelligence.
+Just string replacement + fake scoring.
+
+4 | Data infrastructure?
+
+None.
+* const comparisons = []
+* const feedbacks = []
+
+Their own API currently returns:
+
+* 0 users (actual)
+
+For a product claiming 1.5M+ users.
+
+5 | On their DApp (http://intelligence3.io)
+
+Three production API keys are exposed in plain JavaScript.
+
+* config.js → 2 keys
+* api-manager.js → 1 key + backend IP
+Public. Client-side. No protection.
+
+6 | That backend IP is hardcoded. (3*.7*.1**.1**:**00)
+
+Meaning,
+Any attacker can bypass CDN/WAF protections and hit the server directly.
+
+7 | “200+ AI models”?
+
+Reality:
+A 1.15MB JS file with ~500 text descriptions.
+
+No:
+* inference endpoints
+* model weights
+* downloads
+A description is not a model.
+
+8 | Security posture
+
+* No Content-Security-Policy
+* No X-Frame-Options
+* No X-Content-Type-Options
+* CORS = wildcard
+
+This is not production grade security.
+
+9 | Summary
+
+Claims vs Reality,
+
+“AI Model Nasdaq”
+= String replacement script
+
+“1.5M+ users”
+= No database for like this nasdaq project ai .
+
+“200+ models”
+= Text entries in a JS file
+
+“Decentralized”
+= Single Express.js server
+
+10 | This is not just overhyped.
+
+It’s a complete disconnect between,what is claimed
+and what actually exists.
