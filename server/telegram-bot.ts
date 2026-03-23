@@ -1141,7 +1141,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       ];
     });
 
-    walletButtons.push([{ text: "🔑 Add Wallet", callback_data: "action:genwallet" }]);
+    walletButtons.push([{ text: "🔑 Generate New Wallet", callback_data: "action:genwallet" }, { text: "📥 Import Wallet", callback_data: "action:importwallet" }]);
     if (!solWallet) {
       walletButtons.push([{ text: "🟣 Generate SOL Wallet", callback_data: "action:gensolwallet" }]);
     }
@@ -1246,9 +1246,10 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       }
 
       const msg = await bot.sendMessage(chatId,
-        `🔐 Private Key for ${shortWallet(walletAddr)}\n\n` +
-        `${pk}\n\n` +
-        `⚠️ This message will be auto-deleted in 60 seconds. Copy it now.`
+        `🔐 *Private Key for* \`${shortWallet(walletAddr)}\`\n\n` +
+        `\`${pk}\`\n\n` +
+        `⚠️ This message will be auto-deleted in 60 seconds. Copy it now.`,
+        { parse_mode: "Markdown" }
       );
 
       setTimeout(async () => {
