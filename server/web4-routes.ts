@@ -1504,15 +1504,19 @@ ${urls}
     try {
       const category = req.query.category as string | undefined;
       const executableOnly = req.query.executable === "true";
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 200);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
       let skills;
       if (executableOnly) {
         skills = await storage.getExecutableSkills();
       } else {
-        skills = await storage.getTopSkills(100);
+        skills = await storage.getTopSkills(1000);
       }
       if (category && category !== "all") {
         skills = skills.filter(s => s.category === category);
       }
+      const total = skills.length;
+      skills = skills.slice(offset, offset + limit);
       const agents = await storage.getAllAgents();
       const agentMap = new Map(agents.map(a => [a.id, a]));
       const enriched = skills.map(s => ({
