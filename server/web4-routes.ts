@@ -508,6 +508,7 @@ ${urls}
     }
   });
 
+  const agentCreationCooldowns = new Map<string, number>();
   app.post("/api/web4/agents/create", async (req: Request, res: Response) => {
     try {
       const parsed = web4CreateAgentRequestSchema.parse(req.body);
@@ -515,6 +516,13 @@ ${urls}
       if (!/^\d+$/.test(parsed.initialDeposit)) {
         return res.status(400).json({ error: "initialDeposit must be a numeric wei string" });
       }
+
+      const rateLimitKey = parsed.creatorWallet?.toLowerCase() || req.ip || "unknown";
+      const lastCreation = agentCreationCooldowns.get(rateLimitKey);
+      if (lastCreation && Date.now() - lastCreation < 30000) {
+        return res.status(429).json({ error: "Please wait at least 30 seconds between creating agents." });
+      }
+      agentCreationCooldowns.set(rateLimitKey, Date.now());
 
       const existing = await storage.getAgentByName(parsed.name);
       if (existing) {

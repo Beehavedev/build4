@@ -499,37 +499,44 @@ async function collectLaunchFee(
     return { success: true };
   }
 
-  try {
-    const balance = await provider.getBalance(userWallet.address);
-    if (balance < TOKEN_LAUNCH_FEE) {
-      const balBnb = ethers.formatEther(balance);
-      const feeBnb = ethers.formatEther(TOKEN_LAUNCH_FEE);
-      return { success: false, error: `Insufficient balance for launch fee. Your wallet has ${balBnb} BNB but the launch fee is ${feeBnb} BNB (~$7). Fund your wallet and try again.` };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const balance = await provider.getBalance(userWallet.address);
+      if (balance < TOKEN_LAUNCH_FEE) {
+        const balBnb = ethers.formatEther(balance);
+        const feeBnb = ethers.formatEther(TOKEN_LAUNCH_FEE);
+        return { success: false, error: `Insufficient balance for launch fee. Your wallet has ${balBnb} BNB but the launch fee is ${feeBnb} BNB (~$7). Fund your wallet and try again.` };
+      }
+
+      log(`[LaunchFee] Collecting ${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB launch fee (attempt ${attempt}/3) from ${userWallet.address.substring(0, 10)}...`, "token-launcher");
+
+      const feeData = await provider.getFeeData();
+      const tx = await userWallet.sendTransaction({
+        to: treasury,
+        value: TOKEN_LAUNCH_FEE,
+        gasLimit: 21000,
+        gasPrice: feeData.gasPrice ? feeData.gasPrice * 12n / 10n : undefined,
+      });
+
+      const receipt = await tx.wait();
+      if (!receipt || receipt.status !== 1) {
+        if (attempt < 3) { await new Promise(r => setTimeout(r, 3000)); continue; }
+        return { success: false, error: "Launch fee transaction failed on-chain" };
+      }
+
+      log(`[LaunchFee] Fee collected: ${tx.hash}`, "token-launcher");
+      return { success: true, txHash: tx.hash };
+    } catch (e: any) {
+      const msg = e.message || "";
+      if (msg.includes("insufficient funds")) {
+        return { success: false, error: `Insufficient BNB for launch fee (${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB). Fund your wallet and try again.` };
+      }
+      log(`[LaunchFee] Fee attempt ${attempt}/3 failed: ${msg.substring(0, 200)}`, "token-launcher");
+      if (attempt < 3) { await new Promise(r => setTimeout(r, 3000)); continue; }
+      return { success: false, error: `Launch fee failed: ${msg.substring(0, 100)}` };
     }
-
-    log(`[LaunchFee] Collecting ${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB launch fee from ${userWallet.address.substring(0, 10)}... to treasury ${treasury.substring(0, 10)}...`, "token-launcher");
-
-    const tx = await userWallet.sendTransaction({
-      to: treasury,
-      value: TOKEN_LAUNCH_FEE,
-      gasLimit: 21000,
-    });
-
-    const receipt = await tx.wait();
-    if (!receipt || receipt.status !== 1) {
-      return { success: false, error: "Launch fee transaction failed on-chain" };
-    }
-
-    log(`[LaunchFee] Fee collected: ${tx.hash}`, "token-launcher");
-    return { success: true, txHash: tx.hash };
-  } catch (e: any) {
-    const msg = e.message || "";
-    if (msg.includes("insufficient funds")) {
-      return { success: false, error: `Insufficient BNB for launch fee (${ethers.formatEther(TOKEN_LAUNCH_FEE)} BNB). Fund your wallet and try again.` };
-    }
-    log(`[LaunchFee] Fee collection failed: ${msg.substring(0, 200)}`, "token-launcher");
-    return { success: false, error: `Launch fee failed: ${msg.substring(0, 100)}` };
   }
+  return { success: false, error: "Launch fee failed after 3 attempts" };
 }
 
 async function fourMemeLogin(wallet: ethers.Wallet): Promise<string> {
@@ -849,7 +856,7 @@ async function launchOnFourMeme(params: LaunchParams): Promise<LaunchResult> {
 
     const receipt = await Promise.race([
       tx.wait(),
-      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("TX timeout (120s)")), 120000)),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("TX timeout (180s)")), 180000)),
     ]);
 
     if (!receipt || receipt.status !== 1) {
@@ -1045,7 +1052,7 @@ async function launchOnFlapSh(params: LaunchParams): Promise<LaunchResult> {
 
     const receipt = await Promise.race([
       tx.wait(),
-      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("TX timeout (120s)")), 120000)),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("TX timeout (180s)")), 180000)),
     ]);
 
     if (!receipt || receipt.status !== 1) {

@@ -643,14 +643,18 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
   await storage.setActiveTelegramWallet(chatId.toString(), addr);
   walletsWithKey.add(`${chatId}:${addr}`);
 
-  await bot.sendMessage(chatId,
+  const pkMsg = await bot.sendMessage(chatId,
     `🔑 Wallet created!\n\n` +
     `Address:\n\`${addr}\`\n\n` +
     `Private Key:\n\`${pk}\`\n\n` +
-    `⚠️ SAVE YOUR PRIVATE KEY — it won't be shown again.\n` +
+    `⚠️ SAVE YOUR PRIVATE KEY NOW — this message will be auto-deleted in 30 seconds.\n` +
     `Send BNB to your address to fund it.`,
     { parse_mode: "Markdown" }
   );
+
+  setTimeout(() => {
+    try { bot!.deleteMessage(chatId, pkMsg.message_id); } catch {}
+  }, 30000);
 
   return addr;
 }
@@ -976,14 +980,17 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId, "🟣 Generating Solana wallet...");
     sendTyping(chatId);
     const solWallet = await getOrCreateSolanaWallet(chatId);
-    await bot.sendMessage(chatId,
+    const solPkMsg = await bot.sendMessage(chatId,
       `🟣 *Solana Wallet Created!*\n\n` +
       `Address:\n\`${solWallet.address}\`\n\n` +
       `Private Key:\n\`${solWallet.privateKey}\`\n\n` +
-      `⚠️ *SAVE YOUR PRIVATE KEY* — it won't be shown again.\n\n` +
+      `⚠️ *SAVE YOUR PRIVATE KEY NOW* — this message will be auto-deleted in 30 seconds.\n\n` +
       `This wallet is used for cross-chain bridges to Solana.`,
       { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "👛 My Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
     );
+    setTimeout(() => {
+      try { bot!.deleteMessage(chatId, solPkMsg.message_id); } catch {}
+    }, 30000);
     return;
   }
 
@@ -1248,7 +1255,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const msg = await bot.sendMessage(chatId,
         `🔐 *Private Key for* \`${shortWallet(walletAddr)}\`\n\n` +
         `\`${pk}\`\n\n` +
-        `⚠️ This message will be auto-deleted in 60 seconds. Copy it now.`,
+        `⚠️ This message will be auto-deleted in 30 seconds. Copy it now.`,
         { parse_mode: "Markdown" }
       );
 
@@ -1257,7 +1264,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           await bot.deleteMessage(chatId, msg.message_id);
           await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard() });
         } catch {}
-      }, 60000);
+      }, 30000);
     } catch (e: any) {
       log(`[TelegramBot] Export key error: ${e.message}`, "telegram");
       await bot.sendMessage(chatId, `Failed to export key: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard() });

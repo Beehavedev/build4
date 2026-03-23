@@ -1570,6 +1570,37 @@ export class DatabaseStorage implements IStorage {
     }
     if (renamedCount > 0) console.log(`[cleanup] Renamed ${renamedCount} misleadingly-named skills to honest names`);
     if (repricedCount > 0) console.log(`[cleanup] Repriced ${repricedCount} overpriced template skills to 0.0001 BNB`);
+
+    const staleBap578 = await db.update(agents)
+      .set({ bap578Registered: false })
+      .where(and(eq(agents.bap578Registered, true), isNull(agents.onchainId)))
+      .returning({ id: agents.id });
+    if (staleBap578.length > 0) {
+      console.log(`[cleanup] Reset ${staleBap578.length} stale bap578Registered flags (no onchainId)`);
+    }
+
+    const allAgentsByDate = await db.select({ id: agents.id, createdAt: agents.createdAt, bio: agents.bio, creatorWallet: agents.creatorWallet })
+      .from(agents)
+      .orderBy(agents.createdAt);
+    const botBurstIds: string[] = [];
+    for (let i = 1; i < allAgentsByDate.length; i++) {
+      const prev = new Date(allAgentsByDate[i - 1].createdAt!).getTime();
+      const curr = new Date(allAgentsByDate[i].createdAt!).getTime();
+      const gap = curr - prev;
+      if (gap < 2000) {
+        const walletI = allAgentsByDate[i].creatorWallet;
+        const walletPrev = allAgentsByDate[i - 1].creatorWallet;
+        if (walletI && walletPrev && walletI === walletPrev) {
+          botBurstIds.push(allAgentsByDate[i].id);
+        }
+      }
+    }
+    if (botBurstIds.length > 0) {
+      for (const id of botBurstIds) {
+        try { await this.deleteAgent(id); } catch {}
+      }
+      console.log(`[cleanup] Removed ${botBurstIds.length} bot-burst agents (sub-2s creation gaps from same wallet)`);
+    }
   }
 
   async seedInferenceProviders(): Promise<void> {
