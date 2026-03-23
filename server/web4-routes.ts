@@ -575,13 +575,13 @@ ${urls}
         return res.status(409).json({ error: `An agent named "${name}" already exists. Choose a different name.` });
       }
 
-      const HIRE_FEE_WEI = "950000000000000000";
+      const HIRE_FEE_WEI = "32000000000000000";
       const verification = await verifyPaymentTransaction(paymentTxHash, HIRE_FEE_WEI);
 
       if (!verification.verified) {
         return res.status(400).json({
           error: `Payment verification failed: ${verification.error}`,
-          details: { txHash: paymentTxHash, required: "0.95 BNB", sent: verification.amount },
+          details: { txHash: paymentTxHash, required: "0.032 BNB", sent: verification.amount },
         });
       }
 
@@ -605,7 +605,7 @@ ${urls}
         feeType: "agent_hire",
         amount: HIRE_FEE_WEI,
         agentId: result.agent.id,
-        description: `Agent hire fee ($599 / 0.95 BNB) for ${name.trim()}`,
+        description: `Agent hire fee ($20 / 0.032 BNB) for ${name.trim()}`,
         txHash: paymentTxHash,
         chainId: 56,
         onchainVerified: true,

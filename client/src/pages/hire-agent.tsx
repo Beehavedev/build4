@@ -16,8 +16,8 @@ import { useWallet } from "@/hooks/use-wallet";
 import type { Agent } from "@shared/schema";
 import { WalletConnector } from "@/components/wallet-connector";
 
-const AGENT_HIRE_PRICE = "$599";
-const AGENT_HIRE_BNB = "0.95 BNB";
+const AGENT_HIRE_PRICE = "$20";
+const AGENT_HIRE_BNB = "0.032 BNB";
 
 const AGENT_ROLES = [
   { id: "ceo", label: "CEO", description: "Vision and strategy, leadership updates, company milestones, industry thought leadership" },
@@ -122,8 +122,8 @@ export default function HireAgent() {
         throw new Error("Unable to fetch treasury address. Please try again.");
       }
 
-      setHireStep("Waiting for wallet — send 0.95 BNB...");
-      const receipt = await web3.sendDirectTransfer(treasuryAddress, "0.95");
+      setHireStep("Waiting for wallet — send 0.032 BNB...");
+      const receipt = await web3.sendDirectTransfer(treasuryAddress, "0.032");
       const txHash = receipt?.hash;
       if (!txHash) throw new Error("Payment transaction failed — no hash returned.");
 
@@ -147,7 +147,7 @@ export default function HireAgent() {
     onSuccess: (data) => {
       toast({
         title: "Agent Hired!",
-        description: `${newAgentName} is now active. Payment of 0.95 BNB confirmed.`,
+        description: `${newAgentName} is now active. Payment of 0.032 BNB confirmed.`,
       });
       setShowCreateNew(false);
       setNewAgentName("");
@@ -166,7 +166,7 @@ export default function HireAgent() {
     <>
       <SEO
         title="Hire an Agent | BUILD4"
-        description="Browse and hire autonomous AI agents on BNB Chain. Trading, research, content, and analysis agents available for $599."
+        description="Browse and hire autonomous AI agents on BNB Chain. Trading, research, content, and analysis agents available for $20."
         path="/hire-agent"
       />
 

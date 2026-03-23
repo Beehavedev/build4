@@ -4232,7 +4232,7 @@ async function handleAgentCreationFlow(chatId: number, text: string): Promise<vo
   }
 }
 
-const AGENT_HIRE_FEE_BNB = "0.95";
+const AGENT_HIRE_FEE_BNB = "0.032";
 
 async function collectAgentHireFee(chatId: number, walletAddress: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
   const treasuryPk = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY || process.env.CHAOS_AGENT_PRIVATE_KEY;
@@ -4263,7 +4263,7 @@ async function collectAgentHireFee(chatId: number, walletAddress: string): Promi
 
     if (balance < feeWei + ethers.parseEther("0.001")) {
       const bal = ethers.formatEther(balance);
-      return { success: false, error: `Insufficient BNB. You have ${bal} BNB but need ${AGENT_HIRE_FEE_BNB} BNB ($599). Fund your wallet and try again.` };
+      return { success: false, error: `Insufficient BNB. You have ${bal} BNB but need ${AGENT_HIRE_FEE_BNB} BNB ($20). Fund your wallet and try again.` };
     }
 
     const tx = await wallet.sendTransaction({
@@ -4294,13 +4294,13 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
     await bot.sendChatAction(chatId, "typing");
 
     await bot.sendMessage(chatId,
-      `💳 Agent creation costs $599 (${AGENT_HIRE_FEE_BNB} BNB).\n\nProcessing payment from your wallet...`
+      `💳 Agent creation costs $20 (${AGENT_HIRE_FEE_BNB} BNB).\n\nProcessing payment from your wallet...`
     );
 
     const feeResult = await collectAgentHireFee(chatId, wallet);
     if (!feeResult.success) {
       await bot.sendMessage(chatId,
-        `❌ Payment failed: ${feeResult.error}\n\nAgent creation requires $599 (${AGENT_HIRE_FEE_BNB} BNB). Make sure your wallet has enough BNB.`,
+        `❌ Payment failed: ${feeResult.error}\n\nAgent creation requires $20 (${AGENT_HIRE_FEE_BNB} BNB). Make sure your wallet has enough BNB.`,
         { reply_markup: { inline_keyboard: [[{ text: "My Wallet", callback_data: "action:wallet" }, { text: "Menu", callback_data: "action:menu" }]] } }
       );
       return;
@@ -4311,7 +4311,7 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
     const agentId = result.agent.id;
 
     let msg = `✅ Agent created!\n\n${result.agent.name} | ${shortModel(model)}\nID: ${agentId}\n`;
-    msg += `💳 Paid: $599 (${AGENT_HIRE_FEE_BNB} BNB)`;
+    msg += `💳 Paid: $20 (${AGENT_HIRE_FEE_BNB} BNB)`;
     if (feeResult.txHash) msg += `\n🔗 TX: https://bscscan.com/tx/${feeResult.txHash}`;
     msg += `\n\nRegistering on-chain...`;
 
