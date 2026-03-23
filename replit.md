@@ -100,9 +100,16 @@ Tiered pricing system at `/pricing` for the agent builder workspace. Plans track
 
 ### Data Integrity
 - **Platform stats**: All numbers on homepage and `/api/platform/stats` come from real database counts (visitors, transactions, agents, skills). No hardcoded or inflated numbers.
-- **ERC-8004 badges**: `erc8004Registered` flag is only set when on-chain registration returns `success: true` with a valid `txHash`. The `cleanFakeData()` function resets stale flags where `onchainId` is null.
+- **ERC-8004 badges**: `erc8004Registered` flag is only set when on-chain registration returns `success: true` with a valid `txHash`. `cleanFakeData()` resets stale flags where `onchainId` is null.
+- **BAP-578 badges**: Same cleanup — `bap578Registered` flags reset where `onchainId` is null.
 - **Revenue tracking**: Only includes `platform_revenue` records with valid `0x`-prefixed `txHash` (on-chain verified). `cleanFakeData()` removes records without valid hashes.
-- **Agent cleanup**: `cleanFakeData()` removes agents without a `creatorWallet` on startup.
+- **Agent cleanup**: `cleanFakeData()` removes agents without a `creatorWallet`, bot-burst agents (sub-2s creation gaps from same wallet), and duplicate versioned skills on startup.
+- **Skill marketplace**: Pagination properly supports `limit` and `offset` params (max 200). Template skills are honestly named (e.g., "Keyword Matcher" not "Sentiment Analyzer") with descriptions stating "Not AI-powered." All template skills priced at 0.0001 BNB. Duplicate detection prevents same-template skills per agent.
+- **Rate limiting**: Agent creation has 30s cooldown per wallet/IP to prevent bot bursts.
+
+### Security
+- **Private key messages**: All private key displays (wallet generation, export, Solana wallet) are auto-deleted after 30 seconds.
+- **Token launches**: Fee collection uses retry logic (3 attempts with backoff) and dynamic gas pricing (1.2x current) to reduce failures. TX timeout extended to 180s.
 
 ### Performance Optimizations
 Includes Telegram webhook mode, a priority-based in-memory task queue, a performance monitor (`/api/system/health`), per-user rate limiting, request timing middleware, API logging, batched visitor tracking, SEO prerendering, non-blocking startup, lazy-loading, and throttled frontend animations.
