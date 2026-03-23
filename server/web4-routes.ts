@@ -1791,7 +1791,7 @@ ${urls}
       const [revenueData] = (await db.execute(sql`SELECT SUM(amount::numeric) as total, COUNT(*) as cnt FROM platform_revenue`)).rows;
       const [visitorCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM visitor_logs`)).rows;
       res.json({
-        onchainUsers: 88000,
+        onchainUsers: Number(visitorCount?.cnt || 0),
         transactions: Number(txCount?.cnt || 0),
         skills: Number(skillCount?.cnt || 0),
         agents: Number(agentCount?.cnt || 0),

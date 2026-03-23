@@ -1,0 +1,104 @@
+disappointing","ugly", "boring", "stupid", "broke
+n"]; positiveWords.forEach(w => { if (lower.includes(w)) posScore++;});negati
+
+veWords.forEach(w => { if (lower.includes(w)) negScore++;});``` AI 
+used — none. A hardcoded list of 24 English words. Thiswould fail o
+n a
+
+ny language other than English, any sarcasm, anycontext-dependent sentiment, or any word not in the list. It is sold as"Sentiment Analyzer" for 0.57 BNB ($331).        Skill Pricing vs Reality   Verificationcommand  
+s://build4.io/api/marketplace/s
+
+kills?limit=100"| python
+3 -c "i
+mport sys,json; d=json.load(sys.stdin)for s in sorted(d,key=lambdax:-int(x.
+get('priceAmount','0')))[:10]:    p=int
+(s.get('priceAmount','0'))/1e18    print(f'{s[\"name\"]:35s} {p:.2f}
+BNB (\${p 580:.0f})  Purchases: {s.get(\
+"totalPurchases\",0)}')print(f'Total purchases across ALL skills: {sum(s.get(\"totalPurchases\",0)for
+ s in d)}')print(f'Skills with any rating: {sum(1 for s in d if s.get(\"totalRatings\",0)>
+0)}/100')"   Output  ```Readability Analyzer               0.59 BNB ($342)  Purchases
+:
+ 0D
+
+igest Crea
+tor
+ v89                 0.59 BNB ($342)  Purchases: 0Data Fetcher v1
+0                   0.59 BNB ($342)  Purchases: 0Feed Parser v38 
+                   0.58 BNB ($336)  Purchases: 0Sentiment Analyze
+r v21             0.57 BNB ($331)  Purchases: 0Plagiarism Detecto
+r                0.57 BNB ($331)  Purchases: 0Gas Estimator v54  
+                0.56 BNB ($325)  Purchases: 0 Total purchases acr
+oss ALL skills: 2Skills with any rating: 0/100``` 100 skills pric
+
+ed between $58 and $342 each. Total 
+purchasesacross all of them: 
+2. 
+
+Total ratings: zero. Nobody is buying these because theyare basic JavaScript functions renamed as AI tools.        Versioning Pattern 65 out of 100 skills include version numbers in their name
+
+s(v2 through v95). These 
+
+are not actual versions of improved software. They arethe same 9 templates given different names. 
+nne
+ctor" exists as v44, v55, v68, v81, v91— all identical code"Report Builder"
+ exists as v4, v47, v79, v87 — allidentical code 28 base skill name
+s generate 65 "versioned"variants, all sharing the same 9 code te
+mpl
+
+ates. ---      SECTION 3 — THE 88,000 USERS CLAIM        Finding F4 — 361 Verified Wallets v
+
+s 8
+
+8,000Claimed   Verificationcommand  ```
+
+bashcurl -s "https://build4.io/api/platform/stats" | pytho
+
+n3-c "import sys,json; d
+=json.l
+oad(sys.stdin)print(f'Claimed onchainUsers: {d[\"onchainUsers
+\"]:,}')" curl -s "https://build4.io/ap
+i/web4/agents" | python3-c "import sys,json; d=json.loa
+d
+
+(sys.stdin)wallets=set(a['creatorWallet'] for a in d ifa.g
+et('creatorWallet'))print(f'Total agent
+s: {len(d)}')print(f'Unique creator wallets: {len(wallets)}')"```   
+Output  ```Claimed onchainUsers:
+ 88,000Total agents: 419Unique creator wallets: 
+3
+61`
+
+``   Activ
+ity
+ ratios   ```Metric         
+           Value 
+              Per88K UsersA
+gen
+
+ts created         
+
+   
+ 419                0.48%Skill purchases            2       
+           0.0023%Revenue                   $141.33 
+            $0.0016BAP-578 NFAs              0        
+           0%ERC-8004 identities         0            
+      0%Data marketplace listings  0             
+     0%Bounties completed         0               
+   0%Pipelines created          0                
+  0%``` 88,000 "on-chain users" generated $141 in
+ totalrevenue, purchased 2 skills, and created ze
+ro 
+
+data listings, zero bounties, andzero pipelines. The deployer wallet has 12,208 transactions, which may be thesource of the "on-chain users" metric, counted from on-chaininteractions rather than unique addresses. ---      SECTION 4 — BAP-578 AND ERC-8004 PHANTOMSTANDARDS        Finding F5 — BAP-578 NFAs: Zer
+
+o B
+
+AP-578 (Non-Fungible Agent) is advertised as a key feat
+
+ureon both BUILD4 and Honeycomb.   Ver
+
+ificationcommand  ```bashcurl -s "https://build4.io/api/standards/bap578/nfas"| python3 -
+
+c "import sys,json; d=js
+on.load
+(sys.stdin)print(f'BAP-578 NFAs registered

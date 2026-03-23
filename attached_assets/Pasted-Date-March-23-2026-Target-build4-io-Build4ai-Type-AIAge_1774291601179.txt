@@ -1,0 +1,88 @@
+Date   March 23, 2026
+  Target   build4.io / @Build4ai
+  Type   AIAgent Economy Platform on BNB Chain, Base, XLayer 
+ Investigator   Mefai Security Research 
+ Status   All findings verified live with reproduciblecommands  
+Related   thehoneycomb.social (same infrastructure, sameteam) EX
+
+ECUTIVE SUMMARY B
+
+UILD4 presents itself as "Infrastructure forself-improving, self-replicating, autonomous AI agents" with a "SkillMarketplace" containing 33,459 skills, 88,000 on-chain users, and supportfor BAP-578 and ERC-8004 standards. Our
+
+ investigation reveals that BUILD4 shares the same server(34.111.179.208) as The Honeycomb Social, a platform we previously reported forcritical security vulnerabilities including plaintext private key exposure.While BUILD4 is technically more sophisticated than Honeycomb in several areas,it contains its own set of critical misrepresentations. The mo
+
+st significant finding is that the claimed 33,459skills do not exist. The pagination system returns the same 100 skills at everyoffset. Those 100 skills are built from only 9 JavaScript code templates, noneof which contain any AI or machine learning functionality. A "SentimentAnalyzer" priced at 0.57 BNB ($331) checks for 12 hardcoded words like"good" and "awful." A "Plagiarism Detector"counts words. A "Function Generator" returns 8 pre-written codesnippets.       SECTIO
+
+
+N 1 — SAME INFRASTRUCTURE AS HONEYCOMB        Fin
+
+ding F1 — Identical Server BUILD4 an
+
+d Honeycomb run on the same server. This wasverified through DNS, Replit verification tokens, nameservers, and backendfingerprinting.   Verifica
+
+tioncommand  ```bashdig 
+thehone
+ycomb.social A +short   Output: 
+34.111.179.208 dig build4
+
+.io A +short   Output:
+ 34.111.179.208```   Full
+inf
+
+rastructure comparison   
+   
+          thehoneycomb.social          build4.ioIP Address
+          34.111.179.208              34.111.179.208         MATCHNameservers 
+        ns1cny.name.com             ns1cny.name.com        MATCH              
+     ns2ckr.name.com             ns2ckr.name.com         MATCH                
+   ns3jkl.name.com             ns3jkl.name.com         MATCH                  
+ ns4hny.name.com             ns4hny.name.com         MATCHBackend             
+Express                    Express                 MATCHHosting             Re
+plit(Google Cloud)         Replit (Google Cloud)   MATCHMX Records          Non
+e                       None                    MATCHSSL Issuer          Let's
+ EncryptE7             Let's Encrypt E8       SAME PROVIDERReplit ID          da4fe5d0
+-6e96-4cd4-...       cc1a63c2-8162-4eb0-... DIFFERENT IDs   Verificationcommand for
+ Re
+
+plit  ```bashdig thehoneycomb.socia
+l TXT +
+short   "replit-verify=da4fe5d0-6e
+96-4cd4-a788-88203de4b81c" dig build4.io TXT +short   "
+
+replit-verify=cc1a63c2-8
+162-4eb0-9328-bf25c1af4498"``` Different Replit project
+ ID
+
+s confirm these are two separateReplit deployments routed to the same IP address by the same team using thesame registrar (Name.com) and the same nameservers.   Domainregistration  ```bui
+
+ld4.io  Registrar: Name
+.co
+m, Inc.  
+Created: 2026-02-20  Privac
+y: Domain Protection 
+Services, Inc. (Colorado)``` The domain was created on
+ Fe
+
+bruary 20, 2026 — approximatelyone month before this investigation. ---      SECTION 2 — THE 33,
+
+459
+
+ SKILLS LIE        Finding F2 — Pagina
+
+tion Returns Same Data atEvery Offset The platform claims 33,459
+
+ skills in its marketplace. Thisnumber is fabricated. The API pagination is non-functional and returns the sameset of skills regardless of the offset parameter.   Verificationcommand  ```b
+
+ash   Request skills at 
+6 diffe
+rent offsetsfor offset in 0 500 5000 150
+00 25000 33000; do  curl -s "https://build4.io
+/api/marketplace/skills?limit=3&offset=$offset"| \    python3 -c "import sys,js
+on;d=json.load(sys.stdin); print(f'Offset {offset}: {[s[\"id\"][:12] fors in d]}')"done```   Output  ```Offset    
+ 0: 
+['c
+
+ae97218-7e
+6',
+ '6933117e-b77','8c71177f-cc3']Offset   500: ['cae97218-7e6', 
+'6933117e-b77','8c71177f-cc3']Offset  5000: ['cae97218-7e6',

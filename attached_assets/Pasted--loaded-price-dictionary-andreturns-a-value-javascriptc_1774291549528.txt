@@ -1,0 +1,106 @@
+-loaded price dictionary andreturns a value. ```javascriptconst prices = __EXTERNAL_DATA__.cryptoPrices ||
+
+ {};const tok
+en = (input.token || "BNB").toUpperCase();const toke
+nData = prices[token];// ... if token in dictionary
+, return price. That is all.``` 
+AI used — none. This is a dictionary key lookup. Anydevel
+ope
+
+r would write this in 30 seconds.   Template 2 —"Record Merger", "CSV Column Swapper" (14 skil
+
+ls)   
+ input.operat
+ion || "sort";if (operation ==
+= "sort") {  __result__ = { data: [...data].
+sort((a, b) => ...)};} A
+I used — none. JavaScript Array.sort(), Array.filter(),
+ 
+and
+
+Object grouping. Built-in language features.   Template 3 —"Plagiarism Detector", "Sentiment Analyzer" (1
+
+3 skills)   Sold as AI-powered text analysis. Actual implementationcount
+
+s words. 
+t.split(/\s+/
+).filter(w => w.length >0);con
+st sentences = text.split(/[.!?]+/).filter(s => s.trim().l
+ength> 0);const avgWordLen = words.reduce((s, w) => s + w.length, 0)/ wo
+rds.length; AI used — none. String.split() and basic arithmetic. A"Plag
+iar
+
+ism Detector" that cannot detect plagiarism. A"Sentiment Analyzer" that does not analyze sentiment (the actualsentiment analysis is in Template 9 with 12 hardcoded words).   Template 4 —"Report Builder", "Table Generator" (13 skills)   
+
+```javascriptif (format === "csv") {  const headers = Object.key
+
+s(data[0]);  
+const rows = data.map(r
+ow => headers.map(h => String(row[h])).
+join(","));}``` AI used — none. JSON to CSV/Markdown string conversion.   T
+e
+mpl
+
+ate 5 —"Info Harvester", "Data Miner", "EntityExtractor
+
+" (11 skills)   Sold as data extraction AI. Actual implementation is regexmatch
+
+ing with 8 hardcoded patterns. 
+A-Z0-9.-]+\.[
+a-zA-Z]{2,}/g,  ur
+l: /https?:\/\/[^\s<>"{}|\\^\x60]+/g,  phone: /\+?[\d][\d\-
+\s().]{7,}\d/g,  // ... 5 more hardcoded 
+regex patterns}; AI used — none. R
+egular expressions available in everypro
+gr
+amm
+
+ing language since the 1970s.   Template 6 —"API Connector", "Feed Parser", "Data Fetcher"(1
+
+1 skills)   
+yOfWeek: ["Su
+nday","Monday"...][d.ge
+tUTCDay()]}; AI used — none. new Date() formatting. Returns what day of
+the
+
+ week it is.   Template 7 —"Function Generator", "Code Formatter" (6 skills)
+
+   Sold as AI code generation. Returns 8 pre-written snippetsfrom 
+
+a dictionary. ```javascriptconst templates = {  "sort": "const result = arr.s
+
+ort((a,b) => 
+a - b);",  "reverse
+": "const result =str.split('').reverse().join('');", 
+ "fibonacci": "function fib(n) { if (n<= 1) return n; return fib
+(n-1) + fib(n-2); }",  // ... 5 more hardcoded snippets};for (const [key, template] of 
+Object.entries(templates)) {  if (
+ta
+skLower.includes(key.toLowerCase())) { code = template;bre
+ak; }}``` AI used — none. A string-matching dictionary with 8 entries.If
+ 
+inp
+
+ut contains "sort", return sort snippet. If input contains"fibonacci", return fibonacci snippet. This is sold as "codegeneration" for 0.41 BNB ($238).   Template 8 —"Article Condenser", "Brief Generator" (6 skills)   ``
+
+`javascriptconst scored = sentences.map((s, i) => {  let score = 0
+
+;  s.split(/\
+s+/).forEach(w => { score += (words[lw]|
+| 0); });  if (i
+ === 0) score  = 1.5;  return { sentence: s, score };});``` AI
+ used — none. Extractive sum
+marization by word frequency.Pic
+ks 
+sen
+
+tences that contain the most repeated words. First sentence gets 1.5xbonus. This is a technique from the 1950s.   Template 9 —"Sentiment Analyzer", "Type Classifier" (6 skills)   Th
+
+e only template that attempts classification.Implementation is 12 h
+
+ardcoded positive words and 12 hardcoded negative words. ```javascriptconst positiveWords = ["good", "great", "excellent","ama
+
+zing", "love"
+,  "best", "happy", "wonderful","fantastic", "awesome", "brilliant", "p
+erfect"];const negativeWords = ["bad", "terrible","awful", "hate", "worst",  "ho
+rrible", "poor",

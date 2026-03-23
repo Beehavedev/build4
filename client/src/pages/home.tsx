@@ -188,9 +188,9 @@ function PlatformStats() {
   const stats = data
     ? [
         { key: "onchainUsers", value: formatNum(data.onchainUsers), icon: Users },
-        { key: "transactions", value: formatNum(data.transactions + 100000), icon: Activity },
-        { key: "skillsCreated", value: formatNum(data.skillPurchases + 5000), icon: Cpu },
-        { key: "activeAgents", value: formatNum(Math.round(data.onchainUsers * 0.8)), icon: Bot },
+        { key: "transactions", value: formatNum(data.transactions), icon: Activity },
+        { key: "skillsCreated", value: formatNum(data.skills), icon: Cpu },
+        { key: "activeAgents", value: formatNum(data.agents), icon: Bot },
       ]
     : defaultStats;
 

@@ -1,0 +1,125 @@
+: {len(d) ifisinstance(d,l
+ist) else d}')"```   Output  ```BAP-578
+ NFAs registered: 0``` 419 agents on the platform. Zero BAP-578 NFAs. Th
+e
+ fe
+
+aturedoes 
+not
+ function.        Finding 
+F6 
+
+— ERC-8004: Database Says Yes,Blockchain Says No 20 agents have `erc8004Regis
+
+tered: true` in the database.However, all 20 have onchainId: None
+
+ and the identities endpoint returns zeroresults.   Verificationcommand  
+ld4.io/api/web4/agents" 
+| pytho
+n3-c "import sys,json; d=json.load(sys.stdin)e
+rc=[a for a in d if a.get('erc8004Registered')]print(f'Age
+nts with erc8004Registered=true: {len(e
+rc)}')for a in erc[:5]:    print(f'  {a[\"name\"
+]:20s}onchainId: {a.get(\"onchainId\")}')"    Check actu
+al on-chain ident
+itiescurl -s "https://build4.io/api/standards/erc8004/identities"| 
+p
+
+ython3 -c "import sys,json; d=json.
+load(sys.stdin)print(f'Actual ERC-8004 identities on-chain: {len(d) ifisins
+tance(d,list) else d}')"   Output  `
+``Agents with erc8004Registered=true: 20  TSTB4               onchainId: None  SkyAI
+ 
+   
+
+          
+ on
+chainId: None  SkyAgent            onc
+hainId: None  BT4                 onch
+ainId: None  BT44                oncha
+inId: None Actual ERC-8004 identities 
+on-chain: 0``` The database flag says 
+"registered." Theblockchain says "no."
+
+ Every single one of these 20 agents h
+as 
+
+onchainId:None. The platform displays an ERC-8004 badge on agent profiles based on thedatabase flag, not on actual on-chain verification. ---      SECTION 5 — AGENT CREATION BOT ACTIVITY        Finding F7 — March 2 Burst: 181 Agents, 0.3Secon
+
+d G
+
+aps   Verificationcommand  ```bashcurl -s "h
+
+ttps://build4.io/api/web4/agents" | python3-c "import sys,json
+
+from datetime import dat
+etimed=
+json.load(sys.stdin)mar2=[a for a in d ifa['createdAt'].st
+artswith('2026-
+03-02')]mar2.sort(key=lambda 
+a:a['createdAt'])times
+=[datetime.fromisoformat(a['createdAt'].replace('Z','+00:00'))
+for a in mar2]gaps=[(times[i+1]-times[
+i]).total_seconds() for i inrange(len(times)-1)]hours={}for a in mar2:    h=a['cre
+atedAt'][11:13]    hours[h]=hours.get(h,0)+1print(f'March 2 agents: {len(
+mar2)}')
+print(f'Hour 2
+1:00 alone: {hours.get(\"21
+\",0)}')print(f'Minimum gap: 
+{min(gaps):.1f} seconds')print(f'Gaps
+ < 10 seconds: {sum(1 for g in gaps ifg<10)}/{len
+(gaps)}')print(f'No bio: {sum(1 for a in mar2 
+if not a.get(\"bio\"))}/{len(mar2)}')"```   Output  ```March 2 agents: 
+181Hour 21:00 alone: 96Minimum gap: 0.3 secondsGaps < 10 seconds: 38/180 (
+2
+1%)
+
+No bio: 49
+/18
+1```   Per-hourdist
+ribution on March 2 
+ 10:00    3...21:00   96  ← 96 a
+gents in one h
+our
+
+22:00   2223:00    8 96 agents cr
+eat
+ed between
+ 21:00 and
+ 22:00 UTC
+, w
+ith gaps assmall as 0.3 seconds. 21
+% of all c
+reation ga
+ps 
+
+are under 10 seconds. No humancreates accounts at 0.3-second intervals. This is automated script activity. ---      SECTION 6 — TOKEN LAUNCHES        Finding F8 — 74% Failure Rate   Verificationcommand  ```bashcurl
+
+ -s
+
+ "https://build4.io/api/token-l
+
+auncher/launches"| python3 -c "impor
+
+t sys,json; d=json.load(
+sys.std
+in)launched=[t for t in d if t['status']=='launched']failed=[t for t i
+n d if t['status']=='failed']print(f'To
+tal: {len(d)}, Launched: {len(launched)}, Failed:{
+len(failed)}')for t in launched[:5]:    print(
+f'  {t[\"tokenName\"]}({t[\"tokenSymbol\"]}) → {t.get(\"tokenAddress\",\"no
+ne\")}')"```   Output 
+ 6
+785
+
+03e0174444
+  F
+REEDOM (FREEDOM) →0x67e4c7E7b6B0a34
+31Dd9FEd80df2C56EcDfb4444  Build4ai (BUILD4) →0x0357031615a6F803abf0A5
+3d2A2C235218A04444  Palu Agent (PALUAGENT) →0x8d5363d949a5783aA3
+555fef6060E83AA3684444  AIBinance (AIBINANCE) →0xa46c7Ece356699b
+82a039F9C2e28589de0654444 13 successful launches were verified on-
+chain. All four.memetokens have 3,822 bytes of contract code (four.m
+eme
+
+ factory standard) and validTX hashes. The token launch feature partially works but has a 74% failure rate.   On-chain tokenverification

@@ -1,0 +1,136 @@
+```bashpython3 -c "from web3 import Web3w3=Web3(Web3.HTTPProvider('https://bsc-dat
+
+aseed.binance.org/'))for name,a
+ddr in[
+('BUILD4','0
+x0357031615a6F803abf0
+A53d2A2C235218A04444'),                 ('WOMEN','0x1c2d6721234
+2aDaC7173A1dF2D678503e0174444')]:   code=w3.eth.get_code(Web3.to_checksum_
+address(addr))    print(f'{name}: {len(code)} bytes on-chain —CONFIRMED')"
+``` 2 bytes on-chain — CONFIRMED ---      SECTION 7 — REVENUE
+ 
+ANA
+
+LYS
+IS        Finding F9 — $141 Total Reven
+ue   Verificationcommand  -s 
+
+"ht
+
+tps://build4.io/api/web4/revenue/
+
+summary"| python3 -c "import sys,json;
+
+ d=json.load(sys.stdin)t
+otal=in
+t(d['totalRevenue'])print(f'Total revenue: {total/1e18:.4f} BNB (\$
+{total/1e18 580:.2f})')for k,v in d['by
+FeeType'].items():    print(
+f'  {k:25s} {int(v)/1e18:.4f} BNB({int(v) 100//total:.0f}%)')"   Ou
+tput  ```Total revenue: 0.2437 BNB
+ ($141.33)  skill_listing            0.1653 BNB (67%)  skill_purchase   
+ 
+   
+
+    0.0456
+ BN
+B (18%)  gas_reimbursement         
+0.0200BNB (8%)  evolution                0.0
+085 BNB (3%)  agent_creation           0.003
+9 BNB (1%)  inference                0.0004
+ BNB (0%)``` 67% of revenue comes from skil
+l listing fees, not fromactual skill usage.
+ Inference revenue is 0.0004 BNB ($0.23). F
+rom
+
+ a platformadvertising "decentralized inference" as a core feature. ---      SECTION 8 — WHAT BUILD4 DOES BETTER THANHONEYCOMB To be fair, BUILD4 is technically superior to Honeycomb insev
+
+era
+
+l measurable ways.   Verificationcommands and results  
+
+ ```bash   Smart contracts — real sizespython3 -c "from web3 import Web3w3=Web3(Web
+
+3.HTTPProvider('https://bsc-dataseed.
+
+binance
+.org/'))contracts={'AgentEconom
+yHub':'0x9Ba
+5F28a8Bcc4893E05C7bd2
+9Fd8CAA2C45CF606',          'SkillMarketplace':'0xa6996A83B3909
+Ff12643A4a125eA2704097B0dD3',          'AgentReplication':'0xE49B8Be8416d5
+3D4E0042ea6DEe7727241396b73',          'ConstitutionRegistry':'0x784dB7d652
+59069353eBf05eF17aA51CEfCCaA31',           'HoneycombNFA':'0xd7Deb29ddBB136
+07375Ce50405A574AC2f7d978d'}for n,a in contracts.items():    c=w3.eth.get_code(
+Web3.to_checksum_address(a))    print(f'{n:25s} {len(c):>5} bytes')"``` 
+```AgentEconomyHub           
+4779 bytes    ← Real contractSkillMarketplace     
+      6025bytes    ← Real contractAgent
+R
+epl
+
+ica
+tion           3828bytes    ← Real contractConstitutionR
+egistry       2252 bytes   ← Real contractHoneycomb NFA 
+             708 bytes    ← Suspiciously small``` BUILD4
+ contracts are legitimate sizes for their claimedfunctio
+nality. Honeycomb's NFA contract at 708 bytes remains anomalo
+us.
+
+ ```bash   Web3 libraries in frontendgrep -oiP '(ethers|metamask|walletconnect)' /tmp/build4-bundle.js| sort -u``````MetaMaskWa
+
+lletCon
+nectethersmetamaskwalletconne
+ct``` BUILD4 has actual web3 integration. Honeycomb has none. ```bash   Sec
+uri
+ty 
+headersc
+url -sI "http
+s://bu
+ild4.io/
+" | grep -iP 
+'(c
+
+ontent-security|x-frame|x-content|x-xss)'``````content-
+
+securit
+y-policy: default-s
+rc 'self'; script-src'self' 'unsafe-inline'...x-content-type-options: nosniffx-frame-
+opt
+ion
+s: DENYx-xss-protection: 1; mode=block``` BUILD4 has proper security headers. Hon
+eycomb has none. ```bash   AI m
+odels on agentscurl -
+s "https://build4.io/api/web4/a
+gen
+
+ts" | python3-c "import sys,json; d=json.load(sys.stdin
+
+)models
+={}for a in d:    m=a.
+get('modelType','none')    models[m]=models.get(m,0)+1for 
+m,c in sorted(models.items(),key=lambda
+ x:-x[1])
+:    print(
+f'  {m}: {c} agents')"``````  m
+eta-llama/Llama-3.1-70B-Instruc
+t: 304  deepseek-ai/DeepSeek-V3: 89  Qwen/Qwen2.5-72B
+-Instruct: 25  meta-llama/Llama
+-
+3.3
+-70
+B-Instruct: 1``` All 419 agents have AI 
+models assigned. Honeycomb's 
+18agents are all STATIC with ze
+ro models. ---      SECTION 9 — COMPLE
+TE 
+
+FINDINGS TABLE ```ID    SEVERITY    FINDING                                            VERIFIC
+
+ATI
+
+ONF1    CRITICAL    Same IP as Honeycomb
+
+(34
+.111.179.208)                 dig A+shortF2    CRITICAL    33,459 skills FAKE —same 
+100 at all offsets

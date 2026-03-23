@@ -98,6 +98,12 @@ Tiered pricing system at `/pricing` for the agent builder workspace. Plans track
 - **API**: `GET /api/workspace/plan/:wallet`, `POST /api/workspace/upgrade`, `POST /api/workspace/usage`.
 - **Builder Integration**: Status bar shows current plan, deploy and AI chat check usage limits, upgrade prompts link to `/pricing`.
 
+### Data Integrity
+- **Platform stats**: All numbers on homepage and `/api/platform/stats` come from real database counts (visitors, transactions, agents, skills). No hardcoded or inflated numbers.
+- **ERC-8004 badges**: `erc8004Registered` flag is only set when on-chain registration returns `success: true` with a valid `txHash`. The `cleanFakeData()` function resets stale flags where `onchainId` is null.
+- **Revenue tracking**: Only includes `platform_revenue` records with valid `0x`-prefixed `txHash` (on-chain verified). `cleanFakeData()` removes records without valid hashes.
+- **Agent cleanup**: `cleanFakeData()` removes agents without a `creatorWallet` on startup.
+
 ### Performance Optimizations
 Includes Telegram webhook mode, a priority-based in-memory task queue, a performance monitor (`/api/system/health`), per-user rate limiting, request timing middleware, API logging, batched visitor tracking, SEO prerendering, non-blocking startup, lazy-loading, and throttled frontend animations.
 

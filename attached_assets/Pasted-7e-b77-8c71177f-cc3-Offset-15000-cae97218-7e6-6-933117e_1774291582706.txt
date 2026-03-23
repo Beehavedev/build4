@@ -1,0 +1,88 @@
+7e-b77','8c71177f-cc3']Offset 15000: ['cae97218-7e6', '6
+933117e-b77','8c71177f-cc3']Offset 25000: ['cae97218-7e6', '69
+33117e-b77','8c71177f-cc3']Offset 33000: ['cae97218-7e6', '693
+3117e-b77','8c71177f-cc3']``` The same skill IDs appear at off
+set
+
+ 0, 500, 5,000, 15,000,25,000 and 33,000. The first skill is always `cae97218-7e6d-4742-9f72-5fd710eccb7c`named "Function Generator v50."   Cross-verificationwith full ID set
+
+  /market
+place/skills?limit=100&offset=0"| \  python3 -c "import sys,json; ids=set
+(s['id'] fors in json.load(sys.stdin)); print(f'Unique IDs at offset 0: {len(ids)}')" curl -s "https://build4.io/api/marketp
+
+lace/skills?limit=100&offset=33000"| \  python3 -c "import sys,json; ids=set(
+s['id'] fors in json.load(sys.stdin)); print(f'Unique IDs at offset 33000:{len(ids)}')" IDs
+
+ at
+ offset 33000: 100Overlap: 
+100/100 (identical sets)   C
+laimed vsverified  lls
+
+:     33,459Actual uniq
+ue 
+IDs:  ~100Inflation factor
+:   335x The marketpl
+ace stats endpoint repor
+ts 
+
+33,459 skills, butonly approximately 100 unique skills exist in the database. The paginationignores the offset parameter entirely and always returns the same result set. ---        Finding F3 — All 100 Skills A
+
+re 
+
+9 JavaScriptTemplates With Zero AI The 100 unique skills are not 100 uniqu
+
+e programs. They arebuilt from exactly 9 code templates, copied and renamed with different namesand version numbers. None of the 9 templates contain any AI, machine learning,neural network, or LLM functionality.   Verificationcommand  ```bashcurl -s "ht
+
+tps://build4.io/api/mark
+etplace
+/skills?limit=100"| python3 -c "import sys,json,hashlibd=json.load(sys.stdi
+n)templates={}for s in 
+d:   h=hashlib.md5(s.g
+et('code',''
+).encode())
+.hexdigest()[:8]    templates.setdefault(h,[]).append(s['nam
+e'])print(f'100 skills share {len(templates)} un
+ique codetemplates')for h,names in sorted(templates.items(),key=l
+ambdax:-len(x[1])):    print(f'  Template {h}: {len(names)}skills
+ - {names[:3]}...')"```   Output  ```100 skills share 9 unique cod
+e
+ te
+
+mplates  T
+emp
+late b91bd62a: 20 skills - Whale Movemen
+tSniffer, Gas Estimator v54, Token Tracker v88...  Template 61b1983d: 14 skills - Record Merger 
+v80, CSVColumn Swapper, CSV Column Merger...  Template 515817c3: 13 skills - Plagiarism Dete
+ctor,Sentiment Analyzer v21, Text Pattern Scanner...  Template 22a981b4: 13 skills - Report Builder v
+4,Table Generator v95, Output Formatter v63...  Template 5a203876: 11 skills - Info Harvester v8
+4,Data Miner v12, Entity Extractor v95...  Template dcfa4e50: 11 skills - Feed Parser v38, A
+PIConnector v55, Data Fetcher v61...  Template 92098d77:  6 skills - FunctionGenerator v
+50, Template Engine v48, Code Formatter v86...  Template b0ba64b6:  6 skills - ArticleCondenser, Di
+gest Creator v17, Brief Generator v94...  Template fc493930:  6 skills - Pattern Matcherv19, T
+ype Classifier v16, Category Sorter v92...``` Zero templates used by only one skill. Every single
+ te
+
+mplateis shared across multiple skills with different names.   AI keyword searchacross all skill code  ```bashcurl 
+
+-s "https://build4.io/api/marketplace/skill
+s?limit
+=100"| python3 -c "import sys,jsond=json.load(sys.stdin)keywords=['llm','op
+enai','anthropi
+c','claude','gpt','inf
+erence','predict',         'neural','embedding','transformer','prompt','co
+mpletion','generate',         'deepseek','llama','fetch(','axios','await']for 
+s in d:    code=s.get('code','').lower()    found=[k f
+or k in key
+words if k in code]    if found: 
+print(f'{s[\"name\"]}:{found}')"```   Output
+   Zero matches. No skill contains any referen
+c
+eto
+
+ AI models, API calls, or machine learning functionality. The only"http" matches found are inside a URL-detection regex pattern, notactual HTTP calls.        The 9 Templates — What They Actually Do   Template 1 
+
+—"Whale Movement Sniffer", "Gas Estimator", "T
+
+okenTracker" (20 skills)   Used by 20 skills with names suggesting sophisticatedblockch
+
+ain analytics. Actual code reads a pre

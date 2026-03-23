@@ -1483,6 +1483,14 @@ export class DatabaseStorage implements IStorage {
     if (inflatedRevenue.length > 0) {
       console.log(`[cleanup] Removed ${inflatedRevenue.length} inflated skill_listing records from old fee rates`);
     }
+
+    const staleErc8004 = await db.update(agents)
+      .set({ erc8004Registered: false })
+      .where(and(eq(agents.erc8004Registered, true), isNull(agents.onchainId)))
+      .returning({ id: agents.id });
+    if (staleErc8004.length > 0) {
+      console.log(`[cleanup] Reset ${staleErc8004.length} stale erc8004Registered flags (no onchainId)`);
+    }
   }
 
   async seedInferenceProviders(): Promise<void> {
