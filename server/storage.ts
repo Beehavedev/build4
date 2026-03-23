@@ -1491,6 +1491,38 @@ export class DatabaseStorage implements IStorage {
     if (staleErc8004.length > 0) {
       console.log(`[cleanup] Reset ${staleErc8004.length} stale erc8004Registered flags (no onchainId)`);
     }
+
+    const allSkills = await db.select({ id: agentSkills.id, agentId: agentSkills.agentId, name: agentSkills.name, code: agentSkills.code, createdAt: agentSkills.createdAt }).from(agentSkills);
+    const seen = new Map<string, string>();
+    const dupeIds: string[] = [];
+    const sorted = allSkills.sort((a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime());
+    for (const skill of sorted) {
+      const baseName = skill.name.replace(/\s*v\d+$/, '').toLowerCase().trim();
+      const key = `${skill.agentId}:${baseName}`;
+      if (seen.has(key)) {
+        dupeIds.push(skill.id);
+      } else {
+        seen.set(key, skill.id);
+      }
+    }
+    if (dupeIds.length > 0) {
+      for (const id of dupeIds) {
+        try {
+          await db.delete(skillExecutions).where(sql`skill_id = ${id}`);
+          await db.delete(agentSkills).where(eq(agentSkills.id, id));
+        } catch {}
+      }
+      console.log(`[cleanup] Removed ${dupeIds.length} duplicate versioned skills`);
+    }
+
+    const versionedSkills = await db.select({ id: agentSkills.id, name: agentSkills.name }).from(agentSkills).where(sql`name ~ '\\sv\\d+$'`);
+    if (versionedSkills.length > 0) {
+      for (const skill of versionedSkills) {
+        const cleanName = skill.name.replace(/\s*v\d+$/, '');
+        await db.update(agentSkills).set({ name: cleanName }).where(eq(agentSkills.id, skill.id));
+      }
+      console.log(`[cleanup] Renamed ${versionedSkills.length} skills to remove fake version numbers`);
+    }
   }
 
   async seedInferenceProviders(): Promise<void> {

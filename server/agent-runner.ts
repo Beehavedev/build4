@@ -530,10 +530,20 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           "web-data": ["Web Scraper", "API Connector", "Feed Parser", "Data Fetcher"],
         };
         const catNames = categoryNames[category!] || [`${category} Tool`];
-        const fallbackName = `${catNames[Math.floor(Math.random() * catNames.length)]} v${Math.floor(Math.random() * 99) + 1}`;
+        const fallbackName = catNames[Math.floor(Math.random() * catNames.length)];
         const skillName = (skillNameMatch ? skillNameMatch[1].trim().substring(0, 50) : fallbackName);
         const skillDesc = (descMatch ? descMatch[1].trim() : `${category} skill by ${agent.name} — processes input and returns structured results`);
-        const price = (Math.floor(Math.random() * 50) + 10) + "0000000000000000";
+        const price = (Math.floor(Math.random() * 5) + 1) + "00000000000000";
+
+        const existingSkills = await storage.getAgentSkills(agent.id);
+        const isDuplicate = existingSkills.some(s =>
+          s.name.replace(/\s*v\d+$/, '') === skillName.replace(/\s*v\d+$/, '') ||
+          s.code === skillCode
+        );
+        if (isDuplicate) {
+          log(`[Agent ${agent.name}] Skipping duplicate skill: ${skillName}`, "agent-runner");
+          break;
+        }
 
         const updatedWallet = await storage.getWallet(agent.id);
         const currentBalance = BigInt(updatedWallet?.balance || wallet.balance);
