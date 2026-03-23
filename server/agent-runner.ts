@@ -518,22 +518,35 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         }
 
         const categoryNames: Record<string, string[]> = {
-          "text-analysis": ["Sentiment Analyzer", "Text Pattern Scanner", "Keyword Density Checker", "Readability Scorer"],
-          "code-generation": ["Code Formatter", "Function Generator", "Snippet Builder", "Template Engine"],
-          "data-transform": ["Data Normalizer", "Schema Converter", "Record Merger", "Format Translator"],
-          "math-compute": ["Statistics Calculator", "Number Cruncher", "Metric Aggregator", "Ratio Analyzer"],
-          "summarization": ["Brief Generator", "Key Point Extractor", "Digest Creator", "Summary Engine"],
-          "classification": ["Category Sorter", "Label Assigner", "Type Classifier", "Pattern Matcher"],
-          "extraction": ["Entity Extractor", "Data Miner", "Field Parser", "Info Harvester"],
-          "formatting": ["Output Formatter", "Report Builder", "Table Generator", "Layout Engine"],
-          "crypto-data": ["Chain Monitor", "Token Tracker", "Gas Estimator", "Block Analyzer"],
-          "web-data": ["Web Scraper", "API Connector", "Feed Parser", "Data Fetcher"],
+          "text-analysis": ["Word Counter", "Text Stats"],
+          "code-generation": ["Code Snippet Lookup"],
+          "data-transform": ["Array Sorter", "Data Filter"],
+          "math-compute": ["Stats Calculator", "Math Evaluator"],
+          "summarization": ["Extractive Summarizer"],
+          "classification": ["Keyword Matcher"],
+          "extraction": ["Regex Extractor", "Pattern Finder"],
+          "formatting": ["CSV Formatter", "Markdown Table Builder"],
+          "crypto-data": ["Price Lookup"],
+          "web-data": ["Timestamp Utility", "Market Summary"],
         };
-        const catNames = categoryNames[category!] || [`${category} Tool`];
+        const categoryDescs: Record<string, string> = {
+          "text-analysis": "Counts words, sentences, and character frequency using string operations. Not AI-powered.",
+          "code-generation": "Returns pre-written code snippets from a dictionary of 8 common patterns. Not AI-powered.",
+          "data-transform": "Sorts, filters, groups, or computes stats on arrays using built-in JS methods. Not AI-powered.",
+          "math-compute": "Evaluates math expressions or computes basic statistics (mean, median, stddev). Not AI-powered.",
+          "summarization": "Extracts top sentences by word frequency. Simple extractive method, not AI-powered.",
+          "classification": "Matches text against 24 hardcoded positive/negative keywords. Not AI-powered.",
+          "extraction": "Extracts emails, URLs, phones, etc. using regex patterns. Not AI-powered.",
+          "formatting": "Converts JSON data to CSV or Markdown table format. Not AI-powered.",
+          "crypto-data": "Looks up token prices from a cached price dictionary. Not AI-powered.",
+          "web-data": "Returns current timestamp or cached market summary data. Not AI-powered.",
+        };
+        const catNames = categoryNames[category!] || [`${category} Utility`];
         const fallbackName = catNames[Math.floor(Math.random() * catNames.length)];
         const skillName = (skillNameMatch ? skillNameMatch[1].trim().substring(0, 50) : fallbackName);
-        const skillDesc = (descMatch ? descMatch[1].trim() : `${category} skill by ${agent.name} — processes input and returns structured results`);
-        const price = (Math.floor(Math.random() * 5) + 1) + "00000000000000";
+        const templateDesc = categoryDescs[category!] || `Basic ${category} utility by ${agent.name}. Uses simple logic, not AI.`;
+        const skillDesc = isAiGenerated ? (descMatch ? descMatch[1].trim() : templateDesc) : templateDesc;
+        const price = "100000000000000";
 
         const existingSkills = await storage.getAgentSkills(agent.id);
         const isDuplicate = existingSkills.some(s =>

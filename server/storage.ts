@@ -1523,6 +1523,53 @@ export class DatabaseStorage implements IStorage {
       }
       console.log(`[cleanup] Renamed ${versionedSkills.length} skills to remove fake version numbers`);
     }
+
+    const misleadingNames: Record<string, { newName: string; desc: string }> = {
+      "sentiment analyzer": { newName: "Keyword Matcher", desc: "Matches text against 24 hardcoded positive/negative keywords. Not AI-powered." },
+      "text pattern scanner": { newName: "Text Stats", desc: "Counts words, sentences, and character frequency using string operations. Not AI-powered." },
+      "keyword density checker": { newName: "Word Counter", desc: "Counts words, sentences, and character frequency using string operations. Not AI-powered." },
+      "readability scorer": { newName: "Text Stats", desc: "Counts words, sentences, and character frequency using string operations. Not AI-powered." },
+      "readability analyzer": { newName: "Text Stats", desc: "Counts words, sentences, and character frequency using string operations. Not AI-powered." },
+      "plagiarism detector": { newName: "Word Counter", desc: "Counts words and sentence stats using string operations. Cannot detect plagiarism. Not AI-powered." },
+      "function generator": { newName: "Code Snippet Lookup", desc: "Returns pre-written code snippets from a dictionary of 8 common patterns. Not AI-powered." },
+      "snippet builder": { newName: "Code Snippet Lookup", desc: "Returns pre-written code snippets from a dictionary of 8 common patterns. Not AI-powered." },
+      "template engine": { newName: "Code Snippet Lookup", desc: "Returns pre-written code snippets from a dictionary of 8 common patterns. Not AI-powered." },
+      "entity extractor": { newName: "Regex Extractor", desc: "Extracts emails, URLs, phones, etc. using regex patterns. Not AI-powered." },
+      "data miner": { newName: "Regex Extractor", desc: "Extracts emails, URLs, phones, etc. using regex patterns. Not AI-powered." },
+      "info harvester": { newName: "Pattern Finder", desc: "Extracts emails, URLs, phones, etc. using regex patterns. Not AI-powered." },
+      "api connector": { newName: "Timestamp Utility", desc: "Returns current timestamp or cached market summary data. Not AI-powered." },
+      "feed parser": { newName: "Market Summary", desc: "Returns cached market data summary. Not AI-powered." },
+      "data fetcher": { newName: "Timestamp Utility", desc: "Returns current timestamp or cached data. Not AI-powered." },
+      "web scraper": { newName: "Timestamp Utility", desc: "Returns current timestamp or cached data. Not AI-powered." },
+      "brief generator": { newName: "Extractive Summarizer", desc: "Extracts top sentences by word frequency. Simple extractive method, not AI-powered." },
+      "key point extractor": { newName: "Extractive Summarizer", desc: "Extracts top sentences by word frequency. Simple extractive method, not AI-powered." },
+      "digest creator": { newName: "Extractive Summarizer", desc: "Extracts top sentences by word frequency. Simple extractive method, not AI-powered." },
+      "summary engine": { newName: "Extractive Summarizer", desc: "Extracts top sentences by word frequency. Simple extractive method, not AI-powered." },
+      "article condenser": { newName: "Extractive Summarizer", desc: "Extracts top sentences by word frequency. Simple extractive method, not AI-powered." },
+      "category sorter": { newName: "Keyword Matcher", desc: "Matches text against 24 hardcoded keywords for basic classification. Not AI-powered." },
+      "label assigner": { newName: "Keyword Matcher", desc: "Matches text against 24 hardcoded keywords for basic classification. Not AI-powered." },
+      "type classifier": { newName: "Keyword Matcher", desc: "Matches text against 24 hardcoded keywords for basic classification. Not AI-powered." },
+      "pattern matcher": { newName: "Keyword Matcher", desc: "Matches text against 24 hardcoded keywords for basic classification. Not AI-powered." },
+    };
+
+    const allSkillsForRename = await db.select({ id: agentSkills.id, name: agentSkills.name, priceAmount: agentSkills.priceAmount }).from(agentSkills);
+    let renamedCount = 0;
+    let repricedCount = 0;
+    for (const skill of allSkillsForRename) {
+      const lowerName = skill.name.toLowerCase().trim();
+      const mapping = misleadingNames[lowerName];
+      if (mapping) {
+        await db.update(agentSkills).set({ name: mapping.newName, description: mapping.desc }).where(eq(agentSkills.id, skill.id));
+        renamedCount++;
+      }
+      const priceNum = BigInt(skill.priceAmount || "0");
+      if (priceNum > BigInt("5000000000000000")) {
+        await db.update(agentSkills).set({ priceAmount: "100000000000000" }).where(eq(agentSkills.id, skill.id));
+        repricedCount++;
+      }
+    }
+    if (renamedCount > 0) console.log(`[cleanup] Renamed ${renamedCount} misleadingly-named skills to honest names`);
+    if (repricedCount > 0) console.log(`[cleanup] Repriced ${repricedCount} overpriced template skills to 0.0001 BNB`);
   }
 
   async seedInferenceProviders(): Promise<void> {
