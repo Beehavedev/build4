@@ -282,17 +282,43 @@ export default function AgentBuilder() {
     const configUpdates = extractConfigFromInput(userInput, config);
     let updatedConfig = config;
     const isTemplateMatch = configUpdates?.type ? true : false;
+
     if (configUpdates) {
       updatedConfig = { ...config, ...configUpdates };
       setConfig(updatedConfig);
+
       if (isTemplateMatch) {
+        const tmpl = TEMPLATES[configUpdates.type!];
+        const chainName = updatedConfig.chain === "base" ? "Base" : updatedConfig.chain === "xlayer" ? "XLayer" : "BNB Chain";
+        const modelName = updatedConfig.model === "deepseek" ? "DeepSeek V3" : updatedConfig.model === "qwen" ? "Qwen 2.5" : "Llama 3.3";
         setPreviewHtml(generateDefaultPreview(updatedConfig));
+        addMessage({
+          role: "system",
+          content: `${tmpl.icon} **${tmpl.name}** is ready.\n\n${tmpl.bio}\n\n**Skills:** ${tmpl.skills.join(", ")}\n**Chain:** ${chainName}\n**Model:** ${modelName}\n**Autonomy:** Semi-Auto\n\nYou can customize anything — change the chain, model, add skills, or rename it. When you're happy, just say **deploy**.`,
+          type: "success",
+        });
+        setIsProcessing(false);
+        textareaRef.current?.focus();
+        return;
+      }
+
+      const changes: string[] = [];
+      if (configUpdates.chain) changes.push(`Chain → ${configUpdates.chain === "base" ? "Base" : configUpdates.chain === "xlayer" ? "XLayer" : "BNB Chain"}`);
+      if (configUpdates.model) changes.push(`Model → ${configUpdates.model === "deepseek" ? "DeepSeek V3" : configUpdates.model === "qwen" ? "Qwen 2.5" : "Llama 3.3"}`);
+      if (configUpdates.autonomy) changes.push(`Autonomy → ${configUpdates.autonomy === "full" ? "Full Auto" : configUpdates.autonomy === "supervised" ? "Supervised" : "Semi-Auto"}`);
+      if (configUpdates.name) changes.push(`Name → ${configUpdates.name}`);
+      if (configUpdates.skills && configUpdates.skills.length > config.skills.length) changes.push(`Skill added`);
+
+      if (changes.length > 0) {
+        addMessage({ role: "system", content: `Updated: ${changes.join(", ")}.${config.type ? ' Say **deploy** when ready.' : ""}`, type: "info" });
+        setPreviewHtml(generateDefaultPreview(updatedConfig));
+        setIsProcessing(false);
+        textareaRef.current?.focus();
+        return;
       }
     }
 
-    if (!isTemplateMatch) {
-      setPreviewHtml(generateLoadingPreview("Generating your project..."));
-    }
+    setPreviewHtml(generateLoadingPreview("Generating your project..."));
 
     const aiResponse = await getAIResponse(userInput, updatedConfig);
 
@@ -316,21 +342,7 @@ export default function AgentBuilder() {
       }
       if (aiResponse.preview) setPreviewHtml(aiResponse.preview);
     } else {
-      if (configUpdates) {
-        const tmpl = configUpdates.type ? TEMPLATES[configUpdates.type] : null;
-        if (tmpl) {
-          addMessage({ role: "system", content: `${tmpl.icon} ${tmpl.name} configured.\n\nI've set up ${tmpl.skills.join(", ")} skills on ${updatedConfig.chain === "base" ? "Base" : updatedConfig.chain === "xlayer" ? "XLayer" : "BNB Chain"} with ${updatedConfig.model === "deepseek" ? "DeepSeek V3" : updatedConfig.model === "qwen" ? "Qwen 2.5" : "Llama 3.3"}.\n\nYou can customize it further or say **deploy** when ready.`, type: "info" });
-        } else {
-          const changes: string[] = [];
-          if (configUpdates.chain) changes.push(`Chain → ${configUpdates.chain === "base" ? "Base" : configUpdates.chain === "xlayer" ? "XLayer" : "BNB Chain"}`);
-          if (configUpdates.model) changes.push(`Model → ${configUpdates.model === "deepseek" ? "DeepSeek V3" : configUpdates.model === "qwen" ? "Qwen 2.5" : "Llama 3.3"}`);
-          if (configUpdates.autonomy) changes.push(`Autonomy → ${configUpdates.autonomy}`);
-          if (configUpdates.name) changes.push(`Name → ${configUpdates.name}`);
-          addMessage({ role: "system", content: `Updated: ${changes.join(", ")}.${config.type ? ' Say **deploy** when ready.' : ""}`, type: "info" });
-        }
-      } else {
-        addMessage({ role: "system", content: `I can help you build that. Try describing what you need:\n\n• "Build a trading bot that snipes new tokens"\n• "Create a DeFi yield optimizer"\n• "I need a security scanner for rug pulls"\n• "Make a social media agent for Twitter"\n\nOr just tell me what you're trying to do.`, type: "info" });
-      }
+      addMessage({ role: "system", content: `I can help you build that. Try describing what you need:\n\n• "Build a trading bot that snipes new tokens"\n• "Create a DeFi yield optimizer"\n• "I need a security scanner for rug pulls"\n• "Make a social media agent for Twitter"\n\nOr just tell me what you're trying to do.`, type: "info" });
     }
 
     setIsProcessing(false);
@@ -461,7 +473,7 @@ export default function AgentBuilder() {
                           ? "bg-destructive/10 text-destructive"
                           : "bg-muted"
                       }`} data-testid={`message-${i}`}>
-                        <pre className="text-sm whitespace-pre-wrap leading-relaxed font-sans">{msg.content}</pre>
+                        <div className="text-sm whitespace-pre-wrap leading-relaxed" dangerouslySetInnerHTML={{ __html: msg.content.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }} />
                       </div>
                     </div>
                   </div>
