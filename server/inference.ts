@@ -115,7 +115,8 @@ async function callOpenAICompatible(
   messages.push({ role: "user", content: prompt });
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const timeoutMs = maxTokens > 1024 ? 90000 : 30000;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
@@ -160,7 +161,7 @@ export async function runInference(
   network: string,
   model: string | undefined,
   prompt: string,
-  options?: { systemPrompt?: string; temperature?: number }
+  options?: { systemPrompt?: string; temperature?: number; maxTokens?: number }
 ): Promise<InferenceResult> {
   const config = PROVIDER_CONFIGS[network];
   if (!config) {
@@ -180,7 +181,7 @@ export async function runInference(
       apiKey,
       selectedModel,
       prompt,
-      512,
+      options?.maxTokens || 512,
       options
     );
 
@@ -208,7 +209,7 @@ export async function runInferenceWithFallback(
   preferredNetworks: string[],
   model: string | undefined,
   prompt: string,
-  options?: { systemPrompt?: string; temperature?: number }
+  options?: { systemPrompt?: string; temperature?: number; maxTokens?: number }
 ): Promise<InferenceResult & { network: string }> {
   for (const network of preferredNetworks) {
     if (isProviderLive(network)) {

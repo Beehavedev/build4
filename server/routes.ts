@@ -1115,15 +1115,29 @@ Agent pricing: $20 (0.032 BNB) to deploy on BNB Chain, Base, or XLayer`;
         providers,
         undefined,
         message,
-        { systemPrompt, temperature: 0.7 }
+        { systemPrompt, temperature: 0.7, maxTokens: 4096 }
       );
 
       let responseText = result.text || "";
+
+      if (responseText.includes("<PREVIEW>") && !responseText.match(/<\/PREVIEW>/i)) {
+        const previewStart = responseText.indexOf("<PREVIEW>");
+        const afterPreview = responseText.substring(previewStart + 9);
+        if (afterPreview.includes("</html>")) {
+          responseText = responseText + "\n</PREVIEW>";
+        } else if (afterPreview.includes("</body>")) {
+          responseText = responseText + "\n</html>\n</PREVIEW>";
+        } else {
+          responseText = responseText + "\n</body>\n</html>\n</PREVIEW>";
+        }
+      }
+
       let previewHtml = "";
       const previewMatch = responseText.match(/<PREVIEW>([\s\S]*)<\/PREVIEW>/i);
       if (previewMatch) {
         previewHtml = previewMatch[1].trim();
         responseText = responseText.replace(/<PREVIEW>[\s\S]*<\/PREVIEW>/i, "").trim();
+        console.log(`[Builder] Preview extracted, length: ${previewHtml.length}`);
       }
 
       const files: { path: string; content: string }[] = [];

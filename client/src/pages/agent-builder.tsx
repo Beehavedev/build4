@@ -327,9 +327,13 @@ export default function AgentBuilder() {
             for (const f of data.files) map.set(f.path, f.content);
             return Array.from(map.entries()).map(([path, content]) => ({ path, content }));
           });
-          if (!activeFile && data.files.length > 0) setActiveFile(data.files[0].path);
+          setActiveFile(data.files[0].path);
+          if (!data.preview && !showPanel) {
+            setShowPanel(true);
+            setRightPanel("code");
+          }
         }
-        addMsg("assistant", text || "Here's what I built:", { hasPreview: !!data.preview });
+        addMsg("assistant", text || "Here's what I built:", { hasPreview: !!(data.preview || (data.files && data.files.length > 0)) });
       } else {
         addMsg("assistant", "Tell me what you want to build — a website, landing page, dashboard, app, or AI agent. I'll create it for you.");
       }
@@ -399,7 +403,7 @@ export default function AgentBuilder() {
                               {msg.isDeploying ? <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" /> : msg.deployResult ? <CheckCircle2 className="w-3.5 h-3.5 text-primary" /> : msg.agentStatus ? <Activity className="w-3.5 h-3.5 text-emerald-500" /> : msg.isError ? <X className="w-3.5 h-3.5 text-destructive" /> : msg.hasPreview ? <Monitor className="w-3.5 h-3.5 text-primary" /> : <Terminal className="w-3.5 h-3.5 text-primary" />}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className={`text-[14px] leading-relaxed whitespace-pre-wrap ${msg.isError ? "text-destructive" : "text-foreground"}`} dangerouslySetInnerHTML={{ __html: msg.content.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>") }} />
+                              <div className={`text-[14px] leading-relaxed whitespace-pre-wrap ${msg.isError ? "text-destructive" : "text-foreground"}`}>{msg.content.split(/(\*\*.+?\*\*)/).map((part, i) => part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong> : part)}</div>
                               {msg.hasPreview && !showPanel && (
                                 <button onClick={() => { setShowPanel(true); setRightPanel("preview"); }}
                                   className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-[12px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" data-testid="button-show-preview">
@@ -473,7 +477,7 @@ export default function AgentBuilder() {
               <div className="flex-1 overflow-hidden bg-white">
                 {rightPanel === "preview" ? (
                   <div className={`h-full mx-auto transition-all ${previewWidth}`}>
-                    <iframe id="preview-iframe" className="w-full h-full border-0" data-testid="preview-iframe" sandbox="allow-scripts allow-same-origin" srcDoc={previewHtml} />
+                    <iframe id="preview-iframe" className="w-full h-full border-0" data-testid="preview-iframe" sandbox="allow-scripts" srcDoc={previewHtml} />
                   </div>
                 ) : (
                   projectFiles.length > 0 ? <CodeViewer files={projectFiles} activeFile={activeFile} onSelectFile={setActiveFile} /> : <div className="h-full flex items-center justify-center text-muted-foreground text-[13px]">No files generated yet</div>
