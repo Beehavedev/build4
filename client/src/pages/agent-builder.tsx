@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Link } from "wouter";
 import { SEO } from "@/components/seo";
 import { useToast } from "@/hooks/use-toast";
@@ -8,8 +8,8 @@ import {
   Loader2, ArrowUp, CheckCircle2, Terminal, X,
   Rocket, Shield,
   TrendingUp, Search, MessageSquare, Landmark, Target,
-  ChevronRight, ExternalLink, Copy, RefreshCw, Plus,
-  Settings2, RotateCcw,
+  ChevronRight, ExternalLink, Copy, Plus,
+  Activity, Wallet, Clock, Zap, Eye,
 } from "lucide-react";
 
 interface ChatMessage {
@@ -20,6 +20,8 @@ interface ChatMessage {
   agentCard?: AgentConfig;
   isDeploying?: boolean;
   deployResult?: DeployResultData;
+  agentStatus?: AgentStatusData;
+  myAgentsList?: MyAgentData[];
   isError?: boolean;
 }
 
@@ -28,6 +30,27 @@ interface DeployResultData {
   wallet: string;
   chain: string;
   name: string;
+}
+
+interface AgentStatusData {
+  id: string;
+  name: string;
+  balance: string;
+  totalEarned: string;
+  totalSpent: string;
+  netProfit: string;
+  totalTransactions: number;
+  skills: number;
+  status: string;
+}
+
+interface MyAgentData {
+  id: string;
+  name: string;
+  bio: string;
+  modelType: string;
+  status: string;
+  createdAt: string;
 }
 
 interface AgentConfig {
@@ -98,7 +121,38 @@ function isStartOverCmd(input: string): boolean {
   return ["start over", "new agent", "build another", "reset", "start fresh", "new project", "clear"].some(c => l === c || l.includes(c));
 }
 
+function isShowAgentsCmd(input: string): boolean {
+  const l = input.toLowerCase().trim();
+  return ["show my agents", "my agents", "list agents", "show agents", "what agents", "which agents"].some(c => l === c || l.includes(c));
+}
+
+function isCheckStatusCmd(input: string): string | null {
+  const l = input.toLowerCase().trim();
+  if (["status", "how is", "check on", "check agent", "agent status", "how's my agent"].some(c => l.includes(c))) {
+    return "latest";
+  }
+  return null;
+}
+
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+function formatBNB(bnbStr: string): string {
+  const num = parseFloat(bnbStr);
+  if (num === 0) return "0 BNB";
+  if (num < 0.0001) return "<0.0001 BNB";
+  return num.toFixed(4) + " BNB";
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
 function AgentCard({ config, onDeploy, onUpdate, deploying, deployed }: {
   config: AgentConfig;
@@ -137,8 +191,7 @@ function AgentCard({ config, onDeploy, onUpdate, deploying, deployed }: {
           <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Chain</div>
           <button onClick={() => {
             const chains = ["bnb", "base", "xlayer"];
-            const next = chains[(chains.indexOf(config.chain) + 1) % chains.length];
-            onUpdate("chain", next);
+            onUpdate("chain", chains[(chains.indexOf(config.chain) + 1) % chains.length]);
           }} className="text-[13px] font-medium text-foreground hover:text-primary transition-colors cursor-pointer" data-testid="toggle-chain">
             {CHAIN_LABEL[config.chain]} <ChevronRight className="w-3 h-3 inline text-muted-foreground" />
           </button>
@@ -147,8 +200,7 @@ function AgentCard({ config, onDeploy, onUpdate, deploying, deployed }: {
           <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Model</div>
           <button onClick={() => {
             const models = ["llama", "deepseek", "qwen"];
-            const next = models[(models.indexOf(config.model) + 1) % models.length];
-            onUpdate("model", next);
+            onUpdate("model", models[(models.indexOf(config.model) + 1) % models.length]);
           }} className="text-[13px] font-medium text-foreground hover:text-primary transition-colors cursor-pointer" data-testid="toggle-model">
             {MODEL_LABEL[config.model].split(" ")[0]} <ChevronRight className="w-3 h-3 inline text-muted-foreground" />
           </button>
@@ -157,8 +209,7 @@ function AgentCard({ config, onDeploy, onUpdate, deploying, deployed }: {
           <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Autonomy</div>
           <button onClick={() => {
             const modes = ["semi", "full", "supervised"];
-            const next = modes[(modes.indexOf(config.autonomy) + 1) % modes.length];
-            onUpdate("autonomy", next);
+            onUpdate("autonomy", modes[(modes.indexOf(config.autonomy) + 1) % modes.length]);
           }} className="text-[13px] font-medium text-foreground hover:text-primary transition-colors cursor-pointer" data-testid="toggle-autonomy">
             {AUTONOMY_LABEL[config.autonomy]} <ChevronRight className="w-3 h-3 inline text-muted-foreground" />
           </button>
@@ -191,10 +242,11 @@ function AgentCard({ config, onDeploy, onUpdate, deploying, deployed }: {
   );
 }
 
-function DeployResultCard({ result, onCopy, onBuildAnother }: {
+function DeployResultCard({ result, onCopy, onBuildAnother, onCheckStatus }: {
   result: DeployResultData;
   onCopy: (text: string) => void;
   onBuildAnother: () => void;
+  onCheckStatus: (agentId: string) => void;
 }) {
   const agentIdDisplay = result.agentId ? result.agentId.substring(0, Math.min(24, result.agentId.length)) : "—";
   const walletDisplay = result.wallet ? result.wallet.substring(0, Math.min(20, result.wallet.length)) : "—";
@@ -232,11 +284,16 @@ function DeployResultCard({ result, onCopy, onBuildAnother }: {
             </button>
           </div>
         </div>
-        <div className="flex gap-2 mt-3">
+        <div className="flex gap-2 mt-3 flex-wrap">
+          <button onClick={() => onCheckStatus(result.agentId)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-[12px] font-medium hover:opacity-90 transition-opacity cursor-pointer"
+            data-testid="button-check-status">
+            <Activity className="w-3 h-3" /> Check Status
+          </button>
           <Link href="/autonomous-economy">
-            <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-[12px] font-medium hover:opacity-90 transition-opacity cursor-pointer"
+            <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-[12px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
               data-testid="button-view-agent">
-              <ExternalLink className="w-3 h-3" /> View Dashboard
+              <ExternalLink className="w-3 h-3" /> Dashboard
             </span>
           </Link>
           <button onClick={onBuildAnother}
@@ -250,14 +307,99 @@ function DeployResultCard({ result, onCopy, onBuildAnother }: {
   );
 }
 
+function AgentStatusCard({ status }: { status: AgentStatusData }) {
+  return (
+    <div className="mt-3 rounded-xl border border-border bg-card overflow-hidden" data-testid="agent-status-card">
+      <div className="p-4 border-b border-border">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-emerald-500/15 flex items-center justify-center">
+            <Activity className="w-4 h-4 text-emerald-500" />
+          </div>
+          <div>
+            <div className="text-[14px] font-semibold text-foreground">{status.name}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[11px] text-emerald-500 font-medium">Active</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-px bg-border">
+        <div className="bg-card p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Wallet className="w-3 h-3 text-muted-foreground" />
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Balance</span>
+          </div>
+          <div className="text-[14px] font-semibold text-foreground" data-testid="status-balance">{formatBNB(status.balance)}</div>
+        </div>
+        <div className="bg-card p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <TrendingUp className="w-3 h-3 text-muted-foreground" />
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Earned</span>
+          </div>
+          <div className="text-[14px] font-semibold text-emerald-500" data-testid="status-earned">{formatBNB(status.totalEarned)}</div>
+        </div>
+        <div className="bg-card p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Zap className="w-3 h-3 text-muted-foreground" />
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Transactions</span>
+          </div>
+          <div className="text-[14px] font-semibold text-foreground" data-testid="status-transactions">{status.totalTransactions}</div>
+        </div>
+        <div className="bg-card p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Activity className="w-3 h-3 text-muted-foreground" />
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Net P&L</span>
+          </div>
+          <div className={`text-[14px] font-semibold ${parseFloat(status.netProfit) >= 0 ? "text-emerald-500" : "text-red-500"}`} data-testid="status-pnl">
+            {parseFloat(status.netProfit) >= 0 ? "+" : ""}{formatBNB(status.netProfit)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MyAgentsCard({ agents, onSelect }: { agents: MyAgentData[]; onSelect: (id: string) => void }) {
+  return (
+    <div className="mt-3 rounded-xl border border-border bg-card overflow-hidden" data-testid="my-agents-list">
+      <div className="p-3 border-b border-border">
+        <div className="text-[13px] font-semibold text-foreground">{agents.length} Agent{agents.length !== 1 ? "s" : ""}</div>
+      </div>
+      <div className="divide-y divide-border">
+        {agents.map(agent => (
+          <button key={agent.id} onClick={() => onSelect(agent.id)}
+            className="w-full flex items-center gap-3 p-3 hover:bg-accent/40 transition-colors text-left"
+            data-testid={`my-agent-${agent.id}`}>
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+              <Terminal className="w-4 h-4 text-primary" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-medium text-foreground truncate">{agent.name}</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+              </div>
+              <div className="text-[11px] text-muted-foreground truncate">{agent.bio || agent.modelType}</div>
+            </div>
+            <div className="text-[10px] text-muted-foreground shrink-0">{agent.createdAt ? timeAgo(agent.createdAt) : ""}</div>
+            <Eye className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function AgentBuilder() {
-  const { address, connected: isConnected, signer } = useWallet();
+  const { address, connected: isConnected } = useWallet();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [config, setConfig] = useState<AgentConfig>({ ...EMPTY_CONFIG });
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployed, setDeployed] = useState(false);
+  const [lastDeployedId, setLastDeployedId] = useState<string | null>(null);
+  const [buildHistory, setBuildHistory] = useState<DeployResultData[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
@@ -289,6 +431,54 @@ export default function AgentBuilder() {
     textareaRef.current?.focus();
   };
 
+  const fetchAgentStatus = useCallback(async (agentId: string) => {
+    try {
+      const [agentResp, earningsResp] = await Promise.all([
+        apiRequest("GET", `/api/web4/agents/${agentId}`),
+        apiRequest("GET", `/api/web4/agents/${agentId}/earnings`),
+      ]);
+      const agent = await agentResp.json();
+      const earnings = await earningsResp.json();
+      
+      const statusData: AgentStatusData = {
+        id: agent.id,
+        name: agent.name,
+        balance: earnings.balanceBNB || "0",
+        totalEarned: earnings.totalEarnedBNB || "0",
+        totalSpent: earnings.totalSpentBNB || "0",
+        netProfit: earnings.netProfitBNB || "0",
+        totalTransactions: earnings.totalTransactions || 0,
+        skills: 0,
+        status: "active",
+      };
+      addMsg("assistant", `Here's the current status of **${agent.name}**:`, { agentStatus: statusData });
+    } catch {
+      addMsg("assistant", "Couldn't fetch agent status. The agent might still be initializing — try again in a moment.", { isError: true });
+    }
+  }, []);
+
+  const fetchMyAgents = useCallback(async () => {
+    try {
+      const resp = await apiRequest("GET", `/api/web4/agents${address ? `?wallet=${address}` : ""}`);
+      const agents = await resp.json();
+      if (!Array.isArray(agents) || agents.length === 0) {
+        addMsg("assistant", "You don't have any deployed agents yet. Build one to get started!");
+        return;
+      }
+      const agentsList: MyAgentData[] = agents.slice(0, 10).map((a: any) => ({
+        id: a.id,
+        name: a.name,
+        bio: a.bio || "",
+        modelType: a.modelType || "Llama 3.3",
+        status: "active",
+        createdAt: a.createdAt || "",
+      }));
+      addMsg("assistant", `Here are your agents. Tap any one to check its live status:`, { myAgentsList: agentsList });
+    } catch {
+      addMsg("assistant", "Couldn't load your agents. Make sure your wallet is connected.", { isError: true });
+    }
+  }, [address]);
+
   const handleDeploy = async () => {
     if (isDeploying) return;
     setIsDeploying(true);
@@ -305,10 +495,11 @@ export default function AgentBuilder() {
       const agent = await response.json();
       const chainName = CHAIN_LABEL[config.chain] || "BNB Chain";
       setDeployed(true);
+      setLastDeployedId(agent.id);
+      const result: DeployResultData = { agentId: agent.id, wallet: agent.wallet?.walletAddress || "Generated", chain: chainName, name: config.name };
+      setBuildHistory(prev => [result, ...prev]);
       setMessages(msgs => msgs.map(m => m.agentCard ? { ...m, agentCard: { ...m.agentCard! } } : m));
-      addMsg("assistant", "Your agent is live and operating autonomously. You can keep tweaking the settings above, build another agent, or view it on the dashboard.", {
-        deployResult: { agentId: agent.id, wallet: agent.wallet?.walletAddress || "Generated", chain: chainName, name: config.name },
-      });
+      addMsg("assistant", "Your agent is live. Check its status, view the dashboard, or build another one.", { deployResult: result });
       toast({ title: "Deployed", description: `${config.name} is live on ${chainName}` });
     } catch (error: any) {
       addMsg("assistant", `Deployment failed. Connect your wallet with BNB to cover the $20 fee.\n\n${error.message || ""}`, { isError: true });
@@ -331,6 +522,19 @@ export default function AgentBuilder() {
       return;
     }
 
+    if (isShowAgentsCmd(userInput)) {
+      await fetchMyAgents();
+      setIsProcessing(false);
+      return;
+    }
+
+    const statusCheck = isCheckStatusCmd(userInput);
+    if (statusCheck && lastDeployedId) {
+      await fetchAgentStatus(lastDeployedId);
+      setIsProcessing(false);
+      return;
+    }
+
     if (isDeployCmd(userInput)) {
       if (!config.type) {
         addMsg("assistant", "Nothing to deploy yet. Tell me what kind of agent you want — trading, research, social, DeFi, security, or sniper.");
@@ -347,6 +551,7 @@ export default function AgentBuilder() {
       const isNewAgent = !!configUpdates.type;
       if (isNewAgent && deployed) {
         setDeployed(false);
+        setLastDeployedId(null);
       }
       const updated = { ...(isNewAgent ? EMPTY_CONFIG : config), ...configUpdates };
       setConfig(updated);
@@ -397,7 +602,7 @@ export default function AgentBuilder() {
   const placeholder = !hasMessages
     ? "Describe what you want to build..."
     : deployed
-    ? "Tweak your agent, build another, or ask anything..."
+    ? "Tweak your agent, check status, or build another..."
     : config.type
     ? "Customize your agent or say 'deploy'..."
     : "Message BUILD4...";
@@ -437,6 +642,28 @@ export default function AgentBuilder() {
                     );
                   })}
                 </div>
+
+                {buildHistory.length > 0 && (
+                  <div className="mt-2 p-3 rounded-xl border border-border bg-card">
+                    <div className="text-[11px] text-muted-foreground uppercase tracking-wide mb-2">Recent Builds</div>
+                    <div className="space-y-1.5">
+                      {buildHistory.slice(0, 3).map(b => (
+                        <button key={b.agentId} onClick={() => {
+                          setLastDeployedId(b.agentId);
+                          sendPrompt("check status");
+                        }}
+                          className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-accent/40 transition-colors text-left"
+                          data-testid={`history-${b.agentId}`}>
+                          <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            <span className="text-[12px] font-medium text-foreground">{b.name}</span>
+                          </div>
+                          <span className="text-[11px] text-muted-foreground">{b.chain}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -455,6 +682,8 @@ export default function AgentBuilder() {
                             <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
                           ) : msg.deployResult ? (
                             <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
+                          ) : msg.agentStatus ? (
+                            <Activity className="w-3.5 h-3.5 text-emerald-500" />
                           ) : msg.isError ? (
                             <X className="w-3.5 h-3.5 text-destructive" />
                           ) : (
@@ -477,7 +706,23 @@ export default function AgentBuilder() {
                             result={msg.deployResult}
                             onCopy={(text) => { navigator.clipboard.writeText(text); toast({ title: "Copied" }); }}
                             onBuildAnother={startNew}
+                            onCheckStatus={async (id) => { setIsProcessing(true); await fetchAgentStatus(id); setIsProcessing(false); }}
                           />
+                        </div>
+                      )}
+                      {msg.agentStatus && (
+                        <div className="ml-[34px]">
+                          <AgentStatusCard status={msg.agentStatus} />
+                        </div>
+                      )}
+                      {msg.myAgentsList && (
+                        <div className="ml-[34px]">
+                          <MyAgentsCard agents={msg.myAgentsList} onSelect={async (id) => {
+                            setLastDeployedId(id);
+                            setIsProcessing(true);
+                            await fetchAgentStatus(id);
+                            setIsProcessing(false);
+                          }} />
                         </div>
                       )}
                     </div>
@@ -526,7 +771,7 @@ export default function AgentBuilder() {
             </form>
             {!hasMessages && (
               <div className="flex items-center justify-center gap-2 mt-2.5 flex-wrap">
-                {["Build a trading bot", "Create a security scanner", "DeFi yield optimizer", "Sniper agent"].map(s => (
+                {["Build a trading bot", "Create a security scanner", "Show my agents", "Sniper agent"].map(s => (
                   <button key={s} onClick={() => sendPrompt(s)}
                     className="px-3 py-1.5 rounded-full border border-border text-[12px] text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
                     data-testid={`suggestion-${s.toLowerCase().replace(/\s+/g, "-")}`}>
