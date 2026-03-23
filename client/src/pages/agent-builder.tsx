@@ -85,32 +85,179 @@ function isDeployCommand(input: string): boolean {
   return ["deploy", "launch", "build it", "create it", "ship it", "go", "deploy it", "let's go"].some(cmd => lower === cmd || lower.startsWith(cmd));
 }
 
+interface PreviewData {
+  title: string;
+  accent: string;
+  stats: { value: string; label: string }[];
+  feed: { icon: string; text: string; time: string; color: string }[];
+}
+
+const PREVIEW_DATA: Record<string, PreviewData> = {
+  trading: {
+    title: "Trading Dashboard",
+    accent: "#10b981",
+    stats: [
+      { value: "$47,293", label: "Volume (24h)" },
+      { value: "78.4%", label: "Win Rate" },
+      { value: "143", label: "Trades Today" },
+      { value: "+3.82 BNB", label: "Net Profit" },
+    ],
+    feed: [
+      { icon: "🟢", text: "BUY 2.5 BNB → PEPE at $0.00000847", time: "2s ago", color: "#10b981" },
+      { icon: "📊", text: "Signal detected: DOGE momentum breakout", time: "18s ago", color: "#8b949e" },
+      { icon: "🟢", text: "BUY 1.2 BNB → FLOKI at $0.0001642", time: "1m ago", color: "#10b981" },
+      { icon: "🔴", text: "SELL SHIB — take profit target hit (+12.4%)", time: "3m ago", color: "#ef4444" },
+      { icon: "⚡", text: "Gas optimized: saved 0.004 BNB on batch", time: "5m ago", color: "#f59e0b" },
+      { icon: "🟢", text: "BUY 0.8 BNB → WIF at $1.847", time: "8m ago", color: "#10b981" },
+    ],
+  },
+  research: {
+    title: "Research Terminal",
+    accent: "#8b5cf6",
+    stats: [
+      { value: "2,847", label: "Tokens Scanned" },
+      { value: "94", label: "Reports Generated" },
+      { value: "12", label: "Whales Tracked" },
+      { value: "37", label: "Alerts Sent" },
+    ],
+    feed: [
+      { icon: "📋", text: "REPORT: 0x7a2...f4c — Low risk, strong liquidity", time: "Just now", color: "#10b981" },
+      { icon: "🐋", text: "Whale 0xd8f... moved 450 ETH to Binance", time: "4m ago", color: "#f59e0b" },
+      { icon: "⚠️", text: "Contract 0x3b1... has renounced ownership", time: "12m ago", color: "#f59e0b" },
+      { icon: "📋", text: "REPORT: BONK — High volatility, watch support", time: "18m ago", color: "#8b949e" },
+      { icon: "🐋", text: "Whale alert: 2.1M USDT moved on-chain", time: "25m ago", color: "#f59e0b" },
+      { icon: "✅", text: "Contract audit passed: no malicious functions", time: "31m ago", color: "#10b981" },
+    ],
+  },
+  social: {
+    title: "Social Command Center",
+    accent: "#3b82f6",
+    stats: [
+      { value: "12.4K", label: "Impressions" },
+      { value: "847", label: "Engagements" },
+      { value: "23", label: "Posts Today" },
+      { value: "+156", label: "New Followers" },
+    ],
+    feed: [
+      { icon: "🐦", text: "Posted: \"BNB Chain just hit 2M daily TXs...\"", time: "1m ago", color: "#3b82f6" },
+      { icon: "💬", text: "Replied to @crypto_whale — gained 12 likes", time: "4m ago", color: "#8b949e" },
+      { icon: "📈", text: "Trending: #DeFi — scheduling content", time: "8m ago", color: "#f59e0b" },
+      { icon: "🐦", text: "Posted thread: \"5 undervalued gems on BSC\"", time: "15m ago", color: "#3b82f6" },
+      { icon: "🔔", text: "Community alert sent to 2,341 members", time: "22m ago", color: "#10b981" },
+      { icon: "💬", text: "Engaged with 14 mentions in last hour", time: "30m ago", color: "#8b949e" },
+    ],
+  },
+  defi: {
+    title: "Yield Optimizer",
+    accent: "#f59e0b",
+    stats: [
+      { value: "847.2%", label: "Best APY Found" },
+      { value: "$23,491", label: "TVL Managed" },
+      { value: "18", label: "Active Pools" },
+      { value: "+0.47 BNB", label: "Compounded Today" },
+    ],
+    feed: [
+      { icon: "🔄", text: "Auto-compounded: PancakeSwap BNB/USDT +0.12 BNB", time: "Just now", color: "#10b981" },
+      { icon: "📊", text: "New pool found: Venus BNB — 24.7% APY", time: "5m ago", color: "#f59e0b" },
+      { icon: "🔄", text: "Rebalanced: moved $2,100 from low-yield pool", time: "12m ago", color: "#8b949e" },
+      { icon: "⚡", text: "Gas saved: batched 4 harvests into 1 TX", time: "18m ago", color: "#f59e0b" },
+      { icon: "📊", text: "APY alert: Alpaca Finance dropped below 15%", time: "25m ago", color: "#ef4444" },
+      { icon: "🔄", text: "Auto-compounded: BiSwap CAKE/BNB +0.08 BNB", time: "32m ago", color: "#10b981" },
+    ],
+  },
+  security: {
+    title: "Security Monitor",
+    accent: "#ef4444",
+    stats: [
+      { value: "4,291", label: "Contracts Scanned" },
+      { value: "187", label: "Threats Blocked" },
+      { value: "99.2%", label: "Detection Rate" },
+      { value: "3", label: "Active Alerts" },
+    ],
+    feed: [
+      { icon: "🚨", text: "HONEYPOT DETECTED: 0xa3f...2c1 — sell blocked", time: "Just now", color: "#ef4444" },
+      { icon: "✅", text: "Contract 0x8b2... passed all checks", time: "2m ago", color: "#10b981" },
+      { icon: "⚠️", text: "Suspicious: 0xf41... has hidden mint function", time: "7m ago", color: "#f59e0b" },
+      { icon: "🚨", text: "RUG ALERT: Token XYZ — LP removed 94%", time: "11m ago", color: "#ef4444" },
+      { icon: "✅", text: "Wallet 0x5a9... safe — no approvals at risk", time: "16m ago", color: "#10b981" },
+      { icon: "⚠️", text: "New token flagged: unverified source, proceed with caution", time: "23m ago", color: "#f59e0b" },
+    ],
+  },
+  sniper: {
+    title: "Sniper Terminal",
+    accent: "#ec4899",
+    stats: [
+      { value: "0.4s", label: "Avg. Buy Speed" },
+      { value: "31", label: "Tokens Sniped" },
+      { value: "22/31", label: "Profitable" },
+      { value: "+5.14 BNB", label: "Total Profit" },
+    ],
+    feed: [
+      { icon: "🎯", text: "SNIPED: NewToken launched — bought in 0.3s", time: "Just now", color: "#ec4899" },
+      { icon: "💰", text: "EXIT: MOONCAT — sold at +340% profit", time: "2m ago", color: "#10b981" },
+      { icon: "👀", text: "Watching: 3 tokens pending liquidity add", time: "5m ago", color: "#8b949e" },
+      { icon: "🎯", text: "SNIPED: ROCKETDOG — 0.2s, first 5 buyers", time: "8m ago", color: "#ec4899" },
+      { icon: "❌", text: "SKIPPED: FakeGem — honeypot detected pre-buy", time: "12m ago", color: "#ef4444" },
+      { icon: "🎯", text: "SNIPED: PEPEX — bought 0.5 BNB at launch", time: "19m ago", color: "#ec4899" },
+    ],
+  },
+};
+
 function generatePreviewHtml(config: AgentConfig): string {
-  const skills = config.skills.length > 0 ? config.skills : ["monitoring", "execution"];
   const chainName = config.chain === "base" ? "Base" : config.chain === "xlayer" ? "XLayer" : "BNB Chain";
   const modelName = config.model === "deepseek" ? "DeepSeek V3" : config.model === "qwen" ? "Qwen 2.5" : "Llama 3.3";
+  const data = PREVIEW_DATA[config.type] || PREVIEW_DATA.trading;
+  const accent = data.accent;
+
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0f;color:#e0e0e0;min-height:100vh;display:flex;flex-direction:column}
-.header{background:linear-gradient(135deg,#0d1117,#161b22);border-bottom:1px solid #21262d;padding:14px 20px;display:flex;align-items:center;gap:10px}
-.header .dot{width:8px;height:8px;border-radius:50%;background:#10b981;animation:pulse 2s infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
-.header h1{font-size:15px;font-weight:700;color:#fff}.header .badge{font-size:9px;padding:3px 8px;border-radius:6px;background:#10b98120;color:#10b981;text-transform:uppercase;letter-spacing:.5px}
-.content{flex:1;padding:20px;display:flex;flex-direction:column;gap:16px}
-.card{background:#161b22;border:1px solid #21262d;border-radius:10px;padding:16px}
-.card-title{font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
-.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{background:#0d1117;border-radius:8px;padding:10px}
-.stat-value{font-size:18px;font-weight:700;color:#fff}.stat-label{font-size:10px;color:#8b949e;margin-top:3px}
-.skill-list{display:flex;flex-wrap:wrap;gap:6px}.skill{font-size:10px;padding:4px 10px;border-radius:6px;background:#10b98115;color:#10b981;border:1px solid #10b98130}
-.chart{height:70px;background:#0d1117;border-radius:8px;display:flex;align-items:end;padding:6px;gap:2px}
-.bar{flex:1;background:linear-gradient(to top,#10b981,#10b98160);border-radius:3px 3px 0 0;animation:grow .8s ease-out}@keyframes grow{from{height:0}}
-.status-bar{background:#10b981;padding:8px 20px;display:flex;justify-content:space-between;font-size:10px;color:#fff;font-weight:600}
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0f;color:#e0e0e0;min-height:100vh;display:flex;flex-direction:column}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #1a1a2e}
+.topbar-left{display:flex;align-items:center;gap:8px}
+.dot{width:7px;height:7px;border-radius:50%;background:${accent};box-shadow:0 0 8px ${accent}60;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.topbar h1{font-size:13px;font-weight:700;color:#fff}
+.topbar .tag{font-size:8px;padding:2px 7px;border-radius:4px;background:${accent}18;color:${accent};text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.meta{font-size:9px;color:#555;display:flex;gap:12px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#1a1a2e;margin:0;border-bottom:1px solid #1a1a2e}
+.stat{background:#0d0d14;padding:14px 16px}
+.stat-val{font-size:20px;font-weight:800;color:#fff;letter-spacing:-.5px}
+.stat-lbl{font-size:9px;color:#666;margin-top:3px;text-transform:uppercase;letter-spacing:.3px}
+.feed{flex:1;overflow:hidden}
+.feed-title{font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.5px;padding:12px 16px 8px;font-weight:600}
+.feed-item{display:flex;align-items:flex-start;gap:8px;padding:8px 16px;border-bottom:1px solid #111118;animation:fadeIn .4s ease-out both}
+.feed-item:nth-child(2){animation-delay:.05s}
+.feed-item:nth-child(3){animation-delay:.1s}
+.feed-item:nth-child(4){animation-delay:.15s}
+.feed-item:nth-child(5){animation-delay:.2s}
+.feed-item:nth-child(6){animation-delay:.25s}
+.feed-item:nth-child(7){animation-delay:.3s}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.feed-icon{font-size:11px;margin-top:1px;shrink:0}
+.feed-text{font-size:11px;color:#ccc;line-height:1.4;flex:1}
+.feed-time{font-size:9px;color:#444;white-space:nowrap;margin-top:1px}
+.bottom{padding:8px 16px;border-top:1px solid #1a1a2e;display:flex;justify-content:space-between;font-size:9px;color:#444}
 </style></head><body>
-<div class="header"><div class="dot"></div><h1>${config.name || "My Agent"}</h1><span class="badge">${config.status === "live" ? "Live" : "Ready"}</span></div>
-<div class="content">
-<div class="card"><div class="card-title">Performance</div><div class="stat-grid"><div class="stat"><div class="stat-value">$12,847</div><div class="stat-label">Total Volume</div></div><div class="stat"><div class="stat-value">73.2%</div><div class="stat-label">Win Rate</div></div><div class="stat"><div class="stat-value">341</div><div class="stat-label">Transactions</div></div><div class="stat"><div class="stat-value">2.18 BNB</div><div class="stat-label">Revenue</div></div></div></div>
-<div class="card"><div class="card-title">Activity (24h)</div><div class="chart">${Array.from({length:24},(_,i)=>`<div class="bar" style="height:${10+Math.random()*90}%;animation-delay:${i*30}ms"></div>`).join("")}</div></div>
-<div class="card"><div class="card-title">Active Skills</div><div class="skill-list">${skills.map(s=>`<span class="skill">${s}</span>`).join("")}</div></div>
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="dot"></div>
+    <h1>${config.name || "Agent"}</h1>
+    <span class="tag">${config.status === "live" ? "Live" : "Ready"}</span>
+  </div>
+  <div class="meta">
+    <span>${chainName}</span>
+    <span>${modelName}</span>
+  </div>
 </div>
-<div class="status-bar"><span>${chainName} · ${modelName}</span><span>${config.autonomy === "full" ? "Full Auto" : config.autonomy === "supervised" ? "Supervised" : "Semi-Auto"}</span></div>
+<div class="stats">
+  ${data.stats.map(s => `<div class="stat"><div class="stat-val">${s.value}</div><div class="stat-lbl">${s.label}</div></div>`).join("")}
+</div>
+<div class="feed">
+  <div class="feed-title">${data.title} — Live Feed</div>
+  ${data.feed.map(f => `<div class="feed-item"><span class="feed-icon">${f.icon}</span><span class="feed-text" style="color:${f.color}">${f.text}</span><span class="feed-time">${f.time}</span></div>`).join("")}
+</div>
+<div class="bottom"><span>${config.skills.join(" · ")}</span><span>${config.autonomy === "full" ? "Full Auto" : config.autonomy === "supervised" ? "Supervised" : "Semi-Auto"}</span></div>
 </body></html>`;
 }
 
