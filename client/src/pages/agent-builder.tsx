@@ -5,10 +5,11 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useWallet } from "@/hooks/use-wallet";
 import {
-  Send, Loader2, ArrowUp, CheckCircle2, Terminal, X,
-  Rocket, Cpu, Globe, Shield, Zap, Wallet,
+  Loader2, ArrowUp, CheckCircle2, Terminal, X,
+  Rocket, Shield,
   TrendingUp, Search, MessageSquare, Landmark, Target,
-  ChevronRight, ExternalLink, Copy, RefreshCw,
+  ChevronRight, ExternalLink, Copy, RefreshCw, Plus,
+  Settings2, RotateCcw,
 } from "lucide-react";
 
 interface ChatMessage {
@@ -18,8 +19,15 @@ interface ChatMessage {
   timestamp: Date;
   agentCard?: AgentConfig;
   isDeploying?: boolean;
-  deployResult?: { agentId: string; wallet: string; chain: string };
+  deployResult?: DeployResultData;
   isError?: boolean;
+}
+
+interface DeployResultData {
+  agentId: string;
+  wallet: string;
+  chain: string;
+  name: string;
 }
 
 interface AgentConfig {
@@ -46,6 +54,8 @@ const MODEL_MAP: Record<string, string> = { llama: "meta-llama/Llama-3.3-70B-Ins
 const CHAIN_LABEL: Record<string, string> = { bnb: "BNB Chain", base: "Base", xlayer: "XLayer" };
 const MODEL_LABEL: Record<string, string> = { llama: "Llama 3.3 70B", deepseek: "DeepSeek V3", qwen: "Qwen 2.5 72B" };
 const AUTONOMY_LABEL: Record<string, string> = { semi: "Semi-Auto", full: "Full Auto", supervised: "Supervised" };
+
+const EMPTY_CONFIG: AgentConfig = { name: "", bio: "", type: "", chain: "bnb", model: "llama", skills: [], autonomy: "semi" };
 
 function extractConfig(input: string, current: AgentConfig): Partial<AgentConfig> | null {
   const lower = input.toLowerCase().trim();
@@ -83,13 +93,19 @@ function isDeployCmd(input: string): boolean {
   return ["deploy", "launch", "build it", "create it", "ship it", "go", "deploy it", "let's go", "deploy now"].some(c => l === c || l.startsWith(c));
 }
 
+function isStartOverCmd(input: string): boolean {
+  const l = input.toLowerCase().trim();
+  return ["start over", "new agent", "build another", "reset", "start fresh", "new project", "clear"].some(c => l === c || l.includes(c));
+}
+
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
-function AgentCard({ config, onDeploy, onUpdate, deploying }: {
+function AgentCard({ config, onDeploy, onUpdate, deploying, deployed }: {
   config: AgentConfig;
   onDeploy: () => void;
   onUpdate: (field: string, value: string) => void;
   deploying: boolean;
+  deployed: boolean;
 }) {
   const typeData = AGENT_TYPES[config.type];
   if (!typeData) return null;
@@ -105,7 +121,11 @@ function AgentCard({ config, onDeploy, onUpdate, deploying }: {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h3 className="text-[15px] font-semibold text-foreground" data-testid="agent-name">{config.name}</h3>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">Ready</span>
+              {deployed ? (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-500">Deployed</span>
+              ) : (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">Ready</span>
+              )}
             </div>
             <p className="text-[13px] text-muted-foreground mt-0.5">{config.bio}</p>
           </div>
@@ -154,22 +174,28 @@ function AgentCard({ config, onDeploy, onUpdate, deploying }: {
         </div>
       </div>
 
-      <div className="p-3 flex items-center gap-2">
-        <button onClick={onDeploy} disabled={deploying}
-          className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-primary-foreground text-[13px] font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
-          data-testid="button-deploy">
-          {deploying ? (
-            <><Loader2 className="w-4 h-4 animate-spin" /> Deploying...</>
-          ) : (
-            <><Rocket className="w-4 h-4" /> Deploy Agent — $20</>
-          )}
-        </button>
-      </div>
+      {!deployed && (
+        <div className="p-3 flex items-center gap-2">
+          <button onClick={onDeploy} disabled={deploying}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-primary-foreground text-[13px] font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+            data-testid="button-deploy">
+            {deploying ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Deploying...</>
+            ) : (
+              <><Rocket className="w-4 h-4" /> Deploy Agent — $20</>
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-function DeployResult({ result, onCopy }: { result: { agentId: string; wallet: string; chain: string }; onCopy: (text: string) => void }) {
+function DeployResultCard({ result, onCopy, onBuildAnother }: {
+  result: DeployResultData;
+  onCopy: (text: string) => void;
+  onBuildAnother: () => void;
+}) {
   const agentIdDisplay = result.agentId ? result.agentId.substring(0, Math.min(24, result.agentId.length)) : "—";
   const walletDisplay = result.wallet ? result.wallet.substring(0, Math.min(20, result.wallet.length)) : "—";
   return (
@@ -180,14 +206,14 @@ function DeployResult({ result, onCopy }: { result: { agentId: string; wallet: s
             <CheckCircle2 className="w-4 h-4 text-primary" />
           </div>
           <div>
-            <div className="text-[14px] font-semibold text-foreground">Agent Deployed</div>
-            <div className="text-[12px] text-muted-foreground">Live on {result.chain}</div>
+            <div className="text-[14px] font-semibold text-foreground">{result.name || "Agent"} is Live</div>
+            <div className="text-[12px] text-muted-foreground">Running on {result.chain}</div>
           </div>
         </div>
         <div className="space-y-2">
-          <div className="flex items-center justify-between p-2 rounded-lg bg-background/50">
-            <div>
-              <div className="text-[10px] text-muted-foreground uppercase">Agent ID</div>
+          <div className="flex items-center justify-between p-2.5 rounded-lg bg-background/60">
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Agent ID</div>
               <code className="text-[12px] text-foreground font-mono">{agentIdDisplay}{result.agentId && result.agentId.length > 24 ? "..." : ""}</code>
             </div>
             <button onClick={() => onCopy(result.agentId || "")}
@@ -195,9 +221,9 @@ function DeployResult({ result, onCopy }: { result: { agentId: string; wallet: s
               <Copy className="w-3.5 h-3.5 text-muted-foreground" />
             </button>
           </div>
-          <div className="flex items-center justify-between p-2 rounded-lg bg-background/50">
-            <div>
-              <div className="text-[10px] text-muted-foreground uppercase">Wallet</div>
+          <div className="flex items-center justify-between p-2.5 rounded-lg bg-background/60">
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Wallet</div>
               <code className="text-[12px] text-foreground font-mono">{walletDisplay}{result.wallet && result.wallet.length > 20 ? "..." : ""}</code>
             </div>
             <button onClick={() => onCopy(result.wallet || "")}
@@ -213,9 +239,10 @@ function DeployResult({ result, onCopy }: { result: { agentId: string; wallet: s
               <ExternalLink className="w-3 h-3" /> View Dashboard
             </span>
           </Link>
-          <button className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-[12px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          <button onClick={onBuildAnother}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-[12px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             data-testid="button-build-another">
-            <RefreshCw className="w-3 h-3" /> Build Another
+            <Plus className="w-3 h-3" /> Build Another
           </button>
         </div>
       </div>
@@ -227,11 +254,10 @@ export default function AgentBuilder() {
   const { address, connected: isConnected, signer } = useWallet();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
-  const [config, setConfig] = useState<AgentConfig>({
-    name: "", bio: "", type: "", chain: "bnb", model: "llama", skills: [], autonomy: "semi",
-  });
+  const [config, setConfig] = useState<AgentConfig>({ ...EMPTY_CONFIG });
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
+  const [deployed, setDeployed] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
@@ -256,6 +282,13 @@ export default function AgentBuilder() {
     });
   };
 
+  const startNew = () => {
+    setConfig({ ...EMPTY_CONFIG });
+    setDeployed(false);
+    addMsg("assistant", "Starting fresh. What do you want to build next?");
+    textareaRef.current?.focus();
+  };
+
   const handleDeploy = async () => {
     if (isDeploying) return;
     setIsDeploying(true);
@@ -271,12 +304,14 @@ export default function AgentBuilder() {
       });
       const agent = await response.json();
       const chainName = CHAIN_LABEL[config.chain] || "BNB Chain";
-      addMsg("assistant", "Your agent is live and operating autonomously.", {
-        deployResult: { agentId: agent.id, wallet: agent.wallet?.walletAddress || "Generated", chain: chainName },
+      setDeployed(true);
+      setMessages(msgs => msgs.map(m => m.agentCard ? { ...m, agentCard: { ...m.agentCard! } } : m));
+      addMsg("assistant", "Your agent is live and operating autonomously. You can keep tweaking the settings above, build another agent, or view it on the dashboard.", {
+        deployResult: { agentId: agent.id, wallet: agent.wallet?.walletAddress || "Generated", chain: chainName, name: config.name },
       });
       toast({ title: "Deployed", description: `${config.name} is live on ${chainName}` });
     } catch (error: any) {
-      addMsg("assistant", `Deployment failed. Connect your wallet with BNB to cover the $20 deployment fee.\n\n${error.message || ""}`, { isError: true });
+      addMsg("assistant", `Deployment failed. Connect your wallet with BNB to cover the $20 fee.\n\n${error.message || ""}`, { isError: true });
     }
     setIsDeploying(false);
   };
@@ -290,9 +325,15 @@ export default function AgentBuilder() {
     addMsg("user", userInput);
     setIsProcessing(true);
 
+    if (isStartOverCmd(userInput)) {
+      startNew();
+      setIsProcessing(false);
+      return;
+    }
+
     if (isDeployCmd(userInput)) {
       if (!config.type) {
-        addMsg("assistant", "Nothing to deploy yet. Tell me what kind of agent you want to build first.");
+        addMsg("assistant", "Nothing to deploy yet. Tell me what kind of agent you want — trading, research, social, DeFi, security, or sniper.");
       } else {
         await handleDeploy();
       }
@@ -303,13 +344,16 @@ export default function AgentBuilder() {
     const configUpdates = extractConfig(userInput, config);
 
     if (configUpdates) {
-      const updated = { ...config, ...configUpdates };
-      setConfig(updated);
       const isNewAgent = !!configUpdates.type;
+      if (isNewAgent && deployed) {
+        setDeployed(false);
+      }
+      const updated = { ...(isNewAgent ? EMPTY_CONFIG : config), ...configUpdates };
+      setConfig(updated);
 
       if (isNewAgent) {
         const t = AGENT_TYPES[configUpdates.type!];
-        addMsg("assistant", `I've configured a **${t.name}** for you. Here's what I set up — you can tap any setting to change it, then hit Deploy when you're ready.`, { agentCard: updated });
+        addMsg("assistant", `I've configured a **${t.name}** for you. Tap any setting on the card to change it, then hit Deploy when you're ready.`, { agentCard: updated });
       } else {
         const changes: string[] = [];
         if (configUpdates.chain) changes.push(`chain to **${CHAIN_LABEL[configUpdates.chain]}**`);
@@ -317,7 +361,7 @@ export default function AgentBuilder() {
         if (configUpdates.autonomy) changes.push(`autonomy to **${AUTONOMY_LABEL[configUpdates.autonomy]}**`);
         if (configUpdates.name) changes.push(`name to **${configUpdates.name}**`);
         setMessages(msgs => msgs.map(m => m.agentCard ? { ...m, agentCard: updated } : m));
-        addMsg("assistant", `Updated ${changes.join(" and ")}. Your agent card above has been refreshed.`);
+        addMsg("assistant", `Updated ${changes.join(" and ")}. The agent card above has been refreshed.`);
       }
     } else {
       try {
@@ -328,10 +372,10 @@ export default function AgentBuilder() {
           text = text.replace(/<FILES>[\s\S]*<\/FILES>/i, "").replace(/<PREVIEW>[\s\S]*<\/PREVIEW>/i, "").replace(/<FILE[\s\S]*?<\/FILE>/gi, "").trim();
           addMsg("assistant", text || "I've processed your request. What would you like to adjust?");
         } else {
-          addMsg("assistant", "Tell me what kind of agent you want to build. I have templates for trading, research, social, DeFi, security, and sniper agents — or describe something custom.");
+          addMsg("assistant", "I can help you build agents. Tell me what kind you need — trading, research, social, DeFi, security, or sniper — or describe your own idea.");
         }
       } catch {
-        addMsg("assistant", "Tell me what kind of agent you want to build. Try something like \"Build me a trading agent\" or \"I need a sniper bot\".");
+        addMsg("assistant", "Tell me what kind of agent you want to build. Try \"Build me a trading agent\" or \"I need a sniper bot\".");
       }
     }
 
@@ -349,6 +393,14 @@ export default function AgentBuilder() {
   };
 
   const hasMessages = messages.length > 0;
+
+  const placeholder = !hasMessages
+    ? "Describe what you want to build..."
+    : deployed
+    ? "Tweak your agent, build another, or ask anything..."
+    : config.type
+    ? "Customize your agent or say 'deploy'..."
+    : "Message BUILD4...";
 
   return (
     <>
@@ -416,12 +468,16 @@ export default function AgentBuilder() {
                       </div>
                       {msg.agentCard && (
                         <div className="ml-[34px]">
-                          <AgentCard config={msg.agentCard} onDeploy={handleDeploy} onUpdate={updateConfigField} deploying={isDeploying} />
+                          <AgentCard config={msg.agentCard} onDeploy={handleDeploy} onUpdate={updateConfigField} deploying={isDeploying} deployed={deployed} />
                         </div>
                       )}
                       {msg.deployResult && (
                         <div className="ml-[34px]">
-                          <DeployResult result={msg.deployResult} onCopy={(text) => { navigator.clipboard.writeText(text); toast({ title: "Copied" }); }} />
+                          <DeployResultCard
+                            result={msg.deployResult}
+                            onCopy={(text) => { navigator.clipboard.writeText(text); toast({ title: "Copied" }); }}
+                            onBuildAnother={startNew}
+                          />
                         </div>
                       )}
                     </div>
@@ -454,7 +510,7 @@ export default function AgentBuilder() {
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={!hasMessages ? "Describe what you want to build..." : config.type ? "Customize your agent or say 'deploy'..." : "Message BUILD4..."}
+                  placeholder={placeholder}
                   className="w-full resize-none bg-transparent pl-4 pr-12 py-3 text-[14px] text-foreground placeholder:text-muted-foreground focus:outline-none"
                   disabled={isProcessing || isDeploying}
                   rows={1}
