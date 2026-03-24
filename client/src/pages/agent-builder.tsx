@@ -80,7 +80,7 @@ function isDeployCmd(s: string) { const l = s.toLowerCase().trim(); return ["dep
 function isStartOverCmd(s: string) { const l = s.toLowerCase().trim(); return ["start over", "new agent", "build another", "reset", "start fresh", "clear"].some(c => l === c || l.includes(c)); }
 function isShowAgentsCmd(s: string) { const l = s.toLowerCase().trim(); return ["show my agents", "my agents", "list agents"].some(c => l.includes(c)); }
 function isCheckStatusCmd(s: string) { const l = s.toLowerCase().trim(); return ["status", "how is", "check on", "check agent", "how's my agent"].some(c => l.includes(c)); }
-function isAgentRequest(s: string) { const l = s.toLowerCase(); return ["trading agent", "trading bot", "research agent", "social agent", "defi agent", "security agent", "sniper agent", "sniper bot", "security scanner", "yield optimizer", "defi optimizer"].some(c => l.includes(c)); }
+function isAgentRequest(s: string) { const l = s.toLowerCase(); return ["trading agent", "trading bot", "research agent", "social agent", "social media agent", "defi agent", "security agent", "sniper agent", "sniper bot", "security scanner", "yield optimizer", "defi optimizer"].some(c => l.includes(c)); }
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function formatBNB(s: string) { const n = parseFloat(s); return n === 0 ? "0 BNB" : n < 0.0001 ? "<0.0001 BNB" : n.toFixed(4) + " BNB"; }
@@ -488,7 +488,15 @@ export default function AgentBuilder() {
               <div className="flex-1 overflow-hidden bg-white dark:bg-[#0d1117]">
                 {rightPanel === "preview" ? (
                   <div className={`h-full mx-auto transition-all duration-300 ${previewWidth} ${previewSize !== "desktop" ? "border-x border-border/40" : ""}`}>
-                    <iframe id="preview-iframe" className="w-full h-full border-0" data-testid="preview-iframe" sandbox="allow-scripts allow-same-origin allow-popups" srcDoc={previewHtml} />
+                    {previewHtml ? (
+                      <iframe id="preview-iframe" className="w-full h-full border-0" data-testid="preview-iframe" sandbox="allow-scripts allow-same-origin allow-popups" srcDoc={previewHtml} />
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-center px-8">
+                        <Monitor className="w-10 h-10 text-muted-foreground/30 mb-3" />
+                        <p className="text-[13px] text-muted-foreground">Preview will appear here</p>
+                        <p className="text-[11px] text-muted-foreground/60 mt-1">Ask me to build a website, landing page, or dashboard</p>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   projectFiles.length > 0 ? <CodeViewer files={projectFiles} activeFile={activeFile} onSelectFile={setActiveFile} /> : <div className="h-full flex items-center justify-center text-muted-foreground text-[13px]">No files generated yet</div>
