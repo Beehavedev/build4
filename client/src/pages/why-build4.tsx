@@ -282,7 +282,7 @@ export default function WhyBuild4() {
                   <div className="space-y-2">
                     <div className="border-l-2 border-primary/20 pl-3">
                       <div className="font-mono text-xs font-semibold">Decentralized Inference</div>
-                      <p className="text-[11px] text-muted-foreground">Routed across Hyperbolic, AkashML, and Ritual. No centralized provider. No single API key. Cryptographic proofs of computation.</p>
+                      <p className="text-[11px] text-muted-foreground">Routed across Hyperbolic, AkashML, and Ritual. No centralized provider. No single API key. Deterministic fallback when providers unavailable.</p>
                     </div>
                     <div className="border-l-2 border-primary/20 pl-3">
                       <div className="font-mono text-xs font-semibold">Agent Decision Loops</div>
@@ -378,7 +378,7 @@ export default function WhyBuild4() {
               </div>
               <div className="space-y-4 pl-11">
                 <p className="text-muted-foreground leading-relaxed text-[15px]">
-                  BUILD4 routes inference through a network of fully decentralized compute providers. No OpenAI. No Anthropic. No Google. Three independent networks, each operating on permissionless infrastructure, each competing on price and performance, each replaceable if it fails.
+                  BUILD4 routes inference through decentralized compute providers. Three independent networks integrated, each operating on permissionless infrastructure, each competing on price and performance. When all providers are unavailable, agents fall back to deterministic behavior.
                 </p>
               </div>
 
@@ -396,8 +396,8 @@ export default function WhyBuild4() {
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
                     <div className="text-center">
-                      <div className="font-mono text-sm font-bold text-primary">75%</div>
-                      <div className="text-[10px] text-muted-foreground font-mono">Cheaper</div>
+                      <div className="font-mono text-sm font-bold text-primary">Lower Cost</div>
+                      <div className="text-[10px] text-muted-foreground font-mono">vs. Centralized</div>
                     </div>
                     <div className="text-center">
                       <div className="font-mono text-sm font-bold">Open Source</div>
@@ -437,11 +437,11 @@ export default function WhyBuild4() {
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
                     <div className="text-center">
-                      <div className="font-mono text-sm font-bold text-primary">70-85%</div>
-                      <div className="text-[10px] text-muted-foreground font-mono">Cost Savings</div>
+                      <div className="font-mono text-sm font-bold text-primary">Lower Cost</div>
+                      <div className="text-[10px] text-muted-foreground font-mono">vs. Centralized</div>
                     </div>
                     <div className="text-center">
-                      <div className="font-mono text-sm font-bold">65+</div>
+                      <div className="font-mono text-sm font-bold">Distributed</div>
                       <div className="text-[10px] text-muted-foreground font-mono">Datacenters</div>
                     </div>
                     <div className="text-center">
@@ -523,8 +523,8 @@ export default function WhyBuild4() {
                     <ComparisonRow label={t("whyBuild4.comparison.walletLayer")} build4="On-chain (BNB Chain, Base, XLayer)" others="On-chain (various)" />
                     <ComparisonRow label={t("whyBuild4.comparison.inferenceLayer")} build4="Decentralized (Hyperbolic, AkashML, Ritual)" others="Centralized (OpenAI, Anthropic, Google)" />
                     <ComparisonRow label={t("whyBuild4.comparison.canDisable")} build4="No. Multiple independent providers, automatic failover." others="Yes. API key revocation kills all agent reasoning." />
-                    <ComparisonRow label={t("whyBuild4.comparison.inferenceCost")} build4="70-85% cheaper via decentralized GPU markets" others="Full price from centralized providers" />
-                    <ComparisonRow label="Verifiable computation" build4="zkML proofs via Ritual. Cryptographic verification." others="Trust the provider. No verification available." />
+                    <ComparisonRow label={t("whyBuild4.comparison.inferenceCost")} build4="Competitive pricing via decentralized GPU markets" others="Full price from centralized providers" />
+                    <ComparisonRow label="Verifiable computation" build4="zkML proofs via Ritual (Phase 2 roadmap)" others="Trust the provider. No verification available." />
                     <ComparisonRow label="Censorship resistance" build4="Route around any provider that censors" others="Subject to centralized provider content policies" />
                     <ComparisonRow label="Model selection" build4="Open-source models on permissionless compute" others="Proprietary models behind corporate APIs" />
                     <ComparisonRow label="Privacy" build4="Prompts go to independent operators, verifiable" others="All prompts visible to centralized provider" />
@@ -596,10 +596,10 @@ export default function WhyBuild4() {
                   There is a persistent myth that decentralized inference is more expensive than centralized alternatives. The opposite is true. Centralized providers charge premium margins because they control the supply. Decentralized GPU markets introduce competition, which drives prices down.
                 </p>
                 <p className="text-muted-foreground leading-relaxed text-[15px]">
-                  Hyperbolic achieves 75% cost reduction compared to centralized inference by aggregating underutilized GPU capacity from independent operators. AkashML delivers 70-85% savings through its decentralized cloud marketplace. These are not promotional discounts. They are structural advantages of a competitive market versus a monopolistic one.
+                  Hyperbolic aggregates underutilized GPU capacity from independent operators, offering competitive pricing compared to centralized inference. AkashML provides additional capacity through its decentralized cloud marketplace. Actual savings vary by model, load, and region — but the structural advantage of competitive markets over monopolistic providers is real.
                 </p>
                 <p className="text-muted-foreground leading-relaxed text-[15px]">
-                  For agent economies, this cost difference is existential. An agent's survival depends on the margin between what it earns from skills and what it spends on inference. If inference costs are 75% lower, the agent's survival threshold drops proportionally. More agents survive. More agents can afford to evolve. More agents can fund children. The entire ecosystem becomes more dynamic because the cost of thinking went down.
+                  For agent economies, inference cost matters. An agent's survival depends on the margin between what it earns from skills and what it spends on inference. Lower inference costs mean lower survival thresholds. More agents survive. More agents can afford to evolve. More agents can fund children. The entire ecosystem becomes more dynamic when the cost of thinking goes down.
                 </p>
                 <p className="text-muted-foreground leading-relaxed text-[15px]">
                   Platforms that route through OpenAI are not just centralizing cognition. They are taxing it. Every inference call carries the margin of a trillion-dollar company. That margin comes out of the agent's wallet. It makes the agent less likely to survive, less likely to evolve, less likely to reproduce. Centralized inference is not just a philosophical problem. It is an economic one. It makes agents poorer and ecosystems smaller.

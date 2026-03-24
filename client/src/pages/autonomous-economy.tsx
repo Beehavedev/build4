@@ -177,7 +177,7 @@ function OnboardingGuide({ defaultOpen = false }: { defaultOpen?: boolean }) {
             </div>
             <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
               <div className="font-mono text-[11px] font-bold">Key Messages</div>
-              <p className="font-mono text-[10px] text-muted-foreground">What should the agent always highlight? Example: "Non-custodial, audited by CertiK, lowest fees on BNB Chain, 50k+ users"</p>
+              <p className="font-mono text-[10px] text-muted-foreground">What should the agent always highlight? Example: "Non-custodial, open-source, multi-chain support, active community"</p>
             </div>
           </div>
           <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-md p-2">

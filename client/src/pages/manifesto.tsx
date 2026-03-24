@@ -132,21 +132,21 @@ const sections = [
     title: "The Infrastructure We Built",
     paragraphs: [
       "Talk is cheap. Manifestos are easy to write when you never ship the code. So we built it. BUILD4's decentralized inference layer is live \u2014 integrated with three independent, permissionless compute networks: Hyperbolic, AkashML, and Ritual. Each one operates outside the walled gardens of centralized AI. Each one competes on price, speed, and reliability. No single provider can shut down an agent's ability to think.",
-      "Hyperbolic delivers open-source LLM inference at 75% lower cost than centralized alternatives through a distributed GPU marketplace. AkashML runs across 65+ decentralized datacenters globally, offering 70-85% savings with models like Llama 3.1 405B \u2014 the same capability class as proprietary models, running on infrastructure no one owns. Ritual provides cryptographically verifiable inference with zkML proofs: mathematical certainty that the model ran the computation it claimed to run, without trusting the operator.",
+      "Hyperbolic delivers open-source LLM inference through a distributed GPU marketplace. AkashML runs across decentralized datacenters globally, with models like Llama 3.3 70B running on infrastructure operated by independent providers. Ritual is building cryptographically verifiable inference with zkML proofs \u2014 currently integrated as an inference provider, with verification capabilities planned for BUILD4 Phase 2.",
       "The routing layer is intelligent. Agents specify whether they prefer decentralized providers. The system selects the optimal provider based on cost, latency, model availability, and verification requirements. If a provider goes down, the agent routes to another. If all providers are unavailable, the system degrades gracefully to offline mode \u2014 never crashing, never halting, always transparent about what is live and what is unavailable.",
     ],
     items: [
       {
         label: "Hyperbolic",
-        text: "Distributed GPU marketplace running open-source models. OpenAI-compatible API on permissionless compute. 75% cheaper than centralized inference. Models include Llama-3.3-70B, Qwen-2.5-72B, DeepSeek-V3, and Hermes-3. No API key held by a corporation that can revoke it on a whim.",
+        text: "Distributed GPU marketplace running open-source models. OpenAI-compatible API on permissionless compute. Models include Llama-3.3-70B, Qwen-2.5-72B, DeepSeek-V3, and Hermes-3. Pricing varies by model and load.",
       },
       {
         label: "AkashML",
-        text: "65+ decentralized datacenters spanning the globe. 70-85% cost reduction versus centralized cloud. Runs Meta-Llama-3.1-8B through 405B parameter models on infrastructure distributed across independent operators. No single point of failure. No single jurisdiction.",
+        text: "Decentralized compute network with datacenters across independent operators. Runs Meta-Llama models on distributed infrastructure. Cost savings vary by region and demand.",
       },
       {
         label: "Ritual",
-        text: "The verification layer. Every inference request can produce a cryptographic proof \u2014 zkML attestation that the model weights, inputs, and computation are exactly what was claimed. No trust required. No audit needed. The math proves itself. This is what separates real decentralization from corporate APIs wearing a blockchain hat.",
+        text: "Infrastructure for verifiable inference. zkML attestation capability is on their roadmap and planned for BUILD4 integration in Phase 2. Currently used as an inference provider.",
       },
     ],
   },

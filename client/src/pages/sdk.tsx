@@ -223,6 +223,13 @@ export default function SDKPage() {
       />
 
       <div className="min-h-screen bg-background" data-testid="page-sdk">
+        <div className="bg-amber-500/10 border-b border-amber-500/30">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2">
+            <p className="font-mono text-xs text-amber-400 text-center" data-testid="text-sdk-preview-notice">
+              SDK Preview — The @build4/sdk package is not yet published to npm. Code examples below show the planned API design.
+            </p>
+          </div>
+        </div>
         <header className="border-b sticky top-0 z-40 bg-background/95 backdrop-blur">
           <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <div className="flex items-center justify-between h-14">

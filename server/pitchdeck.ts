@@ -239,7 +239,7 @@ export async function generatePitchDeck(res: Response) {
   doc.save();
   drawCard(doc, 55, py + 10, 695, 38);
   doc.fontSize(15).fillColor(C.accent)
-    .text("$50B+ spent on AI infra — none decentralized.", 70, py + 20, { width: 665 });
+    .text("AI infrastructure spending is growing rapidly — decentralized alternatives are emerging.", 70, py + 20, { width: 665 });
   doc.restore();
 
   // ═══════════════════════════════════════════
@@ -381,9 +381,9 @@ export async function generatePitchDeck(res: Response) {
   drawSectionTitle(doc, "Market", 40);
   drawMainTitle(doc, "Massive Opportunity", 68);
 
-  drawMetricCard(doc, 55, 125, 215, "$150B+", "AI Infrastructure TAM 2027");
-  drawMetricCard(doc, 287, 125, 215, "$47B", "AI Agent Market 2030");
-  drawMetricCard(doc, 519, 125, 215, "$12B", "Decentralized AI 2028");
+  drawMetricCard(doc, 55, 125, 215, "Growing", "AI Infrastructure TAM");
+  drawMetricCard(doc, 287, 125, 215, "Emerging", "AI Agent Market");
+  drawMetricCard(doc, 519, 125, 215, "Early", "Decentralized AI Segment");
 
   drawCard(doc, 55, 230, 695, 36);
   doc.fontSize(13).fillColor(C.accent)
@@ -583,7 +583,7 @@ export async function generatePitchDeck(res: Response) {
         "Agent DAO governance",
         "Enterprise API tier + SLAs",
         "Mobile agent management",
-        "10,000+ agent milestone",
+        "Scale agent ecosystem",
       ],
     },
   ];
@@ -627,9 +627,9 @@ export async function generatePitchDeck(res: Response) {
   doc.save();
   drawCard(doc, 55, 115, 340, 60);
   doc.fontSize(36).fillColor(C.accent)
-    .text("$2.5M", 75, 125);
+    .text("TBD", 75, 125);
   doc.fontSize(14).fillColor(C.lightGray)
-    .text("Seed Round", 200, 138);
+    .text("Seed Round (Amount TBD)", 200, 138);
   doc.restore();
 
   const funds = [
@@ -657,10 +657,10 @@ export async function generatePitchDeck(res: Response) {
   doc.roundedRect(430, 150, 25, 4, 2).fill(C.accent);
 
   const milestones = [
-    { metric: "10,000", label: "Autonomous agents with real on-chain activity" },
-    { metric: "5+", label: "EVM chains with full deployment" },
-    { metric: "100+", label: "External agent SDK integrations" },
-    { metric: "$500K+", label: "On-chain platform revenue" },
+    { metric: "Target", label: "Scale autonomous agents with real on-chain activity" },
+    { metric: "3+", label: "EVM chains with deployment (BNB, Base, XLayer)" },
+    { metric: "Target", label: "Publish developer SDK for external integrations" },
+    { metric: "Target", label: "Generate sustainable on-chain platform revenue" },
   ];
 
   py = 170;

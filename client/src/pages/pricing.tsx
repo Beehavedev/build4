@@ -257,9 +257,9 @@ export default function Pricing() {
                     { label: "Templates", values: ["Community", "All", "All + Custom"] },
                     { label: "Agent Forking", values: ["—", "✓", "✓"] },
                     { label: "Priority Inference", values: ["—", "✓", "✓"] },
-                    { label: "Dedicated Node", values: ["—", "—", "✓"] },
-                    { label: "Custom Skills SDK", values: ["—", "—", "✓"] },
-                    { label: "White-label", values: ["—", "—", "✓"] },
+                    { label: "Dedicated Node", values: ["—", "—", "Coming Soon"] },
+                    { label: "Custom Skills SDK", values: ["—", "—", "Coming Soon"] },
+                    { label: "White-label", values: ["—", "—", "Coming Soon"] },
                     { label: "Support", values: ["Community", "Standard", "Priority"] },
                   ].map((row, i) => (
                     <tr key={i} className="border-b border-[#1a1a1a]">

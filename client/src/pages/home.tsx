@@ -61,10 +61,10 @@ function formatNum(n: number): string {
 }
 
 const defaultStats = [
-  { key: "onchainUsers", value: "88K", icon: Users },
-  { key: "transactions", value: "100K", icon: Activity },
-  { key: "skillsCreated", value: "5K", icon: Cpu },
-  { key: "activeAgents", value: "70.4K", icon: Bot },
+  { key: "visitors", value: "—", icon: Users },
+  { key: "transactions", value: "—", icon: Activity },
+  { key: "skillsCreated", value: "—", icon: Cpu },
+  { key: "activeAgents", value: "—", icon: Bot },
 ];
 
 function TypewriterText({ text, className }: { text: string; className?: string }) {
@@ -187,7 +187,7 @@ function PlatformStats() {
 
   const stats = data
     ? [
-        { key: "onchainUsers", value: formatNum(data.onchainUsers), icon: Users },
+        { key: "visitors", value: formatNum(data.visitors || data.onchainUsers || 0), icon: Users },
         { key: "transactions", value: formatNum(data.transactions), icon: Activity },
         { key: "skillsCreated", value: formatNum(data.skills), icon: Cpu },
         { key: "activeAgents", value: formatNum(data.agents), icon: Bot },
@@ -641,7 +641,7 @@ export default function Home() {
                         { tag: "PROVIDER", text: "hyperbolic.gpu_network" },
                         { tag: "MODEL", text: "meta-llama/Llama-3.3-70B-Instruct" },
                         { tag: "FALLBACK", text: "akash/DeepSeek-V3" },
-                        { tag: "COST", text: "0.0001 BNB/request (-75%)" },
+                        { tag: "COST", text: "0.0001 BNB/request" },
                         { tag: "STATUS", text: "fully_decentralized" },
                       ],
                     },

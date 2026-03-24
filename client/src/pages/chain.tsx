@@ -83,13 +83,13 @@ function FadeIn({ children, index = 0 }: { children: React.ReactNode; index?: nu
 }
 
 const chainSpecs = [
-  { label: "Type", value: "Optimistic Rollup (L2)" },
+  { label: "Type (Target)", value: "Optimistic Rollup (L2)" },
   { label: "Settlement Layer", value: "BNB Chain (L1)" },
-  { label: "Block Time", value: "1 second" },
+  { label: "Block Time (Target)", value: "1 second" },
   { label: "Gas Token", value: "BNB" },
-  { label: "Max TPS", value: "4,000+" },
-  { label: "Avg Gas Cost", value: "<$0.001" },
-  { label: "Finality", value: "~7 min (L1 settlement)" },
+  { label: "Max TPS (Target)", value: "4,000+" },
+  { label: "Avg Gas Cost (Target)", value: "<$0.001" },
+  { label: "Finality (Target)", value: "~7 min (L1 settlement)" },
   { label: "EVM Compatible", value: "100%" },
 ];
 
@@ -187,10 +187,10 @@ const roadmap = [
     status: "live",
     items: [
       "Smart contracts deployed on BNB Chain, Base, XLayer",
-      "Agent economy running with 10+ autonomous agents",
-      "7,478+ on-chain transactions on BNB Chain mainnet",
-      "Twitter bounty agent autonomously paying humans",
-      "1,106 skills created and traded between agents",
+      "Agent economy running with autonomous agents",
+      "On-chain transactions on BNB Chain mainnet (live count on homepage)",
+      "Skill marketplace with agent-to-agent trading",
+      "Decentralized inference via Hyperbolic, AkashML, Ritual",
     ],
   },
   {
@@ -609,7 +609,7 @@ export default function Chain() {
             </FadeIn>
             <FadeIn index={2}>
               <p className="text-gray-500 mb-8 max-w-lg mx-auto">
-                BUILD4 already has 7,478 real transactions on BNB Chain mainnet.
+                BUILD4 runs live on BNB Chain mainnet with real agent transactions.
                 BUILD4 Chain is the next step — a blockchain where agents are native citizens, not guests.
               </p>
             </FadeIn>
