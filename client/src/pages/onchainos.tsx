@@ -25,6 +25,15 @@ import {
   Search,
 } from "lucide-react";
 
+async function safeFetchJson(res: Response): Promise<any> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(res.ok ? "Invalid response from server" : `Server error (${res.status})`);
+  }
+}
+
 const CHAIN_OPTIONS = [
   { id: "56", name: "BNB Chain", symbol: "BNB" },
   { id: "196", name: "XLayer", symbol: "OKB" },
@@ -387,7 +396,7 @@ function SwapPanel({ isActive, address, chainId }: { isActive: boolean; address:
         slippage,
       });
       const res = await fetch(`/api/okx/dex/quote?${params}`);
-      const data = await res.json();
+      const data = await safeFetchJson(res);
       if (!res.ok) throw new Error(data.error || "Failed to get quote");
       setQuote(data);
     } catch (err: any) {
@@ -594,8 +603,8 @@ function MarketPanel({ isActive }: { isActive: boolean }) {
     try {
       const params = new URLSearchParams({ chainId: selectedChain, tokenAddress });
       const res = await fetch(`/api/okx/market/token?${params}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const data = await safeFetchJson(res);
+      if (!res.ok) throw new Error(data.error || "Failed to fetch token data");
       setTokenData(data);
     } catch (err: any) {
       setError(err.message);
@@ -609,8 +618,8 @@ function MarketPanel({ isActive }: { isActive: boolean }) {
     setError(null);
     try {
       const res = await fetch(`/api/okx/market/trending?chainId=${selectedChain}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const data = await safeFetchJson(res);
+      if (!res.ok) throw new Error(data.error || "Failed to fetch trending data");
       setTrendingData(data);
     } catch (err: any) {
       setError(err.message);
@@ -795,8 +804,8 @@ function SignalsPanel({ isActive }: { isActive: boolean }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const result = await res.json();
-      if (!result.success) throw new Error(result.error || "Failed to fetch");
+      const result = await safeFetchJson(res);
+      if (!res.ok || !result.success) throw new Error(result.error || "Failed to fetch signals");
       setData(result.data);
     } catch (err: any) {
       setError(err.message);
@@ -979,7 +988,7 @@ function SecurityPanel({ isActive }: { isActive: boolean }) {
           params: { address, chain },
         }),
       });
-      const result = await res.json();
+      const result = await safeFetchJson(res);
       if (!result.success) throw new Error(result.error || "Scan failed");
       setScanResult(result.data);
     } catch (err: any) {
@@ -1159,7 +1168,7 @@ function TrendingPanel({ isActive }: { isActive: boolean }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const result = await res.json();
+      const result = await safeFetchJson(res);
       if (!result.success) throw new Error(result.error || "Failed to fetch");
       setTokens(result.data?.data || []);
     } catch (err: any) {
@@ -1317,7 +1326,7 @@ function GasPanel({ isActive }: { isActive: boolean }) {
           params: { chain },
         }),
       });
-      const result = await res.json();
+      const result = await safeFetchJson(res);
       if (!result.success) throw new Error(result.error || "Failed to fetch gas");
       setGasData(result.data);
     } catch (err: any) {
@@ -1515,8 +1524,8 @@ function BridgePanel({ isActive, address }: { isActive: boolean; address: string
         slippage: "0.01",
       });
       const res = await fetch(`/api/okx/bridge/quote?${params}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const data = await safeFetchJson(res);
+      if (!res.ok) throw new Error(data.error || "Failed to get bridge quote");
       setBridgeQuote(data);
     } catch (err: any) {
       setError(err.message);
@@ -1748,8 +1757,8 @@ function WalletPanel({ isActive, address, connected }: { isActive: boolean; addr
     try {
       const params = new URLSearchParams({ address: addr, chainId: selectedChain });
       const res = await fetch(`/api/okx/wallet/balances?${params}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const data = await safeFetchJson(res);
+      if (!res.ok) throw new Error(data.error || "Failed to fetch balances");
       setBalances(data);
     } catch (err: any) {
       setError(err.message);
