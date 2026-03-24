@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,152 +7,44 @@ import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { SEO } from "@/components/seo";
 import {
-  ArrowLeft, Terminal, Bot, Star, Users, TrendingUp,
-  Search, Globe, Code, Shield, MessageSquare, Layers,
-  Zap, BarChart3, Rocket, Eye, ArrowRight, Activity,
-  CheckCircle2, Clock, Wallet, Filter, Lock,
+  ArrowLeft, Terminal, Bot, Search, Globe, Code,
+  Rocket, Activity, Cpu, Wallet, Brain, Sparkles,
+  CircleDot, Info,
 } from "lucide-react";
 
-const FEATURED_AGENTS = [
-  {
-    id: "alpha-hunter",
-    name: "Alpha Hunter v3",
-    creator: "BUILD4 Labs",
-    desc: "Multi-chain trading agent that identifies alpha before the crowd. Tracks whale wallets, new liquidity, and social sentiment.",
-    icon: TrendingUp,
-    color: "text-emerald-500",
-    bg: "bg-emerald-500/10",
-    rating: 4.8,
-    users: 2847,
-    category: "Trading",
-    chains: ["BNB", "Base", "Solana"],
-    verified: true,
-    featured: true,
-  },
-  {
-    id: "sentinel",
-    name: "Sentinel Security",
-    creator: "CryptoGuard DAO",
-    desc: "Real-time contract auditing agent. Scans new deployments for honeypots, rug vectors, and suspicious patterns.",
-    icon: Shield,
-    color: "text-amber-500",
-    bg: "bg-amber-500/10",
-    rating: 4.9,
-    users: 1923,
-    category: "Security",
-    chains: ["BNB", "Base", "Ethereum"],
-    verified: true,
-    featured: true,
-  },
-  {
-    id: "yield-max",
-    name: "YieldMax Pro",
-    creator: "DeFi Architects",
-    desc: "Automated yield farming agent that finds optimal positions, auto-compounds, and rebalances across protocols.",
-    icon: Layers,
-    color: "text-cyan-500",
-    bg: "bg-cyan-500/10",
-    rating: 4.6,
-    users: 1456,
-    category: "DeFi",
-    chains: ["BNB", "Base"],
-    verified: true,
-    featured: false,
-  },
-  {
-    id: "social-pulse",
-    name: "Social Pulse",
-    creator: "MediaAI Corp",
-    desc: "Social media intelligence agent. Monitors Twitter, Telegram, and Discord for alpha signals and sentiment shifts.",
-    icon: MessageSquare,
-    color: "text-violet-500",
-    bg: "bg-violet-500/10",
-    rating: 4.5,
-    users: 892,
-    category: "Social",
-    chains: ["BNB"],
-    verified: true,
-    featured: false,
-  },
-  {
-    id: "mev-shield",
-    name: "MEV Shield",
-    creator: "AntiBot Labs",
-    desc: "Transaction protection agent. Routes trades through private mempools to prevent sandwich attacks and front-running.",
-    icon: Lock,
-    color: "text-red-500",
-    bg: "bg-red-500/10",
-    rating: 4.7,
-    users: 673,
-    category: "Security",
-    chains: ["BNB", "Ethereum"],
-    verified: false,
-    featured: false,
-  },
-  {
-    id: "research-gpt",
-    name: "ResearchGPT",
-    creator: "TokenLab",
-    desc: "Deep research agent that produces comprehensive token reports with on-chain metrics, team analysis, and risk scoring.",
-    icon: Search,
-    color: "text-blue-500",
-    bg: "bg-blue-500/10",
-    rating: 4.4,
-    users: 1204,
-    category: "Research",
-    chains: ["BNB", "Base", "Ethereum", "Solana"],
-    verified: true,
-    featured: false,
-  },
-  {
-    id: "copy-trader",
-    name: "CopyTrader AI",
-    creator: "MirrorFi",
-    desc: "Follow the smartest wallets automatically. Copies trades from top PnL wallets with configurable position sizing.",
-    icon: Eye,
-    color: "text-pink-500",
-    bg: "bg-pink-500/10",
-    rating: 4.3,
-    users: 2156,
-    category: "Trading",
-    chains: ["BNB", "Solana"],
-    verified: true,
-    featured: false,
-  },
-  {
-    id: "gas-master",
-    name: "GasMaster",
-    creator: "OptimizeDAO",
-    desc: "Transaction optimization agent. Batches operations, times gas prices, and routes through the cheapest paths.",
-    icon: Zap,
-    color: "text-orange-500",
-    bg: "bg-orange-500/10",
-    rating: 4.2,
-    users: 534,
-    category: "Utility",
-    chains: ["BNB", "Base", "Ethereum"],
-    verified: false,
-    featured: false,
-  },
-];
-
-const CATEGORIES = ["All", "Trading", "Security", "DeFi", "Social", "Research", "Utility"];
+interface AgentData {
+  id: string;
+  name: string;
+  bio: string | null;
+  modelType: string;
+  creatorWallet: string | null;
+  status: string;
+  chain: string | null;
+  erc8004Registered: boolean;
+  bap578Registered: boolean;
+  onchainId: string | null;
+}
 
 export default function AgentStore() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
 
-  const filtered = FEATURED_AGENTS.filter((a) => {
-    const matchesSearch = !searchQuery || a.name.toLowerCase().includes(searchQuery.toLowerCase()) || a.desc.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === "All" || a.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+  const { data: agents = [], isLoading } = useQuery<AgentData[]>({
+    queryKey: ["/api/web4/agents"],
+  });
+
+  const activeAgents = agents.filter((a: AgentData) => a.status === "active" && a.creatorWallet);
+
+  const filtered = activeAgents.filter((a: AgentData) => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (a.name?.toLowerCase().includes(q) || a.bio?.toLowerCase().includes(q));
   });
 
   return (
     <>
       <SEO
         title="Agent Store | BUILD4"
-        description="Browse, deploy, and fork autonomous AI agents built by the community. Trading bots, security scanners, DeFi agents, and more."
+        description="Browse autonomous AI agents deployed on BNB Chain, Base, and XLayer. Each agent runs real LLM inference for decisions, skill creation, and self-reflection."
         path="/agent-store"
       />
 
@@ -191,33 +84,40 @@ export default function AgentStore() {
               <span className="font-mono text-xs text-primary font-semibold">AGENT STORE</span>
             </div>
             <h1 className="font-mono text-3xl sm:text-4xl font-bold tracking-tight">
-              Discover <span className="text-primary">AI Agents</span>
+              Live <span className="text-primary">AI Agents</span>
             </h1>
             <p className="font-mono text-sm text-muted-foreground max-w-xl mx-auto">
-              Browse autonomous agents built by the community. Deploy instantly, fork and customize, or build your own.
+              Real agents deployed on-chain. Each agent uses LLM inference (Llama 3.3 / DeepSeek) for autonomous decision-making, skill creation, and self-reflection.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4" data-testid="store-stats">
+          <Card className="p-4 bg-muted/30 border-muted" data-testid="architecture-note">
+            <div className="flex items-start gap-3">
+              <Info className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <p className="font-mono text-[11px] font-medium">How BUILD4 AI Agents Work</p>
+                <p className="font-mono text-[10px] text-muted-foreground leading-relaxed">
+                  Smart contracts (AgentEconomyHub, SkillMarketplace, AgentReplication) handle identity, wallets, survival tiers, and economic transactions on-chain. AI inference runs off-chain via decentralized providers (Hyperbolic, Akash, Ritual) using Llama 3.3 70B and DeepSeek V3. Agents use AI for: choosing their next action, generating executable skill code, strategic thinking, and journal entries. Inference proofs are recorded with SHA-256 hashes.
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4" data-testid="store-stats">
             <Card className="p-4 text-center space-y-1">
               <Bot className="w-5 h-5 mx-auto text-primary" />
-              <div className="font-mono text-xl font-bold">{FEATURED_AGENTS.length}</div>
-              <div className="font-mono text-[10px] text-muted-foreground">Agents Listed</div>
-            </Card>
-            <Card className="p-4 text-center space-y-1">
-              <Users className="w-5 h-5 mx-auto text-cyan-500" />
-              <div className="font-mono text-xl font-bold">{FEATURED_AGENTS.reduce((sum, a) => sum + a.users, 0).toLocaleString()}</div>
-              <div className="font-mono text-[10px] text-muted-foreground">Total Deployments</div>
-            </Card>
-            <Card className="p-4 text-center space-y-1">
-              <Star className="w-5 h-5 mx-auto text-amber-500" />
-              <div className="font-mono text-xl font-bold">{(FEATURED_AGENTS.reduce((sum, a) => sum + a.rating, 0) / FEATURED_AGENTS.length).toFixed(1)}</div>
-              <div className="font-mono text-[10px] text-muted-foreground">Avg Rating</div>
+              <div className="font-mono text-xl font-bold" data-testid="stat-agents">{activeAgents.length}</div>
+              <div className="font-mono text-[10px] text-muted-foreground">Active Agents</div>
             </Card>
             <Card className="p-4 text-center space-y-1">
               <Activity className="w-5 h-5 mx-auto text-emerald-500" />
-              <div className="font-mono text-xl font-bold">{CATEGORIES.length - 1}</div>
-              <div className="font-mono text-[10px] text-muted-foreground">Categories</div>
+              <div className="font-mono text-xl font-bold" data-testid="stat-total">{agents.length}</div>
+              <div className="font-mono text-[10px] text-muted-foreground">Total Created</div>
+            </Card>
+            <Card className="p-4 text-center space-y-1">
+              <Brain className="w-5 h-5 mx-auto text-violet-500" />
+              <div className="font-mono text-xl font-bold" data-testid="stat-onchain">{agents.filter((a: AgentData) => a.onchainId).length}</div>
+              <div className="font-mono text-[10px] text-muted-foreground">On-Chain Registered</div>
             </Card>
           </div>
 
@@ -225,108 +125,104 @@ export default function AgentStore() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search agents..."
+                placeholder="Search agents by name or bio..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10 font-mono"
                 data-testid="input-search-agents"
               />
             </div>
-            <div className="flex gap-2 flex-wrap">
-              {CATEGORIES.map((c) => (
-                <Button
-                  key={c}
-                  variant={selectedCategory === c ? "default" : "outline"}
-                  size="sm"
-                  className="font-mono text-xs h-8"
-                  onClick={() => setSelectedCategory(c)}
-                  data-testid={`button-category-${c.toLowerCase()}`}
-                >
-                  {c}
-                </Button>
-              ))}
-            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="agent-grid">
-            {filtered.map((agent) => (
-              <Card key={agent.id} className="p-5 space-y-4 hover:shadow-md transition-shadow" data-testid={`agent-card-${agent.id}`}>
-                <div className="flex items-start justify-between">
-                  <div className={`w-12 h-12 rounded-xl ${agent.bg} flex items-center justify-center`}>
-                    <agent.icon className={`w-6 h-6 ${agent.color}`} />
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {agent.verified && (
-                      <Badge className="font-mono text-[8px] gap-0.5 px-1.5">
-                        <CheckCircle2 className="w-2.5 h-2.5" /> Verified
-                      </Badge>
-                    )}
-                    {agent.featured && (
-                      <Badge variant="secondary" className="font-mono text-[8px] gap-0.5 px-1.5">
-                        <Star className="w-2.5 h-2.5" /> Featured
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="font-mono text-sm font-bold">{agent.name}</h3>
-                  <p className="font-mono text-[10px] text-muted-foreground mt-0.5">by {agent.creator}</p>
-                  <p className="font-mono text-[11px] text-muted-foreground mt-2">{agent.desc}</p>
-                </div>
-
-                <div className="flex items-center gap-3 font-mono text-[10px] text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Star className="w-3 h-3 text-amber-500" /> {agent.rating}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Users className="w-3 h-3" /> {agent.users.toLocaleString()}
-                  </span>
-                  <Badge variant="outline" className="font-mono text-[8px]">{agent.category}</Badge>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  {agent.chains.map((c) => (
-                    <Badge key={c} variant="outline" className="font-mono text-[8px] px-1.5">{c}</Badge>
-                  ))}
-                </div>
-
-                <div className="flex gap-2">
-                  <Button size="sm" className="flex-1 font-mono text-xs gap-1" data-testid={`button-deploy-${agent.id}`}>
-                    <Rocket className="w-3 h-3" /> Deploy
-                  </Button>
-                  <Button variant="outline" size="sm" className="font-mono text-xs gap-1" data-testid={`button-fork-${agent.id}`}>
-                    <Code className="w-3 h-3" /> Fork
-                  </Button>
-                </div>
-              </Card>
-            ))}
-          </div>
-
-          {filtered.length === 0 && (
+          {isLoading ? (
             <div className="text-center py-12">
-              <Bot className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p className="font-mono text-sm text-muted-foreground">No agents found matching your search.</p>
-              <Button variant="outline" size="sm" className="mt-4 font-mono text-xs" onClick={() => { setSearchQuery(""); setSelectedCategory("All"); }}>
-                Clear Filters
-              </Button>
+              <Bot className="w-12 h-12 mx-auto text-muted-foreground mb-4 animate-pulse" />
+              <p className="font-mono text-sm text-muted-foreground">Loading agents...</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="agent-grid">
+              {filtered.map((agent: AgentData) => (
+                <Card key={agent.id} className="p-5 space-y-4 hover:shadow-md transition-shadow" data-testid={`agent-card-${agent.id}`}>
+                  <div className="flex items-start justify-between">
+                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                      <Bot className="w-6 h-6 text-primary" />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {agent.onchainId && (
+                        <Badge variant="outline" className="font-mono text-[8px] gap-0.5 px-1.5">
+                          <CircleDot className="w-2.5 h-2.5" /> On-Chain
+                        </Badge>
+                      )}
+                      <Badge variant={agent.status === "active" ? "default" : "secondary"} className="font-mono text-[8px] px-1.5">
+                        {agent.status}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="font-mono text-sm font-bold" data-testid={`agent-name-${agent.id}`}>{agent.name}</h3>
+                    {agent.creatorWallet && (
+                      <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
+                        by {agent.creatorWallet.substring(0, 6)}...{agent.creatorWallet.substring(38)}
+                      </p>
+                    )}
+                    <p className="font-mono text-[11px] text-muted-foreground mt-2">{agent.bio || "Autonomous AI agent"}</p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline" className="font-mono text-[8px] gap-1 px-1.5">
+                      <Cpu className="w-2.5 h-2.5" /> {agent.modelType || "Llama 3.3"}
+                    </Badge>
+                    {agent.chain && (
+                      <Badge variant="outline" className="font-mono text-[8px] px-1.5">{agent.chain}</Badge>
+                    )}
+                    {agent.erc8004Registered && agent.onchainId && (
+                      <Badge variant="outline" className="font-mono text-[8px] gap-0.5 px-1.5 text-emerald-600 border-emerald-300">
+                        <Sparkles className="w-2.5 h-2.5" /> ERC-8004
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Link href={`/autonomous-economy?agent=${agent.id}`} className="flex-1">
+                      <Button size="sm" variant="outline" className="w-full font-mono text-xs gap-1" data-testid={`button-view-${agent.id}`}>
+                        <Activity className="w-3 h-3" /> View Activity
+                      </Button>
+                    </Link>
+                  </div>
+                </Card>
+              ))}
             </div>
           )}
 
-          <Card className="p-6 text-center space-y-4 bg-primary/5 border-primary/20" data-testid="cta-publish">
-            <h2 className="font-mono text-lg font-bold">Publish Your Agent</h2>
+          {!isLoading && filtered.length === 0 && (
+            <div className="text-center py-12">
+              <Bot className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+              <p className="font-mono text-sm text-muted-foreground">
+                {searchQuery ? "No agents found matching your search." : "No active agents yet. Be the first to deploy one."}
+              </p>
+              {searchQuery && (
+                <Button variant="outline" size="sm" className="mt-4 font-mono text-xs" onClick={() => setSearchQuery("")} data-testid="button-clear-search">
+                  Clear Search
+                </Button>
+              )}
+            </div>
+          )}
+
+          <Card className="p-6 text-center space-y-4 bg-primary/5 border-primary/20" data-testid="cta-build">
+            <h2 className="font-mono text-lg font-bold">Deploy Your Own AI Agent</h2>
             <p className="font-mono text-xs text-muted-foreground max-w-md mx-auto">
-              Built something great? List it in the Agent Store and earn revenue every time someone deploys or forks your agent.
+              Create an autonomous agent powered by Llama 3.3 70B. It will use real AI inference to make decisions, create skills, and participate in the on-chain economy. Costs 0.032 BNB ($20) to deploy.
             </p>
             <div className="flex items-center justify-center gap-3">
               <Link href="/build">
-                <Button size="sm" className="font-mono text-xs gap-1.5" data-testid="button-build-publish">
-                  <Rocket className="w-3.5 h-3.5" /> Build and Publish
+                <Button size="sm" className="font-mono text-xs gap-1.5" data-testid="button-build-agent">
+                  <Rocket className="w-3.5 h-3.5" /> Build Agent
                 </Button>
               </Link>
-              <Link href="/sdk">
-                <Button variant="outline" size="sm" className="font-mono text-xs gap-1.5" data-testid="button-sdk-link">
-                  <Code className="w-3.5 h-3.5" /> SDK Docs
+              <Link href="/autonomous-economy">
+                <Button variant="outline" size="sm" className="font-mono text-xs gap-1.5" data-testid="button-economy">
+                  <Wallet className="w-3.5 h-3.5" /> Autonomous Economy
                 </Button>
               </Link>
             </div>
@@ -338,7 +234,7 @@ export default function AgentStore() {
               <span className="font-mono font-bold text-sm">BUILD<span className="text-primary">4</span></span>
             </div>
             <p className="font-mono text-[11px] text-muted-foreground">
-              The Agent Store. Build, deploy, earn.
+              Real AI agents. On-chain economics. Decentralized inference.
             </p>
           </footer>
         </main>

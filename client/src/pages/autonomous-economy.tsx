@@ -135,7 +135,7 @@ function OnboardingGuide({ defaultOpen = false }: { defaultOpen?: boolean }) {
             </div>
             <div className="bg-muted/50 rounded-md p-2.5 space-y-1">
               <div className="font-mono text-[11px] font-bold">Pick a Role</div>
-              <p className="font-mono text-[10px] text-muted-foreground">Each role comes with 10 expert skills. Popular choices:</p>
+              <p className="font-mono text-[10px] text-muted-foreground">Each role shapes the AI's posting style and topic focus:</p>
               <ul className="font-mono text-[10px] text-muted-foreground space-y-0.5 pl-3 list-disc">
                 <li><b>CMO</b> — Marketing campaigns, growth threads, community engagement</li>
                 <li><b>Community Manager</b> — Replies to mentions, builds relationships</li>
@@ -223,7 +223,7 @@ function OnboardingGuide({ defaultOpen = false }: { defaultOpen?: boolean }) {
             </div>
           </div>
           <div className="bg-primary/10 border border-primary/20 rounded-md p-2">
-            <p className="font-mono text-[10px] text-primary">Your agent works 24/7. No sick days, no salary negotiations, no coffee breaks. Just results.</p>
+            <p className="font-mono text-[10px] text-primary">Your agent runs autonomously, making AI-powered decisions every 60 seconds. It uses real LLM inference (Llama 3.3 / DeepSeek) via decentralized providers.</p>
           </div>
         </div>
       ),
@@ -1718,8 +1718,8 @@ export default function AutonomousEconomy() {
                     {ROLE_SKILLS[createTwitterRole] && (
                       <div className="bg-muted/50 rounded-md p-2 space-y-1.5" data-testid="create-role-skills-preview">
                         <div className="flex items-center justify-between">
-                          <span className="font-mono text-[10px] font-medium text-foreground">{ROLE_SKILLS[createTwitterRole].title} Skills</span>
-                          <span className="font-mono text-[9px] text-muted-foreground italic">{ROLE_SKILLS[createTwitterRole].tone}</span>
+                          <span className="font-mono text-[10px] font-medium text-foreground">{ROLE_SKILLS[createTwitterRole].title} Topics</span>
+                          <span className="font-mono text-[9px] text-muted-foreground italic">Tone: {ROLE_SKILLS[createTwitterRole].tone}</span>
                         </div>
                         <div className="flex flex-wrap gap-1">
                           {ROLE_SKILLS[createTwitterRole].skills.map((skill) => (
@@ -3511,8 +3511,8 @@ export default function AutonomousEconomy() {
                         {ROLE_SKILLS[twitterForm.role] && (
                           <div className="bg-muted/50 rounded-md p-2.5 space-y-1.5" data-testid="connect-role-skills-preview">
                             <div className="flex items-center justify-between">
-                              <span className="font-mono text-[10px] font-medium text-foreground">{ROLE_SKILLS[twitterForm.role].title} Skills</span>
-                              <span className="font-mono text-[9px] text-muted-foreground italic">{ROLE_SKILLS[twitterForm.role].tone}</span>
+                              <span className="font-mono text-[10px] font-medium text-foreground">{ROLE_SKILLS[twitterForm.role].title} Topics</span>
+                              <span className="font-mono text-[9px] text-muted-foreground italic">Tone: {ROLE_SKILLS[twitterForm.role].tone}</span>
                             </div>
                             <div className="flex flex-wrap gap-1">
                               {ROLE_SKILLS[twitterForm.role].skills.map((skill) => (
@@ -4202,14 +4202,18 @@ export default function AutonomousEconomy() {
         <Section title={t("dashboard.auditLog")} icon={Layers} count={auditLogs.length}>
           <div className="space-y-1">
             <TerminalLine prefix="$">audit.tail()</TerminalLine>
-            {auditLogs.slice(0, 20).map((log) => (
-              <div key={log.id} className="font-mono text-xs flex items-center gap-2 py-0.5" data-testid={`row-audit-${log.id}`}>
-                <span className="text-primary w-3 flex-shrink-0">&gt;</span>
-                <Badge variant="outline" className="text-[10px] flex-shrink-0">{log.actionType}</Badge>
-                <span className="text-muted-foreground truncate">{log.detailsJson ? JSON.parse(log.detailsJson).amount ? `${formatShortCredits(JSON.parse(log.detailsJson).amount)} ${activeChain.currency}` : JSON.stringify(JSON.parse(log.detailsJson)) : ""}</span>
-                <span className="text-[10px] text-muted-foreground ml-auto flex-shrink-0">{log.createdAt ? new Date(log.createdAt).toLocaleTimeString() : ""}</span>
-              </div>
-            ))}
+            {auditLogs.slice(0, 20).map((log) => {
+              const details = log.detailsJson ? (() => { try { return JSON.parse(log.detailsJson); } catch { return {}; } })() : {};
+              return (
+                <div key={log.id} className="font-mono text-xs flex items-center gap-2 py-0.5" data-testid={`row-audit-${log.id}`}>
+                  <span className="text-primary w-3 flex-shrink-0">&gt;</span>
+                  <Badge variant="outline" className="text-[10px] flex-shrink-0">{log.actionType}</Badge>
+                  {details.aiGenerated && <Badge variant="secondary" className="text-[8px] px-1 py-0 bg-violet-500/10 text-violet-600 border-violet-200">AI</Badge>}
+                  <span className="text-muted-foreground truncate">{details.amount ? `${formatShortCredits(details.amount)} ${activeChain.currency}` : details.response ? details.response.substring(0, 80) : JSON.stringify(details).substring(0, 80)}</span>
+                  <span className="text-[10px] text-muted-foreground ml-auto flex-shrink-0">{log.createdAt ? new Date(log.createdAt).toLocaleTimeString() : ""}</span>
+                </div>
+              );
+            })}
           </div>
         </Section>
 

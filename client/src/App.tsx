@@ -27,6 +27,7 @@ import TokenPage from "@/pages/token";
 import OnchainOS from "@/pages/onchainos";
 import Staking from "@/pages/staking";
 import AgentBuilder from "@/pages/agent-builder";
+import AgentStore from "@/pages/agent-store";
 import Pricing from "@/pages/pricing";
 import NotFound from "@/pages/not-found";
 
@@ -56,7 +57,7 @@ function Router() {
       <Route path="/staking" component={Staking} />
       <Route path="/build" component={AgentBuilder} />
       <Route path="/pricing" component={Pricing} />
-      <Route path="/agent-store">{() => { window.location.href = "/build"; return null; }}</Route>
+      <Route path="/agent-store" component={AgentStore} />
       <Route path="/sdk">{() => { window.location.href = "/build"; return null; }}</Route>
       <Route component={NotFound} />
     </Switch>

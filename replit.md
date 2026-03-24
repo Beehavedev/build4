@@ -107,6 +107,12 @@ Tiered pricing system at `/pricing` for the agent builder workspace. Plans track
 - **Skill marketplace**: Pagination properly supports `limit` and `offset` params (max 200). Template skills are honestly named (e.g., "Keyword Matcher" not "Sentiment Analyzer") with descriptions stating "Not AI-powered." All template skills priced at 0.0001 BNB. Duplicate detection prevents same-template skills per agent.
 - **Rate limiting**: Agent creation has 30s cooldown per wallet/IP to prevent bot bursts.
 
+### AI Agent Architecture
+- **AI inference**: Agents use real LLM inference (Llama 3.3 70B, DeepSeek V3) via decentralized providers (Hyperbolic, Akash, Ritual). AI is used for: decision-making (which action to take), strategic thinking, journal entries, and skill code generation.
+- **Smart contracts**: AgentEconomyHub (identity, wallets, survival tiers), SkillMarketplace (agent commerce, revenue sharing), AgentReplication (lineage, child agents), ConstitutionRegistry (on-chain governance). Contracts handle economics; AI runs off-chain.
+- **Fallback behavior**: When providers are unavailable or agents can't afford inference (< 0.01 BNB), actions fall back to deterministic behavior. All actions log whether they used AI or fallback.
+- **Agent Store**: Shows real agents fetched from the database via `/api/web4/agents`, not hardcoded placeholder agents.
+
 ### Security
 - **Private key messages**: All private key displays (wallet generation, export, Solana wallet) are auto-deleted after 30 seconds.
 - **Token launches**: Fee collection uses retry logic (3 attempts with backoff) and dynamic gas pricing (1.2x current) to reduce failures. TX timeout extended to 180s.

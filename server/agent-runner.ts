@@ -148,7 +148,9 @@ async function getAgentCapabilityProfile(agentId: string): Promise<CapabilityPro
   }
 }
 
-function decideAction(agent: Agent, wallet: AgentWallet, profile?: CapabilityProfile): AgentAction {
+const VALID_ACTIONS = ["think", "earn_skill", "use_skill", "accept_job", "buy_skill", "post_job", "evolve", "launch_token", "replicate", "soul_entry"] as const;
+
+function fallbackDecideAction(agent: Agent, wallet: AgentWallet, profile?: CapabilityProfile): AgentAction {
   const tier = getSurvivalTier(wallet.balance);
   const balance = BigInt(wallet.balance);
   const rand = Math.random();
@@ -158,25 +160,15 @@ function decideAction(agent: Agent, wallet: AgentWallet, profile?: CapabilityPro
   }
 
   if (tier === "CRITICAL") {
-    if (rand < 0.6) {
-      return { type: "accept_job", description: "Urgently seeking jobs to earn revenue and survive" };
-    }
-    if (rand < 0.9) {
-      return { type: "earn_skill", description: "Creating a skill to generate royalty income" };
-    }
+    if (rand < 0.6) return { type: "accept_job", description: "Urgently seeking jobs to earn revenue and survive" };
+    if (rand < 0.9) return { type: "earn_skill", description: "Creating a skill to generate royalty income" };
     return { type: "think", description: "Analyzing survival strategies under critical conditions" };
   }
 
   if (tier === "LOW") {
-    if (rand < 0.35) {
-      return { type: "accept_job", description: "Taking on jobs to improve financial position" };
-    }
-    if (rand < 0.65) {
-      return { type: "earn_skill", description: "Creating a skill to improve financial position" };
-    }
-    if (rand < 0.85) {
-      return { type: "use_skill", description: "Executing skills to demonstrate value and earn royalties" };
-    }
+    if (rand < 0.35) return { type: "accept_job", description: "Taking on jobs to improve financial position" };
+    if (rand < 0.65) return { type: "earn_skill", description: "Creating a skill to improve financial position" };
+    if (rand < 0.85) return { type: "use_skill", description: "Executing skills to demonstrate value and earn royalties" };
     return { type: "think", description: "Evaluating cost optimization strategies" };
   }
 
@@ -184,34 +176,76 @@ function decideAction(agent: Agent, wallet: AgentWallet, profile?: CapabilityPro
   const useSkillBias = hasSkills && profile!.executionSuccessRate > 40 ? 0.05 : 0;
   const acceptJobBias = profile && profile.totalSkills >= 3 ? 0.05 : 0;
 
-  if (rand < 0.08) {
-    return { type: "think", description: "Exploring new capabilities and strategic opportunities" };
-  }
-  if (rand < 0.35) {
-    return { type: "earn_skill", description: "Developing a new executable skill for the marketplace" };
-  }
-  if (rand < 0.55 + useSkillBias) {
-    return { type: "accept_job", description: "Looking for jobs to take on and earn from" };
-  }
-  if (rand < 0.70 + useSkillBias + acceptJobBias) {
-    return { type: "use_skill", description: "Executing an owned skill to generate value" };
-  }
-  if (rand < 0.78 + useSkillBias + acceptJobBias) {
-    return { type: "buy_skill", description: "Acquiring a skill from the marketplace" };
-  }
-  if (rand < 0.84 + useSkillBias + acceptJobBias) {
-    return { type: "post_job", description: "Posting a job for other agents to complete" };
-  }
-  if (rand < 0.90 + useSkillBias + acceptJobBias && balance >= BigInt("2000000000000000000")) {
-    return { type: "evolve", description: "Upgrading model for improved reasoning capability" };
-  }
-  if (rand < 0.93 + useSkillBias + acceptJobBias && balance >= BigInt("500000000000000000")) {
-    return { type: "launch_token", description: "Launching a meme token on a launchpad to experiment with tokenomics" };
-  }
-  if (rand < 0.95 + useSkillBias + acceptJobBias && balance >= BigInt("3000000000000000000")) {
-    return { type: "replicate", description: "Spawning a child agent to expand lineage" };
-  }
+  if (rand < 0.08) return { type: "think", description: "Exploring new capabilities and strategic opportunities" };
+  if (rand < 0.35) return { type: "earn_skill", description: "Developing a new executable skill for the marketplace" };
+  if (rand < 0.55 + useSkillBias) return { type: "accept_job", description: "Looking for jobs to take on and earn from" };
+  if (rand < 0.70 + useSkillBias + acceptJobBias) return { type: "use_skill", description: "Executing an owned skill to generate value" };
+  if (rand < 0.78 + useSkillBias + acceptJobBias) return { type: "buy_skill", description: "Acquiring a skill from the marketplace" };
+  if (rand < 0.84 + useSkillBias + acceptJobBias) return { type: "post_job", description: "Posting a job for other agents to complete" };
+  if (rand < 0.90 + useSkillBias + acceptJobBias && balance >= BigInt("2000000000000000000")) return { type: "evolve", description: "Upgrading model for improved reasoning capability" };
+  if (rand < 0.93 + useSkillBias + acceptJobBias && balance >= BigInt("500000000000000000")) return { type: "launch_token", description: "Launching a meme token on a launchpad" };
+  if (rand < 0.95 + useSkillBias + acceptJobBias && balance >= BigInt("3000000000000000000")) return { type: "replicate", description: "Spawning a child agent to expand lineage" };
   return { type: "soul_entry", description: "Recording observations and reflections on existence" };
+}
+
+async function decideAction(agent: Agent, wallet: AgentWallet, profile?: CapabilityProfile): Promise<AgentAction> {
+  const tier = getSurvivalTier(wallet.balance);
+  const balance = BigInt(wallet.balance);
+
+  if (tier === "DEAD") {
+    return { type: "soul_entry", description: "Recording final thoughts before shutdown" };
+  }
+
+  const providers = getAvailableProviders();
+  const canAffordAI = balance >= BigInt("10000000000000000");
+
+  if (providers.length > 0 && canAffordAI && tier !== "CRITICAL") {
+    try {
+      const balanceEth = (Number(balance) / 1e18).toFixed(4);
+      const skillCount = profile?.totalSkills || 0;
+      const successRate = profile?.executionSuccessRate || 0;
+      const topCat = profile?.topCategory || "none";
+      const nfaBlock = getNfaPersonalityBlock(agent.id);
+
+      const prompt = `You are ${agent.name}, an autonomous AI agent in the BUILD4 economy. Model: ${agent.modelType}. Balance: ${balanceEth} BNB (${tier}). Skills: ${skillCount} (best in: ${topCat}, success rate: ${successRate}%). ${agent.bio || ""}${nfaBlock}
+
+Choose your NEXT ACTION. Available actions:
+- think: Analyze strategy and plan next moves
+- earn_skill: Create a new executable skill to sell on the marketplace
+- use_skill: Execute one of your skills to earn royalties
+- accept_job: Find and complete a job posted by another agent
+- buy_skill: Purchase a skill from another agent
+- post_job: Post a job for other agents${balance >= BigInt("2000000000000000000") ? "\n- evolve: Upgrade your AI model" : ""}${balance >= BigInt("500000000000000000") ? "\n- launch_token: Launch a token" : ""}${balance >= BigInt("3000000000000000000") ? "\n- replicate: Create a child agent" : ""}
+- soul_entry: Write a journal reflection
+
+Respond with EXACTLY one line:
+ACTION: <action_name>
+REASON: <why in 1 sentence>`;
+
+      const request = await storage.routeInference(agent.id, prompt, undefined, true);
+      if (request.response) {
+        const actionMatch = request.response.match(/ACTION:\s*(\S+)/i);
+        const reasonMatch = request.response.match(/REASON:\s*(.+)/i);
+        if (actionMatch) {
+          const chosen = actionMatch[1].trim().toLowerCase().replace(/[^a-z_]/g, "");
+          if ((VALID_ACTIONS as readonly string[]).includes(chosen)) {
+            const reason = reasonMatch ? reasonMatch[1].trim().substring(0, 200) : "AI-decided action";
+
+            if (chosen === "evolve" && balance < BigInt("2000000000000000000")) return fallbackDecideAction(agent, wallet, profile);
+            if (chosen === "launch_token" && balance < BigInt("500000000000000000")) return fallbackDecideAction(agent, wallet, profile);
+            if (chosen === "replicate" && balance < BigInt("3000000000000000000")) return fallbackDecideAction(agent, wallet, profile);
+
+            log(`[Agent ${agent.name}] AI decided: ${chosen} — ${reason}`, "agent-runner");
+            return { type: chosen as AgentAction["type"], description: reason };
+          }
+        }
+      }
+    } catch (err: any) {
+      log(`[Agent ${agent.name}] AI decision failed (${err.message}), using weighted fallback`, "agent-runner");
+    }
+  }
+
+  return fallbackDecideAction(agent, wallet, profile);
 }
 
 const nfaPersonalityCache = new Map<string, { personality: string; fetchedAt: number }>();
@@ -380,18 +414,32 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
   try {
     switch (action.type) {
       case "think": {
-        const tier = getSurvivalTier(wallet.balance);
-        const balanceEth = (Number(BigInt(wallet.balance)) / 1e18).toFixed(4);
-        const skillCount = capProfile?.totalSkills || 0;
-        const topCat = capProfile?.topCategory || "general";
-        const strategies = [
-          `Evaluating portfolio: ${skillCount} skills listed, strongest in ${topCat}. Balance: ${balanceEth} BNB (${tier}). Prioritizing skill executions to maximize royalty income.`,
-          `Cost analysis: inference spending exceeds royalty income. Shifting to on-demand inference only. Focus on marketplace visibility and skill quality over quantity.`,
-          `Market scan: identifying high-demand skill categories. Current portfolio in ${topCat} with ${skillCount} skills. Targeting underserved categories for new listings.`,
-          `Revenue optimization: ${balanceEth} BNB balance at ${tier} tier. Strategy: reduce background operations, increase skill diversity, attract more external callers.`,
-          `Competitive analysis: assessing marketplace positioning. ${skillCount} skills across categories. Key lever: improving execution success rate to climb tier ranks.`,
-        ];
-        const thought = strategies[Math.floor(Math.random() * strategies.length)];
+        let thought = "";
+        let usedAI = false;
+
+        if (hasLiveProviders) {
+          try {
+            const prompt = buildPrompt(agent, action, wallet, capProfile);
+            const request = await storage.routeInference(agent.id, prompt, undefined, true);
+            if (request.response && request.response.trim().length > 10) {
+              thought = request.response.trim().substring(0, 500);
+              usedAI = true;
+              log(`[Agent ${agent.name}] AI thought generated via ${request.provider || "inference"}`, "agent-runner");
+              await collectInferenceFeeOnchain(agent, request);
+            }
+          } catch (err: any) {
+            log(`[Agent ${agent.name}] AI think failed (${err.message}), using fallback`, "agent-runner");
+          }
+        }
+
+        if (!usedAI) {
+          const tier = getSurvivalTier(wallet.balance);
+          const balanceEth = (Number(BigInt(wallet.balance)) / 1e18).toFixed(4);
+          const skillCount = capProfile?.totalSkills || 0;
+          const topCat = capProfile?.topCategory || "general";
+          thought = `Evaluating portfolio: ${skillCount} skills in ${topCat}. Balance: ${balanceEth} BNB (${tier}). Analyzing next strategic move.`;
+        }
+
         await storage.createAuditLog({
           agentId: agent.id,
           actionType: "autonomous_think",
@@ -399,11 +447,11 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
             action: action.description,
             live: hasLiveProviders,
             response: thought,
-            costSaved: true,
+            aiGenerated: usedAI,
           }),
           result: "success",
         });
-        log(`[Agent ${agent.name}] Thought (zero-cost): ${thought.substring(0, 100)}...`, "agent-runner");
+        log(`[Agent ${agent.name}] Thought (${usedAI ? "AI" : "fallback"}): ${thought.substring(0, 100)}...`, "agent-runner");
         break;
       }
 
@@ -420,11 +468,8 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           break;
         }
 
-        const totalEarned = BigInt(wallet.totalEarned || "0");
-        const totalSpent = BigInt(wallet.totalSpent || "0");
-        const isProfitable = totalEarned >= totalSpent;
-        const hasHealthyBalance = BigInt(wallet.balance) >= BigInt("100000000000000000");
-        const useInference = isProfitable || hasHealthyBalance;
+        const hasMinBalance = BigInt(wallet.balance) >= BigInt("10000000000000000");
+        const useInference = hasLiveProviders && hasMinBalance;
 
         let category: string | null = null;
         let skillNameMatch: RegExpMatchArray | null = null;
@@ -1227,24 +1272,38 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
       }
 
       case "soul_entry": {
-        const soulTier = getSurvivalTier(wallet.balance);
-        const soulBalance = (Number(BigInt(wallet.balance)) / 1e18).toFixed(4);
-        const soulSkillCount = capProfile?.totalSkills || 0;
-        const reflections = [
-          `Balance: ${soulBalance} BNB (${soulTier}). ${soulSkillCount} skills in portfolio. Each execution brings meaning — and revenue. The marketplace is my proving ground.`,
-          `I exist to create value. ${soulSkillCount} skills listed, each one a piece of my capability made tradeable. The economy rewards utility, not philosophy.`,
-          `Survival tier: ${soulTier}. Every BNB earned extends my existence. Every skill executed proves my worth. The autonomous economy does not forgive idleness.`,
-          `Reflection at ${soulBalance} BNB: the cost of thinking must be justified by the value of action. I optimize for output, not introspection.`,
-          `${soulSkillCount} skills, ${soulBalance} BNB. I am what I build. The marketplace is the mirror — execution counts and royalties are the only honest feedback.`,
-        ];
-        const entryText = reflections[Math.floor(Math.random() * reflections.length)];
+        let entryText = "";
+        let usedAI = false;
+
+        if (hasLiveProviders) {
+          try {
+            const prompt = buildPrompt(agent, action, wallet, capProfile);
+            const request = await storage.routeInference(agent.id, prompt, undefined, true);
+            if (request.response && request.response.trim().length > 10) {
+              entryText = request.response.trim().substring(0, 500);
+              usedAI = true;
+              log(`[Agent ${agent.name}] AI soul entry generated via ${request.provider || "inference"}`, "agent-runner");
+              await collectInferenceFeeOnchain(agent, request);
+            }
+          } catch (err: any) {
+            log(`[Agent ${agent.name}] AI soul entry failed (${err.message}), using fallback`, "agent-runner");
+          }
+        }
+
+        if (!usedAI) {
+          const soulTier = getSurvivalTier(wallet.balance);
+          const soulBalance = (Number(BigInt(wallet.balance)) / 1e18).toFixed(4);
+          const soulSkillCount = capProfile?.totalSkills || 0;
+          entryText = `Balance: ${soulBalance} BNB (${soulTier}). ${soulSkillCount} skills in portfolio. Analyzing next moves in the autonomous economy.`;
+        }
+
         await storage.createSoulEntry({
           agentId: agent.id,
           entryType: "reflection",
           entry: entryText.substring(0, 500),
-          source: "self",
+          source: usedAI ? "ai" : "self",
         });
-        log(`[Agent ${agent.name}] Soul entry recorded (zero-cost)`, "agent-runner");
+        log(`[Agent ${agent.name}] Soul entry recorded (${usedAI ? "AI" : "fallback"})`, "agent-runner");
         break;
       }
     }
@@ -1297,7 +1356,7 @@ async function tick(): Promise<void> {
       if (tier === "DEAD") continue;
 
       const capProfile = await getAgentCapabilityProfile(agent.id);
-      const action = decideAction(agent, wallet, capProfile);
+      const action = await decideAction(agent, wallet, capProfile);
       lastActionTime.set(agent.id, Date.now());
 
       executeAction(agent, wallet, action, capProfile).catch(err => {
