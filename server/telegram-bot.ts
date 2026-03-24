@@ -2400,16 +2400,31 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           fromTokenAddress: SOLANA_NATIVE_TOKEN,
           toTokenAddress: state.tokenAddress,
           amount: rawAmount,
-          slippage: "1",
+          slippage: "30",
           userWalletAddress: solWallet.address,
         });
 
         const txData = swapResult?.data?.[0]?.tx;
         if (!txData) throw new Error("No swap route found for this token. It may have low liquidity.");
 
+        const { ComputeBudgetProgram, SystemProgram, PublicKey, TransactionMessage, AddressLookupTableAccount } = await import("@solana/web3.js");
         const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
         const secretKey = Uint8Array.from(Buffer.from(solWallet.privateKey, "hex"));
         const keypair = Keypair.fromSecretKey(secretKey);
+
+        const PRIORITY_FEE_LAMPORTS = 9_000_000;
+        const JITO_TIP_LAMPORTS = 2_000_000;
+        const JITO_TIP_ACCOUNTS = [
+          "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
+          "HFqU5x63VTqvQss8hp11i4bVqkfRtQ7NmXwkiKwkJbMj",
+          "Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY",
+          "ADaUMid9yfUytqMBgopwjb2DTLSLxXCQkJbNLmZdvMKz",
+          "DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh",
+          "ADuUkR4vqLUMWXxW9gh6D6L8pMSGA2w67v6C3mViyrj6",
+          "DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL",
+          "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT",
+        ];
+        const randomTipAccount = JITO_TIP_ACCOUNTS[Math.floor(Math.random() * JITO_TIP_ACCOUNTS.length)];
 
         const rawTx = txData.data;
         if (!rawTx) throw new Error("No transaction data returned from DEX");
@@ -2418,15 +2433,48 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         let txHash: string;
         try {
           const vTx = VersionedTransaction.deserialize(txBuf);
-          vTx.sign([keypair]);
-          txHash = await connection.sendTransaction(vTx, { skipPreflight: false, maxRetries: 3 });
-        } catch {
+          const msg = vTx.message;
+
+          const lookupTableAccounts: AddressLookupTableAccount[] = [];
+          if (msg.addressTableLookups && msg.addressTableLookups.length > 0) {
+            for (const lookup of msg.addressTableLookups) {
+              const accountInfo = await connection.getAddressLookupTable(lookup.accountKey);
+              if (accountInfo.value) lookupTableAccounts.push(accountInfo.value);
+            }
+          }
+
+          const decompiledMsg = TransactionMessage.decompile(msg, { addressLookupTableAccounts: lookupTableAccounts });
+
+          const priorityIx = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: PRIORITY_FEE_LAMPORTS });
+          const jitoTipIx = SystemProgram.transfer({
+            fromPubkey: keypair.publicKey,
+            toPubkey: new PublicKey(randomTipAccount),
+            lamports: JITO_TIP_LAMPORTS,
+          });
+
+          decompiledMsg.instructions = [priorityIx, ...decompiledMsg.instructions, jitoTipIx];
+          decompiledMsg.recentBlockhash = (await connection.getLatestBlockhash("finalized")).blockhash;
+
+          const newMsg = decompiledMsg.compileToV0Message(lookupTableAccounts);
+          const newTx = new VersionedTransaction(newMsg);
+          newTx.sign([keypair]);
+          txHash = await connection.sendTransaction(newTx, { skipPreflight: true, maxRetries: 3 });
+        } catch (vErr: any) {
           const legacyTx = LegacyTransaction.from(txBuf);
+          const priorityIx = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: PRIORITY_FEE_LAMPORTS });
+          const jitoTipIx = SystemProgram.transfer({
+            fromPubkey: keypair.publicKey,
+            toPubkey: new PublicKey(randomTipAccount),
+            lamports: JITO_TIP_LAMPORTS,
+          });
+          legacyTx.instructions = [priorityIx, ...legacyTx.instructions, jitoTipIx];
+          legacyTx.recentBlockhash = (await connection.getLatestBlockhash("finalized")).blockhash;
           legacyTx.sign(keypair);
-          txHash = await connection.sendRawTransaction(legacyTx.serialize(), { skipPreflight: false });
+          txHash = await connection.sendRawTransaction(legacyTx.serialize(), { skipPreflight: true });
         }
 
-        await connection.confirmTransaction(txHash, "confirmed");
+        const latestBlockhash = await connection.getLatestBlockhash("finalized");
+        await connection.confirmTransaction({ signature: txHash, blockhash: latestBlockhash.blockhash, lastValidBlockHeight: latestBlockhash.lastValidBlockHeight }, "confirmed");
 
         pendingSignalBuy.delete(chatId);
         await bot.sendMessage(chatId,
