@@ -488,7 +488,7 @@ export default function AgentBuilder() {
               <div className="flex-1 overflow-hidden bg-white dark:bg-[#0d1117]">
                 {rightPanel === "preview" ? (
                   <div className={`h-full mx-auto transition-all duration-300 ${previewWidth} ${previewSize !== "desktop" ? "border-x border-border/40" : ""}`}>
-                    <iframe id="preview-iframe" className="w-full h-full border-0" data-testid="preview-iframe" sandbox="allow-scripts" srcDoc={previewHtml} />
+                    <iframe id="preview-iframe" className="w-full h-full border-0" data-testid="preview-iframe" sandbox="allow-scripts allow-same-origin allow-popups" srcDoc={previewHtml} />
                   </div>
                 ) : (
                   projectFiles.length > 0 ? <CodeViewer files={projectFiles} activeFile={activeFile} onSelectFile={setActiveFile} /> : <div className="h-full flex items-center justify-center text-muted-foreground text-[13px]">No files generated yet</div>
