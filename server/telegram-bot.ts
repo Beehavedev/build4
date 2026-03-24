@@ -2242,7 +2242,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
             if (addr) text += `\`${addr}\`\n`;
             if (extras) text += `   ${extras}\n`;
             text += "\n";
-            if (addr && chain !== "501") {
+            if (addr) {
               buyButtons.push([
                 { text: `⚡ Buy ${name}`, callback_data: `sigbuy:${i}:${chain}:${sigType}` },
                 { text: `🔒 Scan`, callback_data: `okxscan:${chain}:${addr.slice(0, 40)}` },
@@ -2312,6 +2312,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       ? [{ label: "0.01 ETH", val: "0.01" }, { label: "0.05 ETH", val: "0.05" }, { label: "0.1 ETH", val: "0.1" }]
       : sigChain === "56"
       ? [{ label: "0.05 BNB", val: "0.05" }, { label: "0.1 BNB", val: "0.1" }, { label: "0.5 BNB", val: "0.5" }, { label: "1 BNB", val: "1" }]
+      : sigChain === "501"
+      ? [{ label: "0.1 SOL", val: "0.1" }, { label: "0.25 SOL", val: "0.25" }, { label: "0.5 SOL", val: "0.5" }, { label: "1 SOL", val: "1" }]
       : [{ label: `0.01 ${nativeSym}`, val: "0.01" }, { label: `0.05 ${nativeSym}`, val: "0.05" }, { label: `0.1 ${nativeSym}`, val: "0.1" }, { label: `0.5 ${nativeSym}`, val: "0.5" }];
 
     await bot.sendMessage(chatId,
@@ -2367,6 +2369,95 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const state = pendingSignalBuy.get(chatId);
     if (!state || !state.amount) {
       await bot.sendMessage(chatId, "Buy session expired. Start again from signals.", { reply_markup: { inline_keyboard: [[{ text: "🐋 Signals", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+
+    const isSolana = state.chainId === "501";
+
+    if (isSolana) {
+      const solWallet = await getOrCreateSolanaWallet(chatId);
+      if (!solWallet || !solWallet.privateKey) {
+        await bot.sendMessage(chatId, "You need a Solana wallet to buy on Solana. Generating one now...");
+        const newWallet = await getOrCreateSolanaWallet(chatId);
+        if (!newWallet) {
+          await bot.sendMessage(chatId, "Failed to create Solana wallet. Please try again.", { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+          pendingSignalBuy.delete(chatId);
+          return;
+        }
+      }
+
+      await bot.sendMessage(chatId, `⏳ Executing buy: ${state.amount} SOL → ${state.tokenSymbol} on Solana...`);
+      sendTyping(chatId);
+
+      try {
+        const { Connection, Keypair, VersionedTransaction, Transaction: LegacyTransaction } = await import("@solana/web3.js");
+        const LAMPORTS_PER_SOL = 1_000_000_000;
+        const rawAmount = Math.round(parseFloat(state.amount) * LAMPORTS_PER_SOL).toString();
+
+        const { getSwapData } = await import("./okx-onchainos");
+        const swapResult = await getSwapData({
+          chainId: "501",
+          fromTokenAddress: SOLANA_NATIVE_TOKEN,
+          toTokenAddress: state.tokenAddress,
+          amount: rawAmount,
+          slippage: "1",
+          userWalletAddress: solWallet.address,
+        });
+
+        const txData = swapResult?.data?.[0]?.tx;
+        if (!txData) throw new Error("No swap route found for this token. It may have low liquidity.");
+
+        const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
+        const secretKey = Uint8Array.from(Buffer.from(solWallet.privateKey, "hex"));
+        const keypair = Keypair.fromSecretKey(secretKey);
+
+        const rawTx = txData.data;
+        if (!rawTx) throw new Error("No transaction data returned from DEX");
+
+        const txBuf = Buffer.from(rawTx, "base64");
+        let txHash: string;
+        try {
+          const vTx = VersionedTransaction.deserialize(txBuf);
+          vTx.sign([keypair]);
+          txHash = await connection.sendTransaction(vTx, { skipPreflight: false, maxRetries: 3 });
+        } catch {
+          const legacyTx = LegacyTransaction.from(txBuf);
+          legacyTx.sign(keypair);
+          txHash = await connection.sendRawTransaction(legacyTx.serialize(), { skipPreflight: false });
+        }
+
+        await connection.confirmTransaction(txHash, "confirmed");
+
+        pendingSignalBuy.delete(chatId);
+        await bot.sendMessage(chatId,
+          `✅ *Buy Executed!*\n\n` +
+          `⚡ ${state.amount} SOL → ${state.tokenSymbol}\n` +
+          `⛓ Solana\n\n` +
+          `[View Transaction](https://solscan.io/tx/${txHash})`,
+          {
+            parse_mode: "Markdown",
+            disable_web_page_preview: true,
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "🐋 More Signals", callback_data: "action:okxsignals" }],
+                [{ text: "👛 Wallet", callback_data: "action:wallet" }, { text: "« Menu", callback_data: "action:menu" }],
+              ],
+            },
+          }
+        );
+      } catch (e: any) {
+        await bot.sendMessage(chatId,
+          `❌ Buy failed: ${e.message?.substring(0, 150)}\n\nCheck your SOL balance and try again.`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "🔄 Retry", callback_data: "sigbuy_confirm" }],
+                [{ text: "🐋 Signals", callback_data: "action:okxsignals" }, { text: "« Menu", callback_data: "action:menu" }],
+              ],
+            },
+          }
+        );
+      }
       return;
     }
 
