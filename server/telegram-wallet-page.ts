@@ -234,6 +234,8 @@ export function getTelegramWalletPage(wcProjectId: string): string {
     var WC_PROJECT_ID = "${wcProjectId}";
     var params = new URLSearchParams(window.location.search);
     var chatId = params.get('chatId');
+    var linkExp = params.get('exp');
+    var linkSig = params.get('sig');
     var pageUrl = window.location.href;
 
     function setStatus(msg, type) {
@@ -257,7 +259,7 @@ export function getTelegramWalletPage(wcProjectId: string): string {
         fetch('/api/web4/telegram-wallet/link', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chatId: chatId, wallet: address })
+          body: JSON.stringify({ chatId: chatId, wallet: address, exp: linkExp, sig: linkSig })
         }).then(function(resp) {
           if (resp.ok) {
             setStatus('Wallet connected! Return to Telegram.<div class="addr">' + address + '</div>', 'success');

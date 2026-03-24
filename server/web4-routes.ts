@@ -1434,10 +1434,42 @@ ${urls}
 
   app.post("/api/web4/telegram-wallet/link", async (req: Request, res: Response) => {
     try {
-      const { chatId, wallet } = req.body;
+      const { chatId, wallet, exp, sig } = req.body;
       if (!chatId || !wallet || !/^0x[a-fA-F0-9]{40}$/i.test(wallet)) {
         return res.status(400).json({ error: "Invalid chatId or wallet address" });
       }
+
+      if (!exp || !sig) {
+        return res.status(403).json({ error: "Missing authentication. Use the wallet link from the Telegram bot." });
+      }
+      const { createHmac, timingSafeEqual } = await import("crypto");
+      const secret = process.env.SESSION_SECRET || process.env.TELEGRAM_BOT_TOKEN;
+      if (!secret) {
+        return res.status(500).json({ error: "Server misconfigured — wallet linking unavailable." });
+      }
+      const expNum = parseInt(String(exp), 10);
+      const chatIdNum = parseInt(String(chatId), 10);
+      if (!Number.isFinite(expNum) || !Number.isFinite(chatIdNum) || chatIdNum <= 0) {
+        return res.status(400).json({ error: "Invalid parameters." });
+      }
+      const now = Math.floor(Date.now() / 1000);
+      if (expNum < now) {
+        return res.status(403).json({ error: "Link expired. Request a new wallet link from the bot." });
+      }
+      if (expNum > now + 660) {
+        return res.status(403).json({ error: "Invalid expiry." });
+      }
+      if (typeof sig !== "string" || sig.length !== 16 || !/^[a-f0-9]{16}$/.test(sig)) {
+        return res.status(403).json({ error: "Invalid signature format." });
+      }
+      const payload = `${chatIdNum}:${expNum}`;
+      const expectedSig = createHmac("sha256", secret).update(payload).digest("hex").substring(0, 16);
+      const sigBuf = Buffer.from(sig, "hex");
+      const expectedBuf = Buffer.from(expectedSig, "hex");
+      if (!timingSafeEqual(sigBuf, expectedBuf)) {
+        return res.status(403).json({ error: "Invalid signature. Use the wallet link from the Telegram bot." });
+      }
+
       const { linkTelegramWallet } = await import("./telegram-bot");
       linkTelegramWallet(Number(chatId), wallet);
       return res.json({ success: true });

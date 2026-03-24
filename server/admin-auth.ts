@@ -4,7 +4,11 @@ import type { Request, Response, NextFunction } from "express";
 const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 function getTokenSecret(): string {
-  return process.env.SESSION_SECRET || process.env.ANALYTICS_PASSWORD || "build4-analytics-fallback";
+  const secret = process.env.SESSION_SECRET || process.env.ANALYTICS_PASSWORD;
+  if (!secret) {
+    throw new Error("No SESSION_SECRET or ANALYTICS_PASSWORD configured");
+  }
+  return secret;
 }
 
 export function generateAnalyticsToken(): string {

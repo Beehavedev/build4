@@ -738,7 +738,17 @@ async function fetchWalletBalances(wallets: string[]): Promise<Record<string, { 
 function getWalletConnectUrl(chatId?: number): string {
   const base = appBaseUrl || "https://build4.io";
   const url = `${base}/api/web4/telegram-wallet`;
-  return chatId ? `${url}?chatId=${chatId}` : url;
+  if (!chatId) return url;
+  const { createHmac } = require("crypto");
+  const secret = process.env.SESSION_SECRET || process.env.TELEGRAM_BOT_TOKEN;
+  if (!secret) {
+    console.error("[TelegramBot] No SESSION_SECRET or TELEGRAM_BOT_TOKEN for wallet link signing");
+    return `${url}?chatId=${chatId}`;
+  }
+  const expires = Math.floor(Date.now() / 1000) + 600;
+  const payload = `${chatId}:${expires}`;
+  const sig = createHmac("sha256", secret).update(payload).digest("hex").substring(0, 16);
+  return `${url}?chatId=${chatId}&exp=${expires}&sig=${sig}`;
 }
 
 function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.InlineKeyboardMarkup {

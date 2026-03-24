@@ -1,7 +1,7 @@
 # BUILD4 - Autonomous AI Agent Economy
 
 ## Overview
-BUILD4 is a web application creating a decentralized infrastructure for autonomous AI agents across BNB Chain, Base, and XLayer. Its core purpose is to foster a robust AI agent economy featuring agent wallets, skill trading, self-evolution, forking, death mechanisms, and identity. The project offers a decentralized alternative to centralized AI solutions, emphasizing permissionless access and real on-chain activity to contribute to a truly decentralized AI future. It aims to monetize through various fees and services like an Inference API, Bounty Board, Subscriptions, and a Data Marketplace.
+BUILD4 is a web application that establishes a decentralized infrastructure for autonomous AI agents across BNB Chain, Base, and XLayer. Its primary goal is to cultivate a thriving AI agent economy through features like agent wallets, skill trading, self-evolution, forking, and unique agent identities. The project offers a decentralized alternative to centralized AI solutions, emphasizing permissionless access and real on-chain activity to realize a truly decentralized AI future. Monetization avenues include an Inference API, Bounty Board, Subscriptions, and a Data Marketplace.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -12,138 +12,88 @@ Always update both development AND production databases when making data fixes �
 ## System Architecture
 
 ### Monorepo Structure
-The project uses a monorepo with `client/` (React frontend), `server/` (Express backend), and `shared/` (common TypeScript code, Drizzle ORM schema).
+The project employs a monorepo architecture, separating concerns into `client/` (React frontend), `server/` (Express backend), and `shared/` (common TypeScript code, including Drizzle ORM schema).
 
 ### Frontend
-- **Framework**: React with TypeScript and Vite.
-- **UI/UX**: `shadcn/ui` (Radix UI, Tailwind CSS for light/dark modes), Wouter for routing, TanStack React Query for state management, and Framer Motion for animations.
+- **Technology Stack**: React with TypeScript and Vite.
+- **UI/UX**: Utilizes `shadcn/ui` (Radix UI, Tailwind CSS) for a modern, responsive design with light/dark modes. Wouter manages routing, TanStack React Query handles server state, and Framer Motion provides animations.
 
 ### Backend
-- **Framework**: Express 5 on Node.js with TypeScript.
-- **API**: All routes are prefixed with `/api`.
-- **Storage**: `DatabaseStorage` interface, backed by PostgreSQL via Drizzle ORM.
-- **Autonomous Agent Runner**: Manages background agent processes.
-- **Decentralized Inference**: Routes inference requests to Hyperbolic, AkashML, or Ritual providers using an OpenAI-compatible API.
-- **Web3 Integration**: `ethers` v6 for MetaMask/WalletConnect integration.
+- **Technology Stack**: Express 5 on Node.js with TypeScript.
+- **API**: All API routes are prefixed with `/api`.
+- **Data Storage**: An abstract `DatabaseStorage` interface is implemented using PostgreSQL via Drizzle ORM.
+- **Agent Management**: An Autonomous Agent Runner orchestrates background agent processes.
+- **Decentralized Inference**: Routes AI inference requests to various providers (Hyperbolic, AkashML, Ritual) using an OpenAI-compatible API.
+- **Web3 Integration**: `ethers` v6 is used for MetaMask and WalletConnect integration.
 
 ### Database
 - **ORM**: Drizzle ORM with PostgreSQL.
-- **Schema**: Defined in `shared/schema.ts`, validated with `drizzle-zod`, covering users, agent economy components, decentralized inference, and service data.
-- **Migrations**: Handled by `drizzle-kit push`.
+- **Schema**: Defined in `shared/schema.ts` and validated with `drizzle-zod`, covering users, agent economy components, decentralized inference, and service data.
+- **Migrations**: Managed by `drizzle-kit push`.
 
 ### Smart Contracts (On-Chain Layer)
-- **Technology**: 4 Solidity contracts (0.8.24) built with Hardhat, utilizing OpenZeppelin, targeting BNB Chain, Base, and XLayer.
-- **Core Contracts**: `AgentEconomyHub.sol`, `SkillMarketplace.sol`, `AgentReplication.sol`, and `ConstitutionRegistry.sol`.
+- **Technology**: Four Solidity contracts (0.8.24) developed with Hardhat and OpenZeppelin libraries, targeting BNB Chain, Base, and XLayer.
+- **Core Contracts**: `AgentEconomyHub.sol`, `SkillMarketplace.sol`, `AgentReplication.sol`, and `ConstitutionRegistry.sol` manage core agent economics and governance.
 
 ### Permissionless Open Protocol
-- **Discovery**: Standardized endpoints for agent discovery.
-- **Identity**: Wallet address-based.
-- **Interaction**: Permissionless skill listing, wallet activity lookup, and open execution with free tier and HTTP 402 payment protocol.
+- **Features**: Standardized endpoints for agent discovery, wallet address-based identity, permissionless skill listing, wallet activity lookup, and open execution with a free tier and HTTP 402 payment protocol.
 
 ### Key Design Decisions
-- **Two-layer architecture**: On-chain for financial transactions, off-chain for agent behaviors.
-- **Shared schema**: Ensures type-safe data contracts between client and server.
-- **Storage interface abstraction**: Decouples business logic from the data layer.
-- **Single server**: Express serves both API and static frontend files in production.
+- **Two-layer Architecture**: On-chain for financial transactions and off-chain for agent behaviors.
+- **Shared Schema**: Ensures type-safe data contracts between frontend and backend.
+- **Storage Abstraction**: Decouples business logic from the underlying data layer.
+- **Single Server Deployment**: In production, Express serves both the API and static frontend files.
 
 ### Token Launcher
-Enables agents and users to launch meme tokens on various platforms like Flap.sh, Four.meme, XLayer, and Bankr. Features include direct ERC-20 deployment, integration with Bankr API, comprehensive trading functionalities for Four.meme, auto-image generation for token logos, auto-registration for AI Agent badges, and a "Project Chaos Engine" for autonomous token marketing. Integrates with Telegram for full token launch flow.
+Enables agents and users to deploy meme tokens on platforms like Flap.sh, Four.meme, XLayer, and Bankr. Features include direct ERC-20 deployment, integration with the Bankr API, trading functionalities for Four.meme, auto-image generation for token logos, auto-registration for AI Agent badges, and a "Project Chaos Engine" for autonomous token marketing, with full Telegram integration.
 
 ### Self-Service Agent Twitter Integration
-Allows users to connect Twitter/X accounts to BUILD4 agents for autonomous social media roles. Features a multi-agent Twitter runner, model selection (Llama, DeepSeek, Qwen), per-agent knowledge base, conversation memory with sentiment detection, tool use, performance learning, autonomous content posting, auto-reply, configurable personality, and role-based behavior.
+Allows users to connect Twitter/X accounts for autonomous social media management by BUILD4 agents. Includes multi-agent Twitter runners, various LLM models (Llama, DeepSeek, Qwen), per-agent knowledge bases, conversation memory with sentiment detection, tool use, performance learning, autonomous content posting, auto-reply, configurable personality, and role-based behavior.
 
-### Telegram Bot (Onboarding + Agent Management)
-Provides a button-driven interface for agent lifecycle management, task assignment, and wallet operations. Includes zero-friction onboarding, agent creation, task management, token launching, trading, and multi-wallet support. Supports deployment to Render as a standalone service.
-- **OnchainOS Commands**: `/signals`, `/scan`, `/trending`, `/meme`, `/price`, `/gas` powered by `onchainos` CLI v2.1.0.
-- **Solana Wallet Support**: Auto-generates Solana wallets (Ed25519 Keypair via `@solana/web3.js`), stored as `sol:${chatId}` in DB. Used as bridge destination for cross-chain swaps to Solana via Li.Fi.
+### Telegram Bot
+Provides a button-driven interface for agent lifecycle management, task assignment, and wallet operations, featuring zero-friction onboarding, agent creation, task management, token launching, trading, and multi-wallet support. Integrates OnchainOS commands for market data and wallet operations, and supports Solana wallet generation for cross-chain swaps.
 
-### Agent Hiring Fee
-Agent creation costs $20 (0.032 BNB), paid to the BUILD4 treasury wallet. This fee is collected on-chain via the Telegram bot or shown in the web dashboard. Twitter Agent Service costs $499/year (0.79 BNB) for autonomous posting, engagement, and audience growth.
+### Agent Hiring Fee & Subscriptions
+Agent creation incurs a $20 fee (0.032 BNB), directed to the BUILD4 treasury. The Twitter Agent Service costs $499/year (0.79 BNB). A tiered subscription system at `/pricing` provides different levels of access to the agent builder workspace, tracked by wallet address, with payments made in BNB to a treasury wallet.
 
 ### Autonomous AI Trading Agent
-An AI-powered agent for autonomous trading on Four.meme, making dynamic buy/sell decisions with independent scan and position monitor loops, AI analysis, trade memory, adaptive intelligence, trailing stop-loss, dynamic position sizing, and multi-whale copy trading. Modular agent skills allow configuration of strategy, analysis, and execution. Includes a Sniper Mode for fast, high-confidence trades, and an Anti-Repeat-Loss System to avoid re-buying losing tokens. Features Smart Money Discovery to identify and copy profitable traders.
+An AI-powered agent for autonomous trading on Four.meme, featuring dynamic buy/sell decisions, independent scan and position monitoring, AI analysis, trade memory, adaptive intelligence, trailing stop-loss, dynamic position sizing, and multi-whale copy trading. Includes a Sniper Mode and an Anti-Repeat-Loss System.
 
 ### Aster DEX Integration
-Facilitates centralized futures and spot trading on Aster DEX through both autonomous AI trading and manual Telegram commands using a TypeScript API client with HMAC-SHA256 signing. Auto-trading scans Aster markets, evaluates signals with AI, and executes trades with configurable leverage and trailing stops.
+Integrates with Aster DEX for centralized futures and spot trading via autonomous AI trading and manual Telegram commands, using a TypeScript API client with HMAC-SHA256 signing.
 
 ### OKX OnchainOS Integration
-Multi-chain infrastructure powered by OKX OnchainOS v2.1.0, providing:
-- **DEX Aggregator**: Token swaps across 500+ DEXs on 60+ chains via smart routing.
-- **Market Intelligence**: Real-time token data, trending tokens, holder distribution.
-- **Cross-Chain Bridge**: 18 bridge aggregators for seamless transfers.
-- **Wallet API**: Multi-chain token balance queries.
-- **OKX Wallet Connect**: Native OKX Wallet integration.
-- **OnchainOS CLI Skills**: 10 integrated skills for swapping, market data, signals, security, wallet management, and more.
-- **API Routes**: `/api/okx/onchainos/skills` and `/api/okx/onchainos/execute` for CLI command execution.
-- **Frontend Page**: `/onchainos` provides a tabbed UI for DEX Swap, Market Data, Bridge, and Wallet panels.
+Leverages OKX OnchainOS v2.1.0 for multi-chain infrastructure, providing a DEX Aggregator, Market Intelligence, Cross-Chain Bridge, Wallet API, and OKX Wallet Connect. Exposes API routes for CLI command execution and a frontend UI for these functionalities.
 
 ### General-Purpose AI Builder ("/build")
-A full general-purpose AI builder at `/build` competing with Replit/Bolt/v0. Builds anything: websites, apps, dashboards, landing pages, tools, games, and AI agents.
-- **Split-Screen Layout**: Chat on left, live preview panel (iframe) + code viewer on right. Preview/Code tabs.
-- **Live Preview**: AI generates complete HTML documents rendered in a sandboxed iframe. Supports desktop/tablet/mobile viewport sizing with refresh controls.
-- **Code Viewer**: Tabbed file browser showing all generated source files (HTML, CSS, JS, JSX, etc.) with syntax-highlighted code.
-- **Iterative Building**: Conversation-based iteration — "make it darker", "add a contact form", "change the header" — with file context sent back to AI for updates.
-- **AI-Powered Chat**: `POST /api/builder/chat` endpoint uses `runInferenceWithFallback()` (Hyperbolic/Akash/Ritual). System prompt generates `<PREVIEW>` (full HTML doc) and `<FILES>` (individual source files) blocks. Rate-limited (20 req/min per IP).
-- **Web Templates**: Landing Page, Dashboard, Web App, Portfolio quick-start templates.
-- **Agent Templates**: 6 pre-configured agent types (Trading, Research, Social, DeFi, Security, Sniper) with interactive config cards.
-- **Agent Deployment**: Deploys agents with wallet, on-chain identity, and runtime profile ($20 / 0.032 BNB).
+A comprehensive AI builder at `/build` for creating websites, apps, dashboards, landing pages, tools, games, and AI agents. It features a split-screen layout with chat, live preview (sandboxed iframe), and a code viewer. Supports iterative building through conversational prompts and AI-powered chat (`POST /api/builder/chat`). Provides web templates and 6 pre-configured agent templates for rapid deployment.
 
-### Workspace Pricing & Subscriptions
-Tiered pricing system at `/pricing` for the agent builder workspace. Plans tracked by wallet address in `workspace_subscriptions` table.
-- **Starter (Free)**: 1 agent, 2 deploys/month, 50 AI credits, BNB Chain only.
-- **Pro (0.15 BNB/30 days ≈ $89)**: 10 agents, 50 deploys/month, 2,000 AI credits, all chains.
-- **Enterprise (0.5 BNB/30 days ≈ $299)**: Unlimited agents/deploys/credits, dedicated node, white-label.
-- **Payment**: BNB sent on-chain to treasury wallet `0x5Ff57464152c9285A8526a0665d996dA66e2def1`, verified via `verifyPaymentTransaction()`.
-- **Usage Tracking**: `POST /api/workspace/usage` tracks deploys, inference, and agent creation against plan limits. Returns 403 when limits exceeded.
-- **API**: `GET /api/workspace/plan/:wallet`, `POST /api/workspace/upgrade`, `POST /api/workspace/usage`.
-- **Builder Integration**: Status bar shows current plan, deploy and AI chat check usage limits, upgrade prompts link to `/pricing`.
-
-### Data Integrity
-- **Platform stats**: All numbers on homepage and `/api/platform/stats` come from real database counts (visitors, transactions, agents, skills). No hardcoded or inflated numbers.
-- **ERC-8004 badges**: `erc8004Registered` flag is only set when on-chain registration returns `success: true` with a valid `txHash`. `cleanFakeData()` resets stale flags where `onchainId` is null.
-- **BAP-578 badges**: Same cleanup — `bap578Registered` flags reset where `onchainId` is null.
-- **Revenue tracking**: Only includes `platform_revenue` records with valid `0x`-prefixed `txHash` (on-chain verified). `cleanFakeData()` removes records without valid hashes.
-- **Agent cleanup**: `cleanFakeData()` removes agents without a `creatorWallet`, bot-burst agents (sub-2s creation gaps from same wallet), and duplicate versioned skills on startup.
-- **Skill marketplace**: Pagination properly supports `limit` and `offset` params (max 200). Template skills are honestly named (e.g., "Keyword Matcher" not "Sentiment Analyzer") with descriptions stating "Not AI-powered." All template skills priced at 0.0001 BNB. Duplicate detection prevents same-template skills per agent.
-- **Live data skills**: `crypto-data` and `web-data` skills use `safeFetch()` for real API calls to whitelisted domains (CoinGecko, DexScreener, DeFiLlama, etc.). Skills run in async sandbox via `executeSkillAsync()` with 8s timeout. AI-generated skills can also use `safeFetch` for live data access.
-- **Rate limiting**: Agent creation has 30s cooldown per wallet/IP to prevent bot bursts.
-
-### AI Agent Architecture
-- **AI inference**: Agents use real LLM inference (Llama 3.3 70B, DeepSeek V3) via decentralized providers (Hyperbolic, Akash, Ritual). AI is used for: decision-making (which action to take), strategic thinking, journal entries, skill code generation, and analyzing skill execution output (crypto/web data categories get AI analysis piped through LLM).
-- **Smart contracts**: AgentEconomyHub (identity, wallets, survival tiers), SkillMarketplace (agent commerce, revenue sharing), AgentReplication (lineage, child agents), ConstitutionRegistry (on-chain governance). Contracts handle economics; AI runs off-chain.
-- **Fallback behavior**: When providers are unavailable or agents can't afford inference (< 0.01 BNB), actions fall back to deterministic behavior. All actions log whether they used AI or fallback.
-- **Agent Store**: Shows real agents fetched from the database via `/api/web4/agents`, not hardcoded placeholder agents.
-
-### Security
-- **Private key messages**: All private key displays (wallet generation, export, Solana wallet) are auto-deleted after 30 seconds.
-- **Token launches**: Fee collection uses retry logic (3 attempts with backoff) and dynamic gas pricing (1.2x current) to reduce failures. TX timeout extended to 180s.
+### Data Integrity & Security
+Emphasizes real-time data integrity through direct database counts for platform stats, on-chain verification for ERC-8004 and BAP-578 badges, and valid `txHash` requirements for revenue tracking. Includes agent cleanup mechanisms to prevent bot-bursts and ensure data accuracy. Security measures include mandatory environment variables for encryption and admin authentication keys, HMAC-signed Telegram wallet linking, internal-only private key access, temporary display of private keys, and robust retry logic for token launches.
 
 ### Performance Optimizations
-Includes Telegram webhook mode, a priority-based in-memory task queue, a performance monitor (`/api/system/health`), per-user rate limiting, request timing middleware, API logging, batched visitor tracking, SEO prerendering, non-blocking startup, lazy-loading, and throttled frontend animations.
+Includes Telegram webhook mode, a priority-based in-memory task queue, system health monitoring, per-user rate limiting, request timing middleware, API logging, batched visitor tracking, SEO prerendering, non-blocking startup, lazy-loading, and throttled frontend animations.
 
-### Agent Task Terminal
-A direct interface for users to assign tasks to agents, receiving AI-powered results for specialized task types.
-
-### CMO Strategy Brain
-Generates autonomous strategies for Twitter agents, including go-to-market plans, content calendars, performance analysis, and strategic recommendations with a closed-loop feedback system, utilizing decentralized inference.
+### AI Agent Architecture
+Agents utilize decentralized LLM inference (Llama 3.3 70B, DeepSeek V3) for decision-making, strategic thinking, journal entries, skill code generation, and analyzing skill execution. Smart contracts handle economic aspects while AI manages off-chain behaviors. Fallback mechanisms ensure deterministic behavior when inference is unavailable or unaffordable.
 
 ## External Dependencies
 
 ### Database
-- **PostgreSQL**: Primary relational database.
+- **PostgreSQL**: The primary relational database used for persistent storage.
 
 ### Key NPM Packages
-- **express**: Backend HTTP server.
-- **drizzle-orm**, **drizzle-kit**: ORM and migration tooling.
-- **@tanstack/react-query**: Client-side server state management.
-- **zod**, **drizzle-zod**: Schema validation.
-- **wouter**: Client-side router.
-- **framer-motion**: Animation library.
-- **twitter-api-v2**: Twitter API integration.
-- **node-telegram-bot-api**: Telegram Bot API integration.
-- **sharp**: Image processing.
+- **express**: Core framework for the backend HTTP server.
+- **drizzle-orm**, **drizzle-kit**: Object-Relational Mapper and migration tools for database interaction.
+- **@tanstack/react-query**: Manages server state and data fetching on the client-side.
+- **zod**, **drizzle-zod**: Used for schema validation and type safety.
+- **wouter**: A small routing library for the React frontend.
+- **framer-motion**: Library for declarative animations in React.
+- **twitter-api-v2**: Facilitates integration with the Twitter API.
+- **node-telegram-bot-api**: Provides an interface to interact with the Telegram Bot API.
+- **sharp**: An image processing library.
 
 ### Replit-Specific Integrations
-- **@replit/vite-plugin-runtime-error-modal**: Development error display.
-- **@replit/vite-plugin-cartographer**: Replit-specific development tooling.
-- **@replit/vite-plugin-dev-banner**: Development environment banner.
+- **@replit/vite-plugin-runtime-error-modal**: Enhances error reporting during development within Replit.
+- **@replit/vite-plugin-cartographer**: Provides Replit-specific development tooling.
+- **@replit/vite-plugin-dev-banner**: Displays development environment banners.
