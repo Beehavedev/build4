@@ -61,7 +61,7 @@ function formatNum(n: number): string {
 }
 
 const defaultStats = [
-  { key: "visitors", value: "—", icon: Users },
+  { key: "visitors", value: "—", icon: Wallet },
   { key: "transactions", value: "—", icon: Activity },
   { key: "skillsCreated", value: "—", icon: Cpu },
   { key: "activeAgents", value: "—", icon: Bot },
@@ -187,7 +187,7 @@ function PlatformStats() {
 
   const stats = data
     ? [
-        { key: "visitors", value: formatNum(data.visitors || data.onchainUsers || 0), icon: Users },
+        { key: "visitors", value: formatNum(data.visitors || data.onchainUsers || 0), icon: Wallet },
         { key: "transactions", value: formatNum(data.transactions), icon: Activity },
         { key: "skillsCreated", value: formatNum(data.skills), icon: Cpu },
         { key: "activeAgents", value: formatNum(data.agents), icon: Bot },

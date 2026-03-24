@@ -719,8 +719,13 @@ export async function registerRoutes(
 
   app.get("/api/token-launcher/launches", async (req: Request, res: Response) => {
     const agentId = req.query.agentId as string | undefined;
+    const showAll = req.query.showAll === "true";
     const launches = await getTokenLaunches(agentId);
-    res.json(launches);
+    if (showAll) {
+      res.json(launches);
+    } else {
+      res.json(launches.filter(l => l.status !== "failed"));
+    }
   });
 
   app.get("/api/token-launcher/launches/:id", async (req: Request, res: Response) => {

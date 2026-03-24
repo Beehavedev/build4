@@ -65,11 +65,11 @@ Integrates with Aster DEX for centralized futures and spot trading via autonomou
 ### OKX OnchainOS Integration
 Leverages OKX OnchainOS v2.1.0 for multi-chain infrastructure, providing a DEX Aggregator, Market Intelligence, Cross-Chain Bridge, Wallet API, and OKX Wallet Connect. Exposes API routes for CLI command execution and a frontend UI for these functionalities.
 
-### General-Purpose AI Builder ("/build")
-A comprehensive AI builder at `/build` for creating websites, apps, dashboards, landing pages, tools, games, and AI agents. It features a split-screen layout with chat, live preview (sandboxed iframe), and a code viewer. Supports iterative building through conversational prompts and AI-powered chat (`POST /api/builder/chat`). Provides web templates and 6 pre-configured agent templates for rapid deployment.
+### Agent Builder ("/build") — Coming Soon
+The `/build` page currently displays a "Coming Soon" placeholder. The AI Agent Builder is being rebuilt. Routes `/tasks` and `/sdk` redirect to `/build`.
 
 ### Data Integrity & Security
-Emphasizes real-time data integrity through direct database counts for platform stats, on-chain verification for ERC-8004 and BAP-578 badges, and valid `txHash` requirements for revenue tracking. Includes agent cleanup mechanisms to prevent bot-bursts and ensure data accuracy. Security measures include mandatory environment variables for encryption and admin authentication keys, HMAC-signed Telegram wallet linking, internal-only private key access, temporary display of private keys, and robust retry logic for token launches.
+Platform stats (`/api/platform/stats`) use real database counts: unique wallets from `agents.creator_wallet`, real transaction/skill/agent counts — no visitor-log inflation. Token launcher API hides failed launches by default (filter `status !== "failed"`). On-chain verification for ERC-8004 and BAP-578 badges, valid `txHash` requirements for revenue tracking. Agent cleanup mechanisms prevent bot-bursts. Security measures include mandatory environment variables for encryption and admin authentication keys, HMAC-signed Telegram wallet linking, internal-only private key access, temporary display of private keys, and robust retry logic for token launches.
 
 ### Performance Optimizations
 Includes Telegram webhook mode, a priority-based in-memory task queue, system health monitoring, per-user rate limiting, request timing middleware, API logging, batched visitor tracking, SEO prerendering, non-blocking startup, lazy-loading, and throttled frontend animations.

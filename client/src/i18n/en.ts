@@ -18,7 +18,7 @@ const en = {
     launchAgent: "Launch Agent",
     explore: "Explore",
     stats: {
-      visitors: "Site Visitors",
+      visitors: "Unique Wallets",
       activeAgents: "Active Agents",
       transactions: "Transactions",
       transactionsDay: "Transactions/Day",

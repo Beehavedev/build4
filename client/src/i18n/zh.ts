@@ -18,7 +18,7 @@ const zh = {
     launchAgent: "启动代理",
     explore: "探索",
     stats: {
-      visitors: "访问者",
+      visitors: "独立钱包",
       activeAgents: "活跃代理",
       transactions: "交易总量",
       transactionsDay: "日交易量",
