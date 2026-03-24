@@ -73,6 +73,17 @@ const pendingOKXSwap = new Map<number, OKXSwapState>();
 const pendingOKXBridge = new Map<number, OKXBridgeState>();
 const pendingOKXScan = new Map<number, { step: "address"; chain?: string }>();
 const pendingOKXPrice = new Map<number, { step: "address"; chain?: string }>();
+interface SignalBuyState {
+  chainId: string;
+  chainName: string;
+  tokenAddress: string;
+  tokenSymbol: string;
+  nativeSymbol: string;
+  amount?: string;
+  sigType: string;
+  sigIndex: number;
+}
+const pendingSignalBuy = new Map<number, SignalBuyState>();
 
 const OKX_CHAINS = [
   { id: "56", name: "BNB Chain", symbol: "BNB" },
@@ -2215,6 +2226,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           await bot.sendMessage(chatId, `No ${label} signals on ${chainLabel} right now.`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxsig:${sigType}:chain:${chain}` }], [{ text: "« Back", callback_data: "action:okxsignals" }]] } });
         } else {
           let text = `${label} *Buy Signals — ${chainLabel}*\n\n`;
+          const buyButtons: Array<Array<{ text: string; callback_data: string }>> = [];
+          const chainObj = OKX_CHAINS.find(c => c.id === chain);
+          const nativeSym = chainObj?.symbol || "Native";
           signals.forEach((s: any, i: number) => {
             const tok = s.token || {};
             const name = tok.symbol || tok.name || s.tokenSymbol || s.symbol || "Unknown";
@@ -2228,14 +2242,224 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
             if (addr) text += `\`${addr}\`\n`;
             if (extras) text += `   ${extras}\n`;
             text += "\n";
+            if (addr && chain !== "501") {
+              buyButtons.push([
+                { text: `⚡ Buy ${name}`, callback_data: `sigbuy:${i}:${chain}:${sigType}` },
+                { text: `🔒 Scan`, callback_data: `okxscan:${chain}:${addr.slice(0, 40)}` },
+              ]);
+            }
           });
-          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxsig:${sigType}:chain:${chain}` }], [{ text: "« Back", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+
+          const sigCacheKey = `sig_${chatId}_${chain}_${sigType}`;
+          (globalThis as any).__signalCache = (globalThis as any).__signalCache || {};
+          (globalThis as any).__signalCache[sigCacheKey] = signals.map((s: any) => {
+            const tok = s.token || {};
+            return {
+              symbol: tok.symbol || tok.name || s.tokenSymbol || s.symbol || "Unknown",
+              address: tok.tokenAddress || s.tokenAddress || s.address || "",
+            };
+          });
+
+          const buttons = [
+            ...buyButtons.slice(0, 5),
+            [{ text: "🔄 Refresh", callback_data: `okxsig:${sigType}:chain:${chain}` }],
+            [{ text: "« Back", callback_data: "action:okxsignals" }, { text: "« Menu", callback_data: "action:menu" }],
+          ];
+          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
         }
       } else {
         await bot.sendMessage(chatId, `${label} signals unavailable: ${result.error || "try again later"}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxsignals" }]] } });
       }
     } catch (e: any) {
       await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxsignals" }]] } });
+    }
+    return;
+  }
+
+  if (data.startsWith("sigbuy:") && !data.startsWith("sigbuy_")) {
+    const parts = data.replace("sigbuy:", "").split(":");
+    const sigIndex = parseInt(parts[0]);
+    const sigChain = parts[1];
+    const sigTypeFromCb = parts[2] || "";
+
+    const chainObj = OKX_CHAINS.find(c => c.id === sigChain);
+    const nativeSym = chainObj?.symbol || "Native";
+    const chainLabel = chainObj?.name || sigChain;
+
+    const cache = (globalThis as any).__signalCache || {};
+    const exactKey = `sig_${chatId}_${sigChain}_${sigTypeFromCb}`;
+    let tokenInfo: { symbol: string; address: string } | null = null;
+    if (cache[exactKey] && cache[exactKey][sigIndex]) {
+      tokenInfo = cache[exactKey][sigIndex];
+    }
+
+    if (!tokenInfo || !tokenInfo.address) {
+      await bot.sendMessage(chatId, "Signal expired. Please refresh signals and try again.", { reply_markup: { inline_keyboard: [[{ text: "🐋 Signals", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+
+    pendingSignalBuy.set(chatId, {
+      chainId: sigChain,
+      chainName: chainLabel,
+      tokenAddress: tokenInfo.address,
+      tokenSymbol: tokenInfo.symbol,
+      nativeSymbol: nativeSym,
+      sigType: sigTypeFromCb,
+      sigIndex: sigIndex,
+    });
+
+    const amounts = sigChain === "1"
+      ? [{ label: "0.01 ETH", val: "0.01" }, { label: "0.05 ETH", val: "0.05" }, { label: "0.1 ETH", val: "0.1" }]
+      : sigChain === "56"
+      ? [{ label: "0.05 BNB", val: "0.05" }, { label: "0.1 BNB", val: "0.1" }, { label: "0.5 BNB", val: "0.5" }, { label: "1 BNB", val: "1" }]
+      : [{ label: `0.01 ${nativeSym}`, val: "0.01" }, { label: `0.05 ${nativeSym}`, val: "0.05" }, { label: `0.1 ${nativeSym}`, val: "0.1" }, { label: `0.5 ${nativeSym}`, val: "0.5" }];
+
+    await bot.sendMessage(chatId,
+      `⚡ *Instant Buy — ${tokenInfo.symbol}*\n\n` +
+      `Chain: ${chainLabel}\n` +
+      `Token: \`${tokenInfo.address}\`\n\n` +
+      `Select amount of ${nativeSym} to spend:`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            ...amounts.map(a => [{ text: a.label, callback_data: `sigbuy_amt:${a.val}` }]),
+            [{ text: "❌ Cancel", callback_data: "action:okxsignals" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("sigbuy_amt:")) {
+    const amount = data.replace("sigbuy_amt:", "");
+    const state = pendingSignalBuy.get(chatId);
+    if (!state) {
+      await bot.sendMessage(chatId, "Session expired. Please select a signal again.", { reply_markup: { inline_keyboard: [[{ text: "🐋 Signals", callback_data: "action:okxsignals" }]] } });
+      return;
+    }
+    state.amount = amount;
+    pendingSignalBuy.set(chatId, state);
+
+    await bot.sendMessage(chatId,
+      `⚡ *Confirm Buy*\n\n` +
+      `🪙 Token: *${state.tokenSymbol}*\n` +
+      `⛓ Chain: ${state.chainName}\n` +
+      `💰 Spend: *${amount} ${state.nativeSymbol}*\n` +
+      `📋 Address: \`${state.tokenAddress}\`\n\n` +
+      `Proceed with this swap?`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✅ Confirm Buy", callback_data: "sigbuy_confirm" }],
+            [{ text: "💰 Change Amount", callback_data: `sigbuy:${state.sigIndex}:${state.chainId}:${state.sigType}` }],
+            [{ text: "❌ Cancel", callback_data: "action:okxsignals" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (data === "sigbuy_confirm") {
+    const state = pendingSignalBuy.get(chatId);
+    if (!state || !state.amount) {
+      await bot.sendMessage(chatId, "Buy session expired. Start again from signals.", { reply_markup: { inline_keyboard: [[{ text: "🐋 Signals", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+
+    const walletAddr = getLinkedWallet(chatId);
+    if (!walletAddr || !await checkWalletHasKey(chatId, walletAddr)) {
+      await bot.sendMessage(chatId, "You need a wallet with a private key to buy. Use /wallet to set one up.", { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      pendingSignalBuy.delete(chatId);
+      return;
+    }
+
+    await bot.sendMessage(chatId, `⏳ Executing buy: ${state.amount} ${state.nativeSymbol} → ${state.tokenSymbol} on ${state.chainName}...`);
+    sendTyping(chatId);
+
+    try {
+      const { ethers } = await import("ethers");
+      const nativeToken = OKX_NATIVE_TOKEN;
+      const decimals = 18;
+      const rawAmount = ethers.parseUnits(state.amount, decimals).toString();
+
+      const { getSwapData } = await import("./okx-onchainos");
+      const swapTx = await getSwapData({
+        chainId: state.chainId,
+        fromTokenAddress: nativeToken,
+        toTokenAddress: state.tokenAddress,
+        amount: rawAmount,
+        slippage: "1",
+        userWalletAddress: walletAddr,
+      });
+
+      const txData = swapTx?.data?.[0]?.tx;
+      if (!txData) throw new Error("No swap route found for this token. It may have low liquidity.");
+
+      const pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
+      if (!pk) throw new Error("Wallet key not found");
+
+      const CHAIN_RPCS: Record<string, string> = {
+        "56": "https://bsc-dataseed1.binance.org", "1": "https://eth.llamarpc.com",
+        "8453": "https://mainnet.base.org", "42161": "https://arb1.arbitrum.io/rpc",
+        "137": "https://polygon-rpc.com", "10": "https://mainnet.optimism.io",
+        "43114": "https://api.avax.network/ext/bc/C/rpc", "196": "https://rpc.xlayer.tech",
+        "250": "https://rpc.ftm.tools", "5000": "https://rpc.mantle.xyz",
+      };
+      const rpcUrl = CHAIN_RPCS[state.chainId] || "https://bsc-dataseed1.binance.org";
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const wallet = new ethers.Wallet(pk, provider);
+
+      const tx = await wallet.sendTransaction({
+        to: txData.to,
+        data: txData.data,
+        value: txData.value ? BigInt(txData.value) : 0n,
+        gasLimit: txData.gasLimit ? BigInt(txData.gasLimit) : undefined,
+      });
+
+      const receipt = await tx.wait();
+      if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
+
+      const explorerUrls: Record<string, string> = {
+        "56": "https://bscscan.com/tx/", "1": "https://etherscan.io/tx/",
+        "8453": "https://basescan.org/tx/", "42161": "https://arbiscan.io/tx/",
+        "137": "https://polygonscan.com/tx/", "10": "https://optimistic.etherscan.io/tx/",
+        "43114": "https://snowtrace.io/tx/", "196": "https://www.okx.com/explorer/xlayer/tx/",
+      };
+      const explorer = explorerUrls[state.chainId] || "https://bscscan.com/tx/";
+
+      pendingSignalBuy.delete(chatId);
+      await bot.sendMessage(chatId,
+        `✅ *Buy Executed!*\n\n` +
+        `⚡ ${state.amount} ${state.nativeSymbol} → ${state.tokenSymbol}\n` +
+        `⛓ ${state.chainName}\n\n` +
+        `[View Transaction](${explorer}${receipt.hash})`,
+        {
+          parse_mode: "Markdown",
+          disable_web_page_preview: true,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🐋 More Signals", callback_data: "action:okxsignals" }],
+              [{ text: "👛 Wallet", callback_data: "action:wallet" }, { text: "« Menu", callback_data: "action:menu" }],
+            ],
+          },
+        }
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId,
+        `❌ Buy failed: ${e.message?.substring(0, 150)}\n\nCheck your ${state.nativeSymbol} balance and try again.`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 Retry", callback_data: "sigbuy_confirm" }],
+              [{ text: "🐋 Signals", callback_data: "action:okxsignals" }, { text: "« Menu", callback_data: "action:menu" }],
+            ],
+          },
+        }
+      );
     }
     return;
   }
@@ -2255,6 +2479,53 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         },
       }
     );
+    return;
+  }
+
+  if (data.startsWith("okxscan:") && !data.startsWith("okxscan_")) {
+    const parts = data.replace("okxscan:", "").split(":");
+    const scanChain = parts[0];
+    const scanAddr = parts[1];
+    if (!scanAddr) {
+      pendingOKXScan.set(chatId, { step: "address", chain: scanChain });
+      await bot.sendMessage(chatId, "Enter the token contract address to scan (0x...):");
+      return;
+    }
+
+    const fullAddr = scanAddr;
+    const cache = (globalThis as any).__signalCache || {};
+    const cacheKeys = Object.keys(cache).filter(k => k.includes(`_${chatId}_${scanChain}_`));
+    let resolvedAddr = fullAddr;
+    for (const key of cacheKeys) {
+      const items = cache[key] || [];
+      const match = items.find((t: any) => t.address && t.address.startsWith(fullAddr));
+      if (match) { resolvedAddr = match.address; break; }
+    }
+
+    await bot.sendMessage(chatId, `🔒 Scanning \`${resolvedAddr.substring(0, 12)}...\` for risks...`, { parse_mode: "Markdown" });
+    try {
+      const result = await executeSecurityScan(resolvedAddr, scanChain);
+      if (result.success && result.data) {
+        const d = result.data;
+        let scanText = "🔒 *Security Scan Results*\n\n";
+        scanText += `Address: \`${resolvedAddr}\`\n\n`;
+        if (d.isHoneypot !== undefined) scanText += `Honeypot: ${d.isHoneypot ? "⚠️ YES" : "✅ No"}\n`;
+        if (d.riskLevel) scanText += `Risk Level: ${d.riskLevel === "high" ? "🔴 HIGH" : d.riskLevel === "medium" ? "🟡 MEDIUM" : "🟢 LOW"}\n`;
+        if (d.buyTax) scanText += `Buy Tax: ${d.buyTax}%\n`;
+        if (d.sellTax) scanText += `Sell Tax: ${d.sellTax}%\n`;
+        if (d.isOpenSource !== undefined) scanText += `Open Source: ${d.isOpenSource ? "✅" : "❌"}\n`;
+        if (d.isProxy !== undefined) scanText += `Proxy: ${d.isProxy ? "⚠️ Yes" : "✅ No"}\n`;
+        if (d.risks && d.risks.length > 0) {
+          scanText += `\nRisks:\n`;
+          d.risks.slice(0, 5).forEach((r: string) => { scanText += `• ${r}\n`; });
+        }
+        await bot.sendMessage(chatId, scanText, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🐋 Back to Signals", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      } else {
+        await bot.sendMessage(chatId, `Scan failed: ${result.error || "try again"}`, { reply_markup: { inline_keyboard: [[{ text: "🐋 Signals", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Scan error: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "🐋 Signals", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
     return;
   }
 
