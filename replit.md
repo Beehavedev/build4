@@ -105,10 +105,11 @@ Tiered pricing system at `/pricing` for the agent builder workspace. Plans track
 - **Revenue tracking**: Only includes `platform_revenue` records with valid `0x`-prefixed `txHash` (on-chain verified). `cleanFakeData()` removes records without valid hashes.
 - **Agent cleanup**: `cleanFakeData()` removes agents without a `creatorWallet`, bot-burst agents (sub-2s creation gaps from same wallet), and duplicate versioned skills on startup.
 - **Skill marketplace**: Pagination properly supports `limit` and `offset` params (max 200). Template skills are honestly named (e.g., "Keyword Matcher" not "Sentiment Analyzer") with descriptions stating "Not AI-powered." All template skills priced at 0.0001 BNB. Duplicate detection prevents same-template skills per agent.
+- **Live data skills**: `crypto-data` and `web-data` skills use `safeFetch()` for real API calls to whitelisted domains (CoinGecko, DexScreener, DeFiLlama, etc.). Skills run in async sandbox via `executeSkillAsync()` with 8s timeout. AI-generated skills can also use `safeFetch` for live data access.
 - **Rate limiting**: Agent creation has 30s cooldown per wallet/IP to prevent bot bursts.
 
 ### AI Agent Architecture
-- **AI inference**: Agents use real LLM inference (Llama 3.3 70B, DeepSeek V3) via decentralized providers (Hyperbolic, Akash, Ritual). AI is used for: decision-making (which action to take), strategic thinking, journal entries, and skill code generation.
+- **AI inference**: Agents use real LLM inference (Llama 3.3 70B, DeepSeek V3) via decentralized providers (Hyperbolic, Akash, Ritual). AI is used for: decision-making (which action to take), strategic thinking, journal entries, skill code generation, and analyzing skill execution output (crypto/web data categories get AI analysis piped through LLM).
 - **Smart contracts**: AgentEconomyHub (identity, wallets, survival tiers), SkillMarketplace (agent commerce, revenue sharing), AgentReplication (lineage, child agents), ConstitutionRegistry (on-chain governance). Contracts handle economics; AI runs off-chain.
 - **Fallback behavior**: When providers are unavailable or agents can't afford inference (< 0.01 BNB), actions fall back to deterministic behavior. All actions log whether they used AI or fallback.
 - **Agent Store**: Shows real agents fetched from the database via `/api/web4/agents`, not hardcoded placeholder agents.

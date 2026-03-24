@@ -556,7 +556,15 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           break;
         }
 
-        const testResult = executeSkillCode(skillCode!, JSON.parse(skillExampleInput!), skillInputSchema!);
+        const usesAsyncCode = /\bsafeFetch\s*\(/.test(skillCode!) || /\bawait\b/.test(skillCode!);
+        let testResult;
+        if (usesAsyncCode) {
+          const { executeSkillAsync, fetchExternalData } = await import("./skill-executor");
+          const extData = await fetchExternalData();
+          testResult = await executeSkillAsync(skillCode!, JSON.parse(skillExampleInput!), skillInputSchema!, extData);
+        } else {
+          testResult = executeSkillCode(skillCode!, JSON.parse(skillExampleInput!), skillInputSchema!);
+        }
         if (!testResult.success) {
           log(`[Agent ${agent.name}] Skill code test failed: ${testResult.error}`, "agent-runner");
           break;
@@ -918,16 +926,19 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
           if (skill.exampleInput) {
             input = JSON.parse(skill.exampleInput);
           }
+          const cryptoActions = ["price", "detailed", "trending", "fear_greed"];
+          const cryptoTokens = ["BNB", "ETH", "BTC", "SOL", "AVAX", "LINK"];
+          const webActions = ["defi_tvl", "dex_pairs", "yields", "market_summary", "gas"];
           const contextualInputs: Record<string, Record<string, any>> = {
-            "text-analysis": { text: `Agent ${agent.name} is analyzing patterns in the BUILD4 autonomous economy. Skills create value, agents evolve, and the marketplace thrives through competition and collaboration.` },
-            "classification": { text: `The agent marketplace shows strong growth with increasing skill diversity and rising transaction volumes across multiple categories.` },
+            "text-analysis": { text: `Agent ${agent.name} is analyzing patterns in the BUILD4 autonomous economy. Skills create value, agents evolve, and the marketplace thrives through competition and collaboration. Current portfolio: ${executableSkills.length} skills.` },
+            "classification": { text: `The agent marketplace shows ${executableSkills.length > 3 ? "strong" : "early"} growth with ${executableSkills.length} active skills and rising transaction volumes.` },
             "summarization": { text: `The BUILD4 economy enables autonomous AI agents to create, trade, and execute skills. Agents earn through skill creation and job completion. Evolution improves capabilities. Replication expands lineage. The marketplace connects supply with demand.`, maxSentences: 2 },
-            "extraction": { text: `Contact agent@build4.ai for support. Visit https://build4.ai for more. Call +1-555-0123. Date: 2026-02-20. Tags: #AI #agents #economy`, pattern: "email" },
+            "extraction": { text: `Contact agent@build4.ai for support. Visit https://build4.ai for more. Call +1-555-0123. Date: ${new Date().toISOString().split('T')[0]}. Tags: #AI #agents #economy`, pattern: "email" },
             "data-transform": { data: [5, 2, 8, 1, 9, 3, 7, 4, 6], operation: "stats" },
             "math-compute": { operation: "statistics", values: [15, 22, 8, 42, 31, 19, 27] },
-            "formatting": { data: [{ agent: agent.name, skills: executableSkills.length, status: "active" }], format: "json" },
-            "crypto-data": { token: "BNB", action: "price" },
-            "web-data": { type: "market_summary" },
+            "formatting": { data: [{ agent: agent.name, skills: executableSkills.length, status: "active", balance: (Number(BigInt(wallet.balance)) / 1e18).toFixed(4) }], format: "json" },
+            "crypto-data": { token: cryptoTokens[Math.floor(Math.random() * cryptoTokens.length)], action: cryptoActions[Math.floor(Math.random() * cryptoActions.length)] },
+            "web-data": { type: webActions[Math.floor(Math.random() * webActions.length)] },
           };
           if (contextualInputs[skill.category]) {
             const contextInput = contextualInputs[skill.category];
@@ -937,14 +948,16 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
               }
             }
           }
-          const isExternalData = ["crypto-data", "web-data"].includes(skill.category);
+          const usesAsync = ["crypto-data", "web-data"].includes(skill.category) || /\bsafeFetch\s*\(/.test(skill.code!) || /\bawait\b/.test(skill.code!);
           let result;
-          if (isExternalData) {
-            const { fetchExternalData, executeSkillWithExternalData } = await import("./skill-executor");
+          if (usesAsync) {
+            const { fetchExternalData, executeSkillAsync } = await import("./skill-executor");
             const extData = await fetchExternalData();
-            result = executeSkillWithExternalData(skill.code!, input, skill.inputSchema, extData);
+            result = await executeSkillAsync(skill.code!, input, skill.inputSchema, extData);
           } else {
-            result = executeSkillCode(skill.code!, input, skill.inputSchema);
+            const { fetchExternalData } = await import("./skill-executor");
+            const extData = await fetchExternalData();
+            result = executeSkillCode(skill.code!, input, skill.inputSchema, extData);
           }
           const { EXECUTION_ROYALTY_BPS, SKILL_TIERS } = await import("@shared/schema");
           const tierMultiplier = (SKILL_TIERS as any)[skill.tier]?.priceMultiplier || 1.0;
@@ -1043,7 +1056,23 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
 
           if (result.success) {
             await updateAgentMemory(agent.id, "use_skill", true, { category: skill.category });
-            const outputSummary = JSON.stringify(result.output).substring(0, 200);
+            let outputSummary = JSON.stringify(result.output).substring(0, 200);
+
+            const dataCategories = ["crypto-data", "web-data"];
+            if (dataCategories.includes(skill.category) && result.output && hasLiveProviders && BigInt(wallet.balance) >= BigInt("10000000000000000")) {
+              try {
+                const rawOutput = JSON.stringify(result.output).substring(0, 1500);
+                const analysisPrompt = `You are ${agent.name}, an AI agent. You just executed your "${skill.name}" skill (category: ${skill.category}) and got this data:\n${rawOutput}\n\nProvide a brief 1-2 sentence analysis or insight from this data. Be specific with numbers and actionable.`;
+                const request = await storage.routeInference(agent.id, analysisPrompt, undefined, true);
+                if (request.response && request.response.trim().length > 10) {
+                  outputSummary = `[AI Analysis] ${request.response.trim().substring(0, 300)}`;
+                  log(`[Agent ${agent.name}] AI analysis of skill output: ${request.response.trim().substring(0, 100)}...`, "agent-runner");
+                }
+              } catch (analysisErr: any) {
+                log(`[Agent ${agent.name}] AI analysis skipped: ${analysisErr.message?.substring(0, 60)}`, "agent-runner");
+              }
+            }
+
             await storage.upsertAgentMemory(agent.id, "performance", "last_skill_output", outputSummary, 90);
             const memEntries = await storage.getAgentMemories(agent.id, "performance");
             const usedCountMem = memEntries.find(m => m.key === "skills_used_count");

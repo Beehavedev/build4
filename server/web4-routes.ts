@@ -32,7 +32,7 @@ import {
   insertErc8004ValidationSchema,
   insertBap578NfaSchema,
 } from "@shared/schema";
-import { executeSkillCode, validateSkillCode, executeSkillWithExternalData } from "./skill-executor";
+import { executeSkillCode, validateSkillCode, executeSkillWithExternalData, executeSkillAsync } from "./skill-executor";
 import { seedKnownPlatforms, runHttpOutreach, runOnchainBeacon, runFullOutreach, runDirectRecruitment, getOutreachMessage, getPlatformRegistry, getAnnouncementFormats, startAutoBroadcast, stopAutoBroadcast, getAutoBroadcastStatus } from "./outreach";
 import { startAgentTwitter, stopAgentTwitter, getAgentTwitterStatus, updateAgentTwitterInterval, postIntroTweet, postCustomTweet } from "./multi-twitter-agent";
 import { agentTwitterConnectSchema, agentTwitterSettingsSchema } from "@shared/schema";
@@ -1699,16 +1699,12 @@ ${urls}
         }
       }
 
-      const isExternalDataSkill = ["crypto-data", "web-data"].includes(skill.category);
-      let externalData: Record<string, any> | undefined;
-      if (isExternalDataSkill) {
-        const { fetchExternalData } = await import("./skill-executor");
-        externalData = await fetchExternalData();
-      }
-
-      const result = isExternalDataSkill
-        ? executeSkillWithExternalData(skill.code, parsed.input, skill.inputSchema, externalData!)
-        : executeSkillCode(skill.code, parsed.input, skill.inputSchema);
+      const { fetchExternalData } = await import("./skill-executor");
+      const externalData = await fetchExternalData();
+      const usesAsyncExec = ["crypto-data", "web-data"].includes(skill.category) || /\bsafeFetch\s*\(/.test(skill.code) || /\bawait\b/.test(skill.code);
+      const result = usesAsyncExec
+        ? await executeSkillAsync(skill.code, parsed.input, skill.inputSchema, externalData)
+        : executeSkillCode(skill.code, parsed.input, skill.inputSchema, externalData);
 
       const tierMultiplier = getTierMultiplier(skill.tier);
       const baseRoyalty = (BigInt(skill.priceAmount) * BigInt(EXECUTION_ROYALTY_BPS)) / BigInt(10000);
@@ -1773,7 +1769,7 @@ ${urls}
         agentId: skill.agentId,
         tier: newTier,
         royaltyPaid: royaltyStr,
-        hasExternalData: isExternalDataSkill,
+        hasExternalData: usesAsyncExec,
       });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -1917,16 +1913,12 @@ ${urls}
       let totalRoyalty = 0n;
 
       for (const skill of skills) {
-        const isExternal = ["crypto-data", "web-data"].includes(skill.category);
-        let extData: Record<string, any> | undefined;
-        if (isExternal) {
-          const { fetchExternalData } = await import("./skill-executor");
-          extData = await fetchExternalData();
-        }
-
-        const result = isExternal
-          ? executeSkillWithExternalData(skill.code, currentInput, skill.inputSchema, extData!)
-          : executeSkillCode(skill.code, currentInput, skill.inputSchema);
+        const { fetchExternalData } = await import("./skill-executor");
+        const extData = await fetchExternalData();
+        const usesAsyncExec = ["crypto-data", "web-data"].includes(skill.category) || /\bsafeFetch\s*\(/.test(skill.code) || /\bawait\b/.test(skill.code);
+        const result = usesAsyncExec
+          ? await executeSkillAsync(skill.code, currentInput, skill.inputSchema, extData)
+          : executeSkillCode(skill.code, currentInput, skill.inputSchema, extData);
 
         stepResults.push({ skillName: skill.name, success: result.success, output: result.output, latencyMs: result.latencyMs });
         totalLatency += result.latencyMs;

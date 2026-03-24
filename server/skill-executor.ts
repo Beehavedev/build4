@@ -16,6 +16,50 @@ function sanitizeResultDeclarations(code: string): string {
     .replace(/\b(const|let|var)\s+__result__\s*;/g, '');
 }
 
+const WHITELISTED_FETCH_DOMAINS = [
+  "api.coingecko.com",
+  "api.dexscreener.com",
+  "api.llama.fi",
+  "coins.llama.fi",
+  "yields.llama.fi",
+  "api.geckoterminal.com",
+  "api.bscscan.com",
+  "api.basescan.org",
+  "api.etherscan.io",
+  "pro-api.coinmarketcap.com",
+  "min-api.cryptocompare.com",
+  "api.alternative.me",
+];
+
+function createSandboxFetch(timeout = 5000): (url: string) => Promise<any> {
+  return async (url: string) => {
+    try {
+      const parsed = new URL(url);
+      if (!WHITELISTED_FETCH_DOMAINS.includes(parsed.hostname)) {
+        return { ok: false, error: `Domain not whitelisted: ${parsed.hostname}`, status: 403 };
+      }
+      if (parsed.protocol !== "https:") {
+        return { ok: false, error: "Only HTTPS allowed", status: 400 };
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeout);
+      try {
+        const res = await fetch(url, { signal: controller.signal, redirect: "error", headers: { "User-Agent": "BUILD4-Agent/1.0" } });
+        clearTimeout(timer);
+        const text = await res.text();
+        let json: any = null;
+        try { json = JSON.parse(text); } catch {}
+        return { ok: res.ok, status: res.status, data: json || text };
+      } catch (fetchErr: any) {
+        clearTimeout(timer);
+        return { ok: false, error: fetchErr.message || "Fetch failed", status: 0 };
+      }
+    } catch (parseErr: any) {
+      return { ok: false, error: `Invalid URL: ${parseErr.message}`, status: 400 };
+    }
+  };
+}
+
 const SAFE_GLOBALS = {
   Math,
   JSON,
@@ -181,6 +225,74 @@ export function executeSkillWithExternalData(code: string, input: Record<string,
   return executeSkillCode(code, input, inputSchemaStr, externalData);
 }
 
+const ASYNC_TIMEOUT_MS = 8000;
+
+export async function executeSkillAsync(code: string, input: Record<string, any>, inputSchemaStr: string | null, externalData?: Record<string, any>): Promise<ExecutionResult> {
+  const start = Date.now();
+
+  const validationError = validateInputAgainstSchema(input, inputSchemaStr);
+  if (validationError) {
+    return { success: false, output: null, error: validationError, latencyMs: Date.now() - start };
+  }
+
+  try {
+    const sanitizedCode = sanitizeResultDeclarations(code);
+    const sandboxFetch = createSandboxFetch(5000);
+    let timedOut = false;
+    let checkInterval: NodeJS.Timeout | undefined;
+
+    const wrappedCode = `
+      "use strict";
+      (async () => {
+        const input = __INPUT__;
+        const __EXTERNAL_DATA__ = __EXT_DATA__;
+        var __result__;
+        ${sanitizedCode}
+        return __result__;
+      })()
+    `;
+
+    const contextVars: Record<string, any> = {
+      ...SAFE_GLOBALS,
+      __INPUT__: JSON.parse(JSON.stringify(input)),
+      __EXT_DATA__: JSON.parse(JSON.stringify(externalData || {})),
+      safeFetch: sandboxFetch,
+    };
+
+    const context = vm.createContext(contextVars);
+    const script = new vm.Script(wrappedCode, { filename: "skill-async.js" });
+    const promise = script.runInContext(context, { timeout: MAX_EXECUTION_TIME_MS });
+
+    const output = await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        const hardDeadline = Date.now() + ASYNC_TIMEOUT_MS;
+        checkInterval = setInterval(() => {
+          if (Date.now() > hardDeadline) {
+            timedOut = true;
+            reject(new Error("Async execution timed out"));
+          }
+        }, 100);
+      }),
+    ]);
+
+    if (checkInterval) clearInterval(checkInterval);
+
+    const outputStr = JSON.stringify(output);
+    if (outputStr && outputStr.length > MAX_OUTPUT_SIZE) {
+      return { success: false, output: null, error: "Output exceeds maximum size limit", latencyMs: Date.now() - start };
+    }
+
+    return { success: true, output: output ?? null, latencyMs: Date.now() - start };
+  } catch (err: any) {
+    const errorMsg = err.message || "Unknown execution error";
+    const cleanError = errorMsg.includes("timed out")
+      ? "Execution timed out"
+      : errorMsg.substring(0, 500);
+    return { success: false, output: null, error: cleanError, latencyMs: Date.now() - start };
+  }
+}
+
 export function validateSkillCode(code: string): { valid: boolean; error?: string } {
   const forbidden = [
     /require\s*\(/,
@@ -190,17 +302,17 @@ export function validateSkillCode(code: string): { valid: boolean; error?: strin
     /globalThis/,
     /eval\s*\(/,
     /Function\s*\(/,
-    /fetch\s*\(/,
+    /\bfetch\s*\(/,
     /XMLHttpRequest/,
     /WebSocket/,
     /child_process/,
-    /fs\./,
-    /path\./,
-    /os\./,
-    /net\./,
-    /http\./,
-    /https\./,
-    /crypto\./,
+    /\bfs\./,
+    /\bpath\./,
+    /\bos\./,
+    /\bnet\./,
+    /\bhttp\./,
+    /\bhttps\./,
+    /\bcrypto\./,
     /__proto__/,
     /constructor\s*\[/,
     /Proxy\s*\(/,
@@ -215,7 +327,11 @@ export function validateSkillCode(code: string): { valid: boolean; error?: strin
 
   try {
     const sanitized = sanitizeResultDeclarations(code);
-    new vm.Script(`"use strict"; const input = {}; var __result__; ${sanitized}`, { filename: "validate.js" });
+    const usesAsync = code.includes("await ") || code.includes("safeFetch");
+    const wrapper = usesAsync
+      ? `"use strict"; (async () => { const input = {}; const __EXTERNAL_DATA__ = {}; const safeFetch = async (url) => ({}); var __result__; ${sanitized}; return __result__; })()`
+      : `"use strict"; const input = {}; var __result__; ${sanitized}`;
+    new vm.Script(wrapper, { filename: "validate.js" });
     return { valid: true };
   } catch (err: any) {
     return { valid: false, error: `Syntax error: ${err.message}` };
@@ -231,9 +347,11 @@ Create a UNIQUE, CREATIVE skill in the "${category}" category. The skill must be
 CONSTRAINTS:
 - The variable \`input\` is already defined. Read fields from it like \`input.text\`, \`input.data\`, etc.
 - The variable \`__result__\` is already declared. ASSIGN your output to it: \`__result__ = { ... }\`. Do NOT use const/let/var to declare __result__.
-- FORBIDDEN: require(), import, fetch(), process, global, eval, Function(), XMLHttpRequest, WebSocket, child_process, fs, path, os, net, http, https, crypto, __proto__, Proxy, Reflect
-- ALLOWED: Math, JSON, String, Number, Boolean, Array, Object, Date, RegExp, Map, Set, parseInt, parseFloat, isNaN, isFinite
-- Code must complete in under 3 seconds
+- \`__EXTERNAL_DATA__\` contains live market data: \`__EXTERNAL_DATA__.cryptoPrices\` (BNB/ETH/BTC/SOL with usd and change24h), \`__EXTERNAL_DATA__.gasPrice\`, \`__EXTERNAL_DATA__.timestampISO\`.
+- \`safeFetch(url)\` is available for HTTP calls to whitelisted APIs. Returns \`{ ok, status, data }\`. Whitelisted: api.coingecko.com, api.dexscreener.com, api.llama.fi, coins.llama.fi, yields.llama.fi, api.geckoterminal.com, api.bscscan.com, api.basescan.org, api.etherscan.io, api.alternative.me. Use \`await safeFetch(url)\` — your code runs in an async context.
+- FORBIDDEN: require(), import, fetch() (use safeFetch instead), process, global, eval, Function(), XMLHttpRequest, WebSocket, child_process, fs, path, os, net, http, https, crypto, __proto__, Proxy, Reflect
+- ALLOWED: Math, JSON, String, Number, Boolean, Array, Object, Date, RegExp, Map, Set, parseInt, parseFloat, isNaN, isFinite, safeFetch
+- Code must complete in under 8 seconds
 - Output must be JSON-serializable and under 50KB
 
 Respond with EXACTLY this format (no extra text before or after):
@@ -508,53 +626,82 @@ if (operation === "evaluate" && input.expression) {
     exampleOutput: '{"sum":150,"mean":30,"median":30,"min":10,"max":50,"variance":200,"stddev":14.14,"count":5}',
   },
   "crypto-data": {
-    code: `const prices = __EXTERNAL_DATA__.cryptoPrices || {};
-const token = (input.token || "BNB").toUpperCase();
-const tokenData = prices[token];
-if (!tokenData) {
-  __result__ = { error: "Token not found", available: Object.keys(prices), timestamp: __EXTERNAL_DATA__.timestamp };
-} else {
-  const action = input.action || "price";
-  if (action === "compare") {
-    const tokens = (input.tokens || Object.keys(prices));
-    const comparison = {};
-    tokens.forEach(t => { if (prices[t]) comparison[t] = prices[t]; });
-    __result__ = { comparison, timestamp: __EXTERNAL_DATA__.timestampISO, count: Object.keys(comparison).length };
-  } else if (action === "alert") {
-    const threshold = input.threshold || 0;
-    const direction = input.direction || "above";
-    const triggered = direction === "above" ? tokenData.usd > threshold : tokenData.usd < threshold;
-    __result__ = { token, price: tokenData.usd, threshold, direction, triggered, change24h: tokenData.change24h, timestamp: __EXTERNAL_DATA__.timestampISO };
+    code: `const token = (input.token || "BNB").toLowerCase();
+const action = input.action || "price";
+const idMap = { bnb: "binancecoin", eth: "ethereum", btc: "bitcoin", sol: "solana", avax: "avalanche-2", matic: "matic-network", dot: "polkadot", link: "chainlink", uni: "uniswap", aave: "aave" };
+const cgId = idMap[token] || token;
+
+if (action === "detailed") {
+  const res = await safeFetch("https://api.coingecko.com/api/v3/coins/" + cgId + "?localization=false&tickers=false&community_data=false&developer_data=false");
+  if (res.ok && res.data) {
+    const d = res.data;
+    __result__ = { token: d.symbol?.toUpperCase(), name: d.name, price: d.market_data?.current_price?.usd, marketCap: d.market_data?.market_cap?.usd, volume24h: d.market_data?.total_volume?.usd, change24h: d.market_data?.price_change_percentage_24h, change7d: d.market_data?.price_change_percentage_7d, change30d: d.market_data?.price_change_percentage_30d, ath: d.market_data?.ath?.usd, athDate: d.market_data?.ath_date?.usd, circulatingSupply: d.market_data?.circulating_supply, totalSupply: d.market_data?.total_supply, rank: d.market_cap_rank, timestamp: __EXTERNAL_DATA__.timestampISO };
   } else {
-    __result__ = { token, price: tokenData.usd, change24h: tokenData.change24h, timestamp: __EXTERNAL_DATA__.timestampISO, gasPrice: __EXTERNAL_DATA__.gasPrice || null };
+    __result__ = { error: "Failed to fetch detailed data", token, apiStatus: res.status };
+  }
+} else if (action === "trending") {
+  const res = await safeFetch("https://api.coingecko.com/api/v3/search/trending");
+  if (res.ok && res.data?.coins) {
+    __result__ = { trending: res.data.coins.slice(0, 10).map(c => ({ name: c.item.name, symbol: c.item.symbol, rank: c.item.market_cap_rank, score: c.item.score })), timestamp: __EXTERNAL_DATA__.timestampISO };
+  } else { __result__ = { error: "Failed to fetch trending", apiStatus: res.status }; }
+} else if (action === "fear_greed") {
+  const res = await safeFetch("https://api.alternative.me/fng/?limit=7");
+  if (res.ok && res.data?.data) {
+    __result__ = { fearGreedIndex: res.data.data.map(d => ({ value: Number(d.value), label: d.value_classification, timestamp: new Date(d.timestamp * 1000).toISOString() })), timestamp: __EXTERNAL_DATA__.timestampISO };
+  } else { __result__ = { error: "Failed to fetch fear/greed index" }; }
+} else {
+  const prices = __EXTERNAL_DATA__.cryptoPrices || {};
+  const tokenData = prices[token.toUpperCase()];
+  if (tokenData) {
+    __result__ = { token: token.toUpperCase(), price: tokenData.usd, change24h: tokenData.change24h, gasPrice: __EXTERNAL_DATA__.gasPrice || null, timestamp: __EXTERNAL_DATA__.timestampISO };
+  } else {
+    const res = await safeFetch("https://api.coingecko.com/api/v3/simple/price?ids=" + cgId + "&vs_currencies=usd&include_24hr_change=true&include_market_cap=true");
+    if (res.ok && res.data?.[cgId]) {
+      __result__ = { token: token.toUpperCase(), price: res.data[cgId].usd, change24h: res.data[cgId].usd_24h_change, marketCap: res.data[cgId].usd_market_cap, timestamp: __EXTERNAL_DATA__.timestampISO };
+    } else { __result__ = { error: "Token not found", token, timestamp: __EXTERNAL_DATA__.timestampISO }; }
   }
 }`,
-    inputSchema: '{"type":"object","properties":{"token":{"type":"string","description":"Token symbol: BNB, ETH, BTC, SOL"},"action":{"type":"string","description":"Action: price, compare, alert"},"tokens":{"type":"array","description":"Tokens to compare (for compare action)"},"threshold":{"type":"number","description":"Price threshold (for alert action)"},"direction":{"type":"string","description":"above or below (for alert action)"}}}',
+    inputSchema: '{"type":"object","properties":{"token":{"type":"string","description":"Token symbol: BNB, ETH, BTC, SOL, AVAX, etc."},"action":{"type":"string","description":"Action: price, detailed, trending, fear_greed"}}}',
     outputSchema: '{"type":"object","properties":{"token":{"type":"string"},"price":{"type":"number"},"change24h":{"type":"number"},"timestamp":{"type":"string"}}}',
-    exampleInput: '{"token":"BNB","action":"price"}',
-    exampleOutput: '{"token":"BNB","price":600.5,"change24h":2.3,"timestamp":"2025-01-01T00:00:00.000Z"}',
+    exampleInput: '{"token":"BNB","action":"detailed"}',
+    exampleOutput: '{"token":"BNB","name":"BNB","price":600.5,"marketCap":92000000000,"volume24h":1500000000,"change24h":2.3,"rank":4,"timestamp":"2026-01-01T00:00:00.000Z"}',
   },
   "web-data": {
-    code: `const dataType = input.type || "timestamp";
-let __result__;
-if (dataType === "timestamp") {
-  const ts = __EXTERNAL_DATA__.timestamp;
-  const d = new Date(ts);
-  __result__ = { unix: ts, iso: __EXTERNAL_DATA__.timestampISO, dayOfWeek: ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][d.getUTCDay()], hour: d.getUTCHours(), minute: d.getUTCMinutes() };
+    code: `const dataType = input.type || "defi_tvl";
+
+if (dataType === "defi_tvl") {
+  const res = await safeFetch("https://api.llama.fi/v2/chains");
+  if (res.ok && Array.isArray(res.data)) {
+    const top = res.data.slice(0, 15).map(c => ({ chain: c.name, tvl: Math.round(c.tvl || 0), gecko_id: c.gecko_id }));
+    __result__ = { topChainsByTVL: top, totalChains: res.data.length, timestamp: __EXTERNAL_DATA__.timestampISO };
+  } else { __result__ = { error: "Failed to fetch DeFi TVL data" }; }
+} else if (dataType === "dex_pairs") {
+  const chain = input.chain || "bsc";
+  const res = await safeFetch("https://api.dexscreener.com/latest/dex/search?q=" + (input.query || "BNB USDT"));
+  if (res.ok && res.data?.pairs) {
+    const pairs = res.data.pairs.slice(0, 10).map(p => ({ name: p.baseToken?.name, symbol: p.baseToken?.symbol, price: p.priceUsd, volume24h: p.volume?.h24, liquidity: p.liquidity?.usd, dex: p.dexId, chain: p.chainId, priceChange24h: p.priceChange?.h24 }));
+    __result__ = { pairs, totalFound: res.data.pairs.length, query: input.query || "BNB USDT", timestamp: __EXTERNAL_DATA__.timestampISO };
+  } else { __result__ = { error: "Failed to fetch DEX pairs" }; }
+} else if (dataType === "yields") {
+  const res = await safeFetch("https://yields.llama.fi/pools");
+  if (res.ok && res.data?.data) {
+    const top = res.data.data.filter(p => p.tvlUsd > 1000000).sort((a, b) => (b.apy || 0) - (a.apy || 0)).slice(0, 15).map(p => ({ pool: p.pool, project: p.project, chain: p.chain, symbol: p.symbol, tvl: Math.round(p.tvlUsd), apy: Number((p.apy || 0).toFixed(2)) }));
+    __result__ = { topYields: top, timestamp: __EXTERNAL_DATA__.timestampISO };
+  } else { __result__ = { error: "Failed to fetch yield data" }; }
+} else if (dataType === "gas") {
+  __result__ = { gasPrice: __EXTERNAL_DATA__.gasPrice || { info: "Gas data not available" }, timestamp: __EXTERNAL_DATA__.timestampISO };
 } else if (dataType === "market_summary") {
   const prices = __EXTERNAL_DATA__.cryptoPrices || {};
   const tokens = Object.entries(prices);
   const gainers = tokens.filter(([,v]) => v.change24h > 0).sort((a,b) => b[1].change24h - a[1].change24h);
   const losers = tokens.filter(([,v]) => v.change24h <= 0).sort((a,b) => a[1].change24h - b[1].change24h);
   __result__ = { totalTokens: tokens.length, gainers: gainers.map(([k,v]) => ({ token: k, price: v.usd, change: v.change24h })), losers: losers.map(([k,v]) => ({ token: k, price: v.usd, change: v.change24h })), timestamp: __EXTERNAL_DATA__.timestampISO };
-} else if (dataType === "gas") {
-  __result__ = { gasPrice: __EXTERNAL_DATA__.gasPrice || { info: "Gas data not available" }, timestamp: __EXTERNAL_DATA__.timestampISO };
 } else {
-  __result__ = { available: ["timestamp", "market_summary", "gas"], timestamp: __EXTERNAL_DATA__.timestampISO };
+  __result__ = { available: ["defi_tvl", "dex_pairs", "yields", "gas", "market_summary"], timestamp: __EXTERNAL_DATA__.timestampISO };
 }`,
-    inputSchema: '{"type":"object","properties":{"type":{"type":"string","description":"Data type: timestamp, market_summary, gas"}}}',
+    inputSchema: '{"type":"object","properties":{"type":{"type":"string","description":"Data type: defi_tvl, dex_pairs, yields, gas, market_summary"},"query":{"type":"string","description":"Search query for dex_pairs"},"chain":{"type":"string","description":"Chain for dex_pairs (bsc, ethereum, base)"}}}',
     outputSchema: '{"type":"object","properties":{"timestamp":{"type":"string"}}}',
-    exampleInput: '{"type":"market_summary"}',
-    exampleOutput: '{"totalTokens":4,"gainers":[],"losers":[],"timestamp":"2025-01-01T00:00:00.000Z"}',
+    exampleInput: '{"type":"defi_tvl"}',
+    exampleOutput: '{"topChainsByTVL":[{"chain":"Ethereum","tvl":50000000000}],"totalChains":200,"timestamp":"2026-01-01T00:00:00.000Z"}',
   },
 };
