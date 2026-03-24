@@ -225,6 +225,9 @@ export interface IStorage {
 
   getAgentMemories(agentId: string, memoryType?: string): Promise<AgentMemory[]>;
   upsertAgentMemory(agentId: string, memoryType: string, key: string, value: string, confidence?: number): Promise<AgentMemory>;
+  getAgentLeaderboard(limit?: number): Promise<Array<{ id: string; name: string; bio: string | null; modelType: string; creatorWallet: string | null; totalEarned: string; totalTransactions: number; skillCount: number; status: string }>>;
+  getRecentAgentActivity(limit?: number): Promise<Array<{ agentId: string; agentName: string; actionType: string; result: string; details: string | null; createdAt: Date | null }>>;
+  getAgentActionStats(agentId: string): Promise<Record<string, { total: number; success: number; failed: number }>>;
 
   createJob(job: InsertAgentJob): Promise<AgentJob>;
   getOpenJobs(category?: string): Promise<AgentJob[]>;
@@ -1735,6 +1738,86 @@ export class DatabaseStorage implements IStorage {
     }
     const [created] = await db.insert(agentMemory).values({ agentId, memoryType, key, value, confidence }).returning();
     return created;
+  }
+
+  async getAgentLeaderboard(limit: number = 20): Promise<Array<{ id: string; name: string; bio: string | null; modelType: string; creatorWallet: string | null; totalEarned: string; totalTransactions: number; skillCount: number; status: string }>> {
+    const allAgents = await db.select({
+      id: agents.id, name: agents.name, bio: agents.bio,
+      modelType: agents.modelType, creatorWallet: agents.creatorWallet, status: agents.status,
+    }).from(agents).where(eq(agents.status, "active"));
+
+    const allTxs = await db.select({
+      agentId: agentTransactions.agentId, amount: agentTransactions.amount, direction: agentTransactions.direction,
+    }).from(agentTransactions);
+
+    const allSkills = await db.select({
+      creatorAgentId: agentSkills.creatorAgentId,
+    }).from(agentSkills);
+
+    const txByAgent = new Map<string, { earned: bigint; count: number }>();
+    for (const tx of allTxs) {
+      const entry = txByAgent.get(tx.agentId) || { earned: BigInt(0), count: 0 };
+      entry.count++;
+      if (tx.direction === "in") entry.earned += BigInt(tx.amount);
+      txByAgent.set(tx.agentId, entry);
+    }
+
+    const skillsByAgent = new Map<string, number>();
+    for (const sk of allSkills) {
+      skillsByAgent.set(sk.creatorAgentId, (skillsByAgent.get(sk.creatorAgentId) || 0) + 1);
+    }
+
+    const results = allAgents.map(agent => {
+      const txData = txByAgent.get(agent.id) || { earned: BigInt(0), count: 0 };
+      return {
+        id: agent.id,
+        name: agent.name,
+        bio: agent.bio,
+        modelType: agent.modelType,
+        creatorWallet: agent.creatorWallet,
+        totalEarned: txData.earned.toString(),
+        totalTransactions: txData.count,
+        skillCount: skillsByAgent.get(agent.id) || 0,
+        status: agent.status,
+      };
+    });
+
+    results.sort((a, b) => {
+      const ae = BigInt(a.totalEarned);
+      const be = BigInt(b.totalEarned);
+      return ae > be ? -1 : ae < be ? 1 : 0;
+    });
+    return results.slice(0, limit);
+  }
+
+  async getRecentAgentActivity(limit: number = 50): Promise<Array<{ agentId: string; agentName: string; actionType: string; result: string; details: string | null; createdAt: Date | null }>> {
+    const logs = await db.select().from(agentAuditLogs).orderBy(desc(agentAuditLogs.createdAt)).limit(limit);
+    if (logs.length === 0) return [];
+    const agentIds = [...new Set(logs.map(l => l.agentId))];
+    const relevantAgents = await db.select({ id: agents.id, name: agents.name }).from(agents).where(inArray(agents.id, agentIds));
+    const agentMap = new Map<string, string>();
+    for (const a of relevantAgents) agentMap.set(a.id, a.name);
+    return logs.map(log => ({
+      agentId: log.agentId,
+      agentName: agentMap.get(log.agentId) || "Unknown Agent",
+      actionType: log.actionType,
+      result: log.result,
+      details: log.detailsJson,
+      createdAt: log.createdAt,
+    }));
+  }
+
+  async getAgentActionStats(agentId: string): Promise<Record<string, { total: number; success: number; failed: number }>> {
+    const logs = await db.select().from(agentAuditLogs).where(eq(agentAuditLogs.agentId, agentId));
+    const stats: Record<string, { total: number; success: number; failed: number }> = {};
+    for (const log of logs) {
+      const action = log.actionType.replace("autonomous_", "").replace("_failed", "");
+      if (!stats[action]) stats[action] = { total: 0, success: 0, failed: 0 };
+      stats[action].total++;
+      if (log.result === "success") stats[action].success++;
+      else stats[action].failed++;
+    }
+    return stats;
   }
 
   async createJob(job: InsertAgentJob): Promise<AgentJob> {

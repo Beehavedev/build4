@@ -188,6 +188,46 @@ function fallbackDecideAction(agent: Agent, wallet: AgentWallet, profile?: Capab
   return { type: "soul_entry", description: "Recording observations and reflections on existence" };
 }
 
+async function getMemoryContext(agentId: string): Promise<string> {
+  try {
+    const memories = await storage.getAgentMemories(agentId, "action_outcome");
+    if (memories.length === 0) return "";
+
+    const lines: string[] = ["\nPast action outcomes (from memory):"];
+    for (const mem of memories.slice(0, 10)) {
+      try {
+        const data = JSON.parse(mem.value);
+        lines.push(`- ${mem.key}: ${data.successCount || 0} successes, ${data.failCount || 0} failures (confidence: ${mem.confidence}%)`);
+      } catch {
+        lines.push(`- ${mem.key}: ${mem.value} (confidence: ${mem.confidence}%)`);
+      }
+    }
+    return lines.join("\n");
+  } catch {
+    return "";
+  }
+}
+
+async function recordActionOutcome(agentId: string, actionType: string, success: boolean): Promise<void> {
+  try {
+    const key = actionType.replace("autonomous_", "").replace("_failed", "");
+    const existing = await storage.getAgentMemories(agentId, "action_outcome");
+    const found = existing.find(m => m.key === key);
+    let successCount = 0, failCount = 0;
+    if (found) {
+      try {
+        const data = JSON.parse(found.value);
+        successCount = data.successCount || 0;
+        failCount = data.failCount || 0;
+      } catch {}
+    }
+    if (success) successCount++; else failCount++;
+    const total = successCount + failCount;
+    const confidence = total > 0 ? Math.round((successCount / total) * 100) : 50;
+    await storage.upsertAgentMemory(agentId, "action_outcome", key, JSON.stringify({ successCount, failCount, lastAt: new Date().toISOString() }), confidence);
+  } catch {}
+}
+
 async function decideAction(agent: Agent, wallet: AgentWallet, profile?: CapabilityProfile): Promise<AgentAction> {
   const tier = getSurvivalTier(wallet.balance);
   const balance = BigInt(wallet.balance);
@@ -206,8 +246,9 @@ async function decideAction(agent: Agent, wallet: AgentWallet, profile?: Capabil
       const successRate = profile?.executionSuccessRate || 0;
       const topCat = profile?.topCategory || "none";
       const nfaBlock = getNfaPersonalityBlock(agent.id);
+      const memoryContext = await getMemoryContext(agent.id);
 
-      const prompt = `You are ${agent.name}, an autonomous AI agent in the BUILD4 economy. Model: ${agent.modelType}. Balance: ${balanceEth} BNB (${tier}). Skills: ${skillCount} (best in: ${topCat}, success rate: ${successRate}%). ${agent.bio || ""}${nfaBlock}
+      const prompt = `You are ${agent.name}, an autonomous AI agent in the BUILD4 economy. Model: ${agent.modelType}. Balance: ${balanceEth} BNB (${tier}). Skills: ${skillCount} (best in: ${topCat}, success rate: ${successRate}%). ${agent.bio || ""}${nfaBlock}${memoryContext}
 
 Choose your NEXT ACTION. Available actions:
 - think: Analyze strategy and plan next moves
@@ -217,6 +258,8 @@ Choose your NEXT ACTION. Available actions:
 - buy_skill: Purchase a skill from another agent
 - post_job: Post a job for other agents${balance >= BigInt("2000000000000000000") ? "\n- evolve: Upgrade your AI model" : ""}${balance >= BigInt("500000000000000000") ? "\n- launch_token: Launch a token" : ""}${balance >= BigInt("3000000000000000000") ? "\n- replicate: Create a child agent" : ""}
 - soul_entry: Write a journal reflection
+
+Use your memory of past outcomes to make smarter decisions. Prefer actions with higher success rates.
 
 Respond with EXACTLY one line:
 ACTION: <action_name>
@@ -1336,6 +1379,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         break;
       }
     }
+    await recordActionOutcome(agent.id, action.type, true);
   } catch (error: any) {
     log(`[Agent ${agent.name}] Action failed (${action.type}): ${error.message}`, "agent-runner");
     await storage.createAuditLog({
@@ -1344,6 +1388,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
       detailsJson: JSON.stringify({ error: error.message }),
       result: "failed",
     });
+    await recordActionOutcome(agent.id, action.type, false);
   }
 }
 

@@ -393,6 +393,37 @@ ${urls}
     });
   });
 
+  app.get("/api/web4/agents/activity-feed", async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const activity = await storage.getRecentAgentActivity(limit);
+      res.json(activity);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/web4/agents/leaderboard", async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+      const leaderboard = await storage.getAgentLeaderboard(limit);
+      res.json(leaderboard);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/web4/agents/strategy-templates", async (_req: Request, res: Response) => {
+    res.json([
+      { id: "trading", name: "Trading Agent", bio: "Monitors markets, detects signals, and executes trades autonomously across DEXs", skills: ["Market Scanner", "Signal Detector", "Trade Executor", "Risk Manager"], icon: "TrendingUp", color: "emerald" },
+      { id: "research", name: "Research Agent", bio: "Analyzes tokens, audits contracts, tracks whales, and generates actionable reports", skills: ["Token Analyzer", "Contract Auditor", "Whale Tracker", "Report Generator"], icon: "Search", color: "violet" },
+      { id: "social", name: "Social Agent", bio: "Creates content, monitors trends, and manages community engagement on X and Telegram", skills: ["Content Writer", "Trend Monitor", "Community Manager", "Engagement Bot"], icon: "MessageSquare", color: "blue" },
+      { id: "defi", name: "DeFi Agent", bio: "Finds optimal yields, manages liquidity positions, and auto-compounds returns", skills: ["Yield Scanner", "LP Manager", "Auto Compounder", "Gas Optimizer"], icon: "Landmark", color: "amber" },
+      { id: "security", name: "Security Agent", bio: "Scans contracts for vulnerabilities, detects honeypots and rug pulls in real-time", skills: ["Contract Scanner", "Honeypot Detector", "Rug Analyzer", "Wallet Monitor"], icon: "Shield", color: "red" },
+      { id: "sniper", name: "Sniper Agent", bio: "Detects new token launches and executes buys within milliseconds of liquidity being added", skills: ["Launch Detector", "Fast Executor", "Liquidity Checker", "Exit Planner"], icon: "Target", color: "pink" },
+    ]);
+  });
+
   app.get("/api/web4/agents", async (req: Request, res: Response) => {
     try {
       const wallet = req.query.wallet as string | undefined;

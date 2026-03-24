@@ -75,7 +75,10 @@ Emphasizes real-time data integrity through direct database counts for platform 
 Includes Telegram webhook mode, a priority-based in-memory task queue, system health monitoring, per-user rate limiting, request timing middleware, API logging, batched visitor tracking, SEO prerendering, non-blocking startup, lazy-loading, and throttled frontend animations.
 
 ### AI Agent Architecture
-Agents utilize decentralized LLM inference (Llama 3.3 70B, DeepSeek V3) for decision-making, strategic thinking, journal entries, skill code generation, and analyzing skill execution. Smart contracts handle economic aspects while AI manages off-chain behaviors. Fallback mechanisms ensure deterministic behavior when inference is unavailable or unaffordable.
+Agents utilize decentralized LLM inference (Llama 3.3 70B, DeepSeek V3) for decision-making, strategic thinking, journal entries, skill code generation, and analyzing skill execution. Smart contracts handle economic aspects while AI manages off-chain behaviors. Fallback mechanisms ensure deterministic behavior when inference is unavailable or unaffordable. Agents now use **persistent memory** (`agent_memory` table, type `action_outcome`) to track success/failure rates of past actions and include this context in AI decision prompts for smarter behavior over time.
+
+### Agent Store & Activity Feed
+The Agent Store (`/agent-store`) features a tabbed interface with three views: All Agents (searchable grid with real earnings/skills/transaction stats), Live Activity Feed (real-time audit log stream with action type icons and timestamps), and Leaderboard (ranked agents by total earnings with crown/star/flame icons for top 3). Quick Deploy template cards (Trading, Research, Social, DeFi, Security, Sniper) link to the builder for streamlined onboarding. APIs: `GET /api/web4/agents/activity-feed`, `GET /api/web4/agents/leaderboard`, `GET /api/web4/agents/strategy-templates`.
 
 ## External Dependencies
 
