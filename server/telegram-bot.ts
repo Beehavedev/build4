@@ -85,6 +85,20 @@ interface SignalBuyState {
 }
 const pendingSignalBuy = new Map<number, SignalBuyState>();
 
+interface SellState {
+  chainId: string;
+  chainName: string;
+  nativeSymbol: string;
+  tokenAddress: string;
+  tokenSymbol: string;
+  tokenDecimals: number;
+  tokenBalance: string;
+  sellPercent?: number;
+  sellAmount?: string;
+}
+const pendingSell = new Map<number, SellState>();
+const sellTokenCache = new Map<number, Array<{ address: string; symbol: string; balance: string; balanceRaw: string; decimals: number; usdValue: string }>>();
+
 const OKX_CHAINS = [
   { id: "56", name: "BNB Chain", symbol: "BNB" },
   { id: "1", name: "Ethereum", symbol: "ETH" },
@@ -1333,12 +1347,383 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   if (data === "action:sell") {
-    if (!await checkWalletHasKey(chatId, wallet)) {
-      await bot.sendMessage(chatId, "Your active wallet is view-only. Import a wallet with a private key first (/linkwallet).");
+    const chainButtons = [
+      [{ text: "BNB Chain", callback_data: "sell_chain:56" }, { text: "Ethereum", callback_data: "sell_chain:1" }],
+      [{ text: "Base", callback_data: "sell_chain:8453" }, { text: "Solana", callback_data: "sell_chain:501" }],
+      [{ text: "Arbitrum", callback_data: "sell_chain:42161" }, { text: "Polygon", callback_data: "sell_chain:137" }],
+      [{ text: "« Menu", callback_data: "action:menu" }],
+    ];
+    await bot.sendMessage(chatId,
+      `💸 *Sell Token*\n\nSelect the chain where your token is:`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } }
+    );
+    return;
+  }
+
+  if (data.startsWith("sell_chain:")) {
+    const chainId = data.replace("sell_chain:", "");
+    const chainObj = OKX_CHAINS.find(c => c.id === chainId);
+    if (!chainObj) return;
+    const isSol = chainId === "501";
+
+    if (isSol) {
+      const solWallet = solanaWalletMap.get(chatId);
+      if (!solWallet) {
+        await bot.sendMessage(chatId, "You don't have a Solana wallet yet. Generate one first.", { reply_markup: { inline_keyboard: [[{ text: "🟣 Generate SOL Wallet", callback_data: "action:gensolwallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+        return;
+      }
+      await bot.sendMessage(chatId, `⏳ Loading your ${chainObj.name} tokens...`);
+      sendTyping(chatId);
+      try {
+        const { getWalletTokenBalances } = await import("./okx-onchainos");
+        const result = await getWalletTokenBalances({ address: solWallet.address, chainId: "501" });
+        const tokens = result?.data?.[0]?.tokenAssets || [];
+        const sellable = tokens.filter((t: any) => {
+          const bal = parseFloat(t.balance || "0");
+          const addr = t.tokenAddress || "";
+          return bal > 0 && addr !== SOLANA_NATIVE_TOKEN && addr !== "" && addr !== "11111111111111111111111111111111";
+        });
+        if (sellable.length === 0) {
+          await bot.sendMessage(chatId, `No sellable tokens found in your Solana wallet.`, { reply_markup: { inline_keyboard: [[{ text: "💸 Try Another Chain", callback_data: "action:sell" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+          return;
+        }
+        const cached = sellable.slice(0, 10).map((t: any) => ({
+          address: t.tokenAddress,
+          symbol: t.symbol || "???",
+          balance: t.balance || "0",
+          balanceRaw: t.rawBalance || t.balance || "0",
+          decimals: parseInt(t.decimals || "9"),
+          usdValue: t.tokenPrice ? (parseFloat(t.balance) * parseFloat(t.tokenPrice)).toFixed(2) : "?",
+        }));
+        sellTokenCache.set(chatId, cached);
+        let text = `💸 *Your Solana Tokens*\n\n`;
+        const tokenButtons: TelegramBot.InlineKeyboardButton[][] = [];
+        cached.forEach((t, i) => {
+          text += `${i + 1}. *${t.symbol}* — ${parseFloat(t.balance).toFixed(4)} ($${t.usdValue})\n`;
+          tokenButtons.push([{ text: `💸 Sell ${t.symbol}`, callback_data: `sell_tok:${i}:501` }]);
+        });
+        tokenButtons.push([{ text: "🔄 Refresh", callback_data: `sell_chain:501` }]);
+        tokenButtons.push([{ text: "« Back", callback_data: "action:sell" }, { text: "« Menu", callback_data: "action:menu" }]);
+        await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: tokenButtons } });
+      } catch (e: any) {
+        await bot.sendMessage(chatId, `Error loading tokens: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: `sell_chain:501` }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      }
       return;
     }
-    pendingFourMemeSell.set(chatId, { step: "token" });
-    await bot.sendMessage(chatId, "Enter the token contract address you want to sell (0x...):");
+
+    if (!await checkWalletHasKey(chatId, wallet)) {
+      await bot.sendMessage(chatId, "Your active wallet is view-only. Import a wallet with a private key first.", { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+    await bot.sendMessage(chatId, `⏳ Loading your ${chainObj.name} tokens...`);
+    sendTyping(chatId);
+    try {
+      const { getWalletTokenBalances } = await import("./okx-onchainos");
+      const result = await getWalletTokenBalances({ address: wallet, chainId });
+      const tokens = result?.data?.[0]?.tokenAssets || [];
+      const nativeAddrs = [OKX_NATIVE_TOKEN, "0x0000000000000000000000000000000000000000", ""];
+      const sellable = tokens.filter((t: any) => {
+        const bal = parseFloat(t.balance || "0");
+        const addr = (t.tokenAddress || "").toLowerCase();
+        return bal > 0 && !nativeAddrs.includes(addr);
+      });
+      if (sellable.length === 0) {
+        await bot.sendMessage(chatId, `No sellable tokens found on ${chainObj.name}.`, { reply_markup: { inline_keyboard: [[{ text: "💸 Try Another Chain", callback_data: "action:sell" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+        return;
+      }
+      const cached = sellable.slice(0, 10).map((t: any) => ({
+        address: t.tokenAddress,
+        symbol: t.symbol || "???",
+        balance: t.balance || "0",
+        balanceRaw: t.rawBalance || t.balance || "0",
+        decimals: parseInt(t.decimals || "18"),
+        usdValue: t.tokenPrice ? (parseFloat(t.balance) * parseFloat(t.tokenPrice)).toFixed(2) : "?",
+      }));
+      sellTokenCache.set(chatId, cached);
+      let text = `💸 *Your ${chainObj.name} Tokens*\n\n`;
+      const tokenButtons: TelegramBot.InlineKeyboardButton[][] = [];
+      cached.forEach((t, i) => {
+        text += `${i + 1}. *${t.symbol}* — ${parseFloat(t.balance).toFixed(4)} ($${t.usdValue})\n`;
+        tokenButtons.push([{ text: `💸 Sell ${t.symbol}`, callback_data: `sell_tok:${i}:${chainId}` }]);
+      });
+      tokenButtons.push([{ text: "🔄 Refresh", callback_data: `sell_chain:${chainId}` }]);
+      tokenButtons.push([{ text: "« Back", callback_data: "action:sell" }, { text: "« Menu", callback_data: "action:menu" }]);
+      await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: tokenButtons } });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Error loading tokens: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: `sell_chain:${chainId}` }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
+    return;
+  }
+
+  if (data.startsWith("sell_tok:")) {
+    const parts = data.replace("sell_tok:", "").split(":");
+    const tokIdx = parseInt(parts[0]);
+    const chainId = parts[1];
+    const chainObj = OKX_CHAINS.find(c => c.id === chainId);
+    if (!chainObj) return;
+    const cached = sellTokenCache.get(chatId);
+    if (!cached || !cached[tokIdx]) {
+      await bot.sendMessage(chatId, "Token list expired. Please try again.", { reply_markup: { inline_keyboard: [[{ text: "💸 Sell", callback_data: "action:sell" }]] } });
+      return;
+    }
+    const tok = cached[tokIdx];
+    pendingSell.set(chatId, {
+      chainId,
+      chainName: chainObj.name,
+      nativeSymbol: chainObj.symbol,
+      tokenAddress: tok.address,
+      tokenSymbol: tok.symbol,
+      tokenDecimals: tok.decimals,
+      tokenBalance: tok.balance,
+    });
+
+    const pctButtons = [
+      [{ text: "25%", callback_data: "sell_pct:25" }, { text: "50%", callback_data: "sell_pct:50" }],
+      [{ text: "75%", callback_data: "sell_pct:75" }, { text: "100%", callback_data: "sell_pct:100" }],
+      [{ text: "« Back", callback_data: `sell_chain:${chainId}` }, { text: "❌ Cancel", callback_data: "action:menu" }],
+    ];
+    await bot.sendMessage(chatId,
+      `💸 *Sell ${tok.symbol}*\n\n` +
+      `Balance: *${parseFloat(tok.balance).toFixed(6)} ${tok.symbol}*\n` +
+      `Chain: ${chainObj.name}\n\n` +
+      `How much do you want to sell?`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: pctButtons } }
+    );
+    return;
+  }
+
+  if (data.startsWith("sell_pct:")) {
+    const pct = parseInt(data.replace("sell_pct:", ""));
+    const state = pendingSell.get(chatId);
+    if (!state) {
+      await bot.sendMessage(chatId, "Session expired. Start again.", { reply_markup: { inline_keyboard: [[{ text: "💸 Sell", callback_data: "action:sell" }]] } });
+      return;
+    }
+    state.sellPercent = pct;
+    const sellAmount = (parseFloat(state.tokenBalance) * pct / 100);
+    state.sellAmount = sellAmount.toFixed(state.tokenDecimals > 6 ? 6 : state.tokenDecimals);
+    pendingSell.set(chatId, state);
+
+    await bot.sendMessage(chatId,
+      `💸 *Confirm Sell*\n\n` +
+      `🪙 Token: *${state.tokenSymbol}*\n` +
+      `📊 Selling: *${state.sellAmount} ${state.tokenSymbol}* (${pct}%)\n` +
+      `⛓ Chain: ${state.chainName}\n` +
+      `💰 Receive: ${state.nativeSymbol}\n\n` +
+      `Proceed?`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✅ Confirm Sell", callback_data: "sell_confirm" }],
+            [{ text: "📊 Change %", callback_data: `sell_tok:${sellTokenCache.get(chatId)?.findIndex(t => t.address === state.tokenAddress) ?? 0}:${state.chainId}` }],
+            [{ text: "❌ Cancel", callback_data: "action:sell" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (data === "sell_confirm") {
+    const state = pendingSell.get(chatId);
+    if (!state || !state.sellAmount) {
+      await bot.sendMessage(chatId, "Sell session expired. Start again.", { reply_markup: { inline_keyboard: [[{ text: "💸 Sell", callback_data: "action:sell" }]] } });
+      return;
+    }
+
+    const isSol = state.chainId === "501";
+
+    if (isSol) {
+      const solWallet = await getOrCreateSolanaWallet(chatId);
+      if (!solWallet || !solWallet.privateKey) {
+        await bot.sendMessage(chatId, "Solana wallet not found.", { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+        pendingSell.delete(chatId);
+        return;
+      }
+
+      await bot.sendMessage(chatId, `⏳ Selling ${state.sellAmount} ${state.tokenSymbol} → SOL on Solana...`);
+      sendTyping(chatId);
+
+      try {
+        const { Connection, Keypair, VersionedTransaction, Transaction: LegacyTransaction, ComputeBudgetProgram, SystemProgram, PublicKey, TransactionMessage, AddressLookupTableAccount } = await import("@solana/web3.js");
+        const rawAmount = Math.round(parseFloat(state.sellAmount) * Math.pow(10, state.tokenDecimals)).toString();
+
+        const { getSwapData } = await import("./okx-onchainos");
+        const swapResult = await getSwapData({
+          chainId: "501",
+          fromTokenAddress: state.tokenAddress,
+          toTokenAddress: SOLANA_NATIVE_TOKEN,
+          amount: rawAmount,
+          slippage: "30",
+          userWalletAddress: solWallet.address,
+        });
+
+        const txData = swapResult?.data?.[0]?.tx;
+        if (!txData) throw new Error("No swap route found. Token may have low liquidity.");
+
+        const PRIORITY_FEE_LAMPORTS = 9_000_000;
+        const JITO_TIP_LAMPORTS = 2_000_000;
+        const JITO_TIP_ACCOUNTS = [
+          "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
+          "HFqU5x63VTqvQss8hp11i4bVqkfRtQ7NmXwkiKwkJbMj",
+          "Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY",
+          "ADaUMid9yfUytqMBgopwjb2DTLSLxXCQkJbNLmZdvMKz",
+          "DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh",
+          "ADuUkR4vqLUMWXxW9gh6D6L8pMSGA2w67v6C3mViyrj6",
+          "DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL",
+          "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT",
+        ];
+        const randomTipAccount = JITO_TIP_ACCOUNTS[Math.floor(Math.random() * JITO_TIP_ACCOUNTS.length)];
+
+        const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
+        const secretKey = Uint8Array.from(Buffer.from(solWallet.privateKey, "hex"));
+        const keypair = Keypair.fromSecretKey(secretKey);
+
+        const rawTx = txData.data;
+        if (!rawTx) throw new Error("No transaction data returned from DEX");
+
+        const txBuf = Buffer.from(rawTx, "base64");
+        let txHash: string;
+        try {
+          const vTx = VersionedTransaction.deserialize(txBuf);
+          const msg = vTx.message;
+          const lookupTableAccounts: AddressLookupTableAccount[] = [];
+          if (msg.addressTableLookups && msg.addressTableLookups.length > 0) {
+            for (const lookup of msg.addressTableLookups) {
+              const accountInfo = await connection.getAddressLookupTable(lookup.accountKey);
+              if (accountInfo.value) lookupTableAccounts.push(accountInfo.value);
+            }
+          }
+          const decompiledMsg = TransactionMessage.decompile(msg, { addressLookupTableAccounts: lookupTableAccounts });
+          const priorityIx = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: PRIORITY_FEE_LAMPORTS });
+          const jitoTipIx = SystemProgram.transfer({ fromPubkey: keypair.publicKey, toPubkey: new PublicKey(randomTipAccount), lamports: JITO_TIP_LAMPORTS });
+          decompiledMsg.instructions = [priorityIx, ...decompiledMsg.instructions, jitoTipIx];
+          decompiledMsg.recentBlockhash = (await connection.getLatestBlockhash("finalized")).blockhash;
+          const newMsg = decompiledMsg.compileToV0Message(lookupTableAccounts);
+          const newTx = new VersionedTransaction(newMsg);
+          newTx.sign([keypair]);
+          txHash = await connection.sendTransaction(newTx, { skipPreflight: true, maxRetries: 3 });
+        } catch {
+          const legacyTx = LegacyTransaction.from(txBuf);
+          const priorityIx = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: PRIORITY_FEE_LAMPORTS });
+          const jitoTipIx = SystemProgram.transfer({ fromPubkey: keypair.publicKey, toPubkey: new PublicKey(randomTipAccount), lamports: JITO_TIP_LAMPORTS });
+          legacyTx.instructions = [priorityIx, ...legacyTx.instructions, jitoTipIx];
+          legacyTx.recentBlockhash = (await connection.getLatestBlockhash("finalized")).blockhash;
+          legacyTx.sign(keypair);
+          txHash = await connection.sendRawTransaction(legacyTx.serialize(), { skipPreflight: true });
+        }
+
+        const latestBlockhash = await connection.getLatestBlockhash("finalized");
+        await connection.confirmTransaction({ signature: txHash, blockhash: latestBlockhash.blockhash, lastValidBlockHeight: latestBlockhash.lastValidBlockHeight }, "confirmed");
+
+        pendingSell.delete(chatId);
+        await bot.sendMessage(chatId,
+          `✅ *Sell Executed!*\n\n` +
+          `💸 ${state.sellAmount} ${state.tokenSymbol} → SOL\n` +
+          `⛓ Solana\n\n` +
+          `[View Transaction](https://solscan.io/tx/${txHash})`,
+          { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "💸 Sell More", callback_data: "action:sell" }], [{ text: "👛 Wallet", callback_data: "action:wallet" }, { text: "« Menu", callback_data: "action:menu" }]] } }
+        );
+      } catch (e: any) {
+        await bot.sendMessage(chatId,
+          `❌ Sell failed: ${e.message?.substring(0, 150)}\n\nTry again or check your balance.`,
+          { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "sell_confirm" }], [{ text: "💸 Sell", callback_data: "action:sell" }, { text: "« Menu", callback_data: "action:menu" }]] } }
+        );
+      }
+      return;
+    }
+
+    const walletAddr = getLinkedWallet(chatId);
+    if (!walletAddr || !await checkWalletHasKey(chatId, walletAddr)) {
+      await bot.sendMessage(chatId, "You need a wallet with a private key to sell.", { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      pendingSell.delete(chatId);
+      return;
+    }
+
+    await bot.sendMessage(chatId, `⏳ Selling ${state.sellAmount} ${state.tokenSymbol} → ${state.nativeSymbol} on ${state.chainName}...`);
+    sendTyping(chatId);
+
+    try {
+      const { ethers } = await import("ethers");
+      const rawAmount = ethers.parseUnits(state.sellAmount, state.tokenDecimals).toString();
+
+      const { getSwapData, getApproveTransaction } = await import("./okx-onchainos");
+
+      const approveResult = await getApproveTransaction({
+        chainId: state.chainId,
+        tokenContractAddress: state.tokenAddress,
+        approveAmount: rawAmount,
+      });
+      const approveTx = approveResult?.data?.[0];
+
+      const pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
+      if (!pk) throw new Error("Wallet key not found");
+
+      const CHAIN_RPCS: Record<string, string> = {
+        "56": "https://bsc-dataseed1.binance.org", "1": "https://eth.llamarpc.com",
+        "8453": "https://mainnet.base.org", "42161": "https://arb1.arbitrum.io/rpc",
+        "137": "https://polygon-rpc.com", "10": "https://mainnet.optimism.io",
+        "43114": "https://api.avax.network/ext/bc/C/rpc", "196": "https://rpc.xlayer.tech",
+      };
+      const rpcUrl = CHAIN_RPCS[state.chainId] || "https://bsc-dataseed1.binance.org";
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const signer = new ethers.Wallet(pk, provider);
+
+      if (approveTx && approveTx.to) {
+        const aTx = await signer.sendTransaction({
+          to: approveTx.to,
+          data: approveTx.data,
+          value: approveTx.value ? BigInt(approveTx.value) : 0n,
+          gasLimit: approveTx.gasLimit ? BigInt(approveTx.gasLimit) : undefined,
+        });
+        await aTx.wait();
+      }
+
+      const swapResult = await getSwapData({
+        chainId: state.chainId,
+        fromTokenAddress: state.tokenAddress,
+        toTokenAddress: OKX_NATIVE_TOKEN,
+        amount: rawAmount,
+        slippage: "3",
+        userWalletAddress: walletAddr,
+      });
+
+      const swapTx = swapResult?.data?.[0]?.tx;
+      if (!swapTx) throw new Error("No swap route found. Token may have low liquidity.");
+
+      const tx = await signer.sendTransaction({
+        to: swapTx.to,
+        data: swapTx.data,
+        value: swapTx.value ? BigInt(swapTx.value) : 0n,
+        gasLimit: swapTx.gasLimit ? BigInt(swapTx.gasLimit) : undefined,
+      });
+
+      const receipt = await tx.wait();
+      if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
+
+      const explorerUrls: Record<string, string> = {
+        "56": "https://bscscan.com/tx/", "1": "https://etherscan.io/tx/",
+        "8453": "https://basescan.org/tx/", "42161": "https://arbiscan.io/tx/",
+        "137": "https://polygonscan.com/tx/", "10": "https://optimistic.etherscan.io/tx/",
+        "43114": "https://snowtrace.io/tx/", "196": "https://www.okx.com/explorer/xlayer/tx/",
+      };
+      const explorer = explorerUrls[state.chainId] || "https://bscscan.com/tx/";
+
+      pendingSell.delete(chatId);
+      await bot.sendMessage(chatId,
+        `✅ *Sell Executed!*\n\n` +
+        `💸 ${state.sellAmount} ${state.tokenSymbol} → ${state.nativeSymbol}\n` +
+        `⛓ ${state.chainName}\n\n` +
+        `[View Transaction](${explorer}${receipt.hash})`,
+        { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "💸 Sell More", callback_data: "action:sell" }], [{ text: "👛 Wallet", callback_data: "action:wallet" }, { text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId,
+        `❌ Sell failed: ${e.message?.substring(0, 150)}\n\nTry again or check your balance.`,
+        { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "sell_confirm" }], [{ text: "💸 Sell", callback_data: "action:sell" }, { text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+    }
     return;
   }
 
