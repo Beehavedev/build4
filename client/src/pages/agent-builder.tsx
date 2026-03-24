@@ -10,9 +10,10 @@ import {
   TrendingUp, Search, MessageSquare, Landmark, Target,
   ChevronRight, ExternalLink, Copy, Plus,
   Activity, Wallet, Zap, Eye,
-  Code2, Monitor, RotateCcw, Maximize2, Minimize2,
+  Code2, Monitor, RotateCcw,
   FileCode, Globe, Smartphone, Tablet,
   PanelRightOpen, PanelRightClose,
+  Sparkles, LayoutGrid, Palette,
 } from "lucide-react";
 
 interface ChatMessage {
@@ -88,8 +89,8 @@ function timeAgo(d: string) { const m = Math.floor((Date.now() - new Date(d).get
 function AgentCard({ config, onDeploy, onUpdate, deploying, deployed }: { config: AgentConfig; onDeploy: () => void; onUpdate: (f: string, v: string) => void; deploying: boolean; deployed: boolean }) {
   const t = AGENT_TYPES[config.type]; if (!t) return null; const Icon = t.icon;
   return (
-    <div className="mt-3 rounded-xl border border-border bg-card overflow-hidden" data-testid="agent-card">
-      <div className="p-4 border-b border-border">
+    <div className="mt-3 rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm overflow-hidden shadow-sm" data-testid="agent-card">
+      <div className="p-4 border-b border-border/40">
         <div className="flex items-start gap-3">
           <div className={`w-10 h-10 rounded-xl bg-${t.color}-500/15 flex items-center justify-center shrink-0`}><Icon className={`w-5 h-5 text-${t.color}-500`} /></div>
           <div className="min-w-0 flex-1">
@@ -101,7 +102,7 @@ function AgentCard({ config, onDeploy, onUpdate, deploying, deployed }: { config
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-3 divide-x divide-border border-b border-border">
+      <div className="grid grid-cols-3 divide-x divide-border/40 border-b border-border/40">
         {[["chain", ["bnb","base","xlayer"], CHAIN_LABEL, "Chain"], ["model", ["llama","deepseek","qwen"], MODEL_LABEL, "Model"], ["autonomy", ["semi","full","supervised"], AUTONOMY_LABEL, "Autonomy"]].map(([field, opts, labels, label]) => (
           <div key={field as string} className="p-3 text-center">
             <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">{label as string}</div>
@@ -112,9 +113,9 @@ function AgentCard({ config, onDeploy, onUpdate, deploying, deployed }: { config
           </div>
         ))}
       </div>
-      <div className="p-3 border-b border-border">
+      <div className="p-3 border-b border-border/40">
         <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-2">Skills</div>
-        <div className="flex flex-wrap gap-1.5">{config.skills.map(s => <span key={s} className="px-2 py-1 rounded-md bg-muted text-[11px] font-medium text-foreground">{s}</span>)}</div>
+        <div className="flex flex-wrap gap-1.5">{config.skills.map(s => <span key={s} className="px-2 py-1 rounded-md bg-muted/60 text-[11px] font-medium text-foreground">{s}</span>)}</div>
       </div>
       {!deployed && (
         <div className="p-3"><button onClick={onDeploy} disabled={deploying} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-primary-foreground text-[13px] font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity" data-testid="button-deploy">
@@ -155,13 +156,13 @@ function DeployResultCard({ result, onCopy, onBuildAnother, onCheckStatus }: { r
 
 function AgentStatusCard({ status }: { status: AgentStatusData }) {
   return (
-    <div className="mt-3 rounded-xl border border-border bg-card overflow-hidden" data-testid="agent-status-card">
-      <div className="p-4 border-b border-border">
+    <div className="mt-3 rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm overflow-hidden shadow-sm" data-testid="agent-status-card">
+      <div className="p-4 border-b border-border/40">
         <div className="flex items-center gap-2"><div className="w-8 h-8 rounded-full bg-emerald-500/15 flex items-center justify-center"><Activity className="w-4 h-4 text-emerald-500" /></div>
           <div><div className="text-[14px] font-semibold text-foreground">{status.name}</div><div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /><span className="text-[11px] text-emerald-500 font-medium">Active</span></div></div>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-px bg-border">
+      <div className="grid grid-cols-2 gap-px bg-border/40">
         {[["Balance", formatBNB(status.balance), Wallet, "text-foreground"], ["Earned", formatBNB(status.totalEarned), TrendingUp, "text-emerald-500"], ["Transactions", String(status.totalTransactions), Zap, "text-foreground"], ["Net P&L", (parseFloat(status.netProfit) >= 0 ? "+" : "") + formatBNB(status.netProfit), Activity, parseFloat(status.netProfit) >= 0 ? "text-emerald-500" : "text-red-500"]].map(([label, value, Icon, color]) => {
           const I = Icon as typeof Wallet;
           return <div key={label as string} className="bg-card p-3"><div className="flex items-center gap-1.5 mb-1"><I className="w-3 h-3 text-muted-foreground" /><span className="text-[10px] text-muted-foreground uppercase tracking-wide">{label as string}</span></div><div className={`text-[14px] font-semibold ${color}`}>{value as string}</div></div>;
@@ -173,9 +174,9 @@ function AgentStatusCard({ status }: { status: AgentStatusData }) {
 
 function MyAgentsCard({ agents, onSelect }: { agents: MyAgentData[]; onSelect: (id: string) => void }) {
   return (
-    <div className="mt-3 rounded-xl border border-border bg-card overflow-hidden" data-testid="my-agents-list">
-      <div className="p-3 border-b border-border"><div className="text-[13px] font-semibold text-foreground">{agents.length} Agent{agents.length !== 1 ? "s" : ""}</div></div>
-      <div className="divide-y divide-border">
+    <div className="mt-3 rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm overflow-hidden shadow-sm" data-testid="my-agents-list">
+      <div className="p-3 border-b border-border/40"><div className="text-[13px] font-semibold text-foreground">{agents.length} Agent{agents.length !== 1 ? "s" : ""}</div></div>
+      <div className="divide-y divide-border/40">
         {agents.map(a => (
           <button key={a.id} onClick={() => onSelect(a.id)} className="w-full flex items-center gap-3 p-3 hover:bg-accent/40 transition-colors text-left" data-testid={`my-agent-${a.id}`}>
             <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0"><Terminal className="w-4 h-4 text-primary" /></div>
@@ -193,17 +194,17 @@ function CodeViewer({ files, activeFile, onSelectFile }: { files: ProjectFile[];
   const file = files.find(f => f.path === activeFile);
   return (
     <div className="flex flex-col h-full" data-testid="code-viewer">
-      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border overflow-x-auto shrink-0">
+      <div className="flex items-center gap-1 px-3 py-2 border-b border-[#30363d] overflow-x-auto shrink-0 bg-[#161b22]">
         {files.map(f => (
           <button key={f.path} onClick={() => onSelectFile(f.path)}
-            className={`px-2.5 py-1 rounded-md text-[11px] font-medium whitespace-nowrap transition-colors ${f.path === activeFile ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-accent/40"}`}
+            className={`px-3 py-1.5 rounded-md text-[12px] font-medium whitespace-nowrap transition-colors ${f.path === activeFile ? "bg-[#0d1117] text-white" : "text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#21262d]"}`}
             data-testid={`file-tab-${f.path}`}>
-            <FileCode className="w-3 h-3 inline mr-1" />{f.path}
+            <FileCode className="w-3 h-3 inline mr-1.5 opacity-60" />{f.path}
           </button>
         ))}
       </div>
-      <div className="flex-1 overflow-auto bg-[#0d1117] p-3">
-        <pre className="text-[12px] font-mono text-[#c9d1d9] leading-relaxed whitespace-pre-wrap break-all" data-testid="code-content">{file?.content || ""}</pre>
+      <div className="flex-1 overflow-auto bg-[#0d1117] p-4">
+        <pre className="text-[13px] font-mono text-[#c9d1d9] leading-relaxed whitespace-pre-wrap break-all" data-testid="code-content">{file?.content || ""}</pre>
       </div>
     </div>
   );
@@ -362,67 +363,76 @@ export default function AgentBuilder() {
             <div className="flex-1 overflow-y-auto" data-testid="chat-area">
               {!hasMessages ? (
                 <div className="h-full flex flex-col items-center justify-center px-4">
-                  <div className="max-w-[520px] w-full">
-                    <div className="mb-8 text-center">
-                      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-[12px] font-medium mb-4"><Terminal className="w-3.5 h-3.5" /> BUILD4</div>
-                      <h1 className="text-[26px] font-semibold text-foreground tracking-tight mb-2" data-testid="welcome-heading">What do you want to build?</h1>
-                      <p className="text-[14px] text-muted-foreground leading-relaxed">Build websites, apps, dashboards — or deploy autonomous AI agents on-chain.</p>
+                  <div className="max-w-[560px] w-full">
+                    <div className="mb-10 text-center">
+                      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/8 border border-primary/15 text-primary text-[12px] font-medium mb-5">
+                        <Sparkles className="w-3.5 h-3.5" /> BUILD4 AI
+                      </div>
+                      <h1 className="text-[32px] font-bold text-foreground tracking-tight mb-3 leading-tight" data-testid="welcome-heading">What do you want to build?</h1>
+                      <p className="text-[15px] text-muted-foreground leading-relaxed max-w-[420px] mx-auto">Describe anything. I'll generate a live preview with real code you can iterate on.</p>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 mb-4">
+                    <div className="grid grid-cols-2 gap-2.5 mb-5">
                       {[
                         { icon: Globe, label: "Landing Page", desc: "Modern responsive website", prompt: "Build me a modern landing page for a SaaS product", color: "blue" },
-                        { icon: Monitor, label: "Dashboard", desc: "Admin panel with charts", prompt: "Build me an analytics dashboard with charts and stats", color: "violet" },
+                        { icon: LayoutGrid, label: "Dashboard", desc: "Admin panel with charts", prompt: "Build me an analytics dashboard with charts and stats", color: "violet" },
                         { icon: Code2, label: "Web App", desc: "Interactive application", prompt: "Build me a task management web app", color: "emerald" },
-                        { icon: Smartphone, label: "Portfolio", desc: "Personal portfolio site", prompt: "Build me a developer portfolio website", color: "amber" },
+                        { icon: Palette, label: "Portfolio", desc: "Personal portfolio site", prompt: "Build me a developer portfolio website", color: "amber" },
                       ].map(t => (
-                        <button key={t.label} onClick={() => sendPrompt(t.prompt)} className="flex items-center gap-2.5 p-3 rounded-xl border border-border bg-card hover:bg-accent/40 hover:border-primary/20 transition-all text-left group" data-testid={`template-web-${t.label.toLowerCase().replace(/\s/g, "-")}`}>
-                          <div className={`w-8 h-8 rounded-lg bg-${t.color}-500/10 flex items-center justify-center shrink-0 group-hover:bg-${t.color}-500/20 transition-colors`}><t.icon className={`w-4 h-4 text-${t.color}-500`} /></div>
-                          <div className="min-w-0"><div className="text-[13px] font-medium text-foreground">{t.label}</div><div className="text-[11px] text-muted-foreground mt-0.5">{t.desc}</div></div>
+                        <button key={t.label} onClick={() => sendPrompt(t.prompt)} className="flex items-center gap-3 p-3.5 rounded-xl border border-border/60 bg-card/50 hover:bg-accent/50 hover:border-primary/25 transition-all text-left group" data-testid={`template-web-${t.label.toLowerCase().replace(/\s/g, "-")}`}>
+                          <div className={`w-9 h-9 rounded-lg bg-${t.color}-500/10 flex items-center justify-center shrink-0 group-hover:bg-${t.color}-500/20 transition-colors`}><t.icon className={`w-4 h-4 text-${t.color}-500`} /></div>
+                          <div className="min-w-0"><div className="text-[13px] font-semibold text-foreground">{t.label}</div><div className="text-[11px] text-muted-foreground mt-0.5">{t.desc}</div></div>
                         </button>
                       ))}
                     </div>
-                    <div className="text-[11px] text-muted-foreground text-center mb-3">or deploy an AI agent</div>
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="flex-1 h-px bg-border/60" />
+                      <span className="text-[11px] text-muted-foreground/70 uppercase tracking-wider font-medium">or deploy an AI agent</span>
+                      <div className="flex-1 h-px bg-border/60" />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
                       {Object.entries(AGENT_TYPES).slice(0, 6).map(([key, t]) => {
                         const Icon = t.icon;
-                        return <button key={key} onClick={() => sendPrompt(t.prompt)} className="flex items-center gap-2 p-2.5 rounded-lg border border-border bg-card hover:bg-accent/40 transition-all text-left" data-testid={`template-${key}`}><Icon className={`w-3.5 h-3.5 text-${t.color}-500 shrink-0`} /><span className="text-[11px] font-medium text-foreground truncate">{t.name.replace(" Agent", "")}</span></button>;
+                        return <button key={key} onClick={() => sendPrompt(t.prompt)} className="flex items-center gap-2 p-2.5 rounded-lg border border-border/60 bg-card/50 hover:bg-accent/50 hover:border-primary/25 transition-all text-left" data-testid={`template-${key}`}><Icon className={`w-3.5 h-3.5 text-${t.color}-500 shrink-0`} /><span className="text-[11px] font-medium text-foreground truncate">{t.name.replace(" Agent", "")}</span></button>;
                       })}
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="max-w-[640px] mx-auto px-4 py-6 space-y-4" data-testid="chat-messages">
+                <div className="max-w-[640px] mx-auto px-4 py-6 space-y-5" data-testid="chat-messages">
                   {messages.map((msg) => (
                     <div key={msg.id} className={msg.role === "user" ? "flex justify-end" : ""} data-testid={`message-${msg.id}`}>
                       {msg.role === "user" ? (
-                        <div className="max-w-[85%] rounded-2xl bg-secondary px-4 py-2.5"><p className="text-[14px] text-foreground">{msg.content}</p></div>
+                        <div className="max-w-[85%] rounded-2xl bg-primary/10 border border-primary/15 px-4 py-2.5"><p className="text-[14px] text-foreground">{msg.content}</p></div>
                       ) : (
                         <div className="max-w-full">
-                          <div className="flex gap-2.5">
-                            <div className="w-6 h-6 rounded-full bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
-                              {msg.isDeploying ? <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" /> : msg.deployResult ? <CheckCircle2 className="w-3.5 h-3.5 text-primary" /> : msg.agentStatus ? <Activity className="w-3.5 h-3.5 text-emerald-500" /> : msg.isError ? <X className="w-3.5 h-3.5 text-destructive" /> : msg.hasPreview ? <Monitor className="w-3.5 h-3.5 text-primary" /> : <Terminal className="w-3.5 h-3.5 text-primary" />}
+                          <div className="flex gap-3">
+                            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                              {msg.isDeploying ? <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" /> : msg.deployResult ? <CheckCircle2 className="w-3.5 h-3.5 text-primary" /> : msg.agentStatus ? <Activity className="w-3.5 h-3.5 text-emerald-500" /> : msg.isError ? <X className="w-3.5 h-3.5 text-destructive" /> : msg.hasPreview ? <Monitor className="w-3.5 h-3.5 text-primary" /> : <Sparkles className="w-3.5 h-3.5 text-primary" />}
                             </div>
-                            <div className="min-w-0 flex-1">
-                              <div className={`text-[14px] leading-relaxed whitespace-pre-wrap ${msg.isError ? "text-destructive" : "text-foreground"}`}>{msg.content.split(/(\*\*.+?\*\*)/).map((part, i) => part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong> : part)}</div>
+                            <div className="min-w-0 flex-1 pt-0.5">
+                              <div className={`text-[14px] leading-relaxed whitespace-pre-wrap ${msg.isError ? "text-destructive" : "text-foreground"}`}>{msg.content.split(/(\*\*.+?\*\*)/).map((part, i) => part.startsWith("**") && part.endsWith("**") ? <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong> : part)}</div>
                               {msg.hasPreview && !showPanel && (
                                 <button onClick={() => { setShowPanel(true); setRightPanel("preview"); }}
-                                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-[12px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" data-testid="button-show-preview">
-                                  <Eye className="w-3 h-3" /> Show Preview
+                                  className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/20 bg-primary/5 text-[12px] text-primary font-medium hover:bg-primary/10 transition-colors" data-testid="button-show-preview">
+                                  <Eye className="w-3.5 h-3.5" /> Show Preview
                                 </button>
                               )}
                             </div>
                           </div>
-                          {msg.agentCard && <div className="ml-[34px]"><AgentCard config={msg.agentCard} onDeploy={handleDeploy} onUpdate={updateConfigField} deploying={isDeploying} deployed={deployed} /></div>}
-                          {msg.deployResult && <div className="ml-[34px]"><DeployResultCard result={msg.deployResult} onCopy={(t) => { navigator.clipboard.writeText(t); toast({ title: "Copied" }); }} onBuildAnother={startNew} onCheckStatus={async (id) => { setIsProcessing(true); await fetchAgentStatus(id); setIsProcessing(false); }} /></div>}
-                          {msg.agentStatus && <div className="ml-[34px]"><AgentStatusCard status={msg.agentStatus} /></div>}
-                          {msg.myAgentsList && <div className="ml-[34px]"><MyAgentsCard agents={msg.myAgentsList} onSelect={async (id) => { setLastDeployedId(id); setIsProcessing(true); await fetchAgentStatus(id); setIsProcessing(false); }} /></div>}
+                          {msg.agentCard && <div className="ml-10"><AgentCard config={msg.agentCard} onDeploy={handleDeploy} onUpdate={updateConfigField} deploying={isDeploying} deployed={deployed} /></div>}
+                          {msg.deployResult && <div className="ml-10"><DeployResultCard result={msg.deployResult} onCopy={(t) => { navigator.clipboard.writeText(t); toast({ title: "Copied" }); }} onBuildAnother={startNew} onCheckStatus={async (id) => { setIsProcessing(true); await fetchAgentStatus(id); setIsProcessing(false); }} /></div>}
+                          {msg.agentStatus && <div className="ml-10"><AgentStatusCard status={msg.agentStatus} /></div>}
+                          {msg.myAgentsList && <div className="ml-10"><MyAgentsCard agents={msg.myAgentsList} onSelect={async (id) => { setLastDeployedId(id); setIsProcessing(true); await fetchAgentStatus(id); setIsProcessing(false); }} /></div>}
                         </div>
                       )}
                     </div>
                   ))}
                   {isProcessing && (
-                    <div className="flex gap-2.5"><div className="w-6 h-6 rounded-full bg-primary/15 flex items-center justify-center shrink-0"><Loader2 className="w-3.5 h-3.5 text-primary animate-spin" /></div>
-                      <div className="pt-1.5 flex gap-1">{[0,150,300].map(d => <div key={d} className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: d + "ms" }} />)}</div>
+                    <div className="flex gap-3">
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/10 flex items-center justify-center shrink-0">
+                        <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+                      </div>
+                      <div className="pt-2 flex gap-1">{[0,150,300].map(d => <div key={d} className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: d + "ms" }} />)}</div>
                     </div>
                   )}
                   <div ref={chatEndRef} />
@@ -430,53 +440,54 @@ export default function AgentBuilder() {
               )}
             </div>
 
-            <div className="shrink-0 border-t border-border px-4 pb-3 pt-2 bg-background" data-testid="chat-input-area">
+            <div className="shrink-0 border-t border-border/60 px-4 pb-3 pt-3 bg-background/95 backdrop-blur-lg" data-testid="chat-input-area">
               <div className={`mx-auto ${hasPreview ? "max-w-full" : "max-w-[640px]"}`}>
                 <form id="chat-form" onSubmit={handleSubmit}>
-                  <div className="relative border border-border rounded-2xl bg-card focus-within:border-primary/40 transition-colors shadow-sm">
+                  <div className="relative border border-border/60 rounded-2xl bg-card/80 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/10 transition-all shadow-sm">
                     <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown}
                       placeholder={!hasMessages ? "Describe what you want to build..." : previewHtml ? "Make changes — 'add a contact form', 'make it darker'..." : config.type ? "Customize your agent or say 'deploy'..." : "Message BUILD4..."}
-                      className="w-full resize-none bg-transparent pl-4 pr-12 py-3 text-[14px] text-foreground placeholder:text-muted-foreground focus:outline-none" disabled={isProcessing || isDeploying} rows={1} style={{ minHeight: "24px", maxHeight: "200px" }} data-testid="input-command" />
-                    <button type="submit" disabled={isProcessing || isDeploying || !inputValue.trim()} className="absolute right-2 bottom-2 w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-30 hover:opacity-90 transition-opacity" data-testid="button-send">
+                      className="w-full resize-none bg-transparent pl-4 pr-12 py-3 text-[14px] text-foreground placeholder:text-muted-foreground/60 focus:outline-none" disabled={isProcessing || isDeploying} rows={1} style={{ minHeight: "24px", maxHeight: "200px" }} data-testid="input-command" />
+                    <button type="submit" disabled={isProcessing || isDeploying || !inputValue.trim()} className="absolute right-2 bottom-2 w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-20 hover:opacity-90 transition-all shadow-sm" data-testid="button-send">
                       {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUp className="w-4 h-4" />}
                     </button>
                   </div>
                 </form>
                 {!hasMessages && (
-                  <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
+                  <div className="flex items-center justify-center gap-2 mt-2.5 flex-wrap">
                     {["Build a website", "Create a dashboard", "Trading agent", "Show my agents"].map(s => (
-                      <button key={s} onClick={() => sendPrompt(s)} className="px-3 py-1.5 rounded-full border border-border text-[12px] text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors" data-testid={`suggestion-${s.toLowerCase().replace(/\s+/g, "-")}`}>{s}</button>
+                      <button key={s} onClick={() => sendPrompt(s)} className="px-3 py-1.5 rounded-full border border-border/50 text-[12px] text-muted-foreground hover:text-foreground hover:bg-accent/50 hover:border-border transition-all" data-testid={`suggestion-${s.toLowerCase().replace(/\s+/g, "-")}`}>{s}</button>
                     ))}
                   </div>
                 )}
-                <p className="text-center text-[11px] text-muted-foreground/40 mt-1.5">BUILD4 — Build anything with AI. Agents cost $20 to deploy.</p>
+                <p className="text-center text-[11px] text-muted-foreground/30 mt-2">BUILD4 — Build anything with AI. Agents cost $20 to deploy.</p>
               </div>
             </div>
           </div>
 
           {hasPreview && (
-            <div className="hidden lg:flex flex-col w-[50%] border-l border-border" data-testid="right-panel">
-              <div className="flex items-center justify-between px-3 h-10 border-b border-border shrink-0">
-                <div className="flex items-center gap-1">
-                  <button onClick={() => setRightPanel("preview")} className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${rightPanel === "preview" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`} data-testid="tab-preview"><Monitor className="w-3 h-3 inline mr-1" />Preview</button>
-                  <button onClick={() => setRightPanel("code")} className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${rightPanel === "code" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`} data-testid="tab-code"><Code2 className="w-3 h-3 inline mr-1" />Code{projectFiles.length > 0 && <span className="ml-1 text-[10px] text-muted-foreground">({projectFiles.length})</span>}</button>
+            <div className="hidden lg:flex flex-col w-[50%] border-l border-border/60" data-testid="right-panel">
+              <div className="flex items-center justify-between px-3 h-11 border-b border-border/60 shrink-0 bg-muted/30">
+                <div className="flex items-center gap-0.5">
+                  <button onClick={() => setRightPanel("preview")} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all ${rightPanel === "preview" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`} data-testid="tab-preview"><Monitor className="w-3.5 h-3.5" />Preview</button>
+                  <button onClick={() => setRightPanel("code")} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all ${rightPanel === "code" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`} data-testid="tab-code"><Code2 className="w-3.5 h-3.5" />Code{projectFiles.length > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full bg-muted text-[10px] text-muted-foreground">{projectFiles.length}</span>}</button>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5">
                   {rightPanel === "preview" && (
                     <>
-                      <button onClick={() => setPreviewSize("desktop")} className={`p-1 rounded transition-colors ${previewSize === "desktop" ? "text-primary" : "text-muted-foreground hover:text-foreground"}`} data-testid="size-desktop"><Monitor className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => setPreviewSize("tablet")} className={`p-1 rounded transition-colors ${previewSize === "tablet" ? "text-primary" : "text-muted-foreground hover:text-foreground"}`} data-testid="size-tablet"><Tablet className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => setPreviewSize("mobile")} className={`p-1 rounded transition-colors ${previewSize === "mobile" ? "text-primary" : "text-muted-foreground hover:text-foreground"}`} data-testid="size-mobile"><Smartphone className="w-3.5 h-3.5" /></button>
-                      <div className="w-px h-4 bg-border mx-1" />
-                      <button onClick={() => { const iframe = document.getElementById("preview-iframe") as HTMLIFrameElement; if (iframe) iframe.srcdoc = previewHtml; }} className="p-1 rounded hover:bg-accent transition-colors text-muted-foreground hover:text-foreground" data-testid="button-refresh-preview"><RotateCcw className="w-3.5 h-3.5" /></button>
+                      <div className="flex items-center bg-muted/50 rounded-lg p-0.5 mr-1">
+                        <button onClick={() => setPreviewSize("desktop")} className={`p-1.5 rounded-md transition-all ${previewSize === "desktop" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`} data-testid="size-desktop"><Monitor className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => setPreviewSize("tablet")} className={`p-1.5 rounded-md transition-all ${previewSize === "tablet" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`} data-testid="size-tablet"><Tablet className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => setPreviewSize("mobile")} className={`p-1.5 rounded-md transition-all ${previewSize === "mobile" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`} data-testid="size-mobile"><Smartphone className="w-3.5 h-3.5" /></button>
+                      </div>
+                      <button onClick={() => { const iframe = document.getElementById("preview-iframe") as HTMLIFrameElement; if (iframe) iframe.srcdoc = previewHtml; }} className="p-1.5 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground" data-testid="button-refresh-preview"><RotateCcw className="w-3.5 h-3.5" /></button>
                     </>
                   )}
-                  <button onClick={() => setShowPanel(false)} className="p-1 rounded hover:bg-accent transition-colors text-muted-foreground hover:text-foreground" data-testid="button-close-panel"><PanelRightClose className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => setShowPanel(false)} className="p-1.5 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground" data-testid="button-close-panel"><PanelRightClose className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
-              <div className="flex-1 overflow-hidden bg-white">
+              <div className="flex-1 overflow-hidden bg-white dark:bg-[#0d1117]">
                 {rightPanel === "preview" ? (
-                  <div className={`h-full mx-auto transition-all ${previewWidth}`}>
+                  <div className={`h-full mx-auto transition-all duration-300 ${previewWidth} ${previewSize !== "desktop" ? "border-x border-border/40" : ""}`}>
                     <iframe id="preview-iframe" className="w-full h-full border-0" data-testid="preview-iframe" sandbox="allow-scripts" srcDoc={previewHtml} />
                   </div>
                 ) : (
@@ -488,8 +499,8 @@ export default function AgentBuilder() {
 
           {!showPanel && previewHtml && hasMessages && (
             <button onClick={() => { setShowPanel(true); setRightPanel("preview"); }}
-              className="hidden lg:flex fixed right-4 top-1/2 -translate-y-1/2 items-center gap-1.5 px-3 py-2 rounded-lg bg-card border border-border shadow-lg text-[12px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors z-10" data-testid="button-open-panel">
-              <PanelRightOpen className="w-4 h-4" />
+              className="hidden lg:flex fixed right-4 top-1/2 -translate-y-1/2 items-center gap-1.5 px-3 py-2.5 rounded-xl bg-card border border-border/60 shadow-lg text-[12px] text-muted-foreground hover:text-foreground hover:bg-accent hover:border-primary/20 transition-all z-10" data-testid="button-open-panel">
+              <PanelRightOpen className="w-4 h-4" /> Preview
             </button>
           )}
         </div>
