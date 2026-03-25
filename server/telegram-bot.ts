@@ -1047,7 +1047,7 @@ function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.I
     inline_keyboard: [
       [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
       [{ text: "💰 Buy Token", callback_data: "action:buy" }, { text: "💸 Sell Token", callback_data: "action:sell" }],
-      [{ text: "🔄 OKX Swap", callback_data: "action:okxswap" }, { text: "🌉 OKX Bridge", callback_data: "action:okxbridge" }],
+      [{ text: "🔄 OKX Swap", callback_data: "action:okxswap" }, { text: "🌉 Bridge", callback_data: "action:okxbridge" }],
       [{ text: "🐋 Signals", callback_data: "action:okxsignals" }, { text: "🔒 Security", callback_data: "action:okxsecurity" }],
       [{ text: "🔥 Trending", callback_data: "action:okxtrending" }, { text: "🐸 Meme Scanner", callback_data: "action:okxmeme" }],
       [{ text: "📊 Token Price", callback_data: "action:okxprice" }, { text: "⛽ Gas", callback_data: "action:okxgas" }],
@@ -2329,19 +2329,14 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   if (data === "action:okxbridge") {
+    pendingOKXBridge.set(chatId, { step: "from_chain" });
+    const chainButtons = OKX_CHAINS.map(c => [{ text: `${c.name} (${c.symbol})`, callback_data: `okxbridge_from:${c.id}` }]);
+    chainButtons.push([{ text: "« Back", callback_data: "action:menu" }]);
     await bot.sendMessage(chatId,
-      "🌉 *OKX Cross-Chain Bridge*\n\n" +
-      "⚠️ Cross-chain bridge is temporarily unavailable on OKX. Please try again later.\n\n" +
-      "You can still use *DEX Swap* to trade tokens on a single chain.",
-      {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🔄 Use DEX Swap Instead", callback_data: "action:okxswap" }],
-            [{ text: "« Back", callback_data: "action:menu" }],
-          ],
-        },
-      }
+      "🌉 *Cross-Chain Bridge*\n\n" +
+      "Powered by Li.Fi — best routes across 20+ bridges.\n\n" +
+      "Select the *source chain*:",
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } }
     );
     return;
   }
@@ -5167,19 +5162,12 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
 
     if (cmd === "bridge") {
+      pendingOKXBridge.set(chatId, { step: "from_chain" });
+      const chainButtons = OKX_CHAINS.map(c => [{ text: `${c.name} (${c.symbol})`, callback_data: `okxbridge_from:${c.id}` }]);
+      chainButtons.push([{ text: "« Back", callback_data: "action:menu" }]);
       await bot.sendMessage(chatId,
-        "🌉 *OKX Cross-Chain Bridge*\n\n" +
-        "⚠️ Cross-chain bridge is temporarily unavailable on OKX. Please try again later.\n\n" +
-        "You can still use *DEX Swap* to trade tokens on a single chain.",
-        {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "🔄 Use DEX Swap Instead", callback_data: "action:okxswap" }],
-              [{ text: "« Back", callback_data: "action:menu" }],
-            ],
-          },
-        }
+        "🌉 *Cross-Chain Bridge*\n\nPowered by Li.Fi — best routes across 20+ bridges.\n\nSelect the *source chain*:",
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } }
       );
       return;
     }
@@ -7802,34 +7790,42 @@ async function executeBridgeQuote(chatId: number, state: OKXBridgeState): Promis
   if (!bot) return;
 
   const rawAmount = parseHumanAmount(state.amount!, state.fromDecimals || 18);
+  const walletAddr = state.receiver || getLinkedWallet(chatId);
+  if (!walletAddr) {
+    await bot.sendMessage(chatId, "No wallet found. Use /start to create one.");
+    return;
+  }
 
-  await bot.sendMessage(chatId, "Getting bridge quote from OKX...");
+  await bot.sendMessage(chatId, "🔍 Getting bridge quote from Li.Fi...");
   sendTyping(chatId);
 
   try {
-    const { getCrossChainQuote } = await import("./okx-onchainos");
-    const quote = await getCrossChainQuote({
-      fromChainId: state.fromChainId!,
-      toChainId: state.toChainId!,
-      fromTokenAddress: state.fromToken!,
-      toTokenAddress: state.toToken!,
-      amount: rawAmount,
-      slippage: "1",
-    });
+    const normFromToken = state.fromToken === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" ? "0x0000000000000000000000000000000000000000" : state.fromToken;
+    const normToToken = state.toToken === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" ? "0x0000000000000000000000000000000000000000" : state.toToken;
 
-    state.quoteData = quote;
-    const receiveAmount = quote?.data?.[0]?.toTokenAmount
-      ? formatTokenAmount(quote.data[0].toTokenAmount, state.toDecimals || 18)
+    const lifiUrl = `https://li.quest/v1/quote?fromChain=${state.fromChainId}&toChain=${state.toChainId}&fromToken=${normFromToken}&toToken=${normToToken}&fromAmount=${rawAmount}&fromAddress=${walletAddr}&slippage=0.01`;
+    const resp = await fetch(lifiUrl, { headers: { "Accept": "application/json" } });
+    const lifiData = await resp.json() as any;
+
+    if (lifiData.message || !lifiData.estimate) {
+      throw new Error(lifiData.message || "No route found for this bridge pair");
+    }
+
+    const receiveAmount = lifiData.estimate?.toAmount
+      ? formatTokenAmount(lifiData.estimate.toAmount, state.toDecimals || 18)
       : "—";
 
-    const estTime = quote?.data?.[0]?.estimatedTime;
-    const timeStr = estTime
-      ? (Number(estTime) < 60 ? `${estTime}s` : `~${Math.ceil(Number(estTime) / 60)} min`)
+    const estSeconds = lifiData.estimate?.executionDuration;
+    const timeStr = estSeconds
+      ? (Number(estSeconds) < 60 ? `${estSeconds}s` : `~${Math.ceil(Number(estSeconds) / 60)} min`)
       : "—";
-    const bridgeName = quote?.data?.[0]?.bridgeName || "—";
-    const shortReceiver = state.receiver!.substring(0, 8) + "..." + state.receiver!.slice(-6);
+    const bridgeName = lifiData.toolDetails?.name || lifiData.tool || "Li.Fi";
+    const shortReceiver = walletAddr.substring(0, 8) + "..." + walletAddr.slice(-6);
 
+    state.quoteData = { _provider: "lifi", _lifiQuote: lifiData, bridgeProvider: bridgeName };
+    state.receiveAddress = walletAddr;
     state.step = "confirm";
+
     await bot.sendMessage(chatId,
       `🌉 *Bridge Quote*\n\n` +
       `Route: ${state.fromChainName} → ${state.toChainName}\n` +
@@ -7851,7 +7847,7 @@ async function executeBridgeQuote(chatId: number, state: OKXBridgeState): Promis
     );
   } catch (err: any) {
     await bot.sendMessage(chatId,
-      `Failed to get bridge quote: ${err.message}\n\nTry again or go back to menu.`,
+      `Failed to get bridge quote: ${err.message?.substring(0, 150)}\n\nTry a different token pair or go back to menu.`,
       { reply_markup: { inline_keyboard: [[{ text: "🌉 Try Again", callback_data: "action:okxbridge" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
     );
     pendingOKXBridge.delete(chatId);
