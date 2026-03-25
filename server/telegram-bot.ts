@@ -637,16 +637,27 @@ async function checkSubscription(chatId: number): Promise<{ allowed: boolean; st
     }
   }
 
-  const sub = await storage.getBotSubscriptionByChatId(chatId.toString());
+  let sub: any = null;
+  try {
+    sub = await storage.getBotSubscriptionByChatId(chatId.toString());
+  } catch (e: any) {
+    console.error("[Subscription] DB lookup failed, allowing access:", e.message);
+    return { allowed: true, status: "grace", daysLeft: 30 };
+  }
   if (!sub) {
     const wallet = getLinkedWallet(chatId);
     if (wallet) {
-      const newSub = await storage.createBotSubscription(wallet, chatId.toString());
-      const daysLeft = TRIAL_DAYS;
-      subCache.set(chatId, { status: "trial", expiresAt: newSub.expiresAt, checkedAt: Date.now() });
-      return { allowed: true, status: "trial", daysLeft };
+      try {
+        const newSub = await storage.createBotSubscription(wallet, chatId.toString());
+        const daysLeft = TRIAL_DAYS;
+        subCache.set(chatId, { status: "trial", expiresAt: newSub.expiresAt, checkedAt: Date.now() });
+        return { allowed: true, status: "trial", daysLeft };
+      } catch (e: any) {
+        console.error("[Subscription] Trial creation failed, allowing access:", e.message);
+        return { allowed: true, status: "grace", daysLeft: 30 };
+      }
     }
-    return { allowed: false, status: "none", message: "Set up a wallet first with /start" };
+    return { allowed: true, status: "grace", daysLeft: 30 };
   }
 
   const now = new Date();
@@ -1278,20 +1289,24 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   await ensureWalletsLoaded(chatId);
 
   if (PREMIUM_ACTIONS.has(data)) {
-    const subCheck = await checkSubscription(chatId);
-    if (!subCheck.allowed) {
-      const msg = subscriptionExpiredMessage();
-      await bot.sendMessage(chatId, msg.text, { parse_mode: "Markdown", reply_markup: msg.markup });
-      return;
-    }
-    if (subCheck.status === "trial" && subCheck.daysLeft !== undefined && subCheck.daysLeft <= 1) {
-      await bot.sendMessage(chatId,
-        `⏳ *Trial ending soon!* You have less than 1 day left.\n` +
-        `Subscribe now to keep full access.`,
-        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
-          [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
-        ]}}
-      );
+    try {
+      const subCheck = await checkSubscription(chatId);
+      if (!subCheck.allowed) {
+        const msg = subscriptionExpiredMessage();
+        await bot.sendMessage(chatId, msg.text, { parse_mode: "Markdown", reply_markup: msg.markup });
+        return;
+      }
+      if (subCheck.status === "trial" && subCheck.daysLeft !== undefined && subCheck.daysLeft <= 1) {
+        await bot.sendMessage(chatId,
+          `⏳ *Trial ending soon!* You have less than 1 day left.\n` +
+          `Subscribe now to keep full access.`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+            [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+          ]}}
+        );
+      }
+    } catch (e: any) {
+      console.error("[Subscription] Check failed, allowing access:", e.message);
     }
   }
 
