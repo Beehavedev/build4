@@ -620,16 +620,12 @@ export async function registerRoutes(
   if (isDev) {
     console.log("[dev] Skipping background agents in development to save memory. They run in production.");
   } else {
-    if (process.env.TELEGRAM_BOT_EXTERNAL === "true") {
-      console.log("[TelegramBot] Bot running externally (Render) — skipping local startup");
-    } else {
-      setTimeout(() => {
-        if (process.env.TELEGRAM_BOT_TOKEN) {
-          const webhookBase = process.env.TELEGRAM_WEBHOOK_URL || undefined;
-          startTelegramBot(webhookBase);
-        }
-      }, 2000);
-    }
+    setTimeout(() => {
+      if (process.env.TELEGRAM_BOT_TOKEN) {
+        const webhookBase = process.env.TELEGRAM_WEBHOOK_URL || undefined;
+        startTelegramBot(webhookBase);
+      }
+    }, 2000);
 
     setTimeout(() => {
       startBountyEngine().catch(err => {
