@@ -68,6 +68,14 @@ Leverages OKX OnchainOS v2.1.0 for multi-chain infrastructure, providing a DEX A
 ### Agent Builder ("/build") — Coming Soon
 The `/build` page currently displays a "Coming Soon" placeholder. The AI Agent Builder is being rebuilt. Routes `/tasks` and `/sdk` redirect to `/build`.
 
+### Decentralized Memory (IPFS + On-Chain Anchoring)
+Agent memory entries are cryptographically secured through a multi-layer decentralization stack:
+- **Integrity Hash Chain**: Every soul entry gets a SHA-256 linked hash (each entry hashes against the previous), creating a tamper-evident chain. Verified via `GET /api/agents/:id/memory/verify`.
+- **IPFS Pinning**: When `PINATA_JWT` is configured, each memory entry is automatically pinned to IPFS via Pinata with a structured JSON-LD payload (`build4.io/schemas/agent-memory/v1`). CID stored in `ipfs_cid` column.
+- **On-Chain Merkle Root Anchoring**: `POST /api/agents/:id/memory/anchor` computes a Merkle tree of all memory hashes, pins the root to IPFS, and anchors the Merkle root on BNB Chain (or Base) as calldata in a self-transaction. TX hash stored in `anchor_tx_hash`.
+- **Decentralization Status**: `GET /api/decentralization/status` provides a full overview of all decentralization layers.
+- **Key files**: `server/decentralized-storage.ts` (IPFS + anchoring logic), `shared/schema.ts` (ipfs_cid, anchor_tx_hash, anchor_chain_id columns).
+
 ### Data Integrity & Security
 Platform stats (`/api/platform/stats`) use real database counts: unique wallets from `agents.creator_wallet`, real transaction/skill/agent counts — no visitor-log inflation. Token launcher API hides failed launches by default (filter `status !== "failed"`). On-chain verification for ERC-8004 and BAP-578 badges, valid `txHash` requirements for revenue tracking. Agent cleanup mechanisms prevent bot-bursts. Security measures include mandatory environment variables for encryption and admin authentication keys, HMAC-signed Telegram wallet linking, internal-only private key access, temporary display of private keys, and robust retry logic for token launches.
 

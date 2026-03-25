@@ -193,6 +193,9 @@ export const agentSoulEntries = pgTable("agent_soul_entries", {
   metadata: text("metadata"),
   integrityHash: text("integrity_hash"),
   previousHash: text("previous_hash"),
+  ipfsCid: text("ipfs_cid"),
+  anchorTxHash: text("anchor_tx_hash"),
+  anchorChainId: integer("anchor_chain_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

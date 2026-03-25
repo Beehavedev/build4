@@ -738,6 +738,29 @@ export class DatabaseStorage implements IStorage {
       detailsJson: JSON.stringify({ entryType: entry.entryType, integrityHash }),
       result: "success",
     });
+
+    (async () => {
+      try {
+        const { pinMemoryEntry, isIPFSConfigured } = await import("./decentralized-storage");
+        if (!isIPFSConfigured()) return;
+        const ipfsResult = await pinMemoryEntry({
+          agentId: entry.agentId,
+          entryId: created.id,
+          entry: entry.entry,
+          entryType: entry.entryType || "reflection",
+          source: entry.source || "self",
+          integrityHash,
+          previousHash: prevHash,
+          createdAt: created.createdAt?.toISOString() || new Date().toISOString(),
+        });
+        if (ipfsResult.success && ipfsResult.cid) {
+          await db.update(agentSoulEntries)
+            .set({ ipfsCid: ipfsResult.cid })
+            .where(eq(agentSoulEntries.id, created.id));
+        }
+      } catch {}
+    })();
+
     return created;
   }
 

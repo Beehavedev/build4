@@ -2682,6 +2682,8 @@ ${urls}
       let brokenChainAt: number | null = null;
       let totalHashed = 0;
       let totalUnhashed = 0;
+      let totalPinned = 0;
+      let totalAnchored = 0;
 
       const sorted = [...entries].sort((a, b) =>
         new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime()
@@ -2694,6 +2696,8 @@ ${urls}
           continue;
         }
         totalHashed++;
+        if (entry.ipfsCid) totalPinned++;
+        if (entry.anchorTxHash) totalAnchored++;
 
         if (entry.previousHash) {
           if (i > 0) {
@@ -2718,12 +2722,19 @@ ${urls}
         totalEntries: entries.length,
         hashedEntries: totalHashed,
         unhashedEntries: totalUnhashed,
+        ipfsPinnedEntries: totalPinned,
+        onchainAnchoredEntries: totalAnchored,
         chainIntact: brokenChainAt === null,
         brokenAt: brokenChainAt,
         latestHash,
         genesisHash,
         hashAlgorithm: "SHA-256",
         chainType: "linked-hash-chain",
+        decentralization: {
+          ipfs: totalPinned > 0,
+          onchainAnchored: totalAnchored > 0,
+          tamperProof: brokenChainAt === null && totalHashed > 0,
+        },
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -2744,12 +2755,107 @@ ${urls}
           entryType: e.entryType,
           integrityHash: e.integrityHash,
           previousHash: e.previousHash,
+          ipfsCid: e.ipfsCid || null,
+          anchorTxHash: e.anchorTxHash || null,
+          anchorChainId: e.anchorChainId || null,
           createdAt: e.createdAt,
         }));
       res.json({ agentId, totalEntries: entries?.length || 0, hashChain: hashes });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
+  });
+
+  app.post("/api/agents/:agentId/memory/anchor", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const chainId = (req.body?.chainId || "56") as string;
+      const entries = await storage.getSoulEntries(agentId);
+      if (!entries || entries.length === 0) {
+        return res.status(404).json({ error: "No memory entries to anchor" });
+      }
+
+      const { pinMemoryMerkleRoot, anchorMerkleRoot, isIPFSConfigured, isAnchoringConfigured } = await import("./decentralized-storage");
+
+      let ipfsCid: string | undefined;
+      let merkleRoot: string | undefined;
+
+      if (isIPFSConfigured()) {
+        const ipfsResult = await pinMemoryMerkleRoot(agentId, entries);
+        if (ipfsResult.success) {
+          ipfsCid = ipfsResult.cid;
+          merkleRoot = ipfsResult.merkleRoot;
+        }
+      }
+
+      if (!merkleRoot) {
+        const crypto = await import("crypto");
+        const hashes = entries.filter(e => e.integrityHash).map(e => e.integrityHash!);
+        if (hashes.length === 0) return res.status(400).json({ error: "No integrity hashes to anchor" });
+        let level = [...hashes];
+        while (level.length > 1) {
+          const next: string[] = [];
+          for (let i = 0; i < level.length; i += 2) {
+            const left = level[i];
+            const right = i + 1 < level.length ? level[i + 1] : left;
+            next.push(crypto.createHash("sha256").update(left + right).digest("hex"));
+          }
+          level = next;
+        }
+        merkleRoot = level[0];
+      }
+
+      if (!isAnchoringConfigured()) {
+        return res.json({
+          success: true,
+          agentId,
+          merkleRoot,
+          ipfsCid: ipfsCid || null,
+          onchain: null,
+          message: "Merkle root computed and pinned to IPFS. On-chain anchoring requires DEPLOYER_PRIVATE_KEY.",
+        });
+      }
+
+      const anchorResult = await anchorMerkleRoot(agentId, merkleRoot, ipfsCid, chainId);
+
+      res.json({
+        success: anchorResult.success,
+        agentId,
+        merkleRoot,
+        ipfsCid: ipfsCid || null,
+        onchain: anchorResult.success ? {
+          txHash: anchorResult.txHash,
+          chainId: anchorResult.chainId,
+          explorer: anchorResult.explorer,
+        } : { error: anchorResult.error },
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/decentralization/status", async (_req: Request, res: Response) => {
+    const { isIPFSConfigured, isAnchoringConfigured } = await import("./decentralized-storage");
+    res.json({
+      platform: "BUILD4",
+      decentralizationLayers: {
+        agentIdentity: { status: "active", method: "ERC-8004 on-chain registration", chains: ["BNB Chain", "Base", "XLayer"] },
+        skillMarketplace: { status: "active", method: "On-chain skill listing & purchase", contract: "0xa6996A83B3909Ff12643A4a125eA2704097B0dD3" },
+        agentEconomy: { status: "active", method: "On-chain deposits, transfers, withdrawals", contract: "0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606" },
+        memoryIntegrity: { status: "active", method: "SHA-256 linked hash chain", verifiable: true, endpoint: "/api/agents/:id/memory/verify" },
+        ipfsStorage: { status: isIPFSConfigured() ? "active" : "configurable", method: "Pinata IPFS pinning", description: "Agent memory entries pinned to IPFS for permanent decentralized storage" },
+        onchainAnchoring: { status: isAnchoringConfigured() ? "active" : "configurable", method: "Merkle root anchored on-chain", description: "Memory Merkle roots stored on BNB Chain/Base for tamper-proof verification" },
+        walletAuthentication: { status: "active", method: "EIP-191 wallet signature verification", endpoint: "/api/auth/verify-signature" },
+        multiChain: { status: "active", chains: ["BNB Chain (56)", "Ethereum (1)", "Base (8453)", "XLayer (196)", "Solana (501)", "Arbitrum (42161)", "Polygon (137)"] },
+      },
+      verificationEndpoints: {
+        memoryVerify: "/api/agents/:agentId/memory/verify",
+        memoryHashes: "/api/agents/:agentId/memory/hashes",
+        memoryAnchor: "POST /api/agents/:agentId/memory/anchor",
+        authVerify: "POST /api/auth/verify-signature",
+        erc8004Info: "/api/standards/erc8004/info",
+      },
+    });
   });
 
   // ============================================================

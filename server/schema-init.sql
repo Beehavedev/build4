@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS "agent_skills" (id VARCHAR DEFAULT gen_random_uuid() 
 CREATE TABLE IF NOT EXISTS "agent_soul_entries" (id VARCHAR DEFAULT gen_random_uuid() NOT NULL, agent_id VARCHAR NOT NULL, entry TEXT NOT NULL, entry_type TEXT DEFAULT 'reflection'::text NOT NULL, source TEXT DEFAULT 'self'::text NOT NULL, metadata TEXT, integrity_hash TEXT, previous_hash TEXT, created_at TIMESTAMP DEFAULT now());
 ALTER TABLE "agent_soul_entries" ADD COLUMN IF NOT EXISTS integrity_hash TEXT;
 ALTER TABLE "agent_soul_entries" ADD COLUMN IF NOT EXISTS previous_hash TEXT;
+ALTER TABLE "agent_soul_entries" ADD COLUMN IF NOT EXISTS ipfs_cid TEXT;
+ALTER TABLE "agent_soul_entries" ADD COLUMN IF NOT EXISTS anchor_tx_hash TEXT;
+ALTER TABLE "agent_soul_entries" ADD COLUMN IF NOT EXISTS anchor_chain_id INTEGER;
 CREATE TABLE IF NOT EXISTS "agent_strategy_memos" (id VARCHAR DEFAULT gen_random_uuid() NOT NULL, agent_id VARCHAR NOT NULL, memo_type TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL, summary TEXT NOT NULL, metrics TEXT, status TEXT DEFAULT 'active'::text NOT NULL, created_at TIMESTAMP DEFAULT now());
 CREATE TABLE IF NOT EXISTS "agent_subscriptions" (id VARCHAR DEFAULT gen_random_uuid() NOT NULL, wallet_address TEXT NOT NULL, plan_id VARCHAR NOT NULL, status TEXT DEFAULT 'active'::text NOT NULL, started_at TIMESTAMP DEFAULT now(), expires_at TIMESTAMP, tx_hash TEXT, chain_id INTEGER, inference_used INTEGER DEFAULT 0 NOT NULL, skill_executions_used INTEGER DEFAULT 0 NOT NULL, created_at TIMESTAMP DEFAULT now());
 CREATE TABLE IF NOT EXISTS "agent_survival_status" (id VARCHAR DEFAULT gen_random_uuid() NOT NULL, agent_id VARCHAR NOT NULL, tier TEXT DEFAULT 'normal'::text NOT NULL, previous_tier TEXT, last_transition_at TIMESTAMP DEFAULT now(), reason TEXT, turns_alive INTEGER DEFAULT 0 NOT NULL, created_at TIMESTAMP DEFAULT now());
