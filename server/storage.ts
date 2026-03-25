@@ -67,6 +67,7 @@ import {
   type TokenLaunch, type InsertTokenLaunch, tokenLaunches,
   type ChaosMilestone, type InsertChaosMilestone, chaosMilestones,
   type TelegramWallet, type InsertTelegramWallet, telegramWallets,
+  type TelegramBotSubscription, telegramBotSubscriptions,
   tradingPreferences,
   type AsterCredentials, asterCredentials,
   tradeOutcomes,
@@ -429,6 +430,10 @@ export interface IStorage {
   getAllTelegramWalletLinks(): Promise<TelegramWallet[]>;
   getTelegramWalletPrivateKey(chatId: string, walletAddress: string): Promise<string | null>;
   getPrivateKeyByWalletAddress(walletAddress: string): Promise<string | null>;
+  getBotSubscription(walletAddress: string): Promise<TelegramBotSubscription | null>;
+  getBotSubscriptionByChatId(chatId: string): Promise<TelegramBotSubscription | null>;
+  createBotSubscription(walletAddress: string, chatId: string): Promise<TelegramBotSubscription>;
+  activateBotSubscription(walletAddress: string, txHash: string, chainId: number, amountPaid: string): Promise<TelegramBotSubscription | null>;
   saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void>;
   getEnabledTradingPreferences(): Promise<Array<{ chatId: string; enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }>>;
   saveTradeOutcome(outcome: {
@@ -2680,6 +2685,50 @@ export class DatabaseStorage implements IStorage {
 
   async getAllTelegramWalletLinks(): Promise<TelegramWallet[]> {
     return db.select().from(telegramWallets).orderBy(telegramWallets.chatId);
+  }
+
+  async getBotSubscription(walletAddress: string): Promise<TelegramBotSubscription | null> {
+    const rows = await db.select().from(telegramBotSubscriptions)
+      .where(eq(telegramBotSubscriptions.walletAddress, walletAddress.toLowerCase()))
+      .orderBy(desc(telegramBotSubscriptions.createdAt))
+      .limit(1);
+    return rows[0] || null;
+  }
+
+  async getBotSubscriptionByChatId(chatId: string): Promise<TelegramBotSubscription | null> {
+    const rows = await db.select().from(telegramBotSubscriptions)
+      .where(eq(telegramBotSubscriptions.chatId, chatId))
+      .orderBy(desc(telegramBotSubscriptions.createdAt))
+      .limit(1);
+    return rows[0] || null;
+  }
+
+  async createBotSubscription(walletAddress: string, chatId: string): Promise<TelegramBotSubscription> {
+    const trialEnd = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000);
+    const [created] = await db.insert(telegramBotSubscriptions).values({
+      walletAddress: walletAddress.toLowerCase(),
+      chatId,
+      status: "trial",
+      trialStartedAt: new Date(),
+      expiresAt: trialEnd,
+    }).returning();
+    return created;
+  }
+
+  async activateBotSubscription(walletAddress: string, txHash: string, chainId: number, amountPaid: string): Promise<TelegramBotSubscription | null> {
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const rows = await db.update(telegramBotSubscriptions)
+      .set({
+        status: "active",
+        paidAt: new Date(),
+        expiresAt,
+        txHash,
+        chainId,
+        amountPaid,
+      })
+      .where(eq(telegramBotSubscriptions.walletAddress, walletAddress.toLowerCase()))
+      .returning();
+    return rows[0] || null;
   }
 
   async saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void> {

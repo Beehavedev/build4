@@ -1097,6 +1097,21 @@ export const tradingPreferences = pgTable("trading_preferences", {
 });
 export type TradingPreference = typeof tradingPreferences.$inferSelect;
 
+export const telegramBotSubscriptions = pgTable("telegram_bot_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  walletAddress: text("wallet_address").notNull(),
+  chatId: text("chat_id").notNull(),
+  status: text("status").notNull().default("trial"),
+  trialStartedAt: timestamp("trial_started_at").defaultNow(),
+  paidAt: timestamp("paid_at"),
+  expiresAt: timestamp("expires_at"),
+  txHash: text("tx_hash"),
+  chainId: integer("chain_id"),
+  amountPaid: text("amount_paid"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type TelegramBotSubscription = typeof telegramBotSubscriptions.$inferSelect;
+
 export const tradeOutcomes = pgTable("trade_outcomes", {
   id: serial("id").primaryKey(),
   chatId: text("chat_id").notNull(),

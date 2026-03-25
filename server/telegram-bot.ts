@@ -607,6 +607,82 @@ function shortWallet(w: string): string {
   return `${w.substring(0, 6)}...${w.substring(38)}`;
 }
 
+const BOT_PRICE_USD = 19.99;
+const TRIAL_DAYS = 4;
+const TREASURY_WALLET = "0x5Ff57464152c9285A8526a0665d996dA66e2def1";
+
+const USDT_ADDRESSES: Record<string, string> = {
+  "56": "0x55d398326f99059ff775485246999027b3197955",
+  "8453": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "1": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+};
+
+const PREMIUM_ACTIONS = new Set([
+  "action:okxsignals", "action:okxswap", "action:okxbridge", "action:okxsecurity",
+  "action:okxtrending", "action:okxmeme", "action:okxprice",
+  "action:buy", "action:sell", "action:trade", "action:launchtoken",
+]);
+
+const subCache = new Map<number, { status: string; expiresAt: Date | null; checkedAt: number }>();
+
+async function checkSubscription(chatId: number): Promise<{ allowed: boolean; status: string; daysLeft?: number; message?: string }> {
+  const cached = subCache.get(chatId);
+  if (cached && Date.now() - cached.checkedAt < 60_000) {
+    if (cached.status === "active" || cached.status === "trial") {
+      const now = new Date();
+      if (cached.expiresAt && cached.expiresAt > now) {
+        const daysLeft = Math.ceil((cached.expiresAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+        return { allowed: true, status: cached.status, daysLeft };
+      }
+    }
+  }
+
+  const sub = await storage.getBotSubscriptionByChatId(chatId.toString());
+  if (!sub) {
+    const wallet = getLinkedWallet(chatId);
+    if (wallet) {
+      const newSub = await storage.createBotSubscription(wallet, chatId.toString());
+      const daysLeft = TRIAL_DAYS;
+      subCache.set(chatId, { status: "trial", expiresAt: newSub.expiresAt, checkedAt: Date.now() });
+      return { allowed: true, status: "trial", daysLeft };
+    }
+    return { allowed: false, status: "none", message: "Set up a wallet first with /start" };
+  }
+
+  const now = new Date();
+  if (sub.expiresAt && sub.expiresAt > now) {
+    const daysLeft = Math.ceil((sub.expiresAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+    subCache.set(chatId, { status: sub.status, expiresAt: sub.expiresAt, checkedAt: Date.now() });
+    return { allowed: true, status: sub.status, daysLeft };
+  }
+
+  subCache.set(chatId, { status: "expired", expiresAt: sub.expiresAt, checkedAt: Date.now() });
+  return { allowed: false, status: "expired", message: "Your subscription has expired." };
+}
+
+function subscriptionExpiredMessage(): { text: string; markup: TelegramBot.InlineKeyboardMarkup } {
+  return {
+    text:
+      `⚡ *BUILD4 Premium Required*\n\n` +
+      `This feature requires an active subscription.\n\n` +
+      `💰 *$${BOT_PRICE_USD}/month* — Unlimited access to:\n` +
+      `• 🐋 Smart Money Signals\n` +
+      `• ⚡ Instant Buy & Sell\n` +
+      `• 🔄 DEX Swap & Bridge\n` +
+      `• 🔒 Security Scanner\n` +
+      `• 🔥 Trending & Meme Scanner\n` +
+      `• 💎 Autonomous Trading Agent\n` +
+      `• 🚀 Token Launcher\n\n` +
+      `Pay with USDT on BNB Chain or Base.`,
+    markup: {
+      inline_keyboard: [
+        [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+        [{ text: "« Menu", callback_data: "action:menu" }],
+      ],
+    },
+  };
+}
+
 const agentCache = new Map<string, { agents: any[]; ts: number }>();
 const AGENT_CACHE_TTL = 15_000;
 
@@ -776,6 +852,196 @@ function getWalletConnectUrl(chatId?: number): string {
   return `${url}?chatId=${chatId}&exp=${expires}&sig=${sig}`;
 }
 
+async function handleSubscribe(chatId: number): Promise<void> {
+  if (!bot) return;
+
+  const wallet = getLinkedWallet(chatId);
+  if (!wallet) {
+    await bot.sendMessage(chatId,
+      "❌ You need a wallet first. Use /start to create or link one.",
+      { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+    );
+    return;
+  }
+
+  const sub = await storage.getBotSubscriptionByChatId(chatId.toString());
+  if (sub && sub.status === "active" && sub.expiresAt && sub.expiresAt > new Date()) {
+    const daysLeft = Math.ceil((sub.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+    await bot.sendMessage(chatId,
+      `✅ *You're already subscribed!*\n\n` +
+      `Status: Active\nExpires: ${sub.expiresAt.toISOString().split("T")[0]}\n` +
+      `Days remaining: ${daysLeft}`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+    );
+    return;
+  }
+
+  await bot.sendMessage(chatId,
+    `💳 *BUILD4 Premium Subscription*\n\n` +
+    `Price: *$${BOT_PRICE_USD} USDT/month*\n\n` +
+    `Send exactly *${BOT_PRICE_USD} USDT* to:\n\n` +
+    `\`${TREASURY_WALLET}\`\n\n` +
+    `✅ Accepted chains:\n` +
+    `• BNB Chain (BSC) — USDT BEP-20\n` +
+    `• Base — USDC\n\n` +
+    `⚠️ Send from your linked wallet:\n` +
+    `\`${wallet}\`\n\n` +
+    `After sending, tap "✅ I've Paid" to verify.`,
+    {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "✅ I've Paid — Verify Now", callback_data: "action:verifypayment" }],
+          [{ text: "📊 Subscription Status", callback_data: "action:substatus" }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ],
+      },
+    }
+  );
+}
+
+async function handleVerifyPayment(chatId: number): Promise<void> {
+  if (!bot) return;
+
+  const wallet = getLinkedWallet(chatId);
+  if (!wallet) {
+    await bot.sendMessage(chatId, "❌ No wallet linked. Use /start first.");
+    return;
+  }
+
+  await bot.sendMessage(chatId, "🔍 Checking for USDT payment on BNB Chain and Base...");
+  sendTyping(chatId);
+
+  const chains = [
+    { id: 56, name: "BNB Chain", api: "https://api.bscscan.com/api", key: process.env.BSCSCAN_API_KEY || "" },
+    { id: 8453, name: "Base", api: "https://api.basescan.org/api", key: process.env.BASESCAN_API_KEY || "" },
+  ];
+
+  for (const chain of chains) {
+    try {
+      const usdtAddr = USDT_ADDRESSES[chain.id.toString()];
+      if (!usdtAddr) continue;
+
+      const params = new URLSearchParams({
+        module: "account",
+        action: "tokentx",
+        contractaddress: usdtAddr,
+        address: wallet,
+        page: "1",
+        offset: "20",
+        sort: "desc",
+      });
+      if (chain.key) params.set("apikey", chain.key);
+
+      const resp = await fetch(`${chain.api}?${params}`);
+      const json = await resp.json() as any;
+
+      if (json.status !== "1" || !json.result?.length) continue;
+
+      for (const tx of json.result) {
+        if (
+          tx.to?.toLowerCase() === TREASURY_WALLET.toLowerCase() &&
+          tx.from?.toLowerCase() === wallet.toLowerCase()
+        ) {
+          const decimals = parseInt(tx.tokenDecimal || "18");
+          const value = parseFloat(tx.value) / Math.pow(10, decimals);
+          if (value >= BOT_PRICE_USD - 0.01) {
+            const existingSub = await storage.getBotSubscription(wallet);
+            if (existingSub?.txHash === tx.hash) continue;
+
+            const activated = await storage.activateBotSubscription(
+              wallet, tx.hash, chain.id, value.toFixed(2)
+            );
+
+            if (!activated) {
+              await storage.createBotSubscription(wallet, chatId.toString());
+              await storage.activateBotSubscription(wallet, tx.hash, chain.id, value.toFixed(2));
+            }
+
+            subCache.delete(chatId);
+
+            await bot.sendMessage(chatId,
+              `🎉 *Payment Confirmed!*\n\n` +
+              `Amount: ${value.toFixed(2)} USDT\n` +
+              `Chain: ${chain.name}\n` +
+              `TX: \`${tx.hash.substring(0, 20)}...\`\n\n` +
+              `✅ Your premium subscription is now active for 30 days.\n` +
+              `All features unlocked! 🚀`,
+              { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+            );
+            return;
+          }
+        }
+      }
+    } catch (e: any) {
+      console.error(`[Subscription] ${chain.name} verify error:`, e.message);
+    }
+  }
+
+  await bot.sendMessage(chatId,
+    `❌ *Payment Not Found*\n\n` +
+    `Could not detect a USDT payment of $${BOT_PRICE_USD} to the treasury wallet.\n\n` +
+    `Make sure you:\n` +
+    `1. Sent from your linked wallet: \`${wallet}\`\n` +
+    `2. Sent to: \`${TREASURY_WALLET}\`\n` +
+    `3. Sent at least ${BOT_PRICE_USD} USDT\n` +
+    `4. Used BNB Chain or Base\n\n` +
+    `Transactions may take a few minutes to confirm. Try again shortly.`,
+    {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🔄 Check Again", callback_data: "action:verifypayment" }],
+          [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ],
+      },
+    }
+  );
+}
+
+async function handleSubStatus(chatId: number): Promise<void> {
+  if (!bot) return;
+
+  const sub = await storage.getBotSubscriptionByChatId(chatId.toString());
+  if (!sub) {
+    await bot.sendMessage(chatId,
+      `📊 *Subscription Status*\n\nNo subscription found.\n\nGet started with a ${TRIAL_DAYS}-day free trial!`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+        [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+        [{ text: "« Menu", callback_data: "action:menu" }],
+      ]}}
+    );
+    return;
+  }
+
+  const now = new Date();
+  const isActive = sub.expiresAt && sub.expiresAt > now;
+  const daysLeft = isActive ? Math.ceil((sub.expiresAt!.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)) : 0;
+  const statusEmoji = isActive ? "✅" : "❌";
+  const statusText = sub.status === "trial" ? "Free Trial" : sub.status === "active" ? "Active" : "Expired";
+
+  let msg =
+    `📊 *Subscription Status*\n\n` +
+    `${statusEmoji} Status: *${statusText}*\n` +
+    `Wallet: \`${sub.walletAddress.substring(0, 8)}...${sub.walletAddress.substring(38)}\`\n`;
+
+  if (isActive) {
+    msg += `Expires: ${sub.expiresAt!.toISOString().split("T")[0]}\nDays left: ${daysLeft}\n`;
+  }
+  if (sub.txHash) {
+    msg += `Last TX: \`${sub.txHash.substring(0, 20)}...\`\n`;
+  }
+
+  const buttons: TelegramBot.InlineKeyboardButton[][] = [];
+  if (!isActive || sub.status === "trial") {
+    buttons.push([{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }]);
+  }
+  buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
+
+  await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+}
+
 function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.InlineKeyboardMarkup {
   return {
     inline_keyboard: [
@@ -788,7 +1054,7 @@ function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.I
       [{ text: "💎 Make Me Rich", callback_data: "action:trade" }, { text: "📈 Aster DEX", callback_data: "action:aster" }],
       [{ text: "🤖 Create Agent", callback_data: "action:newagent" }, { text: "📋 My Agents", callback_data: "action:myagents" }],
       [{ text: "📝 New Task", callback_data: "action:task" }, { text: "📊 My Tasks", callback_data: "action:mytasks" }],
-      [{ text: "👛 My Wallet", callback_data: "action:wallet" }],
+      [{ text: "👛 My Wallet", callback_data: "action:wallet" }, { text: "⭐ Premium", callback_data: "action:substatus" }],
       [{ text: "❓ Help & Commands", callback_data: "action:help" }],
     ]
   };
@@ -1010,6 +1276,34 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   await ensureWalletsLoaded(chatId);
+
+  if (PREMIUM_ACTIONS.has(data)) {
+    const subCheck = await checkSubscription(chatId);
+    if (!subCheck.allowed) {
+      const msg = subscriptionExpiredMessage();
+      await bot.sendMessage(chatId, msg.text, { parse_mode: "Markdown", reply_markup: msg.markup });
+      return;
+    }
+    if (subCheck.status === "trial" && subCheck.daysLeft !== undefined && subCheck.daysLeft <= 1) {
+      await bot.sendMessage(chatId,
+        `⏳ *Trial ending soon!* You have less than 1 day left.\n` +
+        `Subscribe now to keep full access.`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+          [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+        ]}}
+      );
+    }
+  }
+
+  if (data === "action:subscribe") {
+    return handleSubscribe(chatId);
+  }
+  if (data === "action:verifypayment") {
+    return handleVerifyPayment(chatId);
+  }
+  if (data === "action:substatus") {
+    return handleSubStatus(chatId);
+  }
 
   if (data === "action:gensolwallet") {
     await bot.sendMessage(chatId, "🟣 Generating Solana wallet...");
