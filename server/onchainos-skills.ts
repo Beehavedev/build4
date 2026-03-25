@@ -392,8 +392,9 @@ async function withFallbacks(
 }
 
 export async function executeSecurityScan(address: string, chain: string): Promise<any> {
-  return withFallbacks("okx_security", "security token-scan", { address, chain },
-    () => securityTokenScanAPI(address, chain));
+  const directResult = await securityTokenScanAPI(address, chain);
+  if (directResult?.success && directResult?.data) return directResult;
+  return withFallbacks("okx_security", "security token-scan", { address, chain });
 }
 
 export async function getSmartMoneySignals(chain: string, walletType?: string): Promise<any> {

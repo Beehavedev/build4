@@ -2630,7 +2630,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
             if (addr) {
               buyButtons.push([
                 { text: `⚡ Buy ${name}`, callback_data: `sigbuy:${i}:${chain}:${sigType}` },
-                { text: `🔒 Scan`, callback_data: `okxscan:${chain}:${addr.slice(0, 40)}` },
+                { text: `🔒 Scan`, callback_data: `sigscan:${i}:${chain}:${sigType}` },
               ]);
             }
           });
@@ -3006,13 +3006,61 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data.startsWith("sigscan:")) {
+    const parts = data.replace("sigscan:", "").split(":");
+    const sigIdx = parseInt(parts[0]);
+    const scanChain = parts[1];
+    const sigType = parts[2] || "smart_money";
+    const sigCacheKey = `sig_${chatId}_${scanChain}_${sigType}`;
+    const cache = (globalThis as any).__signalCache || {};
+    const items = cache[sigCacheKey] || [];
+    const token = items[sigIdx];
+    if (!token || !token.address) {
+      await bot.sendMessage(chatId, "Token not found. Signals may have expired — tap Refresh.", { reply_markup: { inline_keyboard: [[{ text: "🐋 Signals", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+    const resolvedAddr = token.address;
+    const tokenName = token.symbol || "token";
+    await bot.sendMessage(chatId, `🔒 Scanning *${tokenName}* \`${resolvedAddr.substring(0, 12)}...\` for risks...`, { parse_mode: "Markdown" });
+    try {
+      const result = await executeSecurityScan(resolvedAddr, scanChain);
+      if (result.success && result.data) {
+        const d = result.data;
+        let scanText = `🔒 *Security Scan: ${d.tokenSymbol || d.tokenName || tokenName}*\n\n`;
+        scanText += `Address:\n\`${resolvedAddr}\`\n\n`;
+        if (d.isHoneypot !== undefined) scanText += `🍯 Honeypot: ${d.isHoneypot ? "⚠️ *YES — DO NOT BUY*" : "✅ No"}\n`;
+        if (d.riskLevel) scanText += `⚡ Risk: ${d.riskLevel === "high" ? "🔴 HIGH" : d.riskLevel === "medium" ? "🟡 MEDIUM" : d.riskLevel === "low" ? "🟢 LOW" : "⚪ Unknown"}\n`;
+        if (d.buyTax !== undefined) scanText += `📥 Buy Tax: ${d.buyTax}%\n`;
+        if (d.sellTax !== undefined) scanText += `📤 Sell Tax: ${d.sellTax}%\n`;
+        if (d.isOpenSource !== undefined) scanText += `📄 Open Source: ${d.isOpenSource ? "✅ Yes" : "❌ No"}\n`;
+        if (d.isProxy !== undefined) scanText += `🔀 Proxy: ${d.isProxy ? "⚠️ Yes" : "✅ No"}\n`;
+        if (d.ownerCanMint !== undefined) scanText += `🖨️ Can Mint: ${d.ownerCanMint ? "⚠️ Yes" : "✅ No"}\n`;
+        if (d.holderCount) scanText += `👥 Holders: ${d.holderCount.toLocaleString()}\n`;
+        if (d.lpHolderCount) scanText += `💧 LP Holders: ${d.lpHolderCount}\n`;
+        if (d.risks && d.risks.length > 0) {
+          scanText += `\n⚠️ *Risks Found:*\n`;
+          d.risks.slice(0, 8).forEach((r: string) => { scanText += `• ${r}\n`; });
+        } else if (d.riskLevel === "low") {
+          scanText += `\n✅ No major risks detected\n`;
+        }
+        if (d.source) scanText += `\n_Source: ${d.source}_`;
+        await bot.sendMessage(chatId, scanText, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: `⚡ Buy ${tokenName}`, callback_data: `sigbuy:${sigIdx}:${scanChain}:${sigType}` }], [{ text: "🐋 Back to Signals", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      } else {
+        await bot.sendMessage(chatId, `Scan failed: ${result.error || "Could not retrieve security data for this token"}`, { reply_markup: { inline_keyboard: [[{ text: "🐋 Signals", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Scan error: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "🐋 Signals", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
+    return;
+  }
+
   if (data.startsWith("okxscan:") && !data.startsWith("okxscan_")) {
     const parts = data.replace("okxscan:", "").split(":");
     const scanChain = parts[0];
     const scanAddr = parts[1];
     if (!scanAddr) {
       pendingOKXScan.set(chatId, { step: "address", chain: scanChain });
-      await bot.sendMessage(chatId, "Enter the token contract address to scan (0x...):");
+      await bot.sendMessage(chatId, "Enter the token contract address to scan:");
       return;
     }
 
@@ -3032,17 +3080,22 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       if (result.success && result.data) {
         const d = result.data;
         let scanText = "🔒 *Security Scan Results*\n\n";
-        scanText += `Address: \`${resolvedAddr}\`\n\n`;
-        if (d.isHoneypot !== undefined) scanText += `Honeypot: ${d.isHoneypot ? "⚠️ YES" : "✅ No"}\n`;
-        if (d.riskLevel) scanText += `Risk Level: ${d.riskLevel === "high" ? "🔴 HIGH" : d.riskLevel === "medium" ? "🟡 MEDIUM" : "🟢 LOW"}\n`;
-        if (d.buyTax) scanText += `Buy Tax: ${d.buyTax}%\n`;
-        if (d.sellTax) scanText += `Sell Tax: ${d.sellTax}%\n`;
-        if (d.isOpenSource !== undefined) scanText += `Open Source: ${d.isOpenSource ? "✅" : "❌"}\n`;
-        if (d.isProxy !== undefined) scanText += `Proxy: ${d.isProxy ? "⚠️ Yes" : "✅ No"}\n`;
+        scanText += `Address:\n\`${resolvedAddr}\`\n\n`;
+        if (d.isHoneypot !== undefined) scanText += `🍯 Honeypot: ${d.isHoneypot ? "⚠️ *YES — DO NOT BUY*" : "✅ No"}\n`;
+        if (d.riskLevel) scanText += `⚡ Risk: ${d.riskLevel === "high" ? "🔴 HIGH" : d.riskLevel === "medium" ? "🟡 MEDIUM" : d.riskLevel === "low" ? "🟢 LOW" : "⚪ Unknown"}\n`;
+        if (d.buyTax !== undefined) scanText += `📥 Buy Tax: ${d.buyTax}%\n`;
+        if (d.sellTax !== undefined) scanText += `📤 Sell Tax: ${d.sellTax}%\n`;
+        if (d.isOpenSource !== undefined) scanText += `📄 Open Source: ${d.isOpenSource ? "✅ Yes" : "❌ No"}\n`;
+        if (d.isProxy !== undefined) scanText += `🔀 Proxy: ${d.isProxy ? "⚠️ Yes" : "✅ No"}\n`;
+        if (d.ownerCanMint !== undefined) scanText += `🖨️ Can Mint: ${d.ownerCanMint ? "⚠️ Yes" : "✅ No"}\n`;
+        if (d.holderCount) scanText += `👥 Holders: ${d.holderCount.toLocaleString()}\n`;
         if (d.risks && d.risks.length > 0) {
-          scanText += `\nRisks:\n`;
-          d.risks.slice(0, 5).forEach((r: string) => { scanText += `• ${r}\n`; });
+          scanText += `\n⚠️ *Risks Found:*\n`;
+          d.risks.slice(0, 8).forEach((r: string) => { scanText += `• ${r}\n`; });
+        } else if (d.riskLevel === "low") {
+          scanText += `\n✅ No major risks detected\n`;
         }
+        if (d.source) scanText += `\n_Source: ${d.source}_`;
         await bot.sendMessage(chatId, scanText, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🐋 Back to Signals", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
       } else {
         await bot.sendMessage(chatId, `Scan failed: ${result.error || "try again"}`, { reply_markup: { inline_keyboard: [[{ text: "🐋 Signals", callback_data: "action:okxsignals" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
@@ -3893,19 +3946,23 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       const result = await executeSecurityScan(addr, state.chain || "56");
       if (result.success && result.data) {
         const d = result.data;
-        let text = "🔒 *Security Scan Results*\n\n";
-        text += `Address: \`${addr}\`\n\n`;
-        if (d.isHoneypot !== undefined) text += `Honeypot: ${d.isHoneypot ? "⚠️ YES" : "✅ No"}\n`;
-        if (d.riskLevel) text += `Risk Level: ${d.riskLevel === "high" ? "🔴 HIGH" : d.riskLevel === "medium" ? "🟡 MEDIUM" : "🟢 LOW"}\n`;
-        if (d.buyTax) text += `Buy Tax: ${d.buyTax}%\n`;
-        if (d.sellTax) text += `Sell Tax: ${d.sellTax}%\n`;
-        if (d.isOpenSource !== undefined) text += `Open Source: ${d.isOpenSource ? "✅" : "❌"}\n`;
-        if (d.isProxy !== undefined) text += `Proxy Contract: ${d.isProxy ? "⚠️ Yes" : "✅ No"}\n`;
-        if (d.ownerCanMint !== undefined) text += `Can Mint: ${d.ownerCanMint ? "⚠️ Yes" : "✅ No"}\n`;
+        let text = `🔒 *Security Scan${d.tokenSymbol ? `: ${d.tokenSymbol}` : ""}*\n\n`;
+        text += `Address:\n\`${addr}\`\n\n`;
+        if (d.isHoneypot !== undefined) text += `🍯 Honeypot: ${d.isHoneypot ? "⚠️ *YES — DO NOT BUY*" : "✅ No"}\n`;
+        if (d.riskLevel) text += `⚡ Risk: ${d.riskLevel === "high" ? "🔴 HIGH" : d.riskLevel === "medium" ? "🟡 MEDIUM" : d.riskLevel === "low" ? "🟢 LOW" : "⚪ Unknown"}\n`;
+        if (d.buyTax !== undefined) text += `📥 Buy Tax: ${d.buyTax}%\n`;
+        if (d.sellTax !== undefined) text += `📤 Sell Tax: ${d.sellTax}%\n`;
+        if (d.isOpenSource !== undefined) text += `📄 Open Source: ${d.isOpenSource ? "✅ Yes" : "❌ No"}\n`;
+        if (d.isProxy !== undefined) text += `🔀 Proxy: ${d.isProxy ? "⚠️ Yes" : "✅ No"}\n`;
+        if (d.ownerCanMint !== undefined) text += `🖨️ Can Mint: ${d.ownerCanMint ? "⚠️ Yes" : "✅ No"}\n`;
+        if (d.holderCount) text += `👥 Holders: ${d.holderCount.toLocaleString()}\n`;
         if (d.risks && d.risks.length > 0) {
-          text += `\nRisks:\n`;
-          d.risks.slice(0, 5).forEach((r: string) => { text += `• ${r}\n`; });
+          text += `\n⚠️ *Risks Found:*\n`;
+          d.risks.slice(0, 8).forEach((r: string) => { text += `• ${r}\n`; });
+        } else if (d.riskLevel === "low") {
+          text += `\n✅ No major risks detected\n`;
         }
+        if (d.source) text += `\n_Source: ${d.source}_`;
         await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔒 Scan Another", callback_data: "action:okxsecurity" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
       } else {
         await bot.sendMessage(chatId, `Scan failed: ${result.error || "try again"}`, { reply_markup: { inline_keyboard: [[{ text: "🔒 Try Again", callback_data: "action:okxsecurity" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });

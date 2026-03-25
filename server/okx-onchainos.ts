@@ -492,10 +492,135 @@ export async function getLeaderboardAPI(chain: string, timeFrame?: string, sortB
 }
 
 export async function securityTokenScanAPI(address: string, chainId: string): Promise<any> {
-  return await okxRequest("GET", "/dex/market/token/advanced-info", {
-    chainIndex: chainId,
-    tokenContractAddress: address,
-  });
+  const chainMap: Record<string, string> = {
+    "56": "56", "1": "1", "137": "137", "42161": "42161",
+    "8453": "8453", "196": "196", "43114": "43114", "10": "10",
+    "501": "solana",
+  };
+  const gpChain = chainMap[chainId] || chainId;
+
+  try {
+    const isSolana = chainId === "501" || gpChain === "solana";
+    const gpUrl = isSolana
+      ? `https://api.gopluslabs.com/api/v1/solana/token_security?contract_addresses=${address}`
+      : `https://api.gopluslabs.com/api/v1/token_security/${gpChain}?contract_addresses=${address}`;
+    const gpRes = await fetch(gpUrl, { signal: AbortSignal.timeout(8000) });
+    if (gpRes.ok) {
+      const gpJson = await gpRes.json() as any;
+      const resultKey = Object.keys(gpJson?.result || {})[0];
+      const d = gpJson?.result?.[resultKey];
+      if (d) {
+        const risks: string[] = [];
+        if (d.is_mintable === "1") risks.push("Owner can mint new tokens");
+        if (d.can_take_back_ownership === "1") risks.push("Owner can reclaim ownership");
+        if (d.owner_change_balance === "1") risks.push("Owner can modify balances");
+        if (d.hidden_owner === "1") risks.push("Hidden owner detected");
+        if (d.selfdestruct === "1") risks.push("Contract can self-destruct");
+        if (d.external_call === "1") risks.push("External call risk");
+        if (d.is_blacklisted === "1") risks.push("Has blacklist function");
+        if (d.is_whitelisted === "1") risks.push("Has whitelist function");
+        if (d.trading_cooldown === "1") risks.push("Trading cooldown enabled");
+        if (d.transfer_pausable === "1") risks.push("Transfers can be paused");
+        if (d.cannot_sell_all === "1") risks.push("Cannot sell all tokens");
+        if (d.personal_slippage_modifiable === "1") risks.push("Per-address slippage modification");
+
+        const buyTax = d.buy_tax ? (parseFloat(d.buy_tax) * 100).toFixed(1) : undefined;
+        const sellTax = d.sell_tax ? (parseFloat(d.sell_tax) * 100).toFixed(1) : undefined;
+        const isHoneypot = d.is_honeypot === "1";
+        const highTax = (parseFloat(buyTax || "0") > 10 || parseFloat(sellTax || "0") > 10);
+        const riskLevel = isHoneypot ? "high" : (risks.length > 3 || highTax) ? "medium" : "low";
+
+        return {
+          success: true,
+          data: {
+            isHoneypot,
+            riskLevel,
+            buyTax,
+            sellTax,
+            isOpenSource: d.is_open_source === "1",
+            isProxy: d.is_proxy === "1",
+            ownerCanMint: d.is_mintable === "1",
+            canTakeBackOwnership: d.can_take_back_ownership === "1",
+            ownerChangeBalance: d.owner_change_balance === "1",
+            holderCount: d.holder_count ? parseInt(d.holder_count) : undefined,
+            lpHolderCount: d.lp_holder_count ? parseInt(d.lp_holder_count) : undefined,
+            totalSupply: d.total_supply,
+            tokenName: d.token_name,
+            tokenSymbol: d.token_symbol,
+            risks,
+            source: "GoPlus",
+          },
+        };
+      }
+    }
+  } catch {}
+
+  const honeypotChainMap: Record<string, string> = {
+    "56": "56", "1": "1", "8453": "8453", "42161": "42161", "137": "137", "43114": "43114", "10": "10",
+  };
+  const hpChainId = honeypotChainMap[chainId];
+  if (hpChainId) {
+    try {
+      const hpUrl = `https://api.honeypot.is/v2/IsHoneypot?address=${address}&chainID=${hpChainId}`;
+      const hpRes = await fetch(hpUrl, { signal: AbortSignal.timeout(8000) });
+      if (hpRes.ok) {
+        const hp = await hpRes.json() as any;
+        if (hp.simulationSuccess !== undefined) {
+          const risks: string[] = [];
+          if (hp.flags) hp.flags.forEach((f: any) => risks.push(f.description || f));
+          if (hp.contractCode?.isProxy) risks.push("Proxy contract detected");
+          if (hp.contractCode?.hasProxyCalls) risks.push("Has proxy calls");
+
+          const buyTax = hp.simulationResult?.buyTax !== undefined ? (hp.simulationResult.buyTax * 100).toFixed(1) : undefined;
+          const sellTax = hp.simulationResult?.sellTax !== undefined ? (hp.simulationResult.sellTax * 100).toFixed(1) : undefined;
+          const isHoneypot = hp.honeypotResult?.isHoneypot === true;
+          const riskStr = hp.summary?.risk || (isHoneypot ? "high" : "low");
+
+          return {
+            success: true,
+            data: {
+              isHoneypot,
+              riskLevel: riskStr,
+              buyTax,
+              sellTax,
+              isOpenSource: hp.contractCode?.openSource || false,
+              isProxy: hp.contractCode?.isProxy || false,
+              holderCount: hp.token?.totalHolders,
+              tokenName: hp.token?.name,
+              tokenSymbol: hp.token?.symbol,
+              risks,
+              source: "Honeypot.is",
+            },
+          };
+        }
+      }
+    } catch {}
+  }
+
+  try {
+    const okxResult = await okxRequest("GET", "/dex/market/token/advanced-info", {
+      chainIndex: chainId,
+      tokenContractAddress: address,
+    });
+    if (okxResult?.data) {
+      const d = Array.isArray(okxResult.data) ? okxResult.data[0] : okxResult.data;
+      return {
+        success: true,
+        data: {
+          riskLevel: "unknown",
+          tokenName: d?.tokenName || d?.name,
+          tokenSymbol: d?.tokenSymbol || d?.symbol,
+          price: d?.price,
+          marketCap: d?.marketCap,
+          volume24h: d?.volume24h,
+          liquidity: d?.liquidity,
+          source: "OKX",
+        },
+      };
+    }
+  } catch {}
+
+  return { success: false, error: "Could not scan token" };
 }
 
 export async function getGasPriceAPI(chainId: string): Promise<any> {
