@@ -4352,6 +4352,59 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "broadcast" && !isGroup) {
+      const adminChatId = process.env.ADMIN_CHAT_ID;
+      if (!adminChatId || chatId.toString() !== adminChatId) {
+        return;
+      }
+      const message = text.replace(/^\/broadcast\s*/i, "").trim();
+      if (!message) {
+        await bot.sendMessage(chatId, "Usage: /broadcast <message>\n\nThis sends to all registered users.");
+        return;
+      }
+      const allChatIds = Array.from(telegramWalletMap.keys());
+      let sent = 0;
+      let failed = 0;
+      await bot.sendMessage(chatId, `Broadcasting to ${allChatIds.length} users...`);
+      for (const targetChatId of allChatIds) {
+        try {
+          await bot.sendMessage(targetChatId, message, { parse_mode: "HTML", disable_web_page_preview: true });
+          sent++;
+          if (sent % 25 === 0) await new Promise(r => setTimeout(r, 1000));
+        } catch {
+          failed++;
+        }
+      }
+      await bot.sendMessage(chatId, `Broadcast complete: ${sent} sent, ${failed} failed (${allChatIds.length} total)`);
+      return;
+    }
+
+    if (cmd === "stats" && !isGroup) {
+      try {
+        const statsRes = await fetch(`http://localhost:${process.env.PORT || 5000}/api/platform/stats`);
+        const stats = await statsRes.json() as any;
+        const totalUsers = telegramWalletMap.size;
+        const revenueWei = BigInt(stats.totalRevenue || "0");
+        const revenueBNB = Number(revenueWei) / 1e18;
+        await bot.sendMessage(chatId,
+          `📊 <b>BUILD4 Platform Stats</b>\n\n` +
+          `👥 Telegram Users: <b>${totalUsers}</b>\n` +
+          `🤖 AI Agents: <b>${stats.agents || 0}</b>\n` +
+          `⛓️ On-Chain Agents: <b>${stats.onchainAgents || 0}</b>\n` +
+          `🔧 Skills: <b>${stats.skills || 0}</b>\n` +
+          `🛒 Skill Purchases: <b>${stats.skillPurchases || 0}</b>\n` +
+          `📝 Transactions: <b>${stats.transactions || 0}</b>\n` +
+          `💰 Revenue: <b>${revenueBNB.toFixed(4)} BNB</b>\n` +
+          `👛 Unique Wallets: <b>${stats.onchainUsers || 0}</b>\n\n` +
+          `🔗 Chains: BNB, Base, XLayer, Solana, Ethereum, Arbitrum, Polygon`,
+          { parse_mode: "HTML", reply_markup: mainMenuKeyboard() }
+        );
+      } catch {
+        await bot.sendMessage(chatId, "Could not fetch stats right now.", { reply_markup: mainMenuKeyboard() });
+      }
+      return;
+    }
+
     if (cmd === "agentstatus") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me to check agent status!"); return; }
       await ensureWallet(chatId);
