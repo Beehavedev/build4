@@ -2668,6 +2668,143 @@ ${urls}
   });
 
   // ============================================================
+  // Memory Integrity Verification (Tamper-Proof Hash Chain)
+  // ============================================================
+
+  app.get("/api/agents/:agentId/memory/verify", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const entries = await storage.getSoulEntries(agentId);
+      if (!entries || entries.length === 0) {
+        return res.json({ verified: true, agentId, totalEntries: 0, message: "No memory entries to verify" });
+      }
+
+      let brokenChainAt: number | null = null;
+      let totalHashed = 0;
+      let totalUnhashed = 0;
+
+      const sorted = [...entries].sort((a, b) =>
+        new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime()
+      );
+
+      for (let i = 0; i < sorted.length; i++) {
+        const entry = sorted[i];
+        if (!entry.integrityHash) {
+          totalUnhashed++;
+          continue;
+        }
+        totalHashed++;
+
+        if (entry.previousHash) {
+          if (i > 0) {
+            const prevEntry = sorted[i - 1];
+            if (prevEntry.integrityHash && entry.previousHash !== prevEntry.integrityHash) {
+              brokenChainAt = i;
+              break;
+            }
+          } else if (entry.previousHash !== "genesis") {
+            brokenChainAt = 0;
+            break;
+          }
+        }
+      }
+
+      const latestHash = sorted[sorted.length - 1]?.integrityHash || null;
+      const genesisHash = sorted.find(e => e.previousHash === "genesis")?.integrityHash || null;
+
+      res.json({
+        verified: brokenChainAt === null,
+        agentId,
+        totalEntries: entries.length,
+        hashedEntries: totalHashed,
+        unhashedEntries: totalUnhashed,
+        chainIntact: brokenChainAt === null,
+        brokenAt: brokenChainAt,
+        latestHash,
+        genesisHash,
+        hashAlgorithm: "SHA-256",
+        chainType: "linked-hash-chain",
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/agents/:agentId/memory/hashes", async (req: Request, res: Response) => {
+    try {
+      const { agentId } = req.params;
+      const entries = await storage.getSoulEntries(agentId);
+      const sorted = [...(entries || [])].sort((a, b) =>
+        new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime()
+      );
+      const hashes = sorted
+        .filter(e => e.integrityHash)
+        .map(e => ({
+          id: e.id,
+          entryType: e.entryType,
+          integrityHash: e.integrityHash,
+          previousHash: e.previousHash,
+          createdAt: e.createdAt,
+        }));
+      res.json({ agentId, totalEntries: entries?.length || 0, hashChain: hashes });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ============================================================
+  // Wallet Signature Authentication Middleware
+  // ============================================================
+
+  app.post("/api/auth/verify-signature", async (req: Request, res: Response) => {
+    try {
+      const { message, signature, walletAddress } = req.body;
+      if (!message || !signature || !walletAddress) {
+        return res.status(400).json({ error: "Missing message, signature, or walletAddress" });
+      }
+      const { ethers } = await import("ethers");
+      const recoveredAddress = ethers.verifyMessage(message, signature);
+      const authenticated = recoveredAddress.toLowerCase() === walletAddress.toLowerCase();
+
+      if (authenticated) {
+        const crypto = await import("crypto");
+        const sessionToken = crypto.randomBytes(32).toString("hex");
+        const expiry = Date.now() + 24 * 60 * 60 * 1000;
+
+        if (!(globalThis as any).__authSessions) (globalThis as any).__authSessions = new Map();
+        (globalThis as any).__authSessions.set(sessionToken, {
+          wallet: walletAddress.toLowerCase(),
+          expiry,
+        });
+
+        res.json({
+          authenticated: true,
+          wallet: recoveredAddress.toLowerCase(),
+          sessionToken,
+          expiresAt: new Date(expiry).toISOString(),
+        });
+      } else {
+        res.status(401).json({ authenticated: false, error: "Signature verification failed" });
+      }
+    } catch (e: any) {
+      res.status(400).json({ authenticated: false, error: e.message });
+    }
+  });
+
+  app.get("/api/auth/session", (req: Request, res: Response) => {
+    const token = req.headers["x-session-token"] as string;
+    if (!token) return res.status(401).json({ authenticated: false, error: "No session token" });
+
+    const sessions = (globalThis as any).__authSessions as Map<string, { wallet: string; expiry: number }> | undefined;
+    const session = sessions?.get(token);
+    if (!session || session.expiry < Date.now()) {
+      sessions?.delete(token);
+      return res.status(401).json({ authenticated: false, error: "Session expired or invalid" });
+    }
+    res.json({ authenticated: true, wallet: session.wallet, expiresAt: new Date(session.expiry).toISOString() });
+  });
+
+  // ============================================================
   // BAP-578 Non-Fungible Agent (NFA) Registry API
   // ============================================================
 

@@ -191,6 +191,8 @@ export const agentSoulEntries = pgTable("agent_soul_entries", {
   entryType: text("entry_type").notNull().default("reflection"),
   source: text("source").notNull().default("self"),
   metadata: text("metadata"),
+  integrityHash: text("integrity_hash"),
+  previousHash: text("previous_hash"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

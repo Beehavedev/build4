@@ -717,11 +717,25 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createSoulEntry(entry: InsertAgentSoulEntry): Promise<AgentSoulEntry> {
-    const [created] = await db.insert(agentSoulEntries).values(entry).returning();
+    const crypto = await import("crypto");
+    const previousEntries = await db.select({ integrityHash: agentSoulEntries.integrityHash })
+      .from(agentSoulEntries)
+      .where(eq(agentSoulEntries.agentId, entry.agentId))
+      .orderBy(desc(agentSoulEntries.createdAt))
+      .limit(1);
+    const prevHash = previousEntries[0]?.integrityHash || "genesis";
+    const payload = `${entry.agentId}:${entry.entry}:${entry.entryType}:${entry.source}:${prevHash}:${Date.now()}`;
+    const integrityHash = crypto.createHash("sha256").update(payload).digest("hex");
+
+    const [created] = await db.insert(agentSoulEntries).values({
+      ...entry,
+      integrityHash,
+      previousHash: prevHash,
+    }).returning();
     await this.createAuditLog({
       agentId: entry.agentId,
       actionType: "soul_entry",
-      detailsJson: JSON.stringify({ entryType: entry.entryType }),
+      detailsJson: JSON.stringify({ entryType: entry.entryType, integrityHash }),
       result: "success",
     });
     return created;
