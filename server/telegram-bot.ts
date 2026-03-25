@@ -3035,8 +3035,10 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         if (d.isOpenSource !== undefined) scanText += `📄 Open Source: ${d.isOpenSource ? "✅ Yes" : "❌ No"}\n`;
         if (d.isProxy !== undefined) scanText += `🔀 Proxy: ${d.isProxy ? "⚠️ Yes" : "✅ No"}\n`;
         if (d.ownerCanMint !== undefined) scanText += `🖨️ Can Mint: ${d.ownerCanMint ? "⚠️ Yes" : "✅ No"}\n`;
+        if (d.freezeAuthority !== undefined) scanText += `❄️ Freeze Auth: ${d.freezeAuthority ? "⚠️ Active" : "✅ None"}\n`;
         if (d.holderCount) scanText += `👥 Holders: ${d.holderCount.toLocaleString()}\n`;
         if (d.lpHolderCount) scanText += `💧 LP Holders: ${d.lpHolderCount}\n`;
+        if (d.liquidity) scanText += `💰 Liquidity: $${(d.liquidity / 1e6 >= 1 ? (d.liquidity / 1e6).toFixed(2) + "M" : (d.liquidity / 1e3).toFixed(0) + "K")}\n`;
         if (d.risks && d.risks.length > 0) {
           scanText += `\n⚠️ *Risks Found:*\n`;
           d.risks.slice(0, 8).forEach((r: string) => { scanText += `• ${r}\n`; });
@@ -3088,7 +3090,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         if (d.isOpenSource !== undefined) scanText += `📄 Open Source: ${d.isOpenSource ? "✅ Yes" : "❌ No"}\n`;
         if (d.isProxy !== undefined) scanText += `🔀 Proxy: ${d.isProxy ? "⚠️ Yes" : "✅ No"}\n`;
         if (d.ownerCanMint !== undefined) scanText += `🖨️ Can Mint: ${d.ownerCanMint ? "⚠️ Yes" : "✅ No"}\n`;
+        if (d.freezeAuthority !== undefined) scanText += `❄️ Freeze Auth: ${d.freezeAuthority ? "⚠️ Active" : "✅ None"}\n`;
         if (d.holderCount) scanText += `👥 Holders: ${d.holderCount.toLocaleString()}\n`;
+        if (d.liquidity) scanText += `💰 Liquidity: $${(d.liquidity / 1e6 >= 1 ? (d.liquidity / 1e6).toFixed(2) + "M" : (d.liquidity / 1e3).toFixed(0) + "K")}\n`;
         if (d.risks && d.risks.length > 0) {
           scanText += `\n⚠️ *Risks Found:*\n`;
           d.risks.slice(0, 8).forEach((r: string) => { scanText += `• ${r}\n`; });
@@ -3955,7 +3959,9 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         if (d.isOpenSource !== undefined) text += `📄 Open Source: ${d.isOpenSource ? "✅ Yes" : "❌ No"}\n`;
         if (d.isProxy !== undefined) text += `🔀 Proxy: ${d.isProxy ? "⚠️ Yes" : "✅ No"}\n`;
         if (d.ownerCanMint !== undefined) text += `🖨️ Can Mint: ${d.ownerCanMint ? "⚠️ Yes" : "✅ No"}\n`;
+        if (d.freezeAuthority !== undefined) text += `❄️ Freeze Auth: ${d.freezeAuthority ? "⚠️ Active" : "✅ None"}\n`;
         if (d.holderCount) text += `👥 Holders: ${d.holderCount.toLocaleString()}\n`;
+        if (d.liquidity) text += `💰 Liquidity: $${(d.liquidity / 1e6 >= 1 ? (d.liquidity / 1e6).toFixed(2) + "M" : (d.liquidity / 1e3).toFixed(0) + "K")}\n`;
         if (d.risks && d.risks.length > 0) {
           text += `\n⚠️ *Risks Found:*\n`;
           d.risks.slice(0, 8).forEach((r: string) => { text += `• ${r}\n`; });

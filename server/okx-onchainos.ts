@@ -555,6 +555,47 @@ export async function securityTokenScanAPI(address: string, chainId: string): Pr
     }
   } catch {}
 
+  if (chainId === "501" || gpChain === "solana") {
+    try {
+      const rcUrl = `https://api.rugcheck.xyz/v1/tokens/${address}/report/summary`;
+      const rcRes = await fetch(rcUrl, { signal: AbortSignal.timeout(8000) });
+      if (rcRes.ok) {
+        const rc = await rcRes.json() as any;
+        const risks: string[] = [];
+        if (rc.risks && Array.isArray(rc.risks)) {
+          rc.risks.forEach((r: any) => {
+            if (r.name || r.description) risks.push(r.description || r.name);
+          });
+        }
+        if (rc.mintAuthority) risks.push("Mint authority is active — new tokens can be minted");
+        if (rc.freezeAuthority) risks.push("Freeze authority is active — tokens can be frozen");
+
+        const score = rc.score_normalised || rc.score || 0;
+        const isHoneypot = rc.rugged === true;
+        const riskLevel = isHoneypot ? "high" : score >= 50000 ? "high" : score >= 10000 ? "medium" : "low";
+
+        return {
+          success: true,
+          data: {
+            isHoneypot,
+            riskLevel,
+            isOpenSource: true,
+            isProxy: false,
+            ownerCanMint: !!rc.mintAuthority,
+            freezeAuthority: !!rc.freezeAuthority,
+            holderCount: rc.totalHolders || undefined,
+            tokenName: rc.tokenMeta?.name || undefined,
+            tokenSymbol: rc.tokenMeta?.symbol || undefined,
+            liquidity: rc.totalMarketLiquidity || undefined,
+            rugScore: score,
+            risks,
+            source: "RugCheck",
+          },
+        };
+      }
+    } catch {}
+  }
+
   const honeypotChainMap: Record<string, string> = {
     "56": "56", "1": "1", "8453": "8453", "42161": "42161", "137": "137", "43114": "43114", "10": "10",
   };
