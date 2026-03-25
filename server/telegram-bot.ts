@@ -1323,18 +1323,25 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   if (data === "action:gensolwallet") {
     await bot.sendMessage(chatId, "🟣 Generating Solana wallet...");
     sendTyping(chatId);
-    const solWallet = await getOrCreateSolanaWallet(chatId);
-    const solPkMsg = await bot.sendMessage(chatId,
-      `🟣 *Solana Wallet Created!*\n\n` +
-      `Address:\n\`${solWallet.address}\`\n\n` +
-      `Private Key:\n\`${solWallet.privateKey}\`\n\n` +
-      `⚠️ *SAVE YOUR PRIVATE KEY NOW* — this message will be auto-deleted in 30 seconds.\n\n` +
-      `This wallet is used for cross-chain bridges to Solana.`,
-      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "👛 My Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
-    );
-    setTimeout(() => {
-      try { bot!.deleteMessage(chatId, solPkMsg.message_id); } catch {}
-    }, 30000);
+    try {
+      const solWallet = await getOrCreateSolanaWallet(chatId);
+      const solPkMsg = await bot.sendMessage(chatId,
+        `🟣 *Solana Wallet Created!*\n\n` +
+        `Address:\n\`${solWallet.address}\`\n\n` +
+        `Private Key:\n\`${solWallet.privateKey}\`\n\n` +
+        `⚠️ *SAVE YOUR PRIVATE KEY NOW* — this message will be auto-deleted in 30 seconds.\n\n` +
+        `This wallet is used for cross-chain bridges to Solana.`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "👛 My Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+      setTimeout(() => {
+        try { bot!.deleteMessage(chatId, solPkMsg.message_id); } catch {}
+      }, 30000);
+    } catch (e: any) {
+      console.error("[TelegramBot] Solana wallet generation error:", e.message);
+      await bot.sendMessage(chatId, `❌ Failed to generate Solana wallet: ${e.message?.substring(0, 100)}\n\nPlease try again.`,
+        { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:gensolwallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+    }
     return;
   }
 
