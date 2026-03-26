@@ -250,7 +250,7 @@ export default function Home() {
               <Link href="/token" className="text-xs text-primary font-mono tracking-wide font-semibold transition-colors" data-testid="link-token">$BUILD4</Link>
               <Link href="/onchainos" className="text-xs text-violet-400 font-mono tracking-wide transition-colors hover:text-violet-300" data-testid="link-onchainos">OnchainOS</Link>
               <Link href="/build" className="text-xs text-emerald-400 font-mono tracking-wide transition-colors hover:text-emerald-300" data-testid="link-build">Build</Link>
-              <Link href="/pricing" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors hover:text-foreground" data-testid="link-pricing">Telegram Bot</Link>
+              <Link href="/agentic_bot" className="text-xs text-muted-foreground font-mono tracking-wide transition-colors hover:text-foreground" data-testid="link-pricing">Telegram Bot</Link>
               <LanguageSwitcher />
               <Button size="sm" asChild data-testid="button-connect">
                 <Link href="/autonomous-economy">
@@ -280,7 +280,7 @@ export default function Home() {
               <Link href="/token" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-primary font-mono font-semibold" data-testid="link-token-mobile">$BUILD4</Link>
               <Link href="/onchainos" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-violet-400 font-mono" data-testid="link-onchainos-mobile">OnchainOS</Link>
               <Link href="/build" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-emerald-400 font-mono" data-testid="link-build-mobile">Build</Link>
-              <Link href="/pricing" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-pricing-mobile">Telegram Bot</Link>
+              <Link href="/agentic_bot" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-muted-foreground font-mono" data-testid="link-pricing-mobile">Telegram Bot</Link>
             </div>
           )}
         </nav>
