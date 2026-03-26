@@ -5131,10 +5131,20 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         return;
       }
       try {
-        const statsRes = await fetch(`http://localhost:${process.env.PORT || 5000}/api/platform/stats`);
-        const stats = await statsRes.json() as any;
         const totalUsers = telegramWalletMap.size;
-        const revenueWei = BigInt(stats.totalRevenue || "0");
+
+        let platformStats = { agents: 0, onchainAgents: 0, skills: 0, transactions: 0, onchainUsers: 0, totalRevenue: "0" };
+        try {
+          const statsRes = await fetch(`http://localhost:${process.env.PORT || 5000}/api/platform/stats`);
+          if (statsRes.ok) {
+            const contentType = statsRes.headers.get("content-type") || "";
+            if (contentType.includes("application/json")) {
+              platformStats = await statsRes.json() as any;
+            }
+          }
+        } catch {}
+
+        const revenueWei = BigInt(platformStats.totalRevenue || "0");
         const revenueBNB = Number(revenueWei) / 1e18;
 
         let subStats = { total: 0, active: 0, trial: 0, expired: 0 };
@@ -5160,7 +5170,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           `📊 <b>BUILD4 Admin Dashboard</b>\n\n` +
           `<b>👥 Users</b>\n` +
           `• Telegram Users: <b>${totalUsers}</b>\n` +
-          `• Unique Wallets: <b>${stats.onchainUsers || 0}</b>\n\n` +
+          `• Unique Wallets: <b>${platformStats.onchainUsers || 0}</b>\n\n` +
           `<b>⭐ Subscriptions</b>\n` +
           `• Total: <b>${subStats.total}</b>\n` +
           `• Active (paid): <b>${subStats.active}</b>\n` +
@@ -5175,10 +5185,10 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           `• Transaction fee: <b>${TRANSACTION_FEE_PERCENT}%</b>\n` +
           `• Free tier actions today: <b>${freeTierUsage.size} tracked</b>\n\n` +
           `<b>🤖 Platform</b>\n` +
-          `• AI Agents: <b>${stats.agents || 0}</b>\n` +
-          `• On-Chain Agents: <b>${stats.onchainAgents || 0}</b>\n` +
-          `• Skills: <b>${stats.skills || 0}</b>\n` +
-          `• Transactions: <b>${stats.transactions || 0}</b>\n` +
+          `• AI Agents: <b>${platformStats.agents || 0}</b>\n` +
+          `• On-Chain Agents: <b>${platformStats.onchainAgents || 0}</b>\n` +
+          `• Skills: <b>${platformStats.skills || 0}</b>\n` +
+          `• Transactions: <b>${platformStats.transactions || 0}</b>\n` +
           `• Revenue: <b>${revenueBNB.toFixed(4)} BNB</b>\n\n` +
           `🔗 Chains: BNB, Base, XLayer, Solana`,
           { parse_mode: "HTML", reply_markup: mainMenuKeyboard() }
