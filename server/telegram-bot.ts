@@ -951,6 +951,50 @@ async function handleSubscribe(chatId: number): Promise<void> {
       return;
     }
 
+    if (sub && sub.status === "trial" && sub.expiresAt && sub.expiresAt > new Date()) {
+      const daysLeft = Math.ceil((sub.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+      await bot.sendMessage(chatId,
+        `🎉 *Your free trial is active!*\n\n` +
+        `Days remaining: ${daysLeft}\n` +
+        `Expires: ${sub.expiresAt.toISOString().split("T")[0]}\n\n` +
+        `You have full access to all premium features.\n` +
+        `Subscribe before it expires to keep uninterrupted access.`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+          [{ text: `💳 Subscribe Now — $${BOT_PRICE_USD}/mo`, callback_data: "action:paynow" }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ]}}
+      );
+      return;
+    }
+
+    if (!sub) {
+      try {
+        await storage.createBotSubscription(wallet, chatId.toString());
+        subCache.delete(chatId);
+        log(`[Trial] Free trial activated for chatId=${chatId}, wallet=${wallet}`, "telegram");
+        await bot.sendMessage(chatId,
+          `🎉 *Your ${TRIAL_DAYS}-day free trial is now active!*\n\n` +
+          `You have full unlimited access to:\n` +
+          `• 🐋 Smart Money Signals\n` +
+          `• ⚡ Instant Buy & Sell\n` +
+          `• 🔄 DEX Swap & Bridge\n` +
+          `• 🔒 Security Scanner\n` +
+          `• 🔥 Trending & Meme Scanner\n` +
+          `• 💎 Autonomous Trading Agent\n` +
+          `• 🚀 Token Launcher\n\n` +
+          `Your trial expires in ${TRIAL_DAYS} days. Subscribe anytime to keep access.\n\n` +
+          `🔗 Share your referral link and earn 30-50% on every subscription!`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+            [{ text: "🚀 Start Trading", callback_data: "action:menu" }],
+            [{ text: "🔗 Get Referral Link", callback_data: "action:referral" }],
+          ]}}
+        );
+        return;
+      } catch (e: any) {
+        console.error("[Trial] Failed to create trial:", e.message);
+      }
+    }
+
     await bot.sendMessage(chatId,
       `💳 *BUILD4 Premium Subscription*\n\n` +
       `Price: *$${BOT_PRICE_USD} USDT/month*\n\n` +
@@ -1605,6 +1649,29 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:subscribe") {
     return handleSubscribe(chatId);
+  }
+  if (data === "action:paynow") {
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) {
+      await bot.sendMessage(chatId, "❌ You need a wallet first. Use /start to create one.",
+        { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+    await bot.sendMessage(chatId,
+      `💳 *BUILD4 Premium — $${BOT_PRICE_USD}/month*\n\n` +
+      `Send exactly *${BOT_PRICE_USD} USDT* to:\n\n` +
+      `\`${TREASURY_WALLET}\`\n\n` +
+      `✅ Accepted:\n` +
+      `• BNB Chain — USDT BEP-20\n` +
+      `• Base — USDC\n\n` +
+      `⚠️ Send from:\n\`${wallet}\`\n\n` +
+      `After sending, tap "✅ I've Paid" to verify.`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+        [{ text: "✅ I've Paid — Verify Now", callback_data: "action:verifypayment" }],
+        [{ text: "« Menu", callback_data: "action:menu" }],
+      ]}}
+    );
+    return;
   }
   if (data === "action:verifypayment") {
     return handleVerifyPayment(chatId);
