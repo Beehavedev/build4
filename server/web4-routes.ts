@@ -1497,11 +1497,11 @@ ${urls}
       if (!Number.isFinite(expNum) || !Number.isFinite(chatIdNum) || chatIdNum <= 0) {
         return res.status(400).json({ error: "Invalid parameters." });
       }
-      const now = Math.floor(Date.now() / 1000);
-      if (expNum < now) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (expNum < nowSec) {
         return res.status(403).json({ error: "Link expired. Request a new wallet link from the bot." });
       }
-      if (expNum > now + 660) {
+      if (expNum > nowSec + 660) {
         return res.status(403).json({ error: "Invalid expiry." });
       }
       if (typeof sig !== "string" || sig.length !== 16 || !/^[a-f0-9]{16}$/.test(sig)) {
