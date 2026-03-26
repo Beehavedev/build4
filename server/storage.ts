@@ -77,9 +77,27 @@ import {
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt, inArray } from "drizzle-orm";
 import { runInference, isProviderLive, getProviderStatus } from "./inference";
-import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypto";
+import { createCipheriv, createDecipheriv, randomBytes, createHash, pbkdf2Sync } from "crypto";
 
+const PBKDF2_ITERATIONS = 100_000;
+const PBKDF2_SALT = "build4-platform-v2";
+
+let _cachedEncKey: Buffer | null = null;
 function getEncryptionKey(): Buffer {
+  if (_cachedEncKey) return _cachedEncKey;
+  const seed = process.env.WALLET_ENCRYPTION_KEY || process.env.DEPLOYER_PRIVATE_KEY || process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DATABASE_URL || "";
+  if (!seed) {
+    console.error("[SECURITY] CRITICAL: No encryption key configured! Set WALLET_ENCRYPTION_KEY env var.");
+    throw new Error("Encryption key not configured");
+  }
+  if (seed.length < 16) {
+    console.warn("[SECURITY] WARNING: Encryption key is very short. Use a strong key with 32+ characters.");
+  }
+  _cachedEncKey = pbkdf2Sync(seed, PBKDF2_SALT, PBKDF2_ITERATIONS, 32, "sha512");
+  return _cachedEncKey;
+}
+
+function getEncryptionKeyLegacy(): Buffer {
   const seed = process.env.WALLET_ENCRYPTION_KEY || process.env.DEPLOYER_PRIVATE_KEY || process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DATABASE_URL || "build4-default-encryption-key-change-me";
   return createHash("sha256").update(seed).digest();
 }
@@ -95,17 +113,31 @@ function encryptPrivateKey(plaintext: string): string {
 }
 
 function decryptPrivateKey(ciphertext: string): string {
-  const key = getEncryptionKey();
   const parts = ciphertext.split(":");
   if (parts.length !== 3) return ciphertext;
   const iv = Buffer.from(parts[0], "hex");
   const tag = Buffer.from(parts[1], "hex");
   const encrypted = parts[2];
-  const decipher = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
-  decipher.setAuthTag(tag);
-  let decrypted = decipher.update(encrypted, "hex", "utf8");
-  decrypted += decipher.final("utf8");
-  return decrypted;
+  try {
+    const key = getEncryptionKey();
+    const decipher = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+    decipher.setAuthTag(tag);
+    let decrypted = decipher.update(encrypted, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
+  } catch {
+    try {
+      const legacyKey = getEncryptionKeyLegacy();
+      const decipher = createDecipheriv("aes-256-gcm", legacyKey, iv, { authTagLength: 16 });
+      decipher.setAuthTag(tag);
+      let decrypted = decipher.update(encrypted, "hex", "utf8");
+      decrypted += decipher.final("utf8");
+      console.warn("[SECURITY] Decrypted with legacy key — re-encrypt recommended");
+      return decrypted;
+    } catch {
+      throw new Error("Decryption failed — encryption key mismatch");
+    }
+  }
 }
 
 const SURVIVAL_THRESHOLDS = {

@@ -269,6 +269,65 @@ const RATE_LIMIT_MS = 3000;
 const answerCache = new Map<string, { answer: string; time: number }>();
 const ANSWER_CACHE_MS = 300_000;
 
+const failedVerificationAttempts = new Map<number, { count: number; lockedUntil: number }>();
+const MAX_VERIFY_ATTEMPTS = 3;
+const VERIFY_LOCKOUT_MS = 15 * 60 * 1000;
+const sensitiveMessageIds = new Map<number, number[]>();
+const securityAuditLog: Array<{ ts: number; chatId: number; action: string; detail: string }> = [];
+const MAX_AUDIT_LOG = 500;
+
+function auditLog(chatId: number, action: string, detail: string): void {
+  const entry = { ts: Date.now(), chatId, action, detail };
+  securityAuditLog.push(entry);
+  if (securityAuditLog.length > MAX_AUDIT_LOG) securityAuditLog.shift();
+  console.log(`[SECURITY AUDIT] ${action} | chatId=${chatId} | ${detail}`);
+}
+
+function isVerificationLocked(chatId: number): boolean {
+  const record = failedVerificationAttempts.get(chatId);
+  if (!record) return false;
+  if (Date.now() < record.lockedUntil) return true;
+  failedVerificationAttempts.delete(chatId);
+  return false;
+}
+
+function recordFailedVerification(chatId: number): { locked: boolean; remaining: number } {
+  const record = failedVerificationAttempts.get(chatId) || { count: 0, lockedUntil: 0 };
+  record.count++;
+  if (record.count >= MAX_VERIFY_ATTEMPTS) {
+    record.lockedUntil = Date.now() + VERIFY_LOCKOUT_MS;
+    failedVerificationAttempts.set(chatId, record);
+    auditLog(chatId, "LOCKOUT", `Account locked for ${VERIFY_LOCKOUT_MS / 60000}min after ${MAX_VERIFY_ATTEMPTS} failed attempts`);
+    return { locked: true, remaining: 0 };
+  }
+  failedVerificationAttempts.set(chatId, record);
+  return { locked: false, remaining: MAX_VERIFY_ATTEMPTS - record.count };
+}
+
+async function deleteMessageSafely(chatId: number, messageId: number): Promise<void> {
+  try { await bot?.deleteMessage(chatId, messageId); } catch {}
+}
+
+function scheduleSecureDelete(chatId: number, messageId: number, delayMs: number): void {
+  const existing = sensitiveMessageIds.get(chatId) || [];
+  existing.push(messageId);
+  sensitiveMessageIds.set(chatId, existing);
+  setTimeout(async () => {
+    await deleteMessageSafely(chatId, messageId);
+    const msgs = sensitiveMessageIds.get(chatId) || [];
+    sensitiveMessageIds.set(chatId, msgs.filter(id => id !== messageId));
+  }, delayMs);
+}
+
+function sanitizeInput(input: string): string {
+  return input.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "").trim().substring(0, 2000);
+}
+
+function maskAddress(addr: string): string {
+  if (addr.length < 10) return "***";
+  return addr.substring(0, 6) + "..." + addr.substring(addr.length - 4);
+}
+
 function isTelegramConfigured(): boolean {
   return !!process.env.TELEGRAM_BOT_TOKEN;
 }
@@ -793,6 +852,7 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
   const wallet = ethers.Wallet.createRandom();
   const addr = wallet.address.toLowerCase();
   const pk = wallet.privateKey;
+  auditLog(chatId, "WALLET_CREATE", `New EVM wallet generated: ${maskAddress(addr)}`);
 
   const existing = telegramWalletMap.get(chatId);
   if (existing) {
@@ -1931,6 +1991,14 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   if (data === "action:exportkey") {
+    if (isVerificationLocked(chatId)) {
+      const record = failedVerificationAttempts.get(chatId)!;
+      const minsLeft = Math.ceil((record.lockedUntil - Date.now()) / 60000);
+      await bot.sendMessage(chatId, `🔒 *Account locked* for ${minsLeft} more minute${minsLeft === 1 ? "" : "s"} due to failed verification attempts.\n\nTry again later.`,
+        { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+      return;
+    }
+    auditLog(chatId, "EXPORT_REQUEST", "Private key export initiated");
     const wallets = getUserWallets(chatId);
     if (wallets.length === 0) {
       await bot.sendMessage(chatId, "No wallets found. Use /wallet to create one first.", { reply_markup: mainMenuKeyboard() });
@@ -1992,11 +2060,19 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   if (data === "action:exportsolkey") {
+    if (isVerificationLocked(chatId)) {
+      const record = failedVerificationAttempts.get(chatId)!;
+      const minsLeft = Math.ceil((record.lockedUntil - Date.now()) / 60000);
+      await bot.sendMessage(chatId, `🔒 *Account locked* for ${minsLeft} more minute${minsLeft === 1 ? "" : "s"} due to failed verification attempts.\n\nTry again later.`,
+        { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+      return;
+    }
     const solWallet = solanaWalletMap.get(chatId);
     if (!solWallet) {
       await bot.sendMessage(chatId, "No Solana wallet found.", { reply_markup: mainMenuKeyboard() });
       return;
     }
+    auditLog(chatId, "EXPORT_REQUEST_SOL", `Solana key export initiated for ${maskAddress(solWallet.address)}`);
     const code = Math.floor(1000 + Math.random() * 9000).toString();
     pendingExportVerification.set(chatId, { walletIdx: -1, code, expiresAt: Date.now() + 60000, type: "sol" });
     await bot.sendMessage(chatId,
@@ -4367,6 +4443,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const result = await fourMemeBuyToken(tokenAddress, state.bnbAmount, 5, userPk);
 
     if (result.success) {
+      auditLog(chatId, "TRADE_BUY", `Buy ${state.bnbAmount} BNB on token ${maskAddress(tokenAddress)} tx=${result.txHash?.substring(0, 16)}`);
       let feeMsg = "";
       try {
         const feeResult = await collectTradeFee(userPk, state.bnbAmount, TRANSACTION_FEE_PERCENT);
@@ -4669,24 +4746,34 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
 
   if (pendingExportVerification.has(chatId) && !text.startsWith("/")) {
+    if (isVerificationLocked(chatId)) {
+      pendingExportVerification.delete(chatId);
+      const record = failedVerificationAttempts.get(chatId)!;
+      const minsLeft = Math.ceil((record.lockedUntil - Date.now()) / 60000);
+      await bot.sendMessage(chatId, `🔒 *Account locked* for ${minsLeft} more minute${minsLeft === 1 ? "" : "s"} due to failed verification attempts.\n\nTry again later.`,
+        { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+      return;
+    }
     const verification = pendingExportVerification.get(chatId)!;
     if (Date.now() > verification.expiresAt) {
       pendingExportVerification.delete(chatId);
+      auditLog(chatId, "EXPORT_EXPIRED", "Verification code expired");
       await bot.sendMessage(chatId, "⏰ Verification code expired. Please try again from the wallet menu.",
         { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }]] } });
       return;
     }
     if (text.trim() === verification.code) {
       pendingExportVerification.delete(chatId);
+      failedVerificationAttempts.delete(chatId);
 
       const exportKey = `export:${chatId}`;
       const now = Date.now();
       const exportWindow = 60 * 60 * 1000;
-      const maxExports = 5;
+      const maxExports = 3;
       const exportAttempts = (exportRateLimits.get(exportKey) || []).filter((t: number) => now - t < exportWindow);
       if (exportAttempts.length >= maxExports) {
-        log(`[AUDIT] BLOCKED export — rate limit hit. chatId=${chatId}, attempts=${exportAttempts.length}`, "security");
-        await bot.sendMessage(chatId, "🚫 Too many export attempts. For security, exports are limited to 5 per hour.",
+        auditLog(chatId, "EXPORT_BLOCKED", `Rate limit hit — ${exportAttempts.length} attempts in 1h`);
+        await bot.sendMessage(chatId, "🚫 Too many export attempts. For security, exports are limited to 3 per hour.",
           { reply_markup: mainMenuKeyboard() });
         return;
       }
@@ -4699,21 +4786,20 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           await bot.sendMessage(chatId, "Solana wallet key not found.", { reply_markup: mainMenuKeyboard() });
           return;
         }
-        log(`[AUDIT] SOL key export — chatId=${chatId}, wallet=${solWallet.address.substring(0, 10)}`, "security");
+        auditLog(chatId, "KEY_EXPORT_SOL", `wallet=${maskAddress(solWallet.address)}`);
         const msg2 = await bot.sendMessage(chatId,
           `🟣 *Solana Private Key*\n\n` +
           `Address: \`${solWallet.address}\`\n\n` +
           `\`${solWallet.privateKey}\`\n\n` +
-          `⚠️ This message will be auto-deleted in 60 seconds. Copy it now.\n` +
+          `⚠️ This message will be auto-deleted in 30 seconds. Copy it NOW.\n` +
+          `🔒 Never share your private key with anyone.\n` +
           `Import this key into Phantom, Solflare, or any Solana wallet.`,
           { parse_mode: "Markdown" }
         );
+        scheduleSecureDelete(chatId, msg2.message_id, 30000);
         setTimeout(async () => {
-          try {
-            await bot.deleteMessage(chatId, msg2.message_id);
-            await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard() });
-          } catch {}
-        }, 60000);
+          await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard() });
+        }, 31000);
       } else {
         const wallets = getUserWallets(chatId);
         const walletAddr = wallets[verification.walletIdx];
@@ -4721,7 +4807,12 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           await bot.sendMessage(chatId, "Wallet not found.", { reply_markup: mainMenuKeyboard() });
           return;
         }
-        const pk = await storage.getTelegramWalletPrivateKey(String(chatId), walletAddr);
+        let pk: string | null = null;
+        try {
+          pk = await storage.getTelegramWalletPrivateKey(String(chatId), walletAddr);
+        } catch (e: any) {
+          auditLog(chatId, "DECRYPT_FAIL", `wallet=${maskAddress(walletAddr)} error=${e.message}`);
+        }
         if (!pk) {
           await bot.sendMessage(chatId,
             `❌ *Could not retrieve private key.*\n\n` +
@@ -4736,26 +4827,33 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           );
           return;
         }
-        log(`[AUDIT] EVM key export — chatId=${chatId}, wallet=${shortWallet(walletAddr)}`, "security");
+        auditLog(chatId, "KEY_EXPORT_EVM", `wallet=${maskAddress(walletAddr)}`);
         const msg2 = await bot.sendMessage(chatId,
           `🔐 *Private Key*\n\n` +
           `Address: \`${walletAddr}\`\n\n` +
           `\`${pk}\`\n\n` +
-          `⚠️ This message will be auto-deleted in 60 seconds. Copy it now.\n` +
+          `⚠️ This message will be auto-deleted in 30 seconds. Copy it NOW.\n` +
+          `🔒 Never share your private key with anyone.\n` +
           `Import this key into MetaMask, Trust Wallet, or any EVM wallet.`,
           { parse_mode: "Markdown" }
         );
+        scheduleSecureDelete(chatId, msg2.message_id, 30000);
         setTimeout(async () => {
-          try {
-            await bot.deleteMessage(chatId, msg2.message_id);
-            await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard() });
-          } catch {}
-        }, 60000);
+          await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard() });
+        }, 31000);
       }
       return;
     } else {
-      await bot.sendMessage(chatId, "❌ Wrong code. Try again or go back to the wallet menu.",
-        { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }]] } });
+      const result = recordFailedVerification(chatId);
+      if (result.locked) {
+        pendingExportVerification.delete(chatId);
+        await bot.sendMessage(chatId,
+          `🔒 *Account locked for 15 minutes*\n\nToo many wrong verification codes. This is a security measure to protect your wallet.\n\nTry again later.`,
+          { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+      } else {
+        await bot.sendMessage(chatId, `❌ Wrong code. ${result.remaining} attempt${result.remaining === 1 ? "" : "s"} remaining before lockout.\n\nTry again or go back to the wallet menu.`,
+          { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }]] } });
+      }
       return;
     }
   }
@@ -5434,6 +5532,23 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "auditlog" && !isGroup) {
+      const adminChatIdAudit = process.env.ADMIN_CHAT_ID;
+      if (!adminChatIdAudit || chatId.toString() !== adminChatIdAudit) return;
+      const recent = securityAuditLog.slice(-20).reverse();
+      if (recent.length === 0) {
+        await bot.sendMessage(chatId, "No security audit events yet.");
+        return;
+      }
+      let text = `🔒 <b>Security Audit Log</b> (last ${recent.length})\n\n`;
+      for (const e of recent) {
+        const time = new Date(e.ts).toISOString().replace("T", " ").substring(0, 19);
+        text += `<code>${time}</code>\n<b>${e.action}</b> | user ${e.chatId}\n${e.detail}\n\n`;
+      }
+      await bot.sendMessage(chatId, text, { parse_mode: "HTML" });
+      return;
+    }
+
     if (cmd === "agentstatus") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me to check agent status!"); return; }
       await ensureWallet(chatId);
@@ -6042,7 +6157,7 @@ function shouldIgnoreMessage(text: string, msg: TelegramBot.Message): boolean {
 
 async function handleImportWalletFlow(chatId: number, text: string): Promise<void> {
   if (!bot) return;
-  const input = text.trim();
+  const input = sanitizeInput(text);
 
   if (/^0x[a-fA-F0-9]{64}$/i.test(input)) {
     try {
@@ -6050,9 +6165,12 @@ async function handleImportWalletFlow(chatId: number, text: string): Promise<voi
       const addr = wallet.address.toLowerCase();
       linkTelegramWallet(chatId, addr, input);
       pendingImportWallet.delete(chatId);
+      auditLog(chatId, "WALLET_IMPORT", `EVM wallet imported: ${maskAddress(addr)}`);
 
       await bot.sendMessage(chatId,
-        `✅ Wallet imported!\n\nAddress: \`${addr}\``,
+        `✅ Wallet imported!\n\nAddress: \`${addr}\`\n\n` +
+        `⚠️ *Delete your private key from this chat for safety!*\n` +
+        `Tap and hold the message above → Delete`,
         { parse_mode: "Markdown" }
       );
       await bot.sendMessage(chatId,
@@ -6069,6 +6187,7 @@ async function handleImportWalletFlow(chatId: number, text: string): Promise<voi
     const addr = input.toLowerCase();
     linkTelegramWallet(chatId, addr);
     pendingImportWallet.delete(chatId);
+    auditLog(chatId, "WALLET_LINK", `View-only wallet linked: ${maskAddress(addr)}`);
 
     await bot.sendMessage(chatId,
       `✅ Wallet linked (view-only)!\n\nAddress: \`${addr}\``,
@@ -8074,6 +8193,7 @@ async function handleAsterConnectFlow(chatId: number, text: string): Promise<voi
 
       await storage.saveAsterCredentials(chatId.toString(), state.apiKey!, input);
       pendingAsterConnect.delete(chatId);
+      auditLog(chatId, "ASTER_CONNECT", "Aster DEX API credentials stored");
 
       await bot.sendMessage(chatId,
         "Aster DEX account connected! Your API credentials are stored securely (encrypted).\n\n" +
