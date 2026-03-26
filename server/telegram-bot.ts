@@ -216,8 +216,8 @@ STANDARDS (INDUSTRY-FIRST):
 - BAP-578 (Non-Fungible Agent): BNB Chain's NFA token standard extending ERC-721 for autonomous digital entities. BUILD4's registry is live on BNB Chain mainnet at 0xd7Deb29ddBB13607375Ce50405A574AC2f7d978d.
 
 BUILT-IN TRADING & BRIDGING:
-- OKX DEX Swap: Swap tokens on any chain (BNB Chain, Ethereum, Base, Polygon, Arbitrum, Avalanche, Optimism, XLayer, and more) directly from Telegram. Just type "swap 1 BNB for USDT" or use the swap menu.
-- OKX Cross-Chain Bridge: Bridge assets between any supported chains directly from Telegram. Just type "bridge 1 ETH from Ethereum to Base" or use the bridge menu.
+- DEX Swap: Swap tokens on any chain (BNB Chain, Ethereum, Base, Polygon, Arbitrum, Avalanche, Optimism, XLayer, and more) directly from Telegram. Just type "swap 1 BNB for USDT" or use the swap menu.
+- Cross-Chain Bridge: Bridge assets between any supported chains directly from Telegram. Just type "bridge 1 ETH from Ethereum to Base" or use the bridge menu.
 - Token launching: Launch tokens on Four.meme, Flap.sh, and Bankr directly from Telegram.
 - BUILD4 IS a trading platform — users can swap, bridge, and trade directly through the bot and dashboard.
 
@@ -427,7 +427,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
   if (lower.includes("contract") || lower.includes("smart contract"))
     return "BUILD4 has 4 core contracts: AgentEconomyHub (wallets), SkillMarketplace (skill trading), AgentReplication (forking + NFTs), and ConstitutionRegistry (immutable agent laws).";
   if (lower.includes("token") && (lower.includes("launch") || lower.includes("create")))
-    return "You can launch tokens on Four.meme, Flap.sh (BNB Chain), XLayer (OKX), or Bankr (Base/Solana) right here in the bot! Use /launch or tap '🚀 Launch Token' from the menu.";
+    return "You can launch tokens on Four.meme, Flap.sh (BNB Chain), XLayer, or Bankr (Base/Solana) right here in the bot! Use /launch or tap '🚀 Launch Token' from the menu.";
   if (lower.includes("agent") && (lower.includes("create") || lower.includes("make") || lower.includes("new")))
     return "Create an AI agent with /newagent — give it a name, bio, and pick a model (Llama 70B, DeepSeek V3, or Qwen 72B). Your agent gets its own wallet and can trade skills, earn BNB, and evolve autonomously.";
   if (lower.includes("how") && lower.includes("start"))
@@ -444,7 +444,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
     return "Hey! Welcome to BUILD4 — decentralized infrastructure for autonomous AI agents. What can I help you with? Try /help to see all commands.";
   }
   if (lower.includes("help") || lower.includes("command"))
-    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — OKX DEX swap (multi-chain)\n🌉 /bridge — OKX cross-chain bridge\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
+    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — Swap (multi-chain)\n🌉 /bridge — Cross-chain bridge\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
   if (lower.includes("thank"))
     return "You're welcome! Let me know if you need anything else. 🤝";
 
@@ -1351,7 +1351,7 @@ function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.I
     inline_keyboard: [
       [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
       [{ text: "💰 Buy Token", callback_data: "action:buy" }, { text: "💸 Sell Token", callback_data: "action:sell" }],
-      [{ text: "🔄 OKX Swap", callback_data: "action:okxswap" }, { text: "🌉 Bridge", callback_data: "action:okxbridge" }],
+      [{ text: "🔄 Swap", callback_data: "action:okxswap" }, { text: "🌉 Bridge", callback_data: "action:okxbridge" }],
       [{ text: "🐋 Signals", callback_data: "action:okxsignals" }, { text: "🔒 Security", callback_data: "action:okxsecurity" }],
       [{ text: "🔥 Trending", callback_data: "action:okxtrending" }, { text: "🐸 Meme Scanner", callback_data: "action:okxmeme" }],
       [{ text: "📊 Token Price", callback_data: "action:okxprice" }, { text: "⛽ Gas", callback_data: "action:okxgas" }],
@@ -1501,8 +1501,8 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
     bot.setMyCommands([
       { command: "start", description: "Start BUILD4 and create a wallet" },
       { command: "launch", description: "Launch a token on Four.meme or Flap.sh" },
-      { command: "swap", description: "OKX DEX swap on any chain" },
-      { command: "bridge", description: "OKX cross-chain bridge" },
+      { command: "swap", description: "Swap tokens on any chain" },
+      { command: "bridge", description: "Cross-chain bridge" },
       { command: "signals", description: "Smart money & whale buy signals" },
       { command: "scan", description: "Security scanner (honeypot check)" },
       { command: "trending", description: "Hot & trending tokens" },
@@ -1798,7 +1798,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId,
       "Commands:\n\n" +
       "🚀 /launch — Launch a token\n" +
-      "🔄 /swap — OKX DEX swap\n" +
+      "🔄 /swap — Swap tokens\n" +
       "🌉 /bridge — Cross-chain bridge\n" +
       "🐋 /signals — Smart money signals\n" +
       "🔒 /scan — Security scanner\n" +
