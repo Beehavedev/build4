@@ -669,6 +669,7 @@ function recordFreeTierUsage(chatId: number, action: string): void {
 
 const TRANSACTION_FEE_PERCENT = 1.0;
 const trialRemindersSent = new Set<string>();
+const pendingExportVerification = new Map<number, { walletIdx: number; code: string; expiresAt: number; type: "evm" | "sol" }>();
 
 const subCache = new Map<number, { status: string; expiresAt: Date | null; checkedAt: number }>();
 
@@ -1799,6 +1800,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       walletButtons.push([{ text: "🟣 Generate SOL Wallet", callback_data: "action:gensolwallet" }]);
     }
     walletButtons.push([{ text: "🔐 Export Private Key", callback_data: "action:exportkey" }]);
+    if (solWallet) {
+      walletButtons.push([{ text: "🟣 Export SOL Key", callback_data: "action:exportsolkey" }]);
+    }
     walletButtons.push([{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }, { text: "◀️ Menu", callback_data: "action:menu" }]);
 
     await bot.sendMessage(chatId, text, {
@@ -1862,75 +1866,95 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       await bot.sendMessage(chatId, "No wallets found. Use /wallet to create one first.", { reply_markup: mainMenuKeyboard() });
       return;
     }
-    const activeIdx = getActiveWalletIndex(chatId);
-    const activeWallet = wallets[activeIdx] || wallets[0];
+    const evmWallets = wallets.filter(w => /^0x[a-fA-F0-9]{40}$/.test(w));
+    if (evmWallets.length === 0) {
+      await bot.sendMessage(chatId, "No EVM wallets found. Use /wallet to create one.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+    if (evmWallets.length === 1) {
+      const idx = wallets.indexOf(evmWallets[0]);
+      const code = Math.floor(1000 + Math.random() * 9000).toString();
+      pendingExportVerification.set(chatId, { walletIdx: idx, code, expiresAt: Date.now() + 60000, type: "evm" });
+      await bot.sendMessage(chatId,
+        `🔐 *Private Key Export Verification*\n\n` +
+        `Wallet: \`${evmWallets[0]}\`\n\n` +
+        `⚠️ Your private key gives *FULL control* of this wallet.\n` +
+        `Never share it with anyone. BUILD4 will never ask for it.\n\n` +
+        `To confirm, type this 4-digit code:\n\n` +
+        `🔢 \`${code}\`\n\n` +
+        `_This code expires in 60 seconds._`,
+        { parse_mode: "Markdown" }
+      );
+    } else {
+      const buttons = evmWallets.map((w, i) => {
+        const idx = wallets.indexOf(w);
+        return [{ text: `${shortWallet(w)}`, callback_data: `selectexport:${idx}` }];
+      });
+      buttons.push([{ text: "❌ Cancel", callback_data: "action:wallet" }]);
+      await bot.sendMessage(chatId,
+        `🔐 *Which wallet's private key do you want to export?*`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } }
+      );
+    }
+    return;
+  }
+
+  if (data.startsWith("selectexport:")) {
+    const idx = parseInt(data.split(":")[1]);
+    const wallets = getUserWallets(chatId);
+    if (idx < 0 || idx >= wallets.length) {
+      await bot.sendMessage(chatId, "Invalid wallet.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    pendingExportVerification.set(chatId, { walletIdx: idx, code, expiresAt: Date.now() + 60000, type: "evm" });
     await bot.sendMessage(chatId,
-      `⚠️ *WARNING: You are about to reveal your private key.*\n\n` +
-      `Wallet: \`${activeWallet}\`\n\n` +
-      `Your private key gives FULL control of this wallet. Never share it with anyone.\n\n` +
-      `Are you sure?`,
-      {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "✅ Yes, show my private key", callback_data: `confirmexport:${activeIdx}` }],
-            [{ text: "❌ Cancel", callback_data: "action:wallet" }],
-          ]
-        }
-      }
+      `🔐 *Private Key Export Verification*\n\n` +
+      `Wallet: \`${wallets[idx]}\`\n\n` +
+      `⚠️ Your private key gives *FULL control* of this wallet.\n` +
+      `Never share it with anyone. BUILD4 will never ask for it.\n\n` +
+      `To confirm, type this 4-digit code:\n\n` +
+      `🔢 \`${code}\`\n\n` +
+      `_This code expires in 60 seconds._`,
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  if (data === "action:exportsolkey") {
+    const solWallet = solanaWalletMap.get(chatId);
+    if (!solWallet) {
+      await bot.sendMessage(chatId, "No Solana wallet found.", { reply_markup: mainMenuKeyboard() });
+      return;
+    }
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    pendingExportVerification.set(chatId, { walletIdx: -1, code, expiresAt: Date.now() + 60000, type: "sol" });
+    await bot.sendMessage(chatId,
+      `🟣 *Solana Private Key Export Verification*\n\n` +
+      `Wallet: \`${solWallet.address}\`\n\n` +
+      `⚠️ Your private key gives *FULL control* of this wallet.\n` +
+      `Never share it with anyone.\n\n` +
+      `To confirm, type this 4-digit code:\n\n` +
+      `🔢 \`${code}\`\n\n` +
+      `_This code expires in 60 seconds._`,
+      { parse_mode: "Markdown" }
     );
     return;
   }
 
   if (data.startsWith("confirmexport:")) {
-    try {
-      const exportKey = `export:${chatId}`;
-      const now = Date.now();
-      const exportWindow = 60 * 60 * 1000;
-      const maxExports = 5;
-      const exportAttempts = (exportRateLimits.get(exportKey) || []).filter((t: number) => now - t < exportWindow);
-      if (exportAttempts.length >= maxExports) {
-        log(`[AUDIT] BLOCKED export — rate limit hit. chatId=${chatId}, attempts=${exportAttempts.length}`, "security");
-        await bot.sendMessage(chatId, "🚫 Too many export attempts. For your security, private key export is limited to 5 times per hour. Please try again later.",
-          { reply_markup: mainMenuKeyboard() });
-        return;
-      }
-
-      const idx = parseInt(data.split(":")[1]);
-      const wallets = getUserWallets(chatId);
-      if (idx < 0 || idx >= wallets.length) {
-        await bot.sendMessage(chatId, "Invalid wallet.", { reply_markup: mainMenuKeyboard() });
-        return;
-      }
-      const walletAddr = wallets[idx];
-
-      exportAttempts.push(now);
-      exportRateLimits.set(exportKey, exportAttempts);
-      log(`[AUDIT] Private key export — chatId=${chatId}, wallet=${shortWallet(walletAddr)}, attempt=${exportAttempts.length}/${maxExports}, ip=telegram`, "security");
-
-      const pk = await storage.getTelegramWalletPrivateKey(String(chatId), walletAddr);
-      if (!pk) {
-        await bot.sendMessage(chatId, "This wallet is view-only — no private key stored. Only wallets generated inside this bot have exportable keys.", { reply_markup: mainMenuKeyboard() });
-        return;
-      }
-
-      const msg = await bot.sendMessage(chatId,
-        `🔐 *Private Key for* \`${shortWallet(walletAddr)}\`\n\n` +
-        `\`${pk}\`\n\n` +
-        `⚠️ This message will be auto-deleted in 30 seconds. Copy it now.`,
-        { parse_mode: "Markdown" }
-      );
-
-      setTimeout(async () => {
-        try {
-          await bot.deleteMessage(chatId, msg.message_id);
-          await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard() });
-        } catch {}
-      }, 30000);
-    } catch (e: any) {
-      log(`[AUDIT] Export key error — chatId=${chatId}, error=${e.message}`, "security");
-      await bot.sendMessage(chatId, `Failed to export key: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard() });
+    const idx = parseInt(data.split(":")[1]);
+    const wallets = getUserWallets(chatId);
+    if (idx < 0 || idx >= wallets.length) {
+      await bot.sendMessage(chatId, "Invalid wallet.", { reply_markup: mainMenuKeyboard() });
+      return;
     }
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    pendingExportVerification.set(chatId, { walletIdx: idx, code, expiresAt: Date.now() + 60000, type: "evm" });
+    await bot.sendMessage(chatId,
+      `🔐 *Verification Required*\n\nType this code to confirm:\n\n🔢 \`${code}\`\n\n_Expires in 60 seconds._`,
+      { parse_mode: "Markdown" }
+    );
     return;
   }
 
@@ -4551,6 +4575,98 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
   console.log(`[TelegramBot] ${isGroup ? "Group" : "DM"} message from @${username} (chatId: ${chatId}): ${text.slice(0, 80)}`);
 
+
+  if (pendingExportVerification.has(chatId) && !text.startsWith("/")) {
+    const verification = pendingExportVerification.get(chatId)!;
+    if (Date.now() > verification.expiresAt) {
+      pendingExportVerification.delete(chatId);
+      await bot.sendMessage(chatId, "⏰ Verification code expired. Please try again from the wallet menu.",
+        { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }]] } });
+      return;
+    }
+    if (text.trim() === verification.code) {
+      pendingExportVerification.delete(chatId);
+
+      const exportKey = `export:${chatId}`;
+      const now = Date.now();
+      const exportWindow = 60 * 60 * 1000;
+      const maxExports = 5;
+      const exportAttempts = (exportRateLimits.get(exportKey) || []).filter((t: number) => now - t < exportWindow);
+      if (exportAttempts.length >= maxExports) {
+        log(`[AUDIT] BLOCKED export — rate limit hit. chatId=${chatId}, attempts=${exportAttempts.length}`, "security");
+        await bot.sendMessage(chatId, "🚫 Too many export attempts. For security, exports are limited to 5 per hour.",
+          { reply_markup: mainMenuKeyboard() });
+        return;
+      }
+      exportAttempts.push(now);
+      exportRateLimits.set(exportKey, exportAttempts);
+
+      if (verification.type === "sol") {
+        const solWallet = solanaWalletMap.get(chatId);
+        if (!solWallet || !solWallet.privateKey) {
+          await bot.sendMessage(chatId, "Solana wallet key not found.", { reply_markup: mainMenuKeyboard() });
+          return;
+        }
+        log(`[AUDIT] SOL key export — chatId=${chatId}, wallet=${solWallet.address.substring(0, 10)}`, "security");
+        const msg2 = await bot.sendMessage(chatId,
+          `🟣 *Solana Private Key*\n\n` +
+          `Address: \`${solWallet.address}\`\n\n` +
+          `\`${solWallet.privateKey}\`\n\n` +
+          `⚠️ This message will be auto-deleted in 60 seconds. Copy it now.\n` +
+          `Import this key into Phantom, Solflare, or any Solana wallet.`,
+          { parse_mode: "Markdown" }
+        );
+        setTimeout(async () => {
+          try {
+            await bot.deleteMessage(chatId, msg2.message_id);
+            await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard() });
+          } catch {}
+        }, 60000);
+      } else {
+        const wallets = getUserWallets(chatId);
+        const walletAddr = wallets[verification.walletIdx];
+        if (!walletAddr) {
+          await bot.sendMessage(chatId, "Wallet not found.", { reply_markup: mainMenuKeyboard() });
+          return;
+        }
+        const pk = await storage.getTelegramWalletPrivateKey(String(chatId), walletAddr);
+        if (!pk) {
+          await bot.sendMessage(chatId,
+            `❌ *Could not retrieve private key.*\n\n` +
+            `This can happen if:\n` +
+            `• The wallet was imported as view-only\n` +
+            `• The encryption key changed on the server\n\n` +
+            `You may need to generate a new wallet and transfer your funds.`,
+            { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+              [{ text: "🔑 Generate New Wallet", callback_data: "action:genwallet" }],
+              [{ text: "« Menu", callback_data: "action:menu" }],
+            ]}}
+          );
+          return;
+        }
+        log(`[AUDIT] EVM key export — chatId=${chatId}, wallet=${shortWallet(walletAddr)}`, "security");
+        const msg2 = await bot.sendMessage(chatId,
+          `🔐 *Private Key*\n\n` +
+          `Address: \`${walletAddr}\`\n\n` +
+          `\`${pk}\`\n\n` +
+          `⚠️ This message will be auto-deleted in 60 seconds. Copy it now.\n` +
+          `Import this key into MetaMask, Trust Wallet, or any EVM wallet.`,
+          { parse_mode: "Markdown" }
+        );
+        setTimeout(async () => {
+          try {
+            await bot.deleteMessage(chatId, msg2.message_id);
+            await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard() });
+          } catch {}
+        }, 60000);
+      }
+      return;
+    } else {
+      await bot.sendMessage(chatId, "❌ Wrong code. Try again or go back to the wallet menu.",
+        { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }]] } });
+      return;
+    }
+  }
 
   if (pendingImportWallet.has(chatId) && !text.startsWith("/")) {
     await handleImportWalletFlow(chatId, text);
