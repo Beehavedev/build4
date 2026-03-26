@@ -482,7 +482,11 @@ async function loadWalletsFromDb(): Promise<void> {
 function getLinkedWallet(chatId: number): string | undefined {
   const data = telegramWalletMap.get(chatId);
   if (!data || data.wallets.length === 0) return undefined;
-  return data.wallets[data.active] || data.wallets[0];
+  const evmWallets = data.wallets.filter(w => /^0x[a-fA-F0-9]{40}$/.test(w));
+  if (evmWallets.length === 0) return undefined;
+  const activeWallet = data.wallets[data.active];
+  if (activeWallet && /^0x[a-fA-F0-9]{40}$/.test(activeWallet)) return activeWallet;
+  return evmWallets[0];
 }
 
 const walletLoadAttempts = new Map<number, number>();
@@ -500,13 +504,16 @@ async function ensureWalletsLoaded(chatId: number): Promise<void> {
       const wallets: string[] = [];
       let activeIdx = 0;
       for (let i = 0; i < rows.length; i++) {
+        if (rows[i].walletAddress.startsWith("sol:")) continue;
         wallets.push(rows[i].walletAddress);
-        if (rows[i].isActive) activeIdx = i;
+        if (rows[i].isActive) activeIdx = wallets.length - 1;
         if (rows[i].encryptedPrivateKey) {
           walletsWithKey.add(`${chatId}:${rows[i].walletAddress}`);
         }
       }
-      telegramWalletMap.set(chatId, { wallets, active: activeIdx });
+      if (wallets.length > 0) {
+        telegramWalletMap.set(chatId, { wallets, active: activeIdx });
+      }
     }
   } catch (e: any) {
     console.error("[TelegramBot] DB wallet lookup error:", e.message);
