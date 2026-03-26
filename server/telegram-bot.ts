@@ -3928,14 +3928,13 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:okxmeme") {
     await bot.sendMessage(chatId,
-      "🐸 *Meme Token Scanner*\n\nScan new meme token launches for alpha.\n\nSelect filter:",
+      "🐸 *Meme Token Scanner*\n\nScan new meme token launches for alpha.\n\nSelect chain:",
       {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "🆕 New Launches", callback_data: "okxmeme:NEW" }],
-            [{ text: "🔄 Migrating", callback_data: "okxmeme:MIGRATING" }],
-            [{ text: "🎓 Migrated", callback_data: "okxmeme:MIGRATED" }],
+            [{ text: "Solana", callback_data: "okxmeme_chain:501" }, { text: "BNB Chain", callback_data: "okxmeme_chain:56" }],
+            [{ text: "Base", callback_data: "okxmeme_chain:8453" }, { text: "Ethereum", callback_data: "okxmeme_chain:1" }],
             [{ text: "« Back", callback_data: "action:menu" }],
           ],
         },
@@ -3944,12 +3943,35 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data.startsWith("okxmeme_chain:")) {
+    const chainId = data.replace("okxmeme_chain:", "");
+    const chainName = OKX_CHAINS.find(c => c.id === chainId)?.name || chainId;
+    await bot.sendMessage(chatId,
+      `🐸 *Meme Scanner — ${chainName}*\n\nSelect filter:`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🆕 New Launches", callback_data: `okxmeme:${chainId}:NEW` }],
+            [{ text: "🔄 Migrating", callback_data: `okxmeme:${chainId}:MIGRATING` }],
+            [{ text: "🎓 Migrated", callback_data: `okxmeme:${chainId}:MIGRATED` }],
+            [{ text: "« Back", callback_data: "action:okxmeme" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
   if (data.startsWith("okxmeme:")) {
-    const stage = data.replace("okxmeme:", "");
+    const parts = data.replace("okxmeme:", "").split(":");
+    const chainId = parts.length > 1 ? parts[0] : "501";
+    const stage = parts.length > 1 ? parts[1] : parts[0];
+    const chainName = OKX_CHAINS.find(c => c.id === chainId)?.name || chainId;
     const stageLabel = stage === "NEW" ? "🆕 New" : stage === "MIGRATED" ? "🎓 Migrated" : "🔄 Migrating";
-    await bot.sendMessage(chatId, `Loading ${stageLabel} meme tokens...`);
+    await bot.sendMessage(chatId, `Loading ${stageLabel} meme tokens on ${chainName}...`);
     try {
-      const result = await getMemeTokens("501", stage);
+      const result = await getMemeTokens(chainId, stage);
       if (result.success && result.data) {
         const tokens = Array.isArray(result.data) ? result.data.slice(0, 8) : result.data?.data?.slice(0, 8) || [];
         if (tokens.length === 0) {
@@ -3973,7 +3995,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
             if (addr) text += `\`${addr}\`\n`;
             text += `   ${mcap}${holdersStr}${bonding}\n\n`;
           });
-          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxmeme:${stage}` }], [{ text: "« Back", callback_data: "action:okxmeme" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxmeme:${chainId}:${stage}` }], [{ text: "« Back", callback_data: `okxmeme_chain:${chainId}` }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
         }
       } else {
         await bot.sendMessage(chatId, `Unavailable: ${result.error || "try again later"}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxmeme" }]] } });
