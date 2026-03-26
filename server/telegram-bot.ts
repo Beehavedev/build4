@@ -1828,11 +1828,13 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
     await bot.sendMessage(chatId, "Loading wallet balances...");
 
-    const balances = await fetchWalletBalances(updatedWallets);
+    const evmWallets = updatedWallets.filter(w => /^0x[a-fA-F0-9]{40}$/.test(w));
+    const balances = await fetchWalletBalances(evmWallets);
 
-    let text = `👛 Your Wallets\n\n`;
-    updatedWallets.forEach((w, i) => {
-      const marker = i === activeIdx ? "✅" : "⬜";
+    let text = `👛 *Your Wallets*\n\n`;
+    evmWallets.forEach((w) => {
+      const origIdx = updatedWallets.indexOf(w);
+      const marker = origIdx === activeIdx ? "✅" : "⬜";
       const bal = balances[w];
       const hasKey = walletsWithKey.has(`${chatId}:${w}`);
       const keyTag = hasKey ? "" : " 🔒 view-only";
@@ -1843,7 +1845,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         if (parseFloat(bal.eth) > 0) parts.push(`${bal.eth} ETH`);
         balText = parts.length > 0 ? ` (${parts.join(", ")})` : " (empty)";
       }
-      text += `${marker} \`${w}\`${i === activeIdx ? " ← active" : ""}${keyTag}\n    ${balText}\n\n`;
+      text += `${marker} \`${w}\`${origIdx === activeIdx ? " ← active" : ""}${keyTag}\n    ${balText}\n\n`;
     });
     const solWallet = solanaWalletMap.get(chatId);
     if (solWallet) {
@@ -1852,13 +1854,14 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
     text += `Send BNB to your active wallet address to fund it.`;
 
-    const walletButtons: TelegramBot.InlineKeyboardButton[][] = updatedWallets.map((w, i) => {
-      if (i === activeIdx) {
-        return [{ text: `📋 Copy Address`, callback_data: `copywall:${i}` }];
+    const walletButtons: TelegramBot.InlineKeyboardButton[][] = evmWallets.map((w) => {
+      const origIdx = updatedWallets.indexOf(w);
+      if (origIdx === activeIdx) {
+        return [{ text: `📋 Copy Address`, callback_data: `copywall:${origIdx}` }];
       }
       return [
-        { text: `▶️ Use ${shortWallet(w)}`, callback_data: `switchwall:${i}` },
-        { text: `🗑`, callback_data: `removewall:${i}` },
+        { text: `▶️ Use ${shortWallet(w)}`, callback_data: `switchwall:${origIdx}` },
+        { text: `🗑`, callback_data: `removewall:${origIdx}` },
       ];
     });
 
