@@ -867,54 +867,67 @@ function getWalletConnectUrl(chatId?: number): string {
 async function handleSubscribe(chatId: number): Promise<void> {
   if (!bot) return;
 
-  const wallet = getLinkedWallet(chatId);
-  if (!wallet) {
-    await bot.sendMessage(chatId,
-      "❌ You need a wallet first. Use /start to create or link one.",
-      { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
-    );
-    return;
-  }
-
-  const sub = await storage.getBotSubscriptionByChatId(chatId.toString());
-  if (sub && sub.status === "active" && sub.expiresAt && sub.expiresAt > new Date()) {
-    const daysLeft = Math.ceil((sub.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
-    await bot.sendMessage(chatId,
-      `✅ *You're already subscribed!*\n\n` +
-      `Status: Active\nExpires: ${sub.expiresAt.toISOString().split("T")[0]}\n` +
-      `Days remaining: ${daysLeft}`,
-      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
-    );
-    return;
-  }
-
-  await bot.sendMessage(chatId,
-    `💳 *BUILD4 Premium Subscription*\n\n` +
-    `Price: *$${BOT_PRICE_USD} USDT/month*\n\n` +
-    `Send exactly *${BOT_PRICE_USD} USDT* to:\n\n` +
-    `\`${TREASURY_WALLET}\`\n\n` +
-    `✅ Accepted chains:\n` +
-    `• BNB Chain (BSC) — USDT BEP-20\n` +
-    `• Base — USDC\n\n` +
-    `⚠️ Send from your linked wallet:\n` +
-    `\`${wallet}\`\n\n` +
-    `After sending, tap "✅ I've Paid" to verify.`,
-    {
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "✅ I've Paid — Verify Now", callback_data: "action:verifypayment" }],
-          [{ text: "📊 Subscription Status", callback_data: "action:substatus" }],
-          [{ text: "« Menu", callback_data: "action:menu" }],
-        ],
-      },
+  try {
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) {
+      await bot.sendMessage(chatId,
+        "❌ You need a wallet first. Use /start to create or link one.",
+        { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+      return;
     }
-  );
+
+    let sub: any = null;
+    try {
+      sub = await storage.getBotSubscriptionByChatId(chatId.toString());
+    } catch (e: any) {
+      console.error("[Subscribe] DB lookup failed:", e.message);
+    }
+
+    if (sub && sub.status === "active" && sub.expiresAt && sub.expiresAt > new Date()) {
+      const daysLeft = Math.ceil((sub.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+      await bot.sendMessage(chatId,
+        `✅ *You're already subscribed!*\n\n` +
+        `Status: Active\nExpires: ${sub.expiresAt.toISOString().split("T")[0]}\n` +
+        `Days remaining: ${daysLeft}`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+      return;
+    }
+
+    await bot.sendMessage(chatId,
+      `💳 *BUILD4 Premium Subscription*\n\n` +
+      `Price: *$${BOT_PRICE_USD} USDT/month*\n\n` +
+      `Send exactly *${BOT_PRICE_USD} USDT* to:\n\n` +
+      `\`${TREASURY_WALLET}\`\n\n` +
+      `✅ Accepted chains:\n` +
+      `• BNB Chain (BSC) — USDT BEP-20\n` +
+      `• Base — USDC\n\n` +
+      `⚠️ Send from your linked wallet:\n` +
+      `\`${wallet}\`\n\n` +
+      `After sending, tap "✅ I've Paid" to verify.`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✅ I've Paid — Verify Now", callback_data: "action:verifypayment" }],
+            [{ text: "📊 Subscription Status", callback_data: "action:substatus" }],
+            [{ text: "« Menu", callback_data: "action:menu" }],
+          ],
+        },
+      }
+    );
+  } catch (e: any) {
+    console.error("[Subscribe] Error:", e.message);
+    await bot.sendMessage(chatId, `❌ Something went wrong: ${e.message?.substring(0, 100)}\n\nPlease try again.`,
+      { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:subscribe" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+  }
 }
 
 async function handleVerifyPayment(chatId: number): Promise<void> {
   if (!bot) return;
 
+  try {
   const wallet = getLinkedWallet(chatId);
   if (!wallet) {
     await bot.sendMessage(chatId, "❌ No wallet linked. Use /start first.");
@@ -1010,11 +1023,17 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
       },
     }
   );
+  } catch (e: any) {
+    console.error("[VerifyPayment] Error:", e.message);
+    await bot.sendMessage(chatId, `❌ Payment verification failed: ${e.message?.substring(0, 100)}\n\nPlease try again.`,
+      { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:verifypayment" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+  }
 }
 
 async function handleSubStatus(chatId: number): Promise<void> {
   if (!bot) return;
 
+  try {
   const sub = await storage.getBotSubscriptionByChatId(chatId.toString());
   if (!sub) {
     await bot.sendMessage(chatId,
@@ -1052,6 +1071,11 @@ async function handleSubStatus(chatId: number): Promise<void> {
   buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
 
   await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+  } catch (e: any) {
+    console.error("[SubStatus] Error:", e.message);
+    await bot.sendMessage(chatId, `❌ Could not check subscription status: ${e.message?.substring(0, 100)}\n\nPlease try again.`,
+      { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:substatus" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+  }
 }
 
 function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.InlineKeyboardMarkup {
