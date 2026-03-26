@@ -25,6 +25,8 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  app.disable("x-powered-by");
+
   app.use((req: Request, res: Response, next: NextFunction) => {
     const start = Date.now();
     res.on("finish", () => {
@@ -36,6 +38,28 @@ export async function registerRoutes(
   app.use(visitorTrackingMiddleware());
   app.use("/uploads", express.static(path.resolve(process.cwd(), "public/uploads")));
   registerSeoPrerender(app);
+
+  const walletExportLimiter = new Map<string, number[]>();
+  function checkWalletExportRate(chatId: string): boolean {
+    const now = Date.now();
+    const window = 60 * 60 * 1000;
+    const maxAttempts = 5;
+    const attempts = (walletExportLimiter.get(chatId) || []).filter(t => now - t < window);
+    if (attempts.length >= maxAttempts) return false;
+    attempts.push(now);
+    walletExportLimiter.set(chatId, attempts);
+    return true;
+  }
+
+  app.all("/api/web4/telegram-wallet/export*", (_req: Request, res: Response) => {
+    res.status(403).json({ error: "Forbidden. Wallet export is only available through the Telegram bot interface." });
+  });
+  app.all("/api/wallet/export*", (_req: Request, res: Response) => {
+    res.status(403).json({ error: "Forbidden. Wallet export is only available through the Telegram bot interface." });
+  });
+  app.all("/api/wallets/*/private*", (_req: Request, res: Response) => {
+    res.status(403).json({ error: "Forbidden. Private key access is not available via API." });
+  });
 
   app.post("/api/telegram/webhook/:token", express.json(), (req: Request, res: Response) => {
     const token = req.params.token;

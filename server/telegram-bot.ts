@@ -264,6 +264,7 @@ COMMUNICATION STYLE:
 14. When citing on-chain transaction counts, convert wei amounts to BNB where helpful (1 BNB = 1e18 wei).`;
 
 const rateLimitMap = new Map<number, number>();
+const exportRateLimits = new Map<string, number[]>();
 const RATE_LIMIT_MS = 3000;
 const answerCache = new Map<string, { answer: string; time: number }>();
 const ANSWER_CACHE_MS = 300_000;
@@ -1589,6 +1590,18 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data.startsWith("confirmexport:")) {
     try {
+      const exportKey = `export:${chatId}`;
+      const now = Date.now();
+      const exportWindow = 60 * 60 * 1000;
+      const maxExports = 5;
+      const exportAttempts = (exportRateLimits.get(exportKey) || []).filter((t: number) => now - t < exportWindow);
+      if (exportAttempts.length >= maxExports) {
+        log(`[AUDIT] BLOCKED export — rate limit hit. chatId=${chatId}, attempts=${exportAttempts.length}`, "security");
+        await bot.sendMessage(chatId, "🚫 Too many export attempts. For your security, private key export is limited to 5 times per hour. Please try again later.",
+          { reply_markup: mainMenuKeyboard() });
+        return;
+      }
+
       const idx = parseInt(data.split(":")[1]);
       const wallets = getUserWallets(chatId);
       if (idx < 0 || idx >= wallets.length) {
@@ -1596,7 +1609,11 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         return;
       }
       const walletAddr = wallets[idx];
-      log(`[TelegramBot] Export key requested for wallet ${shortWallet(walletAddr)} by chat ${chatId}`, "telegram");
+
+      exportAttempts.push(now);
+      exportRateLimits.set(exportKey, exportAttempts);
+      log(`[AUDIT] Private key export — chatId=${chatId}, wallet=${shortWallet(walletAddr)}, attempt=${exportAttempts.length}/${maxExports}, ip=telegram`, "security");
+
       const pk = await storage.getTelegramWalletPrivateKey(String(chatId), walletAddr);
       if (!pk) {
         await bot.sendMessage(chatId, "This wallet is view-only — no private key stored. Only wallets generated inside this bot have exportable keys.", { reply_markup: mainMenuKeyboard() });
@@ -1617,7 +1634,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         } catch {}
       }, 30000);
     } catch (e: any) {
-      log(`[TelegramBot] Export key error: ${e.message}`, "telegram");
+      log(`[AUDIT] Export key error — chatId=${chatId}, error=${e.message}`, "security");
       await bot.sendMessage(chatId, `Failed to export key: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard() });
     }
     return;

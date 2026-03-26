@@ -1463,8 +1463,22 @@ ${urls}
     res.send(getTelegramWalletPage(projectId));
   });
 
+  const linkRateLimiter = new Map<string, number[]>();
   app.post("/api/web4/telegram-wallet/link", async (req: Request, res: Response) => {
     try {
+      const clientIp = req.ip || req.headers["x-forwarded-for"] || "unknown";
+      const ipKey = String(clientIp);
+      const now = Date.now();
+      const linkWindow = 10 * 60 * 1000;
+      const maxLinks = 10;
+      const attempts = (linkRateLimiter.get(ipKey) || []).filter(t => now - t < linkWindow);
+      if (attempts.length >= maxLinks) {
+        console.log(`[AUDIT] BLOCKED wallet link — rate limit. ip=${ipKey}, attempts=${attempts.length}`);
+        return res.status(429).json({ error: "Too many requests. Please try again later." });
+      }
+      attempts.push(now);
+      linkRateLimiter.set(ipKey, attempts);
+
       const { chatId, wallet, exp, sig } = req.body;
       if (!chatId || !wallet || !/^0x[a-fA-F0-9]{40}$/i.test(wallet)) {
         return res.status(400).json({ error: "Invalid chatId or wallet address" });
