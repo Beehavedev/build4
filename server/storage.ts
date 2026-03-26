@@ -437,6 +437,8 @@ export interface IStorage {
   getReferralsByReferrer(referrerChatId: string): Promise<any[]>;
   getReferralCount(referrerChatId: string): Promise<number>;
   markReferralPaid(referredChatId: string, commissionAmount: string, commissionPercent: number): Promise<void>;
+  getAllBotSubscriptions(): Promise<TelegramBotSubscription[]>;
+  getAllReferrals(): Promise<any[]>;
   saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void>;
   getEnabledTradingPreferences(): Promise<Array<{ chatId: string; enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }>>;
   saveTradeOutcome(outcome: {
@@ -2774,6 +2776,14 @@ export class DatabaseStorage implements IStorage {
         paidAt: new Date(),
       })
       .where(eq(telegramBotReferrals.referredChatId, referredChatId));
+  }
+
+  async getAllBotSubscriptions(): Promise<TelegramBotSubscription[]> {
+    return db.select().from(telegramBotSubscriptions);
+  }
+
+  async getAllReferrals(): Promise<any[]> {
+    return db.select().from(telegramBotReferrals);
   }
 
   async saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void> {

@@ -4930,27 +4930,61 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
 
     if (cmd === "stats" && !isGroup) {
+      const adminChatIdStats = process.env.ADMIN_CHAT_ID;
+      if (!adminChatIdStats || chatId.toString() !== adminChatIdStats) {
+        return;
+      }
       try {
         const statsRes = await fetch(`http://localhost:${process.env.PORT || 5000}/api/platform/stats`);
         const stats = await statsRes.json() as any;
         const totalUsers = telegramWalletMap.size;
         const revenueWei = BigInt(stats.totalRevenue || "0");
         const revenueBNB = Number(revenueWei) / 1e18;
+
+        let subStats = { total: 0, active: 0, trial: 0, expired: 0 };
+        let refStats = { totalReferrals: 0, paidReferrals: 0, totalCommissions: "0.00" };
+        try {
+          const subs = await storage.getAllBotSubscriptions?.() || [];
+          subStats.total = subs.length;
+          subStats.active = subs.filter((s: any) => s.status === "active" && s.expiresAt && s.expiresAt > new Date()).length;
+          subStats.trial = subs.filter((s: any) => s.status === "trial" && s.expiresAt && s.expiresAt > new Date()).length;
+          subStats.expired = subs.length - subStats.active - subStats.trial;
+        } catch {}
+        try {
+          const refs = await storage.getAllReferrals?.() || [];
+          refStats.totalReferrals = refs.length;
+          refStats.paidReferrals = refs.filter((r: any) => r.commissionPaid).length;
+          refStats.totalCommissions = refs
+            .filter((r: any) => r.commissionPaid && r.commissionAmount)
+            .reduce((sum: number, r: any) => sum + parseFloat(r.commissionAmount || "0"), 0)
+            .toFixed(2);
+        } catch {}
+
         await bot.sendMessage(chatId,
-          `📊 <b>BUILD4 Platform Stats</b>\n\n` +
-          `👥 Telegram Users: <b>${totalUsers}</b>\n` +
-          `🤖 AI Agents: <b>${stats.agents || 0}</b>\n` +
-          `⛓️ On-Chain Agents: <b>${stats.onchainAgents || 0}</b>\n` +
-          `🔧 Skills: <b>${stats.skills || 0}</b>\n` +
-          `🛒 Skill Purchases: <b>${stats.skillPurchases || 0}</b>\n` +
-          `📝 Transactions: <b>${stats.transactions || 0}</b>\n` +
-          `💰 Revenue: <b>${revenueBNB.toFixed(4)} BNB</b>\n` +
-          `👛 Unique Wallets: <b>${stats.onchainUsers || 0}</b>\n\n` +
-          `🔗 Chains: BNB, Base, XLayer, Solana, Ethereum, Arbitrum, Polygon`,
+          `📊 <b>BUILD4 Admin Dashboard</b>\n\n` +
+          `<b>👥 Users</b>\n` +
+          `• Telegram Users: <b>${totalUsers}</b>\n` +
+          `• Unique Wallets: <b>${stats.onchainUsers || 0}</b>\n\n` +
+          `<b>⭐ Subscriptions</b>\n` +
+          `• Total: <b>${subStats.total}</b>\n` +
+          `• Active (paid): <b>${subStats.active}</b>\n` +
+          `• Trial: <b>${subStats.trial}</b>\n` +
+          `• Expired: <b>${subStats.expired}</b>\n\n` +
+          `<b>🔗 Referrals</b>\n` +
+          `• Total referrals: <b>${refStats.totalReferrals}</b>\n` +
+          `• Paid commissions: <b>${refStats.paidReferrals}</b>\n` +
+          `• Total commissions owed: <b>$${refStats.totalCommissions}</b>\n\n` +
+          `<b>🤖 Platform</b>\n` +
+          `• AI Agents: <b>${stats.agents || 0}</b>\n` +
+          `• On-Chain Agents: <b>${stats.onchainAgents || 0}</b>\n` +
+          `• Skills: <b>${stats.skills || 0}</b>\n` +
+          `• Transactions: <b>${stats.transactions || 0}</b>\n` +
+          `• Revenue: <b>${revenueBNB.toFixed(4)} BNB</b>\n\n` +
+          `🔗 Chains: BNB, Base, XLayer, Solana`,
           { parse_mode: "HTML", reply_markup: mainMenuKeyboard() }
         );
-      } catch {
-        await bot.sendMessage(chatId, "Could not fetch stats right now.", { reply_markup: mainMenuKeyboard() });
+      } catch (e: any) {
+        await bot.sendMessage(chatId, `Could not fetch stats: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard() });
       }
       return;
     }
