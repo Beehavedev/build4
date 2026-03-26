@@ -479,14 +479,15 @@ async function loadWalletsFromDb(): Promise<void> {
   }
 }
 
-function getLinkedWallet(chatId: number): string | undefined {
+function getLinkedWallet(chatId: number, requireEvm: boolean = true): string | undefined {
   const data = telegramWalletMap.get(chatId);
   if (!data || data.wallets.length === 0) return undefined;
   const evmWallets = data.wallets.filter(w => /^0x[a-fA-F0-9]{40}$/.test(w));
-  if (evmWallets.length === 0) return undefined;
+  if (requireEvm && evmWallets.length === 0) return undefined;
   const activeWallet = data.wallets[data.active];
   if (activeWallet && /^0x[a-fA-F0-9]{40}$/.test(activeWallet)) return activeWallet;
-  return evmWallets[0];
+  if (requireEvm) return evmWallets[0];
+  return activeWallet || evmWallets[0];
 }
 
 const walletLoadAttempts = new Map<number, number>();
@@ -827,6 +828,7 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
 
 async function checkWalletHasKey(chatId: number, wallet: string | undefined): Promise<boolean> {
   if (!wallet) return false;
+  if (wallet.startsWith("sol:")) return false;
   if (walletsWithKey.has(`${chatId}:${wallet}`)) return true;
   try {
     const pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
