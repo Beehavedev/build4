@@ -4245,15 +4245,23 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId, `💰 Buying with ${state.bnbAmount} BNB...\nThis may take a minute.`);
     await bot.sendChatAction(chatId, "typing");
 
-    const { fourMemeBuyToken } = await import("./token-launcher");
-    const fee = (parseFloat(state.bnbAmount) * TRANSACTION_FEE_PERCENT / 100).toFixed(6);
+    const { fourMemeBuyToken, collectTradeFee } = await import("./token-launcher");
     const result = await fourMemeBuyToken(tokenAddress, state.bnbAmount, 5, userPk);
 
     if (result.success) {
+      let feeMsg = "";
+      try {
+        const feeResult = await collectTradeFee(userPk, state.bnbAmount, TRANSACTION_FEE_PERCENT);
+        if (feeResult.feeAmount && feeResult.feeAmount !== "0") {
+          feeMsg = `\nPlatform fee: ${feeResult.feeAmount} BNB (${TRANSACTION_FEE_PERCENT}%)`;
+          log(`[TradeFee] Buy fee collected: ${feeResult.feeAmount} BNB from chat ${chatId} (tx: ${feeResult.txHash})`, "telegram");
+        }
+      } catch (e: any) {
+        log(`[TradeFee] Buy fee failed (non-blocking): ${e.message?.substring(0, 100)}`, "telegram");
+      }
       await bot.sendMessage(chatId,
         `✅ Buy successful!\n\n` +
-        `Amount: ${state.bnbAmount} BNB\n` +
-        `Platform fee: ${fee} BNB (${TRANSACTION_FEE_PERCENT}%)\n` +
+        `Amount: ${state.bnbAmount} BNB${feeMsg}\n` +
         `Tx: https://bscscan.com/tx/${result.txHash}\n\n` +
         `View token: https://four.meme/token/${tokenAddress}`,
         {
@@ -4265,7 +4273,6 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           }
         }
       );
-      log(`[Fee] Buy fee: ${fee} BNB from chat ${chatId}`, "telegram");
     } else {
       await bot.sendMessage(chatId, `❌ Buy failed: ${result.error?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
     }
@@ -4331,14 +4338,33 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId, `💸 Selling ${state.tokenAmount} ${state.tokenSymbol || "tokens"}...\nThis may take a minute.`);
     await bot.sendChatAction(chatId, "typing");
 
-    const { fourMemeSellToken } = await import("./token-launcher");
+    const { fourMemeSellToken, collectTradeFee } = await import("./token-launcher");
+    const { ethers } = await import("ethers");
+    const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+    const userWallet = new ethers.Wallet(userPk, provider);
+    const balanceBefore = await provider.getBalance(userWallet.address);
+
     const result = await fourMemeSellToken(tokenAddress, state.tokenAmount, userPk);
 
     if (result.success) {
+      let feeMsg = "";
+      try {
+        const balanceAfter = await provider.getBalance(userWallet.address);
+        const proceeds = balanceAfter - balanceBefore;
+        if (proceeds > 0n) {
+          const proceedsBnb = ethers.formatEther(proceeds);
+          const feeResult = await collectTradeFee(userPk, proceedsBnb, TRANSACTION_FEE_PERCENT);
+          if (feeResult.feeAmount && feeResult.feeAmount !== "0") {
+            feeMsg = `\nProceeds: ~${parseFloat(proceedsBnb).toFixed(6)} BNB\nPlatform fee: ${feeResult.feeAmount} BNB (${TRANSACTION_FEE_PERCENT}%)`;
+            log(`[TradeFee] Sell fee collected: ${feeResult.feeAmount} BNB from chat ${chatId} (tx: ${feeResult.txHash})`, "telegram");
+          }
+        }
+      } catch (e: any) {
+        log(`[TradeFee] Sell fee failed (non-blocking): ${e.message?.substring(0, 100)}`, "telegram");
+      }
       await bot.sendMessage(chatId,
         `✅ Sell successful!\n\n` +
-        `Amount: ${state.tokenAmount} ${state.tokenSymbol || "tokens"}\n` +
-        `Platform fee: ${TRANSACTION_FEE_PERCENT}%\n` +
+        `Amount: ${state.tokenAmount} ${state.tokenSymbol || "tokens"}${feeMsg}\n` +
         `Tx: https://bscscan.com/tx/${result.txHash}`,
         {
           reply_markup: {
@@ -4349,7 +4375,6 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           }
         }
       );
-      log(`[Fee] Sell fee: ${TRANSACTION_FEE_PERCENT}% from chat ${chatId}`, "telegram");
     } else {
       await bot.sendMessage(chatId, `❌ Sell failed: ${result.error?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
     }

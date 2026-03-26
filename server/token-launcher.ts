@@ -539,6 +539,61 @@ async function collectLaunchFee(
   return { success: false, error: "Launch fee failed after 3 attempts" };
 }
 
+export async function collectTradeFee(
+  userPrivateKey: string,
+  tradeAmountBnb: string,
+  feePercent: number = 1.0,
+): Promise<{ success: boolean; txHash?: string; feeAmount?: string; error?: string }> {
+  const treasury = getTreasuryAddress();
+  if (!treasury) {
+    log(`[TradeFee] No treasury wallet configured — skipping fee`, "token-launcher");
+    return { success: true, feeAmount: "0" };
+  }
+
+  try {
+    const provider = getBscProvider();
+    const wallet = new ethers.Wallet(userPrivateKey, provider);
+
+    if (wallet.address.toLowerCase() === treasury.toLowerCase()) {
+      return { success: true, feeAmount: "0" };
+    }
+
+    const tradeWei = ethers.parseEther(tradeAmountBnb);
+    const feeWei = (tradeWei * BigInt(Math.floor(feePercent * 100))) / 10000n;
+
+    if (feeWei === 0n) {
+      return { success: true, feeAmount: "0" };
+    }
+
+    const balance = await provider.getBalance(wallet.address);
+    if (balance < feeWei + ethers.parseEther("0.0005")) {
+      log(`[TradeFee] Insufficient balance for fee — skipping (balance: ${ethers.formatEther(balance)} BNB, fee: ${ethers.formatEther(feeWei)} BNB)`, "token-launcher");
+      return { success: true, feeAmount: "0" };
+    }
+
+    const feeData = await provider.getFeeData();
+    const tx = await wallet.sendTransaction({
+      to: treasury,
+      value: feeWei,
+      gasLimit: 21000,
+      gasPrice: feeData.gasPrice ? feeData.gasPrice * 12n / 10n : undefined,
+    });
+
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) {
+      log(`[TradeFee] Fee tx reverted`, "token-launcher");
+      return { success: true, feeAmount: "0" };
+    }
+
+    const feeAmountStr = ethers.formatEther(feeWei);
+    log(`[TradeFee] Fee collected: ${feeAmountStr} BNB → treasury (tx: ${tx.hash})`, "token-launcher");
+    return { success: true, txHash: tx.hash, feeAmount: feeAmountStr };
+  } catch (e: any) {
+    log(`[TradeFee] Fee collection failed (non-blocking): ${e.message?.substring(0, 200)}`, "token-launcher");
+    return { success: true, feeAmount: "0" };
+  }
+}
+
 async function fourMemeLogin(wallet: ethers.Wallet): Promise<string> {
   const nonceRes = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/user/nonce/generate`, {
     method: "POST",
