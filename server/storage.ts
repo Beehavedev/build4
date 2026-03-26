@@ -68,6 +68,7 @@ import {
   type ChaosMilestone, type InsertChaosMilestone, chaosMilestones,
   type TelegramWallet, type InsertTelegramWallet, telegramWallets,
   type TelegramBotSubscription, telegramBotSubscriptions,
+  type TelegramBotReferral, telegramBotReferrals,
   tradingPreferences,
   type AsterCredentials, asterCredentials,
   tradeOutcomes,
@@ -431,6 +432,11 @@ export interface IStorage {
   getBotSubscriptionByChatId(chatId: string): Promise<TelegramBotSubscription | null>;
   createBotSubscription(walletAddress: string, chatId: string): Promise<TelegramBotSubscription>;
   activateBotSubscription(walletAddress: string, txHash: string, chainId: number, amountPaid: string): Promise<TelegramBotSubscription | null>;
+  createReferral(referrerChatId: string, referredChatId: string, referralCode: string): Promise<any>;
+  getReferralByReferred(referredChatId: string): Promise<any | null>;
+  getReferralsByReferrer(referrerChatId: string): Promise<any[]>;
+  getReferralCount(referrerChatId: string): Promise<number>;
+  markReferralPaid(referredChatId: string, commissionAmount: string, commissionPercent: number): Promise<void>;
   saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void>;
   getEnabledTradingPreferences(): Promise<Array<{ chatId: string; enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }>>;
   saveTradeOutcome(outcome: {
@@ -2726,6 +2732,48 @@ export class DatabaseStorage implements IStorage {
       .where(eq(telegramBotSubscriptions.walletAddress, walletAddress.toLowerCase()))
       .returning();
     return rows[0] || null;
+  }
+
+  async createReferral(referrerChatId: string, referredChatId: string, referralCode: string): Promise<any> {
+    const [created] = await db.insert(telegramBotReferrals).values({
+      referrerChatId,
+      referredChatId,
+      referralCode,
+      status: "pending",
+      commissionPercent: 30,
+    }).returning();
+    return created;
+  }
+
+  async getReferralByReferred(referredChatId: string): Promise<any | null> {
+    const rows = await db.select().from(telegramBotReferrals)
+      .where(eq(telegramBotReferrals.referredChatId, referredChatId))
+      .limit(1);
+    return rows[0] || null;
+  }
+
+  async getReferralsByReferrer(referrerChatId: string): Promise<any[]> {
+    return db.select().from(telegramBotReferrals)
+      .where(eq(telegramBotReferrals.referrerChatId, referrerChatId))
+      .orderBy(desc(telegramBotReferrals.createdAt));
+  }
+
+  async getReferralCount(referrerChatId: string): Promise<number> {
+    const rows = await db.select().from(telegramBotReferrals)
+      .where(eq(telegramBotReferrals.referrerChatId, referrerChatId));
+    return rows.length;
+  }
+
+  async markReferralPaid(referredChatId: string, commissionAmount: string, commissionPercent: number): Promise<void> {
+    await db.update(telegramBotReferrals)
+      .set({
+        status: "paid",
+        commissionAmount,
+        commissionPercent,
+        commissionPaid: true,
+        paidAt: new Date(),
+      })
+      .where(eq(telegramBotReferrals.referredChatId, referredChatId));
   }
 
   async saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void> {

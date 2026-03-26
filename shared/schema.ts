@@ -1112,6 +1112,21 @@ export const telegramBotSubscriptions = pgTable("telegram_bot_subscriptions", {
 });
 export type TelegramBotSubscription = typeof telegramBotSubscriptions.$inferSelect;
 
+export const telegramBotReferrals = pgTable("telegram_bot_referrals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  referrerChatId: text("referrer_chat_id").notNull(),
+  referredChatId: text("referred_chat_id").notNull(),
+  referralCode: text("referral_code").notNull(),
+  status: text("status").notNull().default("pending"),
+  commissionPercent: integer("commission_percent").notNull().default(30),
+  commissionAmount: text("commission_amount"),
+  commissionPaid: boolean("commission_paid").notNull().default(false),
+  commissionTxHash: text("commission_tx_hash"),
+  createdAt: timestamp("created_at").defaultNow(),
+  paidAt: timestamp("paid_at"),
+});
+export type TelegramBotReferral = typeof telegramBotReferrals.$inferSelect;
+
 export const tradeOutcomes = pgTable("trade_outcomes", {
   id: serial("id").primaryKey(),
   chatId: text("chat_id").notNull(),

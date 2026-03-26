@@ -1001,6 +1001,30 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
               `All features unlocked! 🚀`,
               { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
             );
+
+            try {
+              const referral = await storage.getReferralByReferred(chatId.toString());
+              if (referral && !referral.commissionPaid) {
+                const referrerCount = await storage.getReferralCount(referral.referrerChatId);
+                const commissionPct = getReferralCommissionPercent(referrerCount);
+                const commissionAmt = (BOT_PRICE_USD * commissionPct / 100).toFixed(2);
+                await storage.markReferralPaid(chatId.toString(), commissionAmt, commissionPct);
+                log(`[Referral] Commission earned: referrer=${referral.referrerChatId}, referred=${chatId}, amount=$${commissionAmt}, tier=${commissionPct}%`, "telegram");
+                try {
+                  await bot.sendMessage(parseInt(referral.referrerChatId),
+                    `💰 *Referral Commission Earned!*\n\n` +
+                    `Someone you referred just subscribed!\n\n` +
+                    `Commission: *$${commissionAmt} USDT* (${commissionPct}%)\n` +
+                    `Your total referrals: ${referrerCount}\n\n` +
+                    `Commission will be sent to your wallet. Keep sharing your link to earn more!`,
+                    { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔗 My Referrals", callback_data: "action:referral" }]] } }
+                  );
+                } catch {}
+              }
+            } catch (e: any) {
+              console.error("[Referral] Commission tracking error:", e.message);
+            }
+
             return;
           }
         }
@@ -1085,6 +1109,76 @@ async function handleSubStatus(chatId: number): Promise<void> {
   }
 }
 
+function getReferralCommissionPercent(referralCount: number): number {
+  if (referralCount >= 50) return 50;
+  if (referralCount >= 10) return 40;
+  return 30;
+}
+
+async function handleReferral(chatId: number): Promise<void> {
+  if (!bot) return;
+
+  try {
+    const refCode = `ref_${chatId}`;
+    const botUsername = (await bot.getMe()).username || "BUILD4_Bot";
+    const refLink = `https://t.me/${botUsername}?start=${refCode}`;
+
+    let referralCount = 0;
+    let paidCount = 0;
+    let totalEarned = 0;
+    try {
+      const referrals = await storage.getReferralsByReferrer(chatId.toString());
+      referralCount = referrals.length;
+      paidCount = referrals.filter((r: any) => r.commissionPaid).length;
+      totalEarned = referrals
+        .filter((r: any) => r.commissionPaid && r.commissionAmount)
+        .reduce((sum: number, r: any) => sum + parseFloat(r.commissionAmount || "0"), 0);
+    } catch (e: any) {
+      console.error("[Referral] DB lookup failed:", e.message);
+    }
+
+    const currentTier = getReferralCommissionPercent(referralCount);
+    let nextTierText = "";
+    if (referralCount < 10) {
+      nextTierText = `\n📈 *Next tier:* Refer ${10 - referralCount} more to earn 40%`;
+    } else if (referralCount < 50) {
+      nextTierText = `\n📈 *Next tier:* Refer ${50 - referralCount} more to earn 50%`;
+    } else {
+      nextTierText = `\n🏆 *Max tier reached!* You're earning 50% on every referral`;
+    }
+
+    await bot.sendMessage(chatId,
+      `🔗 *BUILD4 Referral Program*\n\n` +
+      `Share your link and earn commissions on every subscription!\n\n` +
+      `💰 *Commission Tiers:*\n` +
+      `• 1-10 referrals → *30%* ($${(BOT_PRICE_USD * 0.3).toFixed(2)}/sub)\n` +
+      `• 10-50 referrals → *40%* ($${(BOT_PRICE_USD * 0.4).toFixed(2)}/sub)\n` +
+      `• 50+ referrals → *50%* ($${(BOT_PRICE_USD * 0.5).toFixed(2)}/sub)\n\n` +
+      `📊 *Your Stats:*\n` +
+      `• Referrals: ${referralCount}\n` +
+      `• Paid subscriptions: ${paidCount}\n` +
+      `• Total earned: $${totalEarned.toFixed(2)} USDT\n` +
+      `• Current tier: *${currentTier}%*` +
+      nextTierText + `\n\n` +
+      `🔗 *Your Referral Link:*\n` +
+      `\`${refLink}\`\n\n` +
+      `Share this link — when someone joins and subscribes, you earn!`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "« Menu", callback_data: "action:menu" }],
+          ],
+        },
+      }
+    );
+  } catch (e: any) {
+    console.error("[Referral] Error:", e.message);
+    await bot.sendMessage(chatId, `❌ Something went wrong: ${e.message?.substring(0, 100)}`,
+      { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:referral" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+  }
+}
+
 function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.InlineKeyboardMarkup {
   return {
     inline_keyboard: [
@@ -1098,7 +1192,7 @@ function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.I
       [{ text: "🤖 Create Agent", callback_data: "action:newagent" }, { text: "📋 My Agents", callback_data: "action:myagents" }],
       [{ text: "📝 New Task", callback_data: "action:task" }, { text: "📊 My Tasks", callback_data: "action:mytasks" }],
       [{ text: "👛 My Wallet", callback_data: "action:wallet" }, { text: "⭐ Premium", callback_data: "action:substatus" }],
-      [{ text: "❓ Help & Commands", callback_data: "action:help" }],
+      [{ text: "🔗 Referral", callback_data: "action:referral" }, { text: "❓ Help & Commands", callback_data: "action:help" }],
     ]
   };
 }
@@ -1364,6 +1458,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
   if (data === "action:substatus") {
     return handleSubStatus(chatId);
+  }
+  if (data === "action:referral") {
+    return handleReferral(chatId);
   }
 
   if (data === "action:gensolwallet") {
@@ -4752,12 +4849,29 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     if (cmd === "start" && !isGroup) {
       let wallet = getLinkedWallet(chatId);
       if (!wallet) {
+        const refCode = cmdArg.startsWith("ref_") ? cmdArg : "";
         await bot.sendMessage(chatId,
           `Welcome to BUILD4\n\n` +
           `Launch tokens, create AI agents, and operate on-chain — all from Telegram.\n\n` +
           `Setting up your wallet...`
         );
         wallet = await autoGenerateWallet(chatId);
+
+        if (refCode) {
+          try {
+            const referrerChatId = refCode.replace("ref_", "");
+            if (referrerChatId !== chatId.toString()) {
+              const existing = await storage.getReferralByReferred(chatId.toString());
+              if (!existing) {
+                await storage.createReferral(referrerChatId, chatId.toString(), refCode);
+                log(`[Referral] ${chatId} referred by ${referrerChatId}`, "telegram");
+              }
+            }
+          } catch (e: any) {
+            console.error("[Referral] Failed to save referral:", e.message);
+          }
+        }
+
         await bot.sendMessage(chatId,
           `✅ You're all set!\n\n` +
           `What do you want to do?`,
