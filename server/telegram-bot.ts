@@ -7623,7 +7623,12 @@ async function handleChaosPlanCallback(chatId: number, data: string): Promise<vo
 async function handleAsterMenu(chatId: number): Promise<void> {
   if (!bot) return;
 
-  const creds = await storage.getAsterCredentials(chatId.toString());
+  let creds: any = null;
+  try {
+    creds = await storage.getAsterCredentials(chatId.toString());
+  } catch (e: any) {
+    console.error("[AsterMenu] Failed to get credentials:", e.message);
+  }
   const connected = !!creds;
 
   if (!connected) {
