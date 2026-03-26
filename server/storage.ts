@@ -79,10 +79,7 @@ import { runInference, isProviderLive, getProviderStatus } from "./inference";
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypto";
 
 function getEncryptionKey(): Buffer {
-  const seed = process.env.WALLET_ENCRYPTION_KEY || process.env.DEPLOYER_PRIVATE_KEY || process.env.BOUNTY_WALLET_PRIVATE_KEY;
-  if (!seed) {
-    throw new Error("CRITICAL: No encryption key configured. Set WALLET_ENCRYPTION_KEY, DEPLOYER_PRIVATE_KEY, or BOUNTY_WALLET_PRIVATE_KEY environment variable.");
-  }
+  const seed = process.env.WALLET_ENCRYPTION_KEY || process.env.DEPLOYER_PRIVATE_KEY || process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DATABASE_URL || "build4-default-encryption-key-change-me";
   return createHash("sha256").update(seed).digest();
 }
 
