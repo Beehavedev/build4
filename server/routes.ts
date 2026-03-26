@@ -51,14 +51,18 @@ export async function registerRoutes(
     return true;
   }
 
-  app.all("/api/web4/telegram-wallet/export*", (_req: Request, res: Response) => {
-    res.status(403).json({ error: "Forbidden. Wallet export is only available through the Telegram bot interface." });
-  });
-  app.all("/api/wallet/export*", (_req: Request, res: Response) => {
-    res.status(403).json({ error: "Forbidden. Wallet export is only available through the Telegram bot interface." });
-  });
-  app.all("/api/wallets/*/private*", (_req: Request, res: Response) => {
-    res.status(403).json({ error: "Forbidden. Private key access is not available via API." });
+  const block403 = (_req: Request, res: Response) => {
+    res.status(403).json({ error: "Forbidden. Not available via API." });
+  };
+  app.use((req: Request, res: Response, next: Function) => {
+    const p = req.path.toLowerCase();
+    if (p.includes("/export") && (p.includes("/wallet") || p.includes("/telegram-wallet"))) {
+      return block403(req, res);
+    }
+    if (p.includes("/private") && p.includes("/wallets/")) {
+      return block403(req, res);
+    }
+    next();
   });
 
   app.post("/api/telegram/webhook/:token", express.json(), (req: Request, res: Response) => {

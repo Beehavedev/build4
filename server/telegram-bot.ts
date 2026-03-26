@@ -631,6 +631,44 @@ const PREMIUM_ACTIONS = new Set([
   "action:buy", "action:sell", "action:trade", "action:launchtoken",
 ]);
 
+const FREE_TIER_LIMITS: Record<string, number> = {
+  "action:okxsignals": 3,
+  "action:okxsecurity": 2,
+  "action:okxtrending": 3,
+  "action:okxmeme": 3,
+  "action:okxprice": 5,
+};
+const freeTierUsage = new Map<string, { count: number; date: string }>();
+
+function checkFreeTierLimit(chatId: number, action: string): { allowed: boolean; remaining: number; limit: number } {
+  const limit = FREE_TIER_LIMITS[action];
+  if (!limit) return { allowed: false, remaining: 0, limit: 0 };
+  const today = new Date().toISOString().split("T")[0];
+  const key = `${chatId}:${action}:${today}`;
+  const usage = freeTierUsage.get(key);
+  if (!usage || usage.date !== today) {
+    return { allowed: true, remaining: limit - 1, limit };
+  }
+  if (usage.count >= limit) {
+    return { allowed: false, remaining: 0, limit };
+  }
+  return { allowed: true, remaining: limit - usage.count - 1, limit };
+}
+
+function recordFreeTierUsage(chatId: number, action: string): void {
+  const today = new Date().toISOString().split("T")[0];
+  const key = `${chatId}:${action}:${today}`;
+  const usage = freeTierUsage.get(key);
+  if (!usage || usage.date !== today) {
+    freeTierUsage.set(key, { count: 1, date: today });
+  } else {
+    usage.count++;
+  }
+}
+
+const TRANSACTION_FEE_PERCENT = 1.0;
+const trialRemindersSent = new Set<string>();
+
 const subCache = new Map<number, { status: string; expiresAt: Date | null; checkedAt: number }>();
 
 async function checkSubscription(chatId: number): Promise<{ allowed: boolean; status: string; daysLeft?: number; message?: string }> {
@@ -683,8 +721,13 @@ function subscriptionExpiredMessage(): { text: string; markup: TelegramBot.Inlin
   return {
     text:
       `⚡ *BUILD4 Premium Required*\n\n` +
-      `This feature requires an active subscription.\n\n` +
-      `💰 *$${BOT_PRICE_USD}/month* — Unlimited access to:\n` +
+      `This feature requires an active subscription.\n` +
+      `Trading (buy/sell/swap/bridge) and token launching are premium-only.\n\n` +
+      `🆓 *Free tier available:*\n` +
+      `• 3 signal checks/day\n` +
+      `• 2 security scans/day\n` +
+      `• 5 price checks/day\n\n` +
+      `💰 *$${BOT_PRICE_USD}/month* — Unlimited everything:\n` +
       `• 🐋 Smart Money Signals\n` +
       `• ⚡ Instant Buy & Sell\n` +
       `• 🔄 DEX Swap & Bridge\n` +
@@ -692,10 +735,13 @@ function subscriptionExpiredMessage(): { text: string; markup: TelegramBot.Inlin
       `• 🔥 Trending & Meme Scanner\n` +
       `• 💎 Autonomous Trading Agent\n` +
       `• 🚀 Token Launcher\n\n` +
-      `Pay with USDT on BNB Chain or Base.`,
+      `Pay with USDT on BNB Chain or Base.\n` +
+      `🎁 Start with a *${TRIAL_DAYS}-day free trial!*`,
     markup: {
       inline_keyboard: [
+        [{ text: `🆓 Start ${TRIAL_DAYS}-Day Free Trial`, callback_data: "action:subscribe" }],
         [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+        [{ text: "🔗 Refer & Earn 30-50%", callback_data: "action:referral" }],
         [{ text: "« Menu", callback_data: "action:menu" }],
       ],
     },
@@ -1179,6 +1225,80 @@ async function handleReferral(chatId: number): Promise<void> {
   }
 }
 
+async function sendTrialReminders(): Promise<void> {
+  if (!bot) return;
+  try {
+    const allSubs = await storage.getAllBotSubscriptions();
+    const now = new Date();
+    for (const sub of allSubs) {
+      if (sub.status !== "trial" || !sub.expiresAt) continue;
+      const expiresAt = new Date(sub.expiresAt);
+      const hoursLeft = (expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60);
+      const chatId = parseInt(sub.chatId);
+      if (isNaN(chatId)) continue;
+
+      if (hoursLeft > 0 && hoursLeft <= 24) {
+        const key = `${chatId}:day1`;
+        if (trialRemindersSent.has(key)) continue;
+        trialRemindersSent.add(key);
+        try {
+          await bot.sendMessage(chatId,
+            `⏰ *Your BUILD4 trial expires in less than 24 hours!*\n\n` +
+            `Don't lose access to:\n` +
+            `• 📊 Trading signals & security scans\n` +
+            `• 🔄 Unlimited swaps & bridges\n` +
+            `• 🚀 Token launcher\n` +
+            `• 🤖 AI trading agent\n\n` +
+            `Subscribe now to keep full access — only *$${BOT_PRICE_USD}/month*`,
+            { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+              [{ text: `💳 Subscribe Now — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+              [{ text: "📊 My Subscription", callback_data: "action:substatus" }],
+            ]}}
+          );
+        } catch {}
+      } else if (hoursLeft > 24 && hoursLeft <= 48) {
+        const key = `${chatId}:day2`;
+        if (trialRemindersSent.has(key)) continue;
+        trialRemindersSent.add(key);
+        try {
+          await bot.sendMessage(chatId,
+            `📅 *Trial reminder:* Your free trial expires in ~${Math.ceil(hoursLeft / 24)} days.\n\n` +
+            `Enjoying BUILD4? Subscribe now and keep trading with zero interruption.\n\n` +
+            `💰 Only *$${BOT_PRICE_USD}/month* — unlimited everything.`,
+            { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+              [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+            ]}}
+          );
+        } catch {}
+      }
+
+      if (hoursLeft <= 0) {
+        const key = `${chatId}:expired`;
+        if (trialRemindersSent.has(key)) continue;
+        trialRemindersSent.add(key);
+        try {
+          await bot.sendMessage(chatId,
+            `🔒 *Your BUILD4 trial has expired.*\n\n` +
+            `You can still use limited free features daily:\n` +
+            `• 3 signal checks\n` +
+            `• 2 security scans\n` +
+            `• 5 price checks\n\n` +
+            `For unlimited access to everything, subscribe:\n` +
+            `💰 *$${BOT_PRICE_USD}/month*`,
+            { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+              [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+              [{ text: "🔗 Refer & Earn 30-50%", callback_data: "action:referral" }],
+            ]}}
+          );
+        } catch {}
+      }
+    }
+    log("[TrialReminder] Reminder cycle complete", "telegram");
+  } catch (e: any) {
+    console.error("[TrialReminder] Error:", e.message);
+  }
+}
+
 function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.InlineKeyboardMarkup {
   return {
     inline_keyboard: [
@@ -1392,6 +1512,9 @@ async function startTelegramBotPolling(token: string): Promise<void> {
 
     registerBotHandlers(bot);
 
+    setInterval(() => { sendTrialReminders().catch(e => console.error("[TrialReminder] Error:", e.message)); }, 6 * 60 * 60 * 1000);
+    setTimeout(() => { sendTrialReminders().catch(e => console.error("[TrialReminder] Error:", e.message)); }, 60_000);
+
     registerTaskHandler("ai_inference", async (data: { chatId: number; question: string; context: string }) => {
       return await runInferenceWithFallback(data.question, data.context, "llama3");
     });
@@ -1418,9 +1541,36 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     try {
       const subCheck = await checkSubscription(chatId);
       if (!subCheck.allowed) {
-        const msg = subscriptionExpiredMessage();
-        await bot.sendMessage(chatId, msg.text, { parse_mode: "Markdown", reply_markup: msg.markup });
-        return;
+        if (FREE_TIER_LIMITS[data]) {
+          const freeCheck = checkFreeTierLimit(chatId, data);
+          if (freeCheck.allowed) {
+            recordFreeTierUsage(chatId, data);
+            if (freeCheck.remaining <= 1) {
+              await bot.sendMessage(chatId,
+                `⚡ *Free tier:* ${freeCheck.remaining} use${freeCheck.remaining === 1 ? "" : "s"} left today.\n` +
+                `Upgrade to Premium for unlimited access!`,
+                { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+                  [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+                ]}}
+              );
+            }
+          } else {
+            await bot.sendMessage(chatId,
+              `🔒 *Daily free limit reached* (${freeCheck.limit}/${freeCheck.limit})\n\n` +
+              `Upgrade to Premium for unlimited access to all features.\n\n` +
+              `💰 Only *$${BOT_PRICE_USD}/month* — unlock everything!`,
+              { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+                [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+                [{ text: "« Menu", callback_data: "action:menu" }],
+              ]}}
+            );
+            return;
+          }
+        } else {
+          const msg = subscriptionExpiredMessage();
+          await bot.sendMessage(chatId, msg.text, { parse_mode: "Markdown", reply_markup: msg.markup });
+          return;
+        }
       }
       if (subCheck.status === "trial" && subCheck.daysLeft !== undefined) {
         if (subCheck.daysLeft <= 1) {
@@ -2349,7 +2499,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const explorerUrls: Record<string, string> = { "56": "https://bscscan.com/tx/", "1": "https://etherscan.io/tx/", "8453": "https://basescan.org/tx/", "42161": "https://arbiscan.io/tx/", "137": "https://polygonscan.com/tx/", "10": "https://optimistic.etherscan.io/tx/", "43114": "https://snowtrace.io/tx/", "196": "https://www.okx.com/explorer/xlayer/tx/" };
       const explorer = explorerUrls[state.chainId!] || "https://bscscan.com/tx/";
       await bot.sendMessage(chatId,
-        `✅ *Swap Executed!*\n\n${state.fromSymbol} → ${state.toSymbol} on ${chain?.name || state.chainName}\n\n` +
+        `✅ *Swap Executed!*\n\n${state.fromSymbol} → ${state.toSymbol} on ${chain?.name || state.chainName}\n` +
+        `Platform fee: ${TRANSACTION_FEE_PERCENT}%\n\n` +
         `[View Transaction](${explorer}${receipt.hash})`,
         { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "🔄 New Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
       );
@@ -2418,7 +2569,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const explorerUrls: Record<string, string> = { "56": "https://bscscan.com/tx/", "1": "https://etherscan.io/tx/", "8453": "https://basescan.org/tx/", "42161": "https://arbiscan.io/tx/", "137": "https://polygonscan.com/tx/", "10": "https://optimistic.etherscan.io/tx/", "43114": "https://snowtrace.io/tx/", "196": "https://www.okx.com/explorer/xlayer/tx/" };
       const explorer = explorerUrls[state.fromChainId!] || "https://bscscan.com/tx/";
       await bot.sendMessage(chatId,
-        `✅ *Cross-Chain Swap Executed!*\n\n${state.fromSymbol} (${state.fromChainName}) → ${state.toSymbol} (${state.toChainName})\nVia: ${bridgeProvider}\n\n` +
+        `✅ *Cross-Chain Swap Executed!*\n\n${state.fromSymbol} (${state.fromChainName}) → ${state.toSymbol} (${state.toChainName})\nVia: ${bridgeProvider}\n` +
+        `Platform fee: ${TRANSACTION_FEE_PERCENT}%\n\n` +
         `[View Transaction](${explorer}${receipt.hash})`,
         { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "🔄 New Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
       );
@@ -4094,11 +4246,16 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendChatAction(chatId, "typing");
 
     const { fourMemeBuyToken } = await import("./token-launcher");
+    const fee = (parseFloat(state.bnbAmount) * TRANSACTION_FEE_PERCENT / 100).toFixed(6);
     const result = await fourMemeBuyToken(tokenAddress, state.bnbAmount, 5, userPk);
 
     if (result.success) {
       await bot.sendMessage(chatId,
-        `✅ Buy successful!\n\nTx: https://bscscan.com/tx/${result.txHash}\n\nView token: https://four.meme/token/${tokenAddress}`,
+        `✅ Buy successful!\n\n` +
+        `Amount: ${state.bnbAmount} BNB\n` +
+        `Platform fee: ${fee} BNB (${TRANSACTION_FEE_PERCENT}%)\n` +
+        `Tx: https://bscscan.com/tx/${result.txHash}\n\n` +
+        `View token: https://four.meme/token/${tokenAddress}`,
         {
           reply_markup: {
             inline_keyboard: [
@@ -4108,6 +4265,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           }
         }
       );
+      log(`[Fee] Buy fee: ${fee} BNB from chat ${chatId}`, "telegram");
     } else {
       await bot.sendMessage(chatId, `❌ Buy failed: ${result.error?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
     }
@@ -4178,7 +4336,10 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
     if (result.success) {
       await bot.sendMessage(chatId,
-        `✅ Sell successful!\n\nTx: https://bscscan.com/tx/${result.txHash}`,
+        `✅ Sell successful!\n\n` +
+        `Amount: ${state.tokenAmount} ${state.tokenSymbol || "tokens"}\n` +
+        `Platform fee: ${TRANSACTION_FEE_PERCENT}%\n` +
+        `Tx: https://bscscan.com/tx/${result.txHash}`,
         {
           reply_markup: {
             inline_keyboard: [
@@ -4188,6 +4349,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           }
         }
       );
+      log(`[Fee] Sell fee: ${TRANSACTION_FEE_PERCENT}% from chat ${chatId}`, "telegram");
     } else {
       await bot.sendMessage(chatId, `❌ Sell failed: ${result.error?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
     }
@@ -4929,6 +5091,40 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "announce" && !isGroup) {
+      const adminChatId = process.env.ADMIN_CHAT_ID;
+      if (!adminChatId || chatId.toString() !== adminChatId) return;
+
+      const allChatIds = Array.from(telegramWalletMap.keys());
+      const announcementMsg =
+        `🚀 <b>BUILD4 Premium is LIVE!</b>\n\n` +
+        `We've upgraded BUILD4 with powerful new features:\n\n` +
+        `✅ <b>Free Tier</b> — Try signals, security scans & price checks daily (limited)\n` +
+        `✅ <b>4-Day Free Trial</b> — Full unlimited access to everything\n` +
+        `✅ <b>Premium</b> — $19.99/month for unlimited trading, swaps, bridges, token launches & more\n\n` +
+        `💰 <b>Refer & Earn:</b> Share your referral link and earn 30-50% commission on every subscription!\n\n` +
+        `Start now 👇`;
+
+      await bot.sendMessage(chatId, `Announcing premium launch to ${allChatIds.length} users...`);
+      let sent = 0, failed = 0;
+      for (const targetChatId of allChatIds) {
+        try {
+          await bot.sendMessage(targetChatId, announcementMsg, {
+            parse_mode: "HTML",
+            reply_markup: { inline_keyboard: [
+              [{ text: "🆓 Start Free Trial", callback_data: "action:subscribe" }],
+              [{ text: "🔗 Get Referral Link", callback_data: "action:referral" }],
+              [{ text: "📊 View Features", callback_data: "action:menu" }],
+            ]}
+          });
+          sent++;
+          if (sent % 25 === 0) await new Promise(r => setTimeout(r, 1000));
+        } catch { failed++; }
+      }
+      await bot.sendMessage(chatId, `Announcement sent: ${sent} delivered, ${failed} failed (${allChatIds.length} total)`);
+      return;
+    }
+
     if (cmd === "stats" && !isGroup) {
       const adminChatIdStats = process.env.ADMIN_CHAT_ID;
       if (!adminChatIdStats || chatId.toString() !== adminChatIdStats) {
@@ -4974,6 +5170,10 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           `• Total referrals: <b>${refStats.totalReferrals}</b>\n` +
           `• Paid commissions: <b>${refStats.paidReferrals}</b>\n` +
           `• Total commissions owed: <b>$${refStats.totalCommissions}</b>\n\n` +
+          `<b>💰 Revenue Model</b>\n` +
+          `• Subscription price: <b>$${BOT_PRICE_USD}/mo</b>\n` +
+          `• Transaction fee: <b>${TRANSACTION_FEE_PERCENT}%</b>\n` +
+          `• Free tier actions today: <b>${freeTierUsage.size} tracked</b>\n\n` +
           `<b>🤖 Platform</b>\n` +
           `• AI Agents: <b>${stats.agents || 0}</b>\n` +
           `• On-Chain Agents: <b>${stats.onchainAgents || 0}</b>\n` +
