@@ -1945,6 +1945,10 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
   if (data === "action:confirm_transfer") {
+    if (!checkRateLimit(`tx:${chatId}`, 2, 30000)) {
+      await bot.sendMessage(chatId, "⏳ Please wait before sending another transaction.", { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }]] } });
+      return;
+    }
     const state = pendingTransfer.get(chatId);
     if (!state || !state.amount || !state.toAddress) {
       await bot.sendMessage(chatId, "❌ Transfer expired. Start again.", { reply_markup: { inline_keyboard: [[{ text: "💸 Transfer", callback_data: "action:transfer" }]] } });
@@ -2025,6 +2029,10 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
   if (data === "action:autopay_usdt") {
+    if (!checkRateLimit(`tx:${chatId}`, 2, 30000)) {
+      await bot.sendMessage(chatId, "⏳ Please wait before retrying payment.", { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
     const wallet = getLinkedWallet(chatId);
     if (!wallet) return;
     const hasKey = await checkWalletHasKey(chatId, wallet);
@@ -2082,6 +2090,10 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
   if (data.startsWith("autopay_native:")) {
+    if (!checkRateLimit(`tx:${chatId}`, 2, 30000)) {
+      await bot.sendMessage(chatId, "⏳ Please wait before retrying payment.", { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
     const chainId = data.split(":")[1];
     const wallet = getLinkedWallet(chatId);
     if (!wallet) return;
@@ -2177,6 +2189,10 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
   if (data === "action:autopay_sol") {
+    if (!checkRateLimit(`tx:${chatId}`, 2, 30000)) {
+      await bot.sendMessage(chatId, "⏳ Please wait before retrying payment.", { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
     const wallet = getLinkedWallet(chatId);
     const solWallet = solanaWalletMap.get(chatId);
     if (!solWallet) {
@@ -5177,11 +5193,11 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     const text = msg.text.trim();
     if (!transferState.amount) {
       const amount = parseFloat(text);
-      if (isNaN(amount) || amount <= 0) {
-        await bot.sendMessage(chatId, "❌ Invalid amount. Enter a valid number:", { reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "action:wallet" }]] } });
+      if (isNaN(amount) || amount <= 0 || amount > 1e12 || !isFinite(amount)) {
+        await bot.sendMessage(chatId, "❌ Invalid amount. Enter a valid positive number:", { reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "action:wallet" }]] } });
         return;
       }
-      transferState.amount = text;
+      transferState.amount = amount.toString();
       pendingTransfer.set(chatId, transferState);
       await bot.sendMessage(chatId,
         `💸 *Transfer ${amount} ${transferState.token.toUpperCase()}*\n\nEnter the recipient wallet address:`,
@@ -5194,7 +5210,17 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         await bot.sendMessage(chatId, "❌ Invalid address. Enter a valid EVM address (0x...):", { reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "action:wallet" }]] } });
         return;
       }
-      transferState.toAddress = text.toLowerCase();
+      const targetAddr = text.toLowerCase();
+      if (targetAddr === "0x0000000000000000000000000000000000000000") {
+        await bot.sendMessage(chatId, "❌ Cannot send to the zero address.", { reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "action:wallet" }]] } });
+        return;
+      }
+      const myWallet = getLinkedWallet(chatId);
+      if (myWallet && targetAddr === myWallet.toLowerCase()) {
+        await bot.sendMessage(chatId, "❌ Cannot send to your own wallet.", { reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "action:wallet" }]] } });
+        return;
+      }
+      transferState.toAddress = targetAddr;
       pendingTransfer.set(chatId, transferState);
       const tokenLabel = transferState.token === "bnb" ? "BNB" : transferState.token === "usdt" ? "USDT" : "ETH";
       await bot.sendMessage(chatId,
