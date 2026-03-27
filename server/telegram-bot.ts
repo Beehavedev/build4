@@ -1008,20 +1008,33 @@ async function regenerateWalletWithKey(chatId: number): Promise<string | null> {
   }
 }
 
-const balanceCache = new Map<string, { bnb: string; eth: string; ts: number }>();
+const balanceCache = new Map<string, { bnb: string; eth: string; usdt: string; ts: number }>();
 const BALANCE_CACHE_TTL = 30_000;
 const bnbProviderCached = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
 const baseProviderCached = new ethers.JsonRpcProvider("https://mainnet.base.org");
 
-async function fetchWalletBalances(wallets: string[]): Promise<Record<string, { bnb: string; eth: string }>> {
-  const result: Record<string, { bnb: string; eth: string }> = {};
+const ERC20_BALANCE_ABI = ["function balanceOf(address) view returns (uint256)"];
+const BSC_USDT = "0x55d398326f99059fF775485246999027B3197955";
+
+async function fetchUsdtBalance(wallet: string): Promise<string> {
+  try {
+    const contract = new ethers.Contract(BSC_USDT, ERC20_BALANCE_ABI, bnbProviderCached);
+    const bal = await contract.balanceOf(wallet);
+    return parseFloat(ethers.formatUnits(bal, 18)).toFixed(2);
+  } catch {
+    return "0.00";
+  }
+}
+
+async function fetchWalletBalances(wallets: string[]): Promise<Record<string, { bnb: string; eth: string; usdt: string }>> {
+  const result: Record<string, { bnb: string; eth: string; usdt: string }> = {};
   const now = Date.now();
   const uncached: string[] = [];
 
   for (const w of wallets) {
     const cached = balanceCache.get(w);
     if (cached && now - cached.ts < BALANCE_CACHE_TTL) {
-      result[w] = { bnb: cached.bnb, eth: cached.eth };
+      result[w] = { bnb: cached.bnb, eth: cached.eth, usdt: cached.usdt };
     } else {
       uncached.push(w);
     }
@@ -1031,20 +1044,103 @@ async function fetchWalletBalances(wallets: string[]): Promise<Record<string, { 
 
   await Promise.all(uncached.map(async (w) => {
     try {
-      const [bnbBal, ethBal] = await Promise.all([
+      const [bnbBal, ethBal, usdtBal] = await Promise.all([
         bnbProviderCached.getBalance(w).catch(() => BigInt(0)),
         baseProviderCached.getBalance(w).catch(() => BigInt(0)),
+        fetchUsdtBalance(w),
       ]);
       const bnbStr = parseFloat(ethers.formatEther(bnbBal)).toFixed(4);
       const ethStr = parseFloat(ethers.formatEther(ethBal)).toFixed(4);
-      result[w] = { bnb: bnbStr, eth: ethStr };
-      balanceCache.set(w, { bnb: bnbStr, eth: ethStr, ts: now });
+      result[w] = { bnb: bnbStr, eth: ethStr, usdt: usdtBal };
+      balanceCache.set(w, { bnb: bnbStr, eth: ethStr, usdt: usdtBal, ts: now });
     } catch {
-      result[w] = { bnb: "0.0000", eth: "0.0000" };
+      result[w] = { bnb: "0.0000", eth: "0.0000", usdt: "0.00" };
     }
   }));
 
   return result;
+}
+
+const pendingTransfer = new Map<number, { token: string; amount?: string; toAddress?: string }>();
+
+async function handleTransfer(chatId: number): Promise<void> {
+  if (!bot) return;
+  const wallet = getLinkedWallet(chatId);
+  if (!wallet) {
+    await bot.sendMessage(chatId, "❌ You need a wallet first.", { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+    return;
+  }
+  const hasKey = await checkWalletHasKey(chatId, wallet);
+  if (!hasKey) {
+    await bot.sendMessage(chatId, "❌ Your wallet is view-only. Generate or import a wallet with a private key.", { reply_markup: { inline_keyboard: [[{ text: "🔑 Generate Wallet", callback_data: "action:genwallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    return;
+  }
+  await bot.sendMessage(chatId,
+    `💸 *Transfer from Wallet*\n\nSelect token to send:`,
+    { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+      [{ text: "BNB", callback_data: "transfer_token:bnb" }, { text: "USDT (BEP-20)", callback_data: "transfer_token:usdt" }],
+      [{ text: "ETH (Base)", callback_data: "transfer_token:eth" }],
+      [{ text: "« Wallet", callback_data: "action:wallet" }],
+    ]}}
+  );
+}
+
+async function handlePayFromWallet(chatId: number): Promise<void> {
+  if (!bot) return;
+  const wallet = getLinkedWallet(chatId);
+  if (!wallet) {
+    await bot.sendMessage(chatId, "❌ You need a wallet first.", { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+    return;
+  }
+  const hasKey = await checkWalletHasKey(chatId, wallet);
+  if (!hasKey) {
+    await bot.sendMessage(chatId, "❌ Your wallet is view-only. Generate or import a wallet with a private key to pay.", { reply_markup: { inline_keyboard: [[{ text: "🔑 Generate Wallet", callback_data: "action:genwallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    return;
+  }
+
+  await bot.sendMessage(chatId, `⏳ Checking your wallet balance...`);
+  sendTyping(chatId);
+
+  const usdtBal = await fetchUsdtBalance(wallet);
+  const bnbBal = parseFloat(ethers.formatEther(await bnbProviderCached.getBalance(wallet).catch(() => BigInt(0))));
+
+  if (parseFloat(usdtBal) >= BOT_PRICE_USD) {
+    await bot.sendMessage(chatId,
+      `💰 *Pay Subscription From Wallet*\n\n` +
+      `Your USDT balance: *${usdtBal} USDT*\n` +
+      `Subscription: *$${BOT_PRICE_USD} USDT*\n\n` +
+      `This will send ${BOT_PRICE_USD} USDT from your wallet directly to BUILD4.\n\n` +
+      `Tap below to confirm payment:`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+        [{ text: `✅ Pay ${BOT_PRICE_USD} USDT Now`, callback_data: "action:autopay_usdt" }],
+        [{ text: "❌ Cancel", callback_data: "action:subscribe" }],
+      ]}}
+    );
+  } else if (bnbBal >= 0.05) {
+    const estimatedBnb = (BOT_PRICE_USD / 600 * 1.03).toFixed(4);
+    await bot.sendMessage(chatId,
+      `💰 *Pay Subscription From Wallet*\n\n` +
+      `Your USDT: *${usdtBal}* (not enough)\n` +
+      `Your BNB: *${bnbBal.toFixed(4)} BNB*\n\n` +
+      `We'll auto-swap ~${estimatedBnb} BNB → ${BOT_PRICE_USD} USDT and send it to BUILD4.\n\n` +
+      `Tap below to confirm:`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+        [{ text: `✅ Swap BNB & Pay Now`, callback_data: "action:autopay_swap" }],
+        [{ text: "❌ Cancel", callback_data: "action:subscribe" }],
+      ]}}
+    );
+  } else {
+    await bot.sendMessage(chatId,
+      `❌ *Insufficient Balance*\n\n` +
+      `USDT: ${usdtBal}\nBNB: ${bnbBal.toFixed(4)}\n\n` +
+      `You need either:\n• ${BOT_PRICE_USD} USDT, or\n• ~0.05 BNB (auto-swap)\n\n` +
+      `Fund your wallet:\n\`${wallet}\``,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+        [{ text: "🔄 Check Again", callback_data: "action:payfromwallet" }],
+        [{ text: "« Menu", callback_data: "action:menu" }],
+      ]}}
+    );
+  }
 }
 
 function getWalletConnectUrl(chatId?: number): string {
@@ -1103,6 +1199,7 @@ async function handleSubscribe(chatId: number): Promise<void> {
         `You have full access to all premium features.\n` +
         `Subscribe before it expires to keep uninterrupted access.`,
         { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+          [{ text: "💰 Pay From My Wallet", callback_data: "action:payfromwallet" }],
           [{ text: `💳 Subscribe Now — $${BOT_PRICE_USD}/mo`, callback_data: "action:paynow" }],
           [{ text: "« Menu", callback_data: "action:menu" }],
         ]}}
@@ -1148,11 +1245,12 @@ async function handleSubscribe(chatId: number): Promise<void> {
       `• Base — USDC\n\n` +
       `⚠️ Send from your linked wallet:\n` +
       `\`${wallet}\`\n\n` +
-      `After sending, tap "✅ I've Paid" to verify.`,
+      `After sending, tap "✅ I've Paid" to verify.\n\nOr pay directly from your bot wallet:`,
       {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
+            [{ text: "💰 Pay From My Wallet", callback_data: "action:payfromwallet" }],
             [{ text: "✅ I've Paid — Verify Now", callback_data: "action:verifypayment" }],
             [{ text: "📊 Subscription Status", callback_data: "action:substatus" }],
             [{ text: "« Menu", callback_data: "action:menu" }],
@@ -1813,10 +1911,244 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       `⚠️ Send from:\n\`${wallet}\`\n\n` +
       `After sending, tap "✅ I've Paid" to verify.`,
       { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+        [{ text: "💰 Pay From My Wallet", callback_data: "action:payfromwallet" }],
         [{ text: "✅ I've Paid — Verify Now", callback_data: "action:verifypayment" }],
         [{ text: "« Menu", callback_data: "action:menu" }],
       ]}}
     );
+    return;
+  }
+  if (data === "action:payfromwallet") {
+    return handlePayFromWallet(chatId);
+  }
+  if (data === "action:transfer") {
+    return handleTransfer(chatId);
+  }
+  if (data.startsWith("transfer_token:")) {
+    const token = data.split(":")[1];
+    pendingTransfer.set(chatId, { token });
+    const tokenLabel = token === "bnb" ? "BNB" : token === "usdt" ? "USDT" : "ETH";
+    await bot.sendMessage(chatId,
+      `💸 *Transfer ${tokenLabel}*\n\nEnter the amount to send:`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "action:wallet" }]] } }
+    );
+    return;
+  }
+  if (data === "action:confirm_transfer") {
+    const state = pendingTransfer.get(chatId);
+    if (!state || !state.amount || !state.toAddress) {
+      await bot.sendMessage(chatId, "❌ Transfer expired. Start again.", { reply_markup: { inline_keyboard: [[{ text: "💸 Transfer", callback_data: "action:transfer" }]] } });
+      pendingTransfer.delete(chatId);
+      return;
+    }
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) { pendingTransfer.delete(chatId); return; }
+
+    const tokenLabel = state.token === "bnb" ? "BNB" : state.token === "usdt" ? "USDT" : "ETH";
+    await bot.sendMessage(chatId, `⏳ Sending ${state.amount} ${tokenLabel} to ${state.toAddress.substring(0, 8)}...`);
+    sendTyping(chatId);
+
+    try {
+      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(wallet);
+      if (!pk) throw new Error("Private key not found. Re-import your wallet.");
+
+      if (state.token === "bnb") {
+        const signer = new ethers.Wallet(pk, bnbProviderCached);
+        const amount = ethers.parseEther(state.amount);
+        const tx = await signer.sendTransaction({ to: state.toAddress, value: amount });
+        const receipt = await tx.wait();
+        if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
+        pendingTransfer.delete(chatId);
+        balanceCache.delete(wallet);
+        await bot.sendMessage(chatId,
+          `✅ *Transfer Successful!*\n\n` +
+          `Sent ${state.amount} BNB\nTo: \`${state.toAddress}\`\n\n` +
+          `[View TX](https://bscscan.com/tx/${receipt.hash})`,
+          { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+        );
+      } else if (state.token === "usdt") {
+        const signer = new ethers.Wallet(pk, bnbProviderCached);
+        const usdtContract = new ethers.Contract(BSC_USDT, [
+          "function transfer(address to, uint256 amount) returns (bool)",
+          "function balanceOf(address) view returns (uint256)",
+        ], signer);
+        const amount = ethers.parseUnits(state.amount, 18);
+        const balance = await usdtContract.balanceOf(wallet);
+        if (balance < amount) throw new Error(`Insufficient USDT. Have ${parseFloat(ethers.formatUnits(balance, 18)).toFixed(2)}, need ${state.amount}`);
+        const tx = await usdtContract.transfer(state.toAddress, amount);
+        const receipt = await tx.wait();
+        if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
+        pendingTransfer.delete(chatId);
+        balanceCache.delete(wallet);
+        await bot.sendMessage(chatId,
+          `✅ *Transfer Successful!*\n\n` +
+          `Sent ${state.amount} USDT\nTo: \`${state.toAddress}\`\n\n` +
+          `[View TX](https://bscscan.com/tx/${receipt.hash})`,
+          { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+        );
+      } else if (state.token === "eth") {
+        const signer = new ethers.Wallet(pk, baseProviderCached);
+        const amount = ethers.parseEther(state.amount);
+        const tx = await signer.sendTransaction({ to: state.toAddress, value: amount });
+        const receipt = await tx.wait();
+        if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
+        pendingTransfer.delete(chatId);
+        balanceCache.delete(wallet);
+        await bot.sendMessage(chatId,
+          `✅ *Transfer Successful!*\n\n` +
+          `Sent ${state.amount} ETH (Base)\nTo: \`${state.toAddress}\`\n\n` +
+          `[View TX](https://basescan.org/tx/${receipt.hash})`,
+          { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+        );
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId,
+        `❌ Transfer failed: ${e.message?.substring(0, 150)}`,
+        { reply_markup: { inline_keyboard: [
+          [{ text: "🔄 Retry", callback_data: "action:transfer" }],
+          [{ text: "👛 Wallet", callback_data: "action:wallet" }],
+        ]}}
+      );
+    }
+    pendingTransfer.delete(chatId);
+    return;
+  }
+  if (data === "action:autopay_usdt") {
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) return;
+    const hasKey = await checkWalletHasKey(chatId, wallet);
+    if (!hasKey) {
+      await bot.sendMessage(chatId, "❌ Wallet key not found. Generate a new wallet.", { reply_markup: { inline_keyboard: [[{ text: "🔑 Generate Wallet", callback_data: "action:genwallet" }]] } });
+      return;
+    }
+    await bot.sendMessage(chatId, `⏳ Sending ${BOT_PRICE_USD} USDT to BUILD4...`);
+    sendTyping(chatId);
+    try {
+      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(wallet);
+      if (!pk) throw new Error("Private key not found. Re-import your wallet via /wallet.");
+
+      const signer = new ethers.Wallet(pk, bnbProviderCached);
+      const usdtContract = new ethers.Contract(BSC_USDT, [
+        "function transfer(address to, uint256 amount) returns (bool)",
+        "function balanceOf(address) view returns (uint256)",
+      ], signer);
+
+      const amount = ethers.parseUnits(BOT_PRICE_USD.toString(), 18);
+      const balance = await usdtContract.balanceOf(wallet);
+      if (balance < amount) throw new Error(`Insufficient USDT. Have ${ethers.formatUnits(balance, 18)}, need ${BOT_PRICE_USD}`);
+
+      const tx = await usdtContract.transfer(TREASURY_WALLET, amount);
+      const receipt = await tx.wait();
+      if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
+
+      try {
+        await storage.activateBotSubscription(wallet, receipt.hash, 56, BOT_PRICE_USD.toString());
+        subCache.delete(chatId);
+      } catch (e: any) {
+        console.error("[AutoPay] activate sub failed, will verify manually:", e.message);
+      }
+
+      await bot.sendMessage(chatId,
+        `✅ *Payment Successful!*\n\n` +
+        `Sent ${BOT_PRICE_USD} USDT to BUILD4\n` +
+        `[View Transaction](https://bscscan.com/tx/${receipt.hash})\n\n` +
+        `Your subscription is now active! 🎉`,
+        { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [
+          [{ text: "🚀 Start Trading", callback_data: "action:menu" }],
+        ]}}
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId,
+        `❌ Payment failed: ${e.message?.substring(0, 150)}\n\nPlease try again or send manually.`,
+        { reply_markup: { inline_keyboard: [
+          [{ text: "🔄 Retry", callback_data: "action:autopay_usdt" }],
+          [{ text: "💳 Pay Manually", callback_data: "action:paynow" }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ]}}
+      );
+    }
+    return;
+  }
+  if (data === "action:autopay_swap") {
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) return;
+    await bot.sendMessage(chatId, `⏳ Swapping BNB → USDT and paying subscription...`);
+    sendTyping(chatId);
+    try {
+      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(wallet);
+      if (!pk) throw new Error("Private key not found. Re-import your wallet.");
+
+      const swapAmountBnb = (BOT_PRICE_USD / 500 * 1.05).toFixed(4);
+      const rawAmount = ethers.parseUnits(swapAmountBnb, 18).toString();
+
+      const { getSwapData } = await import("./okx-onchainos");
+      const swapResult = await getSwapData({
+        chainId: "56",
+        fromTokenAddress: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+        toTokenAddress: BSC_USDT.toLowerCase(),
+        amount: rawAmount,
+        slippage: "1",
+        userWalletAddress: wallet,
+      });
+
+      const txData = swapResult?.data?.[0]?.tx;
+      if (!txData) throw new Error("No swap route found. Try again later.");
+
+      const signer = new ethers.Wallet(pk, bnbProviderCached);
+      const swapTx = await signer.sendTransaction({
+        to: txData.to,
+        data: txData.data,
+        value: txData.value ? BigInt(txData.value) : 0n,
+        gasLimit: txData.gasLimit ? BigInt(txData.gasLimit) : 300000n,
+      });
+      const swapReceipt = await swapTx.wait();
+      if (!swapReceipt || swapReceipt.status !== 1) throw new Error("Swap transaction reverted");
+
+      await new Promise(r => setTimeout(r, 3000));
+
+      const usdtContract = new ethers.Contract(BSC_USDT, [
+        "function transfer(address to, uint256 amount) returns (bool)",
+        "function balanceOf(address) view returns (uint256)",
+      ], signer);
+      const usdtBal = await usdtContract.balanceOf(wallet);
+      const payAmount = ethers.parseUnits(BOT_PRICE_USD.toString(), 18);
+      if (usdtBal < payAmount) throw new Error(`Swap succeeded but USDT balance (${ethers.formatUnits(usdtBal, 18)}) is less than ${BOT_PRICE_USD}. Please try manual payment.`);
+
+      const payTx = await usdtContract.transfer(TREASURY_WALLET, payAmount);
+      const payReceipt = await payTx.wait();
+      if (!payReceipt || payReceipt.status !== 1) throw new Error("USDT transfer reverted");
+
+      try {
+        await storage.activateBotSubscription(wallet, payReceipt.hash, 56, BOT_PRICE_USD.toString());
+        subCache.delete(chatId);
+      } catch (e: any) {
+        console.error("[AutoPay] activate sub after swap failed:", e.message);
+      }
+
+      await bot.sendMessage(chatId,
+        `✅ *Payment Successful!*\n\n` +
+        `Swapped ~${swapAmountBnb} BNB → USDT\n` +
+        `Sent ${BOT_PRICE_USD} USDT to BUILD4\n\n` +
+        `[Swap TX](https://bscscan.com/tx/${swapReceipt.hash})\n` +
+        `[Payment TX](https://bscscan.com/tx/${payReceipt.hash})\n\n` +
+        `Your subscription is now active! 🎉`,
+        { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [
+          [{ text: "🚀 Start Trading", callback_data: "action:menu" }],
+        ]}}
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId,
+        `❌ Auto-pay failed: ${e.message?.substring(0, 200)}\n\nYou can try again or pay manually.`,
+        { reply_markup: { inline_keyboard: [
+          [{ text: "🔄 Retry", callback_data: "action:autopay_swap" }],
+          [{ text: "💳 Pay Manually", callback_data: "action:paynow" }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ]}}
+      );
+    }
     return;
   }
   if (data === "action:verifypayment") {
@@ -2007,6 +2339,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       if (bal) {
         const parts: string[] = [];
         if (parseFloat(bal.bnb) > 0) parts.push(`${bal.bnb} BNB`);
+        if (parseFloat(bal.usdt) > 0) parts.push(`${bal.usdt} USDT`);
         if (parseFloat(bal.eth) > 0) parts.push(`${bal.eth} ETH`);
         balText = parts.length > 0 ? ` (${parts.join(", ")})` : ` ${tr("wallet.empty", chatId)}`;
       }
@@ -2034,7 +2367,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     if (!solWallet) {
       walletButtons.push([{ text: tr("wallet.genSol", chatId), callback_data: "action:gensolwallet" }]);
     }
-    walletButtons.push([{ text: tr("wallet.exportKey", chatId), callback_data: "action:exportkey" }]);
+    walletButtons.push([{ text: "💸 Transfer", callback_data: "action:transfer" }, { text: tr("wallet.exportKey", chatId), callback_data: "action:exportkey" }]);
     if (solWallet) {
       walletButtons.push([{ text: tr("wallet.exportSol", chatId), callback_data: "action:exportsolkey" }]);
     }
@@ -4737,6 +5070,46 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       console.error("[TelegramBot] web_app_data parse error:", e.message);
     }
     return;
+  }
+
+  const transferState = pendingTransfer.get(chatId);
+  if (transferState && msg.text) {
+    const text = msg.text.trim();
+    if (!transferState.amount) {
+      const amount = parseFloat(text);
+      if (isNaN(amount) || amount <= 0) {
+        await bot.sendMessage(chatId, "❌ Invalid amount. Enter a valid number:", { reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "action:wallet" }]] } });
+        return;
+      }
+      transferState.amount = text;
+      pendingTransfer.set(chatId, transferState);
+      await bot.sendMessage(chatId,
+        `💸 *Transfer ${amount} ${transferState.token.toUpperCase()}*\n\nEnter the recipient wallet address:`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "action:wallet" }]] } }
+      );
+      return;
+    }
+    if (!transferState.toAddress) {
+      if (!/^0x[a-fA-F0-9]{40}$/i.test(text)) {
+        await bot.sendMessage(chatId, "❌ Invalid address. Enter a valid EVM address (0x...):", { reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "action:wallet" }]] } });
+        return;
+      }
+      transferState.toAddress = text.toLowerCase();
+      pendingTransfer.set(chatId, transferState);
+      const tokenLabel = transferState.token === "bnb" ? "BNB" : transferState.token === "usdt" ? "USDT" : "ETH";
+      await bot.sendMessage(chatId,
+        `💸 *Confirm Transfer*\n\n` +
+        `Token: *${tokenLabel}*\n` +
+        `Amount: *${transferState.amount}*\n` +
+        `To: \`${transferState.toAddress}\`\n\n` +
+        `Tap confirm to send:`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+          [{ text: `✅ Confirm Send`, callback_data: "action:confirm_transfer" }],
+          [{ text: "❌ Cancel", callback_data: "action:wallet" }],
+        ]}}
+      );
+      return;
+    }
   }
 
   const logoState = pendingTokenLaunch.get(chatId);
