@@ -2559,8 +2559,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       });
       const approveTx = approveResult?.data?.[0];
 
-      const pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
-      if (!pk) throw new Error("Wallet key not found");
+      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
+      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(walletAddr);
+      if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
 
       const CHAIN_RPCS: Record<string, string> = {
         "56": "https://bsc-dataseed1.binance.org", "1": "https://eth.llamarpc.com",
@@ -2759,8 +2760,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       });
       const txData = swapTx?.data?.[0]?.tx;
       if (!txData) throw new Error("No transaction data returned");
-      const pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
-      if (!pk) throw new Error("Wallet key not found");
+      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
+      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(walletAddr);
+      if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
       const CHAIN_RPCS: Record<string, string> = { "56": "https://bsc-dataseed1.binance.org", "1": "https://eth.llamarpc.com", "8453": "https://mainnet.base.org", "42161": "https://arb1.arbitrum.io/rpc", "137": "https://polygon-rpc.com", "10": "https://mainnet.optimism.io", "43114": "https://api.avax.network/ext/bc/C/rpc", "196": "https://rpc.xlayer.tech", "250": "https://rpc.ftm.tools", "5000": "https://rpc.mantle.xyz" };
       const rpcUrl = CHAIN_RPCS[state.chainId!] || "https://bsc-dataseed1.binance.org";
       const { ethers } = await import("ethers");
@@ -2804,8 +2806,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId, `⏳ Executing cross-chain swap via ${bridgeProvider}: ${state.fromSymbol} (${state.fromChainName}) → ${state.toSymbol} (${state.toChainName})...`);
     sendTyping(chatId);
     try {
-      const pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
-      if (!pk) throw new Error("Wallet key not found");
+      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
+      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(walletAddr);
+      if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
       const CHAIN_RPCS: Record<string, string> = { "56": "https://bsc-dataseed1.binance.org", "1": "https://eth.llamarpc.com", "8453": "https://mainnet.base.org", "42161": "https://arb1.arbitrum.io/rpc", "137": "https://polygon-rpc.com", "10": "https://mainnet.optimism.io", "43114": "https://api.avax.network/ext/bc/C/rpc", "196": "https://rpc.xlayer.tech", "250": "https://rpc.ftm.tools", "5000": "https://rpc.mantle.xyz" };
       const rpcUrl = CHAIN_RPCS[state.fromChainId!] || "https://bsc-dataseed1.binance.org";
       const { ethers } = await import("ethers");
@@ -3822,8 +3825,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const txData = swapTx?.data?.[0]?.tx;
       if (!txData) throw new Error("No swap route found for this token. It may have low liquidity.");
 
-      const pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
-      if (!pk) throw new Error("Wallet key not found");
+      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
+      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(walletAddr);
+      if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
 
       const CHAIN_RPCS: Record<string, string> = {
         "56": "https://bsc-dataseed1.binance.org", "1": "https://eth.llamarpc.com",
