@@ -4,6 +4,8 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startAgentRunner } from "./agent-runner";
 import { checkAndExecuteMilestones } from "./chaos-launch";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 
 process.on("uncaughtException", (err) => {
   console.error("[CRASH] Uncaught exception:", err.message, err.stack);
@@ -24,6 +26,8 @@ declare module "http" {
   }
 }
 
+app.set("trust proxy", 1);
+
 app.get("/", (_req, res, next) => {
   if (_req.headers["user-agent"]?.includes("health") || _req.headers["x-healthcheck"]) {
     return res.status(200).send("OK");
@@ -36,20 +40,99 @@ app.use(
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
+    limit: "1mb",
   }),
 );
 
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 
-app.use((_req, res, next) => {
+const ALLOWED_ORIGINS = [
+  process.env.APP_URL,
+  process.env.RENDER_EXTERNAL_URL,
+  "https://build4.world",
+  "https://www.build4.world",
+].filter(Boolean) as string[];
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o))) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  } else if (origin && (origin.includes("walletconnect") || origin.includes("bridge.walletconnect.org") || origin.includes("verify.walletconnect.com"))) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, x-api-key");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Max-Age", "86400");
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+  next();
+});
+
+app.use(helmet({
+  contentSecurityPolicy: process.env.NODE_ENV === "production" ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:", "blob:"],
+      connectSrc: ["'self'", "https:", "wss:", "wss://relay.walletconnect.com", "wss://relay.walletconnect.org", "https://verify.walletconnect.com", "https://rpc.walletconnect.com"],
+      frameSrc: ["'self'", "https://verify.walletconnect.com"],
+      frameAncestors: ["'none'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      upgradeInsecureRequests: [],
+    },
+  } : false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  hsts: process.env.NODE_ENV === "production" ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
+}));
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+  skip: (req) => req.path === "/" || req.path === "/health" || req.path.startsWith("/assets"),
+});
+app.use("/api", globalLimiter);
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many authentication attempts, please try again later." },
+});
+app.use("/api/web4/link-wallet", authLimiter);
+app.use("/api/web4/api-keys", authLimiter);
+app.use("/api/analytics/login", authLimiter);
+
+const webhookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use("/api/telegram/webhook", webhookLimiter);
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.removeHeader("X-Powered-By");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("X-XSS-Protection", "0");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  res.setHeader("X-DNS-Prefetch-Control", "off");
+  res.setHeader("X-Download-Options", "noopen");
+  res.setHeader("X-Permitted-Cross-Domain-Policies", "none");
   if (process.env.NODE_ENV === "production") {
-    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-    res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' https: wss:; frame-ancestors 'none';");
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   }
   next();
 });
@@ -64,6 +147,24 @@ export function log(message: string, source = "express") {
 
   console.log(`${formattedTime} [${source}] ${message}`);
 }
+
+const BLOCKED_PATHS = [
+  "/wp-admin", "/wp-login", "/xmlrpc.php", "/.env", "/.git",
+  "/phpmyadmin", "/admin/config", "/cgi-bin", "/shell", "/eval",
+  "/.well-known/security.txt", "/debug", "/actuator", "/solr",
+  "/manager/html", "/jmx-console", "/web-console",
+  "/server-status", "/server-info", "/.DS_Store",
+  "/config.json", "/database.yml", "/credentials",
+];
+const suspiciousPatterns = /(\.\.|%2e%2e|%00|<script|javascript:|data:text\/html)/i;
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const p = req.path.toLowerCase();
+  if (BLOCKED_PATHS.some(bp => p.startsWith(bp)) || suspiciousPatterns.test(req.url)) {
+    return res.status(404).end();
+  }
+  next();
+});
 
 app.use((req, res, next) => {
   if (!req.path.startsWith("/api")) return next();
