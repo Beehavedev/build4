@@ -1289,8 +1289,8 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
   sendTyping(chatId);
 
   const chains = [
-    { id: 56, name: "BNB Chain", api: "https://api.bscscan.com/api", key: process.env.BSCSCAN_API_KEY || "" },
-    { id: 8453, name: "Base", api: "https://api.basescan.org/api", key: process.env.BASESCAN_API_KEY || "" },
+    { id: 56, name: "BNB Chain", key: process.env.BSCSCAN_API_KEY || "" },
+    { id: 8453, name: "Base", key: process.env.BASESCAN_API_KEY || "" },
   ];
 
   for (const chain of chains) {
@@ -1303,6 +1303,7 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
 
       for (const lookupAddr of lookupAddresses) {
         const params = new URLSearchParams({
+          chainid: chain.id.toString(),
           module: "account",
           action: "tokentx",
           contractaddress: usdtAddr,
@@ -1313,7 +1314,7 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
         });
         if (chain.key) params.set("apikey", chain.key);
 
-        const resp = await fetch(`${chain.api}?${params}`, { signal: AbortSignal.timeout(10000) });
+        const resp = await fetch(`https://api.etherscan.io/v2/api?${params}`, { signal: AbortSignal.timeout(10000) });
         const json = await resp.json() as any;
 
         console.log(`[VerifyPayment] ${chain.name} lookup=${lookupAddr.substring(0,8)} status=${json.status} results=${json.result?.length || 0}`);
