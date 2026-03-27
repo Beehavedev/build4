@@ -5476,6 +5476,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
     if (cmd === "start" && !isGroup) {
       let wallet = getLinkedWallet(chatId);
+      const isNewUser = !wallet;
       if (!wallet) {
         const refCode = cmdArg.startsWith("ref_") ? cmdArg : "";
         await bot.sendMessage(chatId,
@@ -5499,17 +5500,58 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             console.error("[Referral] Failed to save referral:", e.message);
           }
         }
+      }
 
+      let sub: any = null;
+      try {
+        sub = await storage.getBotSubscriptionByChatId(chatId.toString());
+      } catch (e: any) {
+        console.error("[Start] Sub check failed:", e.message);
+      }
+
+      if (!sub) {
+        try {
+          sub = await storage.createBotSubscription(wallet!, chatId.toString());
+          subCache.delete(chatId);
+          log(`[Trial] Auto-activated ${TRIAL_DAYS}-day free trial for chatId=${chatId}`, "telegram");
+        } catch (e: any) {
+          console.error("[Start] Trial creation failed:", e.message);
+        }
+      }
+
+      if (sub && (sub.status === "trial" || sub.status === "active") && sub.expiresAt && sub.expiresAt > new Date()) {
+        const daysLeft = Math.ceil((sub.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+        const statusLabel = sub.status === "trial" ? "Free Trial" : "Active";
+        const trialMsg = isNewUser
+          ? `🎉 *Your ${TRIAL_DAYS}-day free trial is now active!*\n\n` +
+            `✅ Full access to all premium features\n` +
+            `⏳ ${daysLeft} days remaining\n\n` +
+            `After your trial, subscribe for just *$${BOT_PRICE_USD}/month* to keep access.\n\n` +
+            `👛 Wallet: \`${shortWallet(wallet!)}\`\n\nWhat do you want to do?`
+          : `Welcome back!\n\n` +
+            `📊 Subscription: *${statusLabel}*\n` +
+            `⏳ ${daysLeft} days remaining\n` +
+            `👛 Wallet: \`${shortWallet(wallet!)}\`\n\n` +
+            `What do you want to do?`;
+        await bot.sendMessage(chatId, trialMsg, {
+          parse_mode: "Markdown",
+          reply_markup: mainMenuKeyboard(undefined, chatId),
+        });
+      } else if (sub && sub.status === "expired") {
         await bot.sendMessage(chatId,
-          `✅ You're all set!\n\n` +
-          `What do you want to do?`,
-          { reply_markup: mainMenuKeyboard(undefined, chatId) }
+          `⚠️ *Your subscription has expired*\n\n` +
+          `Subscribe for *$${BOT_PRICE_USD}/month* to regain full access to all features.\n\n` +
+          `👛 Wallet: \`${shortWallet(wallet!)}\``,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+            [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+            [{ text: "« Menu", callback_data: "action:menu" }],
+          ]}}
         );
       } else {
         await bot.sendMessage(chatId,
-          `Welcome back!\n\n` +
-          `👛 Wallet: ${shortWallet(wallet)}\n\n` +
-          `What do you want to do?`,
+          isNewUser
+            ? `✅ You're all set!\n\nWhat do you want to do?`
+            : `Welcome back!\n\n👛 Wallet: ${shortWallet(wallet!)}\n\nWhat do you want to do?`,
           { reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       }
