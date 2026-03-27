@@ -706,6 +706,30 @@ export async function getTokenPriceAPI(address: string, chainId: string): Promis
   }
 }
 
+export async function getTokenInfoAPI(address: string, chainId: string): Promise<any> {
+  try {
+    const r = await okxRequest("GET", "/dex/market/token/advanced-info", {
+      chainIndex: chainId, tokenContractAddress: address,
+    });
+    const item = Array.isArray(r?.data) ? r.data[0] : r?.data;
+    if (item) {
+      return {
+        success: true,
+        data: {
+          tokenName: item.tokenName || item.name,
+          tokenSymbol: item.tokenSymbol || item.symbol,
+          price: item.price,
+          marketCap: item.marketCap,
+          volume24h: item.volume24h,
+          liquidity: item.liquidity,
+          holders: item.holders || item.holderCount,
+        },
+      };
+    }
+  } catch {}
+  return { success: false };
+}
+
 export const SUPPORTED_CHAIN_IDS: Record<string, string> = {
   "1": "Ethereum",
   "56": "BNB Chain",

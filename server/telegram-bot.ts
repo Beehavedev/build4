@@ -4418,12 +4418,18 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId, `🔒 Scanning token \`${tokenAddr.substring(0, 12)}...\``, { parse_mode: "Markdown" });
     sendTyping(chatId);
     try {
-      const { securityTokenScanAPI } = await import("./okx-onchainos");
-      const result = await securityTokenScanAPI(tokenAddr, chainId);
+      const { securityTokenScanAPI, getTokenInfoAPI } = await import("./okx-onchainos");
+      const [result, tokenInfoRes] = await Promise.all([
+        securityTokenScanAPI(tokenAddr, chainId),
+        getTokenInfoAPI(tokenAddr, chainId).catch(() => ({ success: false, data: null })),
+      ]);
       const d = result?.data;
+      const ti = tokenInfoRes?.data;
       if (d && result.success) {
+        const tokenName = d.tokenName || ti?.tokenName || null;
+        const tokenSymbol = d.tokenSymbol || ti?.tokenSymbol || null;
         let report = `🔒 *Security Report*\n\n`;
-        if (d.tokenName) report += `Token: *${d.tokenName}* (${d.tokenSymbol || ""})\n`;
+        if (tokenName) report += `Token: *${tokenName}*${tokenSymbol && tokenSymbol !== tokenName ? ` (${tokenSymbol})` : ""}\n`;
         report += `Address: \`${tokenAddr}\`\n\n`;
 
         const displayRisks: string[] = [];
@@ -5761,26 +5767,42 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     sendTyping(chatId);
 
     try {
-      const result = await getTokenPrice(ca, chainId);
+      const { getTokenInfoAPI } = await import("./okx-onchainos");
+      const [result, tokenInfoRes] = await Promise.all([
+        getTokenPrice(ca, chainId),
+        getTokenInfoAPI(ca, chainId).catch(() => ({ success: false, data: null })),
+      ]);
       const d = result?.data;
+      const ti = tokenInfoRes?.data;
+
+      const tokenName = ti?.tokenName || d?.tokenName || d?.name || null;
+      const tokenSymbol = ti?.tokenSymbol || d?.tokenSymbol || d?.symbol || null;
 
       let info = `📊 *Token Details*\n\n`;
+      if (tokenName) info += `*${tokenName}*${tokenSymbol && tokenSymbol !== tokenName ? ` ($${tokenSymbol})` : ""}\n`;
       info += `Address: \`${ca}\`\n`;
       info += `Chain: ${chainName}\n\n`;
 
-      if (d && result.success) {
-        const price = parseFloat(d.price || "0");
-        const priceStr = price < 0.01 ? price.toExponential(3) : price.toFixed(6);
-        if (d.symbol) info += `Symbol: *${d.symbol}*\n`;
-        if (d.price) info += `💲 Price: $${priceStr}\n`;
-        if (d.priceChange24h) {
-          const change = parseFloat(d.priceChange24h) * 100;
+      if ((d && result.success) || ti) {
+        const priceVal = d?.price || ti?.price;
+        if (priceVal) {
+          const price = parseFloat(priceVal);
+          const priceStr = price < 0.01 ? price.toExponential(3) : price.toFixed(6);
+          info += `💲 Price: $${priceStr}\n`;
+        }
+        const change24h = d?.priceChange24h;
+        if (change24h) {
+          const change = parseFloat(change24h) * 100;
           info += `📈 24h: ${change >= 0 ? "+" : ""}${change.toFixed(2)}%\n`;
         }
-        if (d.volume24h) info += `📊 Volume: $${(parseFloat(d.volume24h) / 1e6).toFixed(2)}M\n`;
-        if (d.marketCap && parseFloat(d.marketCap) > 0) info += `💰 MCap: $${(parseFloat(d.marketCap) / 1e6).toFixed(2)}M\n`;
-        if (d.liquidity && parseFloat(d.liquidity) > 0) info += `💧 Liquidity: $${(parseFloat(d.liquidity) / 1e3).toFixed(0)}K\n`;
-        if (d.holders) info += `👥 Holders: ${parseInt(d.holders).toLocaleString()}\n`;
+        const vol = d?.volume24h || ti?.volume24h;
+        if (vol) info += `📊 Volume: $${(parseFloat(vol) / 1e6).toFixed(2)}M\n`;
+        const mcap = d?.marketCap || ti?.marketCap;
+        if (mcap && parseFloat(mcap) > 0) info += `💰 MCap: $${(parseFloat(mcap) / 1e6).toFixed(2)}M\n`;
+        const liq = d?.liquidity || ti?.liquidity;
+        if (liq && parseFloat(liq) > 0) info += `💧 Liquidity: $${(parseFloat(liq) / 1e3).toFixed(0)}K\n`;
+        const holders = d?.holders || ti?.holders;
+        if (holders) info += `👥 Holders: ${parseInt(holders).toLocaleString()}\n`;
       } else {
         info += `⚠️ Limited data available for this token.\n`;
       }
