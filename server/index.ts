@@ -6,6 +6,9 @@ import { startAgentRunner } from "./agent-runner";
 import { checkAndExecuteMilestones } from "./chaos-launch";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { readFileSync } from "fs";
+import { join } from "path";
+import pg from "pg";
 
 process.on("uncaughtException", (err) => {
   console.error("[CRASH] Uncaught exception:", err.message, err.stack);
@@ -176,7 +179,39 @@ app.use((req, res, next) => {
   next();
 });
 
+async function ensureSchema() {
+  if (!process.env.DATABASE_URL) return;
+  const thisDir = new URL(".", import.meta.url).pathname;
+  const candidates = [
+    join(process.cwd(), "dist", "schema-init.sql"),
+    join(process.cwd(), "server", "schema-init.sql"),
+    join(thisDir, "schema-init.sql"),
+    join(thisDir, "..", "server", "schema-init.sql"),
+  ];
+  let sql = "";
+  for (const p of candidates) {
+    try { sql = readFileSync(p, "utf-8"); break; } catch {}
+  }
+  if (!sql) return;
+  const isSSL = process.env.DATABASE_URL.includes("render.com") ||
+    process.env.DATABASE_URL.includes("neon.tech") ||
+    process.env.RENDER === "true";
+  const pool = new pg.Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: isSSL ? { rejectUnauthorized: false } : false,
+  });
+  try {
+    await pool.query(sql);
+    log("Database schema ensured — all tables created");
+  } catch (e: any) {
+    log(`Schema setup warning: ${e.message?.substring(0, 200)}`);
+  } finally {
+    await pool.end();
+  }
+}
+
 (async () => {
+  await ensureSchema();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

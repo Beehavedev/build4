@@ -3545,7 +3545,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           });
 
           const buttons = [
-            ...buyButtons.slice(0, 5),
+            ...buyButtons,
             [{ text: "🔄 Refresh", callback_data: `okxsig:${sigType}:chain:${chain}` }],
             [{ text: "« Back", callback_data: "action:okxsignals" }, { text: "« Menu", callback_data: "action:menu" }],
           ];
