@@ -1221,7 +1221,7 @@ async function handleSubscribe(chatId: number): Promise<void> {
       try {
         await storage.createBotSubscription(wallet, chatId.toString());
         subCache.delete(chatId);
-        log(`[Trial] Free trial activated for chatId=${chatId}, wallet=${wallet}`, "telegram");
+        console.log(`[Trial] Free trial activated for chatId=${chatId}, wallet=${wallet}`);
         await bot.sendMessage(chatId,
           `🎉 *Your ${TRIAL_DAYS}-day free trial is now active!*\n\n` +
           `You have full unlimited access to:\n` +
@@ -1316,7 +1316,7 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
         const resp = await fetch(`${chain.api}?${params}`, { signal: AbortSignal.timeout(10000) });
         const json = await resp.json() as any;
 
-        log(`[VerifyPayment] ${chain.name} lookup=${lookupAddr.substring(0,8)} status=${json.status} results=${json.result?.length || 0}`, "telegram");
+        console.log(`[VerifyPayment] ${chain.name} lookup=${lookupAddr.substring(0,8)} status=${json.status} results=${json.result?.length || 0}`);
 
         if (json.status !== "1" || !json.result?.length) continue;
 
@@ -1358,7 +1358,7 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
         }
 
         subCache.delete(chatId);
-        log(`[VerifyPayment] SUCCESS chatId=${chatId} wallet=${wallet.substring(0,8)} amount=${value.toFixed(2)} chain=${chain.name} tx=${tx.hash.substring(0,16)}`, "telegram");
+        console.log(`[VerifyPayment] SUCCESS chatId=${chatId} wallet=${wallet.substring(0,8)} amount=${value.toFixed(2)} chain=${chain.name} tx=${tx.hash.substring(0,16)}`);
 
         await bot.sendMessage(chatId,
           `🎉 *Payment Confirmed!*\n\n` +
@@ -1377,7 +1377,7 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
             const commissionPct = getReferralCommissionPercent(referrerCount);
             const commissionAmt = (BOT_PRICE_USD * commissionPct / 100).toFixed(2);
             await storage.markReferralPaid(chatId.toString(), commissionAmt, commissionPct);
-            log(`[Referral] Commission earned: referrer=${referral.referrerChatId}, referred=${chatId}, amount=$${commissionAmt}, tier=${commissionPct}%`, "telegram");
+            console.log(`[Referral] Commission earned: referrer=${referral.referrerChatId}, referred=${chatId}, amount=$${commissionAmt}, tier=${commissionPct}%`);
             try {
               await bot.sendMessage(parseInt(referral.referrerChatId),
                 `💰 *Referral Commission Earned!*\n\n` +
@@ -1400,7 +1400,7 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
     }
   }
 
-  log(`[VerifyPayment] FAILED chatId=${chatId} wallet=${wallet.substring(0,8)} — no matching tx found`, "telegram");
+  console.log(`[VerifyPayment] FAILED chatId=${chatId} wallet=${wallet.substring(0,8)} — no matching tx found`);
 
   await bot.sendMessage(chatId,
     `❌ *Payment Not Found*\n\n` +
@@ -2096,7 +2096,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           activated = await storage.activateBotSubscription(wallet, receipt.hash, 56, BOT_PRICE_USD.toString());
         }
         subCache.delete(chatId);
-        log(`[AutoPay USDT] SUCCESS chatId=${chatId} wallet=${wallet.substring(0,8)} tx=${receipt.hash.substring(0,16)}`, "telegram");
+        console.log(`[AutoPay USDT] SUCCESS chatId=${chatId} wallet=${wallet.substring(0,8)} tx=${receipt.hash.substring(0,16)}`);
       } catch (e: any) {
         console.error("[AutoPay] activate sub failed, will verify manually:", e.message);
       }
@@ -2197,7 +2197,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           activated = await storage.activateBotSubscription(wallet, payReceipt.hash, parseInt(chainId), BOT_PRICE_USD.toString());
         }
         subCache.delete(chatId);
-        log(`[AutoPay Native] SUCCESS chatId=${chatId} chain=${chainId} tx=${payReceipt.hash.substring(0,16)}`, "telegram");
+        console.log(`[AutoPay Native] SUCCESS chatId=${chatId} chain=${chainId} tx=${payReceipt.hash.substring(0,16)}`);
       } catch (e: any) {
         console.error("[AutoPay] activate sub failed:", e.message);
       }
@@ -2285,7 +2285,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           activated = await storage.activateBotSubscription(subWallet, sig, 501, BOT_PRICE_USD.toString());
         }
         subCache.delete(chatId);
-        log(`[AutoPay SOL] SUCCESS chatId=${chatId} tx=${sig.substring(0,16)}`, "telegram");
+        console.log(`[AutoPay SOL] SUCCESS chatId=${chatId} tx=${sig.substring(0,16)}`);
       } catch (e: any) {
         console.error("[AutoPay SOL] activate sub failed:", e.message);
       }
@@ -5231,10 +5231,10 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         const feeResult = await collectTradeFee(userPk, state.bnbAmount, TRANSACTION_FEE_PERCENT);
         if (feeResult.feeAmount && feeResult.feeAmount !== "0") {
           feeMsg = `\nPlatform fee: ${feeResult.feeAmount} BNB (${TRANSACTION_FEE_PERCENT}%)`;
-          log(`[TradeFee] Buy fee collected: ${feeResult.feeAmount} BNB from chat ${chatId} (tx: ${feeResult.txHash})`, "telegram");
+          console.log(`[TradeFee] Buy fee collected: ${feeResult.feeAmount} BNB from chat ${chatId} (tx: ${feeResult.txHash})`);
         }
       } catch (e: any) {
-        log(`[TradeFee] Buy fee failed (non-blocking): ${e.message?.substring(0, 100)}`, "telegram");
+        console.log(`[TradeFee] Buy fee failed (non-blocking): ${e.message?.substring(0, 100)}`);
       }
       await bot.sendMessage(chatId,
         `✅ Buy successful!\n\n` +
@@ -5333,11 +5333,11 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           const feeResult = await collectTradeFee(userPk, proceedsBnb, TRANSACTION_FEE_PERCENT);
           if (feeResult.feeAmount && feeResult.feeAmount !== "0") {
             feeMsg = `\nProceeds: ~${parseFloat(proceedsBnb).toFixed(6)} BNB\nPlatform fee: ${feeResult.feeAmount} BNB (${TRANSACTION_FEE_PERCENT}%)`;
-            log(`[TradeFee] Sell fee collected: ${feeResult.feeAmount} BNB from chat ${chatId} (tx: ${feeResult.txHash})`, "telegram");
+            console.log(`[TradeFee] Sell fee collected: ${feeResult.feeAmount} BNB from chat ${chatId} (tx: ${feeResult.txHash})`);
           }
         }
       } catch (e: any) {
-        log(`[TradeFee] Sell fee failed (non-blocking): ${e.message?.substring(0, 100)}`, "telegram");
+        console.log(`[TradeFee] Sell fee failed (non-blocking): ${e.message?.substring(0, 100)}`);
       }
       await bot.sendMessage(chatId,
         `✅ Sell successful!\n\n` +
@@ -6367,7 +6367,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
               const existing = await storage.getReferralByReferred(chatId.toString());
               if (!existing) {
                 await storage.createReferral(referrerChatId, chatId.toString(), refCode);
-                log(`[Referral] ${chatId} referred by ${referrerChatId}`, "telegram");
+                console.log(`[Referral] ${chatId} referred by ${referrerChatId}`);
               }
             }
           } catch (e: any) {
@@ -6387,7 +6387,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         try {
           sub = await storage.createBotSubscription(wallet!, chatId.toString());
           subCache.delete(chatId);
-          log(`[Trial] Auto-activated ${TRIAL_DAYS}-day free trial for chatId=${chatId}`, "telegram");
+          console.log(`[Trial] Auto-activated ${TRIAL_DAYS}-day free trial for chatId=${chatId}`);
         } catch (e: any) {
           console.error("[Start] Trial creation failed:", e.message);
         }
