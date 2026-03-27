@@ -4532,6 +4532,19 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data.startsWith("carefresh:")) {
+    const parts = data.split(":");
+    const tokenAddr = parts[1];
+    const chainId = parts[2];
+    if (tokenAddr && chainId) {
+      pendingOKXScan.delete(chatId);
+      pendingOKXPrice.delete(chatId);
+      const fakeMsg = { chat: { id: chatId }, from: msg?.from, text: tokenAddr, message_id: msg?.message?.message_id } as any;
+      bot.emit("message", fakeMsg);
+    }
+    return;
+  }
+
   if (data === "action:okxsecurity") {
     await bot.sendMessage(chatId,
       "🔒 *Security Scanner*\n\nScan a token for honeypot risks, rug-pull indicators, and contract safety.\n\nSelect chain:",
@@ -5802,79 +5815,156 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     const chainId = isSolana ? "501" : "56";
     const chainName = isSolana ? "Solana" : "BNB Chain";
     const nativeSymbol = isSolana ? "SOL" : "BNB";
+    const chainEmoji = isSolana ? "🟣" : chainId === "8453" ? "🔵" : "🟡";
 
-    await bot.sendMessage(chatId, `🔍 Looking up token \`${ca.substring(0, 12)}...\``, { parse_mode: "Markdown" });
+    await bot.sendMessage(chatId, `🔍 Scanning token \`${ca.substring(0, 12)}...\``, { parse_mode: "Markdown" });
     sendTyping(chatId);
 
     try {
-      const { getTokenInfoAPI } = await import("./okx-onchainos");
-      const [result, tokenInfoRes] = await Promise.all([
-        getTokenPrice(ca, chainId),
+      const { getTokenInfoAPI, securityTokenScanAPI } = await import("./okx-onchainos");
+      const [priceResult, tokenInfoRes, securityRes] = await Promise.all([
+        getTokenPrice(ca, chainId).catch(() => ({ success: false, data: null })),
         getTokenInfoAPI(ca, chainId).catch(() => ({ success: false, data: null })),
+        securityTokenScanAPI(ca, chainId).catch(() => ({ success: false, data: null })),
       ]);
-      const d = result?.data;
+      const pd = priceResult?.data;
       const ti = tokenInfoRes?.data;
+      const sec = securityRes?.data;
 
-      const tokenName = ti?.tokenName || d?.tokenName || d?.name || null;
-      const tokenSymbol = ti?.tokenSymbol || d?.tokenSymbol || d?.symbol || null;
+      const tokenName = sec?.tokenName || ti?.tokenName || pd?.tokenName || pd?.name || null;
+      const tokenSymbol = sec?.tokenSymbol || ti?.tokenSymbol || pd?.tokenSymbol || pd?.symbol || null;
 
-      let info = `📊 *Token Details*\n\n`;
-      if (tokenName) info += `*${tokenName}*${tokenSymbol && tokenSymbol !== tokenName ? ` ($${tokenSymbol})` : ""}\n`;
-      info += `Address: \`${ca}\`\n`;
-      info += `Chain: ${chainName}\n\n`;
+      const dexChainSlug: Record<string, string> = { "56": "bsc", "1": "ethereum", "8453": "base", "501": "solana", "137": "polygon", "42161": "arbitrum" };
+      const chartUrl = `https://dexscreener.com/${dexChainSlug[chainId] || "bsc"}/${ca}`;
 
-      if ((d && result.success) || ti) {
-        const priceVal = d?.price || ti?.price;
-        if (priceVal) {
-          const price = parseFloat(priceVal);
-          const priceStr = price < 0.01 ? price.toExponential(3) : price.toFixed(6);
-          info += `💲 Price: $${priceStr}\n`;
-        }
-        const change24h = d?.priceChange24h;
-        if (change24h) {
-          const change = parseFloat(change24h) * 100;
-          info += `📈 24h: ${change >= 0 ? "+" : ""}${change.toFixed(2)}%\n`;
-        }
-        const vol = d?.volume24h || ti?.volume24h;
-        if (vol) info += `📊 Volume: $${(parseFloat(vol) / 1e6).toFixed(2)}M\n`;
-        const mcap = d?.marketCap || ti?.marketCap;
-        if (mcap && parseFloat(mcap) > 0) info += `💰 MCap: $${(parseFloat(mcap) / 1e6).toFixed(2)}M\n`;
-        const liq = d?.liquidity || ti?.liquidity;
-        if (liq && parseFloat(liq) > 0) info += `💧 Liquidity: $${(parseFloat(liq) / 1e3).toFixed(0)}K\n`;
-        const holders = d?.holders || ti?.holders;
-        if (holders) info += `👥 Holders: ${parseInt(holders).toLocaleString()}\n`;
+      let msg = "";
+
+      if (tokenName) {
+        msg += `${chainEmoji} *${tokenName}*${tokenSymbol && tokenSymbol !== tokenName ? ` ($${tokenSymbol})` : ""}\n`;
       } else {
-        info += `⚠️ Limited data available for this token.\n`;
+        msg += `${chainEmoji} *Token Scan*\n`;
       }
+      msg += `Chain: ${chainName}\n`;
+      msg += `CA: \`${ca}\`\n`;
+      msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+      const priceVal = pd?.price || ti?.price || sec?.price;
+      if (priceVal) {
+        const price = parseFloat(priceVal);
+        const priceStr = price < 0.0001 ? price.toExponential(3) : price < 1 ? price.toFixed(6) : price.toFixed(2);
+        msg += `💲 *Price:* $${priceStr}\n`;
+      }
+
+      const change24h = pd?.priceChange24h;
+      if (change24h) {
+        const pct = parseFloat(change24h) * 100;
+        const arrow = pct >= 0 ? "🟢" : "🔴";
+        msg += `${arrow} *24h:* ${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%\n`;
+      }
+
+      const mcap = pd?.marketCap || ti?.marketCap || sec?.marketCap;
+      if (mcap && parseFloat(mcap) > 0) {
+        const mc = parseFloat(mcap);
+        msg += `💰 *MCap:* $${mc >= 1e9 ? (mc / 1e9).toFixed(2) + "B" : mc >= 1e6 ? (mc / 1e6).toFixed(2) + "M" : (mc / 1e3).toFixed(0) + "K"}\n`;
+      }
+
+      const vol = pd?.volume24h || ti?.volume24h || sec?.volume24h;
+      if (vol && parseFloat(vol) > 0) {
+        const v = parseFloat(vol);
+        msg += `📊 *Volume 24h:* $${v >= 1e6 ? (v / 1e6).toFixed(2) + "M" : (v / 1e3).toFixed(0) + "K"}\n`;
+      }
+
+      const liq = pd?.liquidity || ti?.liquidity || sec?.liquidity;
+      if (liq && parseFloat(liq) > 0) {
+        const l = parseFloat(liq);
+        msg += `💧 *Liquidity:* $${l >= 1e6 ? (l / 1e6).toFixed(2) + "M" : (l / 1e3).toFixed(0) + "K"}\n`;
+      }
+
+      const holders = sec?.holderCount || ti?.holders || pd?.holders;
+      if (holders) msg += `👥 *Holders:* ${parseInt(holders).toLocaleString()}\n`;
+
+      const lpHolders = sec?.lpHolderCount;
+      if (lpHolders) msg += `🏊 *LP Holders:* ${lpHolders.toLocaleString()}\n`;
+
+      if (sec && securityRes?.success) {
+        msg += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+        msg += `🔒 *Security Analysis*\n\n`;
+
+        if (sec.isHoneypot) {
+          msg += `🚨 *HONEYPOT — DO NOT BUY*\n\n`;
+        }
+
+        const checks: string[] = [];
+        checks.push(`${sec.isOpenSource ? "✅" : "❌"} Contract Verified`);
+        checks.push(`${!sec.isProxy ? "✅" : "⚠️"} ${sec.isProxy ? "Proxy (Upgradeable)" : "Not Proxy"}`);
+        checks.push(`${!sec.ownerCanMint ? "✅" : "❌"} ${sec.ownerCanMint ? "Mint Enabled" : "Mint Disabled"}`);
+        checks.push(`${!sec.canTakeBackOwnership ? "✅" : "❌"} ${sec.canTakeBackOwnership ? "Owner Reclaimable" : "Ownership Safe"}`);
+        checks.push(`${!sec.ownerChangeBalance ? "✅" : "❌"} ${sec.ownerChangeBalance ? "Balance Modifiable" : "Balance Safe"}`);
+
+        if (isSolana && sec.freezeAuthority !== undefined) {
+          checks.push(`${!sec.freezeAuthority ? "✅" : "❌"} ${sec.freezeAuthority ? "Freeze Authority Active" : "No Freeze Authority"}`);
+        }
+
+        msg += checks.join("\n") + "\n\n";
+
+        if (sec.buyTax !== undefined || sec.sellTax !== undefined) {
+          const bt = sec.buyTax ? parseFloat(sec.buyTax) : 0;
+          const st = sec.sellTax ? parseFloat(sec.sellTax) : 0;
+          const taxIcon = (bt > 10 || st > 10) ? "🔴" : (bt > 5 || st > 5) ? "🟡" : "🟢";
+          msg += `${taxIcon} *Buy Tax:* ${bt.toFixed(1)}% | *Sell Tax:* ${st.toFixed(1)}%\n`;
+        }
+
+        if (sec.risks && sec.risks.length > 0) {
+          msg += `\n⚠️ *Risks Found (${sec.risks.length}):*\n`;
+          sec.risks.slice(0, 6).forEach((r: string) => {
+            msg += `  • ${r}\n`;
+          });
+          if (sec.risks.length > 6) msg += `  _...and ${sec.risks.length - 6} more_\n`;
+        }
+
+        const riskEmoji = sec.riskLevel === "high" ? "🔴 HIGH" : sec.riskLevel === "medium" ? "🟡 MEDIUM" : sec.riskLevel === "low" ? "🟢 LOW" : "⚪ UNKNOWN";
+        msg += `\n*Risk Level:* ${riskEmoji}`;
+        if (sec.rugScore !== undefined) msg += ` (Score: ${sec.rugScore})`;
+        msg += `\n`;
+
+        if (sec.source) msg += `_Source: ${sec.source}_\n`;
+      } else {
+        msg += `\n⚠️ Security data unavailable — scan manually below.\n`;
+      }
+
+      msg += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+      msg += `[📊 Chart](${chartUrl})`;
 
       const buyAmounts = isSolana
         ? [
-            { text: "Buy 0.1 SOL", callback_data: `cabuy:${ca}:${chainId}:0.1` },
-            { text: "Buy 0.5 SOL", callback_data: `cabuy:${ca}:${chainId}:0.5` },
-            { text: "Buy 1 SOL", callback_data: `cabuy:${ca}:${chainId}:1` },
+            { text: "🟢 0.1 SOL", callback_data: `cabuy:${ca}:${chainId}:0.1` },
+            { text: "🟢 0.5 SOL", callback_data: `cabuy:${ca}:${chainId}:0.5` },
+            { text: "🟢 1 SOL", callback_data: `cabuy:${ca}:${chainId}:1` },
           ]
         : [
-            { text: "Buy 0.01 BNB", callback_data: `cabuy:${ca}:${chainId}:0.01` },
-            { text: "Buy 0.05 BNB", callback_data: `cabuy:${ca}:${chainId}:0.05` },
-            { text: "Buy 0.1 BNB", callback_data: `cabuy:${ca}:${chainId}:0.1` },
+            { text: "🟢 0.01 BNB", callback_data: `cabuy:${ca}:${chainId}:0.01` },
+            { text: "🟢 0.05 BNB", callback_data: `cabuy:${ca}:${chainId}:0.05` },
+            { text: "🟢 0.1 BNB", callback_data: `cabuy:${ca}:${chainId}:0.1` },
           ];
 
-      await bot.sendMessage(chatId, info, {
+      await bot.sendMessage(chatId, msg, {
         parse_mode: "Markdown",
+        disable_web_page_preview: true,
         reply_markup: {
           inline_keyboard: [
             buyAmounts,
             [
-              { text: "🔒 Security Scan", callback_data: `cascan:${ca}:${chainId}` },
-              { text: "📊 Price Chart", callback_data: `cachart:${ca}:${chainId}` },
+              { text: "🔒 Deep Scan", callback_data: `cascan:${ca}:${chainId}` },
+              { text: "📊 Chart", callback_data: `cachart:${ca}:${chainId}` },
             ],
+            [{ text: "🔄 Refresh", callback_data: `carefresh:${ca}:${chainId}` }],
             [{ text: "« Menu", callback_data: "action:menu" }],
           ],
         },
       });
     } catch (e: any) {
       await bot.sendMessage(chatId,
-        `⚠️ Could not look up token \`${ca.substring(0, 12)}...\`\n\n${e.message?.substring(0, 100)}`,
+        `⚠️ Could not scan token \`${ca.substring(0, 12)}...\`\n\n${e.message?.substring(0, 100)}`,
         { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
       );
     }
