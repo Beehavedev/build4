@@ -1286,7 +1286,7 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
     return;
   }
 
-  await bot.sendMessage(chatId, "🔍 Checking for USDT payment on BNB Chain and Base...");
+  await bot.sendMessage(chatId, `🔍 Checking for USDT payment on BNB Chain and Base...\n_Wallet: \`${wallet.substring(0,10)}...\`_`, { parse_mode: "Markdown" });
   sendTyping(chatId);
 
   const scanApiKey = process.env.BSCSCAN_API_KEY || "";
