@@ -1303,39 +1303,85 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
       let foundTx: any = null;
 
       for (const lookupAddr of lookupAddresses) {
-        const params = new URLSearchParams({
-          chainid: chain.id.toString(),
-          module: "account",
-          action: "tokentx",
-          contractaddress: usdtAddr,
-          address: lookupAddr,
-          page: "1",
-          offset: "50",
-          sort: "desc",
-        });
-        if (chain.key) params.set("apikey", chain.key);
+        try {
+          const params = new URLSearchParams({
+            chainid: chain.id.toString(),
+            module: "account",
+            action: "tokentx",
+            contractaddress: usdtAddr,
+            address: lookupAddr,
+            page: "1",
+            offset: "50",
+            sort: "desc",
+          });
+          if (chain.key) params.set("apikey", chain.key);
 
-        const apiUrl = `https://api.etherscan.io/v2/api?${params}`;
-        console.log(`[VerifyPayment] Calling: ${apiUrl.replace(chain.key, "KEY***")}`);
-        const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(15000) });
-        const json = await resp.json() as any;
+          const apiUrl = `https://api.etherscan.io/v2/api?${params}`;
+          console.log(`[VerifyPayment] Etherscan V2 call for ${chain.name} lookup=${lookupAddr.substring(0,8)}`);
+          const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(15000) });
+          const json = await resp.json() as any;
 
-        console.log(`[VerifyPayment] ${chain.name} lookup=${lookupAddr.substring(0,8)} status=${json.status} msg=${json.message} results=${Array.isArray(json.result) ? json.result.length : json.result}`);
+          console.log(`[VerifyPayment] ${chain.name} status=${json.status} msg=${json.message} results=${Array.isArray(json.result) ? json.result.length : typeof json.result === 'string' ? json.result.substring(0, 80) : json.result}`);
 
-        if (json.status !== "1" || !Array.isArray(json.result) || !json.result.length) continue;
-
-        for (const tx of json.result) {
-          if (tx.to?.toLowerCase() !== TREASURY_WALLET.toLowerCase()) continue;
-          if (tx.from?.toLowerCase() !== wallet.toLowerCase()) continue;
-
-          const decimals = parseInt(tx.tokenDecimal || "18");
-          const value = parseFloat(tx.value) / Math.pow(10, decimals);
-          if (value >= BOT_PRICE_USD - 0.50) {
-            foundTx = { tx, value, chain };
-            break;
+          if (json.status === "1" && Array.isArray(json.result) && json.result.length > 0) {
+            for (const tx of json.result) {
+              if (tx.to?.toLowerCase() !== TREASURY_WALLET.toLowerCase()) continue;
+              if (tx.from?.toLowerCase() !== wallet.toLowerCase()) continue;
+              const decimals = parseInt(tx.tokenDecimal || "18");
+              const value = parseFloat(tx.value) / Math.pow(10, decimals);
+              if (value >= BOT_PRICE_USD - 0.50) {
+                foundTx = { tx, value, chain };
+                break;
+              }
+            }
           }
+        } catch (scanErr: any) {
+          console.error(`[VerifyPayment] Etherscan V2 error for ${chain.name}:`, scanErr.message);
         }
         if (foundTx) break;
+      }
+
+      if (!foundTx) {
+        try {
+          const { getWalletTransactionHistory } = await import("./okx-onchainos");
+          for (const lookupAddr of lookupAddresses) {
+            console.log(`[VerifyPayment] OKX fallback for ${chain.name} lookup=${lookupAddr.substring(0,8)}`);
+            const okxRes = await getWalletTransactionHistory({ address: lookupAddr, chainId: chain.id.toString(), limit: "50" });
+            const txList = okxRes?.data || [];
+            if (!Array.isArray(txList)) { console.log(`[VerifyPayment] OKX returned non-array:`, typeof txList); continue; }
+            console.log(`[VerifyPayment] OKX ${chain.name} results=${txList.length}`);
+            for (const tx of txList) {
+              const details = tx.tokenTransferDetails || tx.details || [];
+              for (const d of (Array.isArray(details) ? details : [])) {
+                const tokenAddr = (d.tokenContractAddress || d.contractAddress || "").toLowerCase();
+                if (tokenAddr !== usdtAddr.toLowerCase()) continue;
+                if ((d.to || tx.to || "").toLowerCase() !== TREASURY_WALLET.toLowerCase()) continue;
+                if ((d.from || tx.from || "").toLowerCase() !== wallet.toLowerCase()) continue;
+                const rawAmt = d.amount || d.tokenAmount || d.value || "0";
+                const value = parseFloat(rawAmt);
+                if (value >= BOT_PRICE_USD - 0.50) {
+                  foundTx = { tx: { hash: tx.txHash || tx.hash, ...tx }, value, chain };
+                  break;
+                }
+              }
+              if (foundTx) break;
+              if (!details.length) {
+                if ((tx.to || "").toLowerCase() === TREASURY_WALLET.toLowerCase() &&
+                    (tx.from || "").toLowerCase() === wallet.toLowerCase()) {
+                  const rawAmt = tx.amount || tx.value || "0";
+                  const value = parseFloat(rawAmt);
+                  if (value >= BOT_PRICE_USD - 0.50) {
+                    foundTx = { tx: { hash: tx.txHash || tx.hash, ...tx }, value, chain };
+                    break;
+                  }
+                }
+              }
+            }
+            if (foundTx) break;
+          }
+        } catch (okxErr: any) {
+          console.error(`[VerifyPayment] OKX fallback error:`, okxErr.message);
+        }
       }
 
       if (foundTx) {
