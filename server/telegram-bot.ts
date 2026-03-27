@@ -1711,6 +1711,10 @@ export function processWebhookUpdate(update: any): void {
 }
 
 export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[TelegramBot] Skipped — bot runs on Render production only.");
+    return;
+  }
   if (isRunning || startingBot || !isTelegramConfigured()) return;
   startingBot = true;
 
