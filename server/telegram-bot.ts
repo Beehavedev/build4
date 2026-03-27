@@ -163,8 +163,8 @@ interface SignalBuyState {
   tokenSymbol: string;
   nativeSymbol: string;
   amount?: string;
-  sigType: string;
-  sigIndex: number;
+  sigType?: string;
+  sigIndex?: number;
 }
 const pendingSignalBuy = new Map<number, SignalBuyState>();
 
@@ -4344,6 +4344,148 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data.startsWith("cabuy:")) {
+    const parts = data.split(":");
+    const tokenAddr = parts[1];
+    const chainId = parts[2];
+    const amount = parts[3];
+    if (!tokenAddr || !chainId || !amount) return;
+
+    const isSolana = chainId === "501";
+    const nativeSymbol = isSolana ? "SOL" : chainId === "8453" ? "ETH" : "BNB";
+    const chainName = isSolana ? "Solana" : chainId === "8453" ? "Base" : "BNB Chain";
+
+    if (isSolana) {
+      const solWallet = solanaWalletMap.get(chatId);
+      if (!solWallet) {
+        await bot.sendMessage(chatId, "❌ You need a Solana wallet first.", { reply_markup: { inline_keyboard: [[{ text: "🟣 Generate SOL Wallet", callback_data: "action:gensolwallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+        return;
+      }
+      pendingSignalBuy.set(chatId, {
+        tokenAddress: tokenAddr,
+        tokenSymbol: "Token",
+        chainId,
+        chainName,
+        nativeSymbol,
+        amount,
+        step: "confirm",
+      });
+      await bot.sendMessage(chatId,
+        `⚡ *Instant Buy*\n\n` +
+        `Buy ${amount} ${nativeSymbol} → Token\n` +
+        `Chain: ${chainName}\n` +
+        `CA: \`${tokenAddr}\`\n\n` +
+        `Confirm purchase:`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+          [{ text: `✅ Buy ${amount} ${nativeSymbol}`, callback_data: "sigbuy_confirm" }],
+          [{ text: "❌ Cancel", callback_data: "action:menu" }],
+        ]}}
+      );
+    } else {
+      const walletAddr = getLinkedWallet(chatId);
+      if (!walletAddr) {
+        await bot.sendMessage(chatId, "❌ You need a wallet first.", { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+        return;
+      }
+      pendingSignalBuy.set(chatId, {
+        tokenAddress: tokenAddr,
+        tokenSymbol: "Token",
+        chainId,
+        chainName,
+        nativeSymbol,
+        amount,
+        step: "confirm",
+      });
+      await bot.sendMessage(chatId,
+        `⚡ *Instant Buy*\n\n` +
+        `Buy ${amount} ${nativeSymbol} → Token\n` +
+        `Chain: ${chainName}\n` +
+        `CA: \`${tokenAddr}\`\n\n` +
+        `Confirm purchase:`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+          [{ text: `✅ Buy ${amount} ${nativeSymbol}`, callback_data: "sigbuy_confirm" }],
+          [{ text: "❌ Cancel", callback_data: "action:menu" }],
+        ]}}
+      );
+    }
+    return;
+  }
+
+  if (data.startsWith("cascan:")) {
+    const parts = data.split(":");
+    const tokenAddr = parts[1];
+    const chainId = parts[2];
+    await bot.sendMessage(chatId, `🔒 Scanning token \`${tokenAddr.substring(0, 12)}...\``, { parse_mode: "Markdown" });
+    sendTyping(chatId);
+    try {
+      const { securityTokenScanAPI } = await import("./okx-onchainos");
+      const result = await securityTokenScanAPI(tokenAddr, chainId);
+      const d = result?.data;
+      if (d && result.success) {
+        let report = `🔒 *Security Report*\n\n`;
+        if (d.tokenName) report += `Token: *${d.tokenName}* (${d.tokenSymbol || ""})\n`;
+        report += `Address: \`${tokenAddr}\`\n\n`;
+
+        const displayRisks: string[] = [];
+        if (d.isHoneypot) displayRisks.push("🚨 HONEYPOT DETECTED");
+        if (!d.isOpenSource) displayRisks.push("⚠️ Not open source");
+        if (d.isProxy) displayRisks.push("⚠️ Proxy contract (upgradeable)");
+        if (d.ownerCanMint) displayRisks.push("⚠️ Owner can mint tokens");
+        if (d.canTakeBackOwnership) displayRisks.push("⚠️ Owner can reclaim ownership");
+        if (d.ownerChangeBalance) displayRisks.push("🚨 Owner can change balances");
+        if (d.risks && d.risks.length > 0) {
+          d.risks.forEach((r: string) => {
+            if (!displayRisks.some(dr => dr.includes(r))) displayRisks.push(`⚠️ ${r}`);
+          });
+        }
+        if (d.buyTax && parseFloat(d.buyTax) > 5) displayRisks.push(`⚠️ Buy tax: ${d.buyTax}%`);
+        if (d.sellTax && parseFloat(d.sellTax) > 5) displayRisks.push(`⚠️ Sell tax: ${d.sellTax}%`);
+
+        if (displayRisks.length === 0) {
+          report += `✅ *No major risks detected*\n`;
+        } else {
+          report += displayRisks.slice(0, 10).join("\n") + "\n";
+        }
+        report += `\nRisk: ${d.riskLevel === "high" ? "🔴 HIGH" : d.riskLevel === "medium" ? "🟡 MEDIUM" : "🟢 LOW"}`;
+        if (d.holderCount) report += ` | Holders: ${d.holderCount.toLocaleString()}`;
+        report += `\nSource: ${d.source || "GoPlus"}`;
+
+        await bot.sendMessage(chatId, report, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+          [{ text: "⚡ Buy Anyway", callback_data: `cabuy:${tokenAddr}:${chainId}:0.05` }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ]}});
+      } else {
+        await bot.sendMessage(chatId, "⚠️ Security data not available for this token.", { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `❌ Scan failed: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
+    return;
+  }
+
+  if (data.startsWith("cachart:")) {
+    const parts = data.split(":");
+    const tokenAddr = parts[1];
+    const chainId = parts[2];
+    const chartUrls: Record<string, string> = {
+      "56": `https://dexscreener.com/bsc/${tokenAddr}`,
+      "1": `https://dexscreener.com/ethereum/${tokenAddr}`,
+      "8453": `https://dexscreener.com/base/${tokenAddr}`,
+      "501": `https://dexscreener.com/solana/${tokenAddr}`,
+      "137": `https://dexscreener.com/polygon/${tokenAddr}`,
+      "42161": `https://dexscreener.com/arbitrum/${tokenAddr}`,
+    };
+    const chartUrl = chartUrls[chainId] || `https://dexscreener.com/bsc/${tokenAddr}`;
+    await bot.sendMessage(chatId,
+      `📊 [View Chart on DexScreener](${chartUrl})`,
+      { parse_mode: "Markdown", disable_web_page_preview: false, reply_markup: { inline_keyboard: [
+        [{ text: "⚡ Buy", callback_data: `cabuy:${tokenAddr}:${chainId}:0.05` }],
+        [{ text: "« Menu", callback_data: "action:menu" }],
+      ]}}
+    );
+    return;
+  }
+
   if (data === "action:okxsecurity") {
     await bot.sendMessage(chatId,
       "🔒 *Security Scanner*\n\nScan a token for honeypot risks, rug-pull indicators, and contract safety.\n\nSelect chain:",
@@ -5600,6 +5742,79 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       }
     } catch (e: any) {
       await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 100)}`, { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
+    return;
+  }
+
+  const evmCaMatch = text.match(/^(0x[a-fA-F0-9]{40})$/i);
+  const solanaAddrRegex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+  const isSolanaLike = !evmCaMatch && solanaAddrRegex.test(text) && text.length >= 32 && /\d/.test(text) && /[A-Z]/.test(text) && /[a-z]/.test(text);
+  const solanaCaMatch = isSolanaLike ? text.match(solanaAddrRegex) : null;
+  if ((evmCaMatch || solanaCaMatch) && !text.startsWith("/")) {
+    const ca = text.trim();
+    const isSolana = !!solanaCaMatch;
+    const chainId = isSolana ? "501" : "56";
+    const chainName = isSolana ? "Solana" : "BNB Chain";
+    const nativeSymbol = isSolana ? "SOL" : "BNB";
+
+    await bot.sendMessage(chatId, `🔍 Looking up token \`${ca.substring(0, 12)}...\``, { parse_mode: "Markdown" });
+    sendTyping(chatId);
+
+    try {
+      const result = await getTokenPrice(ca, chainId);
+      const d = result?.data;
+
+      let info = `📊 *Token Details*\n\n`;
+      info += `Address: \`${ca}\`\n`;
+      info += `Chain: ${chainName}\n\n`;
+
+      if (d && result.success) {
+        const price = parseFloat(d.price || "0");
+        const priceStr = price < 0.01 ? price.toExponential(3) : price.toFixed(6);
+        if (d.symbol) info += `Symbol: *${d.symbol}*\n`;
+        if (d.price) info += `💲 Price: $${priceStr}\n`;
+        if (d.priceChange24h) {
+          const change = parseFloat(d.priceChange24h) * 100;
+          info += `📈 24h: ${change >= 0 ? "+" : ""}${change.toFixed(2)}%\n`;
+        }
+        if (d.volume24h) info += `📊 Volume: $${(parseFloat(d.volume24h) / 1e6).toFixed(2)}M\n`;
+        if (d.marketCap && parseFloat(d.marketCap) > 0) info += `💰 MCap: $${(parseFloat(d.marketCap) / 1e6).toFixed(2)}M\n`;
+        if (d.liquidity && parseFloat(d.liquidity) > 0) info += `💧 Liquidity: $${(parseFloat(d.liquidity) / 1e3).toFixed(0)}K\n`;
+        if (d.holders) info += `👥 Holders: ${parseInt(d.holders).toLocaleString()}\n`;
+      } else {
+        info += `⚠️ Limited data available for this token.\n`;
+      }
+
+      const buyAmounts = isSolana
+        ? [
+            { text: "Buy 0.1 SOL", callback_data: `cabuy:${ca}:${chainId}:0.1` },
+            { text: "Buy 0.5 SOL", callback_data: `cabuy:${ca}:${chainId}:0.5` },
+            { text: "Buy 1 SOL", callback_data: `cabuy:${ca}:${chainId}:1` },
+          ]
+        : [
+            { text: "Buy 0.01 BNB", callback_data: `cabuy:${ca}:${chainId}:0.01` },
+            { text: "Buy 0.05 BNB", callback_data: `cabuy:${ca}:${chainId}:0.05` },
+            { text: "Buy 0.1 BNB", callback_data: `cabuy:${ca}:${chainId}:0.1` },
+          ];
+
+      await bot.sendMessage(chatId, info, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            buyAmounts,
+            [
+              { text: "🔒 Security Scan", callback_data: `cascan:${ca}:${chainId}` },
+              { text: "📊 Price Chart", callback_data: `cachart:${ca}:${chainId}` },
+            ],
+            [{ text: "« Menu", callback_data: "action:menu" }],
+          ],
+        },
+      });
+    } catch (e: any) {
+      await bot.sendMessage(chatId,
+        `⚠️ Could not look up token \`${ca.substring(0, 12)}...\`\n\n${e.message?.substring(0, 100)}`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
     }
     return;
   }

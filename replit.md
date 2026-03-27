@@ -79,6 +79,9 @@ Agent memory entries are cryptographically secured through a multi-layer decentr
 ### Data Integrity & Security
 Platform stats (`/api/platform/stats`) use real database counts: unique wallets from `agents.creator_wallet`, real transaction/skill/agent counts — no visitor-log inflation. Token launcher API hides failed launches by default (filter `status !== "failed"`). On-chain verification for ERC-8004 and BAP-578 badges, valid `txHash` requirements for revenue tracking. Agent cleanup mechanisms prevent bot-bursts. Security measures include mandatory environment variables for encryption and admin authentication keys, HMAC-signed Telegram wallet linking, internal-only private key access, temporary display of private keys, and robust retry logic for token launches.
 
+### Contract Address (CA) Auto-Detection
+When a user pastes a contract address (EVM `0x...` or Solana base58) directly in chat, the bot automatically detects it, fetches token details (price, 24h change, volume, market cap, liquidity, holders) via the OKX API, and displays an instant buy panel with preset amounts (BNB or SOL denominated). Additional buttons for security scanning (GoPlus/RugCheck) and DexScreener chart links. Buy flow reuses the existing `pendingSignalBuy` → `sigbuy_confirm` pipeline. Solana detection uses hardened regex requiring mixed-case + digits to avoid false positives.
+
 ### Performance Optimizations
 Includes Telegram webhook mode, a priority-based in-memory task queue, system health monitoring, per-user rate limiting, request timing middleware, API logging, batched visitor tracking, SEO prerendering, non-blocking startup, lazy-loading, and throttled frontend animations.
 
