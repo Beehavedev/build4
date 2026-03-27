@@ -56,7 +56,8 @@ function Router() {
       <Route path="/onchainos" component={OnchainOS} />
       <Route path="/staking" component={Staking} />
       <Route path="/build" component={AgentBuilder} />
-      <Route path="/pricing" component={TelegramBotPage} />
+      <Route path="/agentic_bot" component={TelegramBotPage} />
+      <Route path="/pricing">{() => { window.location.href = "/agentic_bot"; return null; }}</Route>
       <Route path="/agent-store" component={AgentStore} />
       <Route path="/sdk">{() => { window.location.href = "/build"; return null; }}</Route>
       <Route component={NotFound} />
