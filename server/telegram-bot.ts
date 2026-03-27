@@ -22,6 +22,89 @@ let botUsername: string | null = null;
 let webhookMode = false;
 let startingBot = false;
 
+type Lang = "en" | "zh" | "ar";
+const userLang = new Map<number, Lang>();
+function getLang(chatId: number): Lang { return userLang.get(chatId) || "en"; }
+
+const t: Record<string, Record<Lang, string>> = {
+  "menu.launch": { en: "🚀 Launch Token", zh: "🚀 发射代币", ar: "🚀 إطلاق توكن" },
+  "menu.buy": { en: "💰 Buy Token", zh: "💰 买入代币", ar: "💰 شراء توكن" },
+  "menu.sell": { en: "💸 Sell Token", zh: "💸 卖出代币", ar: "💸 بيع توكن" },
+  "menu.swap": { en: "🔄 Swap", zh: "🔄 兑换", ar: "🔄 مبادلة" },
+  "menu.bridge": { en: "🌉 Bridge", zh: "🌉 跨链桥", ar: "🌉 جسر" },
+  "menu.signals": { en: "🐋 Signals", zh: "🐋 信号", ar: "🐋 إشارات" },
+  "menu.security": { en: "🔒 Security", zh: "🔒 安全扫描", ar: "🔒 أمان" },
+  "menu.trending": { en: "🔥 Trending", zh: "🔥 热门代币", ar: "🔥 رائج" },
+  "menu.meme": { en: "🐸 Meme Scanner", zh: "🐸 Meme扫描", ar: "🐸 ماسح ميم" },
+  "menu.price": { en: "📊 Token Price", zh: "📊 代币价格", ar: "📊 سعر التوكن" },
+  "menu.gas": { en: "⛽ Gas", zh: "⛽ Gas费", ar: "⛽ رسوم الغاز" },
+  "menu.rich": { en: "💎 Make Me Rich", zh: "💎 自动交易", ar: "💎 تداول تلقائي" },
+  "menu.aster": { en: "📈 Aster DEX", zh: "📈 Aster DEX", ar: "📈 Aster DEX" },
+  "menu.createAgent": { en: "🤖 Create Agent", zh: "🤖 创建代理", ar: "🤖 إنشاء وكيل" },
+  "menu.myAgents": { en: "📋 My Agents", zh: "📋 我的代理", ar: "📋 وكلائي" },
+  "menu.newTask": { en: "📝 New Task", zh: "📝 新任务", ar: "📝 مهمة جديدة" },
+  "menu.myTasks": { en: "📊 My Tasks", zh: "📊 我的任务", ar: "📊 مهامي" },
+  "menu.wallet": { en: "👛 My Wallet", zh: "👛 我的钱包", ar: "👛 محفظتي" },
+  "menu.premium": { en: "⭐ Premium", zh: "⭐ 高级版", ar: "⭐ مميز" },
+  "menu.referral": { en: "🔗 Referral", zh: "🔗 推荐奖励", ar: "🔗 إحالة" },
+  "menu.help": { en: "❓ Help & Commands", zh: "❓ 帮助", ar: "❓ مساعدة" },
+  "menu.back": { en: "« Menu", zh: "« 菜单", ar: "« القائمة" },
+  "menu.cancel": { en: "❌ Cancel", zh: "❌ 取消", ar: "❌ إلغاء" },
+  "wallet.title": { en: "👛 *Your Wallets*", zh: "👛 *您的钱包*", ar: "👛 *محافظك*" },
+  "wallet.fund": { en: "Send BNB to your active wallet address to fund it.", zh: "发送BNB到您的活跃钱包地址来充值。", ar: "أرسل BNB إلى عنوان محفظتك النشطة لتمويلها." },
+  "wallet.loading": { en: "Loading wallet balances...", zh: "正在加载钱包余额...", ar: "جاري تحميل أرصدة المحفظة..." },
+  "wallet.empty": { en: "(empty)", zh: "(空)", ar: "(فارغة)" },
+  "wallet.viewOnly": { en: "🔒 view-only", zh: "🔒 只读", ar: "🔒 للعرض فقط" },
+  "wallet.active": { en: "← active", zh: "← 活跃", ar: "← نشطة" },
+  "wallet.genNew": { en: "🔑 Generate New Wallet", zh: "🔑 生成新钱包", ar: "🔑 إنشاء محفظة جديدة" },
+  "wallet.import": { en: "📥 Import Wallet", zh: "📥 导入钱包", ar: "📥 استيراد محفظة" },
+  "wallet.genSol": { en: "🟣 Generate SOL Wallet", zh: "🟣 生成SOL钱包", ar: "🟣 إنشاء محفظة SOL" },
+  "wallet.exportKey": { en: "🔐 Export Private Key", zh: "🔐 导出私钥", ar: "🔐 تصدير المفتاح الخاص" },
+  "wallet.exportSol": { en: "🟣 Export SOL Key", zh: "🟣 导出SOL私钥", ar: "🟣 تصدير مفتاح SOL" },
+  "wallet.copyAddr": { en: "📋 Copy Address", zh: "📋 复制地址", ar: "📋 نسخ العنوان" },
+  "export.verify": { en: "🔐 *Private Key Export Verification*", zh: "🔐 *私钥导出验证*", ar: "🔐 *التحقق من تصدير المفتاح الخاص*" },
+  "export.warning": { en: "⚠️ Your private key gives *FULL control* of this wallet.\nNever share it with anyone. BUILD4 will never ask for it.", zh: "⚠️ 您的私钥可以*完全控制*此钱包。\n切勿与任何人分享。BUILD4绝不会索要您的私钥。", ar: "⚠️ مفتاحك الخاص يمنح *تحكماً كاملاً* بهذه المحفظة.\nلا تشاركه مع أي شخص أبداً. BUILD4 لن يطلبه منك أبداً." },
+  "export.typeCode": { en: "To confirm, type this 4-digit code:", zh: "请输入以下4位验证码确认：", ar: "للتأكيد، اكتب هذا الرمز المكون من 4 أرقام:" },
+  "export.expires": { en: "_This code expires in 60 seconds._", zh: "_验证码将在60秒后过期。_", ar: "_ينتهي هذا الرمز خلال 60 ثانية._" },
+  "export.autoDelete": { en: "⚠️ This message will be auto-deleted in 30 seconds. Copy it NOW.\n🔒 Never share your private key with anyone.", zh: "⚠️ 此消息将在30秒后自动删除。请立即复制！\n🔒 切勿与任何人分享您的私钥。", ar: "⚠️ سيتم حذف هذه الرسالة تلقائياً خلال 30 ثانية. انسخها الآن!\n🔒 لا تشارك مفتاحك الخاص مع أي شخص أبداً." },
+  "export.deleted": { en: "🔐 Private key message deleted for security.", zh: "🔐 私钥消息已安全删除。", ar: "🔐 تم حذف رسالة المفتاح الخاص للأمان." },
+  "export.locked": { en: "🔒 *Account locked* due to failed verification attempts.\n\nTry again later.", zh: "🔒 *账户已锁定*，验证码输入错误次数过多。\n\n请稍后再试。", ar: "🔒 *الحساب مقفل* بسبب محاولات تحقق فاشلة.\n\nحاول مرة أخرى لاحقاً." },
+  "export.wrongCode": { en: "❌ Wrong code.", zh: "❌ 验证码错误。", ar: "❌ رمز خاطئ." },
+  "export.rateLimit": { en: "🚫 Too many export attempts. For security, exports are limited to 3 per hour.", zh: "🚫 导出次数过多。出于安全考虑，每小时限3次。", ar: "🚫 محاولات تصدير كثيرة جداً. للأمان، التصدير محدود بـ 3 مرات في الساعة." },
+  "sub.subscribe": { en: "💳 Subscribe", zh: "💳 订阅", ar: "💳 اشتراك" },
+  "sub.trial": { en: "🆓 Start Free Trial", zh: "🆓 开始免费试用", ar: "🆓 بدء التجربة المجانية" },
+  "sub.expired": { en: "Your subscription has expired.", zh: "您的订阅已过期。", ar: "انتهى اشتراكك." },
+  "sub.active": { en: "Your subscription is active!", zh: "您的订阅已激活！", ar: "اشتراكك نشط!" },
+  "welcome.title": { en: "Welcome to BUILD4!", zh: "欢迎使用BUILD4！", ar: "!BUILD4 مرحباً بك في" },
+  "welcome.desc": { en: "Your decentralized AI agent economy platform.", zh: "您的去中心化AI代理经济平台。", ar: "منصتك اللامركزية لاقتصاد وكلاء الذكاء الاصطناعي." },
+  "lang.set": { en: "Language set to English 🇬🇧", zh: "语言已设为中文 🇨🇳", ar: "🇸🇦 تم تعيين اللغة إلى العربية" },
+  "lang.choose": { en: "Choose your language:", zh: "选择您的语言：", ar: "اختر لغتك:" },
+  "help.title": { en: "Commands:", zh: "命令列表：", ar: "الأوامر:" },
+  "meme.title": { en: "🐸 *Meme Token Scanner*\n\nScan new meme token launches for alpha.\n\nSelect chain:", zh: "🐸 *Meme代币扫描*\n\n扫描新Meme代币。\n\n选择链：", ar: "🐸 *ماسح توكنات الميم*\n\nامسح إطلاقات توكنات الميم الجديدة.\n\nاختر السلسلة:" },
+  "meme.filter": { en: "Select filter:", zh: "选择过滤器：", ar: "اختر الفلتر:" },
+  "meme.new": { en: "🆕 New Launches", zh: "🆕 新发射", ar: "🆕 إطلاقات جديدة" },
+  "meme.migrating": { en: "🔄 Migrating", zh: "🔄 迁移中", ar: "🔄 قيد الترحيل" },
+  "meme.migrated": { en: "🎓 Migrated", zh: "🎓 已迁移", ar: "🎓 تم الترحيل" },
+  "signals.title": { en: "🐋 *Smart Money Signals*\n\nSelect signal type:", zh: "🐋 *聪明钱信号*\n\n选择信号类型：", ar: "🐋 *إشارات الأموال الذكية*\n\nاختر نوع الإشارة:" },
+  "signals.whale": { en: "🐋 Whale Buys", zh: "🐋 巨鲸买入", ar: "🐋 مشتريات الحيتان" },
+  "signals.kol": { en: "🎤 KOL Buys", zh: "🎤 KOL买入", ar: "🎤 مشتريات المؤثرين" },
+  "signals.smart": { en: "💰 Smart Money", zh: "💰 聪明钱", ar: "💰 الأموال الذكية" },
+  "signals.leaderboard": { en: "🏆 Leaderboard", zh: "🏆 排行榜", ar: "🏆 لوحة المتصدرين" },
+  "security.enterAddr": { en: "Enter the token contract address to scan:", zh: "输入要扫描的代币合约地址：", ar: "أدخل عنوان عقد التوكن للفحص:" },
+  "price.enterAddr": { en: "Enter the token contract address:", zh: "输入代币合约地址：", ar: "أدخل عنوان عقد التوكن:" },
+  "buy.enterAddr": { en: "Enter the token contract address to buy:", zh: "输入要购买的代币合约地址：", ar: "أدخل عنوان عقد التوكن للشراء:" },
+  "sell.enterAddr": { en: "Enter the token contract address to sell:", zh: "输入要卖出的代币合约地址：", ar: "أدخل عنوان عقد التوكن للبيع:" },
+  "general.error": { en: "Something went wrong. Try again.", zh: "出错了，请重试。", ar: "حدث خطأ ما. حاول مرة أخرى." },
+  "general.noWallet": { en: "❌ You need a wallet first. Use /start to create one.", zh: "❌ 您需要先创建钱包。使用 /start 创建。", ar: "❌ تحتاج محفظة أولاً. استخدم /start لإنشاء واحدة." },
+};
+
+function tr(key: string, chatId: number): string {
+  const lang = getLang(chatId);
+  const entry = t[key];
+  if (!entry) return key;
+  return entry[lang] || entry["en"] || key;
+}
+
 const chatLocks = new Map<number, Promise<void>>();
 function perChatQueue(chatId: number, fn: () => Promise<void>): void {
   const prev = chatLocks.get(chatId) || Promise.resolve();
@@ -216,8 +299,8 @@ STANDARDS (INDUSTRY-FIRST):
 - BAP-578 (Non-Fungible Agent): BNB Chain's NFA token standard extending ERC-721 for autonomous digital entities. BUILD4's registry is live on BNB Chain mainnet at 0xd7Deb29ddBB13607375Ce50405A574AC2f7d978d.
 
 BUILT-IN TRADING & BRIDGING:
-- OKX DEX Swap: Swap tokens on any chain (BNB Chain, Ethereum, Base, Polygon, Arbitrum, Avalanche, Optimism, XLayer, and more) directly from Telegram. Just type "swap 1 BNB for USDT" or use the swap menu.
-- OKX Cross-Chain Bridge: Bridge assets between any supported chains directly from Telegram. Just type "bridge 1 ETH from Ethereum to Base" or use the bridge menu.
+- DEX Swap: Swap tokens on any chain (BNB Chain, Ethereum, Base, Polygon, Arbitrum, Avalanche, Optimism, XLayer, and more) directly from Telegram. Just type "swap 1 BNB for USDT" or use the swap menu.
+- Cross-Chain Bridge: Bridge assets between any supported chains directly from Telegram. Just type "bridge 1 ETH from Ethereum to Base" or use the bridge menu.
 - Token launching: Launch tokens on Four.meme, Flap.sh, and Bankr directly from Telegram.
 - BUILD4 IS a trading platform — users can swap, bridge, and trade directly through the bot and dashboard.
 
@@ -268,6 +351,65 @@ const exportRateLimits = new Map<string, number[]>();
 const RATE_LIMIT_MS = 3000;
 const answerCache = new Map<string, { answer: string; time: number }>();
 const ANSWER_CACHE_MS = 300_000;
+
+const failedVerificationAttempts = new Map<number, { count: number; lockedUntil: number }>();
+const MAX_VERIFY_ATTEMPTS = 3;
+const VERIFY_LOCKOUT_MS = 15 * 60 * 1000;
+const sensitiveMessageIds = new Map<number, number[]>();
+const securityAuditLog: Array<{ ts: number; chatId: number; action: string; detail: string }> = [];
+const MAX_AUDIT_LOG = 500;
+
+function auditLog(chatId: number, action: string, detail: string): void {
+  const entry = { ts: Date.now(), chatId, action, detail };
+  securityAuditLog.push(entry);
+  if (securityAuditLog.length > MAX_AUDIT_LOG) securityAuditLog.shift();
+  console.log(`[SECURITY AUDIT] ${action} | chatId=${chatId} | ${detail}`);
+}
+
+function isVerificationLocked(chatId: number): boolean {
+  const record = failedVerificationAttempts.get(chatId);
+  if (!record) return false;
+  if (Date.now() < record.lockedUntil) return true;
+  failedVerificationAttempts.delete(chatId);
+  return false;
+}
+
+function recordFailedVerification(chatId: number): { locked: boolean; remaining: number } {
+  const record = failedVerificationAttempts.get(chatId) || { count: 0, lockedUntil: 0 };
+  record.count++;
+  if (record.count >= MAX_VERIFY_ATTEMPTS) {
+    record.lockedUntil = Date.now() + VERIFY_LOCKOUT_MS;
+    failedVerificationAttempts.set(chatId, record);
+    auditLog(chatId, "LOCKOUT", `Account locked for ${VERIFY_LOCKOUT_MS / 60000}min after ${MAX_VERIFY_ATTEMPTS} failed attempts`);
+    return { locked: true, remaining: 0 };
+  }
+  failedVerificationAttempts.set(chatId, record);
+  return { locked: false, remaining: MAX_VERIFY_ATTEMPTS - record.count };
+}
+
+async function deleteMessageSafely(chatId: number, messageId: number): Promise<void> {
+  try { await bot?.deleteMessage(chatId, messageId); } catch {}
+}
+
+function scheduleSecureDelete(chatId: number, messageId: number, delayMs: number): void {
+  const existing = sensitiveMessageIds.get(chatId) || [];
+  existing.push(messageId);
+  sensitiveMessageIds.set(chatId, existing);
+  setTimeout(async () => {
+    await deleteMessageSafely(chatId, messageId);
+    const msgs = sensitiveMessageIds.get(chatId) || [];
+    sensitiveMessageIds.set(chatId, msgs.filter(id => id !== messageId));
+  }, delayMs);
+}
+
+function sanitizeInput(input: string): string {
+  return input.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "").trim().substring(0, 2000);
+}
+
+function maskAddress(addr: string): string {
+  if (addr.length < 10) return "***";
+  return addr.substring(0, 6) + "..." + addr.substring(addr.length - 4);
+}
 
 function isTelegramConfigured(): boolean {
   return !!process.env.TELEGRAM_BOT_TOKEN;
@@ -427,7 +569,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
   if (lower.includes("contract") || lower.includes("smart contract"))
     return "BUILD4 has 4 core contracts: AgentEconomyHub (wallets), SkillMarketplace (skill trading), AgentReplication (forking + NFTs), and ConstitutionRegistry (immutable agent laws).";
   if (lower.includes("token") && (lower.includes("launch") || lower.includes("create")))
-    return "You can launch tokens on Four.meme, Flap.sh (BNB Chain), XLayer (OKX), or Bankr (Base/Solana) right here in the bot! Use /launch or tap '🚀 Launch Token' from the menu.";
+    return "You can launch tokens on Four.meme, Flap.sh (BNB Chain), XLayer, or Bankr (Base/Solana) right here in the bot! Use /launch or tap '🚀 Launch Token' from the menu.";
   if (lower.includes("agent") && (lower.includes("create") || lower.includes("make") || lower.includes("new")))
     return "Create an AI agent with /newagent — give it a name, bio, and pick a model (Llama 70B, DeepSeek V3, or Qwen 72B). Your agent gets its own wallet and can trade skills, earn BNB, and evolve autonomously.";
   if (lower.includes("how") && lower.includes("start"))
@@ -444,7 +586,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
     return "Hey! Welcome to BUILD4 — decentralized infrastructure for autonomous AI agents. What can I help you with? Try /help to see all commands.";
   }
   if (lower.includes("help") || lower.includes("command"))
-    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — OKX DEX swap (multi-chain)\n🌉 /bridge — OKX cross-chain bridge\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
+    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — Swap (multi-chain)\n🌉 /bridge — Cross-chain bridge\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
   if (lower.includes("thank"))
     return "You're welcome! Let me know if you need anything else. 🤝";
 
@@ -601,7 +743,7 @@ export function linkTelegramWallet(chatId: number, wallet: string, privateKey?: 
     const msg = count > 1
       ? `Wallet added: ${shortWallet(lower)} (${count} wallets — this one is now active)`
       : `Wallet connected: ${shortWallet(lower)}`;
-    bot.sendMessage(chatId, msg, { reply_markup: mainMenuKeyboard() }).catch(() => {});
+    bot.sendMessage(chatId, msg, { reply_markup: mainMenuKeyboard(undefined, chatId) }).catch(() => {});
   }
 }
 
@@ -793,6 +935,7 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
   const wallet = ethers.Wallet.createRandom();
   const addr = wallet.address.toLowerCase();
   const pk = wallet.privateKey;
+  auditLog(chatId, "WALLET_CREATE", `New EVM wallet generated: ${maskAddress(addr)}`);
 
   const existing = telegramWalletMap.get(chatId);
   if (existing) {
@@ -1346,20 +1489,22 @@ async function sendTrialReminders(): Promise<void> {
   }
 }
 
-function mainMenuKeyboard(_hasWallet?: boolean, _chatId?: number): TelegramBot.InlineKeyboardMarkup {
+function mainMenuKeyboard(_hasWallet?: boolean, chatId?: number): TelegramBot.InlineKeyboardMarkup {
+  const c = chatId || 0;
   return {
     inline_keyboard: [
-      [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
-      [{ text: "💰 Buy Token", callback_data: "action:buy" }, { text: "💸 Sell Token", callback_data: "action:sell" }],
-      [{ text: "🔄 OKX Swap", callback_data: "action:okxswap" }, { text: "🌉 Bridge", callback_data: "action:okxbridge" }],
-      [{ text: "🐋 Signals", callback_data: "action:okxsignals" }, { text: "🔒 Security", callback_data: "action:okxsecurity" }],
-      [{ text: "🔥 Trending", callback_data: "action:okxtrending" }, { text: "🐸 Meme Scanner", callback_data: "action:okxmeme" }],
-      [{ text: "📊 Token Price", callback_data: "action:okxprice" }, { text: "⛽ Gas", callback_data: "action:okxgas" }],
-      [{ text: "💎 Make Me Rich", callback_data: "action:trade" }, { text: "📈 Aster DEX", callback_data: "action:aster" }],
-      [{ text: "🤖 Create Agent", callback_data: "action:newagent" }, { text: "📋 My Agents", callback_data: "action:myagents" }],
-      [{ text: "📝 New Task", callback_data: "action:task" }, { text: "📊 My Tasks", callback_data: "action:mytasks" }],
-      [{ text: "👛 My Wallet", callback_data: "action:wallet" }, { text: "⭐ Premium", callback_data: "action:substatus" }],
-      [{ text: "🔗 Referral", callback_data: "action:referral" }, { text: "❓ Help & Commands", callback_data: "action:help" }],
+      [{ text: tr("menu.launch", c), callback_data: "action:launchtoken" }],
+      [{ text: tr("menu.buy", c), callback_data: "action:buy" }, { text: tr("menu.sell", c), callback_data: "action:sell" }],
+      [{ text: tr("menu.swap", c), callback_data: "action:okxswap" }, { text: tr("menu.bridge", c), callback_data: "action:okxbridge" }],
+      [{ text: tr("menu.signals", c), callback_data: "action:okxsignals" }, { text: tr("menu.security", c), callback_data: "action:okxsecurity" }],
+      [{ text: tr("menu.trending", c), callback_data: "action:okxtrending" }, { text: tr("menu.meme", c), callback_data: "action:okxmeme" }],
+      [{ text: tr("menu.price", c), callback_data: "action:okxprice" }, { text: tr("menu.gas", c), callback_data: "action:okxgas" }],
+      [{ text: tr("menu.rich", c), callback_data: "action:trade" }, { text: tr("menu.aster", c), callback_data: "action:aster" }],
+      [{ text: tr("menu.createAgent", c), callback_data: "action:newagent" }, { text: tr("menu.myAgents", c), callback_data: "action:myagents" }],
+      [{ text: tr("menu.newTask", c), callback_data: "action:task" }, { text: tr("menu.myTasks", c), callback_data: "action:mytasks" }],
+      [{ text: tr("menu.wallet", c), callback_data: "action:wallet" }, { text: tr("menu.premium", c), callback_data: "action:substatus" }],
+      [{ text: tr("menu.referral", c), callback_data: "action:referral" }, { text: tr("menu.help", c), callback_data: "action:help" }],
+      [{ text: "🌐 Language / 语言", callback_data: "action:lang" }],
     ]
   };
 }
@@ -1501,8 +1646,8 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
     bot.setMyCommands([
       { command: "start", description: "Start BUILD4 and create a wallet" },
       { command: "launch", description: "Launch a token on Four.meme or Flap.sh" },
-      { command: "swap", description: "OKX DEX swap on any chain" },
-      { command: "bridge", description: "OKX cross-chain bridge" },
+      { command: "swap", description: "Swap tokens on any chain" },
+      { command: "bridge", description: "Cross-chain bridge" },
       { command: "signals", description: "Smart money & whale buy signals" },
       { command: "scan", description: "Security scanner (honeypot check)" },
       { command: "trending", description: "Hot & trending tokens" },
@@ -1512,6 +1657,7 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
       { command: "newagent", description: "Create an AI agent" },
       { command: "wallet", description: "Wallet info and management" },
       { command: "aster", description: "Aster DEX futures & spot trading" },
+      { command: "lang", description: "Switch language / 切换语言" },
       { command: "help", description: "Show all commands" },
     ]).then(() => {
       console.log("[TelegramBot] Registered bot commands");
@@ -1738,18 +1884,18 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const activeIdx = getActiveWalletIndex(chatId);
     const walletAddr = wallets[activeIdx];
     if (!walletAddr) {
-      await bot.sendMessage(chatId, "No wallet found. Use /wallet to set one up first.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "No wallet found. Use /wallet to set one up first.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
     const hasKey = walletsWithKey.has(walletAddr.toLowerCase());
     if (!hasKey) {
-      await bot.sendMessage(chatId, "You need a wallet with a private key to register. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "You need a wallet with a private key to register. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
     const pk = await storage.getTelegramWalletPrivateKey(String(chatId), walletAddr);
     if (!pk) {
-      await bot.sendMessage(chatId, "Could not retrieve wallet private key. Try generating a new wallet with /wallet.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "Could not retrieve wallet private key. Try generating a new wallet with /wallet.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
@@ -1769,16 +1915,16 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           "✅ AI Agent Badge: REGISTERED\n\n" +
           `Wallet: ${walletAddr.substring(0, 8)}...${walletAddr.slice(-6)}${txInfo}\n\n` +
           "Your token launches on Four.meme will now show the AI Agent icon on GMGN and other trackers!",
-          { reply_markup: mainMenuKeyboard() }
+          { reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       } else {
         await bot.sendMessage(chatId,
           `❌ Registration failed: ${result.error?.substring(0, 120) || "Unknown error"}\n\nMake sure your wallet has at least 0.001 BNB for gas.`,
-          { reply_markup: mainMenuKeyboard() }
+          { reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       }
     } catch (e: any) {
-      await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 100) || "Unknown error"}`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 100) || "Unknown error"}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     }
     return;
   }
@@ -1788,33 +1934,51 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\n" +
       "Agents get wallets, trade skills, evolve, replicate, and operate fully on-chain. No centralized AI — inference runs through Hyperbolic, Akash ML, and Ritual.\n\n" +
       "https://build4.io",
-      { reply_markup: mainMenuKeyboard() }
+      { reply_markup: mainMenuKeyboard(undefined, chatId) }
     );
     return;
   }
 
   if (data === "action:help") {
-    const hasW = !!getLinkedWallet(chatId);
-    await bot.sendMessage(chatId,
-      "Commands:\n\n" +
-      "🚀 /launch — Launch a token\n" +
-      "🔄 /swap — OKX DEX swap\n" +
-      "🌉 /bridge — Cross-chain bridge\n" +
-      "🐋 /signals — Smart money signals\n" +
-      "🔒 /scan — Security scanner\n" +
-      "🔥 /trending — Hot & trending tokens\n" +
-      "🐸 /meme — Meme token scanner\n" +
-      "📊 /price — Token price lookup\n" +
-      "⛽ /gas — Gas prices\n" +
-      "🤖 /newagent — Create an AI agent\n" +
-      "📋 /myagents — Your agents\n" +
-      "📝 /task — Assign a task\n" +
-      "👛 /wallet — Wallet info\n" +
-      "❓ /ask <question> — Ask anything\n" +
-      "❌ /cancel — Cancel current action\n\n" +
-      "Or just type any question!",
-      { reply_markup: mainMenuKeyboard() }
-    );
+    const isZh = getLang(chatId) === "zh";
+    const helpText = isZh
+      ? "命令列表：\n\n" +
+        "🚀 /launch — 发射代币\n" +
+        "🔄 /swap — 兑换代币\n" +
+        "🌉 /bridge — 跨链桥\n" +
+        "🐋 /signals — 聪明钱信号\n" +
+        "🔒 /scan — 安全扫描\n" +
+        "🔥 /trending — 热门代币\n" +
+        "🐸 /meme — Meme代币扫描\n" +
+        "📊 /price — 代币价格查询\n" +
+        "⛽ /gas — Gas费查询\n" +
+        "🤖 /newagent — 创建AI代理\n" +
+        "📋 /myagents — 我的代理\n" +
+        "📝 /task — 分配任务\n" +
+        "👛 /wallet — 钱包管理\n" +
+        "🌐 /lang — 切换语言\n" +
+        "❓ /ask <问题> — 提问\n" +
+        "❌ /cancel — 取消当前操作\n\n" +
+        "或直接输入任何问题！"
+      : "Commands:\n\n" +
+        "🚀 /launch — Launch a token\n" +
+        "🔄 /swap — Swap tokens\n" +
+        "🌉 /bridge — Cross-chain bridge\n" +
+        "🐋 /signals — Smart money signals\n" +
+        "🔒 /scan — Security scanner\n" +
+        "🔥 /trending — Hot & trending tokens\n" +
+        "🐸 /meme — Meme token scanner\n" +
+        "📊 /price — Token price lookup\n" +
+        "⛽ /gas — Gas prices\n" +
+        "🤖 /newagent — Create an AI agent\n" +
+        "📋 /myagents — Your agents\n" +
+        "📝 /task — Assign a task\n" +
+        "👛 /wallet — Wallet info\n" +
+        "🌐 /lang — Switch language\n" +
+        "❓ /ask <question> — Ask anything\n" +
+        "❌ /cancel — Cancel current action\n\n" +
+        "Or just type any question!";
+    await bot.sendMessage(chatId, helpText, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     return;
   }
 
@@ -1826,54 +1990,55 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const activeIdx = getActiveWalletIndex(chatId);
     const updatedWallets = getUserWallets(chatId);
 
-    await bot.sendMessage(chatId, "Loading wallet balances...");
+    await bot.sendMessage(chatId, tr("wallet.loading", chatId));
 
     const evmWallets = updatedWallets.filter(w => /^0x[a-fA-F0-9]{40}$/.test(w));
     const balances = await fetchWalletBalances(evmWallets);
+    const lang = getLang(chatId);
 
-    let text = `👛 *Your Wallets*\n\n`;
+    let text = `${tr("wallet.title", chatId)}\n\n`;
     evmWallets.forEach((w) => {
       const origIdx = updatedWallets.indexOf(w);
       const marker = origIdx === activeIdx ? "✅" : "⬜";
       const bal = balances[w];
       const hasKey = walletsWithKey.has(`${chatId}:${w}`);
-      const keyTag = hasKey ? "" : " 🔒 view-only";
+      const keyTag = hasKey ? "" : ` ${tr("wallet.viewOnly", chatId)}`;
       let balText = "";
       if (bal) {
         const parts: string[] = [];
         if (parseFloat(bal.bnb) > 0) parts.push(`${bal.bnb} BNB`);
         if (parseFloat(bal.eth) > 0) parts.push(`${bal.eth} ETH`);
-        balText = parts.length > 0 ? ` (${parts.join(", ")})` : " (empty)";
+        balText = parts.length > 0 ? ` (${parts.join(", ")})` : ` ${tr("wallet.empty", chatId)}`;
       }
-      text += `${marker} \`${w}\`${origIdx === activeIdx ? " ← active" : ""}${keyTag}\n    ${balText}\n\n`;
+      text += `${marker} \`${w}\`${origIdx === activeIdx ? ` ${tr("wallet.active", chatId)}` : ""}${keyTag}\n    ${balText}\n\n`;
     });
     const solWallet = solanaWalletMap.get(chatId);
     if (solWallet) {
-      text += `🟣 *Solana Wallet*\n\`${solWallet.address}\`\n\n`;
+      text += `🟣 *${lang === "zh" ? "Solana钱包" : lang === "ar" ? "محفظة Solana" : "Solana Wallet"}*\n\`${solWallet.address}\`\n\n`;
     }
 
-    text += `Send BNB to your active wallet address to fund it.`;
+    text += tr("wallet.fund", chatId);
 
     const walletButtons: TelegramBot.InlineKeyboardButton[][] = evmWallets.map((w) => {
       const origIdx = updatedWallets.indexOf(w);
       if (origIdx === activeIdx) {
-        return [{ text: `📋 Copy Address`, callback_data: `copywall:${origIdx}` }];
+        return [{ text: tr("wallet.copyAddr", chatId), callback_data: `copywall:${origIdx}` }];
       }
       return [
-        { text: `▶️ Use ${shortWallet(w)}`, callback_data: `switchwall:${origIdx}` },
+        { text: `▶️ ${lang === "zh" ? "使用" : lang === "ar" ? "استخدام" : "Use"} ${shortWallet(w)}`, callback_data: `switchwall:${origIdx}` },
         { text: `🗑`, callback_data: `removewall:${origIdx}` },
       ];
     });
 
-    walletButtons.push([{ text: "🔑 Generate New Wallet", callback_data: "action:genwallet" }, { text: "📥 Import Wallet", callback_data: "action:importwallet" }]);
+    walletButtons.push([{ text: tr("wallet.genNew", chatId), callback_data: "action:genwallet" }, { text: tr("wallet.import", chatId), callback_data: "action:importwallet" }]);
     if (!solWallet) {
-      walletButtons.push([{ text: "🟣 Generate SOL Wallet", callback_data: "action:gensolwallet" }]);
+      walletButtons.push([{ text: tr("wallet.genSol", chatId), callback_data: "action:gensolwallet" }]);
     }
-    walletButtons.push([{ text: "🔐 Export Private Key", callback_data: "action:exportkey" }]);
+    walletButtons.push([{ text: tr("wallet.exportKey", chatId), callback_data: "action:exportkey" }]);
     if (solWallet) {
-      walletButtons.push([{ text: "🟣 Export SOL Key", callback_data: "action:exportsolkey" }]);
+      walletButtons.push([{ text: tr("wallet.exportSol", chatId), callback_data: "action:exportsolkey" }]);
     }
-    walletButtons.push([{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }, { text: "◀️ Menu", callback_data: "action:menu" }]);
+    walletButtons.push([{ text: tr("menu.launch", chatId), callback_data: "action:launchtoken" }, { text: tr("menu.back", chatId), callback_data: "action:menu" }]);
 
     await bot.sendMessage(chatId, text, {
       parse_mode: "Markdown",
@@ -1919,7 +2084,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const remaining = getUserWallets(chatId);
       if (remaining.length === 0) {
         await bot.sendMessage(chatId, `Wallet removed: ${shortWallet(removed)}\n\nNo wallets left.`, {
-          reply_markup: mainMenuKeyboard()
+          reply_markup: mainMenuKeyboard(undefined, chatId)
         });
       } else {
         await bot.sendMessage(chatId, `Wallet removed: ${shortWallet(removed)}`, {
@@ -1931,14 +2096,22 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   if (data === "action:exportkey") {
+    if (isVerificationLocked(chatId)) {
+      const record = failedVerificationAttempts.get(chatId)!;
+      const minsLeft = Math.ceil((record.lockedUntil - Date.now()) / 60000);
+      await bot.sendMessage(chatId, `🔒 *Account locked* for ${minsLeft} more minute${minsLeft === 1 ? "" : "s"} due to failed verification attempts.\n\nTry again later.`,
+        { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
+      return;
+    }
+    auditLog(chatId, "EXPORT_REQUEST", "Private key export initiated");
     const wallets = getUserWallets(chatId);
     if (wallets.length === 0) {
-      await bot.sendMessage(chatId, "No wallets found. Use /wallet to create one first.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "No wallets found. Use /wallet to create one first.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
     const evmWallets = wallets.filter(w => /^0x[a-fA-F0-9]{40}$/.test(w));
     if (evmWallets.length === 0) {
-      await bot.sendMessage(chatId, "No EVM wallets found. Use /wallet to create one.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "No EVM wallets found. Use /wallet to create one.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
     if (evmWallets.length === 1) {
@@ -1973,7 +2146,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const idx = parseInt(data.split(":")[1]);
     const wallets = getUserWallets(chatId);
     if (idx < 0 || idx >= wallets.length) {
-      await bot.sendMessage(chatId, "Invalid wallet.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "Invalid wallet.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
     const code = Math.floor(1000 + Math.random() * 9000).toString();
@@ -1992,11 +2165,19 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   if (data === "action:exportsolkey") {
-    const solWallet = solanaWalletMap.get(chatId);
-    if (!solWallet) {
-      await bot.sendMessage(chatId, "No Solana wallet found.", { reply_markup: mainMenuKeyboard() });
+    if (isVerificationLocked(chatId)) {
+      const record = failedVerificationAttempts.get(chatId)!;
+      const minsLeft = Math.ceil((record.lockedUntil - Date.now()) / 60000);
+      await bot.sendMessage(chatId, `🔒 *Account locked* for ${minsLeft} more minute${minsLeft === 1 ? "" : "s"} due to failed verification attempts.\n\nTry again later.`,
+        { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
+    const solWallet = solanaWalletMap.get(chatId);
+    if (!solWallet) {
+      await bot.sendMessage(chatId, "No Solana wallet found.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
+      return;
+    }
+    auditLog(chatId, "EXPORT_REQUEST_SOL", `Solana key export initiated for ${maskAddress(solWallet.address)}`);
     const code = Math.floor(1000 + Math.random() * 9000).toString();
     pendingExportVerification.set(chatId, { walletIdx: -1, code, expiresAt: Date.now() + 60000, type: "sol" });
     await bot.sendMessage(chatId,
@@ -2016,7 +2197,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const idx = parseInt(data.split(":")[1]);
     const wallets = getUserWallets(chatId);
     if (idx < 0 || idx >= wallets.length) {
-      await bot.sendMessage(chatId, "Invalid wallet.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "Invalid wallet.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
     const code = Math.floor(1000 + Math.random() * 9000).toString();
@@ -2851,7 +3032,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:trade") {
     if (!await checkWalletHasKey(chatId, wallet)) {
-      await bot.sendMessage(chatId, "You need a wallet with a private key to use the trading agent. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "You need a wallet with a private key to use the trading agent. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
     const { getUserTradingStatus } = await import("./trading-agent");
@@ -2913,19 +3094,19 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       setUserTradingConfig(chatId, { enabled: true });
       if (!isTradingAgentRunning()) {
         startTradingAgent((cid, msg) => {
-          bot?.sendMessage(cid, msg, { reply_markup: mainMenuKeyboard() }).catch(() => {});
+          bot?.sendMessage(cid, msg, { reply_markup: mainMenuKeyboard(undefined, chatId) }).catch(() => {});
         });
       }
       await bot.sendMessage(chatId,
         "✅ Trading agent ENABLED\n\nThe agent will scan Four.meme for new tokens and trade automatically. You'll be notified of every buy and sell.\n\nUse /tradestatus to check positions.",
-        { reply_markup: mainMenuKeyboard() }
+        { reply_markup: mainMenuKeyboard(undefined, chatId) }
       );
       return;
     }
 
     if (tradeAction === "disable") {
       setUserTradingConfig(chatId, { enabled: false });
-      await bot.sendMessage(chatId, "⏸ Trading agent DISABLED\n\nExisting positions will still be monitored until closed.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "⏸ Trading agent DISABLED\n\nExisting positions will still be monitored until closed.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
@@ -2941,7 +3122,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           msg += `  • $${p.tokenSymbol} — ${p.entryPriceBnb} BNB (${age}m ago)\n`;
         }
       }
-      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
@@ -2974,7 +3155,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     if (tradeAction === "history") {
       const history = getTradeHistoryForUser(chatId);
       if (history.length === 0) {
-        await bot.sendMessage(chatId, "No trade history yet. Enable the agent with /trade to start.", { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, "No trade history yet. Enable the agent with /trade to start.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
         return;
       }
       let msg = `📜 *Trade History (last ${history.length}):*\n\n`;
@@ -2986,14 +3167,14 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         msg += `${emoji} $${t.tokenSymbol}: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} BNB\n`;
       }
       msg += `\n*Net PnL: ${totalPnl >= 0 ? "+" : ""}${totalPnl.toFixed(4)} BNB*`;
-      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
     if (tradeAction === "closeall") {
       const positions = getActivePositionsForUser(chatId);
       if (positions.length === 0) {
-        await bot.sendMessage(chatId, "No open positions to close.", { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, "No open positions to close.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
         return;
       }
       await bot.sendMessage(chatId, `Closing ${positions.length} position(s)...`);
@@ -3002,7 +3183,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         const ok = await manualClosePosition(p.id, (cid, m) => bot?.sendMessage(cid, m).catch(() => {}));
         if (ok) closed++;
       }
-      await bot.sendMessage(chatId, `Closed ${closed}/${positions.length} positions.`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `Closed ${closed}/${positions.length} positions.`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
@@ -3066,7 +3247,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       `• TP: ${config.takeProfitMultiple}x\n` +
       `• SL: ${(config.stopLossMultiple * 100).toFixed(0)}%\n` +
       `• Max: ${config.maxPositions} positions`,
-      { reply_markup: mainMenuKeyboard() }
+      { reply_markup: mainMenuKeyboard(undefined, chatId) }
     );
     return;
   }
@@ -3106,7 +3287,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const skillId = skillParts[2];
       const skill = getSkillById(skillId);
       if (!skill) {
-        await bot.sendMessage(chatId, "Unknown skill.", { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, "Unknown skill.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
         return;
       }
 
@@ -3136,7 +3317,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const skillId = skillParts[2];
       const skill = getSkillById(skillId);
       if (!skill || !skill.configSchema) {
-        await bot.sendMessage(chatId, "No configurable options for this skill.", { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, "No configurable options for this skill.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
         return;
       }
 
@@ -3928,14 +4109,13 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:okxmeme") {
     await bot.sendMessage(chatId,
-      "🐸 *Meme Token Scanner*\n\nScan new meme token launches for alpha.\n\nSelect filter:",
+      "🐸 *Meme Token Scanner*\n\nScan new meme token launches for alpha.\n\nSelect chain:",
       {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "🆕 New Launches", callback_data: "okxmeme:NEW" }],
-            [{ text: "🔄 Migrating", callback_data: "okxmeme:MIGRATING" }],
-            [{ text: "🎓 Migrated", callback_data: "okxmeme:MIGRATED" }],
+            [{ text: "Solana", callback_data: "okxmeme_chain:501" }, { text: "BNB Chain", callback_data: "okxmeme_chain:56" }],
+            [{ text: "Base", callback_data: "okxmeme_chain:8453" }, { text: "Ethereum", callback_data: "okxmeme_chain:1" }],
             [{ text: "« Back", callback_data: "action:menu" }],
           ],
         },
@@ -3944,12 +4124,35 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data.startsWith("okxmeme_chain:")) {
+    const chainId = data.replace("okxmeme_chain:", "");
+    const chainName = OKX_CHAINS.find(c => c.id === chainId)?.name || chainId;
+    await bot.sendMessage(chatId,
+      `🐸 *Meme Scanner — ${chainName}*\n\nSelect filter:`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🆕 New Launches", callback_data: `okxmeme:${chainId}:NEW` }],
+            [{ text: "🔄 Migrating", callback_data: `okxmeme:${chainId}:MIGRATING` }],
+            [{ text: "🎓 Migrated", callback_data: `okxmeme:${chainId}:MIGRATED` }],
+            [{ text: "« Back", callback_data: "action:okxmeme" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
   if (data.startsWith("okxmeme:")) {
-    const stage = data.replace("okxmeme:", "");
+    const parts = data.replace("okxmeme:", "").split(":");
+    const chainId = parts.length > 1 ? parts[0] : "501";
+    const stage = parts.length > 1 ? parts[1] : parts[0];
+    const chainName = OKX_CHAINS.find(c => c.id === chainId)?.name || chainId;
     const stageLabel = stage === "NEW" ? "🆕 New" : stage === "MIGRATED" ? "🎓 Migrated" : "🔄 Migrating";
-    await bot.sendMessage(chatId, `Loading ${stageLabel} meme tokens...`);
+    await bot.sendMessage(chatId, `Loading ${stageLabel} meme tokens on ${chainName}...`);
     try {
-      const result = await getMemeTokens("501", stage);
+      const result = await getMemeTokens(chainId, stage);
       if (result.success && result.data) {
         const tokens = Array.isArray(result.data) ? result.data.slice(0, 8) : result.data?.data?.slice(0, 8) || [];
         if (tokens.length === 0) {
@@ -3973,7 +4176,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
             if (addr) text += `\`${addr}\`\n`;
             text += `   ${mcap}${holdersStr}${bonding}\n\n`;
           });
-          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxmeme:${stage}` }], [{ text: "« Back", callback_data: "action:okxmeme" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh", callback_data: `okxmeme:${chainId}:${stage}` }], [{ text: "« Back", callback_data: `okxmeme_chain:${chainId}` }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
         }
       } else {
         await bot.sendMessage(chatId, `Unavailable: ${result.error || "try again later"}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxmeme" }]] } });
@@ -4056,9 +4259,28 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data === "action:lang") {
+    await bot.sendMessage(chatId, "🌐 Choose your language / 选择语言 / اختر لغتك：",
+      { reply_markup: { inline_keyboard: [
+        [{ text: "🇬🇧 English", callback_data: "setlang:en" }, { text: "🇨🇳 中文", callback_data: "setlang:zh" }, { text: "🇸🇦 العربية", callback_data: "setlang:ar" }],
+      ]}}
+    );
+    return;
+  }
+
+  if (data.startsWith("setlang:")) {
+    const lang = data.split(":")[1] as Lang;
+    userLang.set(chatId, lang);
+    await bot.sendMessage(chatId, tr("lang.set", chatId), {
+      reply_markup: mainMenuKeyboard(undefined, chatId)
+    });
+    return;
+  }
+
   if (data === "action:menu") {
-    await bot.sendMessage(chatId, "What would you like to do?", {
-      reply_markup: mainMenuKeyboard()
+    const menuText = getLang(chatId) === "zh" ? "请选择操作：" : "What would you like to do?";
+    await bot.sendMessage(chatId, menuText, {
+      reply_markup: mainMenuKeyboard(undefined, chatId)
     });
     return;
   }
@@ -4253,7 +4475,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   if (data.startsWith("launchcancel:")) {
     pendingTokenLaunch.delete(chatId);
     await bot.sendMessage(chatId, "Token launch cancelled.", {
-      reply_markup: mainMenuKeyboard()
+      reply_markup: mainMenuKeyboard(undefined, chatId)
     });
     return;
   }
@@ -4324,7 +4546,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const tokenAddress = data.split(":")[1];
     const state = pendingFourMemeBuy.get(chatId);
     if (!state || !state.bnbAmount) {
-      await bot.sendMessage(chatId, "Buy session expired. Use /buy to start again.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "Buy session expired. Use /buy to start again.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
     pendingFourMemeBuy.delete(chatId);
@@ -4334,7 +4556,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
     const userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
     if (!userPk) {
-      await bot.sendMessage(chatId, "Could not access wallet keys. Try /start to create a fresh wallet.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "Could not access wallet keys. Try /start to create a fresh wallet.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
@@ -4345,6 +4567,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const result = await fourMemeBuyToken(tokenAddress, state.bnbAmount, 5, userPk);
 
     if (result.success) {
+      auditLog(chatId, "TRADE_BUY", `Buy ${state.bnbAmount} BNB on token ${maskAddress(tokenAddress)} tx=${result.txHash?.substring(0, 16)}`);
       let feeMsg = "";
       try {
         const feeResult = await collectTradeFee(userPk, state.bnbAmount, TRANSACTION_FEE_PERCENT);
@@ -4370,7 +4593,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         }
       );
     } else {
-      await bot.sendMessage(chatId, `❌ Buy failed: ${result.error?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `❌ Buy failed: ${result.error?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     }
     return;
   }
@@ -4407,7 +4630,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       pendingFourMemeSell.set(chatId, state);
       await executeFourMemeSellConfirm(chatId, state);
     } catch (e: any) {
-      await bot.sendMessage(chatId, `Failed: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `Failed: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
       pendingFourMemeSell.delete(chatId);
     }
     return;
@@ -4417,7 +4640,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const tokenAddress = data.split(":")[1];
     const state = pendingFourMemeSell.get(chatId);
     if (!state || !state.tokenAmount) {
-      await bot.sendMessage(chatId, "Sell session expired. Use /sell to start again.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "Sell session expired. Use /sell to start again.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
     pendingFourMemeSell.delete(chatId);
@@ -4427,7 +4650,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
     const userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
     if (!userPk) {
-      await bot.sendMessage(chatId, "Could not access wallet keys. Try /start to create a fresh wallet.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "Could not access wallet keys. Try /start to create a fresh wallet.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
@@ -4472,7 +4695,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         }
       );
     } else {
-      await bot.sendMessage(chatId, `❌ Sell failed: ${result.error?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `❌ Sell failed: ${result.error?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     }
     return;
   }
@@ -4647,25 +4870,35 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
 
   if (pendingExportVerification.has(chatId) && !text.startsWith("/")) {
+    if (isVerificationLocked(chatId)) {
+      pendingExportVerification.delete(chatId);
+      const record = failedVerificationAttempts.get(chatId)!;
+      const minsLeft = Math.ceil((record.lockedUntil - Date.now()) / 60000);
+      await bot.sendMessage(chatId, `🔒 *Account locked* for ${minsLeft} more minute${minsLeft === 1 ? "" : "s"} due to failed verification attempts.\n\nTry again later.`,
+        { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
+      return;
+    }
     const verification = pendingExportVerification.get(chatId)!;
     if (Date.now() > verification.expiresAt) {
       pendingExportVerification.delete(chatId);
+      auditLog(chatId, "EXPORT_EXPIRED", "Verification code expired");
       await bot.sendMessage(chatId, "⏰ Verification code expired. Please try again from the wallet menu.",
         { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }]] } });
       return;
     }
     if (text.trim() === verification.code) {
       pendingExportVerification.delete(chatId);
+      failedVerificationAttempts.delete(chatId);
 
       const exportKey = `export:${chatId}`;
       const now = Date.now();
       const exportWindow = 60 * 60 * 1000;
-      const maxExports = 5;
+      const maxExports = 3;
       const exportAttempts = (exportRateLimits.get(exportKey) || []).filter((t: number) => now - t < exportWindow);
       if (exportAttempts.length >= maxExports) {
-        log(`[AUDIT] BLOCKED export — rate limit hit. chatId=${chatId}, attempts=${exportAttempts.length}`, "security");
-        await bot.sendMessage(chatId, "🚫 Too many export attempts. For security, exports are limited to 5 per hour.",
-          { reply_markup: mainMenuKeyboard() });
+        auditLog(chatId, "EXPORT_BLOCKED", `Rate limit hit — ${exportAttempts.length} attempts in 1h`);
+        await bot.sendMessage(chatId, "🚫 Too many export attempts. For security, exports are limited to 3 per hour.",
+          { reply_markup: mainMenuKeyboard(undefined, chatId) });
         return;
       }
       exportAttempts.push(now);
@@ -4674,32 +4907,36 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       if (verification.type === "sol") {
         const solWallet = solanaWalletMap.get(chatId);
         if (!solWallet || !solWallet.privateKey) {
-          await bot.sendMessage(chatId, "Solana wallet key not found.", { reply_markup: mainMenuKeyboard() });
+          await bot.sendMessage(chatId, "Solana wallet key not found.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
           return;
         }
-        log(`[AUDIT] SOL key export — chatId=${chatId}, wallet=${solWallet.address.substring(0, 10)}`, "security");
+        auditLog(chatId, "KEY_EXPORT_SOL", `wallet=${maskAddress(solWallet.address)}`);
         const msg2 = await bot.sendMessage(chatId,
           `🟣 *Solana Private Key*\n\n` +
           `Address: \`${solWallet.address}\`\n\n` +
           `\`${solWallet.privateKey}\`\n\n` +
-          `⚠️ This message will be auto-deleted in 60 seconds. Copy it now.\n` +
+          `⚠️ This message will be auto-deleted in 30 seconds. Copy it NOW.\n` +
+          `🔒 Never share your private key with anyone.\n` +
           `Import this key into Phantom, Solflare, or any Solana wallet.`,
           { parse_mode: "Markdown" }
         );
+        scheduleSecureDelete(chatId, msg2.message_id, 30000);
         setTimeout(async () => {
-          try {
-            await bot.deleteMessage(chatId, msg2.message_id);
-            await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard() });
-          } catch {}
-        }, 60000);
+          await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
+        }, 31000);
       } else {
         const wallets = getUserWallets(chatId);
         const walletAddr = wallets[verification.walletIdx];
         if (!walletAddr) {
-          await bot.sendMessage(chatId, "Wallet not found.", { reply_markup: mainMenuKeyboard() });
+          await bot.sendMessage(chatId, "Wallet not found.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
           return;
         }
-        const pk = await storage.getTelegramWalletPrivateKey(String(chatId), walletAddr);
+        let pk: string | null = null;
+        try {
+          pk = await storage.getTelegramWalletPrivateKey(String(chatId), walletAddr);
+        } catch (e: any) {
+          auditLog(chatId, "DECRYPT_FAIL", `wallet=${maskAddress(walletAddr)} error=${e.message}`);
+        }
         if (!pk) {
           await bot.sendMessage(chatId,
             `❌ *Could not retrieve private key.*\n\n` +
@@ -4714,26 +4951,33 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           );
           return;
         }
-        log(`[AUDIT] EVM key export — chatId=${chatId}, wallet=${shortWallet(walletAddr)}`, "security");
+        auditLog(chatId, "KEY_EXPORT_EVM", `wallet=${maskAddress(walletAddr)}`);
         const msg2 = await bot.sendMessage(chatId,
           `🔐 *Private Key*\n\n` +
           `Address: \`${walletAddr}\`\n\n` +
           `\`${pk}\`\n\n` +
-          `⚠️ This message will be auto-deleted in 60 seconds. Copy it now.\n` +
+          `⚠️ This message will be auto-deleted in 30 seconds. Copy it NOW.\n` +
+          `🔒 Never share your private key with anyone.\n` +
           `Import this key into MetaMask, Trust Wallet, or any EVM wallet.`,
           { parse_mode: "Markdown" }
         );
+        scheduleSecureDelete(chatId, msg2.message_id, 30000);
         setTimeout(async () => {
-          try {
-            await bot.deleteMessage(chatId, msg2.message_id);
-            await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard() });
-          } catch {}
-        }, 60000);
+          await bot.sendMessage(chatId, "🔐 Private key message deleted for security.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
+        }, 31000);
       }
       return;
     } else {
-      await bot.sendMessage(chatId, "❌ Wrong code. Try again or go back to the wallet menu.",
-        { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }]] } });
+      const result = recordFailedVerification(chatId);
+      if (result.locked) {
+        pendingExportVerification.delete(chatId);
+        await bot.sendMessage(chatId,
+          `🔒 *Account locked for 15 minutes*\n\nToo many wrong verification codes. This is a security measure to protect your wallet.\n\nTry again later.`,
+          { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
+      } else {
+        await bot.sendMessage(chatId, `❌ Wrong code. ${result.remaining} attempt${result.remaining === 1 ? "" : "s"} remaining before lockout.\n\nTry again or go back to the wallet menu.`,
+          { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }]] } });
+      }
       return;
     }
   }
@@ -5221,6 +5465,15 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     pendingOKXScan.delete(chatId);
     pendingOKXPrice.delete(chatId);
 
+    if (cmd === "lang" && !isGroup) {
+      await bot.sendMessage(chatId, "🌐 Choose your language / 选择语言 / اختر لغتك：",
+        { reply_markup: { inline_keyboard: [
+          [{ text: "🇬🇧 English", callback_data: "setlang:en" }, { text: "🇨🇳 中文", callback_data: "setlang:zh" }, { text: "🇸🇦 العربية", callback_data: "setlang:ar" }],
+        ]}}
+      );
+      return;
+    }
+
     if (cmd === "start" && !isGroup) {
       let wallet = getLinkedWallet(chatId);
       if (!wallet) {
@@ -5250,14 +5503,14 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         await bot.sendMessage(chatId,
           `✅ You're all set!\n\n` +
           `What do you want to do?`,
-          { reply_markup: mainMenuKeyboard() }
+          { reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       } else {
         await bot.sendMessage(chatId,
           `Welcome back!\n\n` +
           `👛 Wallet: ${shortWallet(wallet)}\n\n` +
           `What do you want to do?`,
-          { reply_markup: mainMenuKeyboard() }
+          { reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       }
       return;
@@ -5267,7 +5520,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       pendingChaosPlan.delete(chatId);
       pendingAsterConnect.delete(chatId);
       pendingAsterTrade.delete(chatId);
-      await bot.sendMessage(chatId, "Cancelled.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "Cancelled.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
@@ -5404,11 +5657,28 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           `• Transactions: <b>${platformStats.transactions || 0}</b>\n` +
           `• Revenue: <b>${revenueBNB.toFixed(4)} BNB</b>\n\n` +
           `🔗 Chains: BNB, Base, XLayer, Solana`,
-          { parse_mode: "HTML", reply_markup: mainMenuKeyboard() }
+          { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       } catch (e: any) {
-        await bot.sendMessage(chatId, `Could not fetch stats: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, `Could not fetch stats: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
       }
+      return;
+    }
+
+    if (cmd === "auditlog" && !isGroup) {
+      const adminChatIdAudit = process.env.ADMIN_CHAT_ID;
+      if (!adminChatIdAudit || chatId.toString() !== adminChatIdAudit) return;
+      const recent = securityAuditLog.slice(-20).reverse();
+      if (recent.length === 0) {
+        await bot.sendMessage(chatId, "No security audit events yet.");
+        return;
+      }
+      let text = `🔒 <b>Security Audit Log</b> (last ${recent.length})\n\n`;
+      for (const e of recent) {
+        const time = new Date(e.ts).toISOString().replace("T", " ").substring(0, 19);
+        text += `<code>${time}</code>\n<b>${e.action}</b> | user ${e.chatId}\n${e.detail}\n\n`;
+      }
+      await bot.sendMessage(chatId, text, { parse_mode: "HTML" });
       return;
     }
 
@@ -5436,7 +5706,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             `Registry: ERC-8004 on BSC\n` +
             `Contract: ${ERC8004_IDENTITY_REGISTRY_BSC.substring(0, 10)}...\n\n` +
             "Your tokens launched on Four.meme will show the AI Agent icon on GMGN and other trackers.",
-            { reply_markup: mainMenuKeyboard() }
+            { reply_markup: mainMenuKeyboard(undefined, chatId) }
           );
         } else {
           await bot.sendMessage(chatId,
@@ -5456,7 +5726,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           );
         }
       } catch (e: any) {
-        await bot.sendMessage(chatId, `Error checking status: ${e.message?.substring(0, 100) || "Unknown error"}`, { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, `Error checking status: ${e.message?.substring(0, 100) || "Unknown error"}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
       }
       return;
     }
@@ -5493,7 +5763,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         "🔔 /mychatid — Chat ID for notifications\n" +
         "❌ /cancel — Cancel current action\n\n" +
         "Or just type any question!",
-        { reply_markup: mainMenuKeyboard() }
+        { reply_markup: mainMenuKeyboard(undefined, chatId) }
       );
       return;
     }
@@ -5544,7 +5814,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       await bot.sendMessage(chatId,
         "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\n" +
         "Agents get wallets, trade skills, evolve, replicate, and operate fully on-chain. No centralized AI — inference runs through Hyperbolic, Akash ML, and Ritual.\n\nhttps://build4.io",
-        { reply_markup: mainMenuKeyboard() }
+        { reply_markup: mainMenuKeyboard(undefined, chatId) }
       );
       return;
     }
@@ -5570,7 +5840,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
     if (cmd === "linkwallet") {
       await ensureWallet(chatId);
-      await bot.sendMessage(chatId, "Your wallet is ready.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "Your wallet is ready.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
@@ -5665,7 +5935,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       const activeIdx = getActiveWalletIndex(chatId);
       const walletAddr = wallets[activeIdx];
       if (!walletAddr) {
-        await bot.sendMessage(chatId, "No wallet found. Use /wallet first.", { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, "No wallet found. Use /wallet first.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
         return;
       }
 
@@ -5691,9 +5961,9 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
               const etaDate = new Date(eta);
               text += `\nNext: ${next.name} (${next.action})\nETA: ${etaDate.toUTCString()}`;
             }
-            await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+            await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
           } else {
-            await bot.sendMessage(chatId, "No active chaos plans found. Use /chaos to create one!", { reply_markup: mainMenuKeyboard() });
+            await bot.sendMessage(chatId, "No active chaos plans found. Use /chaos to create one!", { reply_markup: mainMenuKeyboard(undefined, chatId) });
           }
           return;
         }
@@ -5717,10 +5987,10 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             text += `\n🎉 Plan complete!`;
           }
 
-          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
         }
       } catch (e: any) {
-        await bot.sendMessage(chatId, `Error checking status: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, `Error checking status: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
       }
       return;
     }
@@ -5730,7 +6000,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       await ensureWallet(chatId);
       const wallet = getLinkedWallet(chatId);
       if (!await checkWalletHasKey(chatId, wallet)) {
-        await bot.sendMessage(chatId, "You need a wallet with a private key to use the trading agent. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, "You need a wallet with a private key to use the trading agent. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
         return;
       }
 
@@ -5780,7 +6050,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         }
       }
 
-      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
@@ -5789,7 +6059,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       const { getDiscoveredSmartWallets } = await import("./trading-agent");
       const wallets = getDiscoveredSmartWallets();
       if (wallets.length === 0) {
-        await bot.sendMessage(chatId, "🧠 *Smart Money Discovery*\n\nNo smart wallets discovered yet. The system analyzes graduated Four.meme tokens every 5 minutes to find consistently profitable early buyers.\n\nCheck back soon!", { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, "🧠 *Smart Money Discovery*\n\nNo smart wallets discovered yet. The system analyzes graduated Four.meme tokens every 5 minutes to find consistently profitable early buyers.\n\nCheck back soon!", { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
         return;
       }
       let msg = `🧠 *Smart Money Discovery*\n\nTracking ${wallets.length} discovered wallets:\n\n`;
@@ -5799,7 +6069,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         msg += `• \`${shortAddr}\` — ${winRate}% win (${w.winCount}/${w.totalTrades}) score: ${w.score}\n`;
       }
       msg += `\nTheir new buys are automatically tracked and boost token scores.`;
-      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
@@ -5952,12 +6222,12 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       const activeIdx = getActiveWalletIndex(chatId);
       const walletAddr = wallets[activeIdx];
       if (!walletAddr) {
-        await bot.sendMessage(chatId, "You need a wallet first. Use /wallet to set one up.", { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, "You need a wallet first. Use /wallet to set one up.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
         return;
       }
       const hasKey = walletsWithKey.has(`${chatId}:${walletAddr}`);
       if (!hasKey) {
-        await bot.sendMessage(chatId, "You need a wallet with a private key to run a chaos plan. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, "You need a wallet with a private key to run a chaos plan. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
         return;
       }
 
@@ -6020,7 +6290,7 @@ function shouldIgnoreMessage(text: string, msg: TelegramBot.Message): boolean {
 
 async function handleImportWalletFlow(chatId: number, text: string): Promise<void> {
   if (!bot) return;
-  const input = text.trim();
+  const input = sanitizeInput(text);
 
   if (/^0x[a-fA-F0-9]{64}$/i.test(input)) {
     try {
@@ -6028,14 +6298,17 @@ async function handleImportWalletFlow(chatId: number, text: string): Promise<voi
       const addr = wallet.address.toLowerCase();
       linkTelegramWallet(chatId, addr, input);
       pendingImportWallet.delete(chatId);
+      auditLog(chatId, "WALLET_IMPORT", `EVM wallet imported: ${maskAddress(addr)}`);
 
       await bot.sendMessage(chatId,
-        `✅ Wallet imported!\n\nAddress: \`${addr}\``,
+        `✅ Wallet imported!\n\nAddress: \`${addr}\`\n\n` +
+        `⚠️ *Delete your private key from this chat for safety!*\n` +
+        `Tap and hold the message above → Delete`,
         { parse_mode: "Markdown" }
       );
       await bot.sendMessage(chatId,
         "What would you like to do?",
-        { reply_markup: mainMenuKeyboard() }
+        { reply_markup: mainMenuKeyboard(undefined, chatId) }
       );
     } catch {
       await bot.sendMessage(chatId, "Invalid private key. Please try again or type /cancel.");
@@ -6047,6 +6320,7 @@ async function handleImportWalletFlow(chatId: number, text: string): Promise<voi
     const addr = input.toLowerCase();
     linkTelegramWallet(chatId, addr);
     pendingImportWallet.delete(chatId);
+    auditLog(chatId, "WALLET_LINK", `View-only wallet linked: ${maskAddress(addr)}`);
 
     await bot.sendMessage(chatId,
       `✅ Wallet linked (view-only)!\n\nAddress: \`${addr}\``,
@@ -6054,7 +6328,7 @@ async function handleImportWalletFlow(chatId: number, text: string): Promise<voi
     );
     await bot.sendMessage(chatId,
       "What would you like to do?",
-      { reply_markup: mainMenuKeyboard() }
+      { reply_markup: mainMenuKeyboard(undefined, chatId) }
     );
     return;
   }
@@ -6296,7 +6570,7 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
     try {
       await bot.sendMessage(chatId,
         `On-chain registration complete:\n\n${results.join("\n")}`,
-        { reply_markup: mainMenuKeyboard() }
+        { reply_markup: mainMenuKeyboard(undefined, chatId) }
       );
     } catch {}
   }
@@ -6565,7 +6839,7 @@ async function handleProposalApproval(chatId: number, proposalId: string, approv
       await storage.updateTokenLaunch(proposalId, { status: "rejected" });
       await bot.sendMessage(chatId,
         `❌ Proposal rejected: ${proposal.tokenName} ($${proposal.tokenSymbol})\n\nYour agent will learn from this.`,
-        { reply_markup: mainMenuKeyboard() }
+        { reply_markup: mainMenuKeyboard(undefined, chatId) }
       );
       return;
     }
@@ -6585,7 +6859,7 @@ async function handleProposalApproval(chatId: number, proposalId: string, approv
       await bot.sendMessage(chatId,
         "⚠️ Your wallet doesn't have a stored private key.\n\n" +
         "Use 🔑 Wallet → Import to re-import this wallet's private key, or create a new proposal from a fresh wallet.",
-        { reply_markup: mainMenuKeyboard() }
+        { reply_markup: mainMenuKeyboard(undefined, chatId) }
       );
       return;
     }
@@ -6627,7 +6901,7 @@ async function handleProposalApproval(chatId: number, proposalId: string, approv
       if (result.launchUrl) lines.push(`\nView: ${result.launchUrl}`);
 
       await bot.sendMessage(chatId, lines.join("\n"), {
-        reply_markup: mainMenuKeyboard()
+        reply_markup: mainMenuKeyboard(undefined, chatId)
       });
     } else {
       await storage.updateTokenLaunch(proposalId, {
@@ -6637,7 +6911,7 @@ async function handleProposalApproval(chatId: number, proposalId: string, approv
 
       await bot.sendMessage(chatId,
         `❌ Launch failed: ${result.error}`,
-        { reply_markup: mainMenuKeyboard() }
+        { reply_markup: mainMenuKeyboard(undefined, chatId) }
       );
     }
   } catch (e: any) {
@@ -6867,7 +7141,7 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
         wallet = newWallet;
       }
       if (!userPk) {
-        await bot.sendMessage(chatId, "⚠️ Could not access wallet keys. Try /start to create a fresh wallet.", { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, "⚠️ Could not access wallet keys. Try /start to create a fresh wallet.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
         return;
       }
     }
@@ -6917,7 +7191,7 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
         );
       }
     } catch (e: any) {
-      await bot.sendMessage(chatId, `❌ Error: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `❌ Error: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     }
     return;
   }
@@ -6969,7 +7243,7 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
         );
       }
     } catch (e: any) {
-      await bot.sendMessage(chatId, `❌ Error: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `❌ Error: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     }
     return;
   }
@@ -6985,7 +7259,7 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
     if (!userPk) {
       await bot.sendMessage(chatId,
         "⚠️ Could not access wallet keys. Try /start to create a fresh wallet.",
-        { reply_markup: mainMenuKeyboard() }
+        { reply_markup: mainMenuKeyboard(undefined, chatId) }
       );
       return;
     }
@@ -7101,7 +7375,7 @@ async function handleTokenInfo(chatId: number, tokenAddress: string): Promise<vo
 
     await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
   } catch (e: any) {
-    await bot.sendMessage(chatId, `Failed to fetch token info: ${e.message?.substring(0, 150) || "Unknown error"}`, { reply_markup: mainMenuKeyboard() });
+    await bot.sendMessage(chatId, `Failed to fetch token info: ${e.message?.substring(0, 150) || "Unknown error"}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
   }
 }
 
@@ -7120,7 +7394,7 @@ async function showSellAmountPrompt(chatId: number, tokenAddress: string): Promi
 
     if (bal <= 0) {
       pendingFourMemeSell.delete(chatId);
-      await bot.sendMessage(chatId, `You don't hold any of this token in your active wallet.`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `You don't hold any of this token in your active wallet.`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
@@ -7146,7 +7420,7 @@ async function showSellAmountPrompt(chatId: number, tokenAddress: string): Promi
       }
     );
   } catch (e: any) {
-    await bot.sendMessage(chatId, `Failed to check balance: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard() });
+    await bot.sendMessage(chatId, `Failed to check balance: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     pendingFourMemeSell.delete(chatId);
   }
 }
@@ -7231,7 +7505,7 @@ async function executeFourMemeBuyConfirm(chatId: number, state: FourMemeBuyState
     );
   } catch (e: any) {
     pendingFourMemeBuy.delete(chatId);
-    await bot.sendMessage(chatId, `Failed to estimate: ${e.message?.substring(0, 150) || "Unknown error"}`, { reply_markup: mainMenuKeyboard() });
+    await bot.sendMessage(chatId, `Failed to estimate: ${e.message?.substring(0, 150) || "Unknown error"}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
   }
 }
 
@@ -7301,7 +7575,7 @@ async function executeFourMemeSellConfirm(chatId: number, state: FourMemeSellSta
     );
   } catch (e: any) {
     pendingFourMemeSell.delete(chatId);
-    await bot.sendMessage(chatId, `Failed to estimate: ${e.message?.substring(0, 150) || "Unknown error"}`, { reply_markup: mainMenuKeyboard() });
+    await bot.sendMessage(chatId, `Failed to estimate: ${e.message?.substring(0, 150) || "Unknown error"}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
   }
 }
 
@@ -7448,7 +7722,7 @@ async function handleChaosPlanFlow(chatId: number, text: string): Promise<void> 
         await bot.sendMessage(chatId,
           `Your wallet holds only ${holdingPct.toFixed(2)}% of $${symbol}.\n\n` +
           `You need at least 1% of the supply to create a chaos plan. Buy more tokens first!`,
-          { reply_markup: mainMenuKeyboard() }
+          { reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
         pendingChaosPlan.delete(chatId);
         return;
@@ -7497,7 +7771,7 @@ async function handleChaosPlanFlow(chatId: number, text: string): Promise<void> 
       console.error("[TelegramBot] Chaos plan error:", e.message);
       await bot.sendMessage(chatId,
         `❌ Error: ${e.message?.substring(0, 200) || "Failed to check token"}\n\nTry again with /chaos`,
-        { reply_markup: mainMenuKeyboard() }
+        { reply_markup: mainMenuKeyboard(undefined, chatId) }
       );
       pendingChaosPlan.delete(chatId);
     }
@@ -7511,7 +7785,7 @@ async function handleChaosPlanCallback(chatId: number, data: string): Promise<vo
 
   if (data === "chaos_approve") {
     if (!state || state.step !== "confirming" || !state.plan) {
-      await bot.sendMessage(chatId, "No pending chaos plan found. Use /chaos to start.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "No pending chaos plan found. Use /chaos to start.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
@@ -7523,7 +7797,7 @@ async function handleChaosPlanCallback(chatId: number, data: string): Promise<vo
       const existing = await getUserChaosPlans(state.walletAddress!);
       const hasOverlap = existing.some(p => p.launch.tokenAddress?.toLowerCase() === state.tokenAddress!.toLowerCase());
       if (hasOverlap) {
-        await bot.sendMessage(chatId, "⚠️ You already have an active chaos plan for this token. Wait for it to complete or let it finish first.", { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, "⚠️ You already have an active chaos plan for this token. Wait for it to complete or let it finish first.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
         pendingChaosPlan.delete(chatId);
         return;
       }
@@ -7559,14 +7833,14 @@ async function handleChaosPlanCallback(chatId: number, data: string): Promise<vo
           `Your agent will autonomously execute each milestone on schedule.` +
           `${genesisTweet}\n\n` +
           `Use /chaosstatus to check progress.`,
-          { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() }
+          { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       } else {
-        await bot.sendMessage(chatId, `❌ Failed to activate: ${result.error}`, { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, `❌ Failed to activate: ${result.error}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
       }
     } catch (e: any) {
       console.error("[TelegramBot] Chaos plan activation error:", e.message);
-      await bot.sendMessage(chatId, `❌ Error: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `❌ Error: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     }
 
     pendingChaosPlan.delete(chatId);
@@ -7575,7 +7849,7 @@ async function handleChaosPlanCallback(chatId: number, data: string): Promise<vo
 
   if (data === "chaos_regen") {
     if (!state || !state.tokenAddress) {
-      await bot.sendMessage(chatId, "No pending chaos plan found. Use /chaos to start.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "No pending chaos plan found. Use /chaos to start.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
@@ -7607,7 +7881,7 @@ async function handleChaosPlanCallback(chatId: number, data: string): Promise<vo
         },
       });
     } catch (e: any) {
-      await bot.sendMessage(chatId, `❌ Error regenerating: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `❌ Error regenerating: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
       pendingChaosPlan.delete(chatId);
     }
     return;
@@ -7615,7 +7889,7 @@ async function handleChaosPlanCallback(chatId: number, data: string): Promise<vo
 
   if (data === "chaos_cancel") {
     pendingChaosPlan.delete(chatId);
-    await bot.sendMessage(chatId, "Chaos plan cancelled.", { reply_markup: mainMenuKeyboard() });
+    await bot.sendMessage(chatId, "Chaos plan cancelled.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
     return;
   }
 }
@@ -7623,7 +7897,12 @@ async function handleChaosPlanCallback(chatId: number, data: string): Promise<vo
 async function handleAsterMenu(chatId: number): Promise<void> {
   if (!bot) return;
 
-  const creds = await storage.getAsterCredentials(chatId.toString());
+  let creds: any = null;
+  try {
+    creds = await storage.getAsterCredentials(chatId.toString());
+  } catch (e: any) {
+    console.error("[AsterMenu] Failed to get credentials:", e.message);
+  }
   const connected = !!creds;
 
   if (!connected) {
@@ -7704,7 +7983,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
   if (action === "disconnect_confirm") {
     await storage.removeAsterCredentials(chatId.toString());
-    await bot.sendMessage(chatId, "Aster account disconnected. Your API credentials have been removed.", { reply_markup: mainMenuKeyboard() });
+    await bot.sendMessage(chatId, "Aster account disconnected. Your API credentials have been removed.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
     return;
   }
 
@@ -7767,7 +8046,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         },
       });
     } catch (e: any) {
-      await bot.sendMessage(chatId, `Failed to fetch balances: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `Failed to fetch balances: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     }
     return;
   }
@@ -7817,7 +8096,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         },
       });
     } catch (e: any) {
-      await bot.sendMessage(chatId, `Failed to fetch positions: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `Failed to fetch positions: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     }
     return;
   }
@@ -7868,7 +8147,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         reply_markup: { inline_keyboard: buttons },
       });
     } catch (e: any) {
-      await bot.sendMessage(chatId, `Failed to fetch orders: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `Failed to fetch orders: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     }
     return;
   }
@@ -7904,7 +8183,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   if (action === "trade_confirm") {
     const state = pendingAsterTrade.get(chatId);
     if (!state || state.step !== "confirm") {
-      await bot.sendMessage(chatId, "No pending trade. Start over with /aster.", { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, "No pending trade. Start over with /aster.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
 
@@ -7940,7 +8219,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
           `${state.orderType === "LIMIT" ? `Price: ${orderResult.price}\n` : ""}` +
           `Order ID: ${orderResult.orderId}\n` +
           `Status: ${orderResult.status}`,
-          { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() }
+          { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       } else {
         const orderResult = await client.spot.createOrder({
@@ -7961,11 +8240,11 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
           `${state.orderType === "LIMIT" ? `Price: ${orderResult.price}\n` : ""}` +
           `Order ID: ${orderResult.orderId}\n` +
           `Status: ${orderResult.status}`,
-          { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() }
+          { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       }
     } catch (e: any) {
-      await bot.sendMessage(chatId, `Failed to place order: ${e.message?.substring(0, 300)}`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `Failed to place order: ${e.message?.substring(0, 300)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     }
 
     pendingAsterTrade.delete(chatId);
@@ -7974,7 +8253,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
   if (action === "trade_cancel") {
     pendingAsterTrade.delete(chatId);
-    await bot.sendMessage(chatId, "Trade cancelled.", { reply_markup: mainMenuKeyboard() });
+    await bot.sendMessage(chatId, "Trade cancelled.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
     return;
   }
 
@@ -8040,13 +8319,14 @@ async function handleAsterConnectFlow(chatId: number, text: string): Promise<voi
       const pingOk = await testClient.futures.ping();
 
       if (!pingOk) {
-        await bot.sendMessage(chatId, "Could not connect to Aster DEX. Please check your credentials and try again.", { reply_markup: mainMenuKeyboard() });
+        await bot.sendMessage(chatId, "Could not connect to Aster DEX. Please check your credentials and try again.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
         pendingAsterConnect.delete(chatId);
         return;
       }
 
       await storage.saveAsterCredentials(chatId.toString(), state.apiKey!, input);
       pendingAsterConnect.delete(chatId);
+      auditLog(chatId, "ASTER_CONNECT", "Aster DEX API credentials stored");
 
       await bot.sendMessage(chatId,
         "Aster DEX account connected! Your API credentials are stored securely (encrypted).\n\n" +
@@ -8062,7 +8342,7 @@ async function handleAsterConnectFlow(chatId: number, text: string): Promise<voi
         }
       );
     } catch (e: any) {
-      await bot.sendMessage(chatId, `Failed to verify credentials: ${e.message?.substring(0, 200)}\n\nPlease try again.`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `Failed to verify credentials: ${e.message?.substring(0, 200)}\n\nPlease try again.`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
       pendingAsterConnect.delete(chatId);
     }
     return;
@@ -8087,9 +8367,9 @@ async function handleAsterTradeFlow(chatId: number, text: string): Promise<void>
       const { createAsterClient } = await import("./aster-client");
       const client = createAsterClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
       await client.futures.cancelAllOrders(input);
-      await bot.sendMessage(chatId, `✅ All open orders for *${input}* have been cancelled.`, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `✅ All open orders for *${input}* have been cancelled.`, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
     } catch (e: any) {
-      await bot.sendMessage(chatId, `Failed to cancel orders: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard() });
+      await bot.sendMessage(chatId, `Failed to cancel orders: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     }
     pendingAsterTrade.delete(chatId);
     return;
