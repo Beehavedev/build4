@@ -152,6 +152,7 @@ const pendingImportWallet = new Set<number>();
 const pendingChaosPlan = new Map<number, ChaosPlanState>();
 const pendingAsterConnect = new Map<number, AsterConnectState>();
 const pendingAsterTrade = new Map<number, AsterTradeState>();
+const pendingTxHashVerify = new Map<number, boolean>();
 const pendingOKXSwap = new Map<number, OKXSwapState>();
 const pendingOKXBridge = new Map<number, OKXBridgeState>();
 const pendingOKXScan = new Map<number, { step: "address"; chain?: string }>();
@@ -1460,12 +1461,14 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
     `2. Sent to: \`${TREASURY_WALLET}\`\n` +
     `3. Sent at least ${BOT_PRICE_USD} USDT\n` +
     `4. Used BNB Chain or Base\n\n` +
-    `If you just sent, wait 1-2 minutes for the chain to index the tx, then try again.`,
+    `If you just sent, wait 1-2 minutes for the chain to index the tx, then try again.\n\n` +
+    `Or paste your transaction hash below for manual verification.`,
     {
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
           [{ text: "🔄 Check Again", callback_data: "action:verifypayment" }],
+          [{ text: "📋 Paste TX Hash", callback_data: "action:verifytxhash" }],
           [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
           [{ text: "« Menu", callback_data: "action:menu" }],
         ],
@@ -2363,6 +2366,16 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
   if (data === "action:verifypayment") {
     return handleVerifyPayment(chatId);
+  }
+  if (data === "action:verifytxhash") {
+    pendingTxHashVerify.set(chatId, true);
+    await bot.sendMessage(chatId,
+      "📋 *Paste your transaction hash*\n\n" +
+      "Send the TX hash of your USDT payment to the treasury wallet.\n\n" +
+      "Example: `0xabc123...`",
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "action:menu" }]] } }
+    );
+    return;
   }
   if (data === "action:substatus") {
     return handleSubStatus(chatId);
@@ -5784,6 +5797,138 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     await handleOKXBridgeFlow(chatId, text);
     return;
   }
+  if (pendingTxHashVerify.has(chatId) && !text.startsWith("/")) {
+    pendingTxHashVerify.delete(chatId);
+    const txHash = text.trim();
+    if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+      await bot.sendMessage(chatId, "❌ Invalid transaction hash. Must be a 66-character hex string starting with 0x.", {
+        reply_markup: { inline_keyboard: [[{ text: "📋 Try Again", callback_data: "action:verifytxhash" }], [{ text: "« Menu", callback_data: "action:menu" }]] }
+      });
+      return;
+    }
+
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) {
+      await bot.sendMessage(chatId, "❌ No wallet linked. Use /start first.");
+      return;
+    }
+
+    await bot.sendMessage(chatId, `🔍 Verifying transaction \`${txHash.substring(0, 16)}...\``, { parse_mode: "Markdown" });
+    sendTyping(chatId);
+
+    const rpcUrls: { chainId: number; name: string; rpc: string }[] = [
+      { chainId: 56, name: "BNB Chain", rpc: "https://bsc-dataseed1.binance.org" },
+      { chainId: 8453, name: "Base", rpc: "https://mainnet.base.org" },
+    ];
+
+    try {
+      const { ethers } = await import("ethers");
+      let verified = false;
+
+      for (const chain of rpcUrls) {
+        try {
+          const provider = new ethers.JsonRpcProvider(chain.rpc);
+          const receipt = await provider.getTransactionReceipt(txHash);
+          if (!receipt) continue;
+
+          console.log(`[TxHashVerify] Found receipt on ${chain.name}, logs=${receipt.logs.length}`);
+
+          const usdtAddr = USDT_ADDRESSES[chain.chainId.toString()];
+          if (!usdtAddr) continue;
+
+          const transferTopic = ethers.id("Transfer(address,address,uint256)");
+          for (const log of receipt.logs) {
+            if (log.address.toLowerCase() !== usdtAddr.toLowerCase()) continue;
+            if (log.topics[0] !== transferTopic) continue;
+
+            const from = ethers.getAddress("0x" + log.topics[1].slice(26));
+            const to = ethers.getAddress("0x" + log.topics[2].slice(26));
+            const value = parseFloat(ethers.formatUnits(log.data, 18));
+
+            console.log(`[TxHashVerify] Transfer: from=${from.substring(0,10)} to=${to.substring(0,10)} value=${value.toFixed(2)}`);
+
+            if (to.toLowerCase() !== TREASURY_WALLET.toLowerCase()) continue;
+            if (from.toLowerCase() !== wallet.toLowerCase()) continue;
+            if (value < BOT_PRICE_USD - 0.50) continue;
+
+            const existingSub = await storage.getBotSubscription(wallet);
+            if (existingSub?.txHash === txHash && existingSub.status === "active") {
+              await bot.sendMessage(chatId,
+                `✅ *Already Active!*\n\nYour subscription is already active (TX \`${txHash.substring(0, 16)}...\`).`,
+                { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+              );
+              return;
+            }
+
+            let activated = await storage.activateBotSubscription(wallet, txHash, chain.chainId, value.toFixed(2));
+            if (!activated) {
+              await storage.createBotSubscription(wallet, chatId.toString());
+              activated = await storage.activateBotSubscription(wallet, txHash, chain.chainId, value.toFixed(2));
+            }
+
+            subCache.delete(chatId);
+            console.log(`[TxHashVerify] SUCCESS chatId=${chatId} wallet=${wallet.substring(0,8)} amount=${value.toFixed(2)} chain=${chain.name}`);
+
+            await bot.sendMessage(chatId,
+              `🎉 *Payment Confirmed!*\n\n` +
+              `Amount: ${value.toFixed(2)} USDT\n` +
+              `Chain: ${chain.name}\n` +
+              `TX: \`${txHash.substring(0, 20)}...\`\n\n` +
+              `✅ Your premium subscription is now active for 30 days.\n` +
+              `All features unlocked! 🚀`,
+              { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+            );
+
+            try {
+              const referral = await storage.getReferralByReferred(chatId.toString());
+              if (referral && !referral.commissionPaid) {
+                const referrerCount = await storage.getReferralCount(referral.referrerChatId);
+                const commissionPct = getReferralCommissionPercent(referrerCount);
+                const commissionAmt = (BOT_PRICE_USD * commissionPct / 100).toFixed(2);
+                await storage.markReferralPaid(chatId.toString(), commissionAmt, commissionPct);
+                try {
+                  await bot.sendMessage(parseInt(referral.referrerChatId),
+                    `💰 *Referral Commission Earned!*\n\nSomeone you referred just subscribed!\nCommission: *$${commissionAmt} USDT* (${commissionPct}%)`,
+                    { parse_mode: "Markdown" }
+                  );
+                } catch {}
+              }
+            } catch {}
+
+            verified = true;
+            break;
+          }
+          if (verified) break;
+        } catch (chainErr: any) {
+          console.error(`[TxHashVerify] ${chain.name} error:`, chainErr.message);
+        }
+      }
+
+      if (!verified) {
+        await bot.sendMessage(chatId,
+          `❌ *Could not verify this transaction*\n\n` +
+          `TX: \`${txHash.substring(0, 20)}...\`\n\n` +
+          `Possible reasons:\n` +
+          `• TX is not a USDT transfer to the treasury wallet\n` +
+          `• Sender is not your linked wallet (\`${wallet.substring(0, 10)}...\`)\n` +
+          `• Amount is less than $${BOT_PRICE_USD}\n` +
+          `• Wrong chain (only BNB Chain and Base supported)`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+            [{ text: "📋 Try Another TX", callback_data: "action:verifytxhash" }],
+            [{ text: "🔄 Auto Check", callback_data: "action:verifypayment" }],
+            [{ text: "« Menu", callback_data: "action:menu" }],
+          ]}}
+        );
+      }
+    } catch (e: any) {
+      console.error("[TxHashVerify] Error:", e.message);
+      await bot.sendMessage(chatId, `❌ Verification error: ${e.message?.substring(0, 100)}`, {
+        reply_markup: { inline_keyboard: [[{ text: "📋 Try Again", callback_data: "action:verifytxhash" }], [{ text: "« Menu", callback_data: "action:menu" }]] }
+      });
+    }
+    return;
+  }
+
   if (pendingOKXScan.has(chatId) && !text.startsWith("/")) {
     const state = pendingOKXScan.get(chatId)!;
     pendingOKXScan.delete(chatId);
@@ -6384,6 +6529,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     pendingImportWallet.delete(chatId);
     pendingAsterConnect.delete(chatId);
     pendingAsterTrade.delete(chatId);
+    pendingTxHashVerify.delete(chatId);
     pendingOKXSwap.delete(chatId);
     pendingOKXBridge.delete(chatId);
     pendingOKXScan.delete(chatId);
@@ -6486,6 +6632,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       pendingChaosPlan.delete(chatId);
       pendingAsterConnect.delete(chatId);
       pendingAsterTrade.delete(chatId);
+      pendingTxHashVerify.delete(chatId);
       await bot.sendMessage(chatId, "Cancelled.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
