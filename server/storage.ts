@@ -98,7 +98,11 @@ function getEncryptionKey(): Buffer {
 }
 
 function getEncryptionKeyLegacy(): Buffer {
-  const seed = process.env.WALLET_ENCRYPTION_KEY || process.env.DEPLOYER_PRIVATE_KEY || process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DATABASE_URL || "build4-default-encryption-key-change-me";
+  const seed = process.env.WALLET_ENCRYPTION_KEY || process.env.DEPLOYER_PRIVATE_KEY || process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DATABASE_URL;
+  if (!seed) {
+    console.error("[SECURITY] CRITICAL: No encryption key for legacy decryption. Set WALLET_ENCRYPTION_KEY.");
+    throw new Error("Legacy encryption key not configured");
+  }
   return createHash("sha256").update(seed).digest();
 }
 
