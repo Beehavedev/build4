@@ -1098,49 +1098,59 @@ async function handlePayFromWallet(chatId: number): Promise<void> {
     return;
   }
 
-  await bot.sendMessage(chatId, `⏳ Checking your wallet balance...`);
+  await bot.sendMessage(chatId, `⏳ Checking your balances...`);
   sendTyping(chatId);
 
-  const usdtBal = await fetchUsdtBalance(wallet);
-  const bnbBal = parseFloat(ethers.formatEther(await bnbProviderCached.getBalance(wallet).catch(() => BigInt(0))));
+  const [usdtBal, bnbRaw, ethRaw] = await Promise.all([
+    fetchUsdtBalance(wallet),
+    bnbProviderCached.getBalance(wallet).catch(() => BigInt(0)),
+    baseProviderCached.getBalance(wallet).catch(() => BigInt(0)),
+  ]);
+  const bnbBal = parseFloat(ethers.formatEther(bnbRaw));
+  const ethBal = parseFloat(ethers.formatEther(ethRaw));
 
-  if (parseFloat(usdtBal) >= BOT_PRICE_USD) {
-    await bot.sendMessage(chatId,
-      `💰 *Pay Subscription From Wallet*\n\n` +
-      `Your USDT balance: *${usdtBal} USDT*\n` +
-      `Subscription: *$${BOT_PRICE_USD} USDT*\n\n` +
-      `This will send ${BOT_PRICE_USD} USDT from your wallet directly to BUILD4.\n\n` +
-      `Tap below to confirm payment:`,
-      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
-        [{ text: `✅ Pay ${BOT_PRICE_USD} USDT Now`, callback_data: "action:autopay_usdt" }],
-        [{ text: "❌ Cancel", callback_data: "action:subscribe" }],
-      ]}}
-    );
-  } else if (bnbBal >= 0.05) {
-    const estimatedBnb = (BOT_PRICE_USD / 600 * 1.03).toFixed(4);
-    await bot.sendMessage(chatId,
-      `💰 *Pay Subscription From Wallet*\n\n` +
-      `Your USDT: *${usdtBal}* (not enough)\n` +
-      `Your BNB: *${bnbBal.toFixed(4)} BNB*\n\n` +
-      `We'll auto-swap ~${estimatedBnb} BNB → ${BOT_PRICE_USD} USDT and send it to BUILD4.\n\n` +
-      `Tap below to confirm:`,
-      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
-        [{ text: `✅ Swap BNB & Pay Now`, callback_data: "action:autopay_swap" }],
-        [{ text: "❌ Cancel", callback_data: "action:subscribe" }],
-      ]}}
-    );
-  } else {
-    await bot.sendMessage(chatId,
-      `❌ *Insufficient Balance*\n\n` +
-      `USDT: ${usdtBal}\nBNB: ${bnbBal.toFixed(4)}\n\n` +
-      `You need either:\n• ${BOT_PRICE_USD} USDT, or\n• ~0.05 BNB (auto-swap)\n\n` +
-      `Fund your wallet:\n\`${wallet}\``,
-      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
-        [{ text: "🔄 Check Again", callback_data: "action:payfromwallet" }],
-        [{ text: "« Menu", callback_data: "action:menu" }],
-      ]}}
-    );
+  const solWallet = solanaWalletMap.get(chatId);
+  let solBal = 0;
+  if (solWallet) {
+    try {
+      const { Connection, PublicKey } = await import("@solana/web3.js");
+      const conn = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
+      const lamports = await conn.getBalance(new PublicKey(solWallet.address));
+      solBal = lamports / 1e9;
+    } catch {}
   }
+
+  let balText = `💰 *Pay Subscription — $${BOT_PRICE_USD}/mo*\n\n`;
+  balText += `📊 *Your Balances:*\n`;
+  balText += `• BNB: *${bnbBal.toFixed(4)}*\n`;
+  balText += `• USDT (BSC): *${usdtBal}*\n`;
+  balText += `• ETH (Base): *${ethBal.toFixed(4)}*\n`;
+  if (solWallet) balText += `• SOL: *${solBal.toFixed(4)}*\n`;
+  balText += `\nSelect how you'd like to pay:`;
+
+  const buttons: TelegramBot.InlineKeyboardButton[][] = [];
+  if (parseFloat(usdtBal) >= BOT_PRICE_USD) {
+    buttons.push([{ text: `💵 Pay with USDT (${usdtBal})`, callback_data: "action:autopay_usdt" }]);
+  }
+  if (bnbBal >= 0.03) {
+    buttons.push([{ text: `🟡 Pay with BNB (${bnbBal.toFixed(4)})`, callback_data: "autopay_native:56" }]);
+  }
+  if (ethBal >= 0.005) {
+    buttons.push([{ text: `🔵 Pay with ETH on Base (${ethBal.toFixed(4)})`, callback_data: "autopay_native:8453" }]);
+  }
+  if (solBal >= 0.1) {
+    buttons.push([{ text: `🟣 Pay with SOL (${solBal.toFixed(4)})`, callback_data: "action:autopay_sol" }]);
+  }
+
+  if (buttons.length === 0) {
+    balText += `\n\n❌ *No sufficient balance found*\nFund any of your wallets to pay:\n\nEVM: \`${wallet}\``;
+    if (solWallet) balText += `\nSOL: \`${solWallet.address}\``;
+    buttons.push([{ text: "🔄 Check Again", callback_data: "action:payfromwallet" }]);
+  }
+
+  buttons.push([{ text: "❌ Cancel", callback_data: "action:subscribe" }]);
+
+  await bot.sendMessage(chatId, balText, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
 }
 
 function getWalletConnectUrl(chatId?: number): string {
@@ -2071,33 +2081,47 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     }
     return;
   }
-  if (data === "action:autopay_swap") {
+  if (data.startsWith("autopay_native:")) {
+    const chainId = data.split(":")[1];
     const wallet = getLinkedWallet(chatId);
     if (!wallet) return;
-    await bot.sendMessage(chatId, `⏳ Swapping BNB → USDT and paying subscription...`);
+
+    const CHAIN_CONFIG: Record<string, { name: string; symbol: string; rpc: string; usdtAddr: string; usdtDecimals: number; explorer: string; priceDivisor: number }> = {
+      "56": { name: "BNB Chain", symbol: "BNB", rpc: "https://bsc-dataseed1.binance.org", usdtAddr: "0x55d398326f99059fF775485246999027B3197955", usdtDecimals: 18, explorer: "https://bscscan.com/tx/", priceDivisor: 500 },
+      "8453": { name: "Base", symbol: "ETH", rpc: "https://mainnet.base.org", usdtAddr: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", usdtDecimals: 6, explorer: "https://basescan.org/tx/", priceDivisor: 2500 },
+      "1": { name: "Ethereum", symbol: "ETH", rpc: "https://eth.llamarpc.com", usdtAddr: "0xdAC17F958D2ee523a2206206994597C13D831ec7", usdtDecimals: 6, explorer: "https://etherscan.io/tx/", priceDivisor: 2500 },
+    };
+    const cfg = CHAIN_CONFIG[chainId];
+    if (!cfg) {
+      await bot.sendMessage(chatId, "❌ Unsupported chain.", { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:payfromwallet" }]] } });
+      return;
+    }
+
+    await bot.sendMessage(chatId, `⏳ Swapping ${cfg.symbol} → USDT and paying subscription on ${cfg.name}...`);
     sendTyping(chatId);
     try {
       let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
       if (!pk) pk = await storage.getPrivateKeyByWalletAddress(wallet);
       if (!pk) throw new Error("Private key not found. Re-import your wallet.");
 
-      const swapAmountBnb = (BOT_PRICE_USD / 500 * 1.05).toFixed(4);
-      const rawAmount = ethers.parseUnits(swapAmountBnb, 18).toString();
+      const swapAmount = (BOT_PRICE_USD / cfg.priceDivisor * 1.05).toFixed(6);
+      const rawAmount = ethers.parseUnits(swapAmount, 18).toString();
 
       const { getSwapData } = await import("./okx-onchainos");
       const swapResult = await getSwapData({
-        chainId: "56",
+        chainId,
         fromTokenAddress: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-        toTokenAddress: BSC_USDT.toLowerCase(),
+        toTokenAddress: cfg.usdtAddr.toLowerCase(),
         amount: rawAmount,
-        slippage: "1",
+        slippage: "1.5",
         userWalletAddress: wallet,
       });
 
       const txData = swapResult?.data?.[0]?.tx;
       if (!txData) throw new Error("No swap route found. Try again later.");
 
-      const signer = new ethers.Wallet(pk, bnbProviderCached);
+      const provider = new ethers.JsonRpcProvider(cfg.rpc);
+      const signer = new ethers.Wallet(pk, provider);
       const swapTx = await signer.sendTransaction({
         to: txData.to,
         data: txData.data,
@@ -2109,31 +2133,32 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
       await new Promise(r => setTimeout(r, 3000));
 
-      const usdtContract = new ethers.Contract(BSC_USDT, [
+      const usdtContract = new ethers.Contract(cfg.usdtAddr, [
         "function transfer(address to, uint256 amount) returns (bool)",
         "function balanceOf(address) view returns (uint256)",
       ], signer);
       const usdtBal = await usdtContract.balanceOf(wallet);
-      const payAmount = ethers.parseUnits(BOT_PRICE_USD.toString(), 18);
-      if (usdtBal < payAmount) throw new Error(`Swap succeeded but USDT balance (${ethers.formatUnits(usdtBal, 18)}) is less than ${BOT_PRICE_USD}. Please try manual payment.`);
+      const payAmount = ethers.parseUnits(BOT_PRICE_USD.toString(), cfg.usdtDecimals);
+      if (usdtBal < payAmount) throw new Error(`Swap succeeded but USDT balance insufficient. Try manual payment.`);
 
       const payTx = await usdtContract.transfer(TREASURY_WALLET, payAmount);
       const payReceipt = await payTx.wait();
       if (!payReceipt || payReceipt.status !== 1) throw new Error("USDT transfer reverted");
 
       try {
-        await storage.activateBotSubscription(wallet, payReceipt.hash, 56, BOT_PRICE_USD.toString());
+        await storage.activateBotSubscription(wallet, payReceipt.hash, parseInt(chainId), BOT_PRICE_USD.toString());
         subCache.delete(chatId);
       } catch (e: any) {
-        console.error("[AutoPay] activate sub after swap failed:", e.message);
+        console.error("[AutoPay] activate sub failed:", e.message);
       }
+      balanceCache.delete(wallet);
 
       await bot.sendMessage(chatId,
         `✅ *Payment Successful!*\n\n` +
-        `Swapped ~${swapAmountBnb} BNB → USDT\n` +
+        `Swapped ~${swapAmount} ${cfg.symbol} → USDT on ${cfg.name}\n` +
         `Sent ${BOT_PRICE_USD} USDT to BUILD4\n\n` +
-        `[Swap TX](https://bscscan.com/tx/${swapReceipt.hash})\n` +
-        `[Payment TX](https://bscscan.com/tx/${payReceipt.hash})\n\n` +
+        `[Swap TX](${cfg.explorer}${swapReceipt.hash})\n` +
+        `[Payment TX](${cfg.explorer}${payReceipt.hash})\n\n` +
         `Your subscription is now active! 🎉`,
         { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [
           [{ text: "🚀 Start Trading", callback_data: "action:menu" }],
@@ -2143,8 +2168,83 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       await bot.sendMessage(chatId,
         `❌ Auto-pay failed: ${e.message?.substring(0, 200)}\n\nYou can try again or pay manually.`,
         { reply_markup: { inline_keyboard: [
-          [{ text: "🔄 Retry", callback_data: "action:autopay_swap" }],
+          [{ text: "🔄 Retry", callback_data: `autopay_native:${chainId}` }],
           [{ text: "💳 Pay Manually", callback_data: "action:paynow" }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ]}}
+      );
+    }
+    return;
+  }
+  if (data === "action:autopay_sol") {
+    const wallet = getLinkedWallet(chatId);
+    const solWallet = solanaWalletMap.get(chatId);
+    if (!solWallet) {
+      await bot.sendMessage(chatId, "❌ No Solana wallet found. Generate one first.", { reply_markup: { inline_keyboard: [[{ text: "🟣 Generate SOL Wallet", callback_data: "action:gensolwallet" }]] } });
+      return;
+    }
+
+    await bot.sendMessage(chatId, `⏳ Sending SOL payment to BUILD4...`);
+    sendTyping(chatId);
+    try {
+      const { Connection, PublicKey, Transaction, SystemProgram, Keypair, LAMPORTS_PER_SOL } = await import("@solana/web3.js");
+      const conn = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
+
+      const solPriceResp = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd").then(r => r.json()).catch(() => ({ solana: { usd: 150 } }));
+      const solPrice = solPriceResp?.solana?.usd || 150;
+      const solAmount = (BOT_PRICE_USD / solPrice) * 1.02;
+      const lamports = Math.ceil(solAmount * LAMPORTS_PER_SOL);
+
+      const balance = await conn.getBalance(new PublicKey(solWallet.address));
+      if (balance < lamports + 10000) throw new Error(`Insufficient SOL. Have ${(balance / LAMPORTS_PER_SOL).toFixed(4)}, need ~${solAmount.toFixed(4)}`);
+
+      const secretKey = Buffer.from(solWallet.privateKey, "hex");
+      const payer = Keypair.fromSecretKey(new Uint8Array(secretKey));
+
+      const SOL_TREASURY = "5Ff57464152c9285A8526a0665d996dA66e2def1";
+      let treasuryPubkey: PublicKey;
+      try {
+        treasuryPubkey = new PublicKey(process.env.SOL_TREASURY_WALLET || SOL_TREASURY);
+      } catch {
+        treasuryPubkey = new PublicKey("5Ff57464152c9285A8526a0665d996dA66e2def1");
+      }
+
+      const tx = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: payer.publicKey,
+          toPubkey: treasuryPubkey,
+          lamports,
+        })
+      );
+      tx.feePayer = payer.publicKey;
+      const { blockhash } = await conn.getLatestBlockhash();
+      tx.recentBlockhash = blockhash;
+      tx.sign(payer);
+      const sig = await conn.sendRawTransaction(tx.serialize());
+      await conn.confirmTransaction(sig, "confirmed");
+
+      try {
+        await storage.activateBotSubscription(wallet || solWallet.address, sig, 501, BOT_PRICE_USD.toString());
+        subCache.delete(chatId);
+      } catch (e: any) {
+        console.error("[AutoPay SOL] activate sub failed:", e.message);
+      }
+
+      await bot.sendMessage(chatId,
+        `✅ *Payment Successful!*\n\n` +
+        `Sent ~${solAmount.toFixed(4)} SOL ($${BOT_PRICE_USD})\n\n` +
+        `[View Transaction](https://solscan.io/tx/${sig})\n\n` +
+        `Your subscription is now active! 🎉`,
+        { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [
+          [{ text: "🚀 Start Trading", callback_data: "action:menu" }],
+        ]}}
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId,
+        `❌ SOL payment failed: ${e.message?.substring(0, 200)}\n\nTry again or use a different token.`,
+        { reply_markup: { inline_keyboard: [
+          [{ text: "🔄 Retry", callback_data: "action:autopay_sol" }],
+          [{ text: "💰 Other Payment Methods", callback_data: "action:payfromwallet" }],
           [{ text: "« Menu", callback_data: "action:menu" }],
         ]}}
       );
