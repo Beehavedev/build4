@@ -1298,95 +1298,119 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
       const usdtAddr = USDT_ADDRESSES[chain.id.toString()];
       if (!usdtAddr) continue;
 
-      const params = new URLSearchParams({
-        module: "account",
-        action: "tokentx",
-        contractaddress: usdtAddr,
-        address: wallet,
-        page: "1",
-        offset: "20",
-        sort: "desc",
-      });
-      if (chain.key) params.set("apikey", chain.key);
+      const lookupAddresses = [wallet, TREASURY_WALLET];
+      let foundTx: any = null;
 
-      const resp = await fetch(`${chain.api}?${params}`);
-      const json = await resp.json() as any;
+      for (const lookupAddr of lookupAddresses) {
+        const params = new URLSearchParams({
+          module: "account",
+          action: "tokentx",
+          contractaddress: usdtAddr,
+          address: lookupAddr,
+          page: "1",
+          offset: "50",
+          sort: "desc",
+        });
+        if (chain.key) params.set("apikey", chain.key);
 
-      if (json.status !== "1" || !json.result?.length) continue;
+        const resp = await fetch(`${chain.api}?${params}`, { signal: AbortSignal.timeout(10000) });
+        const json = await resp.json() as any;
 
-      for (const tx of json.result) {
-        if (
-          tx.to?.toLowerCase() === TREASURY_WALLET.toLowerCase() &&
-          tx.from?.toLowerCase() === wallet.toLowerCase()
-        ) {
+        log(`[VerifyPayment] ${chain.name} lookup=${lookupAddr.substring(0,8)} status=${json.status} results=${json.result?.length || 0}`, "telegram");
+
+        if (json.status !== "1" || !json.result?.length) continue;
+
+        for (const tx of json.result) {
+          if (tx.to?.toLowerCase() !== TREASURY_WALLET.toLowerCase()) continue;
+          if (tx.from?.toLowerCase() !== wallet.toLowerCase()) continue;
+
           const decimals = parseInt(tx.tokenDecimal || "18");
           const value = parseFloat(tx.value) / Math.pow(10, decimals);
-          if (value >= BOT_PRICE_USD - 0.01) {
-            const existingSub = await storage.getBotSubscription(wallet);
-            if (existingSub?.txHash === tx.hash) continue;
-
-            const activated = await storage.activateBotSubscription(
-              wallet, tx.hash, chain.id, value.toFixed(2)
-            );
-
-            if (!activated) {
-              await storage.createBotSubscription(wallet, chatId.toString());
-              await storage.activateBotSubscription(wallet, tx.hash, chain.id, value.toFixed(2));
-            }
-
-            subCache.delete(chatId);
-
-            await bot.sendMessage(chatId,
-              `🎉 *Payment Confirmed!*\n\n` +
-              `Amount: ${value.toFixed(2)} USDT\n` +
-              `Chain: ${chain.name}\n` +
-              `TX: \`${tx.hash.substring(0, 20)}...\`\n\n` +
-              `✅ Your premium subscription is now active for 30 days.\n` +
-              `All features unlocked! 🚀`,
-              { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
-            );
-
-            try {
-              const referral = await storage.getReferralByReferred(chatId.toString());
-              if (referral && !referral.commissionPaid) {
-                const referrerCount = await storage.getReferralCount(referral.referrerChatId);
-                const commissionPct = getReferralCommissionPercent(referrerCount);
-                const commissionAmt = (BOT_PRICE_USD * commissionPct / 100).toFixed(2);
-                await storage.markReferralPaid(chatId.toString(), commissionAmt, commissionPct);
-                log(`[Referral] Commission earned: referrer=${referral.referrerChatId}, referred=${chatId}, amount=$${commissionAmt}, tier=${commissionPct}%`, "telegram");
-                try {
-                  await bot.sendMessage(parseInt(referral.referrerChatId),
-                    `💰 *Referral Commission Earned!*\n\n` +
-                    `Someone you referred just subscribed!\n\n` +
-                    `Commission: *$${commissionAmt} USDT* (${commissionPct}%)\n` +
-                    `Your total referrals: ${referrerCount}\n\n` +
-                    `Commission will be sent to your wallet. Keep sharing your link to earn more!`,
-                    { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔗 My Referrals", callback_data: "action:referral" }]] } }
-                  );
-                } catch {}
-              }
-            } catch (e: any) {
-              console.error("[Referral] Commission tracking error:", e.message);
-            }
-
-            return;
+          if (value >= BOT_PRICE_USD - 0.50) {
+            foundTx = { tx, value, chain };
+            break;
           }
         }
+        if (foundTx) break;
+      }
+
+      if (foundTx) {
+        const { tx, value } = foundTx;
+        const existingSub = await storage.getBotSubscription(wallet);
+        if (existingSub?.txHash === tx.hash) {
+          if (existingSub.status === "active") {
+            await bot.sendMessage(chatId,
+              `✅ *Already Active!*\n\nYour subscription is already active (paid with TX \`${tx.hash.substring(0, 16)}...\`).`,
+              { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+            );
+            return;
+          }
+          continue;
+        }
+
+        let activated = await storage.activateBotSubscription(
+          wallet, tx.hash, chain.id, value.toFixed(2)
+        );
+
+        if (!activated) {
+          await storage.createBotSubscription(wallet, chatId.toString());
+          activated = await storage.activateBotSubscription(wallet, tx.hash, chain.id, value.toFixed(2));
+        }
+
+        subCache.delete(chatId);
+        log(`[VerifyPayment] SUCCESS chatId=${chatId} wallet=${wallet.substring(0,8)} amount=${value.toFixed(2)} chain=${chain.name} tx=${tx.hash.substring(0,16)}`, "telegram");
+
+        await bot.sendMessage(chatId,
+          `🎉 *Payment Confirmed!*\n\n` +
+          `Amount: ${value.toFixed(2)} USDT\n` +
+          `Chain: ${chain.name}\n` +
+          `TX: \`${tx.hash.substring(0, 20)}...\`\n\n` +
+          `✅ Your premium subscription is now active for 30 days.\n` +
+          `All features unlocked! 🚀`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+        );
+
+        try {
+          const referral = await storage.getReferralByReferred(chatId.toString());
+          if (referral && !referral.commissionPaid) {
+            const referrerCount = await storage.getReferralCount(referral.referrerChatId);
+            const commissionPct = getReferralCommissionPercent(referrerCount);
+            const commissionAmt = (BOT_PRICE_USD * commissionPct / 100).toFixed(2);
+            await storage.markReferralPaid(chatId.toString(), commissionAmt, commissionPct);
+            log(`[Referral] Commission earned: referrer=${referral.referrerChatId}, referred=${chatId}, amount=$${commissionAmt}, tier=${commissionPct}%`, "telegram");
+            try {
+              await bot.sendMessage(parseInt(referral.referrerChatId),
+                `💰 *Referral Commission Earned!*\n\n` +
+                `Someone you referred just subscribed!\n\n` +
+                `Commission: *$${commissionAmt} USDT* (${commissionPct}%)\n` +
+                `Your total referrals: ${referrerCount}\n\n` +
+                `Commission will be sent to your wallet. Keep sharing your link to earn more!`,
+                { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔗 My Referrals", callback_data: "action:referral" }]] } }
+              );
+            } catch {}
+          }
+        } catch (e: any) {
+          console.error("[Referral] Commission tracking error:", e.message);
+        }
+
+        return;
       }
     } catch (e: any) {
       console.error(`[Subscription] ${chain.name} verify error:`, e.message);
     }
   }
 
+  log(`[VerifyPayment] FAILED chatId=${chatId} wallet=${wallet.substring(0,8)} — no matching tx found`, "telegram");
+
   await bot.sendMessage(chatId,
     `❌ *Payment Not Found*\n\n` +
-    `Could not detect a USDT payment of $${BOT_PRICE_USD} to the treasury wallet.\n\n` +
+    `Could not detect a USDT payment of ~$${BOT_PRICE_USD} to the treasury wallet.\n\n` +
     `Make sure you:\n` +
     `1. Sent from your linked wallet: \`${wallet}\`\n` +
     `2. Sent to: \`${TREASURY_WALLET}\`\n` +
     `3. Sent at least ${BOT_PRICE_USD} USDT\n` +
     `4. Used BNB Chain or Base\n\n` +
-    `Transactions may take a few minutes to confirm. Try again shortly.`,
+    `If you just sent, wait 1-2 minutes for the chain to index the tx, then try again.`,
     {
       parse_mode: "Markdown",
       reply_markup: {
@@ -2066,8 +2090,13 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
 
       try {
-        await storage.activateBotSubscription(wallet, receipt.hash, 56, BOT_PRICE_USD.toString());
+        let activated = await storage.activateBotSubscription(wallet, receipt.hash, 56, BOT_PRICE_USD.toString());
+        if (!activated) {
+          await storage.createBotSubscription(wallet, chatId.toString());
+          activated = await storage.activateBotSubscription(wallet, receipt.hash, 56, BOT_PRICE_USD.toString());
+        }
         subCache.delete(chatId);
+        log(`[AutoPay USDT] SUCCESS chatId=${chatId} wallet=${wallet.substring(0,8)} tx=${receipt.hash.substring(0,16)}`, "telegram");
       } catch (e: any) {
         console.error("[AutoPay] activate sub failed, will verify manually:", e.message);
       }
@@ -2162,8 +2191,13 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       if (!payReceipt || payReceipt.status !== 1) throw new Error("USDT transfer reverted");
 
       try {
-        await storage.activateBotSubscription(wallet, payReceipt.hash, parseInt(chainId), BOT_PRICE_USD.toString());
+        let activated = await storage.activateBotSubscription(wallet, payReceipt.hash, parseInt(chainId), BOT_PRICE_USD.toString());
+        if (!activated) {
+          await storage.createBotSubscription(wallet, chatId.toString());
+          activated = await storage.activateBotSubscription(wallet, payReceipt.hash, parseInt(chainId), BOT_PRICE_USD.toString());
+        }
         subCache.delete(chatId);
+        log(`[AutoPay Native] SUCCESS chatId=${chatId} chain=${chainId} tx=${payReceipt.hash.substring(0,16)}`, "telegram");
       } catch (e: any) {
         console.error("[AutoPay] activate sub failed:", e.message);
       }
@@ -2244,8 +2278,14 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       await conn.confirmTransaction(sig, "confirmed");
 
       try {
-        await storage.activateBotSubscription(wallet || solWallet.address, sig, 501, BOT_PRICE_USD.toString());
+        const subWallet = wallet || solWallet.address;
+        let activated = await storage.activateBotSubscription(subWallet, sig, 501, BOT_PRICE_USD.toString());
+        if (!activated) {
+          await storage.createBotSubscription(subWallet, chatId.toString());
+          activated = await storage.activateBotSubscription(subWallet, sig, 501, BOT_PRICE_USD.toString());
+        }
         subCache.delete(chatId);
+        log(`[AutoPay SOL] SUCCESS chatId=${chatId} tx=${sig.substring(0,16)}`, "telegram");
       } catch (e: any) {
         console.error("[AutoPay SOL] activate sub failed:", e.message);
       }
