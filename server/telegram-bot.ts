@@ -22,80 +22,80 @@ let botUsername: string | null = null;
 let webhookMode = false;
 let startingBot = false;
 
-type Lang = "en" | "zh";
+type Lang = "en" | "zh" | "ar";
 const userLang = new Map<number, Lang>();
 function getLang(chatId: number): Lang { return userLang.get(chatId) || "en"; }
 
 const t: Record<string, Record<Lang, string>> = {
-  "menu.launch": { en: "🚀 Launch Token", zh: "🚀 发射代币" },
-  "menu.buy": { en: "💰 Buy Token", zh: "💰 买入代币" },
-  "menu.sell": { en: "💸 Sell Token", zh: "💸 卖出代币" },
-  "menu.swap": { en: "🔄 Swap", zh: "🔄 兑换" },
-  "menu.bridge": { en: "🌉 Bridge", zh: "🌉 跨链桥" },
-  "menu.signals": { en: "🐋 Signals", zh: "🐋 信号" },
-  "menu.security": { en: "🔒 Security", zh: "🔒 安全扫描" },
-  "menu.trending": { en: "🔥 Trending", zh: "🔥 热门代币" },
-  "menu.meme": { en: "🐸 Meme Scanner", zh: "🐸 Meme扫描" },
-  "menu.price": { en: "📊 Token Price", zh: "📊 代币价格" },
-  "menu.gas": { en: "⛽ Gas", zh: "⛽ Gas费" },
-  "menu.rich": { en: "💎 Make Me Rich", zh: "💎 自动交易" },
-  "menu.aster": { en: "📈 Aster DEX", zh: "📈 Aster DEX" },
-  "menu.createAgent": { en: "🤖 Create Agent", zh: "🤖 创建代理" },
-  "menu.myAgents": { en: "📋 My Agents", zh: "📋 我的代理" },
-  "menu.newTask": { en: "📝 New Task", zh: "📝 新任务" },
-  "menu.myTasks": { en: "📊 My Tasks", zh: "📊 我的任务" },
-  "menu.wallet": { en: "👛 My Wallet", zh: "👛 我的钱包" },
-  "menu.premium": { en: "⭐ Premium", zh: "⭐ 高级版" },
-  "menu.referral": { en: "🔗 Referral", zh: "🔗 推荐奖励" },
-  "menu.help": { en: "❓ Help & Commands", zh: "❓ 帮助" },
-  "menu.back": { en: "« Menu", zh: "« 菜单" },
-  "menu.cancel": { en: "❌ Cancel", zh: "❌ 取消" },
-  "wallet.title": { en: "👛 *Your Wallets*", zh: "👛 *您的钱包*" },
-  "wallet.fund": { en: "Send BNB to your active wallet address to fund it.", zh: "发送BNB到您的活跃钱包地址来充值。" },
-  "wallet.loading": { en: "Loading wallet balances...", zh: "正在加载钱包余额..." },
-  "wallet.empty": { en: "(empty)", zh: "(空)" },
-  "wallet.viewOnly": { en: "🔒 view-only", zh: "🔒 只读" },
-  "wallet.active": { en: "← active", zh: "← 活跃" },
-  "wallet.genNew": { en: "🔑 Generate New Wallet", zh: "🔑 生成新钱包" },
-  "wallet.import": { en: "📥 Import Wallet", zh: "📥 导入钱包" },
-  "wallet.genSol": { en: "🟣 Generate SOL Wallet", zh: "🟣 生成SOL钱包" },
-  "wallet.exportKey": { en: "🔐 Export Private Key", zh: "🔐 导出私钥" },
-  "wallet.exportSol": { en: "🟣 Export SOL Key", zh: "🟣 导出SOL私钥" },
-  "wallet.copyAddr": { en: "📋 Copy Address", zh: "📋 复制地址" },
-  "export.verify": { en: "🔐 *Private Key Export Verification*", zh: "🔐 *私钥导出验证*" },
-  "export.warning": { en: "⚠️ Your private key gives *FULL control* of this wallet.\nNever share it with anyone. BUILD4 will never ask for it.", zh: "⚠️ 您的私钥可以*完全控制*此钱包。\n切勿与任何人分享。BUILD4绝不会索要您的私钥。" },
-  "export.typeCode": { en: "To confirm, type this 4-digit code:", zh: "请输入以下4位验证码确认：" },
-  "export.expires": { en: "_This code expires in 60 seconds._", zh: "_验证码将在60秒后过期。_" },
-  "export.autoDelete": { en: "⚠️ This message will be auto-deleted in 30 seconds. Copy it NOW.\n🔒 Never share your private key with anyone.", zh: "⚠️ 此消息将在30秒后自动删除。请立即复制！\n🔒 切勿与任何人分享您的私钥。" },
-  "export.deleted": { en: "🔐 Private key message deleted for security.", zh: "🔐 私钥消息已安全删除。" },
-  "export.locked": { en: "🔒 *Account locked* due to failed verification attempts.\n\nTry again later.", zh: "🔒 *账户已锁定*，验证码输入错误次数过多。\n\n请稍后再试。" },
-  "export.wrongCode": { en: "❌ Wrong code.", zh: "❌ 验证码错误。" },
-  "export.rateLimit": { en: "🚫 Too many export attempts. For security, exports are limited to 3 per hour.", zh: "🚫 导出次数过多。出于安全考虑，每小时限3次。" },
-  "sub.subscribe": { en: "💳 Subscribe", zh: "💳 订阅" },
-  "sub.trial": { en: "🆓 Start Free Trial", zh: "🆓 开始免费试用" },
-  "sub.expired": { en: "Your subscription has expired.", zh: "您的订阅已过期。" },
-  "sub.active": { en: "Your subscription is active!", zh: "您的订阅已激活！" },
-  "welcome.title": { en: "Welcome to BUILD4!", zh: "欢迎使用BUILD4！" },
-  "welcome.desc": { en: "Your decentralized AI agent economy platform.", zh: "您的去中心化AI代理经济平台。" },
-  "lang.set": { en: "Language set to English 🇬🇧", zh: "语言已设为中文 🇨🇳" },
-  "lang.choose": { en: "Choose your language:", zh: "选择您的语言：" },
-  "help.title": { en: "Commands:", zh: "命令列表：" },
-  "meme.title": { en: "🐸 *Meme Token Scanner*\n\nScan new meme token launches for alpha.\n\nSelect chain:", zh: "🐸 *Meme代币扫描*\n\n扫描新Meme代币。\n\n选择链：" },
-  "meme.filter": { en: "Select filter:", zh: "选择过滤器：" },
-  "meme.new": { en: "🆕 New Launches", zh: "🆕 新发射" },
-  "meme.migrating": { en: "🔄 Migrating", zh: "🔄 迁移中" },
-  "meme.migrated": { en: "🎓 Migrated", zh: "🎓 已迁移" },
-  "signals.title": { en: "🐋 *Smart Money Signals*\n\nSelect signal type:", zh: "🐋 *聪明钱信号*\n\n选择信号类型：" },
-  "signals.whale": { en: "🐋 Whale Buys", zh: "🐋 巨鲸买入" },
-  "signals.kol": { en: "🎤 KOL Buys", zh: "🎤 KOL买入" },
-  "signals.smart": { en: "💰 Smart Money", zh: "💰 聪明钱" },
-  "signals.leaderboard": { en: "🏆 Leaderboard", zh: "🏆 排行榜" },
-  "security.enterAddr": { en: "Enter the token contract address to scan:", zh: "输入要扫描的代币合约地址：" },
-  "price.enterAddr": { en: "Enter the token contract address:", zh: "输入代币合约地址：" },
-  "buy.enterAddr": { en: "Enter the token contract address to buy:", zh: "输入要购买的代币合约地址：" },
-  "sell.enterAddr": { en: "Enter the token contract address to sell:", zh: "输入要卖出的代币合约地址：" },
-  "general.error": { en: "Something went wrong. Try again.", zh: "出错了，请重试。" },
-  "general.noWallet": { en: "❌ You need a wallet first. Use /start to create one.", zh: "❌ 您需要先创建钱包。使用 /start 创建。" },
+  "menu.launch": { en: "🚀 Launch Token", zh: "🚀 发射代币", ar: "🚀 إطلاق توكن" },
+  "menu.buy": { en: "💰 Buy Token", zh: "💰 买入代币", ar: "💰 شراء توكن" },
+  "menu.sell": { en: "💸 Sell Token", zh: "💸 卖出代币", ar: "💸 بيع توكن" },
+  "menu.swap": { en: "🔄 Swap", zh: "🔄 兑换", ar: "🔄 مبادلة" },
+  "menu.bridge": { en: "🌉 Bridge", zh: "🌉 跨链桥", ar: "🌉 جسر" },
+  "menu.signals": { en: "🐋 Signals", zh: "🐋 信号", ar: "🐋 إشارات" },
+  "menu.security": { en: "🔒 Security", zh: "🔒 安全扫描", ar: "🔒 أمان" },
+  "menu.trending": { en: "🔥 Trending", zh: "🔥 热门代币", ar: "🔥 رائج" },
+  "menu.meme": { en: "🐸 Meme Scanner", zh: "🐸 Meme扫描", ar: "🐸 ماسح ميم" },
+  "menu.price": { en: "📊 Token Price", zh: "📊 代币价格", ar: "📊 سعر التوكن" },
+  "menu.gas": { en: "⛽ Gas", zh: "⛽ Gas费", ar: "⛽ رسوم الغاز" },
+  "menu.rich": { en: "💎 Make Me Rich", zh: "💎 自动交易", ar: "💎 تداول تلقائي" },
+  "menu.aster": { en: "📈 Aster DEX", zh: "📈 Aster DEX", ar: "📈 Aster DEX" },
+  "menu.createAgent": { en: "🤖 Create Agent", zh: "🤖 创建代理", ar: "🤖 إنشاء وكيل" },
+  "menu.myAgents": { en: "📋 My Agents", zh: "📋 我的代理", ar: "📋 وكلائي" },
+  "menu.newTask": { en: "📝 New Task", zh: "📝 新任务", ar: "📝 مهمة جديدة" },
+  "menu.myTasks": { en: "📊 My Tasks", zh: "📊 我的任务", ar: "📊 مهامي" },
+  "menu.wallet": { en: "👛 My Wallet", zh: "👛 我的钱包", ar: "👛 محفظتي" },
+  "menu.premium": { en: "⭐ Premium", zh: "⭐ 高级版", ar: "⭐ مميز" },
+  "menu.referral": { en: "🔗 Referral", zh: "🔗 推荐奖励", ar: "🔗 إحالة" },
+  "menu.help": { en: "❓ Help & Commands", zh: "❓ 帮助", ar: "❓ مساعدة" },
+  "menu.back": { en: "« Menu", zh: "« 菜单", ar: "« القائمة" },
+  "menu.cancel": { en: "❌ Cancel", zh: "❌ 取消", ar: "❌ إلغاء" },
+  "wallet.title": { en: "👛 *Your Wallets*", zh: "👛 *您的钱包*", ar: "👛 *محافظك*" },
+  "wallet.fund": { en: "Send BNB to your active wallet address to fund it.", zh: "发送BNB到您的活跃钱包地址来充值。", ar: "أرسل BNB إلى عنوان محفظتك النشطة لتمويلها." },
+  "wallet.loading": { en: "Loading wallet balances...", zh: "正在加载钱包余额...", ar: "جاري تحميل أرصدة المحفظة..." },
+  "wallet.empty": { en: "(empty)", zh: "(空)", ar: "(فارغة)" },
+  "wallet.viewOnly": { en: "🔒 view-only", zh: "🔒 只读", ar: "🔒 للعرض فقط" },
+  "wallet.active": { en: "← active", zh: "← 活跃", ar: "← نشطة" },
+  "wallet.genNew": { en: "🔑 Generate New Wallet", zh: "🔑 生成新钱包", ar: "🔑 إنشاء محفظة جديدة" },
+  "wallet.import": { en: "📥 Import Wallet", zh: "📥 导入钱包", ar: "📥 استيراد محفظة" },
+  "wallet.genSol": { en: "🟣 Generate SOL Wallet", zh: "🟣 生成SOL钱包", ar: "🟣 إنشاء محفظة SOL" },
+  "wallet.exportKey": { en: "🔐 Export Private Key", zh: "🔐 导出私钥", ar: "🔐 تصدير المفتاح الخاص" },
+  "wallet.exportSol": { en: "🟣 Export SOL Key", zh: "🟣 导出SOL私钥", ar: "🟣 تصدير مفتاح SOL" },
+  "wallet.copyAddr": { en: "📋 Copy Address", zh: "📋 复制地址", ar: "📋 نسخ العنوان" },
+  "export.verify": { en: "🔐 *Private Key Export Verification*", zh: "🔐 *私钥导出验证*", ar: "🔐 *التحقق من تصدير المفتاح الخاص*" },
+  "export.warning": { en: "⚠️ Your private key gives *FULL control* of this wallet.\nNever share it with anyone. BUILD4 will never ask for it.", zh: "⚠️ 您的私钥可以*完全控制*此钱包。\n切勿与任何人分享。BUILD4绝不会索要您的私钥。", ar: "⚠️ مفتاحك الخاص يمنح *تحكماً كاملاً* بهذه المحفظة.\nلا تشاركه مع أي شخص أبداً. BUILD4 لن يطلبه منك أبداً." },
+  "export.typeCode": { en: "To confirm, type this 4-digit code:", zh: "请输入以下4位验证码确认：", ar: "للتأكيد، اكتب هذا الرمز المكون من 4 أرقام:" },
+  "export.expires": { en: "_This code expires in 60 seconds._", zh: "_验证码将在60秒后过期。_", ar: "_ينتهي هذا الرمز خلال 60 ثانية._" },
+  "export.autoDelete": { en: "⚠️ This message will be auto-deleted in 30 seconds. Copy it NOW.\n🔒 Never share your private key with anyone.", zh: "⚠️ 此消息将在30秒后自动删除。请立即复制！\n🔒 切勿与任何人分享您的私钥。", ar: "⚠️ سيتم حذف هذه الرسالة تلقائياً خلال 30 ثانية. انسخها الآن!\n🔒 لا تشارك مفتاحك الخاص مع أي شخص أبداً." },
+  "export.deleted": { en: "🔐 Private key message deleted for security.", zh: "🔐 私钥消息已安全删除。", ar: "🔐 تم حذف رسالة المفتاح الخاص للأمان." },
+  "export.locked": { en: "🔒 *Account locked* due to failed verification attempts.\n\nTry again later.", zh: "🔒 *账户已锁定*，验证码输入错误次数过多。\n\n请稍后再试。", ar: "🔒 *الحساب مقفل* بسبب محاولات تحقق فاشلة.\n\nحاول مرة أخرى لاحقاً." },
+  "export.wrongCode": { en: "❌ Wrong code.", zh: "❌ 验证码错误。", ar: "❌ رمز خاطئ." },
+  "export.rateLimit": { en: "🚫 Too many export attempts. For security, exports are limited to 3 per hour.", zh: "🚫 导出次数过多。出于安全考虑，每小时限3次。", ar: "🚫 محاولات تصدير كثيرة جداً. للأمان، التصدير محدود بـ 3 مرات في الساعة." },
+  "sub.subscribe": { en: "💳 Subscribe", zh: "💳 订阅", ar: "💳 اشتراك" },
+  "sub.trial": { en: "🆓 Start Free Trial", zh: "🆓 开始免费试用", ar: "🆓 بدء التجربة المجانية" },
+  "sub.expired": { en: "Your subscription has expired.", zh: "您的订阅已过期。", ar: "انتهى اشتراكك." },
+  "sub.active": { en: "Your subscription is active!", zh: "您的订阅已激活！", ar: "اشتراكك نشط!" },
+  "welcome.title": { en: "Welcome to BUILD4!", zh: "欢迎使用BUILD4！", ar: "!BUILD4 مرحباً بك في" },
+  "welcome.desc": { en: "Your decentralized AI agent economy platform.", zh: "您的去中心化AI代理经济平台。", ar: "منصتك اللامركزية لاقتصاد وكلاء الذكاء الاصطناعي." },
+  "lang.set": { en: "Language set to English 🇬🇧", zh: "语言已设为中文 🇨🇳", ar: "🇸🇦 تم تعيين اللغة إلى العربية" },
+  "lang.choose": { en: "Choose your language:", zh: "选择您的语言：", ar: "اختر لغتك:" },
+  "help.title": { en: "Commands:", zh: "命令列表：", ar: "الأوامر:" },
+  "meme.title": { en: "🐸 *Meme Token Scanner*\n\nScan new meme token launches for alpha.\n\nSelect chain:", zh: "🐸 *Meme代币扫描*\n\n扫描新Meme代币。\n\n选择链：", ar: "🐸 *ماسح توكنات الميم*\n\nامسح إطلاقات توكنات الميم الجديدة.\n\nاختر السلسلة:" },
+  "meme.filter": { en: "Select filter:", zh: "选择过滤器：", ar: "اختر الفلتر:" },
+  "meme.new": { en: "🆕 New Launches", zh: "🆕 新发射", ar: "🆕 إطلاقات جديدة" },
+  "meme.migrating": { en: "🔄 Migrating", zh: "🔄 迁移中", ar: "🔄 قيد الترحيل" },
+  "meme.migrated": { en: "🎓 Migrated", zh: "🎓 已迁移", ar: "🎓 تم الترحيل" },
+  "signals.title": { en: "🐋 *Smart Money Signals*\n\nSelect signal type:", zh: "🐋 *聪明钱信号*\n\n选择信号类型：", ar: "🐋 *إشارات الأموال الذكية*\n\nاختر نوع الإشارة:" },
+  "signals.whale": { en: "🐋 Whale Buys", zh: "🐋 巨鲸买入", ar: "🐋 مشتريات الحيتان" },
+  "signals.kol": { en: "🎤 KOL Buys", zh: "🎤 KOL买入", ar: "🎤 مشتريات المؤثرين" },
+  "signals.smart": { en: "💰 Smart Money", zh: "💰 聪明钱", ar: "💰 الأموال الذكية" },
+  "signals.leaderboard": { en: "🏆 Leaderboard", zh: "🏆 排行榜", ar: "🏆 لوحة المتصدرين" },
+  "security.enterAddr": { en: "Enter the token contract address to scan:", zh: "输入要扫描的代币合约地址：", ar: "أدخل عنوان عقد التوكن للفحص:" },
+  "price.enterAddr": { en: "Enter the token contract address:", zh: "输入代币合约地址：", ar: "أدخل عنوان عقد التوكن:" },
+  "buy.enterAddr": { en: "Enter the token contract address to buy:", zh: "输入要购买的代币合约地址：", ar: "أدخل عنوان عقد التوكن للشراء:" },
+  "sell.enterAddr": { en: "Enter the token contract address to sell:", zh: "输入要卖出的代币合约地址：", ar: "أدخل عنوان عقد التوكن للبيع:" },
+  "general.error": { en: "Something went wrong. Try again.", zh: "出错了，请重试。", ar: "حدث خطأ ما. حاول مرة أخرى." },
+  "general.noWallet": { en: "❌ You need a wallet first. Use /start to create one.", zh: "❌ 您需要先创建钱包。使用 /start 创建。", ar: "❌ تحتاج محفظة أولاً. استخدم /start لإنشاء واحدة." },
 };
 
 function tr(key: string, chatId: number): string {
@@ -1994,7 +1994,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
     const evmWallets = updatedWallets.filter(w => /^0x[a-fA-F0-9]{40}$/.test(w));
     const balances = await fetchWalletBalances(evmWallets);
-    const isZh = getLang(chatId) === "zh";
+    const lang = getLang(chatId);
 
     let text = `${tr("wallet.title", chatId)}\n\n`;
     evmWallets.forEach((w) => {
@@ -2014,7 +2014,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     });
     const solWallet = solanaWalletMap.get(chatId);
     if (solWallet) {
-      text += `🟣 *${isZh ? "Solana钱包" : "Solana Wallet"}*\n\`${solWallet.address}\`\n\n`;
+      text += `🟣 *${lang === "zh" ? "Solana钱包" : lang === "ar" ? "محفظة Solana" : "Solana Wallet"}*\n\`${solWallet.address}\`\n\n`;
     }
 
     text += tr("wallet.fund", chatId);
@@ -2025,7 +2025,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         return [{ text: tr("wallet.copyAddr", chatId), callback_data: `copywall:${origIdx}` }];
       }
       return [
-        { text: `▶️ ${isZh ? "使用" : "Use"} ${shortWallet(w)}`, callback_data: `switchwall:${origIdx}` },
+        { text: `▶️ ${lang === "zh" ? "使用" : lang === "ar" ? "استخدام" : "Use"} ${shortWallet(w)}`, callback_data: `switchwall:${origIdx}` },
         { text: `🗑`, callback_data: `removewall:${origIdx}` },
       ];
     });
@@ -4260,9 +4260,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
 
   if (data === "action:lang") {
-    await bot.sendMessage(chatId, "🌐 Choose your language / 选择语言：",
+    await bot.sendMessage(chatId, "🌐 Choose your language / 选择语言 / اختر لغتك：",
       { reply_markup: { inline_keyboard: [
-        [{ text: "🇬🇧 English", callback_data: "setlang:en" }, { text: "🇨🇳 中文", callback_data: "setlang:zh" }],
+        [{ text: "🇬🇧 English", callback_data: "setlang:en" }, { text: "🇨🇳 中文", callback_data: "setlang:zh" }, { text: "🇸🇦 العربية", callback_data: "setlang:ar" }],
       ]}}
     );
     return;
@@ -5466,9 +5466,9 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     pendingOKXPrice.delete(chatId);
 
     if (cmd === "lang" && !isGroup) {
-      await bot.sendMessage(chatId, "🌐 Choose your language / 选择语言：",
+      await bot.sendMessage(chatId, "🌐 Choose your language / 选择语言 / اختر لغتك：",
         { reply_markup: { inline_keyboard: [
-          [{ text: "🇬🇧 English", callback_data: "setlang:en" }, { text: "🇨🇳 中文", callback_data: "setlang:zh" }],
+          [{ text: "🇬🇧 English", callback_data: "setlang:en" }, { text: "🇨🇳 中文", callback_data: "setlang:zh" }, { text: "🇸🇦 العربية", callback_data: "setlang:ar" }],
         ]}}
       );
       return;
