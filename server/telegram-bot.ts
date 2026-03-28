@@ -310,7 +310,8 @@ BUILT-IN TRADING & BRIDGING:
 - BUILD4 IS a trading platform — users can swap, bridge, and trade directly through the bot and dashboard.
 
 PRICING:
-- Agent Creation: $20 (0.032 BNB) — create an autonomous AI agent with on-chain wallet and identity.
+- Subscription: $19.99/month with 4-day free trial — includes unlimited access + free AI agent creation.
+- Agent Creation: FREE for all subscribers (trial or paid).
 - Twitter Agent Service: $499/year (0.79 BNB) — autonomous posting, engagement, audience growth, and strategy execution.
 - 20% discount when paying with $BUILD4 token instead of BNB.
 
@@ -8045,25 +8046,6 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
   try {
     await bot.sendChatAction(chatId, "typing");
 
-    const subStatus = await checkSubscription(chatId);
-    const isSubscriber = subStatus.allowed && (subStatus.status === "trial" || subStatus.status === "active");
-    const isFree = freeCreation || isSubscriber;
-
-    if (!isFree) {
-      await bot.sendMessage(chatId,
-        `💳 Agent creation costs $20 (${AGENT_HIRE_FEE_BNB} BNB).\n\nProcessing payment from your wallet...`
-      );
-
-      const feeResult = await collectAgentHireFee(chatId, wallet);
-      if (!feeResult.success) {
-        await bot.sendMessage(chatId,
-          `❌ Payment failed: ${feeResult.error}\n\nAgent creation requires $20 (${AGENT_HIRE_FEE_BNB} BNB). Make sure your wallet has enough BNB.`,
-          { reply_markup: { inline_keyboard: [[{ text: "My Wallet", callback_data: "action:wallet" }, { text: "Menu", callback_data: "action:menu" }]] } }
-        );
-        return;
-      }
-    }
-
     const initialDeposit = "1000000000000000";
     const result = await storage.createFullAgent(name, bio, model, initialDeposit, undefined, undefined, wallet);
     const agentId = result.agent.id;
@@ -8071,13 +8053,9 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
     let msg = `✅ *Agent Created!*\n\n` +
       `🤖 *${result.agent.name}*\n` +
       `Model: ${shortModel(model)}\n` +
-      `ID: \`${agentId}\`\n`;
-    if (isFree) {
-      msg += `\n🎁 Included free with your subscription`;
-    } else {
-      msg += `\n💳 Paid: $20 (${AGENT_HIRE_FEE_BNB} BNB)`;
-    }
-    msg += `\n\n⛓️ Attempting ERC-8004 on-chain registration (Base)...`;
+      `ID: \`${agentId}\`\n` +
+      `\n🎁 Included free with your BUILD4 subscription` +
+      `\n\n⛓️ Attempting ERC-8004 on-chain registration (Base)...`;
 
     await bot.sendMessage(chatId, msg,
       {
