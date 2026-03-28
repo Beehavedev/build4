@@ -158,6 +158,9 @@ const pendingOKXBridge = new Map<number, OKXBridgeState>();
 const pendingOKXScan = new Map<number, { step: "address"; chain?: string }>();
 const pendingOKXPrice = new Map<number, { step: "address"; chain?: string }>();
 const pendingAgentQuestion = new Map<number, string>();
+const pendingStealthToken = new Map<number, string>();
+const pendingStealthEth = new Map<number, { tokenAddress: string; step: "amount" }>();
+const stealthWalletStore = new Map<number, Array<{ address: string; privateKey: string; index: number }>>();
 interface SignalBuyState {
   chainId: string;
   chainName: string;
@@ -4542,6 +4545,71 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data.startsWith("stealth:")) {
+    const tokenShort = data.split(":")[1];
+    const fullToken = pendingStealthToken.get(chatId);
+    if (!fullToken) {
+      await bot.sendMessage(chatId, "⚠️ Stealth buy session expired. Launch a new token first.", { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+
+    const walletAddr = getLinkedWallet(chatId);
+    if (!walletAddr || !await checkWalletHasKey(chatId, walletAddr)) {
+      await bot.sendMessage(chatId, "❌ You need a wallet with a private key for stealth buy.", { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }]] } });
+      return;
+    }
+
+    pendingStealthEth.set(chatId, { tokenAddress: fullToken, step: "amount" });
+    await bot.sendMessage(chatId,
+      `🥷 *Stealth Buy Setup*\n\n` +
+      `Token: \`${fullToken}\`\n` +
+      `Chain: Base\n\n` +
+      `This will:\n` +
+      `1️⃣ Buy 70% of the curve from your main wallet\n` +
+      `2️⃣ Generate 20 fresh wallets\n` +
+      `3️⃣ Fund each wallet with ETH from your main wallet\n` +
+      `4️⃣ All 20 wallets buy simultaneously (10% total)\n\n` +
+      `*How much total ETH do you want to spend?*\n` +
+      `(70% goes to main buy, 30% split across 20 stealth wallets)\n\n` +
+      `Example: Send \`10\` for 10 ETH total (7 ETH main + 3 ETH stealth)`,
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  if (data.startsWith("consolidate:")) {
+    const wallets = stealthWalletStore.get(chatId);
+    const tokenAddr = pendingStealthToken.get(chatId);
+    const walletAddr = getLinkedWallet(chatId);
+    if (!wallets || !tokenAddr || !walletAddr) {
+      await bot.sendMessage(chatId, "No stealth wallets to consolidate.", { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+
+    await bot.sendMessage(chatId, `🔄 Consolidating tokens from ${wallets.length} stealth wallets → your main wallet...\n\nThis may take a minute.`);
+    sendTyping(chatId);
+
+    try {
+      const { consolidateTokens, drainEthFromStealthWallets } = await import("./stealth-buy");
+      const result = await consolidateTokens(wallets, tokenAddr, walletAddr);
+      const drainResult = await drainEthFromStealthWallets(wallets, walletAddr);
+
+      await bot.sendMessage(chatId,
+        `✅ *Consolidation Complete*\n\n` +
+        `Tokens moved: ${result.consolidated}/${wallets.length} wallets\n` +
+        `ETH recovered: ${drainResult.drained} wallets\n` +
+        `${result.errors.length > 0 ? `\n⚠️ Errors: ${result.errors.length}` : ""}\n\n` +
+        `All tokens are now in your main wallet.`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+
+      stealthWalletStore.delete(chatId);
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `❌ Consolidation error: ${e.message?.substring(0, 150)}`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "consolidate:retry" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
+    return;
+  }
+
   if (data.startsWith("cabuy:")) {
     const parts = data.split(":");
     const tokenAddr = parts[1];
@@ -5885,6 +5953,96 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     await handleFourMemeSellFlow(chatId, text);
     return;
   }
+  if (pendingStealthEth.has(chatId) && !text.startsWith("/")) {
+    const state = pendingStealthEth.get(chatId)!;
+    const totalEth = parseFloat(text.trim());
+    if (isNaN(totalEth) || totalEth <= 0) {
+      await bot.sendMessage(chatId, "Please enter a valid ETH amount (e.g. `10` for 10 ETH):", { parse_mode: "Markdown" });
+      return;
+    }
+    if (totalEth < 0.1) {
+      await bot.sendMessage(chatId, "Minimum 0.1 ETH for stealth buy. Enter a higher amount:");
+      return;
+    }
+
+    pendingStealthEth.delete(chatId);
+
+    const mainBuyEth = (totalEth * 0.7).toFixed(6);
+    const stealthTotalEth = totalEth * 0.3;
+    const stealthPerWallet = (stealthTotalEth / 20).toFixed(6);
+
+    await bot.sendMessage(chatId,
+      `🥷 *Stealth Buy Confirmed*\n\n` +
+      `Total: ${totalEth} ETH\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `Main wallet buy: ${mainBuyEth} ETH (70%)\n` +
+      `20 stealth wallets: ${stealthPerWallet} ETH each (30%)\n\n` +
+      `⏳ Executing now... this may take 2-3 minutes.\n` +
+      `Do NOT close the chat.`,
+      { parse_mode: "Markdown" }
+    );
+    sendTyping(chatId);
+
+    const walletAddr = getLinkedWallet(chatId);
+    if (!walletAddr) return;
+    let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
+    if (!pk) pk = await storage.getPrivateKeyByWalletAddress(walletAddr);
+    if (!pk) {
+      await bot.sendMessage(chatId, "❌ Private key not found. Import or create a wallet with /wallet first.");
+      return;
+    }
+
+    try {
+      const { executeStealthBuy } = await import("./stealth-buy");
+      const result = await executeStealthBuy({
+        tokenAddress: state.tokenAddress,
+        mainWalletPk: pk,
+        mainBuyPercent: 70,
+        stealthWalletCount: 20,
+        totalEthBudget: totalEth.toString(),
+        mainBuyEth,
+        stealthBuyEthPerWallet: stealthPerWallet,
+        slippage: "10",
+      });
+
+      if (!result.success) {
+        await bot.sendMessage(chatId,
+          `❌ Stealth buy failed: ${result.error}\n\n${result.mainBuyTxHash ? `Main buy TX: \`${result.mainBuyTxHash}\`` : ""}`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+        );
+        return;
+      }
+
+      stealthWalletStore.set(chatId, result.stealthWallets);
+
+      const successCount = result.stealthResults.filter(r => r.success).length;
+      const failCount = result.stealthResults.filter(r => !r.success).length;
+
+      let report = `🥷 *STEALTH BUY COMPLETE!*\n\n`;
+      report += `✅ Main wallet buy: [View TX](https://basescan.org/tx/${result.mainBuyTxHash})\n`;
+      report += `✅ Stealth buys: ${successCount}/20 succeeded\n`;
+      if (failCount > 0) report += `⚠️ Failed: ${failCount}/20\n`;
+      report += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+      report += `\n💰 Tokens are now spread across:\n`;
+      report += `• Your main wallet (70%)\n`;
+      report += `• ${successCount} stealth wallets (${(successCount * 0.5).toFixed(1)}%)\n\n`;
+      report += `When ready, tap *Consolidate* to move all tokens to your main wallet.`;
+
+      await bot.sendMessage(chatId, report, {
+        parse_mode: "Markdown",
+        disable_web_page_preview: true,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔄 Consolidate All Tokens", callback_data: "consolidate:now" }],
+            [{ text: "⏳ Keep Spread (consolidate later)", callback_data: "action:menu" }],
+          ]
+        }
+      });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `❌ Stealth buy error: ${e.message?.substring(0, 200)}`, { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
+    return;
+  }
   if (pendingAgentQuestion.has(chatId) && !text.startsWith("/")) {
     const agentId = pendingAgentQuestion.get(chatId)!;
     pendingAgentQuestion.delete(chatId);
@@ -6804,6 +6962,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       pendingAsterTrade.delete(chatId);
       pendingTxHashVerify.delete(chatId);
       pendingAgentQuestion.delete(chatId);
+      pendingStealthEth.delete(chatId);
       await bot.sendMessage(chatId, "Cancelled.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
@@ -8608,43 +8767,48 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
         if (result.tokenAddress) lines.push(`Address: \`${result.tokenAddress}\``);
         if (result.launchUrl) lines.push(`\nView: ${result.launchUrl}`);
 
-        if (result.tokenAddress) {
+        if (result.tokenAddress && isBase) {
           lines.push(`\n━━━━━━━━━━━━━━━━━━━━`);
           lines.push(`⚡ *SNIPE NOW* — Buy before anyone else!`);
+          lines.push(`\n🥷 *Stealth Mode* — 70% main + 10% across 20 wallets`);
 
-          const snipeButtons = isBase
-            ? [
-                [
-                  { text: "⚡ 0.1 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:0.1` },
-                  { text: "⚡ 0.5 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:0.5` },
-                  { text: "⚡ 1 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:1` },
-                ],
-                [
-                  { text: "⚡ 2 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:2` },
-                  { text: "⚡ 5 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:5` },
-                  { text: "⚡ 10 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:10` },
-                ],
-              ]
-            : [
-                [
-                  { text: "⚡ 1 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:1` },
-                  { text: "⚡ 5 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:5` },
-                  { text: "⚡ 10 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:10` },
-                ],
-                [
-                  { text: "⚡ 25 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:25` },
-                  { text: "⚡ 50 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:50` },
-                  { text: "⚡ 100 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:100` },
-                ],
-              ];
+          const tokenShort = result.tokenAddress.substring(0, 20);
 
           await bot.sendMessage(chatId, lines.join("\n"), {
             parse_mode: "Markdown",
             reply_markup: {
               inline_keyboard: [
-                ...snipeButtons,
+                [{ text: "🥷 STEALTH BUY (80%)", callback_data: `stealth:${tokenShort}` }],
+                [
+                  { text: "⚡ 0.5 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:0.5` },
+                  { text: "⚡ 1 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:1` },
+                  { text: "⚡ 5 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:5` },
+                ],
+                [
+                  { text: "⚡ 10 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:10` },
+                  { text: "⚡ 20 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:20` },
+                ],
                 [{ text: "🔒 Scan Token", callback_data: `cascan:${result.tokenAddress}:${chainId}` }],
-                [{ text: "🚀 Launch another", callback_data: "action:launchtoken" }],
+                [{ text: "« Menu", callback_data: "action:menu" }],
+              ]
+            }
+          });
+
+          pendingStealthToken.set(chatId, result.tokenAddress);
+        } else if (result.tokenAddress) {
+          lines.push(`\n━━━━━━━━━━━━━━━━━━━━`);
+          lines.push(`⚡ *SNIPE NOW*`);
+
+          await bot.sendMessage(chatId, lines.join("\n"), {
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: "⚡ 1 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:1` },
+                  { text: "⚡ 5 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:5` },
+                  { text: "⚡ 10 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:10` },
+                ],
+                [{ text: "🔒 Scan", callback_data: `cascan:${result.tokenAddress}:${chainId}` }],
                 [{ text: "« Menu", callback_data: "action:menu" }],
               ]
             }
