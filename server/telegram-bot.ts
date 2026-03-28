@@ -8595,22 +8595,71 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
       });
 
       if (result.success) {
+        const launchChain = state.bankrChain || "base";
+        const isBase = launchChain === "base";
+        const chainId = isBase ? "8453" : "501";
+
         const lines = [
           `✅ TOKEN LAUNCHED VIA BANKR!\n`,
           `Token: ${state.tokenName} ($${state.tokenSymbol})`,
           `Platform: ${platformName}`,
+          `Chain: ${isBase ? "Base" : "Solana"}`,
         ];
-        if (result.tokenAddress) lines.push(`Address: ${result.tokenAddress}`);
+        if (result.tokenAddress) lines.push(`Address: \`${result.tokenAddress}\``);
         if (result.launchUrl) lines.push(`\nView: ${result.launchUrl}`);
 
-        await bot.sendMessage(chatId, lines.join("\n"), {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "🚀 Launch another", callback_data: "action:launchtoken" }],
-              [{ text: "Menu", callback_data: "action:menu" }],
-            ]
-          }
-        });
+        if (result.tokenAddress) {
+          lines.push(`\n━━━━━━━━━━━━━━━━━━━━`);
+          lines.push(`⚡ *SNIPE NOW* — Buy before anyone else!`);
+
+          const snipeButtons = isBase
+            ? [
+                [
+                  { text: "⚡ 0.1 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:0.1` },
+                  { text: "⚡ 0.5 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:0.5` },
+                  { text: "⚡ 1 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:1` },
+                ],
+                [
+                  { text: "⚡ 2 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:2` },
+                  { text: "⚡ 5 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:5` },
+                  { text: "⚡ 10 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:10` },
+                ],
+              ]
+            : [
+                [
+                  { text: "⚡ 1 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:1` },
+                  { text: "⚡ 5 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:5` },
+                  { text: "⚡ 10 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:10` },
+                ],
+                [
+                  { text: "⚡ 25 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:25` },
+                  { text: "⚡ 50 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:50` },
+                  { text: "⚡ 100 SOL", callback_data: `cabuy:${result.tokenAddress}:${chainId}:100` },
+                ],
+              ];
+
+          await bot.sendMessage(chatId, lines.join("\n"), {
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [
+                ...snipeButtons,
+                [{ text: "🔒 Scan Token", callback_data: `cascan:${result.tokenAddress}:${chainId}` }],
+                [{ text: "🚀 Launch another", callback_data: "action:launchtoken" }],
+                [{ text: "« Menu", callback_data: "action:menu" }],
+              ]
+            }
+          });
+        } else {
+          await bot.sendMessage(chatId, lines.join("\n"), {
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "🚀 Launch another", callback_data: "action:launchtoken" }],
+                [{ text: "« Menu", callback_data: "action:menu" }],
+              ]
+            }
+          });
+        }
       } else {
         await bot.sendMessage(chatId,
           `❌ Bankr launch failed: ${(result.error || "Unknown error").substring(0, 300)}`,
