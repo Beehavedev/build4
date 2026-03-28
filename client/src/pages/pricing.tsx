@@ -91,7 +91,7 @@ const CHAINS = [
 export default function TelegramBotPage() {
   return (
     <>
-      <SEO title="Telegram Trading Bot | BUILD4" description="The most powerful Telegram trading bot. Smart money signals, instant buy/sell, security scanner, token launcher, and autonomous trading — all in one bot." path="/pricing" />
+      <SEO title="Telegram Trading Bot | BUILD4" description="The most powerful Telegram trading bot. Smart money signals, instant buy/sell, security scanner, token launcher, and autonomous trading — all in one bot." path="/agentic_bot" />
 
       <div className="min-h-screen bg-[#0a0a0a] text-[#cccccc]" data-testid="page-telegram-bot">
         <header className="border-b border-[#252526] bg-[#0a0a0a]/95 backdrop-blur sticky top-0 z-40">
