@@ -128,7 +128,7 @@ interface UserWallets { wallets: string[]; active: number }
 const telegramWalletMap = new Map<number, UserWallets>();
 const walletsWithKey = new Set<string>();
 
-interface AgentCreationState { step: "name" | "bio" | "model"; name?: string; bio?: string }
+interface AgentCreationState { step: "name" | "bio" | "model"; name?: string; bio?: string; mandatory?: boolean }
 interface TaskState { step: "describe"; agentId: string; taskType: string; agentName: string }
 interface TokenLaunchState { step: "platform" | "name" | "symbol" | "description" | "logo" | "links" | "tax" | "bankr_chain"; agentId: string; agentName: string; platform?: string; tokenName?: string; tokenSymbol?: string; tokenDescription?: string; imageUrl?: string; webUrl?: string; twitterUrl?: string; telegramUrl?: string; taxRate?: number; bankrChain?: "base" | "solana" }
 interface FourMemeBuyState { step: "token" | "amount" | "confirm"; tokenAddress?: string; bnbAmount?: string; estimate?: any }
@@ -842,7 +842,19 @@ async function checkSubscription(chatId: number): Promise<{ allowed: boolean; st
         const newSub = await storage.createBotSubscription(wallet, chatId.toString());
         const daysLeft = TRIAL_DAYS;
         subCache.set(chatId, { status: "trial", expiresAt: newSub.expiresAt, checkedAt: Date.now() });
-        autoCreateAgentOnSubscription(chatId, wallet);
+        const existingAgents = await storage.getAgentsByWallet(wallet);
+        if (existingAgents.length === 0) {
+          pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
+          if (bot) {
+            await bot.sendMessage(chatId,
+              `🎉 *Welcome to BUILD4!* Your 4-day free trial is active.\n\n` +
+              `🧠 *First, let's create your AI Agent*\n\n` +
+              `Your agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\n` +
+              `What would you like to name your agent? _(1-50 characters)_`,
+              { parse_mode: "Markdown" }
+            );
+          }
+        }
         return { allowed: true, status: "trial", daysLeft };
       } catch (e: any) {
         console.error("[Subscription] Trial creation failed:", e.message);
@@ -1465,13 +1477,21 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
       `Amount: ${value.toFixed(2)} USDT\n` +
       `Chain: ${chainName}\n` +
       `TX: \`${hash.substring(0, 20)}...\`\n\n` +
-      `✅ Your premium subscription is now active for 30 days.\n` +
-      `All features unlocked! 🚀\n\n` +
-      `⏳ Setting up your AI agent...`,
-      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+      `✅ Your premium subscription is now active for 30 days.`,
+      { parse_mode: "Markdown" }
     );
 
-    autoCreateAgentOnSubscription(chatId, wallet);
+    const existingAgents = await storage.getAgentsByWallet(wallet);
+    if (existingAgents.length === 0) {
+      pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
+      await bot.sendMessage(chatId,
+        `🧠 *Now let's set up your AI Agent*\n\n` +
+        `Your agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\n` +
+        `Agent creation is *included free* with your subscription.\n\n` +
+        `What would you like to name your agent? _(1-50 characters)_`,
+        { parse_mode: "Markdown" }
+      );
+    }
 
     try {
       const referral = await storage.getReferralByReferred(chatId.toString());
@@ -2005,14 +2025,13 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
       const hasAgent = await ensureUserHasAgent(chatId);
       if (!hasAgent) {
+        pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
         await bot.sendMessage(chatId,
-          `🤖 *Agent Required*\n\n` +
-          `You need an active AI agent to use premium features.\n` +
-          `Create your agent now — it's included with your subscription!`,
-          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
-            [{ text: "🤖 Create My Agent", callback_data: "action:newagent" }],
-            [{ text: "« Menu", callback_data: "action:menu" }],
-          ]}}
+          `🧠 *Agent Required*\n\n` +
+          `Your AI agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\n` +
+          `Let's set it up now — it's *free* with your subscription!\n\n` +
+          `What would you like to name your agent? _(1-50 characters)_`,
+          { parse_mode: "Markdown" }
         );
         return;
       }
@@ -5079,7 +5098,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     };
     const model = modelMap[modelId];
     if (!model) return;
-    await createAgent(chatId, state.name!, state.bio || "", model);
+    await createAgent(chatId, state.name!, state.bio || "", model, state.mandatory);
     return;
   }
 
@@ -7646,43 +7665,6 @@ async function collectAgentHireFee(chatId: number, walletAddress: string): Promi
   }
 }
 
-async function autoCreateAgentOnSubscription(chatId: number, wallet: string): Promise<void> {
-  if (!bot) return;
-  try {
-    const existing = await storage.getAgentsByWallet(wallet);
-    if (existing.length > 0) {
-      console.log(`[AutoAgent] User ${chatId} already has ${existing.length} agent(s), skipping`);
-      return;
-    }
-
-    const username = `Agent_${chatId.toString().slice(-4)}`;
-    const bio = "AI trading agent created automatically with BUILD4 subscription";
-    const model = "gpt-4o-mini";
-    const initialDeposit = "1000000000000000";
-
-    const result = await storage.createFullAgent(username, bio, model, initialDeposit, undefined, undefined, wallet);
-    console.log(`[AutoAgent] Created agent "${username}" (${result.agent.id}) for chatId=${chatId}`);
-
-    await bot.sendMessage(chatId,
-      `🤖 *Your AI Agent is Live!*\n\n` +
-      `Name: *${username}*\n` +
-      `Model: ${model}\n` +
-      `ID: \`${result.agent.id}\`\n\n` +
-      `Your agent has been automatically created with your subscription. ` +
-      `It's ready to trade, scan, and work for you!\n\n` +
-      `Use /myagents to manage your agent.`,
-      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
-        [{ text: "📋 My Agents", callback_data: "action:myagents" }],
-        [{ text: "« Menu", callback_data: "action:menu" }],
-      ]}}
-    );
-
-    registerAgentOnAllChains(chatId, result.agent.id, username, bio);
-  } catch (e: any) {
-    console.error(`[AutoAgent] Failed for chatId=${chatId}:`, e.message?.substring(0, 120));
-  }
-}
-
 async function ensureUserHasAgent(chatId: number): Promise<boolean> {
   const wallet = getLinkedWallet(chatId);
   if (!wallet) return false;
@@ -7694,7 +7676,7 @@ async function ensureUserHasAgent(chatId: number): Promise<boolean> {
   }
 }
 
-async function createAgent(chatId: number, name: string, bio: string, model: string): Promise<void> {
+async function createAgent(chatId: number, name: string, bio: string, model: string, freeCreation?: boolean): Promise<void> {
   if (!bot) return;
   const wallet = getLinkedWallet(chatId);
   if (!wallet) return;
@@ -7704,30 +7686,39 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
   try {
     await bot.sendChatAction(chatId, "typing");
 
-    await bot.sendMessage(chatId,
-      `💳 Agent creation costs $20 (${AGENT_HIRE_FEE_BNB} BNB).\n\nProcessing payment from your wallet...`
-    );
-
-    const feeResult = await collectAgentHireFee(chatId, wallet);
-    if (!feeResult.success) {
+    if (!freeCreation) {
       await bot.sendMessage(chatId,
-        `❌ Payment failed: ${feeResult.error}\n\nAgent creation requires $20 (${AGENT_HIRE_FEE_BNB} BNB). Make sure your wallet has enough BNB.`,
-        { reply_markup: { inline_keyboard: [[{ text: "My Wallet", callback_data: "action:wallet" }, { text: "Menu", callback_data: "action:menu" }]] } }
+        `💳 Agent creation costs $20 (${AGENT_HIRE_FEE_BNB} BNB).\n\nProcessing payment from your wallet...`
       );
-      return;
+
+      const feeResult = await collectAgentHireFee(chatId, wallet);
+      if (!feeResult.success) {
+        await bot.sendMessage(chatId,
+          `❌ Payment failed: ${feeResult.error}\n\nAgent creation requires $20 (${AGENT_HIRE_FEE_BNB} BNB). Make sure your wallet has enough BNB.`,
+          { reply_markup: { inline_keyboard: [[{ text: "My Wallet", callback_data: "action:wallet" }, { text: "Menu", callback_data: "action:menu" }]] } }
+        );
+        return;
+      }
     }
 
     const initialDeposit = "1000000000000000";
     const result = await storage.createFullAgent(name, bio, model, initialDeposit, undefined, undefined, wallet);
     const agentId = result.agent.id;
 
-    let msg = `✅ Agent created!\n\n${result.agent.name} | ${shortModel(model)}\nID: ${agentId}\n`;
-    msg += `💳 Paid: $20 (${AGENT_HIRE_FEE_BNB} BNB)`;
-    if (feeResult.txHash) msg += `\n🔗 TX: https://bscscan.com/tx/${feeResult.txHash}`;
-    msg += `\n\nRegistering on-chain...`;
+    let msg = `✅ *Agent Created!*\n\n` +
+      `🤖 *${result.agent.name}*\n` +
+      `Model: ${shortModel(model)}\n` +
+      `ID: \`${agentId}\`\n`;
+    if (freeCreation) {
+      msg += `\n🎁 Included free with your subscription`;
+    } else {
+      msg += `\n💳 Paid: $20 (${AGENT_HIRE_FEE_BNB} BNB)`;
+    }
+    msg += `\n\n🔗 Registering on-chain...`;
 
     await bot.sendMessage(chatId, msg,
       {
+        parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
             [{ text: "Give it a task", callback_data: `agenttask:${agentId}` }],
