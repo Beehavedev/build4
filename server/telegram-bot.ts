@@ -8206,13 +8206,24 @@ async function handleMyAgents(chatId: number, wallet: string): Promise<void> {
       return `🤖 *${a.name}*\n   Model: ${model}\n   Bio: _${(a.bio || "AI trading agent").substring(0, 80)}_\n${onchainLine}\n   Status: 🟢 Active`;
     });
 
-    const buttons: Array<Array<{text: string; callback_data: string}>> = [];
+    const buttons: Array<Array<any>> = [];
     for (const a of myAgents) {
       buttons.push([
         { text: `📋 ${a.name} — Assign Task`, callback_data: `agenttask:${a.id}` },
         { text: `💬 Ask ${a.name}`, callback_data: `agentask:${a.id}` },
       ]);
-      if (!a.erc8004Registered) {
+      if (a.erc8004Registered) {
+        if (a.erc8004TxHash) {
+          const explorer = a.erc8004Chain === "base" ? "basescan.org" : "bscscan.com";
+          buttons.push([
+            { text: `🔗 View ${a.name} on BaseScan`, url: `https://${explorer}/tx/${a.erc8004TxHash}` },
+          ]);
+        } else {
+          buttons.push([
+            { text: `🔗 View ERC-8004 Contract on BaseScan`, url: `https://basescan.org/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` },
+          ]);
+        }
+      } else {
         buttons.push([
           { text: `⛓️ Register ${a.name} On-Chain`, callback_data: `registerchain:${a.id}` },
         ]);
