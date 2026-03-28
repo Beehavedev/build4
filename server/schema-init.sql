@@ -66,3 +66,6 @@ CREATE TABLE IF NOT EXISTS "telegram_bot_referrals" (id VARCHAR DEFAULT gen_rand
 CREATE TABLE IF NOT EXISTS "telegram_bot_subscriptions" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, wallet_address TEXT NOT NULL, chat_id TEXT NOT NULL, status TEXT DEFAULT 'trial'::text NOT NULL, trial_started_at TIMESTAMP DEFAULT now(), paid_at TIMESTAMP, expires_at TIMESTAMP, tx_hash TEXT, chain_id INTEGER, amount_paid TEXT, created_at TIMESTAMP DEFAULT now());
 CREATE TABLE IF NOT EXISTS "users" (id VARCHAR DEFAULT gen_random_uuid() NOT NULL, username TEXT NOT NULL, password TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS "visitor_logs" (id VARCHAR DEFAULT gen_random_uuid() NOT NULL, visitor_type TEXT DEFAULT 'unknown'::text NOT NULL, path TEXT NOT NULL, method TEXT DEFAULT 'GET'::text NOT NULL, user_agent TEXT, ip TEXT, referer TEXT, country TEXT, fingerprint TEXT, wallet_address TEXT, session_id TEXT, status_code INTEGER, created_at TIMESTAMP DEFAULT now());
+ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "erc8004_tx_hash" TEXT;
+ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "erc8004_token_id" TEXT;
+ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "erc8004_chain" TEXT;
