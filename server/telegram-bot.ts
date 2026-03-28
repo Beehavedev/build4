@@ -6778,6 +6778,41 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "activatesub" && !isGroup) {
+      const adminChatIdAct = process.env.ADMIN_CHAT_ID;
+      if (!adminChatIdAct || chatId.toString() !== adminChatIdAct) return;
+      const parts = text.split(/\s+/);
+      const targetWallet = parts[1];
+      const targetTxHash = parts[2] || "manual-admin-" + Date.now();
+      const targetChainId = parseInt(parts[3] || "56");
+      const targetAmount = parts[4] || "19.99";
+      if (!targetWallet || !targetWallet.startsWith("0x")) {
+        await bot.sendMessage(chatId, "Usage: /activatesub <wallet> [txHash] [chainId] [amount]\n\nExample:\n/activatesub 0x7cfe... 0xbcaf... 56 19.99");
+        return;
+      }
+      try {
+        let sub = await storage.getBotSubscription(targetWallet);
+        if (!sub) {
+          const allSubs = await storage.getAllBotSubscriptions();
+          sub = allSubs.find((s: any) => s.walletAddress?.toLowerCase() === targetWallet.toLowerCase()) || null;
+        }
+        if (!sub) {
+          const chatIdForSub = parts[5] || chatId.toString();
+          await storage.createBotSubscription(targetWallet, chatIdForSub);
+          console.log(`[Admin] Created subscription for ${targetWallet}`);
+        }
+        const activated = await storage.activateBotSubscription(targetWallet, targetTxHash, targetChainId, targetAmount);
+        if (activated) {
+          await bot.sendMessage(chatId, `✅ Subscription activated!\n\nWallet: \`${targetWallet}\`\nTX: \`${targetTxHash.substring(0, 20)}...\`\nChain: ${targetChainId}\nAmount: $${targetAmount}`, { parse_mode: "Markdown" });
+        } else {
+          await bot.sendMessage(chatId, `❌ Failed to activate. Wallet: ${targetWallet}`);
+        }
+      } catch (e: any) {
+        await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 200)}`);
+      }
+      return;
+    }
+
     if (cmd === "auditlog" && !isGroup) {
       const adminChatIdAudit = process.env.ADMIN_CHAT_ID;
       if (!adminChatIdAudit || chatId.toString() !== adminChatIdAudit) return;
