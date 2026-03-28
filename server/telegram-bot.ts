@@ -5252,6 +5252,72 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data.startsWith("registerchain:")) {
+    const agentId = data.split(":")[1];
+    const agent = await storage.getAgent(agentId);
+    if (!agent) { await bot.sendMessage(chatId, "Agent not found."); return; }
+
+    const userWallet = getLinkedWallet(chatId);
+    if (!userWallet) { await bot.sendMessage(chatId, "No wallet linked."); return; }
+
+    const userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), userWallet) || undefined;
+    if (!userPk) {
+      await bot.sendMessage(chatId,
+        `⚠️ Could not access your wallet key for on-chain registration.\n\nPlease ensure your wallet is set up via /wallet.`,
+        { reply_markup: { inline_keyboard: [[{ text: "My Wallet", callback_data: "action:wallet" }, { text: "Menu", callback_data: "action:menu" }]] } }
+      );
+      return;
+    }
+
+    await bot.sendMessage(chatId,
+      `⛓️ *Registering ${agent.name} on-chain...*\n\n` +
+      `This will register your agent on the ERC-8004 Identity Registry (Base chain).\n` +
+      `Requires ~0.0005 ETH for gas.\n\n⏳ Processing...`,
+      { parse_mode: "Markdown" }
+    );
+
+    try {
+      const baseResult = await registerAgentERC8004(agent.name, agent.bio || "", agentId, "base", userPk);
+
+      if (baseResult.success) {
+        try {
+          const { db } = await import("./db");
+          const { agents: agentsTable } = await import("@shared/schema");
+          const { eq } = await import("drizzle-orm");
+          await db.update(agentsTable).set({ erc8004Registered: true }).where(eq(agentsTable.id, agentId));
+        } catch {}
+
+        const txLink = baseResult.txHash ? `\n🔗 [View on BaseScan](https://basescan.org/tx/${baseResult.txHash})` : "";
+        const tokenInfo = baseResult.tokenId ? `\nToken ID: \`${baseResult.tokenId}\`` : "";
+
+        await bot.sendMessage(chatId,
+          `✅ *${agent.name} registered on-chain!*\n\n` +
+          `⛓️ Standard: ERC-8004\n` +
+          `🌐 Chain: Base${tokenInfo}${txLink}\n\n` +
+          `Your agent now has a verified on-chain identity.`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "My Agents", callback_data: "action:myagents" }, { text: "Menu", callback_data: "action:menu" }]] } }
+        );
+      } else {
+        let errorMsg = baseResult.error || "Unknown error";
+        let suggestion = "";
+        if (errorMsg.includes("Insufficient") || errorMsg.includes("balance")) {
+          suggestion = `\n\n💡 Fund your wallet with ETH on Base chain first:\n\`${userWallet}\``;
+        }
+
+        await bot.sendMessage(chatId,
+          `❌ *Registration failed*\n\n${errorMsg}${suggestion}`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "Try Again", callback_data: `registerchain:${agentId}` }, { text: "My Agents", callback_data: "action:myagents" }]] } }
+        );
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId,
+        `❌ Registration error: ${e.message?.substring(0, 200)}`,
+        { reply_markup: { inline_keyboard: [[{ text: "Try Again", callback_data: `registerchain:${agentId}` }, { text: "Menu", callback_data: "action:menu" }]] } }
+      );
+    }
+    return;
+  }
+
   if (data.startsWith("agenttask:")) {
     const agentId = data.split(":")[1];
     const agent = await storage.getAgent(agentId);
@@ -8005,7 +8071,7 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
     } else {
       msg += `\n💳 Paid: $20 (${AGENT_HIRE_FEE_BNB} BNB)`;
     }
-    msg += `\n\n🔗 Registering on-chain...`;
+    msg += `\n\n⛓️ Attempting ERC-8004 on-chain registration (Base)...`;
 
     await bot.sendMessage(chatId, msg,
       {
@@ -8040,10 +8106,9 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
   if (!userPk) {
     try {
       await bot.sendMessage(chatId,
-        `⚠️ On-chain registration skipped — your wallet needs funds to register agents.\n\n` +
-        `• ERC-8004 (BNB Chain): ~0.002 BNB for gas\n` +
-        `• BAP-578 (BNB Chain): ~0.012 BNB (0.01 mint + gas)\n\n` +
-        `Fund your wallet and use /myagents to register later.`,
+        `⚠️ On-chain registration skipped — your wallet needs gas to register.\n\n` +
+        `• ERC-8004 (Base): ~0.0005 ETH for gas\n\n` +
+        `Fund your wallet and use /myagents → "Register On-Chain" to register later.`,
       );
     } catch {}
     return;
@@ -8064,11 +8129,11 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
   }
 
   try {
-    const erc8004BscResult = await registerAgentERC8004(name, bio, agentId, "bsc", userPk);
-    if (erc8004BscResult.success) {
-      results.push(`ERC-8004 (${erc8004BscResult.chainName || "BSC"}): ${erc8004BscResult.txHash?.substring(0, 14)}...`);
-      if (erc8004BscResult.tokenId) {
-        results.push(`  Token ID: ${erc8004BscResult.tokenId}`);
+    const erc8004BaseResult = await registerAgentERC8004(name, bio, agentId, "base", userPk);
+    if (erc8004BaseResult.success) {
+      results.push(`ERC-8004 (${erc8004BaseResult.chainName || "Base"}): ${erc8004BaseResult.txHash?.substring(0, 14)}...`);
+      if (erc8004BaseResult.tokenId) {
+        results.push(`  Token ID: ${erc8004BaseResult.tokenId}`);
       }
       try {
         const { db } = await import("./db");
@@ -8077,32 +8142,11 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
         await db.update(agentsTable).set({ erc8004Registered: true }).where(eq(agentsTable.id, agentId));
       } catch {}
     } else {
-      results.push(`ERC-8004 (BSC): ${erc8004BscResult.error?.substring(0, 80) || "skipped"}`);
+      results.push(`ERC-8004 (Base): ${erc8004BaseResult.error?.substring(0, 80) || "skipped"}`);
     }
   } catch (e: any) {
-    console.error(`[TelegramBot] ERC-8004 BSC registration error for ${agentId}:`, e.message);
-    results.push(`ERC-8004 (BSC): ${e.message?.substring(0, 60)}`);
-  }
-
-  try {
-    const bap578Result = await registerAgentBAP578(name, bio, agentId, undefined, userPk);
-    if (bap578Result.success) {
-      results.push(`BAP-578 (BNB Chain): ${bap578Result.txHash?.substring(0, 14)}...`);
-      if (bap578Result.tokenId) {
-        results.push(`  NFA Token ID: ${bap578Result.tokenId}`);
-      }
-      try {
-        const { db } = await import("./db");
-        const { agents: agentsTable } = await import("@shared/schema");
-        const { eq } = await import("drizzle-orm");
-        await db.update(agentsTable).set({ bap578Registered: true }).where(eq(agentsTable.id, agentId));
-      } catch {}
-    } else {
-      results.push(`BAP-578: ${bap578Result.error?.substring(0, 80) || "skipped"}`);
-    }
-  } catch (e: any) {
-    console.error(`[TelegramBot] BAP-578 registration error for ${agentId}:`, e.message);
-    results.push(`BAP-578: ${e.message?.substring(0, 60)}`);
+    console.error(`[TelegramBot] ERC-8004 Base registration error for ${agentId}:`, e.message);
+    results.push(`ERC-8004 (Base): ${e.message?.substring(0, 60)}`);
   }
 
 
@@ -8130,13 +8174,24 @@ async function handleMyAgents(chatId: number, wallet: string): Promise<void> {
 
     const lines = myAgents.map(a => {
       const model = shortModel(a.modelType || "unknown");
-      return `🤖 *${a.name}*\n   Model: ${model}\n   Bio: _${(a.bio || "AI trading agent").substring(0, 80)}_\n   Status: 🟢 Active — scanning, analyzing & trading for you`;
+      const onchainStatus = a.erc8004Registered
+        ? "🟢 On-Chain (ERC-8004)"
+        : "🔴 Not registered on-chain";
+      return `🤖 *${a.name}*\n   Model: ${model}\n   Bio: _${(a.bio || "AI trading agent").substring(0, 80)}_\n   Chain: ${onchainStatus}\n   Status: 🟢 Active — scanning, analyzing & trading for you`;
     });
 
-    const buttons = myAgents.map(a => [
-      { text: `📋 ${a.name} — Assign Task`, callback_data: `agenttask:${a.id}` },
-      { text: `💬 Ask ${a.name}`, callback_data: `agentask:${a.id}` },
-    ]);
+    const buttons: Array<Array<{text: string; callback_data: string}>> = [];
+    for (const a of myAgents) {
+      buttons.push([
+        { text: `📋 ${a.name} — Assign Task`, callback_data: `agenttask:${a.id}` },
+        { text: `💬 Ask ${a.name}`, callback_data: `agentask:${a.id}` },
+      ]);
+      if (!a.erc8004Registered) {
+        buttons.push([
+          { text: `⛓️ Register ${a.name} On-Chain`, callback_data: `registerchain:${a.id}` },
+        ]);
+      }
+    }
     buttons.push([{ text: "➕ Create Another Agent", callback_data: "action:newagent" }]);
     buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
 
