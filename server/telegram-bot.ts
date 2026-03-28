@@ -157,6 +157,7 @@ const pendingOKXSwap = new Map<number, OKXSwapState>();
 const pendingOKXBridge = new Map<number, OKXBridgeState>();
 const pendingOKXScan = new Map<number, { step: "address"; chain?: string }>();
 const pendingOKXPrice = new Map<number, { step: "address"; chain?: string }>();
+const pendingAgentQuestion = new Map<number, string>();
 interface SignalBuyState {
   chainId: string;
   chainName: string;
@@ -4190,6 +4191,19 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
             [{ text: "« Back", callback_data: "action:okxsignals" }, { text: "« Menu", callback_data: "action:menu" }],
           ];
           await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+
+          const topSignals = signals.slice(0, 4).map((s: any, i: number) => {
+            const tok = s.token || {};
+            const name = tok.symbol || tok.name || s.tokenSymbol || "Unknown";
+            const mcap = tok.marketCapUsd ? `MCap $${parseFloat(tok.marketCapUsd).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "";
+            const amount = s.amountUsd ? `$${parseFloat(s.amountUsd).toFixed(0)}` : "";
+            return `${i + 1}. ${name} — Buy: ${amount} ${mcap}`;
+          }).join("\n");
+          agentAnalyze(chatId, `${label} signals on ${chainLabel}:\n${topSignals}`, "Which of these signals looks most promising and why? Pick the top 1-2.").then(analysis => {
+            if (analysis && bot) {
+              bot.sendMessage(chatId, analysis, { parse_mode: "Markdown" }).catch(() => {});
+            }
+          }).catch(() => {});
         }
       } else {
         await bot.sendMessage(chatId, `${label} signals unavailable: ${result.error || "try again later"}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:okxsignals" }]] } });
@@ -4644,6 +4658,13 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           [{ text: "⚡ Buy Anyway", callback_data: `cabuy:${tokenAddr}:${chainId}:0.05` }],
           [{ text: "« Menu", callback_data: "action:menu" }],
         ]}});
+
+        const scanContext = `Token: ${tokenName || tokenAddr}\nRisk Level: ${d.riskLevel}\nHoneypot: ${d.isHoneypot ? "YES" : "No"}\nBuy Tax: ${d.buyTax || "0"}%\nSell Tax: ${d.sellTax || "0"}%\nHolders: ${d.holderCount || "Unknown"}\nRisks: ${displayRisks.join(", ") || "None"}`;
+        agentAnalyze(chatId, scanContext, "Should I buy this token? Give a brief risk assessment and recommendation.").then(analysis => {
+          if (analysis && bot) {
+            bot.sendMessage(chatId, analysis, { parse_mode: "Markdown" }).catch(() => {});
+          }
+        }).catch(() => {});
       } else {
         await bot.sendMessage(chatId, "⚠️ Security data not available for this token.", { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
       }
@@ -5150,6 +5171,16 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   if (data.startsWith("viewtask:")) {
     const taskId = data.split(":")[1];
     if (wallet) await handleTaskStatus(chatId, taskId, wallet);
+    return;
+  }
+
+  if (data.startsWith("agentask:")) {
+    const agentId = data.split(":")[1];
+    const agent = await storage.getAgent(agentId);
+    if (agent) {
+      pendingAgentQuestion.set(chatId, agentId);
+      await bot.sendMessage(chatId, `💬 *Ask ${agent.name}*\n\nType your question — your agent will analyze it using decentralized AI.\n\nExamples:\n• "What's the best memecoin to buy right now?"\n• "Analyze BNB price action"\n• "What trading strategy should I use?"`, { parse_mode: "Markdown" });
+    }
     return;
   }
 
@@ -5854,6 +5885,45 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     await handleFourMemeSellFlow(chatId, text);
     return;
   }
+  if (pendingAgentQuestion.has(chatId) && !text.startsWith("/")) {
+    const agentId = pendingAgentQuestion.get(chatId)!;
+    pendingAgentQuestion.delete(chatId);
+    const agent = await storage.getAgent(agentId);
+    if (agent && bot) {
+      sendTyping(chatId);
+      await bot.sendMessage(chatId, `🤖 *${agent.name}* is thinking...`, { parse_mode: "Markdown" });
+      try {
+        const { runInferenceWithFallback } = await import("./inference");
+        const systemPrompt = `You are ${agent.name}, an autonomous AI trading agent on BUILD4.\n` +
+          `Bio: ${agent.bio || "AI trading agent"}\n` +
+          `You are a crypto expert. Give concise, actionable answers. Keep responses under 300 words.`;
+        const result = await runInferenceWithFallback(
+          ["akash", "hyperbolic"],
+          undefined,
+          text,
+          { systemPrompt, temperature: 0.7, maxTokens: 600 }
+        );
+        if (result.live && result.text && !result.text.startsWith("[NO_PROVIDER]") && !result.text.startsWith("[ERROR")) {
+          await bot.sendMessage(chatId, `🤖 *${agent.name}:*\n\n${result.text.trim()}`, {
+            parse_mode: "Markdown",
+            reply_markup: { inline_keyboard: [
+              [{ text: `💬 Ask Another Question`, callback_data: `agentask:${agentId}` }],
+              [{ text: "« Menu", callback_data: "action:menu" }],
+            ]}
+          });
+        } else {
+          await bot.sendMessage(chatId, `🤖 ${agent.name} couldn't process that right now. Try again later.`, {
+            reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] }
+          });
+        }
+      } catch (e: any) {
+        await bot.sendMessage(chatId, `❌ ${agent.name} encountered an error. Try again.`, {
+          reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] }
+        });
+      }
+    }
+    return;
+  }
   if (pendingTask.has(chatId) && !text.startsWith("/")) {
     await handleTaskFlow(chatId, text);
     return;
@@ -6238,6 +6308,25 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           ],
         },
       });
+
+      const caContext = [
+        `Token: ${tokenName || ca}`,
+        priceVal ? `Price: $${priceVal}` : null,
+        change24h ? `24h Change: ${(parseFloat(change24h) * 100).toFixed(2)}%` : null,
+        mcap ? `Market Cap: $${mcap}` : null,
+        vol ? `Volume 24h: $${vol}` : null,
+        liq ? `Liquidity: $${liq}` : null,
+        holders ? `Holders: ${holders}` : null,
+        sec?.riskLevel ? `Risk: ${sec.riskLevel}` : null,
+        sec?.isHoneypot ? "HONEYPOT WARNING" : null,
+        sec?.buyTax ? `Buy Tax: ${sec.buyTax}%` : null,
+        sec?.sellTax ? `Sell Tax: ${sec.sellTax}%` : null,
+      ].filter(Boolean).join("\n");
+      agentAnalyze(chatId, caContext, "Quick analysis: Is this token worth buying? Consider the price action, liquidity, risk level, and market cap.").then(analysis => {
+        if (analysis && bot) {
+          bot.sendMessage(chatId, analysis, { parse_mode: "Markdown" }).catch(() => {});
+        }
+      }).catch(() => {});
     } catch (e: any) {
       await bot.sendMessage(chatId,
         `⚠️ Could not scan token \`${ca.substring(0, 12)}...\`\n\n${e.message?.substring(0, 100)}`,
@@ -6714,6 +6803,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       pendingAsterConnect.delete(chatId);
       pendingAsterTrade.delete(chatId);
       pendingTxHashVerify.delete(chatId);
+      pendingAgentQuestion.delete(chatId);
       await bot.sendMessage(chatId, "Cancelled.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
@@ -7676,6 +7766,44 @@ async function ensureUserHasAgent(chatId: number): Promise<boolean> {
   }
 }
 
+async function getUserAgent(chatId: number): Promise<{ id: string; name: string; bio: string | null; modelType: string } | null> {
+  const wallet = getLinkedWallet(chatId);
+  if (!wallet) return null;
+  try {
+    const agents = await storage.getAgentsByWallet(wallet);
+    return agents[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function agentAnalyze(chatId: number, context: string, question: string): Promise<string | null> {
+  const agent = await getUserAgent(chatId);
+  if (!agent) return null;
+  try {
+    const { runInferenceWithFallback } = await import("./inference");
+    const systemPrompt = `You are ${agent.name}, an autonomous AI trading agent on BUILD4.\n` +
+      `Bio: ${agent.bio || "AI trading agent"}\n` +
+      `You analyze crypto data and give concise, actionable insights.\n` +
+      `Keep responses under 200 words. Be specific, direct, and data-driven.\n` +
+      `Always end with a clear recommendation or key takeaway.`;
+
+    const result = await runInferenceWithFallback(
+      ["akash", "hyperbolic"],
+      undefined,
+      `${context}\n\nQuestion: ${question}`,
+      { systemPrompt, temperature: 0.5, maxTokens: 400 }
+    );
+
+    if (result.live && result.text && !result.text.startsWith("[NO_PROVIDER]") && !result.text.startsWith("[ERROR")) {
+      return `🤖 *${agent.name}'s Analysis:*\n\n${result.text.trim()}`;
+    }
+  } catch (e: any) {
+    console.error(`[AgentAnalyze] Error for chatId=${chatId}:`, e.message?.substring(0, 100));
+  }
+  return null;
+}
+
 async function createAgent(chatId: number, name: string, bio: string, model: string, freeCreation?: boolean): Promise<void> {
   if (!bot) return;
   const wallet = getLinkedWallet(chatId);
@@ -7837,16 +7965,21 @@ async function handleMyAgents(chatId: number, wallet: string): Promise<void> {
       return;
     }
 
-    const lines = myAgents.map(a => `${a.name} — ${shortModel(a.modelType || "unknown")}`);
+    const lines = myAgents.map(a => {
+      const model = shortModel(a.modelType || "unknown");
+      return `🤖 *${a.name}*\n   Model: ${model}\n   Bio: _${(a.bio || "AI trading agent").substring(0, 80)}_\n   Status: 🟢 Active — scanning, analyzing & trading for you`;
+    });
 
     const buttons = myAgents.map(a => [
-      { text: `${a.name} — Assign task`, callback_data: `agenttask:${a.id}` }
+      { text: `📋 ${a.name} — Assign Task`, callback_data: `agenttask:${a.id}` },
+      { text: `💬 Ask ${a.name}`, callback_data: `agentask:${a.id}` },
     ]);
-    buttons.push([{ text: "Create another agent", callback_data: "action:newagent" }]);
+    buttons.push([{ text: "➕ Create Another Agent", callback_data: "action:newagent" }]);
+    buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
 
     await bot.sendMessage(chatId,
-      `Your Agents (${myAgents.length}):\n\n${lines.join("\n")}`,
-      { reply_markup: { inline_keyboard: buttons } }
+      `🧠 *Your Agents (${myAgents.length})*\n\nYour agents power every BUILD4 feature — security scans, signals, trading, and analysis all run through your agent's AI brain.\n\n${lines.join("\n\n")}`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } }
     );
   } catch (e: any) {
     await bot.sendMessage(chatId, `Error: ${e.message}`);
