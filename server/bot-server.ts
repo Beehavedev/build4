@@ -34,13 +34,14 @@ function findSchemaSQL(): string {
   return "";
 }
 
+const CRITICAL_TABLES_SQL = [
+  `CREATE TABLE IF NOT EXISTS "telegram_bot_subscriptions" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, wallet_address TEXT NOT NULL, chat_id TEXT NOT NULL, status TEXT DEFAULT 'trial'::text NOT NULL, trial_started_at TIMESTAMP DEFAULT now(), paid_at TIMESTAMP, expires_at TIMESTAMP, tx_hash TEXT, chain_id INTEGER, amount_paid TEXT, created_at TIMESTAMP DEFAULT now())`,
+  `CREATE TABLE IF NOT EXISTS "telegram_bot_referrals" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, referrer_chat_id TEXT NOT NULL, referred_chat_id TEXT NOT NULL, referral_code TEXT NOT NULL, status TEXT DEFAULT 'pending' NOT NULL, commission_percent INTEGER DEFAULT 30, commission_amount TEXT, commission_paid BOOLEAN DEFAULT false, created_at TIMESTAMP DEFAULT now())`,
+  `CREATE TABLE IF NOT EXISTS "telegram_wallets" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, chat_id TEXT NOT NULL, wallet_address TEXT NOT NULL, encrypted_key TEXT, created_at TIMESTAMP DEFAULT now(), is_active BOOLEAN DEFAULT true)`,
+];
+
 async function ensureSchema() {
   if (!process.env.DATABASE_URL) return;
-  const sql = findSchemaSQL();
-  if (!sql) {
-    console.warn("[BOT-SERVER] schema-init.sql not found — skipping auto-migration");
-    return;
-  }
   console.log("[BOT-SERVER] Ensuring database schema exists...");
   const isSSL = process.env.DATABASE_URL.includes("render.com") ||
     process.env.DATABASE_URL.includes("neon.tech") ||
@@ -50,10 +51,33 @@ async function ensureSchema() {
     ssl: isSSL ? { rejectUnauthorized: false } : false,
   });
   try {
-    await pool.query(sql);
-    console.log("[BOT-SERVER] Database schema ensured — all tables created");
+    for (const stmt of CRITICAL_TABLES_SQL) {
+      try {
+        await pool.query(stmt);
+      } catch (e: any) {
+        console.warn("[BOT-SERVER] Table create warning:", e.message?.substring(0, 100));
+      }
+    }
+    console.log("[BOT-SERVER] Critical tables ensured");
+
+    const sql = findSchemaSQL();
+    if (sql) {
+      const statements = sql.split(/;\s*\n/).filter((s: string) => s.trim().length > 5);
+      let ok = 0, skip = 0;
+      for (const stmt of statements) {
+        try {
+          await pool.query(stmt);
+          ok++;
+        } catch {
+          skip++;
+        }
+      }
+      console.log(`[BOT-SERVER] Schema init: ${ok} succeeded, ${skip} skipped`);
+    } else {
+      console.warn("[BOT-SERVER] schema-init.sql not found — using embedded critical tables only");
+    }
   } catch (e: any) {
-    console.warn("[BOT-SERVER] Schema setup warning:", e.message?.substring(0, 200));
+    console.error("[BOT-SERVER] Schema setup error:", e.message?.substring(0, 200));
   } finally {
     await pool.end();
   }
