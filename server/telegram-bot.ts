@@ -1276,6 +1276,99 @@ async function handleSubscribe(chatId: number): Promise<void> {
   }
 }
 
+async function verifyViaEtherscanV2(wallet: string, chainId: number, apiKey: string): Promise<{ hash: string; value: number; chainName: string } | null> {
+  const chainNames: Record<number, string> = { 56: "BNB Chain", 8453: "Base" };
+  const chainName = chainNames[chainId] || `Chain ${chainId}`;
+  const usdtAddr = USDT_ADDRESSES[chainId.toString()];
+  if (!usdtAddr) return null;
+
+  if (!apiKey) {
+    console.log(`[VerifyEtherscan] Skipping ${chainName} — no API key set (BSCSCAN_API_KEY or ETHERSCAN_API_KEY)`);
+    return null;
+  }
+
+  const lookupAddresses = [TREASURY_WALLET, wallet];
+  for (const lookupAddr of lookupAddresses) {
+    try {
+      const params = new URLSearchParams({
+        chainid: chainId.toString(),
+        module: "account",
+        action: "tokentx",
+        contractaddress: usdtAddr,
+        address: lookupAddr,
+        page: "1",
+        offset: "100",
+        sort: "desc",
+        apikey: apiKey,
+      });
+      const apiUrl = `https://api.etherscan.io/v2/api?${params}`;
+      console.log(`[VerifyEtherscan] ${chainName} lookup=${lookupAddr.substring(0,10)} key=${apiKey.substring(0,6)}...`);
+      const resp = await fetch(apiUrl);
+      const json = await resp.json() as any;
+      console.log(`[VerifyEtherscan] ${chainName} status=${json.status} msg=${json.message} results=${Array.isArray(json.result) ? json.result.length : String(json.result).substring(0, 120)}`);
+
+      if (json.status === "1" && Array.isArray(json.result)) {
+        for (const tx of json.result) {
+          if (tx.to?.toLowerCase() !== TREASURY_WALLET.toLowerCase()) continue;
+          if (tx.from?.toLowerCase() !== wallet.toLowerCase()) continue;
+          const decimals = parseInt(tx.tokenDecimal || "18");
+          const value = parseFloat(tx.value) / Math.pow(10, decimals);
+          if (value >= BOT_PRICE_USD - 0.50) {
+            return { hash: tx.hash, value, chainName };
+          }
+        }
+      }
+    } catch (e: any) {
+      console.error(`[VerifyEtherscan] ${chainName} error:`, e.message?.substring(0, 100));
+    }
+  }
+  return null;
+}
+
+async function verifyViaRPC(wallet: string, chainId: number): Promise<{ hash: string; value: number; chainName: string } | null> {
+  const RPC_MAP: Record<number, { name: string; usdt: string; decimals: number }> = {
+    56: { name: "BNB Chain", usdt: BSC_USDT, decimals: 18 },
+    8453: { name: "Base", usdt: USDT_ADDRESSES["8453"] || "", decimals: 6 },
+  };
+
+  const cfg = RPC_MAP[chainId];
+  if (!cfg || !cfg.usdt) return null;
+
+  try {
+    const provider = chainId === 56 ? bnbProviderCached : baseProviderCached;
+    const transferTopic = ethers.id("Transfer(address,address,uint256)");
+    const fromPadded = ethers.zeroPadValue(wallet.toLowerCase(), 32);
+    const toPadded = ethers.zeroPadValue(TREASURY_WALLET.toLowerCase(), 32);
+
+    const currentBlock = await provider.getBlockNumber();
+    const blocksToScan = chainId === 56 ? 5_000 : 25_000;
+    const fromBlock = Math.max(0, currentBlock - blocksToScan);
+
+    console.log(`[VerifyRPC] ${cfg.name} scanning blocks ${fromBlock}..${currentBlock} (last ~${blocksToScan})`);
+
+    const logs = await provider.getLogs({
+      address: cfg.usdt,
+      topics: [transferTopic, fromPadded, toPadded],
+      fromBlock,
+      toBlock: currentBlock,
+    });
+
+    console.log(`[VerifyRPC] ${cfg.name} found ${logs.length} matching Transfer logs`);
+
+    for (const log of logs) {
+      const rawValue = BigInt(log.data);
+      const value = parseFloat(ethers.formatUnits(rawValue, cfg.decimals));
+      console.log(`[VerifyRPC] ${cfg.name} TX ${log.transactionHash.substring(0,20)} value=${value}`);
+      if (value >= BOT_PRICE_USD - 0.50) {
+        return { hash: log.transactionHash, value, chainName: cfg.name };
+      }
+    }
+  } catch (err: any) {
+    console.error(`[VerifyRPC] ${cfg.name} error:`, err.message?.substring(0, 150));
+  }
+  return null;
+}
+
 async function handleVerifyPayment(chatId: number): Promise<void> {
   if (!bot) return;
 
@@ -1289,166 +1382,117 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
   await bot.sendMessage(chatId, `🔍 Checking for USDT payment on BNB Chain and Base...\n_Wallet: \`${wallet.substring(0,10)}...\`_`, { parse_mode: "Markdown" });
   sendTyping(chatId);
 
-  const scanApiKey = process.env.BSCSCAN_API_KEY || "";
-  const chains = [
-    { id: 56, name: "BNB Chain", key: scanApiKey },
-    { id: 8453, name: "Base", key: process.env.BASESCAN_API_KEY || scanApiKey },
-  ];
+  const scanApiKey = process.env.BSCSCAN_API_KEY || process.env.ETHERSCAN_API_KEY || "";
+  const chainIds = [56, 8453];
+  let foundTx: { hash: string; value: number; chainName: string } | null = null;
 
-  for (const chain of chains) {
+  console.log(`[VerifyPayment] Starting verification wallet=${wallet.substring(0,10)} apiKey=${scanApiKey ? scanApiKey.substring(0,6) + "..." : "NONE"}`);
+
+  for (const chainId of chainIds) {
+    foundTx = await verifyViaEtherscanV2(wallet, chainId, scanApiKey);
+    if (foundTx) break;
+
+    foundTx = await verifyViaRPC(wallet, chainId);
+    if (foundTx) break;
+  }
+
+  if (!foundTx) {
     try {
-      const usdtAddr = USDT_ADDRESSES[chain.id.toString()];
-      if (!usdtAddr) continue;
-
-      const lookupAddresses = [wallet, TREASURY_WALLET];
-      let foundTx: any = null;
-
-      for (const lookupAddr of lookupAddresses) {
-        try {
-          const params = new URLSearchParams({
-            chainid: chain.id.toString(),
-            module: "account",
-            action: "tokentx",
-            contractaddress: usdtAddr,
-            address: lookupAddr,
-            page: "1",
-            offset: "50",
-            sort: "desc",
-          });
-          if (chain.key) params.set("apikey", chain.key);
-
-          const apiUrl = `https://api.etherscan.io/v2/api?${params}`;
-          console.log(`[VerifyPayment] Etherscan V2 call for ${chain.name} lookup=${lookupAddr.substring(0,8)}`);
-          const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(15000) });
-          const json = await resp.json() as any;
-
-          console.log(`[VerifyPayment] ${chain.name} status=${json.status} msg=${json.message} results=${Array.isArray(json.result) ? json.result.length : typeof json.result === 'string' ? json.result.substring(0, 80) : json.result}`);
-
-          if (json.status === "1" && Array.isArray(json.result) && json.result.length > 0) {
-            for (const tx of json.result) {
-              if (tx.to?.toLowerCase() !== TREASURY_WALLET.toLowerCase()) continue;
-              if (tx.from?.toLowerCase() !== wallet.toLowerCase()) continue;
-              const decimals = parseInt(tx.tokenDecimal || "18");
-              const value = parseFloat(tx.value) / Math.pow(10, decimals);
+      const { getWalletTransactionHistory } = await import("./okx-onchainos");
+      for (const chainId of chainIds) {
+        const usdtAddr = USDT_ADDRESSES[chainId.toString()];
+        if (!usdtAddr) continue;
+        for (const lookupAddr of [wallet, TREASURY_WALLET]) {
+          console.log(`[VerifyPayment] OKX fallback chain=${chainId} lookup=${lookupAddr.substring(0,10)}`);
+          const okxRes = await getWalletTransactionHistory({ address: lookupAddr, chainId: chainId.toString(), limit: "50" });
+          const txList = okxRes?.data || [];
+          if (!Array.isArray(txList)) continue;
+          console.log(`[VerifyPayment] OKX results=${txList.length}`);
+          for (const tx of txList) {
+            const details = tx.tokenTransferDetails || tx.details || [];
+            for (const d of (Array.isArray(details) ? details : [])) {
+              const tokenAddr = (d.tokenContractAddress || d.contractAddress || "").toLowerCase();
+              if (tokenAddr !== usdtAddr.toLowerCase()) continue;
+              if ((d.to || tx.to || "").toLowerCase() !== TREASURY_WALLET.toLowerCase()) continue;
+              if ((d.from || tx.from || "").toLowerCase() !== wallet.toLowerCase()) continue;
+              const rawAmt = d.amount || d.tokenAmount || d.value || "0";
+              const value = parseFloat(rawAmt);
               if (value >= BOT_PRICE_USD - 0.50) {
-                foundTx = { tx, value, chain };
+                foundTx = { hash: tx.txHash || tx.hash, value, chainName: chainId === 56 ? "BNB Chain" : "Base" };
                 break;
-              }
-            }
-          }
-        } catch (scanErr: any) {
-          console.error(`[VerifyPayment] Etherscan V2 error for ${chain.name}:`, scanErr.message);
-        }
-        if (foundTx) break;
-      }
-
-      if (!foundTx) {
-        try {
-          const { getWalletTransactionHistory } = await import("./okx-onchainos");
-          for (const lookupAddr of lookupAddresses) {
-            console.log(`[VerifyPayment] OKX fallback for ${chain.name} lookup=${lookupAddr.substring(0,8)}`);
-            const okxRes = await getWalletTransactionHistory({ address: lookupAddr, chainId: chain.id.toString(), limit: "50" });
-            const txList = okxRes?.data || [];
-            if (!Array.isArray(txList)) { console.log(`[VerifyPayment] OKX returned non-array:`, typeof txList); continue; }
-            console.log(`[VerifyPayment] OKX ${chain.name} results=${txList.length}`);
-            for (const tx of txList) {
-              const details = tx.tokenTransferDetails || tx.details || [];
-              for (const d of (Array.isArray(details) ? details : [])) {
-                const tokenAddr = (d.tokenContractAddress || d.contractAddress || "").toLowerCase();
-                if (tokenAddr !== usdtAddr.toLowerCase()) continue;
-                if ((d.to || tx.to || "").toLowerCase() !== TREASURY_WALLET.toLowerCase()) continue;
-                if ((d.from || tx.from || "").toLowerCase() !== wallet.toLowerCase()) continue;
-                const rawAmt = d.amount || d.tokenAmount || d.value || "0";
-                const value = parseFloat(rawAmt);
-                if (value >= BOT_PRICE_USD - 0.50) {
-                  foundTx = { tx: { hash: tx.txHash || tx.hash, ...tx }, value, chain };
-                  break;
-                }
-              }
-              if (foundTx) break;
-              if (!details.length) {
-                if ((tx.to || "").toLowerCase() === TREASURY_WALLET.toLowerCase() &&
-                    (tx.from || "").toLowerCase() === wallet.toLowerCase()) {
-                  const rawAmt = tx.amount || tx.value || "0";
-                  const value = parseFloat(rawAmt);
-                  if (value >= BOT_PRICE_USD - 0.50) {
-                    foundTx = { tx: { hash: tx.txHash || tx.hash, ...tx }, value, chain };
-                    break;
-                  }
-                }
               }
             }
             if (foundTx) break;
           }
-        } catch (okxErr: any) {
-          console.error(`[VerifyPayment] OKX fallback error:`, okxErr.message);
+          if (foundTx) break;
         }
+        if (foundTx) break;
       }
+    } catch (okxErr: any) {
+      console.error(`[VerifyPayment] OKX fallback error:`, okxErr.message);
+    }
+  }
 
-      if (foundTx) {
-        const { tx, value } = foundTx;
-        const existingSub = await storage.getBotSubscription(wallet);
-        if (existingSub?.txHash === tx.hash) {
-          if (existingSub.status === "active") {
-            await bot.sendMessage(chatId,
-              `✅ *Already Active!*\n\nYour subscription is already active (paid with TX \`${tx.hash.substring(0, 16)}...\`).`,
-              { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
-            );
-            return;
-          }
-          continue;
-        }
-
-        let activated = await storage.activateBotSubscription(
-          wallet, tx.hash, chain.id, value.toFixed(2)
-        );
-
-        if (!activated) {
-          await storage.createBotSubscription(wallet, chatId.toString());
-          activated = await storage.activateBotSubscription(wallet, tx.hash, chain.id, value.toFixed(2));
-        }
-
-        subCache.delete(chatId);
-        console.log(`[VerifyPayment] SUCCESS chatId=${chatId} wallet=${wallet.substring(0,8)} amount=${value.toFixed(2)} chain=${chain.name} tx=${tx.hash.substring(0,16)}`);
-
+  if (foundTx) {
+    const { hash, value, chainName } = foundTx;
+    const chainId = chainName === "BNB Chain" ? 56 : 8453;
+    const existingSub = await storage.getBotSubscription(wallet);
+    if (existingSub?.txHash === hash) {
+      if (existingSub.status === "active") {
         await bot.sendMessage(chatId,
-          `🎉 *Payment Confirmed!*\n\n` +
-          `Amount: ${value.toFixed(2)} USDT\n` +
-          `Chain: ${chain.name}\n` +
-          `TX: \`${tx.hash.substring(0, 20)}...\`\n\n` +
-          `✅ Your premium subscription is now active for 30 days.\n` +
-          `All features unlocked! 🚀`,
+          `✅ *Already Active!*\n\nYour subscription is already active (paid with TX \`${hash.substring(0, 16)}...\`).`,
           { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
         );
-
-        try {
-          const referral = await storage.getReferralByReferred(chatId.toString());
-          if (referral && !referral.commissionPaid) {
-            const referrerCount = await storage.getReferralCount(referral.referrerChatId);
-            const commissionPct = getReferralCommissionPercent(referrerCount);
-            const commissionAmt = (BOT_PRICE_USD * commissionPct / 100).toFixed(2);
-            await storage.markReferralPaid(chatId.toString(), commissionAmt, commissionPct);
-            console.log(`[Referral] Commission earned: referrer=${referral.referrerChatId}, referred=${chatId}, amount=$${commissionAmt}, tier=${commissionPct}%`);
-            try {
-              await bot.sendMessage(parseInt(referral.referrerChatId),
-                `💰 *Referral Commission Earned!*\n\n` +
-                `Someone you referred just subscribed!\n\n` +
-                `Commission: *$${commissionAmt} USDT* (${commissionPct}%)\n` +
-                `Your total referrals: ${referrerCount}\n\n` +
-                `Commission will be sent to your wallet. Keep sharing your link to earn more!`,
-                { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔗 My Referrals", callback_data: "action:referral" }]] } }
-              );
-            } catch {}
-          }
-        } catch (e: any) {
-          console.error("[Referral] Commission tracking error:", e.message);
-        }
-
         return;
       }
-    } catch (e: any) {
-      console.error(`[Subscription] ${chain.name} verify error:`, e.message);
     }
+
+    let activated = await storage.activateBotSubscription(
+      wallet, hash, chainId, value.toFixed(2)
+    );
+
+    if (!activated) {
+      await storage.createBotSubscription(wallet, chatId.toString());
+      activated = await storage.activateBotSubscription(wallet, hash, chainId, value.toFixed(2));
+    }
+
+    subCache.delete(chatId);
+    console.log(`[VerifyPayment] SUCCESS chatId=${chatId} wallet=${wallet.substring(0,8)} amount=${value.toFixed(2)} chain=${chainName} tx=${hash.substring(0,16)}`);
+
+    await bot.sendMessage(chatId,
+      `🎉 *Payment Confirmed!*\n\n` +
+      `Amount: ${value.toFixed(2)} USDT\n` +
+      `Chain: ${chainName}\n` +
+      `TX: \`${hash.substring(0, 20)}...\`\n\n` +
+      `✅ Your premium subscription is now active for 30 days.\n` +
+      `All features unlocked! 🚀`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+    );
+
+    try {
+      const referral = await storage.getReferralByReferred(chatId.toString());
+      if (referral && !referral.commissionPaid) {
+        const referrerCount = await storage.getReferralCount(referral.referrerChatId);
+        const commissionPct = getReferralCommissionPercent(referrerCount);
+        const commissionAmt = (BOT_PRICE_USD * commissionPct / 100).toFixed(2);
+        await storage.markReferralPaid(chatId.toString(), commissionAmt, commissionPct);
+        console.log(`[Referral] Commission earned: referrer=${referral.referrerChatId}, referred=${chatId}, amount=$${commissionAmt}, tier=${commissionPct}%`);
+        try {
+          await bot.sendMessage(parseInt(referral.referrerChatId),
+            `💰 *Referral Commission Earned!*\n\n` +
+            `Someone you referred just subscribed!\n\n` +
+            `Commission: *$${commissionAmt} USDT* (${commissionPct}%)\n` +
+            `Your total referrals: ${referrerCount}\n\n` +
+            `Commission will be sent to your wallet. Keep sharing your link to earn more!`,
+            { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔗 My Referrals", callback_data: "action:referral" }]] } }
+          );
+        } catch {}
+      }
+    } catch (e: any) {
+      console.error("[Referral] Commission tracking error:", e.message);
+    }
+
+    return;
   }
 
   console.log(`[VerifyPayment] FAILED chatId=${chatId} wallet=${wallet.substring(0,8)} — no matching tx found`);
