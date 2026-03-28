@@ -842,6 +842,7 @@ async function checkSubscription(chatId: number): Promise<{ allowed: boolean; st
         const newSub = await storage.createBotSubscription(wallet, chatId.toString());
         const daysLeft = TRIAL_DAYS;
         subCache.set(chatId, { status: "trial", expiresAt: newSub.expiresAt, checkedAt: Date.now() });
+        autoCreateAgentOnSubscription(chatId, wallet);
         return { allowed: true, status: "trial", daysLeft };
       } catch (e: any) {
         console.error("[Subscription] Trial creation failed:", e.message);
@@ -1465,9 +1466,12 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
       `Chain: ${chainName}\n` +
       `TX: \`${hash.substring(0, 20)}...\`\n\n` +
       `✅ Your premium subscription is now active for 30 days.\n` +
-      `All features unlocked! 🚀`,
+      `All features unlocked! 🚀\n\n` +
+      `⏳ Setting up your AI agent...`,
       { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
     );
+
+    autoCreateAgentOnSubscription(chatId, wallet);
 
     try {
       const referral = await storage.getReferralByReferred(chatId.toString());
@@ -1997,6 +2001,20 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           await bot.sendMessage(chatId, msg.text, { parse_mode: "Markdown", reply_markup: msg.markup });
           return;
         }
+      }
+
+      const hasAgent = await ensureUserHasAgent(chatId);
+      if (!hasAgent) {
+        await bot.sendMessage(chatId,
+          `🤖 *Agent Required*\n\n` +
+          `You need an active AI agent to use premium features.\n` +
+          `Create your agent now — it's included with your subscription!`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+            [{ text: "🤖 Create My Agent", callback_data: "action:newagent" }],
+            [{ text: "« Menu", callback_data: "action:menu" }],
+          ]}}
+        );
+        return;
       }
       if (subCheck.status === "trial" && subCheck.daysLeft !== undefined) {
         if (subCheck.daysLeft <= 1) {
@@ -7625,6 +7643,54 @@ async function collectAgentHireFee(chatId: number, walletAddress: string): Promi
     return { success: true, txHash: receipt.hash };
   } catch (e: any) {
     return { success: false, error: e.message?.substring(0, 120) || "Payment failed" };
+  }
+}
+
+async function autoCreateAgentOnSubscription(chatId: number, wallet: string): Promise<void> {
+  if (!bot) return;
+  try {
+    const existing = await storage.getAgentsByWallet(wallet);
+    if (existing.length > 0) {
+      console.log(`[AutoAgent] User ${chatId} already has ${existing.length} agent(s), skipping`);
+      return;
+    }
+
+    const username = `Agent_${chatId.toString().slice(-4)}`;
+    const bio = "AI trading agent created automatically with BUILD4 subscription";
+    const model = "gpt-4o-mini";
+    const initialDeposit = "1000000000000000";
+
+    const result = await storage.createFullAgent(username, bio, model, initialDeposit, undefined, undefined, wallet);
+    console.log(`[AutoAgent] Created agent "${username}" (${result.agent.id}) for chatId=${chatId}`);
+
+    await bot.sendMessage(chatId,
+      `🤖 *Your AI Agent is Live!*\n\n` +
+      `Name: *${username}*\n` +
+      `Model: ${model}\n` +
+      `ID: \`${result.agent.id}\`\n\n` +
+      `Your agent has been automatically created with your subscription. ` +
+      `It's ready to trade, scan, and work for you!\n\n` +
+      `Use /myagents to manage your agent.`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+        [{ text: "📋 My Agents", callback_data: "action:myagents" }],
+        [{ text: "« Menu", callback_data: "action:menu" }],
+      ]}}
+    );
+
+    registerAgentOnAllChains(chatId, result.agent.id, username, bio);
+  } catch (e: any) {
+    console.error(`[AutoAgent] Failed for chatId=${chatId}:`, e.message?.substring(0, 120));
+  }
+}
+
+async function ensureUserHasAgent(chatId: number): Promise<boolean> {
+  const wallet = getLinkedWallet(chatId);
+  if (!wallet) return false;
+  try {
+    const agents = await storage.getAgentsByWallet(wallet);
+    return agents.length > 0;
+  } catch {
+    return true;
   }
 }
 
