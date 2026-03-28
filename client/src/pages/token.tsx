@@ -15,9 +15,9 @@ import {
 const TICKER = "$BUILD4";
 
 const ALLOC_META = [
-  { id: "founder", pct: 80, amount: "800,000,000", bgColor: "bg-primary", bgTint: "bg-primary/15", textColor: "text-primary", icon: Lock, labelKey: "allocFounder", noteKey: "allocFounderNote" },
+  { id: "founder", pct: 70, amount: "700,000,000", bgColor: "bg-primary", bgTint: "bg-primary/15", textColor: "text-primary", icon: Lock, labelKey: "allocFounder", noteKey: "allocFounderNote" },
   { id: "lp", pct: 10, amount: "100,000,000", bgColor: "bg-cyan-500", bgTint: "bg-cyan-500/15", textColor: "text-cyan-500", icon: Flame, labelKey: "allocLp", noteKey: "allocLpNote" },
-  { id: "public", pct: 10, amount: "100,000,000", bgColor: "bg-emerald-500", bgTint: "bg-emerald-500/15", textColor: "text-emerald-500", icon: Users, labelKey: "allocPublic", noteKey: "allocPublicNote" },
+  { id: "public", pct: 20, amount: "200,000,000", bgColor: "bg-emerald-500", bgTint: "bg-emerald-500/15", textColor: "text-emerald-500", icon: Users, labelKey: "allocPublic", noteKey: "allocPublicNote" },
 ];
 
 const DIST_META = [
@@ -25,7 +25,6 @@ const DIST_META = [
   { id: "treasury", pct: 20, amount: "200,000,000", bgColor: "bg-amber-500", bgTint: "bg-amber-500/15", textColor: "text-amber-500", icon: Shield, labelKey: "distTreasury", noteKey: "distTreasuryNote" },
   { id: "marketing", pct: 15, amount: "150,000,000", bgColor: "bg-pink-500", bgTint: "bg-pink-500/15", textColor: "text-pink-500", icon: Rocket, labelKey: "distMarketing", noteKey: "distMarketingNote" },
   { id: "reserve", pct: 10, amount: "100,000,000", bgColor: "bg-purple-500", bgTint: "bg-purple-500/15", textColor: "text-purple-500", icon: Lock, labelKey: "distReserve", noteKey: "distReserveNote" },
-  { id: "team", pct: 10, amount: "100,000,000", bgColor: "bg-orange-500", bgTint: "bg-orange-500/15", textColor: "text-orange-500", icon: Briefcase, labelKey: "distTeam", noteKey: "distTeamNote" },
 ];
 
 const UTIL_META = [
@@ -122,7 +121,7 @@ export default function TokenPage() {
             </Card>
             <Card className="p-5 text-center space-y-2" data-testid="stat-founder">
               <Lock className="w-6 h-6 mx-auto text-primary" />
-              <div className="font-mono text-lg font-bold">80%</div>
+              <div className="font-mono text-lg font-bold">70%</div>
               <div className="font-mono text-[11px] text-muted-foreground">{t("token.statFounder")}</div>
             </Card>
             <Card className="p-5 text-center space-y-2" data-testid="stat-lp">
@@ -132,7 +131,7 @@ export default function TokenPage() {
             </Card>
             <Card className="p-5 text-center space-y-2" data-testid="stat-public">
               <Users className="w-6 h-6 mx-auto text-emerald-500" />
-              <div className="font-mono text-lg font-bold">10%</div>
+              <div className="font-mono text-lg font-bold">20%</div>
               <div className="font-mono text-[11px] text-muted-foreground">{t("token.statPublic")}</div>
             </Card>
             <Card className="p-5 text-center space-y-2 border-primary/20" data-testid="stat-base">
@@ -206,7 +205,7 @@ export default function TokenPage() {
                 <div
                   key={d.id}
                   className={`${d.bgColor} h-full relative group cursor-default`}
-                  style={{ width: `${(d.pct / 80) * 100}%` }}
+                  style={{ width: `${(d.pct / 70) * 100}%` }}
                   title={`${t(`token.${d.labelKey}`)}: ${d.pct}%`}
                 >
                   {d.pct >= 10 && (
@@ -303,13 +302,6 @@ export default function TokenPage() {
                 <div>
                   <div className="font-mono text-sm font-semibold">{t("token.transWallets")}</div>
                   <p className="font-mono text-[11px] text-muted-foreground mt-1">{t("token.transWalletsDesc")}</p>
-                </div>
-              </Card>
-              <Card className="p-4 flex items-start gap-3">
-                <Shield className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-mono text-sm font-semibold">{t("token.transVesting")}</div>
-                  <p className="font-mono text-[11px] text-muted-foreground mt-1">{t("token.transVestingDesc")}</p>
                 </div>
               </Card>
               <Card className="p-4 flex items-start gap-3">
