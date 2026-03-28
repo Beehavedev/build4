@@ -7973,7 +7973,11 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
   try {
     await bot.sendChatAction(chatId, "typing");
 
-    if (!freeCreation) {
+    const subStatus = await checkSubscription(chatId);
+    const isSubscriber = subStatus.allowed && (subStatus.status === "trial" || subStatus.status === "active");
+    const isFree = freeCreation || isSubscriber;
+
+    if (!isFree) {
       await bot.sendMessage(chatId,
         `💳 Agent creation costs $20 (${AGENT_HIRE_FEE_BNB} BNB).\n\nProcessing payment from your wallet...`
       );
@@ -7996,7 +8000,7 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
       `🤖 *${result.agent.name}*\n` +
       `Model: ${shortModel(model)}\n` +
       `ID: \`${agentId}\`\n`;
-    if (freeCreation) {
+    if (isFree) {
       msg += `\n🎁 Included free with your subscription`;
     } else {
       msg += `\n💳 Paid: $20 (${AGENT_HIRE_FEE_BNB} BNB)`;
