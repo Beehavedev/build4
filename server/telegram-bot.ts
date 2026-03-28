@@ -5284,17 +5284,23 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           const { db } = await import("./db");
           const { agents: agentsTable } = await import("@shared/schema");
           const { eq } = await import("drizzle-orm");
-          await db.update(agentsTable).set({ erc8004Registered: true }).where(eq(agentsTable.id, agentId));
+          await db.update(agentsTable).set({
+            erc8004Registered: true,
+            erc8004TxHash: baseResult.txHash || null,
+            erc8004TokenId: baseResult.tokenId || null,
+            erc8004Chain: "base",
+          }).where(eq(agentsTable.id, agentId));
         } catch {}
 
         const txLink = baseResult.txHash ? `\n🔗 [View on BaseScan](https://basescan.org/tx/${baseResult.txHash})` : "";
-        const tokenInfo = baseResult.tokenId ? `\nToken ID: \`${baseResult.tokenId}\`` : "";
+        const tokenInfo = baseResult.tokenId ? `\n🆔 Token ID: \`${baseResult.tokenId}\`` : "";
 
         await bot.sendMessage(chatId,
           `✅ *${agent.name} registered on-chain!*\n\n` +
-          `⛓️ Standard: ERC-8004\n` +
-          `🌐 Chain: Base${tokenInfo}${txLink}\n\n` +
-          `Your agent now has a verified on-chain identity.`,
+          `⛓️ Standard: ERC-8004 Identity Registry\n` +
+          `🌐 Chain: Base (Chain ID: 8453)\n` +
+          `📄 Contract: \`0x8004A169FB4a3325136EB29fA0ceB6D2e539a432\`${tokenInfo}${txLink}\n\n` +
+          `Your agent now has a verified on-chain identity. Click the link above to verify on BaseScan.`,
           { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "My Agents", callback_data: "action:myagents" }, { text: "Menu", callback_data: "action:menu" }]] } }
         );
       } else {
@@ -8131,15 +8137,24 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
   try {
     const erc8004BaseResult = await registerAgentERC8004(name, bio, agentId, "base", userPk);
     if (erc8004BaseResult.success) {
-      results.push(`ERC-8004 (${erc8004BaseResult.chainName || "Base"}): ${erc8004BaseResult.txHash?.substring(0, 14)}...`);
+      const shortTx = erc8004BaseResult.txHash?.substring(0, 14) || "";
+      results.push(`⛓️ ERC-8004 (Base): ${shortTx}...`);
       if (erc8004BaseResult.tokenId) {
-        results.push(`  Token ID: ${erc8004BaseResult.tokenId}`);
+        results.push(`  🆔 Token ID: ${erc8004BaseResult.tokenId}`);
+      }
+      if (erc8004BaseResult.txHash) {
+        results.push(`  🔗 https://basescan.org/tx/${erc8004BaseResult.txHash}`);
       }
       try {
         const { db } = await import("./db");
         const { agents: agentsTable } = await import("@shared/schema");
         const { eq } = await import("drizzle-orm");
-        await db.update(agentsTable).set({ erc8004Registered: true }).where(eq(agentsTable.id, agentId));
+        await db.update(agentsTable).set({
+          erc8004Registered: true,
+          erc8004TxHash: erc8004BaseResult.txHash || null,
+          erc8004TokenId: erc8004BaseResult.tokenId || null,
+          erc8004Chain: "base",
+        }).where(eq(agentsTable.id, agentId));
       } catch {}
     } else {
       results.push(`ERC-8004 (Base): ${erc8004BaseResult.error?.substring(0, 80) || "skipped"}`);
@@ -8174,10 +8189,21 @@ async function handleMyAgents(chatId: number, wallet: string): Promise<void> {
 
     const lines = myAgents.map(a => {
       const model = shortModel(a.modelType || "unknown");
-      const onchainStatus = a.erc8004Registered
-        ? "🟢 On-Chain (ERC-8004)"
-        : "🔴 Not registered on-chain";
-      return `🤖 *${a.name}*\n   Model: ${model}\n   Bio: _${(a.bio || "AI trading agent").substring(0, 80)}_\n   Chain: ${onchainStatus}\n   Status: 🟢 Active — scanning, analyzing & trading for you`;
+      let onchainLine = "";
+      if (a.erc8004Registered) {
+        const chain = a.erc8004Chain === "base" ? "Base" : (a.erc8004Chain || "Base");
+        const explorer = a.erc8004Chain === "base" ? "basescan.org" : "bscscan.com";
+        onchainLine = `   ⛓️ On-Chain: 🟢 ERC-8004 (${chain})`;
+        if (a.erc8004TokenId) {
+          onchainLine += `\n   🆔 Token ID: ${a.erc8004TokenId}`;
+        }
+        if (a.erc8004TxHash) {
+          onchainLine += `\n   🔗 [Verify on ${explorer}](https://${explorer}/tx/${a.erc8004TxHash})`;
+        }
+      } else {
+        onchainLine = `   ⛓️ On-Chain: 🔴 Not registered`;
+      }
+      return `🤖 *${a.name}*\n   Model: ${model}\n   Bio: _${(a.bio || "AI trading agent").substring(0, 80)}_\n${onchainLine}\n   Status: 🟢 Active`;
     });
 
     const buttons: Array<Array<{text: string; callback_data: string}>> = [];
