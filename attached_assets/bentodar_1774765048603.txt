@@ -1,0 +1,900 @@
+BUILD4 ? Technical Issues and Required Fixes
+================================================================
+
+Date: March 28, 2026
+Scope: API, Smart Contracts, Marketplace, Infrastructure
+
+This document describes every technical issue found on the build4.io
+platform and explains how to fix each one. All issues were verified
+against live API endpoints on March 28, 2026. Each issue includes
+the exact problem, a working fix, and example code.
+
+
+CURRENT STATUS
+================================================================
+
+These numbers come directly from the platform stats endpoint:
+
+  Skills reported in stats                : 12,815
+  Actual unique skills from API           : around 200
+  Unique code templates among those       : 11
+  Skills that use any AI                  : 0 (zero)
+  BAP-578 NFAs registered                 : 0
+  ERC-8004 identities on-chain            : 0
+  Total platform revenue                  : 0.2437 BNB (about $146)
+  Inference revenue                       : 0.0004 BNB ($0.23)
+  Total skill purchases                   : 23
+  Token launch success rate               : 26% (13 out of 50)
+  Bot activity on March 2                 : 96 agents per hour, 0.3 second gaps
+
+Some things improved since the first review. The fake 88,000 user count
+now shows 361 real wallets. Pagination partially works. But the core
+problems remain: no AI in skills, BAP-578 and ERC-8004 not functional,
+inference pipeline disconnected, near-zero revenue.
+
+
+================================================================
+ISSUE 1 ? SKILLS HAVE NO AI
+================================================================
+
+What is wrong:
+  Every skill in the marketplace is built from 11 JavaScript templates.
+  None of them call any AI model, LLM endpoint, or machine learning
+  service. The skill called "Sentiment Analyzer" checks for 12 hardcoded
+  English words like "good" and "awful". The skill called "Code Generator"
+  returns 8 pre-written code snippets from a dictionary. The platform
+  markets itself as an AI agent economy, but not a single skill uses AI.
+
+How to verify:
+  curl -s "https://build4.io/api/marketplace/skills?limit=200" | \
+    python3 -c "
+  import sys,json
+  d=json.load(sys.stdin)
+  keywords=['llm','openai','anthropic','gpt','inference','neural','embedding','fetch(','await']
+  ai=sum(1 for s in d if any(k in s.get('code','').lower() for k in keywords))
+  print(f'Skills with AI: {ai}/{len(d)}')
+  "
+  Output: Skills with AI: 0/200
+
+What to do:
+  Skills must call the inference endpoint. The platform already defines
+  AI models on agents (Llama-3.1-70B, DeepSeek-V3, Qwen-2.5-72B). The
+  same inference backend needs to be available to skills through an SDK.
+
+  First, create a drop-in module for skill developers:
+
+  ---- file: sdk/skillInference.js ----
+
+  class SkillAI {
+    constructor(apiKey, baseUrl) {
+      this.apiKey = apiKey;
+      this.baseUrl = baseUrl || "https://build4.io/api/inference";
+    }
+
+    async chat(model, systemPrompt, userMessage, options) {
+      options = options || {};
+      var response = await fetch(this.baseUrl + "/run", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + this.apiKey
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessage }
+          ],
+          max_tokens: options.maxTokens || 1000,
+          temperature: options.temperature || 0.7
+        })
+      });
+
+      if (!response.ok) throw new Error("Inference failed: " + response.status);
+      var data = await response.json();
+      return data.choices[0].message.content;
+    }
+
+    async json(model, systemPrompt, userMessage) {
+      var raw = await this.chat(
+        model,
+        systemPrompt + "\nRespond ONLY with valid JSON.",
+        userMessage,
+        { temperature: 0.1 }
+      );
+      return JSON.parse(raw);
+    }
+  }
+
+  module.exports = { SkillAI };
+
+  ---- end of file ----
+
+  Then rewrite the templates. Here is the Sentiment Analyzer:
+
+  ---- file: skills/sentimentAnalyzer.js ----
+
+  // OLD (broken ? 12 hardcoded words):
+  // var positiveWords = ["good","great","excellent","amazing" ...];
+  // positiveWords.forEach(function(w) { if (lower.includes(w)) posScore++; });
+
+  // NEW (real AI):
+  var ai = new SkillAI(process.env.SKILL_API_KEY);
+
+  var result = await ai.json(
+    "meta-llama/Llama-3.1-70B-Instruct",
+    'Analyze sentiment. Return: {"sentiment":"positive|negative|neutral|mixed",' +
+    '"confidence":0.0-1.0,"aspects":[{"topic":"...","sentiment":"...","reason":"..."}]}',
+    input.text
+  );
+
+  __result__ = result;
+
+  ---- end of file ----
+
+  The Code Generator:
+
+  ---- file: skills/codeGenerator.js ----
+
+  // OLD (broken ? 8 static snippets):
+  // var templates = { "sort": "const result = arr.sort(...)", ... };
+
+  // NEW (real AI):
+  var ai = new SkillAI(process.env.SKILL_API_KEY);
+
+  var code = await ai.chat(
+    "deepseek-ai/DeepSeek-V3",
+    "You are an expert programmer. Generate clean, production-ready code. " +
+    "Include error handling. Return ONLY the code.",
+    input.task
+  );
+
+  __result__ = { code: code, language: input.language || "javascript" };
+
+  ---- end of file ----
+
+  The Whale Movement Sniffer:
+
+  ---- file: skills/whaleTracker.js ----
+
+  // OLD (broken ? dictionary lookup):
+  // var prices = __EXTERNAL_DATA__.cryptoPrices || {};
+
+  // NEW (real on-chain data + AI analysis):
+  var ai = new SkillAI(process.env.SKILL_API_KEY);
+
+  var txResponse = await fetch(
+    "https://api.bscscan.com/api?module=token&action=tokentx" +
+    "&contractaddress=" + input.token + "&sort=desc&page=1&offset=50" +
+    "&apikey=" + process.env.BSCSCAN_KEY
+  );
+  var transfers = await txResponse.json();
+
+  var whales = transfers.result.filter(function(tx) {
+    return parseFloat(tx.value) / 1e18 * input.tokenPrice > 10000;
+  });
+
+  var analysis = await ai.json(
+    "meta-llama/Llama-3.1-70B-Instruct",
+    "Analyze whale transactions. Identify accumulation, distribution, " +
+    "wash trading patterns. Return JSON with pattern, confidence, summary.",
+    JSON.stringify(whales.slice(0, 20))
+  );
+
+  __result__ = { transfers: whales.length, analysis: analysis };
+
+  ---- end of file ----
+
+Priority: HIGHEST. This is the reason the platform exists.
+Estimated time: 1-2 weeks.
+
+
+================================================================
+ISSUE 2 ? SKILL COUNT IS INFLATED
+================================================================
+
+What is wrong:
+  The stats endpoint reports 12,815 skills. The API returns about 200
+  unique ones. Those 200 are built from only 11 code templates. The
+  rest are the same code with different names. "Record Merger v29",
+  "Record Merger v40", "Record Merger v52" all contain identical code.
+
+How to verify:
+  curl -s "https://build4.io/api/marketplace/skills?limit=200" | \
+    python3 -c "
+  import sys,json,hashlib
+  d=json.load(sys.stdin)
+  hashes=set(hashlib.md5(s.get('code','').encode()).hexdigest() for s in d)
+  print(f'Total: {len(d)}, Unique code: {len(hashes)}, Duplicates: {len(d)-len(hashes)}')
+  "
+
+What to do:
+  1. Find skills with identical code and hide the duplicates.
+  2. Make the stats endpoint report the real number.
+
+  ---- file: scripts/deduplicateSkills.js ----
+
+  var crypto = require("crypto");
+
+  async function deduplicate() {
+    var skills = await db.skills.findAll();
+    var seen = new Map();
+    var toHide = [];
+
+    for (var i = 0; i < skills.length; i++) {
+      var skill = skills[i];
+      var hash = crypto.createHash("md5").update(skill.code || "").digest("hex");
+
+      if (seen.has(hash)) {
+        var existing = seen.get(hash);
+        if (skill.totalPurchases > existing.totalPurchases) {
+          toHide.push(existing.id);
+          seen.set(hash, skill);
+        } else {
+          toHide.push(skill.id);
+        }
+      } else {
+        seen.set(hash, skill);
+      }
+    }
+
+    await db.skills.update({ hidden: true }, { where: { id: toHide } });
+    console.log("Kept: " + seen.size + ", Hidden: " + toHide.length);
+  }
+
+  ---- end of file ----
+
+  Fix the stats endpoint:
+
+  ---- file: routes/platform.js ----
+
+  router.get("/stats", async function(req, res) {
+    var skills = await db.skills.count({ where: { hidden: false } });
+    var wallets = await db.agents.aggregate("creatorWallet", "count", { distinct: true });
+
+    res.json({
+      skills: skills,
+      users: wallets,
+      agents: await db.agents.count(),
+      purchases: await db.skills.sum("totalPurchases"),
+      revenue: await db.revenue.sum("amount")
+    });
+  });
+
+  ---- end of file ----
+
+Priority: HIGHEST. Honest numbers build trust.
+Estimated time: 1 day.
+
+
+================================================================
+ISSUE 3 ? BAP-578 IS NOT WORKING
+================================================================
+
+What is wrong:
+  BAP-578 (Non-Fungible Agent) is presented as the core feature. After
+  months of operation, zero NFAs have been registered on-chain. The
+  endpoint returns an empty array.
+
+How to verify:
+  curl -s "https://build4.io/api/standards/bap578/nfas"
+  Output: []
+
+What to do:
+  Deploy a working BAP-578 registry contract. When an agent is created,
+  automatically register it on-chain.
+
+  ---- file: contracts/BAP578Registry.sol ----
+
+  // SPDX-License-Identifier: MIT
+  pragma solidity ^0.8.20;
+
+  import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+  import "@openzeppelin/contracts/access/Ownable.sol";
+
+  contract BAP578Registry is ERC721, Ownable {
+
+      struct Agent {
+          string name;
+          string model;
+          string ipfsHash;
+          uint256 created;
+          uint8 level;
+          bool hasSoul;
+      }
+
+      mapping(uint256 => Agent) public agents;
+      uint256 private _nextId;
+
+      event AgentRegistered(uint256 indexed id, address indexed creator, string name);
+      event AgentEvolved(uint256 indexed id, uint8 newLevel);
+
+      constructor() ERC721("BUILD4 Agent", "B4NFA") Ownable(msg.sender) {}
+
+      function register(
+          string calldata name,
+          string calldata model,
+          string calldata ipfsHash
+      ) external returns (uint256) {
+          uint256 id = _nextId++;
+          _mint(msg.sender, id);
+
+          agents[id] = Agent({
+              name: name,
+              model: model,
+              ipfsHash: ipfsHash,
+              created: block.timestamp,
+              level: 1,
+              hasSoul: bytes(model).length > 0
+          });
+
+          emit AgentRegistered(id, msg.sender, name);
+          return id;
+      }
+
+      function evolve(uint256 id, string calldata newIpfsHash) external {
+          require(ownerOf(id) == msg.sender, "Not owner");
+          agents[id].ipfsHash = newIpfsHash;
+          agents[id].level++;
+          emit AgentEvolved(id, agents[id].level);
+      }
+
+      function total() external view returns (uint256) {
+          return _nextId;
+      }
+  }
+
+  ---- end of file ----
+
+  Backend auto-registration when creating an agent:
+
+  ---- file: services/agentService.js ----
+
+  async function createAgent(params, signer) {
+    var agent = await db.agents.create(params);
+
+    var ipfsHash = await pinata.pinJSON({
+      name: params.name,
+      model: params.modelType,
+      skills: params.skillIds,
+      constitution: params.constitution
+    });
+
+    var registry = new ethers.Contract(BAP578_ADDRESS, BAP578_ABI, signer);
+    var tx = await registry.register(params.name, params.modelType, ipfsHash);
+    var receipt = await tx.wait();
+
+    var event = receipt.logs.find(function(l) {
+      return l.topics[0] === ethers.id("AgentRegistered(uint256,address,string)");
+    });
+    var tokenId = ethers.toBigInt(event.topics[1]);
+
+    await db.agents.update(
+      { onchainId: tokenId.toString(), bap578Registered: true, ipfsHash: ipfsHash },
+      { where: { id: agent.id } }
+    );
+
+    return { agent: agent, tokenId: tokenId.toString(), txHash: receipt.hash };
+  }
+
+  ---- end of file ----
+
+Priority: HIGHEST.
+Estimated time: 1 week.
+
+
+================================================================
+ISSUE 4 ? ERC-8004 FLAGS ARE WRONG
+================================================================
+
+What is wrong:
+  20 agents show erc8004Registered as true in the database. Every one
+  of them has onchainId set to null. The database says "registered" but
+  nothing exists on the blockchain. Users see a badge that means nothing.
+
+How to verify:
+  curl -s "https://build4.io/api/web4/agents" | python3 -c "
+  import sys,json
+  d=json.load(sys.stdin)
+  erc=[a for a in d if a.get('erc8004Registered')]
+  for a in erc[:5]:
+      print(a['name'], '- onchainId:', a.get('onchainId'))
+  "
+  Output: All show None
+
+What to do:
+  1. Run a one-time script to fix the false flags.
+  2. Only set the flag after a confirmed on-chain transaction.
+
+  ---- file: scripts/fixERC8004Flags.js ----
+
+  async function fixFlags() {
+    var flagged = await db.agents.findAll({ where: { erc8004Registered: true } });
+    var fixed = 0;
+
+    for (var i = 0; i < flagged.length; i++) {
+      if (!flagged[i].onchainId) {
+        await db.agents.update(
+          { erc8004Registered: false },
+          { where: { id: flagged[i].id } }
+        );
+        fixed++;
+      }
+    }
+
+    console.log("Fixed " + fixed + " out of " + flagged.length);
+  }
+
+  ---- end of file ----
+
+  Going forward, only set the flag after the transaction succeeds:
+
+  ---- file: services/erc8004Service.js ----
+
+  async function registerIdentity(agentId, signer) {
+    var agent = await db.agents.findByPk(agentId);
+    var contract = new ethers.Contract(ERC8004_ADDRESS, ERC8004_ABI, signer);
+
+    var tx = await contract.registerIdentity(agent.name, JSON.stringify({
+      model: agent.modelType,
+      skills: agent.skillIds
+    }));
+    var receipt = await tx.wait();
+
+    if (receipt.status === 1) {
+      var identityHash = receipt.logs[0].topics[1];
+      await db.agents.update(
+        { erc8004Registered: true, onchainId: identityHash },
+        { where: { id: agentId } }
+      );
+      return { success: true, identityHash: identityHash, txHash: receipt.hash };
+    }
+
+    return { success: false };
+  }
+
+  ---- end of file ----
+
+Priority: HIGH.
+Estimated time: 1 day.
+
+
+================================================================
+ISSUE 5 ? BOT AGENT CREATION
+================================================================
+
+What is wrong:
+  On March 2, 181 agents were created. 96 of them appeared within a
+  single hour with gaps as short as 0.3 seconds. No human creates
+  accounts that fast. This is automated script activity inflating
+  the agent count.
+
+What to do:
+  Add wallet-based rate limiting and require a signed message to prove
+  the creator actually owns the wallet.
+
+  ---- file: middleware/agentRateLimit.js ----
+
+  async function walletRateLimit(req, res, next) {
+    var wallet = req.body.creatorWallet;
+
+    var hourCount = await db.agents.count({
+      where: {
+        creatorWallet: wallet,
+        createdAt: { [Op.gte]: new Date(Date.now() - 3600000) }
+      }
+    });
+
+    if (hourCount >= 3) {
+      return res.status(429).json({ error: "Maximum 3 agents per hour per wallet" });
+    }
+
+    var last = await db.agents.findOne({
+      where: { creatorWallet: wallet },
+      order: [["createdAt", "DESC"]]
+    });
+
+    if (last && Date.now() - new Date(last.createdAt).getTime() < 30000) {
+      return res.status(429).json({ error: "Wait at least 30 seconds between creations" });
+    }
+
+    next();
+  }
+
+  async function requireSignature(req, res, next) {
+    var wallet = req.body.creatorWallet;
+    var signature = req.body.signature;
+    var message = req.body.message;
+
+    if (!signature || !message) {
+      return res.status(401).json({ error: "Wallet signature required" });
+    }
+
+    var timestamp = parseInt(message.split(":").pop());
+    if (Date.now() - timestamp > 300000) {
+      return res.status(400).json({ error: "Signature expired" });
+    }
+
+    var recovered = ethers.verifyMessage(message, signature);
+    if (recovered.toLowerCase() !== wallet.toLowerCase()) {
+      return res.status(401).json({ error: "Signature does not match wallet" });
+    }
+
+    next();
+  }
+
+  router.post("/agents", walletRateLimit, requireSignature, createAgent);
+
+  ---- end of file ----
+
+Priority: HIGH.
+Estimated time: 3 days.
+
+
+================================================================
+ISSUE 6 ? TOKEN LAUNCH 74% FAILURE RATE
+================================================================
+
+What is wrong:
+  37 out of 50 token launches failed. There is no validation before
+  sending the transaction and no retry when it fails.
+
+What to do:
+  Validate parameters before sending anything. Estimate gas first. If
+  the transaction fails, retry up to 3 times with increasing gas.
+
+  ---- file: services/tokenLauncher.js ----
+
+  async function launchToken(params) {
+    var errors = [];
+    if (!params.tokenName || params.tokenName.length < 2) errors.push("Name too short");
+    if (!params.tokenSymbol || params.tokenSymbol.length > 10) errors.push("Symbol too long");
+    if (!params.initialSupply || params.initialSupply <= 0) errors.push("Invalid supply");
+    if (!ethers.isAddress(params.creatorWallet)) errors.push("Invalid wallet");
+
+    if (errors.length > 0) {
+      return { status: "rejected", errors: errors };
+    }
+
+    try {
+      await factory.estimateGas.createToken(
+        params.tokenName, params.tokenSymbol, params.initialSupply
+      );
+    } catch (err) {
+      return { status: "rejected", reason: "Would fail: " + (err.reason || err.message) };
+    }
+
+    var lastError;
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      try {
+        var tx = await factory.createToken(
+          params.tokenName,
+          params.tokenSymbol,
+          params.initialSupply,
+          { gasLimit: 500000 * attempt }
+        );
+        var receipt = await tx.wait(2);
+
+        if (receipt.status === 1) {
+          var tokenAddress = receipt.logs[0].address;
+          await db.launches.update(
+            { status: "launched", tokenAddress: tokenAddress, txHash: receipt.hash },
+            { where: { id: params.launchId } }
+          );
+          return { status: "launched", tokenAddress: tokenAddress, txHash: receipt.hash };
+        }
+      } catch (err) {
+        lastError = err.message;
+        if (err.message.includes("nonce")) {
+          await refreshNonce();
+          continue;
+        }
+        if (attempt === 3) break;
+      }
+    }
+
+    await db.launches.update(
+      { status: "failed", error: lastError },
+      { where: { id: params.launchId } }
+    );
+    return { status: "failed", reason: lastError };
+  }
+
+  ---- end of file ----
+
+Priority: MEDIUM.
+Estimated time: 3 days.
+
+
+================================================================
+ISSUE 7 ? INFERENCE PIPELINE NOT GENERATING REVENUE
+================================================================
+
+What is wrong:
+  All 419 agents have an AI model assigned. But total inference revenue
+  is $0.23. The pipeline is defined but not connected. Models are
+  listed but never called.
+
+What to do:
+  Build the inference endpoint that actually calls the model providers
+  and records revenue for each call.
+
+  ---- file: routes/inference.js ----
+
+  var MODELS = {
+    "meta-llama/Llama-3.1-70B-Instruct": {
+      url: "https://api.together.xyz/v1/chat/completions",
+      key: process.env.TOGETHER_API_KEY,
+      costPer1k: 0.0009
+    },
+    "deepseek-ai/DeepSeek-V3": {
+      url: "https://api.deepseek.com/v1/chat/completions",
+      key: process.env.DEEPSEEK_API_KEY,
+      costPer1k: 0.0014
+    },
+    "Qwen/Qwen2.5-72B-Instruct": {
+      url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+      key: process.env.DASHSCOPE_API_KEY,
+      costPer1k: 0.0012
+    }
+  };
+
+  router.post("/inference/run", async function(req, res) {
+    var agentId = req.body.agentId;
+    var message = req.body.message;
+
+    var agent = await db.agents.findByPk(agentId);
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+    var model = MODELS[agent.modelType];
+    if (!model) return res.status(400).json({ error: "Unknown model" });
+
+    var skills = await db.agentSkills.findAll({
+      where: { agentId: agentId },
+      include: [db.skills]
+    });
+
+    var systemPrompt = agent.constitution || "You are a helpful AI agent on BUILD4.";
+    if (skills.length > 0) {
+      systemPrompt += "\n\nYour skills: " + skills.map(function(s) {
+        return s.skill.name;
+      }).join(", ");
+    }
+
+    var start = Date.now();
+    var response = await fetch(model.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + model.key
+      },
+      body: JSON.stringify({
+        model: agent.modelType,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: message }
+        ],
+        max_tokens: 2000,
+        temperature: 0.7
+      })
+    });
+
+    var data = await response.json();
+    var latency = Date.now() - start;
+    var tokens = data.usage ? data.usage.total_tokens : 0;
+    var costUSD = (tokens / 1000) * model.costPer1k;
+    var costBNB = costUSD / 600 * 2;
+
+    await db.revenue.create({
+      type: "inference",
+      agentId: agentId,
+      amount: ethers.parseEther(costBNB.toFixed(18)).toString(),
+      tokens: tokens,
+      model: agent.modelType,
+      latencyMs: latency
+    });
+
+    res.json({
+      response: data.choices[0].message.content,
+      tokens: tokens,
+      latencyMs: latency,
+      cost: costBNB.toFixed(6) + " BNB"
+    });
+  });
+
+  ---- end of file ----
+
+Priority: HIGH.
+Estimated time: 1 week.
+
+
+================================================================
+ISSUE 8 ? SKILL PRICING IS UNREALISTIC
+================================================================
+
+What is wrong:
+  A function that splits a string and counts words is priced at 0.57 BNB,
+  which is about $342. Nobody pays $342 for text.split(" ").length. Zero
+  ratings across all skills. Near-zero purchases.
+
+What to do:
+  Price skills based on what they actually do.
+
+  ---- file: services/pricing.js ----
+
+  function priceSkill(skill) {
+    var code = skill.code || "";
+    var quality = 0;
+
+    if (/fetch.*inference|openai|anthropic|deepseek/i.test(code)) quality += 40;
+    if (/fetch\s*\(|websocket|ethers|web3/i.test(code)) quality += 20;
+    if (/try\s*\{/.test(code) && /catch/.test(code)) quality += 10;
+
+    var lines = code.split("\n").filter(function(l) { return l.trim(); }).length;
+    if (lines > 50) quality += 5;
+    if (lines > 100) quality += 5;
+    if (lines > 200) quality += 5;
+
+    if (skill.isUnique) quality += 15;
+
+    if (quality >= 80) return { price: 0.15, tier: "AI Premium" };
+    if (quality >= 50) return { price: 0.05, tier: "Standard" };
+    if (quality >= 20) return { price: 0.005, tier: "Basic" };
+    return { price: 0.0001, tier: "Template" };
+  }
+
+  async function repriceAll() {
+    var skills = await db.skills.findAll();
+    for (var i = 0; i < skills.length; i++) {
+      var result = priceSkill(skills[i]);
+      await skills[i].update({
+        priceAmount: ethers.parseEther(result.price.toString()).toString(),
+        tier: result.tier
+      });
+    }
+  }
+
+  ---- end of file ----
+
+Priority: MEDIUM.
+Estimated time: 1 day.
+
+
+================================================================
+ISSUE 9 ? SMART CONTRACTS NOT VERIFIED ON BSCSCAN
+================================================================
+
+What is wrong:
+  All four deployed contracts are unverified on BSCScan. Users cannot
+  read the source code.
+
+What to do:
+
+  npm install --save-dev hardhat @nomicfoundation/hardhat-verify
+
+  npx hardhat verify --network bsc 0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606
+  npx hardhat verify --network bsc 0xa6996A83B3909Ff12643A4a125eA2704097B0dD3
+  npx hardhat verify --network bsc 0xE49B8Be8416d53D4E0042ea6DEe7727241396b73
+  npx hardhat verify --network bsc 0x784dB7d65259069353eBf05eF17aA51CEfCCaA31
+
+Priority: MEDIUM.
+Estimated time: 1 day.
+
+
+================================================================
+ISSUE 10 ? PROVIDER HEALTH NOT MONITORED
+================================================================
+
+What is wrong:
+  The Ritual inference provider is listed as active but does not respond.
+  Users see a provider that does not work.
+
+What to do:
+  Check providers every 5 minutes. Only show the ones that actually respond.
+
+  ---- file: services/healthCheck.js ----
+
+  var PROVIDERS = [
+    { name: "together", url: "https://api.together.xyz/v1/models", key: "TOGETHER_API_KEY" },
+    { name: "deepseek", url: "https://api.deepseek.com/v1/models", key: "DEEPSEEK_API_KEY" },
+    { name: "dashscope", url: "https://dashscope.aliyuncs.com/compatible-mode/v1/models", key: "DASHSCOPE_API_KEY" }
+  ];
+
+  async function checkProviders() {
+    for (var i = 0; i < PROVIDERS.length; i++) {
+      var p = PROVIDERS[i];
+      try {
+        var resp = await fetch(p.url, {
+          headers: { "Authorization": "Bearer " + process.env[p.key] },
+          signal: AbortSignal.timeout(5000)
+        });
+        await db.providers.upsert({
+          name: p.name,
+          status: resp.ok ? "active" : "error",
+          lastChecked: new Date()
+        });
+      } catch (err) {
+        await db.providers.upsert({
+          name: p.name,
+          status: "inactive",
+          lastChecked: new Date()
+        });
+      }
+    }
+  }
+
+  setInterval(checkProviders, 5 * 60 * 1000);
+
+  router.get("/inference/providers", async function(req, res) {
+    var active = await db.providers.findAll({ where: { status: "active" } });
+    res.json(active);
+  });
+
+  ---- end of file ----
+
+Priority: LOW.
+Estimated time: 1 day.
+
+
+================================================================
+PRIORITY ORDER
+================================================================
+
+  Do first (this week):
+    1. Add real AI to skills via inference SDK          1-2 weeks
+    2. Deploy BAP-578 registry, auto-register agents    1 week
+    3. Deduplicate skills, fix stats endpoint            1 day
+
+  Do next:
+    4. Fix ERC-8004 false flags                          1 day
+    5. Build working inference endpoint                  1 week
+    6. Add bot protection to agent creation              3 days
+
+  After that:
+    7. Add retry logic to token launches                 3 days
+    8. Reprice skills based on quality                   1 day
+    9. Verify contracts on BSCScan                       1 day
+   10. Add provider health monitoring                    1 day
+
+
+================================================================
+HOW TO VERIFY THE FIXES WORKED
+================================================================
+
+Run these after implementing:
+
+  Skills have AI:
+  curl -s "https://build4.io/api/marketplace/skills?limit=100" | \
+    python3 -c "
+  import sys,json
+  d=json.load(sys.stdin)
+  ai=sum(1 for s in d if 'fetch' in s.get('code','') and 'inference' in s.get('code',''))
+  print('Skills with AI calls:', ai, '/', len(d))
+  "
+
+  Skill count is honest:
+  curl -s "https://build4.io/api/platform/stats" | python3 -c "
+  import sys,json; d=json.load(sys.stdin); print('Reported skills:', d.get('skills'))
+  "
+
+  BAP-578 is working:
+  curl -s "https://build4.io/api/standards/bap578/nfas" | python3 -c "
+  import sys,json; print('NFAs registered:', len(json.load(sys.stdin)))
+  "
+
+  ERC-8004 flags are correct:
+  curl -s "https://build4.io/api/web4/agents" | python3 -c "
+  import sys,json
+  d=json.load(sys.stdin)
+  erc=[a for a in d if a.get('erc8004Registered')]
+  valid=[a for a in erc if a.get('onchainId')]
+  print('ERC-8004 flagged:', len(erc), '- With on-chain ID:', len(valid))
+  "
+
+  Inference is working:
+  curl -s -X POST "https://build4.io/api/inference/run" \
+    -H "Content-Type: application/json" \
+    -d '{"agentId":"TEST_AGENT_ID","message":"Hello, what can you do?"}'
+
+
+================================================================
