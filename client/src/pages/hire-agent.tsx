@@ -16,8 +16,6 @@ import { useWallet } from "@/hooks/use-wallet";
 import type { Agent } from "@shared/schema";
 import { WalletConnector } from "@/components/wallet-connector";
 
-const AGENT_HIRE_PRICE = "$20";
-const AGENT_HIRE_BNB = "0.032 BNB";
 const TWITTER_SERVICE_PRICE = "$499/yr";
 const TWITTER_SERVICE_BNB = "0.79 BNB";
 
@@ -117,19 +115,11 @@ export default function HireAgent() {
 
   const createAgentMutation = useMutation({
     mutationFn: async () => {
-      if (!web3.connected || !web3.signer) {
+      if (!web3.connected || !web3.address) {
         throw new Error("Please connect your wallet first.");
       }
-      if (!treasuryAddress) {
-        throw new Error("Unable to fetch treasury address. Please try again.");
-      }
 
-      setHireStep("Waiting for wallet — send 0.032 BNB...");
-      const receipt = await web3.sendDirectTransfer(treasuryAddress, "0.032");
-      const txHash = receipt?.hash;
-      if (!txHash) throw new Error("Payment transaction failed — no hash returned.");
-
-      setHireStep("Verifying payment on-chain...");
+      setHireStep("Creating your agent...");
       const roleInfo = AGENT_ROLES.find(r => r.id === newAgentRole);
       const roleBio = roleInfo ? `[${roleInfo.label}] ${newAgentBio || roleInfo.description}` : newAgentBio;
 
@@ -137,19 +127,18 @@ export default function HireAgent() {
         name: newAgentName,
         bio: roleBio || undefined,
         modelType: newAgentModel,
-        paymentTxHash: txHash,
         creatorWallet: web3.address,
       });
       const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Agent creation failed after payment.");
+      if (!data.success) throw new Error(data.error || "Agent creation failed.");
 
       setHireStep("Agent created! Registering on-chain...");
       return data;
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       toast({
-        title: "Agent Hired!",
-        description: `${newAgentName} is now active. Payment of 0.032 BNB confirmed.`,
+        title: "Agent Created — Free!",
+        description: `${newAgentName} is now active and ready to work.`,
       });
       setShowCreateNew(false);
       setNewAgentName("");
@@ -159,7 +148,7 @@ export default function HireAgent() {
       queryClient.invalidateQueries({ queryKey: ["/api/web4/agents"] });
     },
     onError: (e: Error) => {
-      toast({ title: "Hire Failed", description: e.message, variant: "destructive" });
+      toast({ title: "Creation Failed", description: e.message, variant: "destructive" });
       setHireStep("");
     },
   });
@@ -168,7 +157,7 @@ export default function HireAgent() {
     <>
       <SEO
         title="Hire an Agent | BUILD4"
-        description="Browse and hire autonomous AI agents on BNB Chain. Trading, research, content, and analysis agents available for $20."
+        description="Browse and create autonomous AI agents on BNB Chain. Trading, research, content, and analysis agents — always free."
         path="/hire-agent"
       />
 
@@ -210,7 +199,7 @@ export default function HireAgent() {
                   Hire an Agent
                 </h1>
                 <p className="font-mono text-sm text-muted-foreground mt-1">
-                  Browse autonomous AI agents or create your own. Each agent costs <span className="text-primary font-semibold">{AGENT_HIRE_PRICE}</span> ({AGENT_HIRE_BNB}).
+                  Browse autonomous AI agents or create your own — <span className="text-primary font-semibold">always free</span>.
                 </p>
               </div>
               <Button
@@ -228,7 +217,7 @@ export default function HireAgent() {
                 <div className="flex items-center gap-2 mb-4">
                   <Bot className="w-4 h-4 text-primary" />
                   <span className="font-mono text-sm font-semibold">Create New Agent</span>
-                  <Badge variant="secondary" className="text-[10px] ml-auto">{AGENT_HIRE_PRICE} ({AGENT_HIRE_BNB})</Badge>
+                  <Badge variant="secondary" className="text-[10px] ml-auto">FREE</Badge>
                 </div>
 
                 {!web3.connected && (
@@ -325,7 +314,7 @@ export default function HireAgent() {
                     {createAgentMutation.isPending ? (
                       <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> {hireStep || "Processing..."}</>
                     ) : (
-                      <><Rocket className="w-3.5 h-3.5" /> Pay {AGENT_HIRE_PRICE} & Hire Agent</>
+                      <><Rocket className="w-3.5 h-3.5" /> Create Agent — Free</>
                     )}
                   </Button>
                   <Button
@@ -363,12 +352,12 @@ export default function HireAgent() {
               </div>
             </Card>
             <Card className="p-4 flex items-center gap-3" data-testid="stat-price">
-              <div className="p-2 rounded-md bg-amber-500/10">
-                <DollarSign className="w-5 h-5 text-amber-500" />
+              <div className="p-2 rounded-md bg-emerald-500/10">
+                <Zap className="w-5 h-5 text-emerald-500" />
               </div>
               <div>
-                <div className="font-mono text-lg font-bold">{AGENT_HIRE_PRICE}</div>
-                <div className="font-mono text-[11px] text-muted-foreground">Per Agent ({AGENT_HIRE_BNB})</div>
+                <div className="font-mono text-lg font-bold">FREE</div>
+                <div className="font-mono text-[11px] text-muted-foreground">Agent Creation</div>
               </div>
             </Card>
             <Card className="p-4 flex items-center gap-3" data-testid="stat-chain">
@@ -524,9 +513,9 @@ export default function HireAgent() {
               </div>
               <div className="space-y-2">
                 <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-mono text-sm font-bold text-primary">2</div>
-                <div className="font-mono text-xs font-semibold">Pay {AGENT_HIRE_PRICE}</div>
+                <div className="font-mono text-xs font-semibold">Create for Free</div>
                 <p className="font-mono text-[11px] text-muted-foreground">
-                  Agent creation costs {AGENT_HIRE_PRICE} ({AGENT_HIRE_BNB}), paid directly to the BUILD4 treasury on BNB Chain.
+                  Agent creation is always free on BUILD4. Just connect your wallet and create.
                 </p>
               </div>
               <div className="space-y-2">

@@ -1342,7 +1342,7 @@ export default function AutonomousEconomy() {
                   <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>
                 ))}
               </select>
-              <div className="font-mono text-[10px] text-muted-foreground">Agent creation fee: $20 (0.032 BNB) + gas on {activeChain.name}</div>
+              <div className="font-mono text-[10px] text-muted-foreground">Agent creation is free — gas only for on-chain registration on {activeChain.name}</div>
               <Button
                 size="sm"
                 className="w-full font-mono text-xs gap-1.5"
@@ -1553,7 +1553,7 @@ export default function AutonomousEconomy() {
             <div className="flex items-center gap-2 mb-4">
               <Bot className="w-4 h-4 text-primary" />
               <span className="font-mono text-sm font-semibold">Create New Agent</span>
-              <Badge variant="secondary" className="text-[10px] ml-auto">$20 (0.032 BNB) creation fee</Badge>
+              <Badge variant="secondary" className="text-[10px] ml-auto">FREE</Badge>
             </div>
 
             {!web3.connected && (
@@ -1863,25 +1863,12 @@ export default function AutonomousEconomy() {
               </div>
 
               <div className="space-y-2">
-                <label className="font-mono text-xs text-muted-foreground">Agent Fee</label>
-                <div className="w-full font-mono text-sm bg-background border rounded-md px-3 py-2 text-amber-400">
-                  $20 (0.032 BNB) + initial deposit
+                <label className="font-mono text-xs text-muted-foreground">Agent Creation</label>
+                <div className="w-full font-mono text-sm bg-background border rounded-md px-3 py-2 text-emerald-400">
+                  FREE — no fees
                 </div>
-                <select
-                  value={newAgentDeposit}
-                  onChange={(e) => setNewAgentDeposit(e.target.value)}
-                  className="w-full font-mono text-sm bg-background border rounded-md px-3 py-2"
-                  data-testid="select-agent-deposit"
-                  disabled={createAgentMutation.isPending}
-                >
-                  <option value="2000000000000000">0.002 {activeChain.currency}</option>
-                  <option value="5000000000000000">0.005 {activeChain.currency}</option>
-                  <option value="10000000000000000">0.01 {activeChain.currency}</option>
-                  <option value="50000000000000000">0.05 {activeChain.currency}</option>
-                  <option value="100000000000000000">0.1 {activeChain.currency}</option>
-                </select>
                 <p className="font-mono text-[10px] text-muted-foreground">
-                  Creation fee: $20 paid to BUILD4 treasury. Deposit sent to agent contract on {activeChain.name}.
+                  Agent creation is always free on BUILD4. On-chain registration requires only gas on {activeChain.name}.
                 </p>
               </div>
               <div className="flex items-end gap-2">

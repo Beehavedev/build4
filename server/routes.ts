@@ -1168,7 +1168,7 @@ CRITICAL RULES:
 - The output quality is the #1 priority. Users judge BUILD4 by how good these previews look.
 
 AGENT MODE: If the user asks to build an AI agent (trading bot, security scanner, DeFi agent, etc.), respond with helpful text about agent types — the frontend handles agent configuration through an interactive card UI. Don't generate code for agents.
-Agent types: Trading, Research, Social, DeFi, Security, Sniper. Pricing: $20 (0.032 BNB) on BNB Chain, Base, or XLayer.`;
+Agent types: Trading, Research, Social, DeFi, Security, Sniper. Agent creation is always FREE.`;
 
       const result = await runInferenceWithFallback(
         providers,

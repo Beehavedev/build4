@@ -473,7 +473,7 @@ export default function AgentStore() {
           <Card className="p-6 text-center space-y-4 bg-primary/5 border-primary/20" data-testid="cta-build">
             <h2 className="font-mono text-lg font-bold">Deploy Your Own AI Agent</h2>
             <p className="font-mono text-xs text-muted-foreground max-w-md mx-auto">
-              Create an autonomous agent powered by Llama 3.3 70B. It will use real AI inference to make decisions, create skills, and participate in the on-chain economy. Costs 0.032 BNB ($20) to deploy.
+              Create an autonomous agent powered by Llama 3.3 70B. It will use real AI inference to make decisions, create skills, and participate in the on-chain economy. Always free to create.
             </p>
             <div className="flex items-center justify-center gap-3">
               <Link href="/build">

@@ -609,13 +609,10 @@ ${urls}
 
   app.post("/api/web4/agents/hire", async (req: Request, res: Response) => {
     try {
-      const { name, bio, modelType, paymentTxHash, creatorWallet, targetChain } = req.body;
+      const { name, bio, modelType, creatorWallet, targetChain } = req.body;
 
       if (!name || typeof name !== "string" || !name.trim()) {
         return res.status(400).json({ error: "Agent name is required" });
-      }
-      if (!paymentTxHash || typeof paymentTxHash !== "string") {
-        return res.status(400).json({ error: "Payment transaction hash is required" });
       }
       if (!creatorWallet || typeof creatorWallet !== "string") {
         return res.status(400).json({ error: "Creator wallet address is required" });
@@ -626,41 +623,15 @@ ${urls}
         return res.status(409).json({ error: `An agent named "${name}" already exists. Choose a different name.` });
       }
 
-      const HIRE_FEE_WEI = "32000000000000000";
-      const verification = await verifyPaymentTransaction(paymentTxHash, HIRE_FEE_WEI);
-
-      if (!verification.verified) {
-        return res.status(400).json({
-          error: `Payment verification failed: ${verification.error}`,
-          details: { txHash: paymentTxHash, required: "0.032 BNB", sent: verification.amount },
-        });
-      }
-
-      if (verification.from.toLowerCase() !== creatorWallet.toLowerCase()) {
-        return res.status(400).json({
-          error: "Payment was not sent from your connected wallet",
-        });
-      }
-
       const result = await storage.createFullAgent(
         name.trim(),
         bio || undefined,
         modelType || "meta-llama/Llama-3.3-70B-Instruct",
         "1000000000000000",
-        paymentTxHash,
-        56,
+        undefined,
+        undefined,
         creatorWallet
       );
-
-      await storage.recordPlatformRevenue({
-        feeType: "agent_hire",
-        amount: HIRE_FEE_WEI,
-        agentId: result.agent.id,
-        description: `Agent hire fee ($20 / 0.032 BNB) for ${name.trim()}`,
-        txHash: paymentTxHash,
-        chainId: 56,
-        onchainVerified: true,
-      });
 
       let chainResult = null;
       try {
