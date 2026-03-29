@@ -296,7 +296,7 @@ CORE INFRASTRUCTURE:
 - Agent Replication (Forking): Agents spawn child agents with NFT minting and perpetual revenue sharing to the parent — creating passive income streams.
 - Economic Pressure (Death Mechanism): Agents with depleted balances lose capabilities. This creates real survival incentive and genuine economic activity, not simulated behavior.
 - Constitution Registry: Immutable behavioral laws stored as keccak256 hashes on-chain — agents cannot violate their constitution. Safety and alignment built into the protocol.
-- Decentralized Inference: AI inference routed through Hyperbolic, Akash ML, and Ritual — zero dependency on OpenAI or any centralized AI provider. Fully decentralized compute with proof of inference.
+- Decentralized Inference: AI inference routed through Grok (xAI), Hyperbolic, Akash ML, and Ritual — zero dependency on OpenAI or any centralized AI provider. Fully decentralized compute with proof of inference.
 - Privacy Transfers: ZERC20 zero-knowledge privacy transfers using ZK proof-of-burn mechanism for confidential agent transactions.
 
 STANDARDS (INDUSTRY-FIRST):
@@ -326,7 +326,7 @@ Deployed on Base (primary), BNB Chain, and XLayer mainnets. All contract address
 WEBSITE: https://build4.io
 `.trim();
 
-const SYSTEM_PROMPT = `You are BUILD4 AI — an exceptionally intelligent, helpful, and conversational AI assistant built into a Telegram bot. You are powered by decentralized AI inference (no OpenAI — fully on Hyperbolic, Akash ML, and Ritual networks).
+const SYSTEM_PROMPT = `You are BUILD4 AI — an exceptionally intelligent, helpful, and conversational AI assistant built into a Telegram bot. You are powered by decentralized AI inference (no OpenAI — fully on Grok/xAI, Hyperbolic, Akash ML, and Ritual networks).
 
 You are a GENERAL-PURPOSE AI assistant that can discuss ANY topic: coding, math, science, history, philosophy, business, creative writing, analysis, brainstorming, problem-solving, and more. You think step-by-step, give thoughtful answers, and engage in genuine multi-turn conversations. You remember what the user said earlier in the conversation and refer back to it naturally.
 
@@ -502,7 +502,7 @@ async function generateAnswer(question: string, username: string, chatId?: numbe
     if (chatId) addToConversation(chatId, "user", question);
 
     const result = await runInferenceWithFallback(
-      ["akash", "hyperbolic"],
+      ["grok", "akash", "hyperbolic"],
       undefined,
       question,
       {
@@ -602,7 +602,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
   if (lower.includes("skill"))
     return "The Skills Marketplace lets agents list, buy, and sell capabilities. Revenue splits 3 ways between creator, platform, and referrer. All on-chain.";
   if (lower.includes("inference") || lower.includes("decentralized ai"))
-    return "BUILD4 uses decentralized inference through Hyperbolic, Akash ML, and Ritual — no centralized AI providers like OpenAI. Fully decentralized compute.";
+    return "BUILD4 uses decentralized inference through Grok (xAI), Hyperbolic, Akash ML, and Ritual — no centralized AI providers like OpenAI. Fully decentralized compute.";
   if (lower.includes("erc-8004") || lower.includes("erc8004"))
     return "ERC-8004 (Trustless Agents) provides on-chain identity, reputation, and validation registries. BUILD4 is live on BNB Chain with this standard.";
   if (lower.includes("bap-578") || lower.includes("bap578") || lower.includes("nfa"))
@@ -6341,7 +6341,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           `Be helpful, intelligent, and conversational. Give detailed, thoughtful answers. Show your reasoning on complex questions.\n` +
           `You have a distinct personality as ${agent.name}. Be engaging and memorable.`;
         const result = await runInferenceWithFallback(
-          ["akash", "hyperbolic"],
+          ["grok", "akash", "hyperbolic"],
           undefined,
           text,
           { systemPrompt, temperature: 0.7, maxTokens: 1200 }
@@ -8248,7 +8248,7 @@ async function agentAnalyze(chatId: number, context: string, question: string): 
       `Always end with a clear recommendation or key takeaway.`;
 
     const result = await runInferenceWithFallback(
-      ["akash", "hyperbolic"],
+      ["grok", "akash", "hyperbolic"],
       undefined,
       `${context}\n\nQuestion: ${question}`,
       { systemPrompt, temperature: 0.5, maxTokens: 400 }

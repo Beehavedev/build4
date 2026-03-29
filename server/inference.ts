@@ -45,6 +45,18 @@ const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
     ],
     requiresAuth: true,
   },
+  grok: {
+    network: "grok",
+    baseUrl: "https://api.x.ai/v1",
+    apiKeyEnv: "XAI_API_KEY",
+    defaultModel: "grok-3-mini",
+    models: [
+      "grok-3-mini",
+      "grok-3",
+      "grok-2",
+    ],
+    requiresAuth: true,
+  },
   ritual: {
     network: "ritual",
     baseUrl: process.env.RITUAL_NODE_URL || "http://localhost:4000",
