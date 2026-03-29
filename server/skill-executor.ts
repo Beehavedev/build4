@@ -31,6 +31,44 @@ const WHITELISTED_FETCH_DOMAINS = [
   "api.alternative.me",
 ];
 
+function createSkillAI(): (model: string, systemPrompt: string, userMessage: string, options?: { maxTokens?: number; temperature?: number }) => Promise<string> {
+  return async (model: string, systemPrompt: string, userMessage: string, options?: { maxTokens?: number; temperature?: number }): Promise<string> => {
+    try {
+      const { runInferenceWithFallback } = await import("./inference");
+      const result = await runInferenceWithFallback(
+        ["akash", "hyperbolic"],
+        model || undefined,
+        userMessage,
+        {
+          systemPrompt,
+          temperature: options?.temperature ?? 0.7,
+          maxTokens: options?.maxTokens ?? 1000,
+        }
+      );
+      if (result.live && result.text) {
+        return result.text;
+      }
+      return "[AI_UNAVAILABLE] Inference providers are temporarily offline.";
+    } catch (e: any) {
+      return `[AI_ERROR] ${e.message?.substring(0, 200) || "Unknown error"}`;
+    }
+  };
+}
+
+function createSkillAIJson(): (model: string, systemPrompt: string, userMessage: string) => Promise<any> {
+  const aiChat = createSkillAI();
+  return async (model: string, systemPrompt: string, userMessage: string): Promise<any> => {
+    const raw = await aiChat(model, systemPrompt + "\nRespond ONLY with valid JSON. No markdown, no code blocks.", userMessage, { temperature: 0.1 });
+    if (raw.startsWith("[AI_")) return { error: raw };
+    try {
+      const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      return JSON.parse(cleaned);
+    } catch {
+      return { raw, parseError: "Failed to parse AI response as JSON" };
+    }
+  };
+}
+
 function createSandboxFetch(timeout = 5000): (url: string) => Promise<any> {
   return async (url: string) => {
     try {
@@ -225,7 +263,7 @@ export function executeSkillWithExternalData(code: string, input: Record<string,
   return executeSkillCode(code, input, inputSchemaStr, externalData);
 }
 
-const ASYNC_TIMEOUT_MS = 8000;
+const ASYNC_TIMEOUT_MS = 30000;
 
 export async function executeSkillAsync(code: string, input: Record<string, any>, inputSchemaStr: string | null, externalData?: Record<string, any>): Promise<ExecutionResult> {
   const start = Date.now();
@@ -257,6 +295,8 @@ export async function executeSkillAsync(code: string, input: Record<string, any>
       __INPUT__: JSON.parse(JSON.stringify(input)),
       __EXT_DATA__: JSON.parse(JSON.stringify(externalData || {})),
       safeFetch: sandboxFetch,
+      aiChat: createSkillAI(),
+      aiJson: createSkillAIJson(),
     };
 
     const context = vm.createContext(contextVars);
