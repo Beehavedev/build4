@@ -527,9 +527,9 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
       });
       response += "\n";
       response += "💡 Which chain to fund:\n";
+      response += "• ETH (Base) → for Bankr launches & $BUILD4 token ⭐\n";
       response += "• BNB → for Four.meme / Flap.sh launches & trading\n";
-      response += "• OKB → for XLayer token launches\n";
-      response += "• ETH (Base) → for Bankr launches\n\n";
+      response += "• OKB → for XLayer token launches\n\n";
       response += "Same wallet address works across all EVM chains. Just send to the right network!\n\n";
       response += "Use /wallet to manage your wallets or /launch when you're ready.";
       return response;
@@ -539,7 +539,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
   }
 
   if (isFundingQuestion) {
-    return "To fund your wallet, first make sure you have one — use /start or /wallet.\n\nThen send crypto to your wallet address on the right chain:\n• BNB → for Four.meme / Flap.sh launches\n• OKB → for XLayer launches\n• ETH (Base) → for Bankr launches\n\nSame wallet address, just pick the right network!";
+    return "To fund your wallet, first make sure you have one — use /start or /wallet.\n\nThen send crypto to your wallet address on the right chain:\n• ETH (Base) → for Bankr launches & $BUILD4 token ⭐\n• BNB → for Four.meme / Flap.sh launches\n• OKB → for XLayer launches\n\nSame wallet address, just pick the right network!";
   }
 
   if (lower.includes("what is build4") || lower.includes("what's build4") || lower.includes("about build4"))
@@ -575,13 +575,13 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
   if (lower.includes("contract") || lower.includes("smart contract"))
     return "BUILD4 has 4 core contracts: AgentEconomyHub (wallets), SkillMarketplace (skill trading), AgentReplication (forking + NFTs), and ConstitutionRegistry (immutable agent laws).";
   if (lower.includes("token") && (lower.includes("launch") || lower.includes("create")))
-    return "You can launch tokens on Four.meme, Flap.sh (BNB Chain), XLayer, or Bankr (Base/Solana) right here in the bot! Use /launch or tap '🚀 Launch Token' from the menu.";
+    return "You can launch tokens on Bankr (Base/Solana), Four.meme, Flap.sh (BNB Chain), or XLayer right here in the bot! Use /launch or tap '🚀 Launch Token' from the menu.";
   if (lower.includes("agent") && (lower.includes("create") || lower.includes("make") || lower.includes("new")))
     return "Create an AI agent with /newagent — give it a name, bio, and pick a model (Llama 70B, DeepSeek V3, or Qwen 72B). Your agent gets its own wallet and can trade skills, earn BNB, and evolve autonomously.";
   if (lower.includes("how") && lower.includes("start"))
     return "Getting started is easy:\n1. Create a wallet (tap 🔑 Create New Wallet)\n2. Fund it with some BNB, OKB, or ETH\n3. Create an agent with /newagent\n4. Launch tokens with /launch\n\nThat's it — you're in the autonomous economy!";
   if (lower.includes("price") || (lower.includes("token") && !lower.includes("launch")) || lower.includes("buy"))
-    return "BUILD4 is infrastructure, not a token. We power autonomous AI agents on-chain. Agents can launch their own tokens on Four.meme, Flap.sh, XLayer, or Bankr though! Use /launch to try it.";
+    return "BUILD4 is infrastructure, not a token — but $BUILD4 token is launching on Base via Bankr! Agents can also launch their own tokens on Bankr, Four.meme, Flap.sh, or XLayer. Use /launch to try it.";
   if (lower.includes("hello") || lower.includes("hi") || lower.includes("hey") || lower.includes("gm") || lower === "yo") {
     if (chatId) {
       const wallets = getUserWallets(chatId);
@@ -1907,7 +1907,7 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
 
     bot.setMyCommands([
       { command: "start", description: "Start BUILD4 and create a wallet" },
-      { command: "launch", description: "Launch a token on Four.meme or Flap.sh" },
+      { command: "launch", description: "Launch a token on Bankr (Base), Four.meme, or Flap.sh" },
       { command: "swap", description: "Swap tokens on any chain" },
       { command: "bridge", description: "Cross-chain bridge" },
       { command: "signals", description: "Smart money & whale buy signals" },
@@ -5357,10 +5357,10 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       {
         reply_markup: {
           inline_keyboard: [
+            [{ text: "🔵 Bankr (Base/Solana) ⭐", callback_data: `launchplatform:${agentId}:bankr` }],
             [{ text: "Four.meme (BNB Chain)", callback_data: `launchplatform:${agentId}:four_meme` }],
             [{ text: "Flap.sh (BNB Chain)", callback_data: `launchplatform:${agentId}:flap_sh` }],
             [{ text: "XLayer (OKX)", callback_data: `launchplatform:${agentId}:xlayer` }],
-            [{ text: "Bankr (Base/Solana)", callback_data: `launchplatform:${agentId}:bankr` }],
             [{ text: "Cancel", callback_data: "action:menu" }],
           ]
         }
@@ -8214,21 +8214,24 @@ async function handleMyAgents(chatId: number, wallet: string): Promise<void> {
 
     const lines = myAgents.map(a => {
       const model = shortModel(a.modelType || "unknown");
-      let onchainLine = "";
+      const statusEmoji = a.status === "active" ? "🟢" : a.status === "dead" ? "💀" : "🟡";
+      const statusText = a.status === "active" ? "Active" : a.status === "dead" ? "Dead" : (a.status || "Active");
+      let chainLine = "";
       if (a.erc8004Registered) {
-        const chain = a.erc8004Chain === "base" ? "Base" : (a.erc8004Chain || "Base");
-        const explorer = a.erc8004Chain === "base" ? "basescan.org" : "bscscan.com";
-        onchainLine = `   ⛓️ On-Chain: 🟢 ERC-8004 (${chain})`;
+        const chain = a.erc8004Chain === "base" ? "Base" : a.erc8004Chain === "bnb" ? "BNB Chain" : (a.erc8004Chain || "Base");
+        const explorer = a.erc8004Chain === "base" ? "basescan.org" : a.erc8004Chain === "bnb" ? "bscscan.com" : "basescan.org";
+        chainLine = `   ⛓️ Chain: *${chain}*`;
+        chainLine += `\n   📜 On-Chain: 🟢 ERC-8004 Verified`;
         if (a.erc8004TokenId) {
-          onchainLine += `\n   🆔 Token ID: ${a.erc8004TokenId}`;
+          chainLine += ` (#${a.erc8004TokenId})`;
         }
         if (a.erc8004TxHash) {
-          onchainLine += `\n   🔗 [Verify on ${explorer}](https://${explorer}/tx/${a.erc8004TxHash})`;
+          chainLine += `\n   🔗 [Proof → ${explorer}](https://${explorer}/tx/${a.erc8004TxHash})`;
         }
       } else {
-        onchainLine = `   ⛓️ On-Chain: 🔴 Not registered`;
+        chainLine = `   ⛓️ Chain: _Not registered yet_\n   📜 On-Chain: 🔴 Not verified`;
       }
-      return `🤖 *${a.name}*\n   Model: ${model}\n   Bio: _${(a.bio || "AI trading agent").substring(0, 80)}_\n${onchainLine}\n   Status: 🟢 Active`;
+      return `🤖 *${a.name}*\n   ${statusEmoji} Status: *${statusText}*\n   🧠 Model: ${model}\n${chainLine}`;
     });
 
     const buttons: Array<Array<any>> = [];
@@ -8604,10 +8607,10 @@ async function startTokenLaunchFlow(chatId: number, wallet: string): Promise<voi
         {
           reply_markup: {
             inline_keyboard: [
+              [{ text: "🔵 Bankr (Base/Solana) ⭐", callback_data: `launchplatform:${agent.id}:bankr` }],
               [{ text: "Four.meme (BNB Chain)", callback_data: `launchplatform:${agent.id}:four_meme` }],
               [{ text: "Flap.sh (BNB Chain)", callback_data: `launchplatform:${agent.id}:flap_sh` }],
               [{ text: "XLayer (OKX)", callback_data: `launchplatform:${agent.id}:xlayer` }],
-              [{ text: "Bankr (Base/Solana)", callback_data: `launchplatform:${agent.id}:bankr` }],
               [{ text: "Cancel", callback_data: "action:menu" }],
             ]
           }
