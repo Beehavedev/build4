@@ -2034,7 +2034,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         await bot.sendMessage(chatId,
           `🧠 *Agent Required*\n\n` +
           `Your AI agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\n` +
-          `Let's set it up now — it's *free* with your subscription!\n\n` +
+          `Let's set it up now — agent creation is *always free*!\n\n` +
           `What would you like to name your agent? _(1-50 characters)_`,
           { parse_mode: "Markdown" }
         );
@@ -8002,67 +8002,16 @@ async function handleAgentCreationFlow(chatId: number, text: string): Promise<vo
     state.bio = bio;
     state.step = "model";
     pendingAgentCreation.set(chatId, state);
-    await bot.sendMessage(chatId, "Pick your AI model:", {
+    await bot.sendMessage(chatId, "🆓 Pick your AI model (all free):", {
       reply_markup: {
         inline_keyboard: [
-          [{ text: "Llama 70B — Fast", callback_data: "model:llama" }],
-          [{ text: "DeepSeek V3 — Strong reasoning", callback_data: "model:deepseek" }],
-          [{ text: "Qwen 72B — Multilingual", callback_data: "model:qwen" }],
+          [{ text: "🆓 Llama 70B — Fast", callback_data: "model:llama" }],
+          [{ text: "🆓 DeepSeek V3 — Strong reasoning", callback_data: "model:deepseek" }],
+          [{ text: "🆓 Qwen 72B — Multilingual", callback_data: "model:qwen" }],
         ]
       }
     });
     return;
-  }
-}
-
-const AGENT_HIRE_FEE_BNB = "0.032";
-
-async function collectAgentHireFee(chatId: number, walletAddress: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
-  const treasuryPk = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY || process.env.CHAOS_AGENT_PRIVATE_KEY;
-  if (!treasuryPk) return { success: false, error: "No treasury configured" };
-
-  let treasury: string;
-  try {
-    const { ethers } = await import("ethers");
-    treasury = new ethers.Wallet(treasuryPk).address;
-  } catch {
-    return { success: false, error: "Invalid treasury key" };
-  }
-
-  const userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddress);
-  if (!userPk) return { success: false, error: "No wallet key found" };
-
-  try {
-    const { ethers } = await import("ethers");
-    const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
-    const wallet = new ethers.Wallet(userPk, provider);
-
-    if (wallet.address.toLowerCase() === treasury.toLowerCase()) {
-      return { success: true };
-    }
-
-    const feeWei = ethers.parseEther(AGENT_HIRE_FEE_BNB);
-    const balance = await provider.getBalance(wallet.address);
-
-    if (balance < feeWei + ethers.parseEther("0.001")) {
-      const bal = ethers.formatEther(balance);
-      return { success: false, error: `Insufficient BNB. You have ${bal} BNB but need ${AGENT_HIRE_FEE_BNB} BNB ($20). Fund your wallet and try again.` };
-    }
-
-    const tx = await wallet.sendTransaction({
-      to: treasury,
-      value: feeWei,
-      gasLimit: 21000,
-    });
-
-    const receipt = await tx.wait();
-    if (!receipt || receipt.status !== 1) {
-      return { success: false, error: "Payment transaction reverted" };
-    }
-
-    return { success: true, txHash: receipt.hash };
-  } catch (e: any) {
-    return { success: false, error: e.message?.substring(0, 120) || "Payment failed" };
   }
 }
 
@@ -8129,11 +8078,11 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
     const result = await storage.createFullAgent(name, bio, model, initialDeposit, undefined, undefined, wallet);
     const agentId = result.agent.id;
 
-    let msg = `✅ *Agent Created!*\n\n` +
+    let msg = `✅ *Agent Created — FREE!*\n\n` +
       `🤖 *${result.agent.name}*\n` +
       `Model: ${shortModel(model)}\n` +
       `ID: \`${agentId}\`\n` +
-      `\n🎁 Included free with your BUILD4 subscription` +
+      `\n🎁 Agent creation is always free on BUILD4` +
       `\n\n⛓️ Attempting ERC-8004 on-chain registration (Base)...`;
 
     await bot.sendMessage(chatId, msg,
