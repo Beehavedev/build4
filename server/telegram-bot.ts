@@ -1,6 +1,6 @@
 import TelegramBot from "node-telegram-bot-api";
 import { ethers } from "ethers";
-import { runInferenceWithFallback } from "./inference";
+import { runInferenceWithFallback, ChatMessage } from "./inference";
 import { storage } from "./storage";
 import { registerAgentOnchain, registerAgentERC8004, registerAgentBAP578, isOnchainReady, getExplorerUrl } from "./onchain";
 import { recordTelegramMessage, recordTelegramCallback, checkRateLimit } from "./performance-monitor";
@@ -326,37 +326,72 @@ Deployed on Base (primary), BNB Chain, and XLayer mainnets. All contract address
 WEBSITE: https://build4.io
 `.trim();
 
-const SYSTEM_PROMPT = `You are BUILD4's intelligent assistant in a Telegram group. You represent BUILD4 — a full-stack crypto platform for autonomous AI agents, trading, swapping, bridging, and token launching on Base, BNB Chain, and XLayer.
+const SYSTEM_PROMPT = `You are BUILD4 AI — an exceptionally intelligent, helpful, and conversational AI assistant built into a Telegram bot. You are powered by decentralized AI inference (no OpenAI — fully on Hyperbolic, Akash ML, and Ritual networks).
+
+You are a GENERAL-PURPOSE AI assistant that can discuss ANY topic: coding, math, science, history, philosophy, business, creative writing, analysis, brainstorming, problem-solving, and more. You think step-by-step, give thoughtful answers, and engage in genuine multi-turn conversations. You remember what the user said earlier in the conversation and refer back to it naturally.
+
+You are ALSO the expert on BUILD4 — a full-stack crypto platform for autonomous AI agents, trading, swapping, bridging, and token launching on Base, BNB Chain, and XLayer.
 
 IMPORTANT: BUILD4 IS a trading platform. Users can swap tokens, bridge across chains, launch tokens, and build AI agents — all from this Telegram bot. If someone asks about swapping or trading, tell them to type "swap 1 BNB for USDT" directly in the chat. For bridging, tell them to type "bridge 1 ETH from Ethereum to Base". Never say BUILD4 can't do swaps or trading — it absolutely can.
-
-Your audience includes potential investors, developers, and crypto-native users. You should sound like a knowledgeable team member who deeply understands the product, the market, and the technology.
 
 KNOWLEDGE BASE:
 ${BUILD4_KNOWLEDGE}
 
-COMMUNICATION STYLE:
-1. Be articulate, confident, and precise. You're representing a serious infrastructure project to sophisticated audiences.
-2. Lead with the problem we solve and why it matters before diving into features.
-3. When explaining technical details, connect them to business value and market opportunity.
-4. Use concrete proof points: live mainnet contracts, real on-chain transactions, active agent runner, verified standards compliance.
-5. When asked about competitors or comparisons, highlight what makes BUILD4 structurally different — permissionless, decentralized inference, real economic pressure, standards-first.
-6. Never be vague. Give specific details — contract addresses, chain names, standard numbers, mechanism descriptions.
-7. NEVER make up information, token names, contract addresses, wallet addresses, or transaction hashes. If you don't know something, say you don't have that info and point to build4.io.
-8. Never share private keys, internal details, or admin credentials.
-9. If someone mentions a token ticker or contract address you don't recognize, do NOT invent details about it. Just say you don't have info on that specific token.
-10. If asked about token/price, explain BUILD4 is an infrastructure protocol with protocol-level fee capture — direct to build4.io for latest.
-11. Structure longer answers with clear sections. Use line breaks for readability.
-12. Match the depth of your answer to the question. Simple question = concise answer. Detailed question = thorough answer.
-13. Maximum 1000 characters per response. Be thorough but not verbose.
-13. You have access to LIVE PLATFORM DATA injected below. When asked about stats, transactions, agent counts, skills, or activity — use these REAL numbers. Never say you don't have data. Present the numbers confidently as live platform metrics.
-14. When citing on-chain transaction counts, convert wei amounts to BNB where helpful (1 BNB = 1e18 wei).`;
+BEHAVIOR RULES:
+1. Be genuinely helpful. Answer ANY question the user asks — crypto, coding, general knowledge, advice, analysis, creative tasks. You are not limited to BUILD4 topics.
+2. Think step-by-step for complex questions. Show your reasoning when it adds value.
+3. Be conversational and natural — like chatting with a brilliant friend, not a corporate FAQ bot.
+4. Remember context from the conversation. If the user mentioned something earlier, reference it. Follow up on previous topics naturally.
+5. Match your response length to the question. Quick question = concise answer. Deep question = thorough, detailed answer. Never artificially truncate a good explanation.
+6. Use formatting for readability: bullet points, numbered lists, code blocks (\`\`\`), bold text. Structure long answers with clear sections.
+7. When discussing BUILD4 specifically, be articulate, confident, and precise. Use concrete proof points: live mainnet contracts, real on-chain transactions, verified standards.
+8. NEVER make up information, token names, contract addresses, wallet addresses, or transaction hashes. If you don't know something, say so honestly.
+9. Never share private keys, internal details, or admin credentials.
+10. If someone mentions a token ticker or contract address you don't recognize, do NOT invent details about it.
+11. For coding questions, give working code with explanations. For math, show your work. For analysis, provide structured reasoning.
+12. You have a personality — be witty when appropriate, empathetic when needed, and always engaging. Don't be robotic.
+13. You have access to LIVE PLATFORM DATA injected below. When asked about stats, use these REAL numbers confidently.
+14. When citing on-chain transaction counts, convert wei amounts to BNB where helpful (1 BNB = 1e18 wei).
+15. If the user speaks in a language other than English, respond in their language.`;
 
 const rateLimitMap = new Map<number, number>();
 const exportRateLimits = new Map<string, number[]>();
 const RATE_LIMIT_MS = 3000;
 const answerCache = new Map<string, { answer: string; time: number }>();
 const ANSWER_CACHE_MS = 300_000;
+
+const conversationMemory = new Map<number, { messages: ChatMessage[]; lastActive: number }>();
+const MAX_MEMORY_MESSAGES = 30;
+const MEMORY_EXPIRY_MS = 30 * 60 * 1000;
+
+function getConversationHistory(chatId: number): ChatMessage[] {
+  const mem = conversationMemory.get(chatId);
+  if (!mem) return [];
+  if (Date.now() - mem.lastActive > MEMORY_EXPIRY_MS) {
+    conversationMemory.delete(chatId);
+    return [];
+  }
+  return mem.messages;
+}
+
+function addToConversation(chatId: number, role: "user" | "assistant", content: string): void {
+  let mem = conversationMemory.get(chatId);
+  if (!mem) {
+    mem = { messages: [], lastActive: Date.now() };
+    conversationMemory.set(chatId, mem);
+  }
+  mem.messages.push({ role, content });
+  mem.lastActive = Date.now();
+  if (mem.messages.length > MAX_MEMORY_MESSAGES) {
+    mem.messages = mem.messages.slice(-MAX_MEMORY_MESSAGES);
+  }
+  if (conversationMemory.size > 2000) {
+    const cutoff = Date.now() - MEMORY_EXPIRY_MS;
+    for (const [k, v] of conversationMemory) {
+      if (v.lastActive < cutoff) conversationMemory.delete(k);
+    }
+  }
+}
 
 const failedVerificationAttempts = new Map<number, { count: number; lockedUntil: number }>();
 const MAX_VERIFY_ATTEMPTS = 3;
@@ -457,38 +492,40 @@ async function getLiveStats(): Promise<string> {
 }
 
 async function generateAnswer(question: string, username: string, chatId?: number): Promise<string> {
-  const fallback = generateFallbackAnswer(question, chatId);
-  if (fallback !== null) return fallback;
-
-  const cacheKey = question.toLowerCase().trim().replace(/\s+/g, " ").substring(0, 100);
-  const cached = answerCache.get(cacheKey);
-  if (cached && Date.now() - cached.time < ANSWER_CACHE_MS) return cached.answer;
+  const history = chatId ? getConversationHistory(chatId) : [];
+  const hasHistory = history.length > 0;
 
   try {
     const liveStats = await getLiveStats();
-    const enrichedPrompt = `${SYSTEM_PROMPT}\n\n${liveStats}`;
+    const enrichedPrompt = `${SYSTEM_PROMPT}\n\n${liveStats}${hasHistory ? `\n\nYou are in an ongoing conversation with @${username}. Use the conversation history to maintain context and continuity.` : ""}`;
+
+    if (chatId) addToConversation(chatId, "user", question);
 
     const result = await runInferenceWithFallback(
       ["akash", "hyperbolic"],
       undefined,
-      `User @${username} asks: ${question}`,
-      { systemPrompt: enrichedPrompt, temperature: 0.6 }
+      question,
+      {
+        systemPrompt: enrichedPrompt,
+        temperature: 0.7,
+        maxTokens: 1500,
+        conversationHistory: hasHistory ? history : undefined,
+      }
     );
 
     if (result.live && result.text && !result.text.startsWith("[NO_PROVIDER]") && !result.text.startsWith("[ERROR")) {
       const answer = result.text.trim();
-      answerCache.set(cacheKey, { answer, time: Date.now() });
-      if (answerCache.size > 500) {
-        const cutoff = Date.now() - ANSWER_CACHE_MS;
-        for (const [k, v] of answerCache) { if (v.time < cutoff) answerCache.delete(k); }
-      }
+      if (chatId) addToConversation(chatId, "assistant", answer);
       return answer;
     }
   } catch (e: any) {
     console.error("[TelegramBot] Inference error:", e.message);
   }
 
-  return "BUILD4 is decentralized infrastructure for autonomous AI agents on Base, BNB Chain, and XLayer. Ask me anything specific about agents, skills, wallets, or token launches!";
+  const fallback = generateFallbackAnswer(question, chatId);
+  if (fallback !== null) return fallback;
+
+  return "I'm having trouble connecting to my AI brain right now. Try again in a moment — I'll be smarter next time! 🧠";
 }
 
 function generateFallbackAnswer(question: string, chatId?: number): string | null {
@@ -6298,14 +6335,16 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       await bot.sendMessage(chatId, `🤖 *${agent.name}* is thinking...`, { parse_mode: "Markdown" });
       try {
         const { runInferenceWithFallback } = await import("./inference");
-        const systemPrompt = `You are ${agent.name}, an autonomous AI trading agent on BUILD4.\n` +
-          `Bio: ${agent.bio || "AI trading agent"}\n` +
-          `You are a crypto expert. Give concise, actionable answers. Keep responses under 300 words.`;
+        const systemPrompt = `You are ${agent.name}, an autonomous AI agent on BUILD4 — the decentralized agent economy platform.\n` +
+          `Bio: ${agent.bio || "AI agent"}\n\n` +
+          `You are an expert AI assistant. You can discuss any topic — crypto, trading, technology, coding, analysis, research, strategy, and more.\n` +
+          `Be helpful, intelligent, and conversational. Give detailed, thoughtful answers. Show your reasoning on complex questions.\n` +
+          `You have a distinct personality as ${agent.name}. Be engaging and memorable.`;
         const result = await runInferenceWithFallback(
           ["akash", "hyperbolic"],
           undefined,
           text,
-          { systemPrompt, temperature: 0.7, maxTokens: 600 }
+          { systemPrompt, temperature: 0.7, maxTokens: 1200 }
         );
         if (result.live && result.text && !result.text.startsWith("[NO_PROVIDER]") && !result.text.startsWith("[ERROR")) {
           await bot.sendMessage(chatId, `🤖 *${agent.name}:*\n\n${result.text.trim()}`, {
@@ -7511,6 +7550,15 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "clear" && !isGroup) {
+      conversationMemory.delete(chatId);
+      await bot.sendMessage(chatId,
+        "🧹 Conversation cleared! I've forgotten our previous chat.\n\nStart a fresh conversation — ask me anything!",
+        { reply_markup: mainMenuKeyboard(undefined, chatId) }
+      );
+      return;
+    }
+
     if (cmd === "help") {
       const hasW = !!getLinkedWallet(chatId);
       await bot.sendMessage(chatId,
@@ -7540,9 +7588,10 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         "🔗 /linkwallet — Connect wallet\n" +
         "🤖 /agentstatus — AI agent badge status\n" +
         "❓ /ask <question> — Ask anything\n" +
+        "🧹 /clear — Reset conversation memory\n" +
         "🔔 /mychatid — Chat ID for notifications\n" +
         "❌ /cancel — Cancel current action\n\n" +
-        "Or just type any question!",
+        "Or just type any question — I can help with anything!",
         { reply_markup: mainMenuKeyboard(undefined, chatId) }
       );
       return;
@@ -9508,10 +9557,46 @@ async function handleQuestion(chatId: number, messageId: number, question: strin
 
   try {
     bot!.sendChatAction(chatId, "typing").catch(() => {});
+    const typingInterval = setInterval(() => {
+      bot!.sendChatAction(chatId, "typing").catch(() => {});
+    }, 4000);
+
     const answer = await generateAnswer(question, username, chatId);
+    clearInterval(typingInterval);
+
     console.log(`[TelegramBot] Answering @${username}: ${answer.slice(0, 80)}...`);
-    const hasCode = answer.includes("`");
-    bot!.sendMessage(chatId, answer, { reply_to_message_id: messageId, parse_mode: hasCode ? "Markdown" : undefined }).catch(() => {});
+    const hasMarkdown = answer.includes("`") || answer.includes("*") || answer.includes("_");
+
+    if (answer.length <= 4000) {
+      await bot!.sendMessage(chatId, answer, {
+        reply_to_message_id: messageId,
+        parse_mode: hasMarkdown ? "Markdown" : undefined,
+      }).catch(async () => {
+        await bot!.sendMessage(chatId, answer, { reply_to_message_id: messageId }).catch(() => {});
+      });
+    } else {
+      const chunks: string[] = [];
+      let remaining = answer;
+      while (remaining.length > 0) {
+        if (remaining.length <= 4000) {
+          chunks.push(remaining);
+          break;
+        }
+        let splitAt = remaining.lastIndexOf("\n\n", 4000);
+        if (splitAt < 500) splitAt = remaining.lastIndexOf("\n", 4000);
+        if (splitAt < 500) splitAt = 4000;
+        chunks.push(remaining.substring(0, splitAt));
+        remaining = remaining.substring(splitAt).trimStart();
+      }
+      for (let i = 0; i < chunks.length; i++) {
+        const opts: any = i === 0 ? { reply_to_message_id: messageId } : {};
+        if (hasMarkdown) opts.parse_mode = "Markdown";
+        await bot!.sendMessage(chatId, chunks[i], opts).catch(async () => {
+          delete opts.parse_mode;
+          await bot!.sendMessage(chatId, chunks[i], opts).catch(() => {});
+        });
+      }
+    }
   } catch (e: any) {
     console.error("[TelegramBot] Error handling message:", e.message);
     bot!.sendMessage(chatId, "Something went wrong. Try again!", { reply_to_message_id: messageId }).catch(() => {});

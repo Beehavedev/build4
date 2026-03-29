@@ -91,13 +91,18 @@ function generateProofHash(prompt: string, response: string, model: string): str
   return "0x" + crypto.createHash("sha256").update(data).digest("hex");
 }
 
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
 async function callOpenAICompatible(
   baseUrl: string,
   apiKey: string | undefined,
   model: string,
   prompt: string,
   maxTokens: number = 512,
-  options?: { systemPrompt?: string; temperature?: number }
+  options?: { systemPrompt?: string; temperature?: number; conversationHistory?: ChatMessage[] }
 ): Promise<{ text: string; tokensUsed: number; latencyMs: number }> {
   const start = Date.now();
 
@@ -111,6 +116,11 @@ async function callOpenAICompatible(
   const messages: Array<{ role: string; content: string }> = [];
   if (options?.systemPrompt) {
     messages.push({ role: "system", content: options.systemPrompt });
+  }
+  if (options?.conversationHistory && options.conversationHistory.length > 0) {
+    for (const msg of options.conversationHistory) {
+      messages.push({ role: msg.role, content: msg.content });
+    }
   }
   messages.push({ role: "user", content: prompt });
 
@@ -161,7 +171,7 @@ export async function runInference(
   network: string,
   model: string | undefined,
   prompt: string,
-  options?: { systemPrompt?: string; temperature?: number; maxTokens?: number }
+  options?: { systemPrompt?: string; temperature?: number; maxTokens?: number; conversationHistory?: ChatMessage[] }
 ): Promise<InferenceResult> {
   const config = PROVIDER_CONFIGS[network];
   if (!config) {
@@ -209,7 +219,7 @@ export async function runInferenceWithFallback(
   preferredNetworks: string[],
   model: string | undefined,
   prompt: string,
-  options?: { systemPrompt?: string; temperature?: number; maxTokens?: number }
+  options?: { systemPrompt?: string; temperature?: number; maxTokens?: number; conversationHistory?: ChatMessage[] }
 ): Promise<InferenceResult & { network: string }> {
   for (const network of preferredNetworks) {
     if (isProviderLive(network)) {
