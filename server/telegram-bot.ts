@@ -6898,29 +6898,37 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           }
 
           if (!crossChainSuccess) {
-            const fallbackTo = srcTokens.find(t => t.symbol === toUpper) ? toUpper : null;
-            const stableOnSrc = srcTokens.find(t => t.symbol === "USDT" || t.symbol === "USDC");
-            const fallbackSymbol = fallbackTo || stableOnSrc?.symbol;
-            if (fallbackSymbol) {
-              const fallbackToken = srcTokens.find(t => t.symbol === fallbackSymbol)!;
-              const rawAmt = parseHumanAmount(amount, srcToken.decimals);
-              await bot.sendMessage(chatId, `🔄 Getting quote: ${amount} ${fromUpper} → ${fallbackSymbol} on ${srcChain!.name}...`);
-              sendTyping(chatId);
-              try {
-                const { getSwapQuote } = await import("./okx-onchainos");
-                const quote = await getSwapQuote({ chainId: srcChainId, fromTokenAddress: srcToken.address, toTokenAddress: fallbackToken.address, amount: rawAmt, slippage: "1" });
-                const receiveAmt = quote?.data?.[0]?.toTokenAmount ? formatTokenAmount(quote.data[0].toTokenAmount, fallbackToken.decimals) : null;
-                if (receiveAmt) {
-                  pendingOKXSwap.set(chatId, { step: "confirm", chainId: srcChainId, chainName: srcChain!.name, fromToken: srcToken.address, fromSymbol: srcToken.symbol, toToken: fallbackToken.address, toSymbol: fallbackToken.symbol, amount: rawAmt, quoteData: quote.data[0] });
-                  await bot.sendMessage(chatId, `🔄 *Swap Quote on ${srcChain!.name}*\n\n💰 ${amount} ${srcToken.symbol} → ${receiveAmt} ${fallbackSymbol}\n⛓ Chain: ${srcChain!.name}\n\nConfirm this swap?`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Swap", callback_data: "okxswap_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } });
-                } else {
-                  await bot.sendMessage(chatId, `No quote available. Try /swap to pick tokens manually.`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
-                }
-              } catch (swapErr: any) {
-                await bot.sendMessage(chatId, `Quote error. Try /swap to pick tokens manually.`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
-              }
+            const isWrappedFallback = srcTokens.some(t => t.symbol === toUpper && t.address !== OKX_NATIVE_TOKEN);
+            if (isWrappedFallback) {
+              const wrappedToken = srcTokens.find(t => t.symbol === toUpper)!;
+              const nativeChains = OKX_CHAINS.filter(c => c.symbol === toUpper).map(c => c.name).join(", ");
+              await bot.sendMessage(chatId,
+                `⚠️ *Cross-chain swap unavailable*\n\n` +
+                `Could not bridge ${fromUpper} (${srcChain!.name}) → native ${toUpper} (${dstChain?.name || nativeChains}).\n\n` +
+                `⛓ A wrapped ${toUpper} exists on ${srcChain!.name} (contract \`${wrappedToken.address.substring(0, 10)}...\`), but this is NOT the same as native ${toUpper}.\n\n` +
+                `What would you like to do?`,
+                { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+                  [{ text: `🔄 Swap to wrapped ${toUpper} on ${srcChain!.name}`, callback_data: `nlswap:${amount}:${fromUpper}:${toUpper}:${srcChainId}` }],
+                  [{ text: `🌉 Try Bridge manually`, callback_data: "action:okxbridge" }],
+                  [{ text: "❌ Cancel", callback_data: "action:menu" }],
+                ] } }
+              );
             } else {
-              await bot.sendMessage(chatId, `Token "${fromUpper}" not available for swap right now. Try /swap to pick manually.`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+              const stableOnSrc = srcTokens.find(t => t.symbol === "USDT" || t.symbol === "USDC");
+              if (stableOnSrc) {
+                await bot.sendMessage(chatId,
+                  `⚠️ *Cross-chain swap unavailable*\n\n` +
+                  `Could not bridge ${fromUpper} → ${toUpper} across chains.\n\n` +
+                  `You can swap to ${stableOnSrc.symbol} on ${srcChain!.name} instead, or try the bridge manually.`,
+                  { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+                    [{ text: `🔄 Swap to ${stableOnSrc.symbol} on ${srcChain!.name}`, callback_data: `nlswap:${amount}:${fromUpper}:${stableOnSrc.symbol}:${srcChainId}` }],
+                    [{ text: `🌉 Try Bridge manually`, callback_data: "action:okxbridge" }],
+                    [{ text: "❌ Cancel", callback_data: "action:menu" }],
+                  ] } }
+                );
+              } else {
+                await bot.sendMessage(chatId, `Cross-chain swap unavailable for this pair. Try /bridge to move tokens manually.`, { reply_markup: { inline_keyboard: [[{ text: "🌉 Open Bridge", callback_data: "action:okxbridge" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+              }
             }
           }
           return;
