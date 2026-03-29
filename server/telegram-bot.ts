@@ -7172,22 +7172,35 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       try {
         const totalUsers = telegramWalletMap.size;
 
-        let platformStats = { agents: 0, onchainAgents: 0, skills: 0, transactions: 0, onchainUsers: 0, totalRevenue: "0" };
+        let platformStats = { agents: 0, onchainAgents: 0, skills: 0, skillsTotal: 0, transactions: 0, onchainUsers: 0, totalRevenue: "0", skillPurchases: 0 };
         try {
-          const statsRes = await fetch(`http://localhost:${process.env.PORT || 5000}/api/platform/stats`);
-          if (statsRes.ok) {
-            const contentType = statsRes.headers.get("content-type") || "";
-            if (contentType.includes("application/json")) {
-              platformStats = await statsRes.json() as any;
-            } else {
-              const rawText = await statsRes.text();
-              console.log(`[Stats] Non-JSON response: ${rawText.substring(0, 200)}`);
-            }
-          } else {
-            console.log(`[Stats] HTTP ${statsRes.status} from /api/platform/stats`);
+          const { db } = await import("./db");
+          const { sql } = await import("drizzle-orm");
+          const [txCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agent_transactions`)).rows;
+          const [agentCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agents`)).rows;
+          const [purchaseCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM skill_purchases`)).rows;
+          const [revenueData] = (await db.execute(sql`SELECT SUM(amount::numeric) as total, COUNT(*) as cnt FROM platform_revenue`)).rows;
+          const [uniqueWallets] = (await db.execute(sql`SELECT COUNT(DISTINCT creator_wallet) as cnt FROM agents WHERE creator_wallet IS NOT NULL`)).rows;
+          const [onchainAgents] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agents WHERE erc8004_registered = true AND erc8004_tx_hash IS NOT NULL`)).rows;
+          const [skillCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agent_skills`)).rows;
+          const crypto = await import("crypto");
+          const allSkills = await storage.getTopSkills(5000);
+          const uniqueHashes = new Set<string>();
+          for (const s of allSkills) {
+            uniqueHashes.add(crypto.createHash("md5").update(s.code || "").digest("hex"));
           }
+          platformStats = {
+            agents: Number(agentCount?.cnt || 0),
+            onchainAgents: Number(onchainAgents?.cnt || 0),
+            skills: uniqueHashes.size,
+            skillsTotal: Number(skillCount?.cnt || 0),
+            transactions: Number(txCount?.cnt || 0),
+            onchainUsers: Number(uniqueWallets?.cnt || 0),
+            totalRevenue: (revenueData as any)?.total || "0",
+            skillPurchases: Number(purchaseCount?.cnt || 0),
+          };
         } catch (statsErr: any) {
-          console.log(`[Stats] Fetch failed: ${statsErr.message?.substring(0, 100)}`);
+          console.log(`[Stats] DB query failed: ${statsErr.message?.substring(0, 150)}`);
         }
 
         const revenueWei = BigInt(platformStats.totalRevenue || "0");
@@ -7233,8 +7246,10 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           `<b>🤖 Platform</b>\n` +
           `• AI Agents: <b>${platformStats.agents || 0}</b>\n` +
           `• On-Chain Agents: <b>${platformStats.onchainAgents || 0}</b>\n` +
-          `• Skills: <b>${platformStats.skills || 0}</b>\n` +
+          `• Skills: <b>${platformStats.skills || 0}</b> unique (<b>${platformStats.skillsTotal || 0}</b> total)\n` +
+          `• Skill Purchases: <b>${platformStats.skillPurchases || 0}</b>\n` +
           `• Transactions: <b>${platformStats.transactions || 0}</b>\n` +
+          `• Unique Wallets: <b>${platformStats.onchainUsers || 0}</b>\n` +
           `• Revenue: <b>${revenueBNB.toFixed(4)} BNB</b>\n\n` +
           `🔗 Chains: BNB, Base, XLayer, Solana`,
           { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, chatId) }
