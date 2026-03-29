@@ -130,7 +130,7 @@ const walletsWithKey = new Set<string>();
 
 interface AgentCreationState { step: "name" | "bio" | "model"; name?: string; bio?: string; mandatory?: boolean }
 interface TaskState { step: "describe"; agentId: string; taskType: string; agentName: string }
-interface TokenLaunchState { step: "platform" | "name" | "symbol" | "description" | "logo" | "links" | "tax" | "bankr_chain"; agentId: string; agentName: string; platform?: string; tokenName?: string; tokenSymbol?: string; tokenDescription?: string; imageUrl?: string; webUrl?: string; twitterUrl?: string; telegramUrl?: string; taxRate?: number; bankrChain?: "base" | "solana" }
+interface TokenLaunchState { step: "platform" | "name" | "symbol" | "description" | "logo" | "links" | "tax" | "bankr_chain" | "stealth_buy"; agentId: string; agentName: string; platform?: string; tokenName?: string; tokenSymbol?: string; tokenDescription?: string; imageUrl?: string; webUrl?: string; twitterUrl?: string; telegramUrl?: string; taxRate?: number; bankrChain?: "base" | "solana"; stealthBuyEth?: string; stealthBuyPercent?: number }
 interface FourMemeBuyState { step: "token" | "amount" | "confirm"; tokenAddress?: string; bnbAmount?: string; estimate?: any }
 interface FourMemeSellState { step: "token" | "amount" | "confirm"; tokenAddress?: string; tokenAmount?: string; tokenSymbol?: string; estimate?: any }
 
@@ -5428,6 +5428,63 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data.startsWith("bankrstealth:")) {
+    const agentId = data.split(":")[1];
+    const state = pendingTokenLaunch.get(chatId);
+    if (!state || state.agentId !== agentId) return;
+
+    state.step = "stealth_buy";
+    pendingTokenLaunch.set(chatId, state);
+
+    const chainCurrency = state.bankrChain === "solana" ? "SOL" : "ETH";
+    await bot.sendMessage(chatId,
+      `🥷 STEALTH BUY SETUP\n\n` +
+      `This will execute a buy through Bankr immediately after your token deploys — before anyone else can see it.\n\n` +
+      `Choose an option or enter a custom ${chainCurrency} amount:`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: `1 ${chainCurrency}`, callback_data: `bankrstealthamt:${agentId}:1` },
+              { text: `3 ${chainCurrency}`, callback_data: `bankrstealthamt:${agentId}:3` },
+              { text: `5 ${chainCurrency}`, callback_data: `bankrstealthamt:${agentId}:5` },
+            ],
+            [
+              { text: `10 ${chainCurrency}`, callback_data: `bankrstealthamt:${agentId}:10` },
+              { text: `20 ${chainCurrency}`, callback_data: `bankrstealthamt:${agentId}:20` },
+            ],
+            [{ text: "70% of supply", callback_data: `bankrstealthpct:${agentId}:70` }],
+            [{ text: "Skip stealth buy", callback_data: `bankrstealthamt:${agentId}:0` }],
+          ]
+        }
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("bankrstealthamt:") || data.startsWith("bankrstealthpct:")) {
+    const isPct = data.startsWith("bankrstealthpct:");
+    const parts = data.split(":");
+    const agentId = parts[1];
+    const value = parts[2];
+    const state = pendingTokenLaunch.get(chatId);
+    if (!state || state.agentId !== agentId) return;
+
+    if (isPct) {
+      state.stealthBuyPercent = parseInt(value, 10);
+      state.stealthBuyEth = undefined;
+    } else if (value === "0") {
+      state.stealthBuyEth = undefined;
+      state.stealthBuyPercent = undefined;
+    } else {
+      state.stealthBuyEth = value;
+      state.stealthBuyPercent = undefined;
+    }
+
+    showLaunchPreview(chatId, state);
+    return;
+  }
+
   if (data.startsWith("launchconfirm:")) {
     const agentId = data.split(":")[1];
     const state = pendingTokenLaunch.get(chatId);
@@ -8744,17 +8801,22 @@ async function showLaunchPreview(chatId: number, state: TokenLaunchState) {
   if (state.platform === "flap_sh") {
     preview += `Tax: ${state.taxRate ?? 0}%\n`;
   }
+  if (state.platform === "bankr" && (state.stealthBuyEth || state.stealthBuyPercent)) {
+    preview += `\n🥷 Stealth Buy: ${state.stealthBuyEth ? state.stealthBuyEth + " ETH" : state.stealthBuyPercent + "% supply"} (via Bankr)\n`;
+  }
   preview += `\nReady to launch?`;
 
   pendingTokenLaunch.set(chatId, state);
 
+  const buttons: any[][] = [];
+  if (state.platform === "bankr") {
+    buttons.push([{ text: "🥷 Add Stealth Buy", callback_data: `bankrstealth:${state.agentId}` }]);
+  }
+  buttons.push([{ text: "🚀 Confirm & Launch", callback_data: `launchconfirm:${state.agentId}` }]);
+  buttons.push([{ text: "Cancel", callback_data: `launchcancel:${state.agentId}` }]);
+
   await bot.sendMessage(chatId, preview, {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "🚀 Confirm & Launch", callback_data: `launchconfirm:${state.agentId}` }],
-        [{ text: "Cancel", callback_data: `launchcancel:${state.agentId}` }],
-      ]
-    }
+    reply_markup: { inline_keyboard: buttons }
   });
 }
 
@@ -8831,7 +8893,13 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
   }
 
   if (state.platform === "bankr") {
-    await bot.sendMessage(chatId, `🏦 Launching ${state.tokenName} ($${state.tokenSymbol}) on ${platformName} via Bankr API...\n\nThis may take up to 2 minutes.`);
+    const hasStealthBuy = (state.stealthBuyEth && parseFloat(state.stealthBuyEth) > 0) ||
+      (state.stealthBuyPercent && state.stealthBuyPercent > 0);
+    const stealthLabel = state.stealthBuyEth ? `${state.stealthBuyEth} ETH` : `${state.stealthBuyPercent}%`;
+    const launchMsg = hasStealthBuy
+      ? `🏦 Launching ${state.tokenName} ($${state.tokenSymbol}) on ${platformName} via Bankr API...\n\n🥷 Stealth buy (${stealthLabel}) will execute immediately after deploy.\n\nThis may take up to 3 minutes.`
+      : `🏦 Launching ${state.tokenName} ($${state.tokenSymbol}) on ${platformName} via Bankr API...\n\nThis may take up to 2 minutes.`;
+    await bot.sendMessage(chatId, launchMsg);
     await bot.sendChatAction(chatId, "typing");
 
     try {
@@ -8844,6 +8912,8 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
         agentId: state.agentId,
         creatorWallet: wallet,
         bankrChain: state.bankrChain || "base",
+        stealthBuyEth: state.stealthBuyEth,
+        stealthBuyPercent: state.stealthBuyPercent,
       });
 
       if (result.success) {
@@ -8860,34 +8930,38 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
         if (result.tokenAddress) lines.push(`Address: \`${result.tokenAddress}\``);
         if (result.launchUrl) lines.push(`\nView: ${result.launchUrl}`);
 
-        if (result.tokenAddress && isBase) {
+        if (result.stealthBuy) {
           lines.push(`\n━━━━━━━━━━━━━━━━━━━━`);
-          lines.push(`⚡ *SNIPE NOW* — Buy before anyone else!`);
-          lines.push(`\n🥷 *Stealth Mode* — 70% main + 10% across 20 wallets`);
+          if (result.stealthBuy.success) {
+            lines.push(`🥷 *Stealth Buy: SUCCESS* ✅`);
+            if (result.stealthBuy.amountEth) lines.push(`Amount: ${result.stealthBuy.amountEth} ETH`);
+          } else {
+            lines.push(`🥷 *Stealth Buy: FAILED* ❌`);
+            if (result.stealthBuy.error) lines.push(`Reason: ${result.stealthBuy.error.substring(0, 150)}`);
+            lines.push(`\nYou can still buy manually below:`);
+          }
+        }
 
-          const tokenShort = result.tokenAddress.substring(0, 20);
+        if (result.tokenAddress && isBase) {
+          if (!result.stealthBuy?.success) {
+            lines.push(`\n━━━━━━━━━━━━━━━━━━━━`);
+            lines.push(`⚡ *BUY NOW*`);
+          }
 
           await bot.sendMessage(chatId, lines.join("\n"), {
             parse_mode: "Markdown",
             reply_markup: {
               inline_keyboard: [
-                [{ text: "🥷 STEALTH BUY (80%)", callback_data: `stealth:${tokenShort}` }],
                 [
-                  { text: "⚡ 0.5 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:0.5` },
                   { text: "⚡ 1 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:1` },
                   { text: "⚡ 5 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:5` },
-                ],
-                [
                   { text: "⚡ 10 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:10` },
-                  { text: "⚡ 20 ETH", callback_data: `cabuy:${result.tokenAddress}:${chainId}:20` },
                 ],
                 [{ text: "🔒 Scan Token", callback_data: `cascan:${result.tokenAddress}:${chainId}` }],
                 [{ text: "« Menu", callback_data: "action:menu" }],
               ]
             }
           });
-
-          pendingStealthToken.set(chatId, result.tokenAddress);
         } else if (result.tokenAddress) {
           lines.push(`\n━━━━━━━━━━━━━━━━━━━━`);
           lines.push(`⚡ *SNIPE NOW*`);

@@ -448,6 +448,8 @@ interface LaunchParams {
   telegramUrl?: string;
   taxRate?: number;
   bankrChain?: "base" | "solana";
+  stealthBuyEth?: string;
+  stealthBuyPercent?: number;
 }
 
 interface LaunchResult {
@@ -457,6 +459,12 @@ interface LaunchResult {
   launchUrl?: string;
   error?: string;
   launchId?: string;
+  stealthBuy?: {
+    success: boolean;
+    amountEth?: string;
+    error?: string;
+    jobId?: string;
+  };
 }
 
 function getBscProvider(): ethers.JsonRpcProvider {
@@ -1783,6 +1791,42 @@ async function bankrPollJob(jobId: string, timeoutMs = 120000): Promise<{ status
   return { status: "timeout", error: "Bankr job timed out after 120 seconds" };
 }
 
+async function bankrStealthBuy(
+  tokenSymbol: string,
+  chain: string,
+  amountEth?: string,
+  buyPercent?: number,
+): Promise<{ success: boolean; jobId?: string; response?: string; error?: string }> {
+  let buyPrompt: string;
+  if (buyPercent && buyPercent > 0) {
+    buyPrompt = `buy ${buyPercent}% of the supply of ${tokenSymbol} on ${chain}`;
+  } else if (amountEth && parseFloat(amountEth) > 0) {
+    buyPrompt = `buy ${amountEth} ETH worth of ${tokenSymbol} on ${chain}`;
+  } else {
+    return { success: false, error: "No stealth buy amount specified" };
+  }
+
+  log(`[Bankr] Stealth buy prompt: "${buyPrompt}"`, "token-launcher");
+
+  const promptResult = await bankrPrompt(buyPrompt);
+  if ("error" in promptResult) {
+    log(`[Bankr] Stealth buy prompt failed: ${promptResult.error}`, "token-launcher");
+    return { success: false, error: promptResult.error };
+  }
+
+  log(`[Bankr] Stealth buy job: ${promptResult.jobId}`, "token-launcher");
+  const jobResult = await bankrPollJob(promptResult.jobId, 180000);
+
+  if (jobResult.status !== "completed") {
+    const errMsg = jobResult.error || `Stealth buy job ${jobResult.status}`;
+    log(`[Bankr] Stealth buy failed: ${errMsg}`, "token-launcher");
+    return { success: false, error: errMsg, jobId: promptResult.jobId };
+  }
+
+  log(`[Bankr] Stealth buy completed: ${(jobResult.response || "").substring(0, 500)}`, "token-launcher");
+  return { success: true, jobId: promptResult.jobId, response: jobResult.response };
+}
+
 async function launchOnBankr(params: LaunchParams): Promise<LaunchResult> {
   if (!params.tokenName || !params.tokenSymbol) {
     return { success: false, error: "Token name and symbol are required" };
@@ -1793,6 +1837,8 @@ async function launchOnBankr(params: LaunchParams): Promise<LaunchResult> {
 
   const chain = params.bankrChain || "base";
   const chainLabel = chain === "solana" ? "Solana" : "Base";
+  const wantStealthBuy = (params.stealthBuyEth && parseFloat(params.stealthBuyEth) > 0) ||
+    (params.stealthBuyPercent && params.stealthBuyPercent > 0);
 
   const launchRecord = await storage.createTokenLaunch({
     agentId: params.agentId || null,
@@ -1803,13 +1849,17 @@ async function launchOnBankr(params: LaunchParams): Promise<LaunchResult> {
     tokenSymbol: params.tokenSymbol,
     tokenDescription: params.tokenDescription,
     imageUrl: params.imageUrl || null,
-    initialLiquidityBnb: "0",
+    initialLiquidityBnb: params.stealthBuyEth || "0",
     status: "pending",
     tokenAddress: null,
     txHash: null,
     launchUrl: null,
     errorMessage: null,
-    metadata: JSON.stringify({ bankrChain: chain }),
+    metadata: JSON.stringify({
+      bankrChain: chain,
+      stealthBuyEth: params.stealthBuyEth || null,
+      stealthBuyPercent: params.stealthBuyPercent || null,
+    }),
   });
 
   try {
@@ -1818,7 +1868,7 @@ async function launchOnBankr(params: LaunchParams): Promise<LaunchResult> {
       prompt += `. Description: ${params.tokenDescription}`;
     }
 
-    log(`[Bankr] Submitting prompt: "${prompt}"`, "token-launcher");
+    log(`[Bankr] Step 1/2: Deploy token — "${prompt}"`, "token-launcher");
 
     const promptResult = await bankrPrompt(prompt);
     if ("error" in promptResult) {
@@ -1829,7 +1879,7 @@ async function launchOnBankr(params: LaunchParams): Promise<LaunchResult> {
       return { success: false, error: promptResult.error, launchId: launchRecord.id };
     }
 
-    log(`[Bankr] Job created: ${promptResult.jobId} (thread: ${promptResult.threadId})`, "token-launcher");
+    log(`[Bankr] Deploy job created: ${promptResult.jobId} (thread: ${promptResult.threadId})`, "token-launcher");
 
     await storage.updateTokenLaunch(launchRecord.id, {
       status: "confirming",
@@ -1840,7 +1890,7 @@ async function launchOnBankr(params: LaunchParams): Promise<LaunchResult> {
 
     if (jobResult.status !== "completed") {
       const errMsg = jobResult.error || `Bankr job ${jobResult.status}`;
-      log(`[Bankr] Job failed: ${errMsg}`, "token-launcher");
+      log(`[Bankr] Deploy failed: ${errMsg}`, "token-launcher");
       await storage.updateTokenLaunch(launchRecord.id, {
         status: "failed",
         errorMessage: errMsg.substring(0, 500),
@@ -1849,7 +1899,7 @@ async function launchOnBankr(params: LaunchParams): Promise<LaunchResult> {
     }
 
     const response = jobResult.response || "";
-    log(`[Bankr] Job completed. Response: ${response.substring(0, 500)}`, "token-launcher");
+    log(`[Bankr] Deploy completed. Response: ${response.substring(0, 500)}`, "token-launcher");
 
     let tokenAddress: string | undefined;
     if (chain === "solana") {
@@ -1870,25 +1920,78 @@ async function launchOnBankr(params: LaunchParams): Promise<LaunchResult> {
         : `https://basescan.org/token/${tokenAddress}`;
     }
 
+    let stealthBuyResult: LaunchResult["stealthBuy"] | undefined;
+
+    if (wantStealthBuy && tokenAddress) {
+      log(`[Bankr] Step 2/2: Stealth buy immediately after deploy...`, "token-launcher");
+
+      await storage.updateTokenLaunch(launchRecord.id, {
+        status: "launched",
+        tokenAddress: tokenAddress || null,
+        launchUrl: launchUrl || null,
+        metadata: JSON.stringify({
+          bankrChain: chain,
+          jobId: promptResult.jobId,
+          threadId: promptResult.threadId,
+          bankrResponse: response.substring(0, 1000),
+          stealthBuyStatus: "executing",
+        }),
+      });
+
+      const buyResult = await bankrStealthBuy(
+        params.tokenSymbol,
+        chain,
+        params.stealthBuyEth,
+        params.stealthBuyPercent,
+      );
+
+      stealthBuyResult = {
+        success: buyResult.success,
+        amountEth: params.stealthBuyEth,
+        error: buyResult.error,
+        jobId: buyResult.jobId,
+      };
+
+      await storage.updateTokenLaunch(launchRecord.id, {
+        metadata: JSON.stringify({
+          bankrChain: chain,
+          jobId: promptResult.jobId,
+          threadId: promptResult.threadId,
+          bankrResponse: response.substring(0, 1000),
+          stealthBuyStatus: buyResult.success ? "completed" : "failed",
+          stealthBuyJobId: buyResult.jobId,
+          stealthBuyResponse: buyResult.response?.substring(0, 500),
+          stealthBuyError: buyResult.error,
+        }),
+      });
+
+      if (buyResult.success) {
+        log(`[Bankr] Stealth buy SUCCESS for ${params.tokenSymbol}!`, "token-launcher");
+      } else {
+        log(`[Bankr] Stealth buy FAILED: ${buyResult.error} — token still launched`, "token-launcher");
+      }
+    } else if (wantStealthBuy && !tokenAddress) {
+      log(`[Bankr] Stealth buy skipped — could not parse token address from deploy response`, "token-launcher");
+      stealthBuyResult = {
+        success: false,
+        error: "Could not parse token address from deploy response — buy manually",
+      };
+    }
+
     await storage.updateTokenLaunch(launchRecord.id, {
       status: "launched",
       tokenAddress: tokenAddress || null,
       launchUrl: launchUrl || null,
-      metadata: JSON.stringify({
-        bankrChain: chain,
-        jobId: promptResult.jobId,
-        threadId: promptResult.threadId,
-        bankrResponse: response.substring(0, 1000),
-      }),
     });
 
-    log(`[Bankr] Launch success! Token: ${tokenAddress || "see response"}, Chain: ${chainLabel}`, "token-launcher");
+    log(`[Bankr] Launch complete! Token: ${tokenAddress || "see response"}, Chain: ${chainLabel}`, "token-launcher");
 
     return {
       success: true,
       tokenAddress,
       launchUrl,
       launchId: launchRecord.id,
+      stealthBuy: stealthBuyResult,
     };
   } catch (e: any) {
     log(`[Bankr] Launch failed: ${e.message}`, "token-launcher");
