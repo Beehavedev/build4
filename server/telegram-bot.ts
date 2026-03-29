@@ -7179,9 +7179,16 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             const contentType = statsRes.headers.get("content-type") || "";
             if (contentType.includes("application/json")) {
               platformStats = await statsRes.json() as any;
+            } else {
+              const rawText = await statsRes.text();
+              console.log(`[Stats] Non-JSON response: ${rawText.substring(0, 200)}`);
             }
+          } else {
+            console.log(`[Stats] HTTP ${statsRes.status} from /api/platform/stats`);
           }
-        } catch {}
+        } catch (statsErr: any) {
+          console.log(`[Stats] Fetch failed: ${statsErr.message?.substring(0, 100)}`);
+        }
 
         const revenueWei = BigInt(platformStats.totalRevenue || "0");
         const revenueBNB = Number(revenueWei) / 1e18;
