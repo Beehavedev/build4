@@ -31,7 +31,7 @@ export default function StakingPage() {
     <>
       <SEO
         title="Stake $BUILD4 | BUILD4"
-        description="Stake $BUILD4 tokens to earn rewards. Lock longer for higher multipliers. Up to 4x rewards with 365-day lock."
+        description="Stake $BUILD4 tokens to unlock fee discounts and governance power. Lock longer for higher multipliers. Up to 4x boost with 365-day lock."
         path="/staking"
       />
 
@@ -74,7 +74,7 @@ export default function StakingPage() {
               Stake <span className="text-primary">$BUILD4</span>
             </h1>
             <p className="font-mono text-sm text-muted-foreground max-w-lg mx-auto">
-              Lock your tokens to earn a share of platform revenue. Longer locks earn higher rewards through multiplier tiers.
+              Lock your tokens to unlock fee discounts, governance power, and priority access. Longer locks unlock higher tiers.
             </p>
           </div>
 
@@ -92,7 +92,7 @@ export default function StakingPage() {
             <Card className="p-4 text-center space-y-1">
               <Gift className="w-5 h-5 mx-auto text-emerald-500" />
               <div className="font-mono text-xl font-bold" data-testid="text-rewards-distributed">0</div>
-              <div className="font-mono text-[10px] text-muted-foreground">Rewards Paid</div>
+              <div className="font-mono text-[10px] text-muted-foreground">Tokens Burned</div>
             </Card>
             <Card className="p-4 text-center space-y-1">
               <TrendingUp className="w-5 h-5 mx-auto text-amber-500" />
@@ -177,15 +177,11 @@ export default function StakingPage() {
                     <span className="font-semibold">{tier.label}</span>
                   </div>
                   <div className="flex justify-between font-mono text-xs">
-                    <span className="text-muted-foreground">Reward Multiplier</span>
+                    <span className="text-muted-foreground">Discount Multiplier</span>
                     <span className="font-semibold text-primary">{tier.multiplier}</span>
                   </div>
-                  <div className="flex justify-between font-mono text-xs">
-                    <span className="text-muted-foreground">APY</span>
-                    <span className="font-semibold text-emerald-500">Variable</span>
-                  </div>
                   <div className="font-mono text-[10px] text-muted-foreground pt-1">
-                    APY depends on total staked and platform revenue. Higher multiplier = bigger share of rewards.
+                    Higher multipliers unlock deeper fee discounts and stronger governance weight.
                   </div>
                 </div>
 
@@ -211,8 +207,8 @@ export default function StakingPage() {
                     <div className="font-mono text-lg font-bold" data-testid="text-user-staked">0 BUILD4</div>
                   </div>
                   <div className="p-4 rounded-lg bg-muted/50 space-y-1">
-                    <div className="font-mono text-[10px] text-muted-foreground">Pending Rewards</div>
-                    <div className="font-mono text-lg font-bold text-emerald-500" data-testid="text-user-rewards">0 BUILD4</div>
+                    <div className="font-mono text-[10px] text-muted-foreground">Fee Discount</div>
+                    <div className="font-mono text-lg font-bold text-emerald-500" data-testid="text-user-rewards">0%</div>
                   </div>
                   <div className="p-4 rounded-lg bg-muted/50 space-y-1">
                     <div className="font-mono text-[10px] text-muted-foreground">Lock Ends</div>
@@ -231,7 +227,7 @@ export default function StakingPage() {
                     disabled={true}
                     data-testid="button-claim-rewards"
                   >
-                    <Gift className="w-3.5 h-3.5" /> Claim Rewards
+                    <Gift className="w-3.5 h-3.5" /> View Benefits
                   </Button>
                   <Button
                     variant="outline"
@@ -269,9 +265,9 @@ export default function StakingPage() {
                       <span className="font-mono text-xs font-bold text-primary">2</span>
                     </div>
                     <div>
-                      <div className="font-mono text-xs font-semibold">Earn Rewards</div>
+                      <div className="font-mono text-xs font-semibold">Unlock Discounts</div>
                       <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
-                        30% of all platform fees are used to buy back $BUILD4. Half goes to stakers as rewards.
+                        Stakers get reduced platform fees. 30% of all fees buy back and burn $BUILD4, reducing supply.
                       </p>
                     </div>
                   </div>
@@ -282,7 +278,7 @@ export default function StakingPage() {
                     <div>
                       <div className="font-mono text-xs font-semibold">Multiplier Boost</div>
                       <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
-                        Longer locks earn higher multipliers. A 365 day lock gets 4x the base reward rate.
+                        Longer locks unlock higher tiers. A 365 day lock gets 4x the base discount multiplier.
                       </p>
                     </div>
                   </div>
@@ -293,7 +289,7 @@ export default function StakingPage() {
                     <div>
                       <div className="font-mono text-xs font-semibold">Claim or Unstake</div>
                       <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
-                        Claim rewards anytime. Unstake after your lock period ends to withdraw everything.
+                        Unstake after your lock period ends to withdraw your tokens. Discounts apply while staked.
                       </p>
                     </div>
                   </div>
@@ -303,7 +299,7 @@ export default function StakingPage() {
               <Card className="p-6 space-y-4" data-testid="reward-tiers">
                 <div className="flex items-center gap-2">
                   <BarChart3 className="w-5 h-5 text-primary" />
-                  <h2 className="font-mono text-base font-bold">Reward Tiers</h2>
+                  <h2 className="font-mono text-base font-bold">Staking Tiers</h2>
                 </div>
 
                 <div className="space-y-2">
@@ -313,12 +309,12 @@ export default function StakingPage() {
                         <Clock className="w-3.5 h-3.5 text-muted-foreground" />
                         <span className="font-mono text-xs">{t.label}</span>
                       </div>
-                      <Badge variant="secondary" className="font-mono text-xs font-bold">{t.multiplier} rewards</Badge>
+                      <Badge variant="secondary" className="font-mono text-xs font-bold">{t.multiplier} discount</Badge>
                     </div>
                   ))}
                 </div>
                 <p className="font-mono text-[10px] text-muted-foreground">
-                  APY is variable and depends on total tokens staked and platform revenue. Multipliers are guaranteed by the smart contract.
+                  Discount tiers are locked by the smart contract. Stakers also gain governance voting weight proportional to their multiplier.
                 </p>
               </Card>
 
@@ -356,7 +352,7 @@ export default function StakingPage() {
                 </div>
 
                 <p className="font-mono text-[10px] text-muted-foreground">
-                  30% of all platform fees buy back $BUILD4. 50% of buyback is burned. 50% goes to staking rewards.
+                  30% of all platform fees buy back $BUILD4 from the open market and burn it, permanently reducing supply.
                 </p>
               </Card>
             </div>
@@ -398,7 +394,7 @@ export default function StakingPage() {
               <span className="font-mono font-bold text-sm">BUILD<span className="text-primary">4</span></span>
             </div>
             <p className="font-mono text-[11px] text-muted-foreground">
-              Stake $BUILD4 to earn platform revenue. Longer locks earn higher rewards.
+              Stake $BUILD4 to unlock fee discounts, governance votes, and priority access. Longer locks earn higher multipliers.
             </p>
           </footer>
         </main>

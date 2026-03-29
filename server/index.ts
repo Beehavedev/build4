@@ -181,7 +181,7 @@ app.use((req, res, next) => {
 
 async function ensureSchema() {
   if (!process.env.DATABASE_URL) return;
-  const thisDir = new URL(".", import.meta.url).pathname;
+  const thisDir = typeof __dirname !== 'undefined' ? __dirname : new URL(".", import.meta.url).pathname;
   const candidates = [
     join(process.cwd(), "dist", "schema-init.sql"),
     join(process.cwd(), "server", "schema-init.sql"),

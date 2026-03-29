@@ -203,7 +203,35 @@ export function registerServicesRoutes(app: Express) {
   app.get("/api/v1/inference/providers", async (_req: Request, res: Response) => {
     try {
       const status = getProviderStatus();
-      res.json({ providers: status, available: getAvailableProviders() });
+      const available = getAvailableProviders();
+      const healthChecks: Record<string, { status: string; lastChecked: string; latencyMs?: number }> = {};
+      for (const [name, info] of Object.entries(status)) {
+        healthChecks[name] = {
+          status: available.includes(name) ? "active" : "inactive",
+          lastChecked: new Date().toISOString(),
+          latencyMs: (info as any)?.latencyMs,
+        };
+      }
+      res.json({ providers: healthChecks, available, totalActive: available.length, totalConfigured: Object.keys(status).length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/v1/inference/health-check", async (_req: Request, res: Response) => {
+    try {
+      const providers = getAvailableProviders();
+      const results: Record<string, { alive: boolean; latencyMs: number; error?: string }> = {};
+      for (const provider of providers) {
+        const start = Date.now();
+        try {
+          const testResult = await runInferenceWithFallback([provider], undefined, "Say OK", { maxTokens: 5 });
+          results[provider] = { alive: testResult.live, latencyMs: Date.now() - start };
+        } catch (e: any) {
+          results[provider] = { alive: false, latencyMs: Date.now() - start, error: e.message?.substring(0, 100) };
+        }
+      }
+      res.json({ checked: new Date().toISOString(), results });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
