@@ -364,6 +364,19 @@ const conversationMemory = new Map<number, { messages: ChatMessage[]; lastActive
 const MAX_MEMORY_MESSAGES = 30;
 const MEMORY_EXPIRY_MS = 30 * 60 * 1000;
 
+const FREE_AI_CHAT_LIMIT = 10;
+const aiChatUsage = new Map<number, number>();
+
+function getAiChatCount(chatId: number): number {
+  return aiChatUsage.get(chatId) || 0;
+}
+
+function incrementAiChat(chatId: number): number {
+  const count = (aiChatUsage.get(chatId) || 0) + 1;
+  aiChatUsage.set(chatId, count);
+  return count;
+}
+
 function getConversationHistory(chatId: number): ChatMessage[] {
   const mem = conversationMemory.get(chatId);
   if (!mem) return [];
@@ -9557,6 +9570,41 @@ async function handleQuestion(chatId: number, messageId: number, question: strin
   }
 
   try {
+    const isGroup = chatId < 0;
+    if (!isGroup) {
+      const sub = await checkSubscription(chatId);
+      if (!sub.allowed) {
+        const usedChats = getAiChatCount(chatId);
+        if (usedChats >= FREE_AI_CHAT_LIMIT) {
+          const remaining = 0;
+          await bot!.sendMessage(chatId,
+            `🧠 *You've used all ${FREE_AI_CHAT_LIMIT} free AI chats!*\n\n` +
+            `BUILD4 AI is powered by multiple AI providers (Grok, Akash, Hyperbolic) running in parallel for the smartest, most accurate answers.\n\n` +
+            `Subscribe to get *unlimited AI conversations* plus all premium features:\n` +
+            `• 🧠 Unlimited AI Chat\n` +
+            `• 🐋 Smart Money Signals\n` +
+            `• ⚡ Instant Buy & Sell\n` +
+            `• 🔄 DEX Swap & Bridge\n` +
+            `• 🔒 Security Scanner\n` +
+            `• 🚀 Token Launcher\n\n` +
+            `💰 *$${BOT_PRICE_USD}/month* — Start with a *${TRIAL_DAYS}-day free trial!*`,
+            {
+              parse_mode: "Markdown",
+              reply_to_message_id: messageId,
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: `🆓 Start ${TRIAL_DAYS}-Day Free Trial`, callback_data: "action:subscribe" }],
+                  [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+                  [{ text: "« Menu", callback_data: "action:menu" }],
+                ],
+              },
+            }
+          );
+          return;
+        }
+      }
+    }
+
     bot!.sendChatAction(chatId, "typing").catch(() => {});
     const typingInterval = setInterval(() => {
       bot!.sendChatAction(chatId, "typing").catch(() => {});
@@ -9564,6 +9612,40 @@ async function handleQuestion(chatId: number, messageId: number, question: strin
 
     const answer = await generateAnswer(question, username, chatId);
     clearInterval(typingInterval);
+
+    const isGroupChat = chatId < 0;
+    if (!isGroupChat) {
+      const sub = await checkSubscription(chatId);
+      if (!sub.allowed) {
+        const newCount = incrementAiChat(chatId);
+        const remaining = FREE_AI_CHAT_LIMIT - newCount;
+        if (remaining > 0 && remaining <= 3) {
+          const warningText = `\n\n---\n⚠️ _${remaining} free AI chat${remaining === 1 ? "" : "s"} remaining. Subscribe for unlimited access!_`;
+          const fullAnswer = answer + warningText;
+          const hasMarkdown = true;
+          if (fullAnswer.length <= 4000) {
+            await bot!.sendMessage(chatId, fullAnswer, {
+              reply_to_message_id: messageId,
+              parse_mode: "Markdown",
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+                ],
+              },
+            }).catch(async () => {
+              await bot!.sendMessage(chatId, fullAnswer, { reply_to_message_id: messageId }).catch(() => {});
+            });
+          } else {
+            await bot!.sendMessage(chatId, answer, { reply_to_message_id: messageId, parse_mode: "Markdown" }).catch(() => {});
+            await bot!.sendMessage(chatId, `⚠️ _${remaining} free AI chat${remaining === 1 ? "" : "s"} remaining._`, {
+              parse_mode: "Markdown",
+              reply_markup: { inline_keyboard: [[{ text: `💳 Subscribe`, callback_data: "action:subscribe" }]] },
+            }).catch(() => {});
+          }
+          return;
+        }
+      }
+    }
 
     console.log(`[TelegramBot] Answering @${username}: ${answer.slice(0, 80)}...`);
     const hasMarkdown = answer.includes("`") || answer.includes("*") || answer.includes("_");
