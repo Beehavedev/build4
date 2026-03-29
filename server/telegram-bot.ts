@@ -3293,7 +3293,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const receiveAmt = quote?.data?.[0]?.toTokenAmount ? formatTokenAmount(quote.data[0].toTokenAmount, sToToken.decimals) : null;
       if (receiveAmt) {
         pendingOKXSwap.set(chatId, { step: "confirm", chainId: sChainId, chainName: sChain.name, fromToken: sFromToken.address, fromSymbol: sFromToken.symbol, toToken: sToToken.address, toSymbol: sToToken.symbol, amount: sRawAmount, quoteData: quote.data[0] });
-        await bot.sendMessage(chatId, `🔄 *Swap Quote on ${sChain.name}*\n\n💰 ${sAmount} ${sFromToken.symbol} → ${receiveAmt} ${sToToken.symbol}\n\nConfirm this swap?`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Swap", callback_data: "okxswap_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } });
+        await bot.sendMessage(chatId, `🔄 *Swap Quote on ${sChain.name}*\n\n💰 ${sAmount} ${sFromToken.symbol} → ${receiveAmt} ${sToToken.symbol}\n⛓ Chain: ${sChain.name}\n\nConfirm this swap?`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Swap", callback_data: "okxswap_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } });
       } else {
         await bot.sendMessage(chatId, "No quote available for this pair. Try different tokens or amounts.", { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
       }
@@ -3512,6 +3512,82 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       "🔄 *OKX DEX Swap*\n\nSwap tokens on any chain using OKX DEX Aggregator.\n\nSelect a chain:",
       { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } }
     );
+    return;
+  }
+
+  if (data.startsWith("nlswap:")) {
+    const parts = data.replace("nlswap:", "").split(":");
+    const [nlAmount, nlFrom, nlTo, nlChainId] = parts;
+    const nlChain = OKX_CHAINS.find(c => c.id === nlChainId);
+    if (!nlChain) return;
+    const nlFromChainId = Object.entries(OKX_POPULAR_TOKENS).find(([cid, toks]) => {
+      const ch = OKX_CHAINS.find(c => c.id === cid);
+      return ch?.symbol === nlFrom.toUpperCase() || toks.some(t => t.symbol === nlFrom.toUpperCase() && t.address === OKX_NATIVE_TOKEN);
+    })?.[0];
+    if (nlFromChainId && nlFromChainId !== nlChainId) {
+      const srcChain = OKX_CHAINS.find(c => c.id === nlFromChainId);
+      const dstChain = nlChain;
+      const srcTokens = getOKXTokensForChain(nlFromChainId);
+      const dstTokens = getOKXTokensForChain(nlChainId);
+      const srcToken = srcTokens.find(t => t.symbol === nlFrom.toUpperCase());
+      const dstToken = dstTokens.find(t => t.symbol === nlTo.toUpperCase());
+      if (srcToken && dstToken && srcChain) {
+        sendTyping(chatId);
+        try {
+          const { getCrossChainQuote } = await import("./okx-onchainos");
+          const rawAmt = parseHumanAmount(nlAmount, srcToken.decimals);
+          const quote = await getCrossChainQuote({
+            fromChainId: nlFromChainId, toChainId: nlChainId,
+            fromTokenAddress: srcToken.address, toTokenAddress: dstToken.address,
+            amount: rawAmt, slippage: "1",
+          });
+          const routerList = quote?.data?.routerList || quote?.data;
+          const bestRoute = Array.isArray(routerList) ? routerList[0] : null;
+          const receiveAmt = bestRoute?.toTokenAmount ? formatTokenAmount(bestRoute.toTokenAmount, dstToken.decimals) : null;
+          if (receiveAmt) {
+            const bridgeProvider = bestRoute?._provider === "lifi" ? (bestRoute?.bridgeProvider || "Li.Fi") : "OKX";
+            pendingOKXBridge.set(chatId, {
+              step: "confirm", fromChainId: nlFromChainId, fromChainName: srcChain.name,
+              toChainId: nlChainId, toChainName: dstChain.name,
+              fromToken: srcToken.address, fromSymbol: srcToken.symbol,
+              toToken: dstToken.address, toSymbol: dstToken.symbol,
+              amount: rawAmt, receiveAddress: "", quoteData: bestRoute,
+            });
+            await bot.sendMessage(chatId,
+              `🌉 *Cross-Chain Swap Quote* (via ${bridgeProvider})\n\n` +
+              `💰 ${nlAmount} ${srcToken.symbol} (${srcChain.name}) → ${receiveAmt} ${dstToken.symbol} (${dstChain.name})\n\n` +
+              `Confirm this cross-chain swap?`,
+              { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Cross-Chain Swap", callback_data: "okxbridge_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } }
+            );
+            return;
+          }
+        } catch (e: any) {}
+        await bot.sendMessage(chatId, `Cross-chain quote unavailable. Try /swap to pick tokens manually.`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+        return;
+      }
+    }
+    const nlTokens = getOKXTokensForChain(nlChainId);
+    const nlFromToken = nlTokens.find(t => t.symbol.toLowerCase() === nlFrom.toLowerCase());
+    const nlToToken = nlTokens.find(t => t.symbol.toLowerCase() === nlTo.toLowerCase());
+    if (nlFromToken && nlToToken) {
+      sendTyping(chatId);
+      const rawAmt = parseHumanAmount(nlAmount, nlFromToken.decimals);
+      try {
+        const { getSwapQuote } = await import("./okx-onchainos");
+        const quote = await getSwapQuote({ chainId: nlChainId, fromTokenAddress: nlFromToken.address, toTokenAddress: nlToToken.address, amount: rawAmt, slippage: "1" });
+        const receiveAmt = quote?.data?.[0]?.toTokenAmount ? formatTokenAmount(quote.data[0].toTokenAmount, nlToToken.decimals) : null;
+        if (receiveAmt) {
+          pendingOKXSwap.set(chatId, { step: "confirm", chainId: nlChainId, chainName: nlChain.name, fromToken: nlFromToken.address, fromSymbol: nlFromToken.symbol, toToken: nlToToken.address, toSymbol: nlToToken.symbol, amount: rawAmt, quoteData: quote.data[0] });
+          await bot.sendMessage(chatId, `🔄 *Swap Quote on ${nlChain.name}*\n\n💰 ${nlAmount} ${nlFromToken.symbol} → ${receiveAmt} ${nlToToken.symbol}\n⛓ Chain: ${nlChain.name}\n\nConfirm this swap?`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Swap", callback_data: "okxswap_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } });
+        } else {
+          await bot.sendMessage(chatId, "No quote available. Try /swap to pick tokens manually.", { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+        }
+      } catch (e: any) {
+        await bot.sendMessage(chatId, `Quote error. Try /swap to pick tokens manually.`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      }
+    } else {
+      await bot.sendMessage(chatId, `Token not found on ${nlChain.name}. Try /swap to pick manually.`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
     return;
   }
 
@@ -6655,8 +6731,9 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
   }
 
   const swapNorm = text.replace(/\s+/g, " ").trim();
-  const swapMatch = swapNorm.match(/^swap\s+([\d.]+)\s*(\w+)\s+(?:for|to|into|->|→)\s+(\w+)(?:\s+(?:on|@)\s+(.+))?$/i)
-    || swapNorm.match(/^swap\s+([\d.]+)\s*(\w+)\s+(?:for|to|into|->|→)\s+(\w+)\s+(\w+)$/i);
+  const swapMatch = swapNorm.match(/^swap\s+([\d.]+)\s*(\w+)\s+(?:for|to|into|->|→)\s+(\w+)\s+(?:on|@)\s+(.+)$/i)
+    || swapNorm.match(/^swap\s+([\d.]+)\s*(\w+)\s+(?:for|to|into|->|→)\s+(\w+)\s+(\w+)$/i)
+    || swapNorm.match(/^swap\s+([\d.]+)\s*(\w+)\s+(?:for|to|into|->|→)\s+(\w+)$/i);
   if (swapMatch && !text.startsWith("/")) {
     const [, amount, fromSymbol, toSymbol, chainHint] = swapMatch;
 
@@ -6703,7 +6780,6 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       }
       if (!chainId) {
         if (fromUpper === "BNB" || toSymbol.toUpperCase() === "BNB") chainId = "56";
-        else if (fromUpper === "ETH" || toSymbol.toUpperCase() === "ETH") chainId = "1";
         else if (fromUpper === "SOL" || toSymbol.toUpperCase() === "SOL") chainId = "501";
         else if (fromUpper === "AVAX" || toSymbol.toUpperCase() === "AVAX") chainId = "43114";
         else if (fromUpper === "POL" || toSymbol.toUpperCase() === "POL") chainId = "137";
@@ -6711,7 +6787,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         else if (fromUpper === "FTM" || toSymbol.toUpperCase() === "FTM") chainId = "250";
         else if (fromUpper === "MNT" || toSymbol.toUpperCase() === "MNT") chainId = "5000";
         else if (fromUpper === "CRO" || toSymbol.toUpperCase() === "CRO") chainId = "25";
-        else chainId = "56";
+        else if (fromUpper === "ETH" || toSymbol.toUpperCase() === "ETH") chainId = "8453";
+        else chainId = "8453";
       }
     }
 
@@ -6724,6 +6801,31 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     const tokens = getOKXTokensForChain(chainId!);
     const fromToken = tokens.find(t => t.symbol.toLowerCase() === fromSymbol.toLowerCase());
     const toToken = tokens.find(t => t.symbol.toLowerCase() === toSymbol.toLowerCase());
+
+    const multiChainTokens = ["ETH", "USDT", "USDC"];
+    const toUpper0 = toSymbol.toUpperCase();
+    const fromUpper0 = fromSymbol.toUpperCase();
+    if (fromToken && toToken && !chainHint && multiChainTokens.includes(toUpper0) && toToken.address !== OKX_NATIVE_TOKEN) {
+      const nativeChains = OKX_CHAINS.filter(c => c.symbol === toUpper0).map(c => c.name).join(", ");
+      const buttons: any[][] = [];
+      const chainsWithToken = OKX_CHAINS.filter(c => {
+        const toks = getOKXTokensForChain(c.id);
+        return toks.some(t => t.symbol === toUpper0 && t.address === OKX_NATIVE_TOKEN);
+      });
+      for (const c of chainsWithToken) {
+        buttons.push([{ text: `${toUpper0} on ${c.name} (native)`, callback_data: `nlswap:${amount}:${fromUpper0}:${toUpper0}:${c.id}` }]);
+      }
+      buttons.push([{ text: `${toUpper0} on ${chain.name} (wrapped)`, callback_data: `nlswap:${amount}:${fromUpper0}:${toUpper0}:${chainId}` }]);
+      buttons.push([{ text: "❌ Cancel", callback_data: "action:menu" }]);
+      await bot.sendMessage(chatId,
+        `🔄 *Which ${toUpper0} do you want?*\n\n` +
+        `${toUpper0} exists on multiple chains. "${toUpper0} on ${chain.name}" is a wrapped/bridged token.\n` +
+        `Native ${toUpper0} lives on ${nativeChains}.\n\n` +
+        `Pick your destination:`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } }
+      );
+      return;
+    }
 
     if (!fromToken || !toToken) {
       const fromUpper = fromSymbol.toUpperCase();
@@ -6810,7 +6912,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
                 const receiveAmt = quote?.data?.[0]?.toTokenAmount ? formatTokenAmount(quote.data[0].toTokenAmount, fallbackToken.decimals) : null;
                 if (receiveAmt) {
                   pendingOKXSwap.set(chatId, { step: "confirm", chainId: srcChainId, chainName: srcChain!.name, fromToken: srcToken.address, fromSymbol: srcToken.symbol, toToken: fallbackToken.address, toSymbol: fallbackToken.symbol, amount: rawAmt, quoteData: quote.data[0] });
-                  await bot.sendMessage(chatId, `🔄 *Swap Quote on ${srcChain!.name}*\n\n💰 ${amount} ${srcToken.symbol} → ${receiveAmt} ${fallbackSymbol}\n\nConfirm this swap?`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Swap", callback_data: "okxswap_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } });
+                  await bot.sendMessage(chatId, `🔄 *Swap Quote on ${srcChain!.name}*\n\n💰 ${amount} ${srcToken.symbol} → ${receiveAmt} ${fallbackSymbol}\n⛓ Chain: ${srcChain!.name}\n\nConfirm this swap?`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Swap", callback_data: "okxswap_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } });
                 } else {
                   await bot.sendMessage(chatId, `No quote available. Try /swap to pick tokens manually.`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
                 }
@@ -6838,7 +6940,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
               const receiveAmt = quote?.data?.[0]?.toTokenAmount ? formatTokenAmount(quote.data[0].toTokenAmount, fallbackToken.decimals) : null;
               if (receiveAmt) {
                 pendingOKXSwap.set(chatId, { step: "confirm", chainId: srcChainId, chainName: srcChain.name, fromToken: srcToken.address, fromSymbol: srcToken.symbol, toToken: fallbackToken.address, toSymbol: fallbackToken.symbol, amount: rawAmt, quoteData: quote.data[0] });
-                await bot.sendMessage(chatId, `🔄 *Swap Quote on ${srcChain.name}*\n\n💰 ${amount} ${srcToken.symbol} → ${receiveAmt} ${fallbackToken.symbol}\n\nConfirm this swap?`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Swap", callback_data: "okxswap_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } });
+                await bot.sendMessage(chatId, `🔄 *Swap Quote on ${srcChain.name}*\n\n💰 ${amount} ${srcToken.symbol} → ${receiveAmt} ${fallbackToken.symbol}\n⛓ Chain: ${srcChain.name}\n\nConfirm this swap?`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Swap", callback_data: "okxswap_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } });
               } else {
                 await bot.sendMessage(chatId, `No quote available. Try /swap to pick tokens manually.`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Open Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
               }
