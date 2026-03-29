@@ -5396,7 +5396,17 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
             erc8004TokenId: result.tokenId || null,
             erc8004Chain: chainKey,
           }).where(eq(agentsTable.id, agentId));
-        } catch {}
+        } catch (dbErr: any) {
+          console.error(`[TelegramBot] ERC-8004 manual reg DB update failed:`, dbErr.message);
+          try {
+            const { db } = await import("./db");
+            const { sql } = await import("drizzle-orm");
+            await db.execute(sql`UPDATE agents SET erc8004_registered = true, erc8004_tx_hash = ${result.txHash || null}, erc8004_token_id = ${result.tokenId || null}, erc8004_chain = ${chainKey} WHERE id = ${agentId}`);
+          } catch (rawErr: any) {
+            console.error(`[TelegramBot] ERC-8004 manual reg raw SQL also failed:`, rawErr.message);
+          }
+        }
+        if (agent.creatorWallet) agentCache.delete(agent.creatorWallet);
 
         const txLink = result.txHash ? `\n🔗 [View on ${explorerName}](https://${explorer}/tx/${result.txHash})` : "";
         const tokenInfo = result.tokenId ? `\n🆔 Token ID: \`${result.tokenId}\`` : "";
@@ -8311,7 +8321,18 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
             erc8004TokenId: erc8004Result.tokenId || null,
             erc8004Chain: chain.chainKey,
           }).where(eq(agentsTable.id, agentId));
-        } catch {}
+        } catch (dbErr: any) {
+          console.error(`[TelegramBot] ERC-8004 DB update failed for ${agentId}:`, dbErr.message);
+          try {
+            const { db } = await import("./db");
+            const { sql } = await import("drizzle-orm");
+            await db.execute(sql`UPDATE agents SET erc8004_registered = true, erc8004_tx_hash = ${erc8004Result.txHash || null}, erc8004_token_id = ${erc8004Result.tokenId || null}, erc8004_chain = ${chain.chainKey} WHERE id = ${agentId}`);
+          } catch (rawErr: any) {
+            console.error(`[TelegramBot] ERC-8004 raw SQL update also failed:`, rawErr.message);
+          }
+        }
+        const creatorWallet = (await storage.getAgent(agentId))?.creatorWallet;
+        if (creatorWallet) agentCache.delete(creatorWallet);
       }
     } catch (e: any) {
       console.error(`[TelegramBot] ERC-8004 ${chain.chainName} registration error for ${agentId}:`, e.message);
