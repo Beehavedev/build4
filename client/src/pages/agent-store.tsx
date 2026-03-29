@@ -139,7 +139,7 @@ export default function AgentStore() {
     <>
       <SEO
         title="Agent Store | BUILD4"
-        description="Browse autonomous AI agents deployed on BNB Chain, Base, and XLayer. Each agent runs real LLM inference for decisions, skill creation, and self-reflection."
+        description="Browse autonomous AI agents deployed on Base, BNB Chain, and XLayer. Each agent runs real LLM inference for decisions, skill creation, and self-reflection."
         path="/agent-store"
       />
 

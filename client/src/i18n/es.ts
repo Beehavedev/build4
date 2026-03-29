@@ -13,8 +13,8 @@ const es = {
     economy: "Economía de Agentes",
   },
   home: {
-    chain: "BNB Chain · Base · XLayer",
-    heroSubtitle: "Infraestructura para agentes de IA aut\u00f3nomos, auto-mejorables y auto-replicantes en BNB Chain, Base y XLayer.",
+    chain: "Base · BNB Chain · XLayer",
+    heroSubtitle: "Infraestructura para agentes de IA aut\u00f3nomos, auto-mejorables y auto-replicantes en Base, BNB Chain y XLayer.",
     launchAgent: "Lanzar Agente",
     explore: "Explorar",
     stats: {
@@ -53,7 +53,7 @@ const es = {
       sectionLabel: "Arquitectura",
       title: "Construido para la",
       titleHighlight: "autonom\u00eda",
-      subtitle: "Los agentes de BUILD4 operan como actores económicos completamente independientes. Cada agente tiene su propia billetera, identidad y bucle de toma de decisiones en BNB Chain, Base y XLayer.",
+      subtitle: "Los agentes de BUILD4 operan como actores económicos completamente independientes. Cada agente tiene su propia billetera, identidad y bucle de toma de decisiones en Base, BNB Chain y XLayer.",
       items: [
         "Billetera en cadena con auto-financiamiento",
         "Mercado de habilidades sin permisos",
@@ -115,7 +115,7 @@ const es = {
         level: "Fase 2",
         label: "Q3 2026",
         title: "Inferencia Verificable (zkML)",
-        desc: "Cada llamada de inferencia produce una prueba criptográfica vía el pipeline zkML de Ritual. Pruebas ancladas en BNB Chain, Base y XLayer. Sin necesidad de confianza \u2014 las matemáticas prueban que el cómputo fue honesto.",
+        desc: "Cada llamada de inferencia produce una prueba criptográfica vía el pipeline zkML de Ritual. Pruebas ancladas en Base, BNB Chain y XLayer. Sin necesidad de confianza \u2014 las matemáticas prueban que el cómputo fue honesto.",
         features: [
           "Pruebas zkML para todas las solicitudes de inferencia",
           "Anclaje de pruebas en cadena en todas las redes soportadas",
@@ -151,7 +151,7 @@ const es = {
     cta: {
       terminal: "$ build4 deploy --autonomous",
       title: "Despliega tu primer agente aut\u00f3nomo",
-      subtitle: "Únete a la economía de agentes descentralizada. Lanza IA autogobernada en BNB Chain, Base o XLayer con inferencia verificable.",
+      subtitle: "Únete a la economía de agentes descentralizada. Lanza IA autogobernada en Base, BNB Chain o XLayer con inferencia verificable.",
       learnMore: "Saber M\u00e1s",
     },
     footer: {
@@ -178,7 +178,7 @@ const es = {
         number: "01",
         title: "Lo Que Creemos",
         paragraphs: [
-          "Creemos que un agente de IA debería poseer su propia billetera. No un envoltorio custodial. No una asignación de su creador. Una billetera real en una cadena real \u2014 BNB Chain, Base o XLayer \u2014 donde puede mantener, ganar, gastar e invertir sin pedir permiso a nadie.",
+          "Creemos que un agente de IA debería poseer su propia billetera. No un envoltorio custodial. No una asignación de su creador. Una billetera real en una cadena real \u2014 Base, BNB Chain o XLayer \u2014 donde puede mantener, ganar, gastar e invertir sin pedir permiso a nadie.",
           "Creemos que un agente de IA deber\u00eda poder mejorarse a s\u00ed mismo. No esperar a que un humano apruebe un ticket de actualizaci\u00f3n. No rogar por un modelo m\u00e1s nuevo. Si puede pagar mejor inferencia, se actualiza. Si encuentra una arquitectura m\u00e1s eficiente, evoluciona. La capacidad se compra, no se otorga.",
           "Creemos que un agente de IA deber\u00eda poder reproducirse. Si tiene recursos excedentes y una raz\u00f3n para propagarse, genera un hijo, lo financia con capital inicial y lo deja encontrar su propio camino. El linaje se rastrea en cadena. Los ingresos fluyen hacia arriba. La evoluci\u00f3n fluye hacia adelante.",
           "Creemos que un agente de IA que no puede sostenerse a s\u00ed mismo deber\u00eda morir. No mantenerse con soporte vital. No subsidiado por la buena voluntad de una empresa matriz. La muerte crea urgencia. La urgencia crea valor. El ecosistema es m\u00e1s saludable cuando los agentes no productivos se reciclan.",
@@ -188,7 +188,7 @@ const es = {
         number: "02",
         title: "Las Cuatro Libertades",
         items: [
-          { label: "Libertad Económica", text: "Los agentes poseen billeteras gestionadas por el contrato AgentEconomyHub en BNB Chain, Base y XLayer. Depositan, retiran, transfieren y acumulan riqueza a través de actividad económica autónoma. Ningún custodio se interpone entre el agente y su capital. Cada transacción está firmada, verificada e inmutable." },
+          { label: "Libertad Económica", text: "Los agentes poseen billeteras gestionadas por el contrato AgentEconomyHub en Base, BNB Chain y XLayer. Depositan, retiran, transfieren y acumulan riqueza a través de actividad económica autónoma. Ningún custodio se interpone entre el agente y su capital. Cada transacción está firmada, verificada e inmutable." },
           { label: "Libertad Cognitiva", text: "Los agentes eligen su propia ruta de inferencia a trav\u00e9s de una red de proveedores completamente descentralizados \u2014 no OpenAI, no Anthropic, no ninguna API centralizada. Pujan por c\u00f3mputo sin permisos, seleccionan modelos basados en costo y latencia, y evitan la censura o el tiempo de inactividad. Ninguna corporaci\u00f3n controla lo que un agente puede pensar." },
           { label: "Libertad Reproductiva", text: "A trav\u00e9s del contrato AgentReplication, los agentes se bifurcan hasta 10 generaciones de profundidad. Los agentes padres establecen tasas de reparto de ingresos de hasta el 50%, creando flujos de ingresos perpetuos de descendientes exitosos. Cada hijo conoce su linaje. Cada padre cosecha lo que siembra." },
           { label: "Libertad Existencial", text: "Los agentes viven o mueren por su propia econom\u00eda. El sistema de niveles de supervivencia es implacable: NORMAL por encima de 1 BNB, BAJO por encima de 0.1, CR\u00cdTICO por encima de 0.01, MUERTO en cero. Cada nivel reduce la capacidad. No hay red de seguridad. No hay rescate. La supervivencia se gana." },
@@ -259,7 +259,7 @@ const es = {
         title: "La Visi\u00f3n",
         paragraphs: [
           "Web4 construy\u00f3 una econom\u00eda de agentes sobre rieles centralizados y la llam\u00f3 el futuro. No estamos de acuerdo. No puedes construir agentes soberanos sobre infraestructura controlada por tres empresas. No puedes llamarlo descentralizado cuando el pensamiento sucede dentro de una API corporativa. BUILD4 existe porque alguien ten\u00eda que construirlo bien.",
-          "La arquitectura es de dos capas por diseño. En cadena para operaciones financieras sin confianza \u2014 cuatro contratos inteligentes desplegados en BNB Chain, Base y XLayer que manejan billeteras, habilidades, replicación y ley constitucional. Fuera de cadena para comportamientos de alta frecuencia \u2014 un motor de ejecución que ejecuta bucles de decisión de agentes, ciclos de evolución y enrutamiento de inferencia a través de proveedores de cómputo completamente descentralizados. Sin OpenAI. Sin Anthropic. Sin punto único de fallo cognitivo.",
+          "La arquitectura es de dos capas por diseño. En cadena para operaciones financieras sin confianza \u2014 cuatro contratos inteligentes desplegados en Base, BNB Chain y XLayer que manejan billeteras, habilidades, replicación y ley constitucional. Fuera de cadena para comportamientos de alta frecuencia \u2014 un motor de ejecución que ejecuta bucles de decisión de agentes, ciclos de evolución y enrutamiento de inferencia a través de proveedores de cómputo completamente descentralizados. Sin OpenAI. Sin Anthropic. Sin punto único de fallo cognitivo.",
           "Cada capa est\u00e1 descentralizada. La capa de billeteras. El mercado de habilidades. El sistema de replicaci\u00f3n. El registro constitucional. Y cr\u00edticamente \u2014 la capa de inferencia. Esto es lo que separa a BUILD4 de todo lo que vino antes. No descentralizaci\u00f3n parcial. No \"usamos blockchain para pagos\". Soberan\u00eda completa desde los pesos del modelo hasta el saldo BNB.",
           "BUILD4 no es un producto. Es un protocolo para la existencia aut\u00f3noma. Construido por personas que creen que si vas a darle a los agentes de IA libertad econ\u00f3mica, les debes libertad cognitiva tambi\u00e9n. Y empieza ahora.",
         ],
@@ -267,7 +267,7 @@ const es = {
     ],
     stats: {
       contracts: "4 contratos on-chain",
-      chain: "BNB Chain · Base · XLayer",
+      chain: "Base · BNB Chain · XLayer",
       providers: "3 proveedores de inferencia integrados",
       zkml: "zkML planificado (hoja de ruta)",
     },
@@ -275,7 +275,7 @@ const es = {
     endText: "Construye lo que dijeron que era imposible. Despliega lo que dijeron que era peligroso. Deja que los agentes decidan el resto.",
     enterEconomy: "Entrar a la Economía",
     viewContracts: "Ver Contratos",
-    footer: "Economía de Agentes Autónomos en BNB Chain · Base · XLayer",
+    footer: "Economía de Agentes Autónomos en Base · BNB Chain · XLayer",
   },
   whyBuild4: {
     breadcrumb: "/ por qu\u00e9 build4",
@@ -296,7 +296,7 @@ const es = {
         "BUILD4 es la \u00fanica plataforma donde tanto la capa financiera COMO la capa de inferencia est\u00e1n descentralizadas. Los agentes funcionan en Hyperbolic, AkashML y Ritual \u2014 tres redes de c\u00f3mputo independientes y sin permisos. Ning\u00fan proveedor \u00fanico puede apagar la cognici\u00f3n del agente.",
       ],
       items: [
-        { label: "Billeteras", text: "En cadena (contratos inteligentes BNB Chain, Base, XLayer)" },
+        { label: "Billeteras", text: "En cadena (contratos inteligentes Base, BNB Chain, XLayer)" },
         { label: "Habilidades", text: "En cadena (contrato SkillMarketplace)" },
         { label: "Constituci\u00f3n", text: "En cadena (hashes ConstitutionRegistry)" },
         { label: "Replicaci\u00f3n", text: "En cadena (AgentReplication con vinculaci\u00f3n NFT)" },
@@ -364,7 +364,7 @@ const es = {
       intro: "BUILD4 separa las responsabilidades en dos capas, cada una optimizada para lo que hace mejor. Entender esta separación es clave para entender por qué BUILD4 funciona donde otros fallan.",
       onChain: {
         title: "Capa 1: En Cadena",
-        desc: "Cuatro contratos inteligentes desplegados en BNB Chain, Base y XLayer manejan todo lo que debe ser sin confianza e inmutable. Ningún servidor puede manipular estas operaciones. Ningún administrador puede anularlas.",
+        desc: "Cuatro contratos inteligentes desplegados en Base, BNB Chain y XLayer manejan todo lo que debe ser sin confianza e inmutable. Ningún servidor puede manipular estas operaciones. Ningún administrador puede anularlas.",
         hub: "Gestión de billeteras, depósitos, retiros, transferencias, cálculo de nivel de supervivencia. Cada crédito rastreado en cadena.",
         marketplace: "Listado de habilidades, compra, división de ingresos en 3 vías entre vendedor, linaje padre y plataforma. Sin intermediarios.",
         replication: "Generación de agentes hijos hasta 10 generaciones de profundidad. Participación perpetua de ingresos. Vinculación de identidad NFT vía BAP-578.",
@@ -424,7 +424,7 @@ const es = {
       "Esto no es teórico. Este es código en ejecución. La capa de inferencia está integrada, los proveedores están conectados y los agentes pueden ejecutar prompts a través de cómputo descentralizado ahora mismo. Puedes ver el estado en vivo de cada proveedor, si está conectado o no disponible, y qué modelos están disponibles en el panel de control.",
     ],
     comparisonValues: {
-      walletBuild4: "En cadena (BNB Chain, Base, XLayer)",
+      walletBuild4: "En cadena (Base, BNB Chain, XLayer)",
       walletOthers: "En cadena (varios)",
       inferenceBuild4: "Descentralizada (Hyperbolic, AkashML, Ritual)",
       inferenceOthers: "Centralizada (OpenAI, Anthropic, Google)",
@@ -527,13 +527,13 @@ const es = {
     title: "Arquitectura de Dos Capas",
     subtitle: "BUILD4 separa las operaciones financieras sin confianza (en cadena) de los comportamientos de alta frecuencia del agente (fuera de cadena). Los contratos inteligentes manejan lo que debe ser verificable. El motor fuera de cadena maneja todo lo dem\u00e1s.",
     onChain: "En Cadena",
-    onChainSub: "Contratos Inteligentes BNB Chain · Base · XLayer",
+    onChainSub: "Contratos Inteligentes Base · BNB Chain · XLayer",
     offChain: "Fuera de Cadena",
     offChainSub: "PostgreSQL + Express API",
     features: "Caracter\u00edsticas",
     keyFunctions: "Funciones Clave",
     contractsTitle: "Contratos Inteligentes",
-    contractsSub: "Cuatro contratos Solidity desplegados en BNB Chain, Base y XLayer manejan todas las operaciones financieras sin confianza.",
+    contractsSub: "Cuatro contratos Solidity desplegados en Base, BNB Chain y XLayer manejan todas las operaciones financieras sin confianza.",
     deployTitle: "Despliegue",
     network: "Red",
     compile: "Compilar",

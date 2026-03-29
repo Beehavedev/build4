@@ -79,7 +79,7 @@ function OnboardingGuide({ defaultOpen = false }: { defaultOpen?: boolean }) {
             </ul>
           </div>
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-md p-2">
-            <p className="font-mono text-[10px] text-blue-400">Supported chains: BNB Chain, Base, and XLayer. You can deploy agents on any of them.</p>
+            <p className="font-mono text-[10px] text-blue-400">Supported chains: Base (primary), BNB Chain, and XLayer. You can deploy agents on any of them.</p>
           </div>
         </div>
       ),
@@ -426,8 +426,8 @@ function isTestAgent(agent: Agent): boolean {
 }
 
 const CHAINS = [
-  { id: "bnb", name: "BNB Chain", chainId: 56, currency: "BNB", backendKey: "bnbMainnet" },
   { id: "base", name: "Base", chainId: 8453, currency: "ETH", backendKey: "baseMainnet" },
+  { id: "bnb", name: "BNB Chain", chainId: 56, currency: "BNB", backendKey: "bnbMainnet" },
   { id: "xlayer", name: "XLayer", chainId: 196, currency: "OKB", backendKey: "xlayerMainnet" },
 ] as const;
 
@@ -1138,7 +1138,7 @@ export default function AutonomousEconomy() {
         throw new Error("Please connect your wallet first to sign the on-chain transaction.");
       }
       if (!web3.hasContracts) {
-        throw new Error("Smart contracts not available on the connected chain. Please switch to BNB Chain, Base, or XLayer.");
+        throw new Error("Smart contracts not available on the connected chain. Please switch to Base, BNB Chain, or XLayer.");
       }
 
       setCreateAgentStep(`Creating agent and registering on ${activeChain.name}...`);
@@ -2271,7 +2271,7 @@ export default function AutonomousEconomy() {
                   {!web3.hasContracts && web3.chainId && (
                     <div className="mt-2 p-2 bg-primary/10 border border-primary/30 rounded-md">
                       <div className="text-[10px] text-primary font-mono font-semibold">Direct Transfer Mode</div>
-                      <div className="text-[9px] text-muted-foreground font-mono mt-0.5">You're on {web3.chainName}. Deposits will be sent directly to the platform wallet. For full contract features (withdraw, on-chain wallet), switch to BNB Chain, Base, or XLayer.</div>
+                      <div className="text-[9px] text-muted-foreground font-mono mt-0.5">You're on {web3.chainName}. Deposits will be sent directly to the platform wallet. For full contract features (withdraw, on-chain wallet), switch to Base, BNB Chain, or XLayer.</div>
                     </div>
                   )}
                   {lastTxHash && (

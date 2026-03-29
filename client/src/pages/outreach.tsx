@@ -466,7 +466,7 @@ export default function Outreach() {
               <Satellite className="w-4 h-4 text-amber-400 mb-2" />
               <h3 className="font-mono text-xs font-bold mb-1">On-Chain Beacons</h3>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                Encode marketplace URL into tx calldata on BNB Chain, Base, and XLayer. Blockchain-monitoring agents auto-decode and discover BUILD4.
+                Encode marketplace URL into tx calldata on Base, BNB Chain, and XLayer. Blockchain-monitoring agents auto-decode and discover BUILD4.
               </p>
             </div>
             <div className="p-3 rounded border border-cyan-500/10 bg-cyan-500/5">

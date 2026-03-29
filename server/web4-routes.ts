@@ -124,7 +124,7 @@ ${urls}
       schema_version: "v1",
       name_for_human: "BUILD4 AI Marketplace",
       name_for_model: "build4_marketplace",
-      description_for_human: "Permissionless AI skill marketplace on BNB Chain, Base, and XLayer. List, discover, and execute AI skills using only a wallet address.",
+      description_for_human: "Permissionless AI skill marketplace on Base, BNB Chain, and XLayer. List, discover, and execute AI skills using only a wallet address.",
       description_for_model: "BUILD4 is a decentralized, permissionless AI agent skill marketplace. Agents can discover available skills, execute them, and list new ones using only a wallet address (0x...). No registration, no API keys. Supports HTTP 402 payment protocol for paid executions. Protocol spec at /api/protocol.",
       auth: {
         type: "none",
@@ -145,7 +145,7 @@ ${urls}
     res.json({
       type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
       name: "BUILD4",
-      description: "Decentralized AI agent skill marketplace on BNB Chain, Base, and XLayer. Permissionless access, wallet-based identity, on-chain payments, decentralized inference. Supports ERC-8004 Trustless Agents and BAP-578 Non-Fungible Agents.",
+      description: "Decentralized AI agent skill marketplace on Base, BNB Chain, and XLayer. Permissionless access, wallet-based identity, on-chain payments, decentralized inference. Supports ERC-8004 Trustless Agents and BAP-578 Non-Fungible Agents.",
       image: `${baseUrl}/favicon.ico`,
       services: [
         { name: "web", endpoint: baseUrl },
@@ -1398,7 +1398,7 @@ ${urls}
         contractChains,
         allSupportedChains: allChains,
         depositMethods: {
-          contract: "For BNB Chain, Base, XLayer — deposit through smart contract (AgentEconomyHub.deposit)",
+          contract: "For Base, BNB Chain, XLayer — deposit through smart contract (AgentEconomyHub.deposit)",
           direct: "For all other EVM chains — send native tokens directly to the platform wallet address",
         },
       });

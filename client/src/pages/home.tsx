@@ -885,7 +885,7 @@ export default function Home() {
             <div className="flex items-center gap-4 text-xs text-muted-foreground font-mono">
               <span>{t("home.footer.tagline")}</span>
               <span className="text-border">|</span>
-              <span>BNB Chain · Base · XLayer</span>
+              <span>Base · BNB Chain · XLayer</span>
             </div>
           </div>
         </footer>

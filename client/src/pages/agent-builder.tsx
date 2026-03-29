@@ -54,7 +54,7 @@ export default function AgentBuilder() {
               <li className="flex items-start gap-2"><span className="text-primary mt-0.5">&#9656;</span> Strategy templates for instant deployment</li>
               <li className="flex items-start gap-2"><span className="text-primary mt-0.5">&#9656;</span> Visual agent configuration</li>
               <li className="flex items-start gap-2"><span className="text-primary mt-0.5">&#9656;</span> Live preview with real AI inference</li>
-              <li className="flex items-start gap-2"><span className="text-primary mt-0.5">&#9656;</span> One-click deploy to BNB Chain, Base, XLayer</li>
+              <li className="flex items-start gap-2"><span className="text-primary mt-0.5">&#9656;</span> One-click deploy to Base, BNB Chain, XLayer</li>
             </ul>
           </Card>
 

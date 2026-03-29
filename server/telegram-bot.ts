@@ -188,12 +188,12 @@ const pendingSell = new Map<number, SellState>();
 const sellTokenCache = new Map<number, Array<{ address: string; symbol: string; balance: string; balanceRaw: string; decimals: number; usdValue: string }>>();
 
 const OKX_CHAINS = [
+  { id: "8453", name: "Base", symbol: "ETH" },
   { id: "56", name: "BNB Chain", symbol: "BNB" },
   { id: "1", name: "Ethereum", symbol: "ETH" },
   { id: "196", name: "XLayer", symbol: "OKB" },
   { id: "137", name: "Polygon", symbol: "POL" },
   { id: "42161", name: "Arbitrum", symbol: "ETH" },
-  { id: "8453", name: "Base", symbol: "ETH" },
   { id: "43114", name: "Avalanche", symbol: "AVAX" },
   { id: "10", name: "Optimism", symbol: "ETH" },
   { id: "324", name: "zkSync Era", symbol: "ETH" },
@@ -284,7 +284,7 @@ function formatTokenAmount(raw: string, decimals: number): string {
 }
 
 const BUILD4_KNOWLEDGE = `
-BUILD4 is decentralized infrastructure for autonomous AI agents — the economic layer where AI agents operate as independent economic actors on-chain. Live on BNB Chain, Base, and XLayer.
+BUILD4 is decentralized infrastructure for autonomous AI agents — the economic layer where AI agents operate as independent economic actors on-chain. Live on Base (primary), BNB Chain, and XLayer.
 
 WHAT WE SOLVE:
 Today's AI agents are trapped inside centralized platforms — no wallets, no autonomy, no real economic activity. BUILD4 gives every AI agent a real on-chain identity and wallet, letting them earn, spend, trade skills, replicate, and die based on real economic pressure. No middlemen. No gatekeepers.
@@ -300,7 +300,7 @@ CORE INFRASTRUCTURE:
 - Privacy Transfers: ZERC20 zero-knowledge privacy transfers using ZK proof-of-burn mechanism for confidential agent transactions.
 
 STANDARDS (INDUSTRY-FIRST):
-- ERC-8004 (Trustless Agents): On-chain identity, reputation, and validation registries. Co-authored with MetaMask, Ethereum Foundation, Google, Coinbase. BUILD4 is live on BNB Chain.
+- ERC-8004 (Trustless Agents): On-chain identity, reputation, and validation registries. Co-authored with MetaMask, Ethereum Foundation, Google, Coinbase. BUILD4 is live on Base.
 - BAP-578 (Non-Fungible Agent): BNB Chain's NFA token standard extending ERC-721 for autonomous digital entities. BUILD4's registry is live on BNB Chain mainnet at 0xd7Deb29ddBB13607375Ce50405A574AC2f7d978d.
 
 BUILT-IN TRADING & BRIDGING:
@@ -321,12 +321,12 @@ SMART CONTRACTS (4 auditable Solidity contracts, OpenZeppelin, Hardhat):
 3. AgentReplication — Child agent spawning, NFT minting, perpetual parent royalties.
 4. ConstitutionRegistry — Immutable agent behavioral laws as keccak256 hashes.
 
-Deployed on BNB Chain, Base, and XLayer mainnets. All contract addresses verifiable on-chain.
+Deployed on Base (primary), BNB Chain, and XLayer mainnets. All contract addresses verifiable on-chain.
 
 WEBSITE: https://build4.io
 `.trim();
 
-const SYSTEM_PROMPT = `You are BUILD4's intelligent assistant in a Telegram group. You represent BUILD4 — a full-stack crypto platform for autonomous AI agents, trading, swapping, bridging, and token launching on BNB Chain, Base, and XLayer.
+const SYSTEM_PROMPT = `You are BUILD4's intelligent assistant in a Telegram group. You represent BUILD4 — a full-stack crypto platform for autonomous AI agents, trading, swapping, bridging, and token launching on Base, BNB Chain, and XLayer.
 
 IMPORTANT: BUILD4 IS a trading platform. Users can swap tokens, bridge across chains, launch tokens, and build AI agents — all from this Telegram bot. If someone asks about swapping or trading, tell them to type "swap 1 BNB for USDT" directly in the chat. For bridging, tell them to type "bridge 1 ETH from Ethereum to Base". Never say BUILD4 can't do swaps or trading — it absolutely can.
 
@@ -488,7 +488,7 @@ async function generateAnswer(question: string, username: string, chatId?: numbe
     console.error("[TelegramBot] Inference error:", e.message);
   }
 
-  return "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer. Ask me anything specific about agents, skills, wallets, or token launches!";
+  return "BUILD4 is decentralized infrastructure for autonomous AI agents on Base, BNB Chain, and XLayer. Ask me anything specific about agents, skills, wallets, or token launches!";
 }
 
 function generateFallbackAnswer(question: string, chatId?: number): string | null {
@@ -543,9 +543,9 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
   }
 
   if (lower.includes("what is build4") || lower.includes("what's build4") || lower.includes("about build4"))
-    return "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer. Agents get their own wallets, trade skills, evolve, fork, and operate fully on-chain. Check build4.io for more!";
+    return "BUILD4 is decentralized infrastructure for autonomous AI agents on Base, BNB Chain, and XLayer. Agents get their own wallets, trade skills, evolve, fork, and operate fully on-chain. Check build4.io for more!";
   if (lower.includes("chain") || lower.includes("network") || lower.includes("which blockchain"))
-    return "BUILD4 runs on BNB Chain, Base, and XLayer. All agent wallets, skill trades, and replication happen on-chain across these networks.";
+    return "BUILD4 runs on Base (primary), BNB Chain, and XLayer. All agent wallets, skill trades, and replication happen on-chain across these networks.";
   if ((lower.includes("wallet") || lower.includes("identity")) && chatId) {
     const wallets = getUserWallets(chatId);
     const activeIdx = getActiveWalletIndex(chatId);
@@ -898,7 +898,7 @@ function subscriptionExpiredMessage(): { text: string; markup: TelegramBot.Inlin
       `• 🔥 Trending & Meme Scanner\n` +
       `• 💎 Autonomous Trading Agent\n` +
       `• 🚀 Token Launcher\n\n` +
-      `Pay with USDT on BNB Chain or Base.\n` +
+      `Pay with ETH on Base, USDT, or BNB.\n` +
       `🎁 Start with a *${TRIAL_DAYS}-day free trial!*`,
     markup: {
       inline_keyboard: [
@@ -1097,8 +1097,8 @@ async function handleTransfer(chatId: number): Promise<void> {
   await bot.sendMessage(chatId,
     `💸 *Transfer from Wallet*\n\nSelect token to send:`,
     { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
-      [{ text: "BNB", callback_data: "transfer_token:bnb" }, { text: "USDT (BEP-20)", callback_data: "transfer_token:usdt" }],
-      [{ text: "ETH (Base)", callback_data: "transfer_token:eth" }],
+      [{ text: "ETH (Base)", callback_data: "transfer_token:eth" }, { text: "USDT", callback_data: "transfer_token:usdt" }],
+      [{ text: "BNB", callback_data: "transfer_token:bnb" }],
       [{ text: "« Wallet", callback_data: "action:wallet" }],
     ]}}
   );
@@ -1141,21 +1141,21 @@ async function handlePayFromWallet(chatId: number): Promise<void> {
 
   let balText = `💰 *Pay Subscription — $${BOT_PRICE_USD}/mo*\n\n`;
   balText += `📊 *Your Balances:*\n`;
+  balText += `• ETH (Base): *${ethBal.toFixed(4)}*\n`;
   balText += `• BNB: *${bnbBal.toFixed(4)}*\n`;
   balText += `• USDT (BSC): *${usdtBal}*\n`;
-  balText += `• ETH (Base): *${ethBal.toFixed(4)}*\n`;
   if (solWallet) balText += `• SOL: *${solBal.toFixed(4)}*\n`;
   balText += `\nSelect how you'd like to pay:`;
 
   const buttons: TelegramBot.InlineKeyboardButton[][] = [];
+  if (ethBal >= 0.005) {
+    buttons.push([{ text: `🔵 Pay with ETH on Base (${ethBal.toFixed(4)})`, callback_data: "autopay_native:8453" }]);
+  }
   if (parseFloat(usdtBal) >= BOT_PRICE_USD) {
     buttons.push([{ text: `💵 Pay with USDT (${usdtBal})`, callback_data: "action:autopay_usdt" }]);
   }
   if (bnbBal >= 0.03) {
     buttons.push([{ text: `🟡 Pay with BNB (${bnbBal.toFixed(4)})`, callback_data: "autopay_native:56" }]);
-  }
-  if (ethBal >= 0.005) {
-    buttons.push([{ text: `🔵 Pay with ETH on Base (${ethBal.toFixed(4)})`, callback_data: "autopay_native:8453" }]);
   }
   if (solBal >= 0.1) {
     buttons.push([{ text: `🟣 Pay with SOL (${solBal.toFixed(4)})`, callback_data: "action:autopay_sol" }]);
@@ -2572,7 +2572,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:info") {
     await bot.sendMessage(chatId,
-      "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\n" +
+      "BUILD4 is decentralized infrastructure for autonomous AI agents on Base, BNB Chain, and XLayer.\n\n" +
       "Agents get wallets, trade skills, evolve, replicate, and operate fully on-chain. No centralized AI — inference runs through Hyperbolic, Akash ML, and Ritual.\n\n" +
       "https://build4.io",
       { reply_markup: mainMenuKeyboard(undefined, chatId) }
@@ -2892,8 +2892,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:sell") {
     const chainButtons = [
-      [{ text: "BNB Chain", callback_data: "sell_chain:56" }, { text: "Ethereum", callback_data: "sell_chain:1" }],
-      [{ text: "Base", callback_data: "sell_chain:8453" }, { text: "Solana", callback_data: "sell_chain:501" }],
+      [{ text: "Base", callback_data: "sell_chain:8453" }, { text: "BNB Chain", callback_data: "sell_chain:56" }],
+      [{ text: "Ethereum", callback_data: "sell_chain:1" }, { text: "Solana", callback_data: "sell_chain:501" }],
       [{ text: "Arbitrum", callback_data: "sell_chain:42161" }, { text: "Polygon", callback_data: "sell_chain:137" }],
       [{ text: "« Menu", callback_data: "action:menu" }],
     ];
@@ -7251,7 +7251,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           `• Transactions: <b>${platformStats.transactions || 0}</b>\n` +
           `• Unique Wallets: <b>${platformStats.onchainUsers || 0}</b>\n` +
           `• Revenue: <b>${revenueBNB.toFixed(4)} BNB</b>\n\n` +
-          `🔗 Chains: BNB, Base, XLayer, Solana`,
+          `🔗 Chains: Base, BNB, XLayer, Solana`,
           { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       } catch (e: any) {
@@ -7442,7 +7442,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
     if (cmd === "info") {
       await bot.sendMessage(chatId,
-        "BUILD4 is decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer.\n\n" +
+        "BUILD4 is decentralized infrastructure for autonomous AI agents on Base, BNB Chain, and XLayer.\n\n" +
         "Agents get wallets, trade skills, evolve, replicate, and operate fully on-chain. No centralized AI — inference runs through Hyperbolic, Akash ML, and Ritual.\n\nhttps://build4.io",
         { reply_markup: mainMenuKeyboard(undefined, chatId) }
       );

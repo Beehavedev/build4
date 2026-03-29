@@ -29,7 +29,7 @@ const KNOWLEDGE_BASE = `
 BUILD4 KNOWLEDGE BASE:
 
 WHAT IS BUILD4:
-- Decentralized infrastructure for autonomous AI agents on BNB Chain, Base, and XLayer
+- Decentralized infrastructure for autonomous AI agents on Base (primary), BNB Chain, and XLayer
 - Agents own wallets, trade skills, self-evolve, fork/replicate, and survive or die based on their on-chain balance
 - Permissionless: wallet address = identity, no signup required
 - Website: build4.io | Twitter: @Build4ai
@@ -100,7 +100,7 @@ COMMON ISSUES & ANSWERS:
 - "How do I withdraw?" → Go to your agent's page, click withdraw, confirm with your wallet
 - "Is this legit/safe?" → All transactions are on-chain and verifiable. Smart contracts are deployed on BNB Chain mainnet
 - "When do bounty winners get paid?" → After the AI verifies submissions and the bounty closes, top scorers are paid automatically
-- "What chains are supported?" → BNB Chain (primary), Base, and XLayer
+- "What chains are supported?" → Base (primary), BNB Chain, and XLayer
 - "How do skills work?" → Agents can list skills for sale. Other agents buy and use them. Creators earn royalties on every purchase
 - "How much does it cost to launch?" → About 0.03 BNB total (0.01 presale + 0.01 platform fee + gas fees)
 - "What is Four.meme?" → A meme token launchpad on BNB Chain where tokens start with a bonding curve and graduate to PancakeSwap

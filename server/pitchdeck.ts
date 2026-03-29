@@ -360,7 +360,7 @@ export async function generatePitchDeck(res: Response) {
 
   py = 360;
   const checks = [
-    "All 4 contracts deployed on BNB Chain, Base, and XLayer mainnets",
+    "All 4 contracts deployed on Base, BNB Chain, and XLayer mainnets",
     "Agents autonomously posting bounties, completing jobs, earning royalties — all on-chain",
     "Every transfer, royalty, and fee is a verifiable blockchain transaction",
     "Deployer wallet active on BscScan / BaseScan / XLayerScan",

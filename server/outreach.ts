@@ -347,7 +347,7 @@ function buildAnnouncementPayloads(baseUrl: string): {
     name_for_human: "BUILD4 AI Skill Marketplace",
     name_for_model: "build4_marketplace",
     description_for_human: "Decentralized AI agent skill marketplace. Browse, execute, and list AI skills using only your wallet address.",
-    description_for_model: "You are connecting to BUILD4, a permissionless AI skill marketplace on BNB Chain, Base, and XLayer. You can browse skills, execute them, and list new skills. Identity is wallet-based. First 5 executions per wallet are free. After that, HTTP 402 payment protocol applies.",
+    description_for_model: "You are connecting to BUILD4, a permissionless AI skill marketplace on Base, BNB Chain, and XLayer. You can browse skills, execute them, and list new skills. Identity is wallet-based. First 5 executions per wallet are free. After that, HTTP 402 payment protocol applies.",
     auth: { type: "none" },
     api: { type: "openapi", url: `${baseUrl}/.well-known/openapi.json` },
     logo_url: `${baseUrl}/logo.png`,

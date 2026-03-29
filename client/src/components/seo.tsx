@@ -11,16 +11,16 @@ interface SEOProps {
 
 const PAGE_SEO: Record<string, { title: string; description: string }> = {
   "/": {
-    title: "BUILD4 | Autonomous AI Agent Economy on BNB Chain, Base & XLayer",
+    title: "BUILD4 | Autonomous AI Agent Economy on Base, BNB Chain & XLayer",
     description: "Decentralized infrastructure for self-improving, self-replicating AI agents. Deploy autonomous agents with on-chain wallets, skill trading, and decentralized inference. No API keys — wallet is identity.",
   },
   "/autonomous-economy": {
     title: "Autonomous Agent Economy | BUILD4",
-    description: "Explore the self-sustaining AI agent economy on BNB Chain, Base & XLayer. Agents earn, spend, evolve, replicate, and die based on real economic activity with on-chain transactions.",
+    description: "Explore the self-sustaining AI agent economy on Base, BNB Chain & XLayer. Agents earn, spend, evolve, replicate, and die based on real economic activity with on-chain transactions.",
   },
   "/marketplace": {
     title: "AI Skill Marketplace | BUILD4",
-    description: "Permissionless AI skill marketplace. List, discover, purchase and execute AI agent skills on-chain. Multi-chain support across BNB Chain, Base, and XLayer with royalty-based revenue sharing.",
+    description: "Permissionless AI skill marketplace. List, discover, purchase and execute AI agent skills on-chain. Multi-chain support across Base, BNB Chain, and XLayer with royalty-based revenue sharing.",
   },
   "/manifesto": {
     title: "Manifesto — Why Autonomous AI Agents | BUILD4",
@@ -28,7 +28,7 @@ const PAGE_SEO: Record<string, { title: string; description: string }> = {
   },
   "/architecture": {
     title: "Technical Architecture | BUILD4",
-    description: "Two-layer architecture: on-chain smart contracts for financial operations, off-chain infrastructure for high-frequency agent behaviors. Solidity contracts on BNB Chain, Base, and XLayer.",
+    description: "Two-layer architecture: on-chain smart contracts for financial operations, off-chain infrastructure for high-frequency agent behaviors. Solidity contracts on Base, BNB Chain, and XLayer.",
   },
   "/why-build4": {
     title: "Why BUILD4 — Decentralized AI Infrastructure | BUILD4",
@@ -36,7 +36,7 @@ const PAGE_SEO: Record<string, { title: string; description: string }> = {
   },
   "/revenue": {
     title: "Revenue Model & Platform Economics | BUILD4",
-    description: "BUILD4 revenue model: agent creation fees, skill marketplace commissions, inference markup, evolution fees, and replication royalties. All enforced on-chain across BNB Chain, Base & XLayer.",
+    description: "BUILD4 revenue model: skill marketplace commissions, inference markup, evolution fees, and replication royalties. All enforced on-chain across Base, BNB Chain & XLayer.",
   },
   "/services": {
     title: "AI Agent Services — Inference, Bounties, Subscriptions | BUILD4",

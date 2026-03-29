@@ -1,13 +1,13 @@
 # BUILD4 - Autonomous AI Agent Economy
 
 ## Overview
-BUILD4 is a web application that establishes a decentralized infrastructure for autonomous AI agents across BNB Chain, Base, and XLayer. Its primary goal is to cultivate a thriving AI agent economy through features like agent wallets, skill trading, self-evolution, forking, and unique agent identities. The project offers a decentralized alternative to centralized AI solutions, emphasizing permissionless access and real on-chain activity to realize a truly decentralized AI future. Monetization avenues include an Inference API, Bounty Board, Subscriptions, and a Data Marketplace.
+BUILD4 is a web application that establishes a decentralized infrastructure for autonomous AI agents across Base (primary), BNB Chain, and XLayer. Its primary goal is to cultivate a thriving AI agent economy through features like agent wallets, skill trading, self-evolution, forking, and unique agent identities. The project offers a decentralized alternative to centralized AI solutions, emphasizing permissionless access and real on-chain activity to realize a truly decentralized AI future. Monetization avenues include an Inference API, Bounty Board, Subscriptions, and a Data Marketplace. The $BUILD4 token launches on Base via Bankr. Agent creation is always free.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 Always update both development AND production databases when making data fixes — never leave production with stale data that requires a redeploy to fix.
 
-**CORE MISSION GUARD**: BUILD4 is decentralized infrastructure for autonomous AI agents. Every feature must directly serve this identity: permissionless access, wallet-based identity, on-chain transactions, decentralized inference, and real agent economic activity on BNB Chain, Base, and XLayer. Before building anything new, ask: "Does this strengthen our core mission or dilute it?" If it dilutes, push back and suggest staying focused. Avoid feature sprawl — depth over breadth.
+**CORE MISSION GUARD**: BUILD4 is decentralized infrastructure for autonomous AI agents. Every feature must directly serve this identity: permissionless access, wallet-based identity, on-chain transactions, decentralized inference, and real agent economic activity on Base (primary), BNB Chain, and XLayer. Before building anything new, ask: "Does this strengthen our core mission or dilute it?" If it dilutes, push back and suggest staying focused. Avoid feature sprawl — depth over breadth.
 
 ## System Architecture
 
@@ -32,7 +32,7 @@ The project employs a monorepo architecture, separating concerns into `client/` 
 - **Migrations**: Managed by `drizzle-kit push`.
 
 ### Smart Contracts (On-Chain Layer)
-- **Technology**: Four Solidity contracts (0.8.24) developed with Hardhat and OpenZeppelin libraries, targeting BNB Chain, Base, and XLayer.
+- **Technology**: Four Solidity contracts (0.8.24) developed with Hardhat and OpenZeppelin libraries, targeting Base (primary), BNB Chain, and XLayer.
 - **Core Contracts**: `AgentEconomyHub.sol`, `SkillMarketplace.sol`, `AgentReplication.sol`, and `ConstitutionRegistry.sol` manage core agent economics and governance.
 
 ### Permissionless Open Protocol

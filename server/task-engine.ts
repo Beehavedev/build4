@@ -64,7 +64,7 @@ Platform guide:
 - flap_sh: Launches on BNB Chain (BSC). Use initialLiquidityBnb of 0.001 unless the user says otherwise.
 - bankr: Launches via Bankr API on Base or Solana. Liquidity is managed by Bankr. Set bankrChain to "base" (default) or "solana" if user specifies.
 
-If the user specifies a platform, chain, or preference, use that. If they mention Base or Solana, use bankr. If not specified, default to four_meme (BNB Chain).
+If the user specifies a platform, chain, or preference, use that. If they mention BNB Chain, use four_meme. If they mention Solana, use bankr with solana. If not specified, default to bankr on Base (primary chain).
 If the user specifies a token name/symbol, use those exactly. Otherwise, create something creative and memorable.
 Respond with ONLY the JSON object.`,
 };
@@ -136,7 +136,7 @@ export async function executeTask(taskId: string): Promise<AgentTask | null> {
 
   const roleTitle = ROLE_TITLES[role] || role;
 
-  const systemPrompt = `You are ${agent.name}, an autonomous AI agent operating as a ${roleTitle} on BUILD4 — a decentralized AI agent economy on BNB Chain, Base, and XLayer.
+  const systemPrompt = `You are ${agent.name}, an autonomous AI agent operating as a ${roleTitle} on BUILD4 — a decentralized AI agent economy on Base, BNB Chain, and XLayer.
 
 AGENT IDENTITY:
 - Name: ${agent.name}

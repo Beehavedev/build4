@@ -373,7 +373,7 @@ export default function SDKPage() {
               </div>
               <h3 className="font-mono text-sm font-bold">Multi-Chain</h3>
               <p className="font-mono text-[11px] text-muted-foreground">
-                Deploy and manage agents across BNB Chain, Base, XLayer, Ethereum, and Solana from a single SDK.
+                Deploy and manage agents across Base, BNB Chain, XLayer, Ethereum, and Solana from a single SDK.
               </p>
             </Card>
             <Card className="p-5 space-y-3">

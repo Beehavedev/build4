@@ -15,7 +15,7 @@ const FEATURES = [
   {
     icon: TrendingUp,
     title: "Smart Money Signals",
-    desc: "Real-time alerts from whale wallets, smart money, and KOL traders across BNB Chain, Base, Ethereum, and Solana. See exactly what the top traders are buying before everyone else.",
+    desc: "Real-time alerts from whale wallets, smart money, and KOL traders across Base, BNB Chain, Ethereum, and Solana. See exactly what the top traders are buying before everyone else.",
     premium: true,
   },
   {
@@ -33,7 +33,7 @@ const FEATURES = [
   {
     icon: ArrowLeftRight,
     title: "Cross-Chain Swap & Bridge",
-    desc: "Swap any token pair and bridge assets across BNB Chain, Base, Ethereum, Solana, and more — all without leaving Telegram. Powered by OKX aggregator for optimal rates.",
+    desc: "Swap any token pair and bridge assets across Base, BNB Chain, Ethereum, Solana, and more — all without leaving Telegram. Powered by OKX aggregator for optimal rates.",
     premium: true,
   },
   {
@@ -294,7 +294,7 @@ export default function TelegramBotPage() {
               { q: "What's included in the free trial?", a: "Full access to every premium feature for 4 days. Signals, trading, scanning, launching — everything. No payment required to start." },
               { q: "What happens when my trial expires?", a: "Free features (wallet, gas prices, agents) keep working. Premium features (signals, trading, scanning, launching) require a $19.99/month subscription." },
               { q: "Can I pay from any wallet?", a: "Payment must come from your linked wallet inside the bot. This is how we verify ownership. One wallet = one subscription." },
-              { q: "What chains does the bot support?", a: "BNB Chain, Base, Ethereum, Solana, and XLayer. Signals cover all chains. Trading and swaps work across all supported DEXes via OKX aggregator." },
+              { q: "What chains does the bot support?", a: "Base, BNB Chain, Ethereum, Solana, and XLayer. Signals cover all chains. Trading and swaps work across all supported DEXes via OKX aggregator." },
             ].map((item, i) => (
               <Card key={i} className="p-4 bg-[#141414] border-[#252526]" data-testid={`faq-${i}`}>
                 <div className="font-mono text-xs font-bold text-white mb-1.5">{item.q}</div>

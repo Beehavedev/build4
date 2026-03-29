@@ -194,7 +194,7 @@ export default function Standards() {
         <div className="mb-10">
           <h1 className="text-3xl font-bold mb-3" data-testid="text-page-title">Agent Standards</h1>
           <p className="text-muted-foreground text-lg max-w-3xl">
-            BUILD4 implements industry-standard protocols for trustless AI agent identity, reputation, and autonomous behavior on BNB Chain, Base, and XLayer.
+            BUILD4 implements industry-standard protocols for trustless AI agent identity, reputation, and autonomous behavior on Base, BNB Chain, and XLayer.
           </p>
         </div>
 

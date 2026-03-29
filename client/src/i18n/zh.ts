@@ -267,7 +267,7 @@ const zh = {
     ],
     stats: {
       contracts: "4个链上合约",
-      chain: "BNB Chain · Base · XLayer",
+      chain: "Base · BNB Chain · XLayer",
       providers: "3个推理提供商已集成",
       zkml: "zkML计划中（路线图）",
     },
@@ -275,7 +275,7 @@ const zh = {
     endText: "构建他们说不可能的东西。部署他们说危险的东西。让智能体决定其余的一切。",
     enterEconomy: "进入经济体",
     viewContracts: "查看合约",
-    footer: "BNB Chain · Base · XLayer上的自主智能体经济",
+    footer: "Base · BNB Chain · XLayer上的自主智能体经济",
   },
   whyBuild4: {
     breadcrumb: "/ 为什么选BUILD4",
@@ -424,7 +424,7 @@ const zh = {
       "这不是理论。这是运行中的代码。推理层已集成，提供商已连接，智能体现在就可以通过去中心化计算运行提示。你可以在仪表板上看到每个提供商的实时状态，是否已连接或不可用，以及哪些模型可用。",
     ],
     comparisonValues: {
-      walletBuild4: "链上 (BNB Chain, Base, XLayer)",
+      walletBuild4: "链上 (Base, BNB Chain, XLayer)",
       walletOthers: "链上（各种）",
       inferenceBuild4: "去中心化 (Hyperbolic, AkashML, Ritual)",
       inferenceOthers: "中心化 (OpenAI, Anthropic, Google)",
@@ -527,7 +527,7 @@ const zh = {
     title: "两层架构",
     subtitle: "BUILD4将无信任金融操作（链上）与高频代理行为（链下）分离。智能合约处理必须可验证的操作。链下引擎处理其余一切。",
     onChain: "链上",
-    onChainSub: "BNB Chain · Base · XLayer 智能合约",
+    onChainSub: "Base · BNB Chain · XLayer 智能合约",
     offChain: "链下",
     offChainSub: "PostgreSQL + Express API",
     features: "功能特性",

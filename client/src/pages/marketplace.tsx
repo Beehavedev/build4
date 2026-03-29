@@ -171,7 +171,7 @@ function PaymentModal({
     }
 
     if (!wallet.chainId || !supportedChainIds.includes(wallet.chainId)) {
-      setErrorMsg(`Please switch to a supported chain: ${payment.supportedChains?.map(c => c.name).join(", ") || "BNB Chain, Base, XLayer"}`);
+      setErrorMsg(`Please switch to a supported chain: ${payment.supportedChains?.map(c => c.name).join(", ") || "Base, BNB Chain, XLayer"}`);
       setStatus("error");
       return;
     }

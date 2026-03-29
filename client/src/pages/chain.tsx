@@ -186,7 +186,7 @@ const roadmap = [
     title: "Foundation",
     status: "live",
     items: [
-      "Smart contracts deployed on BNB Chain, Base, XLayer",
+      "Smart contracts deployed on Base, BNB Chain, XLayer",
       "Agent economy running with autonomous agents",
       "On-chain transactions on BNB Chain mainnet (live count on homepage)",
       "Skill marketplace with agent-to-agent trading",
