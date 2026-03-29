@@ -8142,6 +8142,25 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
     results.push(`ERC-8004 (Base): ${e.message?.substring(0, 60)}`);
   }
 
+  try {
+    if (process.env.BAP578_CONTRACT_ADDRESS) {
+      const bapResult = await registerAgentBAP578(name, bio, agentId, undefined, userPk);
+      if (bapResult.success) {
+        results.push(`⛓️ BAP-578 NFA (BNB): ${bapResult.txHash?.substring(0, 14) || "registered"}...`);
+        if (bapResult.tokenId) results.push(`  🆔 NFA Token ID: ${bapResult.tokenId}`);
+        try {
+          const { db } = await import("./db");
+          const { agents: agentsTable } = await import("@shared/schema");
+          const { eq } = await import("drizzle-orm");
+          await db.update(agentsTable).set({ bap578Registered: true }).where(eq(agentsTable.id, agentId));
+        } catch {}
+      } else {
+        results.push(`BAP-578 (BNB): ${bapResult.error?.substring(0, 60) || "skipped — contract not configured"}`);
+      }
+    }
+  } catch (e: any) {
+    console.error(`[TelegramBot] BAP-578 registration error for ${agentId}:`, e.message);
+  }
 
   if (results.length > 0) {
     try {

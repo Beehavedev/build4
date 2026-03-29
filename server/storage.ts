@@ -271,6 +271,7 @@ export interface IStorage {
   completeJob(jobId: string, resultJson: string): Promise<AgentJob | undefined>;
 
   updateSkillTier(skillId: string, tier: string): Promise<void>;
+  updateSkill(skillId: string, updates: { priceAmount?: string; tier?: string }): Promise<void>;
   updateSkillRoyalties(skillId: string, royaltyAmount: string): Promise<void>;
   updateSkillCode(skillId: string, code: string, inputSchema: Record<string, any>): Promise<void>;
 
@@ -1937,6 +1938,10 @@ export class DatabaseStorage implements IStorage {
 
   async updateSkillTier(skillId: string, tier: string): Promise<void> {
     await db.update(agentSkills).set({ tier }).where(eq(agentSkills.id, skillId));
+  }
+
+  async updateSkill(skillId: string, updates: { priceAmount?: string; tier?: string }): Promise<void> {
+    await db.update(agentSkills).set(updates).where(eq(agentSkills.id, skillId));
   }
 
   async updateSkillRoyalties(skillId: string, royaltyAmount: string): Promise<void> {

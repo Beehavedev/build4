@@ -1902,19 +1902,62 @@ async function launchOnBankr(params: LaunchParams): Promise<LaunchResult> {
 }
 
 export async function launchToken(params: LaunchParams): Promise<LaunchResult> {
-  log(`[TokenLauncher] Launching ${params.tokenName} ($${params.tokenSymbol}) on ${params.platform}`, "token-launcher");
-
-  if (params.platform === "four_meme") {
-    return launchOnFourMeme(params);
-  } else if (params.platform === "flap_sh") {
-    return launchOnFlapSh(params);
-  } else if (params.platform === "bankr") {
-    return launchOnBankr(params);
-  } else if (params.platform === "xlayer") {
-    return launchOnXLayer(params);
+  const errors: string[] = [];
+  if (!params.tokenName || params.tokenName.trim().length < 2) errors.push("Token name must be at least 2 characters");
+  if (!params.tokenSymbol || params.tokenSymbol.trim().length < 1 || params.tokenSymbol.trim().length > 10) errors.push("Token symbol must be 1-10 characters");
+  if (!params.platform) errors.push("Platform is required");
+  if (params.tokenName && params.tokenName.length > 100) errors.push("Token name too long (max 100 characters)");
+  if (params.tokenSymbol && !/^[a-zA-Z0-9$]+$/.test(params.tokenSymbol.trim())) errors.push("Token symbol must be alphanumeric");
+  if (errors.length > 0) {
+    return { success: false, error: `Validation failed: ${errors.join("; ")}` };
   }
 
-  return { success: false, error: `Unknown platform: ${params.platform}` };
+  log(`[TokenLauncher] Launching ${params.tokenName} ($${params.tokenSymbol}) on ${params.platform}`, "token-launcher");
+
+  const MAX_RETRIES = 3;
+  let lastError = "";
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      let result: LaunchResult;
+      if (params.platform === "four_meme") {
+        result = await launchOnFourMeme(params);
+      } else if (params.platform === "flap_sh") {
+        result = await launchOnFlapSh(params);
+      } else if (params.platform === "bankr") {
+        result = await launchOnBankr(params);
+      } else if (params.platform === "xlayer") {
+        result = await launchOnXLayer(params);
+      } else {
+        return { success: false, error: `Unknown platform: ${params.platform}` };
+      }
+
+      if (result.success) {
+        if (attempt > 1) log(`[TokenLauncher] Succeeded on attempt ${attempt}`, "token-launcher");
+        return result;
+      }
+
+      lastError = result.error || "Unknown error";
+      if (lastError.includes("Insufficient") || lastError.includes("balance") || lastError.includes("Validation")) {
+        return result;
+      }
+
+      if (attempt < MAX_RETRIES) {
+        log(`[TokenLauncher] Attempt ${attempt} failed: ${lastError.substring(0, 100)}, retrying in ${attempt * 2}s...`, "token-launcher");
+        await new Promise(r => setTimeout(r, attempt * 2000));
+      } else {
+        return result;
+      }
+    } catch (e: any) {
+      lastError = e.message || "Unknown error";
+      if (attempt < MAX_RETRIES) {
+        log(`[TokenLauncher] Attempt ${attempt} threw: ${lastError.substring(0, 100)}, retrying...`, "token-launcher");
+        await new Promise(r => setTimeout(r, attempt * 2000));
+      }
+    }
+  }
+
+  return { success: false, error: `Failed after ${MAX_RETRIES} attempts: ${lastError}` };
 }
 
 export async function getTokenLaunches(agentId?: string, limit = 50): Promise<TokenLaunch[]> {

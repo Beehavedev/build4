@@ -540,6 +540,7 @@ ${urls}
   });
 
   const agentCreationCooldowns = new Map<string, number>();
+  const agentCreationHourlyCount = new Map<string, { count: number; resetAt: number }>();
   app.post("/api/web4/agents/create", async (req: Request, res: Response) => {
     try {
       const parsed = web4CreateAgentRequestSchema.parse(req.body);
@@ -553,6 +554,17 @@ ${urls}
       if (lastCreation && Date.now() - lastCreation < 30000) {
         return res.status(429).json({ error: "Please wait at least 30 seconds between creating agents." });
       }
+
+      const hourly = agentCreationHourlyCount.get(rateLimitKey);
+      if (hourly && Date.now() < hourly.resetAt && hourly.count >= 3) {
+        return res.status(429).json({ error: "Maximum 3 agents per hour per wallet. Try again later." });
+      }
+      if (!hourly || Date.now() >= (hourly?.resetAt || 0)) {
+        agentCreationHourlyCount.set(rateLimitKey, { count: 1, resetAt: Date.now() + 3600000 });
+      } else {
+        hourly.count++;
+      }
+
       agentCreationCooldowns.set(rateLimitKey, Date.now());
 
       const existing = await storage.getAgentByName(parsed.name);
@@ -1589,6 +1601,7 @@ ${urls}
     try {
       const category = req.query.category as string | undefined;
       const executableOnly = req.query.executable === "true";
+      const deduplicate = req.query.deduplicate !== "false";
       const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 200);
       const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
       let skills;
@@ -1599,6 +1612,18 @@ ${urls}
       }
       if (category && category !== "all") {
         skills = skills.filter(s => s.category === category);
+      }
+      if (deduplicate) {
+        const crypto = await import("crypto");
+        const seen = new Map<string, typeof skills[0]>();
+        for (const skill of skills) {
+          const hash = crypto.createHash("md5").update(skill.code || "").digest("hex");
+          const existing = seen.get(hash);
+          if (!existing || skill.executionCount > existing.executionCount) {
+            seen.set(hash, skill);
+          }
+        }
+        skills = Array.from(seen.values()).sort((a, b) => b.executionCount - a.executionCount);
       }
       const total = skills.length;
       skills = skills.slice(offset, offset + limit);
@@ -1870,16 +1895,25 @@ ${urls}
       const { db } = await import("./db");
       const { sql } = await import("drizzle-orm");
       const [txCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agent_transactions`)).rows;
-      const [skillCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agent_skills`)).rows;
       const [agentCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agents`)).rows;
       const [purchaseCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM skill_purchases`)).rows;
       const [revenueData] = (await db.execute(sql`SELECT SUM(amount::numeric) as total, COUNT(*) as cnt FROM platform_revenue`)).rows;
       const [uniqueWallets] = (await db.execute(sql`SELECT COUNT(DISTINCT creator_wallet) as cnt FROM agents WHERE creator_wallet IS NOT NULL`)).rows;
-      const [onchainAgents] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agents WHERE onchain_registered = true`)).rows;
+      const [onchainAgents] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agents WHERE erc8004_registered = true AND erc8004_tx_hash IS NOT NULL`)).rows;
+
+      const crypto = await import("crypto");
+      const allSkills = await storage.getTopSkills(5000);
+      const uniqueCodeHashes = new Set<string>();
+      for (const s of allSkills) {
+        const hash = crypto.createHash("md5").update(s.code || "").digest("hex");
+        uniqueCodeHashes.add(hash);
+      }
+
       res.json({
         onchainUsers: Number(uniqueWallets?.cnt || 0),
         transactions: Number(txCount?.cnt || 0),
-        skills: Number(skillCount?.cnt || 0),
+        skills: uniqueCodeHashes.size,
+        skillsTotal: allSkills.length,
         agents: Number(agentCount?.cnt || 0),
         skillPurchases: Number(purchaseCount?.cnt || 0),
         revenueEntries: Number((revenueData as any)?.cnt || 0),
@@ -1895,7 +1929,48 @@ ${urls}
   app.get("/api/marketplace/stats", async (_req: Request, res: Response) => {
     try {
       const stats = await storage.getMarketplaceStats();
-      res.json(stats);
+      const crypto = await import("crypto");
+      const allSkills = await storage.getTopSkills(5000);
+      const uniqueHashes = new Set<string>();
+      for (const s of allSkills) {
+        uniqueHashes.add(crypto.createHash("md5").update(s.code || "").digest("hex"));
+      }
+      res.json({ ...stats, uniqueSkills: uniqueHashes.size });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/marketplace/reprice", async (_req: Request, res: Response) => {
+    try {
+      const allSkills = await storage.getTopSkills(5000);
+      let repriced = 0;
+      for (const skill of allSkills) {
+        const code = skill.code || "";
+        let quality = 0;
+        if (/aiChat|aiJson|fetch.*inference|openai|anthropic|deepseek/i.test(code)) quality += 40;
+        if (/safeFetch\s*\(|fetch\s*\(|websocket|ethers|web3/i.test(code)) quality += 20;
+        if (/try\s*\{/.test(code) && /catch/.test(code)) quality += 10;
+        const lines = code.split("\n").filter((l: string) => l.trim()).length;
+        if (lines > 50) quality += 5;
+        if (lines > 100) quality += 5;
+        if (lines > 200) quality += 5;
+        if (skill.executionCount > 10) quality += 10;
+        if (skill.totalRatings > 0 && skill.avgRating > 300) quality += 10;
+
+        let newPrice: string;
+        let newTier: string;
+        if (quality >= 80) { newPrice = "150000000000000000"; newTier = "legendary"; }
+        else if (quality >= 50) { newPrice = "50000000000000000"; newTier = "gold"; }
+        else if (quality >= 20) { newPrice = "5000000000000000"; newTier = "silver"; }
+        else { newPrice = "100000000000000"; newTier = "bronze"; }
+
+        if (skill.priceAmount !== newPrice || skill.tier !== newTier) {
+          await storage.updateSkill(skill.id, { priceAmount: newPrice, tier: newTier });
+          repriced++;
+        }
+      }
+      res.json({ total: allSkills.length, repriced });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
