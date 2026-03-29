@@ -176,9 +176,9 @@ await sdk.staking.stake({
   lockDays: 90,
 });
 
-// Check staking rewards
-const rewards = await sdk.staking.rewards();
-console.log('Pending:', rewards.pending, 'BUILD4');`,
+// Check staking status & fee discount tier
+const stakeInfo = await sdk.staking.status();
+console.log('Tier:', stakeInfo.tier, 'Discount:', stakeInfo.feeDiscount);`,
   },
 ];
 
@@ -199,7 +199,7 @@ const API_ENDPOINTS = [
   { method: "POST", path: "/api/v1/trade/swap", desc: "Execute a swap" },
   { method: "POST", path: "/api/v1/webhooks", desc: "Register webhook" },
   { method: "POST", path: "/api/v1/staking/stake", desc: "Stake BUILD4 tokens" },
-  { method: "GET", path: "/api/v1/staking/rewards", desc: "Check staking rewards" },
+  { method: "GET", path: "/api/v1/staking/status", desc: "Check staking status & fee tier" },
 ];
 
 export default function SDKPage() {
