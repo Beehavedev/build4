@@ -1,6 +1,6 @@
 import TelegramBot from "node-telegram-bot-api";
 import { ethers } from "ethers";
-import { runInferenceWithFallback, ChatMessage } from "./inference";
+import { runInferenceWithFallback, runInferenceMultiProvider, ChatMessage } from "./inference";
 import { storage } from "./storage";
 import { registerAgentOnchain, registerAgentERC8004, registerAgentBAP578, isOnchainReady, getExplorerUrl } from "./onchain";
 import { recordTelegramMessage, recordTelegramCallback, checkRateLimit } from "./performance-monitor";
@@ -501,7 +501,7 @@ async function generateAnswer(question: string, username: string, chatId?: numbe
 
     if (chatId) addToConversation(chatId, "user", question);
 
-    const result = await runInferenceWithFallback(
+    const result = await runInferenceMultiProvider(
       ["grok", "akash", "hyperbolic"],
       undefined,
       question,
@@ -516,6 +516,7 @@ async function generateAnswer(question: string, username: string, chatId?: numbe
     if (result.live && result.text && !result.text.startsWith("[NO_PROVIDER]") && !result.text.startsWith("[ERROR")) {
       const answer = result.text.trim();
       if (chatId) addToConversation(chatId, "assistant", answer);
+      console.log(`[TelegramBot] AI response from ${result.network} (${result.providersQueried} providers queried)`);
       return answer;
     }
   } catch (e: any) {

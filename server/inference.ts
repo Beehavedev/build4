@@ -250,3 +250,80 @@ export async function runInferenceWithFallback(
   const result = await runInference(fallbackNetwork, model, prompt, options);
   return { ...result, network: fallbackNetwork };
 }
+
+function scoreResponse(text: string): number {
+  if (!text || text.startsWith("[NO_PROVIDER]") || text.startsWith("[ERROR")) return 0;
+  let score = 0;
+  score += Math.min(text.length / 10, 100);
+  const structureMarkers = ["\n\n", "\n-", "\n•", "\n1.", "\n2.", "```", "**"];
+  for (const m of structureMarkers) {
+    if (text.includes(m)) score += 8;
+  }
+  const substantiveWords = text.split(/\s+/).filter(w => w.length > 3).length;
+  score += Math.min(substantiveWords / 2, 60);
+  const hedgeWords = ["I'm not sure", "I don't know", "I cannot", "I can't help", "as an AI"];
+  for (const h of hedgeWords) {
+    if (text.toLowerCase().includes(h.toLowerCase())) score -= 15;
+  }
+  const detailMarkers = ["because", "for example", "specifically", "here's how", "the reason", "in other words"];
+  for (const d of detailMarkers) {
+    if (text.toLowerCase().includes(d)) score += 5;
+  }
+  return score;
+}
+
+export async function runInferenceMultiProvider(
+  networks: string[],
+  model: string | undefined,
+  prompt: string,
+  options?: { systemPrompt?: string; temperature?: number; maxTokens?: number; conversationHistory?: ChatMessage[] }
+): Promise<InferenceResult & { network: string; providersQueried: number; allResponses?: Array<{ network: string; score: number }> }> {
+  const liveNetworks = networks.filter(n => isProviderLive(n));
+
+  if (liveNetworks.length === 0) {
+    const result = await runInference(networks[0] || "hyperbolic", model, prompt, options);
+    return { ...result, network: networks[0] || "hyperbolic", providersQueried: 0 };
+  }
+
+  if (liveNetworks.length === 1) {
+    const result = await runInference(liveNetworks[0], model, prompt, options);
+    return { ...result, network: liveNetworks[0], providersQueried: 1 };
+  }
+
+  const toQuery = liveNetworks.slice(0, 3);
+  console.log(`[Inference] Multi-provider query: ${toQuery.join(", ")}`);
+
+  const results = await Promise.allSettled(
+    toQuery.map(async (network) => {
+      const result = await runInference(network, model, prompt, options);
+      return { result, network };
+    })
+  );
+
+  const successResults: Array<{ result: InferenceResult; network: string; score: number }> = [];
+
+  for (const r of results) {
+    if (r.status === "fulfilled" && r.value.result.live) {
+      const score = scoreResponse(r.value.result.text);
+      successResults.push({ ...r.value, score });
+    }
+  }
+
+  if (successResults.length === 0) {
+    const fallback = await runInference(toQuery[0], model, prompt, options);
+    return { ...fallback, network: toQuery[0], providersQueried: toQuery.length };
+  }
+
+  successResults.sort((a, b) => b.score - a.score);
+
+  const best = successResults[0];
+  const allResponses = successResults.map(r => ({ network: r.network, score: r.score }));
+  console.log(`[Inference] Best response from ${best.network} (score: ${best.score}), queried ${toQuery.length} providers: ${allResponses.map(r => `${r.network}=${r.score}`).join(", ")}`);
+
+  return {
+    ...best.result,
+    network: best.network,
+    providersQueried: toQuery.length,
+    allResponses,
+  };
+}
