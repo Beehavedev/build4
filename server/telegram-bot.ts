@@ -5258,6 +5258,29 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const agent = await storage.getAgent(agentId);
     if (!agent) { await bot.sendMessage(chatId, "Agent not found."); return; }
 
+    await bot.sendMessage(chatId,
+      `⛓️ *Register ${agent.name} on-chain*\n\nPick the chain you want to register on:`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔵 Base (~0.0005 ETH gas)", callback_data: `regchain:${agentId}:base` }],
+            [{ text: "🟡 BNB Chain (~0.002 BNB gas)", callback_data: `regchain:${agentId}:bsc` }],
+            [{ text: "« Back", callback_data: "action:myagents" }],
+          ]
+        }
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("regchain:")) {
+    const parts = data.split(":");
+    const agentId = parts[1];
+    const network = parts[2];
+    const agent = await storage.getAgent(agentId);
+    if (!agent) { await bot.sendMessage(chatId, "Agent not found."); return; }
+
     const userWallet = getLinkedWallet(chatId);
     if (!userWallet) { await bot.sendMessage(chatId, "No wallet linked."); return; }
 
@@ -5270,49 +5293,56 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       return;
     }
 
+    const chainName = network === "bsc" ? "BNB Chain" : "Base";
+    const gasInfo = network === "bsc" ? "~0.002 BNB" : "~0.0005 ETH";
+    const explorer = network === "bsc" ? "bscscan.com" : "basescan.org";
+    const explorerName = network === "bsc" ? "BscScan" : "BaseScan";
+
     await bot.sendMessage(chatId,
-      `⛓️ *Registering ${agent.name} on-chain...*\n\n` +
-      `This will register your agent on the ERC-8004 Identity Registry (Base chain).\n` +
-      `Requires ~0.0005 ETH for gas.\n\n⏳ Processing...`,
+      `⛓️ *Registering ${agent.name} on ${chainName}...*\n\n` +
+      `ERC-8004 Identity Registry on ${chainName}.\n` +
+      `Requires ${gasInfo} for gas.\n\n⏳ Processing...`,
       { parse_mode: "Markdown" }
     );
 
     try {
-      const baseResult = await registerAgentERC8004(agent.name, agent.bio || "", agentId, "base", userPk);
+      const result = await registerAgentERC8004(agent.name, agent.bio || "", agentId, network, userPk);
 
-      if (baseResult.success) {
+      if (result.success) {
+        const chainKey = network === "bsc" ? "bnb" : "base";
         try {
           const { db } = await import("./db");
           const { agents: agentsTable } = await import("@shared/schema");
           const { eq } = await import("drizzle-orm");
           await db.update(agentsTable).set({
             erc8004Registered: true,
-            erc8004TxHash: baseResult.txHash || null,
-            erc8004TokenId: baseResult.tokenId || null,
-            erc8004Chain: "base",
+            erc8004TxHash: result.txHash || null,
+            erc8004TokenId: result.tokenId || null,
+            erc8004Chain: chainKey,
           }).where(eq(agentsTable.id, agentId));
         } catch {}
 
-        const txLink = baseResult.txHash ? `\n🔗 [View on BaseScan](https://basescan.org/tx/${baseResult.txHash})` : "";
-        const tokenInfo = baseResult.tokenId ? `\n🆔 Token ID: \`${baseResult.tokenId}\`` : "";
+        const txLink = result.txHash ? `\n🔗 [View on ${explorerName}](https://${explorer}/tx/${result.txHash})` : "";
+        const tokenInfo = result.tokenId ? `\n🆔 Token ID: \`${result.tokenId}\`` : "";
 
         await bot.sendMessage(chatId,
           `✅ *${agent.name} registered on-chain!*\n\n` +
           `⛓️ Standard: ERC-8004 Identity Registry\n` +
-          `🌐 Chain: Base (Chain ID: 8453)\n` +
+          `🌐 Chain: ${chainName}\n` +
           `📄 Contract: \`0x8004A169FB4a3325136EB29fA0ceB6D2e539a432\`${tokenInfo}${txLink}\n\n` +
-          `Your agent now has a verified on-chain identity. Click the link above to verify on BaseScan.`,
+          `Your agent now has a verified on-chain identity on ${chainName}.`,
           { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "My Agents", callback_data: "action:myagents" }, { text: "Menu", callback_data: "action:menu" }]] } }
         );
       } else {
-        let errorMsg = baseResult.error || "Unknown error";
+        let errorMsg = result.error || "Unknown error";
         let suggestion = "";
         if (errorMsg.includes("Insufficient") || errorMsg.includes("balance")) {
-          suggestion = `\n\n💡 Fund your wallet with ETH on Base chain first:\n\`${userWallet}\``;
+          const gasToken = network === "bsc" ? "BNB" : "ETH on Base";
+          suggestion = `\n\n💡 Fund your wallet with ${gasToken} first:\n\`${userWallet}\``;
         }
 
         await bot.sendMessage(chatId,
-          `❌ *Registration failed*\n\n${errorMsg}${suggestion}`,
+          `❌ *Registration failed on ${chainName}*\n\n${errorMsg}${suggestion}`,
           { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "Try Again", callback_data: `registerchain:${agentId}` }, { text: "My Agents", callback_data: "action:myagents" }]] } }
         );
       }
@@ -8119,8 +8149,9 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
     try {
       await bot.sendMessage(chatId,
         `⚠️ On-chain registration skipped — your wallet needs gas to register.\n\n` +
-        `• ERC-8004 (Base): ~0.0005 ETH for gas\n\n` +
-        `Fund your wallet and use /myagents → "Register On-Chain" to register later.`,
+        `• Base: ~0.0005 ETH\n` +
+        `• BNB Chain: ~0.002 BNB\n\n` +
+        `Fund your wallet and use /myagents → "Register On-Chain" to register on your preferred chain.`,
       );
     } catch {}
     return;
@@ -8140,34 +8171,44 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
     console.error(`[TelegramBot] Hub registration error for ${agentId}:`, e.message);
   }
 
-  try {
-    const erc8004BaseResult = await registerAgentERC8004(name, bio, agentId, "base", userPk);
-    if (erc8004BaseResult.success) {
-      const shortTx = erc8004BaseResult.txHash?.substring(0, 14) || "";
-      results.push(`⛓️ ERC-8004 (Base): ${shortTx}...`);
-      if (erc8004BaseResult.tokenId) {
-        results.push(`  🆔 Token ID: ${erc8004BaseResult.tokenId}`);
+  let erc8004Registered = false;
+  const chainsToTry: Array<{ network: string; chainKey: string; chainName: string; explorer: string }> = [
+    { network: "base", chainKey: "base", chainName: "Base", explorer: "basescan.org" },
+    { network: "bsc", chainKey: "bnb", chainName: "BNB Chain", explorer: "bscscan.com" },
+  ];
+
+  for (const chain of chainsToTry) {
+    if (erc8004Registered) break;
+    try {
+      const erc8004Result = await registerAgentERC8004(name, bio, agentId, chain.network, userPk);
+      if (erc8004Result.success) {
+        erc8004Registered = true;
+        const shortTx = erc8004Result.txHash?.substring(0, 14) || "";
+        results.push(`⛓️ ERC-8004 (${chain.chainName}): ${shortTx}...`);
+        if (erc8004Result.tokenId) {
+          results.push(`  🆔 Token ID: ${erc8004Result.tokenId}`);
+        }
+        if (erc8004Result.txHash) {
+          results.push(`  🔗 https://${chain.explorer}/tx/${erc8004Result.txHash}`);
+        }
+        try {
+          const { db } = await import("./db");
+          const { agents: agentsTable } = await import("@shared/schema");
+          const { eq } = await import("drizzle-orm");
+          await db.update(agentsTable).set({
+            erc8004Registered: true,
+            erc8004TxHash: erc8004Result.txHash || null,
+            erc8004TokenId: erc8004Result.tokenId || null,
+            erc8004Chain: chain.chainKey,
+          }).where(eq(agentsTable.id, agentId));
+        } catch {}
       }
-      if (erc8004BaseResult.txHash) {
-        results.push(`  🔗 https://basescan.org/tx/${erc8004BaseResult.txHash}`);
-      }
-      try {
-        const { db } = await import("./db");
-        const { agents: agentsTable } = await import("@shared/schema");
-        const { eq } = await import("drizzle-orm");
-        await db.update(agentsTable).set({
-          erc8004Registered: true,
-          erc8004TxHash: erc8004BaseResult.txHash || null,
-          erc8004TokenId: erc8004BaseResult.tokenId || null,
-          erc8004Chain: "base",
-        }).where(eq(agentsTable.id, agentId));
-      } catch {}
-    } else {
-      results.push(`ERC-8004 (Base): ${erc8004BaseResult.error?.substring(0, 80) || "skipped"}`);
+    } catch (e: any) {
+      console.error(`[TelegramBot] ERC-8004 ${chain.chainName} registration error for ${agentId}:`, e.message);
     }
-  } catch (e: any) {
-    console.error(`[TelegramBot] ERC-8004 Base registration error for ${agentId}:`, e.message);
-    results.push(`ERC-8004 (Base): ${e.message?.substring(0, 60)}`);
+  }
+  if (!erc8004Registered) {
+    results.push(`ERC-8004: No gas on Base or BNB Chain — register later via /myagents`);
   }
 
   try {
@@ -8242,13 +8283,16 @@ async function handleMyAgents(chatId: number, wallet: string): Promise<void> {
       ]);
       if (a.erc8004Registered) {
         if (a.erc8004TxHash) {
-          const explorer = a.erc8004Chain === "base" ? "basescan.org" : "bscscan.com";
+          const explorer = a.erc8004Chain === "bnb" ? "bscscan.com" : "basescan.org";
+          const explorerName = a.erc8004Chain === "bnb" ? "BscScan" : "BaseScan";
           buttons.push([
-            { text: `🔗 View ${a.name} on BaseScan`, url: `https://${explorer}/tx/${a.erc8004TxHash}` },
+            { text: `🔗 View ${a.name} on ${explorerName}`, url: `https://${explorer}/tx/${a.erc8004TxHash}` },
           ]);
         } else {
+          const explorer = a.erc8004Chain === "bnb" ? "bscscan.com" : "basescan.org";
+          const explorerName = a.erc8004Chain === "bnb" ? "BscScan" : "BaseScan";
           buttons.push([
-            { text: `🔗 View ERC-8004 Contract on BaseScan`, url: `https://basescan.org/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` },
+            { text: `🔗 View ERC-8004 Contract on ${explorerName}`, url: `https://${explorer}/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` },
           ]);
         }
       } else {
