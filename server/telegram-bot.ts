@@ -6921,7 +6921,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
       if (isCrossChain && fromHomeChainId) {
         const srcChainId = fromHomeChainId;
-        const dstChainId = toHomeChainId && toHomeChainId !== srcChainId ? toHomeChainId : chainId!;
+        const dstChainId = chainHint ? chainId! : (toHomeChainId && toHomeChainId !== srcChainId ? toHomeChainId : chainId!);
         const srcChain = OKX_CHAINS.find(c => c.id === srcChainId);
         const dstChain = OKX_CHAINS.find(c => c.id === dstChainId);
         const srcTokens = getOKXTokensForChain(srcChainId);

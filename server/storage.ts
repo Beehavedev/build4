@@ -1576,10 +1576,14 @@ export class DatabaseStorage implements IStorage {
 
     const staleErc8004 = await db.update(agents)
       .set({ erc8004Registered: false })
-      .where(and(eq(agents.erc8004Registered, true), isNull(agents.onchainId)))
+      .where(and(
+        eq(agents.erc8004Registered, true),
+        or(isNull(agents.erc8004TxHash), eq(agents.erc8004TxHash, "")),
+        or(isNull(agents.erc8004Chain), eq(agents.erc8004Chain, ""))
+      ))
       .returning({ id: agents.id });
     if (staleErc8004.length > 0) {
-      console.log(`[cleanup] Reset ${staleErc8004.length} stale erc8004Registered flags (no onchainId)`);
+      console.log(`[cleanup] Reset ${staleErc8004.length} stale erc8004Registered flags (no tx hash or chain)`);
     }
 
     const allSkills = await db.select({ id: agentSkills.id, agentId: agentSkills.agentId, name: agentSkills.name, code: agentSkills.code, createdAt: agentSkills.createdAt }).from(agentSkills);
