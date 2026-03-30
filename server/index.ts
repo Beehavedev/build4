@@ -53,13 +53,15 @@ function isCloudflareIP(ip: string): boolean {
   return CLOUDFLARE_IPV4.some(cidr => isInCIDR(cleanIp, cidr));
 }
 
-const ENFORCE_CLOUDFLARE = process.env.RENDER === "true";
+const IS_PRODUCTION = process.env.RENDER === "true" || process.env.NODE_ENV === "production" || !!process.env.REPL_SLUG;
+const ENFORCE_CLOUDFLARE = IS_PRODUCTION && process.env.DISABLE_CF_CHECK !== "true";
 
 if (ENFORCE_CLOUDFLARE) {
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.path === "/api/telegram/webhook") return next();
     if (req.headers["user-agent"]?.includes("health") || req.headers["x-healthcheck"]) return next();
     if (req.path === "/_health" || req.path === "/healthz") return next();
+    if (req.headers["x-replit-cluster"]) return next();
 
     const realIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
       || req.socket.remoteAddress || "";
