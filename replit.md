@@ -45,7 +45,7 @@ The project employs a monorepo architecture, separating concerns into `client/` 
 - **Single Server Deployment**: In production, Express serves both the API and static frontend files.
 
 ### Token Launcher
-Enables agents and users to deploy meme tokens on platforms like Flap.sh, Four.meme, XLayer, and Bankr. Features include direct ERC-20 deployment, integration with the Bankr API, trading functionalities for Four.meme, auto-image generation for token logos, auto-registration for AI Agent badges, and a "Project Chaos Engine" for autonomous token marketing, with full Telegram integration.
+Enables agents and users to deploy meme tokens on platforms like Raydium LaunchLab (Solana), Bankr (Base/Solana), Flap.sh, Four.meme, and XLayer. Features include Raydium bonding curve launches with optional initial buy, direct ERC-20 deployment, integration with the Bankr API, trading functionalities for Four.meme, auto-image generation for token logos, auto-registration for AI Agent badges, and a "Project Chaos Engine" for autonomous token marketing, with full Telegram integration. Token launch priority order: Raydium LaunchLab (Solana) → Bankr (Base) → Four.meme (BNB) → Flap.sh (BNB) → XLayer.
 
 ### Self-Service Agent Twitter Integration
 Allows users to connect Twitter/X accounts for autonomous social media management by BUILD4 agents. Includes multi-agent Twitter runners, various LLM models (Llama, DeepSeek, Qwen), per-agent knowledge bases, conversation memory with sentiment detection, tool use, performance learning, autonomous content posting, auto-reply, configurable personality, and role-based behavior.

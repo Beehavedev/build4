@@ -130,7 +130,7 @@ const walletsWithKey = new Set<string>();
 
 interface AgentCreationState { step: "name" | "bio" | "model"; name?: string; bio?: string; mandatory?: boolean }
 interface TaskState { step: "describe"; agentId: string; taskType: string; agentName: string }
-interface TokenLaunchState { step: "platform" | "name" | "symbol" | "description" | "logo" | "links" | "tax" | "bankr_chain" | "stealth_buy"; agentId: string; agentName: string; platform?: string; tokenName?: string; tokenSymbol?: string; tokenDescription?: string; imageUrl?: string; webUrl?: string; twitterUrl?: string; telegramUrl?: string; taxRate?: number; bankrChain?: "base" | "solana"; stealthBuyEth?: string; stealthBuyPercent?: number }
+interface TokenLaunchState { step: "platform" | "name" | "symbol" | "description" | "logo" | "links" | "tax" | "bankr_chain" | "stealth_buy" | "raydium_buy"; agentId: string; agentName: string; platform?: string; tokenName?: string; tokenSymbol?: string; tokenDescription?: string; imageUrl?: string; webUrl?: string; twitterUrl?: string; telegramUrl?: string; taxRate?: number; bankrChain?: "base" | "solana"; stealthBuyEth?: string; stealthBuyPercent?: number; initialBuySol?: string }
 interface FourMemeBuyState { step: "token" | "amount" | "confirm"; tokenAddress?: string; bnbAmount?: string; estimate?: any }
 interface FourMemeSellState { step: "token" | "amount" | "confirm"; tokenAddress?: string; tokenAmount?: string; tokenSymbol?: string; estimate?: any }
 
@@ -578,10 +578,11 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
       });
       response += "\n";
       response += "💡 Which chain to fund:\n";
-      response += "• ETH (Base) → for Bankr launches & $BUILD4 token ⭐\n";
+      response += "• SOL (Solana) → for Raydium LaunchLab launches ⭐\n";
+      response += "• ETH (Base) → for Bankr launches\n";
       response += "• BNB → for Four.meme / Flap.sh launches & trading\n";
       response += "• OKB → for XLayer token launches\n\n";
-      response += "Same wallet address works across all EVM chains. Just send to the right network!\n\n";
+      response += "EVM wallet address works across Base, BNB, XLayer. For Solana, your wallet keys derive a Solana keypair automatically.\n\n";
       response += "Use /wallet to manage your wallets or /launch when you're ready.";
       return response;
     } else {
@@ -626,13 +627,13 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
   if (lower.includes("contract") || lower.includes("smart contract"))
     return "BUILD4 has 4 core contracts: AgentEconomyHub (wallets), SkillMarketplace (skill trading), AgentReplication (forking + NFTs), and ConstitutionRegistry (immutable agent laws).";
   if (lower.includes("token") && (lower.includes("launch") || lower.includes("create")))
-    return "You can launch tokens on Bankr (Base/Solana), Four.meme, Flap.sh (BNB Chain), or XLayer right here in the bot! Use /launch or tap '🚀 Launch Token' from the menu.";
+    return "You can launch tokens on Raydium LaunchLab (Solana), Bankr (Base/Solana), Four.meme, Flap.sh (BNB Chain), or XLayer right here in the bot! Use /launch or tap '🚀 Launch Token' from the menu.";
   if (lower.includes("agent") && (lower.includes("create") || lower.includes("make") || lower.includes("new")))
     return "Create an AI agent with /newagent — give it a name, bio, and pick a model (Llama 70B, DeepSeek V3, or Qwen 72B). Your agent gets its own wallet and can trade skills, earn BNB, and evolve autonomously.";
   if (lower.includes("how") && lower.includes("start"))
     return "Getting started is easy:\n1. Create a wallet (tap 🔑 Create New Wallet)\n2. Fund it with some BNB, OKB, or ETH\n3. Create an agent with /newagent\n4. Launch tokens with /launch\n\nThat's it — you're in the autonomous economy!";
   if (lower.includes("price") || (lower.includes("token") && !lower.includes("launch")) || lower.includes("buy"))
-    return "BUILD4 is infrastructure, not a token — but $BUILD4 token is launching on Base via Bankr! Agents can also launch their own tokens on Bankr, Four.meme, Flap.sh, or XLayer. Use /launch to try it.";
+    return "BUILD4 is infrastructure, not a token — but $BUILD4 token is launching on Solana via Raydium LaunchLab! Agents can also launch their own tokens on Raydium, Bankr, Four.meme, Flap.sh, or XLayer. Use /launch to try it.";
   if (lower.includes("hello") || lower.includes("hi") || lower.includes("hey") || lower.includes("gm") || lower === "yo") {
     if (chatId) {
       const wallets = getUserWallets(chatId);
@@ -5524,7 +5525,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "🔵 Bankr (Base/Solana) ⭐", callback_data: `launchplatform:${agentId}:bankr` }],
+            [{ text: "☀️ Raydium LaunchLab (Solana) ⭐", callback_data: `launchplatform:${agentId}:raydium` }],
+            [{ text: "🔵 Bankr (Base/Solana)", callback_data: `launchplatform:${agentId}:bankr` }],
             [{ text: "Four.meme (BNB Chain)", callback_data: `launchplatform:${agentId}:four_meme` }],
             [{ text: "Flap.sh (BNB Chain)", callback_data: `launchplatform:${agentId}:flap_sh` }],
             [{ text: "XLayer (OKX)", callback_data: `launchplatform:${agentId}:xlayer` }],
@@ -5542,12 +5544,22 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const platform = parts[2];
     const state = pendingTokenLaunch.get(chatId);
     if (!state || state.agentId !== agentId) return;
-    if (platform !== "four_meme" && platform !== "flap_sh" && platform !== "bankr" && platform !== "xlayer") {
+    if (platform !== "four_meme" && platform !== "flap_sh" && platform !== "bankr" && platform !== "xlayer" && platform !== "raydium") {
       await bot.sendMessage(chatId, "Invalid platform. Please try again.");
       return;
     }
 
     state.platform = platform;
+
+    if (platform === "raydium") {
+      state.step = "name";
+      state.platform = "raydium";
+      pendingTokenLaunch.set(chatId, state);
+      await bot.sendMessage(chatId,
+        `☀️ Raydium LaunchLab (Solana)\n\nYour token will launch on a bonding curve. Once it fills, liquidity auto-migrates to Raydium DEX.\n\nWhat's the token name? (1-50 chars)\n\nExample: DogeBrain, MoonCat, AgentX`
+      );
+      return;
+    }
 
     if (platform === "bankr") {
       state.step = "bankr_chain";
@@ -5675,6 +5687,15 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId, "Token launch cancelled.", {
       reply_markup: mainMenuKeyboard(undefined, chatId)
     });
+    return;
+  }
+
+  if (data.startsWith("raydium_buy:")) {
+    const amount = data.split(":")[1];
+    const state = pendingTokenLaunch.get(chatId);
+    if (!state || state.step !== "raydium_buy") return;
+    state.initialBuySol = amount === "0" ? undefined : amount;
+    showLaunchPreview(chatId, state);
     return;
   }
 
@@ -8845,7 +8866,8 @@ async function startTokenLaunchFlow(chatId: number, wallet: string): Promise<voi
         {
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🔵 Bankr (Base/Solana) ⭐", callback_data: `launchplatform:${agent.id}:bankr` }],
+              [{ text: "☀️ Raydium LaunchLab (Solana) ⭐", callback_data: `launchplatform:${agent.id}:raydium` }],
+              [{ text: "🔵 Bankr (Base/Solana)", callback_data: `launchplatform:${agent.id}:bankr` }],
               [{ text: "Four.meme (BNB Chain)", callback_data: `launchplatform:${agent.id}:four_meme` }],
               [{ text: "Flap.sh (BNB Chain)", callback_data: `launchplatform:${agent.id}:flap_sh` }],
               [{ text: "XLayer (OKX)", callback_data: `launchplatform:${agent.id}:xlayer` }],
@@ -8963,6 +8985,33 @@ async function handleTokenLaunchFlow(chatId: number, text: string): Promise<void
       }
     }
 
+    if (state.platform === "raydium") {
+      state.step = "raydium_buy";
+      pendingTokenLaunch.set(chatId, state);
+      await bot.sendMessage(chatId,
+        `☀️ Initial buy (optional):\n\nWant to buy some of your own token right at launch? This puts SOL in the bonding curve and gives you tokens.\n\nHow much SOL to spend on initial buy?`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "Skip (0 SOL)", callback_data: "raydium_buy:0" },
+                { text: "0.1 SOL", callback_data: "raydium_buy:0.1" },
+              ],
+              [
+                { text: "0.5 SOL", callback_data: "raydium_buy:0.5" },
+                { text: "1 SOL", callback_data: "raydium_buy:1" },
+              ],
+              [
+                { text: "2 SOL", callback_data: "raydium_buy:2" },
+                { text: "5 SOL", callback_data: "raydium_buy:5" },
+              ],
+            ]
+          }
+        }
+      );
+      return;
+    }
+
     if (state.platform === "flap_sh") {
       state.step = "tax";
       pendingTokenLaunch.set(chatId, state);
@@ -8993,9 +9042,9 @@ async function handleTokenLaunchFlow(chatId: number, text: string): Promise<void
 
 async function showLaunchPreview(chatId: number, state: TokenLaunchState) {
   if (!bot) return;
-  const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : state.platform === "bankr" ? `Bankr (${state.bankrChain === "solana" ? "Solana" : "Base"})` : state.platform === "xlayer" ? "XLayer (OKX)" : "Flap.sh (BNB Chain)";
-  const liquidity = state.platform === "bankr" ? "Managed by Bankr" : state.platform === "xlayer" ? "N/A (direct deploy)" : state.platform === "four_meme" ? "0.01 BNB" : "0.001 BNB";
-  const launchFee = state.platform === "bankr" ? "Free" : state.platform === "xlayer" ? "Gas only (~0.005 OKB)" : "0.01 BNB (~$7)";
+  const platformName = state.platform === "raydium" ? "Raydium LaunchLab (Solana)" : state.platform === "four_meme" ? "Four.meme (BNB Chain)" : state.platform === "bankr" ? `Bankr (${state.bankrChain === "solana" ? "Solana" : "Base"})` : state.platform === "xlayer" ? "XLayer (OKX)" : "Flap.sh (BNB Chain)";
+  const liquidity = state.platform === "raydium" ? "Bonding curve → Raydium DEX" : state.platform === "bankr" ? "Managed by Bankr" : state.platform === "xlayer" ? "N/A (direct deploy)" : state.platform === "four_meme" ? "0.01 BNB" : "0.001 BNB";
+  const launchFee = state.platform === "raydium" ? "Gas only (~0.02 SOL)" : state.platform === "bankr" ? "Free" : state.platform === "xlayer" ? "Gas only (~0.005 OKB)" : "0.01 BNB (~$7)";
 
   let preview = `🚀 LAUNCH PREVIEW\n\n` +
     `Token: ${state.tokenName} ($${state.tokenSymbol})\n` +
@@ -9012,6 +9061,11 @@ async function showLaunchPreview(chatId: number, state: TokenLaunchState) {
   if (state.telegramUrl) preview += `Telegram: ${state.telegramUrl}\n`;
   if (state.platform === "flap_sh") {
     preview += `Tax: ${state.taxRate ?? 0}%\n`;
+  }
+  if (state.platform === "raydium") {
+    preview += `Initial Buy: ${state.initialBuySol ? state.initialBuySol + " SOL" : "None"}\n`;
+    preview += `Supply: 1,000,000,000 tokens\n`;
+    preview += `Curve: 80% on bonding curve, fills at 85 SOL\n`;
   }
   if (state.platform === "bankr" && (state.stealthBuyEth || state.stealthBuyPercent)) {
     preview += `\n🥷 Stealth Buy: ${state.stealthBuyEth ? state.stealthBuyEth + " ETH" : state.stealthBuyPercent + "% supply"} (via Bankr)\n`;
@@ -9035,7 +9089,54 @@ async function showLaunchPreview(chatId: number, state: TokenLaunchState) {
 async function executeTelegramTokenLaunch(chatId: number, wallet: string, state: TokenLaunchState): Promise<void> {
   if (!bot) return;
 
-  const platformName = state.platform === "four_meme" ? "Four.meme (BNB Chain)" : state.platform === "bankr" ? `Bankr (${state.bankrChain === "solana" ? "Solana" : "Base"})` : state.platform === "xlayer" ? "XLayer (OKX)" : "Flap.sh (BNB Chain)";
+  const platformName = state.platform === "raydium" ? "Raydium LaunchLab (Solana)" : state.platform === "four_meme" ? "Four.meme (BNB Chain)" : state.platform === "bankr" ? `Bankr (${state.bankrChain === "solana" ? "Solana" : "Base"})` : state.platform === "xlayer" ? "XLayer (OKX)" : "Flap.sh (BNB Chain)";
+
+  if (state.platform === "raydium") {
+    await bot.sendMessage(chatId, `☀️ Launching ${state.tokenName} ($${state.tokenSymbol}) on Raydium LaunchLab...\n\n${state.initialBuySol ? `Initial buy: ${state.initialBuySol} SOL\n` : ""}This may take up to 2 minutes.`);
+    await bot.sendChatAction(chatId, "typing");
+
+    const solWallet = await getOrCreateSolanaWallet(chatId);
+    if (!solWallet || !solWallet.privateKey) {
+      await bot.sendMessage(chatId, "⚠️ Could not access Solana wallet. Try /start to create a fresh wallet.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
+      return;
+    }
+
+    const { launchToken } = await import("./token-launcher");
+    const result = await launchToken({
+      tokenName: state.tokenName!,
+      tokenSymbol: state.tokenSymbol!,
+      tokenDescription: state.tokenDescription || "",
+      imageUrl: state.imageUrl,
+      platform: "raydium",
+      agentId: state.agentId,
+      creatorWallet: solWallet.address,
+      solanaPrivateKey: solWallet.privateKey,
+      initialBuySol: state.initialBuySol,
+      webUrl: state.webUrl,
+      twitterUrl: state.twitterUrl,
+      telegramUrl: state.telegramUrl,
+    });
+
+    pendingTokenLaunch.delete(chatId);
+
+    if (result.success) {
+      let successMsg = `☀️ TOKEN LAUNCHED ON RAYDIUM!\n\n` +
+        `Token: ${state.tokenName} ($${state.tokenSymbol})\n` +
+        `Address: \`${result.tokenAddress}\`\n` +
+        `TX: \`${result.txHash}\`\n`;
+      if (state.initialBuySol) successMsg += `Initial Buy: ${state.initialBuySol} SOL\n`;
+      successMsg += `\n🔗 Raydium: ${result.launchUrl}\n` +
+        `🔍 Solscan: https://solscan.io/token/${result.tokenAddress}\n\n` +
+        `Your token is live on a bonding curve! Once it fills (85 SOL), liquidity auto-migrates to Raydium DEX.`;
+      await bot.sendMessage(chatId, successMsg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
+    } else {
+      await bot.sendMessage(chatId,
+        `❌ Raydium launch failed: ${(result.error || "Unknown error").substring(0, 300)}\n\nMake sure your wallet has enough SOL for gas${state.initialBuySol ? " + initial buy" : ""}. Try /launch to retry.`,
+        { reply_markup: mainMenuKeyboard(undefined, chatId) }
+      );
+    }
+    return;
+  }
 
   if (state.platform === "xlayer") {
     await bot.sendMessage(chatId, `🌐 Deploying ${state.tokenName} ($${state.tokenSymbol}) as ERC-20 on XLayer...\n\nThis may take a minute.`);

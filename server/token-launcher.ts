@@ -438,7 +438,7 @@ interface LaunchParams {
   tokenSymbol: string;
   tokenDescription: string;
   imageUrl?: string;
-  platform: "four_meme" | "flap_sh" | "bankr" | "xlayer";
+  platform: "four_meme" | "flap_sh" | "bankr" | "xlayer" | "raydium";
   initialLiquidityBnb?: string;
   agentId?: string;
   creatorWallet?: string;
@@ -450,6 +450,8 @@ interface LaunchParams {
   bankrChain?: "base" | "solana";
   stealthBuyEth?: string;
   stealthBuyPercent?: number;
+  solanaPrivateKey?: string;
+  initialBuySol?: string;
 }
 
 interface LaunchResult {
@@ -2004,6 +2006,186 @@ async function launchOnBankr(params: LaunchParams): Promise<LaunchResult> {
   }
 }
 
+async function launchOnRaydium(params: LaunchParams): Promise<LaunchResult> {
+  if (!params.tokenName || !params.tokenSymbol) {
+    return { success: false, error: "Token name and symbol are required" };
+  }
+  if (!params.solanaPrivateKey) {
+    return { success: false, error: "Solana wallet private key is required for Raydium launch" };
+  }
+
+  const launchRecord = await storage.createTokenLaunch({
+    agentId: params.agentId || null,
+    creatorWallet: params.creatorWallet || "raydium-launch",
+    platform: "raydium",
+    chainId: 0,
+    tokenName: params.tokenName,
+    tokenSymbol: params.tokenSymbol,
+    tokenDescription: params.tokenDescription,
+    imageUrl: params.imageUrl || null,
+    initialLiquidityBnb: params.initialBuySol || "0",
+    status: "pending",
+    tokenAddress: null,
+    txHash: null,
+    launchUrl: null,
+    errorMessage: null,
+    metadata: JSON.stringify({ platform: "raydium", initialBuySol: params.initialBuySol || "0" }),
+  });
+
+  try {
+    const { Raydium, TxVersion, LAUNCHPAD_PROGRAM, getPdaLaunchpadConfigId } = await import("@raydium-io/raydium-sdk-v2");
+    const { Connection, Keypair, PublicKey } = await import("@solana/web3.js");
+    const { NATIVE_MINT } = await import("@solana/spl-token");
+    const BN = (await import("bn.js")).default;
+    const SOLANA_RPC = process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
+    const connection = new Connection(SOLANA_RPC, "confirmed");
+
+    let secretKeyBytes: Uint8Array;
+    if (params.solanaPrivateKey!.length === 128) {
+      secretKeyBytes = new Uint8Array(Buffer.from(params.solanaPrivateKey!, "hex"));
+    } else if (params.solanaPrivateKey!.length === 88 || params.solanaPrivateKey!.length === 87) {
+      const bs58 = (await import("bs58")).default;
+      secretKeyBytes = bs58.decode(params.solanaPrivateKey!);
+    } else {
+      const bs58 = (await import("bs58")).default;
+      try {
+        secretKeyBytes = bs58.decode(params.solanaPrivateKey!);
+      } catch {
+        secretKeyBytes = new Uint8Array(Buffer.from(params.solanaPrivateKey!, "hex"));
+      }
+    }
+    const owner = Keypair.fromSecretKey(secretKeyBytes);
+
+    log(`[Raydium] Initializing SDK for ${params.tokenName} ($${params.tokenSymbol})...`, "token-launcher");
+
+    const raydium = await Raydium.load({
+      connection,
+      owner,
+      disableLoadToken: false,
+    });
+
+    const mintKeypair = Keypair.generate();
+
+    const configId = getPdaLaunchpadConfigId(
+      LAUNCHPAD_PROGRAM,
+      NATIVE_MINT,
+      0,
+      0
+    ).publicKey;
+
+    const DECIMALS = 6;
+    const TOTAL_SUPPLY = new BN(1_000_000_000).mul(new BN(10 ** DECIMALS));
+    const TOTAL_SELL = new BN(800_000_000).mul(new BN(10 ** DECIMALS));
+    const TOTAL_FUND_RAISE = new BN(85).mul(new BN(10 ** 9));
+
+    const initialBuyLamports = params.initialBuySol
+      ? new BN(Math.floor(parseFloat(params.initialBuySol) * 1e9))
+      : new BN(0);
+
+    const doInitialBuy = initialBuyLamports.gt(new BN(0));
+
+    let metadataUri = "";
+    if (params.imageUrl || params.tokenDescription) {
+      const metadata = {
+        name: params.tokenName,
+        symbol: params.tokenSymbol,
+        description: params.tokenDescription || `${params.tokenName} — launched via BUILD4 on Raydium LaunchLab`,
+        image: params.imageUrl || "",
+        ...(params.webUrl ? { external_url: params.webUrl } : {}),
+      };
+      const metaBlob = new Blob([JSON.stringify(metadata)], { type: "application/json" });
+      try {
+        const formData = new FormData();
+        formData.append("file", metaBlob, "metadata.json");
+        const ipfsRes = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${process.env.PINATA_JWT || ""}` },
+          body: formData,
+        });
+        if (ipfsRes.ok) {
+          const ipfsData = await ipfsRes.json() as any;
+          metadataUri = `https://gateway.pinata.cloud/ipfs/${ipfsData.IpfsHash}`;
+        }
+      } catch (e: any) {
+        log(`[Raydium] Metadata upload failed (non-fatal): ${e.message}`, "token-launcher");
+      }
+    }
+
+    log(`[Raydium] Creating LaunchLab token: ${params.tokenName} ($${params.tokenSymbol}), initial buy: ${params.initialBuySol || "0"} SOL`, "token-launcher");
+
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "confirming",
+      metadata: JSON.stringify({ platform: "raydium", mintAddress: mintKeypair.publicKey.toBase58() }),
+    });
+
+    const createParams: any = {
+      programId: LAUNCHPAD_PROGRAM,
+      mintA: mintKeypair.publicKey,
+      decimals: DECIMALS,
+      name: params.tokenName,
+      symbol: params.tokenSymbol,
+      uri: metadataUri || `https://build4.io/token/${params.tokenSymbol}`,
+      configId,
+      migrateType: "cpmm",
+      supply: TOTAL_SUPPLY,
+      totalSellA: TOTAL_SELL,
+      totalFundRaisingB: TOTAL_FUND_RAISE,
+      totalLockedAmount: new BN(0),
+      cliffPeriod: new BN(0),
+      unlockPeriod: new BN(0),
+      createOnly: !doInitialBuy,
+      txVersion: TxVersion.V0,
+      signers: [mintKeypair],
+    };
+
+    if (doInitialBuy) {
+      createParams.buyAmount = initialBuyLamports;
+      createParams.slippage = 100;
+    }
+
+    const { execute, extInfo } = await raydium.launchpad.createLaunchpad(createParams);
+
+    const { txId } = await execute({ sendAndConfirm: true });
+
+    const tokenAddress = mintKeypair.publicKey.toBase58();
+    const poolId = extInfo?.poolId?.toBase58?.() || "";
+    const launchUrl = `https://raydium.io/launchpad/token/${tokenAddress}`;
+    const explorerUrl = `https://solscan.io/tx/${txId}`;
+
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "launched",
+      tokenAddress,
+      txHash: txId,
+      launchUrl,
+      metadata: JSON.stringify({
+        platform: "raydium",
+        poolId,
+        explorerUrl,
+        initialBuySol: params.initialBuySol || "0",
+        mintAddress: tokenAddress,
+      }),
+    });
+
+    log(`[Raydium] Launch SUCCESS! Token: ${tokenAddress}, Pool: ${poolId}, TX: ${txId}`, "token-launcher");
+
+    return {
+      success: true,
+      tokenAddress,
+      txHash: txId,
+      launchUrl,
+      launchId: launchRecord.id,
+    };
+  } catch (e: any) {
+    const errMsg = e.message || "Unknown Raydium launch error";
+    log(`[Raydium] Launch FAILED: ${errMsg}`, "token-launcher");
+    await storage.updateTokenLaunch(launchRecord.id, {
+      status: "failed",
+      errorMessage: errMsg.substring(0, 500),
+    });
+    return { success: false, error: errMsg, launchId: launchRecord.id };
+  }
+}
+
 export async function launchToken(params: LaunchParams): Promise<LaunchResult> {
   const errors: string[] = [];
   if (!params.tokenName || params.tokenName.trim().length < 2) errors.push("Token name must be at least 2 characters");
@@ -2031,6 +2213,8 @@ export async function launchToken(params: LaunchParams): Promise<LaunchResult> {
         result = await launchOnBankr(params);
       } else if (params.platform === "xlayer") {
         result = await launchOnXLayer(params);
+      } else if (params.platform === "raydium") {
+        result = await launchOnRaydium(params);
       } else {
         return { success: false, error: `Unknown platform: ${params.platform}` };
       }
