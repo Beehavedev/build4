@@ -31,6 +31,49 @@ declare module "http" {
 
 app.set("trust proxy", 1);
 
+const CLOUDFLARE_IPV4 = [
+  "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
+  "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
+  "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
+  "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+];
+
+function ipToLong(ip: string): number {
+  return ip.split(".").reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+}
+
+function isInCIDR(ip: string, cidr: string): boolean {
+  const [rangeIp, bits] = cidr.split("/");
+  const mask = ~((1 << (32 - parseInt(bits, 10))) - 1) >>> 0;
+  return (ipToLong(ip) & mask) === (ipToLong(rangeIp) & mask);
+}
+
+function isCloudflareIP(ip: string): boolean {
+  const cleanIp = ip.replace("::ffff:", "");
+  return CLOUDFLARE_IPV4.some(cidr => isInCIDR(cleanIp, cidr));
+}
+
+const ENFORCE_CLOUDFLARE = process.env.RENDER === "true";
+
+if (ENFORCE_CLOUDFLARE) {
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path === "/api/telegram/webhook") return next();
+    if (req.headers["user-agent"]?.includes("health") || req.headers["x-healthcheck"]) return next();
+    if (req.path === "/_health" || req.path === "/healthz") return next();
+
+    const realIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
+      || req.socket.remoteAddress || "";
+
+    if (!isCloudflareIP(realIp)) {
+      console.warn(`[Security] Blocked non-Cloudflare request from ${realIp} to ${req.path}`);
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    next();
+  });
+  console.log("[Security] Cloudflare IP enforcement ACTIVE — origin protected");
+}
+
 app.get("/", (_req, res, next) => {
   if (_req.headers["user-agent"]?.includes("health") || _req.headers["x-healthcheck"]) {
     return res.status(200).send("OK");
