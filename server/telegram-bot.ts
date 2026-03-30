@@ -3511,18 +3511,13 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
       let txData: any;
       if (isLifi) {
-        const lifiQuote = state.quoteData?._lifiQuote;
-        if (lifiQuote?.transactionRequest) {
-          txData = lifiQuote.transactionRequest;
-        } else {
-          const toAddr = state.toChainId === "501" && state.receiveAddress ? `&toAddress=${state.receiveAddress}` : "";
-          const normFromToken = state.fromToken === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" ? "0x0000000000000000000000000000000000000000" : state.fromToken;
-          const normToToken = state.toChainId === "501" ? state.toToken : (state.toToken === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" ? "0x0000000000000000000000000000000000000000" : state.toToken);
-          const toChainParam = state.toChainId === "501" ? "SOL" : state.toChainId;
-          const lifiResp = await fetch(`https://li.quest/v1/quote?fromChain=${state.fromChainId}&toChain=${toChainParam}&fromToken=${normFromToken}&toToken=${normToToken}&fromAmount=${state.amount}&fromAddress=${walletAddr}${toAddr}`, { headers: { "Accept": "application/json" } });
-          const lifiData = await lifiResp.json();
-          txData = lifiData?.transactionRequest;
-        }
+        const toAddr = state.toChainId === "501" && state.receiveAddress ? `&toAddress=${state.receiveAddress}` : "";
+        const normFromToken = state.fromToken === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" ? "0x0000000000000000000000000000000000000000" : state.fromToken;
+        const normToToken = state.toChainId === "501" ? state.toToken : (state.toToken === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" ? "0x0000000000000000000000000000000000000000" : state.toToken);
+        const toChainParam = state.toChainId === "501" ? "SOL" : state.toChainId;
+        const lifiResp = await fetch(`https://li.quest/v1/quote?fromChain=${state.fromChainId}&toChain=${toChainParam}&fromToken=${normFromToken}&toToken=${normToToken}&fromAmount=${state.amount}&fromAddress=${walletAddr}${toAddr}`, { headers: { "Accept": "application/json" } });
+        const lifiData = await lifiResp.json();
+        txData = lifiData?.transactionRequest;
       } else {
         const { getCrossChainSwap } = await import("./okx-onchainos");
         const swapResult = await getCrossChainSwap({
