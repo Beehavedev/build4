@@ -40,6 +40,7 @@ const t: Record<string, Record<Lang, string>> = {
   "menu.gas": { en: "⛽ Gas", zh: "⛽ Gas费", ar: "⛽ رسوم الغاز" },
   "menu.rich": { en: "💎 Make Me Rich", zh: "💎 自动交易", ar: "💎 تداول تلقائي" },
   "menu.aster": { en: "📈 Aster DEX", zh: "📈 Aster DEX", ar: "📈 Aster DEX" },
+  "menu.buyBuild4": { en: "🟢 Buy $BUILD4", zh: "🟢 购买 $BUILD4", ar: "🟢 شراء $BUILD4" },
   "menu.createAgent": { en: "🤖 Create Agent", zh: "🤖 创建代理", ar: "🤖 إنشاء وكيل" },
   "menu.myAgents": { en: "📋 My Agents", zh: "📋 我的代理", ar: "📋 وكلائي" },
   "menu.newTask": { en: "📝 New Task", zh: "📝 新任务", ar: "📝 مهمة جديدة" },
@@ -172,6 +173,10 @@ interface SignalBuyState {
   sigIndex?: number;
 }
 const pendingSignalBuy = new Map<number, SignalBuyState>();
+
+const BUILD4_TOKEN_CA = "";
+interface Build4BuyState { amount?: string }
+const pendingBuild4Buy = new Map<number, Build4BuyState>();
 
 interface SellState {
   chainId: string;
@@ -1801,6 +1806,7 @@ function mainMenuKeyboard(_hasWallet?: boolean, chatId?: number): TelegramBot.In
   const c = chatId || 0;
   return {
     inline_keyboard: [
+      [{ text: tr("menu.buyBuild4", c), callback_data: "action:buybuild4" }],
       [{ text: tr("menu.launch", c), callback_data: "action:launchtoken" }],
       [{ text: tr("menu.buy", c), callback_data: "action:buy" }, { text: tr("menu.sell", c), callback_data: "action:sell" }],
       [{ text: tr("menu.swap", c), callback_data: "action:okxswap" }, { text: tr("menu.bridge", c), callback_data: "action:okxbridge" }],
@@ -2927,6 +2933,163 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:launchtoken") {
     await startTokenLaunchFlow(chatId, wallet);
+    return;
+  }
+
+  if (data === "action:buybuild4") {
+    if (!BUILD4_TOKEN_CA) {
+      await bot.sendMessage(chatId,
+        `🟢 *Buy $BUILD4*\n\n` +
+        `The $BUILD4 token contract address has not been set yet.\n\n` +
+        `The token is launching soon on BNB Chain — stay tuned! 🚀`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] },
+        }
+      );
+      return;
+    }
+    pendingBuild4Buy.set(chatId, {});
+    const amounts = [
+      { label: "0.05 BNB", val: "0.05" },
+      { label: "0.1 BNB", val: "0.1" },
+      { label: "0.25 BNB", val: "0.25" },
+      { label: "0.5 BNB", val: "0.5" },
+      { label: "1 BNB", val: "1" },
+    ];
+    await bot.sendMessage(chatId,
+      `🟢 *Buy $BUILD4*\n\n` +
+      `⛓ Chain: BNB Chain\n` +
+      `📋 Token: \`${BUILD4_TOKEN_CA}\`\n\n` +
+      `Select amount of BNB to spend:`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            ...amounts.map(a => [{ text: a.label, callback_data: `b4buy_amt:${a.val}` }]),
+            [{ text: "❌ Cancel", callback_data: "action:menu" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("b4buy_amt:")) {
+    if (!pendingBuild4Buy.has(chatId) || !BUILD4_TOKEN_CA) {
+      await bot.sendMessage(chatId, "Session expired. Please start again.", { reply_markup: { inline_keyboard: [[{ text: "🟢 Buy $BUILD4", callback_data: "action:buybuild4" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+    const amount = data.replace("b4buy_amt:", "");
+    const validAmounts = ["0.05", "0.1", "0.25", "0.5", "1"];
+    if (!validAmounts.includes(amount)) {
+      await bot.sendMessage(chatId, "Invalid amount. Please select from the options.", { reply_markup: { inline_keyboard: [[{ text: "🟢 Buy $BUILD4", callback_data: "action:buybuild4" }]] } });
+      return;
+    }
+    pendingBuild4Buy.set(chatId, { amount });
+    await bot.sendMessage(chatId,
+      `🟢 *Confirm Buy $BUILD4*\n\n` +
+      `🪙 Token: *$BUILD4*\n` +
+      `⛓ Chain: BNB Chain\n` +
+      `💰 Spend: *${amount} BNB*\n` +
+      `📋 Address: \`${BUILD4_TOKEN_CA}\`\n\n` +
+      `Proceed with this swap?`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✅ Confirm Buy", callback_data: "b4buy_confirm" }],
+            [{ text: "💰 Change Amount", callback_data: "action:buybuild4" }],
+            [{ text: "❌ Cancel", callback_data: "action:menu" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (data === "b4buy_confirm") {
+    const state = pendingBuild4Buy.get(chatId);
+    if (!state || !state.amount || !BUILD4_TOKEN_CA) {
+      pendingBuild4Buy.delete(chatId);
+      await bot.sendMessage(chatId, "Buy session expired. Please try again.", { reply_markup: { inline_keyboard: [[{ text: "🟢 Buy $BUILD4", callback_data: "action:buybuild4" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+
+    const walletAddr = getLinkedWallet(chatId);
+    if (!walletAddr || !await checkWalletHasKey(chatId, walletAddr)) {
+      await bot.sendMessage(chatId, "You need a wallet with a private key to buy. Use /wallet to set one up.", { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      pendingBuild4Buy.delete(chatId);
+      return;
+    }
+
+    await bot.sendMessage(chatId, `⏳ Executing buy: ${state.amount} BNB → $BUILD4 on BNB Chain...`);
+    sendTyping(chatId);
+
+    try {
+      const { ethers } = await import("ethers");
+      const rawAmount = ethers.parseUnits(state.amount, 18).toString();
+
+      const { getSwapData } = await import("./okx-onchainos");
+      const swapTx = await getSwapData({
+        chainId: "56",
+        fromTokenAddress: OKX_NATIVE_TOKEN,
+        toTokenAddress: BUILD4_TOKEN_CA,
+        amount: rawAmount,
+        slippage: "1",
+        userWalletAddress: walletAddr,
+      });
+
+      const txData = swapTx?.data?.[0]?.tx;
+      if (!txData) throw new Error("No swap route found. The token may have low liquidity or is not yet tradable.");
+
+      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
+      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(walletAddr);
+      if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
+
+      const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+      const wallet = new ethers.Wallet(pk, provider);
+
+      const tx = await wallet.sendTransaction({
+        to: txData.to,
+        data: txData.data,
+        value: txData.value ? BigInt(txData.value) : 0n,
+        gasLimit: txData.gasLimit ? BigInt(txData.gasLimit) : undefined,
+      });
+
+      const receipt = await tx.wait();
+      if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
+
+      pendingBuild4Buy.delete(chatId);
+      await bot.sendMessage(chatId,
+        `✅ *$BUILD4 Purchased!*\n\n` +
+        `⚡ ${state.amount} BNB → $BUILD4\n` +
+        `⛓ BNB Chain\n\n` +
+        `[View Transaction](https://bscscan.com/tx/${receipt.hash})`,
+        {
+          parse_mode: "Markdown",
+          disable_web_page_preview: true,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🟢 Buy More $BUILD4", callback_data: "action:buybuild4" }],
+              [{ text: "👛 Wallet", callback_data: "action:wallet" }, { text: "« Menu", callback_data: "action:menu" }],
+            ],
+          },
+        }
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId,
+        `❌ Buy failed: ${e.message?.substring(0, 150)}\n\nCheck your BNB balance and try again.`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 Retry", callback_data: "b4buy_confirm" }],
+              [{ text: "🟢 Buy $BUILD4", callback_data: "action:buybuild4" }, { text: "« Menu", callback_data: "action:menu" }],
+            ],
+          },
+        }
+      );
+    }
     return;
   }
 
@@ -8099,6 +8262,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       pendingTokenLaunch.delete(chatId);
       pendingFourMemeBuy.delete(chatId);
       pendingFourMemeSell.delete(chatId);
+      pendingBuild4Buy.delete(chatId);
       pendingChaosPlan.set(chatId, { step: "token_address", walletAddress: walletAddr });
 
       await bot.sendMessage(chatId,
