@@ -8,7 +8,7 @@ import { SEO } from "@/components/seo";
 import {
   ArrowLeft, Terminal, Coins, Flame, Lock, TrendingUp,
   Users, Briefcase, Shield, BarChart3, Rocket, Gift,
-  RefreshCw, Vote, Zap, Star, Wallet,
+  RefreshCw, Vote, Zap, Star, Wallet, Clock, CheckCircle, ExternalLink,
   PieChart, ArrowRight, DollarSign, Layers,
 } from "lucide-react";
 
@@ -25,6 +25,15 @@ const DIST_META = [
   { id: "treasury", pct: 20, amount: "200,000,000", bgColor: "bg-amber-500", bgTint: "bg-amber-500/15", textColor: "text-amber-500", icon: Shield, labelKey: "distTreasury", noteKey: "distTreasuryNote" },
   { id: "marketing", pct: 15, amount: "150,000,000", bgColor: "bg-pink-500", bgTint: "bg-pink-500/15", textColor: "text-pink-500", icon: Rocket, labelKey: "distMarketing", noteKey: "distMarketingNote" },
   { id: "reserve", pct: 10, amount: "100,000,000", bgColor: "bg-purple-500", bgTint: "bg-purple-500/15", textColor: "text-purple-500", icon: Lock, labelKey: "distReserve", noteKey: "distReserveNote" },
+];
+
+const VEST_META = [
+  { id: "rewards", icon: Gift, color: "text-blue-500", bgTint: "bg-blue-500/15", tge: "10%", tgeAmount: "25M", labelKey: "vestRewards", scheduleKey: "vestRewardsSchedule", detailKey: "vestRewardsDetail", barPct: 90 },
+  { id: "treasury", icon: Shield, color: "text-amber-500", bgTint: "bg-amber-500/15", tge: "5%", tgeAmount: "10M", labelKey: "vestTreasury", scheduleKey: "vestTreasurySchedule", detailKey: "vestTreasuryDetail", barPct: 95 },
+  { id: "marketing", icon: Rocket, color: "text-pink-500", bgTint: "bg-pink-500/15", tge: "10%", tgeAmount: "15M", labelKey: "vestMarketing", scheduleKey: "vestMarketingSchedule", detailKey: "vestMarketingDetail", barPct: 90 },
+  { id: "reserve", icon: Lock, color: "text-purple-500", bgTint: "bg-purple-500/15", tge: "0%", tgeAmount: "0", labelKey: "vestReserve", scheduleKey: "vestReserveSchedule", detailKey: "vestReserveDetail", barPct: 100 },
+  { id: "lp", icon: Flame, color: "text-cyan-500", bgTint: "bg-cyan-500/15", tge: "100%", tgeAmount: "100M", labelKey: "vestLp", scheduleKey: "vestLpSchedule", detailKey: "vestLpDetail", barPct: 100 },
+  { id: "public", icon: Users, color: "text-emerald-500", bgTint: "bg-emerald-500/15", tge: "100%", tgeAmount: "200M", labelKey: "vestPublic", scheduleKey: "vestPublicSchedule", detailKey: "vestPublicDetail", barPct: 0 },
 ];
 
 const UTIL_META = [
@@ -238,6 +247,66 @@ export default function TokenPage() {
               })}
             </div>
           </div>
+
+          <div className="space-y-5" data-testid="section-vesting">
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-primary" />
+              <h2 className="font-mono text-lg font-bold">{t("token.sectionVesting")}</h2>
+            </div>
+
+            <Card className="p-4 border-primary/20 bg-primary/5">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-primary" />
+                <p className="font-mono text-xs font-semibold">{t("token.vestingDesc")}</p>
+              </div>
+            </Card>
+
+            <div className="space-y-3">
+              {VEST_META.map((v) => {
+                const Icon = v.icon;
+                return (
+                  <Card key={v.id} className="p-4" data-testid={`vest-${v.id}`}>
+                    <div className="flex items-start gap-3">
+                      <div className={`w-8 h-8 rounded-md ${v.bgTint} flex items-center justify-center flex-shrink-0`}>
+                        <Icon className={`w-4 h-4 ${v.color}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-sm font-semibold">{t(`token.${v.labelKey}`)}</span>
+                          <Badge variant="outline" className="text-[9px] font-mono">TGE: {v.tge}</Badge>
+                          {v.tgeAmount !== "0" && (
+                            <Badge variant="secondary" className="text-[9px] font-mono">{v.tgeAmount} unlocked</Badge>
+                          )}
+                        </div>
+                        <p className="font-mono text-xs text-primary mt-1">{t(`token.${v.scheduleKey}`)}</p>
+                        <p className="font-mono text-[11px] text-muted-foreground mt-1">{t(`token.${v.detailKey}`)}</p>
+                        <div className="mt-2 w-full h-2 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${v.barPct === 100 ? "bg-emerald-500" : v.barPct >= 90 ? "bg-primary" : "bg-muted"}`}
+                            style={{ width: `${v.barPct}%` }}
+                            title={`${v.barPct}% locked/vested`}
+                          />
+                        </div>
+                        <p className="font-mono text-[9px] text-muted-foreground mt-0.5">{v.barPct}% locked / vested</p>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+
+          <Card className="p-5 border-dashed space-y-3" data-testid="section-lock-verification">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-emerald-500" />
+              <h2 className="font-mono text-sm font-bold">{t("token.sectionLockVerification")}</h2>
+            </div>
+            <p className="font-mono text-[11px] text-muted-foreground">{t("token.lockVerificationDesc")}</p>
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span className="font-mono text-[11px] italic">{t("token.lockVerificationSoon")}</span>
+            </div>
+          </Card>
 
           <div className="space-y-5" data-testid="section-utility">
             <div className="flex items-center gap-2">
