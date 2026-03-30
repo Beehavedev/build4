@@ -1456,8 +1456,6 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
   const chainIds = [56, 8453];
   let foundTx: { hash: string; value: number; chainName: string } | null = null;
 
-  console.log(`[VerifyPayment] Starting verification wallet=${wallet.substring(0,10)} apiKey=${scanApiKey ? scanApiKey.substring(0,6) + "..." : "NONE"}`);
-
   for (const chainId of chainIds) {
     foundTx = await verifyViaEtherscanV2(wallet, chainId, scanApiKey);
     if (foundTx) break;
