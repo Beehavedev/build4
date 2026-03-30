@@ -7227,9 +7227,11 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       if (!wallet) {
         const refCode = cmdArg.startsWith("ref_") ? cmdArg : "";
         await bot.sendMessage(chatId,
-          `Welcome to BUILD4\n\n` +
-          `Launch tokens, create AI agents, and operate on-chain — all from Telegram.\n\n` +
-          `Setting up your wallet...`
+          `🎉 Welcome to BUILD4!\n\n` +
+          `Launch tokens, create AI agents, swap, bridge & trade — all from Telegram.\n\n` +
+          `🎁 You get a *FREE ${TRIAL_DAYS}-day trial* with full access — no payment needed!\n\n` +
+          `Setting up your wallet...`,
+          { parse_mode: "Markdown" }
         );
         wallet = await autoGenerateWallet(chatId);
 
@@ -7270,8 +7272,12 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         const daysLeft = Math.ceil((sub.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
         const statusLabel = sub.status === "trial" ? "Free Trial" : "Active";
         const trialMsg = isNewUser
-          ? `🎉 *Your ${TRIAL_DAYS}-day free trial is now active!*\n\n` +
-            `✅ Full access to all premium features\n` +
+          ? `🎉 *Your ${TRIAL_DAYS}-day FREE trial is now active!*\n\n` +
+            `✅ Full access to ALL premium features — no payment needed\n` +
+            `🚀 Launch tokens on Raydium, Bankr, Four.meme & more\n` +
+            `🤖 Create unlimited AI agents\n` +
+            `💱 Swap & bridge across 10+ chains\n` +
+            `📊 Trading signals & security scans\n\n` +
             `⏳ ${daysLeft} days remaining\n\n` +
             `After your trial, subscribe for just *$${BOT_PRICE_USD}/month* to keep access.\n\n` +
             `👛 Wallet: \`${shortWallet(wallet!)}\`\n\nWhat do you want to do?`
@@ -7297,9 +7303,9 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       } else {
         await bot.sendMessage(chatId,
           isNewUser
-            ? `✅ You're all set!\n\nWhat do you want to do?`
-            : `Welcome back!\n\n👛 Wallet: ${shortWallet(wallet!)}\n\nWhat do you want to do?`,
-          { reply_markup: mainMenuKeyboard(undefined, chatId) }
+            ? `✅ You're all set!\n\n🎁 Your *${TRIAL_DAYS}-day FREE trial* is active — enjoy full access to all features!\n\n👛 Wallet: \`${shortWallet(wallet!)}\`\n\nWhat do you want to do?`
+            : `Welcome back!\n\n👛 Wallet: \`${shortWallet(wallet!)}\`\n\nWhat do you want to do?`,
+          { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       }
       return;
