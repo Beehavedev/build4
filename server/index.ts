@@ -53,7 +53,8 @@ function isCloudflareIP(ip: string): boolean {
   return CLOUDFLARE_IPV4.some(cidr => isInCIDR(cleanIp, cidr));
 }
 
-const IS_PRODUCTION = process.env.RENDER === "true" || process.env.NODE_ENV === "production" || !!process.env.REPL_SLUG;
+const IS_RENDER = process.env.RENDER === "true";
+const IS_PRODUCTION = IS_RENDER || (process.env.NODE_ENV === "production" && !process.env.REPL_SLUG);
 const ENFORCE_CLOUDFLARE = IS_PRODUCTION && process.env.DISABLE_CF_CHECK !== "true";
 
 if (ENFORCE_CLOUDFLARE) {
