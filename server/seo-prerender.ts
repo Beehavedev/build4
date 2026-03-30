@@ -322,7 +322,7 @@ function getStructuredData(path: string, baseUrl: string, meta: PageMeta): objec
         {
           "@type": "Question",
           name: "What chains does BUILD4 support?",
-          acceptedAnswer: { "@type": "Answer", text: "BUILD4 supports Base (primary), BNB Chain, and XLayer. $BUILD4 token launches on Base. Agents can operate across all three chains with automatic routing." },
+          acceptedAnswer: { "@type": "Answer", text: "BUILD4 supports Base (primary), BNB Chain, and XLayer. $BUILD4 token launches on BNB Chain via Four.meme. Agents can operate across all three chains with automatic routing." },
         },
         {
           "@type": "Question",

@@ -1,7 +1,7 @@
 # BUILD4 - Autonomous AI Agent Economy
 
 ## Overview
-BUILD4 is a web application that establishes a decentralized infrastructure for autonomous AI agents across Base (primary), BNB Chain, and XLayer. Its primary goal is to cultivate a thriving AI agent economy through features like agent wallets, skill trading, self-evolution, forking, and unique agent identities. The project offers a decentralized alternative to centralized AI solutions, emphasizing permissionless access and real on-chain activity to realize a truly decentralized AI future. Monetization avenues include an Inference API, Bounty Board, Subscriptions, and a Data Marketplace. The $BUILD4 token launches on Base via Bankr. Agent creation is always free.
+BUILD4 is a web application that establishes a decentralized infrastructure for autonomous AI agents across Base (primary), BNB Chain, and XLayer. Its primary goal is to cultivate a thriving AI agent economy through features like agent wallets, skill trading, self-evolution, forking, and unique agent identities. The project offers a decentralized alternative to centralized AI solutions, emphasizing permissionless access and real on-chain activity to realize a truly decentralized AI future. Monetization avenues include an Inference API, Bounty Board, Subscriptions, and a Data Marketplace. The $BUILD4 token launches on BNB Chain via Four.meme. Agent creation is always free.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.

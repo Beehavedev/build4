@@ -591,7 +591,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
   }
 
   if (isFundingQuestion) {
-    return "To fund your wallet, first make sure you have one — use /start or /wallet.\n\nThen send crypto to your wallet address on the right chain:\n• ETH (Base) → for Bankr launches & $BUILD4 token ⭐\n• BNB → for Four.meme / Flap.sh launches\n• OKB → for XLayer launches\n\nSame wallet address, just pick the right network!";
+    return "To fund your wallet, first make sure you have one — use /start or /wallet.\n\nThen send crypto to your wallet address on the right chain:\n• BNB → for Four.meme / Flap.sh launches & $BUILD4 token ⭐\n• ETH (Base) → for Bankr launches\n• SOL → for Raydium LaunchLab launches\n• OKB → for XLayer launches\n\nSame wallet address, just pick the right network!";
   }
 
   if (lower.includes("what is build4") || lower.includes("what's build4") || lower.includes("about build4"))
@@ -633,7 +633,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
   if (lower.includes("how") && lower.includes("start"))
     return "Getting started is easy:\n1. Create a wallet (tap 🔑 Create New Wallet)\n2. Fund it with some BNB, OKB, or ETH\n3. Create an agent with /newagent\n4. Launch tokens with /launch\n\nThat's it — you're in the autonomous economy!";
   if (lower.includes("price") || (lower.includes("token") && !lower.includes("launch")) || lower.includes("buy"))
-    return "BUILD4 is infrastructure, not a token — but $BUILD4 token is launching on Solana via Raydium LaunchLab! Agents can also launch their own tokens on Raydium, Bankr, Four.meme, Flap.sh, or XLayer. Use /launch to try it.";
+    return "BUILD4 is infrastructure, not a token — but $BUILD4 token is launching on BNB Chain via Four.meme! Agents can also launch their own tokens on Raydium, Bankr, Four.meme, Flap.sh, or XLayer. Use /launch to try it.";
   if (lower.includes("hello") || lower.includes("hi") || lower.includes("hey") || lower.includes("gm") || lower === "yo") {
     if (chatId) {
       const wallets = getUserWallets(chatId);

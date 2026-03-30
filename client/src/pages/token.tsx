@@ -51,7 +51,7 @@ export default function TokenPage() {
     <>
       <SEO
         title="$BUILD4 Token | BUILD4"
-        description="$BUILD4 — the token powering decentralized AI agent infrastructure on Base. Fair launch. 1B supply."
+        description="$BUILD4 — the token powering decentralized AI agent infrastructure on BNB Chain via Four.meme. Fair launch. 1B supply."
         path="/token"
       />
 
@@ -135,9 +135,9 @@ export default function TokenPage() {
               <div className="font-mono text-[11px] text-muted-foreground">{t("token.statPublic")}</div>
             </Card>
             <Card className="p-5 text-center space-y-2 border-primary/20" data-testid="stat-base">
-              <Layers className="w-6 h-6 mx-auto text-blue-500" />
-              <div className="font-mono text-lg font-bold">Base</div>
-              <div className="font-mono text-[11px] text-muted-foreground">ERC-20</div>
+              <Layers className="w-6 h-6 mx-auto text-yellow-500" />
+              <div className="font-mono text-lg font-bold">BNB Chain</div>
+              <div className="font-mono text-[11px] text-muted-foreground">BEP-20 (Four.meme)</div>
             </Card>
           </div>
 
@@ -322,10 +322,10 @@ export default function TokenPage() {
 
             <Card className="p-5 text-center space-y-3 border-dashed max-w-md mx-auto">
               <div className="flex items-center justify-center gap-2">
-                <Layers className="w-5 h-5 text-blue-500" />
-                <span className="font-mono text-sm font-bold">Base Chain</span>
+                <Layers className="w-5 h-5 text-yellow-500" />
+                <span className="font-mono text-sm font-bold">BNB Chain (Four.meme)</span>
               </div>
-              <Badge variant="outline" className="font-mono text-[10px]">ERC-20</Badge>
+              <Badge variant="outline" className="font-mono text-[10px]">BEP-20</Badge>
               <p className="font-mono text-xs text-muted-foreground">{t("token.contractSoon")}</p>
             </Card>
 
