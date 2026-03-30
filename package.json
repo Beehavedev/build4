@@ -11,6 +11,7 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
+    "@exodus/bigint-buffer": "^1.1.5-exodus.1",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@nomicfoundation/hardhat-toolbox": "^6.1.2",
@@ -135,7 +136,8 @@
       "form-data": "2.5.4",
       "qs": "6.14.1"
     },
-    "undici": "6.24.0"
+    "undici": "6.24.0",
+    "bigint-buffer": "npm:@exodus/bigint-buffer@1.1.5-exodus.1"
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"
