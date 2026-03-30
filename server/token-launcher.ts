@@ -2035,7 +2035,7 @@ async function launchOnRaydium(params: LaunchParams): Promise<LaunchResult> {
   try {
     const { Raydium, TxVersion, LAUNCHPAD_PROGRAM, getPdaLaunchpadConfigId } = await import("@raydium-io/raydium-sdk-v2");
     const { Connection, Keypair, PublicKey } = await import("@solana/web3.js");
-    const { NATIVE_MINT } = await import("@solana/spl-token");
+    const NATIVE_MINT = new PublicKey("So11111111111111111111111111111111111111112");
     const BN = (await import("bn.js")).default;
     const SOLANA_RPC = process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
     const connection = new Connection(SOLANA_RPC, "confirmed");
