@@ -174,7 +174,7 @@ interface SignalBuyState {
 }
 const pendingSignalBuy = new Map<number, SignalBuyState>();
 
-const BUILD4_TOKEN_CA = "";
+const BUILD4_TOKEN_CA = "0x1d547f9d0890ee5abfb49d7d53ca19df85da4444";
 interface Build4BuyState { amount?: string }
 const pendingBuild4Buy = new Map<number, Build4BuyState>();
 
