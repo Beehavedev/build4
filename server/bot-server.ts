@@ -38,6 +38,9 @@ const CRITICAL_TABLES_SQL = [
   `CREATE TABLE IF NOT EXISTS "telegram_bot_subscriptions" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, wallet_address TEXT NOT NULL, chat_id TEXT NOT NULL, status TEXT DEFAULT 'trial'::text NOT NULL, trial_started_at TIMESTAMP DEFAULT now(), paid_at TIMESTAMP, expires_at TIMESTAMP, tx_hash TEXT, chain_id INTEGER, amount_paid TEXT, created_at TIMESTAMP DEFAULT now())`,
   `CREATE TABLE IF NOT EXISTS "telegram_bot_referrals" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, referrer_chat_id TEXT NOT NULL, referred_chat_id TEXT NOT NULL, referral_code TEXT NOT NULL, status TEXT DEFAULT 'pending' NOT NULL, commission_percent INTEGER DEFAULT 30, commission_amount TEXT, commission_paid BOOLEAN DEFAULT false, created_at TIMESTAMP DEFAULT now())`,
   `CREATE TABLE IF NOT EXISTS "telegram_wallets" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, chat_id TEXT NOT NULL, wallet_address TEXT NOT NULL, encrypted_key TEXT, created_at TIMESTAMP DEFAULT now(), is_active BOOLEAN DEFAULT true)`,
+  `ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "owner_telegram_chat_id" TEXT`,
+  `ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "preferred_model" TEXT`,
+  `ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "updated_at" TIMESTAMP DEFAULT now()`,
 ];
 
 async function ensureSchema() {
