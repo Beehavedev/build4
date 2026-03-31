@@ -6,6 +6,7 @@ const CONTRACTS = [
   "ConstitutionRegistry",
   "SkillMarketplace",
   "AgentReplication",
+  "BUILD4Staking",
 ];
 
 const ARTIFACTS_DIR = path.join(__dirname, "..", "artifacts", "contracts", "web4");

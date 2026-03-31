@@ -313,6 +313,47 @@
       "artifacts": [
         "AgentEconomyHub"
       ]
+    },
+    "/home/runner/workspace/contracts/web4/BUILD4Staking.sol": {
+      "lastModificationDate": 1774079554760,
+      "contentHash": "4af3f54769a4e64a65f8e1cf4f20d4bd",
+      "sourceName": "contracts/web4/BUILD4Staking.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "viaIR": false,
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/access/Ownable.sol",
+        "@openzeppelin/contracts/utils/ReentrancyGuard.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "BUILD4Staking",
+        "IERC20"
+      ]
     }
   }
 }

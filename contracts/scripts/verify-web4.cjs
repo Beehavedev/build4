@@ -42,6 +42,14 @@ async function main() {
     },
   ];
 
+  if (contracts.BUILD4Staking) {
+    verifications.push({
+      name: "BUILD4Staking",
+      address: contracts.BUILD4Staking,
+      constructorArguments: [],
+    });
+  }
+
   const results = [];
 
   for (const v of verifications) {
