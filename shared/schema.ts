@@ -32,6 +32,7 @@ export const agents = pgTable("agents", {
   bap578Registered: boolean("bap578_registered").notNull().default(false),
   creatorWallet: text("creator_wallet"),
   preferredChain: text("preferred_chain").default("bnbMainnet"),
+  ownerTelegramChatId: text("owner_telegram_chat_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
