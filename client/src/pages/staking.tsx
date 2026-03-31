@@ -30,8 +30,8 @@ export default function StakingPage() {
   return (
     <>
       <SEO
-        title="Stake $BUILD4 | BUILD4"
-        description="Stake $BUILD4 tokens to unlock fee discounts and governance power. Lock longer for higher multipliers. Up to 4x boost with 365-day lock."
+        title="Stake $B4 | BUILD4"
+        description="Stake $B4 tokens to unlock fee discounts and governance power. Lock longer for higher multipliers. Up to 4x boost with 365-day lock."
         path="/staking"
       />
 
@@ -71,7 +71,7 @@ export default function StakingPage() {
               <span className="font-mono text-xs text-primary font-semibold">STAKING</span>
             </div>
             <h1 className="font-mono text-3xl sm:text-4xl font-bold tracking-tight">
-              Stake <span className="text-primary">$BUILD4</span>
+              Stake <span className="text-primary">$B4</span>
             </h1>
             <p className="font-mono text-sm text-muted-foreground max-w-lg mx-auto">
               Lock your tokens to unlock fee discounts, governance power, and priority access. Longer locks unlock higher tiers.
@@ -108,7 +108,7 @@ export default function StakingPage() {
                 <div>
                   <div className="font-mono text-sm font-bold text-amber-500">Token Not Yet Launched</div>
                   <p className="font-mono text-xs text-muted-foreground mt-1">
-                    $BUILD4 has not launched yet. Staking will be available immediately after the token launches on Four.meme (BNB Chain) and Flap.sh (XLayer). The staking contract is deployed and ready.
+                    $B4 has not launched yet. Staking will be available immediately after the token launches on Four.meme (BNB Chain) and Flap.sh (XLayer). The staking contract is deployed and ready.
                   </p>
                 </div>
               </div>
@@ -254,7 +254,7 @@ export default function StakingPage() {
                       <span className="font-mono text-xs font-bold text-primary">1</span>
                     </div>
                     <div>
-                      <div className="font-mono text-xs font-semibold">Stake $BUILD4</div>
+                      <div className="font-mono text-xs font-semibold">Stake $B4</div>
                       <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
                         Deposit your tokens and choose a lock period from 7 to 365 days.
                       </p>
@@ -267,7 +267,7 @@ export default function StakingPage() {
                     <div>
                       <div className="font-mono text-xs font-semibold">Unlock Discounts</div>
                       <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
-                        Stakers get reduced platform fees. 30% of all fees buy back and burn $BUILD4, reducing supply.
+                        Stakers get reduced platform fees. 30% of all fees buy back and burn $B4, reducing supply.
                       </p>
                     </div>
                   </div>
@@ -352,7 +352,7 @@ export default function StakingPage() {
                 </div>
 
                 <p className="font-mono text-[10px] text-muted-foreground">
-                  30% of all platform fees buy back $BUILD4 from the open market and burn it, permanently reducing supply.
+                  30% of all platform fees buy back $B4 from the open market and burn it, permanently reducing supply.
                 </p>
               </Card>
             </div>
@@ -394,7 +394,7 @@ export default function StakingPage() {
               <span className="font-mono font-bold text-sm">BUILD<span className="text-primary">4</span></span>
             </div>
             <p className="font-mono text-[11px] text-muted-foreground">
-              Stake $BUILD4 to unlock fee discounts, governance votes, and priority access. Longer locks earn higher multipliers.
+              Stake $B4 to unlock fee discounts, governance votes, and priority access. Longer locks earn higher multipliers.
             </p>
           </footer>
         </main>

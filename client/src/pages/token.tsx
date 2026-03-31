@@ -12,7 +12,8 @@ import {
   PieChart, ArrowRight, DollarSign, Layers,
 } from "lucide-react";
 
-const TICKER = "$BUILD4";
+const TICKER = "$B4";
+const TOKEN_CA = "0x1d547f9d0890ee5abfb49d7d53ca19df85da4444";
 
 const ALLOC_META = [
   { id: "founder", pct: 70, amount: "700,000,000", bgColor: "bg-primary", bgTint: "bg-primary/15", textColor: "text-primary", icon: Lock, labelKey: "allocFounder", noteKey: "allocFounderNote" },
@@ -59,8 +60,8 @@ export default function TokenPage() {
   return (
     <>
       <SEO
-        title="$BUILD4 Token | BUILD4"
-        description="$BUILD4 — the token powering decentralized AI agent infrastructure on BNB Chain via Four.meme. Fair launch. 1B supply."
+        title="$B4 Token | BUILD4"
+        description="$B4 — the token powering decentralized AI agent infrastructure on BNB Chain via Four.meme. Fair launch. 1B supply."
         path="/token"
       />
 
@@ -389,19 +390,38 @@ export default function TokenPage() {
               <h2 className="font-mono text-lg font-bold">{t("token.contractTitle")}</h2>
             </div>
 
-            <Card className="p-5 text-center space-y-3 border-dashed max-w-md mx-auto">
+            <Card className="p-5 text-center space-y-3 border-primary/20 max-w-lg mx-auto" data-testid="contract-address-card">
               <div className="flex items-center justify-center gap-2">
                 <Layers className="w-5 h-5 text-yellow-500" />
                 <span className="font-mono text-sm font-bold">BNB Chain (Four.meme)</span>
               </div>
               <Badge variant="outline" className="font-mono text-[10px]">BEP-20</Badge>
-              <p className="font-mono text-xs text-muted-foreground">{t("token.contractSoon")}</p>
+              <div className="flex items-center justify-center gap-2 bg-muted/50 rounded-lg px-3 py-2">
+                <code className="font-mono text-xs text-primary break-all select-all" data-testid="text-token-ca">{TOKEN_CA}</code>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(TOKEN_CA); }}
+                  className="text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+                  title="Copy address"
+                  data-testid="button-copy-ca"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                </button>
+              </div>
+              <a
+                href={`https://bscscan.com/token/${TOKEN_CA}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 font-mono text-xs text-primary hover:underline"
+                data-testid="link-bscscan"
+              >
+                View on BscScan <ExternalLink className="w-3 h-3" />
+              </a>
             </Card>
 
             <div className="flex items-center justify-center gap-3 pt-2">
               <Link href="/staking">
                 <Button size="sm" className="font-mono text-xs gap-1.5" data-testid="button-stake-from-token">
-                  <Lock className="w-3.5 h-3.5" /> Stake $BUILD4
+                  <Lock className="w-3.5 h-3.5" /> Stake $B4
                 </Button>
               </Link>
               <Link href="/hire-agent">

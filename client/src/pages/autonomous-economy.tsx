@@ -1405,7 +1405,7 @@ export default function AutonomousEconomy() {
                   data-testid="button-token"
                 >
                   <Coins className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">$BUILD4</span>
+                  <span className="hidden sm:inline">$B4</span>
                 </Button>
               </Link>
               <Link href="/onchainos">
