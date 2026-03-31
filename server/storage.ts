@@ -2651,8 +2651,29 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTokenLaunch(launch: InsertTokenLaunch): Promise<TokenLaunch> {
-    const [created] = await db.insert(tokenLaunches).values(launch).returning();
-    return created;
+    try {
+      const [created] = await db.insert(tokenLaunches).values(launch).returning();
+      return created;
+    } catch (e: any) {
+      if (e.message?.includes("agent_id") || e.message?.includes("creator_wallet") || e.message?.includes("image_url") || e.message?.includes("launch_url") || e.message?.includes("initial_liquidity") || e.message?.includes("error_message") || e.message?.includes("metadata")) {
+        console.warn("[Storage] token_launches missing columns, attempting ALTER then retry...");
+        const alters = [
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "agent_id" VARCHAR`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "creator_wallet" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "image_url" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "launch_url" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "initial_liquidity_bnb" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "error_message" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "metadata" TEXT`,
+        ];
+        for (const a of alters) {
+          try { await db.execute(sql.raw(a)); } catch {}
+        }
+        const [created] = await db.insert(tokenLaunches).values(launch).returning();
+        return created;
+      }
+      throw e;
+    }
   }
 
   async getTokenLaunch(id: string): Promise<TokenLaunch | undefined> {

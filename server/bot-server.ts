@@ -41,6 +41,14 @@ const CRITICAL_TABLES_SQL = [
   `ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "owner_telegram_chat_id" TEXT`,
   `ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "preferred_model" TEXT`,
   `ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "updated_at" TIMESTAMP DEFAULT now()`,
+  `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "agent_id" VARCHAR`,
+  `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "creator_wallet" TEXT`,
+  `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "image_url" TEXT`,
+  `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "launch_url" TEXT`,
+  `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "initial_liquidity_bnb" TEXT`,
+  `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "error_message" TEXT`,
+  `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "metadata" TEXT`,
+  `CREATE TABLE IF NOT EXISTS "sniper_wallet_keys" (id VARCHAR DEFAULT gen_random_uuid() NOT NULL, launch_id VARCHAR, chat_id TEXT NOT NULL, agent_id VARCHAR NOT NULL, token_address TEXT, wallet_index INTEGER NOT NULL, wallet_address TEXT NOT NULL, encrypted_private_key TEXT NOT NULL, bnb_amount TEXT, status TEXT DEFAULT 'funded'::text NOT NULL, tx_hash TEXT, created_at TIMESTAMP DEFAULT now())`,
 ];
 
 async function ensureSchema() {
