@@ -6322,13 +6322,14 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
             try {
               const { fourMemeUploadImageBuffer } = await import("./token-launcher");
-              const uploadedUrl = await fourMemeUploadImageBuffer(imageBuffer);
-              if (uploadedUrl) {
-                logoState.imageUrl = uploadedUrl;
+              const uploadResult = await fourMemeUploadImageBuffer(imageBuffer);
+              if (uploadResult && typeof uploadResult === "string" && uploadResult.startsWith("http")) {
+                logoState.imageUrl = uploadResult;
                 await bot.sendMessage(chatId, `✅ Logo uploaded successfully! (${ext.toUpperCase()} format)`);
+              } else if (uploadResult && typeof uploadResult === "string") {
+                await bot.sendMessage(chatId, `⚠️ Upload debug: ${uploadResult.substring(0, 200)}\nContinuing with auto-generated logo.`);
               } else {
-                console.error("[TelegramBot] Logo upload returned null — check token-launcher logs for details");
-                await bot.sendMessage(chatId, `⚠️ Logo upload failed (CDN rejected). Continuing with auto-generated logo.`);
+                await bot.sendMessage(chatId, `⚠️ Logo upload returned empty. Continuing with auto-generated logo.`);
               }
             } catch (uploadErr: any) {
               console.error("[TelegramBot] Logo upload error:", uploadErr.message, uploadErr.stack?.substring(0, 300));

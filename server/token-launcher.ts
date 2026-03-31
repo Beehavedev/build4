@@ -84,14 +84,23 @@ async function fourMemeUploadImage(pngBuffer: Buffer, accessToken: string): Prom
       body,
     });
 
-    const uploadJson = await uploadRes.json() as any;
-    if (uploadJson.code === 0 && uploadJson.data) {
-      const imgUrl = typeof uploadJson.data === "string" ? uploadJson.data : uploadJson.data.url || uploadJson.data.imgUrl;
-      log(`[TokenLauncher] Image uploaded to four.meme CDN: ${imgUrl}`, "token-launcher");
-      return imgUrl;
+    log(`[TokenLauncher] Authenticated upload HTTP ${uploadRes.status}`, "token-launcher");
+    const responseText = await uploadRes.text();
+    log(`[TokenLauncher] Authenticated upload raw response: ${responseText.substring(0, 400)}`, "token-launcher");
+    try {
+      const uploadJson = JSON.parse(responseText);
+      if (uploadJson.code === 0 && uploadJson.data) {
+        const imgUrl = typeof uploadJson.data === "string" ? uploadJson.data : uploadJson.data.url || uploadJson.data.imgUrl || uploadJson.data.imageUrl;
+        log(`[TokenLauncher] Image uploaded to four.meme CDN: ${imgUrl}`, "token-launcher");
+        return imgUrl;
+      }
+      if (uploadJson.data && typeof uploadJson.data === "string" && uploadJson.data.startsWith("http")) {
+        log(`[TokenLauncher] Image uploaded (alt parse): ${uploadJson.data}`, "token-launcher");
+        return uploadJson.data;
+      }
+    } catch {
+      log(`[TokenLauncher] Upload response was not JSON`, "token-launcher");
     }
-
-    log(`[TokenLauncher] four.meme upload response: ${JSON.stringify(uploadJson).substring(0, 200)}`, "token-launcher");
     return null;
   } catch (e: any) {
     log(`[TokenLauncher] four.meme image upload failed: ${e.message?.substring(0, 100)}`, "token-launcher");
@@ -679,20 +688,21 @@ export async function fourMemeUploadImageBuffer(pngBuffer: Buffer): Promise<stri
       return await fourMemeUploadImagePublic(pngBuffer);
     }
     log(`[TokenLauncher] Logging into four.meme for image upload with wallet ${wallet.address.substring(0, 10)}...`, "token-launcher");
-    const accessToken = await fourMemeLogin(wallet);
+    let accessToken: string;
+    try {
+      accessToken = await fourMemeLogin(wallet);
+    } catch (loginErr: any) {
+      log(`[TokenLauncher] four.meme login failed for upload: ${loginErr.message?.substring(0, 150)}`, "token-launcher");
+      return await fourMemeUploadImagePublic(pngBuffer);
+    }
     log(`[TokenLauncher] Login OK, uploading image (${pngBuffer.length} bytes)...`, "token-launcher");
     const result = await fourMemeUploadImage(pngBuffer, accessToken);
     if (result) return result;
     log(`[TokenLauncher] Authenticated upload returned null, trying public fallback`, "token-launcher");
     return await fourMemeUploadImagePublic(pngBuffer);
   } catch (e: any) {
-    log(`[TokenLauncher] fourMemeUploadImageBuffer failed: ${e.message?.substring(0, 200)}, trying public fallback`, "token-launcher");
-    try {
-      return await fourMemeUploadImagePublic(pngBuffer);
-    } catch (e2: any) {
-      log(`[TokenLauncher] Public fallback also failed: ${e2.message?.substring(0, 150)}`, "token-launcher");
-      return null;
-    }
+    log(`[TokenLauncher] fourMemeUploadImageBuffer failed: ${e.message?.substring(0, 200)}`, "token-launcher");
+    return null;
   }
 }
 
@@ -702,6 +712,7 @@ async function fourMemeUploadImagePublic(pngBuffer: Buffer): Promise<string | nu
     `${FOUR_MEME_API}/meme-api/meme/image/upload`,
     `${FOUR_MEME_API}/meme-api/v1/public/token/upload`,
   ];
+  const debugResults: string[] = [];
   for (const url of endpoints) {
     try {
       const boundary = `----FormBoundary${crypto.randomBytes(8).toString("hex")}`;
@@ -715,21 +726,33 @@ async function fourMemeUploadImagePublic(pngBuffer: Buffer): Promise<string | nu
         headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
         body,
       });
-      log(`[TokenLauncher] Public upload ${url} → HTTP ${res.status}`, "token-launcher");
-      if (!res.ok) continue;
-      const json = await res.json() as any;
-      log(`[TokenLauncher] Public upload response: ${JSON.stringify(json).substring(0, 300)}`, "token-launcher");
-      if (json.code === 0 && json.data) {
-        const imgUrl = typeof json.data === "string" ? json.data : json.data.url || json.data.imgUrl || json.data.imageUrl;
-        if (imgUrl) return imgUrl;
+      const shortUrl = url.replace(FOUR_MEME_API, "");
+      log(`[TokenLauncher] Public upload ${shortUrl} → HTTP ${res.status}`, "token-launcher");
+      if (!res.ok) {
+        debugResults.push(`${shortUrl}→${res.status}`);
+        continue;
       }
-      if (json.msg === "success" && json.data?.imageUrl) {
-        return json.data.imageUrl;
+      const text = await res.text();
+      log(`[TokenLauncher] Public upload response: ${text.substring(0, 300)}`, "token-launcher");
+      try {
+        const json = JSON.parse(text);
+        if (json.code === 0 && json.data) {
+          const imgUrl = typeof json.data === "string" ? json.data : json.data.url || json.data.imgUrl || json.data.imageUrl;
+          if (imgUrl) return imgUrl;
+        }
+        if (json.msg === "success" && json.data?.imageUrl) {
+          return json.data.imageUrl;
+        }
+        debugResults.push(`${shortUrl}→${JSON.stringify(json).substring(0, 80)}`);
+      } catch {
+        debugResults.push(`${shortUrl}→non-JSON: ${text.substring(0, 60)}`);
       }
     } catch (e: any) {
       log(`[TokenLauncher] Public upload ${url} error: ${e.message?.substring(0, 100)}`, "token-launcher");
+      debugResults.push(`error: ${e.message?.substring(0, 40)}`);
     }
   }
+  log(`[TokenLauncher] All upload endpoints failed: ${debugResults.join(" | ")}`, "token-launcher");
   return null;
 }
 
