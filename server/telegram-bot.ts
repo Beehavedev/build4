@@ -7864,15 +7864,17 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     if (cmd === "wallet") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for wallet info!"); return; }
       await ensureWallet(chatId);
-      const wallets = getUserWallets(chatId);
+      const allWallets = getUserWallets(chatId);
       const activeIdx = getActiveWalletIndex(chatId);
+      const wallets = allWallets.filter(w => /^0x[a-fA-F0-9]{40}$/.test(w));
 
       await bot.sendMessage(chatId, "Loading wallet balances...");
       const balances = await fetchWalletBalances(wallets);
 
       let text = `👛 Your Wallets\n\n`;
-      wallets.forEach((w, i) => {
-        const marker = i === activeIdx ? "✅" : "⬜";
+      wallets.forEach((w) => {
+        const origIdx = allWallets.indexOf(w);
+        const marker = origIdx === activeIdx ? "✅" : "⬜";
         const bal = balances[w];
         const hasKey = walletsWithKey.has(`${chatId}:${w}`);
         const keyTag = hasKey ? "" : " 🔒 view-only";
@@ -7883,17 +7885,22 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           if (parseFloat(bal.eth) > 0) parts.push(`${bal.eth} ETH`);
           balText = parts.length > 0 ? ` (${parts.join(", ")})` : " (empty)";
         }
-        text += `${marker} \`${w}\`${i === activeIdx ? " ← active" : ""}${keyTag}\n    ${balText}\n\n`;
+        text += `${marker} \`${w}\`${origIdx === activeIdx ? " ← active" : ""}${keyTag}\n    ${balText}\n\n`;
       });
+      const solWallet = solanaWalletMap.get(chatId);
+      if (solWallet) {
+        text += `🟣 *Solana Wallet*\n\`${solWallet.address}\`\n\n`;
+      }
       text += `Send BNB to your active wallet address to fund it.`;
 
-      const walletButtons: TelegramBot.InlineKeyboardButton[][] = wallets.map((w, i) => {
-        if (i === activeIdx) {
-          return [{ text: `📋 Copy Address`, callback_data: `copywall:${i}` }];
+      const walletButtons: TelegramBot.InlineKeyboardButton[][] = wallets.map((w) => {
+        const origIdx = allWallets.indexOf(w);
+        if (origIdx === activeIdx) {
+          return [{ text: `📋 Copy Address`, callback_data: `copywall:${origIdx}` }];
         }
         return [
-          { text: `▶️ Use ${shortWallet(w)}`, callback_data: `switchwall:${i}` },
-          { text: `🗑`, callback_data: `removewall:${i}` },
+          { text: `▶️ Use ${shortWallet(w)}`, callback_data: `switchwall:${origIdx}` },
+          { text: `🗑`, callback_data: `removewall:${origIdx}` },
         ];
       });
       walletButtons.push([{ text: "🔑 Add Wallet", callback_data: "action:genwallet" }]);
