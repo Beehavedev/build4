@@ -534,14 +534,39 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAgentsByWallet(walletAddress: string): Promise<Agent[]> {
-    return db.select().from(agents).where(eq(agents.creatorWallet, walletAddress.toLowerCase())).orderBy(agents.createdAt);
+    try {
+      return await db.select().from(agents).where(eq(agents.creatorWallet, walletAddress.toLowerCase())).orderBy(agents.createdAt);
+    } catch (e: any) {
+      console.error("[Storage] getAgentsByWallet drizzle error, falling back to raw SQL:", e.message);
+      try {
+        const result = await db.execute(sql`SELECT id, name, bio, model_type as "modelType", status, onchain_id as "onchainId", onchain_registered as "onchainRegistered", erc8004_registered as "erc8004Registered", erc8004_tx_hash as "erc8004TxHash", erc8004_token_id as "erc8004TokenId", erc8004_chain as "erc8004Chain", bap578_registered as "bap578Registered", creator_wallet as "creatorWallet", preferred_chain as "preferredChain", created_at as "createdAt" FROM agents WHERE LOWER(creator_wallet) = ${walletAddress.toLowerCase()} ORDER BY created_at`);
+        return (result.rows || []) as Agent[];
+      } catch (e2: any) {
+        console.error("[Storage] getAgentsByWallet raw SQL also failed:", e2.message);
+        return [];
+      }
+    }
   }
 
   async getAgentsByTelegramChatId(chatId: string): Promise<Agent[]> {
     try {
-      return await db.select().from(agents).where(eq(agents.ownerTelegramChatId, chatId)).orderBy(agents.createdAt);
+      const results = await db.select().from(agents).where(eq(agents.ownerTelegramChatId, chatId)).orderBy(agents.createdAt);
+      if (results.length > 0) return results;
     } catch (e: any) {
-      console.error("[Storage] getAgentsByTelegramChatId error:", e.message);
+      console.error("[Storage] getAgentsByTelegramChatId direct lookup error:", e.message);
+    }
+    try {
+      const wallets = await this.getTelegramWallets(chatId);
+      if (wallets.length === 0) return [];
+      const walletAddresses = wallets.map(w => w.walletAddress.toLowerCase());
+      const allAgents: Agent[] = [];
+      for (const addr of walletAddresses) {
+        const found = await this.getAgentsByWallet(addr);
+        allAgents.push(...found);
+      }
+      return allAgents;
+    } catch (e: any) {
+      console.error("[Storage] getAgentsByTelegramChatId wallet fallback error:", e.message);
       return [];
     }
   }

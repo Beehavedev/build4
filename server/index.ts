@@ -234,11 +234,10 @@ async function ensureSchema() {
     join(thisDir, "schema-init.sql"),
     join(thisDir, "..", "server", "schema-init.sql"),
   ];
-  let sql = "";
+  let sqlContent = "";
   for (const p of candidates) {
-    try { sql = readFileSync(p, "utf-8"); break; } catch {}
+    try { sqlContent = readFileSync(p, "utf-8"); break; } catch {}
   }
-  if (!sql) return;
   const isSSL = process.env.DATABASE_URL.includes("render.com") ||
     process.env.DATABASE_URL.includes("neon.tech") ||
     process.env.RENDER === "true";
@@ -247,10 +246,28 @@ async function ensureSchema() {
     ssl: isSSL ? { rejectUnauthorized: false } : false,
   });
   try {
-    await pool.query(sql);
-    log("Database schema ensured — all tables created");
+    const criticalAlters = [
+      `ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "owner_telegram_chat_id" TEXT`,
+      `ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "preferred_model" TEXT`,
+      `ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "updated_at" TIMESTAMP DEFAULT now()`,
+    ];
+    for (const stmt of criticalAlters) {
+      try { await pool.query(stmt); } catch (e: any) {
+        log(`Critical ALTER warning: ${e.message?.substring(0, 100)}`);
+      }
+    }
+    log("Critical agent columns ensured (v2)");
+
+    if (sqlContent) {
+      const statements = sqlContent.split(/;\s*\n/).filter((s: string) => s.trim().length > 5);
+      let ok = 0, skip = 0;
+      for (const stmt of statements) {
+        try { await pool.query(stmt); ok++; } catch { skip++; }
+      }
+      log(`Schema init: ${ok} succeeded, ${skip} skipped`);
+    }
   } catch (e: any) {
-    log(`Schema setup warning: ${e.message?.substring(0, 200)}`);
+    log(`Schema setup error: ${e.message?.substring(0, 200)}`);
   } finally {
     await pool.end();
   }
