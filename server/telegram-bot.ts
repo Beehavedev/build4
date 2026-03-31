@@ -6320,24 +6320,18 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
               }
             }
 
-            const formData = new FormData();
-            const blob = new Blob([imageBuffer], { type: uploadMime });
-            formData.append("file", blob, `logo.${uploadExt}`);
-
-            const uploadRes = await fetch("https://four.meme/meme-api/meme/image/upload", {
-              method: "POST",
-              body: formData,
-            });
-            if (!uploadRes.ok) {
-              await bot.sendMessage(chatId, `⚠️ Logo upload failed (HTTP ${uploadRes.status}). Continuing without custom logo.`);
-            } else {
-              const uploadJson = await uploadRes.json();
-              if (uploadJson.msg === "success" && uploadJson.data?.imageUrl) {
-                logoState.imageUrl = uploadJson.data.imageUrl;
+            try {
+              const { fourMemeUploadImageBuffer } = await import("./token-launcher");
+              const uploadedUrl = await fourMemeUploadImageBuffer(imageBuffer);
+              if (uploadedUrl) {
+                logoState.imageUrl = uploadedUrl;
                 await bot.sendMessage(chatId, `✅ Logo uploaded successfully! (${ext.toUpperCase()} format)`);
               } else {
-                await bot.sendMessage(chatId, `⚠️ Logo upload failed, using auto-generated logo. Continuing...`);
+                await bot.sendMessage(chatId, `⚠️ Logo upload failed. Continuing with auto-generated logo.`);
               }
+            } catch (uploadErr: any) {
+              console.error("[TelegramBot] Logo upload error:", uploadErr.message);
+              await bot.sendMessage(chatId, `⚠️ Logo upload failed. Continuing with auto-generated logo.`);
             }
           }
         }

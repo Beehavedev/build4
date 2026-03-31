@@ -670,6 +670,22 @@ async function fourMemeLogin(wallet: ethers.Wallet): Promise<string> {
   return loginJson.data;
 }
 
+export async function fourMemeUploadImageBuffer(pngBuffer: Buffer): Promise<string | null> {
+  try {
+    const provider = getBscProvider();
+    const wallet = getDeployerWallet(provider);
+    if (!wallet) {
+      log("[TokenLauncher] No deployer wallet for image upload", "token-launcher");
+      return null;
+    }
+    const accessToken = await fourMemeLogin(wallet);
+    return await fourMemeUploadImage(pngBuffer, accessToken);
+  } catch (e: any) {
+    log(`[TokenLauncher] fourMemeUploadImageBuffer failed: ${e.message?.substring(0, 150)}`, "token-launcher");
+    return null;
+  }
+}
+
 async function fourMemeFetchRaisedConfig(accessToken: string): Promise<any> {
   try {
     const res = await fetch(`${FOUR_MEME_API}/meme-api/v1/private/token/raise`, {
