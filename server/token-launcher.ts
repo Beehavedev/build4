@@ -2288,9 +2288,9 @@ export async function fourMemeLaunchWithSnipe(
   const walletCount = params.sniperWalletCount || 10;
   const perWalletBnb = parseFloat(params.sniperPerWalletBnb || "1");
 
-  const maxFundPerWallet = perWalletBnb * 1.25 + 0.008;
+  const maxFundPerWallet = perWalletBnb * 1.15 + 0.008;
   const totalSniperBnb = maxFundPerWallet * walletCount;
-  const totalNeeded = parseFloat(devBuyBnb) + totalSniperBnb + 0.05;
+  const totalNeeded = parseFloat(devBuyBnb) + totalSniperBnb + 0.1;
 
   let wallet: ethers.Wallet | null = null;
   if (params.userPrivateKey) {
@@ -2311,24 +2311,16 @@ export async function fourMemeLaunchWithSnipe(
     };
   }
 
-  log(`[Sniper] Phase 1: Launching token with ${devBuyBnb} BNB dev buy...`, "token-launcher");
-  const launchResult = await launchOnFourMeme({
-    ...params,
-    initialLiquidityBnb: devBuyBnb,
-  });
+  log(`[Sniper] ====== SNIPE LAUNCH START ======`, "token-launcher");
+  log(`[Sniper] Strategy: Fund all snipers FIRST, then launch + instant buys`, "token-launcher");
+  log(`[Sniper] Config: ${walletCount} wallets × ${perWalletBnb} BNB, dev buy ${devBuyBnb} BNB`, "token-launcher");
 
-  if (!launchResult.success || !launchResult.tokenAddress) {
-    return launchResult;
-  }
-
-  const tokenAddress = launchResult.tokenAddress;
-  log(`[Sniper] Phase 1 complete: Token ${tokenAddress}. Phase 2: Generating ${walletCount} sniper wallets...`, "token-launcher");
-
+  log(`[Sniper] Phase 1: Generating ${walletCount} sniper wallets...`, "token-launcher");
   const sniperWallets: { address: string; privateKey: string; wallet: ethers.Wallet; fundBnb: number; buyBnb: number }[] = [];
   for (let i = 0; i < walletCount; i++) {
     const sw = ethers.Wallet.createRandom().connect(provider);
-    const buyAmt = randomJitter(perWalletBnb, 0.20);
-    const fundAmt = buyAmt + randomJitter(0.005, 0.40);
+    const buyAmt = randomJitter(perWalletBnb, 0.15);
+    const fundAmt = buyAmt + randomJitter(0.006, 0.30);
     sniperWallets.push({
       address: sw.address,
       privateKey: sw.privateKey,
@@ -2339,7 +2331,7 @@ export async function fourMemeLaunchWithSnipe(
   }
 
   const RELAY_COUNT = 3;
-  log(`[Sniper] Phase 3: Creating ${RELAY_COUNT} relay wallets to break on-chain trace...`, "token-launcher");
+  log(`[Sniper] Phase 2: Creating ${RELAY_COUNT} relay wallets to distribute funds...`, "token-launcher");
 
   const relayWallets: { wallet: ethers.Wallet; assignedSnipers: number[] }[] = [];
   for (let i = 0; i < RELAY_COUNT; i++) {
@@ -2351,6 +2343,7 @@ export async function fourMemeLaunchWithSnipe(
     relayWallets[i % RELAY_COUNT].assignedSnipers.push(shuffledSniperIdxs[i]);
   }
 
+  log(`[Sniper] Phase 2a: Dev wallet funding relay wallets...`, "token-launcher");
   let devNonce = await provider.getTransactionCount(wallet.address);
   const relayFundResults: boolean[] = new Array(RELAY_COUNT).fill(false);
 
@@ -2358,7 +2351,7 @@ export async function fourMemeLaunchWithSnipe(
   for (const ri of relayFundOrder) {
     const relay = relayWallets[ri];
     const relayTotal = relay.assignedSnipers.reduce((sum, si) => sum + sniperWallets[si].fundBnb, 0);
-    const relayFundAmt = relayTotal + randomJitter(0.003, 0.30) * relay.assignedSnipers.length;
+    const relayFundAmt = relayTotal + randomJitter(0.003, 0.25) * relay.assignedSnipers.length;
     try {
       const tx = await wallet!.sendTransaction({
         to: relay.wallet.address,
@@ -2371,14 +2364,14 @@ export async function fourMemeLaunchWithSnipe(
       relayFundResults[ri] = true;
       log(`[Sniper] Dev → Relay ${ri + 1}: ${relay.wallet.address.substring(0, 10)}... (${relayFundAmt.toFixed(5)} BNB for ${relay.assignedSnipers.length} snipers)`, "token-launcher");
 
-      const relayDelay = Math.floor(randomJitter(4000, 0.50));
+      const relayDelay = Math.floor(randomJitter(3000, 0.40));
       await new Promise(r => setTimeout(r, relayDelay));
     } catch (e: any) {
-      log(`[Sniper] Failed to fund Relay ${ri + 1}: ${e.message?.substring(0, 100)}`, "token-launcher");
+      log(`[Sniper] FAILED to fund Relay ${ri + 1}: ${e.message?.substring(0, 100)}`, "token-launcher");
     }
   }
 
-  log(`[Sniper] Phase 3b: Relays funding sniper wallets...`, "token-launcher");
+  log(`[Sniper] Phase 2b: Relays distributing to sniper wallets...`, "token-launcher");
 
   const fundResults: boolean[] = new Array(walletCount).fill(false);
 
@@ -2405,61 +2398,111 @@ export async function fourMemeLaunchWithSnipe(
         fundResults[si] = true;
         log(`[Sniper] Relay ${ri + 1} → W${si + 1}: ${sw.address.substring(0, 10)}... (${sw.fundBnb.toFixed(5)} BNB)`, "token-launcher");
 
-        const hopDelay = Math.floor(randomJitter(2500, 0.50));
+        const hopDelay = Math.floor(randomJitter(2000, 0.40));
         await new Promise(r => setTimeout(r, hopDelay));
       } catch (e: any) {
         log(`[Sniper] Relay ${ri + 1} failed to fund W${si + 1}: ${e.message?.substring(0, 100)}`, "token-launcher");
       }
     }
 
-    const interRelayDelay = Math.floor(randomJitter(5000, 0.40));
+    const interRelayDelay = Math.floor(randomJitter(3000, 0.30));
     await new Promise(r => setTimeout(r, interRelayDelay));
   }
 
   const fundedCount = fundResults.filter(Boolean).length;
-  log(`[Sniper] Funded ${fundedCount}/${walletCount} snipers via ${RELAY_COUNT} relays. Phase 4: Staggered snipe buys...`, "token-launcher");
+  log(`[Sniper] Phase 2 complete: ${fundedCount}/${walletCount} sniper wallets funded and ready`, "token-launcher");
+
+  if (fundedCount === 0) {
+    return {
+      success: false,
+      error: `All sniper wallet funding failed. Aborting launch to prevent losses. Check relay wallet balances and gas.`,
+    };
+  }
+
+  if (fundedCount < walletCount) {
+    log(`[Sniper] WARNING: Only ${fundedCount}/${walletCount} funded. Proceeding with available snipers.`, "token-launcher");
+  }
+
+  log(`[Sniper] ✅ All snipers funded. Phase 3: LAUNCHING TOKEN with ${devBuyBnb} BNB dev buy...`, "token-launcher");
+  const launchResult = await launchOnFourMeme({
+    ...params,
+    initialLiquidityBnb: devBuyBnb,
+  });
+
+  if (!launchResult.success || !launchResult.tokenAddress) {
+    log(`[Sniper] Launch failed! Sniper wallets still hold BNB — keys saved for recovery.`, "token-launcher");
+    return {
+      ...launchResult,
+      sniperResults: {
+        devBuyBnb,
+        wallets: sniperWallets.map((sw, i) => ({
+          address: sw.address,
+          privateKey: sw.privateKey,
+          success: false,
+          error: fundResults[i] ? "Launch failed — wallet funded but no token to buy" : "Funding failed",
+        })),
+        successCount: 0,
+        totalSnipedBnb: "0",
+      },
+    };
+  }
+
+  const tokenAddress = launchResult.tokenAddress;
+  log(`[Sniper] 🚀 Token LIVE at ${tokenAddress}! Phase 4: INSTANT snipe buys from ${fundedCount} wallets...`, "token-launcher");
 
   const sniperResults: SniperWalletResult[] = new Array(walletCount);
 
   const buyOrder = shuffleArray(sniperWallets.map((_, i) => i));
 
-  for (const idx of buyOrder) {
-    const sw = sniperWallets[idx];
-    if (!fundResults[idx]) {
-      sniperResults[idx] = { address: sw.address, privateKey: sw.privateKey, success: false, error: "Funding failed" };
-      continue;
-    }
+  const BATCH_SIZE = 3;
+  for (let batchStart = 0; batchStart < buyOrder.length; batchStart += BATCH_SIZE) {
+    const batch = buyOrder.slice(batchStart, batchStart + BATCH_SIZE);
 
-    try {
-      const buyDelay = Math.floor(randomJitter(5000, 0.60));
-      await new Promise(r => setTimeout(r, buyDelay));
-
-      const result = await fourMemeBuyToken(
-        tokenAddress,
-        sw.buyBnb.toFixed(6),
-        30,
-        sw.privateKey,
-        false,
-      );
-      sniperResults[idx] = {
-        address: sw.address,
-        privateKey: sw.privateKey,
-        txHash: result.txHash,
-        success: result.success,
-        error: result.error,
-      };
-      if (result.success) {
-        log(`[Sniper] W${idx + 1} buy OK: ${result.txHash} (${sw.buyBnb.toFixed(5)} BNB)`, "token-launcher");
-      } else {
-        log(`[Sniper] W${idx + 1} buy failed: ${result.error?.substring(0, 100)}`, "token-launcher");
+    const batchPromises = batch.map(async (idx) => {
+      const sw = sniperWallets[idx];
+      if (!fundResults[idx]) {
+        sniperResults[idx] = { address: sw.address, privateKey: sw.privateKey, success: false, error: "Funding failed" };
+        return;
       }
-    } catch (e: any) {
-      sniperResults[idx] = {
-        address: sw.address,
-        privateKey: sw.privateKey,
-        success: false,
-        error: e.message?.substring(0, 100),
-      };
+
+      try {
+        const jitter = Math.floor(Math.random() * 1500);
+        await new Promise(r => setTimeout(r, jitter));
+
+        const result = await fourMemeBuyToken(
+          tokenAddress,
+          sw.buyBnb.toFixed(6),
+          30,
+          sw.privateKey,
+          false,
+        );
+        sniperResults[idx] = {
+          address: sw.address,
+          privateKey: sw.privateKey,
+          txHash: result.txHash,
+          success: result.success,
+          error: result.error,
+        };
+        if (result.success) {
+          log(`[Sniper] W${idx + 1} BUY OK: ${result.txHash} (${sw.buyBnb.toFixed(4)} BNB)`, "token-launcher");
+        } else {
+          log(`[Sniper] W${idx + 1} buy failed: ${result.error?.substring(0, 100)}`, "token-launcher");
+        }
+      } catch (e: any) {
+        sniperResults[idx] = {
+          address: sw.address,
+          privateKey: sw.privateKey,
+          success: false,
+          error: e.message?.substring(0, 100),
+        };
+      }
+    });
+
+    await Promise.all(batchPromises);
+
+    if (batchStart + BATCH_SIZE < buyOrder.length) {
+      const batchDelay = Math.floor(randomJitter(2000, 0.40));
+      await new Promise(r => setTimeout(r, batchDelay));
     }
   }
 
@@ -2468,7 +2511,7 @@ export async function fourMemeLaunchWithSnipe(
     .filter(r => r.success)
     .reduce((sum, _, i) => sum + sniperWallets[i].buyBnb, 0)
     .toFixed(4);
-  log(`[Sniper] Complete: ${successCount}/${walletCount} snipe buys succeeded (${actualSnipedBnb} BNB total)`, "token-launcher");
+  log(`[Sniper] ====== SNIPE COMPLETE: ${successCount}/${walletCount} buys succeeded (${actualSnipedBnb} BNB total) ======`, "token-launcher");
 
   return {
     ...launchResult,

@@ -9338,9 +9338,11 @@ async function showLaunchPreview(chatId: number, state: TokenLaunchState) {
     const totalSnipeBnb = (parseFloat(state.sniperPerWalletBnb || "1") * (state.sniperWalletCount || 10)).toFixed(2);
     const totalBnb = (parseFloat(state.sniperDevBuyBnb || "18") + parseFloat(totalSnipeBnb) + 0.1).toFixed(2);
     preview += `\n🎯 Snipe Launch: ENABLED\n`;
+    preview += `  Strategy: Fund snipers first → Launch → Instant buys\n`;
     preview += `  Dev Buy: ${state.sniperDevBuyBnb} BNB (curve pre-buy)\n`;
     preview += `  Snipers: ${state.sniperWalletCount} wallets × ${state.sniperPerWalletBnb} BNB\n`;
     preview += `  Total Snipe: ${totalSnipeBnb} BNB\n`;
+    preview += `  Relay Wallets: 3 (breaks on-chain trace)\n`;
     preview += `  Total BNB needed: ~${totalBnb} BNB\n`;
   }
   preview += `\nReady to launch?`;
