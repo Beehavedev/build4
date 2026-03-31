@@ -1875,9 +1875,10 @@ async function handleRewardsDashboard(chatId: number): Promise<void> {
       `🚀 Token Launches: *${launchCount}* tokens → *${Number(launchRewards.reduce((s: number, r: any) => s + Number(r.amount || 0), 0)).toLocaleString()} $B4*\n` +
       `━━━━━━━━━━━━━━━━━━━━\n\n` +
       `*How to earn more:*\n` +
-      `🤖 Create agents → +${Number(REWARD_AMOUNTS.AGENT_CREATION).toLocaleString()} $B4 each\n` +
-      `🔗 Refer users → +${Number(REWARD_AMOUNTS.REFERRAL).toLocaleString()} $B4 each\n` +
-      `🚀 Launch tokens → +${Number(REWARD_AMOUNTS.TOKEN_LAUNCH).toLocaleString()} $B4 each\n\n` +
+      `🎉 Join the bot → +100 $B4\n` +
+      `🤖 Create your first agent → +500 $B4\n` +
+      `🔗 Refer a friend → +250 $B4\n` +
+      `🚀 Launch a token → +1,000 $B4\n\n` +
       `📊 250M $B4 reserved for agent economy rewards\n` +
       `_Rewards vest over 24 months from the ecosystem pool_`;
 
@@ -1885,7 +1886,7 @@ async function handleRewardsDashboard(chatId: number): Promise<void> {
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "📊 Leaderboard", callback_data: "action:leaderboard" }],
+          [{ text: "🎯 Quests", callback_data: "action:quests" }, { text: "📊 Leaderboard", callback_data: "action:leaderboard" }],
           [{ text: "🤖 Create Agent", callback_data: "action:newagent" }, { text: "🔗 Refer Friends", callback_data: "action:referral" }],
           [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
           [{ text: "« Menu", callback_data: "action:menu" }],
