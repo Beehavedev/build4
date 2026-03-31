@@ -2506,7 +2506,8 @@ export const WEB4_ADDRESSES: Record<string, Record<Web4ContractName, string>> = 
     "AgentEconomyHub": "0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606",
     "ConstitutionRegistry": "0x784dB7d65259069353eBf05eF17aA51CEfCCaA31",
     "SkillMarketplace": "0xa6996A83B3909Ff12643A4a125eA2704097B0dD3",
-    "AgentReplication": "0xE49B8Be8416d53D4E0042ea6DEe7727241396b73"
+    "AgentReplication": "0xE49B8Be8416d53D4E0042ea6DEe7727241396b73",
+    "BUILD4Staking": "0x5005dd0F5B3338526dd12f0Abc34C0Cb1Aa362ea"
   },
   "bnbTestnet": {
     "AgentEconomyHub": "0x7f408768204a50291CaA50df744D56Bf6fC3A40B",

@@ -21,6 +21,7 @@ const LOCK_TIERS = [
 
 const TOKEN_NOT_LAUNCHED = false;
 const B4_CA = "0x1d547f9d0890ee5abfb49d7d53ca19df85da4444";
+const STAKING_CA = "0x5005dd0F5B3338526dd12f0Abc34C0Cb1Aa362ea";
 
 export default function StakingPage() {
   const [selectedTier, setSelectedTier] = useState(2);
@@ -365,8 +366,26 @@ export default function StakingPage() {
           <Card className="p-6 space-y-4" data-testid="staking-contract-info">
             <div className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-primary" />
-              <h2 className="font-mono text-base font-bold">Contract Security</h2>
+              <h2 className="font-mono text-base font-bold">Contract Info</h2>
             </div>
+
+            <div className="p-4 rounded-lg bg-muted/50 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] text-muted-foreground">Staking Contract</span>
+                <a href={`https://bscscan.com/address/${STAKING_CA}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] text-primary hover:underline flex items-center gap-1" data-testid="link-staking-bscscan">
+                  View on BscScan <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+              <p className="font-mono text-[10px] text-muted-foreground break-all" data-testid="text-staking-ca">{STAKING_CA}</p>
+              <div className="flex items-center justify-between pt-1">
+                <span className="font-mono text-[10px] text-muted-foreground">Staking Token ($B4)</span>
+                <a href={`https://bscscan.com/token/${B4_CA}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] text-primary hover:underline flex items-center gap-1" data-testid="link-b4-bscscan">
+                  View on BscScan <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+              <p className="font-mono text-[10px] text-muted-foreground break-all">{B4_CA}</p>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="flex items-start gap-3">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
