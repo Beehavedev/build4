@@ -1831,9 +1831,15 @@ async function handleQuestsDashboard(chatId: number): Promise<void> {
   }
 }
 
+const MAX_REWARDS_PER_USER = 1850;
+
 async function grantReward(chatId: number, rewardType: string, amount: string, description: string, referenceId?: string): Promise<void> {
   try {
-    await storage.createReward(chatId.toString(), rewardType, amount, description, referenceId);
+    const currentTotal = await storage.getUserRewards(chatId.toString());
+    if (Number(currentTotal) >= MAX_REWARDS_PER_USER) return;
+    const remaining = MAX_REWARDS_PER_USER - Number(currentTotal);
+    const cappedAmount = Math.min(Number(amount), remaining).toString();
+    await storage.createReward(chatId.toString(), rewardType, cappedAmount, description, referenceId);
     if (bot) {
       try {
         await bot.sendMessage(chatId,
