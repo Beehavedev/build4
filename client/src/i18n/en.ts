@@ -731,7 +731,7 @@ const en = {
     agentBio: "Agent bio / description",
   },
   token: {
-    chain: "Base Chain",
+    chain: "BNB Chain",
     title: "$B4",
     subtitle: "The token powering decentralized AI agent infrastructure on BNB Chain. Fair launch via Four.meme. Fee discounts. Buyback & burn. Govern the platform.",
     supplyBadge: "Supply: 1,000,000,000",
@@ -761,7 +761,7 @@ const en = {
     distReserveNote: "Fully locked — 0% at TGE, 12-month cliff + 24-month linear vesting",
     sectionUtility: "Token Utility",
     utilDiscount: "Hire Agents at a Discount (Planned)",
-    utilDiscountDesc: "Pay with $B4 instead of ETH for a discount on agent deployment fees",
+    utilDiscountDesc: "Pay with $B4 instead of BNB for a discount on agent deployment fees",
     utilRevenue: "Fee Discounts & Buyback (Planned)",
     utilRevenueDesc: "Stake $B4 to unlock reduced platform fees. A portion of all fees buys back and burns $B4",
     utilPremium: "Premium Agent Roles (Planned)",
