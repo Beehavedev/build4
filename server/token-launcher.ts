@@ -2265,17 +2265,32 @@ export async function launchToken(params: LaunchParams): Promise<LaunchResult> {
   return { success: false, error: `Failed after ${MAX_RETRIES} attempts: ${lastError}` };
 }
 
+function randomJitter(base: number, pct: number): number {
+  const min = base * (1 - pct);
+  const max = base * (1 + pct);
+  return min + Math.random() * (max - min);
+}
+
+function shuffleArray<T>(arr: T[]): T[] {
+  const shuffled = [...arr];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
 export async function fourMemeLaunchWithSnipe(
   params: LaunchParams,
 ): Promise<LaunchResult> {
   const provider = getBscProvider();
   const devBuyBnb = params.sniperDevBuyBnb || "18";
   const walletCount = params.sniperWalletCount || 10;
-  const perWalletBnb = params.sniperPerWalletBnb || "0.26";
+  const perWalletBnb = parseFloat(params.sniperPerWalletBnb || "0.26");
 
-  const perWalletWithGas = parseFloat(perWalletBnb) + 0.005;
-  const totalSniperBnb = perWalletWithGas * walletCount;
-  const totalNeeded = parseFloat(devBuyBnb) + totalSniperBnb + 0.02;
+  const maxFundPerWallet = perWalletBnb * 1.25 + 0.008;
+  const totalSniperBnb = maxFundPerWallet * walletCount;
+  const totalNeeded = parseFloat(devBuyBnb) + totalSniperBnb + 0.05;
 
   let wallet: ethers.Wallet | null = null;
   if (params.userPrivateKey) {
@@ -2296,7 +2311,7 @@ export async function fourMemeLaunchWithSnipe(
     };
   }
 
-  log(`[Sniper] Phase 1: Launching token with ${devBuyBnb} BNB dev buy (70% curve)...`, "token-launcher");
+  log(`[Sniper] Phase 1: Launching token with ${devBuyBnb} BNB dev buy...`, "token-launcher");
   const launchResult = await launchOnFourMeme({
     ...params,
     initialLiquidityBnb: devBuyBnb,
@@ -2309,53 +2324,74 @@ export async function fourMemeLaunchWithSnipe(
   const tokenAddress = launchResult.tokenAddress;
   log(`[Sniper] Phase 1 complete: Token ${tokenAddress}. Phase 2: Generating ${walletCount} sniper wallets...`, "token-launcher");
 
-  const sniperWallets: { address: string; privateKey: string; wallet: ethers.Wallet }[] = [];
+  const sniperWallets: { address: string; privateKey: string; wallet: ethers.Wallet; fundBnb: number; buyBnb: number }[] = [];
   for (let i = 0; i < walletCount; i++) {
     const sw = ethers.Wallet.createRandom().connect(provider);
-    sniperWallets.push({ address: sw.address, privateKey: sw.privateKey, wallet: sw });
+    const buyAmt = randomJitter(perWalletBnb, 0.20);
+    const fundAmt = buyAmt + randomJitter(0.005, 0.40);
+    sniperWallets.push({
+      address: sw.address,
+      privateKey: sw.privateKey,
+      wallet: sw,
+      fundBnb: fundAmt,
+      buyBnb: buyAmt,
+    });
   }
 
-  log(`[Sniper] Phase 3: Funding ${walletCount} sniper wallets with ${perWalletWithGas.toFixed(4)} BNB each...`, "token-launcher");
-  const fundingAmount = ethers.parseEther(perWalletWithGas.toFixed(6));
-  const nonce = await provider.getTransactionCount(wallet.address);
+  log(`[Sniper] Phase 3: Funding ${walletCount} wallets with randomized amounts (anti-bundle)...`, "token-launcher");
 
-  const fundingTxs = sniperWallets.map(async (sw, i) => {
+  const fundOrder = shuffleArray(sniperWallets.map((_, i) => i));
+  const fundResults: boolean[] = new Array(walletCount).fill(false);
+  let currentNonce = await provider.getTransactionCount(wallet.address);
+
+  for (const idx of fundOrder) {
+    const sw = sniperWallets[idx];
     try {
+      const fundWei = ethers.parseEther(sw.fundBnb.toFixed(8));
       const tx = await wallet!.sendTransaction({
         to: sw.address,
-        value: fundingAmount,
-        nonce: nonce + i,
+        value: fundWei,
+        nonce: currentNonce,
         gasLimit: 21000,
       });
+      currentNonce++;
       await tx.wait();
-      log(`[Sniper] Funded wallet ${i + 1}/${walletCount}: ${sw.address.substring(0, 10)}...`, "token-launcher");
-      return true;
+      fundResults[idx] = true;
+      log(`[Sniper] Funded W${idx + 1}: ${sw.address.substring(0, 10)}... (${sw.fundBnb.toFixed(5)} BNB)`, "token-launcher");
+
+      const fundDelay = Math.floor(randomJitter(3000, 0.50));
+      await new Promise(r => setTimeout(r, fundDelay));
     } catch (e: any) {
-      log(`[Sniper] Failed to fund wallet ${i + 1}: ${e.message?.substring(0, 100)}`, "token-launcher");
-      return false;
+      log(`[Sniper] Failed to fund W${idx + 1}: ${e.message?.substring(0, 100)}`, "token-launcher");
     }
-  });
+  }
 
-  const fundResults = await Promise.all(fundingTxs);
   const fundedCount = fundResults.filter(Boolean).length;
-  log(`[Sniper] Funded ${fundedCount}/${walletCount} wallets. Phase 4: Executing snipe buys...`, "token-launcher");
+  log(`[Sniper] Funded ${fundedCount}/${walletCount} wallets. Phase 4: Staggered snipe buys...`, "token-launcher");
 
-  const sniperResults: SniperWalletResult[] = [];
+  const sniperResults: SniperWalletResult[] = new Array(walletCount);
 
-  const buyPromises = sniperWallets.map(async (sw, i) => {
-    if (!fundResults[i]) {
-      sniperResults[i] = { address: sw.address, privateKey: sw.privateKey, success: false, error: "Funding failed" };
-      return;
+  const buyOrder = shuffleArray(sniperWallets.map((_, i) => i));
+
+  for (const idx of buyOrder) {
+    const sw = sniperWallets[idx];
+    if (!fundResults[idx]) {
+      sniperResults[idx] = { address: sw.address, privateKey: sw.privateKey, success: false, error: "Funding failed" };
+      continue;
     }
+
     try {
+      const buyDelay = Math.floor(randomJitter(5000, 0.60));
+      await new Promise(r => setTimeout(r, buyDelay));
+
       const result = await fourMemeBuyToken(
         tokenAddress,
-        perWalletBnb,
+        sw.buyBnb.toFixed(6),
         30,
         sw.privateKey,
-        true,
+        false,
       );
-      sniperResults[i] = {
+      sniperResults[idx] = {
         address: sw.address,
         privateKey: sw.privateKey,
         txHash: result.txHash,
@@ -2363,25 +2399,26 @@ export async function fourMemeLaunchWithSnipe(
         error: result.error,
       };
       if (result.success) {
-        log(`[Sniper] Wallet ${i + 1} buy success: ${result.txHash}`, "token-launcher");
+        log(`[Sniper] W${idx + 1} buy OK: ${result.txHash} (${sw.buyBnb.toFixed(5)} BNB)`, "token-launcher");
       } else {
-        log(`[Sniper] Wallet ${i + 1} buy failed: ${result.error?.substring(0, 100)}`, "token-launcher");
+        log(`[Sniper] W${idx + 1} buy failed: ${result.error?.substring(0, 100)}`, "token-launcher");
       }
     } catch (e: any) {
-      sniperResults[i] = {
+      sniperResults[idx] = {
         address: sw.address,
         privateKey: sw.privateKey,
         success: false,
         error: e.message?.substring(0, 100),
       };
     }
-  });
-
-  await Promise.all(buyPromises);
+  }
 
   const successCount = sniperResults.filter(r => r.success).length;
-  const totalSnipedBnb = (successCount * parseFloat(perWalletBnb)).toFixed(4);
-  log(`[Sniper] Complete: ${successCount}/${walletCount} snipe buys succeeded (${totalSnipedBnb} BNB total)`, "token-launcher");
+  const actualSnipedBnb = sniperResults
+    .filter(r => r.success)
+    .reduce((sum, _, i) => sum + sniperWallets[i].buyBnb, 0)
+    .toFixed(4);
+  log(`[Sniper] Complete: ${successCount}/${walletCount} snipe buys succeeded (${actualSnipedBnb} BNB total)`, "token-launcher");
 
   return {
     ...launchResult,
@@ -2389,7 +2426,7 @@ export async function fourMemeLaunchWithSnipe(
       devBuyBnb,
       wallets: sniperResults,
       successCount,
-      totalSnipedBnb,
+      totalSnipedBnb: actualSnipedBnb,
     },
   };
 }
