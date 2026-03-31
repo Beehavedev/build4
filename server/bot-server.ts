@@ -58,6 +58,7 @@ const CRITICAL_TABLES_SQL = [
   `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "metadata" TEXT`,
   `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "created_at" TIMESTAMP DEFAULT now()`,
   `CREATE TABLE IF NOT EXISTS "sniper_wallet_keys" (id VARCHAR DEFAULT gen_random_uuid() NOT NULL, launch_id VARCHAR, chat_id TEXT NOT NULL, agent_id VARCHAR NOT NULL, token_address TEXT, wallet_index INTEGER NOT NULL, wallet_address TEXT NOT NULL, encrypted_private_key TEXT NOT NULL, bnb_amount TEXT, status TEXT DEFAULT 'funded'::text NOT NULL, tx_hash TEXT, created_at TIMESTAMP DEFAULT now())`,
+  `CREATE TABLE IF NOT EXISTS "user_rewards" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, chat_id TEXT NOT NULL, reward_type TEXT NOT NULL, amount TEXT NOT NULL, description TEXT, reference_id TEXT, claimed BOOLEAN DEFAULT false NOT NULL, claimed_at TIMESTAMP, created_at TIMESTAMP DEFAULT now())`,
 ];
 
 async function ensureSchema() {

@@ -496,6 +496,12 @@ export interface IStorage {
   setUserSkillConfig(chatId: string, skillId: string, enabled: boolean, config: Record<string, any>): Promise<void>;
 
   seedInferenceProviders(): Promise<void>;
+
+  createReward(chatId: string, rewardType: string, amount: string, description?: string, referenceId?: string): Promise<any>;
+  getUserRewards(chatId: string): Promise<any[]>;
+  getUserRewardTotal(chatId: string): Promise<string>;
+  getRewardsLeaderboard(limit?: number): Promise<Array<{ chatId: string; totalRewards: string; rewardCount: number }>>;
+  getUserRewardsByType(chatId: string, rewardType: string): Promise<any[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3105,6 +3111,74 @@ export class DatabaseStorage implements IStorage {
       await db.execute(sql.raw(query));
     } catch (e: any) {
       console.error("[Storage] Failed to update sniper wallet:", e.message);
+    }
+  }
+  async createReward(chatId: string, rewardType: string, amount: string, description?: string, referenceId?: string): Promise<any> {
+    try {
+      const result = await db.execute(sql.raw(
+        `INSERT INTO user_rewards (id, chat_id, reward_type, amount, description, reference_id, claimed, created_at)
+         VALUES (gen_random_uuid(), '${chatId.replace(/'/g, "''")}', '${rewardType.replace(/'/g, "''")}', '${amount.replace(/'/g, "''")}', ${description ? `'${description.replace(/'/g, "''")}'` : 'NULL'}, ${referenceId ? `'${referenceId.replace(/'/g, "''")}'` : 'NULL'}, false, now())
+         RETURNING *`
+      ));
+      console.log(`[Rewards] Created reward: chatId=${chatId} type=${rewardType} amount=${amount}`);
+      return (result.rows || [])[0] || null;
+    } catch (e: any) {
+      console.error("[Rewards] Failed to create reward:", e.message);
+      return null;
+    }
+  }
+
+  async getUserRewards(chatId: string): Promise<any[]> {
+    try {
+      const result = await db.execute(sql.raw(
+        `SELECT * FROM user_rewards WHERE chat_id = '${chatId.replace(/'/g, "''")}' ORDER BY created_at DESC LIMIT 50`
+      ));
+      return result.rows || [];
+    } catch (e: any) {
+      console.error("[Rewards] Failed to get user rewards:", e.message);
+      return [];
+    }
+  }
+
+  async getUserRewardTotal(chatId: string): Promise<string> {
+    try {
+      const result = await db.execute(sql.raw(
+        `SELECT COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as total FROM user_rewards WHERE chat_id = '${chatId.replace(/'/g, "''")}'`
+      ));
+      const row = (result.rows || [])[0] as any;
+      return row?.total?.toString() || "0";
+    } catch (e: any) {
+      console.error("[Rewards] Failed to get reward total:", e.message);
+      return "0";
+    }
+  }
+
+  async getRewardsLeaderboard(limit: number = 10): Promise<Array<{ chatId: string; totalRewards: string; rewardCount: number }>> {
+    try {
+      const result = await db.execute(sql.raw(
+        `SELECT chat_id as "chatId", COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as "totalRewards", COUNT(*) as "rewardCount"
+         FROM user_rewards GROUP BY chat_id ORDER BY "totalRewards" DESC LIMIT ${limit}`
+      ));
+      return (result.rows || []).map((r: any) => ({
+        chatId: r.chatId,
+        totalRewards: r.totalRewards?.toString() || "0",
+        rewardCount: parseInt(r.rewardCount) || 0,
+      }));
+    } catch (e: any) {
+      console.error("[Rewards] Failed to get leaderboard:", e.message);
+      return [];
+    }
+  }
+
+  async getUserRewardsByType(chatId: string, rewardType: string): Promise<any[]> {
+    try {
+      const result = await db.execute(sql.raw(
+        `SELECT * FROM user_rewards WHERE chat_id = '${chatId.replace(/'/g, "''")}' AND reward_type = '${rewardType.replace(/'/g, "''")}' ORDER BY created_at DESC`
+      ));
+      return result.rows || [];
+    } catch (e: any) {
+      console.error("[Rewards] Failed to get rewards by type:", e.message);
+      return [];
     }
   }
 }

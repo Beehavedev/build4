@@ -1534,6 +1534,30 @@ export const insertAsterCredentialsSchema = createInsertSchema(asterCredentials)
 export type InsertAsterCredentials = z.infer<typeof insertAsterCredentialsSchema>;
 export type AsterCredentials = typeof asterCredentials.$inferSelect;
 
+export const userRewards = pgTable("user_rewards", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  chatId: text("chat_id").notNull(),
+  rewardType: text("reward_type").notNull(),
+  amount: text("amount").notNull(),
+  description: text("description"),
+  referenceId: text("reference_id"),
+  claimed: boolean("claimed").notNull().default(false),
+  claimedAt: timestamp("claimed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertUserRewardSchema = createInsertSchema(userRewards).omit({ id: true, createdAt: true });
+export type InsertUserReward = z.infer<typeof insertUserRewardSchema>;
+export type UserReward = typeof userRewards.$inferSelect;
+
+export const REWARD_AMOUNTS = {
+  AGENT_CREATION: "1000",
+  REFERRAL: "5000",
+  TOKEN_LAUNCH: "2500",
+  FIRST_AGENT_BONUS: "500",
+  FIRST_LAUNCH_BONUS: "1000",
+} as const;
+
 export const SEED_AGENTS = {
   RESEARCH_BOT: {
     name: "ResearchBot-7B",

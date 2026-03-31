@@ -47,6 +47,7 @@ const t: Record<string, Record<Lang, string>> = {
   "menu.myTasks": { en: "📊 My Tasks", zh: "📊 我的任务", ar: "📊 مهامي" },
   "menu.wallet": { en: "👛 My Wallet", zh: "👛 我的钱包", ar: "👛 محفظتي" },
   "menu.premium": { en: "⭐ Premium", zh: "⭐ 高级版", ar: "⭐ مميز" },
+  "menu.rewards": { en: "🏆 Rewards", zh: "🏆 奖励", ar: "🏆 مكافآت" },
   "menu.referral": { en: "🔗 Referral", zh: "🔗 推荐奖励", ar: "🔗 إحالة" },
   "menu.help": { en: "❓ Help & Commands", zh: "❓ 帮助", ar: "❓ مساعدة" },
   "menu.back": { en: "« Menu", zh: "« 菜单", ar: "« القائمة" },
@@ -649,7 +650,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
     return "Hey! Welcome to BUILD4 — decentralized infrastructure for autonomous AI agents. What can I help you with? Try /help to see all commands.";
   }
   if (lower.includes("help") || lower.includes("command"))
-    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — Swap (multi-chain)\n🌉 /bridge — Cross-chain bridge\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
+    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n🏆 /rewards — $B4 rewards dashboard\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — Swap (multi-chain)\n🌉 /bridge — Cross-chain bridge\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
   if (lower.includes("thank"))
     return "You're welcome! Let me know if you need anything else. 🤝";
 
@@ -1583,6 +1584,9 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
             { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔗 My Referrals", callback_data: "action:referral" }]] } }
           );
         } catch {}
+        try {
+          await grantReward(parseInt(referral.referrerChatId), "referral", REWARD_AMOUNTS.REFERRAL, `🔗 Referred a new subscriber`, referral.referredChatId);
+        } catch {}
       }
     } catch (e: any) {
       console.error("[Referral] Commission tracking error:", e.message);
@@ -1740,6 +1744,133 @@ async function handleReferral(chatId: number): Promise<void> {
   }
 }
 
+const REWARD_AMOUNTS = {
+  AGENT_CREATION: "1000",
+  REFERRAL: "5000",
+  TOKEN_LAUNCH: "2500",
+  FIRST_AGENT_BONUS: "500",
+  FIRST_LAUNCH_BONUS: "1000",
+};
+
+async function grantReward(chatId: number, rewardType: string, amount: string, description: string, referenceId?: string): Promise<void> {
+  try {
+    await storage.createReward(chatId.toString(), rewardType, amount, description, referenceId);
+    if (bot) {
+      try {
+        await bot.sendMessage(chatId,
+          `🏆 *$B4 Reward Earned!*\n\n` +
+          `+${Number(amount).toLocaleString()} $B4\n` +
+          `${description}\n\n` +
+          `View all rewards: /rewards`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🏆 My Rewards", callback_data: "action:rewards" }]] } }
+        );
+      } catch {}
+    }
+  } catch (e: any) {
+    console.error(`[Rewards] Failed to grant reward to ${chatId}:`, e.message);
+  }
+}
+
+async function handleRewardsDashboard(chatId: number): Promise<void> {
+  if (!bot) return;
+  try {
+    const [total, rewards, agentRewards, referralRewards, launchRewards] = await Promise.all([
+      storage.getUserRewardTotal(chatId.toString()),
+      storage.getUserRewards(chatId.toString()),
+      storage.getUserRewardsByType(chatId.toString(), "agent_creation"),
+      storage.getUserRewardsByType(chatId.toString(), "referral"),
+      storage.getUserRewardsByType(chatId.toString(), "token_launch"),
+    ]);
+
+    const totalNum = Number(total).toLocaleString();
+    const agentCount = agentRewards.length;
+    const referralCount = referralRewards.length;
+    const launchCount = launchRewards.length;
+
+    let msg =
+      `🏆 *$B4 Rewards Dashboard*\n\n` +
+      `💰 Total Earned: *${totalNum} $B4*\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `🤖 Agent Hiring: *${agentCount}* agents → *${Number(agentRewards.reduce((s: number, r: any) => s + Number(r.amount || 0), 0)).toLocaleString()} $B4*\n` +
+      `🔗 Referrals: *${referralCount}* users → *${Number(referralRewards.reduce((s: number, r: any) => s + Number(r.amount || 0), 0)).toLocaleString()} $B4*\n` +
+      `🚀 Token Launches: *${launchCount}* tokens → *${Number(launchRewards.reduce((s: number, r: any) => s + Number(r.amount || 0), 0)).toLocaleString()} $B4*\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `*How to earn more:*\n` +
+      `🤖 Create agents → +${Number(REWARD_AMOUNTS.AGENT_CREATION).toLocaleString()} $B4 each\n` +
+      `🔗 Refer users → +${Number(REWARD_AMOUNTS.REFERRAL).toLocaleString()} $B4 each\n` +
+      `🚀 Launch tokens → +${Number(REWARD_AMOUNTS.TOKEN_LAUNCH).toLocaleString()} $B4 each\n\n` +
+      `📊 250M $B4 reserved for agent economy rewards\n` +
+      `_Rewards vest over 24 months from the ecosystem pool_`;
+
+    await bot.sendMessage(chatId, msg, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📊 Leaderboard", callback_data: "action:leaderboard" }],
+          [{ text: "🤖 Create Agent", callback_data: "action:newagent" }, { text: "🔗 Refer Friends", callback_data: "action:referral" }],
+          [{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ]
+      }
+    });
+  } catch (e: any) {
+    console.error("[Rewards] Dashboard error:", e.message);
+    await bot.sendMessage(chatId, `❌ Could not load rewards: ${e.message?.substring(0, 100)}`,
+      { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:rewards" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+  }
+}
+
+async function handleRewardsLeaderboard(chatId: number): Promise<void> {
+  if (!bot) return;
+  try {
+    const leaderboard = await storage.getRewardsLeaderboard(10);
+
+    if (leaderboard.length === 0) {
+      await bot.sendMessage(chatId,
+        `📊 *$B4 Rewards Leaderboard*\n\nNo rewards earned yet. Be the first!\n\n🤖 Create an agent to start earning.`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🤖 Create Agent", callback_data: "action:newagent" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+      return;
+    }
+
+    const medals = ["🥇", "🥈", "🥉"];
+    let msg = `📊 *$B4 Rewards Leaderboard*\n\n`;
+
+    let userRank = -1;
+    for (let i = 0; i < leaderboard.length; i++) {
+      const entry = leaderboard[i];
+      const medal = i < 3 ? medals[i] : `${i + 1}.`;
+      const shortId = `${entry.chatId.substring(0, 4)}...${entry.chatId.substring(entry.chatId.length - 3)}`;
+      const isYou = entry.chatId === chatId.toString();
+      if (isYou) userRank = i + 1;
+      msg += `${medal} ${isYou ? "*YOU* " : ""}${shortId} — *${Number(entry.totalRewards).toLocaleString()} $B4* (${entry.rewardCount} actions)\n`;
+    }
+
+    if (userRank === -1) {
+      const userTotal = await storage.getUserRewardTotal(chatId.toString());
+      msg += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+      msg += `Your total: *${Number(userTotal).toLocaleString()} $B4*\n`;
+      msg += `_Keep earning to make the top 10!_`;
+    }
+
+    msg += `\n\n💡 _Top deployers earn bonus rewards!_`;
+
+    await bot.sendMessage(chatId, msg, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🏆 My Rewards", callback_data: "action:rewards" }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ]
+      }
+    });
+  } catch (e: any) {
+    console.error("[Rewards] Leaderboard error:", e.message);
+    await bot.sendMessage(chatId, `❌ Could not load leaderboard: ${e.message?.substring(0, 100)}`,
+      { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:leaderboard" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+  }
+}
+
 async function sendTrialReminders(): Promise<void> {
   if (!bot) return;
   try {
@@ -1829,7 +1960,8 @@ function mainMenuKeyboard(_hasWallet?: boolean, chatId?: number): TelegramBot.In
       [{ text: tr("menu.createAgent", c), callback_data: "action:newagent" }, { text: tr("menu.myAgents", c), callback_data: "action:myagents" }],
       [{ text: tr("menu.newTask", c), callback_data: "action:task" }, { text: tr("menu.myTasks", c), callback_data: "action:mytasks" }],
       [{ text: tr("menu.wallet", c), callback_data: "action:wallet" }, { text: tr("menu.premium", c), callback_data: "action:substatus" }],
-      [{ text: tr("menu.referral", c), callback_data: "action:referral" }, { text: tr("menu.help", c), callback_data: "action:help" }],
+      [{ text: tr("menu.rewards", c), callback_data: "action:rewards" }, { text: tr("menu.referral", c), callback_data: "action:referral" }],
+      [{ text: tr("menu.help", c), callback_data: "action:help" }],
       [{ text: "🌐 Language / 语言", callback_data: "action:lang" }],
     ]
   };
@@ -1986,6 +2118,7 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
       { command: "gas", description: "Gas prices by chain" },
       { command: "newagent", description: "Create an AI agent" },
       { command: "wallet", description: "Wallet info and management" },
+      { command: "rewards", description: "$B4 rewards dashboard" },
       { command: "aster", description: "Aster DEX futures & spot trading" },
       { command: "lang", description: "Switch language / 切换语言" },
       { command: "help", description: "Show all commands" },
@@ -2537,6 +2670,12 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   if (data === "action:referral") {
     return handleReferral(chatId);
   }
+  if (data === "action:rewards") {
+    return handleRewardsDashboard(chatId);
+  }
+  if (data === "action:leaderboard") {
+    return handleRewardsLeaderboard(chatId);
+  }
 
   if (data === "action:gensolwallet") {
     await bot.sendMessage(chatId, "🟣 Generating Solana wallet...");
@@ -2683,6 +2822,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         "📋 /myagents — Your agents\n" +
         "📝 /task — Assign a task\n" +
         "👛 /wallet — Wallet info\n" +
+        "🏆 /rewards — $B4 rewards dashboard\n" +
         "🌐 /lang — Switch language\n" +
         "❓ /ask <question> — Ask anything\n" +
         "❌ /cancel — Cancel current action\n\n" +
@@ -6766,6 +6906,9 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
                     { parse_mode: "Markdown" }
                   );
                 } catch {}
+                try {
+                  await grantReward(parseInt(referral.referrerChatId), "referral", REWARD_AMOUNTS.REFERRAL, `🔗 Referred a new subscriber`, referral.referredChatId);
+                } catch {}
               }
             } catch {}
 
@@ -7883,6 +8026,12 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "rewards") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for rewards info!"); return; }
+      await handleRewardsDashboard(chatId);
+      return;
+    }
+
     if (cmd === "wallet") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for wallet info!"); return; }
       await ensureWallet(chatId);
@@ -8585,6 +8734,17 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
       await storage.updateAgent(agentId, { ownerTelegramChatId: chatId.toString() });
     } catch {}
 
+    try {
+      const existingAgentRewards = await storage.getUserRewardsByType(chatId.toString(), "agent_creation");
+      const isFirst = existingAgentRewards.length === 0;
+      const rewardAmt = REWARD_AMOUNTS.AGENT_CREATION;
+      await grantReward(chatId, "agent_creation", rewardAmt, `🤖 Created agent: ${name}`, agentId);
+      if (isFirst) {
+        await grantReward(chatId, "first_agent_bonus", REWARD_AMOUNTS.FIRST_AGENT_BONUS, "🎁 First agent bonus!", agentId);
+      }
+    } catch (e: any) {
+      console.error("[Rewards] Agent creation reward failed:", e.message);
+    }
 
     let msg = `✅ *Agent Created — FREE!*\n\n` +
       `🤖 *${result.agent.name}*\n` +
@@ -9101,6 +9261,15 @@ async function handleProposalApproval(chatId: number, proposalId: string, approv
       await bot.sendMessage(chatId, lines.join("\n"), {
         reply_markup: mainMenuKeyboard(undefined, chatId)
       });
+
+      try {
+        const existingLaunchRewards = await storage.getUserRewardsByType(chatId.toString(), "token_launch");
+        const isFirst = existingLaunchRewards.length === 0;
+        await grantReward(chatId, "token_launch", REWARD_AMOUNTS.TOKEN_LAUNCH, `🚀 Launched token: ${proposal.tokenName} ($${proposal.tokenSymbol})`, result.tokenAddress || proposalId);
+        if (isFirst) {
+          await grantReward(chatId, "first_launch_bonus", REWARD_AMOUNTS.FIRST_LAUNCH_BONUS, "🎁 First token launch bonus!", result.tokenAddress || proposalId);
+        }
+      } catch (e: any) { console.error("[Rewards] Token launch reward failed:", e.message); }
     } else {
       await storage.updateTokenLaunch(proposalId, {
         status: "failed",
@@ -9491,6 +9660,12 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
         `🔍 Solscan: https://solscan.io/token/${result.tokenAddress}\n\n` +
         `Your token is live on a bonding curve! Once it fills (85 SOL), liquidity auto-migrates to Raydium DEX.`;
       await bot.sendMessage(chatId, successMsg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
+      try {
+        const existingLaunchRewards = await storage.getUserRewardsByType(chatId.toString(), "token_launch");
+        const isFirst = existingLaunchRewards.length === 0;
+        await grantReward(chatId, "token_launch", REWARD_AMOUNTS.TOKEN_LAUNCH, `🚀 Launched token: ${state.tokenName} ($${state.tokenSymbol})`, result.tokenAddress);
+        if (isFirst) await grantReward(chatId, "first_launch_bonus", REWARD_AMOUNTS.FIRST_LAUNCH_BONUS, "🎁 First token launch bonus!", result.tokenAddress);
+      } catch (e: any) { console.error("[Rewards] Token launch reward failed:", e.message); }
     } else {
       await bot.sendMessage(chatId,
         `❌ Raydium launch failed: ${(result.error || "Unknown error").substring(0, 300)}\n\nMake sure your wallet has enough SOL for gas${state.initialBuySol ? " + initial buy" : ""}. Try /launch to retry.`,
@@ -9666,6 +9841,12 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
             }
           });
         }
+        try {
+          const existingLaunchRewards = await storage.getUserRewardsByType(chatId.toString(), "token_launch");
+          const isFirst = existingLaunchRewards.length === 0;
+          await grantReward(chatId, "token_launch", REWARD_AMOUNTS.TOKEN_LAUNCH, `🚀 Launched token: ${state.tokenName} ($${state.tokenSymbol})`, result.tokenAddress);
+          if (isFirst) await grantReward(chatId, "first_launch_bonus", REWARD_AMOUNTS.FIRST_LAUNCH_BONUS, "🎁 First token launch bonus!", result.tokenAddress);
+        } catch (e: any) { console.error("[Rewards] Token launch reward failed:", e.message); }
       } else {
         await bot.sendMessage(chatId,
           `❌ Bankr launch failed: ${(result.error || "Unknown error").substring(0, 300)}`,
@@ -9872,6 +10053,12 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
           ]
         }
       });
+      try {
+        const existingLaunchRewards = await storage.getUserRewardsByType(chatId.toString(), "token_launch");
+        const isFirst = existingLaunchRewards.length === 0;
+        await grantReward(chatId, "token_launch", REWARD_AMOUNTS.TOKEN_LAUNCH, `🚀 Launched token: ${state.tokenName} ($${state.tokenSymbol})`, result.tokenAddress);
+        if (isFirst) await grantReward(chatId, "first_launch_bonus", REWARD_AMOUNTS.FIRST_LAUNCH_BONUS, "🎁 First token launch bonus!", result.tokenAddress);
+      } catch (e: any) { console.error("[Rewards] Token launch reward failed:", e.message); }
     } else {
       await bot.sendMessage(chatId,
         `❌ Launch failed: ${(result.error || "Unknown error").substring(0, 200)}`,
