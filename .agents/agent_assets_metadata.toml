@@ -1,5 +1,10 @@
 uploads = []
-generated = []
+
+[[generated]]
+id = "0-Rx6UnwPmf3SkyhyU-QY"
+uri = "file://attached_assets/build4_dexscreener_banner.png"
+type = "image"
+title = "BUILD4 DexScreener banner"
 
 [[outputs]]
 id = "JBjCUwiEHNM3bqg5OGXfp"
@@ -30,3 +35,9 @@ id = "U7TbCXI3yrFqag6jxKdDj"
 uri = "file://attached_assets/generated_images/build4_free_agents_tweet.png"
 type = "image"
 title = "BUILD4 Free Agents Tweet Image"
+
+[[outputs]]
+id = "DjCupKyU-pS5nVWbrMoR-"
+uri = "file://attached_assets/build4_dexscreener_200x600.png"
+type = "image"
+title = "BUILD4 DexScreener Banner (200x600)"
