@@ -8,7 +8,7 @@ import { SEO } from "@/components/seo";
 import {
   ArrowLeft, Terminal, Lock, Unlock, TrendingUp,
   Clock, Coins, Users, BarChart3, Wallet, Zap,
-  Shield, Gift, Timer, ArrowRight, CheckCircle2,
+  Shield, Gift, ArrowRight, CheckCircle2, ExternalLink,
 } from "lucide-react";
 
 const LOCK_TIERS = [
@@ -19,7 +19,8 @@ const LOCK_TIERS = [
   { days: 365, label: "365 Days", multiplier: "4x", color: "border-primary", active: "border-primary bg-primary/10" },
 ];
 
-const TOKEN_NOT_LAUNCHED = true;
+const TOKEN_NOT_LAUNCHED = false;
+const B4_CA = "0x1d547f9d0890ee5abfb49d7d53ca19df85da4444";
 
 export default function StakingPage() {
   const [selectedTier, setSelectedTier] = useState(2);
@@ -101,19 +102,22 @@ export default function StakingPage() {
             </Card>
           </div>
 
-          {TOKEN_NOT_LAUNCHED && (
-            <Card className="p-6 border-dashed border-amber-500/30 bg-amber-500/5" data-testid="token-not-launched-notice">
-              <div className="flex items-start gap-3">
-                <Timer className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-mono text-sm font-bold text-amber-500">Token Not Yet Launched</div>
-                  <p className="font-mono text-xs text-muted-foreground mt-1">
-                    $B4 has not launched yet. Staking will be available immediately after the token launches on Four.meme (BNB Chain) and Flap.sh (XLayer). The staking contract is deployed and ready.
-                  </p>
+          <Card className="p-6 border-primary/20 bg-primary/5" data-testid="token-live-notice">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-mono text-sm font-bold text-emerald-500">$B4 Token Live on BNB Chain</div>
+                <p className="font-mono text-[10px] text-muted-foreground mt-1 break-all" data-testid="text-b4-ca">
+                  CA: {B4_CA}
+                </p>
+                <div className="flex items-center gap-3 mt-2">
+                  <a href={`https://bscscan.com/token/${B4_CA}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] text-primary hover:underline" data-testid="link-bscscan">BscScan</a>
+                  <a href={`https://four.meme/token/${B4_CA}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] text-primary hover:underline" data-testid="link-fourmeme">Four.meme</a>
+                  <a href={`https://dexscreener.com/bsc/${B4_CA}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] text-primary hover:underline" data-testid="link-dexscreener">DexScreener</a>
                 </div>
               </div>
-            </Card>
-          )}
+            </div>
+          </Card>
 
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
@@ -146,7 +150,7 @@ export default function StakingPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-xs text-muted-foreground">Amount to Stake</span>
-                    <span className="font-mono text-[10px] text-muted-foreground">Balance: 0 BUILD4</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">Balance: 0 $B4</span>
                   </div>
                   <div className="flex gap-2">
                     <Input
@@ -191,7 +195,7 @@ export default function StakingPage() {
                   data-testid="button-stake"
                 >
                   <Lock className="w-4 h-4" />
-                  {TOKEN_NOT_LAUNCHED ? "Staking Opens After Launch" : "Stake BUILD4"}
+                  {TOKEN_NOT_LAUNCHED ? "Staking Opens After Launch" : "Stake $B4"}
                 </Button>
               </Card>
 
@@ -204,7 +208,7 @@ export default function StakingPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-4 rounded-lg bg-muted/50 space-y-1">
                     <div className="font-mono text-[10px] text-muted-foreground">Staked Amount</div>
-                    <div className="font-mono text-lg font-bold" data-testid="text-user-staked">0 BUILD4</div>
+                    <div className="font-mono text-lg font-bold" data-testid="text-user-staked">0 $B4</div>
                   </div>
                   <div className="p-4 rounded-lg bg-muted/50 space-y-1">
                     <div className="font-mono text-[10px] text-muted-foreground">Fee Discount</div>
