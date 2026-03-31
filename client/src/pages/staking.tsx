@@ -57,7 +57,7 @@ export default function StakingPage() {
   const [loading, setLoading] = useState(false);
   const [txPending, setTxPending] = useState<string | null>(null);
 
-  const { connected, address, signer, provider, chainId } = useWallet();
+  const { connected, address, signer, provider, chainId, switchChain } = useWallet();
   const { toast } = useToast();
 
   const tier = LOCK_TIERS[selectedTier];
@@ -327,11 +327,20 @@ export default function StakingPage() {
             <Card className="p-6 border-dashed border-amber-500/30 bg-amber-500/5" data-testid="wrong-chain-notice">
               <div className="flex items-start gap-3">
                 <Shield className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                <div>
+                <div className="flex-1">
                   <div className="font-mono text-sm font-bold text-amber-500">Switch to BNB Chain</div>
                   <p className="font-mono text-xs text-muted-foreground mt-1">
-                    The staking contract is deployed on BNB Chain (BSC). Please switch your wallet to BNB Chain to stake.
+                    The staking contract is deployed on BNB Chain (BSC). Switch your wallet to BNB Chain to stake.
                   </p>
+                  <Button
+                    size="sm"
+                    className="mt-3 font-mono text-xs gap-1.5"
+                    onClick={() => switchChain(56)}
+                    data-testid="button-switch-bnb"
+                  >
+                    <ArrowRight className="w-3.5 h-3.5" />
+                    Switch to BNB Chain
+                  </Button>
                 </div>
               </div>
             </Card>
