@@ -6327,11 +6327,12 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
                 logoState.imageUrl = uploadedUrl;
                 await bot.sendMessage(chatId, `✅ Logo uploaded successfully! (${ext.toUpperCase()} format)`);
               } else {
-                await bot.sendMessage(chatId, `⚠️ Logo upload failed. Continuing with auto-generated logo.`);
+                console.error("[TelegramBot] Logo upload returned null — check token-launcher logs for details");
+                await bot.sendMessage(chatId, `⚠️ Logo upload failed (CDN rejected). Continuing with auto-generated logo.`);
               }
             } catch (uploadErr: any) {
-              console.error("[TelegramBot] Logo upload error:", uploadErr.message);
-              await bot.sendMessage(chatId, `⚠️ Logo upload failed. Continuing with auto-generated logo.`);
+              console.error("[TelegramBot] Logo upload error:", uploadErr.message, uploadErr.stack?.substring(0, 300));
+              await bot.sendMessage(chatId, `⚠️ Logo upload error: ${uploadErr.message?.substring(0, 80)}. Continuing with auto-generated logo.`);
             }
           }
         }

@@ -675,15 +675,62 @@ export async function fourMemeUploadImageBuffer(pngBuffer: Buffer): Promise<stri
     const provider = getBscProvider();
     const wallet = getDeployerWallet(provider);
     if (!wallet) {
-      log("[TokenLauncher] No deployer wallet for image upload", "token-launcher");
+      log("[TokenLauncher] No deployer wallet for image upload, trying public upload", "token-launcher");
+      return await fourMemeUploadImagePublic(pngBuffer);
+    }
+    log(`[TokenLauncher] Logging into four.meme for image upload with wallet ${wallet.address.substring(0, 10)}...`, "token-launcher");
+    const accessToken = await fourMemeLogin(wallet);
+    log(`[TokenLauncher] Login OK, uploading image (${pngBuffer.length} bytes)...`, "token-launcher");
+    const result = await fourMemeUploadImage(pngBuffer, accessToken);
+    if (result) return result;
+    log(`[TokenLauncher] Authenticated upload returned null, trying public fallback`, "token-launcher");
+    return await fourMemeUploadImagePublic(pngBuffer);
+  } catch (e: any) {
+    log(`[TokenLauncher] fourMemeUploadImageBuffer failed: ${e.message?.substring(0, 200)}, trying public fallback`, "token-launcher");
+    try {
+      return await fourMemeUploadImagePublic(pngBuffer);
+    } catch (e2: any) {
+      log(`[TokenLauncher] Public fallback also failed: ${e2.message?.substring(0, 150)}`, "token-launcher");
       return null;
     }
-    const accessToken = await fourMemeLogin(wallet);
-    return await fourMemeUploadImage(pngBuffer, accessToken);
-  } catch (e: any) {
-    log(`[TokenLauncher] fourMemeUploadImageBuffer failed: ${e.message?.substring(0, 150)}`, "token-launcher");
-    return null;
   }
+}
+
+async function fourMemeUploadImagePublic(pngBuffer: Buffer): Promise<string | null> {
+  const endpoints = [
+    `${FOUR_MEME_API}/meme-api/v1/private/token/upload`,
+    `${FOUR_MEME_API}/meme-api/meme/image/upload`,
+    `${FOUR_MEME_API}/meme-api/v1/public/token/upload`,
+  ];
+  for (const url of endpoints) {
+    try {
+      const boundary = `----FormBoundary${crypto.randomBytes(8).toString("hex")}`;
+      const filename = `token-${Date.now()}.png`;
+      const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: image/png\r\n\r\n`;
+      const footer = `\r\n--${boundary}--\r\n`;
+      const body = Buffer.concat([Buffer.from(header), pngBuffer, Buffer.from(footer)]);
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
+        body,
+      });
+      log(`[TokenLauncher] Public upload ${url} → HTTP ${res.status}`, "token-launcher");
+      if (!res.ok) continue;
+      const json = await res.json() as any;
+      log(`[TokenLauncher] Public upload response: ${JSON.stringify(json).substring(0, 300)}`, "token-launcher");
+      if (json.code === 0 && json.data) {
+        const imgUrl = typeof json.data === "string" ? json.data : json.data.url || json.data.imgUrl || json.data.imageUrl;
+        if (imgUrl) return imgUrl;
+      }
+      if (json.msg === "success" && json.data?.imageUrl) {
+        return json.data.imageUrl;
+      }
+    } catch (e: any) {
+      log(`[TokenLauncher] Public upload ${url} error: ${e.message?.substring(0, 100)}`, "token-launcher");
+    }
+  }
+  return null;
 }
 
 async function fourMemeFetchRaisedConfig(accessToken: string): Promise<any> {
