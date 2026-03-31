@@ -514,37 +514,59 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  private async safeAgentQuery(whereClause: string, params: any[] = []): Promise<Agent[]> {
+    try {
+      const result = await db.execute(sql.raw(`SELECT id, name, bio, model_type as "modelType", status, onchain_id as "onchainId", onchain_registered as "onchainRegistered", erc8004_registered as "erc8004Registered", erc8004_tx_hash as "erc8004TxHash", erc8004_token_id as "erc8004TokenId", erc8004_chain as "erc8004Chain", bap578_registered as "bap578Registered", creator_wallet as "creatorWallet", preferred_chain as "preferredChain", created_at as "createdAt" FROM agents ${whereClause}`));
+      return (result.rows || []) as Agent[];
+    } catch (e: any) {
+      console.error("[Storage] safeAgentQuery failed:", e.message);
+      return [];
+    }
+  }
+
   async getAgent(id: string): Promise<Agent | undefined> {
-    const [agent] = await db.select().from(agents).where(eq(agents.id, id));
-    return agent;
+    try {
+      const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+      return agent;
+    } catch {
+      const results = await this.safeAgentQuery(`WHERE id = '${id.replace(/'/g, "''")}'`);
+      return results[0];
+    }
   }
 
   async getAgentByName(name: string): Promise<Agent | undefined> {
-    const [agent] = await db.select().from(agents).where(eq(agents.name, name));
-    return agent;
+    try {
+      const [agent] = await db.select().from(agents).where(eq(agents.name, name));
+      return agent;
+    } catch {
+      const results = await this.safeAgentQuery(`WHERE name = '${name.replace(/'/g, "''")}'`);
+      return results[0];
+    }
   }
 
   async getAgentByWallet(walletAddress: string): Promise<Agent | undefined> {
-    const [agent] = await db.select().from(agents).where(eq(agents.creatorWallet, walletAddress.toLowerCase()));
-    return agent;
+    try {
+      const [agent] = await db.select().from(agents).where(eq(agents.creatorWallet, walletAddress.toLowerCase()));
+      return agent;
+    } catch {
+      const results = await this.safeAgentQuery(`WHERE LOWER(creator_wallet) = '${walletAddress.toLowerCase().replace(/'/g, "''")}'`);
+      return results[0];
+    }
   }
 
   async getAllAgents(): Promise<Agent[]> {
-    return db.select().from(agents).orderBy(agents.createdAt);
+    try {
+      return await db.select().from(agents).orderBy(agents.createdAt);
+    } catch {
+      return this.safeAgentQuery("ORDER BY created_at");
+    }
   }
 
   async getAgentsByWallet(walletAddress: string): Promise<Agent[]> {
     try {
       return await db.select().from(agents).where(eq(agents.creatorWallet, walletAddress.toLowerCase())).orderBy(agents.createdAt);
-    } catch (e: any) {
-      console.error("[Storage] getAgentsByWallet drizzle error, falling back to raw SQL:", e.message);
-      try {
-        const result = await db.execute(sql`SELECT id, name, bio, model_type as "modelType", status, onchain_id as "onchainId", onchain_registered as "onchainRegistered", erc8004_registered as "erc8004Registered", erc8004_tx_hash as "erc8004TxHash", erc8004_token_id as "erc8004TokenId", erc8004_chain as "erc8004Chain", bap578_registered as "bap578Registered", creator_wallet as "creatorWallet", preferred_chain as "preferredChain", created_at as "createdAt" FROM agents WHERE LOWER(creator_wallet) = ${walletAddress.toLowerCase()} ORDER BY created_at`);
-        return (result.rows || []) as Agent[];
-      } catch (e2: any) {
-        console.error("[Storage] getAgentsByWallet raw SQL also failed:", e2.message);
-        return [];
-      }
+    } catch {
+      return this.safeAgentQuery(`WHERE LOWER(creator_wallet) = '${walletAddress.toLowerCase().replace(/'/g, "''")}' ORDER BY created_at`);
     }
   }
 
