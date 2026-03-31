@@ -1558,6 +1558,25 @@ export const REWARD_AMOUNTS = {
   FIRST_LAUNCH_BONUS: "1000",
 } as const;
 
+export const userQuests = pgTable("user_quests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  chatId: text("chat_id").notNull(),
+  questId: text("quest_id").notNull(),
+  completed: boolean("completed").notNull().default(false),
+  completedAt: timestamp("completed_at"),
+  rewardGranted: boolean("reward_granted").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const QUEST_CONFIG = {
+  join: { id: "join", title: "Join BUILD4", reward: 100, emoji: "🎉", description: "Join the BUILD4 bot" },
+  create_agent: { id: "create_agent", title: "Create Your First Agent", reward: 500, emoji: "🤖", description: "Create your first AI agent" },
+  refer_friend: { id: "refer_friend", title: "Refer a Friend", reward: 250, emoji: "🔗", description: "Refer 1 friend to BUILD4" },
+  launch_token: { id: "launch_token", title: "Launch a Token", reward: 1000, emoji: "🚀", description: "Launch your first token" },
+} as const;
+
+export type QuestId = keyof typeof QUEST_CONFIG;
+
 export const SEED_AGENTS = {
   RESEARCH_BOT: {
     name: "ResearchBot-7B",

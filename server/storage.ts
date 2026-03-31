@@ -502,6 +502,10 @@ export interface IStorage {
   getUserRewardTotal(chatId: string): Promise<string>;
   getRewardsLeaderboard(limit?: number): Promise<Array<{ chatId: string; totalRewards: string; rewardCount: number }>>;
   getUserRewardsByType(chatId: string, rewardType: string): Promise<any[]>;
+
+  getQuestStatus(chatId: string, questId: string): Promise<{ completed: boolean; rewardGranted: boolean } | null>;
+  getAllQuests(chatId: string): Promise<Array<{ questId: string; completed: boolean; rewardGranted: boolean; completedAt: Date | null }>>;
+  completeQuest(chatId: string, questId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3179,6 +3183,53 @@ export class DatabaseStorage implements IStorage {
     } catch (e: any) {
       console.error("[Rewards] Failed to get rewards by type:", e.message);
       return [];
+    }
+  }
+
+  async getQuestStatus(chatId: string, questId: string): Promise<{ completed: boolean; rewardGranted: boolean } | null> {
+    try {
+      const result = await db.execute(sql.raw(
+        `SELECT completed, reward_granted as "rewardGranted" FROM user_quests WHERE chat_id = '${chatId.replace(/'/g, "''")}' AND quest_id = '${questId.replace(/'/g, "''")}' LIMIT 1`
+      ));
+      const row = (result.rows || [])[0] as any;
+      if (!row) return null;
+      return { completed: row.completed, rewardGranted: row.rewardGranted };
+    } catch (e: any) {
+      console.error("[Quests] Failed to get quest status:", e.message);
+      return null;
+    }
+  }
+
+  async getAllQuests(chatId: string): Promise<Array<{ questId: string; completed: boolean; rewardGranted: boolean; completedAt: Date | null }>> {
+    try {
+      const result = await db.execute(sql.raw(
+        `SELECT quest_id as "questId", completed, reward_granted as "rewardGranted", completed_at as "completedAt" FROM user_quests WHERE chat_id = '${chatId.replace(/'/g, "''")}' ORDER BY created_at ASC`
+      ));
+      return (result.rows || []).map((r: any) => ({
+        questId: r.questId,
+        completed: r.completed,
+        rewardGranted: r.rewardGranted,
+        completedAt: r.completedAt,
+      }));
+    } catch (e: any) {
+      console.error("[Quests] Failed to get all quests:", e.message);
+      return [];
+    }
+  }
+
+  async completeQuest(chatId: string, questId: string): Promise<boolean> {
+    try {
+      const existing = await this.getQuestStatus(chatId, questId);
+      if (existing?.completed) return false;
+      await db.execute(sql.raw(
+        `INSERT INTO user_quests (id, chat_id, quest_id, completed, completed_at, reward_granted, created_at)
+         VALUES (gen_random_uuid(), '${chatId.replace(/'/g, "''")}', '${questId.replace(/'/g, "''")}', true, now(), false, now())
+         ON CONFLICT (chat_id, quest_id) DO UPDATE SET completed = true, completed_at = now()`
+      ));
+      return true;
+    } catch (e: any) {
+      console.error("[Quests] Failed to complete quest:", e.message);
+      return false;
     }
   }
 }

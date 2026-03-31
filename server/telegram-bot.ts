@@ -47,6 +47,7 @@ const t: Record<string, Record<Lang, string>> = {
   "menu.myTasks": { en: "📊 My Tasks", zh: "📊 我的任务", ar: "📊 مهامي" },
   "menu.wallet": { en: "👛 My Wallet", zh: "👛 我的钱包", ar: "👛 محفظتي" },
   "menu.premium": { en: "⭐ Premium", zh: "⭐ 高级版", ar: "⭐ مميز" },
+  "menu.quests": { en: "🎯 Quests", zh: "🎯 任务", ar: "🎯 مهام" },
   "menu.rewards": { en: "🏆 Rewards", zh: "🏆 奖励", ar: "🏆 مكافآت" },
   "menu.referral": { en: "🔗 Referral", zh: "🔗 推荐奖励", ar: "🔗 إحالة" },
   "menu.help": { en: "❓ Help & Commands", zh: "❓ 帮助", ar: "❓ مساعدة" },
@@ -650,7 +651,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
     return "Hey! Welcome to BUILD4 — decentralized infrastructure for autonomous AI agents. What can I help you with? Try /help to see all commands.";
   }
   if (lower.includes("help") || lower.includes("command"))
-    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n🏆 /rewards — $B4 rewards dashboard\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — Swap (multi-chain)\n🌉 /bridge — Cross-chain bridge\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
+    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n🎯 /quests — Earn $B4 quests\n🏆 /rewards — $B4 rewards dashboard\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — Swap (multi-chain)\n🌉 /bridge — Cross-chain bridge\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
   if (lower.includes("thank"))
     return "You're welcome! Let me know if you need anything else. 🤝";
 
@@ -1586,6 +1587,7 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
         } catch {}
         try {
           await grantReward(parseInt(referral.referrerChatId), "referral", REWARD_AMOUNTS.REFERRAL, `🔗 Referred a new subscriber`, referral.referredChatId);
+          tryCompleteQuest(parseInt(referral.referrerChatId), "refer_friend");
         } catch {}
       }
     } catch (e: any) {
@@ -1751,6 +1753,83 @@ const REWARD_AMOUNTS = {
   FIRST_AGENT_BONUS: "500",
   FIRST_LAUNCH_BONUS: "1000",
 };
+
+const QUEST_CONFIG = {
+  join: { id: "join", title: "Join BUILD4", reward: 100, emoji: "🎉", description: "Join the BUILD4 bot" },
+  create_agent: { id: "create_agent", title: "Create Your First Agent", reward: 500, emoji: "🤖", description: "Create your first AI agent" },
+  refer_friend: { id: "refer_friend", title: "Refer a Friend", reward: 250, emoji: "🔗", description: "Refer 1 friend to BUILD4" },
+  launch_token: { id: "launch_token", title: "Launch a Token", reward: 1000, emoji: "🚀", description: "Launch your first token" },
+} as const;
+
+type QuestId = keyof typeof QUEST_CONFIG;
+
+async function tryCompleteQuest(chatId: number, questId: QuestId): Promise<void> {
+  try {
+    const quest = QUEST_CONFIG[questId];
+    const isNew = await storage.completeQuest(chatId.toString(), questId);
+    if (!isNew) return;
+    await grantReward(chatId, `quest_${questId}`, quest.reward.toString(), `${quest.emoji} Quest: ${quest.title}`);
+    if (bot) {
+      const allQuests = await storage.getAllQuests(chatId.toString());
+      const completedCount = allQuests.filter(q => q.completed).length;
+      const totalQuests = Object.keys(QUEST_CONFIG).length;
+      const allDone = completedCount >= totalQuests;
+      try {
+        await bot.sendMessage(chatId,
+          `🎯 *Quest Complete!*\n\n` +
+          `${quest.emoji} *${quest.title}*\n` +
+          `+${quest.reward.toLocaleString()} $B4\n\n` +
+          `Progress: ${completedCount}/${totalQuests} quests${allDone ? "\n\n🏅 *ALL QUESTS COMPLETE!* You've earned the maximum 1,850 $B4!" : ""}\n\n` +
+          `View all quests: /quests`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🎯 My Quests", callback_data: "action:quests" }]] } }
+        );
+      } catch {}
+    }
+    console.log(`[Quests] ${chatId} completed quest: ${questId} (+${quest.reward} $B4)`);
+  } catch (e: any) {
+    console.error(`[Quests] Failed to complete quest ${questId} for ${chatId}:`, e.message);
+  }
+}
+
+async function handleQuestsDashboard(chatId: number): Promise<void> {
+  if (!bot) return;
+  try {
+    const userQuests = await storage.getAllQuests(chatId.toString());
+    const completedIds = new Set(userQuests.filter(q => q.completed).map(q => q.questId));
+    const totalReward = Object.values(QUEST_CONFIG).reduce((s, q) => s + q.reward, 0);
+    const earnedReward = Object.entries(QUEST_CONFIG).reduce((s, [id, q]) => s + (completedIds.has(id) ? q.reward : 0), 0);
+
+    let msg = `🎯 *Agent Quests*\n\n` +
+      `Complete quests to earn *$B4 tokens*!\n` +
+      `Progress: *${completedIds.size}/${Object.keys(QUEST_CONFIG).length}* — Earned: *${earnedReward.toLocaleString()}/${totalReward.toLocaleString()} $B4*\n\n`;
+
+    for (const [id, quest] of Object.entries(QUEST_CONFIG)) {
+      const done = completedIds.has(id);
+      msg += done
+        ? `✅ ~${quest.emoji} ${quest.title}~ — *+${quest.reward.toLocaleString()} $B4* ✓\n`
+        : `⬜ ${quest.emoji} *${quest.title}* — +${quest.reward.toLocaleString()} $B4\n   _${quest.description}_\n`;
+    }
+
+    if (completedIds.size >= Object.keys(QUEST_CONFIG).length) {
+      msg += `\n🏅 *ALL QUESTS COMPLETE!* Congratulations!`;
+    } else {
+      msg += `\n_Complete all quests to earn ${totalReward.toLocaleString()} $B4!_`;
+    }
+
+    const buttons: any[][] = [];
+    if (!completedIds.has("create_agent")) buttons.push([{ text: "🤖 Create Agent", callback_data: "action:newagent" }]);
+    if (!completedIds.has("refer_friend")) buttons.push([{ text: "🔗 Refer a Friend", callback_data: "action:referral" }]);
+    if (!completedIds.has("launch_token")) buttons.push([{ text: "🚀 Launch Token", callback_data: "action:launchtoken" }]);
+    buttons.push([{ text: "🏆 Rewards", callback_data: "action:rewards" }, { text: "📊 Leaderboard", callback_data: "action:leaderboard" }]);
+    buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
+
+    await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+  } catch (e: any) {
+    console.error("[Quests] Dashboard error:", e.message);
+    await bot.sendMessage(chatId, `❌ Could not load quests: ${e.message?.substring(0, 100)}`,
+      { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:quests" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+  }
+}
 
 async function grantReward(chatId: number, rewardType: string, amount: string, description: string, referenceId?: string): Promise<void> {
   try {
@@ -1960,7 +2039,8 @@ function mainMenuKeyboard(_hasWallet?: boolean, chatId?: number): TelegramBot.In
       [{ text: tr("menu.createAgent", c), callback_data: "action:newagent" }, { text: tr("menu.myAgents", c), callback_data: "action:myagents" }],
       [{ text: tr("menu.newTask", c), callback_data: "action:task" }, { text: tr("menu.myTasks", c), callback_data: "action:mytasks" }],
       [{ text: tr("menu.wallet", c), callback_data: "action:wallet" }, { text: tr("menu.premium", c), callback_data: "action:substatus" }],
-      [{ text: tr("menu.rewards", c), callback_data: "action:rewards" }, { text: tr("menu.referral", c), callback_data: "action:referral" }],
+      [{ text: tr("menu.quests", c), callback_data: "action:quests" }, { text: tr("menu.rewards", c), callback_data: "action:rewards" }],
+      [{ text: tr("menu.referral", c), callback_data: "action:referral" }],
       [{ text: tr("menu.help", c), callback_data: "action:help" }],
       [{ text: "🌐 Language / 语言", callback_data: "action:lang" }],
     ]
@@ -2673,6 +2753,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   if (data === "action:rewards") {
     return handleRewardsDashboard(chatId);
   }
+  if (data === "action:quests") {
+    return handleQuestsDashboard(chatId);
+  }
   if (data === "action:leaderboard") {
     return handleRewardsLeaderboard(chatId);
   }
@@ -2822,6 +2905,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         "📋 /myagents — Your agents\n" +
         "📝 /task — Assign a task\n" +
         "👛 /wallet — Wallet info\n" +
+        "🎯 /quests — Earn $B4 quests\n" +
         "🏆 /rewards — $B4 rewards dashboard\n" +
         "🌐 /lang — Switch language\n" +
         "❓ /ask <question> — Ask anything\n" +
@@ -6908,6 +6992,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
                 } catch {}
                 try {
                   await grantReward(parseInt(referral.referrerChatId), "referral", REWARD_AMOUNTS.REFERRAL, `🔗 Referred a new subscriber`, referral.referredChatId);
+                  tryCompleteQuest(parseInt(referral.referrerChatId), "refer_friend");
                 } catch {}
               }
             } catch {}
@@ -7701,6 +7786,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       }
+      tryCompleteQuest(chatId, "join");
       return;
     }
 
@@ -8015,6 +8101,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         "📊 /mytasks — Recent tasks\n" +
         "👛 /wallet — Wallet info\n" +
         "🔗 /linkwallet — Connect wallet\n" +
+        "🎯 /quests — Earn $B4 quests\n" +
+        "🏆 /rewards — $B4 rewards dashboard\n" +
         "🤖 /agentstatus — AI agent badge status\n" +
         "❓ /ask <question> — Ask anything\n" +
         "🧹 /clear — Reset conversation memory\n" +
@@ -8023,6 +8111,12 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         "Or just type any question — I can help with anything!",
         { reply_markup: mainMenuKeyboard(undefined, chatId) }
       );
+      return;
+    }
+
+    if (cmd === "quests") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for quests info!"); return; }
+      await handleQuestsDashboard(chatId);
       return;
     }
 
@@ -8742,6 +8836,7 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
       if (isFirst) {
         await grantReward(chatId, "first_agent_bonus", REWARD_AMOUNTS.FIRST_AGENT_BONUS, "🎁 First agent bonus!", agentId);
       }
+      tryCompleteQuest(chatId, "create_agent");
     } catch (e: any) {
       console.error("[Rewards] Agent creation reward failed:", e.message);
     }
@@ -9269,6 +9364,7 @@ async function handleProposalApproval(chatId: number, proposalId: string, approv
         if (isFirst) {
           await grantReward(chatId, "first_launch_bonus", REWARD_AMOUNTS.FIRST_LAUNCH_BONUS, "🎁 First token launch bonus!", result.tokenAddress || proposalId);
         }
+        tryCompleteQuest(chatId, "launch_token");
       } catch (e: any) { console.error("[Rewards] Token launch reward failed:", e.message); }
     } else {
       await storage.updateTokenLaunch(proposalId, {
@@ -9665,6 +9761,7 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
         const isFirst = existingLaunchRewards.length === 0;
         await grantReward(chatId, "token_launch", REWARD_AMOUNTS.TOKEN_LAUNCH, `🚀 Launched token: ${state.tokenName} ($${state.tokenSymbol})`, result.tokenAddress);
         if (isFirst) await grantReward(chatId, "first_launch_bonus", REWARD_AMOUNTS.FIRST_LAUNCH_BONUS, "🎁 First token launch bonus!", result.tokenAddress);
+        tryCompleteQuest(chatId, "launch_token");
       } catch (e: any) { console.error("[Rewards] Token launch reward failed:", e.message); }
     } else {
       await bot.sendMessage(chatId,
@@ -9846,6 +9943,7 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
           const isFirst = existingLaunchRewards.length === 0;
           await grantReward(chatId, "token_launch", REWARD_AMOUNTS.TOKEN_LAUNCH, `🚀 Launched token: ${state.tokenName} ($${state.tokenSymbol})`, result.tokenAddress);
           if (isFirst) await grantReward(chatId, "first_launch_bonus", REWARD_AMOUNTS.FIRST_LAUNCH_BONUS, "🎁 First token launch bonus!", result.tokenAddress);
+          tryCompleteQuest(chatId, "launch_token");
         } catch (e: any) { console.error("[Rewards] Token launch reward failed:", e.message); }
       } else {
         await bot.sendMessage(chatId,
@@ -10058,6 +10156,7 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
         const isFirst = existingLaunchRewards.length === 0;
         await grantReward(chatId, "token_launch", REWARD_AMOUNTS.TOKEN_LAUNCH, `🚀 Launched token: ${state.tokenName} ($${state.tokenSymbol})`, result.tokenAddress);
         if (isFirst) await grantReward(chatId, "first_launch_bonus", REWARD_AMOUNTS.FIRST_LAUNCH_BONUS, "🎁 First token launch bonus!", result.tokenAddress);
+        tryCompleteQuest(chatId, "launch_token");
       } catch (e: any) { console.error("[Rewards] Token launch reward failed:", e.message); }
     } else {
       await bot.sendMessage(chatId,
