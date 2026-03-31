@@ -131,7 +131,7 @@ const walletsWithKey = new Set<string>();
 
 interface AgentCreationState { step: "name" | "bio" | "model"; name?: string; bio?: string; mandatory?: boolean }
 interface TaskState { step: "describe"; agentId: string; taskType: string; agentName: string }
-interface TokenLaunchState { step: "platform" | "name" | "symbol" | "description" | "logo" | "links" | "tax" | "bankr_chain" | "stealth_buy" | "raydium_buy" | "snipe_config"; agentId: string; agentName: string; platform?: string; tokenName?: string; tokenSymbol?: string; tokenDescription?: string; imageUrl?: string; webUrl?: string; twitterUrl?: string; telegramUrl?: string; taxRate?: number; bankrChain?: "base" | "solana"; stealthBuyEth?: string; stealthBuyPercent?: number; initialBuySol?: string; sniperEnabled?: boolean; sniperDevBuyBnb?: string; sniperWalletCount?: number; sniperPerWalletBnb?: string }
+interface TokenLaunchState { step: "platform" | "name" | "symbol" | "description" | "logo" | "links" | "tax" | "bankr_chain" | "stealth_buy" | "raydium_buy" | "snipe_config" | "snipe_wallets" | "snipe_bnb" | "snipe_dev"; agentId: string; agentName: string; platform?: string; tokenName?: string; tokenSymbol?: string; tokenDescription?: string; imageUrl?: string; webUrl?: string; twitterUrl?: string; telegramUrl?: string; taxRate?: number; bankrChain?: "base" | "solana"; stealthBuyEth?: string; stealthBuyPercent?: number; initialBuySol?: string; sniperEnabled?: boolean; sniperDevBuyBnb?: string; sniperWalletCount?: number; sniperPerWalletBnb?: string }
 interface FourMemeBuyState { step: "token" | "amount" | "confirm"; tokenAddress?: string; bnbAmount?: string; estimate?: any }
 interface FourMemeSellState { step: "token" | "amount" | "confirm"; tokenAddress?: string; tokenAmount?: string; tokenSymbol?: string; estimate?: any }
 
@@ -5844,18 +5844,19 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId,
       `🎯 SNIPE LAUNCH SETUP\n\n` +
       `This will:\n` +
-      `1️⃣ Pre-buy the bonding curve with your dev wallet\n` +
-      `2️⃣ Generate 10 fresh wallets\n` +
-      `3️⃣ Fund each wallet with ~1 BNB and buy via relay wallets\n\n` +
-      `Choose a preset or customize:`,
+      `1️⃣ Fund sniper wallets via relay wallets\n` +
+      `2️⃣ Launch token with dev buy on the curve\n` +
+      `3️⃣ Instant snipe buys from all funded wallets\n\n` +
+      `Choose a preset or set your own:`,
       {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "🎯 70% Dev + 10 Snipers × 1 BNB (default)", callback_data: `snipecfg:${agentId}:default` }],
+            [{ text: "🎯 70% Dev + 10 × 1 BNB (~28 BNB)", callback_data: `snipecfg:${agentId}:default` }],
             [
               { text: "50% Dev + 10 × 1 BNB", callback_data: `snipecfg:${agentId}:50` },
               { text: "80% Dev + 10 × 1 BNB", callback_data: `snipecfg:${agentId}:80` },
             ],
+            [{ text: "⚙️ Custom Setup", callback_data: `snipecfg:${agentId}:custom` }],
             [{ text: "Skip snipe launch", callback_data: `snipecfg:${agentId}:skip` }],
           ]
         }
@@ -5877,17 +5878,31 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       state.sniperDevBuyBnb = undefined;
       state.sniperWalletCount = undefined;
       state.sniperPerWalletBnb = undefined;
-    } else {
+      showLaunchPreview(chatId, state);
+      return;
+    }
+
+    if (preset === "custom") {
       state.sniperEnabled = true;
-      state.sniperWalletCount = 10;
-      state.sniperPerWalletBnb = "1";
-      if (preset === "50") {
-        state.sniperDevBuyBnb = "13";
-      } else if (preset === "80") {
-        state.sniperDevBuyBnb = "20.8";
-      } else {
-        state.sniperDevBuyBnb = "18";
-      }
+      state.step = "snipe_wallets";
+      pendingTokenLaunch.set(chatId, state);
+      await bot.sendMessage(chatId,
+        `⚙️ Custom Snipe Setup\n\n` +
+        `Step 1/3: How many sniper wallets?\n\n` +
+        `Enter a number (1-50):`,
+      );
+      return;
+    }
+
+    state.sniperEnabled = true;
+    state.sniperWalletCount = 10;
+    state.sniperPerWalletBnb = "1";
+    if (preset === "50") {
+      state.sniperDevBuyBnb = "13";
+    } else if (preset === "80") {
+      state.sniperDevBuyBnb = "20.8";
+    } else {
+      state.sniperDevBuyBnb = "18";
     }
 
     showLaunchPreview(chatId, state);
@@ -9217,6 +9232,75 @@ async function handleTokenLaunchFlow(chatId: number, text: string): Promise<void
       `telegram: https://t.me/yourgroup\n\n` +
       `You can include one, two, or all three. Or type "skip" to continue without links.`,
     );
+    return;
+  }
+
+  if (state.step === "snipe_wallets") {
+    const count = parseInt(input.trim());
+    if (isNaN(count) || count < 1 || count > 50) {
+      await bot.sendMessage(chatId, `❌ Enter a number between 1 and 50.`);
+      return;
+    }
+    state.sniperWalletCount = count;
+    state.step = "snipe_bnb";
+    pendingTokenLaunch.set(chatId, state);
+    await bot.sendMessage(chatId,
+      `✅ ${count} sniper wallets\n\n` +
+      `Step 2/3: How much BNB per wallet?\n\n` +
+      `Four.meme curve is ~26 BNB total.\n` +
+      `Examples: 0.5, 1, 2, 5\n\n` +
+      `Enter BNB amount per wallet:`,
+    );
+    return;
+  }
+
+  if (state.step === "snipe_bnb") {
+    const bnb = parseFloat(input.trim());
+    if (isNaN(bnb) || bnb < 0.01 || bnb > 26) {
+      await bot.sendMessage(chatId, `❌ Enter a BNB amount between 0.01 and 26.`);
+      return;
+    }
+    state.sniperPerWalletBnb = bnb.toString();
+    state.step = "snipe_dev";
+    pendingTokenLaunch.set(chatId, state);
+
+    const totalSnipe = (bnb * (state.sniperWalletCount || 10)).toFixed(2);
+    await bot.sendMessage(chatId,
+      `✅ ${state.sniperWalletCount} wallets × ${bnb} BNB = ${totalSnipe} BNB total snipe\n\n` +
+      `Step 3/3: Dev buy amount (BNB)?\n\n` +
+      `This is how much BNB your dev wallet buys on the curve before snipers.\n` +
+      `Four.meme curve is ~26 BNB total.\n\n` +
+      `Common amounts:\n` +
+      `• 13 BNB = ~50% of curve\n` +
+      `• 18 BNB = ~70% of curve\n` +
+      `• 20.8 BNB = ~80% of curve\n\n` +
+      `Enter BNB amount for dev buy:`,
+    );
+    return;
+  }
+
+  if (state.step === "snipe_dev") {
+    const devBnb = parseFloat(input.trim());
+    if (isNaN(devBnb) || devBnb < 0) {
+      await bot.sendMessage(chatId, `❌ Enter a valid BNB amount (0 or more).`);
+      return;
+    }
+    state.sniperDevBuyBnb = devBnb.toString();
+    state.sniperEnabled = true;
+
+    const totalSnipe = (parseFloat(state.sniperPerWalletBnb || "1") * (state.sniperWalletCount || 10)).toFixed(2);
+    const totalNeeded = (devBnb + parseFloat(totalSnipe) + 0.1).toFixed(2);
+
+    await bot.sendMessage(chatId,
+      `✅ Snipe config set!\n\n` +
+      `📊 Summary:\n` +
+      `  Dev Buy: ${devBnb} BNB\n` +
+      `  Snipers: ${state.sniperWalletCount} wallets × ${state.sniperPerWalletBnb} BNB\n` +
+      `  Total Snipe: ${totalSnipe} BNB\n` +
+      `  Total BNB needed: ~${totalNeeded} BNB`,
+    );
+
+    showLaunchPreview(chatId, state);
     return;
   }
 
