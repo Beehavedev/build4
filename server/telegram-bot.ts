@@ -40,7 +40,7 @@ const t: Record<string, Record<Lang, string>> = {
   "menu.gas": { en: "⛽ Gas", zh: "⛽ Gas费", ar: "⛽ رسوم الغاز" },
   "menu.rich": { en: "💎 Make Me Rich", zh: "💎 自动交易", ar: "💎 تداول تلقائي" },
   "menu.aster": { en: "📈 Aster DEX", zh: "📈 Aster DEX", ar: "📈 Aster DEX" },
-  "menu.buyBuild4": { en: "🟢 Buy $BUILD4", zh: "🟢 购买 $BUILD4", ar: "🟢 شراء $BUILD4" },
+  "menu.buyBuild4": { en: "🟢 Buy $B4", zh: "🟢 购买 $B4", ar: "🟢 شراء $B4" },
   "menu.createAgent": { en: "🤖 Create Agent", zh: "🤖 创建代理", ar: "🤖 إنشاء وكيل" },
   "menu.myAgents": { en: "📋 My Agents", zh: "📋 我的代理", ar: "📋 وكلائي" },
   "menu.newTask": { en: "📝 New Task", zh: "📝 新任务", ar: "📝 مهمة جديدة" },
@@ -318,7 +318,7 @@ PRICING:
 - Subscription: $19.99/month with 4-day free trial — includes unlimited access + free AI agent creation.
 - Agent Creation: FREE for all subscribers (trial or paid).
 - Twitter Agent Service: $499/year (0.79 BNB) — autonomous posting, engagement, audience growth, and strategy execution.
-- 20% discount when paying with $BUILD4 token instead of BNB.
+- 20% discount when paying with $B4 token instead of BNB.
 
 SMART CONTRACTS (4 auditable Solidity contracts, OpenZeppelin, Hardhat):
 1. AgentEconomyHub — Core wallet layer: deposits, withdrawals, transfers, survival tiers, module authorization.
@@ -596,7 +596,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
   }
 
   if (isFundingQuestion) {
-    return "To fund your wallet, first make sure you have one — use /start or /wallet.\n\nThen send crypto to your wallet address on the right chain:\n• BNB → for Four.meme / Flap.sh launches & $BUILD4 token ⭐\n• ETH (Base) → for Bankr launches\n• SOL → for Raydium LaunchLab launches\n• OKB → for XLayer launches\n\nSame wallet address, just pick the right network!";
+    return "To fund your wallet, first make sure you have one — use /start or /wallet.\n\nThen send crypto to your wallet address on the right chain:\n• BNB → for Four.meme / Flap.sh launches & $B4 token ⭐\n• ETH (Base) → for Bankr launches\n• SOL → for Raydium LaunchLab launches\n• OKB → for XLayer launches\n\nSame wallet address, just pick the right network!";
   }
 
   if (lower.includes("what is build4") || lower.includes("what's build4") || lower.includes("about build4"))
@@ -638,7 +638,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
   if (lower.includes("how") && lower.includes("start"))
     return "Getting started is easy:\n1. Create a wallet (tap 🔑 Create New Wallet)\n2. Fund it with some BNB, OKB, or ETH\n3. Create an agent with /newagent\n4. Launch tokens with /launch\n\nThat's it — you're in the autonomous economy!";
   if (lower.includes("price") || (lower.includes("token") && !lower.includes("launch")) || lower.includes("buy"))
-    return "BUILD4 is infrastructure, not a token — but $BUILD4 token is launching on BNB Chain via Four.meme! Agents can also launch their own tokens on Raydium, Bankr, Four.meme, Flap.sh, or XLayer. Use /launch to try it.";
+    return "$B4 is LIVE on BNB Chain via Four.meme! CA: 0x1d547f9d0890ee5abfb49d7d53ca19df85da4444. Buy directly in this bot with the Buy $B4 button. Agents can also launch their own tokens on Raydium, Bankr, Four.meme, Flap.sh, or XLayer. Use /launch to try it.";
   if (lower.includes("hello") || lower.includes("hi") || lower.includes("hey") || lower.includes("gm") || lower === "yo") {
     if (chatId) {
       const wallets = getUserWallets(chatId);
@@ -2951,8 +2951,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   if (data === "action:buybuild4") {
     if (!BUILD4_TOKEN_CA) {
       await bot.sendMessage(chatId,
-        `🟢 *Buy $BUILD4*\n\n` +
-        `The $BUILD4 token contract address has not been set yet.\n\n` +
+        `🟢 *Buy $B4*\n\n` +
+        `The $B4 token contract address has not been set yet.\n\n` +
         `The token is launching soon on BNB Chain — stay tuned! 🚀`,
         {
           parse_mode: "Markdown",
@@ -2970,7 +2970,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       { label: "1 BNB", val: "1" },
     ];
     await bot.sendMessage(chatId,
-      `🟢 *Buy $BUILD4*\n\n` +
+      `🟢 *Buy $B4*\n\n` +
       `⛓ Chain: BNB Chain\n` +
       `📋 Token: \`${BUILD4_TOKEN_CA}\`\n\n` +
       `Select amount of BNB to spend:`,
@@ -2989,19 +2989,19 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data.startsWith("b4buy_amt:")) {
     if (!pendingBuild4Buy.has(chatId) || !BUILD4_TOKEN_CA) {
-      await bot.sendMessage(chatId, "Session expired. Please start again.", { reply_markup: { inline_keyboard: [[{ text: "🟢 Buy $BUILD4", callback_data: "action:buybuild4" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      await bot.sendMessage(chatId, "Session expired. Please start again.", { reply_markup: { inline_keyboard: [[{ text: "🟢 Buy $B4", callback_data: "action:buybuild4" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
       return;
     }
     const amount = data.replace("b4buy_amt:", "");
     const validAmounts = ["0.05", "0.1", "0.25", "0.5", "1"];
     if (!validAmounts.includes(amount)) {
-      await bot.sendMessage(chatId, "Invalid amount. Please select from the options.", { reply_markup: { inline_keyboard: [[{ text: "🟢 Buy $BUILD4", callback_data: "action:buybuild4" }]] } });
+      await bot.sendMessage(chatId, "Invalid amount. Please select from the options.", { reply_markup: { inline_keyboard: [[{ text: "🟢 Buy $B4", callback_data: "action:buybuild4" }]] } });
       return;
     }
     pendingBuild4Buy.set(chatId, { amount });
     await bot.sendMessage(chatId,
-      `🟢 *Confirm Buy $BUILD4*\n\n` +
-      `🪙 Token: *$BUILD4*\n` +
+      `🟢 *Confirm Buy $B4*\n\n` +
+      `🪙 Token: *$B4*\n` +
       `⛓ Chain: BNB Chain\n` +
       `💰 Spend: *${amount} BNB*\n` +
       `📋 Address: \`${BUILD4_TOKEN_CA}\`\n\n` +
@@ -3024,7 +3024,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const state = pendingBuild4Buy.get(chatId);
     if (!state || !state.amount || !BUILD4_TOKEN_CA) {
       pendingBuild4Buy.delete(chatId);
-      await bot.sendMessage(chatId, "Buy session expired. Please try again.", { reply_markup: { inline_keyboard: [[{ text: "🟢 Buy $BUILD4", callback_data: "action:buybuild4" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      await bot.sendMessage(chatId, "Buy session expired. Please try again.", { reply_markup: { inline_keyboard: [[{ text: "🟢 Buy $B4", callback_data: "action:buybuild4" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
       return;
     }
 
@@ -3035,7 +3035,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       return;
     }
 
-    await bot.sendMessage(chatId, `⏳ Executing buy: ${state.amount} BNB → $BUILD4 on BNB Chain...`);
+    await bot.sendMessage(chatId, `⏳ Executing buy: ${state.amount} BNB → $B4 on BNB Chain...`);
     sendTyping(chatId);
 
     try {
@@ -3074,8 +3074,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
       pendingBuild4Buy.delete(chatId);
       await bot.sendMessage(chatId,
-        `✅ *$BUILD4 Purchased!*\n\n` +
-        `⚡ ${state.amount} BNB → $BUILD4\n` +
+        `✅ *$B4 Purchased!*\n\n` +
+        `⚡ ${state.amount} BNB → $B4\n` +
         `⛓ BNB Chain\n\n` +
         `[View Transaction](https://bscscan.com/tx/${receipt.hash})`,
         {
@@ -3083,7 +3083,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           disable_web_page_preview: true,
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🟢 Buy More $BUILD4", callback_data: "action:buybuild4" }],
+              [{ text: "🟢 Buy More $B4", callback_data: "action:buybuild4" }],
               [{ text: "👛 Wallet", callback_data: "action:wallet" }, { text: "« Menu", callback_data: "action:menu" }],
             ],
           },
@@ -3096,7 +3096,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           reply_markup: {
             inline_keyboard: [
               [{ text: "🔄 Retry", callback_data: "b4buy_confirm" }],
-              [{ text: "🟢 Buy $BUILD4", callback_data: "action:buybuild4" }, { text: "« Menu", callback_data: "action:menu" }],
+              [{ text: "🟢 Buy $B4", callback_data: "action:buybuild4" }, { text: "« Menu", callback_data: "action:menu" }],
             ],
           },
         }
