@@ -2286,7 +2286,7 @@ export async function fourMemeLaunchWithSnipe(
   const provider = getBscProvider();
   const devBuyBnb = params.sniperDevBuyBnb || "18";
   const walletCount = params.sniperWalletCount || 10;
-  const perWalletBnb = parseFloat(params.sniperPerWalletBnb || "0.26");
+  const perWalletBnb = parseFloat(params.sniperPerWalletBnb || "1");
 
   const maxFundPerWallet = perWalletBnb * 1.25 + 0.008;
   const totalSniperBnb = maxFundPerWallet * walletCount;

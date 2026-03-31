@@ -5844,18 +5844,17 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId,
       `🎯 SNIPE LAUNCH SETUP\n\n` +
       `This will:\n` +
-      `1️⃣ Pre-buy 70% of the bonding curve with your dev wallet (~18 BNB)\n` +
+      `1️⃣ Pre-buy the bonding curve with your dev wallet\n` +
       `2️⃣ Generate 10 fresh wallets\n` +
-      `3️⃣ Fund each wallet and buy 1% of the curve (~0.26 BNB each)\n\n` +
-      `Total needed: ~21 BNB\n\n` +
+      `3️⃣ Fund each wallet with ~1 BNB and buy via relay wallets\n\n` +
       `Choose a preset or customize:`,
       {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "🎯 70% Dev + 10% Snipe (default)", callback_data: `snipecfg:${agentId}:default` }],
+            [{ text: "🎯 70% Dev + 10 Snipers × 1 BNB (default)", callback_data: `snipecfg:${agentId}:default` }],
             [
-              { text: "50% Dev + 10% Snipe", callback_data: `snipecfg:${agentId}:50` },
-              { text: "80% Dev + 10% Snipe", callback_data: `snipecfg:${agentId}:80` },
+              { text: "50% Dev + 10 × 1 BNB", callback_data: `snipecfg:${agentId}:50` },
+              { text: "80% Dev + 10 × 1 BNB", callback_data: `snipecfg:${agentId}:80` },
             ],
             [{ text: "Skip snipe launch", callback_data: `snipecfg:${agentId}:skip` }],
           ]
@@ -5881,7 +5880,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     } else {
       state.sniperEnabled = true;
       state.sniperWalletCount = 10;
-      state.sniperPerWalletBnb = "0.26";
+      state.sniperPerWalletBnb = "1";
       if (preset === "50") {
         state.sniperDevBuyBnb = "13";
       } else if (preset === "80") {
@@ -9336,7 +9335,7 @@ async function showLaunchPreview(chatId: number, state: TokenLaunchState) {
     preview += `\n🥷 Stealth Buy: ${state.stealthBuyEth ? state.stealthBuyEth + " ETH" : state.stealthBuyPercent + "% supply"} (via Bankr)\n`;
   }
   if (state.platform === "four_meme" && state.sniperEnabled) {
-    const totalSnipeBnb = (parseFloat(state.sniperPerWalletBnb || "0.26") * (state.sniperWalletCount || 10)).toFixed(2);
+    const totalSnipeBnb = (parseFloat(state.sniperPerWalletBnb || "1") * (state.sniperWalletCount || 10)).toFixed(2);
     const totalBnb = (parseFloat(state.sniperDevBuyBnb || "18") + parseFloat(totalSnipeBnb) + 0.1).toFixed(2);
     preview += `\n🎯 Snipe Launch: ENABLED\n`;
     preview += `  Dev Buy: ${state.sniperDevBuyBnb} BNB (curve pre-buy)\n`;
