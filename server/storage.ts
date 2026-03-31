@@ -3030,6 +3030,53 @@ export class DatabaseStorage implements IStorage {
       console.error("[Storage] Failed to save skill config:", e.message);
     }
   }
+
+  async saveSniperWallets(params: {
+    chatId: string;
+    agentId: string;
+    launchId?: string;
+    tokenAddress?: string;
+    wallets: Array<{ index: number; address: string; privateKey: string; bnbAmount: string; txHash?: string; status?: string }>;
+  }): Promise<void> {
+    try {
+      await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS "sniper_wallet_keys" (id VARCHAR DEFAULT gen_random_uuid() NOT NULL, launch_id VARCHAR, chat_id TEXT NOT NULL, agent_id VARCHAR NOT NULL, token_address TEXT, wallet_index INTEGER NOT NULL, wallet_address TEXT NOT NULL, encrypted_private_key TEXT NOT NULL, bnb_amount TEXT, status TEXT DEFAULT 'funded'::text NOT NULL, tx_hash TEXT, created_at TIMESTAMP DEFAULT now())`));
+      for (const w of params.wallets) {
+        const encKey = encryptPrivateKey(w.privateKey);
+        await db.execute(sql`INSERT INTO sniper_wallet_keys (chat_id, agent_id, launch_id, token_address, wallet_index, wallet_address, encrypted_private_key, bnb_amount, status, tx_hash) VALUES (${params.chatId}, ${params.agentId}, ${params.launchId || null}, ${params.tokenAddress || null}, ${w.index}, ${w.address.toLowerCase()}, ${encKey}, ${w.bnbAmount}, ${w.status || 'funded'}, ${w.txHash || null})`);
+      }
+      console.log(`[Storage] Saved ${params.wallets.length} sniper wallet keys for chat ${params.chatId}`);
+    } catch (e: any) {
+      console.error("[Storage] Failed to save sniper wallets:", e.message);
+    }
+  }
+
+  async getSniperWallets(chatId: string, agentId?: string): Promise<Array<{ walletIndex: number; walletAddress: string; privateKey: string; bnbAmount: string; tokenAddress: string | null; status: string; launchId: string | null; createdAt: any }>> {
+    try {
+      let query = `SELECT wallet_index as "walletIndex", wallet_address as "walletAddress", encrypted_private_key as "encryptedPrivateKey", bnb_amount as "bnbAmount", token_address as "tokenAddress", status, launch_id as "launchId", created_at as "createdAt" FROM sniper_wallet_keys WHERE chat_id = '${chatId.replace(/'/g, "''")}'`;
+      if (agentId) query += ` AND agent_id = '${agentId.replace(/'/g, "''")}'`;
+      query += ` ORDER BY created_at DESC, wallet_index ASC`;
+      const result = await db.execute(sql.raw(query));
+      return (result.rows || []).map((r: any) => ({
+        ...r,
+        privateKey: r.encryptedPrivateKey ? decryptPrivateKey(r.encryptedPrivateKey) : "",
+      }));
+    } catch (e: any) {
+      console.error("[Storage] Failed to get sniper wallets:", e.message);
+      return [];
+    }
+  }
+
+  async updateSniperWalletStatus(walletAddress: string, status: string, tokenAddress?: string, txHash?: string): Promise<void> {
+    try {
+      let query = `UPDATE sniper_wallet_keys SET status = '${status.replace(/'/g, "''")}'`;
+      if (tokenAddress) query += `, token_address = '${tokenAddress.replace(/'/g, "''")}'`;
+      if (txHash) query += `, tx_hash = '${txHash.replace(/'/g, "''")}'`;
+      query += ` WHERE wallet_address = '${walletAddress.toLowerCase().replace(/'/g, "''")}'`;
+      await db.execute(sql.raw(query));
+    } catch (e: any) {
+      console.error("[Storage] Failed to update sniper wallet:", e.message);
+    }
+  }
 }
 
 export const storage = new DatabaseStorage();

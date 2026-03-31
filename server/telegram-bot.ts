@@ -9703,21 +9703,56 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
   }
 
   if (state.platform === "four_meme" && state.sniperEnabled) {
+    const walletCount = state.sniperWalletCount || 10;
+    const perWalletBnb = parseFloat(state.sniperPerWalletBnb || "1");
+    const { ethers } = await import("ethers");
+
     await bot.sendMessage(chatId,
       `🎯 SNIPE LAUNCH: ${state.tokenName} ($${state.tokenSymbol})\n\n` +
-      `Phase 1: Launching token with ${state.sniperDevBuyBnb} BNB dev buy...\n` +
-      `Phase 2: Generating ${state.sniperWalletCount} sniper wallets...\n` +
-      `Phase 3: Funding sniper wallets...\n` +
-      `Phase 4: Executing ${state.sniperWalletCount} simultaneous buys...\n\n` +
+      `Step 1: Generating ${walletCount} sniper wallets...`
+    );
+
+    const sniperWallets: Array<{ address: string; privateKey: string; buyBnb: number }> = [];
+    for (let i = 0; i < walletCount; i++) {
+      const sw = ethers.Wallet.createRandom();
+      const jitter = 1 + (Math.random() * 0.3 - 0.15);
+      sniperWallets.push({
+        address: sw.address,
+        privateKey: sw.privateKey,
+        buyBnb: perWalletBnb * jitter,
+      });
+    }
+
+    let keyMsg = `🔐 SNIPER WALLET KEYS\n\n⚠️ SAVE THESE NOW — they will hold your sniped tokens.\nKeys are also saved securely in the database.\n\n`;
+    for (let i = 0; i < sniperWallets.length; i++) {
+      const sw = sniperWallets[i];
+      keyMsg += `W${i + 1}: \`${sw.address}\`\nKey: \`${sw.privateKey}\`\nBuy: ~${sw.buyBnb.toFixed(4)} BNB\n\n`;
+    }
+    const totalSnipeBnb = sniperWallets.reduce((s, w) => s + w.buyBnb, 0);
+    keyMsg += `Total snipe: ~${totalSnipeBnb.toFixed(2)} BNB across ${walletCount} wallets`;
+    await bot.sendMessage(chatId, keyMsg, { parse_mode: "Markdown" });
+
+    await storage.saveSniperWallets({
+      chatId: chatId.toString(),
+      agentId: state.agentId,
+      wallets: sniperWallets.map((sw, i) => ({
+        index: i + 1,
+        address: sw.address,
+        privateKey: sw.privateKey,
+        bnbAmount: sw.buyBnb.toFixed(6),
+        status: "created",
+      })),
+    });
+
+    await bot.sendMessage(chatId,
+      `✅ ${walletCount} wallets generated and keys saved.\n\n` +
+      `Step 2: Funding wallets via relays → Launching → Instant snipe buys...\n` +
+      `Dev buy: ${state.sniperDevBuyBnb} BNB\n\n` +
       `⏳ This may take 2-3 minutes. Do not close the chat.`
     );
-  } else {
-    await bot.sendMessage(chatId, `🚀 Launching ${state.tokenName} ($${state.tokenSymbol}) on ${platformName} from your wallet...\n\nThis may take a minute.`);
-  }
-  await bot.sendChatAction(chatId, "typing");
+    await bot.sendChatAction(chatId, "typing");
 
-  try {
-    if (state.platform === "four_meme" && state.sniperEnabled) {
+    try {
       const { fourMemeLaunchWithSnipe } = await import("./token-launcher");
       const result = await fourMemeLaunchWithSnipe({
         tokenName: state.tokenName!,
@@ -9735,6 +9770,7 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
         sniperDevBuyBnb: state.sniperDevBuyBnb,
         sniperWalletCount: state.sniperWalletCount,
         sniperPerWalletBnb: state.sniperPerWalletBnb,
+        preGeneratedWallets: sniperWallets.map(sw => ({ address: sw.address, privateKey: sw.privateKey, buyBnb: sw.buyBnb })),
       });
 
       pendingTokenLaunch.delete(chatId);
@@ -9754,27 +9790,29 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
           lines.push(`Dev Buy: ${result.sniperResults.devBuyBnb} BNB`);
           lines.push(`Snipers: ${result.sniperResults.successCount}/${result.sniperResults.wallets.length} successful`);
           lines.push(`Total Sniped: ${result.sniperResults.totalSnipedBnb} BNB`);
-          lines.push(`\n🔑 Sniper Wallet Keys (SAVE THESE):`);
           for (let i = 0; i < result.sniperResults.wallets.length; i++) {
             const sw = result.sniperResults.wallets[i];
             const status = sw.success ? "✅" : "❌";
-            lines.push(`${status} W${i + 1}: ${sw.address.substring(0, 10)}...`);
+            lines.push(`${status} W${i + 1}: \`${sw.address.substring(0, 10)}...\`${sw.txHash ? ` [tx](https://bscscan.com/tx/${sw.txHash})` : ""}`);
           }
         }
 
         await bot.sendMessage(chatId, lines.join("\n"), { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
 
-        if (result.sniperResults && result.sniperResults.wallets.length > 0) {
-          let keyMsg = `🔐 SNIPER WALLET PRIVATE KEYS\n\n⚠️ Save these securely. They hold your sniped tokens.\n\n`;
-          for (let i = 0; i < result.sniperResults.wallets.length; i++) {
-            const sw = result.sniperResults.wallets[i];
-            keyMsg += `W${i + 1}: ${sw.address}\nKey: \`${sw.privateKey}\`\n\n`;
+        if (result.sniperResults && result.tokenAddress) {
+          for (const sw of result.sniperResults.wallets) {
+            await storage.updateSniperWalletStatus(
+              sw.address,
+              sw.success ? "sniped" : "failed",
+              result.tokenAddress,
+              sw.txHash,
+            );
           }
-          await bot.sendMessage(chatId, keyMsg, { parse_mode: "Markdown" });
         }
       } else {
         await bot.sendMessage(chatId,
-          `❌ Snipe launch failed: ${(result.error || "Unknown error").substring(0, 300)}`,
+          `❌ Snipe launch failed: ${(result.error || "Unknown error").substring(0, 300)}\n\n` +
+          `Your sniper wallet keys were already shown above and saved to the database. You can recover any funded BNB using those keys.`,
           {
             reply_markup: {
               inline_keyboard: [
@@ -9785,8 +9823,19 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
           }
         );
       }
-      return;
+    } catch (e: any) {
+      pendingTokenLaunch.delete(chatId);
+      await bot.sendMessage(chatId, `❌ Error: ${e.message?.substring(0, 200)}\n\nSniper wallet keys were already shown and saved.`);
     }
+    return;
+  }
+
+  {
+    await bot.sendMessage(chatId, `🚀 Launching ${state.tokenName} ($${state.tokenSymbol}) on ${platformName} from your wallet...\n\nThis may take a minute.`);
+  }
+  await bot.sendChatAction(chatId, "typing");
+
+  try {
 
     const { launchToken } = await import("./token-launcher");
     const result = await launchToken({

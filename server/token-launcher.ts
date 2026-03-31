@@ -465,6 +465,7 @@ interface LaunchParams {
   sniperDevBuyBnb?: string;
   sniperWalletCount?: number;
   sniperPerWalletBnb?: string;
+  preGeneratedWallets?: Array<{ address: string; privateKey: string; buyBnb: number }>;
 }
 
 interface SniperWalletResult {
@@ -2400,19 +2401,34 @@ export async function fourMemeLaunchWithSnipe(
   log(`[Sniper] Strategy: Fund all snipers FIRST, then launch + instant buys`, "token-launcher");
   log(`[Sniper] Config: ${walletCount} wallets × ${perWalletBnb} BNB, dev buy ${devBuyBnb} BNB`, "token-launcher");
 
-  log(`[Sniper] Phase 1: Generating ${walletCount} sniper wallets...`, "token-launcher");
+  log(`[Sniper] Phase 1: Preparing ${walletCount} sniper wallets...`, "token-launcher");
   const sniperWallets: { address: string; privateKey: string; wallet: ethers.Wallet; fundBnb: number; buyBnb: number }[] = [];
-  for (let i = 0; i < walletCount; i++) {
-    const sw = ethers.Wallet.createRandom().connect(provider);
-    const buyAmt = randomJitter(perWalletBnb, 0.15);
-    const fundAmt = buyAmt + randomJitter(0.006, 0.30);
-    sniperWallets.push({
-      address: sw.address,
-      privateKey: sw.privateKey,
-      wallet: sw,
-      fundBnb: fundAmt,
-      buyBnb: buyAmt,
-    });
+  if (params.preGeneratedWallets && params.preGeneratedWallets.length > 0) {
+    log(`[Sniper] Using ${params.preGeneratedWallets.length} pre-generated wallets`, "token-launcher");
+    for (const pg of params.preGeneratedWallets) {
+      const sw = new ethers.Wallet(pg.privateKey, provider);
+      const fundAmt = pg.buyBnb + randomJitter(0.006, 0.30);
+      sniperWallets.push({
+        address: pg.address,
+        privateKey: pg.privateKey,
+        wallet: sw,
+        fundBnb: fundAmt,
+        buyBnb: pg.buyBnb,
+      });
+    }
+  } else {
+    for (let i = 0; i < walletCount; i++) {
+      const sw = ethers.Wallet.createRandom().connect(provider);
+      const buyAmt = randomJitter(perWalletBnb, 0.15);
+      const fundAmt = buyAmt + randomJitter(0.006, 0.30);
+      sniperWallets.push({
+        address: sw.address,
+        privateKey: sw.privateKey,
+        wallet: sw,
+        fundBnb: fundAmt,
+        buyBnb: buyAmt,
+      });
+    }
   }
 
   const RELAY_COUNT = 3;
