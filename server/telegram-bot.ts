@@ -6322,18 +6322,22 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
             try {
               const { fourMemeUploadImageBuffer } = await import("./token-launcher");
-              const uploadResult = await fourMemeUploadImageBuffer(imageBuffer);
-              if (uploadResult && typeof uploadResult === "string" && uploadResult.startsWith("http")) {
+              const userWallet = getLinkedWallet(chatId);
+              let userPk: string | undefined;
+              if (userWallet) {
+                const pk = await storage.getPrivateKeyByWalletAddress(userWallet);
+                if (pk) userPk = pk;
+              }
+              const uploadResult = await fourMemeUploadImageBuffer(imageBuffer, userPk);
+              if (uploadResult && uploadResult.startsWith("http")) {
                 logoState.imageUrl = uploadResult;
                 await bot.sendMessage(chatId, `✅ Logo uploaded successfully! (${ext.toUpperCase()} format)`);
-              } else if (uploadResult && typeof uploadResult === "string") {
-                await bot.sendMessage(chatId, `⚠️ Upload debug: ${uploadResult.substring(0, 200)}\nContinuing with auto-generated logo.`);
               } else {
-                await bot.sendMessage(chatId, `⚠️ Logo upload returned empty. Continuing with auto-generated logo.`);
+                await bot.sendMessage(chatId, `⚠️ Logo upload failed. Continuing with auto-generated logo.`);
               }
             } catch (uploadErr: any) {
-              console.error("[TelegramBot] Logo upload error:", uploadErr.message, uploadErr.stack?.substring(0, 300));
-              await bot.sendMessage(chatId, `⚠️ Logo upload error: ${uploadErr.message?.substring(0, 80)}. Continuing with auto-generated logo.`);
+              console.error("[TelegramBot] Logo upload error:", uploadErr.message);
+              await bot.sendMessage(chatId, `⚠️ Logo upload error. Continuing with auto-generated logo.`);
             }
           }
         }

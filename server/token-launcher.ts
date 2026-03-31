@@ -679,45 +679,29 @@ async function fourMemeLogin(wallet: ethers.Wallet): Promise<string> {
   return loginJson.data;
 }
 
-export async function fourMemeUploadImageBuffer(pngBuffer: Buffer): Promise<string | null> {
-  const diag: string[] = [];
+export async function fourMemeUploadImageBuffer(pngBuffer: Buffer, userPrivateKey?: string): Promise<string | null> {
   try {
-    diag.push(`buf=${pngBuffer.length}b`);
-    let provider: any;
-    try {
-      provider = getBscProvider();
-      diag.push("provider=ok");
-    } catch (pe: any) {
-      diag.push(`provider=ERR:${pe.message?.substring(0, 40)}`);
-      return `DEBUG:${diag.join("|")}`;
+    const provider = getBscProvider();
+    let wallet: ethers.Wallet | null = null;
+    if (userPrivateKey) {
+      wallet = new ethers.Wallet(userPrivateKey, provider);
+    } else {
+      wallet = getDeployerWallet(provider);
     }
-    const wallet = getDeployerWallet(provider);
     if (!wallet) {
-      diag.push("wallet=none");
-      const pub = await fourMemeUploadImagePublic(pngBuffer);
-      if (pub) return pub;
-      return `DEBUG:${diag.join("|")}|public=failed`;
+      log("[TokenLauncher] No wallet available for four.meme image upload", "token-launcher");
+      return null;
     }
-    diag.push(`wallet=${wallet.address.substring(0, 8)}`);
-    let accessToken: string;
-    try {
-      accessToken = await fourMemeLogin(wallet);
-      diag.push("login=ok");
-    } catch (loginErr: any) {
-      diag.push(`login=ERR:${loginErr.message?.substring(0, 60)}`);
-      const pub = await fourMemeUploadImagePublic(pngBuffer);
-      if (pub) return pub;
-      return `DEBUG:${diag.join("|")}|public=failed`;
-    }
+    log(`[TokenLauncher] Logging into four.meme for image upload with ${wallet.address.substring(0, 10)}...`, "token-launcher");
+    const accessToken = await fourMemeLogin(wallet);
+    log(`[TokenLauncher] Login OK, uploading image (${pngBuffer.length} bytes)...`, "token-launcher");
     const result = await fourMemeUploadImage(pngBuffer, accessToken);
     if (result) return result;
-    diag.push("auth_upload=null");
-    const pub = await fourMemeUploadImagePublic(pngBuffer);
-    if (pub) return pub;
-    return `DEBUG:${diag.join("|")}|public=failed`;
+    log(`[TokenLauncher] Authenticated upload returned null`, "token-launcher");
+    return null;
   } catch (e: any) {
-    diag.push(`outer=ERR:${e.message?.substring(0, 60)}`);
-    return `DEBUG:${diag.join("|")}`;
+    log(`[TokenLauncher] fourMemeUploadImageBuffer failed: ${e.message?.substring(0, 200)}`, "token-launcher");
+    return null;
   }
 }
 
