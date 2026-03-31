@@ -1747,11 +1747,11 @@ async function handleReferral(chatId: number): Promise<void> {
 }
 
 const REWARD_AMOUNTS = {
-  AGENT_CREATION: "1000",
-  REFERRAL: "5000",
-  TOKEN_LAUNCH: "2500",
-  FIRST_AGENT_BONUS: "500",
-  FIRST_LAUNCH_BONUS: "1000",
+  AGENT_CREATION: "500",
+  REFERRAL: "250",
+  TOKEN_LAUNCH: "1000",
+  FIRST_AGENT_BONUS: "0",
+  FIRST_LAUNCH_BONUS: "0",
 };
 
 const QUEST_CONFIG = {
