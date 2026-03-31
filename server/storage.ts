@@ -2655,16 +2655,25 @@ export class DatabaseStorage implements IStorage {
       const [created] = await db.insert(tokenLaunches).values(launch).returning();
       return created;
     } catch (e: any) {
-      if (e.message?.includes("agent_id") || e.message?.includes("creator_wallet") || e.message?.includes("image_url") || e.message?.includes("launch_url") || e.message?.includes("initial_liquidity") || e.message?.includes("error_message") || e.message?.includes("metadata")) {
+      if (e.message?.includes("column") && e.message?.includes("token_launches")) {
         console.warn("[Storage] token_launches missing columns, attempting ALTER then retry...");
         const alters = [
           `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "agent_id" VARCHAR`,
           `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "creator_wallet" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "chain_id" INTEGER DEFAULT 56`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "platform" TEXT DEFAULT 'four_meme'`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "token_name" TEXT DEFAULT ''`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "token_symbol" TEXT DEFAULT ''`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "token_description" TEXT`,
           `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "image_url" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "token_address" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "tx_hash" TEXT`,
           `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "launch_url" TEXT`,
           `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "initial_liquidity_bnb" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 'pending'`,
           `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "error_message" TEXT`,
           `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "metadata" TEXT`,
+          `ALTER TABLE "token_launches" ADD COLUMN IF NOT EXISTS "created_at" TIMESTAMP DEFAULT now()`,
         ];
         for (const a of alters) {
           try { await db.execute(sql.raw(a)); } catch {}
