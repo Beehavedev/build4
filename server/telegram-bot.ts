@@ -131,7 +131,7 @@ const walletsWithKey = new Set<string>();
 
 interface AgentCreationState { step: "name" | "bio" | "model"; name?: string; bio?: string; mandatory?: boolean }
 interface TaskState { step: "describe"; agentId: string; taskType: string; agentName: string }
-interface TokenLaunchState { step: "platform" | "name" | "symbol" | "description" | "logo" | "links" | "tax" | "bankr_chain" | "stealth_buy" | "raydium_buy"; agentId: string; agentName: string; platform?: string; tokenName?: string; tokenSymbol?: string; tokenDescription?: string; imageUrl?: string; webUrl?: string; twitterUrl?: string; telegramUrl?: string; taxRate?: number; bankrChain?: "base" | "solana"; stealthBuyEth?: string; stealthBuyPercent?: number; initialBuySol?: string }
+interface TokenLaunchState { step: "platform" | "name" | "symbol" | "description" | "logo" | "links" | "tax" | "bankr_chain" | "stealth_buy" | "raydium_buy" | "snipe_config"; agentId: string; agentName: string; platform?: string; tokenName?: string; tokenSymbol?: string; tokenDescription?: string; imageUrl?: string; webUrl?: string; twitterUrl?: string; telegramUrl?: string; taxRate?: number; bankrChain?: "base" | "solana"; stealthBuyEth?: string; stealthBuyPercent?: number; initialBuySol?: string; sniperEnabled?: boolean; sniperDevBuyBnb?: string; sniperWalletCount?: number; sniperPerWalletBnb?: string }
 interface FourMemeBuyState { step: "token" | "amount" | "confirm"; tokenAddress?: string; bnbAmount?: string; estimate?: any }
 interface FourMemeSellState { step: "token" | "amount" | "confirm"; tokenAddress?: string; tokenAmount?: string; tokenSymbol?: string; estimate?: any }
 
@@ -5820,6 +5820,67 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data.startsWith("foursnipe:")) {
+    const agentId = data.split(":")[1];
+    const state = pendingTokenLaunch.get(chatId);
+    if (!state || state.agentId !== agentId) return;
+
+    state.step = "snipe_config";
+    pendingTokenLaunch.set(chatId, state);
+
+    await bot.sendMessage(chatId,
+      `🎯 SNIPE LAUNCH SETUP\n\n` +
+      `This will:\n` +
+      `1️⃣ Pre-buy 70% of the bonding curve with your dev wallet (~18 BNB)\n` +
+      `2️⃣ Generate 10 fresh wallets\n` +
+      `3️⃣ Fund each wallet and buy 1% of the curve (~0.26 BNB each)\n\n` +
+      `Total needed: ~21 BNB\n\n` +
+      `Choose a preset or customize:`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🎯 70% Dev + 10% Snipe (default)", callback_data: `snipecfg:${agentId}:default` }],
+            [
+              { text: "50% Dev + 10% Snipe", callback_data: `snipecfg:${agentId}:50` },
+              { text: "80% Dev + 10% Snipe", callback_data: `snipecfg:${agentId}:80` },
+            ],
+            [{ text: "Skip snipe launch", callback_data: `snipecfg:${agentId}:skip` }],
+          ]
+        }
+      }
+    );
+    return;
+  }
+
+  if (data.startsWith("snipecfg:")) {
+    const parts = data.split(":");
+    const agentId = parts[1];
+    const preset = parts[2];
+    const state = pendingTokenLaunch.get(chatId);
+    if (!state || state.agentId !== agentId) return;
+
+    if (preset === "skip") {
+      state.sniperEnabled = false;
+      state.sniperDevBuyBnb = undefined;
+      state.sniperWalletCount = undefined;
+      state.sniperPerWalletBnb = undefined;
+    } else {
+      state.sniperEnabled = true;
+      state.sniperWalletCount = 10;
+      state.sniperPerWalletBnb = "0.26";
+      if (preset === "50") {
+        state.sniperDevBuyBnb = "13";
+      } else if (preset === "80") {
+        state.sniperDevBuyBnb = "20.8";
+      } else {
+        state.sniperDevBuyBnb = "18";
+      }
+    }
+
+    showLaunchPreview(chatId, state);
+    return;
+  }
+
   if (data.startsWith("launchconfirm:")) {
     const agentId = data.split(":")[1];
     const state = pendingTokenLaunch.get(chatId);
@@ -9148,6 +9209,11 @@ async function handleTokenLaunchFlow(chatId: number, text: string): Promise<void
       }
     }
 
+    if (state.platform === "four_meme") {
+      showLaunchPreview(chatId, state);
+      return;
+    }
+
     if (state.platform === "raydium") {
       state.step = "raydium_buy";
       pendingTokenLaunch.set(chatId, state);
@@ -9233,6 +9299,15 @@ async function showLaunchPreview(chatId: number, state: TokenLaunchState) {
   if (state.platform === "bankr" && (state.stealthBuyEth || state.stealthBuyPercent)) {
     preview += `\n🥷 Stealth Buy: ${state.stealthBuyEth ? state.stealthBuyEth + " ETH" : state.stealthBuyPercent + "% supply"} (via Bankr)\n`;
   }
+  if (state.platform === "four_meme" && state.sniperEnabled) {
+    const totalSnipeBnb = (parseFloat(state.sniperPerWalletBnb || "0.26") * (state.sniperWalletCount || 10)).toFixed(2);
+    const totalBnb = (parseFloat(state.sniperDevBuyBnb || "18") + parseFloat(totalSnipeBnb) + 0.1).toFixed(2);
+    preview += `\n🎯 Snipe Launch: ENABLED\n`;
+    preview += `  Dev Buy: ${state.sniperDevBuyBnb} BNB (curve pre-buy)\n`;
+    preview += `  Snipers: ${state.sniperWalletCount} wallets × ${state.sniperPerWalletBnb} BNB\n`;
+    preview += `  Total Snipe: ${totalSnipeBnb} BNB\n`;
+    preview += `  Total BNB needed: ~${totalBnb} BNB\n`;
+  }
   preview += `\nReady to launch?`;
 
   pendingTokenLaunch.set(chatId, state);
@@ -9240,6 +9315,9 @@ async function showLaunchPreview(chatId: number, state: TokenLaunchState) {
   const buttons: any[][] = [];
   if (state.platform === "bankr") {
     buttons.push([{ text: "🥷 Add Stealth Buy", callback_data: `bankrstealth:${state.agentId}` }]);
+  }
+  if (state.platform === "four_meme") {
+    buttons.push([{ text: state.sniperEnabled ? "🎯 Modify Snipe Config" : "🎯 Add Snipe Launch", callback_data: `foursnipe:${state.agentId}` }]);
   }
   buttons.push([{ text: "🚀 Confirm & Launch", callback_data: `launchconfirm:${state.agentId}` }]);
   buttons.push([{ text: "Cancel", callback_data: `launchcancel:${state.agentId}` }]);
@@ -9503,10 +9581,92 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
     }
   }
 
-  await bot.sendMessage(chatId, `🚀 Launching ${state.tokenName} ($${state.tokenSymbol}) on ${platformName} from your wallet...\n\nThis may take a minute.`);
+  if (state.platform === "four_meme" && state.sniperEnabled) {
+    await bot.sendMessage(chatId,
+      `🎯 SNIPE LAUNCH: ${state.tokenName} ($${state.tokenSymbol})\n\n` +
+      `Phase 1: Launching token with ${state.sniperDevBuyBnb} BNB dev buy...\n` +
+      `Phase 2: Generating ${state.sniperWalletCount} sniper wallets...\n` +
+      `Phase 3: Funding sniper wallets...\n` +
+      `Phase 4: Executing ${state.sniperWalletCount} simultaneous buys...\n\n` +
+      `⏳ This may take 2-3 minutes. Do not close the chat.`
+    );
+  } else {
+    await bot.sendMessage(chatId, `🚀 Launching ${state.tokenName} ($${state.tokenSymbol}) on ${platformName} from your wallet...\n\nThis may take a minute.`);
+  }
   await bot.sendChatAction(chatId, "typing");
 
   try {
+    if (state.platform === "four_meme" && state.sniperEnabled) {
+      const { fourMemeLaunchWithSnipe } = await import("./token-launcher");
+      const result = await fourMemeLaunchWithSnipe({
+        tokenName: state.tokenName!,
+        tokenSymbol: state.tokenSymbol!,
+        tokenDescription: state.tokenDescription || `${state.tokenName} — launched by ${state.agentName} on BUILD4`,
+        imageUrl: state.imageUrl,
+        platform: "four_meme",
+        agentId: state.agentId,
+        creatorWallet: wallet,
+        userPrivateKey: userPk,
+        webUrl: state.webUrl,
+        twitterUrl: state.twitterUrl,
+        telegramUrl: state.telegramUrl,
+        sniperEnabled: true,
+        sniperDevBuyBnb: state.sniperDevBuyBnb,
+        sniperWalletCount: state.sniperWalletCount,
+        sniperPerWalletBnb: state.sniperPerWalletBnb,
+      });
+
+      pendingTokenLaunch.delete(chatId);
+
+      if (result.success) {
+        const lines = [
+          `🎯 SNIPE LAUNCH COMPLETE!\n`,
+          `Token: ${state.tokenName} ($${state.tokenSymbol})`,
+          `Platform: Four.meme (BNB Chain)`,
+        ];
+        if (result.tokenAddress) lines.push(`Address: \`${result.tokenAddress}\``);
+        if (result.txHash) lines.push(`Launch TX: https://bscscan.com/tx/${result.txHash}`);
+        if (result.launchUrl) lines.push(`View: ${result.launchUrl}`);
+
+        if (result.sniperResults) {
+          lines.push(`\n🎯 SNIPE RESULTS:`);
+          lines.push(`Dev Buy: ${result.sniperResults.devBuyBnb} BNB`);
+          lines.push(`Snipers: ${result.sniperResults.successCount}/${result.sniperResults.wallets.length} successful`);
+          lines.push(`Total Sniped: ${result.sniperResults.totalSnipedBnb} BNB`);
+          lines.push(`\n🔑 Sniper Wallet Keys (SAVE THESE):`);
+          for (let i = 0; i < result.sniperResults.wallets.length; i++) {
+            const sw = result.sniperResults.wallets[i];
+            const status = sw.success ? "✅" : "❌";
+            lines.push(`${status} W${i + 1}: ${sw.address.substring(0, 10)}...`);
+          }
+        }
+
+        await bot.sendMessage(chatId, lines.join("\n"), { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
+
+        if (result.sniperResults && result.sniperResults.wallets.length > 0) {
+          let keyMsg = `🔐 SNIPER WALLET PRIVATE KEYS\n\n⚠️ Save these securely. They hold your sniped tokens.\n\n`;
+          for (let i = 0; i < result.sniperResults.wallets.length; i++) {
+            const sw = result.sniperResults.wallets[i];
+            keyMsg += `W${i + 1}: ${sw.address}\nKey: \`${sw.privateKey}\`\n\n`;
+          }
+          await bot.sendMessage(chatId, keyMsg, { parse_mode: "Markdown" });
+        }
+      } else {
+        await bot.sendMessage(chatId,
+          `❌ Snipe launch failed: ${(result.error || "Unknown error").substring(0, 300)}`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "Try again", callback_data: "action:launchtoken" }],
+                [{ text: "Menu", callback_data: "action:menu" }],
+              ]
+            }
+          }
+        );
+      }
+      return;
+    }
+
     const { launchToken } = await import("./token-launcher");
     const result = await launchToken({
       tokenName: state.tokenName!,
