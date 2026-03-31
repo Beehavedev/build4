@@ -73,3 +73,6 @@ ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "erc8004_tx_hash" TEXT;
 ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "erc8004_token_id" TEXT;
 ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "erc8004_chain" TEXT;
 UPDATE "agents" SET erc8004_registered = false WHERE erc8004_registered = true AND (erc8004_tx_hash IS NULL OR erc8004_tx_hash = '') AND (erc8004_chain IS NULL OR erc8004_chain = '');
+ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "owner_telegram_chat_id" TEXT;
+ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "preferred_model" TEXT;
+ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "updated_at" TIMESTAMP DEFAULT now();

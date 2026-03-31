@@ -538,7 +538,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAgentsByTelegramChatId(chatId: string): Promise<Agent[]> {
-    return db.select().from(agents).where(eq(agents.ownerTelegramChatId, chatId)).orderBy(agents.createdAt);
+    try {
+      return await db.select().from(agents).where(eq(agents.ownerTelegramChatId, chatId)).orderBy(agents.createdAt);
+    } catch (e: any) {
+      console.error("[Storage] getAgentsByTelegramChatId error:", e.message);
+      return [];
+    }
   }
 
   async getUnclaimedAgents(): Promise<Agent[]> {
@@ -558,7 +563,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateAgent(id: string, data: Partial<{ ownerTelegramChatId: string; creatorWallet: string }>): Promise<void> {
-    await db.update(agents).set(data).where(eq(agents.id, id));
+    try {
+      await db.update(agents).set(data).where(eq(agents.id, id));
+    } catch (e: any) {
+      console.error("[Storage] updateAgent error:", e.message);
+    }
   }
 
   async deleteAgent(id: string): Promise<void> {
