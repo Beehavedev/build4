@@ -904,7 +904,10 @@ async function checkSubscription(chatId: number): Promise<{ allowed: boolean; st
         const newSub = await storage.createBotSubscription(wallet, chatId.toString());
         const daysLeft = TRIAL_DAYS;
         subCache.set(chatId, { status: "trial", expiresAt: newSub.expiresAt, checkedAt: Date.now() });
-        const existingAgents = await storage.getAgentsByWallet(wallet);
+        let existingAgents = await storage.getAgentsByWallet(wallet);
+        if (existingAgents.length === 0) {
+          existingAgents = await storage.getAgentsByTelegramChatId(chatId.toString());
+        }
         if (existingAgents.length === 0) {
           pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
           if (bot) {
@@ -1545,7 +1548,10 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
       { parse_mode: "Markdown" }
     );
 
-    const existingAgents = await storage.getAgentsByWallet(wallet);
+    let existingAgents = await storage.getAgentsByWallet(wallet);
+    if (existingAgents.length === 0) {
+      existingAgents = await storage.getAgentsByTelegramChatId(chatId.toString());
+    }
     if (existingAgents.length === 0) {
       pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
       await bot.sendMessage(chatId,
@@ -8490,7 +8496,10 @@ async function ensureUserHasAgent(chatId: number): Promise<boolean> {
   const wallet = getLinkedWallet(chatId);
   if (!wallet) return false;
   try {
-    const agents = await storage.getAgentsByWallet(wallet);
+    let agents = await storage.getAgentsByWallet(wallet);
+    if (agents.length === 0) {
+      agents = await storage.getAgentsByTelegramChatId(chatId.toString());
+    }
     return agents.length > 0;
   } catch {
     return true;
@@ -8501,7 +8510,10 @@ async function getUserAgent(chatId: number): Promise<{ id: string; name: string;
   const wallet = getLinkedWallet(chatId);
   if (!wallet) return null;
   try {
-    const agents = await storage.getAgentsByWallet(wallet);
+    let agents = await storage.getAgentsByWallet(wallet);
+    if (agents.length === 0) {
+      agents = await storage.getAgentsByTelegramChatId(chatId.toString());
+    }
     return agents[0] || null;
   } catch {
     return null;
