@@ -904,21 +904,22 @@ async function checkSubscription(chatId: number): Promise<{ allowed: boolean; st
         const newSub = await storage.createBotSubscription(wallet, chatId.toString());
         const daysLeft = TRIAL_DAYS;
         subCache.set(chatId, { status: "trial", expiresAt: newSub.expiresAt, checkedAt: Date.now() });
-        let existingAgents = await storage.getAgentsByWallet(wallet);
-        if (existingAgents.length === 0) {
-          existingAgents = await storage.getAgentsByTelegramChatId(chatId.toString());
-        }
-        if (existingAgents.length === 0) {
-          pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
-          if (bot) {
-            await bot.sendMessage(chatId,
-              `🎉 *Welcome to BUILD4!* Your 4-day free trial is active.\n\n` +
-              `🧠 *First, let's create your AI Agent*\n\n` +
-              `Your agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\n` +
-              `What would you like to name your agent? _(1-50 characters)_`,
-              { parse_mode: "Markdown" }
-            );
+        try {
+          const hasAgent = await ensureUserHasAgent(chatId);
+          if (!hasAgent) {
+            pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
+            if (bot) {
+              await bot.sendMessage(chatId,
+                `🎉 *Welcome to BUILD4!* Your 4-day free trial is active.\n\n` +
+                `🧠 *First, let's create your AI Agent*\n\n` +
+                `Your agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\n` +
+                `What would you like to name your agent? _(1-50 characters)_`,
+                { parse_mode: "Markdown" }
+              );
+            }
           }
+        } catch (agentErr: any) {
+          console.error("[Subscription] Agent check failed (non-blocking):", agentErr.message);
         }
         return { allowed: true, status: "trial", daysLeft };
       } catch (e: any) {
@@ -1548,19 +1549,20 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
       { parse_mode: "Markdown" }
     );
 
-    let existingAgents = await storage.getAgentsByWallet(wallet);
-    if (existingAgents.length === 0) {
-      existingAgents = await storage.getAgentsByTelegramChatId(chatId.toString());
-    }
-    if (existingAgents.length === 0) {
-      pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
-      await bot.sendMessage(chatId,
-        `🧠 *Now let's set up your AI Agent*\n\n` +
-        `Your agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\n` +
-        `Agent creation is *included free* with your subscription.\n\n` +
-        `What would you like to name your agent? _(1-50 characters)_`,
-        { parse_mode: "Markdown" }
-      );
+    try {
+      const hasAgent = await ensureUserHasAgent(chatId);
+      if (!hasAgent) {
+        pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
+        await bot.sendMessage(chatId,
+          `🧠 *Now let's set up your AI Agent*\n\n` +
+          `Your agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\n` +
+          `Agent creation is *included free* with your subscription.\n\n` +
+          `What would you like to name your agent? _(1-50 characters)_`,
+          { parse_mode: "Markdown" }
+        );
+      }
+    } catch (agentErr: any) {
+      console.error("[Payment] Agent check failed (non-blocking):", agentErr.message);
     }
 
     try {
@@ -8496,14 +8498,18 @@ async function ensureUserHasAgent(chatId: number): Promise<boolean> {
   const wallet = getLinkedWallet(chatId);
   if (!wallet) return false;
   try {
-    let agents = await storage.getAgentsByWallet(wallet);
-    if (agents.length === 0) {
-      agents = await storage.getAgentsByTelegramChatId(chatId.toString());
-    }
-    return agents.length > 0;
-  } catch {
-    return true;
+    const agents = await storage.getAgentsByWallet(wallet);
+    if (agents.length > 0) return true;
+  } catch (e: any) {
+    console.error("[ensureUserHasAgent] getAgentsByWallet failed:", e.message);
   }
+  try {
+    const agents = await storage.getAgentsByTelegramChatId(chatId.toString());
+    if (agents.length > 0) return true;
+  } catch (e: any) {
+    console.error("[ensureUserHasAgent] getAgentsByTelegramChatId failed:", e.message);
+  }
+  return false;
 }
 
 async function getUserAgent(chatId: number): Promise<{ id: string; name: string; bio: string | null; modelType: string } | null> {
