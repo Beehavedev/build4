@@ -2338,36 +2338,86 @@ export async function fourMemeLaunchWithSnipe(
     });
   }
 
-  log(`[Sniper] Phase 3: Funding ${walletCount} wallets with randomized amounts (anti-bundle)...`, "token-launcher");
+  const RELAY_COUNT = 3;
+  log(`[Sniper] Phase 3: Creating ${RELAY_COUNT} relay wallets to break on-chain trace...`, "token-launcher");
 
-  const fundOrder = shuffleArray(sniperWallets.map((_, i) => i));
-  const fundResults: boolean[] = new Array(walletCount).fill(false);
-  let currentNonce = await provider.getTransactionCount(wallet.address);
+  const relayWallets: { wallet: ethers.Wallet; assignedSnipers: number[] }[] = [];
+  for (let i = 0; i < RELAY_COUNT; i++) {
+    relayWallets.push({ wallet: ethers.Wallet.createRandom().connect(provider), assignedSnipers: [] });
+  }
 
-  for (const idx of fundOrder) {
-    const sw = sniperWallets[idx];
+  const shuffledSniperIdxs = shuffleArray(sniperWallets.map((_, i) => i));
+  for (let i = 0; i < shuffledSniperIdxs.length; i++) {
+    relayWallets[i % RELAY_COUNT].assignedSnipers.push(shuffledSniperIdxs[i]);
+  }
+
+  let devNonce = await provider.getTransactionCount(wallet.address);
+  const relayFundResults: boolean[] = new Array(RELAY_COUNT).fill(false);
+
+  const relayFundOrder = shuffleArray(relayWallets.map((_, i) => i));
+  for (const ri of relayFundOrder) {
+    const relay = relayWallets[ri];
+    const relayTotal = relay.assignedSnipers.reduce((sum, si) => sum + sniperWallets[si].fundBnb, 0);
+    const relayFundAmt = relayTotal + randomJitter(0.003, 0.30) * relay.assignedSnipers.length;
     try {
-      const fundWei = ethers.parseEther(sw.fundBnb.toFixed(8));
       const tx = await wallet!.sendTransaction({
-        to: sw.address,
-        value: fundWei,
-        nonce: currentNonce,
+        to: relay.wallet.address,
+        value: ethers.parseEther(relayFundAmt.toFixed(8)),
+        nonce: devNonce,
         gasLimit: 21000,
       });
-      currentNonce++;
+      devNonce++;
       await tx.wait();
-      fundResults[idx] = true;
-      log(`[Sniper] Funded W${idx + 1}: ${sw.address.substring(0, 10)}... (${sw.fundBnb.toFixed(5)} BNB)`, "token-launcher");
+      relayFundResults[ri] = true;
+      log(`[Sniper] Dev → Relay ${ri + 1}: ${relay.wallet.address.substring(0, 10)}... (${relayFundAmt.toFixed(5)} BNB for ${relay.assignedSnipers.length} snipers)`, "token-launcher");
 
-      const fundDelay = Math.floor(randomJitter(3000, 0.50));
-      await new Promise(r => setTimeout(r, fundDelay));
+      const relayDelay = Math.floor(randomJitter(4000, 0.50));
+      await new Promise(r => setTimeout(r, relayDelay));
     } catch (e: any) {
-      log(`[Sniper] Failed to fund W${idx + 1}: ${e.message?.substring(0, 100)}`, "token-launcher");
+      log(`[Sniper] Failed to fund Relay ${ri + 1}: ${e.message?.substring(0, 100)}`, "token-launcher");
     }
   }
 
+  log(`[Sniper] Phase 3b: Relays funding sniper wallets...`, "token-launcher");
+
+  const fundResults: boolean[] = new Array(walletCount).fill(false);
+
+  for (let ri = 0; ri < RELAY_COUNT; ri++) {
+    if (!relayFundResults[ri]) {
+      log(`[Sniper] Relay ${ri + 1} not funded, skipping its snipers`, "token-launcher");
+      continue;
+    }
+    const relay = relayWallets[ri];
+    let relayNonce = await provider.getTransactionCount(relay.wallet.address);
+    const assignOrder = shuffleArray(relay.assignedSnipers);
+
+    for (const si of assignOrder) {
+      const sw = sniperWallets[si];
+      try {
+        const tx = await relay.wallet.sendTransaction({
+          to: sw.address,
+          value: ethers.parseEther(sw.fundBnb.toFixed(8)),
+          nonce: relayNonce,
+          gasLimit: 21000,
+        });
+        relayNonce++;
+        await tx.wait();
+        fundResults[si] = true;
+        log(`[Sniper] Relay ${ri + 1} → W${si + 1}: ${sw.address.substring(0, 10)}... (${sw.fundBnb.toFixed(5)} BNB)`, "token-launcher");
+
+        const hopDelay = Math.floor(randomJitter(2500, 0.50));
+        await new Promise(r => setTimeout(r, hopDelay));
+      } catch (e: any) {
+        log(`[Sniper] Relay ${ri + 1} failed to fund W${si + 1}: ${e.message?.substring(0, 100)}`, "token-launcher");
+      }
+    }
+
+    const interRelayDelay = Math.floor(randomJitter(5000, 0.40));
+    await new Promise(r => setTimeout(r, interRelayDelay));
+  }
+
   const fundedCount = fundResults.filter(Boolean).length;
-  log(`[Sniper] Funded ${fundedCount}/${walletCount} wallets. Phase 4: Staggered snipe buys...`, "token-launcher");
+  log(`[Sniper] Funded ${fundedCount}/${walletCount} snipers via ${RELAY_COUNT} relays. Phase 4: Staggered snipe buys...`, "token-launcher");
 
   const sniperResults: SniperWalletResult[] = new Array(walletCount);
 
