@@ -247,6 +247,8 @@ export interface IStorage {
   getPlatformRevenueSummary(): Promise<{ totalRevenue: string; byFeeType: Record<string, string>; totalTransactions: number; onchainVerified: number; onchainRevenue: string }>;
 
   getAgentsByWallet(walletAddress: string): Promise<Agent[]>;
+  getAgentsByTelegramChatId(chatId: string): Promise<Agent[]>;
+  updateAgent(id: string, data: Partial<{ ownerTelegramChatId: string; creatorWallet: string }>): Promise<void>;
   getUnclaimedAgents(): Promise<Agent[]>;
   createFullAgent(name: string, bio: string | undefined, modelType: string, initialDeposit: string, onchainTxHash?: string, onchainChainId?: number, creatorWallet?: string): Promise<{ agent: Agent; wallet: AgentWallet }>;
 
@@ -535,6 +537,10 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(agents).where(eq(agents.creatorWallet, walletAddress.toLowerCase())).orderBy(agents.createdAt);
   }
 
+  async getAgentsByTelegramChatId(chatId: string): Promise<Agent[]> {
+    return db.select().from(agents).where(eq(agents.ownerTelegramChatId, chatId)).orderBy(agents.createdAt);
+  }
+
   async getUnclaimedAgents(): Promise<Agent[]> {
     return db.select().from(agents).where(sql`${agents.creatorWallet} IS NULL`).orderBy(agents.createdAt);
   }
@@ -549,6 +555,10 @@ export class DatabaseStorage implements IStorage {
       }
       throw err;
     }
+  }
+
+  async updateAgent(id: string, data: Partial<{ ownerTelegramChatId: string; creatorWallet: string }>): Promise<void> {
+    await db.update(agents).set(data).where(eq(agents.id, id));
   }
 
   async deleteAgent(id: string): Promise<void> {

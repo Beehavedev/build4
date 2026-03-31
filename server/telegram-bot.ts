@@ -971,11 +971,15 @@ function subscriptionExpiredMessage(): { text: string; markup: TelegramBot.Inlin
 const agentCache = new Map<string, { agents: any[]; ts: number }>();
 const AGENT_CACHE_TTL = 15_000;
 
-async function getMyAgents(wallet: string) {
-  const cached = agentCache.get(wallet);
+async function getMyAgents(wallet: string, chatId?: number) {
+  const cacheKey = chatId ? `${wallet}:${chatId}` : wallet;
+  const cached = agentCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < AGENT_CACHE_TTL) return cached.agents;
-  const agents = await storage.getAgentsByWallet(wallet);
-  agentCache.set(wallet, { agents, ts: Date.now() });
+  let agents = await storage.getAgentsByWallet(wallet);
+  if (agents.length === 0 && chatId) {
+    agents = await storage.getAgentsByTelegramChatId(chatId.toString());
+  }
+  agentCache.set(cacheKey, { agents, ts: Date.now() });
   return agents;
 }
 
@@ -8538,6 +8542,11 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
     const result = await storage.createFullAgent(name, bio, model, initialDeposit, undefined, undefined, wallet);
     const agentId = result.agent.id;
 
+    try {
+      await storage.updateAgent(agentId, { ownerTelegramChatId: chatId.toString() });
+    } catch {}
+
+
     let msg = `✅ *Agent Created — FREE!*\n\n` +
       `🤖 *${result.agent.name}*\n` +
       `Model: ${shortModel(model)}\n` +
@@ -8685,7 +8694,7 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
 async function handleMyAgents(chatId: number, wallet: string): Promise<void> {
   if (!bot) return;
   try {
-    const myAgents = await getMyAgents(wallet);
+    const myAgents = await getMyAgents(wallet, chatId);
 
     if (myAgents.length === 0) {
       await bot.sendMessage(chatId, "No agents yet.", {
@@ -8757,7 +8766,7 @@ async function handleMyAgents(chatId: number, wallet: string): Promise<void> {
 async function startTaskFlow(chatId: number, wallet: string): Promise<void> {
   if (!bot) return;
   try {
-    const myAgents = await getMyAgents(wallet);
+    const myAgents = await getMyAgents(wallet, chatId);
 
     if (myAgents.length === 0) {
       await bot.sendMessage(chatId, "You need an agent first.", {
@@ -9072,7 +9081,7 @@ async function handleProposalApproval(chatId: number, proposalId: string, approv
 async function startTokenLaunchFlow(chatId: number, wallet: string): Promise<void> {
   if (!bot) return;
   try {
-    const myAgents = await getMyAgents(wallet);
+    const myAgents = await getMyAgents(wallet, chatId);
 
     if (myAgents.length === 0) {
       await bot.sendMessage(chatId, "You need an agent first to launch a token.", {
