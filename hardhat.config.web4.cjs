@@ -1,5 +1,11 @@
 require("@nomicfoundation/hardhat-toolbox");
 
+// BUILD4 Smart Contract Configuration
+// Primary deployment target: BNB Chain (BSC) - Chain ID 56
+// All core contracts deployed on BNB Smart Chain mainnet
+// $B4 Token: 0x1d547f9d0890ee5abfb49d7d53ca19df85da4444 (BEP-20 on BSC)
+// Staking: 0x5005dd0F5B3338526dd12f0Abc34C0Cb1Aa362ea (BNB Chain)
+
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: {
@@ -12,6 +18,7 @@ module.exports = {
       viaIR: false,
     },
   },
+  defaultNetwork: "bnbMainnet",
   paths: {
     sources: "./contracts",
     tests: "./contracts/test",
@@ -22,6 +29,7 @@ module.exports = {
     hardhat: {
       chainId: 31337,
     },
+    // PRIMARY: BNB Chain (BSC) - All core contracts deployed here
     bnbTestnet: {
       url: process.env.BNB_TESTNET_RPC || "https://data-seed-prebsc-1-s1.binance.org:8545",
       chainId: 97,
