@@ -5824,6 +5824,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const agentId = data.split(":")[1];
     const state = pendingTokenLaunch.get(chatId);
     if (!state || state.agentId !== agentId) return;
+    if (!process.env.ADMIN_CHAT_ID || chatId.toString() !== process.env.ADMIN_CHAT_ID) return;
 
     state.step = "snipe_config";
     pendingTokenLaunch.set(chatId, state);
@@ -5858,6 +5859,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const preset = parts[2];
     const state = pendingTokenLaunch.get(chatId);
     if (!state || state.agentId !== agentId) return;
+    if (!process.env.ADMIN_CHAT_ID || chatId.toString() !== process.env.ADMIN_CHAT_ID) return;
 
     if (preset === "skip") {
       state.sniperEnabled = false;
@@ -9316,7 +9318,7 @@ async function showLaunchPreview(chatId: number, state: TokenLaunchState) {
   if (state.platform === "bankr") {
     buttons.push([{ text: "🥷 Add Stealth Buy", callback_data: `bankrstealth:${state.agentId}` }]);
   }
-  if (state.platform === "four_meme") {
+  if (state.platform === "four_meme" && process.env.ADMIN_CHAT_ID && chatId.toString() === process.env.ADMIN_CHAT_ID) {
     buttons.push([{ text: state.sniperEnabled ? "🎯 Modify Snipe Config" : "🎯 Add Snipe Launch", callback_data: `foursnipe:${state.agentId}` }]);
   }
   buttons.push([{ text: "🚀 Confirm & Launch", callback_data: `launchconfirm:${state.agentId}` }]);
