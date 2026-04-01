@@ -53,6 +53,10 @@ const t: Record<string, Record<Lang, string>> = {
   "menu.help": { en: "❓ Help & Commands", zh: "❓ 帮助", ar: "❓ مساعدة" },
   "menu.back": { en: "« Menu", zh: "« 菜单", ar: "« القائمة" },
   "menu.cancel": { en: "❌ Cancel", zh: "❌ 取消", ar: "❌ إلغاء" },
+  "menu.trading": { en: "💹 Trading", zh: "💹 交易", ar: "💹 تداول" },
+  "menu.market": { en: "📡 Market Intel", zh: "📡 市场情报", ar: "📡 معلومات السوق" },
+  "menu.earn": { en: "💰 Earn $B4", zh: "💰 赚取 $B4", ar: "💰 اكسب $B4" },
+  "menu.portfolio": { en: "📊 Portfolio", zh: "📊 投资组合", ar: "📊 محفظة" },
   "wallet.title": { en: "👛 *Your Wallets*", zh: "👛 *您的钱包*", ar: "👛 *محافظك*" },
   "wallet.fund": { en: "Send BNB to your active wallet address to fund it.", zh: "发送BNB到您的活跃钱包地址来充值。", ar: "أرسل BNB إلى عنوان محفظتك النشطة لتمويلها." },
   "wallet.loading": { en: "Loading wallet balances...", zh: "正在加载钱包余额...", ar: "جاري تحميل أرصدة المحفظة..." },
@@ -1856,6 +1860,72 @@ async function grantReward(chatId: number, rewardType: string, amount: string, d
   }
 }
 
+async function handlePortfolio(chatId: number): Promise<void> {
+  if (!bot) return;
+  try {
+    await bot.sendMessage(chatId, "📊 Loading your portfolio...");
+    const wallet = getLinkedWallet(chatId);
+    const [total, agents] = await Promise.all([
+      storage.getUserRewardTotal(chatId.toString()),
+      storage.getAgentsByTelegramChatId(chatId.toString()),
+    ]);
+
+    let balText = "";
+    if (wallet) {
+      const evmWallets = [wallet];
+      const balances = await fetchWalletBalances(evmWallets);
+      const bal = balances[wallet];
+      if (bal) {
+        const parts: string[] = [];
+        if (parseFloat(bal.bnb) > 0) parts.push(`${bal.bnb} BNB`);
+        if (parseFloat(bal.usdt) > 0) parts.push(`${bal.usdt} USDT`);
+        if (parseFloat(bal.eth) > 0) parts.push(`${bal.eth} ETH`);
+        balText = parts.length > 0 ? parts.join(" · ") : "Empty";
+      }
+    }
+
+    const questIds = Object.keys(QUEST_CONFIG) as QuestId[];
+    let completedQuests = 0;
+    for (const qid of questIds) {
+      const status = await storage.getQuestStatus(chatId.toString(), qid);
+      if (status?.completed) completedQuests++;
+    }
+
+    let sub: any = null;
+    try { sub = await storage.getBotSubscriptionByChatId(chatId.toString()); } catch {}
+    const subStatus = sub ? (sub.status === "trial" ? "Free Trial" : sub.status === "active" ? "Active" : "Expired") : "None";
+
+    const agentList = agents.length > 0
+      ? agents.slice(0, 5).map((a: any) => `  • ${a.name || "Unnamed"}`).join("\n")
+      : "  None yet";
+
+    const msg =
+      `📊 *Your BUILD4 Portfolio*\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `👛 *Wallet*\n` +
+      `${wallet ? `\`${shortWallet(wallet)}\`` : "Not set up"}\n` +
+      `${balText ? `💎 ${balText}` : ""}\n\n` +
+      `🤖 *Agents* (${agents.length})\n${agentList}\n\n` +
+      `🏆 *$B4 Earned:* ${Number(total).toLocaleString()} / 1,850\n` +
+      `🎯 *Quests:* ${completedQuests}/${questIds.length} complete\n` +
+      `⭐ *Plan:* ${subStatus}\n` +
+      `━━━━━━━━━━━━━━━━━━━━`;
+
+    await bot.sendMessage(chatId, msg, {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [
+        [{ text: "👛 Wallet Details", callback_data: "action:wallet" }, { text: "🎯 Quests", callback_data: "action:quests" }],
+        [{ text: "🤖 My Agents", callback_data: "action:myagents" }, { text: "🏆 Rewards", callback_data: "action:rewards" }],
+        [{ text: "« Menu", callback_data: "action:menu" }],
+      ]}
+    });
+  } catch (e: any) {
+    console.error("[Portfolio] Error:", e.message);
+    await bot.sendMessage(chatId, `❌ Could not load portfolio: ${e.message?.substring(0, 100)}`,
+      { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:portfolio" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+  }
+}
+
 async function handleRewardsDashboard(chatId: number): Promise<void> {
   if (!bot) return;
   try {
@@ -2035,21 +2105,11 @@ function mainMenuKeyboard(_hasWallet?: boolean, chatId?: number): TelegramBot.In
   const c = chatId || 0;
   return {
     inline_keyboard: [
-      [{ text: tr("menu.buyBuild4", c), callback_data: "action:buybuild4" }],
-      [{ text: tr("menu.launch", c), callback_data: "action:launchtoken" }],
-      [{ text: tr("menu.buy", c), callback_data: "action:buy" }, { text: tr("menu.sell", c), callback_data: "action:sell" }],
-      [{ text: tr("menu.swap", c), callback_data: "action:okxswap" }, { text: tr("menu.bridge", c), callback_data: "action:okxbridge" }],
-      [{ text: tr("menu.signals", c), callback_data: "action:okxsignals" }, { text: tr("menu.security", c), callback_data: "action:okxsecurity" }],
-      [{ text: tr("menu.trending", c), callback_data: "action:okxtrending" }, { text: tr("menu.meme", c), callback_data: "action:okxmeme" }],
-      [{ text: tr("menu.price", c), callback_data: "action:okxprice" }, { text: tr("menu.gas", c), callback_data: "action:okxgas" }],
-      [{ text: tr("menu.rich", c), callback_data: "action:trade" }, { text: tr("menu.aster", c), callback_data: "action:aster" }],
-      [{ text: tr("menu.createAgent", c), callback_data: "action:newagent" }, { text: tr("menu.myAgents", c), callback_data: "action:myagents" }],
-      [{ text: tr("menu.newTask", c), callback_data: "action:task" }, { text: tr("menu.myTasks", c), callback_data: "action:mytasks" }],
-      [{ text: tr("menu.wallet", c), callback_data: "action:wallet" }, { text: tr("menu.premium", c), callback_data: "action:substatus" }],
-      [{ text: tr("menu.quests", c), callback_data: "action:quests" }, { text: tr("menu.rewards", c), callback_data: "action:rewards" }],
-      [{ text: tr("menu.referral", c), callback_data: "action:referral" }],
-      [{ text: tr("menu.help", c), callback_data: "action:help" }],
-      [{ text: "🌐 Language / 语言", callback_data: "action:lang" }],
+      [{ text: tr("menu.buyBuild4", c), callback_data: "action:buybuild4" }, { text: tr("menu.launch", c), callback_data: "action:launchtoken" }],
+      [{ text: tr("menu.trading", c), callback_data: "action:submenu_trading" }, { text: tr("menu.market", c), callback_data: "action:submenu_market" }],
+      [{ text: "🤖 Agents", callback_data: "action:submenu_agents" }, { text: tr("menu.earn", c), callback_data: "action:submenu_earn" }],
+      [{ text: tr("menu.portfolio", c), callback_data: "action:portfolio" }, { text: tr("menu.wallet", c), callback_data: "action:wallet" }],
+      [{ text: tr("menu.help", c), callback_data: "action:help" }, { text: "🌐 Lang", callback_data: "action:lang" }],
     ]
   };
 }
@@ -2912,6 +2972,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         "📋 /myagents — Your agents\n" +
         "📝 /task — Assign a task\n" +
         "👛 /wallet — Wallet info\n" +
+        "📊 /portfolio — Your portfolio overview\n" +
         "🎯 /quests — Earn $B4 quests\n" +
         "🏆 /rewards — $B4 rewards dashboard\n" +
         "🌐 /lang — Switch language\n" +
@@ -5704,6 +5765,65 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data === "action:submenu_trading") {
+    const c = chatId;
+    await bot.sendMessage(chatId, "💹 *Trading*\n\nBuy, sell, swap & bridge tokens across chains.", {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [
+        [{ text: tr("menu.buy", c), callback_data: "action:buy" }, { text: tr("menu.sell", c), callback_data: "action:sell" }],
+        [{ text: tr("menu.swap", c), callback_data: "action:okxswap" }, { text: tr("menu.bridge", c), callback_data: "action:okxbridge" }],
+        [{ text: tr("menu.rich", c), callback_data: "action:trade" }, { text: tr("menu.aster", c), callback_data: "action:aster" }],
+        [{ text: tr("menu.back", c), callback_data: "action:menu" }],
+      ]}
+    });
+    return;
+  }
+
+  if (data === "action:submenu_market") {
+    const c = chatId;
+    await bot.sendMessage(chatId, "📡 *Market Intel*\n\nSignals, trends, prices & security scans.", {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [
+        [{ text: tr("menu.signals", c), callback_data: "action:okxsignals" }, { text: tr("menu.security", c), callback_data: "action:okxsecurity" }],
+        [{ text: tr("menu.trending", c), callback_data: "action:okxtrending" }, { text: tr("menu.meme", c), callback_data: "action:okxmeme" }],
+        [{ text: tr("menu.price", c), callback_data: "action:okxprice" }, { text: tr("menu.gas", c), callback_data: "action:okxgas" }],
+        [{ text: tr("menu.back", c), callback_data: "action:menu" }],
+      ]}
+    });
+    return;
+  }
+
+  if (data === "action:submenu_agents") {
+    const c = chatId;
+    await bot.sendMessage(chatId, "🤖 *AI Agents*\n\nCreate, manage & assign tasks to your agents.", {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [
+        [{ text: tr("menu.createAgent", c), callback_data: "action:newagent" }, { text: tr("menu.myAgents", c), callback_data: "action:myagents" }],
+        [{ text: tr("menu.newTask", c), callback_data: "action:task" }, { text: tr("menu.myTasks", c), callback_data: "action:mytasks" }],
+        [{ text: tr("menu.back", c), callback_data: "action:menu" }],
+      ]}
+    });
+    return;
+  }
+
+  if (data === "action:submenu_earn") {
+    const c = chatId;
+    await bot.sendMessage(chatId, "💰 *Earn $B4*\n\nComplete quests, refer friends & earn rewards.", {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [
+        [{ text: tr("menu.quests", c), callback_data: "action:quests" }, { text: tr("menu.rewards", c), callback_data: "action:rewards" }],
+        [{ text: tr("menu.referral", c), callback_data: "action:referral" }, { text: tr("menu.premium", c), callback_data: "action:substatus" }],
+        [{ text: tr("menu.back", c), callback_data: "action:menu" }],
+      ]}
+    });
+    return;
+  }
+
+  if (data === "action:portfolio") {
+    await handlePortfolio(chatId);
+    return;
+  }
+
   if (data.startsWith("model:")) {
     const state = pendingAgentCreation.get(chatId);
     if (!state || state.step !== "model") return;
@@ -7753,28 +7873,35 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         }
       }
 
-      if (sub && (sub.status === "trial" || sub.status === "active") && sub.expiresAt && sub.expiresAt > new Date()) {
+      if (isNewUser) {
+        const daysLeft = sub?.expiresAt ? Math.ceil((sub.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : TRIAL_DAYS;
+        await bot.sendMessage(chatId,
+          `🎉 *Welcome to BUILD4!*\n\n` +
+          `Your wallet is ready and your *${TRIAL_DAYS}-day free trial* is active.\n\n` +
+          `👛 Wallet: \`${shortWallet(wallet!)}\`\n` +
+          `⏳ Trial: ${daysLeft} days remaining\n\n` +
+          `━━━━━━━━━━━━━━━━━━━━\n` +
+          `*Get started in 3 steps:*\n\n` +
+          `1️⃣ *Create your AI agent* — it powers everything\n` +
+          `2️⃣ *Explore the menu* — trade, launch tokens, swap\n` +
+          `3️⃣ *Complete quests* — earn up to 1,850 $B4\n\n` +
+          `Let's start with your first agent 👇`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+            [{ text: "🤖 Create My First Agent", callback_data: "action:newagent" }],
+            [{ text: "🎯 View Quests", callback_data: "action:quests" }, { text: "📊 Portfolio", callback_data: "action:portfolio" }],
+            [{ text: "☰ Full Menu", callback_data: "action:menu" }],
+          ]}}
+        );
+      } else if (sub && (sub.status === "trial" || sub.status === "active") && sub.expiresAt && sub.expiresAt > new Date()) {
         const daysLeft = Math.ceil((sub.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
         const statusLabel = sub.status === "trial" ? "Free Trial" : "Active";
-        const trialMsg = isNewUser
-          ? `🎉 *Your ${TRIAL_DAYS}-day FREE trial is now active!*\n\n` +
-            `✅ Full access to ALL premium features — no payment needed\n` +
-            `🚀 Launch tokens on Raydium, Bankr, Four.meme & more\n` +
-            `🤖 Create unlimited AI agents\n` +
-            `💱 Swap & bridge across 10+ chains\n` +
-            `📊 Trading signals & security scans\n\n` +
-            `⏳ ${daysLeft} days remaining\n\n` +
-            `After your trial, subscribe for just *$${BOT_PRICE_USD}/month* to keep access.\n\n` +
-            `👛 Wallet: \`${shortWallet(wallet!)}\`\n\nWhat do you want to do?`
-          : `Welcome back!\n\n` +
-            `📊 Subscription: *${statusLabel}*\n` +
-            `⏳ ${daysLeft} days remaining\n` +
-            `👛 Wallet: \`${shortWallet(wallet!)}\`\n\n` +
-            `What do you want to do?`;
-        await bot.sendMessage(chatId, trialMsg, {
-          parse_mode: "Markdown",
-          reply_markup: mainMenuKeyboard(undefined, chatId),
-        });
+        await bot.sendMessage(chatId,
+          `Welcome back!\n\n` +
+          `📊 Plan: *${statusLabel}* (${daysLeft} days left)\n` +
+          `👛 Wallet: \`${shortWallet(wallet!)}\`\n\n` +
+          `What do you want to do?`,
+          { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) }
+        );
       } else if (sub && sub.status === "expired") {
         await bot.sendMessage(chatId,
           `⚠️ *Your subscription has expired*\n\n` +
@@ -7787,9 +7914,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         );
       } else {
         await bot.sendMessage(chatId,
-          isNewUser
-            ? `✅ You're all set!\n\n🎁 Your *${TRIAL_DAYS}-day FREE trial* is active — enjoy full access to all features!\n\n👛 Wallet: \`${shortWallet(wallet!)}\`\n\nWhat do you want to do?`
-            : `Welcome back!\n\n👛 Wallet: \`${shortWallet(wallet!)}\`\n\nWhat do you want to do?`,
+          `Welcome back!\n\n👛 Wallet: \`${shortWallet(wallet!)}\`\n\nWhat do you want to do?`,
           { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       }
@@ -8118,6 +8243,12 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         "Or just type any question — I can help with anything!",
         { reply_markup: mainMenuKeyboard(undefined, chatId) }
       );
+      return;
+    }
+
+    if (cmd === "portfolio") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for portfolio info!"); return; }
+      await handlePortfolio(chatId);
       return;
     }
 
