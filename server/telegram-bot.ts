@@ -1060,18 +1060,32 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
   return addr;
 }
 
+async function resolvePrivateKey(chatId: number, walletAddr: string): Promise<string | null> {
+  try {
+    let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
+    if (pk) {
+      walletsWithKey.add(`${chatId}:${walletAddr}`);
+      return pk;
+    }
+    pk = await storage.getPrivateKeyByWalletAddress(walletAddr);
+    if (pk) {
+      await storage.saveTelegramWallet(chatId.toString(), walletAddr, pk);
+      walletsWithKey.add(`${chatId}:${walletAddr}`);
+      console.log(`[Wallet] Recovered key for chatId=${chatId} wallet=${walletAddr.substring(0, 8)}`);
+      return pk;
+    }
+  } catch (e: any) {
+    console.error(`[Wallet] resolvePrivateKey error for chatId=${chatId}:`, e.message);
+  }
+  return null;
+}
+
 async function checkWalletHasKey(chatId: number, wallet: string | undefined): Promise<boolean> {
   if (!wallet) return false;
   if (wallet.startsWith("sol:")) return false;
   if (walletsWithKey.has(`${chatId}:${wallet}`)) return true;
-  try {
-    const pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
-    if (pk) {
-      walletsWithKey.add(`${chatId}:${wallet}`);
-      return true;
-    }
-  } catch {}
-  return false;
+  const pk = await resolvePrivateKey(chatId, wallet);
+  return pk !== null;
 }
 
 async function ensureWallet(chatId: number): Promise<string> {
@@ -2478,9 +2492,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     sendTyping(chatId);
 
     try {
-      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
-      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(wallet);
-      if (!pk) throw new Error("Private key not found. Re-import your wallet.");
+      const pk = await resolvePrivateKey(chatId, wallet);
+      if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
 
       if (state.token === "bnb") {
         const signer = new ethers.Wallet(pk, bnbProviderCached);
@@ -2558,9 +2571,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId, `⏳ Sending ${BOT_PRICE_USD} USDT to BUILD4...`);
     sendTyping(chatId);
     try {
-      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
-      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(wallet);
-      if (!pk) throw new Error("Private key not found. Re-import your wallet via /wallet.");
+      const pk = await resolvePrivateKey(chatId, wallet);
+      if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
 
       const signer = new ethers.Wallet(pk, bnbProviderCached);
       const usdtContract = new ethers.Contract(BSC_USDT, [
@@ -2632,9 +2644,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId, `⏳ Swapping ${cfg.symbol} → USDT and paying subscription on ${cfg.name}...`);
     sendTyping(chatId);
     try {
-      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
-      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(wallet);
-      if (!pk) throw new Error("Private key not found. Re-import your wallet.");
+      const pk = await resolvePrivateKey(chatId, wallet);
+      if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
 
       const swapAmount = (BOT_PRICE_USD / cfg.priceDivisor * 1.05).toFixed(6);
       const rawAmount = ethers.parseUnits(swapAmount, 18).toString();
@@ -2891,7 +2902,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       return;
     }
 
-    const pk = await storage.getTelegramWalletPrivateKey(String(chatId), walletAddr);
+    const pk = await resolvePrivateKey(chatId, walletAddr);
     if (!pk) {
       await bot.sendMessage(chatId, "Could not retrieve wallet private key. Try generating a new wallet with /wallet.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
@@ -3347,8 +3358,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const txData = swapTx?.data?.[0]?.tx;
       if (!txData) throw new Error("No swap route found. The token may have low liquidity or is not yet tradable.");
 
-      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
-      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(walletAddr);
+      const pk = await resolvePrivateKey(chatId, walletAddr);
       if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
 
       const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
@@ -3718,8 +3728,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       });
       const approveTx = approveResult?.data?.[0];
 
-      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
-      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(walletAddr);
+      const pk = await resolvePrivateKey(chatId, walletAddr);
       if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
 
       const CHAIN_RPCS: Record<string, string> = {
@@ -3919,8 +3928,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       });
       const txData = swapTx?.data?.[0]?.tx;
       if (!txData) throw new Error("No transaction data returned");
-      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
-      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(walletAddr);
+      const pk = await resolvePrivateKey(chatId, walletAddr);
       if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
       const CHAIN_RPCS: Record<string, string> = { "56": "https://bsc-dataseed1.binance.org", "1": "https://eth.llamarpc.com", "8453": "https://mainnet.base.org", "42161": "https://arb1.arbitrum.io/rpc", "137": "https://polygon-rpc.com", "10": "https://mainnet.optimism.io", "43114": "https://api.avax.network/ext/bc/C/rpc", "196": "https://rpc.xlayer.tech", "250": "https://rpc.ftm.tools", "5000": "https://rpc.mantle.xyz" };
       const rpcUrl = CHAIN_RPCS[state.chainId!] || "https://bsc-dataseed1.binance.org";
@@ -3965,8 +3973,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     await bot.sendMessage(chatId, `⏳ Executing cross-chain swap via ${bridgeProvider}: ${state.fromSymbol} (${state.fromChainName}) → ${state.toSymbol} (${state.toChainName})...`);
     sendTyping(chatId);
     try {
-      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
-      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(walletAddr);
+      const pk = await resolvePrivateKey(chatId, walletAddr);
       if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
       const CHAIN_RPCS: Record<string, string> = { "56": "https://bsc-dataseed1.binance.org", "1": "https://eth.llamarpc.com", "8453": "https://mainnet.base.org", "42161": "https://arb1.arbitrum.io/rpc", "137": "https://polygon-rpc.com", "10": "https://mainnet.optimism.io", "43114": "https://api.avax.network/ext/bc/C/rpc", "196": "https://rpc.xlayer.tech", "250": "https://rpc.ftm.tools", "5000": "https://rpc.mantle.xyz" };
       const rpcUrl = CHAIN_RPCS[state.fromChainId!] || "https://bsc-dataseed1.binance.org";
@@ -5068,8 +5075,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const txData = swapTx?.data?.[0]?.tx;
       if (!txData) throw new Error("No swap route found for this token. It may have low liquidity.");
 
-      let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
-      if (!pk) pk = await storage.getPrivateKeyByWalletAddress(walletAddr);
+      const pk = await resolvePrivateKey(chatId, walletAddr);
       if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
 
       const CHAIN_RPCS: Record<string, string> = {
@@ -5931,7 +5937,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const userWallet = getLinkedWallet(chatId);
     if (!userWallet) { await bot.sendMessage(chatId, "No wallet linked."); return; }
 
-    const userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), userWallet) || undefined;
+    const userPk = await resolvePrivateKey(chatId, userWallet) || undefined;
     if (!userPk) {
       await bot.sendMessage(chatId,
         `⚠️ Could not access your wallet key for on-chain registration.\n\nPlease ensure your wallet is set up via /wallet.`,
@@ -6369,7 +6375,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const wallet = getLinkedWallet(chatId);
     if (!wallet) return;
 
-    const userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+    const userPk = await resolvePrivateKey(chatId, wallet);
     if (!userPk) {
       await bot.sendMessage(chatId, "Could not access wallet keys. Try /start to create a fresh wallet.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
@@ -6463,7 +6469,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const wallet = getLinkedWallet(chatId);
     if (!wallet) return;
 
-    const userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+    const userPk = await resolvePrivateKey(chatId, wallet);
     if (!userPk) {
       await bot.sendMessage(chatId, "Could not access wallet keys. Try /start to create a fresh wallet.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
@@ -6798,7 +6804,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         }
         let pk: string | null = null;
         try {
-          pk = await storage.getTelegramWalletPrivateKey(String(chatId), walletAddr);
+          pk = await resolvePrivateKey(chatId, walletAddr);
         } catch (e: any) {
           auditLog(chatId, "DECRYPT_FAIL", `wallet=${maskAddress(walletAddr)} error=${e.message}`);
         }
@@ -6899,8 +6905,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
     const walletAddr = getLinkedWallet(chatId);
     if (!walletAddr) return;
-    let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
-    if (!pk) pk = await storage.getPrivateKeyByWalletAddress(walletAddr);
+    const pk = await resolvePrivateKey(chatId, walletAddr);
     if (!pk) {
       await bot.sendMessage(chatId, "❌ Private key not found. Import or create a wallet with /wallet first.");
       return;
@@ -9013,7 +9018,7 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
   const wallet = getLinkedWallet(chatId);
   let userPk: string | undefined;
   if (wallet) {
-    userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet) || undefined;
+    userPk = await resolvePrivateKey(chatId, wallet) || undefined;
   }
 
   if (!userPk) {
@@ -9444,7 +9449,7 @@ async function handleProposalApproval(chatId: number, proposalId: string, approv
     await bot.sendMessage(chatId, `🚀 Launching ${proposal.tokenName} ($${proposal.tokenSymbol})...\n\nThis may take a minute.`);
     await bot.sendChatAction(chatId, "typing");
 
-    let userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+    let userPk = await resolvePrivateKey(chatId, wallet);
 
     if (!userPk) {
       await bot.sendMessage(chatId,
@@ -9914,11 +9919,11 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
     await bot.sendMessage(chatId, `🌐 Deploying ${state.tokenName} ($${state.tokenSymbol}) as ERC-20 on XLayer...\n\nThis may take a minute.`);
     await bot.sendChatAction(chatId, "typing");
 
-    let userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+    let userPk = await resolvePrivateKey(chatId, wallet);
     if (!userPk) {
       const newWallet = await regenerateWalletWithKey(chatId);
       if (newWallet) {
-        userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), newWallet);
+        userPk = await resolvePrivateKey(chatId, newWallet);
         wallet = newWallet;
       }
       if (!userPk) {
@@ -10102,12 +10107,12 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
     return;
   }
 
-  let userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), wallet);
+  let userPk = await resolvePrivateKey(chatId, wallet);
 
   if (!userPk) {
     const newWallet = await regenerateWalletWithKey(chatId);
     if (newWallet) {
-      userPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), newWallet);
+      userPk = await resolvePrivateKey(chatId, newWallet);
       wallet = newWallet;
     }
     if (!userPk) {

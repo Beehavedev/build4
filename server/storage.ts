@@ -2787,8 +2787,19 @@ export class DatabaseStorage implements IStorage {
     const existing = await db.select().from(telegramWallets)
       .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
     if (existing.length > 0) {
-      if (encrypted && !existing[0].encryptedPrivateKey) {
-        await db.update(telegramWallets).set({ encryptedPrivateKey: encrypted }).where(eq(telegramWallets.id, existing[0].id));
+      if (encrypted) {
+        let needsUpdate = !existing[0].encryptedPrivateKey;
+        if (!needsUpdate && existing[0].encryptedPrivateKey) {
+          try {
+            decryptPrivateKey(existing[0].encryptedPrivateKey);
+          } catch {
+            needsUpdate = true;
+            console.warn(`[Storage] Re-encrypting wallet key for chatId=${chatId} (old key undecryptable)`);
+          }
+        }
+        if (needsUpdate) {
+          await db.update(telegramWallets).set({ encryptedPrivateKey: encrypted }).where(eq(telegramWallets.id, existing[0].id));
+        }
       }
       return existing[0];
     }
