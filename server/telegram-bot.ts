@@ -655,7 +655,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
     return "Hey! Welcome to BUILD4 — decentralized infrastructure for autonomous AI agents. What can I help you with? Try /help to see all commands.";
   }
   if (lower.includes("help") || lower.includes("command"))
-    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n🎯 /quests — Earn $B4 quests\n🏆 /rewards — $B4 rewards dashboard\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — Swap (multi-chain)\n🌉 /bridge — Cross-chain bridge\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
+    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n🎯 /quests — Earn $B4 quests\n🏆 /rewards — $B4 rewards dashboard\n💰 /fees — Fee tiers & discounts\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — Swap (multi-chain)\n🌉 /bridge — Cross-chain bridge\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
   if (lower.includes("thank"))
     return "You're welcome! Let me know if you need anything else. 🤝";
 
@@ -831,34 +831,93 @@ const BOT_PRICE_USD = 19.99;
 const TRIAL_DAYS = 4;
 const TREASURY_WALLET = "0x5Ff57464152c9285A8526a0665d996dA66e2def1";
 const TRANSACTION_FEE_PERCENT = 1;
+const B4_STAKING_CONTRACT = "0x5005dd0F5B3338526dd12f0Abc34C0Cb1Aa362ea";
 
-async function collectTransactionFee(pk: string, amountWei: bigint, chainRpc: string, chatId: number): Promise<string | null> {
+const FEE_TIERS = [
+  { minB4: 1_000_000, feePercent: 0,   label: "Diamond (0%)" },
+  { minB4: 500_000,   feePercent: 0.25, label: "Platinum (0.25%)" },
+  { minB4: 100_000,   feePercent: 0.5,  label: "Gold (0.5%)" },
+  { minB4: 10_000,    feePercent: 0.75, label: "Silver (0.75%)" },
+  { minB4: 0,         feePercent: 1.0,  label: "Standard (1%)" },
+];
+
+const feeTierCache = new Map<string, { tier: typeof FEE_TIERS[0]; checkedAt: number }>();
+
+async function getUserFeeTier(walletAddress: string): Promise<typeof FEE_TIERS[0]> {
+  const cached = feeTierCache.get(walletAddress.toLowerCase());
+  if (cached && Date.now() - cached.checkedAt < 5 * 60 * 1000) {
+    return cached.tier;
+  }
+
   try {
-    if (amountWei <= 0n) return null;
-    const feeWei = amountWei / 100n;
-    if (feeWei <= 0n) return null;
+    const { ethers } = await import("ethers");
+    const bscProvider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+
+    const erc20Abi = ["function balanceOf(address) view returns (uint256)"];
+    const b4Contract = new ethers.Contract(BUILD4_TOKEN_CA, erc20Abi, bscProvider);
+
+    const stakingAbi = ["function getStakeInfo(address) view returns (uint256 amount, uint256 rewardDebt, uint256 pendingReward, uint256 stakeTimestamp)"];
+    const stakingContract = new ethers.Contract(B4_STAKING_CONTRACT, stakingAbi, bscProvider);
+
+    let totalB4 = 0n;
+    try {
+      const walletBalance = await b4Contract.balanceOf(walletAddress);
+      totalB4 += walletBalance;
+    } catch {}
+    try {
+      const stakeInfo = await stakingContract.getStakeInfo(walletAddress);
+      totalB4 += stakeInfo[0];
+    } catch {}
+
+    const totalB4Formatted = Number(ethers.formatEther(totalB4));
+    const tier = FEE_TIERS.find(t => totalB4Formatted >= t.minB4) || FEE_TIERS[FEE_TIERS.length - 1];
+
+    feeTierCache.set(walletAddress.toLowerCase(), { tier, checkedAt: Date.now() });
+    console.log(`[FeeTier] ${walletAddress.substring(0, 10)}... holds ${Math.floor(totalB4Formatted).toLocaleString()} $B4 → ${tier.label}`);
+    return tier;
+  } catch (e: any) {
+    console.error(`[FeeTier] Lookup failed for ${walletAddress.substring(0, 10)}...:`, e.message);
+    return FEE_TIERS[FEE_TIERS.length - 1];
+  }
+}
+
+async function collectTransactionFee(pk: string, amountWei: bigint, chainRpc: string, chatId: number): Promise<{ txHash: string | null; feePercent: number; tierLabel: string }> {
+  const defaultResult = { txHash: null, feePercent: 1, tierLabel: "Standard (1%)" };
+  try {
+    if (amountWei <= 0n) return defaultResult;
     const { ethers } = await import("ethers");
     const provider = new ethers.JsonRpcProvider(chainRpc);
     const signer = new ethers.Wallet(pk, provider);
-    if (signer.address.toLowerCase() === TREASURY_WALLET.toLowerCase()) return null;
+    if (signer.address.toLowerCase() === TREASURY_WALLET.toLowerCase()) return { ...defaultResult, feePercent: 0 };
+
+    const tier = await getUserFeeTier(signer.address);
+    if (tier.feePercent === 0) {
+      console.log(`[Fee] ${tier.label} tier for chatId=${chatId}, no fee charged`);
+      return { txHash: null, feePercent: 0, tierLabel: tier.label };
+    }
+
+    const feeBps = BigInt(Math.floor(tier.feePercent * 100));
+    const feeWei = (amountWei * feeBps) / 10000n;
+    if (feeWei <= 0n) return { txHash: null, feePercent: tier.feePercent, tierLabel: tier.label };
+
     const balance = await provider.getBalance(signer.address);
     const gasEstimate = 21000n * (await provider.getFeeData()).gasPrice!;
     if (balance < feeWei + gasEstimate) {
       console.log(`[Fee] Insufficient balance for fee from chatId=${chatId}, skipping`);
-      return null;
+      return { txHash: null, feePercent: tier.feePercent, tierLabel: tier.label };
     }
     const tx = await signer.sendTransaction({ to: TREASURY_WALLET, value: feeWei });
     const receipt = await tx.wait();
     if (!receipt || receipt.status !== 1) {
       console.error(`[Fee] Fee tx reverted for chatId=${chatId}`);
-      return null;
+      return { txHash: null, feePercent: tier.feePercent, tierLabel: tier.label };
     }
     const feeEth = ethers.formatEther(feeWei);
-    console.log(`[Fee] Collected ${feeEth} fee from chatId=${chatId} tx=${receipt.hash}`);
-    return receipt.hash;
+    console.log(`[Fee] Collected ${feeEth} (${tier.label}) from chatId=${chatId} tx=${receipt.hash}`);
+    return { txHash: receipt.hash, feePercent: tier.feePercent, tierLabel: tier.label };
   } catch (e: any) {
     console.error(`[Fee] Fee collection failed for chatId=${chatId}:`, e.message);
-    return null;
+    return defaultResult;
   }
 }
 
@@ -3405,14 +3464,14 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
 
       const amountWei = ethers.parseEther(state.amount);
-      await collectTransactionFee(pk, amountWei, "https://bsc-dataseed1.binance.org", chatId);
+      const feeResult = await collectTransactionFee(pk, amountWei, "https://bsc-dataseed1.binance.org", chatId);
 
       pendingBuild4Buy.delete(chatId);
       await bot.sendMessage(chatId,
         `✅ *$B4 Purchased!*\n\n` +
         `⚡ ${state.amount} BNB → $B4\n` +
         `⛓ BNB Chain\n` +
-        `💡 Platform fee: ${TRANSACTION_FEE_PERCENT}%\n\n` +
+        `💡 Fee: ${feeResult.feePercent}% (${feeResult.tierLabel})\n\n` +
         `[View Transaction](https://bscscan.com/tx/${receipt.hash})`,
         {
           parse_mode: "Markdown",
@@ -3811,8 +3870,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
       const balanceAfter = await provider.getBalance(walletAddr);
       const nativeReceived = balanceAfter > balanceBefore ? balanceAfter - balanceBefore : 0n;
+      let sellFeeResult = { txHash: null as string | null, feePercent: 1, tierLabel: "Standard (1%)" };
       if (nativeReceived > 0n) {
-        await collectTransactionFee(pk, nativeReceived, rpcUrl, chatId);
+        sellFeeResult = await collectTransactionFee(pk, nativeReceived, rpcUrl, chatId);
       }
 
       const explorerUrls: Record<string, string> = {
@@ -3828,7 +3888,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         `✅ *Sell Executed!*\n\n` +
         `💸 ${state.sellAmount} ${state.tokenSymbol} → ${state.nativeSymbol}\n` +
         `⛓ ${state.chainName}\n` +
-        `💡 Platform fee: ${TRANSACTION_FEE_PERCENT}%\n\n` +
+        `💡 Fee: ${sellFeeResult.feePercent}% (${sellFeeResult.tierLabel})\n\n` +
         `[View Transaction](${explorer}${receipt.hash})`,
         { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "💸 Sell More", callback_data: "action:sell" }], [{ text: "👛 Wallet", callback_data: "action:wallet" }, { text: "« Menu", callback_data: "action:menu" }]] } }
       );
@@ -3986,8 +4046,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
 
       const swapAmountWei = txData.value ? BigInt(txData.value) : 0n;
+      let swapFeeResult = { txHash: null as string | null, feePercent: 1, tierLabel: "Standard (1%)" };
       if (swapAmountWei > 0n) {
-        await collectTransactionFee(pk, swapAmountWei, rpcUrl, chatId);
+        swapFeeResult = await collectTransactionFee(pk, swapAmountWei, rpcUrl, chatId);
       }
 
       const chain = OKX_CHAINS.find(c => c.id === state.chainId);
@@ -3995,7 +4056,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const explorer = explorerUrls[state.chainId!] || "https://bscscan.com/tx/";
       await bot.sendMessage(chatId,
         `✅ *Swap Executed!*\n\n${state.fromSymbol} → ${state.toSymbol} on ${chain?.name || state.chainName}\n` +
-        `💡 Platform fee: ${TRANSACTION_FEE_PERCENT}%\n\n` +
+        `💡 Fee: ${swapFeeResult.feePercent}% (${swapFeeResult.tierLabel})\n\n` +
         `[View Transaction](${explorer}${receipt.hash})`,
         { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "🔄 New Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
       );
@@ -4058,15 +4119,16 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
 
       const bridgeAmountWei = txData.value ? BigInt(txData.value) : 0n;
+      let bridgeFeeResult = { txHash: null as string | null, feePercent: 1, tierLabel: "Standard (1%)" };
       if (bridgeAmountWei > 0n) {
-        await collectTransactionFee(pk, bridgeAmountWei, rpcUrl, chatId);
+        bridgeFeeResult = await collectTransactionFee(pk, bridgeAmountWei, rpcUrl, chatId);
       }
 
       const explorerUrls: Record<string, string> = { "56": "https://bscscan.com/tx/", "1": "https://etherscan.io/tx/", "8453": "https://basescan.org/tx/", "42161": "https://arbiscan.io/tx/", "137": "https://polygonscan.com/tx/", "10": "https://optimistic.etherscan.io/tx/", "43114": "https://snowtrace.io/tx/", "196": "https://www.okx.com/explorer/xlayer/tx/" };
       const explorer = explorerUrls[state.fromChainId!] || "https://bscscan.com/tx/";
       await bot.sendMessage(chatId,
         `✅ *Cross-Chain Swap Executed!*\n\n${state.fromSymbol} (${state.fromChainName}) → ${state.toSymbol} (${state.toChainName})\nVia: ${bridgeProvider}\n` +
-        `💡 Platform fee: ${TRANSACTION_FEE_PERCENT}%\n\n` +
+        `💡 Fee: ${bridgeFeeResult.feePercent}% (${bridgeFeeResult.tierLabel})\n\n` +
         `[View Transaction](${explorer}${receipt.hash})`,
         { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "🔄 New Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
       );
@@ -5869,14 +5931,57 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:submenu_earn") {
     const c = chatId;
-    await bot.sendMessage(chatId, "💰 *Earn $B4*\n\nComplete quests, refer friends & earn rewards.", {
+    await bot.sendMessage(chatId, "💰 *Earn $B4*\n\nComplete quests, refer friends, earn rewards & reduce fees!", {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: [
         [{ text: tr("menu.quests", c), callback_data: "action:quests" }, { text: tr("menu.rewards", c), callback_data: "action:rewards" }],
-        [{ text: tr("menu.referral", c), callback_data: "action:referral" }, { text: tr("menu.premium", c), callback_data: "action:substatus" }],
+        [{ text: "💎 Fee Tiers", callback_data: "action:fees" }, { text: tr("menu.referral", c), callback_data: "action:referral" }],
+        [{ text: tr("menu.premium", c), callback_data: "action:substatus" }],
         [{ text: tr("menu.back", c), callback_data: "action:menu" }],
       ]}
     });
+    return;
+  }
+
+  if (data === "action:fees") {
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) {
+      await bot.sendMessage(chatId, "You need a wallet first. Use /start to create one.");
+      return;
+    }
+    try {
+      const tier = await getUserFeeTier(wallet);
+      const { ethers: ethFees } = await import("ethers");
+      const bscProv = new ethFees.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+      const erc20Abi = ["function balanceOf(address) view returns (uint256)"];
+      const b4c = new ethFees.Contract(BUILD4_TOKEN_CA, erc20Abi, bscProv);
+      let b4Balance = 0n;
+      try { b4Balance = await b4c.balanceOf(wallet); } catch {}
+      const b4Formatted = Number(ethFees.formatEther(b4Balance));
+
+      let tierList = "";
+      for (const t of FEE_TIERS) {
+        const marker = t.label === tier.label ? " ← You" : "";
+        const holdReq = t.minB4 > 0 ? `${t.minB4.toLocaleString()}+ $B4` : "No minimum";
+        tierList += `${t.feePercent === 0 ? "💎" : t.feePercent <= 0.25 ? "🏆" : t.feePercent <= 0.5 ? "🥇" : t.feePercent <= 0.75 ? "🥈" : "📊"} *${t.label}* — ${holdReq}${marker}\n`;
+      }
+
+      await bot.sendMessage(chatId,
+        `💰 *BUILD4 Fee Tiers*\n\n` +
+        `Your $B4 balance: *${Math.floor(b4Formatted).toLocaleString()}*\n` +
+        `Your tier: *${tier.label}*\n\n` +
+        `${tierList}\n` +
+        `Hold or stake more $B4 to unlock lower fees!\n` +
+        `Wallet + staked $B4 both count toward your tier.`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+          [{ text: "🟢 Buy $B4", callback_data: "action:buybuild4" }],
+          [{ text: "🔒 Stake $B4", callback_data: "action:staking" }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ] } }
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId, "Could not load fee info. Try again later.");
+    }
     return;
   }
 
@@ -6446,10 +6551,15 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       auditLog(chatId, "TRADE_BUY", `Buy ${state.bnbAmount} BNB on token ${maskAddress(tokenAddress)} tx=${result.txHash?.substring(0, 16)}`);
       let feeMsg = "";
       try {
-        const feeResult = await collectTradeFee(userPk, state.bnbAmount, TRANSACTION_FEE_PERCENT);
+        const { ethers: ethFee } = await import("ethers");
+        const feeWallet = new ethFee.Wallet(userPk);
+        const tier = await getUserFeeTier(feeWallet.address);
+        const feeResult = await collectTradeFee(userPk, state.bnbAmount, tier.feePercent);
         if (feeResult.feeAmount && feeResult.feeAmount !== "0") {
-          feeMsg = `\nPlatform fee: ${feeResult.feeAmount} BNB (${TRANSACTION_FEE_PERCENT}%)`;
-          console.log(`[TradeFee] Buy fee collected: ${feeResult.feeAmount} BNB from chat ${chatId} (tx: ${feeResult.txHash})`);
+          feeMsg = `\nFee: ${feeResult.feeAmount} BNB (${tier.label})`;
+          console.log(`[TradeFee] Buy fee collected: ${feeResult.feeAmount} BNB from chat ${chatId} tier=${tier.label} (tx: ${feeResult.txHash})`);
+        } else if (tier.feePercent === 0) {
+          feeMsg = `\nFee: 0% (${tier.label})`;
         }
       } catch (e: any) {
         console.log(`[TradeFee] Buy fee failed (non-blocking): ${e.message?.substring(0, 100)}`);
@@ -6544,14 +6654,17 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     if (result.success) {
       let feeMsg = "";
       try {
+        const tier = await getUserFeeTier(userWallet.address);
         const balanceAfter = await provider.getBalance(userWallet.address);
         const proceeds = balanceAfter - balanceBefore;
         if (proceeds > 0n) {
           const proceedsBnb = ethers.formatEther(proceeds);
-          const feeResult = await collectTradeFee(userPk, proceedsBnb, TRANSACTION_FEE_PERCENT);
+          const feeResult = await collectTradeFee(userPk, proceedsBnb, tier.feePercent);
           if (feeResult.feeAmount && feeResult.feeAmount !== "0") {
-            feeMsg = `\nProceeds: ~${parseFloat(proceedsBnb).toFixed(6)} BNB\nPlatform fee: ${feeResult.feeAmount} BNB (${TRANSACTION_FEE_PERCENT}%)`;
-            console.log(`[TradeFee] Sell fee collected: ${feeResult.feeAmount} BNB from chat ${chatId} (tx: ${feeResult.txHash})`);
+            feeMsg = `\nProceeds: ~${parseFloat(proceedsBnb).toFixed(6)} BNB\nFee: ${feeResult.feeAmount} BNB (${tier.label})`;
+            console.log(`[TradeFee] Sell fee collected: ${feeResult.feeAmount} BNB from chat ${chatId} tier=${tier.label} (tx: ${feeResult.txHash})`);
+          } else if (tier.feePercent === 0) {
+            feeMsg = `\nProceeds: ~${parseFloat(proceedsBnb).toFixed(6)} BNB\nFee: 0% (${tier.label})`;
           }
         }
       } catch (e: any) {
@@ -8321,6 +8434,49 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     if (cmd === "rewards") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for rewards info!"); return; }
       await handleRewardsDashboard(chatId);
+      return;
+    }
+
+    if (cmd === "fees") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for fee info!"); return; }
+      const wallet = getLinkedWallet(chatId);
+      if (!wallet) {
+        await bot.sendMessage(chatId, "You need a wallet first. Use /start to create one.");
+        return;
+      }
+      try {
+        const tier = await getUserFeeTier(wallet);
+        const { ethers: ethFees } = await import("ethers");
+        const bscProv = new ethFees.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+        const erc20Abi = ["function balanceOf(address) view returns (uint256)"];
+        const b4c = new ethFees.Contract(BUILD4_TOKEN_CA, erc20Abi, bscProv);
+        let b4Balance = 0n;
+        try { b4Balance = await b4c.balanceOf(wallet); } catch {}
+        const b4Formatted = Number(ethFees.formatEther(b4Balance));
+
+        let tierList = "";
+        for (const t of FEE_TIERS) {
+          const marker = t.label === tier.label ? " ← You" : "";
+          const holdReq = t.minB4 > 0 ? `${t.minB4.toLocaleString()}+ $B4` : "No minimum";
+          tierList += `${t.feePercent === 0 ? "💎" : t.feePercent <= 0.25 ? "🏆" : t.feePercent <= 0.5 ? "🥇" : t.feePercent <= 0.75 ? "🥈" : "📊"} *${t.label}* — ${holdReq}${marker}\n`;
+        }
+
+        await bot.sendMessage(chatId,
+          `💰 *BUILD4 Fee Tiers*\n\n` +
+          `Your $B4 balance: *${Math.floor(b4Formatted).toLocaleString()}*\n` +
+          `Your tier: *${tier.label}*\n\n` +
+          `${tierList}\n` +
+          `Hold or stake more $B4 to unlock lower fees!\n` +
+          `Wallet + staked $B4 both count toward your tier.`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+            [{ text: "🟢 Buy $B4", callback_data: "action:buybuild4" }],
+            [{ text: "🔒 Stake $B4", callback_data: "action:staking" }],
+            [{ text: "« Menu", callback_data: "action:menu" }],
+          ] } }
+        );
+      } catch (e: any) {
+        await bot.sendMessage(chatId, "Could not load fee info. Try again later.");
+      }
       return;
     }
 

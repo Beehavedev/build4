@@ -39,11 +39,14 @@ The project employs a monorepo architecture, separating concerns into `client/` 
 - **Features**: Standardized endpoints for agent discovery, wallet address-based identity, permissionless skill listing, wallet activity lookup, and open execution with a free tier and HTTP 402 payment protocol.
 
 ### Transaction Fee System
-- **1% platform fee** on all trades (buy, sell, swap, bridge) sent to treasury wallet `0x5Ff57464152c9285A8526a0665d996dA66e2def1`
-- `collectTransactionFee()` in `telegram-bot.ts` handles EVM swap/buy/sell/bridge fees (checks balance, skips if insufficient or if sender is treasury)
-- `collectTradeFee()` in `token-launcher.ts` handles Four.meme buy/sell fees
+- **Tiered platform fee** on all trades (buy, sell, swap, bridge) sent to treasury wallet `0x5Ff57464152c9285A8526a0665d996dA66e2def1`
+- Fee tiers based on $B4 holdings (wallet + staked): Diamond (1M+ $B4 = 0%), Platinum (500K = 0.25%), Gold (100K = 0.5%), Silver (10K = 0.75%), Standard (0 = 1%)
+- `getUserFeeTier(walletAddress)` checks on-chain $B4 balance + staking contract, cached 5 min
+- `collectTransactionFee()` in `telegram-bot.ts` handles EVM swap/buy/sell/bridge fees
+- `collectTradeFee()` in `token-launcher.ts` handles Four.meme buy/sell fees (also uses tiers)
 - Fee is non-blocking: if fee tx fails, the trade still succeeds
-- Fee is collected **after** the main trade tx succeeds, as a separate native transfer
+- `/fees` command and `action:fees` button show user their tier, balance, and upgrade path
+- Staking contract: `0x5005dd0F5B3338526dd12f0Abc34C0Cb1Aa362ea` on BNB Chain
 
 ### Key Design Decisions
 - **Two-layer Architecture**: On-chain for financial transactions and off-chain for agent behaviors.
