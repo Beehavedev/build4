@@ -65,11 +65,16 @@ module.exports = {
     enabled: true,
   },
   etherscan: {
-    apiKey: {
-      bsc: process.env.BSCSCAN_API_KEY || "PLACEHOLDER",
-      base: process.env.BASESCAN_API_KEY || "PLACEHOLDER",
-    },
+    apiKey: process.env.BSCSCAN_API_KEY || "PLACEHOLDER",
     customChains: [
+      {
+        network: "bnbMainnet",
+        chainId: 56,
+        urls: {
+          apiURL: "https://api.bscscan.com/api",
+          browserURL: "https://bscscan.com",
+        },
+      },
       {
         network: "xlayerMainnet",
         chainId: 196,
