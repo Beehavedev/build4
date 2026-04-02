@@ -103,13 +103,67 @@ const t: Record<string, Record<Lang, string>> = {
   "sell.enterAddr": { en: "Enter the token contract address to sell:", zh: "输入要卖出的代币合约地址：", ar: "أدخل عنوان عقد التوكن للبيع:" },
   "general.error": { en: "Something went wrong. Try again.", zh: "出错了，请重试。", ar: "حدث خطأ ما. حاول مرة أخرى." },
   "general.noWallet": { en: "❌ You need a wallet first. Use /start to create one.", zh: "❌ 您需要先创建钱包。使用 /start 创建。", ar: "❌ تحتاج محفظة أولاً. استخدم /start لإنشاء واحدة." },
+  "welcome.newUser": {
+    en: "🎉 Welcome to BUILD4!\n\nLaunch tokens, create AI agents, swap, bridge & trade — all from Telegram.\n\n🎁 You get a *FREE {days}-day trial* with full access — no payment needed!\n\nSetting up your wallet...",
+    zh: "🎉 欢迎使用BUILD4！\n\n发射代币、创建AI代理、兑换、跨链桥和交易——全部在Telegram完成。\n\n🎁 您将获得 *{days}天免费试用*，享受全部功能——无需付款！\n\n正在为您设置钱包...",
+    ar: "🎉 !BUILD4 مرحباً بك في\n\nأطلق توكنات، أنشئ وكلاء ذكاء اصطناعي، بادل، وتداول — كل ذلك من تيليجرام.\n\n🎁 تحصل على *تجربة مجانية لمدة {days} أيام* — لا حاجة للدفع!\n\nجاري إعداد محفظتك..."
+  },
+  "welcome.ready": {
+    en: "🎉 *Welcome to BUILD4!*\n\nYour wallet is ready and your *{days}-day free trial* is active.\n\n👛 Wallet: `{wallet}`\n⏳ Trial: {daysLeft} days remaining\n\n━━━━━━━━━━━━━━━━━━━━\n*Get started in 3 steps:*\n\n1️⃣ *Create your AI agent* — it powers everything\n2️⃣ *Explore the menu* — trade, launch tokens, swap\n3️⃣ *Complete quests* — earn up to 1,850 $B4\n\nLet's start with your first agent 👇",
+    zh: "🎉 *欢迎使用BUILD4！*\n\n您的钱包已准备就绪，*{days}天免费试用*已激活。\n\n👛 钱包: `{wallet}`\n⏳ 试用期: 剩余{daysLeft}天\n\n━━━━━━━━━━━━━━━━━━━━\n*3步快速开始:*\n\n1️⃣ *创建您的AI代理* — 它是一切功能的核心\n2️⃣ *探索菜单* — 交易、发射代币、兑换\n3️⃣ *完成任务* — 赚取最多1,850 $B4\n\n让我们从创建您的第一个代理开始 👇",
+    ar: "🎉 *!BUILD4 مرحباً بك في*\n\nمحفظتك جاهزة و*تجربتك المجانية لمدة {days} أيام* مفعلة.\n\n👛 المحفظة: `{wallet}`\n⏳ التجربة: {daysLeft} أيام متبقية\n\n━━━━━━━━━━━━━━━━━━━━\n*ابدأ في 3 خطوات:*\n\n1️⃣ *أنشئ وكيل الذكاء الاصطناعي* — يقود كل شيء\n2️⃣ *استكشف القائمة* — تداول، أطلق توكنات\n3️⃣ *أكمل المهام* — اكسب حتى 1,850 $B4\n\nلنبدأ بوكيلك الأول 👇"
+  },
+  "welcome.back": {
+    en: "Welcome back!\n\n📊 Plan: *{status}* ({daysLeft} days left)\n👛 Wallet: `{wallet}`\n\nWhat do you want to do?",
+    zh: "欢迎回来！\n\n📊 套餐: *{status}*（剩余{daysLeft}天）\n👛 钱包: `{wallet}`\n\n您想做什么？",
+    ar: "!مرحباً بعودتك\n\n📊 الخطة: *{status}* ({daysLeft} أيام متبقية)\n👛 المحفظة: `{wallet}`\n\nماذا تريد أن تفعل؟"
+  },
+  "agent.welcome": {
+    en: "🎉 *Welcome to BUILD4!* Your {days}-day free trial is active.\n\n🧠 *First, let's create your AI Agent*\n\nYour agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\nWhat would you like to name your agent? _(1-50 characters)_",
+    zh: "🎉 *欢迎使用BUILD4！*您的{days}天免费试用已激活。\n\n🧠 *首先，让我们创建您的AI代理*\n\n您的代理是BUILD4的大脑——没有它，机器人无法为您交易、扫描或分析。\n\n您想给代理取什么名字？_（1-50个字符）_",
+    ar: "🎉 *!BUILD4 مرحباً بك في* تجربتك المجانية لمدة {days} أيام مفعلة.\n\n🧠 *أولاً، لنُنشئ وكيل الذكاء الاصطناعي الخاص بك*\n\nوكيلك هو العقل وراء BUILD4 — بدونه لا يمكن للبوت التداول أو الفحص أو التحليل.\n\nما الاسم الذي تريده لوكيلك؟ _(1-50 حرفاً)_"
+  },
+  "agent.required": {
+    en: "🧠 *Agent Required*\n\nYour AI agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\nLet's set it up now — agent creation is *always free*!\n\nWhat would you like to name your agent? _(1-50 characters)_",
+    zh: "🧠 *需要创建代理*\n\n您的AI代理是BUILD4的大脑——没有它，机器人无法为您交易、扫描或分析。\n\n现在就来设置吧——创建代理*完全免费*！\n\n您想给代理取什么名字？_（1-50个字符）_",
+    ar: "🧠 *مطلوب وكيل*\n\nوكيل الذكاء الاصطناعي هو العقل وراء BUILD4 — بدونه لا يمكن للبوت التداول أو الفحص أو التحليل.\n\nلنُعِدّه الآن — إنشاء الوكيل *مجاني دائماً*!\n\nما الاسم الذي تريده لوكيلك؟ _(1-50 حرفاً)_"
+  },
+  "agent.postPay": {
+    en: "🧠 *Now let's set up your AI Agent*\n\nYour agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\nAgent creation is *included free* with your subscription.\n\nWhat would you like to name your agent? _(1-50 characters)_",
+    zh: "🧠 *现在让我们设置您的AI代理*\n\n您的代理是BUILD4的大脑——没有它，机器人无法为您交易、扫描或分析。\n\n创建代理已*免费包含*在您的订阅中。\n\n您想给代理取什么名字？_（1-50个字符）_",
+    ar: "🧠 *الآن لنُعِدّ وكيل الذكاء الاصطناعي*\n\nوكيلك هو العقل وراء BUILD4 — بدونه لا يمكن للبوت التداول أو الفحص أو التحليل.\n\nإنشاء الوكيل *مجاني* مع اشتراكك.\n\nما الاسم الذي تريده لوكيلك؟ _(1-50 حرفاً)_"
+  },
+  "trial.ending": {
+    en: "⏳ *Trial ending soon!* You have less than 1 day left.\nSubscribe now to keep full access.",
+    zh: "⏳ *试用即将结束！*剩余不到1天。\n立即订阅以保持完整访问权限。",
+    ar: "⏳ *التجربة على وشك الانتهاء!* أقل من يوم واحد متبقٍ.\nاشترك الآن للحفاظ على الوصول الكامل."
+  },
+  "trial.started": {
+    en: "🎉 *Welcome! Your {days}-day free trial has started.*\nYou have full access to all premium features.\n\nTrial expires in {daysLeft} days.",
+    zh: "🎉 *欢迎！您的{days}天免费试用已开始。*\n您可以使用所有高级功能。\n\n试用将在{daysLeft}天后到期。",
+    ar: "🎉 *مرحباً! بدأت تجربتك المجانية لمدة {days} أيام.*\nلديك وصول كامل لجميع الميزات المميزة.\n\nتنتهي التجربة خلال {daysLeft} أيام."
+  },
+  "btn.createAgent": { en: "🤖 Create My First Agent", zh: "🤖 创建我的第一个代理", ar: "🤖 أنشئ وكيلي الأول" },
+  "btn.viewQuests": { en: "🎯 View Quests", zh: "🎯 查看任务", ar: "🎯 عرض المهام" },
+  "btn.portfolio": { en: "📊 Portfolio", zh: "📊 投资组合", ar: "📊 المحفظة" },
+  "btn.fullMenu": { en: "☰ Full Menu", zh: "☰ 完整菜单", ar: "☰ القائمة الكاملة" },
+  "btn.subscribe": { en: "💳 Subscribe", zh: "💳 订阅", ar: "💳 اشتراك" },
+  "btn.subStatus": { en: "📊 Subscription Status", zh: "📊 订阅状态", ar: "📊 حالة الاشتراك" },
+  "status.trial": { en: "Free Trial", zh: "免费试用", ar: "تجربة مجانية" },
+  "status.active": { en: "Active", zh: "已激活", ar: "نشط" },
 };
 
-function tr(key: string, chatId: number): string {
+function tr(key: string, chatId: number, vars?: Record<string, string | number>): string {
   const lang = getLang(chatId);
   const entry = t[key];
   if (!entry) return key;
-  return entry[lang] || entry["en"] || key;
+  let text = entry[lang] || entry["en"] || key;
+  if (vars) {
+    for (const [k, v] of Object.entries(vars)) {
+      text = text.replace(new RegExp(`\\{${k}\\}`, "g"), String(v));
+    }
+  }
+  return text;
 }
 
 const chatLocks = new Map<number, Promise<void>>();
@@ -1009,10 +1063,7 @@ async function checkSubscription(chatId: number): Promise<{ allowed: boolean; st
             pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
             if (bot) {
               await bot.sendMessage(chatId,
-                `🎉 *Welcome to BUILD4!* Your 4-day free trial is active.\n\n` +
-                `🧠 *First, let's create your AI Agent*\n\n` +
-                `Your agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\n` +
-                `What would you like to name your agent? _(1-50 characters)_`,
+                tr("agent.welcome", chatId, { days: TRIAL_DAYS }),
                 { parse_mode: "Markdown" }
               );
             }
@@ -1667,10 +1718,7 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
       if (!hasAgent) {
         pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
         await bot.sendMessage(chatId,
-          `🧠 *Now let's set up your AI Agent*\n\n` +
-          `Your agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\n` +
-          `Agent creation is *included free* with your subscription.\n\n` +
-          `What would you like to name your agent? _(1-50 characters)_`,
+          tr("agent.postPay", chatId),
           { parse_mode: "Markdown" }
         );
       }
@@ -2489,10 +2537,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       if (!hasAgent) {
         pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
         await bot.sendMessage(chatId,
-          `🧠 *Agent Required*\n\n` +
-          `Your AI agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\n` +
-          `Let's set it up now — agent creation is *always free*!\n\n` +
-          `What would you like to name your agent? _(1-50 characters)_`,
+          tr("agent.required", chatId),
           { parse_mode: "Markdown" }
         );
         return;
@@ -2500,19 +2545,16 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       if (subCheck.status === "trial" && subCheck.daysLeft !== undefined) {
         if (subCheck.daysLeft <= 1) {
           await bot.sendMessage(chatId,
-            `⏳ *Trial ending soon!* You have less than 1 day left.\n` +
-            `Subscribe now to keep full access.`,
+            tr("trial.ending", chatId),
             { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
-              [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+              [{ text: `${tr("btn.subscribe", chatId)} — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
             ]}}
           );
         } else if (subCheck.daysLeft === TRIAL_DAYS) {
           await bot.sendMessage(chatId,
-            `🎉 *Welcome! Your ${TRIAL_DAYS}-day free trial has started.*\n` +
-            `You have full access to all premium features.\n\n` +
-            `Trial expires in ${subCheck.daysLeft} days.`,
+            tr("trial.started", chatId, { days: TRIAL_DAYS, daysLeft: subCheck.daysLeft }),
             { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
-              [{ text: "📊 Subscription Status", callback_data: "action:substatus" }],
+              [{ text: tr("btn.subStatus", chatId), callback_data: "action:substatus" }],
             ]}}
           );
         }
@@ -3060,6 +3102,11 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         "📋 /myagents — 我的代理\n" +
         "📝 /task — 分配任务\n" +
         "👛 /wallet — 钱包管理\n" +
+        "📊 /portfolio — 投资组合概览\n" +
+        "🎯 /quests — 赚取 $B4 任务\n" +
+        "🏆 /rewards — $B4 奖励面板\n" +
+        "🏅 /challenge — 交易挑战赛\n" +
+        "📋 /copytrade — 跟单交易\n" +
         "🌐 /lang — 切换语言\n" +
         "❓ /ask <问题> — 提问\n" +
         "❌ /cancel — 取消当前操作\n\n" +
@@ -3081,6 +3128,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         "📊 /portfolio — Your portfolio overview\n" +
         "🎯 /quests — Earn $B4 quests\n" +
         "🏆 /rewards — $B4 rewards dashboard\n" +
+        "🏅 /challenge — Trading challenges\n" +
+        "📋 /copytrade — Copy trading\n" +
         "🌐 /lang — Switch language\n" +
         "❓ /ask <question> — Ask anything\n" +
         "❌ /cancel — Cancel current action\n\n" +
@@ -8220,10 +8269,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       if (!wallet) {
         const refCode = cmdArg.startsWith("ref_") ? cmdArg : "";
         await bot.sendMessage(chatId,
-          `🎉 Welcome to BUILD4!\n\n` +
-          `Launch tokens, create AI agents, swap, bridge & trade — all from Telegram.\n\n` +
-          `🎁 You get a *FREE ${TRIAL_DAYS}-day trial* with full access — no payment needed!\n\n` +
-          `Setting up your wallet...`,
+          tr("welcome.newUser", chatId, { days: TRIAL_DAYS }),
           { parse_mode: "Markdown" }
         );
         wallet = await autoGenerateWallet(chatId);
@@ -8264,45 +8310,40 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       if (isNewUser) {
         const daysLeft = sub?.expiresAt ? Math.ceil((sub.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : TRIAL_DAYS;
         await bot.sendMessage(chatId,
-          `🎉 *Welcome to BUILD4!*\n\n` +
-          `Your wallet is ready and your *${TRIAL_DAYS}-day free trial* is active.\n\n` +
-          `👛 Wallet: \`${shortWallet(wallet!)}\`\n` +
-          `⏳ Trial: ${daysLeft} days remaining\n\n` +
-          `━━━━━━━━━━━━━━━━━━━━\n` +
-          `*Get started in 3 steps:*\n\n` +
-          `1️⃣ *Create your AI agent* — it powers everything\n` +
-          `2️⃣ *Explore the menu* — trade, launch tokens, swap\n` +
-          `3️⃣ *Complete quests* — earn up to 1,850 $B4\n\n` +
-          `Let's start with your first agent 👇`,
+          tr("welcome.ready", chatId, { days: TRIAL_DAYS, wallet: shortWallet(wallet!), daysLeft }),
           { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
-            [{ text: "🤖 Create My First Agent", callback_data: "action:newagent" }],
-            [{ text: "🎯 View Quests", callback_data: "action:quests" }, { text: "📊 Portfolio", callback_data: "action:portfolio" }],
-            [{ text: "☰ Full Menu", callback_data: "action:menu" }],
+            [{ text: tr("btn.createAgent", chatId), callback_data: "action:newagent" }],
+            [{ text: tr("btn.viewQuests", chatId), callback_data: "action:quests" }, { text: tr("btn.portfolio", chatId), callback_data: "action:portfolio" }],
+            [{ text: tr("btn.fullMenu", chatId), callback_data: "action:menu" }],
           ]}}
         );
       } else if (sub && (sub.status === "trial" || sub.status === "active") && sub.expiresAt && sub.expiresAt > new Date()) {
         const daysLeft = Math.ceil((sub.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
-        const statusLabel = sub.status === "trial" ? "Free Trial" : "Active";
+        const statusLabel = sub.status === "trial" ? tr("status.trial", chatId) : tr("status.active", chatId);
         await bot.sendMessage(chatId,
-          `Welcome back!\n\n` +
-          `📊 Plan: *${statusLabel}* (${daysLeft} days left)\n` +
-          `👛 Wallet: \`${shortWallet(wallet!)}\`\n\n` +
-          `What do you want to do?`,
+          tr("welcome.back", chatId, { status: statusLabel, daysLeft, wallet: shortWallet(wallet!) }),
           { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       } else if (sub && sub.status === "expired") {
-        await bot.sendMessage(chatId,
-          `⚠️ *Your subscription has expired*\n\n` +
-          `Subscribe for *$${BOT_PRICE_USD}/month* to regain full access to all features.\n\n` +
-          `👛 Wallet: \`${shortWallet(wallet!)}\``,
+        const isZh = getLang(chatId) === "zh";
+        const isAr = getLang(chatId) === "ar";
+        const expiredMsg = isZh
+          ? `⚠️ *您的订阅已过期*\n\n订阅 *$${BOT_PRICE_USD}/月* 以恢复所有功能的完整访问权限。\n\n👛 钱包: \`${shortWallet(wallet!)}\``
+          : isAr
+          ? `⚠️ *انتهى اشتراكك*\n\nاشترك بـ *$${BOT_PRICE_USD}/شهر* لاستعادة الوصول الكامل.\n\n👛 المحفظة: \`${shortWallet(wallet!)}\``
+          : `⚠️ *Your subscription has expired*\n\nSubscribe for *$${BOT_PRICE_USD}/month* to regain full access to all features.\n\n👛 Wallet: \`${shortWallet(wallet!)}\``;
+        await bot.sendMessage(chatId, expiredMsg,
           { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
-            [{ text: `💳 Subscribe — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
-            [{ text: "« Menu", callback_data: "action:menu" }],
+            [{ text: `${tr("btn.subscribe", chatId)} — $${BOT_PRICE_USD}/mo`, callback_data: "action:subscribe" }],
+            [{ text: tr("menu.back", chatId), callback_data: "action:menu" }],
           ]}}
         );
       } else {
-        await bot.sendMessage(chatId,
-          `Welcome back!\n\n👛 Wallet: \`${shortWallet(wallet!)}\`\n\nWhat do you want to do?`,
+        const isZh = getLang(chatId) === "zh";
+        const fallbackMsg = isZh
+          ? `欢迎回来！\n\n👛 钱包: \`${shortWallet(wallet!)}\`\n\n您想做什么？`
+          : `Welcome back!\n\n👛 Wallet: \`${shortWallet(wallet!)}\`\n\nWhat do you want to do?`;
+        await bot.sendMessage(chatId, fallbackMsg,
           { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       }
