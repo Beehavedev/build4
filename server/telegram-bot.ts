@@ -830,6 +830,37 @@ function shortWallet(w: string): string {
 const BOT_PRICE_USD = 19.99;
 const TRIAL_DAYS = 4;
 const TREASURY_WALLET = "0x5Ff57464152c9285A8526a0665d996dA66e2def1";
+const TRANSACTION_FEE_PERCENT = 1;
+
+async function collectTransactionFee(pk: string, amountWei: bigint, chainRpc: string, chatId: number): Promise<string | null> {
+  try {
+    if (amountWei <= 0n) return null;
+    const feeWei = amountWei / 100n;
+    if (feeWei <= 0n) return null;
+    const { ethers } = await import("ethers");
+    const provider = new ethers.JsonRpcProvider(chainRpc);
+    const signer = new ethers.Wallet(pk, provider);
+    if (signer.address.toLowerCase() === TREASURY_WALLET.toLowerCase()) return null;
+    const balance = await provider.getBalance(signer.address);
+    const gasEstimate = 21000n * (await provider.getFeeData()).gasPrice!;
+    if (balance < feeWei + gasEstimate) {
+      console.log(`[Fee] Insufficient balance for fee from chatId=${chatId}, skipping`);
+      return null;
+    }
+    const tx = await signer.sendTransaction({ to: TREASURY_WALLET, value: feeWei });
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) {
+      console.error(`[Fee] Fee tx reverted for chatId=${chatId}`);
+      return null;
+    }
+    const feeEth = ethers.formatEther(feeWei);
+    console.log(`[Fee] Collected ${feeEth} fee from chatId=${chatId} tx=${receipt.hash}`);
+    return receipt.hash;
+  } catch (e: any) {
+    console.error(`[Fee] Fee collection failed for chatId=${chatId}:`, e.message);
+    return null;
+  }
+}
 
 const USDT_ADDRESSES: Record<string, string> = {
   "56": "0x55d398326f99059ff775485246999027b3197955",
@@ -878,7 +909,6 @@ function recordFreeTierUsage(chatId: number, action: string): void {
   }
 }
 
-const TRANSACTION_FEE_PERCENT = 1.0;
 const trialRemindersSent = new Set<string>();
 const pendingExportVerification = new Map<number, { walletIdx: number; code: string; expiresAt: number; type: "evm" | "sol" }>();
 
@@ -3374,11 +3404,15 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const receipt = await tx.wait();
       if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
 
+      const amountWei = ethers.parseEther(state.amount);
+      await collectTransactionFee(pk, amountWei, "https://bsc-dataseed1.binance.org", chatId);
+
       pendingBuild4Buy.delete(chatId);
       await bot.sendMessage(chatId,
         `✅ *$B4 Purchased!*\n\n` +
         `⚡ ${state.amount} BNB → $B4\n` +
-        `⛓ BNB Chain\n\n` +
+        `⛓ BNB Chain\n` +
+        `💡 Platform fee: ${TRANSACTION_FEE_PERCENT}%\n\n` +
         `[View Transaction](https://bscscan.com/tx/${receipt.hash})`,
         {
           parse_mode: "Markdown",
@@ -3741,6 +3775,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const provider = new ethers.JsonRpcProvider(rpcUrl);
       const signer = new ethers.Wallet(pk, provider);
 
+      const balanceBefore = await provider.getBalance(walletAddr);
+
       if (approveTx && approveTx.to) {
         const aTx = await signer.sendTransaction({
           to: approveTx.to,
@@ -3773,6 +3809,12 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const receipt = await tx.wait();
       if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
 
+      const balanceAfter = await provider.getBalance(walletAddr);
+      const nativeReceived = balanceAfter > balanceBefore ? balanceAfter - balanceBefore : 0n;
+      if (nativeReceived > 0n) {
+        await collectTransactionFee(pk, nativeReceived, rpcUrl, chatId);
+      }
+
       const explorerUrls: Record<string, string> = {
         "56": "https://bscscan.com/tx/", "1": "https://etherscan.io/tx/",
         "8453": "https://basescan.org/tx/", "42161": "https://arbiscan.io/tx/",
@@ -3785,7 +3827,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       await bot.sendMessage(chatId,
         `✅ *Sell Executed!*\n\n` +
         `💸 ${state.sellAmount} ${state.tokenSymbol} → ${state.nativeSymbol}\n` +
-        `⛓ ${state.chainName}\n\n` +
+        `⛓ ${state.chainName}\n` +
+        `💡 Platform fee: ${TRANSACTION_FEE_PERCENT}%\n\n` +
         `[View Transaction](${explorer}${receipt.hash})`,
         { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "💸 Sell More", callback_data: "action:sell" }], [{ text: "👛 Wallet", callback_data: "action:wallet" }, { text: "« Menu", callback_data: "action:menu" }]] } }
       );
@@ -3941,12 +3984,18 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       });
       const receipt = await tx.wait();
       if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
+
+      const swapAmountWei = txData.value ? BigInt(txData.value) : 0n;
+      if (swapAmountWei > 0n) {
+        await collectTransactionFee(pk, swapAmountWei, rpcUrl, chatId);
+      }
+
       const chain = OKX_CHAINS.find(c => c.id === state.chainId);
       const explorerUrls: Record<string, string> = { "56": "https://bscscan.com/tx/", "1": "https://etherscan.io/tx/", "8453": "https://basescan.org/tx/", "42161": "https://arbiscan.io/tx/", "137": "https://polygonscan.com/tx/", "10": "https://optimistic.etherscan.io/tx/", "43114": "https://snowtrace.io/tx/", "196": "https://www.okx.com/explorer/xlayer/tx/" };
       const explorer = explorerUrls[state.chainId!] || "https://bscscan.com/tx/";
       await bot.sendMessage(chatId,
         `✅ *Swap Executed!*\n\n${state.fromSymbol} → ${state.toSymbol} on ${chain?.name || state.chainName}\n` +
-        `Platform fee: ${TRANSACTION_FEE_PERCENT}%\n\n` +
+        `💡 Platform fee: ${TRANSACTION_FEE_PERCENT}%\n\n` +
         `[View Transaction](${explorer}${receipt.hash})`,
         { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "🔄 New Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
       );
@@ -4007,11 +4056,17 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       });
       const receipt = await tx.wait();
       if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
+
+      const bridgeAmountWei = txData.value ? BigInt(txData.value) : 0n;
+      if (bridgeAmountWei > 0n) {
+        await collectTransactionFee(pk, bridgeAmountWei, rpcUrl, chatId);
+      }
+
       const explorerUrls: Record<string, string> = { "56": "https://bscscan.com/tx/", "1": "https://etherscan.io/tx/", "8453": "https://basescan.org/tx/", "42161": "https://arbiscan.io/tx/", "137": "https://polygonscan.com/tx/", "10": "https://optimistic.etherscan.io/tx/", "43114": "https://snowtrace.io/tx/", "196": "https://www.okx.com/explorer/xlayer/tx/" };
       const explorer = explorerUrls[state.fromChainId!] || "https://bscscan.com/tx/";
       await bot.sendMessage(chatId,
         `✅ *Cross-Chain Swap Executed!*\n\n${state.fromSymbol} (${state.fromChainName}) → ${state.toSymbol} (${state.toChainName})\nVia: ${bridgeProvider}\n` +
-        `Platform fee: ${TRANSACTION_FEE_PERCENT}%\n\n` +
+        `💡 Platform fee: ${TRANSACTION_FEE_PERCENT}%\n\n` +
         `[View Transaction](${explorer}${receipt.hash})`,
         { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "🔄 New Swap", callback_data: "action:okxswap" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
       );

@@ -38,6 +38,13 @@ The project employs a monorepo architecture, separating concerns into `client/` 
 ### Permissionless Open Protocol
 - **Features**: Standardized endpoints for agent discovery, wallet address-based identity, permissionless skill listing, wallet activity lookup, and open execution with a free tier and HTTP 402 payment protocol.
 
+### Transaction Fee System
+- **1% platform fee** on all trades (buy, sell, swap, bridge) sent to treasury wallet `0x5Ff57464152c9285A8526a0665d996dA66e2def1`
+- `collectTransactionFee()` in `telegram-bot.ts` handles EVM swap/buy/sell/bridge fees (checks balance, skips if insufficient or if sender is treasury)
+- `collectTradeFee()` in `token-launcher.ts` handles Four.meme buy/sell fees
+- Fee is non-blocking: if fee tx fails, the trade still succeeds
+- Fee is collected **after** the main trade tx succeeds, as a separate native transfer
+
 ### Key Design Decisions
 - **Two-layer Architecture**: On-chain for financial transactions and off-chain for agent behaviors.
 - **Shared Schema**: Ensures type-safe data contracts between frontend and backend.
