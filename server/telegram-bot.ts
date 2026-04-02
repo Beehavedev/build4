@@ -1256,7 +1256,7 @@ async function regenerateWalletWithKey(chatId: number): Promise<string | null> {
   }
 }
 
-const balanceCache = new Map<string, { bnb: string; eth: string; usdt: string; ts: number }>();
+const balanceCache = new Map<string, { bnb: string; eth: string; usdt: string; b4?: string; ts: number }>();
 const BALANCE_CACHE_TTL = 30_000;
 const bnbProviderCached = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
 const baseProviderCached = new ethers.JsonRpcProvider("https://mainnet.base.org");
@@ -1274,15 +1274,17 @@ async function fetchUsdtBalance(wallet: string): Promise<string> {
   }
 }
 
-async function fetchWalletBalances(wallets: string[]): Promise<Record<string, { bnb: string; eth: string; usdt: string }>> {
-  const result: Record<string, { bnb: string; eth: string; usdt: string }> = {};
+async function fetchWalletBalances(wallets: string[]): Promise<Record<string, { bnb: string; eth: string; usdt: string; b4: string }>> {
+  const result: Record<string, { bnb: string; eth: string; usdt: string; b4: string }> = {};
   const now = Date.now();
   const uncached: string[] = [];
+  const b4Abi = ["function balanceOf(address) view returns (uint256)"];
+  const b4Contract = new ethers.Contract(BUILD4_TOKEN_CA, b4Abi, bnbProviderCached);
 
   for (const w of wallets) {
     const cached = balanceCache.get(w);
     if (cached && now - cached.ts < BALANCE_CACHE_TTL) {
-      result[w] = { bnb: cached.bnb, eth: cached.eth, usdt: cached.usdt };
+      result[w] = { bnb: cached.bnb, eth: cached.eth, usdt: cached.usdt, b4: cached.b4 || "0" };
     } else {
       uncached.push(w);
     }
@@ -1292,17 +1294,19 @@ async function fetchWalletBalances(wallets: string[]): Promise<Record<string, { 
 
   await Promise.all(uncached.map(async (w) => {
     try {
-      const [bnbBal, ethBal, usdtBal] = await Promise.all([
+      const [bnbBal, ethBal, usdtBal, b4Bal] = await Promise.all([
         bnbProviderCached.getBalance(w).catch(() => BigInt(0)),
         baseProviderCached.getBalance(w).catch(() => BigInt(0)),
         fetchUsdtBalance(w),
+        b4Contract.balanceOf(w).catch(() => BigInt(0)),
       ]);
       const bnbStr = parseFloat(ethers.formatEther(bnbBal)).toFixed(4);
       const ethStr = parseFloat(ethers.formatEther(ethBal)).toFixed(4);
-      result[w] = { bnb: bnbStr, eth: ethStr, usdt: usdtBal };
-      balanceCache.set(w, { bnb: bnbStr, eth: ethStr, usdt: usdtBal, ts: now });
+      const b4Str = Math.floor(parseFloat(ethers.formatEther(b4Bal))).toLocaleString();
+      result[w] = { bnb: bnbStr, eth: ethStr, usdt: usdtBal, b4: b4Str };
+      balanceCache.set(w, { bnb: bnbStr, eth: ethStr, usdt: usdtBal, b4: b4Str, ts: now });
     } catch {
-      result[w] = { bnb: "0.0000", eth: "0.0000", usdt: "0.00" };
+      result[w] = { bnb: "0.0000", eth: "0.0000", usdt: "0.00", b4: "0" };
     }
   }));
 
@@ -2032,6 +2036,7 @@ async function handlePortfolio(chatId: number): Promise<void> {
       const bal = balances[wallet];
       if (bal) {
         const parts: string[] = [];
+        if (bal.b4 && bal.b4 !== "0") parts.push(`${bal.b4} $B4`);
         if (parseFloat(bal.bnb) > 0) parts.push(`${bal.bnb} BNB`);
         if (parseFloat(bal.usdt) > 0) parts.push(`${bal.usdt} USDT`);
         if (parseFloat(bal.eth) > 0) parts.push(`${bal.eth} ETH`);
@@ -3162,6 +3167,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       let balText = "";
       if (bal) {
         const parts: string[] = [];
+        if (bal.b4 && bal.b4 !== "0") parts.push(`${bal.b4} $B4`);
         if (parseFloat(bal.bnb) > 0) parts.push(`${bal.bnb} BNB`);
         if (parseFloat(bal.usdt) > 0) parts.push(`${bal.usdt} USDT`);
         if (parseFloat(bal.eth) > 0) parts.push(`${bal.eth} ETH`);
@@ -8845,6 +8851,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         let balText = "";
         if (bal) {
           const parts: string[] = [];
+          if (bal.b4 && bal.b4 !== "0") parts.push(`${bal.b4} $B4`);
           if (parseFloat(bal.bnb) > 0) parts.push(`${bal.bnb} BNB`);
           if (parseFloat(bal.eth) > 0) parts.push(`${bal.eth} ETH`);
           balText = parts.length > 0 ? ` (${parts.join(", ")})` : " (empty)";
