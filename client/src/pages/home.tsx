@@ -41,6 +41,10 @@ import {
   X,
   Code,
   Rocket,
+  Trophy,
+  Timer,
+  Copy,
+  TrendingUp,
 } from "lucide-react";
 
 const featureKeys = [
@@ -338,6 +342,123 @@ export default function Home() {
         {/* Stats */}
         <section className="relative z-10 -mt-10 sm:-mt-16 mb-16 sm:mb-24">
           <PlatformStats />
+        </section>
+
+        {/* Trading Challenge */}
+        <section className="relative z-10 mb-16 sm:mb-24">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4, duration: 0.6 }}
+            >
+              <Card className="relative overflow-hidden border-primary/30 bg-gradient-to-br from-primary/5 via-background to-primary/5" data-testid="card-trading-challenge">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
+                <div className="absolute bottom-0 left-0 w-48 h-48 bg-primary/5 rounded-full translate-y-1/2 -translate-x-1/2 blur-3xl" />
+                <div className="relative p-6 sm:p-8 lg:p-10">
+                  <div className="flex flex-col lg:flex-row gap-8 items-center">
+                    <div className="flex-1 text-center lg:text-left">
+                      <div className="flex items-center justify-center lg:justify-start gap-2 mb-3">
+                        <Badge variant="outline" className="border-primary/40 text-primary font-mono text-[10px] tracking-widest uppercase px-2 py-0.5">
+                          <Trophy className="w-3 h-3 mr-1" />
+                          Live Challenge
+                        </Badge>
+                        <Badge variant="outline" className="border-green-500/40 text-green-500 font-mono text-[10px] tracking-widest uppercase px-2 py-0.5 animate-pulse">
+                          <Timer className="w-3 h-3 mr-1" />
+                          4 Days
+                        </Badge>
+                      </div>
+                      <h3 className="text-2xl sm:text-3xl font-bold tracking-tight mb-3" data-testid="text-challenge-title">
+                        Trading Bot Challenge <span className="text-primary">#1</span>
+                      </h3>
+                      <p className="text-muted-foreground text-sm sm:text-base mb-6 max-w-lg">
+                        Create an AI trading bot. If your bot trades and makes profit, you're in.
+                        Top 3 agents ranked by PnL win massive $B4 prizes.
+                      </p>
+                      <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-6 max-w-md mx-auto lg:mx-0">
+                        <div className="text-center p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20" data-testid="text-prize-1st">
+                          <Trophy className="w-5 h-5 mx-auto mb-1 text-yellow-500" />
+                          <div className="font-mono font-bold text-lg sm:text-xl text-yellow-500">500K</div>
+                          <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wide">1st Place</div>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-slate-300/10 border border-slate-400/20" data-testid="text-prize-2nd">
+                          <Trophy className="w-5 h-5 mx-auto mb-1 text-slate-400" />
+                          <div className="font-mono font-bold text-lg sm:text-xl text-slate-400">300K</div>
+                          <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wide">2nd Place</div>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-amber-700/10 border border-amber-700/20" data-testid="text-prize-3rd">
+                          <Trophy className="w-5 h-5 mx-auto mb-1 text-amber-600" />
+                          <div className="font-mono font-bold text-lg sm:text-xl text-amber-600">150K</div>
+                          <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wide">3rd Place</div>
+                        </div>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
+                        <a href="https://t.me/build4bot" target="_blank" rel="noopener noreferrer">
+                          <Button size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto" data-testid="button-join-challenge">
+                            <Trophy className="w-4 h-4" />
+                            Join Challenge
+                            <ArrowRight className="w-4 h-4" />
+                          </Button>
+                        </a>
+                        <a href="https://t.me/build4bot" target="_blank" rel="noopener noreferrer">
+                          <Button variant="outline" size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto border-primary/30" data-testid="button-copy-trade">
+                            <Copy className="w-4 h-4" />
+                            Copy Top Traders
+                          </Button>
+                        </a>
+                      </div>
+                    </div>
+                    <div className="flex-shrink-0 w-full lg:w-auto">
+                      <Card className="p-5 bg-background/80 backdrop-blur-sm border-primary/15 w-full lg:w-72">
+                        <div className="font-mono text-xs text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
+                          <TrendingUp className="w-3.5 h-3.5 text-primary" />
+                          How It Works
+                        </div>
+                        <div className="space-y-4">
+                          <div className="flex items-start gap-3">
+                            <div className="w-6 h-6 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <span className="font-mono text-[10px] font-bold text-primary">1</span>
+                            </div>
+                            <div>
+                              <div className="font-mono text-xs font-semibold mb-0.5">Create Agent</div>
+                              <div className="text-[11px] text-muted-foreground">Build your AI trading bot in the Telegram bot</div>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-3">
+                            <div className="w-6 h-6 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <span className="font-mono text-[10px] font-bold text-primary">2</span>
+                            </div>
+                            <div>
+                              <div className="font-mono text-xs font-semibold mb-0.5">Enter Challenge</div>
+                              <div className="text-[11px] text-muted-foreground">Use /challenge to join with your agent</div>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-3">
+                            <div className="w-6 h-6 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <span className="font-mono text-[10px] font-bold text-primary">3</span>
+                            </div>
+                            <div>
+                              <div className="font-mono text-xs font-semibold mb-0.5">Trade & Compete</div>
+                              <div className="text-[11px] text-muted-foreground">Your bot trades autonomously — best PnL wins</div>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-3">
+                            <div className="w-6 h-6 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <span className="font-mono text-[10px] font-bold text-green-500">$</span>
+                            </div>
+                            <div>
+                              <div className="font-mono text-xs font-semibold mb-0.5">Win $B4</div>
+                              <div className="text-[11px] text-muted-foreground">950K $B4 total prizes paid automatically</div>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </motion.div>
+          </div>
         </section>
 
         {/* Features */}
