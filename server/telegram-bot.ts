@@ -9554,13 +9554,13 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
         `模型: ${shortModel(model)}\n` +
         `ID: \`${agentId}\`\n` +
         `\n🎁 BUILD4上创建代理永远免费` +
-        `\n\n⛓️ 正在尝试ERC-8004链上注册...\n_（使用您钱包中的少量gas费）_`
+        `\n\n⛓️ 正在自动注册ERC-8004链上身份...`
       : `✅ *Agent Created — FREE!*\n\n` +
         `🤖 *${result.agent.name}*\n` +
         `Model: ${shortModel(model)}\n` +
         `ID: \`${agentId}\`\n` +
         `\n🎁 Agent creation is always free on BUILD4` +
-        `\n\n⛓️ Attempting ERC-8004 on-chain registration...\n_（Uses a small gas fee from your wallet）_`;
+        `\n\n⛓️ Auto-registering ERC-8004 on-chain identity...`;
 
     await bot.sendMessage(chatId, msg,
       {
@@ -9568,7 +9568,6 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
         reply_markup: {
           inline_keyboard: [
             [{ text: isZh ? "分配任务" : "Give it a task", callback_data: `agenttask:${agentId}` }],
-            [{ text: isZh ? "⛓️ 注册上链" : "⛓️ Register On-Chain", callback_data: `registerchain:${agentId}` }],
             [{ text: isZh ? "我的代理" : "My Agents", callback_data: "action:myagents" }, { text: isZh ? "菜单" : "Menu", callback_data: "action:menu" }],
           ]
         }
@@ -9593,13 +9592,14 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
     userPk = await resolvePrivateKey(chatId, wallet) || undefined;
   }
 
-  if (!userPk) {
+  const deployerPk = process.env.DEPLOYER_PRIVATE_KEY;
+  const erc8004Key = deployerPk || userPk;
+
+  if (!erc8004Key) {
     try {
       await bot.sendMessage(chatId,
-        `⚠️ On-chain registration skipped — your wallet needs gas to register.\n\n` +
-        `• Base: ~0.0005 ETH\n` +
-        `• BNB Chain: ~0.002 BNB\n\n` +
-        `Fund your wallet and use /myagents → "Register On-Chain" to register on your preferred chain.`,
+        `⚠️ On-chain registration skipped — no wallet key available.\n\n` +
+        `Use /myagents → "Register On-Chain" to register later.`,
       );
     } catch {}
     return;
@@ -9607,14 +9607,14 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
 
   let erc8004Registered = false;
   const chainsToTry: Array<{ network: string; chainKey: string; chainName: string; explorer: string }> = [
-    { network: "base", chainKey: "base", chainName: "Base", explorer: "basescan.org" },
     { network: "bsc", chainKey: "bnb", chainName: "BNB Chain", explorer: "bscscan.com" },
+    { network: "base", chainKey: "base", chainName: "Base", explorer: "basescan.org" },
   ];
 
   for (const chain of chainsToTry) {
     if (erc8004Registered) break;
     try {
-      const erc8004Result = await registerAgentERC8004(name, bio, agentId, chain.network, userPk);
+      const erc8004Result = await registerAgentERC8004(name, bio, agentId, chain.network, erc8004Key);
       if (erc8004Result.success) {
         erc8004Registered = true;
         const shortTx = erc8004Result.txHash?.substring(0, 14) || "";
@@ -9653,7 +9653,7 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
     }
   }
   if (!erc8004Registered) {
-    results.push(`ERC-8004: No gas on Base or BNB Chain — register later via /myagents`);
+    results.push(`ERC-8004: Registration failed — register later via /myagents`);
   }
 
   try {

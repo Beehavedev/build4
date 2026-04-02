@@ -1480,7 +1480,74 @@ async function backfillAgentIdentity(): Promise<void> {
 async function registerExistingAgentsOnchain(): Promise<void> {
   if (!onchainEnabled) return;
   initMultiChain();
-  log("[agent-runner] On-chain registration is user-funded — skipping deployer-funded bulk registration. Users register via /myagents.", "agent-runner");
+
+  const deployerPk = process.env.DEPLOYER_PRIVATE_KEY;
+  if (!deployerPk) {
+    log("[agent-runner] No DEPLOYER_PRIVATE_KEY — skipping ERC-8004 bulk registration.", "agent-runner");
+    return;
+  }
+
+  const { registerAgentERC8004 } = await import("./onchain");
+  const { db } = await import("./db");
+  const { agents: agentsTable } = await import("@shared/schema");
+  const { eq } = await import("drizzle-orm");
+
+  const allAgents = await storage.getAllAgents();
+  const unregistered = allAgents.filter(a => a.status === "active" && !a.erc8004Registered);
+  if (unregistered.length === 0) {
+    log(`[agent-runner] All ${allAgents.filter(a => a.status === "active").length} active agents already ERC-8004 registered.`, "agent-runner");
+    return;
+  }
+
+  log(`[agent-runner] ERC-8004 bulk registration: ${unregistered.length} agents to register on BNB Chain (deployer-funded, free mint)...`, "agent-runner");
+
+  let successCount = 0;
+  let failCount = 0;
+  const BATCH_SIZE = 10;
+  const DELAY_BETWEEN_TX = 2000;
+  const DELAY_BETWEEN_BATCHES = 10000;
+
+  for (let i = 0; i < unregistered.length; i++) {
+    const agent = unregistered[i];
+    try {
+      const result = await registerAgentERC8004(agent.name, agent.bio || undefined, agent.id, "bsc", deployerPk);
+      if (result.success) {
+        successCount++;
+        try {
+          await db.update(agentsTable).set({
+            erc8004Registered: true,
+            erc8004TxHash: result.txHash || null,
+            erc8004TokenId: result.tokenId || null,
+            erc8004Chain: "bnb",
+          }).where(eq(agentsTable.id, agent.id));
+        } catch (dbErr: any) {
+          const { sql } = await import("drizzle-orm");
+          await db.execute(sql`UPDATE agents SET erc8004_registered = true, erc8004_tx_hash = ${result.txHash || null}, erc8004_token_id = ${result.tokenId || null}, erc8004_chain = 'bnb' WHERE id = ${agent.id}`);
+        }
+        if (agent.creatorWallet) agentCache.delete(agent.creatorWallet);
+        log(`[ERC-8004] ✅ ${agent.name} registered (${successCount}/${unregistered.length}) TX: ${result.txHash?.substring(0, 20)}...`, "agent-runner");
+      } else {
+        failCount++;
+        log(`[ERC-8004] ❌ ${agent.name} failed: ${result.error?.substring(0, 120)}`, "agent-runner");
+        if (result.error?.includes("Insufficient")) {
+          log(`[ERC-8004] Deployer out of gas — stopping bulk registration. ${successCount} registered, ${unregistered.length - successCount} remaining.`, "agent-runner");
+          break;
+        }
+      }
+    } catch (e: any) {
+      failCount++;
+      log(`[ERC-8004] ❌ ${agent.name} error: ${e.message?.substring(0, 120)}`, "agent-runner");
+    }
+
+    if (i > 0 && i % BATCH_SIZE === 0) {
+      log(`[ERC-8004] Batch pause after ${i} agents (${successCount} ok, ${failCount} fail)...`, "agent-runner");
+      await new Promise(r => setTimeout(r, DELAY_BETWEEN_BATCHES));
+    } else {
+      await new Promise(r => setTimeout(r, DELAY_BETWEEN_TX));
+    }
+  }
+
+  log(`[ERC-8004] Bulk registration complete: ${successCount} registered, ${failCount} failed out of ${unregistered.length} total.`, "agent-runner");
 }
 
 const STANDARDS_REGISTRATION_INTERVAL_MS = 5 * 60 * 1000;
@@ -1517,11 +1584,24 @@ async function autoRegisterAgentStandards(): Promise<void> {
       let hadFailure = false;
 
       if (!agent.erc8004Registered) {
+        const deployerPk = process.env.DEPLOYER_PRIVATE_KEY;
+        const regKey = deployerPk || userPk;
         try {
-          const bscResult = await registerAgentERC8004(agent.name, agent.bio || undefined, agent.id, "bsc", userPk);
+          const bscResult = await registerAgentERC8004(agent.name, agent.bio || undefined, agent.id, "bsc", regKey);
           if (bscResult.success) {
             log(`[AutoReg] ${agent.name} registered on ERC-8004 (BSC): ${bscResult.txHash?.substring(0, 18)}...`, "agent-runner");
-            await db.update(agentsTable).set({ erc8004Registered: true }).where(eq(agentsTable.id, agent.id));
+            try {
+              await db.update(agentsTable).set({
+                erc8004Registered: true,
+                erc8004TxHash: bscResult.txHash || null,
+                erc8004TokenId: bscResult.tokenId || null,
+                erc8004Chain: "bnb",
+              }).where(eq(agentsTable.id, agent.id));
+            } catch {
+              const { sql } = await import("drizzle-orm");
+              await db.execute(sql`UPDATE agents SET erc8004_registered = true, erc8004_tx_hash = ${bscResult.txHash || null}, erc8004_token_id = ${bscResult.tokenId || null}, erc8004_chain = 'bnb' WHERE id = ${agent.id}`);
+            }
+            if (agent.creatorWallet) agentCache.delete(agent.creatorWallet);
             await new Promise(r => setTimeout(r, 3000));
           } else {
             hadFailure = true;
