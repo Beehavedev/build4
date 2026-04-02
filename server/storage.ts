@@ -3157,8 +3157,9 @@ export class DatabaseStorage implements IStorage {
 
   async getUserRewardTotal(chatId: string): Promise<string> {
     try {
+      const safeChatId = chatId.replace(/'/g, "''");
       const result = await db.execute(sql.raw(
-        `SELECT COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as total FROM user_rewards WHERE chat_id = '${chatId.replace(/'/g, "''")}'`
+        `SELECT COALESCE(SUM(CASE WHEN amount ~ '^[0-9]+(\\.[0-9]+)?$' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0) as total FROM user_rewards WHERE chat_id = '${safeChatId}'`
       ));
       const row = (result.rows || [])[0] as any;
       return row?.total?.toString() || "0";
@@ -3170,10 +3171,9 @@ export class DatabaseStorage implements IStorage {
 
   async getRewardsLeaderboard(limit: number = 10): Promise<Array<{ chatId: string; totalRewards: string; rewardCount: number }>> {
     try {
-      const result = await db.execute(
-        sql`SELECT chat_id, COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as total_rewards, COUNT(*) as reward_count
-            FROM user_rewards GROUP BY chat_id ORDER BY total_rewards DESC LIMIT ${limit}`
-      );
+      const result = await db.execute(sql.raw(
+        `SELECT chat_id, COALESCE(SUM(CASE WHEN amount ~ '^[0-9]+(\\.[0-9]+)?$' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0) as total_rewards, COUNT(*) as reward_count FROM user_rewards GROUP BY chat_id ORDER BY total_rewards DESC LIMIT ${Number(limit) || 10}`
+      ));
       return (result.rows || []).map((r: any) => ({
         chatId: String(r.chat_id || ""),
         totalRewards: String(r.total_rewards ?? "0"),
