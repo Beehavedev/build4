@@ -3170,14 +3170,14 @@ export class DatabaseStorage implements IStorage {
 
   async getRewardsLeaderboard(limit: number = 10): Promise<Array<{ chatId: string; totalRewards: string; rewardCount: number }>> {
     try {
-      const result = await db.execute(sql.raw(
-        `SELECT chat_id as "chatId", COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as "totalRewards", COUNT(*) as "rewardCount"
-         FROM user_rewards GROUP BY chat_id ORDER BY "totalRewards" DESC LIMIT ${limit}`
-      ));
+      const result = await db.execute(
+        sql`SELECT chat_id, COALESCE(SUM(CAST(amount AS NUMERIC)), 0) as total_rewards, COUNT(*) as reward_count
+            FROM user_rewards GROUP BY chat_id ORDER BY total_rewards DESC LIMIT ${limit}`
+      );
       return (result.rows || []).map((r: any) => ({
-        chatId: r.chatId,
-        totalRewards: r.totalRewards?.toString() || "0",
-        rewardCount: parseInt(r.rewardCount) || 0,
+        chatId: String(r.chat_id || ""),
+        totalRewards: String(r.total_rewards ?? "0"),
+        rewardCount: Number(r.reward_count) || 0,
       }));
     } catch (e: any) {
       console.error("[Rewards] Failed to get leaderboard:", e.message);

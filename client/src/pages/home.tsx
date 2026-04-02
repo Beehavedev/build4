@@ -179,6 +179,70 @@ function TerminalLine({ prompt, command, delay = 0 }: { prompt: string; command:
   );
 }
 
+function B4RewardsLeaderboard() {
+  const { data: leaderboard = [] } = useQuery<Array<{ chatId: string; totalRewards: string; rewardCount: number }>>({
+    queryKey: ["/api/rewards/leaderboard"],
+  });
+
+  if (leaderboard.length === 0) return null;
+
+  const medals = ["🥇", "🥈", "🥉"];
+
+  return (
+    <section className="relative z-10 mb-16 sm:mb-24">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3, duration: 0.5 }}
+        >
+          <Card className="p-6 sm:p-8 border-primary/20" data-testid="card-b4-leaderboard">
+            <div className="flex items-center gap-2 mb-6">
+              <Trophy className="w-5 h-5 text-primary" />
+              <h3 className="text-lg font-bold font-mono">$B4 Rewards Leaderboard</h3>
+            </div>
+            <div className="space-y-2">
+              {leaderboard.slice(0, 10).map((entry, i) => {
+                const medal = i < 3 ? medals[i] : `${i + 1}.`;
+                const shortId = entry.chatId.length > 7
+                  ? `${entry.chatId.substring(0, 4)}...${entry.chatId.substring(entry.chatId.length - 3)}`
+                  : entry.chatId;
+                const total = Number(entry.totalRewards) || 0;
+                return (
+                  <div
+                    key={entry.chatId}
+                    className={`flex items-center justify-between px-4 py-2.5 rounded-lg font-mono text-sm ${
+                      i < 3 ? "bg-primary/5 border border-primary/10" : "bg-muted/30"
+                    }`}
+                    data-testid={`leaderboard-row-${i}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="w-8 text-center">{medal}</span>
+                      <span className="text-muted-foreground">{shortId}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="font-semibold">{total.toLocaleString()} $B4</span>
+                      <span className="text-xs text-muted-foreground">{entry.rewardCount} actions</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-4 text-center">
+              <a href="https://t.me/build4bot" target="_blank" rel="noopener noreferrer">
+                <Button variant="outline" size="sm" className="font-mono text-xs gap-2" data-testid="button-earn-b4">
+                  <Rocket className="w-3.5 h-3.5" />
+                  Start Earning $B4
+                </Button>
+              </a>
+            </div>
+          </Card>
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
 function PlatformStats() {
   const t = useT();
   const { data } = useQuery<{
@@ -343,6 +407,9 @@ export default function Home() {
         <section className="relative z-10 -mt-10 sm:-mt-16 mb-16 sm:mb-24">
           <PlatformStats />
         </section>
+
+        {/* $B4 Rewards Leaderboard */}
+        <B4RewardsLeaderboard />
 
         {/* Trading Challenge */}
         <section className="relative z-10 mb-16 sm:mb-24">

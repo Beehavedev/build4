@@ -1870,7 +1870,7 @@ ${urls}
       const [purchaseCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM skill_purchases`)).rows;
       const [revenueData] = (await db.execute(sql`SELECT SUM(amount::numeric) as total, COUNT(*) as cnt FROM platform_revenue`)).rows;
       const [uniqueWallets] = (await db.execute(sql`SELECT COUNT(DISTINCT creator_wallet) as cnt FROM agents WHERE creator_wallet IS NOT NULL`)).rows;
-      const [onchainAgents] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agents WHERE erc8004_registered = true AND erc8004_tx_hash IS NOT NULL`)).rows;
+      const [onchainAgents] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agents WHERE erc8004_registered = true OR onchain_registered = true`)).rows;
 
       const crypto = await import("crypto");
       const allSkills = await storage.getTopSkills(5000);
@@ -1892,6 +1892,15 @@ ${urls}
         visitors: Number(uniqueWallets?.cnt || 0),
         onchainAgents: Number(onchainAgents?.cnt || 0),
       });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/rewards/leaderboard", async (_req: Request, res: Response) => {
+    try {
+      const leaderboard = await storage.getRewardsLeaderboard(20);
+      res.json(leaderboard);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

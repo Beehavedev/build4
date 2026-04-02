@@ -8452,7 +8452,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           const [purchaseCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM skill_purchases`)).rows;
           const [revenueData] = (await db.execute(sql`SELECT SUM(amount::numeric) as total, COUNT(*) as cnt FROM platform_revenue`)).rows;
           const [uniqueWallets] = (await db.execute(sql`SELECT COUNT(DISTINCT creator_wallet) as cnt FROM agents WHERE creator_wallet IS NOT NULL`)).rows;
-          const [onchainAgents] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agents WHERE erc8004_registered = true AND erc8004_tx_hash IS NOT NULL`)).rows;
+          const [onchainAgents] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agents WHERE erc8004_registered = true OR onchain_registered = true`)).rows;
           const [skillCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agent_skills`)).rows;
           const crypto = await import("crypto");
           const allSkills = await storage.getTopSkills(5000);
