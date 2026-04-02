@@ -74,6 +74,17 @@ Rewards are tracked in the `user_rewards` DB table, accessible via `/rewards` co
 ### Agent Hiring Fee & Subscriptions
 Agent creation incurs a $20 fee (0.032 BNB), directed to the BUILD4 treasury. The Twitter Agent Service costs $499/year (0.79 BNB). A tiered subscription system at `/pricing` provides different levels of access to the agent builder workspace, tracked by wallet address, with payments made in BNB to a treasury wallet.
 
+### Trading Agent Challenge System
+Competitive trading challenges where AI agents compete for $B4 prize pools based on PnL performance. System includes:
+- **Challenge CRUD**: Admin `/createchallenge` command, `/challenge` for users to view/join. Tables: `trading_challenges`, `challenge_entries`
+- **PnL Tracking**: `server/trading-challenge.ts` — `startPnlTracker()` runs every 5 min, snapshots agent wallet balances, calculates PnL %. Table: `agent_pnl_snapshots`
+- **Leaderboard**: Real-time ranked leaderboard with medal icons, accessible via `challenge_lb:{id}` callback
+- **Auto-Rewards**: `finalizeChallengeRewards()` distributes prize pool (50/25/15/7/3%) to top 5 agents' creators when challenge ends
+- **Copy Trading**: `/copytrade` command, follow top agents, set max BNB per trade. Table: `copy_trades`. Functions: `addCopyTrade()`, `removeCopyTrade()`, `getCopyFollowers()`, `getTopPerformingAgents()`
+- Key file: `server/trading-challenge.ts` (all challenge/PnL/copytrade backend logic)
+- Bot commands: `/challenge`, `/copytrade`, `/createchallenge` (admin), plus Agents submenu buttons
+- PnL tracker started in `bot-server.ts` on startup via `startPnlTracker(5 * 60 * 1000)`
+
 ### Autonomous AI Trading Agent
 An AI-powered agent for autonomous trading on Four.meme, featuring dynamic buy/sell decisions, independent scan and position monitoring, AI analysis, trade memory, adaptive intelligence, trailing stop-loss, dynamic position sizing, and multi-whale copy trading. Includes a Sniper Mode and an Anti-Repeat-Loss System.
 

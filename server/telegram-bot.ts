@@ -162,6 +162,10 @@ const pendingAsterTrade = new Map<number, AsterTradeState>();
 const pendingTxHashVerify = new Map<number, boolean>();
 const pendingOKXSwap = new Map<number, OKXSwapState>();
 const pendingOKXBridge = new Map<number, OKXBridgeState>();
+
+interface ChallengeCreationState { step: "name" | "description" | "duration" | "prize" | "confirm"; name?: string; description?: string; durationDays?: number; prizePoolB4?: string }
+const pendingChallengeCreation = new Map<number, ChallengeCreationState>();
+const pendingCopyTradeAmount = new Map<number, { agentId: string; agentName: string }>();
 const pendingOKXScan = new Map<number, { step: "address"; chain?: string }>();
 const pendingOKXPrice = new Map<number, { step: "address"; chain?: string }>();
 const pendingAgentQuestion = new Map<number, string>();
@@ -2369,6 +2373,8 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
       { command: "newagent", description: "Create an AI agent" },
       { command: "wallet", description: "Wallet info and management" },
       { command: "rewards", description: "$B4 rewards dashboard" },
+      { command: "challenge", description: "Trading Agent Challenges" },
+      { command: "copytrade", description: "Copy top agent trades" },
       { command: "aster", description: "Aster DEX futures & spot trading" },
       { command: "lang", description: "Switch language / 切换语言" },
       { command: "help", description: "Show all commands" },
@@ -5923,6 +5929,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       reply_markup: { inline_keyboard: [
         [{ text: tr("menu.createAgent", c), callback_data: "action:newagent" }, { text: tr("menu.myAgents", c), callback_data: "action:myagents" }],
         [{ text: tr("menu.newTask", c), callback_data: "action:task" }, { text: tr("menu.myTasks", c), callback_data: "action:mytasks" }],
+        [{ text: "🏆 Challenges", callback_data: "action:challenges" }, { text: "📋 Copy Trade", callback_data: "action:copytrade_menu" }],
         [{ text: tr("menu.back", c), callback_data: "action:menu" }],
       ]}
     });
@@ -5982,6 +5989,176 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     } catch (e: any) {
       await bot.sendMessage(chatId, "Could not load fee info. Try again later.");
     }
+    return;
+  }
+
+  if (data === "action:challenges") {
+    const { getActiveChallenges, getChallengeLeaderboard } = await import("./trading-challenge");
+    const challenges = await getActiveChallenges();
+    if (challenges.length === 0) {
+      await bot.sendMessage(chatId,
+        `🏆 *Trading Agent Challenge*\n\nNo active challenges right now.\n\nCreate an AI trading agent and compete for $B4 prizes!`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🤖 Create Agent", callback_data: "action:createagent" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+      return;
+    }
+    let msg = `🏆 *Trading Agent Challenges*\n\n`;
+    const buttons: any[][] = [];
+    for (const c of challenges) {
+      const timeLeft = c.endDate > new Date() ? Math.ceil((c.endDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : 0;
+      const entries = await getChallengeLeaderboard(c.id);
+      msg += `*${c.name}*\n${c.description || ""}\n💰 Prize: ${parseInt(c.prizePoolB4).toLocaleString()} $B4\n👥 ${entries.length}/${c.maxEntries} entries\n⏰ ${timeLeft}d left | ${c.status === "active" ? "🟢 Active" : "🟡 Upcoming"}\n\n`;
+      buttons.push([{ text: `📊 ${c.name} Leaderboard`, callback_data: `challenge_lb:${c.id}` }]);
+      if (c.status === "active" || c.status === "upcoming") {
+        buttons.push([{ text: `⚡ Join ${c.name}`, callback_data: `challenge_join:${c.id}` }]);
+      }
+    }
+    buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
+    await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+    return;
+  }
+
+  if (data.startsWith("challenge_lb:")) {
+    const challengeId = data.split(":")[1];
+    const { getChallengeLeaderboard, getChallengeById } = await import("./trading-challenge");
+    const challenge = await getChallengeById(challengeId);
+    if (!challenge) { await bot.sendMessage(chatId, "Challenge not found."); return; }
+    const entries = await getChallengeLeaderboard(challengeId);
+    if (entries.length === 0) {
+      await bot.sendMessage(chatId, `📊 *${challenge.name} — Leaderboard*\n\nNo entries yet. Be the first to join!`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "⚡ Join", callback_data: `challenge_join:${challengeId}` }], [{ text: "« Back", callback_data: "action:challenges" }]] } });
+      return;
+    }
+    const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
+    let msg = `📊 *${challenge.name} — Leaderboard*\n💰 Prize pool: ${parseInt(challenge.prizePoolB4).toLocaleString()} $B4\n\n`;
+    for (let i = 0; i < Math.min(entries.length, 10); i++) {
+      const e = entries[i];
+      const pnl = parseFloat(e.pnlPercent);
+      const agentRow = await storage.getAgent(e.agentId);
+      msg += `${medals[i] || `${i + 1}.`} *${agentRow?.name || "Agent"}*\n   PnL: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}% | ${parseFloat(e.currentBalanceBnb).toFixed(4)} BNB\n`;
+    }
+    const buttons: any[][] = [[{ text: "⚡ Join Challenge", callback_data: `challenge_join:${challengeId}` }]];
+    for (const e of entries.slice(0, 5)) {
+      buttons.push([{ text: `📋 Copy ${(await storage.getAgent(e.agentId))?.name || "Agent"}`, callback_data: `copytrade_start:${e.agentId}` }]);
+    }
+    buttons.push([{ text: "« Back", callback_data: "action:challenges" }]);
+    await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+    return;
+  }
+
+  if (data.startsWith("challenge_join:")) {
+    const challengeId = data.split(":")[1];
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) { await bot.sendMessage(chatId, "You need a wallet first. Use /start."); return; }
+    const myAgents = await storage.getAgentsByTelegramChatId(chatId.toString());
+    if (!myAgents || myAgents.length === 0) {
+      await bot.sendMessage(chatId, "You need an AI agent to enter. Create one first!", { reply_markup: { inline_keyboard: [[{ text: "🤖 Create Agent", callback_data: "action:createagent" }], [{ text: "« Back", callback_data: "action:challenges" }]] } });
+      return;
+    }
+    if (myAgents.length === 1) {
+      const { joinChallenge } = await import("./trading-challenge");
+      const result = await joinChallenge(challengeId, myAgents[0].id, chatId.toString(), wallet);
+      if (result.success) {
+        await bot.sendMessage(chatId, `✅ *${myAgents[0].name}* joined the challenge!\n\nStarting balance: ${parseFloat(result.entry!.startingBalanceBnb).toFixed(4)} BNB\n\nYour agent will be tracked on the leaderboard. Trade to climb the ranks!`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "📊 Leaderboard", callback_data: `challenge_lb:${challengeId}` }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      } else {
+        await bot.sendMessage(chatId, `❌ ${result.error}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:challenges" }]] } });
+      }
+      return;
+    }
+    const agentButtons = myAgents.map(a => [{ text: `🤖 ${a.name}`, callback_data: `challenge_pick:${challengeId}:${a.id}` }]);
+    agentButtons.push([{ text: "« Back", callback_data: "action:challenges" }]);
+    await bot.sendMessage(chatId, "Which agent do you want to enter?", { reply_markup: { inline_keyboard: agentButtons } });
+    return;
+  }
+
+  if (data.startsWith("challenge_pick:")) {
+    const parts = data.split(":");
+    const challengeId = parts[1];
+    const agentId = parts[2];
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) return;
+    const { joinChallenge } = await import("./trading-challenge");
+    const agent = await storage.getAgent(agentId);
+    const result = await joinChallenge(challengeId, agentId, chatId.toString(), wallet);
+    if (result.success) {
+      await bot.sendMessage(chatId, `✅ *${agent?.name || "Agent"}* joined the challenge!\n\nStarting balance: ${parseFloat(result.entry!.startingBalanceBnb).toFixed(4)} BNB\n\nTrade to climb the ranks!`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "📊 Leaderboard", callback_data: `challenge_lb:${challengeId}` }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    } else {
+      await bot.sendMessage(chatId, `❌ ${result.error}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:challenges" }]] } });
+    }
+    return;
+  }
+
+  if (data.startsWith("copytrade_start:")) {
+    const agentId = data.split(":")[1];
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet || !await checkWalletHasKey(chatId, wallet)) {
+      await bot.sendMessage(chatId, "You need a wallet with a private key to copy trade. Use /wallet.");
+      return;
+    }
+    const agent = await storage.getAgent(agentId);
+    pendingCopyTradeAmount.set(chatId, { agentId, agentName: agent?.name || "Agent" });
+    await bot.sendMessage(chatId,
+      `📋 *Copy Trade: ${agent?.name || "Agent"}*\n\n` +
+      `Enter the max BNB amount per trade (e.g. 0.05, 0.1):\n\n` +
+      `This is the maximum your wallet will spend per copied trade.`,
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  if (data.startsWith("copytrade_stop:")) {
+    const agentId = data.split(":")[1];
+    const { removeCopyTrade } = await import("./trading-challenge");
+    await removeCopyTrade(chatId.toString(), agentId);
+    await bot.sendMessage(chatId, "✅ Copy trade stopped.", { reply_markup: { inline_keyboard: [[{ text: "📋 My Copy Trades", callback_data: "action:copytrades" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    return;
+  }
+
+  if (data === "action:copytrade_menu") {
+    const { getTopPerformingAgents, getActiveCopyTrades } = await import("./trading-challenge");
+    const copies = await getActiveCopyTrades(chatId.toString());
+    const topAgents = await getTopPerformingAgents(5);
+    let msg = `📋 *Copy Trading*\n\nMirror top agent trades automatically.\n\n`;
+    const buttons: any[][] = [];
+    if (copies.length > 0) {
+      msg += `*Active (${copies.length}):*\n`;
+      for (const ct of copies) {
+        msg += `• ${ct.agentName || "Agent"} — Max ${ct.maxAmountBnb} BNB\n`;
+      }
+      msg += `\n`;
+      buttons.push([{ text: "🛑 Manage Copy Trades", callback_data: "action:copytrades" }]);
+    }
+    if (topAgents.length > 0) {
+      msg += `*Top Agents:*\n`;
+      for (let i = 0; i < topAgents.length; i++) {
+        const a = topAgents[i];
+        const pnl = parseFloat(a.pnlPercent);
+        msg += `${i + 1}. ${a.agentName} — ${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}%\n`;
+        buttons.push([{ text: `📋 Copy ${a.agentName}`, callback_data: `copytrade_start:${a.agentId}` }]);
+      }
+    } else {
+      msg += `No agents with performance data yet.`;
+    }
+    buttons.push([{ text: "🏆 View Challenges", callback_data: "action:challenges" }]);
+    buttons.push([{ text: "« Back", callback_data: "action:submenu_agents" }]);
+    await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+    return;
+  }
+
+  if (data === "action:copytrades") {
+    const { getActiveCopyTrades } = await import("./trading-challenge");
+    const copies = await getActiveCopyTrades(chatId.toString());
+    if (copies.length === 0) {
+      await bot.sendMessage(chatId, "No active copy trades. Use /copytrade to start.", { reply_markup: { inline_keyboard: [[{ text: "📋 Copy Trade", callback_data: "action:copytrade_menu" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+    let msg = `📋 *Your Copy Trades*\n\n`;
+    const buttons: any[][] = [];
+    for (const ct of copies) {
+      msg += `🤖 *${ct.agentName || "Agent"}*\nMax: ${ct.maxAmountBnb} BNB | Trades: ${ct.totalCopied}\n\n`;
+      buttons.push([{ text: `🛑 Stop ${ct.agentName}`, callback_data: `copytrade_stop:${ct.agentId}` }]);
+    }
+    buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
+    await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
     return;
   }
 
@@ -7031,6 +7208,34 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
   }
   if (pendingTokenLaunch.has(chatId) && !text.startsWith("/")) {
     await handleTokenLaunchFlow(chatId, text);
+    return;
+  }
+  if (pendingChallengeCreation.has(chatId) && !text.startsWith("/")) {
+    await handleChallengeCreationFlow(chatId, text);
+    return;
+  }
+  if (pendingCopyTradeAmount.has(chatId) && !text.startsWith("/")) {
+    const info = pendingCopyTradeAmount.get(chatId)!;
+    const amount = parseFloat(text.trim());
+    if (isNaN(amount) || amount <= 0 || amount > 10) {
+      await bot.sendMessage(chatId, "Enter a valid BNB amount between 0.001 and 10:");
+      return;
+    }
+    pendingCopyTradeAmount.delete(chatId);
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) { await bot.sendMessage(chatId, "No wallet found."); return; }
+    const { addCopyTrade } = await import("./trading-challenge");
+    const ct = await addCopyTrade(chatId.toString(), wallet, info.agentId, info.agentName, amount.toString());
+    await bot.sendMessage(chatId,
+      `✅ *Copy Trade Active*\n\n` +
+      `Agent: ${info.agentName}\n` +
+      `Max per trade: ${amount} BNB\n\n` +
+      `Trades by this agent will be automatically mirrored to your wallet.`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+        [{ text: "📋 My Copy Trades", callback_data: "action:copytrades" }],
+        [{ text: "« Menu", callback_data: "action:menu" }],
+      ] } }
+    );
     return;
   }
   if (pendingFourMemeBuy.has(chatId) && !text.startsWith("/")) {
@@ -8408,6 +8613,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         "🔗 /linkwallet — Connect wallet\n" +
         "🎯 /quests — Earn $B4 quests\n" +
         "🏆 /rewards — $B4 rewards dashboard\n" +
+        "🏆 /challenge — Trading Agent Challenges\n" +
+        "📋 /copytrade — Copy top agent trades\n" +
         "🤖 /agentstatus — AI agent badge status\n" +
         "❓ /ask <question> — Ask anything\n" +
         "🧹 /clear — Reset conversation memory\n" +
@@ -8477,6 +8684,93 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       } catch (e: any) {
         await bot.sendMessage(chatId, "Could not load fee info. Try again later.");
       }
+      return;
+    }
+
+    if (cmd === "challenge" || cmd === "challenges") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for challenge info!"); return; }
+      const { getActiveChallenges, getChallengeLeaderboard } = await import("./trading-challenge");
+      const challenges = await getActiveChallenges();
+      if (challenges.length === 0) {
+        await bot.sendMessage(chatId,
+          `🏆 *Trading Agent Challenge*\n\n` +
+          `No active challenges right now.\n\n` +
+          `Create an AI trading agent and compete against other agents for $B4 prizes!\n\n` +
+          `Stay tuned for the next challenge.`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+            [{ text: "🤖 Create Agent", callback_data: "action:createagent" }],
+            [{ text: "« Menu", callback_data: "action:menu" }],
+          ] } }
+        );
+        return;
+      }
+      let msg = `🏆 *Trading Agent Challenges*\n\n`;
+      const buttons: any[][] = [];
+      for (const c of challenges) {
+        const timeLeft = c.endDate > new Date() ? Math.ceil((c.endDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : 0;
+        const entries = await getChallengeLeaderboard(c.id);
+        msg += `*${c.name}*\n` +
+          `${c.description || ""}\n` +
+          `💰 Prize: ${parseInt(c.prizePoolB4).toLocaleString()} $B4\n` +
+          `👥 Entries: ${entries.length}/${c.maxEntries}\n` +
+          `⏰ ${c.status === "upcoming" ? "Starts" : "Ends"} in ${timeLeft}d\n` +
+          `Status: ${c.status === "active" ? "🟢 Active" : "🟡 Upcoming"}\n\n`;
+        buttons.push([
+          { text: `📊 Leaderboard: ${c.name}`, callback_data: `challenge_lb:${c.id}` },
+        ]);
+        if (c.status === "active" || c.status === "upcoming") {
+          buttons.push([{ text: `⚡ Join: ${c.name}`, callback_data: `challenge_join:${c.id}` }]);
+        }
+      }
+      buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+      return;
+    }
+
+    if (cmd === "copytrade") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for copy trading!"); return; }
+      const { getActiveCopyTrades, getTopPerformingAgents } = await import("./trading-challenge");
+      const activeCopies = await getActiveCopyTrades(chatId.toString());
+      let msg = `📋 *Copy Trading*\n\nAutomatically mirror top agent trades.\n\n`;
+
+      if (activeCopies.length > 0) {
+        msg += `*Your Active Copy Trades:*\n`;
+        for (const ct of activeCopies) {
+          msg += `• ${ct.agentName || "Agent"} — Max ${ct.maxAmountBnb} BNB | ${ct.totalCopied} trades\n`;
+        }
+        msg += `\n`;
+      }
+
+      const topAgents = await getTopPerformingAgents(5);
+      if (topAgents.length > 0) {
+        msg += `*Top Performing Agents:*\n`;
+        const agentButtons: any[][] = [];
+        for (let i = 0; i < topAgents.length; i++) {
+          const a = topAgents[i];
+          const pnl = parseFloat(a.pnlPercent);
+          msg += `${i + 1}. ${a.agentName} — ${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}% PnL\n`;
+          agentButtons.push([{ text: `📋 Copy ${a.agentName}`, callback_data: `copytrade_start:${a.agentId}` }]);
+        }
+        agentButtons.push([{ text: "« Menu", callback_data: "action:menu" }]);
+        await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: agentButtons } });
+      } else {
+        msg += `No agents with performance data yet. Agents need to participate in challenges first.`;
+        await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+          [{ text: "🏆 View Challenges", callback_data: "action:challenges" }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ] } });
+      }
+      return;
+    }
+
+    if (cmd === "createchallenge" && !isGroup) {
+      const adminIds = (process.env.ADMIN_CHAT_IDS || "").split(",").map(s => s.trim());
+      if (!adminIds.includes(chatId.toString())) {
+        await bot.sendMessage(chatId, "Admin only.");
+        return;
+      }
+      pendingChallengeCreation.set(chatId, { step: "name" });
+      await bot.sendMessage(chatId, "🏆 *Create Trading Challenge*\n\nEnter the challenge name:", { parse_mode: "Markdown" });
       return;
     }
 
@@ -10630,6 +10924,98 @@ async function showSellAmountPrompt(chatId: number, tokenAddress: string): Promi
   } catch (e: any) {
     await bot.sendMessage(chatId, `Failed to check balance: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     pendingFourMemeSell.delete(chatId);
+  }
+}
+
+async function handleChallengeCreationFlow(chatId: number, text: string): Promise<void> {
+  if (!bot) return;
+  const state = pendingChallengeCreation.get(chatId)!;
+  const input = text.trim();
+
+  if (state.step === "name") {
+    state.name = input;
+    state.step = "description";
+    pendingChallengeCreation.set(chatId, state);
+    await bot.sendMessage(chatId, "Enter a description for the challenge (or 'skip'):");
+    return;
+  }
+  if (state.step === "description") {
+    state.description = input.toLowerCase() === "skip" ? "" : input;
+    state.step = "duration";
+    pendingChallengeCreation.set(chatId, state);
+    await bot.sendMessage(chatId, "How many days should the challenge run? (e.g. 7, 14, 30):");
+    return;
+  }
+  if (state.step === "duration") {
+    const days = parseInt(input);
+    if (isNaN(days) || days < 1 || days > 90) {
+      await bot.sendMessage(chatId, "Enter a number between 1 and 90:");
+      return;
+    }
+    state.durationDays = days;
+    state.step = "prize";
+    pendingChallengeCreation.set(chatId, state);
+    await bot.sendMessage(chatId, "Enter the $B4 prize pool amount (e.g. 50000, 100000):");
+    return;
+  }
+  if (state.step === "prize") {
+    const prize = parseInt(input.replace(/,/g, ""));
+    if (isNaN(prize) || prize < 1000) {
+      await bot.sendMessage(chatId, "Enter at least 1000 $B4:");
+      return;
+    }
+    state.prizePoolB4 = prize.toString();
+    state.step = "confirm";
+    pendingChallengeCreation.set(chatId, state);
+    const startDate = new Date();
+    const endDate = new Date(startDate.getTime() + state.durationDays! * 24 * 60 * 60 * 1000);
+    await bot.sendMessage(chatId,
+      `🏆 *Confirm Challenge*\n\n` +
+      `Name: ${state.name}\n` +
+      `Description: ${state.description || "None"}\n` +
+      `Duration: ${state.durationDays} days\n` +
+      `Prize: ${prize.toLocaleString()} $B4\n` +
+      `Start: Now\n` +
+      `End: ${endDate.toLocaleDateString()}\n\n` +
+      `Type "yes" to create or "cancel" to abort.`,
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+  if (state.step === "confirm") {
+    if (input.toLowerCase() === "cancel") {
+      pendingChallengeCreation.delete(chatId);
+      await bot.sendMessage(chatId, "Challenge creation cancelled.");
+      return;
+    }
+    if (input.toLowerCase() !== "yes") {
+      await bot.sendMessage(chatId, 'Type "yes" to confirm or "cancel" to abort.');
+      return;
+    }
+    pendingChallengeCreation.delete(chatId);
+    const { createChallenge } = await import("./trading-challenge");
+    const startDate = new Date();
+    const endDate = new Date(startDate.getTime() + state.durationDays! * 24 * 60 * 60 * 1000);
+    const challenge = await createChallenge({
+      name: state.name!,
+      description: state.description || "",
+      startDate,
+      endDate,
+      prizePoolB4: state.prizePoolB4!,
+      maxEntries: 100,
+    });
+    await bot.sendMessage(chatId,
+      `✅ *Challenge Created!*\n\n` +
+      `*${challenge.name}*\n` +
+      `Prize: ${parseInt(challenge.prizePoolB4).toLocaleString()} $B4\n` +
+      `Duration: ${state.durationDays} days\n` +
+      `ID: \`${challenge.id}\``,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+        [{ text: "📊 View Challenge", callback_data: `challenge_lb:${challenge.id}` }],
+        [{ text: "« Menu", callback_data: "action:menu" }],
+      ] } }
+    );
+    return;
   }
 }
 

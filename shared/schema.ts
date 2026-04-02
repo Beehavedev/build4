@@ -1568,6 +1568,76 @@ export const userQuests = pgTable("user_quests", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const tradingChallenges = pgTable("trading_challenges", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  prizePoolB4: text("prize_pool_b4").notNull().default("0"),
+  status: text("status").notNull().default("upcoming"),
+  maxEntries: integer("max_entries").default(100),
+  minBalanceBnb: text("min_balance_bnb").default("0.01"),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTradingChallengeSchema = createInsertSchema(tradingChallenges).omit({ id: true, createdAt: true });
+export type InsertTradingChallenge = z.infer<typeof insertTradingChallengeSchema>;
+export type TradingChallenge = typeof tradingChallenges.$inferSelect;
+
+export const challengeEntries = pgTable("challenge_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  challengeId: varchar("challenge_id").notNull(),
+  agentId: varchar("agent_id").notNull(),
+  ownerChatId: text("owner_chat_id").notNull(),
+  walletAddress: text("wallet_address").notNull(),
+  startingBalanceBnb: text("starting_balance_bnb").notNull().default("0"),
+  currentBalanceBnb: text("current_balance_bnb").notNull().default("0"),
+  pnlPercent: text("pnl_percent").notNull().default("0"),
+  pnlBnb: text("pnl_bnb").notNull().default("0"),
+  tradeCount: integer("trade_count").notNull().default(0),
+  rank: integer("rank"),
+  rewardAmount: text("reward_amount"),
+  rewardPaid: boolean("reward_paid").default(false),
+  joinedAt: timestamp("joined_at").defaultNow(),
+});
+
+export const insertChallengeEntrySchema = createInsertSchema(challengeEntries).omit({ id: true, joinedAt: true, rank: true, rewardAmount: true, rewardPaid: true });
+export type InsertChallengeEntry = z.infer<typeof insertChallengeEntrySchema>;
+export type ChallengeEntry = typeof challengeEntries.$inferSelect;
+
+export const agentPnlSnapshots = pgTable("agent_pnl_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agentId: varchar("agent_id").notNull(),
+  challengeId: varchar("challenge_id"),
+  walletAddress: text("wallet_address").notNull(),
+  balanceBnb: text("balance_bnb").notNull(),
+  tokenValueBnb: text("token_value_bnb").default("0"),
+  totalValueBnb: text("total_value_bnb").notNull(),
+  pnlPercent: text("pnl_percent").notNull().default("0"),
+  snapshotAt: timestamp("snapshot_at").defaultNow(),
+});
+
+export type AgentPnlSnapshot = typeof agentPnlSnapshots.$inferSelect;
+
+export const copyTrades = pgTable("copy_trades", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  followerChatId: text("follower_chat_id").notNull(),
+  followerWallet: text("follower_wallet").notNull(),
+  agentId: varchar("agent_id").notNull(),
+  agentName: text("agent_name"),
+  maxAmountBnb: text("max_amount_bnb").notNull().default("0.1"),
+  totalCopied: integer("total_copied").notNull().default(0),
+  totalPnlBnb: text("total_pnl_bnb").notNull().default("0"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCopyTradeSchema = createInsertSchema(copyTrades).omit({ id: true, createdAt: true, totalCopied: true, totalPnlBnb: true });
+export type InsertCopyTrade = z.infer<typeof insertCopyTradeSchema>;
+export type CopyTrade = typeof copyTrades.$inferSelect;
+
 export const QUEST_CONFIG = {
   join: { id: "join", title: "Join BUILD4", reward: 100, emoji: "🎉", description: "Join the BUILD4 bot" },
   create_agent: { id: "create_agent", title: "Create Your First Agent", reward: 500, emoji: "🤖", description: "Create your first AI agent" },
