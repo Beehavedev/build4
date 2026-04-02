@@ -61,7 +61,7 @@ const CRITICAL_TABLES_SQL = [
   `CREATE TABLE IF NOT EXISTS "user_rewards" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, chat_id TEXT NOT NULL, reward_type TEXT NOT NULL, amount TEXT NOT NULL, description TEXT, reference_id TEXT, claimed BOOLEAN DEFAULT false NOT NULL, claimed_at TIMESTAMP, created_at TIMESTAMP DEFAULT now())`,
   `CREATE TABLE IF NOT EXISTS "user_quests" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, chat_id TEXT NOT NULL, quest_id TEXT NOT NULL, completed BOOLEAN DEFAULT false NOT NULL, completed_at TIMESTAMP, reward_granted BOOLEAN DEFAULT false NOT NULL, created_at TIMESTAMP DEFAULT now())`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "user_quests_chat_quest_idx" ON "user_quests" (chat_id, quest_id)`,
-  `CREATE TABLE IF NOT EXISTS "trading_challenges" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, name TEXT NOT NULL, description TEXT, start_date TIMESTAMP NOT NULL, end_date TIMESTAMP NOT NULL, prize_pool_b4 TEXT DEFAULT '0' NOT NULL, status TEXT DEFAULT 'upcoming' NOT NULL, max_entries INTEGER DEFAULT 100, min_balance_bnb TEXT DEFAULT '0.01', created_by TEXT, created_at TIMESTAMP DEFAULT now())`,
+  `CREATE TABLE IF NOT EXISTS "trading_challenges" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, name TEXT NOT NULL, description TEXT, start_date TIMESTAMP NOT NULL, end_date TIMESTAMP NOT NULL, prize_pool_b4 TEXT DEFAULT '0' NOT NULL, status TEXT DEFAULT 'upcoming' NOT NULL, max_entries INTEGER DEFAULT 100, min_balance_bnb TEXT DEFAULT '0.01', prize_distribution TEXT, created_by TEXT, created_at TIMESTAMP DEFAULT now())`,
   `CREATE TABLE IF NOT EXISTS "challenge_entries" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, challenge_id VARCHAR NOT NULL, agent_id VARCHAR NOT NULL, owner_chat_id TEXT NOT NULL, wallet_address TEXT NOT NULL, starting_balance_bnb TEXT DEFAULT '0' NOT NULL, current_balance_bnb TEXT DEFAULT '0' NOT NULL, pnl_percent TEXT DEFAULT '0' NOT NULL, pnl_bnb TEXT DEFAULT '0' NOT NULL, trade_count INTEGER DEFAULT 0 NOT NULL, rank INTEGER, reward_amount TEXT, reward_paid BOOLEAN DEFAULT false, joined_at TIMESTAMP DEFAULT now())`,
   `CREATE TABLE IF NOT EXISTS "agent_pnl_snapshots" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, agent_id VARCHAR NOT NULL, challenge_id VARCHAR, wallet_address TEXT NOT NULL, balance_bnb TEXT NOT NULL, token_value_bnb TEXT DEFAULT '0', total_value_bnb TEXT NOT NULL, pnl_percent TEXT DEFAULT '0' NOT NULL, snapshot_at TIMESTAMP DEFAULT now())`,
   `CREATE TABLE IF NOT EXISTS "copy_trades" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, follower_chat_id TEXT NOT NULL, follower_wallet TEXT NOT NULL, agent_id VARCHAR NOT NULL, agent_name TEXT, max_amount_bnb TEXT DEFAULT '0.1' NOT NULL, total_copied INTEGER DEFAULT 0 NOT NULL, total_pnl_bnb TEXT DEFAULT '0' NOT NULL, active BOOLEAN DEFAULT true NOT NULL, created_at TIMESTAMP DEFAULT now())`,
@@ -86,6 +86,12 @@ async function ensureSchema() {
       }
     }
     console.log("[BOT-SERVER] Critical tables ensured");
+
+    try {
+      await pool.query(`ALTER TABLE "trading_challenges" ADD COLUMN IF NOT EXISTS "prize_distribution" TEXT`);
+    } catch (e: any) {
+      console.warn("[BOT-SERVER] prize_distribution column:", e.message?.substring(0, 80));
+    }
 
     const sql = findSchemaSQL();
     if (sql) {
@@ -166,11 +172,28 @@ app.post("/api/telegram/webhook/:token", (req, res) => {
         }
 
         try {
-          const { startPnlTracker } = await import("./trading-challenge");
+          const { startPnlTracker, getActiveChallenges, createChallenge } = await import("./trading-challenge");
           startPnlTracker(5 * 60 * 1000);
           console.log("[BOT-SERVER] PnL tracker started (5 min interval)");
+
+          const existing = await getActiveChallenges();
+          const hasTraderChallenge = existing.some(c => c.name === "Trading Bot Challenge #1");
+          if (!hasTraderChallenge) {
+            const now = new Date();
+            const endDate = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000);
+            await createChallenge({
+              name: "Trading Bot Challenge #1",
+              description: "Create a trading bot. If your bot trades and makes profit, you're in! Top 3 win $B4 prizes.",
+              startDate: now,
+              endDate,
+              prizePoolB4: "950000",
+              maxEntries: 100,
+              prizeDistribution: ["500000", "300000", "150000"],
+            });
+            console.log("[BOT-SERVER] Created 'Trading Bot Challenge #1' — 4 days, 950K $B4 pool");
+          }
         } catch (pnlErr: any) {
-          console.error("[BOT-SERVER] PnL tracker start failed:", pnlErr.message);
+          console.error("[BOT-SERVER] PnL tracker/challenge start failed:", pnlErr.message);
         }
 
         let restored = 0;

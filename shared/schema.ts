@@ -1578,6 +1578,7 @@ export const tradingChallenges = pgTable("trading_challenges", {
   status: text("status").notNull().default("upcoming"),
   maxEntries: integer("max_entries").default(100),
   minBalanceBnb: text("min_balance_bnb").default("0.01"),
+  prizeDistribution: text("prize_distribution"),
   createdBy: text("created_by"),
   createdAt: timestamp("created_at").defaultNow(),
 });

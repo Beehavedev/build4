@@ -6029,12 +6029,22 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       return;
     }
     const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
-    let msg = `📊 *${challenge.name} — Leaderboard*\n💰 Prize pool: ${parseInt(challenge.prizePoolB4).toLocaleString()} $B4\n\n`;
+    let prizeAmounts: string[] = [];
+    try { if (challenge.prizeDistribution) prizeAmounts = JSON.parse(challenge.prizeDistribution); } catch {}
+    let msg = `📊 *${challenge.name} — Leaderboard*\n💰 Prize pool: ${parseInt(challenge.prizePoolB4).toLocaleString()} $B4\n`;
+    if (prizeAmounts.length > 0) {
+      msg += `🥇 ${parseInt(prizeAmounts[0]).toLocaleString()}`;
+      if (prizeAmounts[1]) msg += ` | 🥈 ${parseInt(prizeAmounts[1]).toLocaleString()}`;
+      if (prizeAmounts[2]) msg += ` | 🥉 ${parseInt(prizeAmounts[2]).toLocaleString()}`;
+      msg += ` $B4\n`;
+    }
+    msg += `\n`;
     for (let i = 0; i < Math.min(entries.length, 10); i++) {
       const e = entries[i];
       const pnl = parseFloat(e.pnlPercent);
       const agentRow = await storage.getAgent(e.agentId);
-      msg += `${medals[i] || `${i + 1}.`} *${agentRow?.name || "Agent"}*\n   PnL: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}% | ${parseFloat(e.currentBalanceBnb).toFixed(4)} BNB\n`;
+      const prizeTag = prizeAmounts[i] ? ` — 💰 ${parseInt(prizeAmounts[i]).toLocaleString()} $B4` : "";
+      msg += `${medals[i] || `${i + 1}.`} *${agentRow?.name || "Agent"}*\n   PnL: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}% | ${parseFloat(e.currentBalanceBnb).toFixed(4)} BNB${prizeTag}\n`;
     }
     const buttons: any[][] = [[{ text: "⚡ Join Challenge", callback_data: `challenge_join:${challengeId}` }]];
     for (const e of entries.slice(0, 5)) {

@@ -20,6 +20,7 @@ const BSC_RPC = "https://bsc-dataseed1.binance.org";
 export async function createChallenge(data: {
   name: string; description?: string; startDate: Date; endDate: Date;
   prizePoolB4: string; maxEntries?: number; minBalanceBnb?: string; createdBy?: string;
+  prizeDistribution?: string[];
 }): Promise<TradingChallenge> {
   const db = getDb();
   const [challenge] = await db.insert(tradingChallenges).values({
@@ -27,6 +28,7 @@ export async function createChallenge(data: {
     startDate: data.startDate, endDate: data.endDate,
     prizePoolB4: data.prizePoolB4, status: data.startDate <= new Date() ? "active" : "upcoming",
     maxEntries: data.maxEntries || 100, minBalanceBnb: data.minBalanceBnb || "0.01",
+    prizeDistribution: data.prizeDistribution ? JSON.stringify(data.prizeDistribution) : null,
     createdBy: data.createdBy || null,
   }).returning();
   return challenge;
@@ -165,13 +167,22 @@ export async function finalizeChallengeRewards(challengeId: string): Promise<voi
   const leaderboard = await getChallengeLeaderboard(challengeId);
   if (leaderboard.length === 0) return;
 
-  const pool = parseFloat(challenge.prizePoolB4);
-  const distribution = [0.50, 0.25, 0.15, 0.07, 0.03];
+  let rewards: string[];
+  if (challenge.prizeDistribution) {
+    try {
+      rewards = JSON.parse(challenge.prizeDistribution) as string[];
+    } catch {
+      const pool = parseFloat(challenge.prizePoolB4);
+      rewards = [0.50, 0.25, 0.15, 0.07, 0.03].map(p => (pool * p).toFixed(0));
+    }
+  } else {
+    const pool = parseFloat(challenge.prizePoolB4);
+    rewards = [0.50, 0.25, 0.15, 0.07, 0.03].map(p => (pool * p).toFixed(0));
+  }
 
-  for (let i = 0; i < Math.min(leaderboard.length, distribution.length); i++) {
-    const reward = (pool * distribution[i]).toFixed(0);
+  for (let i = 0; i < Math.min(leaderboard.length, rewards.length); i++) {
     await db.update(challengeEntries).set({
-      rank: i + 1, rewardAmount: reward,
+      rank: i + 1, rewardAmount: rewards[i],
     }).where(eq(challengeEntries.id, leaderboard[i].id));
   }
 
