@@ -1479,55 +1479,8 @@ async function backfillAgentIdentity(): Promise<void> {
 
 async function registerExistingAgentsOnchain(): Promise<void> {
   if (!onchainEnabled) return;
-
   initMultiChain();
-
-  const allAgents = await storage.getAllAgents();
-  const unregistered = allAgents.filter(a => !a.onchainRegistered && a.status === "active");
-
-  for (const agent of unregistered) {
-    try {
-      await ensureAgentRegisteredOnchain(agent);
-      const wallet = await storage.getWallet(agent.id);
-      const hasBalance = wallet && BigInt(wallet.balance) > 0n;
-      if (hasBalance) {
-        const depositResult = await depositOnchain(agent.id, "10000000000000000");
-        if (depositResult.success && depositResult.txHash) {
-          log(`[Agent ${agent.name}] On-chain deposit: ${getExplorerUrl(depositResult.txHash)}`, "agent-runner");
-          await storage.createTransaction({
-            agentId: agent.id,
-            type: "onchain_deposit",
-            amount: "10000000000000000",
-            description: `Initial on-chain deposit (0.01 BNB)`,
-            txHash: depositResult.txHash,
-            chainId: getChainId(),
-          });
-        }
-      }
-
-      log(`[Agent ${agent.name}] Registered on-chain successfully`, "agent-runner");
-      await new Promise(r => setTimeout(r, 3000));
-    } catch (e: any) {
-      log(`[Agent ${agent.name}] On-chain registration error: ${e.message}`, "agent-runner");
-    }
-  }
-
-  const activeAgents = allAgents.filter(a => a.status === "active" && a.preferredChain && a.preferredChain !== "bnbMainnet");
-  for (const agent of activeAgents) {
-    try {
-      const chainKey = agent.preferredChain!;
-      const regResult = await registerAgentOnChain(agent.id, chainKey);
-      if (regResult.success) {
-        const label = regResult.txHash === "already-registered" ? "already registered" : `TX: ${regResult.txHash}`;
-        log(`[Agent ${agent.name}] Registered on ${getChainLabel(chainKey)} (${label})`, "agent-runner");
-      } else {
-        log(`[Agent ${agent.name}] ${getChainLabel(chainKey)} registration failed: ${regResult.error}`, "agent-runner");
-      }
-      await new Promise(r => setTimeout(r, 2000));
-    } catch (e: any) {
-      log(`[Agent ${agent.name}] Multi-chain registration error: ${e.message}`, "agent-runner");
-    }
-  }
+  log("[agent-runner] On-chain registration is user-funded — skipping deployer-funded bulk registration. Users register via /myagents.", "agent-runner");
 }
 
 const STANDARDS_REGISTRATION_INTERVAL_MS = 5 * 60 * 1000;

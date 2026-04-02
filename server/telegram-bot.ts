@@ -9547,20 +9547,29 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
       console.error("[Rewards] Agent creation reward failed:", e.message);
     }
 
-    let msg = `✅ *Agent Created — FREE!*\n\n` +
-      `🤖 *${result.agent.name}*\n` +
-      `Model: ${shortModel(model)}\n` +
-      `ID: \`${agentId}\`\n` +
-      `\n🎁 Agent creation is always free on BUILD4` +
-      `\n\n⛓️ Attempting ERC-8004 on-chain registration (Base)...`;
+    const isZh = getLang(chatId) === "zh";
+    let msg = isZh
+      ? `✅ *代理创建成功 — 免费！*\n\n` +
+        `🤖 *${result.agent.name}*\n` +
+        `模型: ${shortModel(model)}\n` +
+        `ID: \`${agentId}\`\n` +
+        `\n🎁 BUILD4上创建代理永远免费` +
+        `\n\n⛓️ 正在尝试ERC-8004链上注册...\n_（使用您钱包中的少量gas费）_`
+      : `✅ *Agent Created — FREE!*\n\n` +
+        `🤖 *${result.agent.name}*\n` +
+        `Model: ${shortModel(model)}\n` +
+        `ID: \`${agentId}\`\n` +
+        `\n🎁 Agent creation is always free on BUILD4` +
+        `\n\n⛓️ Attempting ERC-8004 on-chain registration...\n_（Uses a small gas fee from your wallet）_`;
 
     await bot.sendMessage(chatId, msg,
       {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "Give it a task", callback_data: `agenttask:${agentId}` }],
-            [{ text: "My Agents", callback_data: "action:myagents" }, { text: "Menu", callback_data: "action:menu" }],
+            [{ text: isZh ? "分配任务" : "Give it a task", callback_data: `agenttask:${agentId}` }],
+            [{ text: isZh ? "⛓️ 注册上链" : "⛓️ Register On-Chain", callback_data: `registerchain:${agentId}` }],
+            [{ text: isZh ? "我的代理" : "My Agents", callback_data: "action:myagents" }, { text: isZh ? "菜单" : "Menu", callback_data: "action:menu" }],
           ]
         }
       }
@@ -9594,20 +9603,6 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
       );
     } catch {}
     return;
-  }
-
-  try {
-    if (isOnchainReady()) {
-      const hubResult = await registerAgentOnchain(agentId);
-      if (hubResult.success && hubResult.txHash !== "already-registered") {
-        const explorer = getExplorerUrl(hubResult.txHash || "");
-        results.push(`AgentEconomyHub: ${explorer ? explorer : "registered"}`);
-      } else if (hubResult.success) {
-        results.push("AgentEconomyHub: already registered");
-      }
-    }
-  } catch (e: any) {
-    console.error(`[TelegramBot] Hub registration error for ${agentId}:`, e.message);
   }
 
   let erc8004Registered = false;
