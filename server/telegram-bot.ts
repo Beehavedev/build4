@@ -8407,33 +8407,29 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       const adminChatId = process.env.ADMIN_CHAT_ID;
       if (!adminChatId || chatId.toString() !== adminChatId) return;
 
-      const allChatIds = Array.from(telegramWalletMap.keys());
-      const announcementMsg =
-        `🚀 <b>BUILD4 Premium is LIVE!</b>\n\n` +
-        `We've upgraded BUILD4 with powerful new features:\n\n` +
-        `✅ <b>Free Tier</b> — Try signals, security scans & price checks daily (limited)\n` +
-        `✅ <b>4-Day Free Trial</b> — Full unlimited access to everything\n` +
-        `✅ <b>Premium</b> — $19.99/month for unlimited trading, swaps, bridges, token launches & more\n\n` +
-        `💰 <b>Refer & Earn:</b> Share your referral link and earn 30-50% commission on every subscription!\n\n` +
-        `Start now 👇`;
+      const announcementMsg = text.replace(/^\/announce\s*/i, "").trim();
+      if (!announcementMsg) {
+        await bot.sendMessage(chatId, "Usage: /announce <message>\n\nSends your message to all users with a Menu button. Supports HTML formatting:\n<b>bold</b>, <i>italic</i>, <a href=\"url\">links</a>");
+        return;
+      }
 
-      await bot.sendMessage(chatId, `Announcing premium launch to ${allChatIds.length} users...`);
+      const allChatIds = Array.from(telegramWalletMap.keys());
+      await bot.sendMessage(chatId, `📢 Announcing to ${allChatIds.length} users...`);
       let sent = 0, failed = 0;
       for (const targetChatId of allChatIds) {
         try {
           await bot.sendMessage(targetChatId, announcementMsg, {
             parse_mode: "HTML",
+            disable_web_page_preview: false,
             reply_markup: { inline_keyboard: [
-              [{ text: "🆓 Start Free Trial", callback_data: "action:subscribe" }],
-              [{ text: "🔗 Get Referral Link", callback_data: "action:referral" }],
-              [{ text: "📊 View Features", callback_data: "action:menu" }],
+              [{ text: "🤖 Open BUILD4", callback_data: "action:menu" }],
             ]}
           });
           sent++;
           if (sent % 25 === 0) await new Promise(r => setTimeout(r, 1000));
         } catch { failed++; }
       }
-      await bot.sendMessage(chatId, `Announcement sent: ${sent} delivered, ${failed} failed (${allChatIds.length} total)`);
+      await bot.sendMessage(chatId, `✅ Announcement sent: ${sent} delivered, ${failed} failed (${allChatIds.length} total)`);
       return;
     }
 
