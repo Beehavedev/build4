@@ -12722,9 +12722,16 @@ async function handleAsterMenu(chatId: number): Promise<void> {
     return;
   }
 
+  const isV3Direct = creds && creds.apiKey === "V3_DIRECT";
+  const modeLabel = isV3Direct ? "V3 Wallet Signing" : "API Key";
+  const tradeButtons: TelegramBot.InlineKeyboardButton[][] = isV3Direct
+    ? [[{ text: "🔄 Futures Trade", callback_data: "aster:trade_futures" }]]
+    : [[{ text: "🔄 Futures Trade", callback_data: "aster:trade_futures" }, { text: "💱 Spot Trade", callback_data: "aster:trade_spot" }]];
+
   await bot.sendMessage(chatId,
     `📈 *Aster DEX — Connected*\n` +
-    `_Powered by Aster DEX_\n\n` +
+    `_Powered by Aster DEX_\n` +
+    `Mode: ${modeLabel}\n\n` +
     `What would you like to do?`,
     {
       parse_mode: "Markdown",
@@ -12734,7 +12741,8 @@ async function handleAsterMenu(chatId: number): Promise<void> {
           [{ text: "📊 Positions", callback_data: "aster:positions" }],
           [{ text: "📋 Open Orders", callback_data: "aster:orders" }],
           [{ text: "📈 PnL Summary", callback_data: "aster:pnl" }],
-          [{ text: "🔄 Futures Trade", callback_data: "aster:trade_futures" }, { text: "💱 Spot Trade", callback_data: "aster:trade_spot" }],
+          ...tradeButtons,
+          ...(isV3Direct ? [[{ text: "🔑 Upgrade to Full (Add API Key)", callback_data: "aster:connect" }]] : []),
           [{ text: "🔌 Disconnect", callback_data: "aster:disconnect" }],
           [{ text: "« Back", callback_data: "action:menu" }],
         ],
@@ -12745,10 +12753,11 @@ async function handleAsterMenu(chatId: number): Promise<void> {
 
 async function getAsterClient(chatId: number): Promise<any> {
   const creds = await storage.getAsterCredentials(chatId.toString());
-  if (!creds) return null;
 
   const wallet = getLinkedWallet(chatId);
   const pk = wallet ? await resolvePrivateKey(chatId, wallet) : null;
+
+  const isV3Direct = creds && creds.apiKey === "V3_DIRECT";
 
   if (pk && wallet) {
     const { createAsterV3FuturesClient, createAsterSpotClient } = await import("./aster-client");
@@ -12757,9 +12766,14 @@ async function getAsterClient(chatId: number): Promise<any> {
       signer: wallet,
       signerPrivateKey: pk,
     });
-    const v1Spot = createAsterSpotClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
-    return { futures: v3Futures, spot: v1Spot };
+    if (!isV3Direct && creds) {
+      const v1Spot = createAsterSpotClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+      return { futures: v3Futures, spot: v1Spot };
+    }
+    return { futures: v3Futures, spot: null };
   }
+
+  if (!creds || isV3Direct) return null;
 
   const { createAsterClient } = await import("./aster-client");
   return createAsterClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
@@ -12793,8 +12807,30 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const result = await asterBrokerOnboard(pk);
       if (!result.success || !result.apiKey || !result.apiSecret) {
         const isRegion = (result.error || "").toLowerCase().includes("region");
+        if (isRegion && pk) {
+          await storage.saveAsterCredentials(chatId.toString(), "V3_DIRECT", "V3_DIRECT");
+          auditLog(chatId, "ASTER_V3_DIRECT", `Connected via V3 EIP-712 direct (broker region-blocked)`);
+          await bot.sendMessage(chatId,
+            `⚡ *Aster DEX — Connected via V3!*\n` +
+            `_Powered by Aster DEX_\n\n` +
+            `Connected using EIP-712 wallet signing (V3).\n` +
+            `Futures trading is fully available — no API keys needed!\n\n` +
+            `💡 _Spot trading requires manual API key setup._`,
+            {
+              parse_mode: "Markdown",
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "📊 Trade Futures", callback_data: "aster:trade" }],
+                  [{ text: "💰 View Balances", callback_data: "aster:balance" }],
+                  [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
+                ],
+              },
+            }
+          );
+          return;
+        }
         const failMsg = isRegion
-          ? `⚠️ *Aster Region Restriction*\n\nAster's API is unavailable from our server's region. No worries — you can connect manually:\n\n1. Go to [asterdex.com](https://www.asterdex.com)\n2. Connect your wallet & create an API key\n3. Come back and tap "Connect with API Key"\n\nYour trading will work perfectly once connected!`
+          ? `⚠️ Auto-setup unavailable. Connect manually with an API key from asterdex.com.`
           : `Auto-setup failed: ${result.error || "Unknown error"}\n\nYou can still connect manually with an API key.`;
         await bot.sendMessage(chatId, failMsg, {
           parse_mode: "Markdown",
