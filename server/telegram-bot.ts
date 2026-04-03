@@ -12696,10 +12696,10 @@ async function handleAsterMenu(chatId: number): Promise<void> {
 
   if (!connected) {
     const wallet = getLinkedWallet(chatId);
-    const hasKey = wallet ? await checkWalletHasKey(chatId, wallet) : false;
+    const hasWallet = !!wallet;
 
     const buttons: TelegramBot.InlineKeyboardButton[][] = [];
-    if (hasKey) {
+    if (hasWallet) {
       buttons.push([{ text: "⚡ 1-Tap Connect (Auto-Setup)", callback_data: "aster:auto_connect" }]);
     }
     buttons.push([{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }]);
@@ -12709,7 +12709,7 @@ async function handleAsterMenu(chatId: number): Promise<void> {
       `📈 *Aster DEX — Futures & Spot Trading*\n` +
       `_Powered by Aster DEX_\n\n` +
       `Trade futures and spot markets directly from Telegram.\n\n` +
-      (hasKey
+      (hasWallet
         ? `⚡ *1-Tap Connect* — We'll auto-create your Aster account and API key using your existing wallet. No manual setup needed!\n\n`
         : `Connect your Aster API credentials to get started.\n`) +
       `🌐 https://www.asterdex.com`,
@@ -12776,7 +12776,14 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     }
     const pk = await resolvePrivateKey(chatId, wallet);
     if (!pk) {
-      await bot.sendMessage(chatId, "Could not access wallet key. Try importing your wallet again.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
+      await bot.sendMessage(chatId,
+        "⚠️ Could not access your wallet key. Please re-import your private key, then try 1-Tap Connect again.\n\nOr connect manually with an Aster API key.",
+        { reply_markup: { inline_keyboard: [
+          [{ text: "👛 Import Wallet", callback_data: "action:linkwallet" }],
+          [{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }],
+          [{ text: "« Back", callback_data: "action:menu" }],
+        ] } }
+      );
       return;
     }
     await bot.sendMessage(chatId, "⚡ Setting up your Aster DEX account...\nThis may take a few seconds.");
