@@ -12747,6 +12747,7 @@ async function handleAsterMenu(chatId: number): Promise<void> {
       reply_markup: {
         inline_keyboard: [
           ...tradeButtons,
+          [{ text: "📊 Markets", callback_data: "aster:markets" }],
           [{ text: "💰 Balances", callback_data: "aster:balance" }, { text: "📊 Positions", callback_data: "aster:positions" }],
           [{ text: "📋 Open Orders", callback_data: "aster:orders" }, { text: "📈 PnL", callback_data: "aster:pnl" }],
           ...(isV3Direct ? [[{ text: "🔑 Upgrade (Add API Key)", callback_data: "aster:connect" }]] : []),
@@ -12903,6 +12904,124 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         ],
       },
     });
+    return;
+  }
+
+  if (action === "markets") {
+    await bot.sendMessage(chatId, "📊 Loading market data...");
+    try {
+      const futuresClient = client.futures || client;
+      const topSymbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "SUIUSDT", "ADAUSDT"];
+      const [allTickers, allFunding] = await Promise.all([
+        futuresClient.ticker().catch(() => []),
+        futuresClient.fundingRate(undefined, 100).catch(() => []),
+      ]);
+      const tickerArr = Array.isArray(allTickers) ? allTickers : [allTickers];
+      const fundingArr = Array.isArray(allFunding) ? allFunding : [];
+      const fundingMap = new Map<string, any>();
+      for (const f of fundingArr) {
+        if (!fundingMap.has(f.symbol)) fundingMap.set(f.symbol, f);
+      }
+
+      let msg = "📊 *Aster DEX — Top Futures Markets*\n━━━━━━━━━━━━━━━━━━━━\n\n";
+      for (const sym of topSymbols) {
+        const t = tickerArr.find((tk: any) => tk.symbol === sym);
+        if (!t) continue;
+        const price = parseFloat(t.price);
+        const change = parseFloat(t.priceChangePercent);
+        const vol = parseFloat(t.quoteVolume);
+        const high = parseFloat(t.high);
+        const low = parseFloat(t.low);
+        const changeIcon = change >= 0 ? "🟢" : "🔴";
+        const changeStr = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
+        const base = sym.replace("USDT", "");
+        const funding = fundingMap.get(sym);
+        const fundingStr = funding ? ` · FR: ${(parseFloat(funding.fundingRate) * 100).toFixed(4)}%` : "";
+        msg += `${changeIcon} *${base}/USDT*  \`$${price >= 1 ? price.toLocaleString("en-US", { maximumFractionDigits: 2 }) : price.toPrecision(4)}\`\n`;
+        msg += `   ${changeStr} · H: $${high >= 1 ? high.toLocaleString("en-US", { maximumFractionDigits: 2 }) : high.toPrecision(4)} · L: $${low >= 1 ? low.toLocaleString("en-US", { maximumFractionDigits: 2 }) : low.toPrecision(4)}\n`;
+        msg += `   Vol: $${vol >= 1e9 ? (vol / 1e9).toFixed(2) + "B" : vol >= 1e6 ? (vol / 1e6).toFixed(2) + "M" : vol >= 1e3 ? (vol / 1e3).toFixed(1) + "K" : vol.toFixed(0)}${fundingStr}\n\n`;
+      }
+      msg += `_Tap a pair below to trade instantly_`;
+
+      const pairButtons: TelegramBot.InlineKeyboardButton[][] = [
+        [
+          { text: "BTC", callback_data: "aster:qpair_BTCUSDT" },
+          { text: "ETH", callback_data: "aster:qpair_ETHUSDT" },
+          { text: "BNB", callback_data: "aster:qpair_BNBUSDT" },
+          { text: "SOL", callback_data: "aster:qpair_SOLUSDT" },
+        ],
+        [
+          { text: "XRP", callback_data: "aster:qpair_XRPUSDT" },
+          { text: "DOGE", callback_data: "aster:qpair_DOGEUSDT" },
+          { text: "SUI", callback_data: "aster:qpair_SUIUSDT" },
+          { text: "ADA", callback_data: "aster:qpair_ADAUSDT" },
+        ],
+        [{ text: "🔍 Other Pair", callback_data: "aster:trade_futures" }],
+        [{ text: "🔄 Refresh", callback_data: "aster:markets" }, { text: "« Back", callback_data: "action:aster" }],
+      ];
+
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: pairButtons } });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Failed to fetch markets: ${e.message?.substring(0, 200)}`, {
+        reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:aster" }]] },
+      });
+    }
+    return;
+  }
+
+  if (action?.startsWith("qpair_")) {
+    const symbol = action.replace("qpair_", "");
+    pendingAsterTrade.set(chatId, { step: "side", market: "futures", symbol });
+    try {
+      const futuresClient = client.futures || client;
+      const [ticker, fundingArr] = await Promise.all([
+        futuresClient.ticker(symbol).catch(() => null),
+        futuresClient.fundingRate(symbol, 1).catch(() => []),
+      ]);
+      const t = Array.isArray(ticker) ? ticker[0] : ticker;
+      const f = Array.isArray(fundingArr) && fundingArr.length > 0 ? fundingArr[0] : null;
+      const base = symbol.replace("USDT", "");
+      let infoMsg = `📈 *${base}/USDT — Futures*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      if (t) {
+        const price = parseFloat(t.price);
+        const change = parseFloat(t.priceChangePercent);
+        const changeIcon = change >= 0 ? "🟢" : "🔴";
+        const changeStr = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
+        infoMsg += `💲 Price: \`$${price >= 1 ? price.toLocaleString("en-US", { maximumFractionDigits: 2 }) : price.toPrecision(4)}\`  ${changeIcon} ${changeStr}\n`;
+        infoMsg += `📊 24h High: \`$${parseFloat(t.high) >= 1 ? parseFloat(t.high).toLocaleString("en-US", { maximumFractionDigits: 2 }) : parseFloat(t.high).toPrecision(4)}\`  Low: \`$${parseFloat(t.low) >= 1 ? parseFloat(t.low).toLocaleString("en-US", { maximumFractionDigits: 2 }) : parseFloat(t.low).toPrecision(4)}\`\n`;
+        const vol = parseFloat(t.quoteVolume);
+        infoMsg += `📦 Volume: \`$${vol >= 1e9 ? (vol / 1e9).toFixed(2) + "B" : vol >= 1e6 ? (vol / 1e6).toFixed(2) + "M" : vol >= 1e3 ? (vol / 1e3).toFixed(1) + "K" : vol.toFixed(0)}\`\n`;
+      }
+      if (f) {
+        const fr = parseFloat(f.fundingRate) * 100;
+        const mp = parseFloat(f.markPrice);
+        infoMsg += `🏷️ Mark: \`$${mp >= 1 ? mp.toLocaleString("en-US", { maximumFractionDigits: 2 }) : mp.toPrecision(4)}\`\n`;
+        infoMsg += `💸 Funding: \`${fr >= 0 ? "+" : ""}${fr.toFixed(4)}%\`\n`;
+      }
+      infoMsg += `\nChoose direction:`;
+      await bot.sendMessage(chatId, infoMsg, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🟢 BUY / LONG", callback_data: "aster:side_buy" }, { text: "🔴 SELL / SHORT", callback_data: "aster:side_sell" }],
+            [{ text: "Cancel", callback_data: "aster:trade_cancel" }],
+          ],
+        },
+      });
+    } catch (e: any) {
+      await bot.sendMessage(chatId,
+        `Symbol: *${symbol}*\n\nChoose direction:`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🟢 BUY / LONG", callback_data: "aster:side_buy" }, { text: "🔴 SELL / SHORT", callback_data: "aster:side_sell" }],
+              [{ text: "Cancel", callback_data: "aster:trade_cancel" }],
+            ],
+          },
+        }
+      );
+    }
     return;
   }
 
@@ -13137,9 +13256,28 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   if (action === "trade_futures") {
     pendingAsterTrade.set(chatId, { step: "symbol", market: "futures" });
     await bot.sendMessage(chatId,
-      "🔄 *Futures Trade*\n\n" +
-      "Enter the trading pair symbol (e.g. BTCUSDT, ETHUSDT):",
-      { parse_mode: "Markdown" }
+      "🔄 *Futures Trade*\n━━━━━━━━━━━━━━━━━━━━\n\n" +
+      "Pick a pair or type any symbol (e.g. BTCUSDT):",
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "BTC", callback_data: "aster:qpair_BTCUSDT" },
+              { text: "ETH", callback_data: "aster:qpair_ETHUSDT" },
+              { text: "BNB", callback_data: "aster:qpair_BNBUSDT" },
+              { text: "SOL", callback_data: "aster:qpair_SOLUSDT" },
+            ],
+            [
+              { text: "XRP", callback_data: "aster:qpair_XRPUSDT" },
+              { text: "DOGE", callback_data: "aster:qpair_DOGEUSDT" },
+              { text: "SUI", callback_data: "aster:qpair_SUIUSDT" },
+              { text: "ADA", callback_data: "aster:qpair_ADAUSDT" },
+            ],
+            [{ text: "Cancel", callback_data: "aster:trade_cancel" }],
+          ],
+        },
+      }
     );
     return;
   }
@@ -13147,7 +13285,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   if (action === "trade_spot") {
     pendingAsterTrade.set(chatId, { step: "symbol", market: "spot" });
     await bot.sendMessage(chatId,
-      "💱 *Spot Trade*\n\n" +
+      "💱 *Spot Trade*\n━━━━━━━━━━━━━━━━━━━━\n\n" +
       "Enter the trading pair symbol (e.g. BTCUSDT, ETHUSDT):",
       { parse_mode: "Markdown" }
     );
@@ -13390,13 +13528,55 @@ async function handleAsterTradeFlow(chatId: number, text: string): Promise<void>
     state.step = "side";
     pendingAsterTrade.set(chatId, state);
 
+    try {
+      const asterClient = await getAsterClient(chatId);
+      if (asterClient && state.market === "futures") {
+        const futuresClient = asterClient.futures || asterClient;
+        const [ticker, fundingArr] = await Promise.all([
+          futuresClient.ticker(input).catch(() => null),
+          futuresClient.fundingRate(input, 1).catch(() => []),
+        ]);
+        const t = Array.isArray(ticker) ? ticker[0] : ticker;
+        const f = Array.isArray(fundingArr) && fundingArr.length > 0 ? fundingArr[0] : null;
+        if (t) {
+          const base = input.replace("USDT", "");
+          const price = parseFloat(t.price);
+          const change = parseFloat(t.priceChangePercent);
+          const changeIcon = change >= 0 ? "🟢" : "🔴";
+          const changeStr = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
+          let infoMsg = `📈 *${base}/USDT — Futures*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+          infoMsg += `💲 Price: \`$${price >= 1 ? price.toLocaleString("en-US", { maximumFractionDigits: 2 }) : price.toPrecision(4)}\`  ${changeIcon} ${changeStr}\n`;
+          infoMsg += `📊 24h High: \`$${parseFloat(t.high) >= 1 ? parseFloat(t.high).toLocaleString("en-US", { maximumFractionDigits: 2 }) : parseFloat(t.high).toPrecision(4)}\`  Low: \`$${parseFloat(t.low) >= 1 ? parseFloat(t.low).toLocaleString("en-US", { maximumFractionDigits: 2 }) : parseFloat(t.low).toPrecision(4)}\`\n`;
+          const vol = parseFloat(t.quoteVolume);
+          infoMsg += `📦 Volume: \`$${vol >= 1e9 ? (vol / 1e9).toFixed(2) + "B" : vol >= 1e6 ? (vol / 1e6).toFixed(2) + "M" : vol >= 1e3 ? (vol / 1e3).toFixed(1) + "K" : vol.toFixed(0)}\`\n`;
+          if (f) {
+            const fr = parseFloat(f.fundingRate) * 100;
+            const mp = parseFloat(f.markPrice);
+            infoMsg += `🏷️ Mark: \`$${mp >= 1 ? mp.toLocaleString("en-US", { maximumFractionDigits: 2 }) : mp.toPrecision(4)}\`\n`;
+            infoMsg += `💸 Funding: \`${fr >= 0 ? "+" : ""}${fr.toFixed(4)}%\`\n`;
+          }
+          infoMsg += `\nChoose direction:`;
+          await bot.sendMessage(chatId, infoMsg, {
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "🟢 BUY / LONG", callback_data: "aster:side_buy" }, { text: "🔴 SELL / SHORT", callback_data: "aster:side_sell" }],
+                [{ text: "Cancel", callback_data: "aster:trade_cancel" }],
+              ],
+            },
+          });
+          return;
+        }
+      }
+    } catch (_) {}
+
     await bot.sendMessage(chatId,
       `Symbol: *${input}*\n\nChoose direction:`,
       {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "BUY / LONG", callback_data: "aster:side_buy" }, { text: "SELL / SHORT", callback_data: "aster:side_sell" }],
+            [{ text: "🟢 BUY / LONG", callback_data: "aster:side_buy" }, { text: "🔴 SELL / SHORT", callback_data: "aster:side_sell" }],
             [{ text: "Cancel", callback_data: "aster:trade_cancel" }],
           ],
         },
