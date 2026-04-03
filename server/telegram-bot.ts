@@ -13362,7 +13362,32 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         );
       }
     } catch (e: any) {
-      await bot.sendMessage(chatId, `Failed to place order: ${e.message?.substring(0, 300)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
+      const errMsg = e.message || "";
+      let userMsg = `❌ *Order Failed*\n\n\`${errMsg.substring(0, 300)}\``;
+      if (errMsg.includes("-2019") || errMsg.toLowerCase().includes("margin is insufficient")) {
+        const reqMargin = state.quantity && state.leverage
+          ? `\n\nYour order needs ~\`$${(parseFloat(state.quantity!) * (state.price ? parseFloat(state.price!) : 1) / parseFloat(state.leverage || "1")).toFixed(2)}\` margin.`
+          : "";
+        userMsg = `❌ *Insufficient Margin*\n\n` +
+          `Your Aster futures account doesn't have enough USDT to cover this trade.${reqMargin}\n\n` +
+          `💡 *What to do:*\n` +
+          `1️⃣ Deposit USDT to your Aster futures wallet at [asterdex.com](https://www.asterdex.com)\n` +
+          `2️⃣ Or reduce position size / increase leverage\n` +
+          `3️⃣ Check your balance below`;
+      } else if (errMsg.includes("-1121") || errMsg.toLowerCase().includes("invalid symbol")) {
+        userMsg = `❌ *Invalid Symbol*\n\nThe pair \`${state.symbol}\` is not available on Aster DEX. Check the Markets page for available pairs.`;
+      } else if (errMsg.includes("-4003") || errMsg.toLowerCase().includes("quantity")) {
+        userMsg = `❌ *Invalid Quantity*\n\nThe quantity \`${state.quantity}\` is not valid for \`${state.symbol}\`. Try a different amount.`;
+      }
+      await bot.sendMessage(chatId, userMsg, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "💰 Check Balance", callback_data: "aster:balance" }, { text: "🔄 Try Again", callback_data: "aster:trade_futures" }],
+            [{ text: "« Aster Menu", callback_data: "action:aster" }],
+          ],
+        },
+      });
     }
 
     pendingAsterTrade.delete(chatId);
