@@ -2977,30 +2977,59 @@ export class DatabaseStorage implements IStorage {
   async saveAsterCredentials(chatId: string, apiKey: string, apiSecret: string): Promise<AsterCredentials> {
     const encryptedApiKey = encryptPrivateKey(apiKey);
     const encryptedApiSecret = encryptPrivateKey(apiSecret);
-    const [row] = await db.insert(asterCredentials).values({
-      chatId,
-      encryptedApiKey,
-      encryptedApiSecret,
-    }).onConflictDoUpdate({
-      target: asterCredentials.chatId,
-      set: {
+    try {
+      const [row] = await db.insert(asterCredentials).values({
+        chatId,
         encryptedApiKey,
         encryptedApiSecret,
-        createdAt: new Date(),
-      },
-    }).returning();
-    return row;
+      }).onConflictDoUpdate({
+        target: asterCredentials.chatId,
+        set: {
+          encryptedApiKey,
+          encryptedApiSecret,
+          createdAt: new Date(),
+        },
+      }).returning();
+      return row;
+    } catch (e: any) {
+      if (e.message?.includes("does not exist")) {
+        await db.execute(sql`CREATE TABLE IF NOT EXISTS "aster_credentials" (
+          chat_id TEXT PRIMARY KEY NOT NULL,
+          encrypted_api_key TEXT NOT NULL,
+          encrypted_api_secret TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT now()
+        )`);
+        const [row] = await db.insert(asterCredentials).values({
+          chatId,
+          encryptedApiKey,
+          encryptedApiSecret,
+        }).onConflictDoUpdate({
+          target: asterCredentials.chatId,
+          set: { encryptedApiKey, encryptedApiSecret, createdAt: new Date() },
+        }).returning();
+        return row;
+      }
+      throw e;
+    }
   }
 
   async getAsterCredentials(chatId: string): Promise<{ chatId: string; apiKey: string; apiSecret: string } | null> {
-    const rows = await db.select().from(asterCredentials).where(eq(asterCredentials.chatId, chatId));
-    if (!rows.length) return null;
-    const row = rows[0];
-    return {
-      chatId: row.chatId,
-      apiKey: decryptPrivateKey(row.encryptedApiKey),
-      apiSecret: decryptPrivateKey(row.encryptedApiSecret),
-    };
+    try {
+      const rows = await db.select().from(asterCredentials).where(eq(asterCredentials.chatId, chatId));
+      if (!rows.length) return null;
+      const row = rows[0];
+      return {
+        chatId: row.chatId,
+        apiKey: decryptPrivateKey(row.encryptedApiKey),
+        apiSecret: decryptPrivateKey(row.encryptedApiSecret),
+      };
+    } catch (e: any) {
+      if (e.message?.includes("does not exist")) {
+        console.log("[Storage] aster_credentials table missing, will be created on first save");
+        return null;
+      }
+      throw e;
+    }
   }
 
   async removeAsterCredentials(chatId: string): Promise<void> {
