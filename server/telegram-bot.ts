@@ -1998,9 +1998,10 @@ const MAX_REWARDS_PER_USER = 1850;
 
 async function grantReward(chatId: number, rewardType: string, amount: string, description: string, referenceId?: string): Promise<void> {
   try {
-    const currentTotal = await storage.getUserRewards(chatId.toString());
-    if (Number(currentTotal) >= MAX_REWARDS_PER_USER) return;
-    const remaining = MAX_REWARDS_PER_USER - Number(currentTotal);
+    const currentTotal = await storage.getUserRewardTotal(chatId.toString());
+    const totalNum = Number(currentTotal) || 0;
+    if (totalNum >= MAX_REWARDS_PER_USER) return;
+    const remaining = MAX_REWARDS_PER_USER - totalNum;
     const cappedAmount = Math.min(Number(amount), remaining).toString();
     await storage.createReward(chatId.toString(), rewardType, cappedAmount, description, referenceId);
     if (bot) {
