@@ -12745,6 +12745,21 @@ async function handleAsterMenu(chatId: number): Promise<void> {
 async function getAsterClient(chatId: number): Promise<any> {
   const creds = await storage.getAsterCredentials(chatId.toString());
   if (!creds) return null;
+
+  const wallet = getLinkedWallet(chatId);
+  const pk = wallet ? await resolvePrivateKey(chatId, wallet) : null;
+
+  if (pk && wallet) {
+    const { createAsterV3FuturesClient, createAsterSpotClient } = await import("./aster-client");
+    const v3Futures = createAsterV3FuturesClient({
+      user: wallet,
+      signer: wallet,
+      signerPrivateKey: pk,
+    });
+    const v1Spot = createAsterSpotClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+    return { futures: v3Futures, spot: v1Spot };
+  }
+
   const { createAsterClient } = await import("./aster-client");
   return createAsterClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
 }
