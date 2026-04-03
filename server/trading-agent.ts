@@ -2523,9 +2523,12 @@ async function aiEvaluateAsterMarkets(markets: Array<{ ticker: AsterTicker; fund
     const frDir = fr > 0 ? "longs pay" : fr < 0 ? "shorts pay" : "neutral";
     const pctChange = parseFloat(m.ticker.priceChangePercent || "0");
     const vol = parseFloat(m.ticker.quoteVolume || "0");
-    const range = parseFloat(m.ticker.high) - parseFloat(m.ticker.low);
-    const rangePct = parseFloat(m.ticker.low) > 0 ? ((range / parseFloat(m.ticker.low)) * 100).toFixed(2) : "0";
-    return `${i + 1}. ${m.ticker.symbol} — $${m.ticker.price}, 24h: ${pctChange.toFixed(2)}%, Vol: ${(vol / 1000).toFixed(0)}K, FR: ${(fr * 100).toFixed(4)}% (${frDir}), Range: ${rangePct}%, H/L: ${m.ticker.high}/${m.ticker.low}`;
+    const tPrice = m.ticker.lastPrice || m.ticker.price;
+    const tHigh = m.ticker.highPrice || m.ticker.high;
+    const tLow = m.ticker.lowPrice || m.ticker.low;
+    const range = parseFloat(tHigh) - parseFloat(tLow);
+    const rangePct = parseFloat(tLow) > 0 ? ((range / parseFloat(tLow)) * 100).toFixed(2) : "0";
+    return `${i + 1}. ${m.ticker.symbol} — $${tPrice}, 24h: ${pctChange.toFixed(2)}%, Vol: ${(vol / 1000).toFixed(0)}K, FR: ${(fr * 100).toFixed(4)}% (${frDir}), Range: ${rangePct}%, H/L: ${tHigh}/${tLow}`;
   }).join("\n");
 
   const prompt = `Expert crypto futures trader. Pick the BEST trade or SKIP.
@@ -2590,7 +2593,7 @@ REASONING: [1 sentence]`;
       fundingRate: parseFloat(market.fundingRate.fundingRate),
       volume24h: parseFloat(market.ticker.quoteVolume || "0"),
       priceChangePct: parseFloat(market.ticker.priceChangePercent || "0"),
-      markPrice: market.fundingRate.markPrice || market.ticker.price,
+      markPrice: market.fundingRate.markPrice || market.ticker.lastPrice || market.ticker.price,
     };
   } catch (e: any) {
     log(`[AsterAgent] AI error: ${e.message?.substring(0, 80)}`, "trading");

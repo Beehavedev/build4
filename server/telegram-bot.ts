@@ -13279,11 +13279,11 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       for (const sym of topSymbols) {
         const t = tickerArr.find((tk: any) => tk.symbol === sym);
         if (!t) continue;
-        const price = parseFloat(t.price);
+        const price = parseFloat(t.lastPrice || t.price);
         const change = parseFloat(t.priceChangePercent);
         const vol = parseFloat(t.quoteVolume);
-        const high = parseFloat(t.high);
-        const low = parseFloat(t.low);
+        const high = parseFloat(t.highPrice || t.high);
+        const low = parseFloat(t.lowPrice || t.low);
         const changeIcon = change >= 0 ? "🟢" : "🔴";
         const changeStr = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
         const base = sym.replace("USDT", "");
@@ -13335,12 +13335,14 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const base = symbol.replace("USDT", "");
       let infoMsg = `📈 *${base}/USDT — Futures*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
       if (t) {
-        const price = parseFloat(t.price);
+        const price = parseFloat(t.lastPrice || t.price);
         const change = parseFloat(t.priceChangePercent);
         const changeIcon = change >= 0 ? "🟢" : "🔴";
         const changeStr = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
+        const high = parseFloat(t.highPrice || t.high);
+        const low = parseFloat(t.lowPrice || t.low);
         infoMsg += `💲 Price: \`$${price >= 1 ? price.toLocaleString("en-US", { maximumFractionDigits: 2 }) : price.toPrecision(4)}\`  ${changeIcon} ${changeStr}\n`;
-        infoMsg += `📊 24h High: \`$${parseFloat(t.high) >= 1 ? parseFloat(t.high).toLocaleString("en-US", { maximumFractionDigits: 2 }) : parseFloat(t.high).toPrecision(4)}\`  Low: \`$${parseFloat(t.low) >= 1 ? parseFloat(t.low).toLocaleString("en-US", { maximumFractionDigits: 2 }) : parseFloat(t.low).toPrecision(4)}\`\n`;
+        infoMsg += `📊 24h High: \`$${high >= 1 ? high.toLocaleString("en-US", { maximumFractionDigits: 2 }) : high.toPrecision(4)}\`  Low: \`$${low >= 1 ? low.toLocaleString("en-US", { maximumFractionDigits: 2 }) : low.toPrecision(4)}\`\n`;
         const vol = parseFloat(t.quoteVolume);
         infoMsg += `📦 Volume: \`$${vol >= 1e9 ? (vol / 1e9).toFixed(2) + "B" : vol >= 1e6 ? (vol / 1e6).toFixed(2) + "M" : vol >= 1e3 ? (vol / 1e3).toFixed(1) + "K" : vol.toFixed(0)}\`\n`;
       }

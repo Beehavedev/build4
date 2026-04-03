@@ -24,12 +24,15 @@ interface AsterRequestOptions {
 interface AsterTicker {
   symbol: string;
   price: string;
+  lastPrice: string;
   volume: string;
   quoteVolume: string;
   priceChange: string;
   priceChangePercent: string;
   high: string;
+  highPrice: string;
   low: string;
+  lowPrice: string;
   lastQty: string;
   time: number;
 }
