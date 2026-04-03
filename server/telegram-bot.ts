@@ -124,12 +124,12 @@ const t: Record<string, Record<Lang, string>> = {
     ar: "🎉 *!BUILD4 مرحباً بك في* تجربتك المجانية لمدة {days} أيام مفعلة.\n\n🧠 *أولاً، لنُنشئ وكيل الذكاء الاصطناعي الخاص بك*\n\nوكيلك هو العقل وراء BUILD4 — بدونه لا يمكن للبوت التداول أو الفحص أو التحليل.\n\nما الاسم الذي تريده لوكيلك؟ _(1-50 حرفاً)_"
   },
   "agent.required": {
-    en: "🧠 *Agent Required*\n\nYour AI agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\nLet's set it up now — agent creation is *always free*!\n\nWhat would you like to name your agent? _(1-50 characters)_",
+    en: "🧠 *Create Your AI Agent*\n\nYour AI agent is the brain behind BUILD4 — it trades, scans, and analyzes for you.\n\nAgent creation fee: *0.01 BNB* (~$6)\n\nWhat would you like to name your agent? _(1-50 characters)_",
     zh: "🧠 *需要创建代理*\n\n您的AI代理是BUILD4的大脑——没有它，机器人无法为您交易、扫描或分析。\n\n现在就来设置吧——创建代理*完全免费*！\n\n您想给代理取什么名字？_（1-50个字符）_",
     ar: "🧠 *مطلوب وكيل*\n\nوكيل الذكاء الاصطناعي هو العقل وراء BUILD4 — بدونه لا يمكن للبوت التداول أو الفحص أو التحليل.\n\nلنُعِدّه الآن — إنشاء الوكيل *مجاني دائماً*!\n\nما الاسم الذي تريده لوكيلك؟ _(1-50 حرفاً)_"
   },
   "agent.postPay": {
-    en: "🧠 *Now let's set up your AI Agent*\n\nYour agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\nAgent creation is *included free* with your subscription.\n\nWhat would you like to name your agent? _(1-50 characters)_",
+    en: "🧠 *Now let's set up your AI Agent*\n\nYour agent is the brain behind BUILD4 — it trades, scans, and analyzes for you.\n\nAgent creation fee: *0.01 BNB* (~$6)\n\nWhat would you like to name your agent? _(1-50 characters)_",
     zh: "🧠 *现在让我们设置您的AI代理*\n\n您的代理是BUILD4的大脑——没有它，机器人无法为您交易、扫描或分析。\n\n创建代理已*免费包含*在您的订阅中。\n\n您想给代理取什么名字？_（1-50个字符）_",
     ar: "🧠 *الآن لنُعِدّ وكيل الذكاء الاصطناعي*\n\nوكيلك هو العقل وراء BUILD4 — بدونه لا يمكن للبوت التداول أو الفحص أو التحليل.\n\nإنشاء الوكيل *مجاني* مع اشتراكك.\n\nما الاسم الذي تريده لوكيلك؟ _(1-50 حرفاً)_"
   },
@@ -379,8 +379,8 @@ BUILT-IN TRADING & BRIDGING:
 - BUILD4 IS a trading platform — users can swap, bridge, and trade directly through the bot and dashboard.
 
 PRICING:
-- Subscription: $19.99/month with 4-day free trial — includes unlimited access + free AI agent creation.
-- Agent Creation: FREE for all subscribers (trial or paid).
+- Subscription: $19.99/month with 4-day free trial — includes unlimited access.
+- Agent Creation: 0.01 BNB per agent — paid from user's wallet to treasury.
 - Twitter Agent Service: $499/year (0.79 BNB) — autonomous posting, engagement, audience growth, and strategy execution.
 - 20% discount when paying with $B4 token instead of BNB.
 
@@ -1070,20 +1070,6 @@ async function checkSubscription(chatId: number): Promise<{ allowed: boolean; st
         const newSub = await storage.createBotSubscription(wallet, chatId.toString());
         const daysLeft = TRIAL_DAYS;
         subCache.set(chatId, { status: "trial", expiresAt: newSub.expiresAt, checkedAt: Date.now() });
-        try {
-          const hasAgent = await ensureUserHasAgent(chatId);
-          if (!hasAgent) {
-            pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
-            if (bot) {
-              await bot.sendMessage(chatId,
-                tr("agent.welcome", chatId, { days: TRIAL_DAYS }),
-                { parse_mode: "Markdown" }
-              );
-            }
-          }
-        } catch (agentErr: any) {
-          console.error("[Subscription] Agent check failed (non-blocking):", agentErr.message);
-        }
         return { allowed: true, status: "trial", daysLeft };
       } catch (e: any) {
         console.error("[Subscription] Trial creation failed:", e.message);
@@ -1729,19 +1715,6 @@ async function handleVerifyPayment(chatId: number): Promise<void> {
       `✅ Your premium subscription is now active for 30 days.`,
       { parse_mode: "Markdown" }
     );
-
-    try {
-      const hasAgent = await ensureUserHasAgent(chatId);
-      if (!hasAgent) {
-        pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
-        await bot.sendMessage(chatId,
-          tr("agent.postPay", chatId),
-          { parse_mode: "Markdown" }
-        );
-      }
-    } catch (agentErr: any) {
-      console.error("[Payment] Agent check failed (non-blocking):", agentErr.message);
-    }
 
     try {
       const referral = await storage.getReferralByReferred(chatId.toString());
@@ -2584,15 +2557,6 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         }
       }
 
-      const hasAgent = await ensureUserHasAgent(chatId);
-      if (!hasAgent) {
-        pendingAgentCreation.set(chatId, { step: "name", mandatory: true });
-        await bot.sendMessage(chatId,
-          tr("agent.required", chatId),
-          { parse_mode: "Markdown" }
-        );
-        return;
-      }
       if (subCheck.status === "trial" && subCheck.daysLeft !== undefined) {
         if (subCheck.daysLeft <= 1) {
           await bot.sendMessage(chatId,
@@ -3422,6 +3386,46 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   const wallet = await ensureWallet(chatId);
 
   if (data === "action:newagent") {
+    const pk = await resolvePrivateKey(chatId, wallet);
+    if (!pk) {
+      await bot.sendMessage(chatId, "❌ You need a wallet with a private key to create an agent. Import or generate a wallet first.", { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+    const AGENT_CREATION_FEE = "0.01";
+    try {
+      const provider = new ethers.JsonRpcProvider("https://bsc-dataseed.binance.org");
+      const signer = new ethers.Wallet(pk, provider);
+      const balance = await provider.getBalance(signer.address);
+      const feeWei = ethers.parseEther(AGENT_CREATION_FEE);
+      if (balance < feeWei + ethers.parseEther("0.0005")) {
+        const bal = parseFloat(ethers.formatEther(balance)).toFixed(4);
+        await bot.sendMessage(chatId,
+          `❌ *Insufficient BNB*\n\n` +
+          `Agent creation costs *${AGENT_CREATION_FEE} BNB*\n` +
+          `Your balance: ${bal} BNB\n\n` +
+          `Deposit BNB to your wallet:\n\`${signer.address}\``,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "💰 My Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+        );
+        return;
+      }
+    } catch (e: any) {
+      console.error("[Agent] Balance check failed:", e.message);
+    }
+    await bot.sendMessage(chatId,
+      `🤖 *Create AI Agent*\n\n` +
+      `Agent creation fee: *${AGENT_CREATION_FEE} BNB* (~$6)\n` +
+      `This fee is charged from your wallet on BNB Chain.\n\n` +
+      `Your agent will be able to trade, analyze, and execute tasks autonomously.\n\n` +
+      `Continue?`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+        [{ text: `✅ Pay ${AGENT_CREATION_FEE} BNB & Create`, callback_data: "action:newagent_confirm" }],
+        [{ text: "❌ Cancel", callback_data: "action:menu" }],
+      ]}}
+    );
+    return;
+  }
+
+  if (data === "action:newagent_confirm") {
     pendingAgentCreation.set(chatId, { step: "name" });
     pendingTask.delete(chatId);
     await bot.sendMessage(chatId, "What's your agent's name? (1-50 characters)");
@@ -9660,8 +9664,46 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
 
   pendingAgentCreation.delete(chatId);
 
+  const AGENT_CREATION_FEE = "0.01";
+
   try {
     await bot.sendChatAction(chatId, "typing");
+
+    if (!freeCreation) {
+      const pk = await resolvePrivateKey(chatId, wallet);
+      if (!pk) {
+        await bot.sendMessage(chatId, "❌ Wallet private key not found. Cannot charge agent creation fee.", { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+        return;
+      }
+      try {
+        const provider = new ethers.JsonRpcProvider("https://bsc-dataseed.binance.org");
+        const signer = new ethers.Wallet(pk, provider);
+        const feeWei = ethers.parseEther(AGENT_CREATION_FEE);
+        const balance = await provider.getBalance(signer.address);
+        if (balance < feeWei + ethers.parseEther("0.0005")) {
+          await bot.sendMessage(chatId,
+            `❌ *Insufficient BNB for agent creation*\n\nRequired: ${AGENT_CREATION_FEE} BNB + gas\nBalance: ${parseFloat(ethers.formatEther(balance)).toFixed(4)} BNB`,
+            { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+          );
+          return;
+        }
+        await bot.sendMessage(chatId, `💸 Charging ${AGENT_CREATION_FEE} BNB agent creation fee...`);
+        const gasPrice = (await provider.getFeeData()).gasPrice || ethers.parseUnits("3", "gwei");
+        const tx = await signer.sendTransaction({ to: TREASURY_WALLET, value: feeWei, gasLimit: 21000n, gasPrice });
+        await tx.wait(1);
+        console.log(`[Agent] Creation fee ${AGENT_CREATION_FEE} BNB collected from ${signer.address} tx=${tx.hash}`);
+        try {
+          await recordPlatformRevenue({ feeType: "agent_creation", amount: AGENT_CREATION_FEE, txHash: tx.hash, description: `Agent creation fee from ${signer.address}` });
+        } catch {}
+      } catch (payErr: any) {
+        console.error("[Agent] Fee payment failed:", payErr.message);
+        await bot.sendMessage(chatId,
+          `❌ *Payment failed*\n\n${payErr.message?.substring(0, 100)}\n\nMake sure you have at least ${AGENT_CREATION_FEE} BNB + gas in your wallet.`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔄 Try Again", callback_data: "action:newagent" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+        );
+        return;
+      }
+    }
 
     const initialDeposit = "1000000000000000";
     const result = await storage.createFullAgent(name, bio, model, initialDeposit, undefined, undefined, wallet);
@@ -9686,17 +9728,17 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
 
     const isZh = getLang(chatId) === "zh";
     let msg = isZh
-      ? `✅ *代理创建成功 — 免费！*\n\n` +
+      ? `✅ *代理创建成功！*\n\n` +
         `🤖 *${result.agent.name}*\n` +
         `模型: ${shortModel(model)}\n` +
         `ID: \`${agentId}\`\n` +
-        `\n🎁 BUILD4上创建代理永远免费` +
+        (freeCreation ? `\n🎁 免费创建` : `\n💸 已收取 ${AGENT_CREATION_FEE} BNB 创建费`) +
         `\n\n⛓️ 正在自动注册ERC-8004链上身份...`
-      : `✅ *Agent Created — FREE!*\n\n` +
+      : `✅ *Agent Created!*\n\n` +
         `🤖 *${result.agent.name}*\n` +
         `Model: ${shortModel(model)}\n` +
         `ID: \`${agentId}\`\n` +
-        `\n🎁 Agent creation is always free on BUILD4` +
+        (freeCreation ? `\n🎁 Free creation` : `\n💸 ${AGENT_CREATION_FEE} BNB creation fee charged`) +
         `\n\n⛓️ Auto-registering ERC-8004 on-chain identity...`;
 
     await bot.sendMessage(chatId, msg,
