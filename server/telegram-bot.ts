@@ -2478,8 +2478,9 @@ function mainMenuKeyboard(_hasWallet?: boolean, chatId?: number): TelegramBot.In
   return {
     inline_keyboard: [
       [{ text: tr("menu.buyBuild4", c), callback_data: "action:buybuild4" }, { text: tr("menu.launch", c), callback_data: "action:launchtoken" }],
-      [{ text: tr("menu.trading", c), callback_data: "action:submenu_trading" }, { text: tr("menu.market", c), callback_data: "action:submenu_market" }],
+      [{ text: tr("menu.trading", c), callback_data: "action:submenu_trading" }, { text: "📈 Aster DEX", callback_data: "action:aster" }],
       [{ text: "🤖 Agents", callback_data: "action:submenu_agents" }, { text: tr("menu.earn", c), callback_data: "action:submenu_earn" }],
+      [{ text: tr("menu.market", c), callback_data: "action:submenu_market" }],
       [{ text: tr("menu.portfolio", c), callback_data: "action:portfolio" }, { text: tr("menu.wallet", c), callback_data: "action:wallet" }],
       [{ text: tr("menu.help", c), callback_data: "action:help" }, { text: "🌐 Lang", callback_data: "action:lang" }],
     ]
