@@ -171,7 +171,7 @@ interface BrokerOnboardResult {
 }
 
 const DEFAULT_FUTURES_BASE_URL = "https://fapi.asterdex.com";
-const DEFAULT_FUTURES_V3_BASE_URL = "https://fapi3.asterdex.com";
+const DEFAULT_FUTURES_V3_BASE_URL = "https://fapi.asterdex.com";
 const DEFAULT_SPOT_BASE_URL = "https://sapi.asterdex.com";
 const BROKER_BASE_URL = "https://www.asterdex.com/bapi/futures/v1";
 const WS_BASE_URL = "wss://fstream.asterdex.com";
