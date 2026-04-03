@@ -232,7 +232,7 @@ function B4RewardsLeaderboard() {
               })}
             </div>
             <div className="mt-4 text-center">
-              <a href="https://t.me/build4bot" target="_blank" rel="noopener noreferrer">
+              <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer">
                 <Button variant="outline" size="sm" className="font-mono text-xs gap-2" data-testid="button-earn-b4">
                   <Rocket className="w-3.5 h-3.5" />
                   Start Earning $B4
@@ -463,14 +463,14 @@ export default function Home() {
                         </div>
                       </div>
                       <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
-                        <a href="https://t.me/build4bot" target="_blank" rel="noopener noreferrer">
+                        <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer">
                           <Button size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto" data-testid="button-join-challenge">
                             <Trophy className="w-4 h-4" />
                             Join Challenge
                             <ArrowRight className="w-4 h-4" />
                           </Button>
                         </a>
-                        <a href="https://t.me/build4bot" target="_blank" rel="noopener noreferrer">
+                        <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer">
                           <Button variant="outline" size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto border-primary/30" data-testid="button-copy-trade">
                             <Copy className="w-4 h-4" />
                             Copy Top Traders
@@ -581,7 +581,7 @@ export default function Home() {
                         </div>
                       </div>
                       <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
-                        <a href="https://t.me/build4bot" target="_blank" rel="noopener noreferrer">
+                        <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer">
                           <Button size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto bg-violet-600 hover:bg-violet-700" data-testid="button-trade-aster">
                             <BarChart3 className="w-4 h-4" />
                             Start Trading
