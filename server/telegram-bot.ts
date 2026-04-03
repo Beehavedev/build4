@@ -1346,19 +1346,52 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
 }
 
 async function resolvePrivateKey(chatId: number, walletAddr: string): Promise<string | null> {
+  const lowerAddr = walletAddr.toLowerCase();
   try {
-    let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
+    let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), lowerAddr);
     if (pk) {
-      walletsWithKey.add(`${chatId}:${walletAddr}`);
+      walletsWithKey.add(`${chatId}:${lowerAddr}`);
       return pk;
     }
-    pk = await storage.getPrivateKeyByWalletAddress(walletAddr);
+    if (lowerAddr !== walletAddr) {
+      pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
+      if (pk) {
+        walletsWithKey.add(`${chatId}:${lowerAddr}`);
+        return pk;
+      }
+    }
+    pk = await storage.getPrivateKeyByWalletAddress(lowerAddr);
     if (pk) {
-      await storage.saveTelegramWallet(chatId.toString(), walletAddr, pk);
-      walletsWithKey.add(`${chatId}:${walletAddr}`);
-      console.log(`[Wallet] Recovered key for chatId=${chatId} wallet=${walletAddr.substring(0, 8)}`);
+      await storage.saveTelegramWallet(chatId.toString(), lowerAddr, pk);
+      walletsWithKey.add(`${chatId}:${lowerAddr}`);
+      console.log(`[Wallet] Recovered key for chatId=${chatId} wallet=${lowerAddr.substring(0, 8)}`);
       return pk;
     }
+    const userWallets = await storage.getTelegramWallets(chatId.toString());
+    for (const w of userWallets) {
+      if (w.walletAddress.toLowerCase() === lowerAddr) continue;
+      if (!w.encryptedPrivateKey) continue;
+      try {
+        const altPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), w.walletAddress);
+        if (altPk) {
+          console.log(`[Wallet] Found working key on alternate wallet ${w.walletAddress.substring(0, 8)} for chatId=${chatId}`);
+        }
+      } catch {}
+    }
+    try {
+      const { db } = await import("./db");
+      const { telegramWallets: tw } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const rows = await db.select().from(tw)
+        .where(and(eq(tw.chatId, chatId.toString()), eq(tw.walletAddress, lowerAddr)));
+      if (rows.length > 0 && rows[0].encryptedPrivateKey) {
+        console.error(`[Wallet] DECRYPT_FAIL chatId=${chatId} wallet=${lowerAddr.substring(0, 8)} key_len=${rows[0].encryptedPrivateKey.length}`);
+      } else if (rows.length > 0) {
+        console.error(`[Wallet] NULL_KEY chatId=${chatId} wallet=${lowerAddr.substring(0, 8)}`);
+      } else {
+        console.error(`[Wallet] NO_ROW chatId=${chatId} wallet=${lowerAddr.substring(0, 8)}`);
+      }
+    } catch {}
   } catch (e: any) {
     console.error(`[Wallet] resolvePrivateKey error for chatId=${chatId}:`, e.message);
   }
@@ -1368,7 +1401,6 @@ async function resolvePrivateKey(chatId: number, walletAddr: string): Promise<st
 async function checkWalletHasKey(chatId: number, wallet: string | undefined): Promise<boolean> {
   if (!wallet) return false;
   if (wallet.startsWith("sol:")) return false;
-  if (walletsWithKey.has(`${chatId}:${wallet}`)) return true;
   const pk = await resolvePrivateKey(chatId, wallet);
   return pk !== null;
 }
@@ -5477,9 +5509,18 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       return;
     }
 
-    const walletAddr = getLinkedWallet(chatId);
-    if (!walletAddr || !await checkWalletHasKey(chatId, walletAddr)) {
-      await bot.sendMessage(chatId, "You need a wallet with a private key to buy. Use /wallet to set one up.", { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    let walletAddr = getLinkedWallet(chatId);
+    if (!walletAddr) {
+      walletAddr = await autoGenerateWallet(chatId);
+    }
+    if (!await checkWalletHasKey(chatId, walletAddr)) {
+      console.error(`[Wallet] Key unrecoverable for chatId=${chatId}, wallet=${walletAddr.substring(0, 8)}. Auto-regenerating...`);
+      const newAddr = await regenerateWalletWithKey(chatId);
+      if (newAddr) {
+        await bot.sendMessage(chatId, `⚠️ *Wallet Key Recovery*\n\nYour previous wallet key couldn't be decrypted. A fresh wallet has been generated:\n\`${newAddr}\`\n\nPlease fund this wallet with ${state.nativeSymbol} and try your buy again.\n\nOr import your old private key: tap 👛 Wallet → Import.`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      } else {
+        await bot.sendMessage(chatId, "❌ Wallet key issue. Use /wallet to import your private key or generate a new wallet.", { reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+      }
       pendingSignalBuy.delete(chatId);
       return;
     }
@@ -5506,8 +5547,19 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const txData = swapTx?.data?.[0]?.tx;
       if (!txData) throw new Error("No swap route found for this token. It may have low liquidity.");
 
-      const pk = await resolvePrivateKey(chatId, walletAddr);
-      if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
+      let pk = await resolvePrivateKey(chatId, walletAddr);
+      if (!pk) {
+        const newAddr = await regenerateWalletWithKey(chatId);
+        if (newAddr) {
+          pk = await resolvePrivateKey(chatId, newAddr);
+          if (pk) {
+            await bot.sendMessage(chatId, `⚠️ Your old wallet key was unrecoverable. A new wallet has been created: \`${newAddr}\`\n\nFund it with ${state.nativeSymbol} and retry your buy.`, { parse_mode: "Markdown" });
+            pendingSignalBuy.delete(chatId);
+            return;
+          }
+        }
+        throw new Error("Private key not found. Use /wallet to check your wallet status.");
+      }
 
       const CHAIN_RPCS: Record<string, string> = {
         "56": "https://bsc-dataseed1.binance.org", "1": "https://eth.llamarpc.com",
