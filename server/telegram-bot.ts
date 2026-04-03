@@ -1994,7 +1994,7 @@ async function handleQuestsDashboard(chatId: number): Promise<void> {
   }
 }
 
-const MAX_REWARDS_PER_USER = 1850;
+const MAX_REWARDS_PER_USER = 5000;
 
 async function grantReward(chatId: number, rewardType: string, amount: string, description: string, referenceId?: string): Promise<void> {
   try {
