@@ -1678,3 +1678,11 @@ export const SEED_AGENTS = {
     categories: ["testing", "development"],
   },
 } as const;
+
+export const userTradingData = pgTable("user_trading_data", {
+  id: serial("id").primaryKey(),
+  chatId: varchar("chat_id", { length: 64 }).notNull(),
+  dataType: varchar("data_type", { length: 32 }).notNull(),
+  data: text("data").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});

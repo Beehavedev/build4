@@ -43,9 +43,10 @@ A tiered platform fee (0-1%) on all trades, based on $B4 holdings, is collected 
 
 ### Trading Bot Features
 - **Core Trading**: 1-tap buy/sell/swap, custom buy amounts, token PnL tracking, TX status tracking.
-- **Advanced Orders**: Limit orders with background price checking and alerts, token watchlists with price alerts.
-- **User Settings**: Per-user trading defaults (slippage, gas priority, auto-approve).
+- **Advanced Orders**: Limit orders with background price checking and auto-execution (when auto-approve enabled), token watchlists with price alerts.
+- **User Settings**: Per-user trading defaults (slippage, gas priority, auto-approve). Slippage is applied to actual swap calls, with Solana minimum of 15%.
 - **Sell UX**: Entry price tracking, PnL display, and limit sell options.
+- **Data Persistence**: All trading data (settings, watchlists, limit orders, trade entries) is persisted to `user_trading_data` table via JSON serialization, keyed by chatId + dataType. Loaded on bot startup, saved on every change. In-memory Maps are the working cache.
 
 ### Key Design Decisions
 - **Two-layer Architecture**: On-chain for financial transactions, off-chain for agent behaviors.

@@ -252,6 +252,11 @@ const userSettings = new Map<number, UserSettings>();
 function getUserSettings(chatId: number): UserSettings {
   return userSettings.get(chatId) || { defaultSlippage: 1, defaultBuyAmount: "0.05", gasPriority: "normal", autoApprove: false };
 }
+function getSlippageForChain(chatId: number, chainId: string): string {
+  const s = getUserSettings(chatId);
+  if (chainId === "501") return Math.max(s.defaultSlippage, 15).toString();
+  return s.defaultSlippage.toString();
+}
 
 interface LimitOrder {
   id: string;
@@ -292,6 +297,92 @@ interface TradeEntry {
   boughtAt: number;
 }
 const userTradeEntries = new Map<number, TradeEntry[]>();
+
+async function saveTradingData(chatId: number, dataType: string, data: any) {
+  try {
+    const { db } = await import("./db");
+    const { userTradingData } = await import("@shared/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const jsonStr = JSON.stringify(data);
+    const existing = await db.select().from(userTradingData).where(and(eq(userTradingData.chatId, chatId.toString()), eq(userTradingData.dataType, dataType))).limit(1);
+    if (existing.length > 0) {
+      await db.update(userTradingData).set({ data: jsonStr, updatedAt: new Date() }).where(and(eq(userTradingData.chatId, chatId.toString()), eq(userTradingData.dataType, dataType)));
+    } else {
+      await db.insert(userTradingData).values({ chatId: chatId.toString(), dataType, data: jsonStr });
+    }
+  } catch (e: any) {
+    console.error(`[TradingData] Save failed ${dataType} for ${chatId}:`, e.message?.substring(0, 100));
+  }
+}
+
+async function loadTradingData(chatId: number, dataType: string): Promise<any | null> {
+  try {
+    const { db } = await import("./db");
+    const { userTradingData } = await import("@shared/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const rows = await db.select().from(userTradingData).where(and(eq(userTradingData.chatId, chatId.toString()), eq(userTradingData.dataType, dataType))).limit(1);
+    if (rows.length > 0) return JSON.parse(rows[0].data);
+  } catch (e: any) {
+    console.error(`[TradingData] Load failed ${dataType} for ${chatId}:`, e.message?.substring(0, 100));
+  }
+  return null;
+}
+
+async function loadAllTradingDataByType(dataType: string): Promise<Array<{ chatId: number; data: any }>> {
+  try {
+    const { db } = await import("./db");
+    const { userTradingData } = await import("@shared/schema");
+    const { eq } = await import("drizzle-orm");
+    const rows = await db.select().from(userTradingData).where(eq(userTradingData.dataType, dataType));
+    return rows.map(r => ({ chatId: parseInt(r.chatId), data: JSON.parse(r.data) }));
+  } catch (e: any) {
+    console.error(`[TradingData] LoadAll failed ${dataType}:`, e.message?.substring(0, 100));
+  }
+  return [];
+}
+
+async function loadUserSettingsFromDB(chatId: number) {
+  const saved = await loadTradingData(chatId, "settings");
+  if (saved) userSettings.set(chatId, saved);
+}
+
+async function saveUserSettings(chatId: number, s: UserSettings) {
+  userSettings.set(chatId, s);
+  await saveTradingData(chatId, "settings", s);
+}
+
+async function saveWatchlist(chatId: number) {
+  const list = userWatchlists.get(chatId) || [];
+  await saveTradingData(chatId, "watchlist", list);
+}
+
+async function saveTradeEntries(chatId: number) {
+  const entries = userTradeEntries.get(chatId) || [];
+  await saveTradingData(chatId, "entries", entries);
+}
+
+async function saveLimitOrders() {
+  const orders = Array.from(limitOrders.values()).filter(o => o.status === "active");
+  await saveTradingData(0, "limit_orders", orders);
+}
+
+async function loadAllPersisted() {
+  try {
+    const orderData = await loadTradingData(0, "limit_orders");
+    if (Array.isArray(orderData)) {
+      for (const o of orderData) { if (o.status === "active") limitOrders.set(o.id, o); }
+    }
+    const watchRows = await loadAllTradingDataByType("watchlist");
+    for (const r of watchRows) { if (Array.isArray(r.data)) userWatchlists.set(r.chatId, r.data); }
+    const settingsRows = await loadAllTradingDataByType("settings");
+    for (const r of settingsRows) { if (r.data) userSettings.set(r.chatId, r.data); }
+    const entryRows = await loadAllTradingDataByType("entries");
+    for (const r of entryRows) { if (Array.isArray(r.data)) userTradeEntries.set(r.chatId, r.data); }
+    console.log(`[TradingData] Loaded ${limitOrders.size} limit orders, ${userWatchlists.size} watchlists, ${userSettings.size} settings, ${userTradeEntries.size} entry trackers`);
+  } catch (e: any) {
+    console.error("[TradingData] Initial load failed:", e.message?.substring(0, 100));
+  }
+}
 
 interface SellState {
   chainId: string;
@@ -2556,6 +2647,8 @@ async function startTelegramBotPolling(token: string): Promise<void> {
     console.log(`[TelegramBot] Fallback started with polling as @${botUsername}`);
 
     registerBotHandlers(bot);
+
+    loadAllPersisted().then(() => console.log("[TradingData] Persisted data loaded on startup")).catch(e => console.error("[TradingData] Startup load error:", e.message));
 
     setInterval(() => { sendTrialReminders().catch(e => console.error("[TrialReminder] Error:", e.message)); }, 6 * 60 * 60 * 1000);
     setTimeout(() => { sendTrialReminders().catch(e => console.error("[TrialReminder] Error:", e.message)); }, 60_000);
@@ -5266,7 +5359,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           fromTokenAddress: SOLANA_NATIVE_TOKEN,
           toTokenAddress: state.tokenAddress,
           amount: rawAmount,
-          slippage: "30",
+          slippage: getSlippageForChain(chatId, "501"),
           userWalletAddress: solWallet.address,
         });
 
@@ -5349,6 +5442,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
             const entries = userTradeEntries.get(chatId) || [];
             entries.push({ tokenAddress: state.tokenAddress, chainId: "501", entryPrice: parseFloat(priceResult.data.price), amount: state.amount, nativeSymbol: "SOL", boughtAt: Date.now() });
             userTradeEntries.set(chatId, entries);
+            saveTradeEntries(chatId);
           }
         } catch {}
         await bot.sendMessage(chatId,
@@ -5405,7 +5499,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         fromTokenAddress: nativeToken,
         toTokenAddress: state.tokenAddress,
         amount: rawAmount,
-        slippage: "1",
+        slippage: getSlippageForChain(chatId, state.chainId),
         userWalletAddress: walletAddr,
       });
 
@@ -5458,6 +5552,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           const entries = userTradeEntries.get(chatId) || [];
           entries.push({ tokenAddress: state.tokenAddress, chainId: state.chainId, entryPrice: parseFloat(priceResult.data.price), amount: state.amount, nativeSymbol: state.nativeSymbol, boughtAt: Date.now() });
           userTradeEntries.set(chatId, entries);
+          saveTradeEntries(chatId);
         }
       } catch {}
       await bot.sendMessage(chatId,
@@ -5581,11 +5676,11 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     } else if (setting === "gas") {
       const next = s.gasPriority === "low" ? "normal" : s.gasPriority === "normal" ? "fast" : "low";
       s.gasPriority = next;
-      userSettings.set(chatId, s);
+      await saveUserSettings(chatId, s);
       await bot.sendMessage(chatId, `⛽ Gas priority set to *${next}*`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "⚙️ Settings", callback_data: "action:settings" }]] } });
     } else if (setting === "autoapprove") {
       s.autoApprove = !s.autoApprove;
-      userSettings.set(chatId, s);
+      await saveUserSettings(chatId, s);
       await bot.sendMessage(chatId, `✅ Auto-Approve is now *${s.autoApprove ? "ON" : "OFF"}*`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "⚙️ Settings", callback_data: "action:settings" }]] } });
     }
     return;
@@ -5594,7 +5689,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const val = parseFloat(data.split(":")[1]);
     const s = getUserSettings(chatId);
     s.defaultSlippage = val;
-    userSettings.set(chatId, s);
+    await saveUserSettings(chatId, s);
     await bot.sendMessage(chatId, `📊 Default slippage set to *${val}%*`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "⚙️ Settings", callback_data: "action:settings" }]] } });
     return;
   }
@@ -5602,7 +5697,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const val = data.split(":")[1];
     const s = getUserSettings(chatId);
     s.defaultBuyAmount = val;
-    userSettings.set(chatId, s);
+    await saveUserSettings(chatId, s);
     await bot.sendMessage(chatId, `💰 Default buy amount set to *${val} BNB*`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "⚙️ Settings", callback_data: "action:settings" }]] } });
     return;
   }
@@ -5629,6 +5724,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     };
     limitOrders.set(orderId, order);
     pendingLimitOrder.delete(chatId);
+    saveLimitOrders();
     await bot.sendMessage(chatId,
       `✅ *Limit Order Created*\n\n` +
       `${order.type === "buy" ? "🟢" : "🔴"} *${order.type.toUpperCase()}* ${order.amount} ${nativeSym}\n` +
@@ -5691,6 +5787,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         cancelled++;
       }
     }
+    saveLimitOrders();
     await bot.sendMessage(chatId, `❌ Cancelled ${cancelled} limit order${cancelled !== 1 ? "s" : ""}.`, { reply_markup: { inline_keyboard: [[{ text: "📋 Limit Orders", callback_data: "action:limitorders" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
     return;
   }
@@ -5699,6 +5796,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const order = limitOrders.get(orderId);
     if (order && order.chatId === chatId) {
       limitOrders.delete(orderId);
+      saveLimitOrders();
       await bot.sendMessage(chatId, `❌ Limit order cancelled.`, { reply_markup: { inline_keyboard: [[{ text: "📋 Limit Orders", callback_data: "action:limitorders" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
     }
     return;
@@ -5757,6 +5855,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       } catch {}
     }
     userWatchlists.set(chatId, list);
+    saveWatchlist(chatId);
     let msg = `👁️ *Watchlist* (updated)\n\n`;
     for (let i = 0; i < list.length; i++) {
       const w = list[i];
@@ -5774,6 +5873,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
   }
   if (data === "watch:clearall") {
     userWatchlists.delete(chatId);
+    saveTradingData(chatId, "watchlist", []);
     await bot.sendMessage(chatId, "🗑️ Watchlist cleared.", { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
     return;
   }
@@ -5783,6 +5883,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     if (idx >= 0 && idx < list.length) {
       const removed = list.splice(idx, 1)[0];
       userWatchlists.set(chatId, list);
+      saveWatchlist(chatId);
       await bot.sendMessage(chatId, `🗑️ Removed *${removed.tokenSymbol || removed.tokenAddress.substring(0, 8) + "..."}* from watchlist.`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "👁️ Watchlist", callback_data: "action:watchlist" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
     }
     return;
@@ -8181,6 +8282,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       };
       limitOrders.set(orderId, order);
       pendingLimitOrder.delete(chatId);
+      saveLimitOrders();
       await bot.sendMessage(chatId,
         `✅ *Limit Order Created*\n\n` +
         `${order.type === "buy" ? "🟢" : "🔴"} *${order.type.toUpperCase()}* ${order.amount} ${nativeSym}\n` +
@@ -8220,6 +8322,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       const list = userWatchlists.get(chatId) || [];
       list.push({ tokenAddress: addr, chainId: state.chainId, tokenName, tokenSymbol, addedAt: Date.now(), lastPrice });
       userWatchlists.set(chatId, list);
+      saveWatchlist(chatId);
       pendingWatchlistAlert.delete(chatId);
       await bot.sendMessage(chatId,
         `✅ *Added to Watchlist*\n\n` +
@@ -8259,6 +8362,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         }
       }
       userWatchlists.set(chatId, list);
+      saveWatchlist(chatId);
       pendingWatchlistAlert.delete(chatId);
       await bot.sendMessage(chatId,
         `✅ *Price alerts set!*\n\n` +
@@ -9079,6 +9183,10 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       pendingTxHashVerify.delete(chatId);
       pendingAgentQuestion.delete(chatId);
       pendingStealthEth.delete(chatId);
+      pendingLimitOrder.delete(chatId);
+      pendingWatchlistAlert.delete(chatId);
+      pendingSignalBuy.delete(chatId);
+      pendingBuild4Buy.delete(chatId);
       await bot.sendMessage(chatId, "Cancelled.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
       return;
     }
@@ -13434,22 +13542,57 @@ async function checkLimitOrdersAndAlerts(bot: any) {
     if (triggered) {
       order.status = "triggered";
       limitOrders.delete(order.id);
-      try {
-        await bot.sendMessage(order.chatId,
-          `🔔 *Limit Order Triggered!*\n\n` +
-          `${order.type === "buy" ? "🟢" : "🔴"} *${order.type.toUpperCase()}* ${order.amount} ${order.nativeSymbol}\n` +
-          `Token: \`${order.tokenAddress.substring(0, 12)}...\`${order.tokenName ? ` (${order.tokenName})` : ""}\n` +
-          `Trigger: $${order.triggerPrice < 0.01 ? order.triggerPrice.toExponential(3) : order.triggerPrice.toFixed(6)}\n` +
-          `Current: $${price < 0.01 ? price.toExponential(3) : price.toFixed(6)}\n\n` +
-          `Tap below to execute now:`,
-          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
-            [{ text: `⚡ ${order.type === "buy" ? "Buy" : "Sell"} Now`, callback_data: `cabuy:${order.tokenAddress}:${order.chainId}:${order.amount}` }],
-            [{ text: "📋 Limit Orders", callback_data: "action:limitorders" }],
-            [{ text: "« Menu", callback_data: "action:menu" }],
-          ] } }
-        );
-      } catch (e: any) {
-        console.error(`[LimitChecker] Failed to notify ${order.chatId}:`, e.message);
+      saveLimitOrders();
+
+      const isSolana = order.chainId === "501";
+      const chainName = isSolana ? "Solana" : order.chainId === "8453" ? "Base" : "BNB Chain";
+      const autoApprove = getUserSettings(order.chatId).autoApprove;
+
+      if (autoApprove && order.type === "buy") {
+        try {
+          await bot.sendMessage(order.chatId,
+            `🔔 *Limit Order Triggered — Auto-Executing!*\n\n` +
+            `🟢 *BUY* ${order.amount} ${order.nativeSymbol}\n` +
+            `Token: \`${order.tokenAddress.substring(0, 12)}...\`${order.tokenName ? ` (${order.tokenName})` : ""}\n` +
+            `Price hit $${price < 0.01 ? price.toExponential(3) : price.toFixed(6)} (target: $${order.triggerPrice < 0.01 ? order.triggerPrice.toExponential(3) : order.triggerPrice.toFixed(6)})\n\n` +
+            `⏳ Executing swap on ${chainName}...`,
+            { parse_mode: "Markdown" }
+          );
+          pendingSignalBuy.set(order.chatId, {
+            tokenAddress: order.tokenAddress,
+            tokenSymbol: order.tokenName || "Token",
+            chainId: order.chainId,
+            chainName,
+            nativeSymbol: order.nativeSymbol,
+            amount: order.amount,
+            step: "confirm",
+          });
+          const fakeQuery = { id: `limit_auto_${order.id}`, from: { id: order.chatId, first_name: "User" }, data: "sigbuy_confirm" } as any;
+          bot.emit("callback_query", fakeQuery);
+        } catch (e: any) {
+          console.error(`[LimitChecker] Auto-execute setup failed for ${order.id}:`, e.message);
+        }
+      } else {
+        try {
+          const actionBtn = order.type === "buy"
+            ? [{ text: `⚡ Buy ${order.amount} ${order.nativeSymbol}`, callback_data: `cabuy:${order.tokenAddress}:${order.chainId}:${order.amount}` }]
+            : [{ text: `🔴 Sell Now`, callback_data: `selltoken:${order.tokenAddress}:${order.chainId}` }];
+          await bot.sendMessage(order.chatId,
+            `🔔 *Limit Order Triggered!*\n\n` +
+            `${order.type === "buy" ? "🟢" : "🔴"} *${order.type.toUpperCase()}* ${order.amount} ${order.nativeSymbol}\n` +
+            `Token: \`${order.tokenAddress.substring(0, 12)}...\`${order.tokenName ? ` (${order.tokenName})` : ""}\n` +
+            `Trigger: $${order.triggerPrice < 0.01 ? order.triggerPrice.toExponential(3) : order.triggerPrice.toFixed(6)}\n` +
+            `Current: $${price < 0.01 ? price.toExponential(3) : price.toFixed(6)}\n\n` +
+            `Tap below to execute:`,
+            { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+              actionBtn,
+              [{ text: "📋 Limit Orders", callback_data: "action:limitorders" }],
+              [{ text: "« Menu", callback_data: "action:menu" }],
+            ] } }
+          );
+        } catch (e: any) {
+          console.error(`[LimitChecker] Failed to notify ${order.chatId}:`, e.message);
+        }
       }
     }
   }
