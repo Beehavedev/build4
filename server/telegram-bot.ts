@@ -38,7 +38,7 @@ const t: Record<string, Record<Lang, string>> = {
   "menu.meme": { en: "🐸 Meme Scanner", zh: "🐸 Meme扫描", ar: "🐸 ماسح ميم" },
   "menu.price": { en: "📊 Token Price", zh: "📊 代币价格", ar: "📊 سعر التوكن" },
   "menu.gas": { en: "⛽ Gas", zh: "⛽ Gas费", ar: "⛽ رسوم الغاز" },
-  "menu.rich": { en: "💎 Make Me Rich", zh: "💎 自动交易", ar: "💎 تداول تلقائي" },
+  "menu.rich": { en: "💎 Auto Trade", zh: "💎 自动交易", ar: "💎 تداول تلقائي" },
   "menu.aster": { en: "📈 Aster DEX", zh: "📈 Aster DEX", ar: "📈 Aster DEX" },
   "menu.buyBuild4": { en: "🟢 Buy $B4", zh: "🟢 购买 $B4", ar: "🟢 شراء $B4" },
   "menu.createAgent": { en: "🤖 Create Agent", zh: "🤖 创建代理", ar: "🤖 إنشاء وكيل" },
@@ -114,9 +114,9 @@ const t: Record<string, Record<Lang, string>> = {
     ar: "🎉 *!BUILD4 مرحباً بك في*\n\nمحفظتك جاهزة و*تجربتك المجانية لمدة {days} أيام* مفعلة.\n\n👛 المحفظة: `{wallet}`\n⏳ التجربة: {daysLeft} أيام متبقية\n\n━━━━━━━━━━━━━━━━━━━━\n*ابدأ في 3 خطوات:*\n\n1️⃣ *أنشئ وكيل الذكاء الاصطناعي* — يقود كل شيء\n2️⃣ *استكشف القائمة* — تداول، أطلق توكنات\n3️⃣ *أكمل المهام* — اكسب حتى 1,850 $B4\n\nلنبدأ بوكيلك الأول 👇"
   },
   "welcome.back": {
-    en: "Welcome back!\n\n📊 Plan: *{status}* ({daysLeft} days left)\n👛 Wallet: `{wallet}`\n\nWhat do you want to do?",
-    zh: "欢迎回来！\n\n📊 套餐: *{status}*（剩余{daysLeft}天）\n👛 钱包: `{wallet}`\n\n您想做什么？",
-    ar: "!مرحباً بعودتك\n\n📊 الخطة: *{status}* ({daysLeft} أيام متبقية)\n👛 المحفظة: `{wallet}`\n\nماذا تريد أن تفعل؟"
+    en: "⚡ *BUILD4*\n━━━━━━━━━━━━━━━━━━━━\n\n📊 Plan: *{status}* ({daysLeft} days left)\n👛 `{wallet}`\n\n━━━━━━━━━━━━━━━━━━━━\nWhat would you like to do?",
+    zh: "⚡ *BUILD4*\n━━━━━━━━━━━━━━━━━━━━\n\n📊 套餐: *{status}*（剩余{daysLeft}天）\n👛 `{wallet}`\n\n━━━━━━━━━━━━━━━━━━━━\n您想做什么？",
+    ar: "⚡ *BUILD4*\n━━━━━━━━━━━━━━━━━━━━\n\n📊 الخطة: *{status}* ({daysLeft} أيام متبقية)\n👛 `{wallet}`\n\n━━━━━━━━━━━━━━━━━━━━\nماذا تريد أن تفعل؟"
   },
   "agent.welcome": {
     en: "🎉 *Welcome to BUILD4!* Your {days}-day free trial is active.\n\n🧠 *First, let's create your AI Agent*\n\nYour agent is the brain behind BUILD4 — without it, the bot can't trade, scan, or analyze for you.\n\nWhat would you like to name your agent? _(1-50 characters)_",
@@ -2478,9 +2478,9 @@ function mainMenuKeyboard(_hasWallet?: boolean, chatId?: number): TelegramBot.In
   return {
     inline_keyboard: [
       [{ text: tr("menu.buyBuild4", c), callback_data: "action:buybuild4" }, { text: tr("menu.launch", c), callback_data: "action:launchtoken" }],
-      [{ text: tr("menu.trading", c), callback_data: "action:submenu_trading" }, { text: "📈 Aster DEX", callback_data: "action:aster" }],
-      [{ text: "🤖 Agents", callback_data: "action:submenu_agents" }, { text: tr("menu.earn", c), callback_data: "action:submenu_earn" }],
-      [{ text: tr("menu.market", c), callback_data: "action:submenu_market" }],
+      [{ text: tr("menu.trading", c), callback_data: "action:submenu_trading" }, { text: "📈 Futures (Aster)", callback_data: "action:aster" }],
+      [{ text: "🤖 Agents", callback_data: "action:submenu_agents" }, { text: tr("menu.market", c), callback_data: "action:submenu_market" }],
+      [{ text: tr("menu.earn", c), callback_data: "action:submenu_earn" }],
       [{ text: tr("menu.portfolio", c), callback_data: "action:portfolio" }, { text: tr("menu.wallet", c), callback_data: "action:wallet" }],
       [{ text: tr("menu.help", c), callback_data: "action:help" }, { text: "🌐 Lang", callback_data: "action:lang" }],
     ]
@@ -3406,15 +3406,13 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     });
 
     walletButtons.push([{ text: "🟢 Buy", callback_data: "action:buy" }, { text: "📉 Sell", callback_data: "action:sell" }, { text: "💱 Swap", callback_data: "action:okxswap" }]);
+    walletButtons.push([{ text: "💸 Transfer", callback_data: "action:transfer" }, { text: "🚀 Launch Token", callback_data: "action:launchtoken" }]);
     walletButtons.push([{ text: tr("wallet.genNew", chatId), callback_data: "action:genwallet" }, { text: tr("wallet.import", chatId), callback_data: "action:importwallet" }]);
     if (!solWallet) {
       walletButtons.push([{ text: tr("wallet.genSol", chatId), callback_data: "action:gensolwallet" }]);
     }
-    walletButtons.push([{ text: "💸 Transfer", callback_data: "action:transfer" }, { text: tr("wallet.exportKey", chatId), callback_data: "action:exportkey" }]);
-    if (solWallet) {
-      walletButtons.push([{ text: tr("wallet.exportSol", chatId), callback_data: "action:exportsolkey" }]);
-    }
-    walletButtons.push([{ text: tr("menu.launch", chatId), callback_data: "action:launchtoken" }, { text: tr("menu.back", chatId), callback_data: "action:menu" }]);
+    walletButtons.push([{ text: tr("wallet.exportKey", chatId), callback_data: "action:exportkey" }, ...(solWallet ? [{ text: tr("wallet.exportSol", chatId), callback_data: "action:exportsolkey" }] : [])]);
+    walletButtons.push([{ text: tr("menu.back", chatId), callback_data: "action:menu" }]);
 
     await bot.sendMessage(chatId, text, {
       parse_mode: "Markdown",
@@ -6576,14 +6574,15 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:submenu_trading") {
     const c = chatId;
-    await bot.sendMessage(chatId, "💹 *Trading*\n\nBuy, sell, swap & bridge tokens across chains.", {
+    await bot.sendMessage(chatId,
+      "💹 *Trading*\n━━━━━━━━━━━━━━━━━━━━\n\nBuy, sell, swap & bridge tokens across chains.\nUse Aster DEX for leveraged futures.", {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: [
         [{ text: tr("menu.buy", c), callback_data: "action:buy" }, { text: tr("menu.sell", c), callback_data: "action:sell" }],
         [{ text: tr("menu.swap", c), callback_data: "action:okxswap" }, { text: tr("menu.bridge", c), callback_data: "action:okxbridge" }],
         [{ text: "📋 Limit Orders", callback_data: "action:limitorders" }, { text: "👁️ Watchlist", callback_data: "action:watchlist" }],
+        [{ text: "📈 Futures (Aster)", callback_data: "action:aster" }, { text: "💎 Auto Trade", callback_data: "action:trade" }],
         [{ text: "⚙️ Settings", callback_data: "action:settings" }],
-        [{ text: tr("menu.rich", c), callback_data: "action:trade" }, { text: tr("menu.aster", c), callback_data: "action:aster" }],
         [{ text: tr("menu.back", c), callback_data: "action:menu" }],
       ]}
     });
@@ -6592,7 +6591,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:submenu_market") {
     const c = chatId;
-    await bot.sendMessage(chatId, "📡 *Market Intel*\n\nSignals, trends, prices & security scans.", {
+    await bot.sendMessage(chatId,
+      "📡 *Market Intel*\n━━━━━━━━━━━━━━━━━━━━\n\nSmart money signals, trending tokens, security scans & gas prices.", {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: [
         [{ text: tr("menu.signals", c), callback_data: "action:okxsignals" }, { text: tr("menu.security", c), callback_data: "action:okxsecurity" }],
@@ -6606,7 +6606,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:submenu_agents") {
     const c = chatId;
-    await bot.sendMessage(chatId, "🤖 *AI Agents*\n\nCreate, manage & assign tasks to your agents.", {
+    await bot.sendMessage(chatId,
+      "🤖 *AI Agents*\n━━━━━━━━━━━━━━━━━━━━\n\nCreate agents, assign tasks, compete in challenges & copy top traders.", {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: [
         [{ text: tr("menu.createAgent", c), callback_data: "action:newagent" }, { text: tr("menu.myAgents", c), callback_data: "action:myagents" }],
@@ -6620,7 +6621,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
   if (data === "action:submenu_earn") {
     const c = chatId;
-    await bot.sendMessage(chatId, "💰 *Earn $B4*\n\nComplete quests, refer friends, earn rewards & reduce fees!", {
+    await bot.sendMessage(chatId,
+      "💰 *Earn $B4*\n━━━━━━━━━━━━━━━━━━━━\n\nComplete quests, refer friends, stake to reduce fees & earn rewards.", {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: [
         [{ text: tr("menu.quests", c), callback_data: "action:quests" }, { text: tr("menu.rewards", c), callback_data: "action:rewards" }],
@@ -12712,13 +12714,15 @@ async function handleAsterMenu(chatId: number): Promise<void> {
     buttons.push([{ text: "« Back", callback_data: "action:menu" }]);
 
     await bot.sendMessage(chatId,
-      `📈 *Aster DEX — Futures & Spot Trading*\n` +
+      `📈 *Aster DEX — Futures Trading*\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
       `_Powered by Aster DEX_\n\n` +
-      `Trade futures and spot markets directly from Telegram.\n\n` +
+      `Up to 150x leverage on BTC, ETH & more.\n` +
+      `Trade directly from Telegram.\n\n` +
       (hasWallet
-        ? `⚡ *1-Tap Connect* — We'll auto-create your Aster account and API key using your existing wallet. No manual setup needed!\n\n`
-        : `Connect your Aster API credentials to get started.\n`) +
-      `🌐 https://www.asterdex.com`,
+        ? `⚡ *1-Tap Connect* — instant setup using your existing wallet. No API keys needed!\n\n`
+        : `Connect your Aster API credentials to get started.\n\n`) +
+      `🌐 [asterdex.com](https://www.asterdex.com)`,
       {
         parse_mode: "Markdown",
         reply_markup: { inline_keyboard: buttons },
@@ -12734,22 +12738,19 @@ async function handleAsterMenu(chatId: number): Promise<void> {
     : [[{ text: "🔄 Futures Trade", callback_data: "aster:trade_futures" }, { text: "💱 Spot Trade", callback_data: "aster:trade_spot" }]];
 
   await bot.sendMessage(chatId,
-    `📈 *Aster DEX — Connected*\n` +
-    `_Powered by Aster DEX_\n` +
-    `Mode: ${modeLabel}\n\n` +
-    `What would you like to do?`,
+    `📈 *Aster DEX*\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `✅ Connected · ${modeLabel}\n\n` +
+    `Select an action below:`,
     {
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "💰 Balances", callback_data: "aster:balance" }],
-          [{ text: "📊 Positions", callback_data: "aster:positions" }],
-          [{ text: "📋 Open Orders", callback_data: "aster:orders" }],
-          [{ text: "📈 PnL Summary", callback_data: "aster:pnl" }],
           ...tradeButtons,
-          ...(isV3Direct ? [[{ text: "🔑 Upgrade to Full (Add API Key)", callback_data: "aster:connect" }]] : []),
-          [{ text: "🔌 Disconnect", callback_data: "aster:disconnect" }],
-          [{ text: "« Back", callback_data: "action:menu" }],
+          [{ text: "💰 Balances", callback_data: "aster:balance" }, { text: "📊 Positions", callback_data: "aster:positions" }],
+          [{ text: "📋 Open Orders", callback_data: "aster:orders" }, { text: "📈 PnL", callback_data: "aster:pnl" }],
+          ...(isV3Direct ? [[{ text: "🔑 Upgrade (Add API Key)", callback_data: "aster:connect" }]] : []),
+          [{ text: "🔌 Disconnect", callback_data: "aster:disconnect" }, { text: "« Back", callback_data: "action:menu" }],
         ],
       },
     }
