@@ -8842,11 +8842,25 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
-    if (cmd === "users") {
+    if (cmd === "data") {
       const totalUsers = telegramWalletMap.size;
+      let transactions = 0, uniqueWallets = 0, aiAgents = 0;
+      try {
+        const { db } = await import("./db");
+        const { sql } = await import("drizzle-orm");
+        const [txCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agent_transactions`)).rows;
+        const [walletCount] = (await db.execute(sql`SELECT COUNT(DISTINCT creator_wallet) as cnt FROM agents WHERE creator_wallet IS NOT NULL`)).rows;
+        const [agentCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agents`)).rows;
+        transactions = Number(txCount?.cnt || 0);
+        uniqueWallets = Number(walletCount?.cnt || 0);
+        aiAgents = Number(agentCount?.cnt || 0);
+      } catch {}
       await bot.sendMessage(chatId,
-        `👥 *BUILD4 Community*\n\n` +
-        `Total Users: *${totalUsers.toLocaleString()}*`,
+        `📊 *BUILD4 Platform Data*\n\n` +
+        `👥 Users: *${totalUsers.toLocaleString()}*\n` +
+        `🔗 Transactions: *${transactions.toLocaleString()}*\n` +
+        `👛 Unique Wallets: *${uniqueWallets.toLocaleString()}*\n` +
+        `🤖 AI Agents: *${aiAgents.toLocaleString()}*`,
         { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
       );
       return;
