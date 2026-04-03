@@ -8842,6 +8842,16 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "users") {
+      const totalUsers = telegramWalletMap.size;
+      await bot.sendMessage(chatId,
+        `👥 *BUILD4 Community*\n\n` +
+        `Total Users: *${totalUsers.toLocaleString()}*`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+      return;
+    }
+
     if (cmd === "fees") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for fee info!"); return; }
       const wallet = getLinkedWallet(chatId);
