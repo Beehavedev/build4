@@ -57,6 +57,10 @@ The project employs a monorepo architecture, separating concerns into `client/` 
 - **Token PnL in portfolio**: Portfolio shows all token holdings with USD value and 24h % change
 - **TX status tracking**: Buy execution shows real-time status updates (finding route → sending tx → confirming)
 - **$B4 rewards cap**: 5,000 $B4 max per user, enforced via `getUserRewardTotal()`
+- **Limit Orders** (`/limit`): Buy/sell limit orders with background price checker (60s interval). Flow: select chain → enter CA → set trigger price (shows current price) → set amount → order created. Auto-triggers when price hits target, notifies user with 1-tap execute button. In-memory `limitOrders` Map, `pendingLimitOrder` state machine. Cancel individual or all orders.
+- **Watchlist** (`/watchlist`, `/watch`): Add tokens to track, set above/below price alerts. Background checker runs every 60s alongside limit orders. Alerts fire once per 5 min cooldown. Add/remove tokens, refresh prices, set alert targets. In-memory `userWatchlists` Map.
+- **Settings Panel** (`/settings`): Per-user trading defaults — slippage (0.5-15%), default buy amount, gas priority (low/normal/fast), auto-approve toggle. In-memory `userSettings` Map with `getUserSettings()` helper. Accessible from Trading submenu.
+- **Better Sell UX**: Entry price tracking on all buys (Solana + EVM). Sell screen shows PnL % (green/red), entry price, current price. Token list in sell flow shows per-position PnL. Limit sell button added to sell screen. In-memory `userTradeEntries` Map.
 
 ### Key Design Decisions
 - **Two-layer Architecture**: On-chain for financial transactions and off-chain for agent behaviors.

@@ -242,6 +242,57 @@ const BUILD4_TOKEN_CA = "0x1d547f9d0890ee5abfb49d7d53ca19df85da4444";
 interface Build4BuyState { amount?: string }
 const pendingBuild4Buy = new Map<number, Build4BuyState>();
 
+interface UserSettings {
+  defaultSlippage: number;
+  defaultBuyAmount: string;
+  gasPriority: "low" | "normal" | "fast";
+  autoApprove: boolean;
+}
+const userSettings = new Map<number, UserSettings>();
+function getUserSettings(chatId: number): UserSettings {
+  return userSettings.get(chatId) || { defaultSlippage: 1, defaultBuyAmount: "0.05", gasPriority: "normal", autoApprove: false };
+}
+
+interface LimitOrder {
+  id: string;
+  chatId: number;
+  tokenAddress: string;
+  chainId: string;
+  type: "buy" | "sell";
+  triggerPrice: number;
+  amount: string;
+  nativeSymbol: string;
+  tokenName?: string;
+  createdAt: number;
+  status: "active" | "triggered" | "cancelled";
+}
+const limitOrders = new Map<string, LimitOrder>();
+const pendingLimitOrder = new Map<number, { step: string; tokenAddress?: string; chainId?: string; type?: "buy" | "sell"; triggerPrice?: number; tokenName?: string }>();
+
+interface WatchlistItem {
+  tokenAddress: string;
+  chainId: string;
+  tokenName?: string;
+  tokenSymbol?: string;
+  addedAt: number;
+  alertAbove?: number;
+  alertBelow?: number;
+  lastPrice?: number;
+  lastAlertAt?: number;
+}
+const userWatchlists = new Map<number, WatchlistItem[]>();
+const pendingWatchlistAlert = new Map<number, { tokenAddress: string; chainId: string; step: "above" | "below" }>();
+
+interface TradeEntry {
+  tokenAddress: string;
+  chainId: string;
+  entryPrice: number;
+  amount: string;
+  nativeSymbol: string;
+  boughtAt: number;
+}
+const userTradeEntries = new Map<number, TradeEntry[]>();
+
 interface SellState {
   chainId: string;
   chainName: string;
@@ -713,7 +764,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
     return "Hey! Welcome to BUILD4 — decentralized infrastructure for autonomous AI agents. What can I help you with? Try /help to see all commands.";
   }
   if (lower.includes("help") || lower.includes("command"))
-    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n🎯 /quests — Earn $B4 quests\n🏆 /rewards — $B4 rewards dashboard\n💰 /fees — Fee tiers & discounts\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — Swap (multi-chain)\n🌉 /bridge — Cross-chain bridge\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
+    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n🎯 /quests — Earn $B4 quests\n🏆 /rewards — $B4 rewards dashboard\n💰 /fees — Fee tiers & discounts\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — Swap (multi-chain)\n🌉 /bridge — Cross-chain bridge\n📋 /limit — Limit orders\n👁️ /watchlist — Price watchlist & alerts\n⚙️ /settings — Trading settings\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
   if (lower.includes("thank"))
     return "You're welcome! Let me know if you need anything else. 🤝";
 
@@ -2509,6 +2560,9 @@ async function startTelegramBotPolling(token: string): Promise<void> {
     setInterval(() => { sendTrialReminders().catch(e => console.error("[TrialReminder] Error:", e.message)); }, 6 * 60 * 60 * 1000);
     setTimeout(() => { sendTrialReminders().catch(e => console.error("[TrialReminder] Error:", e.message)); }, 60_000);
 
+    setInterval(() => { checkLimitOrdersAndAlerts(bot).catch(e => console.error("[LimitChecker] Error:", e.message)); }, 60_000);
+    setTimeout(() => { console.log("[LimitChecker] Background price checker started"); }, 5_000);
+
     registerTaskHandler("ai_inference", async (data: { chatId: number; question: string; context: string }) => {
       return await runInferenceWithFallback(data.question, data.context, "llama3");
     });
@@ -3146,6 +3200,9 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         "🐸 /meme — Meme token scanner\n" +
         "📊 /price — Token price lookup\n" +
         "⛽ /gas — Gas prices\n" +
+        "📋 /limit — Limit orders\n" +
+        "👁️ /watchlist — Price watchlist & alerts\n" +
+        "⚙️ /settings — Trading settings\n" +
         "🤖 /newagent — Create an AI agent\n" +
         "📋 /myagents — Your agents\n" +
         "📝 /task — Assign a task\n" +
@@ -3726,10 +3783,21 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         usdValue: t.tokenPrice ? (parseFloat(t.balance) * parseFloat(t.tokenPrice)).toFixed(2) : "?",
       }));
       sellTokenCache.set(chatId, cached);
+      const tradeEntries = userTradeEntries.get(chatId) || [];
       let text = `💸 *Your ${chainObj.name} Tokens*\n\n`;
       const tokenButtons: TelegramBot.InlineKeyboardButton[][] = [];
       cached.forEach((t, i) => {
-        text += `${i + 1}. *${t.symbol}* — ${parseFloat(t.balance).toFixed(4)} ($${t.usdValue})\n`;
+        let pnlStr = "";
+        const entry = tradeEntries.find(e => e.tokenAddress.toLowerCase() === t.address.toLowerCase() && e.chainId === chainId);
+        if (entry && t.usdValue !== "?" && parseFloat(t.balance) > 0) {
+          const currentVal = parseFloat(t.usdValue);
+          const entryVal = entry.entryPrice * parseFloat(t.balance);
+          if (entryVal > 0) {
+            const pnlPct = ((currentVal - entryVal) / entryVal) * 100;
+            pnlStr = ` ${pnlPct >= 0 ? "🟢" : "🔴"}${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%`;
+          }
+        }
+        text += `${i + 1}. *${t.symbol}* — ${parseFloat(t.balance).toFixed(4)} ($${t.usdValue})${pnlStr}\n`;
         tokenButtons.push([{ text: `💸 Sell ${t.symbol}`, callback_data: `sell_tok:${i}:${chainId}` }]);
       });
       tokenButtons.push([{ text: "🔄 Refresh", callback_data: `sell_chain:${chainId}` }]);
@@ -3763,15 +3831,37 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       tokenBalance: tok.balance,
     });
 
+    let pnlLine = "";
+    const entries = userTradeEntries.get(chatId) || [];
+    const entry = entries.find(e => e.tokenAddress.toLowerCase() === tok.address.toLowerCase() && e.chainId === chainId);
+    let currentPrice: number | undefined;
+    try {
+      const priceResult = await getTokenPrice(tok.address, chainId);
+      if (priceResult.success && priceResult.data?.price) currentPrice = parseFloat(priceResult.data.price);
+    } catch {}
+
+    if (entry && currentPrice) {
+      const pnlPct = ((currentPrice - entry.entryPrice) / entry.entryPrice) * 100;
+      const pnlIcon = pnlPct >= 0 ? "🟢" : "🔴";
+      pnlLine = `\n${pnlIcon} *PnL: ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%*\n` +
+        `Entry: $${entry.entryPrice < 0.01 ? entry.entryPrice.toExponential(3) : entry.entryPrice.toFixed(6)}\n` +
+        `Current: $${currentPrice < 0.01 ? currentPrice.toExponential(3) : currentPrice.toFixed(6)}\n`;
+    } else if (currentPrice) {
+      pnlLine = `\nPrice: $${currentPrice < 0.01 ? currentPrice.toExponential(3) : currentPrice.toFixed(6)}\n`;
+    }
+
+    const usdVal = tok.usdValue !== "?" ? ` ($${tok.usdValue})` : "";
     const pctButtons = [
       [{ text: "25%", callback_data: "sell_pct:25" }, { text: "50%", callback_data: "sell_pct:50" }],
       [{ text: "75%", callback_data: "sell_pct:75" }, { text: "100%", callback_data: "sell_pct:100" }],
+      [{ text: "📋 Limit Sell", callback_data: "limit:new:sell" }],
       [{ text: "« Back", callback_data: `sell_chain:${chainId}` }, { text: "❌ Cancel", callback_data: "action:menu" }],
     ];
     await bot.sendMessage(chatId,
       `💸 *Sell ${tok.symbol}*\n\n` +
-      `Balance: *${parseFloat(tok.balance).toFixed(6)} ${tok.symbol}*\n` +
-      `Chain: ${chainObj.name}\n\n` +
+      `Balance: *${parseFloat(tok.balance).toFixed(6)} ${tok.symbol}*${usdVal}\n` +
+      `Chain: ${chainObj.name}` +
+      `${pnlLine}\n` +
       `How much do you want to sell?`,
       { parse_mode: "Markdown", reply_markup: { inline_keyboard: pctButtons } }
     );
@@ -5253,6 +5343,14 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         await connection.confirmTransaction({ signature: txHash, blockhash: latestBlockhash.blockhash, lastValidBlockHeight: latestBlockhash.lastValidBlockHeight }, "confirmed");
 
         pendingSignalBuy.delete(chatId);
+        try {
+          const priceResult = await getTokenPrice(state.tokenAddress, "501");
+          if (priceResult.success && priceResult.data?.price) {
+            const entries = userTradeEntries.get(chatId) || [];
+            entries.push({ tokenAddress: state.tokenAddress, chainId: "501", entryPrice: parseFloat(priceResult.data.price), amount: state.amount, nativeSymbol: "SOL", boughtAt: Date.now() });
+            userTradeEntries.set(chatId, entries);
+          }
+        } catch {}
         await bot.sendMessage(chatId,
           `✅ *Buy Executed!*\n\n` +
           `⚡ ${state.amount} SOL → ${state.tokenSymbol}\n` +
@@ -5354,6 +5452,14 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const buyFeeResult = await collectTransactionFee(pk, buyAmountWei, rpcUrl, chatId);
 
       pendingSignalBuy.delete(chatId);
+      try {
+        const priceResult = await getTokenPrice(state.tokenAddress, state.chainId);
+        if (priceResult.success && priceResult.data?.price) {
+          const entries = userTradeEntries.get(chatId) || [];
+          entries.push({ tokenAddress: state.tokenAddress, chainId: state.chainId, entryPrice: parseFloat(priceResult.data.price), amount: state.amount, nativeSymbol: state.nativeSymbol, boughtAt: Date.now() });
+          userTradeEntries.set(chatId, entries);
+        }
+      } catch {}
       await bot.sendMessage(chatId,
         `✅ *Buy Executed!*\n\n` +
         `⚡ ${state.amount} ${state.nativeSymbol} → ${state.tokenSymbol}\n` +
@@ -5450,6 +5556,269 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     } catch (e: any) {
       await bot.sendMessage(chatId, `❌ Consolidation error: ${e.message?.substring(0, 150)}`, { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "consolidate:retry" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
     }
+    return;
+  }
+
+  if (data.startsWith("settings:")) {
+    const setting = data.split(":")[1];
+    const s = getUserSettings(chatId);
+    if (setting === "slippage") {
+      await bot.sendMessage(chatId, `📊 *Set Default Slippage*\n\nCurrent: *${s.defaultSlippage}%*`, {
+        parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+          [{ text: "0.5%", callback_data: "setslip:0.5" }, { text: "1%", callback_data: "setslip:1" }, { text: "3%", callback_data: "setslip:3" }],
+          [{ text: "5%", callback_data: "setslip:5" }, { text: "10%", callback_data: "setslip:10" }, { text: "15%", callback_data: "setslip:15" }],
+          [{ text: "« Back", callback_data: "action:settings" }],
+        ] }
+      });
+    } else if (setting === "buyamt") {
+      await bot.sendMessage(chatId, `💰 *Set Default Buy Amount*\n\nCurrent: *${s.defaultBuyAmount} BNB*`, {
+        parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+          [{ text: "0.01 BNB", callback_data: "setbuy:0.01" }, { text: "0.05 BNB", callback_data: "setbuy:0.05" }, { text: "0.1 BNB", callback_data: "setbuy:0.1" }],
+          [{ text: "0.25 BNB", callback_data: "setbuy:0.25" }, { text: "0.5 BNB", callback_data: "setbuy:0.5" }, { text: "1 BNB", callback_data: "setbuy:1" }],
+          [{ text: "« Back", callback_data: "action:settings" }],
+        ] }
+      });
+    } else if (setting === "gas") {
+      const next = s.gasPriority === "low" ? "normal" : s.gasPriority === "normal" ? "fast" : "low";
+      s.gasPriority = next;
+      userSettings.set(chatId, s);
+      await bot.sendMessage(chatId, `⛽ Gas priority set to *${next}*`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "⚙️ Settings", callback_data: "action:settings" }]] } });
+    } else if (setting === "autoapprove") {
+      s.autoApprove = !s.autoApprove;
+      userSettings.set(chatId, s);
+      await bot.sendMessage(chatId, `✅ Auto-Approve is now *${s.autoApprove ? "ON" : "OFF"}*`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "⚙️ Settings", callback_data: "action:settings" }]] } });
+    }
+    return;
+  }
+  if (data.startsWith("setslip:")) {
+    const val = parseFloat(data.split(":")[1]);
+    const s = getUserSettings(chatId);
+    s.defaultSlippage = val;
+    userSettings.set(chatId, s);
+    await bot.sendMessage(chatId, `📊 Default slippage set to *${val}%*`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "⚙️ Settings", callback_data: "action:settings" }]] } });
+    return;
+  }
+  if (data.startsWith("setbuy:")) {
+    const val = data.split(":")[1];
+    const s = getUserSettings(chatId);
+    s.defaultBuyAmount = val;
+    userSettings.set(chatId, s);
+    await bot.sendMessage(chatId, `💰 Default buy amount set to *${val} BNB*`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "⚙️ Settings", callback_data: "action:settings" }]] } });
+    return;
+  }
+
+  if (data.startsWith("limitamt:")) {
+    const amount = data.split(":")[1];
+    const state = pendingLimitOrder.get(chatId);
+    if (!state || state.step !== "amount") return;
+    const isSol = state.chainId === "501";
+    const nativeSym = isSol ? "SOL" : state.chainId === "8453" ? "ETH" : "BNB";
+    const orderId = `LO${Date.now().toString(36)}`;
+    const order: LimitOrder = {
+      id: orderId,
+      chatId,
+      tokenAddress: state.tokenAddress!,
+      chainId: state.chainId || "56",
+      type: state.type!,
+      triggerPrice: state.triggerPrice!,
+      amount,
+      nativeSymbol: nativeSym,
+      tokenName: state.tokenName,
+      createdAt: Date.now(),
+      status: "active",
+    };
+    limitOrders.set(orderId, order);
+    pendingLimitOrder.delete(chatId);
+    await bot.sendMessage(chatId,
+      `✅ *Limit Order Created*\n\n` +
+      `${order.type === "buy" ? "🟢" : "🔴"} *${order.type.toUpperCase()}* ${order.amount} ${nativeSym}\n` +
+      `Token: \`${order.tokenAddress.substring(0, 12)}...\`${order.tokenName ? ` (${order.tokenName})` : ""}\n` +
+      `Trigger: $${order.triggerPrice < 0.01 ? order.triggerPrice.toExponential(3) : order.triggerPrice.toFixed(6)}\n` +
+      `ID: \`${orderId}\`\n\n` +
+      `Order will execute automatically when price reaches your target.`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+        [{ text: "📋 View Orders", callback_data: "action:limitorders" }, { text: "➕ New Order", callback_data: `limit:new:${order.type}` }],
+        [{ text: "« Menu", callback_data: "action:menu" }],
+      ] } }
+    );
+    return;
+  }
+
+  if (data === "action:settings") {
+    const s = getUserSettings(chatId);
+    await bot.sendMessage(chatId,
+      `⚙️ *Trading Settings*\n\n` +
+      `📊 Default Slippage: *${s.defaultSlippage}%*\n` +
+      `💰 Default Buy Amount: *${s.defaultBuyAmount} BNB*\n` +
+      `⛽ Gas Priority: *${s.gasPriority}*\n` +
+      `✅ Auto-Approve: *${s.autoApprove ? "ON" : "OFF"}*`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+        [{ text: `📊 Slippage: ${s.defaultSlippage}%`, callback_data: "settings:slippage" }, { text: `💰 Buy: ${s.defaultBuyAmount}`, callback_data: "settings:buyamt" }],
+        [{ text: `⛽ Gas: ${s.gasPriority}`, callback_data: "settings:gas" }, { text: `${s.autoApprove ? "✅" : "❌"} Auto-Approve`, callback_data: "settings:autoapprove" }],
+        [{ text: "« Menu", callback_data: "action:menu" }],
+      ] } }
+    );
+    return;
+  }
+
+  if (data.startsWith("limit:new:")) {
+    const type = data.split(":")[2] as "buy" | "sell";
+    pendingLimitOrder.set(chatId, { step: "chain", type });
+    const chainButtons = [
+      [{ text: "BNB Chain", callback_data: `limitchain:56` }, { text: "Ethereum", callback_data: `limitchain:1` }],
+      [{ text: "Base", callback_data: `limitchain:8453` }, { text: "Solana", callback_data: `limitchain:501` }],
+      [{ text: "« Cancel", callback_data: "action:menu" }],
+    ];
+    await bot.sendMessage(chatId, `📋 *New ${type.toUpperCase()} Limit Order*\n\nSelect chain:`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } });
+    return;
+  }
+  if (data.startsWith("limitchain:")) {
+    const chainId = data.split(":")[1];
+    const state = pendingLimitOrder.get(chatId);
+    if (!state) return;
+    state.chainId = chainId;
+    state.step = "address";
+    pendingLimitOrder.set(chatId, state);
+    await bot.sendMessage(chatId, `Enter the token contract address:`);
+    return;
+  }
+  if (data === "limit:cancelall") {
+    let cancelled = 0;
+    for (const [id, order] of Array.from(limitOrders.entries())) {
+      if (order.chatId === chatId && order.status === "active") {
+        order.status = "cancelled";
+        limitOrders.delete(id);
+        cancelled++;
+      }
+    }
+    await bot.sendMessage(chatId, `❌ Cancelled ${cancelled} limit order${cancelled !== 1 ? "s" : ""}.`, { reply_markup: { inline_keyboard: [[{ text: "📋 Limit Orders", callback_data: "action:limitorders" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    return;
+  }
+  if (data.startsWith("limitcancel:")) {
+    const orderId = data.split(":")[1];
+    const order = limitOrders.get(orderId);
+    if (order && order.chatId === chatId) {
+      limitOrders.delete(orderId);
+      await bot.sendMessage(chatId, `❌ Limit order cancelled.`, { reply_markup: { inline_keyboard: [[{ text: "📋 Limit Orders", callback_data: "action:limitorders" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
+    return;
+  }
+  if (data === "action:limitorders") {
+    const userOrders = Array.from(limitOrders.values()).filter(o => o.chatId === chatId && o.status === "active");
+    let msg = `📋 *Limit Orders*\n\n`;
+    if (userOrders.length === 0) {
+      msg += `No active limit orders.`;
+    } else {
+      for (const o of userOrders) {
+        const typeIcon = o.type === "buy" ? "🟢" : "🔴";
+        msg += `${typeIcon} *${o.type.toUpperCase()}* ${o.amount} ${o.nativeSymbol}\n`;
+        msg += `Token: \`${o.tokenAddress.substring(0, 10)}...\`${o.tokenName ? ` (${o.tokenName})` : ""}\n`;
+        msg += `Trigger: $${o.triggerPrice < 0.01 ? o.triggerPrice.toExponential(3) : o.triggerPrice.toFixed(6)}\n`;
+        msg += `[❌ Cancel](cancel)\n\n`;
+      }
+    }
+    await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+      [{ text: "🟢 New Buy Limit", callback_data: "limit:new:buy" }, { text: "🔴 New Sell Limit", callback_data: "limit:new:sell" }],
+      ...(userOrders.map(o => [{ text: `❌ Cancel ${o.type} ${o.tokenAddress.substring(0, 6)}...`, callback_data: `limitcancel:${o.id}` }])),
+      [{ text: "« Menu", callback_data: "action:menu" }],
+    ] } });
+    return;
+  }
+
+  if (data === "watch:add") {
+    pendingWatchlistAlert.set(chatId, { tokenAddress: "", chainId: "", step: "above" });
+    const chainButtons = [
+      [{ text: "BNB Chain", callback_data: `watchchain:56` }, { text: "Ethereum", callback_data: `watchchain:1` }],
+      [{ text: "Base", callback_data: `watchchain:8453` }, { text: "Solana", callback_data: `watchchain:501` }],
+      [{ text: "« Cancel", callback_data: "action:menu" }],
+    ];
+    await bot.sendMessage(chatId, `👁️ *Add to Watchlist*\n\nSelect chain:`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: chainButtons } });
+    return;
+  }
+  if (data.startsWith("watchchain:")) {
+    const chainId = data.split(":")[1];
+    pendingWatchlistAlert.set(chatId, { tokenAddress: "", chainId, step: "above" });
+    await bot.sendMessage(chatId, `Enter the token contract address to watch:`);
+    return;
+  }
+  if (data === "watch:refresh") {
+    const list = userWatchlists.get(chatId) || [];
+    if (list.length === 0) {
+      await bot.sendMessage(chatId, "Watchlist is empty.", { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+      return;
+    }
+    await bot.sendMessage(chatId, "🔄 Refreshing prices...");
+    for (const item of list) {
+      try {
+        const result = await getTokenPrice(item.tokenAddress, item.chainId);
+        if (result.success && result.data?.price) {
+          item.lastPrice = parseFloat(result.data.price);
+        }
+      } catch {}
+    }
+    userWatchlists.set(chatId, list);
+    let msg = `👁️ *Watchlist* (updated)\n\n`;
+    for (let i = 0; i < list.length; i++) {
+      const w = list[i];
+      const priceStr = w.lastPrice ? `$${w.lastPrice < 0.01 ? w.lastPrice.toExponential(3) : w.lastPrice.toFixed(6)}` : "N/A";
+      msg += `${i + 1}. *${w.tokenSymbol || w.tokenAddress.substring(0, 8) + "..."}* — ${priceStr}\n`;
+      if (w.alertAbove) msg += `   🔔 Above: $${w.alertAbove < 0.01 ? w.alertAbove.toExponential(3) : w.alertAbove.toFixed(6)}\n`;
+      if (w.alertBelow) msg += `   🔔 Below: $${w.alertBelow < 0.01 ? w.alertBelow.toExponential(3) : w.alertBelow.toFixed(6)}\n`;
+    }
+    await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+      [{ text: "➕ Add Token", callback_data: "watch:add" }, { text: "🗑️ Clear All", callback_data: "watch:clearall" }],
+      ...list.map((w, i) => [{ text: `🔔 Alert: ${w.tokenSymbol || w.tokenAddress.substring(0, 6) + "..."}`, callback_data: `watchalert:${i}` }, { text: `🗑️`, callback_data: `watchdel:${i}` }]),
+      [{ text: "« Menu", callback_data: "action:menu" }],
+    ] } });
+    return;
+  }
+  if (data === "watch:clearall") {
+    userWatchlists.delete(chatId);
+    await bot.sendMessage(chatId, "🗑️ Watchlist cleared.", { reply_markup: { inline_keyboard: [[{ text: "« Menu", callback_data: "action:menu" }]] } });
+    return;
+  }
+  if (data.startsWith("watchdel:")) {
+    const idx = parseInt(data.split(":")[1]);
+    const list = userWatchlists.get(chatId) || [];
+    if (idx >= 0 && idx < list.length) {
+      const removed = list.splice(idx, 1)[0];
+      userWatchlists.set(chatId, list);
+      await bot.sendMessage(chatId, `🗑️ Removed *${removed.tokenSymbol || removed.tokenAddress.substring(0, 8) + "..."}* from watchlist.`, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "👁️ Watchlist", callback_data: "action:watchlist" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+    }
+    return;
+  }
+  if (data.startsWith("watchalert:")) {
+    const idx = parseInt(data.split(":")[1]);
+    const list = userWatchlists.get(chatId) || [];
+    if (idx >= 0 && idx < list.length) {
+      const w = list[idx];
+      pendingWatchlistAlert.set(chatId, { tokenAddress: w.tokenAddress, chainId: w.chainId, step: "above" });
+      await bot.sendMessage(chatId,
+        `🔔 *Set Price Alert*\n\n` +
+        `Token: *${w.tokenSymbol || w.tokenAddress.substring(0, 10) + "..."}*\n` +
+        `Current price: $${w.lastPrice ? (w.lastPrice < 0.01 ? w.lastPrice.toExponential(3) : w.lastPrice.toFixed(6)) : "N/A"}\n\n` +
+        `Enter the price to alert *above* (or type "skip" to set below only):`,
+        { parse_mode: "Markdown" }
+      );
+    }
+    return;
+  }
+  if (data === "action:watchlist") {
+    const list = userWatchlists.get(chatId) || [];
+    let msg = `👁️ *Watchlist*\n\n`;
+    if (list.length === 0) {
+      msg += `Your watchlist is empty.`;
+    } else {
+      for (let i = 0; i < list.length; i++) {
+        const w = list[i];
+        const priceStr = w.lastPrice ? `$${w.lastPrice < 0.01 ? w.lastPrice.toExponential(3) : w.lastPrice.toFixed(6)}` : "fetching...";
+        msg += `${i + 1}. *${w.tokenSymbol || w.tokenAddress.substring(0, 8) + "..."}* — ${priceStr}\n`;
+      }
+    }
+    await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+      [{ text: "➕ Add Token", callback_data: "watch:add" }, { text: "🔄 Refresh", callback_data: "watch:refresh" }],
+      [{ text: "« Menu", callback_data: "action:menu" }],
+    ] } });
     return;
   }
 
@@ -6048,6 +6417,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       reply_markup: { inline_keyboard: [
         [{ text: tr("menu.buy", c), callback_data: "action:buy" }, { text: tr("menu.sell", c), callback_data: "action:sell" }],
         [{ text: tr("menu.swap", c), callback_data: "action:okxswap" }, { text: tr("menu.bridge", c), callback_data: "action:okxbridge" }],
+        [{ text: "📋 Limit Orders", callback_data: "action:limitorders" }, { text: "👁️ Watchlist", callback_data: "action:watchlist" }],
+        [{ text: "⚙️ Settings", callback_data: "action:settings" }],
         [{ text: tr("menu.rich", c), callback_data: "action:trade" }, { text: tr("menu.aster", c), callback_data: "action:aster" }],
         [{ text: tr("menu.back", c), callback_data: "action:menu" }],
       ]}
@@ -7734,6 +8105,173 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
     return;
   }
+  if (pendingLimitOrder.has(chatId) && !text.startsWith("/")) {
+    const state = pendingLimitOrder.get(chatId)!;
+    if (state.step === "address") {
+      const addr = text.trim();
+      if (!addr.startsWith("0x") && addr.length < 30) {
+        await bot.sendMessage(chatId, "Invalid address. Enter a valid contract address.");
+        return;
+      }
+      state.tokenAddress = addr;
+      state.step = "price";
+      pendingLimitOrder.set(chatId, state);
+      try {
+        const result = await getTokenPrice(addr, state.chainId || "56");
+        if (result.success && result.data?.price) {
+          const currentPrice = parseFloat(result.data.price);
+          state.tokenName = result.data.tokenName || result.data.name || undefined;
+          pendingLimitOrder.set(chatId, state);
+          await bot.sendMessage(chatId,
+            `Current price: $${currentPrice < 0.01 ? currentPrice.toExponential(3) : currentPrice.toFixed(6)}\n\nEnter your *${state.type === "buy" ? "buy below" : "sell above"}* trigger price in USD:`,
+            { parse_mode: "Markdown" }
+          );
+        } else {
+          await bot.sendMessage(chatId, `Enter your trigger price in USD (couldn't fetch current price):`);
+        }
+      } catch {
+        await bot.sendMessage(chatId, `Enter your trigger price in USD:`);
+      }
+      return;
+    }
+    if (state.step === "price") {
+      const price = parseFloat(text.trim().replace("$", ""));
+      if (isNaN(price) || price <= 0) {
+        await bot.sendMessage(chatId, "Invalid price. Enter a number like 0.0001 or 50.00");
+        return;
+      }
+      state.triggerPrice = price;
+      state.step = "amount";
+      pendingLimitOrder.set(chatId, state);
+      const isSol = state.chainId === "501";
+      const nativeSym = isSol ? "SOL" : state.chainId === "8453" ? "ETH" : "BNB";
+      const s = getUserSettings(chatId);
+      await bot.sendMessage(chatId,
+        `Enter amount in ${nativeSym} to ${state.type}:`,
+        { reply_markup: { inline_keyboard: [
+          isSol
+            ? [{ text: "0.5 SOL", callback_data: `limitamt:0.5` }, { text: "1 SOL", callback_data: `limitamt:1` }, { text: "2 SOL", callback_data: `limitamt:2` }]
+            : [{ text: `${s.defaultBuyAmount} ${nativeSym}`, callback_data: `limitamt:${s.defaultBuyAmount}` }, { text: `0.1 ${nativeSym}`, callback_data: `limitamt:0.1` }, { text: `0.25 ${nativeSym}`, callback_data: `limitamt:0.25` }],
+          [{ text: "❌ Cancel", callback_data: "action:menu" }],
+        ] } }
+      );
+      return;
+    }
+    if (state.step === "amount") {
+      const amount = text.trim();
+      if (isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+        await bot.sendMessage(chatId, "Invalid amount. Enter a number.");
+        return;
+      }
+      const isSol = state.chainId === "501";
+      const nativeSym = isSol ? "SOL" : state.chainId === "8453" ? "ETH" : "BNB";
+      const orderId = `LO${Date.now().toString(36)}`;
+      const order: LimitOrder = {
+        id: orderId,
+        chatId,
+        tokenAddress: state.tokenAddress!,
+        chainId: state.chainId || "56",
+        type: state.type!,
+        triggerPrice: state.triggerPrice!,
+        amount,
+        nativeSymbol: nativeSym,
+        tokenName: state.tokenName,
+        createdAt: Date.now(),
+        status: "active",
+      };
+      limitOrders.set(orderId, order);
+      pendingLimitOrder.delete(chatId);
+      await bot.sendMessage(chatId,
+        `✅ *Limit Order Created*\n\n` +
+        `${order.type === "buy" ? "🟢" : "🔴"} *${order.type.toUpperCase()}* ${order.amount} ${nativeSym}\n` +
+        `Token: \`${order.tokenAddress.substring(0, 12)}...\`${order.tokenName ? ` (${order.tokenName})` : ""}\n` +
+        `Trigger: $${order.triggerPrice < 0.01 ? order.triggerPrice.toExponential(3) : order.triggerPrice.toFixed(6)}\n` +
+        `ID: \`${orderId}\`\n\n` +
+        `Order will execute automatically when price reaches your target.`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+          [{ text: "📋 View Orders", callback_data: "action:limitorders" }, { text: "➕ New Order", callback_data: `limit:new:${order.type}` }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ] } }
+      );
+      return;
+    }
+    return;
+  }
+
+  if (pendingWatchlistAlert.has(chatId) && !text.startsWith("/")) {
+    const state = pendingWatchlistAlert.get(chatId)!;
+    if (!state.tokenAddress) {
+      const addr = text.trim();
+      if (!addr.startsWith("0x") && addr.length < 30) {
+        await bot.sendMessage(chatId, "Invalid address. Enter a valid contract address.");
+        return;
+      }
+      let tokenName: string | undefined;
+      let tokenSymbol: string | undefined;
+      let lastPrice: number | undefined;
+      try {
+        const result = await getTokenPrice(addr, state.chainId);
+        if (result.success && result.data) {
+          tokenName = result.data.tokenName || result.data.name || undefined;
+          tokenSymbol = result.data.tokenSymbol || result.data.symbol || undefined;
+          if (result.data.price) lastPrice = parseFloat(result.data.price);
+        }
+      } catch {}
+      const list = userWatchlists.get(chatId) || [];
+      list.push({ tokenAddress: addr, chainId: state.chainId, tokenName, tokenSymbol, addedAt: Date.now(), lastPrice });
+      userWatchlists.set(chatId, list);
+      pendingWatchlistAlert.delete(chatId);
+      await bot.sendMessage(chatId,
+        `✅ *Added to Watchlist*\n\n` +
+        `${tokenSymbol ? `$${tokenSymbol}` : addr.substring(0, 10) + "..."}` +
+        `${lastPrice ? ` — $${lastPrice < 0.01 ? lastPrice.toExponential(3) : lastPrice.toFixed(6)}` : ""}\n\n` +
+        `Set price alerts from your watchlist.`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+          [{ text: "👁️ Watchlist", callback_data: "action:watchlist" }, { text: "🔔 Set Alert", callback_data: `watchalert:${list.length - 1}` }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ] } }
+      );
+      return;
+    }
+    if (state.step === "above") {
+      const val = text.trim().toLowerCase();
+      const list = userWatchlists.get(chatId) || [];
+      const item = list.find(w => w.tokenAddress === state.tokenAddress);
+      if (val !== "skip" && val !== "0") {
+        const price = parseFloat(val.replace("$", ""));
+        if (!isNaN(price) && price > 0 && item) {
+          item.alertAbove = price;
+        }
+      }
+      state.step = "below";
+      pendingWatchlistAlert.set(chatId, state);
+      await bot.sendMessage(chatId, `Now enter the price to alert *below* (or type "skip"):`, { parse_mode: "Markdown" });
+      return;
+    }
+    if (state.step === "below") {
+      const val = text.trim().toLowerCase();
+      const list = userWatchlists.get(chatId) || [];
+      const item = list.find(w => w.tokenAddress === state.tokenAddress);
+      if (val !== "skip" && val !== "0") {
+        const price = parseFloat(val.replace("$", ""));
+        if (!isNaN(price) && price > 0 && item) {
+          item.alertBelow = price;
+        }
+      }
+      userWatchlists.set(chatId, list);
+      pendingWatchlistAlert.delete(chatId);
+      await bot.sendMessage(chatId,
+        `✅ *Price alerts set!*\n\n` +
+        `${item?.alertAbove ? `🔔 Alert above: $${item.alertAbove < 0.01 ? item.alertAbove.toExponential(3) : item.alertAbove.toFixed(6)}\n` : ""}` +
+        `${item?.alertBelow ? `🔔 Alert below: $${item.alertBelow < 0.01 ? item.alertBelow.toExponential(3) : item.alertBelow.toFixed(6)}\n` : ""}` +
+        `You'll be notified when price hits your targets.`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "👁️ Watchlist", callback_data: "action:watchlist" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+      );
+      return;
+    }
+    return;
+  }
+
   if (pendingOKXPrice.has(chatId) && !text.startsWith("/")) {
     const state = pendingOKXPrice.get(chatId)!;
     pendingOKXPrice.delete(chatId);
@@ -8968,6 +9506,71 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       } catch (e: any) {
         await bot.sendMessage(chatId, "Could not load fee info. Try again later.");
       }
+      return;
+    }
+
+    if (cmd === "settings") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for settings!"); return; }
+      const s = getUserSettings(chatId);
+      await bot.sendMessage(chatId,
+        `⚙️ *Trading Settings*\n\n` +
+        `📊 Default Slippage: *${s.defaultSlippage}%*\n` +
+        `💰 Default Buy Amount: *${s.defaultBuyAmount} BNB*\n` +
+        `⛽ Gas Priority: *${s.gasPriority}*\n` +
+        `✅ Auto-Approve: *${s.autoApprove ? "ON" : "OFF"}*`,
+        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+          [{ text: `📊 Slippage: ${s.defaultSlippage}%`, callback_data: "settings:slippage" }, { text: `💰 Buy: ${s.defaultBuyAmount}`, callback_data: "settings:buyamt" }],
+          [{ text: `⛽ Gas: ${s.gasPriority}`, callback_data: "settings:gas" }, { text: `${s.autoApprove ? "✅" : "❌"} Auto-Approve`, callback_data: "settings:autoapprove" }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ] } }
+      );
+      return;
+    }
+
+    if (cmd === "limit") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for limit orders!"); return; }
+      const userOrders = Array.from(limitOrders.values()).filter(o => o.chatId === chatId && o.status === "active");
+      let msg = `📋 *Limit Orders*\n\n`;
+      if (userOrders.length === 0) {
+        msg += `No active limit orders.\n\nSet a limit order to auto-buy when price drops or auto-sell when price rises.`;
+      } else {
+        for (const o of userOrders) {
+          const typeIcon = o.type === "buy" ? "🟢" : "🔴";
+          msg += `${typeIcon} *${o.type.toUpperCase()}* ${o.amount} ${o.nativeSymbol}\n`;
+          msg += `Token: \`${o.tokenAddress.substring(0, 10)}...\`\n`;
+          msg += `Trigger: $${o.triggerPrice < 0.01 ? o.triggerPrice.toExponential(3) : o.triggerPrice.toFixed(6)}\n`;
+          msg += `ID: \`${o.id}\`\n\n`;
+        }
+      }
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+        [{ text: "🟢 New Buy Limit", callback_data: "limit:new:buy" }, { text: "🔴 New Sell Limit", callback_data: "limit:new:sell" }],
+        ...(userOrders.length > 0 ? [[{ text: "❌ Cancel All", callback_data: "limit:cancelall" }]] : []),
+        [{ text: "« Menu", callback_data: "action:menu" }],
+      ] } });
+      return;
+    }
+
+    if (cmd === "watchlist" || cmd === "watch") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for watchlist!"); return; }
+      const list = userWatchlists.get(chatId) || [];
+      let msg = `👁️ *Watchlist*\n\n`;
+      if (list.length === 0) {
+        msg += `Your watchlist is empty.\n\nAdd tokens to track prices and get alerts.`;
+      } else {
+        for (let i = 0; i < list.length; i++) {
+          const w = list[i];
+          const priceStr = w.lastPrice ? `$${w.lastPrice < 0.01 ? w.lastPrice.toExponential(3) : w.lastPrice.toFixed(6)}` : "fetching...";
+          msg += `${i + 1}. *${w.tokenSymbol || w.tokenAddress.substring(0, 8) + "..."}*\n`;
+          msg += `   Price: ${priceStr}\n`;
+          if (w.alertAbove) msg += `   🔔 Alert above: $${w.alertAbove < 0.01 ? w.alertAbove.toExponential(3) : w.alertAbove.toFixed(6)}\n`;
+          if (w.alertBelow) msg += `   🔔 Alert below: $${w.alertBelow < 0.01 ? w.alertBelow.toExponential(3) : w.alertBelow.toFixed(6)}\n`;
+          msg += `\n`;
+        }
+      }
+      const buttons: any[][] = [[{ text: "➕ Add Token", callback_data: "watch:add" }]];
+      if (list.length > 0) buttons.push([{ text: "🔄 Refresh Prices", callback_data: "watch:refresh" }, { text: "🗑️ Clear All", callback_data: "watch:clearall" }]);
+      buttons.push([{ text: "« Menu", callback_data: "action:menu" }]);
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
       return;
     }
 
@@ -12803,5 +13406,95 @@ async function executeBridgeQuote(chatId: number, state: OKXBridgeState): Promis
       { reply_markup: { inline_keyboard: [[{ text: "🌉 Try Again", callback_data: "action:okxbridge" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
     );
     pendingOKXBridge.delete(chatId);
+  }
+}
+
+async function checkLimitOrdersAndAlerts(bot: any) {
+  const activeOrders = Array.from(limitOrders.values()).filter(o => o.status === "active");
+  const tokenPriceCache = new Map<string, number>();
+
+  for (const order of activeOrders) {
+    const key = `${order.tokenAddress}:${order.chainId}`;
+    let price = tokenPriceCache.get(key);
+    if (price === undefined) {
+      try {
+        const result = await getTokenPrice(order.tokenAddress, order.chainId);
+        if (result.success && result.data?.price) {
+          price = parseFloat(result.data.price);
+          tokenPriceCache.set(key, price);
+        }
+      } catch {}
+    }
+    if (price === undefined) continue;
+
+    let triggered = false;
+    if (order.type === "buy" && price <= order.triggerPrice) triggered = true;
+    if (order.type === "sell" && price >= order.triggerPrice) triggered = true;
+
+    if (triggered) {
+      order.status = "triggered";
+      limitOrders.delete(order.id);
+      try {
+        await bot.sendMessage(order.chatId,
+          `🔔 *Limit Order Triggered!*\n\n` +
+          `${order.type === "buy" ? "🟢" : "🔴"} *${order.type.toUpperCase()}* ${order.amount} ${order.nativeSymbol}\n` +
+          `Token: \`${order.tokenAddress.substring(0, 12)}...\`${order.tokenName ? ` (${order.tokenName})` : ""}\n` +
+          `Trigger: $${order.triggerPrice < 0.01 ? order.triggerPrice.toExponential(3) : order.triggerPrice.toFixed(6)}\n` +
+          `Current: $${price < 0.01 ? price.toExponential(3) : price.toFixed(6)}\n\n` +
+          `Tap below to execute now:`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+            [{ text: `⚡ ${order.type === "buy" ? "Buy" : "Sell"} Now`, callback_data: `cabuy:${order.tokenAddress}:${order.chainId}:${order.amount}` }],
+            [{ text: "📋 Limit Orders", callback_data: "action:limitorders" }],
+            [{ text: "« Menu", callback_data: "action:menu" }],
+          ] } }
+        );
+      } catch (e: any) {
+        console.error(`[LimitChecker] Failed to notify ${order.chatId}:`, e.message);
+      }
+    }
+  }
+
+  const watchEntries = Array.from(userWatchlists.entries());
+  for (const [chatId, list] of watchEntries) {
+    for (const item of list) {
+      const key = `${item.tokenAddress}:${item.chainId}`;
+      let price = tokenPriceCache.get(key);
+      if (price === undefined) {
+        try {
+          const result = await getTokenPrice(item.tokenAddress, item.chainId);
+          if (result.success && result.data?.price) {
+            price = parseFloat(result.data.price);
+            tokenPriceCache.set(key, price);
+          }
+        } catch {}
+      }
+      if (price === undefined) continue;
+      item.lastPrice = price;
+
+      const now = Date.now();
+      if (item.lastAlertAt && now - item.lastAlertAt < 5 * 60 * 1000) continue;
+
+      let alertMsg = "";
+      if (item.alertAbove && price >= item.alertAbove) {
+        alertMsg = `🔔 *Price Alert*\n\n*${item.tokenSymbol || item.tokenAddress.substring(0, 8) + "..."}* is above your target!\n\nCurrent: $${price < 0.01 ? price.toExponential(3) : price.toFixed(6)}\nTarget: $${item.alertAbove < 0.01 ? item.alertAbove.toExponential(3) : item.alertAbove.toFixed(6)}`;
+        item.alertAbove = undefined;
+      }
+      if (item.alertBelow && price <= item.alertBelow) {
+        alertMsg = `🔔 *Price Alert*\n\n*${item.tokenSymbol || item.tokenAddress.substring(0, 8) + "..."}* is below your target!\n\nCurrent: $${price < 0.01 ? price.toExponential(3) : price.toFixed(6)}\nTarget: $${item.alertBelow < 0.01 ? item.alertBelow.toExponential(3) : item.alertBelow.toFixed(6)}`;
+        item.alertBelow = undefined;
+      }
+
+      if (alertMsg) {
+        item.lastAlertAt = now;
+        try {
+          await bot.sendMessage(chatId, alertMsg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+            [{ text: `🟢 Buy`, callback_data: `cabuy:${item.tokenAddress}:${item.chainId}:0.05` }, { text: `🔴 Sell`, callback_data: `selltoken:${item.tokenAddress}:${item.chainId}` }],
+            [{ text: "👁️ Watchlist", callback_data: "action:watchlist" }],
+          ] } });
+        } catch (e: any) {
+          console.error(`[WatchlistAlert] Failed to notify ${chatId}:`, e.message);
+        }
+      }
+    }
   }
 }
