@@ -12806,40 +12806,26 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const { asterBrokerOnboard } = await import("./aster-client");
       const result = await asterBrokerOnboard(pk);
       if (!result.success || !result.apiKey || !result.apiSecret) {
-        const isRegion = (result.error || "").toLowerCase().includes("region");
-        if (isRegion && pk) {
-          await storage.saveAsterCredentials(chatId.toString(), "V3_DIRECT", "V3_DIRECT");
-          auditLog(chatId, "ASTER_V3_DIRECT", `Connected via V3 EIP-712 direct (broker region-blocked)`);
-          await bot.sendMessage(chatId,
-            `⚡ *Aster DEX — Connected via V3!*\n` +
-            `_Powered by Aster DEX_\n\n` +
-            `Connected using EIP-712 wallet signing (V3).\n` +
-            `Futures trading is fully available — no API keys needed!\n\n` +
-            `💡 _Spot trading requires manual API key setup._`,
-            {
-              parse_mode: "Markdown",
-              reply_markup: {
-                inline_keyboard: [
-                  [{ text: "📊 Trade Futures", callback_data: "aster:trade" }],
-                  [{ text: "💰 View Balances", callback_data: "aster:balance" }],
-                  [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
-                ],
-              },
-            }
-          );
-          return;
-        }
-        const failMsg = isRegion
-          ? `⚠️ Auto-setup unavailable. Connect manually with an API key from asterdex.com.`
-          : `Auto-setup failed: ${result.error || "Unknown error"}\n\nYou can still connect manually with an API key.`;
-        await bot.sendMessage(chatId, failMsg, {
-          parse_mode: "Markdown",
-          reply_markup: { inline_keyboard: [
-            [{ text: "🌐 Open Aster DEX", url: "https://www.asterdex.com" }],
-            [{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }],
-            [{ text: "« Back", callback_data: "action:menu" }],
-          ] },
-        });
+        console.log(`[Aster] Broker onboard failed for ${chatId}: ${result.error}. Falling back to V3 direct.`);
+        await storage.saveAsterCredentials(chatId.toString(), "V3_DIRECT", "V3_DIRECT");
+        auditLog(chatId, "ASTER_V3_DIRECT", `Connected via V3 EIP-712 direct (broker failed: ${result.error})`);
+        await bot.sendMessage(chatId,
+          `⚡ *Aster DEX — Connected via V3!*\n` +
+          `_Powered by Aster DEX_\n\n` +
+          `Connected using EIP-712 wallet signing (V3).\n` +
+          `Futures trading is fully available — no API keys needed!\n\n` +
+          `💡 _Spot trading requires manual API key setup._`,
+          {
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "📊 Trade Futures", callback_data: "aster:trade" }],
+                [{ text: "💰 View Balances", callback_data: "aster:balance" }],
+                [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
+              ],
+            },
+          }
+        );
         return;
       }
       await storage.saveAsterCredentials(chatId.toString(), result.apiKey, result.apiSecret);

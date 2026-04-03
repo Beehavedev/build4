@@ -383,8 +383,9 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
       body: JSON.stringify({ type: "LOGIN", sourceAddr: address }),
     });
     const nonceData = await nonceRes.json();
+    console.log(`[Aster] Nonce response status=${nonceRes.status}`, JSON.stringify(nonceData).substring(0, 300));
     if (!nonceData?.data?.nonce) {
-      return { success: false, error: "Failed to get login nonce from Aster" };
+      return { success: false, error: `Failed to get login nonce from Aster (code: ${nonceData?.code || 'none'}, msg: ${nonceData?.message || nonceData?.msg || 'none'})` };
     }
     const loginNonce = nonceData.data.nonce;
 
@@ -402,12 +403,13 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
       }),
     });
     const loginData = await loginRes.json();
+    console.log(`[Aster] Login response status=${loginRes.status} code=${loginData?.code} msg=${loginData?.message} hasUid=${!!loginData?.data?.uid}`, JSON.stringify(loginData).substring(0, 500));
     if (loginData?.code !== "000000" || !loginData?.data?.uid) {
-      const msg = loginData?.message || "Unknown error";
+      const msg = loginData?.message || loginData?.msg || "Unknown error";
       if (msg.toLowerCase().includes("region") || msg.toLowerCase().includes("not available")) {
         return { success: false, error: "Aster region restriction — please connect manually with an API key from asterdex.com instead" };
       }
-      return { success: false, error: `Aster login failed: ${msg}` };
+      return { success: false, error: `Aster login failed: ${msg} (code: ${loginData?.code || 'none'})` };
     }
     const uid = loginData.data.uid;
 
