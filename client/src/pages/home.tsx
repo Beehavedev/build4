@@ -45,6 +45,9 @@ import {
   Timer,
   Copy,
   TrendingUp,
+  BarChart3,
+  Shield,
+  LineChart,
 } from "lucide-react";
 
 const featureKeys = [
@@ -516,6 +519,124 @@ export default function Home() {
                             <div>
                               <div className="font-mono text-xs font-semibold mb-0.5">Win $B4</div>
                               <div className="text-[11px] text-muted-foreground">950K $B4 total prizes paid automatically</div>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </motion.div>
+          </div>
+        </section>
+
+        {/* Aster DEX */}
+        <section className="relative z-10 mb-16 sm:mb-24">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5, duration: 0.6 }}
+            >
+              <Card className="relative overflow-hidden border-violet-500/30 bg-gradient-to-br from-violet-500/5 via-background to-purple-500/5" data-testid="card-aster-dex">
+                <div className="absolute top-0 right-0 w-72 h-72 bg-violet-500/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
+                <div className="absolute bottom-0 left-0 w-56 h-56 bg-purple-500/5 rounded-full translate-y-1/2 -translate-x-1/2 blur-3xl" />
+                <div className="relative p-6 sm:p-8 lg:p-10">
+                  <div className="flex flex-col lg:flex-row gap-8 items-center">
+                    <div className="flex-1 text-center lg:text-left">
+                      <div className="flex items-center justify-center lg:justify-start gap-2 mb-3">
+                        <Badge variant="outline" className="border-violet-500/40 text-violet-400 font-mono text-[10px] tracking-widest uppercase px-2 py-0.5">
+                          <BarChart3 className="w-3 h-3 mr-1" />
+                          Perpetual DEX
+                        </Badge>
+                        <Badge variant="outline" className="border-green-500/40 text-green-500 font-mono text-[10px] tracking-widest uppercase px-2 py-0.5">
+                          <Shield className="w-3 h-3 mr-1" />
+                          Non-Custodial
+                        </Badge>
+                      </div>
+                      <h3 className="text-2xl sm:text-3xl font-bold tracking-tight mb-3" data-testid="text-aster-title">
+                        Aster DEX <span className="text-violet-400">Trading</span>
+                      </h3>
+                      <p className="text-muted-foreground text-sm sm:text-base mb-4 max-w-lg">
+                        Trade perpetual futures and spot markets directly from Telegram.
+                        Up to 150x leverage, deep liquidity, and multichain support — powered by Aster DEX.
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 max-w-lg mx-auto lg:mx-0">
+                        <div className="text-center p-3 rounded-lg bg-violet-500/10 border border-violet-500/20">
+                          <div className="font-mono font-bold text-lg text-violet-400">150x</div>
+                          <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wide">Max Leverage</div>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-violet-500/10 border border-violet-500/20">
+                          <div className="font-mono font-bold text-lg text-violet-400">1-Tap</div>
+                          <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wide">Connect</div>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-violet-500/10 border border-violet-500/20">
+                          <div className="font-mono font-bold text-lg text-violet-400">5+</div>
+                          <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wide">Order Types</div>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-violet-500/10 border border-violet-500/20">
+                          <div className="font-mono font-bold text-lg text-violet-400">V3</div>
+                          <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wide">EIP-712</div>
+                        </div>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
+                        <a href="https://t.me/build4bot" target="_blank" rel="noopener noreferrer">
+                          <Button size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto bg-violet-600 hover:bg-violet-700" data-testid="button-trade-aster">
+                            <BarChart3 className="w-4 h-4" />
+                            Start Trading
+                            <ArrowRight className="w-4 h-4" />
+                          </Button>
+                        </a>
+                        <a href="https://www.asterdex.com" target="_blank" rel="noopener noreferrer">
+                          <Button variant="outline" size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto border-violet-500/30 text-violet-400 hover:bg-violet-500/10" data-testid="button-aster-website">
+                            <Globe className="w-4 h-4" />
+                            Aster DEX
+                          </Button>
+                        </a>
+                      </div>
+                    </div>
+                    <div className="flex-shrink-0 w-full lg:w-auto">
+                      <Card className="p-5 bg-background/80 backdrop-blur-sm border-violet-500/15 w-full lg:w-72">
+                        <div className="font-mono text-xs text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
+                          <LineChart className="w-3.5 h-3.5 text-violet-400" />
+                          Trading Features
+                        </div>
+                        <div className="space-y-4">
+                          <div className="flex items-start gap-3">
+                            <div className="w-6 h-6 rounded-full bg-violet-500/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <Zap className="w-3 h-3 text-violet-400" />
+                            </div>
+                            <div>
+                              <div className="font-mono text-xs font-semibold mb-0.5">1-Tap Connect</div>
+                              <div className="text-[11px] text-muted-foreground">Auto-setup with your BUILD4 wallet — no manual API keys</div>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-3">
+                            <div className="w-6 h-6 rounded-full bg-violet-500/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <BarChart3 className="w-3 h-3 text-violet-400" />
+                            </div>
+                            <div>
+                              <div className="font-mono text-xs font-semibold mb-0.5">Advanced Orders</div>
+                              <div className="text-[11px] text-muted-foreground">Stop-loss, take-profit, trailing stop, and limit orders</div>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-3">
+                            <div className="w-6 h-6 rounded-full bg-violet-500/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <TrendingUp className="w-3 h-3 text-violet-400" />
+                            </div>
+                            <div>
+                              <div className="font-mono text-xs font-semibold mb-0.5">PnL Dashboard</div>
+                              <div className="text-[11px] text-muted-foreground">Track positions, unrealized PnL, and trade history</div>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-3">
+                            <div className="w-6 h-6 rounded-full bg-violet-500/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <Shield className="w-3 h-3 text-violet-400" />
+                            </div>
+                            <div>
+                              <div className="font-mono text-xs font-semibold mb-0.5">EIP-712 Signing</div>
+                              <div className="text-[11px] text-muted-foreground">Non-custodial V3 trading — keys never leave your device</div>
                             </div>
                           </div>
                         </div>
