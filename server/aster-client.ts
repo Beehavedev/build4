@@ -403,7 +403,11 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
     });
     const loginData = await loginRes.json();
     if (loginData?.code !== "000000" || !loginData?.data?.uid) {
-      return { success: false, error: `Aster login failed: ${loginData?.message || "Unknown error"}` };
+      const msg = loginData?.message || "Unknown error";
+      if (msg.toLowerCase().includes("region") || msg.toLowerCase().includes("not available")) {
+        return { success: false, error: "Aster region restriction — please connect manually with an API key from asterdex.com instead" };
+      }
+      return { success: false, error: `Aster login failed: ${msg}` };
     }
     const uid = loginData.data.uid;
 

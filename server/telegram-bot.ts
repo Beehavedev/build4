@@ -12792,8 +12792,17 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const { asterBrokerOnboard } = await import("./aster-client");
       const result = await asterBrokerOnboard(pk);
       if (!result.success || !result.apiKey || !result.apiSecret) {
-        await bot.sendMessage(chatId, `Auto-setup failed: ${result.error || "Unknown error"}\n\nYou can still connect manually with an API key.`, {
-          reply_markup: { inline_keyboard: [[{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }], [{ text: "« Back", callback_data: "action:menu" }]] },
+        const isRegion = (result.error || "").toLowerCase().includes("region");
+        const failMsg = isRegion
+          ? `⚠️ *Aster Region Restriction*\n\nAster's API is unavailable from our server's region. No worries — you can connect manually:\n\n1. Go to [asterdex.com](https://www.asterdex.com)\n2. Connect your wallet & create an API key\n3. Come back and tap "Connect with API Key"\n\nYour trading will work perfectly once connected!`
+          : `Auto-setup failed: ${result.error || "Unknown error"}\n\nYou can still connect manually with an API key.`;
+        await bot.sendMessage(chatId, failMsg, {
+          parse_mode: "Markdown",
+          reply_markup: { inline_keyboard: [
+            [{ text: "🌐 Open Aster DEX", url: "https://www.asterdex.com" }],
+            [{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }],
+            [{ text: "« Back", callback_data: "action:menu" }],
+          ] },
         });
         return;
       }
