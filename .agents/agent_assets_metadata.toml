@@ -18,6 +18,12 @@ uri = "file://attached_assets/build4_10k_banner.png"
 type = "image"
 title = "generated_image"
 
+[[generated]]
+id = "HcXzM-YgxXIihMi_5zarT"
+uri = "file://attached_assets/build4_10k_banner_v2.png"
+type = "image"
+title = "generated_image"
+
 [[outputs]]
 id = "JBjCUwiEHNM3bqg5OGXfp"
 uri = "file://attached_assets/generated_images/build4_xlayer_banner.png"
@@ -65,3 +71,9 @@ id = "BLMGR1kftb0_YvyfvyIXi"
 uri = "file://attached_assets/build4_10k_banner.png"
 type = "image"
 title = "BUILD4 10K Users Milestone Banner"
+
+[[outputs]]
+id = "TdpgORuZk0K8oo-jnEFiO"
+uri = "file://attached_assets/build4_10k_banner_v2.png"
+type = "image"
+title = "BUILD4 10K Users Banner (Brand Colors)"
