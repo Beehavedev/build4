@@ -12819,7 +12819,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
             parse_mode: "Markdown",
             reply_markup: {
               inline_keyboard: [
-                [{ text: "📊 Trade Futures", callback_data: "aster:trade" }],
+                [{ text: "📊 Trade Futures", callback_data: "aster:trade_futures" }],
                 [{ text: "💰 View Balances", callback_data: "aster:balance" }],
                 [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
               ],
@@ -12903,10 +12903,11 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   if (action === "balance") {
     await bot.sendMessage(chatId, "Loading Aster balances...");
     try {
-      const [futuresBalances, spotAccount] = await Promise.all([
-        client.futures.balance().catch(() => []),
-        client.spot.account().catch(() => ({ balances: [] })),
-      ]);
+      const futuresClient = client.futures || client;
+      const spotClient = client.spot || null;
+
+      const futuresBalances = await futuresClient.balance().catch(() => []);
+      const spotAccount = spotClient ? await spotClient.account().catch(() => ({ balances: [] })) : { balances: [] };
 
       let msg = "💰 *Aster DEX Balances*\n\n";
 
@@ -12924,16 +12925,20 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
       msg += "\n";
 
-      const nonZeroSpot = (spotAccount.balances || []).filter((b: any) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0);
-      if (nonZeroSpot.length > 0) {
-        msg += "*Spot:*\n";
-        for (const b of nonZeroSpot) {
-          const locked = parseFloat(b.locked);
-          const lockedStr = locked > 0 ? ` (locked: ${locked.toFixed(4)})` : "";
-          msg += `  ${b.asset}: ${parseFloat(b.free).toFixed(4)}${lockedStr}\n`;
+      if (spotClient) {
+        const nonZeroSpot = (spotAccount.balances || []).filter((b: any) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0);
+        if (nonZeroSpot.length > 0) {
+          msg += "*Spot:*\n";
+          for (const b of nonZeroSpot) {
+            const locked = parseFloat(b.locked);
+            const lockedStr = locked > 0 ? ` (locked: ${locked.toFixed(4)})` : "";
+            msg += `  ${b.asset}: ${parseFloat(b.free).toFixed(4)}${lockedStr}\n`;
+          }
+        } else {
+          msg += "*Spot:* No balances\n";
         }
       } else {
-        msg += "*Spot:* No balances\n";
+        msg += "_Spot: Connect API key for spot balances_\n";
       }
 
       await bot.sendMessage(chatId, msg, {
@@ -12954,7 +12959,8 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   if (action === "positions") {
     await bot.sendMessage(chatId, "Loading futures positions...");
     try {
-      const positions = await client.futures.positions();
+      const futuresClient = client.futures || client;
+      const positions = await futuresClient.positions();
       const openPositions = (positions as any[]).filter((p: any) => parseFloat(p.positionAmt) !== 0);
 
       if (openPositions.length === 0) {
@@ -13004,9 +13010,11 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   if (action === "orders") {
     await bot.sendMessage(chatId, "Loading open orders...");
     try {
+      const futuresClient = client.futures || client;
+      const spotClient = client.spot || null;
       const [futuresOrders, spotOrders] = await Promise.all([
-        client.futures.openOrders().catch(() => []),
-        client.spot.openOrders().catch(() => []),
+        futuresClient.openOrders().catch(() => []),
+        spotClient ? spotClient.openOrders().catch(() => []) : Promise.resolve([]),
       ]);
 
       let msg = "📋 *Open Orders*\n\n";
@@ -13055,9 +13063,10 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   if (action === "pnl") {
     await bot.sendMessage(chatId, "Loading PnL summary...");
     try {
+      const futuresClient = client.futures || client;
       const [positions, balances] = await Promise.all([
-        client.futures.positions().catch(() => []),
-        client.futures.balance().catch(() => []),
+        futuresClient.positions().catch(() => []),
+        futuresClient.balance().catch(() => []),
       ]);
 
       const openPositions = (positions as any[]).filter((p: any) => parseFloat(p.positionAmt) !== 0);
@@ -13152,7 +13161,8 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       if (state.market === "futures") {
         if (state.leverage) {
           try {
-            await client.futures.setLeverage(state.symbol!, state.leverage);
+            const fc = client.futures || client;
+            await fc.setLeverage(state.symbol!, state.leverage);
           } catch (e: any) {
             if (!e.message?.includes("No need to change")) {
               console.warn(`[Aster] Leverage set warning: ${e.message}`);
@@ -13160,8 +13170,9 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
           }
         }
 
+        const fc = client.futures || client;
         const needsTimeInForce = state.orderType === "LIMIT" || state.orderType === "STOP" || state.orderType === "TAKE_PROFIT";
-        const orderResult = await client.futures.createOrder({
+        const orderResult = await fc.createOrder({
           symbol: state.symbol!,
           side: state.side!,
           type: state.orderType!,
@@ -13354,7 +13365,8 @@ async function handleAsterTradeFlow(chatId: number, text: string): Promise<void>
       if (!creds) { pendingAsterTrade.delete(chatId); return; }
       const { createAsterClient } = await import("./aster-client");
       const client = createAsterClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
-      await client.futures.cancelAllOrders(input);
+      const fc = client.futures || client;
+      await fc.cancelAllOrders(input);
       await bot.sendMessage(chatId, `✅ All open orders for *${input}* have been cancelled.`, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
     } catch (e: any) {
       await bot.sendMessage(chatId, `Failed to cancel orders: ${e.message?.substring(0, 100)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
