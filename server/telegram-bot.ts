@@ -8551,6 +8551,36 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "airdrop" && !isGroup) {
+      const adminChatId = process.env.ADMIN_CHAT_ID;
+      if (!adminChatId || chatId.toString() !== adminChatId) return;
+      const allChatIds = Array.from(telegramWalletMap.keys());
+      const AIRDROP_AMOUNT = "100";
+      await bot.sendMessage(chatId, `🪂 Starting airdrop of ${AIRDROP_AMOUNT} $B4 to ${allChatIds.length} users...`);
+      let credited = 0, skipped = 0, failed = 0;
+      for (const targetChatId of allChatIds) {
+        try {
+          const currentTotal = await storage.getUserRewardTotal(targetChatId.toString());
+          const totalNum = Number(currentTotal) || 0;
+          if (totalNum >= MAX_REWARDS_PER_USER) {
+            skipped++;
+            continue;
+          }
+          const remaining = MAX_REWARDS_PER_USER - totalNum;
+          const cappedAmount = Math.min(Number(AIRDROP_AMOUNT), remaining).toString();
+          await storage.createReward(targetChatId.toString(), "airdrop", cappedAmount, "🪂 BUILD4 Airdrop — 100 $B4");
+          credited++;
+          if (credited % 100 === 0) {
+            await bot.sendMessage(chatId, `Progress: ${credited} credited, ${skipped} skipped (cap), ${failed} failed`);
+          }
+        } catch {
+          failed++;
+        }
+      }
+      await bot.sendMessage(chatId, `🪂 *Airdrop Complete*\n\n✅ Credited: ${credited}\n⏭️ Skipped (cap): ${skipped}\n❌ Failed: ${failed}\n\nTotal: ${allChatIds.length} users`, { parse_mode: "Markdown" });
+      return;
+    }
+
     if (cmd === "broadcast" && !isGroup) {
       const adminChatId = process.env.ADMIN_CHAT_ID;
       if (!adminChatId || chatId.toString() !== adminChatId) {
