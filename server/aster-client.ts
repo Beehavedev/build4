@@ -859,6 +859,20 @@ export function createAsterSpotClient(config: AsterClientConfig) {
       if (symbol) params.symbol = symbol;
       return request("/sapi/v1/openOrders", { signed: true, params });
     },
+
+    async getDepositAddress(coin: string, network?: string): Promise<{ address: string; coin: string; network: string; tag?: string }> {
+      const params: Record<string, string | number | boolean | undefined> = { coin };
+      if (network) params.network = network;
+      return request("/sapi/v1/capital/deposit/address", { signed: true, params });
+    },
+
+    async internalTransfer(asset: string, amount: string, type: number): Promise<{ tranId: number }> {
+      return request("/sapi/v1/asset/transfer", {
+        method: "POST",
+        signed: true,
+        params: { asset, amount, type },
+      });
+    },
   };
 }
 
