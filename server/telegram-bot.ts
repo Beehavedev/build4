@@ -1863,22 +1863,32 @@ async function handleReferral(chatId: number): Promise<void> {
       nextTierText = `\n🏆 *Max tier reached!* You're earning 50% on every referral`;
     }
 
+    let referralB4Earned = 0;
+    try {
+      const refRewards = await storage.getUserRewardsByType(chatId.toString(), "referral_signup");
+      referralB4Earned = refRewards.reduce((sum: number, r: any) => sum + parseFloat(r.amount || "0"), 0);
+    } catch {}
+
     await bot.sendMessage(chatId,
       `🔗 *BUILD4 Referral Program*\n\n` +
-      `Share your link and earn commissions on every subscription!\n\n` +
-      `💰 *Commission Tiers:*\n` +
+      `Share your link and earn *100 $B4* for every new user who joins!\n\n` +
+      `🎁 *Instant Rewards:*\n` +
+      `• *100 $B4* per referral signup\n` +
+      `• Cap: 10,000 $B4 per user (100 referrals)\n\n` +
+      `💰 *Subscription Commissions:*\n` +
       `• 1-10 referrals → *30%* ($${(BOT_PRICE_USD * 0.3).toFixed(2)}/sub)\n` +
       `• 10-50 referrals → *40%* ($${(BOT_PRICE_USD * 0.4).toFixed(2)}/sub)\n` +
       `• 50+ referrals → *50%* ($${(BOT_PRICE_USD * 0.5).toFixed(2)}/sub)\n\n` +
       `📊 *Your Stats:*\n` +
       `• Referrals: ${referralCount}\n` +
+      `• $B4 earned: ${referralB4Earned.toLocaleString()}/10,000 $B4\n` +
       `• Paid subscriptions: ${paidCount}\n` +
-      `• Total earned: $${totalEarned.toFixed(2)} USDT\n` +
+      `• Commission earned: $${totalEarned.toFixed(2)} USDT\n` +
       `• Current tier: *${currentTier}%*` +
       nextTierText + `\n\n` +
       `🔗 *Your Referral Link:*\n` +
       `\`${refLink}\`\n\n` +
-      `Share this link — when someone joins and subscribes, you earn!`,
+      `Share this link — earn 100 $B4 instantly when someone joins!`,
       {
         parse_mode: "Markdown",
         reply_markup: {
@@ -8433,6 +8443,28 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
               if (!existing) {
                 await storage.createReferral(referrerChatId, chatId.toString(), refCode);
                 console.log(`[Referral] ${chatId} referred by ${referrerChatId}`);
+                try {
+                  const REFERRAL_REWARD = "100";
+                  const REFERRAL_CAP = 10000;
+                  const referrerChatIdNum = parseInt(referrerChatId);
+                  const existingReferralRewards = await storage.getUserRewardsByType(referrerChatId, "referral_signup");
+                  const totalReferralRewards = existingReferralRewards.reduce((sum: number, r: any) => sum + parseFloat(r.amount || "0"), 0);
+                  if (totalReferralRewards < REFERRAL_CAP) {
+                    await grantReward(referrerChatIdNum, "referral_signup", REFERRAL_REWARD, `🔗 New referral joined! +100 $B4`, chatId.toString());
+                    tryCompleteQuest(referrerChatIdNum, "refer_friend");
+                    if (bot) {
+                      await bot.sendMessage(referrerChatIdNum,
+                        `🎉 *New Referral!*\n\n` +
+                        `Someone joined BUILD4 using your link!\n` +
+                        `+${REFERRAL_REWARD} $B4 reward\n\n` +
+                        `Referral rewards: ${Math.min(totalReferralRewards + 100, REFERRAL_CAP).toLocaleString()}/${REFERRAL_CAP.toLocaleString()} $B4`,
+                        { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🔗 My Referrals", callback_data: "action:referral" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
+                      );
+                    }
+                  }
+                } catch (rewardErr: any) {
+                  console.error("[Referral] Reward grant failed:", rewardErr.message);
+                }
               }
             }
           } catch (e: any) {
