@@ -939,10 +939,13 @@ async function getUserFeeTier(walletAddress: string): Promise<typeof FEE_TIERS[0
   }
 }
 
-async function collectTransactionFee(pk: string, amountWei: bigint, chainRpc: string, chatId: number): Promise<{ txHash: string | null; feePercent: number; tierLabel: string }> {
-  const defaultResult = { txHash: null, feePercent: 1, tierLabel: "Standard (1%)" };
+async function collectTransactionFee(pk: string, amountWei: bigint, chainRpc: string, chatId: number): Promise<{ txHash: string | null; feePercent: number; tierLabel: string; feeAmount: string }> {
+  const defaultResult = { txHash: null, feePercent: 1, tierLabel: "Standard (1%)", feeAmount: "0" };
   try {
-    if (amountWei <= 0n) return defaultResult;
+    if (amountWei <= 0n) {
+      console.log(`[Fee] Skipping: zero amount for chatId=${chatId}`);
+      return defaultResult;
+    }
     const { ethers } = await import("ethers");
     const provider = new ethers.JsonRpcProvider(chainRpc);
     const signer = new ethers.Wallet(pk, provider);
@@ -951,30 +954,37 @@ async function collectTransactionFee(pk: string, amountWei: bigint, chainRpc: st
     const tier = await getUserFeeTier(signer.address);
     if (tier.feePercent === 0) {
       console.log(`[Fee] ${tier.label} tier for chatId=${chatId}, no fee charged`);
-      return { txHash: null, feePercent: 0, tierLabel: tier.label };
+      return { txHash: null, feePercent: 0, tierLabel: tier.label, feeAmount: "0" };
     }
 
     const feeBps = BigInt(Math.floor(tier.feePercent * 100));
     const feeWei = (amountWei * feeBps) / 10000n;
-    if (feeWei <= 0n) return { txHash: null, feePercent: tier.feePercent, tierLabel: tier.label };
+    if (feeWei <= 0n) return { txHash: null, feePercent: tier.feePercent, tierLabel: tier.label, feeAmount: "0" };
+
+    const feeEth = ethers.formatEther(feeWei);
+    console.log(`[Fee] Attempting to collect ${feeEth} native (${tier.feePercent}%) from chatId=${chatId} on ${chainRpc}`);
 
     const balance = await provider.getBalance(signer.address);
-    const gasEstimate = 21000n * (await provider.getFeeData()).gasPrice!;
+    const feeData = await provider.getFeeData();
+    const gasPrice = feeData.gasPrice || 5000000000n;
+    const gasEstimate = 21000n * gasPrice;
     if (balance < feeWei + gasEstimate) {
-      console.log(`[Fee] Insufficient balance for fee from chatId=${chatId}, skipping`);
-      return { txHash: null, feePercent: tier.feePercent, tierLabel: tier.label };
+      console.log(`[Fee] Insufficient balance for fee from chatId=${chatId} (bal: ${ethers.formatEther(balance)}, need: ${ethers.formatEther(feeWei + gasEstimate)}), skipping`);
+      return { txHash: null, feePercent: tier.feePercent, tierLabel: tier.label, feeAmount: "0" };
     }
-    const tx = await signer.sendTransaction({ to: TREASURY_WALLET, value: feeWei });
+    const tx = await signer.sendTransaction({ to: TREASURY_WALLET, value: feeWei, gasLimit: 21000n, gasPrice });
     const receipt = await tx.wait();
     if (!receipt || receipt.status !== 1) {
-      console.error(`[Fee] Fee tx reverted for chatId=${chatId}`);
-      return { txHash: null, feePercent: tier.feePercent, tierLabel: tier.label };
+      console.error(`[Fee] Fee tx reverted for chatId=${chatId} tx=${tx.hash}`);
+      return { txHash: null, feePercent: tier.feePercent, tierLabel: tier.label, feeAmount: "0" };
     }
-    const feeEth = ethers.formatEther(feeWei);
-    console.log(`[Fee] Collected ${feeEth} (${tier.label}) from chatId=${chatId} tx=${receipt.hash}`);
-    return { txHash: receipt.hash, feePercent: tier.feePercent, tierLabel: tier.label };
+    console.log(`[Fee] ✅ Collected ${feeEth} (${tier.label}) from chatId=${chatId} tx=${receipt.hash}`);
+    try {
+      await storage.recordPlatformRevenue({ feeType: "transaction_fee", amount: feeEth, txHash: receipt.hash, description: `Fee from chatId=${chatId} (${tier.label})` });
+    } catch {}
+    return { txHash: receipt.hash, feePercent: tier.feePercent, tierLabel: tier.label, feeAmount: feeEth };
   } catch (e: any) {
-    console.error(`[Fee] Fee collection failed for chatId=${chatId}:`, e.message);
+    console.error(`[Fee] Fee collection FAILED for chatId=${chatId}:`, e.message);
     return defaultResult;
   }
 }
@@ -2031,6 +2041,7 @@ async function handlePortfolio(chatId: number): Promise<void> {
     ]);
 
     let balText = "";
+    let tokenHoldings = "";
     if (wallet) {
       const evmWallets = [wallet];
       const balances = await fetchWalletBalances(evmWallets);
@@ -2043,6 +2054,34 @@ async function handlePortfolio(chatId: number): Promise<void> {
         if (parseFloat(bal.eth) > 0) parts.push(`${bal.eth} ETH`);
         balText = parts.length > 0 ? parts.join(" · ") : "Empty";
       }
+
+      try {
+        const { getWalletTokenBalances } = await import("./okx-onchainos");
+        const tokenRes = await getWalletTokenBalances({ address: wallet, chainId: "56" });
+        const tokens = tokenRes?.data?.[0]?.tokenAssets || [];
+        const significantTokens = tokens.filter((t: any) => {
+          const usdVal = parseFloat(t.tokenPrice || "0") * parseFloat(t.holdingAmount || "0");
+          return usdVal >= 0.01 && t.symbol !== "BNB";
+        }).sort((a: any, b: any) => {
+          const aVal = parseFloat(a.tokenPrice || "0") * parseFloat(a.holdingAmount || "0");
+          const bVal = parseFloat(b.tokenPrice || "0") * parseFloat(b.holdingAmount || "0");
+          return bVal - aVal;
+        }).slice(0, 8);
+
+        if (significantTokens.length > 0) {
+          tokenHoldings = `\n💰 *Token Holdings*\n`;
+          for (const t of significantTokens) {
+            const amount = parseFloat(t.holdingAmount || "0");
+            const price = parseFloat(t.tokenPrice || "0");
+            const value = amount * price;
+            const change = parseFloat(t.priceChange24h || "0");
+            const changeEmoji = change >= 0 ? "🟢" : "🔴";
+            const changeStr = change !== 0 ? ` ${changeEmoji}${change >= 0 ? "+" : ""}${(change * 100).toFixed(1)}%` : "";
+            const amountStr = amount >= 1000 ? Math.floor(amount).toLocaleString() : amount.toFixed(2);
+            tokenHoldings += `  ${t.symbol}: ${amountStr} ($${value < 1 ? value.toFixed(4) : value.toFixed(2)})${changeStr}\n`;
+          }
+        }
+      } catch {}
     }
 
     const questIds = Object.keys(QUEST_CONFIG) as QuestId[];
@@ -2065,9 +2104,10 @@ async function handlePortfolio(chatId: number): Promise<void> {
       `━━━━━━━━━━━━━━━━━━━━\n` +
       `👛 *Wallet*\n` +
       `${wallet ? `\`${shortWallet(wallet)}\`` : "Not set up"}\n` +
-      `${balText ? `💎 ${balText}` : ""}\n\n` +
+      `${balText ? `💎 ${balText}` : ""}\n` +
+      `${tokenHoldings}\n` +
       `🤖 *Agents* (${agents.length})\n${agentList}\n\n` +
-      `🏆 *$B4 Earned:* ${Number(total).toLocaleString()} / 1,850\n` +
+      `🏆 *$B4 Earned:* ${(Number(total) || 0).toLocaleString()} / 5,000\n` +
       `🎯 *Quests:* ${completedQuests}/${questIds.length} complete\n` +
       `⭐ *Plan:* ${subStatus}\n` +
       `━━━━━━━━━━━━━━━━━━━━`;
@@ -2075,6 +2115,7 @@ async function handlePortfolio(chatId: number): Promise<void> {
     await bot.sendMessage(chatId, msg, {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: [
+        [{ text: "🟢 Buy", callback_data: "action:buy" }, { text: "📉 Sell", callback_data: "action:sell" }, { text: "💱 Swap", callback_data: "action:okxswap" }],
         [{ text: "👛 Wallet Details", callback_data: "action:wallet" }, { text: "🎯 Quests", callback_data: "action:quests" }],
         [{ text: "🤖 My Agents", callback_data: "action:myagents" }, { text: "🏆 Rewards", callback_data: "action:rewards" }],
         [{ text: "« Menu", callback_data: "action:menu" }],
@@ -3195,6 +3236,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       ];
     });
 
+    walletButtons.push([{ text: "🟢 Buy", callback_data: "action:buy" }, { text: "📉 Sell", callback_data: "action:sell" }, { text: "💱 Swap", callback_data: "action:okxswap" }]);
     walletButtons.push([{ text: tr("wallet.genNew", chatId), callback_data: "action:genwallet" }, { text: tr("wallet.import", chatId), callback_data: "action:importwallet" }]);
     if (!solWallet) {
       walletButtons.push([{ text: tr("wallet.genSol", chatId), callback_data: "action:gensolwallet" }]);
@@ -5233,7 +5275,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       return;
     }
 
-    await bot.sendMessage(chatId, `⏳ Executing buy: ${state.amount} ${state.nativeSymbol} → ${state.tokenSymbol} on ${state.chainName}...`);
+    const statusMsg = await bot.sendMessage(chatId, `⏳ *Executing buy:* ${state.amount} ${state.nativeSymbol} → ${state.tokenSymbol} on ${state.chainName}...\n\n🔄 Status: Finding best route...`, { parse_mode: "Markdown" });
     sendTyping(chatId);
 
     try {
@@ -5269,12 +5311,16 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const provider = new ethers.JsonRpcProvider(rpcUrl);
       const wallet = new ethers.Wallet(pk, provider);
 
+      try { await bot.editMessageText(`⏳ *Executing buy:* ${state.amount} ${state.nativeSymbol} → ${state.tokenSymbol}\n\n🔄 Status: Sending transaction...`, { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: "Markdown" }); } catch {}
+
       const tx = await wallet.sendTransaction({
         to: txData.to,
         data: txData.data,
         value: txData.value ? BigInt(txData.value) : 0n,
         gasLimit: txData.gasLimit ? BigInt(txData.gasLimit) : undefined,
       });
+
+      try { await bot.editMessageText(`⏳ *Executing buy:* ${state.amount} ${state.nativeSymbol} → ${state.tokenSymbol}\n\n🔄 Status: TX sent, waiting for confirmation...\nTX: \`${tx.hash.substring(0, 20)}...\``, { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: "Markdown" }); } catch {}
 
       const receipt = await tx.wait();
       if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted");
@@ -5287,18 +5333,23 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       };
       const explorer = explorerUrls[state.chainId] || "https://bscscan.com/tx/";
 
+      const buyAmountWei = ethers.parseEther(state.amount);
+      const buyFeeResult = await collectTransactionFee(pk, buyAmountWei, rpcUrl, chatId);
+
       pendingSignalBuy.delete(chatId);
       await bot.sendMessage(chatId,
         `✅ *Buy Executed!*\n\n` +
         `⚡ ${state.amount} ${state.nativeSymbol} → ${state.tokenSymbol}\n` +
-        `⛓ ${state.chainName}\n\n` +
+        `⛓ ${state.chainName}\n` +
+        `💡 Fee: ${buyFeeResult.feePercent}% (${buyFeeResult.tierLabel})\n\n` +
         `[View Transaction](${explorer}${receipt.hash})`,
         {
           parse_mode: "Markdown",
           disable_web_page_preview: true,
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🐋 More Signals", callback_data: "action:okxsignals" }],
+              [{ text: `🟢 Buy More`, callback_data: `cabuy:${state.tokenAddress}:${state.chainId}:${state.amount}` }],
+              [{ text: "📉 Sell", callback_data: "action:sell" }, { text: "🐋 Signals", callback_data: "action:okxsignals" }],
               [{ text: "👛 Wallet", callback_data: "action:wallet" }, { text: "« Menu", callback_data: "action:menu" }],
             ],
           },
@@ -5449,6 +5500,28 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         ]}}
       );
     }
+    return;
+  }
+
+  if (data.startsWith("cacustom:")) {
+    const parts = data.split(":");
+    const tokenAddr = parts[1];
+    const chainId = parts[2];
+    const isSolana = chainId === "501";
+    const nativeSymbol = isSolana ? "SOL" : chainId === "8453" ? "ETH" : "BNB";
+    pendingSignalBuy.set(chatId, {
+      tokenAddress: tokenAddr,
+      tokenSymbol: "Token",
+      chainId,
+      chainName: isSolana ? "Solana" : chainId === "8453" ? "Base" : "BNB Chain",
+      nativeSymbol,
+      amount: "",
+      step: "amount",
+    });
+    await bot.sendMessage(chatId,
+      `💱 *Custom Buy Amount*\n\nEnter the amount of ${nativeSymbol} to spend:`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "action:menu" }]] } }
+    );
     return;
   }
 
@@ -7674,6 +7747,30 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     return;
   }
 
+  const sigBuyState = pendingSignalBuy.get(chatId);
+  if (sigBuyState && sigBuyState.step === "amount" && !text.startsWith("/")) {
+    const amount = parseFloat(text.trim());
+    if (isNaN(amount) || amount <= 0) {
+      await bot.sendMessage(chatId, `❌ Invalid amount. Enter a number (e.g., 0.1)`, { reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "action:menu" }]] } });
+      return;
+    }
+    sigBuyState.amount = amount.toString();
+    sigBuyState.step = "confirm";
+    pendingSignalBuy.set(chatId, sigBuyState);
+    await bot.sendMessage(chatId,
+      `⚡ *Instant Buy*\n\n` +
+      `Buy ${amount} ${sigBuyState.nativeSymbol} → Token\n` +
+      `Chain: ${sigBuyState.chainName}\n` +
+      `CA: \`${sigBuyState.tokenAddress}\`\n\n` +
+      `Confirm purchase:`,
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
+        [{ text: `✅ Buy ${amount} ${sigBuyState.nativeSymbol}`, callback_data: "sigbuy_confirm" }],
+        [{ text: "❌ Cancel", callback_data: "action:menu" }],
+      ]}}
+    );
+    return;
+  }
+
   const evmCaMatch = text.match(/^(0x[a-fA-F0-9]{40})$/i);
   const solanaAddrRegex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
   const isSolanaLike = !evmCaMatch && solanaAddrRegex.test(text) && text.length >= 32 && /\d/.test(text) && /[A-Z]/.test(text) && /[a-z]/.test(text);
@@ -7804,16 +7901,27 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       msg += `\n━━━━━━━━━━━━━━━━━━━━\n`;
       msg += `[📊 Chart](${chartUrl})`;
 
-      const buyAmounts = isSolana
+      const buyRow1 = isSolana
         ? [
-            { text: "🟢 0.1 SOL", callback_data: `cabuy:${ca}:${chainId}:0.1` },
-            { text: "🟢 0.5 SOL", callback_data: `cabuy:${ca}:${chainId}:0.5` },
-            { text: "🟢 1 SOL", callback_data: `cabuy:${ca}:${chainId}:1` },
+            { text: "⚡ 0.1 SOL", callback_data: `cabuy:${ca}:${chainId}:0.1` },
+            { text: "⚡ 0.5 SOL", callback_data: `cabuy:${ca}:${chainId}:0.5` },
+            { text: "⚡ 1 SOL", callback_data: `cabuy:${ca}:${chainId}:1` },
           ]
         : [
-            { text: "🟢 0.01 BNB", callback_data: `cabuy:${ca}:${chainId}:0.01` },
-            { text: "🟢 0.05 BNB", callback_data: `cabuy:${ca}:${chainId}:0.05` },
-            { text: "🟢 0.1 BNB", callback_data: `cabuy:${ca}:${chainId}:0.1` },
+            { text: "⚡ 0.01 BNB", callback_data: `cabuy:${ca}:${chainId}:0.01` },
+            { text: "⚡ 0.05 BNB", callback_data: `cabuy:${ca}:${chainId}:0.05` },
+            { text: "⚡ 0.1 BNB", callback_data: `cabuy:${ca}:${chainId}:0.1` },
+          ];
+      const buyRow2 = isSolana
+        ? [
+            { text: "🟢 2 SOL", callback_data: `cabuy:${ca}:${chainId}:2` },
+            { text: "🟢 5 SOL", callback_data: `cabuy:${ca}:${chainId}:5` },
+            { text: "🟢 10 SOL", callback_data: `cabuy:${ca}:${chainId}:10` },
+          ]
+        : [
+            { text: "🟢 0.25 BNB", callback_data: `cabuy:${ca}:${chainId}:0.25` },
+            { text: "🟢 0.5 BNB", callback_data: `cabuy:${ca}:${chainId}:0.5` },
+            { text: "🟢 1 BNB", callback_data: `cabuy:${ca}:${chainId}:1` },
           ];
 
       await bot.sendMessage(chatId, msg, {
@@ -7821,7 +7929,12 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         disable_web_page_preview: true,
         reply_markup: {
           inline_keyboard: [
-            buyAmounts,
+            buyRow1,
+            buyRow2,
+            [
+              { text: "💱 Custom Amount", callback_data: `cacustom:${ca}:${chainId}` },
+              { text: "📉 Sell", callback_data: "action:sell" },
+            ],
             [
               { text: "🔒 Deep Scan", callback_data: `cascan:${ca}:${chainId}` },
               { text: "📊 Chart", callback_data: `cachart:${ca}:${chainId}` },

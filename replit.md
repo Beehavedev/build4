@@ -42,11 +42,21 @@ The project employs a monorepo architecture, separating concerns into `client/` 
 - **Tiered platform fee** on all trades (buy, sell, swap, bridge) sent to treasury wallet `0x5Ff57464152c9285A8526a0665d996dA66e2def1`
 - Fee tiers based on $B4 holdings (wallet + staked): Diamond (1M+ $B4 = 0%), Platinum (500K = 0.25%), Gold (100K = 0.5%), Silver (10K = 0.75%), Standard (0 = 1%)
 - `getUserFeeTier(walletAddress)` checks on-chain $B4 balance + staking contract, cached 5 min
-- `collectTransactionFee()` in `telegram-bot.ts` handles EVM swap/buy/sell/bridge fees
+- `collectTransactionFee()` in `telegram-bot.ts` handles EVM swap/buy/sell/bridge fees — returns `{ txHash, feePercent, tierLabel, feeAmount }`
 - `collectTradeFee()` in `token-launcher.ts` handles Four.meme buy/sell fees (also uses tiers)
 - Fee is non-blocking: if fee tx fails, the trade still succeeds
+- Fee collection now logs to `platform_revenue` table for auditing
+- All trade paths (buy, sell, swap, bridge, signal buy) now collect fees
 - `/fees` command and `action:fees` button show user their tier, balance, and upgrade path
 - Staking contract: `0x5005dd0F5B3338526dd12f0Abc34C0Cb1Aa362ea` on BNB Chain
+
+### Trading Bot Features (Maestro-parity)
+- **1-tap buy**: Contract address paste → scan + 6 preset buy buttons (2 rows: small + large amounts)
+- **Custom buy amount**: "Custom Amount" button on scan → user types amount → confirms
+- **Buy/Sell/Swap buttons**: Present on wallet view, portfolio, and post-trade screens
+- **Token PnL in portfolio**: Portfolio shows all token holdings with USD value and 24h % change
+- **TX status tracking**: Buy execution shows real-time status updates (finding route → sending tx → confirming)
+- **$B4 rewards cap**: 5,000 $B4 max per user, enforced via `getUserRewardTotal()`
 
 ### Key Design Decisions
 - **Two-layer Architecture**: On-chain for financial transactions and off-chain for agent behaviors.
