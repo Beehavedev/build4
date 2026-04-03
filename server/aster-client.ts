@@ -524,6 +524,10 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
       return request("/fapi/v1/premiumIndex", { params });
     },
 
+    async openInterest(symbol: string): Promise<any> {
+      return request("/fapi/v1/openInterest", { params: { symbol } });
+    },
+
     async balance(): Promise<AsterBalance[]> {
       return request("/fapi/v2/balance", { signed: true });
     },

@@ -2471,7 +2471,105 @@ async function getAsterUsersWithCredentials(): Promise<Array<{ chatId: number; c
   return result;
 }
 
-async function fetchAsterMarketData(client: AsterFuturesClient): Promise<Array<{ ticker: AsterTicker; fundingRate: AsterFundingRate }>> {
+interface TechnicalAnalysis {
+  rsi14: number;
+  sma20: number;
+  sma50: number;
+  bbUpper: number;
+  bbLower: number;
+  bbMiddle: number;
+  atr14: number;
+  regime: "trending_up" | "trending_down" | "ranging" | "volatile";
+  trendStrength: number;
+  priceVsSma20: number;
+  openInterest: number;
+}
+
+interface EnhancedMarketData {
+  ticker: AsterTicker;
+  fundingRate: AsterFundingRate;
+  ta?: TechnicalAnalysis;
+}
+
+function computeRSI(closes: number[], period: number = 14): number {
+  if (closes.length < period + 1) return 50;
+  let gains = 0, losses = 0;
+  for (let i = closes.length - period; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff > 0) gains += diff; else losses -= diff;
+  }
+  const avgGain = gains / period;
+  const avgLoss = losses / period;
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
+}
+
+function computeSMA(values: number[], period: number): number {
+  if (values.length < period) return values[values.length - 1] || 0;
+  const slice = values.slice(-period);
+  return slice.reduce((a, b) => a + b, 0) / period;
+}
+
+function computeBollingerBands(closes: number[], period: number = 20, stdDev: number = 2): { upper: number; lower: number; middle: number } {
+  const sma = computeSMA(closes, period);
+  const slice = closes.slice(-period);
+  const variance = slice.reduce((sum, v) => sum + (v - sma) ** 2, 0) / period;
+  const sd = Math.sqrt(variance);
+  return { upper: sma + stdDev * sd, lower: sma - stdDev * sd, middle: sma };
+}
+
+function computeATR(highs: number[], lows: number[], closes: number[], period: number = 14): number {
+  if (highs.length < period + 1) return 0;
+  const trs: number[] = [];
+  for (let i = 1; i < highs.length; i++) {
+    const tr = Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1]));
+    trs.push(tr);
+  }
+  return computeSMA(trs.slice(-period), period);
+}
+
+function detectRegime(closes: number[], sma20: number, sma50: number, atr: number, price: number): { regime: TechnicalAnalysis["regime"]; strength: number } {
+  const atrPct = price > 0 ? (atr / price) * 100 : 0;
+  const smaSpread = price > 0 ? ((sma20 - sma50) / price) * 100 : 0;
+  const priceAboveSma20 = price > sma20;
+  const sma20AboveSma50 = sma20 > sma50;
+
+  if (atrPct > 4) return { regime: "volatile", strength: Math.min(atrPct / 2, 10) };
+  if (priceAboveSma20 && sma20AboveSma50 && smaSpread > 0.5) return { regime: "trending_up", strength: Math.min(smaSpread * 2, 10) };
+  if (!priceAboveSma20 && !sma20AboveSma50 && smaSpread < -0.5) return { regime: "trending_down", strength: Math.min(Math.abs(smaSpread) * 2, 10) };
+  return { regime: "ranging", strength: Math.max(1, 5 - Math.abs(smaSpread) * 3) };
+}
+
+async function fetchTechnicalData(client: AsterFuturesClient, symbol: string): Promise<TechnicalAnalysis | undefined> {
+  try {
+    const [klines, oiData] = await Promise.all([
+      client.klines(symbol, "1h", 60).catch(() => []),
+      client.openInterest(symbol).catch(() => null),
+    ]);
+    if (klines.length < 20) return undefined;
+
+    const closes = klines.map(k => parseFloat(k.close));
+    const highs = klines.map(k => parseFloat(k.high));
+    const lows = klines.map(k => parseFloat(k.low));
+    const price = closes[closes.length - 1];
+
+    const rsi14 = computeRSI(closes, 14);
+    const sma20 = computeSMA(closes, 20);
+    const sma50 = computeSMA(closes, Math.min(50, closes.length));
+    const bb = computeBollingerBands(closes, 20);
+    const atr14 = computeATR(highs, lows, closes, 14);
+    const { regime, strength } = detectRegime(closes, sma20, sma50, atr14, price);
+    const priceVsSma20 = sma20 > 0 ? ((price - sma20) / sma20) * 100 : 0;
+    const openInterest = oiData?.openInterest ? parseFloat(oiData.openInterest) : 0;
+
+    return { rsi14, sma20, sma50, bbUpper: bb.upper, bbLower: bb.lower, bbMiddle: bb.middle, atr14, regime, trendStrength: strength, priceVsSma20, openInterest };
+  } catch {
+    return undefined;
+  }
+}
+
+async function fetchAsterMarketData(client: AsterFuturesClient): Promise<EnhancedMarketData[]> {
   try {
     const [tickers, fundingRates] = await Promise.all([
       client.ticker().then(t => Array.isArray(t) ? t : [t]),
@@ -2481,7 +2579,7 @@ async function fetchAsterMarketData(client: AsterFuturesClient): Promise<Array<{
     const fundingMap = new Map<string, AsterFundingRate>();
     for (const fr of fundingRates) fundingMap.set(fr.symbol, fr);
 
-    const combined: Array<{ ticker: AsterTicker; fundingRate: AsterFundingRate }> = [];
+    const combined: EnhancedMarketData[] = [];
     for (const t of tickers) {
       const vol = parseFloat(t.quoteVolume || "0");
       if (vol < ASTER_MIN_VOLUME_USDT) continue;
@@ -2491,7 +2589,15 @@ async function fetchAsterMarketData(client: AsterFuturesClient): Promise<Array<{
     }
 
     combined.sort((a, b) => parseFloat(b.ticker.quoteVolume) - parseFloat(a.ticker.quoteVolume));
-    return combined.slice(0, 25);
+    const top = combined.slice(0, 15);
+
+    const taPromises = top.map(async m => {
+      m.ta = await fetchTechnicalData(client, m.ticker.symbol);
+      return m;
+    });
+    await Promise.allSettled(taPromises);
+
+    return top;
   } catch (e: any) {
     log(`[AsterAgent] Market data error: ${e.message?.substring(0, 80)}`, "trading");
     return [];
@@ -2510,7 +2616,7 @@ function buildAsterTradeMemoryContext(): string {
   return ctx;
 }
 
-async function aiEvaluateAsterMarkets(markets: Array<{ ticker: AsterTicker; fundingRate: AsterFundingRate }>): Promise<AsterMarketSignal | null> {
+async function aiEvaluateAsterMarkets(markets: EnhancedMarketData[]): Promise<AsterMarketSignal | null> {
   if (markets.length === 0) return null;
 
   const memoryCtx = buildAsterTradeMemoryContext();
@@ -2528,42 +2634,78 @@ async function aiEvaluateAsterMarkets(markets: Array<{ ticker: AsterTicker; fund
     const tLow = m.ticker.lowPrice || m.ticker.low;
     const range = parseFloat(tHigh) - parseFloat(tLow);
     const rangePct = parseFloat(tLow) > 0 ? ((range / parseFloat(tLow)) * 100).toFixed(2) : "0";
-    return `${i + 1}. ${m.ticker.symbol} — $${tPrice}, 24h: ${pctChange.toFixed(2)}%, Vol: ${(vol / 1000).toFixed(0)}K, FR: ${(fr * 100).toFixed(4)}% (${frDir}), Range: ${rangePct}%, H/L: ${tHigh}/${tLow}`;
+
+    let line = `${i + 1}. ${m.ticker.symbol} — $${tPrice}, 24h: ${pctChange.toFixed(2)}%, Vol: $${vol >= 1e6 ? (vol / 1e6).toFixed(1) + "M" : (vol / 1e3).toFixed(0) + "K"}, FR: ${(fr * 100).toFixed(4)}% (${frDir}), Range: ${rangePct}%`;
+
+    if (m.ta) {
+      const ta = m.ta;
+      line += ` | RSI: ${ta.rsi14.toFixed(1)}`;
+      line += `, SMA20: $${ta.sma20.toFixed(2)} (${ta.priceVsSma20 >= 0 ? "+" : ""}${ta.priceVsSma20.toFixed(2)}%)`;
+      line += `, BB: ${parseFloat(tPrice) > ta.bbUpper ? "ABOVE upper" : parseFloat(tPrice) < ta.bbLower ? "BELOW lower" : "within"}`;
+      line += `, ATR: ${((ta.atr14 / parseFloat(tPrice)) * 100).toFixed(2)}%`;
+      line += `, Regime: ${ta.regime} (str:${ta.trendStrength.toFixed(1)})`;
+      if (ta.openInterest > 0) line += `, OI: $${(ta.openInterest * parseFloat(tPrice) / 1e6).toFixed(1)}M`;
+    }
+    return line;
   }).join("\n");
 
-  const prompt = `Expert crypto futures trader. Pick the BEST trade or SKIP.
+  const prompt = `You are a world-class crypto futures trader who has mastered technical analysis, market microstructure, and risk management. Analyze these markets using ALL available data to find the single highest-probability trade.
 
-MARKETS:
+LIVE MARKETS:
 ${marketLines}
 
-STATS: ${totalCount > 0 ? `${winRate}% win rate over ${totalCount}` : "New"}
-MEMORY:
+PERFORMANCE: ${totalCount > 0 ? `${winRate}% win rate over ${totalCount} trades` : "New agent — be selective"}
+TRADE HISTORY:
 ${memoryCtx}
 
-EDGE SIGNALS:
-1. FR >0.05% + overbought (big green 24h) = SHORT (funding arb + mean reversion)
-2. FR <-0.03% + oversold (big red 24h) = LONG (funding arb + bounce)
-3. Strong trend (>3% 24h) + high vol + moderate FR = ride momentum
-4. Wide range% + high vol = volatile — trade breakout direction
-5. SKIP if no clear edge
+STRATEGY FRAMEWORK:
 
-RESPOND:
+1. TREND FOLLOWING (best in trending_up/trending_down regimes):
+   - Price above SMA20 + SMA20 above SMA50 + RSI 40-70 = BUY
+   - Price below SMA20 + SMA20 below SMA50 + RSI 30-60 = SELL
+   - Higher trend strength = higher confidence
+
+2. MEAN REVERSION (best in ranging regimes):
+   - RSI >70 + price above BB upper + high FR (longs pay) = SELL
+   - RSI <30 + price below BB lower + negative FR (shorts pay) = BUY
+   - Tighter BB bands = stronger signal
+
+3. FUNDING RATE ARBITRAGE:
+   - FR >0.05% = shorts get paid, bias SHORT especially if overbought
+   - FR <-0.03% = longs get paid, bias LONG especially if oversold
+
+4. VOLATILITY FILTER:
+   - ATR >3% = volatile, use wider stops, smaller size → lower confidence
+   - ATR <1% = low vol, tight ranges, likely choppy → prefer SKIP
+   - ATR 1-3% = ideal trading conditions
+
+5. VOLUME + OPEN INTEREST CONFIRMATION:
+   - Rising OI + rising price = strong bullish (new money entering longs)
+   - Rising OI + falling price = strong bearish (new money entering shorts)
+   - High volume confirms moves; low volume = fake-outs
+
+6. CONFLUENCE:
+   - Best trades have 3+ signals aligned (trend + RSI + FR + volume)
+   - Single-indicator trades = low confidence
+   - SKIP if signals conflict or no clear edge
+
+RESPOND IN EXACTLY 4 LINES:
 DECISION: BUY or SELL or SKIP
-SYMBOL: [exact symbol]
-CONFIDENCE: [1-100]
-REASONING: [1 sentence]`;
+SYMBOL: [exact symbol from the list]
+CONFIDENCE: [1-100, require 3+ confluent signals for >70]
+REASONING: [concise explanation citing specific indicators]`;
 
   try {
     const result = await Promise.race([
       runInferenceWithFallback(AI_NETWORKS, AI_MODEL, prompt, {
-        systemPrompt: "Elite futures trader. Find high-probability setups from funding rates, volume, momentum. Be aggressive when edge is clear. Respond in 4 lines.",
-        temperature: 0.35,
+        systemPrompt: "You are an elite quantitative futures trader. You combine technical analysis (RSI, Bollinger Bands, moving averages, ATR), funding rate analysis, volume/OI data, and market regime detection. You only trade when multiple signals align. You are disciplined — skipping is often the best trade. Respond in exactly 4 lines.",
+        temperature: 0.3,
       }),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI timeout")), 12000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI timeout")), 15000)),
     ]);
 
     const output = result.text.trim();
-    log(`[AsterAgent] AI: ${output.substring(0, 200)}`, "trading");
+    log(`[AsterAgent] AI: ${output.substring(0, 250)}`, "trading");
 
     if (!output || output.includes("[NO_PROVIDER]") || output.length < 10) return null;
 
@@ -2726,14 +2868,19 @@ async function scanAsterInner(notifyFn: (chatId: number, message: string) => voi
     }
 
     const userLeverage = Math.min(ASTER_DEFAULT_LEVERAGE, limits.maxLeverage);
-    const userPositionSize = Math.min(parseFloat(ASTER_DEFAULT_POSITION_SIZE_USDT), limits.maxPositionSizeUsdt).toString();
+    const baseSize = Math.min(parseFloat(ASTER_DEFAULT_POSITION_SIZE_USDT), limits.maxPositionSizeUsdt);
+    let sizeMult = 0.5;
+    if (signal.confidence >= 85) sizeMult = 1.0;
+    else if (signal.confidence >= 75) sizeMult = 0.8;
+    else if (signal.confidence >= 65) sizeMult = 0.65;
+    const userPositionSize = (baseSize * sizeMult).toFixed(2);
 
     const position = await executeAsterFuturesTradeWithLimits(user.chatId, user.client, signal, notifyFn, userLeverage, userPositionSize);
     if (position) {
       const frLabel = signal.fundingRate > 0 ? `+${(signal.fundingRate * 100).toFixed(4)}%` : `${(signal.fundingRate * 100).toFixed(4)}%`;
       let msg = `📊 ASTER AUTO: ${signal.side} ${signal.symbol}\n`;
       msg += `Entry: ~${signal.markPrice} | ${userLeverage}x | ${position.quantity}\n`;
-      msg += `Size: $${userPositionSize} | Confidence: ${signal.confidence}%\n`;
+      msg += `Size: $${userPositionSize} (${(sizeMult * 100).toFixed(0)}%) | Confidence: ${signal.confidence}%\n`;
       msg += `FR: ${frLabel} | 24h: ${signal.priceChangePct.toFixed(2)}%\n`;
       msg += `🧠 ${signal.reasoning}\n`;
       msg += `Trail stop: ${ASTER_TRAILING_STOP_PCT}%\n`;
