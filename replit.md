@@ -129,4 +129,4 @@ The Agent Store features searchable agents with stats, a real-time activity feed
 - **GoPlus/RugCheck**: Security scanning for tokens.
 - **DexScreener**: Charting data.
 - **Raydium LaunchLab, Bankr, Flap.sh, Four.meme, XLayer**: Token launch platforms.
-- **Aster DEX**: Centralized futures and spot trading integration (V1 HMAC + V3 EIP-712 signing, broker auto-onboarding API, WebSocket streams, advanced order types: SL/TP/trailing stop).
+- **Aster DEX**: Centralized futures and spot trading integration (V1 HMAC + V3 EIP-712 signing, broker auto-onboarding API, WebSocket streams, advanced order types: SL/TP/trailing stop). Risk management system with per-user configurable limits: max daily loss, max position size, max leverage, max open positions, auto-trade toggle. Daily PnL tracked and auto-resets after 24h. Risk settings accessible via "Risk Settings" button in the Aster menu. Table: `aster_trading_limits`.

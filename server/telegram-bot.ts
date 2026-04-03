@@ -12750,6 +12750,7 @@ async function handleAsterMenu(chatId: number): Promise<void> {
           [{ text: "📊 Markets", callback_data: "aster:markets" }, { text: "💵 Fund Account", callback_data: "aster:fund" }],
           [{ text: "💰 Balances", callback_data: "aster:balance" }, { text: "📊 Positions", callback_data: "aster:positions" }],
           [{ text: "📋 Open Orders", callback_data: "aster:orders" }, { text: "📈 PnL", callback_data: "aster:pnl" }],
+          [{ text: "⚙️ Risk Settings", callback_data: "aster:risk_settings" }],
           ...(isV3Direct ? [[{ text: "🔑 Upgrade (Add API Key)", callback_data: "aster:connect" }]] : []),
           [{ text: "🔌 Disconnect", callback_data: "aster:disconnect" }, { text: "« Back", callback_data: "action:menu" }],
         ],
@@ -12891,6 +12892,90 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   if (action === "disconnect_confirm") {
     await storage.removeAsterCredentials(chatId.toString());
     await bot.sendMessage(chatId, "Aster account disconnected. Your API credentials have been removed.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
+    return;
+  }
+
+  if (action === "risk_settings") {
+    const limits = await storage.getAsterTradingLimits(chatId.toString());
+    const l = limits || { maxDailyLossUsdt: 100, maxPositionSizeUsdt: 50, maxLeverage: 10, maxOpenPositions: 3, autoTradeEnabled: false, dailyPnlUsdt: 0 };
+    const autoLabel = l.autoTradeEnabled ? "ON ✅" : "OFF ❌";
+    let msg = `⚙️ *Aster Risk Management*\n\n`;
+    msg += `🤖 Auto-Trade: ${autoLabel}\n`;
+    msg += `📉 Max Daily Loss: $${l.maxDailyLossUsdt}\n`;
+    msg += `💰 Max Position Size: $${l.maxPositionSizeUsdt}\n`;
+    msg += `⚡ Max Leverage: ${l.maxLeverage}x\n`;
+    msg += `📊 Max Open Positions: ${l.maxOpenPositions}\n\n`;
+    msg += `📋 Today's PnL: ${l.dailyPnlUsdt >= 0 ? "+" : ""}$${l.dailyPnlUsdt.toFixed(2)}\n`;
+    if (l.dailyPnlUsdt <= -(l.maxDailyLossUsdt)) {
+      msg += `⚠️ *Daily loss limit reached — auto-trading paused*`;
+    }
+    await bot.sendMessage(chatId, msg, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: `🤖 Auto-Trade: ${autoLabel}`, callback_data: "aster:risk_toggle_auto" }],
+          [{ text: "📉 Daily Loss Limit", callback_data: "aster:risk_set_loss" }, { text: "💰 Position Size", callback_data: "aster:risk_set_size" }],
+          [{ text: "⚡ Max Leverage", callback_data: "aster:risk_set_lev" }, { text: "📊 Max Positions", callback_data: "aster:risk_set_pos" }],
+          [{ text: "🔄 Reset Daily PnL", callback_data: "aster:risk_reset_pnl" }],
+          [{ text: "« Aster Menu", callback_data: "action:aster" }],
+        ],
+      },
+    });
+    return;
+  }
+
+  if (action === "risk_toggle_auto") {
+    const limits = await storage.getAsterTradingLimits(chatId.toString());
+    const newVal = !(limits?.autoTradeEnabled ?? false);
+    await storage.saveAsterTradingLimits(chatId.toString(), { autoTradeEnabled: newVal });
+    await bot.sendMessage(chatId, `🤖 Auto-Trade ${newVal ? "ENABLED ✅" : "DISABLED ❌"}\n\n${newVal ? "The AI agent will now automatically open futures positions based on market analysis, respecting your risk limits." : "Auto-trading is now off. You can still trade manually."}`, {
+      reply_markup: { inline_keyboard: [[{ text: "⚙️ Risk Settings", callback_data: "aster:risk_settings" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+    });
+    return;
+  }
+
+  if (action === "risk_reset_pnl") {
+    await storage.saveAsterTradingLimits(chatId.toString(), { dailyPnlUsdt: 0, dailyPnlResetAt: new Date() });
+    await bot.sendMessage(chatId, "✅ Daily PnL counter reset to $0.", {
+      reply_markup: { inline_keyboard: [[{ text: "⚙️ Risk Settings", callback_data: "aster:risk_settings" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+    });
+    return;
+  }
+
+  if (action === "risk_set_loss" || action === "risk_set_size" || action === "risk_set_lev" || action === "risk_set_pos") {
+    const labels: Record<string, { label: string; field: string; min: number; max: number; unit: string }> = {
+      risk_set_loss: { label: "Max Daily Loss", field: "maxDailyLossUsdt", min: 10, max: 10000, unit: "USDT" },
+      risk_set_size: { label: "Max Position Size", field: "maxPositionSizeUsdt", min: 10, max: 5000, unit: "USDT" },
+      risk_set_lev: { label: "Max Leverage", field: "maxLeverage", min: 1, max: 125, unit: "x" },
+      risk_set_pos: { label: "Max Open Positions", field: "maxOpenPositions", min: 1, max: 20, unit: "" },
+    };
+    const cfg = labels[action];
+    const presets: Record<string, number[]> = {
+      risk_set_loss: [25, 50, 100, 250, 500],
+      risk_set_size: [25, 50, 100, 250, 500],
+      risk_set_lev: [2, 3, 5, 10, 20],
+      risk_set_pos: [1, 2, 3, 5, 10],
+    };
+    const buttons = presets[action].map(v => ({ text: `${v}${cfg.unit}`, callback_data: `aster:risk_val_${cfg.field}_${v}` }));
+    const rows = [];
+    for (let i = 0; i < buttons.length; i += 3) rows.push(buttons.slice(i, i + 3));
+    rows.push([{ text: "« Risk Settings", callback_data: "aster:risk_settings" }]);
+    await bot.sendMessage(chatId, `Set *${cfg.label}*:\n\nRange: ${cfg.min} - ${cfg.max} ${cfg.unit}`, {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: rows },
+    });
+    return;
+  }
+
+  if (action.startsWith("risk_val_")) {
+    const parts = action.replace("risk_val_", "").split("_");
+    const val = parseInt(parts.pop()!);
+    const field = parts.join("_");
+    const fieldMap: Record<string, string> = { maxDailyLossUsdt: "Max Daily Loss", maxPositionSizeUsdt: "Max Position Size", maxLeverage: "Max Leverage", maxOpenPositions: "Max Open Positions" };
+    await storage.saveAsterTradingLimits(chatId.toString(), { [field]: val } as any);
+    await bot.sendMessage(chatId, `✅ ${fieldMap[field] || field} set to ${val}`, {
+      reply_markup: { inline_keyboard: [[{ text: "⚙️ Risk Settings", callback_data: "aster:risk_settings" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+    });
     return;
   }
 
@@ -13570,6 +13655,11 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
     try {
       if (state.market === "futures") {
+        const userLimits = await storage.getAsterTradingLimits(chatId.toString());
+        if (userLimits && state.leverage && state.leverage > userLimits.maxLeverage) {
+          state.leverage = userLimits.maxLeverage;
+          await bot.sendMessage(chatId, `⚠️ Leverage capped to ${userLimits.maxLeverage}x (your risk limit)`);
+        }
         if (state.leverage) {
           try {
             const fc = client.futures || client;

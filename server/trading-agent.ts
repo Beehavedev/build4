@@ -2604,22 +2604,33 @@ async function executeAsterFuturesTrade(
   signal: AsterMarketSignal,
   notifyFn: (chatId: number, message: string) => void,
 ): Promise<AsterFuturesPosition | null> {
+  return executeAsterFuturesTradeWithLimits(chatId, client, signal, notifyFn, ASTER_DEFAULT_LEVERAGE, ASTER_DEFAULT_POSITION_SIZE_USDT);
+}
+
+async function executeAsterFuturesTradeWithLimits(
+  chatId: number,
+  client: any,
+  signal: AsterMarketSignal,
+  notifyFn: (chatId: number, message: string) => void,
+  leverage: number,
+  positionSizeUsdt: string,
+): Promise<AsterFuturesPosition | null> {
   const positionId = `aster_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
   try {
     await Promise.allSettled([
       client.setMarginType(signal.symbol, ASTER_DEFAULT_MARGIN_TYPE),
-      client.setLeverage(signal.symbol, ASTER_DEFAULT_LEVERAGE),
+      client.setLeverage(signal.symbol, leverage),
     ]);
 
     const markPrice = parseFloat(signal.markPrice);
     if (markPrice <= 0) return null;
 
-    const positionSizeUsdt = parseFloat(ASTER_DEFAULT_POSITION_SIZE_USDT) * ASTER_DEFAULT_LEVERAGE;
-    const quantity = (positionSizeUsdt / markPrice).toFixed(6);
+    const notional = parseFloat(positionSizeUsdt) * leverage;
+    const quantity = (notional / markPrice).toFixed(6);
     const orderSide = signal.side === "LONG" ? "BUY" as const : "SELL" as const;
 
-    log(`[AsterAgent] ${signal.side} ${signal.symbol} — qty: ${quantity}, ${ASTER_DEFAULT_LEVERAGE}x`, "trading");
+    log(`[AsterAgent] ${signal.side} ${signal.symbol} — qty: ${quantity}, ${leverage}x, size: $${positionSizeUsdt}`, "trading");
 
     const order = await client.createOrder({
       symbol: signal.symbol, side: orderSide, type: "MARKET",
@@ -2642,7 +2653,7 @@ async function executeAsterFuturesTrade(
 
     const position: AsterFuturesPosition = {
       id: positionId, chatId, symbol: signal.symbol, side: signal.side,
-      entryPrice: signal.markPrice, quantity, leverage: ASTER_DEFAULT_LEVERAGE,
+      entryPrice: signal.markPrice, quantity, leverage,
       stopOrderId, entryTime: Date.now(), status: "open",
       peakPnlPct: 0, trailingStopActive: false,
       confidenceScore: signal.confidence, reasoning: signal.reasoning,
@@ -2667,6 +2678,23 @@ async function scanAsterAndTrade(notifyFn: (chatId: number, message: string) => 
   }
 }
 
+async function getAsterUserLimits(chatId: number): Promise<{
+  maxDailyLossUsdt: number; maxPositionSizeUsdt: number;
+  maxLeverage: number; maxOpenPositions: number;
+  autoTradeEnabled: boolean; dailyPnlUsdt: number;
+}> {
+  const limits = await storage.getAsterTradingLimits(chatId.toString());
+  if (!limits) return {
+    maxDailyLossUsdt: 100, maxPositionSizeUsdt: 50,
+    maxLeverage: ASTER_DEFAULT_LEVERAGE, maxOpenPositions: ASTER_MAX_POSITIONS_PER_USER,
+    autoTradeEnabled: false, dailyPnlUsdt: 0,
+  };
+  const now = Date.now();
+  const resetAt = limits.dailyPnlResetAt ? new Date(limits.dailyPnlResetAt).getTime() : 0;
+  const effectivePnl = (now - resetAt) >= 24 * 60 * 60 * 1000 ? 0 : limits.dailyPnlUsdt;
+  return { ...limits, dailyPnlUsdt: effectivePnl };
+}
+
 async function scanAsterInner(notifyFn: (chatId: number, message: string) => void): Promise<void> {
   const asterUsers = await getAsterUsersWithCredentials();
   if (asterUsers.length === 0) return;
@@ -2681,18 +2709,32 @@ async function scanAsterInner(notifyFn: (chatId: number, message: string) => voi
   log(`[AsterAgent] 🎯 ${signal.side} ${signal.symbol} (${signal.confidence}%) — ${signal.reasoning}`, "trading");
 
   const tradePromises = asterUsers.map(async user => {
+    const limits = await getAsterUserLimits(user.chatId);
+
+    if (!limits.autoTradeEnabled) return;
+
     const userPos = Array.from(activeAsterPositions.values()).filter(p => p.chatId === user.chatId && p.status === "open");
-    if (userPos.length >= ASTER_MAX_POSITIONS_PER_USER) return;
+    if (userPos.length >= limits.maxOpenPositions) return;
     if (userPos.some(p => p.symbol === signal.symbol)) return;
 
-    const position = await executeAsterFuturesTrade(user.chatId, user.client, signal, notifyFn);
+    if (limits.dailyPnlUsdt <= -limits.maxDailyLossUsdt) {
+      log(`[AsterAgent] Skipping ${user.chatId} — daily loss limit ($${limits.maxDailyLossUsdt}) reached`, "trading");
+      return;
+    }
+
+    const userLeverage = Math.min(ASTER_DEFAULT_LEVERAGE, limits.maxLeverage);
+    const userPositionSize = Math.min(parseFloat(ASTER_DEFAULT_POSITION_SIZE_USDT), limits.maxPositionSizeUsdt).toString();
+
+    const position = await executeAsterFuturesTradeWithLimits(user.chatId, user.client, signal, notifyFn, userLeverage, userPositionSize);
     if (position) {
       const frLabel = signal.fundingRate > 0 ? `+${(signal.fundingRate * 100).toFixed(4)}%` : `${(signal.fundingRate * 100).toFixed(4)}%`;
-      let msg = `📊 ASTER: ${signal.side} ${signal.symbol}\n`;
-      msg += `Entry: ~${signal.markPrice} | ${ASTER_DEFAULT_LEVERAGE}x | ${position.quantity}\n`;
-      msg += `Confidence: ${signal.confidence}% | FR: ${frLabel} | 24h: ${signal.priceChangePct.toFixed(2)}%\n`;
+      let msg = `📊 ASTER AUTO: ${signal.side} ${signal.symbol}\n`;
+      msg += `Entry: ~${signal.markPrice} | ${userLeverage}x | ${position.quantity}\n`;
+      msg += `Size: $${userPositionSize} | Confidence: ${signal.confidence}%\n`;
+      msg += `FR: ${frLabel} | 24h: ${signal.priceChangePct.toFixed(2)}%\n`;
       msg += `🧠 ${signal.reasoning}\n`;
-      msg += `Trail stop: ${ASTER_TRAILING_STOP_PCT}%`;
+      msg += `Trail stop: ${ASTER_TRAILING_STOP_PCT}%\n`;
+      msg += `📉 Daily loss limit: $${limits.maxDailyLossUsdt}`;
       notifyFn(user.chatId, msg);
     }
   });
@@ -2755,6 +2797,7 @@ async function checkAsterPositions(notifyFn: (chatId: number, message: string) =
           asterTradeHistory.push(pos);
           asterTradeMemory.push({ symbol: pos.symbol, side: pos.side, result: pos.status === "closed_profit" ? "WIN" : "LOSS", pnl: unrealized, reasoning: "Closed on exchange" });
           if (asterTradeMemory.length > 20) asterTradeMemory.splice(0, asterTradeMemory.length - 20);
+          storage.updateAsterDailyPnl(chatId.toString(), unrealized).catch(() => {});
 
           const emoji = unrealized >= 0 ? "💰" : "📉";
           notifyFn(chatId, `${emoji} ASTER CLOSED: ${pos.side} ${pos.symbol}\nEntry: ${pos.entryPrice}\nPnL: ${unrealized >= 0 ? "+" : ""}${unrealized.toFixed(4)} USDT | ${Math.floor((Date.now() - pos.entryTime) / 60000)}m | ${pos.leverage}x`);
@@ -2802,6 +2845,7 @@ async function checkAsterPositions(notifyFn: (chatId: number, message: string) =
           asterTradeHistory.push(pos);
           asterTradeMemory.push({ symbol: pos.symbol, side: pos.side, result: pos.status === "closed_profit" ? "WIN" : "LOSS", pnl: unrealizedPnl, reasoning: `Trail: ${pos.peakPnlPct.toFixed(2)}% → ${pnlPct.toFixed(2)}%` });
           if (asterTradeMemory.length > 20) asterTradeMemory.splice(0, asterTradeMemory.length - 20);
+          storage.updateAsterDailyPnl(chatId.toString(), unrealizedPnl).catch(() => {});
 
           notifyFn(chatId, `${unrealizedPnl >= 0 ? "💰" : "📉"} ASTER TRAIL STOP: ${pos.side} ${pos.symbol}\nEntry: ${pos.entryPrice} → ${livePos.markPrice}\nPnL: ${unrealizedPnl >= 0 ? "+" : ""}${unrealizedPnl.toFixed(4)} USDT (${pnlPct.toFixed(2)}%)\nPeak: ${pos.peakPnlPct.toFixed(2)}% | ${Math.floor((Date.now() - pos.entryTime) / 60000)}m | ${pos.leverage}x`);
         }
@@ -2822,6 +2866,7 @@ async function checkAsterPositions(notifyFn: (chatId: number, message: string) =
           asterTradeHistory.push(pos);
           asterTradeMemory.push({ symbol: pos.symbol, side: pos.side, result: "LOSS", pnl: unrealizedPnl, reasoning: "Hard SL -10%" });
           if (asterTradeMemory.length > 20) asterTradeMemory.splice(0, asterTradeMemory.length - 20);
+          storage.updateAsterDailyPnl(chatId.toString(), unrealizedPnl).catch(() => {});
 
           notifyFn(chatId, `📉 ASTER STOP LOSS: ${pos.side} ${pos.symbol}\nEntry: ${pos.entryPrice}\nPnL: ${unrealizedPnl.toFixed(4)} USDT (${pnlPct.toFixed(2)}%)\n${Math.floor((Date.now() - pos.entryTime) / 60000)}m | ${pos.leverage}x`);
         }

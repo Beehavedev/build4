@@ -71,6 +71,7 @@ import {
   type TelegramBotReferral, telegramBotReferrals,
   tradingPreferences,
   type AsterCredentials, asterCredentials,
+  type AsterTradingLimit, asterTradingLimits,
   tradeOutcomes,
   agentSkillConfigs,
 } from "@shared/schema";
@@ -480,6 +481,9 @@ export interface IStorage {
   getAllReferrals(): Promise<any[]>;
   saveTradingPreference(chatId: string, config: { enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }): Promise<void>;
   getEnabledTradingPreferences(): Promise<Array<{ chatId: string; enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }>>;
+  getAsterTradingLimits(chatId: string): Promise<AsterTradingLimit | null>;
+  saveAsterTradingLimits(chatId: string, limits: Partial<AsterTradingLimit>): Promise<void>;
+  updateAsterDailyPnl(chatId: string, pnlDelta: number): Promise<void>;
   saveTradeOutcome(outcome: {
     chatId: string; tokenAddress: string; tokenSymbol: string; result: string;
     pnlBnb: number; peakMultiple: number; entryPriceBnb: number; holdTimeMinutes: number;
@@ -2972,6 +2976,62 @@ export class DatabaseStorage implements IStorage {
 
   async getEnabledTradingPreferences(): Promise<Array<{ chatId: string; enabled: boolean; buyAmountBnb: string; takeProfitMultiple: number; stopLossMultiple: number; maxPositions: number }>> {
     return db.select().from(tradingPreferences).where(eq(tradingPreferences.enabled, true));
+  }
+
+  async getAsterTradingLimits(chatId: string): Promise<AsterTradingLimit | null> {
+    try {
+      const rows = await db.select().from(asterTradingLimits).where(eq(asterTradingLimits.chatId, chatId));
+      return rows[0] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async saveAsterTradingLimits(chatId: string, limits: Partial<AsterTradingLimit>): Promise<void> {
+    const now = new Date();
+    await db.insert(asterTradingLimits).values({
+      chatId,
+      maxDailyLossUsdt: limits.maxDailyLossUsdt ?? 100,
+      maxPositionSizeUsdt: limits.maxPositionSizeUsdt ?? 50,
+      maxLeverage: limits.maxLeverage ?? 10,
+      maxOpenPositions: limits.maxOpenPositions ?? 3,
+      autoTradeEnabled: limits.autoTradeEnabled ?? false,
+      dailyPnlUsdt: limits.dailyPnlUsdt ?? 0,
+      dailyPnlResetAt: limits.dailyPnlResetAt ?? now,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: asterTradingLimits.chatId,
+      set: {
+        ...(limits.maxDailyLossUsdt !== undefined ? { maxDailyLossUsdt: limits.maxDailyLossUsdt } : {}),
+        ...(limits.maxPositionSizeUsdt !== undefined ? { maxPositionSizeUsdt: limits.maxPositionSizeUsdt } : {}),
+        ...(limits.maxLeverage !== undefined ? { maxLeverage: limits.maxLeverage } : {}),
+        ...(limits.maxOpenPositions !== undefined ? { maxOpenPositions: limits.maxOpenPositions } : {}),
+        ...(limits.autoTradeEnabled !== undefined ? { autoTradeEnabled: limits.autoTradeEnabled } : {}),
+        ...(limits.dailyPnlUsdt !== undefined ? { dailyPnlUsdt: limits.dailyPnlUsdt } : {}),
+        ...(limits.dailyPnlResetAt !== undefined ? { dailyPnlResetAt: limits.dailyPnlResetAt } : {}),
+        updatedAt: now,
+      },
+    });
+  }
+
+  async updateAsterDailyPnl(chatId: string, pnlDelta: number): Promise<void> {
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    await db.execute(sql`
+      UPDATE aster_trading_limits
+      SET daily_pnl_usdt = CASE
+            WHEN daily_pnl_reset_at IS NULL OR daily_pnl_reset_at < ${twentyFourHoursAgo}
+            THEN ${pnlDelta}
+            ELSE daily_pnl_usdt + ${pnlDelta}
+          END,
+          daily_pnl_reset_at = CASE
+            WHEN daily_pnl_reset_at IS NULL OR daily_pnl_reset_at < ${twentyFourHoursAgo}
+            THEN ${now}
+            ELSE daily_pnl_reset_at
+          END,
+          updated_at = ${now}
+      WHERE chat_id = ${chatId}
+    `);
   }
 
   async saveAsterCredentials(chatId: string, apiKey: string, apiSecret: string): Promise<AsterCredentials> {
