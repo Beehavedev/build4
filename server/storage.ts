@@ -2993,7 +2993,9 @@ export class DatabaseStorage implements IStorage {
       return row;
     } catch (e: any) {
       if (e.message?.includes("does not exist")) {
-        await db.execute(sql`CREATE TABLE IF NOT EXISTS "aster_credentials" (
+        console.log("[Storage] aster_credentials table/column missing, recreating...");
+        await db.execute(sql`DROP TABLE IF EXISTS "aster_credentials"`);
+        await db.execute(sql`CREATE TABLE "aster_credentials" (
           chat_id TEXT PRIMARY KEY NOT NULL,
           encrypted_api_key TEXT NOT NULL,
           encrypted_api_secret TEXT NOT NULL,
