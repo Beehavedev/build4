@@ -556,6 +556,9 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
       if (orderParams.type === "LIMIT" && !params.timeInForce) {
         params.timeInForce = "GTC";
       }
+      if (!params.newClientOrderId) {
+        params.newClientOrderId = `BUILD4_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      }
       return request("/fapi/v1/order", { method: "POST", signed: true, params });
     },
 
@@ -730,6 +733,9 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
       if (orderParams.callbackRate) params.callbackRate = orderParams.callbackRate;
       if (orderParams.workingType) params.workingType = orderParams.workingType;
       if (orderParams.type === "LIMIT" && !params.timeInForce) params.timeInForce = "GTC";
+      if (!params.newClientOrderId) {
+        params.newClientOrderId = `BUILD4_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      }
       return makeV3Request(baseUrl, "/fapi/v3/order", user, signer, signerPrivateKey, { method: "POST", params });
     },
 
