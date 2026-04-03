@@ -1007,6 +1007,9 @@ const FREE_TIER_LIMITS: Record<string, number> = {
   "action:okxtrending": 3,
   "action:okxmeme": 3,
   "action:okxprice": 5,
+  "action:buy": 5,
+  "action:sell": 5,
+  "action:trade": 5,
 };
 const freeTierUsage = new Map<string, { count: number; date: string }>();
 
