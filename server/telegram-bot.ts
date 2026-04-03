@@ -13275,6 +13275,8 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         if (!fundingMap.has(f.symbol)) fundingMap.set(f.symbol, f);
       }
 
+      const fp = (v: number) => v >= 1 ? v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : v.toPrecision(4);
+      const fv = (v: number) => v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? (v / 1e6).toFixed(2) + "M" : v >= 1e3 ? (v / 1e3).toFixed(1) + "K" : v.toFixed(0);
       let msg = "📊 *Aster DEX — Top Futures Markets*\n━━━━━━━━━━━━━━━━━━━━\n\n";
       for (const sym of topSymbols) {
         const t = tickerArr.find((tk: any) => tk.symbol === sym);
@@ -13288,10 +13290,10 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         const changeStr = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
         const base = sym.replace("USDT", "");
         const funding = fundingMap.get(sym);
-        const fundingStr = funding ? ` · FR: ${(parseFloat(funding.fundingRate) * 100).toFixed(4)}%` : "";
-        msg += `${changeIcon} *${base}/USDT*  \`$${price >= 1 ? price.toLocaleString("en-US", { maximumFractionDigits: 2 }) : price.toPrecision(4)}\`\n`;
-        msg += `   ${changeStr} · H: $${high >= 1 ? high.toLocaleString("en-US", { maximumFractionDigits: 2 }) : high.toPrecision(4)} · L: $${low >= 1 ? low.toLocaleString("en-US", { maximumFractionDigits: 2 }) : low.toPrecision(4)}\n`;
-        msg += `   Vol: $${vol >= 1e9 ? (vol / 1e9).toFixed(2) + "B" : vol >= 1e6 ? (vol / 1e6).toFixed(2) + "M" : vol >= 1e3 ? (vol / 1e3).toFixed(1) + "K" : vol.toFixed(0)}${fundingStr}\n\n`;
+        const fundingStr = funding ? ` · FR: \`${(parseFloat(funding.fundingRate) * 100).toFixed(4)}%\`` : "";
+        msg += `${changeIcon} *${base}/USDT*  \`$${fp(price)}\`\n`;
+        msg += `   ${changeStr} · H: \`$${fp(high)}\` · L: \`$${fp(low)}\`\n`;
+        msg += `   Vol: \`$${fv(vol)}\`${fundingStr}\n\n`;
       }
       msg += `_Tap a pair below to trade instantly_`;
 
@@ -13334,6 +13336,8 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const f = Array.isArray(fundingArr) && fundingArr.length > 0 ? fundingArr[0] : null;
       const base = symbol.replace("USDT", "");
       let infoMsg = `📈 *${base}/USDT — Futures*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      const fmtPrice = (v: number) => v >= 1 ? v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : v.toPrecision(4);
+      const fmtVol = (v: number) => v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? (v / 1e6).toFixed(2) + "M" : v >= 1e3 ? (v / 1e3).toFixed(1) + "K" : v.toFixed(0);
       if (t) {
         const price = parseFloat(t.lastPrice || t.price);
         const change = parseFloat(t.priceChangePercent);
@@ -13341,16 +13345,19 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         const changeStr = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
         const high = parseFloat(t.highPrice || t.high);
         const low = parseFloat(t.lowPrice || t.low);
-        infoMsg += `💲 Price: \`$${price >= 1 ? price.toLocaleString("en-US", { maximumFractionDigits: 2 }) : price.toPrecision(4)}\`  ${changeIcon} ${changeStr}\n`;
-        infoMsg += `📊 24h High: \`$${high >= 1 ? high.toLocaleString("en-US", { maximumFractionDigits: 2 }) : high.toPrecision(4)}\`  Low: \`$${low >= 1 ? low.toLocaleString("en-US", { maximumFractionDigits: 2 }) : low.toPrecision(4)}\`\n`;
         const vol = parseFloat(t.quoteVolume);
-        infoMsg += `📦 Volume: \`$${vol >= 1e9 ? (vol / 1e9).toFixed(2) + "B" : vol >= 1e6 ? (vol / 1e6).toFixed(2) + "M" : vol >= 1e3 ? (vol / 1e3).toFixed(1) + "K" : vol.toFixed(0)}\`\n`;
-      }
-      if (f) {
+        infoMsg += `${changeIcon} *${base}/USDT*  \`$${fmtPrice(price)}\`\n`;
+        infoMsg += `   ${changeStr} · H: \`$${fmtPrice(high)}\` · L: \`$${fmtPrice(low)}\`\n`;
+        infoMsg += `   Vol: \`$${fmtVol(vol)}\`\n`;
+        if (f) {
+          const fr = parseFloat(f.fundingRate) * 100;
+          const mp = parseFloat(f.markPrice || "0");
+          const markVal = mp > 0 ? mp : price;
+          infoMsg += `   Mark: \`$${fmtPrice(markVal)}\` · FR: \`${fr >= 0 ? "+" : ""}${fr.toFixed(4)}%\`\n`;
+        }
+      } else if (f) {
         const fr = parseFloat(f.fundingRate) * 100;
-        const mp = parseFloat(f.markPrice);
-        infoMsg += `🏷️ Mark: \`$${mp >= 1 ? mp.toLocaleString("en-US", { maximumFractionDigits: 2 }) : mp.toPrecision(4)}\`\n`;
-        infoMsg += `💸 Funding: \`${fr >= 0 ? "+" : ""}${fr.toFixed(4)}%\`\n`;
+        infoMsg += `   FR: \`${fr >= 0 ? "+" : ""}${fr.toFixed(4)}%\`\n`;
       }
       infoMsg += `\nChoose direction:`;
       await bot.sendMessage(chatId, infoMsg, {
