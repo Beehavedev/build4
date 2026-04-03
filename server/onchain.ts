@@ -197,9 +197,9 @@ function recordSpend(weiAmount: bigint) {
 }
 
 export function initOnchain(): boolean {
-  const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
+  const privateKey = process.env.ONCHAIN_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
   if (!privateKey) {
-    log("[onchain] No DEPLOYER_PRIVATE_KEY - on-chain disabled", "onchain");
+    log("[onchain] No ONCHAIN_PRIVATE_KEY - on-chain disabled", "onchain");
     return false;
   }
 
@@ -884,7 +884,7 @@ const multiChainConnections: Map<string, MultiChainConnection> = new Map();
 const MAINNET_CHAIN_KEYS = ["bnbMainnet", "baseMainnet", "xlayerMainnet"] as const;
 
 export function initMultiChain(): string[] {
-  const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
+  const privateKey = process.env.ONCHAIN_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
   if (!privateKey) return [];
 
   const initialized: string[] = [];
@@ -1404,7 +1404,7 @@ export async function registerAgentERC8004(
   network: string = "base",
   userPrivateKey?: string
 ): Promise<StandardsRegistrationResult> {
-  const privateKey = userPrivateKey || process.env.DEPLOYER_PRIVATE_KEY;
+  const privateKey = userPrivateKey || process.env.ONCHAIN_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
   if (!privateKey) {
     return { standard: "erc8004", success: false, error: "No wallet available for registration. Fund your wallet with ETH for gas." };
   }
@@ -1484,7 +1484,7 @@ export async function registerAgentBAP578(
   contractAddress?: string,
   userPrivateKey?: string
 ): Promise<StandardsRegistrationResult> {
-  const privateKey = userPrivateKey || process.env.DEPLOYER_PRIVATE_KEY;
+  const privateKey = userPrivateKey || process.env.ONCHAIN_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
   if (!privateKey) {
     return { standard: "bap578", success: false, error: "No wallet available for registration. Fund your wallet with BNB for gas + mint fee." };
   }

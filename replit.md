@@ -85,6 +85,17 @@ Agent memory entries are secured via an integrity hash chain, IPFS pinning throu
 ### Data Integrity & Security
 Uses real database counts for platform stats, filters failed token launches, validates on-chain badges via `txHash`, implements agent cleanup, and enforces environment variables for encryption and authentication.
 
+### Private Key Security Policy
+- **NEVER** hardcode private keys in source code or commit them to git
+- **NEVER** log, print, or expose private key values in console output
+- All private keys stored as Replit Secrets only — never shared to external services
+- Telegram messages containing private keys auto-delete after 30-60 seconds
+- `DEPLOYER_PRIVATE_KEY` is COMPROMISED (March 31 2026 EIP-7702 attack) — do NOT use
+- Use `ONCHAIN_PRIVATE_KEY` for on-chain agent registration (new clean key)
+- Use `BOUNTY_WALLET_PRIVATE_KEY` for bounty/fee payments
+- User wallet keys are encrypted in DB via `WALLET_ENCRYPTION_KEY`
+- All key fallback chains: `ONCHAIN_PRIVATE_KEY || DEPLOYER_PRIVATE_KEY` (for backward compat only)
+
 ### Contract Address (CA) Auto-Detection
 Automatically detects EVM and Solana contract addresses, fetches token details via OKX API, and displays an instant buy panel with security scanning and DexScreener links.
 

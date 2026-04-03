@@ -1588,7 +1588,7 @@ async function checkAndClosePositions(notifyFn: (chatId: number, message: string
 }
 
 function getTreasuryWallet(): string | null {
-  const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY || process.env.CHAOS_AGENT_PRIVATE_KEY;
+  const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.CHAOS_AGENT_PRIVATE_KEY;
   if (!pk) return null;
   try {
     return new ethers.Wallet(pk).address;

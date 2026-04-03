@@ -1481,9 +1481,9 @@ async function registerExistingAgentsOnchain(): Promise<void> {
   if (!onchainEnabled) return;
   initMultiChain();
 
-  const deployerPk = process.env.DEPLOYER_PRIVATE_KEY;
+  const deployerPk = process.env.ONCHAIN_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
   if (!deployerPk) {
-    log("[agent-runner] No DEPLOYER_PRIVATE_KEY — skipping ERC-8004 bulk registration.", "agent-runner");
+    log("[agent-runner] No ONCHAIN_PRIVATE_KEY — skipping ERC-8004 bulk registration.", "agent-runner");
     return;
   }
 
@@ -1584,7 +1584,7 @@ async function autoRegisterAgentStandards(): Promise<void> {
       let hadFailure = false;
 
       if (!agent.erc8004Registered) {
-        const deployerPk = process.env.DEPLOYER_PRIVATE_KEY;
+        const deployerPk = process.env.ONCHAIN_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
         const regKey = deployerPk || userPk;
         try {
           const bscResult = await registerAgentERC8004(agent.name, agent.bio || undefined, agent.id, "bsc", regKey);

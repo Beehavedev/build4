@@ -506,13 +506,13 @@ function getBaseProvider(): ethers.JsonRpcProvider {
 }
 
 function getDeployerWallet(provider: ethers.JsonRpcProvider): ethers.Wallet | null {
-  const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
+  const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY;
   if (!pk) return null;
   return new ethers.Wallet(pk, provider);
 }
 
 function getTreasuryAddress(): string | null {
-  const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
+  const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY;
   if (!pk) return null;
   try {
     return new ethers.Wallet(pk).address;
@@ -1385,7 +1385,7 @@ async function launchOnXLayer(params: LaunchParams): Promise<LaunchResult> {
     wallet = new ethers.Wallet(params.userPrivateKey, provider);
     log(`[TokenLauncher] Using user wallet ${wallet.address.substring(0, 10)}... for XLayer launch`, "token-launcher");
   } else {
-    const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
+    const pk = process.env.BOUNTY_WALLET_PRIVATE_KEY;
     if (pk) wallet = new ethers.Wallet(pk, provider);
   }
   if (!wallet) {

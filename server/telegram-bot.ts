@@ -4338,14 +4338,15 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const solWallet = await getOrCreateSolanaWallet(chatId);
     state.receiveAddress = solWallet.address;
     state.step = "confirm";
-    await bot.sendMessage(chatId,
+    const solKeyMsg = await bot.sendMessage(chatId,
       `🔑 *Solana Wallet Created!*\n\n` +
       `Address:\n\`${solWallet.address}\`\n\n` +
       `Private Key:\n\`${solWallet.privateKey}\`\n\n` +
-      `⚠️ *SAVE YOUR PRIVATE KEY* — it won't be shown again.\n\n` +
+      `⚠️ *SAVE YOUR PRIVATE KEY* — this message will be auto-deleted in 30 seconds.\n\n` +
       `Confirm this cross-chain swap?`,
       { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✅ Confirm Cross-Chain Swap", callback_data: "okxbridge_confirm" }], [{ text: "❌ Cancel", callback_data: "action:menu" }]] } }
     );
+    scheduleSecureDelete(chatId, solKeyMsg.message_id, 30000);
     return;
   }
 
@@ -10630,7 +10631,7 @@ async function registerAgentOnAllChains(chatId: number, agentId: string, name: s
     userPk = await resolvePrivateKey(chatId, wallet) || undefined;
   }
 
-  const deployerPk = process.env.DEPLOYER_PRIVATE_KEY;
+  const deployerPk = process.env.ONCHAIN_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
   const erc8004Key = deployerPk || userPk;
 
   if (!erc8004Key) {
@@ -11741,14 +11742,18 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
       });
     }
 
-    let keyMsg = `🔐 SNIPER WALLET KEYS\n\n⚠️ SAVE THESE NOW — they will hold your sniped tokens.\nKeys are also saved securely in the database.\n\n`;
+    let keyMsg = `🔐 SNIPER WALLET KEYS\n\n⚠️ SAVE THESE NOW — this message will be auto-deleted in 60 seconds.\nKeys are also saved securely in the database.\n\n`;
     for (let i = 0; i < sniperWallets.length; i++) {
       const sw = sniperWallets[i];
       keyMsg += `W${i + 1}: \`${sw.address}\`\nKey: \`${sw.privateKey}\`\nBuy: ~${sw.buyBnb.toFixed(4)} BNB\n\n`;
     }
     const totalSnipeBnb = sniperWallets.reduce((s, w) => s + w.buyBnb, 0);
     keyMsg += `Total snipe: ~${totalSnipeBnb.toFixed(2)} BNB across ${walletCount} wallets`;
-    await bot.sendMessage(chatId, keyMsg, { parse_mode: "Markdown" });
+    const sniperKeyMsg = await bot.sendMessage(chatId, keyMsg, { parse_mode: "Markdown" });
+    scheduleSecureDelete(chatId, sniperKeyMsg.message_id, 60000);
+    setTimeout(async () => {
+      try { await bot!.sendMessage(chatId, "🔐 Sniper wallet keys message deleted for security. Keys are saved in the database."); } catch {}
+    }, 61000);
 
     await storage.saveSniperWallets({
       chatId: chatId.toString(),

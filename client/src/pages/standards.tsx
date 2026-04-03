@@ -309,7 +309,7 @@ export default function Standards() {
                 ))}
               </div>
               {!(config as any)?.deployerConfigured && (
-                <p className="text-xs text-muted-foreground">Set DEPLOYER_PRIVATE_KEY to enable on-chain registration.</p>
+                <p className="text-xs text-muted-foreground">Set ONCHAIN_PRIVATE_KEY to enable on-chain registration.</p>
               )}
             </Card>
 

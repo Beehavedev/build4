@@ -3,7 +3,7 @@ import { log } from "./index";
 
 const PINATA_JWT = process.env.PINATA_JWT;
 const PINATA_GATEWAY = process.env.PINATA_GATEWAY || "https://gateway.pinata.cloud/ipfs";
-const DEPLOYER_KEY = process.env.DEPLOYER_PRIVATE_KEY;
+const DEPLOYER_KEY = process.env.ONCHAIN_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
 
 const BSC_RPC = "https://bsc-dataseed1.binance.org";
 const BASE_RPC = "https://mainnet.base.org";

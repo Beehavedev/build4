@@ -273,7 +273,7 @@ function getNextBountyChain(): string {
 }
 
 async function sendNativePayment(toAddress: string, amountBnb: string, chainKey?: string): Promise<{ success: boolean; txHash?: string; error?: string; chainKey?: string }> {
-  const privateKey = process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
+  const privateKey = process.env.BOUNTY_WALLET_PRIVATE_KEY;
   if (!privateKey) {
     return { success: false, error: "Bounty wallet private key not configured" };
   }
@@ -404,7 +404,7 @@ export async function getTwitterAgentStatus() {
     }
   }
 
-  const hasDeployerKey = !!process.env.DEPLOYER_PRIVATE_KEY;
+  const hasDeployerKey = !!(process.env.ONCHAIN_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY);
 
   return {
     configured,
