@@ -2159,13 +2159,14 @@ async function handleRewardsLeaderboard(chatId: number): Promise<void> {
       const shortId = `${entry.chatId.substring(0, 4)}...${entry.chatId.substring(entry.chatId.length - 3)}`;
       const isYou = entry.chatId === chatId.toString();
       if (isYou) userRank = i + 1;
-      msg += `${medal} ${isYou ? "*YOU* " : ""}${shortId} — *${Number(entry.totalRewards).toLocaleString()} $B4* (${entry.rewardCount} actions)\n`;
+      const rewardNum = Number(entry.totalRewards) || 0;
+      msg += `${medal} ${isYou ? "*YOU* " : ""}${shortId} — *${rewardNum.toLocaleString()} $B4* (${entry.rewardCount || 0} actions)\n`;
     }
 
     if (userRank === -1) {
       const userTotal = await storage.getUserRewardTotal(chatId.toString());
       msg += `\n━━━━━━━━━━━━━━━━━━━━\n`;
-      msg += `Your total: *${Number(userTotal).toLocaleString()} $B4*\n`;
+      msg += `Your total: *${(Number(userTotal) || 0).toLocaleString()} $B4*\n`;
       msg += `_Keep earning to make the top 10!_`;
     }
 
