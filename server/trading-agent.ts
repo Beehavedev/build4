@@ -12,6 +12,7 @@ import {
 } from "./token-launcher";
 import {
   createAsterFuturesClient,
+  createAsterV3FuturesClient,
   type AsterFuturesClient,
   type AsterTicker,
   type AsterFundingRate,
@@ -2439,16 +2440,31 @@ async function _copyTradeFromWhalesInner(notifyFn: (chatId: number, message: str
   }
 }
 
-async function getAsterUsersWithCredentials(): Promise<Array<{ chatId: number; client: AsterFuturesClient }>> {
-  const result: Array<{ chatId: number; client: AsterFuturesClient }> = [];
+async function getAsterUsersWithCredentials(): Promise<Array<{ chatId: number; client: any }>> {
+  const result: Array<{ chatId: number; client: any }> = [];
   const checks = Array.from(userTradingConfig.entries())
     .filter(([_, c]) => c.enabled)
     .map(async ([chatId]) => {
       try {
         const creds = await storage.getAsterCredentials(chatId.toString());
         if (!creds) return;
-        const client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
-        result.push({ chatId, client });
+
+        if (creds.apiKey === "V3_DIRECT") {
+          const walletRows = await storage.getTelegramWallets(chatId.toString());
+          const evmWallet = walletRows.find(w => /^0x[a-fA-F0-9]{40}$/.test(w.walletAddress));
+          if (!evmWallet) return;
+          const pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), evmWallet.walletAddress.toLowerCase());
+          if (!pk) return;
+          const v3Client = createAsterV3FuturesClient({
+            user: evmWallet.walletAddress,
+            signer: evmWallet.walletAddress,
+            signerPrivateKey: pk,
+          });
+          result.push({ chatId, client: v3Client });
+        } else {
+          const client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+          result.push({ chatId, client });
+        }
       } catch {}
     });
   await Promise.allSettled(checks);
@@ -2693,7 +2709,7 @@ async function checkAsterPositions(notifyFn: (chatId: number, message: string) =
   }
 
   const userChecks = Array.from(positionsByUser.entries()).map(async ([chatId, positions]) => {
-    let client: AsterFuturesClient;
+    let client: any;
     try {
       const creds = await storage.getAsterCredentials(chatId.toString());
       if (!creds) {
@@ -2703,7 +2719,20 @@ async function checkAsterPositions(notifyFn: (chatId: number, message: string) =
         }
         return;
       }
-      client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+      if (creds.apiKey === "V3_DIRECT") {
+        const walletRows = await storage.getTelegramWallets(chatId.toString());
+        const evmWallet = walletRows.find(w => /^0x[a-fA-F0-9]{40}$/.test(w.walletAddress));
+        if (!evmWallet) return;
+        const pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), evmWallet.walletAddress.toLowerCase());
+        if (!pk) return;
+        client = createAsterV3FuturesClient({
+          user: evmWallet.walletAddress,
+          signer: evmWallet.walletAddress,
+          signerPrivateKey: pk,
+        });
+      } else {
+        client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+      }
     } catch { return; }
 
     let livePositions: AsterPosition[];
