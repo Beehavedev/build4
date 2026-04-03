@@ -188,6 +188,7 @@ let appBaseUrl: string | null = null;
 interface UserWallets { wallets: string[]; active: number }
 const telegramWalletMap = new Map<number, UserWallets>();
 const walletsWithKey = new Set<string>();
+const inMemoryKeyCache = new Map<string, string>();
 
 interface AgentCreationState { step: "name" | "bio" | "model"; name?: string; bio?: string; mandatory?: boolean }
 interface TaskState { step: "describe"; agentId: string; taskType: string; agentName: string }
@@ -999,6 +1000,7 @@ export function linkTelegramWallet(chatId: number, wallet: string, privateKey?: 
 
   if (privateKey) {
     walletsWithKey.add(`${chatId}:${lower}`);
+    inMemoryKeyCache.set(`${chatId}:${lower}`, privateKey);
   }
 
   storage.saveTelegramWallet(chatId.toString(), lower, privateKey || undefined).then(() => {
@@ -1325,9 +1327,20 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
     telegramWalletMap.set(chatId, { wallets: [addr], active: 0 });
   }
 
+  inMemoryKeyCache.set(`${chatId}:${addr}`, pk);
   await storage.saveTelegramWallet(chatId.toString(), addr, pk);
   await storage.setActiveTelegramWallet(chatId.toString(), addr);
   walletsWithKey.add(`${chatId}:${addr}`);
+
+  const verifyPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), addr);
+  if (!verifyPk) {
+    console.error(`[Wallet] CRITICAL: Key failed round-trip verify for chatId=${chatId} wallet=${addr.substring(0, 8)}. Re-saving...`);
+    await storage.saveTelegramWallet(chatId.toString(), addr, pk);
+    const verifyPk2 = await storage.getTelegramWalletPrivateKey(chatId.toString(), addr);
+    if (!verifyPk2) {
+      console.error(`[Wallet] CRITICAL: Key still fails after re-save for chatId=${chatId}. Using in-memory cache only.`);
+    }
+  }
 
   const pkMsg = await bot.sendMessage(chatId,
     `🔑 Wallet created!\n\n` +
@@ -1347,36 +1360,32 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
 
 async function resolvePrivateKey(chatId: number, walletAddr: string): Promise<string | null> {
   const lowerAddr = walletAddr.toLowerCase();
+  const cacheKey = `${chatId}:${lowerAddr}`;
+  const cached = inMemoryKeyCache.get(cacheKey);
+  if (cached) return cached;
+
   try {
     let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), lowerAddr);
     if (pk) {
-      walletsWithKey.add(`${chatId}:${lowerAddr}`);
+      inMemoryKeyCache.set(cacheKey, pk);
+      walletsWithKey.add(cacheKey);
       return pk;
     }
     if (lowerAddr !== walletAddr) {
       pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
       if (pk) {
-        walletsWithKey.add(`${chatId}:${lowerAddr}`);
+        inMemoryKeyCache.set(cacheKey, pk);
+        walletsWithKey.add(cacheKey);
         return pk;
       }
     }
     pk = await storage.getPrivateKeyByWalletAddress(lowerAddr);
     if (pk) {
       await storage.saveTelegramWallet(chatId.toString(), lowerAddr, pk);
-      walletsWithKey.add(`${chatId}:${lowerAddr}`);
+      inMemoryKeyCache.set(cacheKey, pk);
+      walletsWithKey.add(cacheKey);
       console.log(`[Wallet] Recovered key for chatId=${chatId} wallet=${lowerAddr.substring(0, 8)}`);
       return pk;
-    }
-    const userWallets = await storage.getTelegramWallets(chatId.toString());
-    for (const w of userWallets) {
-      if (w.walletAddress.toLowerCase() === lowerAddr) continue;
-      if (!w.encryptedPrivateKey) continue;
-      try {
-        const altPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), w.walletAddress);
-        if (altPk) {
-          console.log(`[Wallet] Found working key on alternate wallet ${w.walletAddress.substring(0, 8)} for chatId=${chatId}`);
-        }
-      } catch {}
     }
     try {
       const { db } = await import("./db");
