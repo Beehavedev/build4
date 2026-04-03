@@ -7727,17 +7727,40 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
     await bot.sendMessage(chatId, `📊 Looking up price for \`${addr.substring(0, 12)}...\``, { parse_mode: "Markdown" });
     try {
-      const result = await getTokenPrice(addr, state.chain || "56");
+      const chainId = state.chain || "56";
+      const isSol = chainId === "501";
+      const nativeSym = isSol ? "SOL" : chainId === "8453" ? "ETH" : "BNB";
+      const result = await getTokenPrice(addr, chainId);
       if (result.success && result.data) {
         const d = result.data;
-        let text = "📊 *Token Price*\n\n";
+        const tokenName = d.tokenName || d.name || null;
+        const tokenSymbol = d.tokenSymbol || d.symbol || null;
+        let text = tokenName ? `📊 *${tokenName}*${tokenSymbol ? ` ($${tokenSymbol})` : ""}\n\n` : "📊 *Token Price*\n\n";
         text += `Address: \`${addr}\`\n\n`;
-        if (d.price) text += `Price: $${parseFloat(d.price) < 0.01 ? parseFloat(d.price).toExponential(3) : parseFloat(d.price).toFixed(6)}\n`;
-        if (d.priceChange24h) text += `24h Change: ${parseFloat(d.priceChange24h) >= 0 ? "+" : ""}${(parseFloat(d.priceChange24h) * 100).toFixed(2)}%\n`;
-        if (d.volume24h) text += `24h Volume: $${(parseFloat(d.volume24h) / 1e6).toFixed(2)}M\n`;
-        if (d.marketCap) text += `Market Cap: $${(parseFloat(d.marketCap) / 1e6).toFixed(2)}M\n`;
-        if (d.liquidity) text += `Liquidity: $${(parseFloat(d.liquidity) / 1e3).toFixed(0)}K\n`;
-        await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "📊 Another Token", callback_data: "action:okxprice" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
+        if (d.price) text += `💲 Price: $${parseFloat(d.price) < 0.01 ? parseFloat(d.price).toExponential(3) : parseFloat(d.price).toFixed(6)}\n`;
+        if (d.priceChange24h) { const pct = parseFloat(d.priceChange24h) * 100; text += `${pct >= 0 ? "🟢" : "🔴"} 24h: ${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%\n`; }
+        if (d.volume24h) text += `📊 Volume: $${(parseFloat(d.volume24h) / 1e6).toFixed(2)}M\n`;
+        if (d.marketCap && parseFloat(d.marketCap) > 0) { const mc = parseFloat(d.marketCap); text += `💰 MCap: $${mc >= 1e9 ? (mc / 1e9).toFixed(2) + "B" : mc >= 1e6 ? (mc / 1e6).toFixed(2) + "M" : (mc / 1e3).toFixed(0) + "K"}\n`; }
+        if (d.liquidity) text += `💧 Liquidity: $${(parseFloat(d.liquidity) / 1e3).toFixed(0)}K\n`;
+
+        const dexSlug: Record<string, string> = { "56": "bsc", "1": "ethereum", "8453": "base", "501": "solana", "137": "polygon", "42161": "arbitrum" };
+        const chartUrl = `https://dexscreener.com/${dexSlug[chainId] || "bsc"}/${addr}`;
+        text += `\n[📊 Chart](${chartUrl})`;
+
+        const buyRow1 = isSol
+          ? [{ text: "⚡ 0.1 SOL", callback_data: `cabuy:${addr}:${chainId}:0.1` }, { text: "⚡ 0.5 SOL", callback_data: `cabuy:${addr}:${chainId}:0.5` }, { text: "⚡ 1 SOL", callback_data: `cabuy:${addr}:${chainId}:1` }]
+          : [{ text: `⚡ 0.01 ${nativeSym}`, callback_data: `cabuy:${addr}:${chainId}:0.01` }, { text: `⚡ 0.05 ${nativeSym}`, callback_data: `cabuy:${addr}:${chainId}:0.05` }, { text: `⚡ 0.1 ${nativeSym}`, callback_data: `cabuy:${addr}:${chainId}:0.1` }];
+        const buyRow2 = isSol
+          ? [{ text: "🟢 2 SOL", callback_data: `cabuy:${addr}:${chainId}:2` }, { text: "🟢 5 SOL", callback_data: `cabuy:${addr}:${chainId}:5` }, { text: "🟢 10 SOL", callback_data: `cabuy:${addr}:${chainId}:10` }]
+          : [{ text: `🟢 0.25 ${nativeSym}`, callback_data: `cabuy:${addr}:${chainId}:0.25` }, { text: `🟢 0.5 ${nativeSym}`, callback_data: `cabuy:${addr}:${chainId}:0.5` }, { text: `🟢 1 ${nativeSym}`, callback_data: `cabuy:${addr}:${chainId}:1` }];
+
+        await bot.sendMessage(chatId, text, { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [
+          buyRow1,
+          buyRow2,
+          [{ text: "💱 Custom Amount", callback_data: `cacustom:${addr}:${chainId}` }, { text: "📉 Sell", callback_data: "action:sell" }],
+          [{ text: "🔒 Security Scan", callback_data: `cascan:${addr}:${chainId}` }, { text: "📊 Another Token", callback_data: "action:okxprice" }],
+          [{ text: "« Menu", callback_data: "action:menu" }],
+        ] } });
       } else {
         await bot.sendMessage(chatId, `Price lookup failed: ${result.error || "token not found"}`, { reply_markup: { inline_keyboard: [[{ text: "📊 Try Again", callback_data: "action:okxprice" }], [{ text: "« Menu", callback_data: "action:menu" }]] } });
       }
