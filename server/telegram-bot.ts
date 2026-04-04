@@ -4224,32 +4224,58 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const balanceBefore = await provider.getBalance(walletAddr);
 
       if (approveTx && approveTx.to) {
+        try {
+          const tokenContract = new ethers.Contract(state.tokenAddress, [
+            "function allowance(address,address) view returns (uint256)",
+            "function approve(address,uint256) returns (bool)"
+          ], signer);
+          const currentAllowance = await tokenContract.allowance(walletAddr, approveTx.to);
+          if (currentAllowance > 0n && currentAllowance < BigInt(rawAmount)) {
+            const resetTx = await tokenContract.approve(approveTx.to, 0n);
+            await resetTx.wait();
+          }
+        } catch {}
         const aTx = await signer.sendTransaction({
           to: approveTx.to,
           data: approveTx.data,
           value: approveTx.value ? BigInt(approveTx.value) : 0n,
-          gasLimit: approveTx.gasLimit ? BigInt(approveTx.gasLimit) : undefined,
+          gasLimit: approveTx.gasLimit ? BigInt(approveTx.gasLimit) : 100000n,
         });
         await aTx.wait();
       }
 
+      const sellSlippage = state.tokenAddress.toLowerCase() === BUILD4_TOKEN_CA.toLowerCase() ? "15" : "5";
       const swapResult = await getSwapData({
         chainId: state.chainId,
         fromTokenAddress: state.tokenAddress,
         toTokenAddress: OKX_NATIVE_TOKEN,
         amount: rawAmount,
-        slippage: "3",
+        slippage: sellSlippage,
         userWalletAddress: walletAddr,
       });
 
       const swapTx = swapResult?.data?.[0]?.tx;
       if (!swapTx) throw new Error("No swap route found. Token may have low liquidity.");
 
+      let gasLimit = swapTx.gasLimit ? BigInt(swapTx.gasLimit) : undefined;
+      try {
+        const estimated = await provider.estimateGas({
+          to: swapTx.to,
+          data: swapTx.data,
+          value: swapTx.value ? BigInt(swapTx.value) : 0n,
+          from: walletAddr,
+        });
+        gasLimit = estimated * 150n / 100n;
+      } catch (estErr: any) {
+        console.warn(`[Sell] Gas estimate failed, using fallback: ${estErr.message?.substring(0, 100)}`);
+        gasLimit = 500000n;
+      }
+
       const tx = await signer.sendTransaction({
         to: swapTx.to,
         data: swapTx.data,
         value: swapTx.value ? BigInt(swapTx.value) : 0n,
-        gasLimit: swapTx.gasLimit ? BigInt(swapTx.gasLimit) : undefined,
+        gasLimit,
       });
 
       const receipt = await tx.wait();
