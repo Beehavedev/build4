@@ -13184,15 +13184,36 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
             }
           }
           if (v3Working) {
-            for (let balAttempt = 0; balAttempt < 3; balAttempt++) {
-              try {
-                if (balAttempt > 0) await new Promise(r => setTimeout(r, 2000));
-                const bal = await v3Client.balance();
-                console.log(`[Aster] V3 balance verify for ${chatId} (attempt ${balAttempt + 1}): success, ${Array.isArray(bal) ? bal.length : 0} entries`);
-                balanceWorks = true;
-                break;
-              } catch (verifyErr: any) {
-                console.error(`[Aster] V3 balance verify FAIL for ${chatId} (attempt ${balAttempt + 1}):`, verifyErr.message?.substring(0, 200));
+            try {
+              const bal = await v3Client.balance();
+              console.log(`[Aster] V3 balance verify for ${chatId}: success, ${Array.isArray(bal) ? bal.length : 0} entries`);
+              balanceWorks = true;
+            } catch (verifyErr: any) {
+              console.error(`[Aster] V3 balance verify FAIL for ${chatId}:`, verifyErr.message?.substring(0, 200));
+              console.log(`[Aster] Attempting V3 account activation for ${chatId}...`);
+              const activationAttempts = [
+                { name: "listenKey", fn: () => v3Client.listenKey() },
+                { name: "account", fn: () => v3Client.account() },
+              ];
+              for (const attempt of activationAttempts) {
+                try {
+                  const res = await attempt.fn();
+                  console.log(`[Aster] V3 ${attempt.name} for ${chatId}: ${JSON.stringify(res).substring(0, 200)}`);
+                } catch (e: any) {
+                  console.log(`[Aster] V3 ${attempt.name} FAIL for ${chatId}: ${e.message?.substring(0, 100)}`);
+                }
+              }
+              await new Promise(r => setTimeout(r, 3000));
+              for (let balAttempt = 0; balAttempt < 3; balAttempt++) {
+                try {
+                  if (balAttempt > 0) await new Promise(r => setTimeout(r, 2000));
+                  const bal = await v3Client.balance();
+                  console.log(`[Aster] V3 balance re-verify for ${chatId} (attempt ${balAttempt + 1}): success`);
+                  balanceWorks = true;
+                  break;
+                } catch (e: any) {
+                  console.log(`[Aster] V3 balance re-verify FAIL for ${chatId} (attempt ${balAttempt + 1}): ${e.message?.substring(0, 100)}`);
+                }
               }
             }
           }

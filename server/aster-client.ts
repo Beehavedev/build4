@@ -434,44 +434,74 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
     if (!loginCookies) {
       loginCookies = loginRes.headers.get("set-cookie") || "";
     }
-    const token = loginData?.data?.token || loginData?.data?.accessToken || loginData?.data?.jwt || loginData?.data?.sessionToken || loginData?.data?.bearerToken || "";
+
     const dataFields = loginData?.data ? Object.keys(loginData.data) : [];
+    const potentialTokens: { field: string; value: string }[] = [];
+    if (loginData?.data) {
+      for (const [k, v] of Object.entries(loginData.data)) {
+        if (typeof v === "string" && v.length > 10) {
+          potentialTokens.push({ field: k, value: v as string });
+        }
+      }
+    }
     const allHeaders: Record<string, string> = {};
     loginRes.headers.forEach((v, k) => { allHeaders[k] = v.substring(0, 80); });
-    debugParts.push(`login: uid=${uid} fields=[${dataFields.join(',')}] cookie=${loginCookies.length}ch token=${token.length}ch hdrs=[${Object.keys(allHeaders).join(',')}]`);
-    console.log(`[Aster] Login parsed: uid=${uid} loginSuccess=${loginSuccess} hasCookies=${!!loginCookies} cookieLen=${loginCookies.length} hasToken=${!!token} tokenLen=${token.length} dataFields=${JSON.stringify(dataFields)} responseHeaders=${JSON.stringify(allHeaders).substring(0, 500)}`);
+    debugParts.push(`login: uid=${uid} fields=[${dataFields.join(',')}] tokenFields=[${potentialTokens.map(t => `${t.field}(${t.value.length}ch)`).join(',')}] cookie=${loginCookies.length}ch hdrs=[${Object.keys(allHeaders).join(',')}]`);
+    console.log(`[Aster] Login parsed: uid=${uid} dataFields=${JSON.stringify(dataFields)} potentialTokens=${potentialTokens.map(t => `${t.field}(${t.value.length}ch)`).join(',')} cookieLen=${loginCookies.length} responseHeaders=${JSON.stringify(allHeaders).substring(0, 500)}`);
+    if (loginData?.data) {
+      for (const [k, v] of Object.entries(loginData.data)) {
+        console.log(`[Aster] Login data.${k} = type=${typeof v} len=${String(v).length} preview=${String(v).substring(0, 40)}`);
+      }
+    }
 
     await new Promise(r => setTimeout(r, 500));
 
     let futuresAccountOpened = false;
-    const openUrls = [
-      `${BROKER_BASE_URL}/private/future/open-account`,
-      `https://www.asterdex.com/bapi/futures/v1/private/user/futures-account/open`,
-    ];
-    for (const openUrl of openUrls) {
-      try {
-        const openHeaders: Record<string, string> = { "Content-Type": "application/json", "clientType": "web" };
-        if (loginCookies) openHeaders["Cookie"] = loginCookies;
-        if (token) openHeaders["Authorization"] = `Bearer ${token}`;
-        console.log(`[Aster] Opening futures account at: ${openUrl} (hasCookie=${!!loginCookies} hasToken=${!!token})`);
-        const openRes = await fetch(openUrl, {
-          method: "POST",
-          headers: openHeaders,
-          body: JSON.stringify({}),
+    const openUrl = `${BROKER_BASE_URL}/private/future/open-account`;
+
+    const authStrategies: { name: string; headers: Record<string, string> }[] = [];
+    for (const pt of potentialTokens) {
+      authStrategies.push({
+        name: `Bearer(${pt.field})`,
+        headers: { "Authorization": `Bearer ${pt.value}` },
+      });
+      authStrategies.push({
+        name: `RawAuth(${pt.field})`,
+        headers: { "Authorization": pt.value },
+      });
+    }
+    if (loginCookies) {
+      authStrategies.push({ name: "Cookie", headers: { "Cookie": loginCookies } });
+      for (const pt of potentialTokens) {
+        authStrategies.push({
+          name: `Cookie+Bearer(${pt.field})`,
+          headers: { "Cookie": loginCookies, "Authorization": `Bearer ${pt.value}` },
         });
+      }
+    }
+    if (authStrategies.length === 0) {
+      authStrategies.push({ name: "NoAuth", headers: {} });
+    }
+
+    for (const strategy of authStrategies) {
+      if (futuresAccountOpened) break;
+      try {
+        const openHeaders: Record<string, string> = { "Content-Type": "application/json", "clientType": "web", ...strategy.headers };
+        console.log(`[Aster] Open-account attempt: strategy=${strategy.name} url=${openUrl}`);
+        const openRes = await fetch(openUrl, { method: "POST", headers: openHeaders, body: JSON.stringify({}) });
         const openText = await openRes.text();
         let openData: any;
         try { openData = JSON.parse(openText); } catch { openData = { rawText: openText.substring(0, 200) }; }
-        const openMsg = `${openRes.status}:${openData?.code || 'nocode'}:${openData?.message || openData?.msg || openText.substring(0, 80)}`;
-        debugParts.push(`open[${openUrl.split('/').slice(-2).join('/')}]=${openMsg}`);
-        console.log(`[Aster] Open futures account response: url=${openUrl} status=${openRes.status} code=${openData?.code} msg=${openData?.message || openData?.msg || 'ok'} body=${JSON.stringify(openData).substring(0, 300)}`);
+        const openMsg = `${openRes.status}:${openData?.code || 'nocode'}:${(openData?.message || openData?.msg || openText.substring(0, 60)).substring(0, 60)}`;
+        debugParts.push(`open(${strategy.name})=${openMsg}`);
+        console.log(`[Aster] Open-account result: strategy=${strategy.name} status=${openRes.status} code=${openData?.code} msg=${openData?.message || openData?.msg || 'ok'}`);
         if (openData?.code === "000000" || (openRes.ok && openData?.success !== false)) {
           futuresAccountOpened = true;
-          break;
+          debugParts.push(`OPENED via ${strategy.name}!`);
         }
+        if ((openData?.message || '').includes('log in first')) continue;
       } catch (openErr: any) {
-        debugParts.push(`open[${openUrl.split('/').slice(-2).join('/')}]=ERR:${openErr.message?.substring(0, 80)}`);
-        console.log(`[Aster] Open futures account error at ${openUrl}:`, openErr.message?.substring(0, 150));
+        debugParts.push(`open(${strategy.name})=ERR:${openErr.message?.substring(0, 60)}`);
       }
     }
     debugParts.push(`opened=${futuresAccountOpened}`);
@@ -782,6 +812,10 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
       const params: Record<string, string | number | boolean | undefined> = {};
       if (symbol) params.symbol = symbol;
       return request("/fapi/v3/premiumIndex", { params, signed: false });
+    },
+
+    async listenKey(): Promise<any> {
+      return makeV3Request(baseUrl, "/fapi/v3/listenKey", user, signer, signerPrivateKey, { method: "POST" });
     },
 
     async balance(): Promise<AsterBalance[]> {
