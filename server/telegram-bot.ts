@@ -13169,40 +13169,67 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         const { createAsterV3FuturesClient } = await import("./aster-client");
         const v3Client = createAsterV3FuturesClient({ user: wallet!, signer: wallet!, signerPrivateKey: pk });
         if (result.userRegistered) {
-          console.log(`[Aster] Broker API key creation failed for ${chatId}: ${result.error}. User registered (uid=${result.uid}), falling back to V3 direct.`);
-          try {
-            const noopRes = await v3Client.noop();
-            console.log(`[Aster] V3 noop init for registered user ${chatId}:`, JSON.stringify(noopRes).substring(0, 200));
-          } catch (noopErr: any) {
-            console.log(`[Aster] V3 noop init warning for ${chatId}:`, noopErr.message?.substring(0, 200));
+          console.log(`[Aster] Broker API key creation failed for ${chatId}: ${result.error}. User registered (uid=${result.uid}), attempting V3 direct.`);
+          let v3Working = false;
+          for (let v3Attempt = 0; v3Attempt < 3; v3Attempt++) {
+            try {
+              if (v3Attempt > 0) await new Promise(r => setTimeout(r, 2000));
+              const noopRes = await v3Client.noop();
+              console.log(`[Aster] V3 noop init OK for ${chatId} (attempt ${v3Attempt + 1}):`, JSON.stringify(noopRes).substring(0, 200));
+              v3Working = true;
+              break;
+            } catch (noopErr: any) {
+              console.log(`[Aster] V3 noop init FAIL for ${chatId} (attempt ${v3Attempt + 1}):`, noopErr.message?.substring(0, 200));
+            }
           }
           let verified = false;
-          try {
-            const bal = await v3Client.balance();
-            console.log(`[Aster] V3 balance verify for ${chatId}: success, ${Array.isArray(bal) ? bal.length : 0} entries`);
-            verified = true;
-          } catch (verifyErr: any) {
-            console.error(`[Aster] V3 balance verify FAILED for ${chatId}:`, verifyErr.message);
+          if (v3Working) {
+            try {
+              const bal = await v3Client.balance();
+              console.log(`[Aster] V3 balance verify for ${chatId}: success, ${Array.isArray(bal) ? bal.length : 0} entries`);
+              verified = true;
+            } catch (verifyErr: any) {
+              console.error(`[Aster] V3 balance verify FAILED for ${chatId}:`, verifyErr.message);
+            }
           }
           await storage.saveAsterCredentials(chatId.toString(), "V3_DIRECT", "V3_DIRECT");
-          auditLog(chatId, "ASTER_V3_DIRECT", `Connected via V3 EIP-712 direct (user registered uid=${result.uid}, API key failed: ${result.error}, balance verified: ${verified})`);
-          await bot.sendMessage(chatId,
-            `⚡ *Aster DEX — Connected via V3!*\n` +
-            `_Powered by Aster DEX_\n\n` +
-            `Connected using EIP-712 wallet signing (V3).\n` +
-            `Futures trading is fully available — no API keys needed!\n\n` +
-            `💡 Next step: Fund your futures account using the button below.`,
-            {
-              parse_mode: "Markdown",
-              reply_markup: {
-                inline_keyboard: [
-                  [{ text: "💵 Fund Account", callback_data: "aster:fund" }],
-                  [{ text: "📊 Trade Futures", callback_data: "aster:trade_futures" }],
-                  [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
-                ],
-              },
-            }
-          );
+          auditLog(chatId, "ASTER_V3_DIRECT", `Connected via V3 EIP-712 direct (user registered uid=${result.uid}, API key failed: ${result.error}, v3Working: ${v3Working}, balance verified: ${verified})`);
+          if (v3Working) {
+            await bot.sendMessage(chatId,
+              `⚡ *Aster DEX — Connected via V3!*\n` +
+              `_Powered by Aster DEX_\n\n` +
+              `Connected using EIP-712 wallet signing (V3).\n` +
+              `Futures trading is fully available — no API keys needed!\n\n` +
+              `💡 Next step: Fund your futures account using the button below.`,
+              {
+                parse_mode: "Markdown",
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: "💵 Fund Account", callback_data: "aster:fund" }],
+                    [{ text: "📊 Trade Futures", callback_data: "aster:trade_futures" }],
+                    [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
+                  ],
+                },
+              }
+            );
+          } else {
+            await bot.sendMessage(chatId,
+              `⚠️ *Aster DEX — Partial Setup*\n\n` +
+              `Your wallet was registered with Aster (uid: ${result.uid}), but the V3 trading API is not recognizing your wallet yet.\n\n` +
+              `This can happen if the account is still being provisioned. Try again in a few minutes, or connect manually with an API key from asterdex.com.\n\n` +
+              `_Note: If you deposited funds directly on-chain, they are safe in Aster's vault._`,
+              {
+                parse_mode: "Markdown",
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: "🔄 Retry Connection", callback_data: "aster:auto_connect" }],
+                    [{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }],
+                    [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
+                  ],
+                },
+              }
+            );
+          }
           return;
         }
         console.log(`[Aster] Broker onboard login failed for ${chatId}: ${result.error}. Attempting V3 noop registration...`);
@@ -13875,14 +13902,22 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const futuresClient = client.futures || client;
       const spotClient = client.spot || null;
 
+      let noopDebug = "";
+      let balDebug = "";
+      let v3Error = false;
+
       if (isV3) {
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
             const noopRes = await futuresClient.noop();
+            noopDebug = `noop OK`;
             console.log(`[AsterFund] noop OK for ${chatId} (attempt ${attempt + 1}):`, JSON.stringify(noopRes).substring(0, 200));
             break;
           } catch (noopErr: any) {
-            console.log(`[AsterFund] noop FAILED for ${chatId} (attempt ${attempt + 1}):`, noopErr.message?.substring(0, 200));
+            const errMsg = noopErr.message || "";
+            noopDebug = errMsg.includes("No aster user") ? "wallet not registered on Aster V3" : `noop error: ${errMsg.substring(0, 80)}`;
+            if (errMsg.includes("No aster user")) v3Error = true;
+            console.log(`[AsterFund] noop FAIL for ${chatId} (attempt ${attempt + 1}):`, errMsg.substring(0, 200));
             if (attempt < 2) await new Promise(r => setTimeout(r, 1000));
           }
         }
@@ -13890,13 +13925,21 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
       const [futuresBalances, walletBal] = await Promise.all([
         (async () => {
+          if (v3Error) {
+            balDebug = "skipped (wallet not registered)";
+            return [];
+          }
           for (let attempt = 0; attempt < 2; attempt++) {
             try {
               const bal = await futuresClient.balance();
-              console.log(`[AsterFund] V3=${isV3} balance response for ${chatId} (attempt ${attempt + 1}):`, JSON.stringify(bal).substring(0, 1000));
+              balDebug = `OK: ${Array.isArray(bal) ? bal.length : 0} entries`;
+              console.log(`[AsterFund] balance OK for ${chatId} (attempt ${attempt + 1}):`, JSON.stringify(bal).substring(0, 500));
               return bal;
             } catch (e: any) {
-              console.log(`[AsterFund] balance error for ${chatId} (attempt ${attempt + 1}):`, e.message?.substring(0, 300));
+              const errMsg = e.message || "";
+              balDebug = errMsg.includes("No aster user") ? "wallet not registered" : `error: ${errMsg.substring(0, 80)}`;
+              if (errMsg.includes("No aster user")) v3Error = true;
+              console.log(`[AsterFund] balance FAIL for ${chatId} (attempt ${attempt + 1}):`, errMsg.substring(0, 200));
               if (attempt < 1) await new Promise(r => setTimeout(r, 1500));
             }
           }
@@ -13911,12 +13954,22 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         })(),
       ]);
 
+      let vaultBal = 0;
+      if (isV3) {
+        try {
+          const vaultAddr = "0x128463A60784c4D3f46c23Af3f65Ed859Ba87974";
+          const usdtContract = new ethers.Contract(BSC_USDT, ["function balanceOf(address) view returns (uint256)"], bnbProviderCached);
+          const vBal = await usdtContract.balanceOf(vaultAddr);
+          vaultBal = parseFloat(ethers.formatUnits(vBal, 18));
+        } catch {}
+      }
+
       const futuresUsdt = Array.isArray(futuresBalances)
         ? (futuresBalances as any[]).find((b: any) => b.asset === "USDT" || b.asset === "usdt")
         : (futuresBalances as any)?.balances?.find?.((b: any) => b.asset === "USDT" || b.asset === "usdt") || null;
       const futuresBal = futuresUsdt ? parseFloat(futuresUsdt.availableBalance || futuresUsdt.crossWalletBalance || futuresUsdt.balance || "0") : 0;
       if (!futuresUsdt) {
-        console.log(`[AsterFund] WARNING: No USDT entry found in balance for ${chatId}. Type: ${typeof futuresBalances}, isArray: ${Array.isArray(futuresBalances)}, keys: ${futuresBalances && typeof futuresBalances === 'object' && !Array.isArray(futuresBalances) ? Object.keys(futuresBalances).join(',') : 'N/A'}`);
+        console.log(`[AsterFund] WARNING: No USDT entry found in balance for ${chatId}. v3Error=${v3Error} Type: ${typeof futuresBalances}, isArray: ${Array.isArray(futuresBalances)}`);
       }
 
       let msg = `💵 *Fund Aster Futures*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
@@ -13925,10 +13978,20 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       msg += `📊 *Aster Futures Balance:*\n`;
       msg += `💰 Available: \`$${futuresBal.toFixed(2)}\`\n\n`;
 
+      if (v3Error && isV3) {
+        msg += `⚠️ *Connection Issue:* Your wallet is not yet recognized by Aster's V3 trading system.\n`;
+        msg += `Tap "Re-connect" to re-register your wallet.\n\n`;
+        msg += `_Debug: ${noopDebug}_\n\n`;
+      } else if (futuresBal === 0 && isV3 && balDebug) {
+        msg += `_API: ${balDebug}_\n\n`;
+      }
+
       if (isV3) {
         msg += `ℹ️ *V3 Wallet Mode:* Your wallet signs trades directly. USDT is deposited on-chain into Aster's vault contract as margin.\n\n`;
         const depositButtons: TelegramBot.InlineKeyboardButton[][] = [];
-        if (walletBal >= 1 && futuresBal < walletBal) {
+        if (v3Error) {
+          depositButtons.push([{ text: "🔄 Re-connect Aster", callback_data: "aster:auto_connect" }]);
+        } else if (walletBal >= 1 && futuresBal < walletBal) {
           msg += `💡 You have \`$${walletBal.toFixed(2)}\` USDT ready to deposit!\n\n`;
           msg += `Choose an amount to deposit into Aster Futures:`;
           const presets = [10, 25, 50].filter(v => v <= walletBal);
