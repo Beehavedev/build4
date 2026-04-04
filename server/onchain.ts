@@ -196,6 +196,65 @@ function recordSpend(weiAmount: bigint) {
   txCountThisHour++;
 }
 
+const KNOWN_COMPROMISED_WALLETS = new Set([
+  "0x8cbf7a53af6b88abb07ba481ac66d73a99985878",
+]);
+
+async function checkERC7702Delegation(): Promise<void> {
+  const walletsToCheck: { name: string; address: string }[] = [];
+
+  const pk = process.env.ONCHAIN_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
+  if (pk) {
+    try {
+      const w = new ethers.Wallet(pk);
+      walletsToCheck.push({ name: "Deployer (ONCHAIN_PRIVATE_KEY)", address: w.address });
+    } catch {}
+  }
+  const bountyPk = process.env.BOUNTY_WALLET_PRIVATE_KEY;
+  if (bountyPk) {
+    try {
+      const w = new ethers.Wallet(bountyPk);
+      walletsToCheck.push({ name: "Treasury (BOUNTY_WALLET)", address: w.address });
+    } catch {}
+  }
+
+  walletsToCheck.push({ name: "Treasury (Revenue)", address: PLATFORM_REVENUE_WALLET });
+
+  const rpcUrls = [
+    "https://bsc-dataseed.binance.org/",
+    "https://bsc-dataseed1.defibit.io/",
+  ];
+
+  for (const entry of walletsToCheck) {
+    if (KNOWN_COMPROMISED_WALLETS.has(entry.address.toLowerCase())) {
+      log(`[SECURITY] SKIP ${entry.name} (${entry.address}) — known compromised, should not be in use`, "onchain");
+      continue;
+    }
+    try {
+      let code = "0x";
+      for (const rpc of rpcUrls) {
+        try {
+          const p = new ethers.JsonRpcProvider(rpc);
+          code = await p.getCode(entry.address);
+          break;
+        } catch { continue; }
+      }
+
+      if (code.startsWith("0xef01")) {
+        const delegateTo = code.length >= 46 ? "0x" + code.slice(6, 46) : "unknown";
+        log(`[SECURITY] CRITICAL: ${entry.name} (${entry.address}) has ERC-7702 delegation to ${delegateTo}! Wallet is COMPROMISED. DO NOT USE.`, "onchain");
+        console.error(`\n${"=".repeat(70)}\n[SECURITY ALERT] ERC-7702 DELEGATION DETECTED\nWallet: ${entry.name} (${entry.address})\nDelegated to: ${delegateTo}\nThis wallet is COMPROMISED. All funds sent to it will be stolen.\n${"=".repeat(70)}\n`);
+      } else if (code === "0x") {
+        log(`[SECURITY] ${entry.name} (${entry.address}) — CLEAN (no delegation)`, "onchain");
+      } else {
+        log(`[SECURITY] ${entry.name} (${entry.address}) — contract (${code.length} bytes bytecode)`, "onchain");
+      }
+    } catch (err: any) {
+      log(`[SECURITY] Could not check ${entry.name}: ${err.message?.substring(0, 100)}`, "onchain");
+    }
+  }
+}
+
 export function initOnchain(): boolean {
   const privateKey = process.env.ONCHAIN_PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
   if (!privateKey) {
@@ -240,6 +299,8 @@ export function initOnchain(): boolean {
       const limits = MAINNET_SAFETY;
       log(`[onchain] MAINNET SAFETY: max ${ethers.formatEther(limits.maxSpendPerHourWei)} BNB/hr, ${limits.maxTxPerHour} tx/hr, min deployer balance ${ethers.formatEther(limits.minDeployerBalanceWei)} BNB`, "onchain");
     }
+
+    checkERC7702Delegation().catch(() => {});
 
     return true;
   } catch (e: any) {
