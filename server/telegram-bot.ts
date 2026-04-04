@@ -13875,6 +13875,12 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const futuresClient = client.futures || client;
       const spotClient = client.spot || null;
 
+      if (isV3) {
+        try { await futuresClient.noop(); } catch (noopErr: any) {
+          console.log(`[AsterFund] noop for ${chatId}:`, noopErr.message?.substring(0, 100));
+        }
+      }
+
       const [futuresBalances, walletBal] = await Promise.all([
         futuresClient.balance().catch((e: any) => { console.log(`[AsterFund] balance error for ${chatId}:`, e.message?.substring(0, 200)); return []; }),
         (async () => {
@@ -13887,8 +13893,8 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       ]);
 
       console.log(`[AsterFund] V3=${isV3} balances for ${chatId}:`, JSON.stringify(futuresBalances).substring(0, 500));
-      const futuresUsdt = (futuresBalances as any[]).find((b: any) => b.asset === "USDT");
-      const futuresBal = futuresUsdt ? parseFloat(futuresUsdt.availableBalance || "0") : 0;
+      const futuresUsdt = (futuresBalances as any[]).find((b: any) => b.asset === "USDT" || b.asset === "usdt");
+      const futuresBal = futuresUsdt ? parseFloat(futuresUsdt.availableBalance || futuresUsdt.crossWalletBalance || futuresUsdt.balance || "0") : 0;
 
       let msg = `💵 *Fund Aster Futures*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
       msg += `🔗 *Your Bot Wallet:*\n\`${wallet}\`\n`;
