@@ -14911,6 +14911,23 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     return;
   }
 
+  if (action.startsWith("qty_")) {
+    const qty = action.replace("qty_", "");
+    const state = pendingAsterTrade.get(chatId);
+    if (!state || state.step !== "quantity") {
+      await bot.sendMessage(chatId, "No pending trade. Start over with /aster.");
+      return;
+    }
+    const qtyNum = parseFloat(qty);
+    if (isNaN(qtyNum) || qtyNum <= 0) {
+      await bot.sendMessage(chatId, "Invalid quantity. Try again.");
+      return;
+    }
+    state.quantity = qty;
+    await handleAsterTradeFlow(chatId, qty);
+    return;
+  }
+
   if (action.startsWith("lev_")) {
     const lev = parseInt(action.replace("lev_", ""), 10);
     if (!isNaN(lev)) {
@@ -15393,6 +15410,70 @@ async function handleAsterSideCallback(chatId: number, side: "BUY" | "SELL"): Pr
   );
 }
 
+async function showQuantityStep(chatId: number, state: AsterTradeState, typeLabel: string): Promise<void> {
+  if (!bot) return;
+  const side = state.side === "BUY" ? "🟢 LONG" : "🔴 SHORT";
+
+  let balanceMsg = "";
+  let priceMsg = "";
+  let pctButtons: TelegramBot.InlineKeyboardButton[][] = [];
+
+  try {
+    const client = await getAsterClient(chatId);
+    if (client) {
+      const fc = client.futures || client;
+      const [balances, tickerData] = await Promise.all([
+        fc.balance().catch(() => []),
+        fc.tickerPrice(state.symbol).catch(() => null),
+      ]);
+
+      const usdtBal = (balances as any[]).find((b: any) => b.asset === "USDT" || b.asset === "usdt");
+      const availBal = usdtBal ? parseFloat(usdtBal.availableBalance || usdtBal.balance || "0") : 0;
+
+      const currentPrice = tickerData?.price ? parseFloat(tickerData.price) : 0;
+
+      if (availBal > 0) {
+        balanceMsg = `💰 Available: \`${availBal.toFixed(2)} USDT\`\n`;
+      }
+      if (currentPrice > 0) {
+        priceMsg = `📊 Price: \`$${currentPrice >= 1 ? currentPrice.toLocaleString("en-US", { maximumFractionDigits: 2 }) : currentPrice.toPrecision(4)}\`\n`;
+      }
+
+      if (availBal > 0 && currentPrice > 0) {
+        const pcts = [10, 25, 50, 75, 100];
+        const row: TelegramBot.InlineKeyboardButton[] = pcts.map(pct => {
+          const usdtAmount = availBal * pct / 100;
+          const qty = (usdtAmount / currentPrice).toFixed(currentPrice >= 100 ? 3 : currentPrice >= 1 ? 2 : 4);
+          return { text: `${pct}%`, callback_data: `aster:qty_${qty}` };
+        });
+        pctButtons.push(row);
+
+        const presetAmounts = [5, 10, 25, 50, 100].filter(a => a <= availBal);
+        if (presetAmounts.length > 0) {
+          const usdRow: TelegramBot.InlineKeyboardButton[] = presetAmounts.map(amt => {
+            const qty = (amt / currentPrice).toFixed(currentPrice >= 100 ? 3 : currentPrice >= 1 ? 2 : 4);
+            return { text: `$${amt}`, callback_data: `aster:qty_${qty}` };
+          });
+          pctButtons.push(usdRow);
+        }
+      }
+    }
+  } catch {}
+
+  pctButtons.push([{ text: "❌ Cancel", callback_data: "aster:trade_cancel" }]);
+
+  const msg = `*${state.symbol}* — ${side} ${typeLabel}\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `${balanceMsg}${priceMsg}\n` +
+    `Enter quantity in ${state.symbol?.replace("USDT", "") || "tokens"}, or pick below:\n` +
+    `_e.g. 0.001 BTC, 0.1 ETH, 1 BNB_`;
+
+  await bot.sendMessage(chatId, msg, {
+    parse_mode: "Markdown",
+    reply_markup: { inline_keyboard: pctButtons },
+  });
+}
+
 async function handleAsterTypeCallback(chatId: number, orderType: "MARKET" | "LIMIT"): Promise<void> {
   if (!bot) return;
   const state = pendingAsterTrade.get(chatId);
@@ -15402,7 +15483,7 @@ async function handleAsterTypeCallback(chatId: number, orderType: "MARKET" | "LI
   state.step = "quantity";
   pendingAsterTrade.set(chatId, state);
 
-  await bot.sendMessage(chatId, `${state.symbol} — ${state.side} ${orderType}\n\nEnter quantity:`);
+  await showQuantityStep(chatId, state, orderType);
 }
 
 async function handleAsterAdvancedTypeCallback(chatId: number, orderType: "STOP" | "STOP_MARKET" | "TAKE_PROFIT" | "TAKE_PROFIT_MARKET" | "TRAILING_STOP_MARKET"): Promise<void> {
@@ -15415,11 +15496,11 @@ async function handleAsterAdvancedTypeCallback(chatId: number, orderType: "STOP"
   pendingAsterTrade.set(chatId, state);
 
   const typeLabels: Record<string, string> = {
-    "STOP": "Stop Limit", "STOP_MARKET": "Stop Loss (Market)",
-    "TAKE_PROFIT": "Take Profit (Limit)", "TAKE_PROFIT_MARKET": "Take Profit (Market)",
+    "STOP": "Stop Limit", "STOP_MARKET": "Stop Loss",
+    "TAKE_PROFIT": "Take Profit (Limit)", "TAKE_PROFIT_MARKET": "Take Profit",
     "TRAILING_STOP_MARKET": "Trailing Stop",
   };
-  await bot.sendMessage(chatId, `${state.symbol} — ${state.side} ${typeLabels[orderType]}\n\nEnter quantity:`);
+  await showQuantityStep(chatId, state, typeLabels[orderType]);
 }
 
 async function handleAsterLeverageCallback(chatId: number, leverage: number): Promise<void> {
