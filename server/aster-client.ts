@@ -461,82 +461,89 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
 
     const tokenVal = potentialTokens.find(t => t.field === "token")?.value || potentialTokens[0]?.value || "";
 
-    const authStrategies: { name: string; headers: Record<string, string>; body?: any }[] = [];
+    let xsrfToken = "";
+    for (const cookie of parsedCookies) {
+      const [name, ...rest] = cookie.split("=");
+      if (name.trim().toUpperCase() === "XSRF-TOKEN") {
+        xsrfToken = decodeURIComponent(rest.join("=").trim());
+        break;
+      }
+    }
+    if (!xsrfToken) {
+      for (const cookie of parsedCookies) {
+        const [name, ...rest] = cookie.split("=");
+        if (name.trim().toLowerCase().includes("csrf") || name.trim().toLowerCase().includes("xsrf")) {
+          xsrfToken = decodeURIComponent(rest.join("=").trim());
+          break;
+        }
+      }
+    }
+    debugParts.push(`xsrf=${xsrfToken.length}ch cookies=[${parsedCookies.map(c => c.split('=')[0]).join(',')}]`);
+    console.log(`[Aster] XSRF token: ${xsrfToken.length}ch, cookie names: ${parsedCookies.map(c => c.split('=')[0]).join(',')}`);
 
-    if (loginCookies && tokenVal) {
+    const browserHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+      "clientType": "web",
+      "Origin": "https://www.asterdex.com",
+      "Referer": "https://www.asterdex.com/en/futures/BTCUSDT",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "application/json, text/plain, */*",
+      "subclienttype": "pc",
+    };
+
+    const authStrategies: { name: string; headers: Record<string, string> }[] = [];
+
+    if (loginCookies && xsrfToken) {
       authStrategies.push({
-        name: "Cookie+TokenCookie",
-        headers: { "Cookie": `${loginCookies}; token=${tokenVal}` },
-      });
-      authStrategies.push({
-        name: "Cookie+XToken",
-        headers: { "Cookie": loginCookies, "X-Token": tokenVal },
-      });
-      authStrategies.push({
-        name: "Cookie+XAuthToken",
-        headers: { "Cookie": loginCookies, "X-Auth-Token": tokenVal },
-      });
-      authStrategies.push({
-        name: "Cookie+TokenHeader",
-        headers: { "Cookie": loginCookies, "token": tokenVal },
-      });
-      authStrategies.push({
-        name: "Cookie+Body",
-        headers: { "Cookie": loginCookies },
-        body: { token: tokenVal },
-      });
-      authStrategies.push({
-        name: "Cookie+CSRF",
-        headers: { "Cookie": loginCookies, "X-CSRF-TOKEN": tokenVal },
+        name: "Cookie+XSRF",
+        headers: { ...browserHeaders, "Cookie": loginCookies, "X-XSRF-TOKEN": xsrfToken },
       });
     }
-    if (tokenVal) {
+    if (loginCookies && tokenVal) {
       authStrategies.push({
-        name: "TokenCookieOnly",
-        headers: { "Cookie": `token=${tokenVal}` },
+        name: "Cookie+XSRF(token)",
+        headers: { ...browserHeaders, "Cookie": loginCookies, "X-XSRF-TOKEN": tokenVal },
       });
       authStrategies.push({
-        name: "BearerToken",
-        headers: { "Authorization": `Bearer ${tokenVal}` },
+        name: "Cookie+TokenCookie+XSRF",
+        headers: { ...browserHeaders, "Cookie": `${loginCookies}; token=${tokenVal}`, "X-XSRF-TOKEN": xsrfToken || tokenVal },
       });
     }
     if (loginCookies) {
       authStrategies.push({
-        name: "CookieOnly",
-        headers: { "Cookie": loginCookies },
+        name: "CookieBrowser",
+        headers: { ...browserHeaders, "Cookie": loginCookies },
+      });
+    }
+    if (tokenVal) {
+      authStrategies.push({
+        name: "Bearer",
+        headers: { ...browserHeaders, "Authorization": `Bearer ${tokenVal}` },
       });
     }
     if (authStrategies.length === 0) {
-      authStrategies.push({ name: "NoAuth", headers: {} });
+      authStrategies.push({ name: "NoAuth", headers: browserHeaders });
     }
 
-    const openUrls = [
-      `${BROKER_BASE_URL}/private/future/open-account`,
-      `https://www.asterdex.com/bapi/futures/v1/private/user/open-futures-account`,
-    ];
+    const openUrl = `${BROKER_BASE_URL}/private/future/open-account`;
 
-    for (const tryUrl of openUrls) {
+    for (const strategy of authStrategies) {
       if (futuresAccountOpened) break;
-      for (const strategy of authStrategies) {
-        if (futuresAccountOpened) break;
-        try {
-          const openHeaders: Record<string, string> = { "Content-Type": "application/json", "clientType": "web", ...strategy.headers };
-          const bodyData = strategy.body || {};
-          console.log(`[Aster] Open-account: strategy=${strategy.name} url=${tryUrl}`);
-          const openRes = await fetch(tryUrl, { method: "POST", headers: openHeaders, body: JSON.stringify(bodyData) });
-          const openText = await openRes.text();
-          let openData: any;
-          try { openData = JSON.parse(openText); } catch { openData = { rawText: openText.substring(0, 200) }; }
-          const openMsg = `${openRes.status}:${openData?.code || 'nocode'}:${(openData?.message || openData?.msg || openData?.error || openText.substring(0, 50)).substring(0, 50)}`;
-          debugParts.push(`${strategy.name}=${openMsg}`);
-          console.log(`[Aster] Open-account result: strategy=${strategy.name} ${openMsg}`);
-          if (openData?.code === "000000" || (openRes.ok && openData?.success !== false && !openData?.error)) {
-            futuresAccountOpened = true;
-            debugParts.push(`OPENED via ${strategy.name}!`);
-          }
-        } catch (openErr: any) {
-          debugParts.push(`${strategy.name}=ERR:${openErr.message?.substring(0, 50)}`);
+      try {
+        console.log(`[Aster] Open-account: strategy=${strategy.name}`);
+        const openRes = await fetch(openUrl, { method: "POST", headers: strategy.headers, body: JSON.stringify({}) });
+        const openText = await openRes.text();
+        let openData: any;
+        try { openData = JSON.parse(openText); } catch { openData = { rawText: openText.substring(0, 200) }; }
+        const openMsg = `${openRes.status}:${openData?.code || 'nocode'}:${(openData?.message || openData?.msg || openData?.error || openText.substring(0, 50)).substring(0, 50)}`;
+        debugParts.push(`${strategy.name}=${openMsg}`);
+        console.log(`[Aster] Open-account result: strategy=${strategy.name} ${openMsg}`);
+        if (openData?.code === "000000" || (openRes.ok && openData?.success !== false && !openData?.error)) {
+          futuresAccountOpened = true;
+          debugParts.push(`OPENED via ${strategy.name}!`);
         }
+      } catch (openErr: any) {
+        debugParts.push(`${strategy.name}=ERR:${openErr.message?.substring(0, 50)}`);
       }
     }
     debugParts.push(`opened=${futuresAccountOpened}`);
