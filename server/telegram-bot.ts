@@ -13937,10 +13937,20 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
               return bal;
             } catch (e: any) {
               const errMsg = e.message || "";
-              balDebug = errMsg.includes("No aster user") ? "wallet not registered" : `error: ${errMsg.substring(0, 80)}`;
+              balDebug = errMsg.substring(0, 100);
               if (errMsg.includes("No aster user")) v3Error = true;
-              console.log(`[AsterFund] balance FAIL for ${chatId} (attempt ${attempt + 1}):`, errMsg.substring(0, 200));
+              console.log(`[AsterFund] balance FAIL for ${chatId} (attempt ${attempt + 1}):`, errMsg.substring(0, 300));
               if (attempt < 1) await new Promise(r => setTimeout(r, 1500));
+            }
+          }
+          if (v3Error) {
+            try {
+              const acct = await futuresClient.account();
+              balDebug += ` | acct: ${JSON.stringify(acct).substring(0, 100)}`;
+              console.log(`[AsterFund] account response for ${chatId}:`, JSON.stringify(acct).substring(0, 500));
+            } catch (acctErr: any) {
+              balDebug += ` | acct: ${acctErr.message?.substring(0, 80)}`;
+              console.log(`[AsterFund] account FAIL for ${chatId}:`, acctErr.message?.substring(0, 200));
             }
           }
           return [];
@@ -13985,7 +13995,8 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       } else if (v3Error && isV3 && noopDebug === "noop OK") {
         msg += `⚠️ *Futures Account Issue:* Your wallet is registered but may not have a futures account opened yet.\n`;
         msg += `Tap "Re-connect" to open your futures account.\n\n`;
-        msg += `_Debug: ${noopDebug}, ${balDebug}_\n\n`;
+        const safeBal = balDebug.replace(/[_*`\[\]]/g, '').substring(0, 200);
+        msg += `Debug: ${noopDebug}\nBalance: ${safeBal}\n\n`;
       } else if (futuresBal === 0 && isV3 && balDebug) {
         msg += `_API: ${balDebug}_\n\n`;
       }
