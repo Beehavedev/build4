@@ -838,6 +838,13 @@ export async function asterV3Deposit(
       "function deposit(address currency, uint256 amount, uint256 brokerId)",
     ], wallet);
 
+    const bnbBalance = await provider.getBalance(wallet.address);
+    const minGas = ethers.parseEther("0.001");
+    if (bnbBalance < minGas) {
+      const bnbHave = parseFloat(ethers.formatEther(bnbBalance)).toFixed(6);
+      return { success: false, error: `Need BNB for gas fees. You have ${bnbHave} BNB — send at least 0.002 BNB (~$1) to your wallet to cover gas.` };
+    }
+
     const amount = ethers.parseUnits(amountUsdt.toString(), 18);
     const balance = await usdt.balanceOf(wallet.address);
     if (balance < amount) {
