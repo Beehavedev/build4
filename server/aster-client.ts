@@ -420,14 +420,17 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
     const loginSuccess = loginData?.code === "000000";
     console.log(`[Aster] Login parsed: uid=${uid} loginSuccess=${loginSuccess} dataFields=${loginData?.data ? JSON.stringify(Object.keys(loginData.data)) : '[]'}`);
 
+    await new Promise(r => setTimeout(r, 1500));
+
     const akNonceRes = await fetch(`${BROKER_BASE_URL}/public/future/web3/get-nonce`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "clientType": "web" },
       body: JSON.stringify({ type: "CREATE_API_KEY", sourceAddr: address }),
     });
     const akNonceData = await akNonceRes.json();
+    console.log(`[Aster] API key nonce response:`, JSON.stringify(akNonceData).substring(0, 300));
     if (!akNonceData?.data?.nonce) {
-      return { success: false, userRegistered: true, uid, error: "Failed to get API key nonce" };
+      return { success: false, userRegistered: true, uid, error: `Failed to get API key nonce: ${JSON.stringify(akNonceData).substring(0, 200)}` };
     }
     const akNonce = akNonceData.data.nonce;
 
@@ -435,22 +438,32 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
     const akSignature = await wallet.signMessage(akMessage);
 
     const desc = `build4_${Date.now()}`;
+    const createBody = {
+      signature: akSignature,
+      sourceAddr: address,
+      desc,
+      ip: "",
+      network: "56",
+      type: "CREATE_API_KEY",
+      sourceCode: "BUILD4",
+    };
+    console.log(`[Aster] Creating API key with body keys: ${Object.keys(createBody).join(',')}`);
     const createRes = await fetch(`${BROKER_BASE_URL}/public/future/web3/broker-create-api-key`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "clientType": "web" },
-      body: JSON.stringify({
-        signature: akSignature,
-        sourceAddr: address,
-        desc,
-        ip: "",
-        network: "56",
-        type: "CREATE_API_KEY",
-        sourceCode: "BUILD4",
-      }),
+      body: JSON.stringify(createBody),
     });
     const createData = await createRes.json();
+    const createDataStr = JSON.stringify(createData).substring(0, 500);
+    console.log(`[Aster] API key create response status=${createRes.status} code=${createData?.code}:`, createDataStr);
     if (createData?.code !== "000000" || !createData?.data?.apiKey) {
-      return { success: false, userRegistered: true, uid, error: `API key creation failed: ${createData?.message || JSON.stringify(createData)}` };
+      const akFromData = createData?.data?.apiKey || createData?.data?.key || createData?.data?.accessKey;
+      const asFromData = createData?.data?.apiSecret || createData?.data?.secret || createData?.data?.secretKey;
+      if (akFromData && asFromData) {
+        console.log(`[Aster] Found API keys in alternate fields for ${address.substring(0, 10)}...`);
+        return { success: true, userRegistered: true, apiKey: akFromData, apiSecret: asFromData, uid };
+      }
+      return { success: false, userRegistered: true, uid, error: `API key creation failed (status=${createRes.status} code=${createData?.code}): ${createData?.message || createData?.msg || createDataStr.substring(0, 200)}` };
     }
 
     console.log(`[Aster] Broker onboard success for ${address.substring(0, 10)}... uid=${uid}`);

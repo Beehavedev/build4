@@ -13181,12 +13181,13 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
             return;
           }
           await bot.sendMessage(chatId,
-            `⚠️ *Aster account created but V3 connection failed*\n\n` +
-            `Your Aster account was registered (UID: ${result.uid}) but the V3 trading API could not verify your account.\n\n` +
+            `⚠️ *Aster account created but trading connection failed*\n\n` +
+            `Your Aster account was registered (UID: ${result.uid}) but API key creation failed.\n\n` +
+            `API key error: _${(result.error || 'Unknown').substring(0, 150)}_\n\n` +
             `Please try:\n` +
             `1. Visit [asterdex.com](https://www.asterdex.com) and log in with your wallet once\n` +
             `2. Then come back and tap Connect again\n` +
-            `3. Or connect manually with an API key`,
+            `3. Or connect manually with your Aster API key from the API Management page`,
             {
               parse_mode: "Markdown",
               reply_markup: {
