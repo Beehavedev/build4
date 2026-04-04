@@ -421,9 +421,28 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
     }
     const uid = loginData?.data?.uid || loginData?.data?.userId || loginData?.data?.id || loginData?.data?.accountId || 0;
     const loginSuccess = loginData?.code === "000000";
-    console.log(`[Aster] Login parsed: uid=${uid} loginSuccess=${loginSuccess} dataFields=${loginData?.data ? JSON.stringify(Object.keys(loginData.data)) : '[]'}`);
+    const loginCookies = loginRes.headers.get("set-cookie") || "";
+    const token = loginData?.data?.token || loginData?.data?.accessToken || "";
+    console.log(`[Aster] Login parsed: uid=${uid} loginSuccess=${loginSuccess} hasCookies=${!!loginCookies} hasToken=${!!token} dataFields=${loginData?.data ? JSON.stringify(Object.keys(loginData.data)) : '[]'}`);
 
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 500));
+
+    try {
+      const openHeaders: Record<string, string> = { "Content-Type": "application/json", "clientType": "web" };
+      if (loginCookies) openHeaders["Cookie"] = loginCookies;
+      if (token) openHeaders["Authorization"] = `Bearer ${token}`;
+      const openRes = await fetch(`${BROKER_BASE_URL.replace('/public/future', '/private/future')}/open-account`, {
+        method: "POST",
+        headers: openHeaders,
+        body: JSON.stringify({}),
+      });
+      const openData = await openRes.json();
+      console.log(`[Aster] Open futures account response: status=${openRes.status} code=${openData?.code} msg=${openData?.message || openData?.msg || 'ok'}`);
+    } catch (openErr: any) {
+      console.log(`[Aster] Open futures account error (non-fatal):`, openErr.message?.substring(0, 150));
+    }
+
+    await new Promise(r => setTimeout(r, 1000));
 
     const akNonceRes = await fetch(`${BROKER_BASE_URL}/public/future/web3/get-nonce`, {
       method: "POST",
