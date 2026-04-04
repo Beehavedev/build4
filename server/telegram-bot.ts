@@ -14721,49 +14721,92 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
       results.push(`Wallet: ${address.substring(0, 10)}...`);
 
+      const browserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+      function extractCookies(res: Response): string[] {
+        let raw: string[] = [];
+        try { raw = (res.headers as any).getSetCookie?.() || []; } catch {}
+        if (!raw.length) {
+          const sc = res.headers.get("set-cookie");
+          if (sc) raw = sc.split(/,(?=\s*\w+=)/);
+        }
+        return raw.map((c: string) => c.split(";")[0].trim()).filter(Boolean);
+      }
+
+      // Step 1: Pre-fetch XSRF cookie from Aster website
+      const prefetchRes = await fetch("https://www.asterdex.com/en/futures/BTCUSDT", {
+        headers: { "User-Agent": browserUA, "Accept": "text/html" },
+        redirect: "follow",
+      });
+      const prefetchCookies = extractCookies(prefetchRes);
+      const prefetchCookieStr = prefetchCookies.join("; ");
+      const prefetchNames = prefetchCookies.map((c: string) => c.split("=")[0]);
+      results.push(`Prefetch: ${prefetchRes.status} cookies=[${prefetchNames.join(',')}]`);
+
+      let xsrfFromPrefetch = "";
+      for (const cookie of prefetchCookies) {
+        const [name, ...rest] = cookie.split("=");
+        if (name.trim().toUpperCase() === "XSRF-TOKEN") {
+          xsrfFromPrefetch = decodeURIComponent(rest.join("=").trim());
+        }
+      }
+      results.push(`Prefetch XSRF: ${xsrfFromPrefetch.length}ch`);
+
+      // Step 2: Get nonce (with prefetch cookies)
       const nonceRes = await fetch(`${BAPI}/public/future/web3/get-nonce`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "clientType": "web" },
+        headers: { "Content-Type": "application/json", "clientType": "web", "Cookie": prefetchCookieStr, "User-Agent": browserUA },
         body: JSON.stringify({ type: "LOGIN", sourceAddr: address }),
       });
       const nonceData = await nonceRes.json();
-      results.push(`Nonce: ${nonceRes.status} ${nonceData?.data?.nonce ? 'OK' : 'FAIL'}`);
+      const nonceCookies = extractCookies(nonceRes);
+      results.push(`Nonce: ${nonceRes.status} ${nonceData?.data?.nonce ? 'OK' : 'FAIL'} +cookies=[${nonceCookies.map((c: string) => c.split("=")[0]).join(',')}]`);
       if (!nonceData?.data?.nonce) {
         await bot.sendMessage(chatId, results.join("\n"));
         return;
       }
 
+      // Merge cookies
+      const allCookieMap = new Map<string, string>();
+      for (const c of [...prefetchCookies, ...nonceCookies]) {
+        const [name, ...rest] = c.split("=");
+        allCookieMap.set(name.trim(), rest.join("=").trim());
+      }
+
+      // Step 3: Login (with merged cookies)
+      const preLoginCookieStr = Array.from(allCookieMap.entries()).map(([k, v]) => `${k}=${v}`).join("; ");
       const loginSig = await w.signMessage(`You are signing into Astherus ${nonceData.data.nonce}`);
       const loginRes = await fetch(`${BAPI}/public/future/web3/ae/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "clientType": "web" },
+        headers: {
+          "Content-Type": "application/json", "clientType": "web",
+          "Cookie": preLoginCookieStr, "User-Agent": browserUA,
+          "Origin": "https://www.asterdex.com", "Referer": "https://www.asterdex.com/en/futures/BTCUSDT",
+          ...(xsrfFromPrefetch ? { "X-XSRF-TOKEN": xsrfFromPrefetch } : {}),
+        },
         body: JSON.stringify({ signature: loginSig, sourceAddr: address, chainId: 56, agentCode: "BUILD4" }),
       });
       const loginData = await loginRes.json();
-      let rawSetCookies: string[] = [];
-      try { rawSetCookies = (loginRes.headers as any).getSetCookie?.() || []; } catch {}
-      if (!rawSetCookies.length) {
-        const sc = loginRes.headers.get("set-cookie");
-        if (sc) rawSetCookies = sc.split(/,(?=\s*\w+=)/);
+      const loginCookies = extractCookies(loginRes);
+      for (const c of loginCookies) {
+        const [name, ...rest] = c.split("=");
+        allCookieMap.set(name.trim(), rest.join("=").trim());
       }
-      const parsedCookies = rawSetCookies.map((c: string) => c.split(";")[0].trim()).filter(Boolean);
-      const cookieStr = parsedCookies.join("; ");
-      const cookieNames = parsedCookies.map((c: string) => c.split("=")[0]);
 
-      let xsrfToken = "";
-      for (const cookie of parsedCookies) {
-        const [name, ...rest] = cookie.split("=");
-        if (name.trim().toUpperCase() === "XSRF-TOKEN") {
-          xsrfToken = decodeURIComponent(rest.join("=").trim());
-          break;
+      // Extract XSRF from all accumulated cookies
+      let xsrfToken = xsrfFromPrefetch;
+      for (const [name, value] of allCookieMap.entries()) {
+        if (name.toUpperCase() === "XSRF-TOKEN") {
+          xsrfToken = decodeURIComponent(value);
         }
       }
 
+      const finalCookieStr = Array.from(allCookieMap.entries()).map(([k, v]) => `${k}=${v}`).join("; ");
       const uid = loginData?.data?.uid || loginData?.data?.userId || 0;
       const token = loginData?.data?.token || "";
-      results.push(`Login: ${loginData?.code} uid=${uid} token=${token.length}ch`);
-      results.push(`Cookies: ${cookieNames.join(', ')}`);
-      results.push(`XSRF: ${xsrfToken.length}ch`);
+      results.push(`Login: ${loginData?.code} uid=${uid} token=${token.length}ch +cookies=[${loginCookies.map((c: string) => c.split("=")[0]).join(',')}]`);
+      results.push(`Total cookies: ${allCookieMap.size} names=[${Array.from(allCookieMap.keys()).join(',')}]`);
+      results.push(`Final XSRF: ${xsrfToken.length}ch`);
 
       const openUrl = `${BAPI}/private/future/open-account`;
       const browserHeaders: Record<string, string> = {
@@ -14771,19 +14814,17 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         "clientType": "web",
         "Origin": "https://www.asterdex.com",
         "Referer": "https://www.asterdex.com/en/futures/BTCUSDT",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": browserUA,
         "Accept": "application/json, text/plain, */*",
       };
 
       const strategies = [
-        { name: "Cookie+XSRF", h: { ...browserHeaders, "Cookie": cookieStr, "X-XSRF-TOKEN": xsrfToken } },
-        { name: "Cookie+Token-as-XSRF", h: { ...browserHeaders, "Cookie": cookieStr, "X-XSRF-TOKEN": token } },
-        { name: "Cookie+TokenCookie+XSRF", h: { ...browserHeaders, "Cookie": `${cookieStr}; token=${token}`, "X-XSRF-TOKEN": xsrfToken || token } },
-        { name: "CookieOnly", h: { ...browserHeaders, "Cookie": cookieStr } },
-        { name: "Bearer", h: { ...browserHeaders, "Authorization": `Bearer ${token}` } },
-        { name: "Cookie+Bearer", h: { ...browserHeaders, "Cookie": cookieStr, "Authorization": `Bearer ${token}` } },
-        { name: "Cookie+csrftoken-header", h: { ...browserHeaders, "Cookie": cookieStr, "csrftoken": xsrfToken || token } },
-        { name: "Cookie+X-CSRFToken", h: { ...browserHeaders, "Cookie": cookieStr, "X-CSRFToken": xsrfToken || token } },
+        { name: "AllCookies+XSRF", h: { ...browserHeaders, "Cookie": finalCookieStr, "X-XSRF-TOKEN": xsrfToken } },
+        { name: "AllCookies+Token-XSRF", h: { ...browserHeaders, "Cookie": finalCookieStr, "X-XSRF-TOKEN": token } },
+        { name: "AllCookies+TokenCookie", h: { ...browserHeaders, "Cookie": `${finalCookieStr}; token=${token}`, "X-XSRF-TOKEN": xsrfToken || token } },
+        { name: "AllCookiesOnly", h: { ...browserHeaders, "Cookie": finalCookieStr } },
+        { name: "Bearer+XSRF", h: { ...browserHeaders, "Authorization": `Bearer ${token}`, "X-XSRF-TOKEN": xsrfToken } },
+        { name: "AllCookies+Bearer+XSRF", h: { ...browserHeaders, "Cookie": finalCookieStr, "Authorization": `Bearer ${token}`, "X-XSRF-TOKEN": xsrfToken || token } },
       ];
 
       for (const s of strategies) {
