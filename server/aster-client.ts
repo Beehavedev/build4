@@ -172,6 +172,7 @@ interface BrokerOnboardResult {
   uid?: number;
   error?: string;
   userRegistered?: boolean;
+  debug?: string;
 }
 
 const DEFAULT_FUTURES_BASE_URL = "https://fapi.asterdex.com";
@@ -422,6 +423,7 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
     }
     const uid = loginData?.data?.uid || loginData?.data?.userId || loginData?.data?.id || loginData?.data?.accountId || 0;
     const loginSuccess = loginData?.code === "000000";
+    const debugParts: string[] = [];
     let loginCookies = "";
     try {
       const setCookieHeaders = (loginRes.headers as any).getSetCookie?.() || [];
@@ -433,9 +435,11 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
       loginCookies = loginRes.headers.get("set-cookie") || "";
     }
     const token = loginData?.data?.token || loginData?.data?.accessToken || loginData?.data?.jwt || loginData?.data?.sessionToken || loginData?.data?.bearerToken || "";
+    const dataFields = loginData?.data ? Object.keys(loginData.data) : [];
     const allHeaders: Record<string, string> = {};
-    loginRes.headers.forEach((v, k) => { allHeaders[k] = v.substring(0, 100); });
-    console.log(`[Aster] Login parsed: uid=${uid} loginSuccess=${loginSuccess} hasCookies=${!!loginCookies} cookieLen=${loginCookies.length} hasToken=${!!token} tokenLen=${token.length} dataFields=${loginData?.data ? JSON.stringify(Object.keys(loginData.data)) : '[]'} responseHeaders=${JSON.stringify(allHeaders).substring(0, 500)}`);
+    loginRes.headers.forEach((v, k) => { allHeaders[k] = v.substring(0, 80); });
+    debugParts.push(`login: uid=${uid} fields=[${dataFields.join(',')}] cookie=${loginCookies.length}ch token=${token.length}ch hdrs=[${Object.keys(allHeaders).join(',')}]`);
+    console.log(`[Aster] Login parsed: uid=${uid} loginSuccess=${loginSuccess} hasCookies=${!!loginCookies} cookieLen=${loginCookies.length} hasToken=${!!token} tokenLen=${token.length} dataFields=${JSON.stringify(dataFields)} responseHeaders=${JSON.stringify(allHeaders).substring(0, 500)}`);
 
     await new Promise(r => setTimeout(r, 500));
 
@@ -455,16 +459,22 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
           headers: openHeaders,
           body: JSON.stringify({}),
         });
-        const openData = await openRes.json();
+        const openText = await openRes.text();
+        let openData: any;
+        try { openData = JSON.parse(openText); } catch { openData = { rawText: openText.substring(0, 200) }; }
+        const openMsg = `${openRes.status}:${openData?.code || 'nocode'}:${openData?.message || openData?.msg || openText.substring(0, 80)}`;
+        debugParts.push(`open[${openUrl.split('/').slice(-2).join('/')}]=${openMsg}`);
         console.log(`[Aster] Open futures account response: url=${openUrl} status=${openRes.status} code=${openData?.code} msg=${openData?.message || openData?.msg || 'ok'} body=${JSON.stringify(openData).substring(0, 300)}`);
         if (openData?.code === "000000" || (openRes.ok && openData?.success !== false)) {
           futuresAccountOpened = true;
           break;
         }
       } catch (openErr: any) {
+        debugParts.push(`open[${openUrl.split('/').slice(-2).join('/')}]=ERR:${openErr.message?.substring(0, 80)}`);
         console.log(`[Aster] Open futures account error at ${openUrl}:`, openErr.message?.substring(0, 150));
       }
     }
+    debugParts.push(`opened=${futuresAccountOpened}`);
     console.log(`[Aster] Futures account opened: ${futuresAccountOpened}`);
 
     await new Promise(r => setTimeout(r, 1000));
@@ -477,7 +487,7 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
     const akNonceData = await akNonceRes.json();
     console.log(`[Aster] API key nonce response:`, JSON.stringify(akNonceData).substring(0, 300));
     if (!akNonceData?.data?.nonce) {
-      return { success: false, userRegistered: true, uid, error: `Failed to get API key nonce: ${JSON.stringify(akNonceData).substring(0, 200)}` };
+      return { success: false, userRegistered: true, uid, error: `Failed to get API key nonce: ${JSON.stringify(akNonceData).substring(0, 200)}`, debug: debugParts.join(' | ') };
     }
     const akNonce = akNonceData.data.nonce;
 
@@ -510,7 +520,7 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
         console.log(`[Aster] Found API keys in alternate fields for ${address.substring(0, 10)}...`);
         return { success: true, userRegistered: true, apiKey: akFromData, apiSecret: asFromData, uid };
       }
-      return { success: false, userRegistered: true, uid, error: `API key creation failed (status=${createRes.status} code=${createData?.code}): ${createData?.message || createData?.msg || createDataStr.substring(0, 200)}` };
+      return { success: false, userRegistered: true, uid, error: `API key creation failed (status=${createRes.status} code=${createData?.code}): ${createData?.message || createData?.msg || createDataStr.substring(0, 200)}`, debug: debugParts.join(' | ') };
     }
 
     console.log(`[Aster] Broker onboard success for ${address.substring(0, 10)}... uid=${uid}`);
