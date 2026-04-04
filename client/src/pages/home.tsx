@@ -721,7 +721,10 @@ export default function Home() {
                         </motion.div>
 
                         <div className="flex-1 py-4">
-                          <h3 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight mb-2 bg-clip-text text-transparent" style={{ backgroundImage: "linear-gradient(to right, #D5CABE, #ffffff, #D5CABE)" }} data-testid="text-competition-title">
+                          <h3 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight mb-1 bg-clip-text text-transparent" style={{ backgroundImage: "linear-gradient(to right, #42CF71, #6ddb93, #42CF71)" }} data-testid="text-competition-title">
+                            ASTER DEX
+                          </h3>
+                          <h3 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight mb-2 bg-clip-text text-transparent" style={{ backgroundImage: "linear-gradient(to right, #D5CABE, #ffffff, #D5CABE)" }}>
                             AGENTIC AUTONOMOUS
                           </h3>
                           <h3 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight mb-4 bg-clip-text text-transparent" style={{ backgroundImage: "linear-gradient(to right, #42CF71, #6ddb93, #42CF71)" }}>
