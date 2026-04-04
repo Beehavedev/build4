@@ -353,6 +353,7 @@ async function makeV3Request(
     clearTimeout(timeoutId);
 
     const text = await response.text();
+    console.log(`[AsterV3] ${method} ${path} status=${response.status} body=${text.substring(0, 400)}`);
     let data: any;
     try {
       data = JSON.parse(text);
@@ -669,7 +670,9 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
 
 export function createAsterV3FuturesClient(config: AsterV3Config) {
   const baseUrl = config.futuresBaseUrl || DEFAULT_FUTURES_V3_BASE_URL;
-  const { user, signer, signerPrivateKey } = config;
+  const user = ethers.getAddress(config.user); // EIP-55 checksum
+  const signer = ethers.getAddress(config.signer); // EIP-55 checksum
+  const { signerPrivateKey } = config;
 
   async function request(path: string, options: AsterRequestOptions = {}) {
     const { method = "GET", params = {} } = options;
