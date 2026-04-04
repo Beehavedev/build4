@@ -212,6 +212,7 @@ const pendingFourMemeSell = new Map<number, FourMemeSellState>();
 const pendingWallet = new Set<number>();
 const pendingImportWallet = new Set<number>();
 const pendingChaosPlan = new Map<number, ChaosPlanState>();
+const pendingCompetitionReferrals = new Map<string, { compId: string; referrerChatId: string }>();
 const pendingAsterConnect = new Map<number, AsterConnectState>();
 const pendingAsterTrade = new Map<number, AsterTradeState>();
 const pendingTxHashVerify = new Map<number, boolean>();
@@ -9180,6 +9181,25 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         }
       }
 
+      if (cmdArg.startsWith("compref_")) {
+        try {
+          const parts = cmdArg.replace("compref_", "").split("_");
+          const refCompId = parts[0];
+          const referrerChatId = parts[1];
+          if (referrerChatId && referrerChatId !== chatId.toString()) {
+            pendingCompetitionReferrals.set(chatId.toString(), { compId: refCompId, referrerChatId });
+            await bot.sendMessage(chatId,
+              `🏆 You've been invited to a *Trading Competition*!\n\n` +
+              `Open /aster → 🏆 Competition to join and start competing!\n\n` +
+              `_Referred by a friend — your entry will be tracked!_`,
+              { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "🏆 View Competition", callback_data: "aster:competition" }], [{ text: "📈 Aster Menu", callback_data: "action:aster" }]] } }
+            );
+          }
+        } catch (e: any) {
+          console.error("[CompRef] Failed to handle referral deep link:", e.message);
+        }
+      }
+
       let sub: any = null;
       try {
         sub = await storage.getBotSubscriptionByChatId(chatId.toString());
@@ -9551,6 +9571,70 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         );
       } catch (e: any) {
         await bot.sendMessage(chatId, `Failed: ${e.message?.substring(0, 200)}`);
+      }
+      return;
+    }
+
+    if (cmd === "compannounce" && !isGroup) {
+      const adminChatIdComp = process.env.ADMIN_CHAT_ID;
+      if (!adminChatIdComp || chatId.toString() !== adminChatIdComp) return;
+      const msgText = text.replace("/compannounce", "").trim();
+      if (!msgText) {
+        await bot.sendMessage(chatId,
+          "Usage: /compannounce Your announcement message here\n\n" +
+          "This broadcasts to ALL bot users. Use wisely!\n\n" +
+          "Or use /compannounce auto — to send current active competition info"
+        );
+        return;
+      }
+      try {
+        const { db } = await import("./db");
+        const { sql } = await import("drizzle-orm");
+        const allUsers = (await db.execute(sql`SELECT DISTINCT chat_id FROM telegram_wallets`)).rows;
+
+        let broadcastMsg = "";
+        if (msgText.toLowerCase() === "auto") {
+          const [activeComp] = (await db.execute(sql`SELECT * FROM aster_competition WHERE status = 'active' ORDER BY created_at DESC LIMIT 1`)).rows;
+          if (!activeComp) {
+            await bot.sendMessage(chatId, "No active competition to announce.");
+            return;
+          }
+          const ac = activeComp as any;
+          const endDate = new Date(ac.end_date);
+          const msLeft = Math.max(0, endDate.getTime() - Date.now());
+          const dLeft = Math.floor(msLeft / 86400000);
+          const hLeft = Math.floor((msLeft % 86400000) / 3600000);
+          const [entryCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_competition_entries WHERE competition_id = ${ac.id}`)).rows;
+          const count = parseInt((entryCount as any)?.cnt || "0");
+
+          broadcastMsg = `🏆 *TRADING COMPETITION LIVE!*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `*${ac.name}*\n\n` +
+            `${ac.description || "Trade futures on Aster DEX. Top PnL% wins!"}\n\n` +
+            `🎁 Prize Pool: *${ac.prize_pool || "TBA"}*\n` +
+            `⏰ Time Left: *${dLeft}d ${hLeft}h*\n` +
+            `👥 Traders so far: *${count}*\n\n` +
+            `📈 Open /aster → 🏆 Competition to join!\n\n` +
+            `_Don't miss out — compete and win big!_ 🚀`;
+        } else {
+          broadcastMsg = `📢 *BUILD4 Announcement*\n━━━━━━━━━━━━━━━━━━━━\n\n${msgText}`;
+        }
+
+        let sent = 0, failed = 0;
+        await bot.sendMessage(chatId, `Broadcasting to ${allUsers.length} users...`);
+
+        for (const u of allUsers) {
+          try {
+            await bot!.sendMessage(parseInt((u as any).chat_id), broadcastMsg, { parse_mode: "Markdown" });
+            sent++;
+          } catch {
+            failed++;
+          }
+          if (sent % 25 === 0) await new Promise(r => setTimeout(r, 1000));
+        }
+
+        await bot.sendMessage(chatId, `✅ Broadcast complete!\n\nSent: ${sent}\nFailed: ${failed}\nTotal: ${allUsers.length}`);
+      } catch (e: any) {
+        await bot.sendMessage(chatId, `Broadcast failed: ${e.message?.substring(0, 200)}`);
       }
       return;
     }
@@ -12988,7 +13072,9 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const { db } = await import("./db");
       const { sql } = await import("drizzle-orm");
       await db.execute(sql`CREATE TABLE IF NOT EXISTS "aster_competition" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, name TEXT NOT NULL, description TEXT, start_date TIMESTAMP NOT NULL, end_date TIMESTAMP NOT NULL, prize_pool TEXT DEFAULT '0', status TEXT DEFAULT 'upcoming' NOT NULL, max_entries INTEGER DEFAULT 500, created_at TIMESTAMP DEFAULT now())`);
-      await db.execute(sql`CREATE TABLE IF NOT EXISTS "aster_competition_entries" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, competition_id VARCHAR NOT NULL, chat_id TEXT NOT NULL, username TEXT, starting_balance_usdt DOUBLE PRECISION DEFAULT 0, current_equity_usdt DOUBLE PRECISION DEFAULT 0, pnl_usdt DOUBLE PRECISION DEFAULT 0, pnl_percent DOUBLE PRECISION DEFAULT 0, trade_count INTEGER DEFAULT 0, best_trade_pnl DOUBLE PRECISION DEFAULT 0, worst_trade_pnl DOUBLE PRECISION DEFAULT 0, win_count INTEGER DEFAULT 0, loss_count INTEGER DEFAULT 0, joined_at TIMESTAMP DEFAULT now(), last_updated TIMESTAMP DEFAULT now())`);
+      await db.execute(sql`CREATE TABLE IF NOT EXISTS "aster_competition_entries" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, competition_id VARCHAR NOT NULL, chat_id TEXT NOT NULL, username TEXT, starting_balance_usdt DOUBLE PRECISION DEFAULT 0, current_equity_usdt DOUBLE PRECISION DEFAULT 0, pnl_usdt DOUBLE PRECISION DEFAULT 0, pnl_percent DOUBLE PRECISION DEFAULT 0, trade_count INTEGER DEFAULT 0, best_trade_pnl DOUBLE PRECISION DEFAULT 0, worst_trade_pnl DOUBLE PRECISION DEFAULT 0, win_count INTEGER DEFAULT 0, loss_count INTEGER DEFAULT 0, referred_by TEXT, referral_count INTEGER DEFAULT 0, joined_at TIMESTAMP DEFAULT now(), last_updated TIMESTAMP DEFAULT now())`);
+      await db.execute(sql`ALTER TABLE aster_competition_entries ADD COLUMN IF NOT EXISTS referred_by TEXT`).catch(() => {});
+      await db.execute(sql`ALTER TABLE aster_competition_entries ADD COLUMN IF NOT EXISTS referral_count INTEGER DEFAULT 0`).catch(() => {});
 
       const activeComps = (await db.execute(sql`SELECT * FROM aster_competition WHERE status IN ('active', 'upcoming') ORDER BY start_date ASC LIMIT 5`)).rows;
 
@@ -13071,7 +13157,13 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       }
       buttons.push([{ text: "🏆 Leaderboard", callback_data: `aster:comp_leaderboard_${comp.id}` }]);
       if (myEntry) {
+        const me = myEntry as any;
+        const refCount = parseInt(me.referral_count || "0");
+        if (refCount > 0) {
+          msg += `\n🤝 Referrals: *${refCount}* traders invited`;
+        }
         buttons.push([{ text: "🔄 Refresh Stats", callback_data: `aster:comp_update_${comp.id}` }, { text: "📈 Trade Now", callback_data: "aster:trade_futures" }]);
+        buttons.push([{ text: "🔗 Share & Invite Friends", callback_data: `aster:comp_share_${comp.id}` }]);
       } else {
         buttons.push([{ text: "📈 Trade Now", callback_data: "aster:trade_futures" }]);
       }
@@ -13133,33 +13225,57 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const compName = (compInfo as any)?.name || "Trading Competition";
       const prize = (compInfo as any)?.prize_pool || "TBA";
 
-      await db.execute(sql`INSERT INTO aster_competition_entries (competition_id, chat_id, username, starting_balance_usdt, current_equity_usdt) VALUES (${compId}, ${chatId.toString()}, ${username}, ${totalBalance}, ${totalBalance})`);
+      const pendingRef = pendingCompetitionReferrals.get(chatId.toString());
+      let referredBy: string | null = null;
+      if (pendingRef && pendingRef.compId === compId) {
+        referredBy = pendingRef.referrerChatId;
+        pendingCompetitionReferrals.delete(chatId.toString());
+      }
+
+      if (referredBy) {
+        await db.execute(sql`INSERT INTO aster_competition_entries (competition_id, chat_id, username, starting_balance_usdt, current_equity_usdt, referred_by) VALUES (${compId}, ${chatId.toString()}, ${username}, ${totalBalance}, ${totalBalance}, ${referredBy})`);
+        await db.execute(sql`UPDATE aster_competition_entries SET referral_count = referral_count + 1 WHERE competition_id = ${compId} AND chat_id = ${referredBy}`).catch(() => {});
+        try {
+          const referrerChatIdNum = parseInt(referredBy);
+          await bot.sendMessage(referrerChatIdNum,
+            `🤝 *Competition Referral!*\n\n` +
+            `*${username}* joined the competition through your link!\n` +
+            `Your referral count has been updated. 🎉`,
+            { parse_mode: "Markdown" }
+          );
+        } catch {}
+      } else {
+        await db.execute(sql`INSERT INTO aster_competition_entries (competition_id, chat_id, username, starting_balance_usdt, current_equity_usdt) VALUES (${compId}, ${chatId.toString()}, ${username}, ${totalBalance}, ${totalBalance})`);
+      }
 
       const endD = new Date((compInfo as any)?.end_date);
       const dLeft = Math.ceil((endD.getTime() - Date.now()) / 86400000);
 
-      await bot.sendMessage(chatId,
-        `✅ *You're In! Welcome to ${compName}!*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+      let joinMsg = `✅ *You're In! Welcome to ${compName}!*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
         `📸 Starting Balance: \`$${totalBalance.toFixed(2)} USDT\`\n` +
         `🎁 Prize Pool: *${prize}*\n` +
-        `⏰ Time Left: *~${dLeft} days*\n\n` +
-        `*How it works:*\n` +
+        `⏰ Time Left: *~${dLeft} days*\n\n`;
+      if (referredBy) {
+        joinMsg += `🤝 _You were referred by a friend!_\n\n`;
+      }
+      joinMsg += `*How it works:*\n` +
         `• Your PnL% is tracked from your current balance\n` +
         `• Trade any futures pair on Aster DEX\n` +
         `• Stats auto-update every 5 minutes\n` +
         `• Highest PnL% at the end wins!\n\n` +
-        `_Good luck, trader! 🚀_`,
-        {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "📈 Start Trading", callback_data: "aster:trade_futures" }],
-              [{ text: "🏆 Leaderboard", callback_data: `aster:comp_leaderboard_${compId}` }],
-              [{ text: "« Competition", callback_data: "aster:competition" }],
-            ],
-          },
-        }
-      );
+        `_Good luck, trader! 🚀_`;
+
+      const joinButtons: TelegramBot.InlineKeyboardButton[][] = [
+        [{ text: "📈 Start Trading", callback_data: "aster:trade_futures" }],
+        [{ text: "🔗 Share & Invite Friends", callback_data: `aster:comp_share_${compId}` }],
+        [{ text: "🏆 Leaderboard", callback_data: `aster:comp_leaderboard_${compId}` }],
+        [{ text: "« Competition", callback_data: "aster:competition" }],
+      ];
+
+      await bot.sendMessage(chatId, joinMsg, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: joinButtons },
+      });
     } catch (e: any) {
       await bot.sendMessage(chatId, `Failed to join: ${e.message?.substring(0, 200)}`, {
         reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] },
@@ -13308,6 +13424,49 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       await bot.sendMessage(chatId, `Failed to load leaderboard: ${e.message?.substring(0, 200)}`, {
         reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] },
       });
+    }
+    return;
+  }
+
+  if (action?.startsWith("comp_share_")) {
+    const compId = action.replace("comp_share_", "");
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const [compInfo] = (await db.execute(sql`SELECT name, prize_pool, end_date FROM aster_competition WHERE id = ${compId}`)).rows;
+      if (!compInfo) {
+        await bot.sendMessage(chatId, "Competition not found.", { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "aster:competition" }]] } });
+        return;
+      }
+      const ci = compInfo as any;
+      const endDate = new Date(ci.end_date);
+      const dLeft = Math.ceil((endDate.getTime() - Date.now()) / 86400000);
+
+      const botUsername = (await bot.getMe()).username;
+      const refLink = `https://t.me/${botUsername}?start=compref_${compId}_${chatId}`;
+
+      const shareText = `🏆 *Share Your Competition Link*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `Invite friends to join *${ci.name}*!\n\n` +
+        `🎁 Prize Pool: *${ci.prize_pool || "TBA"}*\n` +
+        `⏰ ${dLeft} days left\n\n` +
+        `📋 *Your Referral Link:*\n\`${refLink}\`\n\n` +
+        `Share this link — when friends join through it, they'll be tracked as your referrals!\n\n` +
+        `_Forward the message below to your groups and friends:_`;
+
+      await bot.sendMessage(chatId, shareText, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: [[{ text: "🏆 Competition", callback_data: "aster:competition" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+      });
+
+      const forwardMsg = `🏆 *JOIN THE ${ci.name.toUpperCase()}!*\n\n` +
+        `💰 Prize Pool: *${ci.prize_pool || "TBA"}*\n` +
+        `⏰ ${dLeft} days left to compete!\n\n` +
+        `Trade futures on Aster DEX via BUILD4 — top PnL% wins!\n\n` +
+        `👉 Join now: ${refLink}\n\n` +
+        `_Powered by BUILD4 x Aster DEX_ 🚀`;
+      await bot.sendMessage(chatId, forwardMsg, { parse_mode: "Markdown" });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 200)}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "aster:competition" }]] } });
     }
     return;
   }

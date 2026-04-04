@@ -3030,6 +3030,9 @@ async function checkAsterPositions(notifyFn: (chatId: number, message: string) =
 }
 
 let competitionUpdateRunning = false;
+const previousRanks = new Map<string, number>();
+let lastDailyLeaderboardHour = -1;
+
 async function updateCompetitionStats(notifyFn: (chatId: number, message: string) => void): Promise<void> {
   if (competitionUpdateRunning) return;
   competitionUpdateRunning = true;
@@ -3043,20 +3046,28 @@ async function updateCompetitionStats(notifyFn: (chatId: number, message: string
       log(`[Competition] Auto-started: ${(c as any).name}`, "trading");
     }
 
-    const ended = await db.execute(sql`UPDATE aster_competition SET status = 'ended' WHERE status = 'active' AND end_date <= ${now} RETURNING id, name`);
+    const ended = await db.execute(sql`UPDATE aster_competition SET status = 'ended' WHERE status = 'active' AND end_date <= ${now} RETURNING id, name, prize_pool`);
     for (const c of ended.rows) {
       const comp = c as any;
       log(`[Competition] Auto-ended: ${comp.name}`, "trading");
-      const top3 = (await db.execute(sql`SELECT chat_id, username, pnl_percent, pnl_usdt FROM aster_competition_entries WHERE competition_id = ${comp.id} ORDER BY pnl_percent DESC LIMIT 3`)).rows;
+      const top10 = (await db.execute(sql`SELECT chat_id, username, pnl_percent, pnl_usdt, trade_count, win_count, loss_count FROM aster_competition_entries WHERE competition_id = ${comp.id} ORDER BY pnl_percent DESC LIMIT 10`)).rows;
+      const [totalEntries] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_competition_entries WHERE competition_id = ${comp.id}`)).rows;
       const medals = ["🥇", "🥈", "🥉"];
       let announcement = `🏆 *Competition Ended: ${comp.name}*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
-      if (top3.length > 0) {
-        announcement += `*Final Results:*\n`;
-        for (let i = 0; i < top3.length; i++) {
-          const w = top3[i] as any;
-          announcement += `${medals[i]} ${w.username || "Anon"} — ${parseFloat(w.pnl_percent || "0").toFixed(1)}% ($${parseFloat(w.pnl_usdt || "0").toFixed(2)})\n`;
+      announcement += `🎁 Prize Pool: *${comp.prize_pool || "TBA"}*\n`;
+      announcement += `👥 Total Traders: *${(totalEntries as any)?.cnt || 0}*\n\n`;
+      if (top10.length > 0) {
+        announcement += `*🏅 Final Standings:*\n\n`;
+        for (let i = 0; i < Math.min(top10.length, 5); i++) {
+          const w = top10[i] as any;
+          const pnlPct = parseFloat(w.pnl_percent || "0");
+          const pnlUsdt = parseFloat(w.pnl_usdt || "0");
+          const wr = (w.win_count + w.loss_count) > 0 ? ((w.win_count / (w.win_count + w.loss_count)) * 100).toFixed(0) : "—";
+          announcement += `${i < 3 ? medals[i] : `${i+1}.`} *${w.username || "Anon"}*\n`;
+          announcement += `   PnL: \`${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%\` · \`${pnlUsdt >= 0 ? "+" : ""}$${pnlUsdt.toFixed(2)}\`\n`;
+          announcement += `   ${w.trade_count || 0} trades · WR: ${wr}%\n\n`;
         }
-        announcement += `\nCongratulations to the winners! 🎉`;
+        announcement += `Congratulations to all winners! 🎉\n_Stay tuned for the next competition!_`;
       }
       const allEntries = (await db.execute(sql`SELECT chat_id FROM aster_competition_entries WHERE competition_id = ${comp.id}`)).rows;
       for (const entry of allEntries) {
@@ -3064,13 +3075,18 @@ async function updateCompetitionStats(notifyFn: (chatId: number, message: string
       }
     }
 
-    const activeComps = (await db.execute(sql`SELECT id FROM aster_competition WHERE status = 'active'`)).rows;
+    const activeComps = (await db.execute(sql`SELECT id, name, end_date, prize_pool FROM aster_competition WHERE status = 'active'`)).rows;
     if (activeComps.length === 0) return;
 
     for (const comp of activeComps) {
       const compId = (comp as any).id;
-      const entries = (await db.execute(sql`SELECT id, chat_id, starting_balance_usdt, joined_at FROM aster_competition_entries WHERE competition_id = ${compId}`)).rows;
+      const compName = (comp as any).name;
+      const entries = (await db.execute(sql`SELECT id, chat_id, starting_balance_usdt, joined_at, pnl_percent FROM aster_competition_entries WHERE competition_id = ${compId}`)).rows;
       if (entries.length === 0) continue;
+
+      const rankedBefore = [...entries].sort((a: any, b: any) => parseFloat(b.pnl_percent || "0") - parseFloat(a.pnl_percent || "0"));
+      const beforeRanks = new Map<string, number>();
+      rankedBefore.forEach((e: any, i: number) => beforeRanks.set(e.chat_id, i + 1));
 
       for (const entry of entries) {
         const e = entry as any;
@@ -3134,6 +3150,64 @@ async function updateCompetitionStats(notifyFn: (chatId: number, message: string
 
         await new Promise(r => setTimeout(r, 500));
       }
+
+      const updatedEntries = (await db.execute(sql`SELECT chat_id, username, pnl_percent, pnl_usdt FROM aster_competition_entries WHERE competition_id = ${compId} ORDER BY pnl_percent DESC`)).rows;
+      for (let i = 0; i < updatedEntries.length; i++) {
+        const ue = updatedEntries[i] as any;
+        const newRank = i + 1;
+        const rankKey = `${compId}_${ue.chat_id}`;
+        const oldRank = previousRanks.get(rankKey);
+        previousRanks.set(rankKey, newRank);
+
+        if (oldRank !== undefined && oldRank !== newRank) {
+          const moved = oldRank - newRank;
+          if (moved >= 2 || (moved > 0 && newRank <= 5)) {
+            try {
+              const pnlPct = parseFloat(ue.pnl_percent || "0");
+              notifyFn(parseInt(ue.chat_id),
+                `📈 *Rank Update — ${compName}*\n\n` +
+                `You moved from #${oldRank} → *#${newRank}*! 🚀\n` +
+                `PnL: \`${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%\`\n` +
+                `${newRank <= 3 ? "You're in prize position! Keep it up! 🏆" : "Keep climbing! 💪"}`
+              );
+            } catch {}
+          } else if (moved <= -3 || (moved < 0 && oldRank <= 3)) {
+            try {
+              notifyFn(parseInt(ue.chat_id),
+                `📉 *Rank Alert — ${compName}*\n\n` +
+                `You dropped from #${oldRank} → *#${newRank}*\n` +
+                `Time to trade your way back up! 💪`
+              );
+            } catch {}
+          }
+        }
+      }
+
+      const currentHour = now.getUTCHours();
+      if (currentHour === 12 && lastDailyLeaderboardHour !== 12 && updatedEntries.length > 0) {
+        lastDailyLeaderboardHour = 12;
+        const compEnd = new Date((comp as any).end_date);
+        const msLeft = Math.max(0, compEnd.getTime() - now.getTime());
+        const dLeft = Math.floor(msLeft / 86400000);
+        const hLeft = Math.floor((msLeft % 86400000) / 3600000);
+
+        const medals = ["🥇", "🥈", "🥉"];
+        let dailyMsg = `📊 *Daily Leaderboard — ${compName}*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+        dailyMsg += `⏰ *${dLeft}d ${hLeft}h remaining*\n\n`;
+        for (let i = 0; i < Math.min(updatedEntries.length, 10); i++) {
+          const ue = updatedEntries[i] as any;
+          const pnlPct = parseFloat(ue.pnl_percent || "0");
+          const pnlUsdt = parseFloat(ue.pnl_usdt || "0");
+          dailyMsg += `${i < 3 ? medals[i] : `${i+1}.`} ${ue.username || "Anon"} · \`${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%\` · \`${pnlUsdt >= 0 ? "+" : ""}$${pnlUsdt.toFixed(2)}\`\n`;
+        }
+        dailyMsg += `\n👥 ${updatedEntries.length} traders competing\n_Trade now to climb the ranks!_`;
+
+        for (const ue of updatedEntries) {
+          try { notifyFn(parseInt((ue as any).chat_id), dailyMsg); } catch {}
+        }
+        log(`[Competition] Daily leaderboard sent to ${updatedEntries.length} participants`, "trading");
+      }
+      if (currentHour !== 12) lastDailyLeaderboardHour = -1;
     }
     log(`[Competition] Stats updated for all active competitions`, "trading");
   } catch (err: any) {

@@ -92,6 +92,13 @@ User-facing trading competitions on Aster DEX futures. Features:
 - Order confirmation shows LONG/SHORT labels, fill price, estimated margin, post-order quick actions
 - Robust error handling for insufficient margin, invalid quantity, leverage errors, timeouts, disconnections
 - API timeout increased from 15s to 20s for reliability during volatile markets
+- **Growth features**:
+  - Daily leaderboard push: All participants receive a daily standings update at 12:00 UTC with top 10 rankings, time remaining, and call to action
+  - Rank change alerts: Participants notified when they move up significantly (2+ spots or into top 5) or drop significantly (3+ spots or out of top 3)
+  - `/compannounce` admin broadcast: Admin can send custom messages or auto-generated competition info to ALL bot users (rate-limited at 25/sec)
+  - Referral tracking: Deep link system (`/start compref_<compId>_<chatId>`), "Share & Invite" button, referral count on profile, referrer notifications
+  - DB columns: `referred_by TEXT`, `referral_count INTEGER` on `aster_competition_entries`
+  - `previousRanks` in-memory map tracks rank changes between update cycles
 
 ### Autonomous AI Trading Agent
 An AI-powered agent for autonomous trading on Four.meme, featuring dynamic buy/sell decisions, independent position monitoring, AI analysis, adaptive intelligence, and multi-whale copy trading.
