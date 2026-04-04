@@ -9578,7 +9578,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     if (cmd === "compannounce" && !isGroup) {
       const adminChatIdComp = process.env.ADMIN_CHAT_ID;
       if (!adminChatIdComp || chatId.toString() !== adminChatIdComp) return;
-      const msgText = text.replace("/compannounce", "").trim();
+      const msgText = text.replace(/^\/compannounce(@\S+)?\s*/, "").trim();
       if (!msgText) {
         await bot.sendMessage(chatId,
           "Usage: /compannounce Your announcement message here\n\n" +

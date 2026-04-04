@@ -24,6 +24,18 @@ uri = "file://attached_assets/build4_10k_banner_v2.png"
 type = "image"
 title = "generated_image"
 
+[[generated]]
+id = "rdZf6XxK-RAyrjVEvSYxg"
+uri = "file://attached_assets/generated_images/aster_ninja_red.png"
+type = "image"
+title = "red ninja competitor"
+
+[[generated]]
+id = "dQIvl6wJuD1YwHo_zbain"
+uri = "file://attached_assets/generated_images/aster_ninja_blue.png"
+type = "image"
+title = "blue ninja competitor"
+
 [[outputs]]
 id = "JBjCUwiEHNM3bqg5OGXfp"
 uri = "file://attached_assets/generated_images/build4_xlayer_banner.png"

@@ -3031,7 +3031,7 @@ async function checkAsterPositions(notifyFn: (chatId: number, message: string) =
 
 let competitionUpdateRunning = false;
 const previousRanks = new Map<string, number>();
-let lastDailyLeaderboardHour = -1;
+const lastDailyLeaderboardDate = new Map<string, string>();
 
 async function updateCompetitionStats(notifyFn: (chatId: number, message: string) => void): Promise<void> {
   if (competitionUpdateRunning) return;
@@ -3184,8 +3184,10 @@ async function updateCompetitionStats(notifyFn: (chatId: number, message: string
       }
 
       const currentHour = now.getUTCHours();
-      if (currentHour === 12 && lastDailyLeaderboardHour !== 12 && updatedEntries.length > 0) {
-        lastDailyLeaderboardHour = 12;
+      const todayKey = `${now.getUTCFullYear()}-${now.getUTCMonth()}-${now.getUTCDate()}`;
+      const dailyKey = `${compId}_${todayKey}`;
+      if (currentHour === 12 && !lastDailyLeaderboardDate.has(dailyKey) && updatedEntries.length > 0) {
+        lastDailyLeaderboardDate.set(dailyKey, todayKey);
         const compEnd = new Date((comp as any).end_date);
         const msLeft = Math.max(0, compEnd.getTime() - now.getTime());
         const dLeft = Math.floor(msLeft / 86400000);
@@ -3207,7 +3209,10 @@ async function updateCompetitionStats(notifyFn: (chatId: number, message: string
         }
         log(`[Competition] Daily leaderboard sent to ${updatedEntries.length} participants`, "trading");
       }
-      if (currentHour !== 12) lastDailyLeaderboardHour = -1;
+      for (const [k] of lastDailyLeaderboardDate) {
+        if (!k.startsWith(compId + "_")) continue;
+        if (!k.endsWith(todayKey)) lastDailyLeaderboardDate.delete(k);
+      }
     }
     log(`[Competition] Stats updated for all active competitions`, "trading");
   } catch (err: any) {
