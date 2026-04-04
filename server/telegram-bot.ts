@@ -14854,14 +14854,48 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       }
 
       results.push(`\n--- V3 API Tests ---`);
-      await tryV3("bal POST+URL", "POST", "/fapi/v3/balance", true);
-      await tryV3("bal POST+BODY", "POST", "/fapi/v3/balance", false);
-      await tryV3("bal GET+URL", "GET", "/fapi/v3/balance", true);
-      await tryV3("pos POST+URL", "POST", "/fapi/v3/positionRisk", true);
-      await tryV3("pos POST+BODY", "POST", "/fapi/v3/positionRisk", false);
-      await tryV3("pos GET+URL", "GET", "/fapi/v3/positionRisk", true);
-      await tryV3("acct POST+URL", "POST", "/fapi/v3/account", true);
-      await tryV3("noop POST+URL", "POST", "/fapi/v3/noop", true);
+
+      async function tryV3h(label: string, method: string, path: string, extraHeaders: Record<string, string> = {}, extraParams: Record<string, any> = {}) {
+        try {
+          const sp = await signP(extraParams);
+          const q = bqs(sp);
+          const url = `${FAPI}${path}?${q}`;
+          const h: Record<string, string> = { "User-Agent": "BUILD4/1.0", "Content-Type": "application/x-www-form-urlencoded", ...extraHeaders };
+          const r = await fetch(url, { method, headers: h });
+          const t = await r.text();
+          results.push(`${label}: ${r.status} ${t.substring(0, 120)}`);
+        } catch (e: any) {
+          results.push(`${label}: ERR ${e.message?.substring(0, 80)}`);
+        }
+      }
+
+      await tryV3h("noop POST", "POST", "/fapi/v3/noop");
+      await tryV3h("bal GET", "GET", "/fapi/v3/balance");
+      await tryV3h("bal GET+APIKEY=addr", "GET", "/fapi/v3/balance", { "X-MBX-APIKEY": checksumAddr });
+      await tryV3h("bal GET+APIKEY=signer", "GET", "/fapi/v3/balance", { "X-MBX-APIKEY": checksumAddr.toLowerCase() });
+      await tryV3h("bal GET+APIKEY=V3", "GET", "/fapi/v3/balance", { "X-MBX-APIKEY": "V3" });
+      await tryV3h("bal GET+timestamp", "GET", "/fapi/v3/balance", {}, { timestamp: Date.now() });
+      await tryV3h("bal GET+recvWindow", "GET", "/fapi/v3/balance", {}, { recvWindow: 60000 });
+      await tryV3h("pos GET+APIKEY=addr", "GET", "/fapi/v3/positionRisk", { "X-MBX-APIKEY": checksumAddr });
+      // Try V1 path with V3 signing
+      await tryV3h("bal GET v1path", "GET", "/fapi/v1/balance");
+      await tryV3h("pos GET v1path", "GET", "/fapi/v1/positionRisk");
+      // Try with JSON content type
+      await tryV3h("bal GET+JSON", "GET", "/fapi/v3/balance", { "Content-Type": "application/json" });
+      // Try without Content-Type
+      async function tryNoContentType(label: string, path: string) {
+        try {
+          const sp = await signP({});
+          const q = bqs(sp);
+          const url = `${FAPI}${path}?${q}`;
+          const r = await fetch(url, { method: "GET", headers: { "User-Agent": "BUILD4/1.0" } });
+          const t = await r.text();
+          results.push(`${label}: ${r.status} ${t.substring(0, 120)}`);
+        } catch (e: any) {
+          results.push(`${label}: ERR ${e.message?.substring(0, 80)}`);
+        }
+      }
+      await tryNoContentType("bal GET noCT", "/fapi/v3/balance");
 
       const fullMsg = results.join("\n");
       const chunks = [];
