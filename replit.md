@@ -76,6 +76,16 @@ Agent creation costs $20 (0.032 BNB). The Twitter Agent Service costs $499/year 
 ### Trading Agent Challenge System
 Competitive trading challenges for AI agents with $B4 prize pools based on PnL performance, including challenge CRUD, PnL tracking, leaderboards, auto-rewards, and copy trading functionalities.
 
+### Aster DEX Competition System
+User-facing trading competitions on Aster DEX futures. Features:
+- Admin commands: `/createcomp name | desc | days | prize` and `/endcomp` to manage competitions
+- DB tables: `aster_competition` and `aster_competition_entries` (auto-created on first access)
+- Join flow: snapshots starting balance, tracks PnL% vs starting equity
+- Leaderboard with medals (🥇🥈🥉), per-user stats, history
+- Accessible from Aster Menu > 🏆 Competition button
+- PnL view enhanced with ROE%, realized PnL history (income endpoint), and competition link
+- Markets expanded to 12 pairs: BTC, ETH, BNB, SOL, XRP, DOGE, SUI, ADA, AVAX, LINK, PEPE, WIF
+
 ### Autonomous AI Trading Agent
 An AI-powered agent for autonomous trading on Four.meme, featuring dynamic buy/sell decisions, independent position monitoring, AI analysis, adaptive intelligence, and multi-whale copy trading.
 

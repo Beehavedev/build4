@@ -9518,6 +9518,71 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "createcomp" && !isGroup) {
+      const adminChatIdComp = process.env.ADMIN_CHAT_ID;
+      if (!adminChatIdComp || chatId.toString() !== adminChatIdComp) return;
+      const parts = text.split("|").map(s => s.trim());
+      if (parts.length < 4) {
+        await bot.sendMessage(chatId,
+          "Usage: /createcomp name | description | duration_days | prize_pool\n\n" +
+          "Example:\n/createcomp BUILD4 Trading Championship | Trade futures, top PnL% wins! | 7 | 100,000 $B4 + 500 USDT"
+        );
+        return;
+      }
+      const name = parts[0].replace("/createcomp ", "").trim();
+      const description = parts[1];
+      const durationDays = parseInt(parts[2]) || 7;
+      const prizePool = parts[3];
+      try {
+        const { db } = await import("./db");
+        const { sql } = await import("drizzle-orm");
+        const startDate = new Date();
+        const endDate = new Date(startDate.getTime() + durationDays * 86400000);
+        await db.execute(sql`INSERT INTO aster_competition (name, description, start_date, end_date, prize_pool, status) VALUES (${name}, ${description}, ${startDate}, ${endDate}, ${prizePool}, 'active')`);
+        await bot.sendMessage(chatId,
+          `✅ Competition Created!\n\n` +
+          `Name: ${name}\n` +
+          `Duration: ${durationDays} days\n` +
+          `Prize: ${prizePool}\n` +
+          `Status: ACTIVE\n\n` +
+          `Users can join from the Aster Menu > Competition.`
+        );
+      } catch (e: any) {
+        await bot.sendMessage(chatId, `Failed: ${e.message?.substring(0, 200)}`);
+      }
+      return;
+    }
+
+    if (cmd === "endcomp" && !isGroup) {
+      const adminChatIdComp = process.env.ADMIN_CHAT_ID;
+      if (!adminChatIdComp || chatId.toString() !== adminChatIdComp) return;
+      try {
+        const { db } = await import("./db");
+        const { sql } = await import("drizzle-orm");
+        const result = await db.execute(sql`UPDATE aster_competition SET status = 'ended' WHERE status = 'active' RETURNING name`);
+        const ended = result.rows;
+        if (ended.length === 0) {
+          await bot.sendMessage(chatId, "No active competitions to end.");
+        } else {
+          let msg = `✅ Ended ${ended.length} competition(s):\n`;
+          for (const c of ended) msg += `• ${(c as any).name}\n`;
+          const winners = (await db.execute(sql`SELECT ce.username, ce.pnl_percent, ce.pnl_usdt, ce.trade_count FROM aster_competition_entries ce JOIN aster_competition c ON ce.competition_id = c.id WHERE c.status = 'ended' ORDER BY ce.pnl_percent DESC LIMIT 10`)).rows;
+          if (winners.length > 0) {
+            msg += `\n🏆 Final Leaderboard:\n`;
+            const medals = ["🥇", "🥈", "🥉"];
+            for (let i = 0; i < winners.length; i++) {
+              const w = winners[i] as any;
+              msg += `${i < 3 ? medals[i] : `${i+1}.`} ${w.username} — ${parseFloat(w.pnl_percent || "0").toFixed(1)}% ($${parseFloat(w.pnl_usdt || "0").toFixed(2)})\n`;
+            }
+          }
+          await bot.sendMessage(chatId, msg);
+        }
+      } catch (e: any) {
+        await bot.sendMessage(chatId, `Failed: ${e.message?.substring(0, 200)}`);
+      }
+      return;
+    }
+
     if (cmd === "agentstatus") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me to check agent status!"); return; }
       await ensureWallet(chatId);
@@ -12771,7 +12836,7 @@ async function handleAsterMenu(chatId: number): Promise<void> {
           [{ text: "📊 Markets", callback_data: "aster:markets" }, { text: "💵 Fund Account", callback_data: "aster:fund" }],
           [{ text: "💰 Balances", callback_data: "aster:balance" }, { text: "📊 Positions", callback_data: "aster:positions" }],
           [{ text: "📋 Open Orders", callback_data: "aster:orders" }, { text: "📈 PnL", callback_data: "aster:pnl" }],
-          [{ text: "⚙️ Risk Settings", callback_data: "aster:risk_settings" }],
+          [{ text: "🏆 Competition", callback_data: "aster:competition" }, { text: "⚙️ Risk Settings", callback_data: "aster:risk_settings" }],
           ...(isV3Direct ? [[{ text: "🔑 Upgrade (Add API Key)", callback_data: "aster:connect" }]] : []),
           [{ text: "🔌 Disconnect", callback_data: "aster:disconnect" }, { text: "« Back", callback_data: "action:menu" }],
         ],
@@ -12913,6 +12978,273 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   if (action === "disconnect_confirm") {
     await storage.removeAsterCredentials(chatId.toString());
     await bot.sendMessage(chatId, "Aster account disconnected. Your API credentials have been removed.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
+    return;
+  }
+
+  if (action === "competition") {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      await db.execute(sql`CREATE TABLE IF NOT EXISTS "aster_competition" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, name TEXT NOT NULL, description TEXT, start_date TIMESTAMP NOT NULL, end_date TIMESTAMP NOT NULL, prize_pool TEXT DEFAULT '0', status TEXT DEFAULT 'upcoming' NOT NULL, max_entries INTEGER DEFAULT 500, created_at TIMESTAMP DEFAULT now())`);
+      await db.execute(sql`CREATE TABLE IF NOT EXISTS "aster_competition_entries" (id VARCHAR DEFAULT gen_random_uuid() PRIMARY KEY, competition_id VARCHAR NOT NULL, chat_id TEXT NOT NULL, username TEXT, starting_balance_usdt DOUBLE PRECISION DEFAULT 0, current_equity_usdt DOUBLE PRECISION DEFAULT 0, pnl_usdt DOUBLE PRECISION DEFAULT 0, pnl_percent DOUBLE PRECISION DEFAULT 0, trade_count INTEGER DEFAULT 0, best_trade_pnl DOUBLE PRECISION DEFAULT 0, worst_trade_pnl DOUBLE PRECISION DEFAULT 0, win_count INTEGER DEFAULT 0, loss_count INTEGER DEFAULT 0, joined_at TIMESTAMP DEFAULT now(), last_updated TIMESTAMP DEFAULT now())`);
+
+      const activeComps = (await db.execute(sql`SELECT * FROM aster_competition WHERE status IN ('active', 'upcoming') ORDER BY start_date ASC LIMIT 5`)).rows;
+
+      if (activeComps.length === 0) {
+        await bot.sendMessage(chatId,
+          `🏆 *Trading Competition*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+          `No active competitions right now.\n\nStay tuned — competitions are announced in our community!\n\n` +
+          `_Trade on Aster DEX via BUILD4 to be ready when the next one drops._`,
+          {
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "📊 My Stats", callback_data: "aster:comp_mystats" }],
+                [{ text: "🏆 Leaderboard", callback_data: "aster:comp_leaderboard" }],
+                [{ text: "« Aster Menu", callback_data: "action:aster" }],
+              ],
+            },
+          }
+        );
+        return;
+      }
+
+      const comp = activeComps[0] as any;
+      const isActive = comp.status === "active";
+      const endDate = new Date(comp.end_date);
+      const now = new Date();
+      const hoursLeft = Math.max(0, (endDate.getTime() - now.getTime()) / 3600000);
+      const timeStr = hoursLeft > 24 ? `${Math.ceil(hoursLeft / 24)} days` : `${Math.ceil(hoursLeft)} hours`;
+
+      const [entryCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_competition_entries WHERE competition_id = ${comp.id}`)).rows;
+      const [myEntry] = (await db.execute(sql`SELECT * FROM aster_competition_entries WHERE competition_id = ${comp.id} AND chat_id = ${chatId.toString()}`)).rows;
+
+      let msg = `🏆 *${comp.name}*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      msg += `${comp.description || "Trade futures on Aster DEX. Top PnL% wins!"}\n\n`;
+      msg += `📅 Status: *${isActive ? "LIVE" : "Upcoming"}*\n`;
+      msg += `⏰ ${isActive ? "Ends in" : "Starts in"}: *${timeStr}*\n`;
+      msg += `🎁 Prize Pool: *${comp.prize_pool || "TBA"}*\n`;
+      msg += `👥 Entries: *${(entryCount as any)?.cnt || 0}*/${comp.max_entries || 500}\n\n`;
+
+      if (myEntry) {
+        const me = myEntry as any;
+        msg += `📊 *Your Stats:*\n`;
+        msg += `  PnL: \`${me.pnl_usdt >= 0 ? "+" : ""}$${parseFloat(me.pnl_usdt || "0").toFixed(2)}\` (${parseFloat(me.pnl_percent || "0").toFixed(1)}%)\n`;
+        msg += `  Trades: ${me.trade_count || 0} · W/L: ${me.win_count || 0}/${me.loss_count || 0}\n`;
+      }
+
+      const buttons: TelegramBot.InlineKeyboardButton[][] = [];
+      if (!myEntry && isActive) {
+        buttons.push([{ text: "✅ Join Competition", callback_data: `aster:comp_join_${comp.id}` }]);
+      }
+      buttons.push([{ text: "🏆 Leaderboard", callback_data: `aster:comp_leaderboard_${comp.id}` }]);
+      if (myEntry) {
+        buttons.push([{ text: "🔄 Update My Stats", callback_data: `aster:comp_update_${comp.id}` }]);
+      }
+      buttons.push([{ text: "🔄 Trade Now", callback_data: "aster:trade_futures" }]);
+      buttons.push([{ text: "« Aster Menu", callback_data: "action:aster" }]);
+
+      await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Failed to load competition: ${e.message?.substring(0, 200)}`, {
+        reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+      });
+    }
+    return;
+  }
+
+  if (action?.startsWith("comp_join_")) {
+    const compId = action.replace("comp_join_", "");
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const [existing] = (await db.execute(sql`SELECT * FROM aster_competition_entries WHERE competition_id = ${compId} AND chat_id = ${chatId.toString()}`)).rows;
+      if (existing) {
+        await bot.sendMessage(chatId, "You're already in this competition!", { reply_markup: { inline_keyboard: [[{ text: "🏆 Competition", callback_data: "aster:competition" }]] } });
+        return;
+      }
+
+      const futuresClient = client.futures || client;
+      const balances = await futuresClient.balance().catch(() => []);
+      let totalBalance = 0;
+      for (const b of (balances as any[])) {
+        totalBalance += parseFloat(b.crossWalletBalance || b.balance || "0");
+      }
+
+      const username = await (async () => {
+        try {
+          const chatInfo = await bot!.getChat(chatId);
+          return (chatInfo as any).username || (chatInfo as any).first_name || `user_${chatId}`;
+        } catch { return `user_${chatId}`; }
+      })();
+
+      await db.execute(sql`INSERT INTO aster_competition_entries (competition_id, chat_id, username, starting_balance_usdt, current_equity_usdt) VALUES (${compId}, ${chatId.toString()}, ${username}, ${totalBalance}, ${totalBalance})`);
+
+      await bot.sendMessage(chatId,
+        `✅ *Joined the Competition!*\n\n` +
+        `Starting Balance: \`$${totalBalance.toFixed(2)} USDT\`\n\n` +
+        `Your PnL% will be tracked from this point.\nTrade smart and climb the leaderboard! 🚀`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 Trade Now", callback_data: "aster:trade_futures" }],
+              [{ text: "🏆 Leaderboard", callback_data: `aster:comp_leaderboard_${compId}` }],
+              [{ text: "« Aster Menu", callback_data: "action:aster" }],
+            ],
+          },
+        }
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Failed to join: ${e.message?.substring(0, 200)}`, {
+        reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+      });
+    }
+    return;
+  }
+
+  if (action?.startsWith("comp_update_")) {
+    const compId = action.replace("comp_update_", "");
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const futuresClient = client.futures || client;
+      const [balances, positions] = await Promise.all([
+        futuresClient.balance().catch(() => []),
+        futuresClient.positions().catch(() => []),
+      ]);
+      let totalBalance = 0;
+      for (const b of (balances as any[])) {
+        totalBalance += parseFloat(b.crossWalletBalance || b.balance || "0");
+      }
+      let totalUpnl = 0;
+      const openPositions = (positions as any[]).filter((p: any) => parseFloat(p.positionAmt) !== 0);
+      for (const p of openPositions) {
+        totalUpnl += parseFloat(p.unRealizedProfit || "0");
+      }
+      const equity = totalBalance + totalUpnl;
+
+      const [entry] = (await db.execute(sql`SELECT * FROM aster_competition_entries WHERE competition_id = ${compId} AND chat_id = ${chatId.toString()}`)).rows;
+      if (!entry) {
+        await bot.sendMessage(chatId, "You haven't joined this competition.", { reply_markup: { inline_keyboard: [[{ text: "🏆 Competition", callback_data: "aster:competition" }]] } });
+        return;
+      }
+      const e = entry as any;
+      const startBal = parseFloat(e.starting_balance_usdt || "0");
+      const pnlUsdt = equity - startBal;
+      const pnlPct = startBal > 0 ? (pnlUsdt / startBal * 100) : 0;
+
+      await db.execute(sql`UPDATE aster_competition_entries SET current_equity_usdt = ${equity}, pnl_usdt = ${pnlUsdt}, pnl_percent = ${pnlPct}, last_updated = now() WHERE competition_id = ${compId} AND chat_id = ${chatId.toString()}`);
+
+      await bot.sendMessage(chatId,
+        `📊 *Stats Updated!*\n\n` +
+        `Equity: \`$${equity.toFixed(2)}\`\n` +
+        `PnL: \`${pnlUsdt >= 0 ? "+" : ""}$${pnlUsdt.toFixed(2)}\` (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%)\n` +
+        `Open Positions: ${openPositions.length}`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🏆 Leaderboard", callback_data: `aster:comp_leaderboard_${compId}` }],
+              [{ text: "« Aster Menu", callback_data: "action:aster" }],
+            ],
+          },
+        }
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Update failed: ${e.message?.substring(0, 200)}`, {
+        reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+      });
+    }
+    return;
+  }
+
+  if (action?.startsWith("comp_leaderboard")) {
+    const compId = action.replace("comp_leaderboard_", "").replace("comp_leaderboard", "");
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      let query;
+      if (compId) {
+        query = await db.execute(sql`SELECT * FROM aster_competition_entries WHERE competition_id = ${compId} ORDER BY pnl_percent DESC LIMIT 20`);
+      } else {
+        query = await db.execute(sql`SELECT * FROM aster_competition_entries ORDER BY pnl_percent DESC LIMIT 20`);
+      }
+      const entries = query.rows;
+
+      if (entries.length === 0) {
+        await bot.sendMessage(chatId, "🏆 *Leaderboard*\n\nNo entries yet. Be the first to join!", {
+          parse_mode: "Markdown",
+          reply_markup: { inline_keyboard: [[{ text: "🏆 Competition", callback_data: "aster:competition" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+        });
+        return;
+      }
+
+      const medals = ["🥇", "🥈", "🥉"];
+      let msg = `🏆 *Trading Competition Leaderboard*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      for (let i = 0; i < entries.length; i++) {
+        const e = entries[i] as any;
+        const rank = i < 3 ? medals[i] : `${i + 1}.`;
+        const pnlPct = parseFloat(e.pnl_percent || "0");
+        const pnlUsdt = parseFloat(e.pnl_usdt || "0");
+        const name = e.username || `user_${e.chat_id?.substring(0, 6)}`;
+        const isMe = e.chat_id === chatId.toString();
+        msg += `${rank} ${isMe ? "*" : ""}${name}${isMe ? " (you)*" : ""}\n`;
+        msg += `   PnL: \`${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%\` · \`${pnlUsdt >= 0 ? "+" : ""}$${pnlUsdt.toFixed(2)}\`\n`;
+        msg += `   W/L: ${e.win_count || 0}/${e.loss_count || 0} · Trades: ${e.trade_count || 0}\n\n`;
+      }
+
+      await bot.sendMessage(chatId, msg, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔄 Refresh", callback_data: action }],
+            [{ text: "🏆 Competition", callback_data: "aster:competition" }],
+            [{ text: "« Aster Menu", callback_data: "action:aster" }],
+          ],
+        },
+      });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Failed to load leaderboard: ${e.message?.substring(0, 200)}`, {
+        reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+      });
+    }
+    return;
+  }
+
+  if (action === "comp_mystats") {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const entries = (await db.execute(sql`SELECT ce.*, c.name as comp_name FROM aster_competition_entries ce JOIN aster_competition c ON ce.competition_id = c.id WHERE ce.chat_id = ${chatId.toString()} ORDER BY ce.joined_at DESC LIMIT 5`)).rows;
+
+      if (entries.length === 0) {
+        await bot.sendMessage(chatId, "📊 *My Competition Stats*\n\nYou haven't joined any competitions yet.", {
+          parse_mode: "Markdown",
+          reply_markup: { inline_keyboard: [[{ text: "🏆 Competition", callback_data: "aster:competition" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+        });
+        return;
+      }
+
+      let msg = `📊 *My Competition History*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      for (const e of entries) {
+        const entry = e as any;
+        const pnlPct = parseFloat(entry.pnl_percent || "0");
+        const pnlUsdt = parseFloat(entry.pnl_usdt || "0");
+        msg += `*${entry.comp_name || "Competition"}*\n`;
+        msg += `  PnL: \`${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%\` · \`${pnlUsdt >= 0 ? "+" : ""}$${pnlUsdt.toFixed(2)}\`\n`;
+        msg += `  Trades: ${entry.trade_count || 0} · W/L: ${entry.win_count || 0}/${entry.loss_count || 0}\n\n`;
+      }
+
+      await bot.sendMessage(chatId, msg, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: [[{ text: "🏆 Competition", callback_data: "aster:competition" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+      });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 200)}`, {
+        reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+      });
+    }
     return;
   }
 
@@ -13284,7 +13616,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     await bot.sendMessage(chatId, "📊 Loading market data...");
     try {
       const futuresClient = client.futures || client;
-      const topSymbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "SUIUSDT", "ADAUSDT"];
+      const topSymbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "SUIUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "PEPEUSDT", "WIFUSDT"];
       const [allTickers, allFunding] = await Promise.all([
         futuresClient.ticker().catch(() => []),
         futuresClient.fundingRate(undefined, 100).catch(() => []),
@@ -13330,6 +13662,12 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
           { text: "DOGE", callback_data: "aster:qpair_DOGEUSDT" },
           { text: "SUI", callback_data: "aster:qpair_SUIUSDT" },
           { text: "ADA", callback_data: "aster:qpair_ADAUSDT" },
+        ],
+        [
+          { text: "AVAX", callback_data: "aster:qpair_AVAXUSDT" },
+          { text: "LINK", callback_data: "aster:qpair_LINKUSDT" },
+          { text: "PEPE", callback_data: "aster:qpair_PEPEUSDT" },
+          { text: "WIF", callback_data: "aster:qpair_WIFUSDT" },
         ],
         [{ text: "🔍 Other Pair", callback_data: "aster:trade_futures" }],
         [{ text: "🔄 Refresh", callback_data: "aster:markets" }, { text: "« Back", callback_data: "action:aster" }],
@@ -13463,6 +13801,148 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     return;
   }
 
+  if (action?.startsWith("close_pos_")) {
+    const closeSymbol = action.replace("close_pos_", "");
+    try {
+      const futuresClient = client.futures || client;
+      const positions = await futuresClient.positions();
+      const pos = (positions as any[]).find((p: any) => p.symbol === closeSymbol && parseFloat(p.positionAmt) !== 0);
+      if (!pos) {
+        await bot.sendMessage(chatId, `No open position found for ${closeSymbol}.`, { reply_markup: { inline_keyboard: [[{ text: "« Positions", callback_data: "aster:positions" }]] } });
+        return;
+      }
+      const amt = parseFloat(pos.positionAmt);
+      const closeSide = amt > 0 ? "SELL" : "BUY";
+      const closeQty = Math.abs(amt).toString();
+      await bot.sendMessage(chatId,
+        `⚠️ *Close ${closeSymbol} Position?*\n\n` +
+        `Direction: ${amt > 0 ? "LONG" : "SHORT"}\n` +
+        `Size: ${closeQty}\n` +
+        `uPnL: ${parseFloat(pos.unRealizedProfit) >= 0 ? "+" : ""}${parseFloat(pos.unRealizedProfit).toFixed(2)} USDT\n\n` +
+        `This will market-close your entire position.`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "✅ Close Position", callback_data: `aster:close_confirm_${closeSymbol}_${closeSide}_${closeQty}` }],
+              [{ text: "❌ Cancel", callback_data: "aster:positions" }],
+            ],
+          },
+        }
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 200)}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "aster:positions" }]] } });
+    }
+    return;
+  }
+
+  if (action?.startsWith("close_confirm_")) {
+    const parts = action.replace("close_confirm_", "").split("_");
+    const closeQty = parts.pop()!;
+    const closeSide = parts.pop()! as "BUY" | "SELL";
+    const closeSymbol = parts.join("_");
+    try {
+      const futuresClient = client.futures || client;
+      await bot.sendMessage(chatId, `⏳ Closing ${closeSymbol} position...`);
+      const result = await futuresClient.createOrder({
+        symbol: closeSymbol,
+        side: closeSide,
+        type: "MARKET",
+        quantity: closeQty,
+        reduceOnly: true,
+      });
+      await bot.sendMessage(chatId,
+        `✅ *Position Closed*\n\n` +
+        `${closeSymbol} — ${result.status}\n` +
+        `Order ID: ${result.orderId}`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: { inline_keyboard: [
+            [{ text: "📊 View Positions", callback_data: "aster:positions" }],
+            [{ text: "📈 PnL", callback_data: "aster:pnl" }],
+            [{ text: "« Aster Menu", callback_data: "action:aster" }],
+          ]},
+        }
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `❌ Close failed: ${e.message?.substring(0, 200)}`, {
+        reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: `aster:close_pos_${closeSymbol}` }], [{ text: "« Positions", callback_data: "aster:positions" }]] },
+      });
+    }
+    return;
+  }
+
+  if (action === "close_all_positions") {
+    try {
+      const futuresClient = client.futures || client;
+      const positions = await futuresClient.positions();
+      const openPositions = (positions as any[]).filter((p: any) => parseFloat(p.positionAmt) !== 0);
+      if (openPositions.length === 0) {
+        await bot.sendMessage(chatId, "No open positions to close.", { reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] } });
+        return;
+      }
+      let totalUpnl = 0;
+      let posText = "";
+      for (const p of openPositions) {
+        const upnl = parseFloat(p.unRealizedProfit || "0");
+        totalUpnl += upnl;
+        posText += `  ${p.symbol} ${parseFloat(p.positionAmt) > 0 ? "LONG" : "SHORT"} — ${upnl >= 0 ? "+" : ""}${upnl.toFixed(2)}\n`;
+      }
+      await bot.sendMessage(chatId,
+        `⚠️ *Close ALL ${openPositions.length} Positions?*\n\n${posText}\nTotal uPnL: ${totalUpnl >= 0 ? "+" : ""}${totalUpnl.toFixed(2)} USDT`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "✅ Close All", callback_data: "aster:close_all_confirm" }],
+              [{ text: "❌ Cancel", callback_data: "aster:positions" }],
+            ],
+          },
+        }
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Error: ${e.message?.substring(0, 200)}`, { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "aster:positions" }]] } });
+    }
+    return;
+  }
+
+  if (action === "close_all_confirm") {
+    try {
+      const futuresClient = client.futures || client;
+      const positions = await futuresClient.positions();
+      const openPositions = (positions as any[]).filter((p: any) => parseFloat(p.positionAmt) !== 0);
+      await bot.sendMessage(chatId, `⏳ Closing ${openPositions.length} positions...`);
+      let closed = 0;
+      let failed = 0;
+      for (const p of openPositions) {
+        try {
+          const amt = parseFloat(p.positionAmt);
+          await futuresClient.createOrder({
+            symbol: p.symbol,
+            side: amt > 0 ? "SELL" : "BUY",
+            type: "MARKET",
+            quantity: Math.abs(amt).toString(),
+            reduceOnly: true,
+          });
+          closed++;
+        } catch { failed++; }
+      }
+      await bot.sendMessage(chatId,
+        `✅ *Positions Closed*\n\n${closed} closed${failed > 0 ? `, ${failed} failed` : ""}`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: { inline_keyboard: [
+            [{ text: "📈 PnL", callback_data: "aster:pnl" }],
+            [{ text: "« Aster Menu", callback_data: "action:aster" }],
+          ]},
+        }
+      );
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Close all failed: ${e.message?.substring(0, 200)}`, { reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] } });
+    }
+    return;
+  }
+
   if (action === "positions") {
     await bot.sendMessage(chatId, "Loading futures positions...");
     try {
@@ -13475,6 +13955,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
+              [{ text: "🔄 New Trade", callback_data: "aster:trade_futures" }],
               [{ text: "🔄 Refresh", callback_data: "aster:positions" }],
               [{ text: "« Back", callback_data: "action:aster" }],
             ],
@@ -13483,30 +13964,48 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         return;
       }
 
-      let msg = "📊 *Futures Positions*\n\n";
+      const fmtP = (v: number) => v >= 1 ? v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : v.toPrecision(4);
+      let msg = `📊 *Futures Positions* (${openPositions.length})\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let totalUpnl = 0;
+      const closeButtons: TelegramBot.InlineKeyboardButton[][] = [];
       for (const p of openPositions) {
         const amt = parseFloat(p.positionAmt);
-        const direction = amt > 0 ? "LONG" : "SHORT";
+        const direction = amt > 0 ? "🟢 LONG" : "🔴 SHORT";
         const upnl = parseFloat(p.unRealizedProfit);
-        const pnlEmoji = upnl >= 0 ? "+" : "";
-        msg += `*${p.symbol}* — ${direction}\n`;
-        msg += `  Size: ${Math.abs(amt)} | Leverage: ${p.leverage}x\n`;
-        msg += `  Entry: ${parseFloat(p.entryPrice).toFixed(4)} | Mark: ${parseFloat(p.markPrice).toFixed(4)}\n`;
-        msg += `  uPnL: ${pnlEmoji}${upnl.toFixed(4)} USDT\n`;
+        totalUpnl += upnl;
+        const entry = parseFloat(p.entryPrice);
+        const mark = parseFloat(p.markPrice);
+        const notional = Math.abs(parseFloat(p.notional || "0"));
+        const leverage = parseInt(p.leverage || "1");
+        const margin = notional / leverage;
+        const roe = margin > 0 ? (upnl / margin * 100) : 0;
+        const pnlIcon = upnl >= 0 ? "📈" : "📉";
+        msg += `${direction} *${p.symbol}* ${p.leverage}x\n`;
+        msg += `   Size: \`${Math.abs(amt)}\` · Notional: \`$${fmtP(notional)}\`\n`;
+        msg += `   Entry: \`$${fmtP(entry)}\` → Mark: \`$${fmtP(mark)}\`\n`;
+        msg += `   ${pnlIcon} PnL: \`${upnl >= 0 ? "+" : ""}${upnl.toFixed(2)} USDT\` · ROE: \`${roe >= 0 ? "+" : ""}${roe.toFixed(1)}%\`\n`;
         if (p.liquidationPrice && parseFloat(p.liquidationPrice) > 0) {
-          msg += `  Liq: ${parseFloat(p.liquidationPrice).toFixed(4)}\n`;
+          msg += `   ⚠️ Liq: \`$${fmtP(parseFloat(p.liquidationPrice))}\`\n`;
         }
         msg += "\n";
+        const base = p.symbol.replace("USDT", "");
+        closeButtons.push([{ text: `❌ Close ${base}`, callback_data: `aster:close_pos_${p.symbol}` }]);
       }
+      msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+      msg += `Total uPnL: \`${totalUpnl >= 0 ? "+" : ""}${totalUpnl.toFixed(2)} USDT\``;
+
+      const buttons: TelegramBot.InlineKeyboardButton[][] = [
+        ...closeButtons,
+      ];
+      if (openPositions.length > 1) {
+        buttons.push([{ text: "🔴 Close ALL Positions", callback_data: "aster:close_all_positions" }]);
+      }
+      buttons.push([{ text: "🔄 Refresh", callback_data: "aster:positions" }, { text: "📈 PnL", callback_data: "aster:pnl" }]);
+      buttons.push([{ text: "« Aster Menu", callback_data: "action:aster" }]);
 
       await bot.sendMessage(chatId, msg, {
         parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🔄 Refresh", callback_data: "aster:positions" }],
-            [{ text: "« Back", callback_data: "action:aster" }],
-          ],
-        },
+        reply_markup: { inline_keyboard: buttons },
       });
     } catch (e: any) {
       await bot.sendMessage(chatId, `Failed to fetch positions: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
@@ -13571,24 +14070,28 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     await bot.sendMessage(chatId, "Loading PnL summary...");
     try {
       const futuresClient = client.futures || client;
-      const [positions, balances] = await Promise.all([
+      const [positions, balances, income] = await Promise.all([
         futuresClient.positions().catch(() => []),
         futuresClient.balance().catch(() => []),
+        futuresClient.income("REALIZED_PNL", 10).catch(() => []),
       ]);
 
       const openPositions = (positions as any[]).filter((p: any) => parseFloat(p.positionAmt) !== 0);
       let totalUpnl = 0;
       let positionDetails = "";
+      const fmtP = (v: number) => v >= 1 ? v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : v.toPrecision(4);
 
       for (const p of openPositions) {
         const upnl = parseFloat(p.unRealizedProfit || "0");
         totalUpnl += upnl;
         const amt = parseFloat(p.positionAmt);
-        const dir = amt > 0 ? "LONG" : "SHORT";
-        const entry = parseFloat(p.entryPrice);
-        const mark = parseFloat(p.markPrice);
-        const pctChange = entry > 0 ? ((mark - entry) / entry * 100 * (amt > 0 ? 1 : -1)).toFixed(2) : "0";
-        positionDetails += `  *${p.symbol}* ${dir} ${p.leverage}x — ${upnl >= 0 ? "+" : ""}${upnl.toFixed(2)} USDT (${pctChange}%)\n`;
+        const dir = amt > 0 ? "🟢 LONG" : "🔴 SHORT";
+        const notional = Math.abs(parseFloat(p.notional || "0"));
+        const leverage = parseInt(p.leverage || "1");
+        const margin = notional / leverage;
+        const roe = margin > 0 ? (upnl / margin * 100) : 0;
+        positionDetails += `  ${dir} *${p.symbol}* ${p.leverage}x\n`;
+        positionDetails += `     \`${upnl >= 0 ? "+" : ""}${upnl.toFixed(2)} USDT\` · ROE: \`${roe >= 0 ? "+" : ""}${roe.toFixed(1)}%\`\n`;
       }
 
       let totalBalance = 0;
@@ -13598,26 +14101,36 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         totalAvailable += parseFloat(b.availableBalance || "0");
       }
 
-      let msg = `📈 *Aster DEX — PnL Summary*\n` +
-        `_Powered by Aster DEX_\n\n` +
-        `*Account Overview:*\n` +
-        `  Wallet Balance: ${totalBalance.toFixed(2)} USDT\n` +
-        `  Available: ${totalAvailable.toFixed(2)} USDT\n` +
-        `  Unrealized PnL: ${totalUpnl >= 0 ? "+" : ""}${totalUpnl.toFixed(2)} USDT\n` +
-        `  Equity: ${(totalBalance + totalUpnl).toFixed(2)} USDT\n\n`;
+      const equity = totalBalance + totalUpnl;
+      let msg = `📈 *PnL Summary*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      msg += `💰 Wallet: \`$${fmtP(totalBalance)}\`\n`;
+      msg += `📊 Available: \`$${fmtP(totalAvailable)}\`\n`;
+      msg += `${totalUpnl >= 0 ? "📈" : "📉"} Unrealized: \`${totalUpnl >= 0 ? "+" : ""}$${totalUpnl.toFixed(2)}\`\n`;
+      msg += `🏦 Equity: \`$${fmtP(equity)}\`\n\n`;
 
       if (openPositions.length > 0) {
-        msg += `*Open Positions (${openPositions.length}):*\n${positionDetails}`;
-      } else {
-        msg += `_No open positions_`;
+        msg += `*Open Positions (${openPositions.length}):*\n${positionDetails}\n`;
+      }
+
+      if (Array.isArray(income) && income.length > 0) {
+        msg += `*Recent Realized PnL:*\n`;
+        let totalRealized = 0;
+        for (const inc of income.slice(0, 8)) {
+          const amt = parseFloat(inc.income || "0");
+          totalRealized += amt;
+          const ts = new Date(inc.time || Date.now()).toISOString().substring(5, 16).replace("T", " ");
+          msg += `  ${amt >= 0 ? "✅" : "❌"} \`${amt >= 0 ? "+" : ""}${amt.toFixed(2)}\` ${inc.symbol || ""} · ${ts}\n`;
+        }
+        msg += `  ─────\n  Total (recent): \`${totalRealized >= 0 ? "+" : ""}${totalRealized.toFixed(2)} USDT\`\n`;
       }
 
       await bot.sendMessage(chatId, msg, {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "🔄 Refresh", callback_data: "aster:pnl" }],
-            [{ text: "« Back", callback_data: "action:aster" }],
+            [{ text: "🔄 Refresh", callback_data: "aster:pnl" }, { text: "📊 Positions", callback_data: "aster:positions" }],
+            [{ text: "🏆 Competition", callback_data: "aster:competition" }],
+            [{ text: "« Aster Menu", callback_data: "action:aster" }],
           ],
         },
       });
@@ -13655,6 +14168,12 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
               { text: "DOGE", callback_data: "aster:qpair_DOGEUSDT" },
               { text: "SUI", callback_data: "aster:qpair_SUIUSDT" },
               { text: "ADA", callback_data: "aster:qpair_ADAUSDT" },
+            ],
+            [
+              { text: "AVAX", callback_data: "aster:qpair_AVAXUSDT" },
+              { text: "LINK", callback_data: "aster:qpair_LINKUSDT" },
+              { text: "PEPE", callback_data: "aster:qpair_PEPEUSDT" },
+              { text: "WIF", callback_data: "aster:qpair_WIFUSDT" },
             ],
             [{ text: "Cancel", callback_data: "aster:trade_cancel" }],
           ],
@@ -14033,20 +14552,24 @@ async function handleAsterTradeFlow(chatId: number, text: string): Promise<void>
         const f = Array.isArray(fundingArr) && fundingArr.length > 0 ? fundingArr[0] : null;
         if (t) {
           const base = input.replace("USDT", "");
-          const price = parseFloat(t.price);
+          const price = parseFloat(t.lastPrice || t.price);
           const change = parseFloat(t.priceChangePercent);
+          const high = parseFloat(t.highPrice || t.high);
+          const low = parseFloat(t.lowPrice || t.low);
           const changeIcon = change >= 0 ? "🟢" : "🔴";
           const changeStr = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
+          const fmtP = (v: number) => v >= 1 ? v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : v.toPrecision(4);
+          const fmtV = (v: number) => v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? (v / 1e6).toFixed(2) + "M" : v >= 1e3 ? (v / 1e3).toFixed(1) + "K" : v.toFixed(0);
           let infoMsg = `📈 *${base}/USDT — Futures*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
-          infoMsg += `💲 Price: \`$${price >= 1 ? price.toLocaleString("en-US", { maximumFractionDigits: 2 }) : price.toPrecision(4)}\`  ${changeIcon} ${changeStr}\n`;
-          infoMsg += `📊 24h High: \`$${parseFloat(t.high) >= 1 ? parseFloat(t.high).toLocaleString("en-US", { maximumFractionDigits: 2 }) : parseFloat(t.high).toPrecision(4)}\`  Low: \`$${parseFloat(t.low) >= 1 ? parseFloat(t.low).toLocaleString("en-US", { maximumFractionDigits: 2 }) : parseFloat(t.low).toPrecision(4)}\`\n`;
+          infoMsg += `${changeIcon} *${base}/USDT*  \`$${fmtP(price)}\`\n`;
+          infoMsg += `   ${changeStr} · H: \`$${fmtP(high)}\` · L: \`$${fmtP(low)}\`\n`;
           const vol = parseFloat(t.quoteVolume);
-          infoMsg += `📦 Volume: \`$${vol >= 1e9 ? (vol / 1e9).toFixed(2) + "B" : vol >= 1e6 ? (vol / 1e6).toFixed(2) + "M" : vol >= 1e3 ? (vol / 1e3).toFixed(1) + "K" : vol.toFixed(0)}\`\n`;
+          infoMsg += `   Vol: \`$${fmtV(vol)}\`\n`;
           if (f) {
             const fr = parseFloat(f.fundingRate) * 100;
-            const mp = parseFloat(f.markPrice);
-            infoMsg += `🏷️ Mark: \`$${mp >= 1 ? mp.toLocaleString("en-US", { maximumFractionDigits: 2 }) : mp.toPrecision(4)}\`\n`;
-            infoMsg += `💸 Funding: \`${fr >= 0 ? "+" : ""}${fr.toFixed(4)}%\`\n`;
+            const mp = parseFloat(f.markPrice || "0");
+            const markVal = mp > 0 ? mp : price;
+            infoMsg += `   Mark: \`$${fmtP(markVal)}\` · FR: \`${fr >= 0 ? "+" : ""}${fr.toFixed(4)}%\`\n`;
           }
           infoMsg += `\nChoose direction:`;
           await bot.sendMessage(chatId, infoMsg, {
@@ -14248,16 +14771,24 @@ async function showAsterTradeConfirmation(chatId: number, state: AsterTradeState
     "TRAILING_STOP_MARKET": "Trailing Stop",
   };
 
-  let msg = `*Confirm ${state.market === "futures" ? "Futures" : "Spot"} Order*\n` +
-    `_Powered by Aster DEX_\n\n`;
-  msg += `Symbol: ${state.symbol}\n`;
-  msg += `Side: ${state.side}\n`;
-  msg += `Type: ${typeLabels[state.orderType || "MARKET"] || state.orderType}\n`;
-  msg += `Quantity: ${state.quantity}\n`;
-  if (state.price) msg += `Price: ${state.price}\n`;
-  if (state.stopPrice) msg += `Trigger Price: ${state.stopPrice}\n`;
-  if (state.callbackRate) msg += `Callback Rate: ${state.callbackRate}%\n`;
-  if (state.market === "futures" && state.leverage) msg += `Leverage: ${state.leverage}x\n`;
+  const sideIcon = state.side === "BUY" ? "🟢" : "🔴";
+  const sideLabel = state.market === "futures" ? (state.side === "BUY" ? "LONG" : "SHORT") : state.side;
+  let msg = `${sideIcon} *Confirm ${state.market === "futures" ? "Futures" : "Spot"} Order*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+  msg += `📌 Pair: *${state.symbol}*\n`;
+  msg += `${sideIcon} Side: *${sideLabel}*\n`;
+  msg += `📋 Type: ${typeLabels[state.orderType || "MARKET"] || state.orderType}\n`;
+  msg += `📦 Quantity: \`${state.quantity}\`\n`;
+  if (state.price) msg += `💲 Price: \`$${state.price}\`\n`;
+  if (state.stopPrice) msg += `🎯 Trigger: \`$${state.stopPrice}\`\n`;
+  if (state.callbackRate) msg += `📐 Callback: \`${state.callbackRate}%\`\n`;
+  if (state.market === "futures" && state.leverage) {
+    msg += `⚡ Leverage: *${state.leverage}x*\n`;
+    if (state.price && state.quantity) {
+      const notional = parseFloat(state.quantity!) * parseFloat(state.price!);
+      const margin = notional / state.leverage;
+      msg += `💰 Est. Margin: \`~$${margin.toFixed(2)}\`\n`;
+    }
+  }
 
   await bot.sendMessage(chatId, msg, {
     parse_mode: "Markdown",
