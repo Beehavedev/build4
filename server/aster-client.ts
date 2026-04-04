@@ -424,16 +424,17 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
     const uid = loginData?.data?.uid || loginData?.data?.userId || loginData?.data?.id || loginData?.data?.accountId || 0;
     const loginSuccess = loginData?.code === "000000";
     const debugParts: string[] = [];
-    let loginCookies = "";
+    let rawSetCookies: string[] = [];
     try {
-      const setCookieHeaders = (loginRes.headers as any).getSetCookie?.() || [];
-      if (Array.isArray(setCookieHeaders) && setCookieHeaders.length > 0) {
-        loginCookies = setCookieHeaders.join("; ");
-      }
+      rawSetCookies = (loginRes.headers as any).getSetCookie?.() || [];
     } catch {}
-    if (!loginCookies) {
-      loginCookies = loginRes.headers.get("set-cookie") || "";
+    if (!rawSetCookies.length) {
+      const sc = loginRes.headers.get("set-cookie");
+      if (sc) rawSetCookies = sc.split(/,(?=\s*\w+=)/);
     }
+    const parsedCookies = rawSetCookies.map(c => c.split(";")[0].trim()).filter(Boolean);
+    const loginCookies = parsedCookies.join("; ");
+    console.log(`[Aster] Cookies raw=${rawSetCookies.length} parsed=${parsedCookies.length} cookieStr=${loginCookies.substring(0, 200)}`);
 
     const dataFields = loginData?.data ? Object.keys(loginData.data) : [];
     const potentialTokens: { field: string; value: string }[] = [];
