@@ -13918,13 +13918,28 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       msg += `💰 Available: \`$${futuresBal.toFixed(2)}\`\n\n`;
 
       if (isV3) {
-        msg += `ℹ️ *V3 Wallet Mode:* Your bot wallet IS your Aster wallet. ` +
-          `Deposit USDT to your wallet address above on BSC, then it's ready to trade.\n\n` +
-          `To deposit from an exchange or another wallet, send USDT (BEP-20) to:\n\`${wallet}\``;
+        msg += `ℹ️ *V3 Wallet Mode:* Your wallet signs trades directly, but USDT must be deposited into Aster's futures contract as margin collateral.\n\n`;
+        if (walletBal >= 1 && futuresBal < walletBal) {
+          msg += `💡 You have \`$${walletBal.toFixed(2)}\` USDT in your wallet — deposit it to start trading!\n\n`;
+          msg += `*How to deposit:*\n`;
+          msg += `1️⃣ Go to [asterdex.com/futures](https://www.asterdex.com/futures)\n`;
+          msg += `2️⃣ Connect with the same wallet\n`;
+          msg += `3️⃣ Click "Deposit" to move USDT into futures\n\n`;
+          msg += `Or send USDT from another wallet to:\n\`${wallet}\`\nthen deposit via Aster.`;
+        } else if (futuresBal >= 1) {
+          msg += `✅ Your futures account is funded and ready to trade!`;
+        } else {
+          msg += `*How to fund:*\n`;
+          msg += `1️⃣ Send USDT (BEP-20) to your wallet:\n\`${wallet}\`\n`;
+          msg += `2️⃣ Go to [asterdex.com/futures](https://www.asterdex.com/futures)\n`;
+          msg += `3️⃣ Connect wallet & click "Deposit" to move USDT into futures`;
+        }
         await bot.sendMessage(chatId, msg, {
           parse_mode: "Markdown",
+          disable_web_page_preview: true,
           reply_markup: {
             inline_keyboard: [
+              [{ text: "🌐 Open Aster DEX", url: "https://www.asterdex.com/futures/BTCUSDT" }],
               [{ text: "🔄 Refresh", callback_data: "aster:fund" }],
               [{ text: "« Aster Menu", callback_data: "action:aster" }],
             ],
