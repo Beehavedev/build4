@@ -14818,32 +14818,50 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         "Accept": "application/json, text/plain, */*",
       };
 
-      const strategies = [
-        { name: "AllCookies+XSRF", h: { ...browserHeaders, "Cookie": finalCookieStr, "X-XSRF-TOKEN": xsrfToken } },
-        { name: "AllCookies+Token-XSRF", h: { ...browserHeaders, "Cookie": finalCookieStr, "X-XSRF-TOKEN": token } },
-        { name: "AllCookies+TokenCookie", h: { ...browserHeaders, "Cookie": `${finalCookieStr}; token=${token}`, "X-XSRF-TOKEN": xsrfToken || token } },
-        { name: "AllCookiesOnly", h: { ...browserHeaders, "Cookie": finalCookieStr } },
-        { name: "Bearer+XSRF", h: { ...browserHeaders, "Authorization": `Bearer ${token}`, "X-XSRF-TOKEN": xsrfToken } },
-        { name: "AllCookies+Bearer+XSRF", h: { ...browserHeaders, "Cookie": finalCookieStr, "Authorization": `Bearer ${token}`, "X-XSRF-TOKEN": xsrfToken || token } },
-      ];
+      // Test V3 API endpoints with POST + params in URL (the working pattern)
+      const EIP712D = { name: "AsterSignTransaction", version: "1", chainId: 1666, verifyingContract: "0x0000000000000000000000000000000000000000" };
+      const EIP712T = { Message: [{ name: "msg", type: "string" }] };
+      const checksumAddr = ethers.getAddress(address);
 
-      for (const s of strategies) {
+      function bqs(p: Record<string, any>): string {
+        const f: Record<string, string> = {};
+        for (const [k, v] of Object.entries(p)) if (v != null) f[k] = String(v);
+        return new URLSearchParams(f).toString();
+      }
+
+      async function signP(params: Record<string, any>) {
+        const p = { ...params, nonce: String(Math.trunc(Date.now() / 1000) * 1_000_000 + Math.floor(Math.random() * 999)), user: checksumAddr, signer: checksumAddr };
+        const q = bqs(p);
+        p.signature = await w.signTypedData(EIP712D, EIP712T, { msg: q });
+        return p;
+      }
+
+      const FAPI = "https://fapi.asterdex.com";
+
+      async function tryV3(label: string, method: string, path: string, paramsInUrl: boolean) {
         try {
-          const r = await fetch(openUrl, { method: "POST", headers: s.h, body: JSON.stringify({}) });
+          const sp = await signP({});
+          const q = bqs(sp);
+          const url = paramsInUrl ? `${FAPI}${path}?${q}` : `${FAPI}${path}`;
+          const h: Record<string, string> = { "User-Agent": "BUILD4/1.0", "Content-Type": "application/x-www-form-urlencoded" };
+          const body = paramsInUrl ? undefined : q;
+          const r = await fetch(url, { method, headers: h, body });
           const t = await r.text();
-          let parsed: any;
-          try { parsed = JSON.parse(t); } catch { parsed = { raw: t.substring(0, 100) }; }
-          const code = parsed?.code || "nocode";
-          const msg = (parsed?.message || parsed?.msg || parsed?.error || t.substring(0, 60)).substring(0, 60);
-          results.push(`${s.name}: ${r.status} code=${code} ${msg}`);
-          if (code === "000000") {
-            results.push(`SUCCESS via ${s.name}!`);
-            break;
-          }
+          results.push(`${label}: ${r.status} ${t.substring(0, 120)}`);
         } catch (e: any) {
-          results.push(`${s.name}: ERR ${e.message?.substring(0, 60)}`);
+          results.push(`${label}: ERR ${e.message?.substring(0, 80)}`);
         }
       }
+
+      results.push(`\n--- V3 API Tests ---`);
+      await tryV3("bal POST+URL", "POST", "/fapi/v3/balance", true);
+      await tryV3("bal POST+BODY", "POST", "/fapi/v3/balance", false);
+      await tryV3("bal GET+URL", "GET", "/fapi/v3/balance", true);
+      await tryV3("pos POST+URL", "POST", "/fapi/v3/positionRisk", true);
+      await tryV3("pos POST+BODY", "POST", "/fapi/v3/positionRisk", false);
+      await tryV3("pos GET+URL", "GET", "/fapi/v3/positionRisk", true);
+      await tryV3("acct POST+URL", "POST", "/fapi/v3/account", true);
+      await tryV3("noop POST+URL", "POST", "/fapi/v3/noop", true);
 
       const fullMsg = results.join("\n");
       const chunks = [];
