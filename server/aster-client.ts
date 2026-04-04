@@ -407,15 +407,18 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
       }),
     });
     const loginData = await loginRes.json();
-    console.log(`[Aster] Login response status=${loginRes.status} code=${loginData?.code} msg=${loginData?.message} hasUid=${!!loginData?.data?.uid}`, JSON.stringify(loginData).substring(0, 500));
-    if (loginData?.code !== "000000" || !loginData?.data?.uid) {
+    const loginDataStr = JSON.stringify(loginData).substring(0, 800);
+    console.log(`[Aster] Login response status=${loginRes.status} code=${loginData?.code} msg=${loginData?.message} hasData=${!!loginData?.data} dataKeys=${loginData?.data ? Object.keys(loginData.data).join(',') : 'none'}`, loginDataStr);
+    if (loginData?.code !== "000000") {
       const msg = loginData?.message || loginData?.msg || "Unknown error";
       if (msg.toLowerCase().includes("region") || msg.toLowerCase().includes("not available")) {
         return { success: false, userRegistered: false, error: "Aster region restriction — please connect manually with an API key from asterdex.com instead" };
       }
       return { success: false, userRegistered: false, error: `Aster login failed: ${msg} (code: ${loginData?.code || 'none'})` };
     }
-    const uid = loginData.data.uid;
+    const uid = loginData?.data?.uid || loginData?.data?.userId || loginData?.data?.id || loginData?.data?.accountId || 0;
+    const loginSuccess = loginData?.code === "000000";
+    console.log(`[Aster] Login parsed: uid=${uid} loginSuccess=${loginSuccess} dataFields=${loginData?.data ? JSON.stringify(Object.keys(loginData.data)) : '[]'}`);
 
     const akNonceRes = await fetch(`${BROKER_BASE_URL}/public/future/web3/get-nonce`, {
       method: "POST",
