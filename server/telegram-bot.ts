@@ -14825,11 +14825,26 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const errMsg = e.message || "";
       let userMsg = `❌ *Order Failed*\n\n\`${errMsg.substring(0, 300)}\``;
       if (errMsg.includes("-2019") || errMsg.toLowerCase().includes("margin is insufficient")) {
-        const reqMargin = state.quantity && state.leverage
-          ? `\n\nYour order needs ~\`$${(parseFloat(state.quantity!) * (state.price ? parseFloat(state.price!) : 1) / parseFloat(state.leverage || "1")).toFixed(2)}\` margin.`
-          : "";
+        let marginInfo = "";
+        try {
+          const fc = client.futures || client;
+          const [balances, tickerData] = await Promise.all([
+            fc.balance().catch(() => []),
+            fc.tickerPrice(state.symbol).catch(() => null),
+          ]);
+          const usdtBal = (balances as any[]).find((b: any) => b.asset === "USDT" || b.asset === "usdt");
+          const availBal = usdtBal ? parseFloat(usdtBal.availableBalance || usdtBal.balance || "0") : 0;
+          const mktPrice = tickerData?.price ? parseFloat(tickerData.price) : 0;
+          const qty = parseFloat(state.quantity || "0");
+          const lev = state.leverage || 1;
+          const notional = qty * (state.price ? parseFloat(state.price) : mktPrice);
+          const reqMargin = notional / lev;
+          marginInfo = `\n\n📊 Order notional: \`$${notional.toFixed(2)}\`\n` +
+            `⚡ Leverage: \`${lev}x\` → Required margin: \`$${reqMargin.toFixed(2)}\`\n` +
+            `💰 Your available balance: \`$${availBal.toFixed(2)} USDT\``;
+        } catch {}
         userMsg = `❌ *Insufficient Margin*\n\n` +
-          `Your Aster futures account doesn't have enough USDT to cover this trade.${reqMargin}\n\n` +
+          `Your Aster futures account doesn't have enough USDT to cover this trade.${marginInfo}\n\n` +
           `💡 *What to do:*\n` +
           `1️⃣ Fund your account using the button below\n` +
           `2️⃣ Or reduce position size / increase leverage`;
