@@ -28,13 +28,13 @@ title = "generated_image"
 id = "rdZf6XxK-RAyrjVEvSYxg"
 uri = "file://attached_assets/generated_images/aster_ninja_red.png"
 type = "image"
-title = "red ninja emoji style"
+title = "teal ninja attacker"
 
 [[generated]]
 id = "dQIvl6wJuD1YwHo_zbain"
 uri = "file://attached_assets/generated_images/aster_ninja_blue.png"
 type = "image"
-title = "blue ninja emoji style"
+title = "green ninja defender"
 
 [[outputs]]
 id = "JBjCUwiEHNM3bqg5OGXfp"

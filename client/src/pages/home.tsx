@@ -660,18 +660,18 @@ export default function Home() {
               transition={{ delay: 0.6, duration: 0.7 }}
             >
               <Card className="relative overflow-hidden border-0 bg-transparent shadow-none" data-testid="card-aster-competition">
-                <div className="relative rounded-2xl overflow-hidden" style={{ background: "linear-gradient(135deg, #0a0015 0%, #1a0030 25%, #0d001f 50%, #150028 75%, #0a0015 100%)" }}>
+                <div className="relative rounded-2xl overflow-hidden" style={{ background: "linear-gradient(135deg, #020d0d 0%, #031a1a 25%, #021212 50%, #041e1e 75%, #020d0d 100%)" }}>
                   <div className="absolute inset-0 overflow-hidden">
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-violet-600/10 rounded-full blur-[120px]" />
-                    <div className="absolute top-0 left-0 w-96 h-96 bg-red-500/8 rounded-full -translate-y-1/2 -translate-x-1/3 blur-[80px]" />
-                    <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-500/8 rounded-full translate-y-1/2 translate-x-1/3 blur-[80px]" />
-                    <div className="absolute inset-0" style={{ backgroundImage: "radial-gradient(rgba(139, 92, 246, 0.06) 1px, transparent 1px)", backgroundSize: "30px 30px" }} />
-                    <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-violet-500/40 to-transparent" />
-                    <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-violet-500/40 to-transparent" />
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-teal-500/10 rounded-full blur-[120px]" />
+                    <div className="absolute top-0 left-0 w-96 h-96 bg-teal-400/8 rounded-full -translate-y-1/2 -translate-x-1/3 blur-[80px]" />
+                    <div className="absolute bottom-0 right-0 w-96 h-96 bg-emerald-500/8 rounded-full translate-y-1/2 translate-x-1/3 blur-[80px]" />
+                    <div className="absolute inset-0" style={{ backgroundImage: "radial-gradient(rgba(20, 184, 166, 0.06) 1px, transparent 1px)", backgroundSize: "30px 30px" }} />
+                    <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-teal-400/40 to-transparent" />
+                    <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-teal-400/40 to-transparent" />
                     {[15, 42, 73, 28, 61, 85, 19, 54, 37, 68, 91, 46].map((pos, i) => (
                       <motion.div
                         key={i}
-                        className="absolute w-1 h-1 bg-violet-400/40 rounded-full"
+                        className="absolute w-1 h-1 bg-teal-400/40 rounded-full"
                         style={{ left: `${pos}%`, top: `${[22, 67, 41, 83, 15, 58, 34, 76, 49, 12, 65, 88][i]}%` }}
                         animate={{ opacity: [0.2, 0.8, 0.2], scale: [1, 1.5, 1] }}
                         transition={{ duration: [3, 4, 2.5, 3.5, 4.5, 2, 3.2, 4.1, 2.8, 3.7, 4.3, 2.3][i], repeat: Infinity, delay: [0.2, 1.1, 0.7, 1.8, 0.4, 1.5, 0.9, 0.3, 1.2, 0.6, 1.7, 0.1][i] }}
@@ -687,7 +687,7 @@ export default function Home() {
                         transition={{ delay: 0.8, duration: 0.5, type: "spring" }}
                         className="mb-4"
                       >
-                        <Badge className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 border-amber-500/40 text-amber-400 font-mono text-[10px] tracking-[0.2em] uppercase px-4 py-1.5 backdrop-blur-sm">
+                        <Badge className="bg-gradient-to-r from-teal-500/20 to-emerald-500/20 border-teal-400/40 text-teal-300 font-mono text-[10px] tracking-[0.2em] uppercase px-4 py-1.5 backdrop-blur-sm">
                           <Trophy className="w-3.5 h-3.5 mr-1.5" />
                           Trading Competition
                         </Badge>
@@ -701,15 +701,15 @@ export default function Home() {
                           transition={{ delay: 1, duration: 0.8, type: "spring" }}
                         >
                           <div className="relative">
-                            <div className="absolute inset-0 bg-gradient-to-r from-red-500/30 to-orange-500/20 rounded-full blur-2xl scale-110" />
+                            <div className="absolute inset-0 bg-gradient-to-r from-teal-400/30 to-cyan-400/20 rounded-full blur-2xl scale-110" />
                             <img
                               src={asterNinjaRed}
-                              alt="Red Ninja Trader"
-                              className="relative w-40 h-40 xl:w-52 xl:h-52 object-contain drop-shadow-[0_0_30px_rgba(239,68,68,0.4)]"
+                              alt="Teal Ninja Trader"
+                              className="relative w-40 h-40 xl:w-52 xl:h-52 object-contain drop-shadow-[0_0_30px_rgba(20,184,166,0.4)]"
                               data-testid="img-ninja-red"
                             />
                             <motion.div
-                              className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-gradient-to-r from-red-600 to-orange-500 text-white text-[10px] font-mono font-bold px-3 py-1 rounded-full tracking-wider whitespace-nowrap shadow-lg shadow-red-500/30"
+                              className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-gradient-to-r from-teal-500 to-cyan-400 text-black text-[10px] font-mono font-bold px-3 py-1 rounded-full tracking-wider whitespace-nowrap shadow-lg shadow-teal-500/30"
                               animate={{ y: [0, -3, 0] }}
                               transition={{ duration: 2, repeat: Infinity }}
                             >
@@ -719,36 +719,36 @@ export default function Home() {
                         </motion.div>
 
                         <div className="flex-1 py-4">
-                          <h3 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight mb-2 bg-gradient-to-r from-white via-violet-200 to-white bg-clip-text text-transparent" data-testid="text-competition-title">
+                          <h3 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight mb-2 bg-gradient-to-r from-white via-teal-100 to-white bg-clip-text text-transparent" data-testid="text-competition-title">
                             AGENTIC AUTONOMOUS
                           </h3>
-                          <h3 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight mb-4 bg-gradient-to-r from-violet-400 via-purple-400 to-violet-400 bg-clip-text text-transparent">
+                          <h3 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight mb-4 bg-gradient-to-r from-teal-300 via-cyan-300 to-emerald-300 bg-clip-text text-transparent">
                             TRADING COMPETITION
                           </h3>
 
                           <div className="flex lg:hidden justify-center gap-6 mb-6">
                             <div className="relative">
-                              <div className="absolute inset-0 bg-gradient-to-r from-red-500/30 to-orange-500/20 rounded-full blur-xl scale-110" />
-                              <img src={asterNinjaRed} alt="Red Ninja" className="relative w-24 h-24 object-contain drop-shadow-[0_0_20px_rgba(239,68,68,0.4)]" />
-                              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-gradient-to-r from-red-600 to-orange-500 text-white text-[8px] font-mono font-bold px-2 py-0.5 rounded-full tracking-wider whitespace-nowrap">ALPHA</div>
+                              <div className="absolute inset-0 bg-gradient-to-r from-teal-400/30 to-cyan-400/20 rounded-full blur-xl scale-110" />
+                              <img src={asterNinjaRed} alt="Teal Ninja" className="relative w-24 h-24 object-contain drop-shadow-[0_0_20px_rgba(20,184,166,0.4)]" />
+                              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-gradient-to-r from-teal-500 to-cyan-400 text-black text-[8px] font-mono font-bold px-2 py-0.5 rounded-full tracking-wider whitespace-nowrap">ALPHA</div>
                             </div>
                             <div className="flex items-center">
-                              <span className="text-3xl font-black text-violet-400/60">VS</span>
+                              <span className="text-3xl font-black text-teal-400/60">VS</span>
                             </div>
                             <div className="relative">
-                              <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/30 rounded-full blur-xl scale-110" />
-                              <img src={asterNinjaBlue} alt="Blue Ninja" className="relative w-24 h-24 object-contain drop-shadow-[0_0_20px_rgba(96,165,250,0.4)]" />
-                              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-600 to-purple-500 text-white text-[8px] font-mono font-bold px-2 py-0.5 rounded-full tracking-wider whitespace-nowrap">OMEGA</div>
+                              <div className="absolute inset-0 bg-gradient-to-r from-emerald-400/20 to-green-400/30 rounded-full blur-xl scale-110" />
+                              <img src={asterNinjaBlue} alt="Green Ninja" className="relative w-24 h-24 object-contain drop-shadow-[0_0_20px_rgba(52,211,153,0.4)]" />
+                              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-gradient-to-r from-emerald-500 to-green-400 text-black text-[8px] font-mono font-bold px-2 py-0.5 rounded-full tracking-wider whitespace-nowrap">OMEGA</div>
                             </div>
                           </div>
 
                           <motion.div
-                            className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500/10 via-yellow-500/10 to-amber-500/10 border border-amber-500/20 rounded-xl px-5 py-2.5 mb-6 backdrop-blur-sm"
-                            animate={{ boxShadow: ["0 0 20px rgba(245, 158, 11, 0)", "0 0 20px rgba(245, 158, 11, 0.15)", "0 0 20px rgba(245, 158, 11, 0)"] }}
+                            className="inline-flex items-center gap-2 bg-gradient-to-r from-teal-500/10 via-cyan-500/10 to-teal-500/10 border border-teal-400/20 rounded-xl px-5 py-2.5 mb-6 backdrop-blur-sm"
+                            animate={{ boxShadow: ["0 0 20px rgba(20, 184, 166, 0)", "0 0 20px rgba(20, 184, 166, 0.15)", "0 0 20px rgba(20, 184, 166, 0)"] }}
                             transition={{ duration: 3, repeat: Infinity }}
                           >
-                            <Timer className="w-4 h-4 text-amber-400" />
-                            <span className="font-mono text-sm font-bold text-amber-400 tracking-wide">COMING SOON</span>
+                            <Timer className="w-4 h-4 text-teal-300" />
+                            <span className="font-mono text-sm font-bold text-teal-300 tracking-wide">COMING SOON</span>
                           </motion.div>
 
                           <p className="text-gray-400 text-sm sm:text-base max-w-xl mx-auto mb-6 leading-relaxed">
@@ -758,30 +758,30 @@ export default function Home() {
 
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-xl mx-auto mb-8">
                             <div className="relative group">
-                              <div className="absolute inset-0 bg-gradient-to-b from-violet-500/20 to-transparent rounded-xl blur-sm group-hover:from-violet-500/30 transition-all" />
-                              <div className="relative text-center p-3 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
-                                <div className="font-mono font-black text-xl text-white">150x</div>
+                              <div className="absolute inset-0 bg-gradient-to-b from-teal-500/20 to-transparent rounded-xl blur-sm group-hover:from-teal-500/30 transition-all" />
+                              <div className="relative text-center p-3 rounded-xl bg-white/5 border border-teal-500/15 backdrop-blur-sm">
+                                <div className="font-mono font-black text-xl text-teal-300">150x</div>
                                 <div className="font-mono text-[9px] text-gray-400 uppercase tracking-widest mt-0.5">Max Leverage</div>
                               </div>
                             </div>
                             <div className="relative group">
-                              <div className="absolute inset-0 bg-gradient-to-b from-amber-500/20 to-transparent rounded-xl blur-sm group-hover:from-amber-500/30 transition-all" />
-                              <div className="relative text-center p-3 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
-                                <div className="font-mono font-black text-xl text-amber-400">$B4</div>
+                              <div className="absolute inset-0 bg-gradient-to-b from-cyan-500/20 to-transparent rounded-xl blur-sm group-hover:from-cyan-500/30 transition-all" />
+                              <div className="relative text-center p-3 rounded-xl bg-white/5 border border-teal-500/15 backdrop-blur-sm">
+                                <div className="font-mono font-black text-xl text-cyan-300">$B4</div>
                                 <div className="font-mono text-[9px] text-gray-400 uppercase tracking-widest mt-0.5">Prize Pool</div>
                               </div>
                             </div>
                             <div className="relative group">
-                              <div className="absolute inset-0 bg-gradient-to-b from-green-500/20 to-transparent rounded-xl blur-sm group-hover:from-green-500/30 transition-all" />
-                              <div className="relative text-center p-3 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
-                                <div className="font-mono font-black text-xl text-green-400">PnL%</div>
+                              <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/20 to-transparent rounded-xl blur-sm group-hover:from-emerald-500/30 transition-all" />
+                              <div className="relative text-center p-3 rounded-xl bg-white/5 border border-teal-500/15 backdrop-blur-sm">
+                                <div className="font-mono font-black text-xl text-emerald-300">PnL%</div>
                                 <div className="font-mono text-[9px] text-gray-400 uppercase tracking-widest mt-0.5">Ranked By</div>
                               </div>
                             </div>
                             <div className="relative group">
-                              <div className="absolute inset-0 bg-gradient-to-b from-blue-500/20 to-transparent rounded-xl blur-sm group-hover:from-blue-500/30 transition-all" />
-                              <div className="relative text-center p-3 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
-                                <div className="font-mono font-black text-xl text-blue-400">AI</div>
+                              <div className="absolute inset-0 bg-gradient-to-b from-teal-400/20 to-transparent rounded-xl blur-sm group-hover:from-teal-400/30 transition-all" />
+                              <div className="relative text-center p-3 rounded-xl bg-white/5 border border-teal-500/15 backdrop-blur-sm">
+                                <div className="font-mono font-black text-xl text-teal-200">AI</div>
                                 <div className="font-mono text-[9px] text-gray-400 uppercase tracking-widest mt-0.5">Agent Trading</div>
                               </div>
                             </div>
@@ -789,14 +789,14 @@ export default function Home() {
 
                           <div className="flex flex-col sm:flex-row gap-3 justify-center">
                             <a href="https://t.me/build4_bot" target="_blank" rel="noopener noreferrer">
-                              <Button size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 border-0 shadow-lg shadow-violet-500/25 transition-all hover:shadow-violet-500/40" data-testid="button-join-competition">
+                              <Button size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-black border-0 shadow-lg shadow-teal-500/25 transition-all hover:shadow-teal-500/40" data-testid="button-join-competition">
                                 <Trophy className="w-4 h-4" />
                                 Join the Competition
                                 <ArrowRight className="w-4 h-4" />
                               </Button>
                             </a>
                             <a href="https://www.asterdex.com" target="_blank" rel="noopener noreferrer">
-                              <Button variant="outline" size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto border-white/15 text-gray-300 hover:bg-white/5 hover:text-white backdrop-blur-sm" data-testid="button-learn-competition">
+                              <Button variant="outline" size="lg" className="font-mono text-sm gap-2 w-full sm:w-auto border-teal-500/25 text-teal-300 hover:bg-teal-500/10 hover:text-teal-200 backdrop-blur-sm" data-testid="button-learn-competition">
                                 <BarChart3 className="w-4 h-4" />
                                 Learn More
                               </Button>
@@ -811,15 +811,15 @@ export default function Home() {
                           transition={{ delay: 1, duration: 0.8, type: "spring" }}
                         >
                           <div className="relative">
-                            <div className="absolute inset-0 bg-gradient-to-l from-blue-500/30 to-purple-500/20 rounded-full blur-2xl scale-110" />
+                            <div className="absolute inset-0 bg-gradient-to-l from-emerald-400/30 to-green-400/20 rounded-full blur-2xl scale-110" />
                             <img
                               src={asterNinjaBlue}
-                              alt="Blue Ninja Trader"
-                              className="relative w-40 h-40 xl:w-52 xl:h-52 object-contain drop-shadow-[0_0_30px_rgba(96,165,250,0.4)]"
+                              alt="Green Ninja Trader"
+                              className="relative w-40 h-40 xl:w-52 xl:h-52 object-contain drop-shadow-[0_0_30px_rgba(52,211,153,0.4)]"
                               data-testid="img-ninja-blue"
                             />
                             <motion.div
-                              className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-600 to-purple-500 text-white text-[10px] font-mono font-bold px-3 py-1 rounded-full tracking-wider whitespace-nowrap shadow-lg shadow-blue-500/30"
+                              className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-gradient-to-r from-emerald-500 to-green-400 text-black text-[10px] font-mono font-bold px-3 py-1 rounded-full tracking-wider whitespace-nowrap shadow-lg shadow-emerald-500/30"
                               animate={{ y: [0, -3, 0] }}
                               transition={{ duration: 2, repeat: Infinity, delay: 1 }}
                             >
@@ -831,13 +831,13 @@ export default function Home() {
 
                       <div className="hidden lg:flex items-center justify-center mt-4">
                         <div className="flex items-center gap-4 text-[11px] font-mono text-gray-500">
-                          <span className="flex items-center gap-1.5"><TrendingUp className="w-3 h-3 text-green-500" />Live PnL Tracking</span>
+                          <span className="flex items-center gap-1.5"><TrendingUp className="w-3 h-3 text-emerald-400" />Live PnL Tracking</span>
                           <span className="text-gray-700">|</span>
-                          <span className="flex items-center gap-1.5"><Shield className="w-3 h-3 text-violet-400" />Non-Custodial</span>
+                          <span className="flex items-center gap-1.5"><Shield className="w-3 h-3 text-teal-400" />Non-Custodial</span>
                           <span className="text-gray-700">|</span>
-                          <span className="flex items-center gap-1.5"><Zap className="w-3 h-3 text-amber-400" />Auto-Updated Stats</span>
+                          <span className="flex items-center gap-1.5"><Zap className="w-3 h-3 text-cyan-400" />Auto-Updated Stats</span>
                           <span className="text-gray-700">|</span>
-                          <span className="flex items-center gap-1.5"><Users className="w-3 h-3 text-blue-400" />Referral Bonuses</span>
+                          <span className="flex items-center gap-1.5"><Users className="w-3 h-3 text-teal-300" />Referral Bonuses</span>
                         </div>
                       </div>
                     </div>
