@@ -74,6 +74,7 @@ import {
   type AsterTradingLimit, asterTradingLimits,
   tradeOutcomes,
   agentSkillConfigs,
+  asterLocalTrades,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, isNull, not, like, or, gt, inArray } from "drizzle-orm";
@@ -510,6 +511,10 @@ export interface IStorage {
   getQuestStatus(chatId: string, questId: string): Promise<{ completed: boolean; rewardGranted: boolean } | null>;
   getAllQuests(chatId: string): Promise<Array<{ questId: string; completed: boolean; rewardGranted: boolean; completedAt: Date | null }>>;
   completeQuest(chatId: string, questId: string): Promise<boolean>;
+
+  saveAsterLocalTrade(trade: { chatId: string; orderId: string; symbol: string; side: string; type: string; quantity: number; executedQty: number; price: number; avgPrice: number; status: string; reduceOnly: boolean; leverage: number }): Promise<void>;
+  getAsterLocalTrades(chatId: string, symbol?: string): Promise<any[]>;
+  getAsterLocalPositions(chatId: string): Promise<Array<{ symbol: string; side: string; quantity: number; entryPrice: number; leverage: number }>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3332,6 +3337,108 @@ export class DatabaseStorage implements IStorage {
     } catch (e: any) {
       console.error("[Quests] Failed to complete quest:", e.message);
       return false;
+    }
+  }
+
+  async saveAsterLocalTrade(trade: { chatId: string; orderId: string; symbol: string; side: string; type: string; quantity: number; executedQty: number; price: number; avgPrice: number; status: string; reduceOnly: boolean; leverage: number }): Promise<void> {
+    try {
+      await db.insert(asterLocalTrades).values({
+        chatId: trade.chatId,
+        orderId: trade.orderId,
+        symbol: trade.symbol,
+        side: trade.side,
+        type: trade.type,
+        quantity: trade.quantity,
+        executedQty: trade.executedQty,
+        price: trade.price,
+        avgPrice: trade.avgPrice,
+        status: trade.status,
+        reduceOnly: trade.reduceOnly,
+        leverage: trade.leverage,
+      });
+    } catch (e: any) {
+      console.error("[AsterLocal] Failed to save trade:", e.message);
+    }
+  }
+
+  async getAsterLocalTrades(chatId: string, symbol?: string): Promise<any[]> {
+    try {
+      if (symbol) {
+        return await db.select().from(asterLocalTrades)
+          .where(and(eq(asterLocalTrades.chatId, chatId), eq(asterLocalTrades.symbol, symbol)))
+          .orderBy(desc(asterLocalTrades.createdAt));
+      }
+      return await db.select().from(asterLocalTrades)
+        .where(eq(asterLocalTrades.chatId, chatId))
+        .orderBy(desc(asterLocalTrades.createdAt));
+    } catch (e: any) {
+      console.error("[AsterLocal] Failed to get trades:", e.message);
+      return [];
+    }
+  }
+
+  async getAsterLocalPositions(chatId: string): Promise<Array<{ symbol: string; side: string; quantity: number; entryPrice: number; leverage: number }>> {
+    try {
+      const trades = await db.select().from(asterLocalTrades)
+        .where(eq(asterLocalTrades.chatId, chatId))
+        .orderBy(asterLocalTrades.createdAt);
+
+      const positions: Record<string, { netQty: number; totalCost: number; leverage: number }> = {};
+
+      for (const t of trades) {
+        const qty = t.executedQty || t.quantity;
+        const price = t.avgPrice || t.price || 0;
+        if (!positions[t.symbol]) {
+          positions[t.symbol] = { netQty: 0, totalCost: 0, leverage: t.leverage };
+        }
+        const p = positions[t.symbol];
+        p.leverage = t.leverage;
+
+        if (t.side === "BUY") {
+          if (p.netQty >= 0) {
+            p.totalCost += qty * price;
+            p.netQty += qty;
+          } else {
+            const closedQty = Math.min(qty, Math.abs(p.netQty));
+            p.netQty += qty;
+            if (p.netQty > 0) {
+              p.totalCost = (qty - closedQty) * price;
+            } else if (p.netQty === 0) {
+              p.totalCost = 0;
+            }
+          }
+        } else {
+          if (p.netQty <= 0) {
+            p.totalCost += qty * price;
+            p.netQty -= qty;
+          } else {
+            const closedQty = Math.min(qty, p.netQty);
+            p.netQty -= qty;
+            if (p.netQty < 0) {
+              p.totalCost = (qty - closedQty) * price;
+            } else if (p.netQty === 0) {
+              p.totalCost = 0;
+            }
+          }
+        }
+      }
+
+      const result: Array<{ symbol: string; side: string; quantity: number; entryPrice: number; leverage: number }> = [];
+      for (const [symbol, p] of Object.entries(positions)) {
+        if (Math.abs(p.netQty) < 0.0000001) continue;
+        const avgEntry = Math.abs(p.netQty) > 0 ? p.totalCost / Math.abs(p.netQty) : 0;
+        result.push({
+          symbol,
+          side: p.netQty > 0 ? "LONG" : "SHORT",
+          quantity: Math.abs(p.netQty),
+          entryPrice: avgEntry,
+          leverage: p.leverage,
+        });
+      }
+      return result;
+    } catch (e: any) {
+      console.error("[AsterLocal] Failed to calculate positions:", e.message);
+      return [];
     }
   }
 }

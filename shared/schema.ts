@@ -1699,3 +1699,20 @@ export const userTradingData = pgTable("user_trading_data", {
   data: text("data").notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const asterLocalTrades = pgTable("aster_local_trades", {
+  id: serial("id").primaryKey(),
+  chatId: varchar("chat_id", { length: 64 }).notNull(),
+  orderId: varchar("order_id", { length: 64 }).notNull(),
+  symbol: varchar("symbol", { length: 32 }).notNull(),
+  side: varchar("side", { length: 8 }).notNull(),
+  type: varchar("type", { length: 32 }).notNull(),
+  quantity: doublePrecision("quantity").notNull(),
+  executedQty: doublePrecision("executed_qty").notNull().default(0),
+  price: doublePrecision("price").notNull().default(0),
+  avgPrice: doublePrecision("avg_price").notNull().default(0),
+  status: varchar("status", { length: 32 }).notNull(),
+  reduceOnly: boolean("reduce_only").notNull().default(false),
+  leverage: integer("leverage").notNull().default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
