@@ -13291,15 +13291,12 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         } catch (v3Err: any) {
           console.error(`[Aster] V3 noop/verify also failed for ${chatId}:`, v3Err.message);
           await bot.sendMessage(chatId,
-            `⚠️ *Could not create your Aster DEX account*\n\n` +
-            `Broker login: ${result.error || 'Failed'}\n` +
-            `V3 direct: ${v3Err.message?.substring(0, 100)}\n\n` +
+            `⚠️ Could not create your Aster DEX account\n\n` +
             `Please try:\n` +
-            `1. Visit [asterdex.com](https://www.asterdex.com) and create an account with your wallet first\n` +
+            `1. Visit asterdex.com and create an account with your wallet first\n` +
             `2. Then come back and tap Connect again\n` +
             `3. Or connect manually with your Aster API key`,
             {
-              parse_mode: "Markdown",
               reply_markup: {
                 inline_keyboard: [
                   [{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }],
@@ -13339,7 +13336,8 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         }
       );
     } catch (e: any) {
-      await bot.sendMessage(chatId, `Auto-setup error: ${e.message?.substring(0, 200)}\n\nTry connecting manually.`, {
+      const safeErr = (e.message || 'Unknown error').substring(0, 200).replace(/[_*[\]()~`>#+=|{}.!-]/g, ' ');
+      await bot.sendMessage(chatId, `Auto-setup error: ${safeErr}\n\nTry connecting manually.`, {
         reply_markup: { inline_keyboard: [[{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }], [{ text: "« Back", callback_data: "action:menu" }]] },
       });
     }
