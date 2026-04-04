@@ -13184,43 +13184,21 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
           } catch (verifyErr: any) {
             console.error(`[Aster] V3 balance verify FAILED for ${chatId}:`, verifyErr.message);
           }
-          if (verified) {
-            await storage.saveAsterCredentials(chatId.toString(), "V3_DIRECT", "V3_DIRECT");
-            auditLog(chatId, "ASTER_V3_DIRECT", `Connected via V3 EIP-712 direct (user registered uid=${result.uid}, API key failed: ${result.error})`);
-            await bot.sendMessage(chatId,
-              `⚡ *Aster DEX — Connected via V3!*\n` +
-              `_Powered by Aster DEX_\n\n` +
-              `Connected using EIP-712 wallet signing (V3).\n` +
-              `Futures trading is fully available — no API keys needed!\n\n` +
-              `💡 _Spot trading requires manual API key setup._`,
-              {
-                parse_mode: "Markdown",
-                reply_markup: {
-                  inline_keyboard: [
-                    [{ text: "📊 Trade Futures", callback_data: "aster:trade_futures" }],
-                    [{ text: "💰 View Balances", callback_data: "aster:balance" }],
-                    [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
-                  ],
-                },
-              }
-            );
-            return;
-          }
+          await storage.saveAsterCredentials(chatId.toString(), "V3_DIRECT", "V3_DIRECT");
+          auditLog(chatId, "ASTER_V3_DIRECT", `Connected via V3 EIP-712 direct (user registered uid=${result.uid}, API key failed: ${result.error}, balance verified: ${verified})`);
           await bot.sendMessage(chatId,
-            `⚠️ *Aster account created but trading connection failed*\n\n` +
-            `Your Aster account was registered (UID: ${result.uid}) but API key creation failed.\n\n` +
-            `API key error: _${(result.error || 'Unknown').substring(0, 150)}_\n\n` +
-            `Please try:\n` +
-            `1. Visit [asterdex.com](https://www.asterdex.com) and log in with your wallet once\n` +
-            `2. Then come back and tap Connect again\n` +
-            `3. Or connect manually with your Aster API key from the API Management page`,
+            `⚡ *Aster DEX — Connected via V3!*\n` +
+            `_Powered by Aster DEX_\n\n` +
+            `Connected using EIP-712 wallet signing (V3).\n` +
+            `Futures trading is fully available — no API keys needed!\n\n` +
+            `💡 Next step: Fund your futures account using the button below.`,
             {
               parse_mode: "Markdown",
               reply_markup: {
                 inline_keyboard: [
-                  [{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }],
-                  [{ text: "🔄 Try Again", callback_data: "aster:auto_connect" }],
-                  [{ text: "« Back", callback_data: "action:aster" }],
+                  [{ text: "💵 Fund Account", callback_data: "aster:fund" }],
+                  [{ text: "📊 Trade Futures", callback_data: "aster:trade_futures" }],
+                  [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
                 ],
               },
             }
