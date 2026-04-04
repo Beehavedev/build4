@@ -167,6 +167,8 @@ const asterTradeMemory: Array<{ symbol: string; side: string; result: string; pn
 
 let asterScanTimer: ReturnType<typeof setInterval> | null = null;
 let asterPositionTimer: ReturnType<typeof setInterval> | null = null;
+let competitionUpdateTimer: ReturnType<typeof setInterval> | null = null;
+const COMPETITION_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
 
 interface TradingPosition {
   id: string;
@@ -3027,6 +3029,120 @@ async function checkAsterPositions(notifyFn: (chatId: number, message: string) =
   await Promise.allSettled(userChecks);
 }
 
+let competitionUpdateRunning = false;
+async function updateCompetitionStats(notifyFn: (chatId: number, message: string) => void): Promise<void> {
+  if (competitionUpdateRunning) return;
+  competitionUpdateRunning = true;
+  try {
+    const { db } = await import("./db");
+    const { sql } = await import("drizzle-orm");
+
+    const now = new Date();
+    const transitioned = await db.execute(sql`UPDATE aster_competition SET status = 'active' WHERE status = 'upcoming' AND start_date <= ${now} RETURNING id, name`);
+    for (const c of transitioned.rows) {
+      log(`[Competition] Auto-started: ${(c as any).name}`, "trading");
+    }
+
+    const ended = await db.execute(sql`UPDATE aster_competition SET status = 'ended' WHERE status = 'active' AND end_date <= ${now} RETURNING id, name`);
+    for (const c of ended.rows) {
+      const comp = c as any;
+      log(`[Competition] Auto-ended: ${comp.name}`, "trading");
+      const top3 = (await db.execute(sql`SELECT chat_id, username, pnl_percent, pnl_usdt FROM aster_competition_entries WHERE competition_id = ${comp.id} ORDER BY pnl_percent DESC LIMIT 3`)).rows;
+      const medals = ["🥇", "🥈", "🥉"];
+      let announcement = `🏆 *Competition Ended: ${comp.name}*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      if (top3.length > 0) {
+        announcement += `*Final Results:*\n`;
+        for (let i = 0; i < top3.length; i++) {
+          const w = top3[i] as any;
+          announcement += `${medals[i]} ${w.username || "Anon"} — ${parseFloat(w.pnl_percent || "0").toFixed(1)}% ($${parseFloat(w.pnl_usdt || "0").toFixed(2)})\n`;
+        }
+        announcement += `\nCongratulations to the winners! 🎉`;
+      }
+      const allEntries = (await db.execute(sql`SELECT chat_id FROM aster_competition_entries WHERE competition_id = ${comp.id}`)).rows;
+      for (const entry of allEntries) {
+        try { notifyFn(parseInt((entry as any).chat_id), announcement); } catch {}
+      }
+    }
+
+    const activeComps = (await db.execute(sql`SELECT id FROM aster_competition WHERE status = 'active'`)).rows;
+    if (activeComps.length === 0) return;
+
+    for (const comp of activeComps) {
+      const compId = (comp as any).id;
+      const entries = (await db.execute(sql`SELECT id, chat_id, starting_balance_usdt, joined_at FROM aster_competition_entries WHERE competition_id = ${compId}`)).rows;
+      if (entries.length === 0) continue;
+
+      for (const entry of entries) {
+        const e = entry as any;
+        const chatId = e.chat_id;
+        try {
+          const creds = await storage.getAsterCredentials(chatId);
+          if (!creds) continue;
+
+          let client: any;
+          if (creds.apiKey === "V3_DIRECT") {
+            const walletRows = await storage.getTelegramWallets(chatId);
+            const evmWallet = walletRows.find((w: any) => /^0x[a-fA-F0-9]{40}$/.test(w.walletAddress));
+            if (!evmWallet) continue;
+            const pk = await storage.getTelegramWalletPrivateKey(chatId, evmWallet.walletAddress.toLowerCase());
+            if (!pk) continue;
+            client = createAsterV3FuturesClient({
+              user: evmWallet.walletAddress, signer: evmWallet.walletAddress, signerPrivateKey: pk,
+            });
+          } else {
+            client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+          }
+
+          const [balances, positions, income] = await Promise.all([
+            client.balance().catch(() => []),
+            client.positions().catch(() => []),
+            client.income("REALIZED_PNL", 100).catch(() => []),
+          ]);
+
+          let totalBalance = 0;
+          for (const b of (balances as any[])) {
+            totalBalance += parseFloat(b.crossWalletBalance || b.balance || "0");
+          }
+          let totalUpnl = 0;
+          const openPositions = (positions as any[]).filter((p: any) => parseFloat(p.positionAmt) !== 0);
+          for (const p of openPositions) {
+            totalUpnl += parseFloat(p.unRealizedProfit || "0");
+          }
+          const equity = totalBalance + totalUpnl;
+
+          const startBal = parseFloat(e.starting_balance_usdt || "0");
+          const pnlUsdt = equity - startBal;
+          const pnlPct = startBal > 0 ? (pnlUsdt / startBal * 100) : 0;
+
+          let tradeCount = 0, winCount = 0, lossCount = 0, bestPnl = 0, worstPnl = 0;
+          const joinedAt = new Date(e.joined_at || 0).getTime();
+          if (Array.isArray(income)) {
+            const filtered = income.filter((i: any) => (i.time || 0) >= joinedAt);
+            tradeCount = filtered.length;
+            for (const inc of filtered) {
+              const amt = parseFloat(inc.income || "0");
+              if (amt > 0) winCount++; else if (amt < 0) lossCount++;
+              if (amt > bestPnl) bestPnl = amt;
+              if (amt < worstPnl) worstPnl = amt;
+            }
+          }
+
+          await db.execute(sql`UPDATE aster_competition_entries SET current_equity_usdt = ${equity}, pnl_usdt = ${pnlUsdt}, pnl_percent = ${pnlPct}, trade_count = ${tradeCount}, win_count = ${winCount}, loss_count = ${lossCount}, best_trade_pnl = ${bestPnl}, worst_trade_pnl = ${worstPnl}, last_updated = now() WHERE id = ${e.id}`);
+        } catch (err: any) {
+          log(`[Competition] Update failed for ${chatId}: ${err.message?.substring(0, 80)}`, "trading");
+        }
+
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+    log(`[Competition] Stats updated for all active competitions`, "trading");
+  } catch (err: any) {
+    log(`[Competition] Update error: ${err.message?.substring(0, 100)}`, "trading");
+  } finally {
+    competitionUpdateRunning = false;
+  }
+}
+
 export function getActiveAsterPositionsForUser(chatId: number): AsterFuturesPosition[] {
   return Array.from(activeAsterPositions.values()).filter(p => p.chatId === chatId && p.status === "open");
 }
@@ -3241,6 +3357,10 @@ export function startTradingAgent(notifyFn: (chatId: number, message: string) =>
     checkAsterPositions(notifyFn).catch(e => log(`[AsterAgent] Check error: ${e.message?.substring(0, 80)}`, "trading"));
   }, ASTER_POSITION_CHECK_INTERVAL_MS);
 
+  competitionUpdateTimer = setInterval(() => {
+    updateCompetitionStats(notifyFn).catch(e => log(`[Competition] Error: ${e.message?.substring(0, 80)}`, "trading"));
+  }, COMPETITION_UPDATE_INTERVAL_MS);
+
   smartMoneyTimer = setInterval(() => {
     discoverSmartWallets().catch(e => log(`[SmartMoney] Error: ${e.message?.substring(0, 80)}`, "trading"));
   }, SMART_MONEY_SCAN_INTERVAL_MS);
@@ -3250,6 +3370,7 @@ export function startTradingAgent(notifyFn: (chatId: number, message: string) =>
   log(`[CopyTrade] Tracking ${COPY_TRADE_WALLETS.map(w => w.label).join(", ")} + auto-discovered wallets`, "trading");
   log(`[SmartMoney] Discovery active — scanning every ${SMART_MONEY_SCAN_INTERVAL_MS / 1000}s for top traders`, "trading");
   log(`[AsterAgent] Aster futures active`, "trading");
+  log(`[Competition] Auto-update active — refreshing every ${COMPETITION_UPDATE_INTERVAL_MS / 60000}min`, "trading");
 }
 
 export function stopTradingAgent(): void {
@@ -3260,9 +3381,10 @@ export function stopTradingAgent(): void {
   if (instantSniperTimer) clearInterval(instantSniperTimer);
   if (asterScanTimer) clearInterval(asterScanTimer);
   if (asterPositionTimer) clearInterval(asterPositionTimer);
+  if (competitionUpdateTimer) clearInterval(competitionUpdateTimer);
   if (smartMoneyTimer) clearInterval(smartMoneyTimer);
   scanTimer = null; sniperTimer = null; positionTimer = null; copyTradeTimer = null;
-  instantSniperTimer = null; asterScanTimer = null; asterPositionTimer = null; smartMoneyTimer = null;
+  instantSniperTimer = null; asterScanTimer = null; asterPositionTimer = null; competitionUpdateTimer = null; smartMoneyTimer = null;
   running = false;
   log("[TradingAgent] Stopped", "trading");
 }

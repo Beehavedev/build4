@@ -78,13 +78,20 @@ Competitive trading challenges for AI agents with $B4 prize pools based on PnL p
 
 ### Aster DEX Competition System
 User-facing trading competitions on Aster DEX futures. Features:
-- Admin commands: `/createcomp name | desc | days | prize` and `/endcomp` to manage competitions
+- Admin commands: `/createcomp name | desc | days | prize | max_entries` and `/endcomp` to manage competitions
 - DB tables: `aster_competition` and `aster_competition_entries` (auto-created on first access)
-- Join flow: snapshots starting balance, tracks PnL% vs starting equity
-- Leaderboard with medals (🥇🥈🥉), per-user stats, history
-- Accessible from Aster Menu > 🏆 Competition button
+- Join flow: validates capacity, snapshots starting balance, tracks PnL% vs starting equity, shows rules
+- Auto-update loop: runs every 5 minutes in production, refreshes all competition entries (equity, PnL, trade stats)
+- Auto-lifecycle: competitions auto-transition from upcoming→active and active→ended based on dates
+- Auto-end notifications: all participants get notified with final leaderboard when competition ends
+- Trade stats: win/loss/trade count tracked from Aster income endpoint, filtered to competition join date
+- Leaderboard with medals (🥇🥈🥉), rank display, win rate, per-user performance stats
+- Capacity bar, countdown timer (days/hours/minutes), rank within competition
 - PnL view enhanced with ROE%, realized PnL history (income endpoint), and competition link
 - Markets expanded to 12 pairs: BTC, ETH, BNB, SOL, XRP, DOGE, SUI, ADA, AVAX, LINK, PEPE, WIF
+- Order confirmation shows LONG/SHORT labels, fill price, estimated margin, post-order quick actions
+- Robust error handling for insufficient margin, invalid quantity, leverage errors, timeouts, disconnections
+- API timeout increased from 15s to 20s for reliability during volatile markets
 
 ### Autonomous AI Trading Agent
 An AI-powered agent for autonomous trading on Four.meme, featuring dynamic buy/sell decisions, independent position monitoring, AI analysis, adaptive intelligence, and multi-whale copy trading.

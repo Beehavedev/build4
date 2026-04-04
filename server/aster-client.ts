@@ -178,7 +178,7 @@ const DEFAULT_FUTURES_V3_BASE_URL = "https://fapi.asterdex.com";
 const DEFAULT_SPOT_BASE_URL = "https://sapi.asterdex.com";
 const BROKER_BASE_URL = "https://www.asterdex.com/bapi/futures/v1";
 const WS_BASE_URL = "wss://fstream.asterdex.com";
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS = 20000;
 const BUILD4_AGENT_CODE = "BUILD4";
 
 function buildQueryString(params: Record<string, string | number | boolean | undefined>): string {
