@@ -163,7 +163,7 @@ app.post("/api/telegram/webhook/:token", (req, res) => {
       try {
         const { getBotInstance } = await import("./telegram-bot");
         const notifyFn = (cid: number, msg: string) => {
-          getBotInstance()?.sendMessage(cid, msg).catch(() => {});
+          getBotInstance()?.sendMessage(cid, msg, { parse_mode: "Markdown" }).catch(() => {});
         };
 
         if (!isTradingAgentRunning()) {

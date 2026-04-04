@@ -4798,7 +4798,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       setUserTradingConfig(chatId, { enabled: true });
       if (!isTradingAgentRunning()) {
         startTradingAgent((cid, msg) => {
-          bot?.sendMessage(cid, msg, { reply_markup: mainMenuKeyboard(undefined, chatId) }).catch(() => {});
+          bot?.sendMessage(cid, msg, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) }).catch(() => {});
         });
       }
       await bot.sendMessage(chatId,
@@ -9645,14 +9645,15 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       try {
         const { db } = await import("./db");
         const { sql } = await import("drizzle-orm");
-        const result = await db.execute(sql`UPDATE aster_competition SET status = 'ended' WHERE status = 'active' RETURNING name`);
+        const result = await db.execute(sql`UPDATE aster_competition SET status = 'ended' WHERE status = 'active' RETURNING id, name`);
         const ended = result.rows;
         if (ended.length === 0) {
           await bot.sendMessage(chatId, "No active competitions to end.");
         } else {
           let msg = `✅ Ended ${ended.length} competition(s):\n`;
           for (const c of ended) msg += `• ${(c as any).name}\n`;
-          const winners = (await db.execute(sql`SELECT ce.username, ce.pnl_percent, ce.pnl_usdt, ce.trade_count FROM aster_competition_entries ce JOIN aster_competition c ON ce.competition_id = c.id WHERE c.status = 'ended' ORDER BY ce.pnl_percent DESC LIMIT 10`)).rows;
+          const firstEndedId = (ended[0] as any).id;
+          const winners = (await db.execute(sql`SELECT ce.username, ce.pnl_percent, ce.pnl_usdt, ce.trade_count FROM aster_competition_entries ce WHERE ce.competition_id = ${firstEndedId} ORDER BY ce.pnl_percent DESC LIMIT 10`)).rows;
           if (winners.length > 0) {
             msg += `\n🏆 Final Leaderboard:\n`;
             const medals = ["🥇", "🥈", "🥉"];
