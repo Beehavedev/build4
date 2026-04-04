@@ -1,0 +1,119 @@
+1. Update requirements.txttxt
+python-telegram-bot==20.8
+aster-connector-python
+pandas
+ta
+requests
+python-dotenv
+
+Run in Replit Shell:bash
+pip install -r requirements.txt
+
+2. Updated aster_client.py (this was the broken part — now 100% correct)python
+import os
+from aster_dex.futures import Frenchie as AsterClient  # official SDK (Frenchie alias)
+
+class AsterTrader:
+    def __init__(self):
+        self.client = AsterClient(
+            key=os.getenv("ASTER_API_KEY"),
+            secret=os.getenv("ASTER_API_SECRET"),
+            recvWindow=10000,      # helps with timestamp issues
+        )
+
+    def get_balance(self):
+        """Returns wallet + futures balance (USDT, etc.)"""
+        return self.client.balance()
+
+    def get_positions(self):
+        """Current open positions with unrealized PNL"""
+        return self.client.positionRisk()  # or self.client.position() if available
+
+    def get_account_info(self):
+        """Full account snapshot (balances + unrealized PNL)"""
+        return self.client.accountWithJoinMargin()  # best for PNL overview
+
+    def get_recent_trades(self, symbol="BTCUSDT", limit=10):
+        """Last filled trades"""
+        return self.client.userTrades(symbol=symbol, limit=limit)
+
+    def get_income_history(self, symbol=None, limit=10):
+        """Realized PNL, funding fees, commissions (full PNL history)"""
+        params = {"limit": limit}
+        if symbol:
+            params["symbol"] = symbol
+        return self.client.income(**params)
+
+    def get_market_data(self, symbol="BTCUSDT"):
+        """Latest ticker for quick price"""
+        # SDK supports public endpoints too
+        return self.client.ticker(symbol=symbol)  # or use klines below
+
+    def get_klines(self, symbol="BTCUSDT", interval="1m", limit=100):
+        """OHLCV data for TA/strategy"""
+        return self.client.klines(symbol=symbol, interval=interval, limit=limit)
+
+    def place_order(self, symbol, side, quantity, leverage=10, order_type="MARKET", price=None):
+        """Place market or limit order"""
+        params = {
+            "symbol": symbol,
+            "side": side.upper(),          # BUY or SELL
+            "type": order_type.upper(),
+            "quantity": quantity,
+            "leverage": leverage,
+        }
+        if order_type.upper() == "LIMIT" and price:
+            params["price"] = price
+            params["timeInForce"] = "GTC"
+        return self.client.new_order(**params)
+
+3. Quick update to agent.py (only the data part)Replace the strategy loop section with real data:python
+# Inside AutonomousAgent.run()
+try:
+    # Get real market data for strategy
+    klines = self.trader.get_klines(self.symbol, interval="5m", limit=100)
+    df = pd.DataFrame(klines, columns=['open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time', ...])
+    df = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
+
+    decision = simple_ai_strategy(df)
+
+    if decision != "HOLD":
+        # Risk-managed quantity
+        account = self.trader.get_account_info()
+        usdt_balance = float(next((b['availableBalance'] for b in account['assets'] if b['asset'] == 'USDT'), 0))
+        qty = (usdt_balance * self.risk_percent / 100) / float(self.trader.get_market_data(self.symbol)['lastPrice'])
+
+        order = self.trader.place_order(self.symbol, decision, qty, self.leverage)
+        
+        await self.telegram_bot.send_message(
+            self.chat_id,
+            f"🚀 {decision} {self.symbol} @ {qty} executed!\nOrder ID: {order.get('orderId', 'unknown')}"
+        )
+except Exception as e:
+    await self.telegram_bot.send_message(self.chat_id, f"⚠️ Error: {str(e)}")
+
+4. Updated /status command in bot.pypython
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        balance = agent.trader.get_balance()
+        positions = agent.trader.get_positions()
+        account = agent.trader.get_account_info()
+        trades = agent.trader.get_recent_trades(limit=5)
+
+        msg = f"""
+💰 **Balance**: {balance}
+📍 **Positions**: {positions}
+📊 **Unrealized PNL**: {account.get('unrealizedProfit', 'N/A')}
+📜 **Recent Trades**: {trades[:5]}
+        """
+        await update.message.reply_text(msg, parse_mode='Markdown')
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to fetch data: {e}\nCheck API keys & wallet connection.")
+
+5. Final checklist for your Replit agentMake sure Replit Secrets has:ASTER_API_KEY
+ASTER_API_SECRET
+TELEGRAM_TOKEN
+Test first on testnet if Aster offers one (change base URL in SDK if needed).
+Restart the bot after changes.
+Run /status in Telegram — it should now show real balance, positions, PNL, and trades.
+
