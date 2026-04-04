@@ -14708,67 +14708,105 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   }
 
   if (action === "api_diag") {
-    await bot.sendMessage(chatId, "Running API diagnostics...");
+    await bot.sendMessage(chatId, "Running API diagnostics (broker open-account flow)...");
     try {
       const { ethers } = await import("ethers");
-      const wallet = getLinkedWallet(chatId);
-      const pk = await resolvePrivateKey(chatId, wallet || "");
-      if (!pk || !wallet) { await bot.sendMessage(chatId, "No wallet found"); return; }
+      const walletAddr = getLinkedWallet(chatId);
+      const pk = await resolvePrivateKey(chatId, walletAddr || "");
+      if (!pk || !walletAddr) { await bot.sendMessage(chatId, "No wallet found"); return; }
       const w = new ethers.Wallet(pk);
-      const user = ethers.getAddress(w.address);
-      const signer = user;
-
-      const EIP712D = {
-        name: "AsterSignTransaction", version: "1", chainId: 1666,
-        verifyingContract: "0x0000000000000000000000000000000000000000",
-      };
-      const EIP712T = { Message: [{ name: "msg", type: "string" }] };
-
-      function bqs(p: Record<string, any>): string {
-        const f: Record<string, string> = {};
-        for (const [k, v] of Object.entries(p)) if (v != null) f[k] = String(v);
-        return new URLSearchParams(f).toString();
-      }
-
-      async function signP(params: Record<string, any>) {
-        const p = { ...params, nonce: String(Math.trunc(Date.now() / 1000) * 1_000_000 + Math.floor(Math.random() * 999)), user, signer };
-        const q = bqs(p);
-        p.signature = await w.signTypedData(EIP712D, EIP712T, { msg: q });
-        return p;
-      }
-
-      const BASE = "https://fapi.asterdex.com";
+      const address = w.address;
       const results: string[] = [];
+      const BAPI = "https://www.asterdex.com/bapi/futures/v1";
 
-      async function tryCall(label: string, method: string, path: string, extra: Record<string, any> = {}) {
-        try {
-          const sp = await signP(extra);
-          const q = bqs(sp);
-          let url: string, body: string | undefined;
-          const h: Record<string, string> = { "User-Agent": "BUILD4/1.0" };
-          if (method === "GET") { url = `${BASE}${path}?${q}`; }
-          else { url = `${BASE}${path}`; h["Content-Type"] = "application/x-www-form-urlencoded"; body = q; }
-          const r = await fetch(url, { method, headers: h, body });
-          const t = await r.text();
-          results.push(`${label}: ${r.status} ${t.substring(0, 150)}`);
-        } catch (e: any) {
-          results.push(`${label}: ERR ${e.message?.substring(0, 100)}`);
+      results.push(`Wallet: ${address.substring(0, 10)}...`);
+
+      const nonceRes = await fetch(`${BAPI}/public/future/web3/get-nonce`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "clientType": "web" },
+        body: JSON.stringify({ type: "LOGIN", sourceAddr: address }),
+      });
+      const nonceData = await nonceRes.json();
+      results.push(`Nonce: ${nonceRes.status} ${nonceData?.data?.nonce ? 'OK' : 'FAIL'}`);
+      if (!nonceData?.data?.nonce) {
+        await bot.sendMessage(chatId, results.join("\n"));
+        return;
+      }
+
+      const loginSig = await w.signMessage(`You are signing into Astherus ${nonceData.data.nonce}`);
+      const loginRes = await fetch(`${BAPI}/public/future/web3/ae/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "clientType": "web" },
+        body: JSON.stringify({ signature: loginSig, sourceAddr: address, chainId: 56, agentCode: "BUILD4" }),
+      });
+      const loginData = await loginRes.json();
+      let rawSetCookies: string[] = [];
+      try { rawSetCookies = (loginRes.headers as any).getSetCookie?.() || []; } catch {}
+      if (!rawSetCookies.length) {
+        const sc = loginRes.headers.get("set-cookie");
+        if (sc) rawSetCookies = sc.split(/,(?=\s*\w+=)/);
+      }
+      const parsedCookies = rawSetCookies.map((c: string) => c.split(";")[0].trim()).filter(Boolean);
+      const cookieStr = parsedCookies.join("; ");
+      const cookieNames = parsedCookies.map((c: string) => c.split("=")[0]);
+
+      let xsrfToken = "";
+      for (const cookie of parsedCookies) {
+        const [name, ...rest] = cookie.split("=");
+        if (name.trim().toUpperCase() === "XSRF-TOKEN") {
+          xsrfToken = decodeURIComponent(rest.join("=").trim());
+          break;
         }
       }
 
-      await tryCall("noop POST", "POST", "/fapi/v3/noop");
-      await tryCall("bal GET", "GET", "/fapi/v3/balance");
-      await tryCall("bal POST body", "POST", "/fapi/v3/balance");
-      await tryCall("pos GET", "GET", "/fapi/v3/positionRisk");
-      await tryCall("pos POST body", "POST", "/fapi/v3/positionRisk");
-      await tryCall("acct GET", "GET", "/fapi/v3/account");
-      await tryCall("acct POST body", "POST", "/fapi/v3/account");
-      await tryCall("bal GET+ts", "GET", "/fapi/v3/balance", { timestamp: Date.now() });
-      await tryCall("bal GET+rw", "GET", "/fapi/v3/balance", { recvWindow: 60000 });
+      const uid = loginData?.data?.uid || loginData?.data?.userId || 0;
+      const token = loginData?.data?.token || "";
+      results.push(`Login: ${loginData?.code} uid=${uid} token=${token.length}ch`);
+      results.push(`Cookies: ${cookieNames.join(', ')}`);
+      results.push(`XSRF: ${xsrfToken.length}ch`);
 
-      const msg = results.join("\n\n");
+      const openUrl = `${BAPI}/private/future/open-account`;
+      const browserHeaders: Record<string, string> = {
+        "Content-Type": "application/json",
+        "clientType": "web",
+        "Origin": "https://www.asterdex.com",
+        "Referer": "https://www.asterdex.com/en/futures/BTCUSDT",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+      };
+
+      const strategies = [
+        { name: "Cookie+XSRF", h: { ...browserHeaders, "Cookie": cookieStr, "X-XSRF-TOKEN": xsrfToken } },
+        { name: "Cookie+Token-as-XSRF", h: { ...browserHeaders, "Cookie": cookieStr, "X-XSRF-TOKEN": token } },
+        { name: "Cookie+TokenCookie+XSRF", h: { ...browserHeaders, "Cookie": `${cookieStr}; token=${token}`, "X-XSRF-TOKEN": xsrfToken || token } },
+        { name: "CookieOnly", h: { ...browserHeaders, "Cookie": cookieStr } },
+        { name: "Bearer", h: { ...browserHeaders, "Authorization": `Bearer ${token}` } },
+        { name: "Cookie+Bearer", h: { ...browserHeaders, "Cookie": cookieStr, "Authorization": `Bearer ${token}` } },
+        { name: "Cookie+csrftoken-header", h: { ...browserHeaders, "Cookie": cookieStr, "csrftoken": xsrfToken || token } },
+        { name: "Cookie+X-CSRFToken", h: { ...browserHeaders, "Cookie": cookieStr, "X-CSRFToken": xsrfToken || token } },
+      ];
+
+      for (const s of strategies) {
+        try {
+          const r = await fetch(openUrl, { method: "POST", headers: s.h, body: JSON.stringify({}) });
+          const t = await r.text();
+          let parsed: any;
+          try { parsed = JSON.parse(t); } catch { parsed = { raw: t.substring(0, 100) }; }
+          const code = parsed?.code || "nocode";
+          const msg = (parsed?.message || parsed?.msg || parsed?.error || t.substring(0, 60)).substring(0, 60);
+          results.push(`${s.name}: ${r.status} code=${code} ${msg}`);
+          if (code === "000000") {
+            results.push(`SUCCESS via ${s.name}!`);
+            break;
+          }
+        } catch (e: any) {
+          results.push(`${s.name}: ERR ${e.message?.substring(0, 60)}`);
+        }
+      }
+
+      const fullMsg = results.join("\n");
       const chunks = [];
-      for (let i = 0; i < msg.length; i += 4000) chunks.push(msg.substring(i, i + 4000));
+      for (let i = 0; i < fullMsg.length; i += 4000) chunks.push(fullMsg.substring(i, i + 4000));
       for (const chunk of chunks) {
         await bot.sendMessage(chatId, chunk);
       }
