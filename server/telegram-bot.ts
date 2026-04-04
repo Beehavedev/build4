@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { registerAgentOnchain, registerAgentERC8004, registerAgentBAP578, isOnchainReady, getExplorerUrl } from "./onchain";
 import { recordTelegramMessage, recordTelegramCallback, checkRateLimit } from "./performance-monitor";
 import { enqueueTask, registerTaskHandler } from "./task-queue";
+import { startAgent, stopAgent, getAgentStatus, getAgentConfig, setAgentConfig, getAgentState } from "./autonomous-agent";
 import {
   getSmartMoneySignals,
   getLeaderboard,
@@ -13102,7 +13103,8 @@ async function handleAsterMenu(chatId: number): Promise<void> {
           [{ text: "📊 Markets", callback_data: "aster:markets" }, { text: "💵 Fund Account", callback_data: "aster:fund" }],
           [{ text: "💰 Balances", callback_data: "aster:balance" }, { text: "📊 Positions", callback_data: "aster:positions" }],
           [{ text: "📋 Open Orders", callback_data: "aster:orders" }, { text: "📈 PnL", callback_data: "aster:pnl" }],
-          [{ text: "🏆 Competition", callback_data: "aster:competition" }, { text: "⚙️ Risk Settings", callback_data: "aster:risk_settings" }],
+          [{ text: "🤖 AI Agent", callback_data: "aster:agent" }, { text: "⚙️ Risk Settings", callback_data: "aster:risk_settings" }],
+          [{ text: "🏆 Competition", callback_data: "aster:competition" }],
           [{ text: "🔧 API Diagnostics", callback_data: "aster:api_diag" }],
           ...(isV3Direct ? [[{ text: "🔑 Upgrade (Add API Key)", callback_data: "aster:connect" }]] : []),
           [{ text: "🔌 Disconnect", callback_data: "aster:disconnect" }, { text: "« Back", callback_data: "action:menu" }],
@@ -15144,6 +15146,267 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     } catch (e: any) {
       await bot.sendMessage(chatId, `Failed to fetch PnL: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
     }
+    return;
+  }
+
+  if (action === "agent") {
+    const config = getAgentConfig(chatId.toString());
+    const state = getAgentState(chatId.toString());
+    const isRunning = state?.running || false;
+
+    let msg = `🤖 *AI Trading Agent*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+    msg += `Status: ${isRunning ? "🟢 RUNNING" : "🔴 STOPPED"}\n`;
+    msg += `Symbol: \`${config.symbol}\`\n`;
+    msg += `Leverage: *${config.leverage}x*\n`;
+    msg += `Risk: \`${config.riskPercent}%\` per trade\n`;
+    msg += `Interval: \`${config.intervalMs / 1000}s\`\n`;
+    msg += `Timeframe: \`${config.klineInterval}\`\n`;
+    if (state) {
+      msg += `Position: \`${state.currentPosition}\`\n`;
+      msg += `Trades: \`${state.tradeCount}\`\n`;
+      msg += `Last Signal: \`${state.lastSignal}\`\n`;
+    }
+    msg += `\n_Strategy: EMA(8/21) crossover + RSI filter_\n`;
+    msg += `_The agent fetches candles, computes signals, and auto-trades._`;
+
+    const buttons: TelegramBot.InlineKeyboardButton[][] = [];
+    if (isRunning) {
+      buttons.push([{ text: "⛔ Stop Agent", callback_data: "aster:agent_stop" }]);
+    } else {
+      buttons.push([{ text: "▶️ Start Agent", callback_data: "aster:agent_start" }]);
+    }
+    buttons.push([{ text: "⚙️ Configure", callback_data: "aster:agent_config" }]);
+    buttons.push([{ text: "📊 Status", callback_data: "aster:agent_status" }]);
+    buttons.push([{ text: "« Aster Menu", callback_data: "action:aster" }]);
+
+    await bot.sendMessage(chatId, msg, {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: buttons },
+    });
+    return;
+  }
+
+  if (action === "agent_start") {
+    const futuresClient = client.futures || client;
+    const chatIdStr = chatId.toString();
+
+    const sendMsg = async (msg: string) => {
+      try {
+        await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
+      } catch (e: any) {
+        const safeMsg = msg.replace(/[_*[\]()~`>#+=|{}.!-]/g, " ");
+        await bot.sendMessage(chatId, safeMsg).catch(() => {});
+      }
+    };
+
+    const getClientFn = () => client;
+    const started = await startAgent(chatIdStr, getClientFn, sendMsg);
+
+    if (started) {
+      const config = getAgentConfig(chatIdStr);
+      await bot.sendMessage(chatId,
+        `🤖 *Agent Started!*\n\n` +
+        `Trading \`${config.symbol}\` with ${config.leverage}x leverage\n` +
+        `Risk: ${config.riskPercent}% per trade\n` +
+        `Checking every ${config.intervalMs / 1000}s\n\n` +
+        `The agent will auto-trade based on EMA/RSI signals.`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "⛔ Stop Agent", callback_data: "aster:agent_stop" }],
+              [{ text: "📊 Status", callback_data: "aster:agent_status" }],
+              [{ text: "« Aster Menu", callback_data: "action:aster" }],
+            ],
+          },
+        }
+      );
+    } else {
+      await bot.sendMessage(chatId, "Agent is already running.", {
+        reply_markup: { inline_keyboard: [[{ text: "⛔ Stop Agent", callback_data: "aster:agent_stop" }], [{ text: "« Back", callback_data: "aster:agent" }]] },
+      });
+    }
+    return;
+  }
+
+  if (action === "agent_stop") {
+    const stopped = stopAgent(chatId.toString());
+    if (stopped) {
+      await bot.sendMessage(chatId, "⛔ *Agent Stopped*\n\nAutonomous trading has been disabled.", {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "▶️ Restart Agent", callback_data: "aster:agent_start" }],
+            [{ text: "🤖 Agent Menu", callback_data: "aster:agent" }],
+            [{ text: "« Aster Menu", callback_data: "action:aster" }],
+          ],
+        },
+      });
+    } else {
+      await bot.sendMessage(chatId, "Agent is not running.", {
+        reply_markup: { inline_keyboard: [[{ text: "🤖 Agent Menu", callback_data: "aster:agent" }]] },
+      });
+    }
+    return;
+  }
+
+  if (action === "agent_status") {
+    const statusMsg = getAgentStatus(chatId.toString());
+    await bot.sendMessage(chatId, statusMsg, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🔄 Refresh", callback_data: "aster:agent_status" }],
+          [{ text: "🤖 Agent Menu", callback_data: "aster:agent" }],
+          [{ text: "« Aster Menu", callback_data: "action:aster" }],
+        ],
+      },
+    });
+    return;
+  }
+
+  if (action === "agent_config") {
+    const config = getAgentConfig(chatId.toString());
+    await bot.sendMessage(chatId,
+      `⚙️ *Agent Configuration*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `Symbol: \`${config.symbol}\`\n` +
+      `Leverage: *${config.leverage}x*\n` +
+      `Risk: \`${config.riskPercent}%\` per trade\n` +
+      `Interval: \`${config.intervalMs / 1000}s\`\n` +
+      `Timeframe: \`${config.klineInterval}\`\n\n` +
+      `Select what to change:`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "📌 Symbol", callback_data: "aster:agent_set_symbol" }, { text: "⚡ Leverage", callback_data: "aster:agent_set_leverage" }],
+            [{ text: "🎯 Risk %", callback_data: "aster:agent_set_risk" }, { text: "⏱️ Interval", callback_data: "aster:agent_set_interval" }],
+            [{ text: "📊 Timeframe", callback_data: "aster:agent_set_tf" }],
+            [{ text: "« Agent Menu", callback_data: "aster:agent" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (action === "agent_set_symbol") {
+    const symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT"];
+    await bot.sendMessage(chatId, "Select trading symbol:", {
+      reply_markup: {
+        inline_keyboard: [
+          symbols.slice(0, 3).map(s => ({ text: s, callback_data: `aster:agcfg_sym_${s}` })),
+          symbols.slice(3).map(s => ({ text: s, callback_data: `aster:agcfg_sym_${s}` })),
+          [{ text: "« Back", callback_data: "aster:agent_config" }],
+        ],
+      },
+    });
+    return;
+  }
+
+  if (action?.startsWith("agcfg_sym_")) {
+    const sym = action.replace("agcfg_sym_", "");
+    setAgentConfig(chatId.toString(), { symbol: sym });
+    await bot.sendMessage(chatId, `Symbol set to \`${sym}\``, {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [[{ text: "« Config", callback_data: "aster:agent_config" }], [{ text: "🤖 Agent", callback_data: "aster:agent" }]] },
+    });
+    return;
+  }
+
+  if (action === "agent_set_leverage") {
+    const levs = [3, 5, 10, 15, 20, 25];
+    await bot.sendMessage(chatId, "Select leverage:", {
+      reply_markup: {
+        inline_keyboard: [
+          levs.slice(0, 3).map(l => ({ text: `${l}x`, callback_data: `aster:agcfg_lev_${l}` })),
+          levs.slice(3).map(l => ({ text: `${l}x`, callback_data: `aster:agcfg_lev_${l}` })),
+          [{ text: "« Back", callback_data: "aster:agent_config" }],
+        ],
+      },
+    });
+    return;
+  }
+
+  if (action?.startsWith("agcfg_lev_")) {
+    const lev = parseInt(action.replace("agcfg_lev_", ""));
+    setAgentConfig(chatId.toString(), { leverage: lev });
+    await bot.sendMessage(chatId, `Leverage set to *${lev}x*`, {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [[{ text: "« Config", callback_data: "aster:agent_config" }], [{ text: "🤖 Agent", callback_data: "aster:agent" }]] },
+    });
+    return;
+  }
+
+  if (action === "agent_set_risk") {
+    const risks = [0.5, 1, 2, 3, 5];
+    await bot.sendMessage(chatId, "Select risk per trade (% of deposited margin):", {
+      reply_markup: {
+        inline_keyboard: [
+          risks.slice(0, 3).map(r => ({ text: `${r}%`, callback_data: `aster:agcfg_risk_${r}` })),
+          risks.slice(3).map(r => ({ text: `${r}%`, callback_data: `aster:agcfg_risk_${r}` })),
+          [{ text: "« Back", callback_data: "aster:agent_config" }],
+        ],
+      },
+    });
+    return;
+  }
+
+  if (action?.startsWith("agcfg_risk_")) {
+    const risk = parseFloat(action.replace("agcfg_risk_", ""));
+    setAgentConfig(chatId.toString(), { riskPercent: risk });
+    await bot.sendMessage(chatId, `Risk set to \`${risk}%\` per trade`, {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [[{ text: "« Config", callback_data: "aster:agent_config" }], [{ text: "🤖 Agent", callback_data: "aster:agent" }]] },
+    });
+    return;
+  }
+
+  if (action === "agent_set_interval") {
+    const intervals = [{ label: "30s", val: 30000 }, { label: "1m", val: 60000 }, { label: "5m", val: 300000 }, { label: "15m", val: 900000 }, { label: "30m", val: 1800000 }];
+    await bot.sendMessage(chatId, "Select check interval:", {
+      reply_markup: {
+        inline_keyboard: [
+          intervals.slice(0, 3).map(i => ({ text: i.label, callback_data: `aster:agcfg_int_${i.val}` })),
+          intervals.slice(3).map(i => ({ text: i.label, callback_data: `aster:agcfg_int_${i.val}` })),
+          [{ text: "« Back", callback_data: "aster:agent_config" }],
+        ],
+      },
+    });
+    return;
+  }
+
+  if (action?.startsWith("agcfg_int_")) {
+    const intVal = parseInt(action.replace("agcfg_int_", ""));
+    setAgentConfig(chatId.toString(), { intervalMs: intVal });
+    await bot.sendMessage(chatId, `Interval set to \`${intVal / 1000}s\``, {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [[{ text: "« Config", callback_data: "aster:agent_config" }], [{ text: "🤖 Agent", callback_data: "aster:agent" }]] },
+    });
+    return;
+  }
+
+  if (action === "agent_set_tf") {
+    const tfs = ["1m", "5m", "15m", "1h", "4h"];
+    await bot.sendMessage(chatId, "Select candle timeframe:", {
+      reply_markup: {
+        inline_keyboard: [
+          tfs.slice(0, 3).map(t => ({ text: t, callback_data: `aster:agcfg_tf_${t}` })),
+          tfs.slice(3).map(t => ({ text: t, callback_data: `aster:agcfg_tf_${t}` })),
+          [{ text: "« Back", callback_data: "aster:agent_config" }],
+        ],
+      },
+    });
+    return;
+  }
+
+  if (action?.startsWith("agcfg_tf_")) {
+    const tf = action.replace("agcfg_tf_", "");
+    setAgentConfig(chatId.toString(), { klineInterval: tf });
+    await bot.sendMessage(chatId, `Timeframe set to \`${tf}\``, {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [[{ text: "« Config", callback_data: "aster:agent_config" }], [{ text: "🤖 Agent", callback_data: "aster:agent" }]] },
+    });
     return;
   }
 
