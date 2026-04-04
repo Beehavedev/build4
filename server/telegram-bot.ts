@@ -14527,7 +14527,8 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
           msg += `  ${b.asset}: ${parseFloat(b.balance).toFixed(4)} (avail: ${parseFloat(b.availableBalance).toFixed(4)})${upnlStr}\n`;
         }
       } else {
-        msg += "*Futures:* No balances\n";
+        const debugBal = JSON.stringify(futuresBalances).substring(0, 300).replace(/[_*[\]()~`>#+=|{}.!-]/g, ' ');
+        msg += `Futures: No balances\nRaw: ${debugBal}\n`;
       }
 
       msg += "\n";
@@ -14710,11 +14711,13 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     try {
       const futuresClient = client.futures || client;
       const positions = await futuresClient.positions();
+      console.log(`[AsterPositions] raw for ${chatId}: count=${(positions as any[]).length} sample=${JSON.stringify((positions as any[]).slice(0, 3)).substring(0, 1000)}`);
       const openPositions = (positions as any[]).filter((p: any) => parseFloat(p.positionAmt) !== 0);
+      console.log(`[AsterPositions] open for ${chatId}: count=${openPositions.length}`);
 
       if (openPositions.length === 0) {
-        await bot.sendMessage(chatId, "📊 *Futures Positions*\n\nNo open positions.", {
-          parse_mode: "Markdown",
+        const debugSample = JSON.stringify((positions as any[]).slice(0, 2)).substring(0, 300).replace(/[_*[\]()~`>#+=|{}.!-]/g, ' ');
+        await bot.sendMessage(chatId, `No open positions.\n\nRaw count: ${(positions as any[]).length}\nSample: ${debugSample}`, {
           reply_markup: {
             inline_keyboard: [
               [{ text: "🔄 New Trade", callback_data: "aster:trade_futures" }],
