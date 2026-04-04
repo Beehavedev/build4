@@ -98,11 +98,22 @@ export function emaCrossRsiStrategy(candles: Candle[]): StrategyResult {
 }
 
 export function parseKlinesToCandles(klines: any[]): Candle[] {
-  return klines.map(k => ({
-    open: parseFloat(k.open),
-    high: parseFloat(k.high),
-    low: parseFloat(k.low),
-    close: parseFloat(k.close),
-    volume: parseFloat(k.volume),
-  }));
+  return klines.map(k => {
+    if (Array.isArray(k)) {
+      return {
+        open: parseFloat(k[1]),
+        high: parseFloat(k[2]),
+        low: parseFloat(k[3]),
+        close: parseFloat(k[4]),
+        volume: parseFloat(k[5]),
+      };
+    }
+    return {
+      open: parseFloat(k.open),
+      high: parseFloat(k.high),
+      low: parseFloat(k.low),
+      close: parseFloat(k.close),
+      volume: parseFloat(k.volume),
+    };
+  }).filter(c => !isNaN(c.close) && c.close > 0);
 }

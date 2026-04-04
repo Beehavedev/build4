@@ -19,6 +19,8 @@ interface AgentState {
   errors: number;
   timer: ReturnType<typeof setTimeout> | null;
   currentPosition: "LONG" | "SHORT" | "NONE";
+  lastPrice: number;
+  lastReason: string;
 }
 
 const agentStates = new Map<string, AgentState>();
@@ -28,7 +30,7 @@ const DEFAULT_CONFIG: AgentConfig = {
   leverage: 10,
   riskPercent: 1.0,
   intervalMs: 60000,
-  klineInterval: "1m",
+  klineInterval: "5m",
   enabled: false,
 };
 
@@ -44,20 +46,26 @@ export function getAgentConfig(chatId: string): AgentConfig {
 export function setAgentConfig(chatId: string, partial: Partial<AgentConfig>): AgentConfig {
   let state = agentStates.get(chatId);
   if (!state) {
-    state = {
-      config: { ...DEFAULT_CONFIG },
-      running: false,
-      lastSignal: "HOLD",
-      lastCheck: 0,
-      tradeCount: 0,
-      errors: 0,
-      timer: null,
-      currentPosition: "NONE",
-    };
+    state = createDefaultState();
     agentStates.set(chatId, state);
   }
   Object.assign(state.config, partial);
   return state.config;
+}
+
+function createDefaultState(): AgentState {
+  return {
+    config: { ...DEFAULT_CONFIG },
+    running: false,
+    lastSignal: "HOLD",
+    lastCheck: 0,
+    tradeCount: 0,
+    errors: 0,
+    timer: null,
+    currentPosition: "NONE",
+    lastPrice: 0,
+    lastReason: "",
+  };
 }
 
 export async function startAgent(
@@ -67,16 +75,7 @@ export async function startAgent(
 ): Promise<boolean> {
   let state = agentStates.get(chatId);
   if (!state) {
-    state = {
-      config: { ...DEFAULT_CONFIG },
-      running: false,
-      lastSignal: "HOLD",
-      lastCheck: 0,
-      tradeCount: 0,
-      errors: 0,
-      timer: null,
-      currentPosition: "NONE",
-    };
+    state = createDefaultState();
     agentStates.set(chatId, state);
   }
 
@@ -119,7 +118,7 @@ async function runAgentLoop(
     const client = getClient();
     const futuresClient = client.futures || client;
 
-    const klines = await futuresClient.klines(state.config.symbol, state.config.klineInterval, 50);
+    const klines = await futuresClient.klines(state.config.symbol, state.config.klineInterval, 100);
     const candles = parseKlinesToCandles(klines);
 
     if (candles.length < 22) {
@@ -131,8 +130,10 @@ async function runAgentLoop(
     const result: StrategyResult = emaCrossRsiStrategy(candles);
     state.lastSignal = result.signal;
     state.lastCheck = Date.now();
+    state.lastPrice = result.lastClose;
+    state.lastReason = result.reason;
 
-    console.log(`[Agent:${chatId}] ${state.config.symbol} signal=${result.signal} reason=${result.reason} pos=${state.currentPosition}`);
+    console.log(`[Agent:${chatId}] ${state.config.symbol} signal=${result.signal} price=$${result.lastClose.toFixed(2)} pos=${state.currentPosition} | ${result.reason}`);
 
     if (result.signal === "BUY" && state.currentPosition !== "LONG") {
       if (state.currentPosition === "SHORT") {
@@ -182,6 +183,43 @@ function scheduleNext(
   }, state.config.intervalMs);
 }
 
+function computeQuantity(symbol: string, usdtBalance: number, riskPercent: number, leverage: number, lastPrice: number): number {
+  if (lastPrice <= 0 || usdtBalance <= 0) return 0;
+
+  const riskAmount = usdtBalance * (riskPercent / 100);
+  const notional = riskAmount * leverage;
+  let qty = notional / lastPrice;
+
+  if (symbol.includes("BTC")) {
+    qty = Math.floor(qty * 1000) / 1000;
+  } else if (symbol.includes("ETH")) {
+    qty = Math.floor(qty * 100) / 100;
+  } else if (symbol.includes("SOL") || symbol.includes("BNB")) {
+    qty = Math.floor(qty * 10) / 10;
+  } else if (symbol.includes("DOGE") || symbol.includes("XRP")) {
+    qty = Math.floor(qty);
+  } else {
+    qty = Math.floor(qty * 10) / 10;
+  }
+
+  return qty;
+}
+
+async function getAvailableBalance(chatId: string): Promise<number> {
+  const allTrades = await storage.getAsterLocalTrades(chatId);
+  const deposits = allTrades.filter((t: any) => t.type === "DEPOSIT");
+  const totalDeposited = deposits.reduce((sum: number, t: any) => sum + (t.price || 0), 0);
+
+  const localPositions = await storage.getAsterLocalPositions(chatId);
+  let marginUsed = 0;
+  for (const p of localPositions) {
+    marginUsed += (p.quantity * p.entryPrice) / p.leverage;
+  }
+
+  const available = totalDeposited - marginUsed;
+  return Math.max(available, 0);
+}
+
 async function openPosition(
   chatId: string,
   futuresClient: any,
@@ -199,32 +237,19 @@ async function openPosition(
   }
 
   const ticker = await futuresClient.tickerPrice(state.config.symbol);
-  const price = parseFloat(ticker?.price || "0");
-  if (price === 0) throw new Error("Could not get current price");
+  const lastPrice = parseFloat(ticker?.price || "0");
+  if (lastPrice === 0) throw new Error("Could not get current price");
 
-  const localPositions = await storage.getAsterLocalPositions(chatId);
-  let availableMargin = 10;
-
-  const allTrades = await storage.getAsterLocalTrades(chatId);
-  const deposits = allTrades.filter((t: any) => t.type === "DEPOSIT");
-  const totalDeposited = deposits.reduce((sum: number, t: any) => sum + (t.price || 0), 0);
-  if (totalDeposited > 0) availableMargin = totalDeposited;
-
-  const riskAmount = availableMargin * (state.config.riskPercent / 100);
-  const notional = riskAmount * state.config.leverage;
-  let qty = notional / price;
-
-  const symbolInfo = state.config.symbol;
-  if (symbolInfo.includes("BTC")) {
-    qty = Math.floor(qty * 1000) / 1000;
-  } else if (symbolInfo.includes("ETH")) {
-    qty = Math.floor(qty * 100) / 100;
-  } else {
-    qty = Math.floor(qty * 10) / 10;
+  const availableBalance = await getAvailableBalance(chatId);
+  if (availableBalance < 1) {
+    console.log(`[Agent:${chatId}] Insufficient balance: $${availableBalance.toFixed(2)}`);
+    await sendMessage(`⚠️ Agent: Insufficient balance ($${availableBalance.toFixed(2)}). Fund your account to continue.`);
+    return;
   }
 
+  const qty = computeQuantity(state.config.symbol, availableBalance, state.config.riskPercent, state.config.leverage, lastPrice);
   if (qty <= 0) {
-    console.log(`[Agent:${chatId}] Qty too small: ${qty}`);
+    console.log(`[Agent:${chatId}] Qty too small after rounding`);
     return;
   }
 
@@ -259,12 +284,13 @@ async function openPosition(
   const icon = side === "BUY" ? "🟢" : "🔴";
 
   await sendMessage(
-    `${icon} *Auto Trade: ${sideLabel} ${state.config.symbol}*\n` +
+    `🚀 *Auto Trade Executed!*\n` +
     `━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `${icon} ${sideLabel} *${state.config.symbol}*\n` +
     `📦 Qty: \`${filledQty || qty}\`\n` +
-    `💲 Price: \`$${(avgPrice || price).toFixed(2)}\`\n` +
+    `💲 Price: \`$${(avgPrice || lastPrice).toFixed(2)}\`\n` +
     `⚡ Leverage: *${state.config.leverage}x*\n` +
-    `📊 Strategy: ${result.reason}\n\n` +
+    `📊 Signal: ${result.reason}\n\n` +
     `📋 Order ID: \`${orderResult.orderId}\`\n` +
     `✅ Status: *${orderResult.status}*`
   );
@@ -292,6 +318,9 @@ async function closeCurrentPosition(
     reduceOnly: true,
   });
 
+  const filledQty = parseFloat(closeResult.executedQty || String(pos.quantity));
+  const closePrice = parseFloat(closeResult.avgPrice || closeResult.price || "0");
+
   await storage.saveAsterLocalTrade({
     chatId,
     orderId: String(closeResult.orderId),
@@ -299,9 +328,9 @@ async function closeCurrentPosition(
     side: closeSide,
     type: "MARKET",
     quantity: pos.quantity,
-    executedQty: parseFloat(closeResult.executedQty || String(pos.quantity)),
+    executedQty: filledQty,
     price: parseFloat(closeResult.price || "0"),
-    avgPrice: parseFloat(closeResult.avgPrice || closeResult.price || "0"),
+    avgPrice: closePrice,
     status: closeResult.status || "FILLED",
     reduceOnly: true,
     leverage: state.config.leverage,
@@ -309,46 +338,53 @@ async function closeCurrentPosition(
 
   state.currentPosition = "NONE";
 
-  const ticker = await futuresClient.tickerPrice(state.config.symbol);
-  const markPrice = parseFloat(ticker?.price || "0");
   let pnl = 0;
-  if (markPrice > 0) {
+  if (closePrice > 0) {
     pnl = pos.side === "LONG"
-      ? (markPrice - pos.entryPrice) * pos.quantity
-      : (pos.entryPrice - markPrice) * pos.quantity;
+      ? (closePrice - pos.entryPrice) * filledQty
+      : (pos.entryPrice - closePrice) * filledQty;
   }
 
+  const pnlIcon = pnl >= 0 ? "✅" : "❌";
   await sendMessage(
-    `📤 *Auto Close: ${pos.side} ${state.config.symbol}*\n` +
+    `📤 *Position Closed*\n` +
     `━━━━━━━━━━━━━━━━━━━━\n\n` +
-    `📦 Qty: \`${pos.quantity}\`\n` +
-    `💲 Entry: \`$${pos.entryPrice.toFixed(2)}\`\n` +
-    `${pnl >= 0 ? "📈" : "📉"} PnL: \`${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} USDT\`\n\n` +
+    `${pos.side === "LONG" ? "🟢" : "🔴"} ${pos.side} *${state.config.symbol}*\n` +
+    `📦 Qty: \`${filledQty}\`\n` +
+    `💲 Entry: \`$${pos.entryPrice.toFixed(2)}\` → Exit: \`$${closePrice.toFixed(2)}\`\n` +
+    `${pnlIcon} Realized PnL: \`${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} USDT\`\n\n` +
     `📋 Order ID: \`${closeResult.orderId}\``
   );
 }
 
 export function getAgentStatus(chatId: string): string {
   const state = agentStates.get(chatId);
-  if (!state) return "Not configured";
+  if (!state) return "*Agent Status*\n\nNot configured. Open Agent menu to set up.";
 
   const status = state.running ? "🟢 RUNNING" : "🔴 STOPPED";
   const lastCheck = state.lastCheck > 0
     ? new Date(state.lastCheck).toISOString().substring(11, 19) + " UTC"
     : "Never";
 
-  return (
-    `*Agent Status*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
-    `Status: ${status}\n` +
-    `Symbol: \`${state.config.symbol}\`\n` +
-    `Leverage: *${state.config.leverage}x*\n` +
-    `Risk: \`${state.config.riskPercent}%\` per trade\n` +
-    `Interval: \`${state.config.intervalMs / 1000}s\`\n` +
-    `Timeframe: \`${state.config.klineInterval}\`\n` +
-    `Last Signal: \`${state.lastSignal}\`\n` +
-    `Position: \`${state.currentPosition}\`\n` +
-    `Trades: \`${state.tradeCount}\`\n` +
-    `Errors: \`${state.errors}\`\n` +
-    `Last Check: ${lastCheck}`
-  );
+  let msg = `*Agent Status*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+  msg += `${status}\n\n`;
+  msg += `📌 Symbol: \`${state.config.symbol}\`\n`;
+  msg += `⚡ Leverage: *${state.config.leverage}x*\n`;
+  msg += `🎯 Risk: \`${state.config.riskPercent}%\` per trade\n`;
+  msg += `⏱️ Interval: \`${state.config.intervalMs / 1000}s\`\n`;
+  msg += `📊 Timeframe: \`${state.config.klineInterval}\`\n\n`;
+  msg += `📡 Last Signal: \`${state.lastSignal}\`\n`;
+  if (state.lastPrice > 0) {
+    msg += `💲 Last Price: \`$${state.lastPrice.toFixed(2)}\`\n`;
+  }
+  if (state.lastReason) {
+    msg += `📐 Reason: _${state.lastReason}_\n`;
+  }
+  msg += `📍 Position: \`${state.currentPosition}\`\n`;
+  msg += `🔄 Trades: \`${state.tradeCount}\`\n`;
+  msg += `⚠️ Errors: \`${state.errors}\`\n`;
+  msg += `🕐 Last Check: ${lastCheck}\n\n`;
+  msg += `_Strategy: EMA(8/21) + RSI(14) filter_`;
+
+  return msg;
 }

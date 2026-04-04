@@ -870,6 +870,16 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
       return makeV3Request(baseUrl, "/fapi/v3/account", user, signer, signerPrivateKey, { method: "POST" });
     },
 
+    async accountWithJoinMargin(): Promise<any> {
+      return makeV3Request(baseUrl, "/fapi/v3/accountWithJoinMargin", user, signer, signerPrivateKey, { method: "POST" });
+    },
+
+    async positionRisk(): Promise<AsterPosition[]> {
+      const data = await makeV3Request(baseUrl, "/fapi/v3/positionRisk", user, signer, signerPrivateKey, { method: "POST" });
+      if (Array.isArray(data)) return data;
+      return [];
+    },
+
     async positions(): Promise<AsterPosition[]> {
       const data = await makeV3Request(baseUrl, "/fapi/v3/positionRisk", user, signer, signerPrivateKey, { method: "POST" });
       if (Array.isArray(data)) return data;
