@@ -1,0 +1,44 @@
+We analyzed both wallets on chain. Here is what happened to you.
+
+Your dev wallet (0x8cbf7a53af6b88abb07ba481ac66d73a99985878) was compromised through an ERC 7702 delegation attack. This is a known attack pattern called CrimeEnjoyor that has drained over 450,000 wallets globally across Ethereum and BSC.
+
+WHAT MEFAI FOUND ON CHAIN
+
+Your wallet's bytecode now starts with 0xef01. A normal wallet returns empty code (0x). Yours returns  0xef010091c478e3a87626be374e0c29338ad68f38556e2c. This means an ERC 7702  delegation was set on your wallet pointing to a malicious contract.
+
+The delegate contract is 0x91c478e3a87626be374e0c29338ad68f38556e2c. It is 2,727 bytes. I decompiled it and found one single hardcoded controller address repeated 5 times in thebytecode: 0xa7bff280ba6308ebc8fa3f5a1fa1b455aa57e972. It also contains the string "not owner" as access control. It has a fallback function that auto forwards incoming BNB and three external functions for executing token transfers. This matches the CrimeEnjoyer drainer family pattern exactly.
+
+The controller address 0xa7bff280ba6308ebc8fa3f5a1fa1b455aa57e972 has a nonce of 3,796. That is nearly four thousand transactions. It is a serial drainer operating at industrial scale. Its current balance is only 0.243 BNB which is gas money. The stolen funds have already been moved through intermediary wallets.
+
+HOW THE ATTACK WORKS TODAR
+
+ERC 7702 was introduced with the Pectra upgrade. It allows a normal wallet to delegate its execution to a smart contract by signing one authorization. Once signed the delegate  contract gains full control. It can transfer BNB. It can transfer tokens. It can set approvals. It can do anything your private key could do. You do not need to sign anything else after that initial authorization. One signature is enough.
+
+CrimeEnjoyer variant specifically has a fallback function. This means even if you send new BNB to your wallet it will be automatically forwarded to the attacker in the same transaction. The delegation is still active right now.
+
+HOW YOU SIGNED IT WITHOUT KNOWING
+
+MetaMask and other wallet UIs did not properly flag ERC 7702 authorization payloads when BSC first enabled support. Wintermute's research confirmed that over 80% of ERC 7702 delegations in the wild were linked to this malicious script family. What you saw in MetaMask looked like a normal transaction confirmation. Behind it was an ERC 7702  authorization that delegated your wallet. A documented case on Ethereum showed a user losing $146,551 through the same method. MetaMask's own June 2025 security report confirmed  $5 million was stolen from 7,565 individuals in a single month through this vector.
+
+ABOUT THE RELAY WALLET 0x14F9f768...
+
+This is an intermediary EOA with 74 transactions and 0.00009 BNB remaining. It was used to relay stolen funds further down the laundering chain.
+
+Your wallet balance is 0 BNB. The delegation is still active. Anything sent to this address will be stolen instantly. The drainer has executed 3,796 transactions confirming this is an organized large scale operation that has hit thousands of wallets.
+
+WHAT TO DO
+
+Never send anything to that wallet again. The delegation is still live and will auto forward funds. Create a new wallet with a fresh seed phrase on a clean device. Check your other wallets by calling eth_getCode on each address. If any return something starting with 0xef01 they are also compromised. Report 0xa7bff280ba6308ebc8fa3f5a1fa1b455aa57e972 as a CrimeEnjoyer drainer to BNB Chain security.
+
+EVIDENCE
+
+Victim wallet: 0x8cbf7a53af6b88abb07ba481ac66d73a99985878
+Victim bytecode: 0xef010091c478e3a87626be374e0c29338ad68f38556e2c
+Attack type: ERC 7702 CrimeEnjoyer Delegation Hijack
+Delegate contract: 0x91c478e3a87626be374e0c29338ad68f38556e2c (2727 bytes)
+Hardcoded controller: 0xa7bff280ba6308ebc8fa3f5a1fa1b455aa57e972 (nonce 3796)
+Relay wallet: 0x14F9f76863b57e89f2D482557828337234DCacaD (nonce 74)
+Victim balance: 0 BNB
+Delegation status: STILL ACTIVE
+
+U did nothing obviously wrong. This is a new class of attack that exploits ERC 7702 before wallet UIs
