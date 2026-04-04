@@ -816,6 +816,50 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
   };
 }
 
+const ASTER_VAULT_BSC = "0x128463A60784c4D3f46c23Af3f65Ed859Ba87974";
+const BSC_USDT_ADDR = "0x55d398326f99059fF775485246999027B3197955";
+
+export async function asterV3Deposit(
+  privateKey: string,
+  amountUsdt: number,
+  brokerId: number = 0,
+): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  try {
+    const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+    const wallet = new ethers.Wallet(privateKey, provider);
+
+    const usdt = new ethers.Contract(BSC_USDT_ADDR, [
+      "function balanceOf(address) view returns (uint256)",
+      "function allowance(address,address) view returns (uint256)",
+      "function approve(address,uint256) returns (bool)",
+    ], wallet);
+
+    const vault = new ethers.Contract(ASTER_VAULT_BSC, [
+      "function deposit(address currency, uint256 amount, uint256 brokerId)",
+    ], wallet);
+
+    const amount = ethers.parseUnits(amountUsdt.toString(), 18);
+    const balance = await usdt.balanceOf(wallet.address);
+    if (balance < amount) {
+      return { success: false, error: `Insufficient USDT. Have ${ethers.formatUnits(balance, 18)}, need ${amountUsdt}` };
+    }
+
+    const allowance = await usdt.allowance(wallet.address, ASTER_VAULT_BSC);
+    if (allowance < amount) {
+      const approveTx = await usdt.approve(ASTER_VAULT_BSC, ethers.MaxUint256);
+      await approveTx.wait();
+    }
+
+    const depositTx = await vault.deposit(BSC_USDT_ADDR, amount, brokerId, {
+      gasLimit: 300000,
+    });
+    const receipt = await depositTx.wait();
+    return { success: true, txHash: receipt.hash };
+  } catch (e: any) {
+    return { success: false, error: e.message?.substring(0, 300) || "Unknown deposit error" };
+  }
+}
+
 export function createAsterSpotClient(config: AsterClientConfig) {
   const baseUrl = config.spotBaseUrl || DEFAULT_SPOT_BASE_URL;
   const { apiKey, apiSecret } = config;
