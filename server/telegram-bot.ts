@@ -13171,6 +13171,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         if (result.userRegistered) {
           console.log(`[Aster] Broker API key creation failed for ${chatId}: ${result.error}. User registered (uid=${result.uid}), attempting V3 direct.`);
           let v3Working = false;
+          let balanceWorks = false;
           for (let v3Attempt = 0; v3Attempt < 3; v3Attempt++) {
             try {
               if (v3Attempt > 0) await new Promise(r => setTimeout(r, 2000));
@@ -13182,19 +13183,23 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
               console.log(`[Aster] V3 noop init FAIL for ${chatId} (attempt ${v3Attempt + 1}):`, noopErr.message?.substring(0, 200));
             }
           }
-          let verified = false;
           if (v3Working) {
-            try {
-              const bal = await v3Client.balance();
-              console.log(`[Aster] V3 balance verify for ${chatId}: success, ${Array.isArray(bal) ? bal.length : 0} entries`);
-              verified = true;
-            } catch (verifyErr: any) {
-              console.error(`[Aster] V3 balance verify FAILED for ${chatId}:`, verifyErr.message);
+            for (let balAttempt = 0; balAttempt < 3; balAttempt++) {
+              try {
+                if (balAttempt > 0) await new Promise(r => setTimeout(r, 2000));
+                const bal = await v3Client.balance();
+                console.log(`[Aster] V3 balance verify for ${chatId} (attempt ${balAttempt + 1}): success, ${Array.isArray(bal) ? bal.length : 0} entries`);
+                balanceWorks = true;
+                break;
+              } catch (verifyErr: any) {
+                console.error(`[Aster] V3 balance verify FAIL for ${chatId} (attempt ${balAttempt + 1}):`, verifyErr.message?.substring(0, 200));
+              }
             }
           }
+          const verified = balanceWorks;
           await storage.saveAsterCredentials(chatId.toString(), "V3_DIRECT", "V3_DIRECT");
           auditLog(chatId, "ASTER_V3_DIRECT", `Connected via V3 EIP-712 direct (user registered uid=${result.uid}, API key failed: ${result.error}, v3Working: ${v3Working}, balance verified: ${verified})`);
-          if (v3Working) {
+          if (v3Working && balanceWorks) {
             await bot.sendMessage(chatId,
               `⚡ *Aster DEX — Connected via V3!*\n` +
               `_Powered by Aster DEX_\n\n` +

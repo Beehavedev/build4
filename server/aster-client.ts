@@ -422,35 +422,48 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
     }
     const uid = loginData?.data?.uid || loginData?.data?.userId || loginData?.data?.id || loginData?.data?.accountId || 0;
     const loginSuccess = loginData?.code === "000000";
-    const loginCookies = loginRes.headers.get("set-cookie") || "";
-    const token = loginData?.data?.token || loginData?.data?.accessToken || "";
-    console.log(`[Aster] Login parsed: uid=${uid} loginSuccess=${loginSuccess} hasCookies=${!!loginCookies} hasToken=${!!token} dataFields=${loginData?.data ? JSON.stringify(Object.keys(loginData.data)) : '[]'}`);
+    let loginCookies = "";
+    try {
+      const setCookieHeaders = (loginRes.headers as any).getSetCookie?.() || [];
+      if (Array.isArray(setCookieHeaders) && setCookieHeaders.length > 0) {
+        loginCookies = setCookieHeaders.join("; ");
+      }
+    } catch {}
+    if (!loginCookies) {
+      loginCookies = loginRes.headers.get("set-cookie") || "";
+    }
+    const token = loginData?.data?.token || loginData?.data?.accessToken || loginData?.data?.jwt || loginData?.data?.sessionToken || loginData?.data?.bearerToken || "";
+    const allHeaders: Record<string, string> = {};
+    loginRes.headers.forEach((v, k) => { allHeaders[k] = v.substring(0, 100); });
+    console.log(`[Aster] Login parsed: uid=${uid} loginSuccess=${loginSuccess} hasCookies=${!!loginCookies} cookieLen=${loginCookies.length} hasToken=${!!token} tokenLen=${token.length} dataFields=${loginData?.data ? JSON.stringify(Object.keys(loginData.data)) : '[]'} responseHeaders=${JSON.stringify(allHeaders).substring(0, 500)}`);
 
     await new Promise(r => setTimeout(r, 500));
 
     let futuresAccountOpened = false;
-    for (let openAttempt = 0; openAttempt < 2; openAttempt++) {
+    const openUrls = [
+      `${BROKER_BASE_URL}/private/future/open-account`,
+      `https://www.asterdex.com/bapi/futures/v1/private/user/futures-account/open`,
+    ];
+    for (const openUrl of openUrls) {
       try {
         const openHeaders: Record<string, string> = { "Content-Type": "application/json", "clientType": "web" };
         if (loginCookies) openHeaders["Cookie"] = loginCookies;
         if (token) openHeaders["Authorization"] = `Bearer ${token}`;
-        const openUrl = `${BROKER_BASE_URL}/private/future/open-account`;
-        console.log(`[Aster] Opening futures account at: ${openUrl} (attempt ${openAttempt + 1})`);
+        console.log(`[Aster] Opening futures account at: ${openUrl} (hasCookie=${!!loginCookies} hasToken=${!!token})`);
         const openRes = await fetch(openUrl, {
           method: "POST",
           headers: openHeaders,
           body: JSON.stringify({}),
         });
         const openData = await openRes.json();
-        console.log(`[Aster] Open futures account response: status=${openRes.status} code=${openData?.code} msg=${openData?.message || openData?.msg || 'ok'}`);
-        if (openData?.code === "000000" || openRes.ok) {
+        console.log(`[Aster] Open futures account response: url=${openUrl} status=${openRes.status} code=${openData?.code} msg=${openData?.message || openData?.msg || 'ok'} body=${JSON.stringify(openData).substring(0, 300)}`);
+        if (openData?.code === "000000" || (openRes.ok && openData?.success !== false)) {
           futuresAccountOpened = true;
           break;
         }
       } catch (openErr: any) {
-        console.log(`[Aster] Open futures account error (attempt ${openAttempt + 1}):`, openErr.message?.substring(0, 150));
+        console.log(`[Aster] Open futures account error at ${openUrl}:`, openErr.message?.substring(0, 150));
       }
-      if (openAttempt < 1) await new Promise(r => setTimeout(r, 1000));
     }
     console.log(`[Aster] Futures account opened: ${futuresAccountOpened}`);
 
