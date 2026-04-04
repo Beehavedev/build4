@@ -9358,6 +9358,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         const totalUsers = telegramWalletMap.size;
 
         let platformStats = { agents: 0, onchainAgents: 0, skills: 0, skillsTotal: 0, transactions: 0, onchainUsers: 0, totalRevenue: "0", skillPurchases: 0 };
+        let tradingStats = { tradeOutcomes: 0, asterUsers: 0, asterAutoEnabled: 0, walletsWithBalance: 0, rewardsIssued: 0 };
         try {
           const { db } = await import("./db");
           const { sql } = await import("drizzle-orm");
@@ -9383,6 +9384,19 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             onchainUsers: Number(uniqueWallets?.cnt || 0),
             totalRevenue: (revenueData as any)?.total || "0",
             skillPurchases: Number(purchaseCount?.cnt || 0),
+          };
+
+          const [tradeCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM trade_outcomes`)).rows;
+          const [asterUserCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_credentials`)).rows;
+          const [asterAutoCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_trading_limits WHERE auto_trade_enabled = true`)).rows;
+          const [walletCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM telegram_wallets`)).rows;
+          const [rewardCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM user_rewards`)).rows;
+          tradingStats = {
+            tradeOutcomes: Number(tradeCount?.cnt || 0),
+            asterUsers: Number(asterUserCount?.cnt || 0),
+            asterAutoEnabled: Number(asterAutoCount?.cnt || 0),
+            walletsWithBalance: Number(walletCount?.cnt || 0),
+            rewardsIssued: Number(rewardCount?.cnt || 0),
           };
         } catch (statsErr: any) {
           console.log(`[Stats] DB query failed: ${statsErr.message?.substring(0, 150)}`);
@@ -9410,11 +9424,21 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             .toFixed(2);
         } catch {}
 
+        const conversionRate = totalUsers > 0 ? ((tradingStats.walletsWithBalance / totalUsers) * 100).toFixed(1) : "0";
+        const asterRate = totalUsers > 0 ? ((tradingStats.asterUsers / totalUsers) * 100).toFixed(1) : "0";
+
         await bot.sendMessage(chatId,
           `📊 <b>BUILD4 Admin Dashboard</b>\n\n` +
           `<b>👥 Users</b>\n` +
           `• Telegram Users: <b>${totalUsers}</b>\n` +
-          `• Unique Wallets: <b>${platformStats.onchainUsers || 0}</b>\n\n` +
+          `• Wallets Created: <b>${tradingStats.walletsWithBalance}</b> (${conversionRate}%)\n` +
+          `• Unique Agent Creators: <b>${platformStats.onchainUsers || 0}</b>\n\n` +
+          `<b>📈 Trading Activity</b>\n` +
+          `• Aster Futures Users: <b>${tradingStats.asterUsers}</b> (${asterRate}%)\n` +
+          `• Auto-Trade Enabled: <b>${tradingStats.asterAutoEnabled}</b>\n` +
+          `• Token Trades (AI scanner): <b>${tradingStats.tradeOutcomes}</b>\n` +
+          `• Agent Transactions: <b>${platformStats.transactions || 0}</b>\n` +
+          `• Rewards Issued: <b>${tradingStats.rewardsIssued}</b>\n\n` +
           `<b>⭐ Subscriptions</b>\n` +
           `• Total: <b>${subStats.total}</b>\n` +
           `• Active (paid): <b>${subStats.active}</b>\n` +
@@ -9424,18 +9448,15 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           `• Total referrals: <b>${refStats.totalReferrals}</b>\n` +
           `• Paid commissions: <b>${refStats.paidReferrals}</b>\n` +
           `• Total commissions owed: <b>$${refStats.totalCommissions}</b>\n\n` +
-          `<b>💰 Revenue Model</b>\n` +
+          `<b>💰 Revenue</b>\n` +
           `• Subscription price: <b>$${BOT_PRICE_USD}/mo</b>\n` +
           `• Transaction fee: <b>${TRANSACTION_FEE_PERCENT}%</b>\n` +
-          `• Free tier actions today: <b>${freeTierUsage.size} tracked</b>\n\n` +
-          `<b>🤖 Platform</b>\n` +
-          `• AI Agents: <b>${platformStats.agents || 0}</b>\n` +
-          `• On-Chain Agents: <b>${platformStats.onchainAgents || 0}</b>\n` +
+          `• On-chain revenue: <b>${revenueBNB.toFixed(4)} BNB</b>\n\n` +
+          `<b>🤖 AI Agents</b>\n` +
+          `• Total: <b>${platformStats.agents || 0}</b>\n` +
+          `• On-Chain: <b>${platformStats.onchainAgents || 0}</b>\n` +
           `• Skills: <b>${platformStats.skills || 0}</b> unique (<b>${platformStats.skillsTotal || 0}</b> total)\n` +
-          `• Skill Purchases: <b>${platformStats.skillPurchases || 0}</b>\n` +
-          `• Transactions: <b>${platformStats.transactions || 0}</b>\n` +
-          `• Unique Wallets: <b>${platformStats.onchainUsers || 0}</b>\n` +
-          `• Revenue: <b>${revenueBNB.toFixed(4)} BNB</b>\n\n` +
+          `• Skill Purchases: <b>${platformStats.skillPurchases || 0}</b>\n\n` +
           `🔗 Chains: Base, BNB, XLayer, Solana`,
           { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
