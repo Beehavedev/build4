@@ -10,6 +10,7 @@ import { LanguageSwitcher } from "@/components/language-switcher";
 import { SEO } from "@/components/seo";
 import asterNinjaRed from "@assets/generated_images/aster_ninja_red.png";
 import asterNinjaBlue from "@assets/generated_images/aster_ninja_blue.png";
+import asterLogo from "@assets/aster_logo.svg";
 import {
   Wallet,
   Zap,
@@ -721,9 +722,9 @@ export default function Home() {
                         </motion.div>
 
                         <div className="flex-1 py-4">
-                          <h3 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight mb-1 bg-clip-text text-transparent" style={{ backgroundImage: "linear-gradient(to right, #42CF71, #6ddb93, #42CF71)" }} data-testid="text-competition-title">
-                            ASTER DEX
-                          </h3>
+                          <div className="flex items-center justify-center gap-3 mb-3">
+                            <img src={asterLogo} alt="Aster DEX" className="h-8 sm:h-10 lg:h-12 w-auto" style={{ filter: "drop-shadow(0 0 12px rgba(66, 207, 113, 0.4))" }} data-testid="img-aster-logo" />
+                          </div>
                           <h3 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight mb-2 bg-clip-text text-transparent" style={{ backgroundImage: "linear-gradient(to right, #D5CABE, #ffffff, #D5CABE)" }}>
                             AGENTIC AUTONOMOUS
                           </h3>
