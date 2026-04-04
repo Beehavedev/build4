@@ -14003,39 +14003,45 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         } catch {}
       }
 
-      const futuresUsdt = Array.isArray(futuresBalances)
-        ? (futuresBalances as any[]).find((b: any) => b.asset === "USDT" || b.asset === "usdt")
-        : (futuresBalances as any)?.balances?.find?.((b: any) => b.asset === "USDT" || b.asset === "usdt") || null;
-      const futuresBal = futuresUsdt ? parseFloat(futuresUsdt.availableBalance || futuresUsdt.crossWalletBalance || futuresUsdt.balance || "0") : 0;
-      if (!futuresUsdt) {
-        console.log(`[AsterFund] WARNING: No USDT entry found in balance for ${chatId}. v3Error=${v3Error} Type: ${typeof futuresBalances}, isArray: ${Array.isArray(futuresBalances)}`);
+      let futuresBal = 0;
+      let balSource = "";
+      if (isV3) {
+        const localTrades = await storage.getAsterLocalTrades(chatId.toString());
+        const deposits = localTrades.filter((t: any) => t.type === "DEPOSIT");
+        const totalDeposited = deposits.reduce((sum: number, t: any) => sum + (t.price || 0), 0);
+        if (totalDeposited > 0) {
+          futuresBal = totalDeposited;
+          balSource = "tracked deposits";
+        }
+        const futuresUsdt = Array.isArray(futuresBalances)
+          ? (futuresBalances as any[]).find((b: any) => b.asset === "USDT" || b.asset === "usdt")
+          : null;
+        if (futuresUsdt) {
+          futuresBal = parseFloat(futuresUsdt.availableBalance || futuresUsdt.crossWalletBalance || futuresUsdt.balance || "0");
+          balSource = "API";
+        }
+      } else {
+        const futuresUsdt = Array.isArray(futuresBalances)
+          ? (futuresBalances as any[]).find((b: any) => b.asset === "USDT" || b.asset === "usdt")
+          : (futuresBalances as any)?.balances?.find?.((b: any) => b.asset === "USDT" || b.asset === "usdt") || null;
+        futuresBal = futuresUsdt ? parseFloat(futuresUsdt.availableBalance || futuresUsdt.crossWalletBalance || futuresUsdt.balance || "0") : 0;
       }
 
       let msg = `💵 *Fund Aster Futures*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
       msg += `🔗 *Your Bot Wallet:*\n\`${wallet}\`\n`;
       msg += `💰 USDT Balance: \`$${walletBal.toFixed(2)}\`\n\n`;
       msg += `📊 *Aster Futures Balance:*\n`;
-      msg += `💰 Available: \`$${futuresBal.toFixed(2)}\`\n\n`;
-
-      if (v3Error && isV3 && noopDebug !== "noop OK") {
-        msg += `⚠️ *Connection Issue:* Your wallet is not yet recognized by Aster's V3 trading system.\n`;
-        msg += `Tap "Re-connect" to re-register your wallet.\n\n`;
-        msg += `_Debug: ${noopDebug}_\n\n`;
-      } else if (v3Error && isV3 && noopDebug === "noop OK") {
-        msg += `⚠️ *Futures Account Issue:* Your wallet is registered but may not have a futures account opened yet.\n`;
-        msg += `Tap "Re-connect" to open your futures account.\n\n`;
-        const safeBal = balDebug.replace(/[_*`\[\]]/g, '').substring(0, 200);
-        msg += `Debug: ${noopDebug}\nBalance: ${safeBal}\n\n`;
-      } else if (futuresBal === 0 && isV3 && balDebug) {
-        msg += `_API: ${balDebug}_\n\n`;
+      if (futuresBal > 0) {
+        msg += `💰 Deposited: \`$${futuresBal.toFixed(2)}\`\n\n`;
+      } else {
+        msg += `💰 Balance not available via API\n`;
+        msg += `_Your deposits are sent on-chain to Aster's vault._\n\n`;
       }
 
       if (isV3) {
         msg += `ℹ️ *V3 Wallet Mode:* Your wallet signs trades directly. USDT is deposited on-chain into Aster's vault contract as margin.\n\n`;
         const depositButtons: TelegramBot.InlineKeyboardButton[][] = [];
-        if (v3Error) {
-          depositButtons.push([{ text: "🔄 Re-connect Aster", callback_data: "aster:auto_connect" }]);
-        } else if (walletBal >= 1 && futuresBal < walletBal) {
+        if (walletBal >= 1) {
           msg += `💡 You have \`$${walletBal.toFixed(2)}\` USDT ready to deposit!\n\n`;
           msg += `Choose an amount to deposit into Aster Futures:`;
           const presets = [10, 25, 50].filter(v => v <= walletBal);
@@ -14150,6 +14156,24 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const { asterV3Deposit } = await import("./aster-client");
       const result = await asterV3Deposit(pk, depositAmount);
       if (!result.success) throw new Error(result.error || "Deposit failed");
+
+      try {
+        await storage.saveAsterLocalTrade({
+          chatId: chatId.toString(),
+          orderId: result.txHash || "deposit",
+          symbol: "USDT",
+          side: "BUY",
+          type: "DEPOSIT",
+          quantity: depositAmount,
+          executedQty: depositAmount,
+          price: depositAmount,
+          avgPrice: 1,
+          status: "CONFIRMED",
+          reduceOnly: false,
+          leverage: 1,
+        });
+        console.log(`[AsterLocal] Saved deposit $${depositAmount} for ${chatId}`);
+      } catch {}
 
       balanceCache.delete(wallet);
 
