@@ -13876,16 +13876,32 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const spotClient = client.spot || null;
 
       if (isV3) {
-        try {
-          const noopRes = await futuresClient.noop();
-          console.log(`[AsterFund] noop OK for ${chatId}:`, JSON.stringify(noopRes).substring(0, 200));
-        } catch (noopErr: any) {
-          console.log(`[AsterFund] noop FAILED for ${chatId}:`, noopErr.message?.substring(0, 200));
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const noopRes = await futuresClient.noop();
+            console.log(`[AsterFund] noop OK for ${chatId} (attempt ${attempt + 1}):`, JSON.stringify(noopRes).substring(0, 200));
+            break;
+          } catch (noopErr: any) {
+            console.log(`[AsterFund] noop FAILED for ${chatId} (attempt ${attempt + 1}):`, noopErr.message?.substring(0, 200));
+            if (attempt < 2) await new Promise(r => setTimeout(r, 1000));
+          }
         }
       }
 
       const [futuresBalances, walletBal] = await Promise.all([
-        futuresClient.balance().catch((e: any) => { console.log(`[AsterFund] balance error for ${chatId}:`, e.message?.substring(0, 200)); return []; }),
+        (async () => {
+          for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+              const bal = await futuresClient.balance();
+              console.log(`[AsterFund] V3=${isV3} balance response for ${chatId} (attempt ${attempt + 1}):`, JSON.stringify(bal).substring(0, 1000));
+              return bal;
+            } catch (e: any) {
+              console.log(`[AsterFund] balance error for ${chatId} (attempt ${attempt + 1}):`, e.message?.substring(0, 300));
+              if (attempt < 1) await new Promise(r => setTimeout(r, 1500));
+            }
+          }
+          return [];
+        })(),
         (async () => {
           try {
             const usdtContract = new ethers.Contract(BSC_USDT, ["function balanceOf(address) view returns (uint256)"], bnbProviderCached);
@@ -13895,7 +13911,6 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         })(),
       ]);
 
-      console.log(`[AsterFund] V3=${isV3} raw balance response for ${chatId}:`, JSON.stringify(futuresBalances).substring(0, 1000));
       const futuresUsdt = Array.isArray(futuresBalances)
         ? (futuresBalances as any[]).find((b: any) => b.asset === "USDT" || b.asset === "usdt")
         : (futuresBalances as any)?.balances?.find?.((b: any) => b.asset === "USDT" || b.asset === "usdt") || null;
@@ -14030,10 +14045,27 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       if (!result.success) throw new Error(result.error || "Deposit failed");
 
       balanceCache.delete(wallet);
+
+      const futuresClient = client.futures || client;
+      for (let i = 0; i < 3; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+          await futuresClient.noop();
+          const bal = await futuresClient.balance();
+          const usdtEntry = Array.isArray(bal) ? bal.find((b: any) => b.asset === "USDT" || b.asset === "usdt") : null;
+          const avail = usdtEntry ? parseFloat(usdtEntry.availableBalance || usdtEntry.crossWalletBalance || usdtEntry.balance || "0") : 0;
+          console.log(`[AsterFund] post-deposit balance check ${i + 1} for ${chatId}: $${avail}`);
+          if (avail > 0) break;
+        } catch (e: any) {
+          console.log(`[AsterFund] post-deposit check ${i + 1} error for ${chatId}:`, e.message?.substring(0, 200));
+        }
+      }
+
       let successMsg = `✅ *Deposit Successful!*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
       successMsg += `Deposited \`$${depositAmount} USDT\` into Aster Futures\n\n`;
       successMsg += `[View TX](https://bscscan.com/tx/${result.txHash})\n\n`;
       successMsg += `⏱️ Balance should update within 1-2 minutes.\n`;
+      successMsg += `Use the Check Balance button to verify.\n`;
       successMsg += `You can now start trading!`;
 
       await bot.sendMessage(chatId, successMsg, {
@@ -14365,6 +14397,13 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     try {
       const futuresClient = client.futures || client;
       const spotClient = client.spot || null;
+
+      const pk = await resolvePrivateKey(chatId, getLinkedWallet(chatId) || "");
+      if (pk) {
+        try { await futuresClient.noop(); } catch (noopErr: any) {
+          console.log(`[AsterBalance] noop failed for ${chatId}:`, noopErr.message?.substring(0, 200));
+        }
+      }
 
       const futuresBalances = await futuresClient.balance().catch((e: any) => { console.log(`[AsterBalance] balance error for ${chatId}:`, e.message?.substring(0, 300)); return []; });
       console.log(`[AsterBalance] raw response for ${chatId}:`, JSON.stringify(futuresBalances).substring(0, 1000));
