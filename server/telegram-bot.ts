@@ -13239,14 +13239,12 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
               }
             );
           } else {
-            const debugStr = result.debug ? `\n\nDebug: ${result.debug}` : '';
             await bot.sendMessage(chatId,
-              `⚠️ *Aster DEX — Partial Setup*\n\n` +
+              `⚠️ Aster DEX — Partial Setup\n\n` +
               `Your wallet was registered with Aster (uid: ${result.uid}), but the V3 trading API is not recognizing your wallet yet.\n\n` +
               `This can happen if the futures account was not opened properly during setup.\n\n` +
-              `_Note: If you deposited funds directly on-chain, they are safe in Aster's vault._${debugStr}`,
+              `Note: If you deposited funds directly on-chain, they are safe in Aster's vault.`,
               {
-                parse_mode: "Markdown",
                 reply_markup: {
                   inline_keyboard: [
                     [{ text: "🔄 Retry Connection", callback_data: "aster:auto_connect" }],
@@ -13256,6 +13254,11 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
                 },
               }
             );
+            if (result.debug) {
+              try {
+                await bot.sendMessage(chatId, `Debug:\n${result.debug.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&').substring(0, 3500)}`);
+              } catch {}
+            }
           }
           return;
         }
