@@ -13888,10 +13888,10 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       return;
     }
 
-    const isV3Direct = (() => { try { const c = pendingAsterTrade.get(chatId); return false; } catch { return false; } })();
     let creds: any = null;
     try { creds = await storage.getAsterCredentials(chatId.toString()); } catch {}
-    const isV3 = creds && creds.apiKey === "V3_DIRECT";
+    const pk = await resolvePrivateKey(chatId, wallet);
+    const isV3 = !!pk; // V3 mode = user has private key for on-chain vault deposit
 
     try {
       const futuresClient = client.futures || client;
