@@ -428,20 +428,31 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
 
     await new Promise(r => setTimeout(r, 500));
 
-    try {
-      const openHeaders: Record<string, string> = { "Content-Type": "application/json", "clientType": "web" };
-      if (loginCookies) openHeaders["Cookie"] = loginCookies;
-      if (token) openHeaders["Authorization"] = `Bearer ${token}`;
-      const openRes = await fetch(`${BROKER_BASE_URL.replace('/public/future', '/private/future')}/open-account`, {
-        method: "POST",
-        headers: openHeaders,
-        body: JSON.stringify({}),
-      });
-      const openData = await openRes.json();
-      console.log(`[Aster] Open futures account response: status=${openRes.status} code=${openData?.code} msg=${openData?.message || openData?.msg || 'ok'}`);
-    } catch (openErr: any) {
-      console.log(`[Aster] Open futures account error (non-fatal):`, openErr.message?.substring(0, 150));
+    let futuresAccountOpened = false;
+    for (let openAttempt = 0; openAttempt < 2; openAttempt++) {
+      try {
+        const openHeaders: Record<string, string> = { "Content-Type": "application/json", "clientType": "web" };
+        if (loginCookies) openHeaders["Cookie"] = loginCookies;
+        if (token) openHeaders["Authorization"] = `Bearer ${token}`;
+        const openUrl = `${BROKER_BASE_URL}/private/future/open-account`;
+        console.log(`[Aster] Opening futures account at: ${openUrl} (attempt ${openAttempt + 1})`);
+        const openRes = await fetch(openUrl, {
+          method: "POST",
+          headers: openHeaders,
+          body: JSON.stringify({}),
+        });
+        const openData = await openRes.json();
+        console.log(`[Aster] Open futures account response: status=${openRes.status} code=${openData?.code} msg=${openData?.message || openData?.msg || 'ok'}`);
+        if (openData?.code === "000000" || openRes.ok) {
+          futuresAccountOpened = true;
+          break;
+        }
+      } catch (openErr: any) {
+        console.log(`[Aster] Open futures account error (attempt ${openAttempt + 1}):`, openErr.message?.substring(0, 150));
+      }
+      if (openAttempt < 1) await new Promise(r => setTimeout(r, 1000));
     }
+    console.log(`[Aster] Futures account opened: ${futuresAccountOpened}`);
 
     await new Promise(r => setTimeout(r, 1000));
 

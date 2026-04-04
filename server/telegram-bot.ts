@@ -13978,10 +13978,14 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       msg += `📊 *Aster Futures Balance:*\n`;
       msg += `💰 Available: \`$${futuresBal.toFixed(2)}\`\n\n`;
 
-      if (v3Error && isV3) {
+      if (v3Error && isV3 && noopDebug !== "noop OK") {
         msg += `⚠️ *Connection Issue:* Your wallet is not yet recognized by Aster's V3 trading system.\n`;
         msg += `Tap "Re-connect" to re-register your wallet.\n\n`;
         msg += `_Debug: ${noopDebug}_\n\n`;
+      } else if (v3Error && isV3 && noopDebug === "noop OK") {
+        msg += `⚠️ *Futures Account Issue:* Your wallet is registered but may not have a futures account opened yet.\n`;
+        msg += `Tap "Re-connect" to open your futures account.\n\n`;
+        msg += `_Debug: ${noopDebug}, ${balDebug}_\n\n`;
       } else if (futuresBal === 0 && isV3 && balDebug) {
         msg += `_API: ${balDebug}_\n\n`;
       }
