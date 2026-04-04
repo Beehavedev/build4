@@ -13103,6 +13103,7 @@ async function handleAsterMenu(chatId: number): Promise<void> {
           [{ text: "💰 Balances", callback_data: "aster:balance" }, { text: "📊 Positions", callback_data: "aster:positions" }],
           [{ text: "📋 Open Orders", callback_data: "aster:orders" }, { text: "📈 PnL", callback_data: "aster:pnl" }],
           [{ text: "🏆 Competition", callback_data: "aster:competition" }, { text: "⚙️ Risk Settings", callback_data: "aster:risk_settings" }],
+          [{ text: "🔧 API Diagnostics", callback_data: "aster:api_diag" }],
           ...(isV3Direct ? [[{ text: "🔑 Upgrade (Add API Key)", callback_data: "aster:connect" }]] : []),
           [{ text: "🔌 Disconnect", callback_data: "aster:disconnect" }, { text: "« Back", callback_data: "action:menu" }],
         ],
@@ -14702,6 +14703,78 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       );
     } catch (e: any) {
       await bot.sendMessage(chatId, `Close all failed: ${e.message?.substring(0, 200)}`, { reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] } });
+    }
+    return;
+  }
+
+  if (action === "api_diag") {
+    await bot.sendMessage(chatId, "Running API diagnostics...");
+    try {
+      const { ethers } = await import("ethers");
+      const wallet = getLinkedWallet(chatId);
+      const pk = await resolvePrivateKey(chatId, wallet || "");
+      if (!pk || !wallet) { await bot.sendMessage(chatId, "No wallet found"); return; }
+      const w = new ethers.Wallet(pk);
+      const user = ethers.getAddress(w.address);
+      const signer = user;
+
+      const EIP712D = {
+        name: "AsterSignTransaction", version: "1", chainId: 1666,
+        verifyingContract: "0x0000000000000000000000000000000000000000",
+      };
+      const EIP712T = { Message: [{ name: "msg", type: "string" }] };
+
+      function bqs(p: Record<string, any>): string {
+        const f: Record<string, string> = {};
+        for (const [k, v] of Object.entries(p)) if (v != null) f[k] = String(v);
+        return new URLSearchParams(f).toString();
+      }
+
+      async function signP(params: Record<string, any>) {
+        const p = { ...params, nonce: String(Math.trunc(Date.now() / 1000) * 1_000_000 + Math.floor(Math.random() * 999)), user, signer };
+        const q = bqs(p);
+        p.signature = await w.signTypedData(EIP712D, EIP712T, { msg: q });
+        return p;
+      }
+
+      const BASE = "https://fapi.asterdex.com";
+      const results: string[] = [];
+
+      async function tryCall(label: string, method: string, path: string, extra: Record<string, any> = {}) {
+        try {
+          const sp = await signP(extra);
+          const q = bqs(sp);
+          let url: string, body: string | undefined;
+          const h: Record<string, string> = { "User-Agent": "BUILD4/1.0" };
+          if (method === "GET") { url = `${BASE}${path}?${q}`; }
+          else { url = `${BASE}${path}`; h["Content-Type"] = "application/x-www-form-urlencoded"; body = q; }
+          const r = await fetch(url, { method, headers: h, body });
+          const t = await r.text();
+          results.push(`${label}: ${r.status} ${t.substring(0, 150)}`);
+        } catch (e: any) {
+          results.push(`${label}: ERR ${e.message?.substring(0, 100)}`);
+        }
+      }
+
+      await tryCall("noop POST", "POST", "/fapi/v3/noop");
+      await tryCall("bal GET", "GET", "/fapi/v3/balance");
+      await tryCall("bal POST body", "POST", "/fapi/v3/balance");
+      await tryCall("pos GET", "GET", "/fapi/v3/positionRisk");
+      await tryCall("pos POST body", "POST", "/fapi/v3/positionRisk");
+      await tryCall("acct GET", "GET", "/fapi/v3/account");
+      await tryCall("acct POST body", "POST", "/fapi/v3/account");
+      await tryCall("bal GET+ts", "GET", "/fapi/v3/balance", { timestamp: Date.now() });
+      await tryCall("bal GET+rw", "GET", "/fapi/v3/balance", { recvWindow: 60000 });
+
+      const msg = results.join("\n\n");
+      const chunks = [];
+      for (let i = 0; i < msg.length; i += 4000) chunks.push(msg.substring(i, i + 4000));
+      for (const chunk of chunks) {
+        await bot.sendMessage(chatId, chunk);
+      }
+    } catch (e: any) {
+      const safeErr = (e.message || "Unknown").substring(0, 200).replace(/[_*[\]()~`>#+=|{}.!-]/g, " ");
+      await bot.sendMessage(chatId, `Diag error: ${safeErr}`);
     }
     return;
   }
