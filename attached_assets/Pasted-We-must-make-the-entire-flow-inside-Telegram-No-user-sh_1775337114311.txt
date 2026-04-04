@@ -1,0 +1,108 @@
+We must make the entire flow inside Telegram. No user should visit asterdex.com.
+Update the project to:Add Web3.py support for BSC (Aster mainly uses BNB Smart Chain for perps).
+Add a new command /deposit that shows the Aster Futures vault deposit address + amount input.
+Add /confirm_deposit that checks on-chain balance via Web3.
+Improve /status to clearly show: Spot-like balance vs Futures Vault margin.
+Keep all trading (place_order, get_positions, PNL) using the existing AsterTrader class.
+Install web3 if needed.
+Make deposit flow user-friendly with clear copy-paste instructions."
+Updated requirements.txt (add Web3)txt
+python-telegram-bot==20.8
+aster-connector-python
+pandas
+ta
+python-dotenv
+web3==6.20.0   # for on-chain deposit handling
+
+Run in Shell: pip install -r requirements.txtNew file: deposit_helper.py (add this)python
+from web3 import Web3
+import os
+
+# Aster uses BSC for many perps (confirm chain in their docs)
+BSC_RPC = "https://bsc-dataseed.binance.org/"
+w3 = Web3(Web3.HTTPProvider(BSC_RPC))
+
+# Replace with official Aster Futures Vault / Treasury address (from Aster docs or API)
+# Common ones: 0x128463A60784c4D3f46c23Af3f65Ed859Ba87974 (Treasury on BSC)
+VAULT_ADDRESS = "0x128463A60784c4D3f46c23Af3f65Ed859Ba87974"  # ← update if Aster publishes exact futures vault
+
+USDT_ADDRESS = "0x55d398326f99059fF775485246999027B3197955"  # USDT on BSC (BEP-20)
+
+class DepositHelper:
+    def get_deposit_address(self):
+        return VAULT_ADDRESS
+
+    def check_deposit(self, user_wallet_address: str, min_amount=10):
+        """Check USDT balance in vault for a specific wallet (if Aster links deposits to user)"""
+        # Note: Many DEX vaults are shared. Aster may map by user address or sub-account.
+        # For now, we can check recent transfers or ask user to provide tx hash.
+        try:
+            contract = w3.eth.contract(address=USDT_ADDRESS, abi=[{"constant":True,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"type":"function"}])
+            balance = contract.functions.balanceOf(w3.to_checksum_address(user_wallet_address)).call() / 10**18
+            return balance
+        except:
+            return 0.0
+
+    def generate_deposit_instructions(self, amount: float, user_wallet: str = None):
+        msg = f"""
+✅ **Deposit USDT to Aster Futures Vault (Bot-only flow)**
+
+Network: **BNB Smart Chain (BSC)**  
+Token: **USDT (BEP-20)**
+
+**Vault Address to SEND to:**
+`{VAULT_ADDRESS}`
+
+**Amount:** {amount} USDT
+
+**Steps (do this in your wallet like MetaMask/Trust Wallet):**
+1. Switch to BSC network
+2. Send exactly {amount} USDT to the address above
+3. After transaction confirms (usually <1 min), reply with `/confirm_deposit <your_tx_hash>` or just `/status`
+
+⚠️ Important: Only send USDT on BSC. Wrong network/coin = lost funds.
+
+I will monitor and notify you when funds appear in trading margin.
+"""
+        return msg
+
+Update aster_client.py — add vault-aware statusAdd this method:python
+    def get_futures_margin(self):
+        """Try to get margin available for trading after deposit"""
+        try:
+            acc = self.client.accountWithJoinMargin()
+            return acc.get("availableBalance", "N/A") or acc.get("totalWalletBalance", "N/A")
+        except:
+            return "Deposit required to vault (on-chain)"
+
+Update /status and add /deposit command in bot.pyAdd these handlers:python
+from deposit_helper import DepositHelper
+
+deposit_helper = DepositHelper()
+
+async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /deposit <amount>  e.g. /deposit 50")
+        return
+    try:
+        amount = float(context.args[0])
+        instructions = deposit_helper.generate_deposit_instructions(amount)
+        await update.message.reply_text(instructions, parse_mode='Markdown')
+    except:
+        await update.message.reply_text("Please provide a valid amount: /deposit 50")
+
+async def confirm_deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # User can paste tx hash later for verification
+    await update.message.reply_text("Send me the transaction hash after depositing and I'll verify it.\nOr just wait 30-60s and type /status")
+
+Update the status command to mention deposit clearly:python
+        msg = f"""
+💰 **USDT Ready (API view)**: {balance}
+
+📊 **Futures Vault Margin**: {agent.trader.get_futures_margin()}
+
+If margin shows low or "Deposit required", use **/deposit <amount>** to fund directly from bot instructions.
+
+Positions & PNL will appear once funds are in the vault.
+        """
+
