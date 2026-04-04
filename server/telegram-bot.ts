@@ -13140,23 +13140,60 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const { asterBrokerOnboard } = await import("./aster-client");
       const result = await asterBrokerOnboard(pk);
       if (!result.success || !result.apiKey || !result.apiSecret) {
+        const { createAsterV3FuturesClient } = await import("./aster-client");
+        const v3Client = createAsterV3FuturesClient({ user: wallet!, signer: wallet!, signerPrivateKey: pk });
         if (result.userRegistered) {
           console.log(`[Aster] Broker API key creation failed for ${chatId}: ${result.error}. User registered (uid=${result.uid}), falling back to V3 direct.`);
-          await storage.saveAsterCredentials(chatId.toString(), "V3_DIRECT", "V3_DIRECT");
-          auditLog(chatId, "ASTER_V3_DIRECT", `Connected via V3 EIP-712 direct (user registered uid=${result.uid}, API key failed: ${result.error})`);
+          try {
+            const noopRes = await v3Client.noop();
+            console.log(`[Aster] V3 noop init for registered user ${chatId}:`, JSON.stringify(noopRes).substring(0, 200));
+          } catch (noopErr: any) {
+            console.log(`[Aster] V3 noop init warning for ${chatId}:`, noopErr.message?.substring(0, 200));
+          }
+          let verified = false;
+          try {
+            const bal = await v3Client.balance();
+            console.log(`[Aster] V3 balance verify for ${chatId}: success, ${Array.isArray(bal) ? bal.length : 0} entries`);
+            verified = true;
+          } catch (verifyErr: any) {
+            console.error(`[Aster] V3 balance verify FAILED for ${chatId}:`, verifyErr.message);
+          }
+          if (verified) {
+            await storage.saveAsterCredentials(chatId.toString(), "V3_DIRECT", "V3_DIRECT");
+            auditLog(chatId, "ASTER_V3_DIRECT", `Connected via V3 EIP-712 direct (user registered uid=${result.uid}, API key failed: ${result.error})`);
+            await bot.sendMessage(chatId,
+              `⚡ *Aster DEX — Connected via V3!*\n` +
+              `_Powered by Aster DEX_\n\n` +
+              `Connected using EIP-712 wallet signing (V3).\n` +
+              `Futures trading is fully available — no API keys needed!\n\n` +
+              `💡 _Spot trading requires manual API key setup._`,
+              {
+                parse_mode: "Markdown",
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: "📊 Trade Futures", callback_data: "aster:trade_futures" }],
+                    [{ text: "💰 View Balances", callback_data: "aster:balance" }],
+                    [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
+                  ],
+                },
+              }
+            );
+            return;
+          }
           await bot.sendMessage(chatId,
-            `⚡ *Aster DEX — Connected via V3!*\n` +
-            `_Powered by Aster DEX_\n\n` +
-            `Connected using EIP-712 wallet signing (V3).\n` +
-            `Futures trading is fully available — no API keys needed!\n\n` +
-            `💡 _Spot trading requires manual API key setup._`,
+            `⚠️ *Aster account created but V3 connection failed*\n\n` +
+            `Your Aster account was registered (UID: ${result.uid}) but the V3 trading API could not verify your account.\n\n` +
+            `Please try:\n` +
+            `1. Visit [asterdex.com](https://www.asterdex.com) and log in with your wallet once\n` +
+            `2. Then come back and tap Connect again\n` +
+            `3. Or connect manually with an API key`,
             {
               parse_mode: "Markdown",
               reply_markup: {
                 inline_keyboard: [
-                  [{ text: "📊 Trade Futures", callback_data: "aster:trade_futures" }],
-                  [{ text: "💰 View Balances", callback_data: "aster:balance" }],
-                  [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
+                  [{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }],
+                  [{ text: "🔄 Try Again", callback_data: "aster:auto_connect" }],
+                  [{ text: "« Back", callback_data: "action:aster" }],
                 ],
               },
             }
@@ -13165,10 +13202,10 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         }
         console.log(`[Aster] Broker onboard login failed for ${chatId}: ${result.error}. Attempting V3 noop registration...`);
         try {
-          const { createAsterV3FuturesClient } = await import("./aster-client");
-          const v3Client = createAsterV3FuturesClient({ user: wallet!, signer: wallet!, signerPrivateKey: pk });
           const noopResult = await v3Client.noop();
           console.log(`[Aster] V3 noop result for ${chatId}:`, JSON.stringify(noopResult).substring(0, 300));
+          const balResult = await v3Client.balance();
+          console.log(`[Aster] V3 balance verify after noop for ${chatId}: success, ${Array.isArray(balResult) ? balResult.length : 0} entries`);
           await storage.saveAsterCredentials(chatId.toString(), "V3_DIRECT", "V3_DIRECT");
           auditLog(chatId, "ASTER_V3_DIRECT", `Connected via V3 noop registration (broker login failed: ${result.error})`);
           await bot.sendMessage(chatId,
@@ -13190,15 +13227,15 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
           );
           return;
         } catch (v3Err: any) {
-          console.error(`[Aster] V3 noop registration also failed for ${chatId}:`, v3Err.message);
+          console.error(`[Aster] V3 noop/verify also failed for ${chatId}:`, v3Err.message);
           await bot.sendMessage(chatId,
             `⚠️ *Could not create your Aster DEX account*\n\n` +
-            `Reason: ${result.error || 'Registration failed'}\n\n` +
-            `The V3 direct connection also failed: ${v3Err.message?.substring(0, 100)}\n\n` +
-            `Please try one of these options:\n` +
-            `1. Visit [asterdex.com](https://www.asterdex.com) and create an account with your wallet first, then come back and reconnect\n` +
-            `2. Connect manually with your Aster API key\n` +
-            `3. Try again later — Aster may have temporary restrictions`,
+            `Broker login: ${result.error || 'Failed'}\n` +
+            `V3 direct: ${v3Err.message?.substring(0, 100)}\n\n` +
+            `Please try:\n` +
+            `1. Visit [asterdex.com](https://www.asterdex.com) and create an account with your wallet first\n` +
+            `2. Then come back and tap Connect again\n` +
+            `3. Or connect manually with your Aster API key`,
             {
               parse_mode: "Markdown",
               reply_markup: {
@@ -13214,6 +13251,14 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         }
       }
       await storage.saveAsterCredentials(chatId.toString(), result.apiKey, result.apiSecret);
+      try {
+        const { createAsterV3FuturesClient } = await import("./aster-client");
+        const v3Init = createAsterV3FuturesClient({ user: wallet!, signer: wallet!, signerPrivateKey: pk });
+        await v3Init.noop();
+        console.log(`[Aster] V3 noop init after broker onboard for ${chatId}: success`);
+      } catch (noopErr: any) {
+        console.log(`[Aster] V3 noop init after broker onboard for ${chatId}: ${noopErr.message?.substring(0, 100)} (non-fatal)`);
+      }
       auditLog(chatId, "ASTER_AUTO_CONNECT", `Aster auto-onboarded via broker API, uid=${result.uid}`);
       await bot.sendMessage(chatId,
         `⚡ *Aster DEX — Connected!*\n` +
