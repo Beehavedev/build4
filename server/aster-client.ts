@@ -171,6 +171,7 @@ interface BrokerOnboardResult {
   apiSecret?: string;
   uid?: number;
   error?: string;
+  userRegistered?: boolean;
 }
 
 const DEFAULT_FUTURES_BASE_URL = "https://fapi.asterdex.com";
@@ -410,9 +411,9 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
     if (loginData?.code !== "000000" || !loginData?.data?.uid) {
       const msg = loginData?.message || loginData?.msg || "Unknown error";
       if (msg.toLowerCase().includes("region") || msg.toLowerCase().includes("not available")) {
-        return { success: false, error: "Aster region restriction — please connect manually with an API key from asterdex.com instead" };
+        return { success: false, userRegistered: false, error: "Aster region restriction — please connect manually with an API key from asterdex.com instead" };
       }
-      return { success: false, error: `Aster login failed: ${msg} (code: ${loginData?.code || 'none'})` };
+      return { success: false, userRegistered: false, error: `Aster login failed: ${msg} (code: ${loginData?.code || 'none'})` };
     }
     const uid = loginData.data.uid;
 
@@ -423,7 +424,7 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
     });
     const akNonceData = await akNonceRes.json();
     if (!akNonceData?.data?.nonce) {
-      return { success: false, error: "Failed to get API key nonce" };
+      return { success: false, userRegistered: true, uid, error: "Failed to get API key nonce" };
     }
     const akNonce = akNonceData.data.nonce;
 
@@ -446,12 +447,13 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
     });
     const createData = await createRes.json();
     if (createData?.code !== "000000" || !createData?.data?.apiKey) {
-      return { success: false, error: `API key creation failed: ${createData?.message || JSON.stringify(createData)}` };
+      return { success: false, userRegistered: true, uid, error: `API key creation failed: ${createData?.message || JSON.stringify(createData)}` };
     }
 
     console.log(`[Aster] Broker onboard success for ${address.substring(0, 10)}... uid=${uid}`);
     return {
       success: true,
+      userRegistered: true,
       apiKey: createData.data.apiKey,
       apiSecret: createData.data.apiSecret,
       uid,
