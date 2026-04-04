@@ -13876,7 +13876,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const spotClient = client.spot || null;
 
       const [futuresBalances, walletBal] = await Promise.all([
-        futuresClient.balance().catch(() => []),
+        futuresClient.balance().catch((e: any) => { console.log(`[AsterFund] balance error for ${chatId}:`, e.message?.substring(0, 200)); return []; }),
         (async () => {
           try {
             const usdtContract = new ethers.Contract(BSC_USDT, ["function balanceOf(address) view returns (uint256)"], bnbProviderCached);
@@ -13886,6 +13886,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         })(),
       ]);
 
+      console.log(`[AsterFund] V3=${isV3} balances for ${chatId}:`, JSON.stringify(futuresBalances).substring(0, 500));
       const futuresUsdt = (futuresBalances as any[]).find((b: any) => b.asset === "USDT");
       const futuresBal = futuresUsdt ? parseFloat(futuresUsdt.availableBalance || "0") : 0;
 

@@ -366,6 +366,9 @@ async function makeV3Request(
       throw new Error(`Aster V3 API error ${code}: ${msg}`);
     }
 
+    if (data && data.data && !Array.isArray(data)) {
+      return data.data;
+    }
     return data;
   } catch (e: any) {
     clearTimeout(timeoutId);
