@@ -100,6 +100,9 @@ User-facing trading competitions on Aster DEX futures. Features:
   - DB columns: `referred_by TEXT`, `referral_count INTEGER` on `aster_competition_entries`
   - `previousRanks` in-memory map tracks rank changes between update cycles
 
+### ERC-7702 Wallet Security Checker
+Telegram bot command `/check7702 0xAddress` (alias `/erc7702`) scans a wallet across 6 EVM chains (Ethereum, BSC, Base, Arbitrum, Optimism, Polygon) for ERC-7702 delegation. Detects the `0xef0100` delegation designator prefix in account code via `eth_getCode`. Reports compromised chains with delegate contract addresses and explorer links, or confirms clean status. Includes security tips callback, scan-again button, and 8-second timeout per chain with parallel scanning.
+
 ### Autonomous AI Trading Agent
 An AI-powered agent for autonomous trading on Four.meme, featuring dynamic buy/sell decisions, independent position monitoring, AI analysis, adaptive intelligence, and multi-whale copy trading.
 

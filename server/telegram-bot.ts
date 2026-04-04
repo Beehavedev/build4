@@ -3190,6 +3190,47 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return handleRewardsLeaderboard(chatId);
   }
 
+  if (data?.startsWith("action:check7702_")) {
+    const addr = data.replace("action:check7702_", "");
+    const fakeMsg = { ...query.message, text: `/check7702 ${addr}`, chat: { id: chatId, type: "private" as const } };
+    bot.emit("message", fakeMsg);
+    return;
+  }
+  if (data === "action:erc7702_tips") {
+    await bot.sendMessage(chatId,
+      `🔒 *ERC-7702 Security Tips*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `*What is ERC-7702?*\n` +
+      `EIP-7702 (Pectra upgrade) lets EOAs temporarily delegate to smart contracts. While useful for account abstraction, it can be exploited.\n\n` +
+      `*How wallets get compromised:*\n` +
+      `• Signing malicious authorization tuples\n` +
+      `• Phishing sites requesting EIP-7702 signatures\n` +
+      `• Malicious dApps inserting delegation payloads\n\n` +
+      `*How to stay safe:*\n` +
+      `1. Never sign transactions you don't understand\n` +
+      `2. Use a hardware wallet for high-value accounts\n` +
+      `3. Check your wallet regularly with /check7702\n` +
+      `4. Revoke unknown delegations immediately\n` +
+      `5. Keep assets in fresh wallets if compromised\n\n` +
+      `*Signs of compromise:*\n` +
+      `• Unexpected token approvals\n` +
+      `• Funds moving without your action\n` +
+      `• Your EOA showing contract code on explorers\n\n` +
+      `_Stay vigilant — check your wallets often!_ 🛡️`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: [[{ text: "🔍 Check a Wallet", callback_data: "action:check7702_prompt" }], [{ text: "« Main Menu", callback_data: "action:main" }]] },
+      }
+    );
+    return;
+  }
+  if (data === "action:check7702_prompt") {
+    await bot.sendMessage(chatId,
+      `🔒 *ERC-7702 Wallet Check*\n\nSend the command with a wallet address:\n\n\`/check7702 0xYourWalletAddress\`\n\n_Paste any EVM wallet address to scan._`,
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
   if (data === "action:gensolwallet") {
     await bot.sendMessage(chatId, "🟣 Generating Solana wallet...");
     sendTyping(chatId);
@@ -9670,6 +9711,117 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if ((cmd === "check7702" || cmd === "erc7702") && !isGroup) {
+      const addrArg = text.replace(/^\/(check7702|erc7702)(@\S+)?\s*/i, "").trim();
+      if (!addrArg || !/^0x[a-fA-F0-9]{40}$/.test(addrArg)) {
+        await bot.sendMessage(chatId,
+          `🔒 *ERC-7702 Wallet Security Checker*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+          `Check if a wallet has been compromised via ERC-7702 delegation.\n\n` +
+          `*Usage:*\n\`/check7702 0xYourWalletAddress\`\n\n` +
+          `*What is ERC-7702?*\n` +
+          `ERC-7702 allows EOAs (regular wallets) to delegate execution to a smart contract. ` +
+          `If your wallet has been delegated to a malicious contract without your knowledge, attackers can drain your funds.\n\n` +
+          `_Paste any EVM wallet address to scan it across multiple chains._`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "« Main Menu", callback_data: "action:main" }]] } }
+        );
+        return;
+      }
+
+      await bot.sendMessage(chatId, `🔍 Scanning \`${addrArg}\` for ERC-7702 delegation across chains...`, { parse_mode: "Markdown" });
+
+      try {
+        const { ethers } = await import("ethers");
+        const chainsToCheck = [
+          { name: "Ethereum", chainId: 1, rpc: "https://eth.llamarpc.com", explorer: "https://etherscan.io" },
+          { name: "BNB Chain", chainId: 56, rpc: "https://bsc-dataseed1.binance.org", explorer: "https://bscscan.com" },
+          { name: "Base", chainId: 8453, rpc: "https://mainnet.base.org", explorer: "https://basescan.org" },
+          { name: "Arbitrum", chainId: 42161, rpc: "https://arb1.arbitrum.io/rpc", explorer: "https://arbiscan.io" },
+          { name: "Optimism", chainId: 10, rpc: "https://mainnet.optimism.io", explorer: "https://optimistic.etherscan.io" },
+          { name: "Polygon", chainId: 137, rpc: "https://polygon-rpc.com", explorer: "https://polygonscan.com" },
+        ];
+
+        const ERC7702_PREFIX = "0xef0100";
+        let compromisedChains: { name: string; delegateTo: string; explorer: string; code: string }[] = [];
+        let cleanChains: string[] = [];
+        let errorChains: string[] = [];
+
+        await Promise.all(chainsToCheck.map(async (chain) => {
+          try {
+            const provider = new ethers.JsonRpcProvider(chain.rpc);
+            const code = await Promise.race([
+              provider.getCode(addrArg),
+              new Promise<string>((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000)),
+            ]) as string;
+
+            if (code && code !== "0x" && code.toLowerCase().startsWith(ERC7702_PREFIX)) {
+              const delegateAddr = "0x" + code.slice(ERC7702_PREFIX.length, ERC7702_PREFIX.length + 40);
+              compromisedChains.push({ name: chain.name, delegateTo: delegateAddr, explorer: chain.explorer, code: code.slice(0, 50) });
+            } else if (code && code !== "0x") {
+              compromisedChains.push({ name: chain.name, delegateTo: "contract (non-7702)", explorer: chain.explorer, code: code.slice(0, 50) });
+            } else {
+              cleanChains.push(chain.name);
+            }
+          } catch {
+            errorChains.push(chain.name);
+          }
+        }));
+
+        let resultMsg = "";
+        if (compromisedChains.length > 0) {
+          resultMsg = `🚨 *ERC-7702 ALERT — DELEGATION DETECTED!*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `Address: \`${addrArg}\`\n\n` +
+            `⚠️ *${compromisedChains.length} chain(s) show delegation:*\n\n`;
+          for (const c of compromisedChains) {
+            resultMsg += `🔴 *${c.name}*\n`;
+            if (c.delegateTo !== "contract (non-7702)") {
+              resultMsg += `   Delegated to: \`${c.delegateTo}\`\n`;
+              resultMsg += `   [View on Explorer](${c.explorer}/address/${c.delegateTo})\n`;
+            } else {
+              resultMsg += `   Has contract code (may be a contract account)\n`;
+            }
+            resultMsg += `\n`;
+          }
+          resultMsg += `*⚠️ RECOMMENDED ACTIONS:*\n`;
+          resultMsg += `1. *Do NOT* deposit or send funds to this wallet\n`;
+          resultMsg += `2. Move any remaining funds to a *new wallet* immediately\n`;
+          resultMsg += `3. Revoke the delegation if possible using a trusted tool\n`;
+          resultMsg += `4. Check recent transactions for unauthorized activity\n\n`;
+          resultMsg += `_A delegated wallet means a contract can execute code as if it were your wallet. ` +
+            `If you did not authorize this, your wallet may be compromised._`;
+        } else {
+          resultMsg = `✅ *ERC-7702 Check — CLEAN*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `Address: \`${addrArg}\`\n\n` +
+            `No ERC-7702 delegation detected on any chain.\n\n`;
+        }
+
+        if (cleanChains.length > 0) {
+          resultMsg += `\n\n✅ *Clean:* ${cleanChains.join(", ")}`;
+        }
+        if (errorChains.length > 0) {
+          resultMsg += `\n⚠️ *Could not check:* ${errorChains.join(", ")}`;
+        }
+
+        resultMsg += `\n\n_Scanned ${chainsToCheck.length} chains · ${new Date().toUTCString()}_`;
+
+        await bot.sendMessage(chatId, resultMsg, {
+          parse_mode: "Markdown",
+          disable_web_page_preview: true,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 Scan Again", callback_data: `action:check7702_${addrArg}` }],
+              [{ text: "🔒 Security Tips", callback_data: "action:erc7702_tips" }],
+              [{ text: "« Main Menu", callback_data: "action:main" }],
+            ],
+          },
+        });
+      } catch (e: any) {
+        await bot.sendMessage(chatId, `❌ Scan failed: ${e.message?.substring(0, 200)}`, {
+          reply_markup: { inline_keyboard: [[{ text: "« Main Menu", callback_data: "action:main" }]] },
+        });
+      }
+      return;
+    }
+
     if (cmd === "agentstatus") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me to check agent status!"); return; }
       await ensureWallet(chatId);
@@ -9744,6 +9896,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         "🌉 /bridge — OKX cross-chain bridge\n" +
         "🐋 /signals — Smart money & whale signals\n" +
         "🔒 /scan — Security scanner (honeypot check)\n" +
+        "🛡️ /check7702 — ERC-7702 wallet delegation checker\n" +
         "🔥 /trending — Hot & trending tokens\n" +
         "🐸 /meme — Meme token scanner\n" +
         "📊 /price — Token price lookup\n" +
