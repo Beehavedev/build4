@@ -1,0 +1,46 @@
+The persistent error "Cannot access 'E' before initialization" is caused by a circular import / initialization bug in the installed aster-connector-python package when doing `from aster_dex.futures import Frenchie`.
+
+Fix it properly:
+
+1. Clean reinstall using the GitHub source (more up-to-date):
+   pip uninstall aster-connector-python -y
+   pip install git+https://github.com/asterdex/aster-connector-python.git --no-cache-dir
+
+2. Replace the entire aster_client.py with this safer, lazy-loading version that avoids early initialization:
+
+```python
+import os
+import time
+
+class AsterTrader:
+    def __init__(self):
+        try:
+            # Lazy import to avoid circular initialization issues
+            from aster_dex.futures import Frenchie
+            self.client = Frenchie(
+                key=os.getenv("ASTER_API_KEY") or "",
+                secret=os.getenv("ASTER_API_SECRET") or "",
+                recvWindow=30000
+            )
+        except Exception as import_err:
+            raise ImportError(f"SDK failed to load: {import_err}. Make sure you installed from GitHub: git+https://github.com/asterdex/aster-connector-python.git")
+
+        self.api_wallet = os.getenv("ASTER_API_WALLET_ADDRESS")
+
+    def test_connection(self):
+        try:
+            time.sleep(0.5)  # Give time for internal init
+            # Use the most stable V3/Pro endpoint
+            account = self.client.accountWithJoinMargin()
+            return {
+                "success": True,
+                "message": "✅ Aster Pro API (V3) connected successfully!"
+            }
+        except Exception as e:
+            err = str(e).lower()
+            if "no aster user found" in err or "user not found" in err:
+                return {"success": False, "message": "❌ 'No aster user found' — You need to create/authorize a Pro API Wallet at https://www.asterdex.com/en/api-wallet\nThen add ASTER_API_KEY, ASTER_API_SECRET, and ASTER_API_WALLET_ADDRESS to Render Environment Variables."}
+            elif "api-key format invalid" in err:
+                return {"success": False, "message": "❌ API Key format invalid. Double-check you copied the full key and secret correctly."}
+            else:
+                return {"success": False, "message": f"❌ Connection error: {str(e)}"}
