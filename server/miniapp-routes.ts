@@ -16,15 +16,16 @@ export function registerMiniAppRoutes(app: Express) {
 
       const futuresClient = client.futures || client;
 
+      console.log(`[MiniApp] Fetching Aster data for chatId=${chatId}...`);
       const [balances, accountData, positions, income] = await Promise.all([
-        futuresClient.balance().catch((e: any) => { console.log(`[MiniApp] balance() error: ${e.message}`); return []; }),
-        futuresClient.account().catch((e: any) => { console.log(`[MiniApp] account() error: ${e.message}`); return null; }),
-        futuresClient.positions().catch((e: any) => { console.log(`[MiniApp] positions() error: ${e.message}`); return []; }),
-        futuresClient.income("REALIZED_PNL", 20).catch((e: any) => { console.log(`[MiniApp] income() error: ${e.message}`); return []; }),
+        futuresClient.balance().catch((e: any) => { console.log(`[MiniApp] balance() error: ${e.message?.substring(0, 200)}`); return []; }),
+        futuresClient.account().catch((e: any) => { console.log(`[MiniApp] account() error: ${e.message?.substring(0, 200)}`); return null; }),
+        futuresClient.positions().catch((e: any) => { console.log(`[MiniApp] positions() error: ${e.message?.substring(0, 200)}`); return []; }),
+        futuresClient.income("REALIZED_PNL", 20).catch((e: any) => { console.log(`[MiniApp] income() error: ${e.message?.substring(0, 200)}`); return []; }),
       ]);
 
-      console.log(`[MiniApp] balance raw: ${JSON.stringify(balances).substring(0, 500)}`);
-      console.log(`[MiniApp] account raw: ${JSON.stringify(accountData).substring(0, 500)}`);
+      console.log(`[MiniApp] balance raw type=${typeof balances} isArr=${Array.isArray(balances)} len=${Array.isArray(balances)?balances.length:'n/a'}: ${JSON.stringify(balances).substring(0, 500)}`);
+      console.log(`[MiniApp] account raw type=${typeof accountData}: ${JSON.stringify(accountData).substring(0, 500)}`);
 
       let availBal = 0;
       let walletBal = 0;
@@ -117,6 +118,21 @@ export function registerMiniAppRoutes(app: Express) {
         }
       }
 
+      let spotBalance = 0;
+      try {
+        const spotClient = client.spot;
+        if (spotClient && spotClient.account) {
+          const spotAcct = await spotClient.account();
+          if (spotAcct && Array.isArray(spotAcct.balances)) {
+            const usdtSpot = spotAcct.balances.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+            if (usdtSpot) spotBalance = parseFloat(usdtSpot.free || "0");
+          }
+          console.log(`[MiniApp] Spot balance: $${spotBalance}`);
+        }
+      } catch (spotErr: any) {
+        console.log(`[MiniApp] Spot balance error: ${spotErr.message?.substring(0, 100)}`);
+      }
+
       let bscBalance = 0;
       let bnbBalance = 0;
       let walletAddr: string | null = null;
@@ -152,6 +168,7 @@ export function registerMiniAppRoutes(app: Express) {
         connected: true,
         walletBalance: walletBal,
         availableMargin: availBal,
+        spotBalance,
         bscBalance,
         bnbBalance,
         bscWalletAddress: walletAddr,

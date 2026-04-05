@@ -201,8 +201,8 @@ function renderDash(){
   h+='<div class="card card-accent"><div class="row"><div><div class="label">Futures Available Margin</div><div class="val">$'+fmt(D.availableMargin)+'</div></div><div style="text-align:right"><div class="label">Total Balance</div><div class="val-sm text-w">$'+fmt(D.walletBalance)+'</div></div></div>';
   h+='<div class="grid3 mt-3">';
   h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">BSC Wallet</div><div class="val-xs text-w mt-1">$'+fmt(D.bscBalance)+'</div></div>';
-  h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Spot</div><div class="val-xs text-w mt-1">$'+fmt(D.walletBalance)+'</div></div>';
-  h+='<div style="text-align:center;padding:8px;background:var(--green-bg);border-radius:8px"><div class="text-xs" style="color:var(--green)">Futures</div><div class="val-xs text-w mt-1">$'+fmt(D.availableMargin)+'</div></div>';
+  h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Spot</div><div class="val-xs text-w mt-1">$'+fmt(D.spotBalance||0)+'</div></div>';
+  h+='<div style="text-align:center;padding:8px;background:var(--green-bg);border-radius:8px"><div class="text-xs" style="color:var(--green)">Futures</div><div class="val-xs text-w mt-1">$'+fmt(D.walletBalance)+'</div></div>';
   h+='</div></div>';
 
   h+='<div class="grid2">';
@@ -257,8 +257,8 @@ function renderDeposit(){
 
   h+='<div class="card"><div class="label">Account Balances</div><div class="grid3 mt-2">';
   h+='<div style="text-align:center;padding:10px 8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">BSC Wallet</div><div class="val-sm text-w mt-1">$'+fmt(D.bscBalance)+'</div></div>';
-  h+='<div style="text-align:center;padding:10px 8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Spot</div><div class="val-sm text-w mt-1">$'+fmt(D.walletBalance)+'</div></div>';
-  h+='<div style="text-align:center;padding:10px 8px;background:var(--green-bg);border-radius:8px"><div class="text-xs" style="color:var(--green)">Futures</div><div class="val-sm text-w mt-1">$'+fmt(D.availableMargin)+'</div></div>';
+  h+='<div style="text-align:center;padding:10px 8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Spot</div><div class="val-sm text-w mt-1">$'+fmt(D.spotBalance||0)+'</div></div>';
+  h+='<div style="text-align:center;padding:10px 8px;background:var(--green-bg);border-radius:8px"><div class="text-xs" style="color:var(--green)">Futures</div><div class="val-sm text-w mt-1">$'+fmt(D.walletBalance)+'</div></div>';
   h+='</div></div>';
 
   h+='<div class="card"><div class="section-title">📤 Transfer to Aster</div>';
@@ -290,10 +290,10 @@ function renderDeposit(){
   h+='<div id="verify-status"></div>';
   h+='</div>';
 
-  if(D.walletBalance>0&&D.availableMargin===0){
+  if((D.spotBalance||0)>0){
     h+='<div class="card card-accent"><div class="section-title">🔄 Transfer Spot → Futures</div>';
-    h+='<div class="text-xs text-dim mb-2">You have $'+fmt(D.walletBalance)+' in Spot. Transfer to Futures to start trading.</div>';
-    h+='<button class="btn btn-green" style="width:100%" onclick="spotToFutures()">Transfer $'+fmt(D.walletBalance)+' to Futures</button>';
+    h+='<div class="text-xs text-dim mb-2">You have $'+fmt(D.spotBalance)+' in Spot. Transfer to Futures to start trading.</div>';
+    h+='<button class="btn btn-green" style="width:100%" onclick="spotToFutures()">Transfer $'+fmt(D.spotBalance)+' to Futures</button>';
     h+='<div id="stf-status"></div></div>';
   }
   h+='<button class="btn btn-outline mt-2" style="width:100%" onclick="spotToFutures()">🔄 Move Spot → Futures</button>';
