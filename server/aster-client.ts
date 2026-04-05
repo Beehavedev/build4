@@ -685,10 +685,29 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
       return request("/fapi/v2/account", { signed: true });
     },
 
+    async accountWithJoinMargin(): Promise<any> {
+      return request("/fapi/v2/account", { signed: true });
+    },
+
+    async positionRisk(): Promise<AsterPosition[]> {
+      const data = await request("/fapi/v2/positionRisk", { signed: true });
+      if (Array.isArray(data)) return data;
+      return [];
+    },
+
     async positions(): Promise<AsterPosition[]> {
       const data = await request("/fapi/v2/positionRisk", { signed: true });
       if (Array.isArray(data)) return data;
       return [];
+    },
+
+    async testConnection(): Promise<{ success: boolean; data?: any; error?: string }> {
+      try {
+        const bal = await request("/fapi/v2/balance", { signed: true });
+        return { success: true, data: bal };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
     },
 
     async createOrder(orderParams: AsterNewOrderParams): Promise<AsterOrder> {

@@ -13056,14 +13056,9 @@ async function handleAsterMenu(chatId: number): Promise<void> {
   const connected = !!creds;
 
   if (!connected) {
-    const wallet = getLinkedWallet(chatId);
-    const hasWallet = !!wallet;
-
     const buttons: TelegramBot.InlineKeyboardButton[][] = [];
-    if (hasWallet) {
-      buttons.push([{ text: "⚡ 1-Tap Connect (Auto-Setup)", callback_data: "aster:auto_connect" }]);
-    }
     buttons.push([{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }]);
+    buttons.push([{ text: "❓ How to Get API Key", callback_data: "aster:api_help" }]);
     buttons.push([{ text: "« Back", callback_data: "action:menu" }]);
 
     await bot.sendMessage(chatId,
@@ -13072,10 +13067,11 @@ async function handleAsterMenu(chatId: number): Promise<void> {
       `_Powered by Aster DEX_\n\n` +
       `Up to 150x leverage on BTC, ETH & more.\n` +
       `Trade directly from Telegram.\n\n` +
-      (hasWallet
-        ? `⚡ *1-Tap Connect* — instant setup using your existing wallet. No API keys needed!\n\n`
-        : `Connect your Aster API credentials to get started.\n\n`) +
-      `_Everything happens right here in Telegram._`,
+      `*To get started:*\n` +
+      `1. Create an API Wallet on Aster DEX\n` +
+      `2. Paste your API Key + Secret here\n` +
+      `3. Everything else happens in Telegram!\n\n` +
+      `Tap "How to Get API Key" for step-by-step instructions.`,
       {
         parse_mode: "Markdown",
         reply_markup: { inline_keyboard: buttons },
@@ -13085,10 +13081,7 @@ async function handleAsterMenu(chatId: number): Promise<void> {
   }
 
   const isV3Direct = creds && creds.apiKey === "V3_DIRECT";
-  const modeLabel = isV3Direct ? "V3 Wallet Signing" : "API Key";
-  const tradeButtons: TelegramBot.InlineKeyboardButton[][] = isV3Direct
-    ? [[{ text: "🔄 Futures Trade", callback_data: "aster:trade_futures" }]]
-    : [[{ text: "🔄 Futures Trade", callback_data: "aster:trade_futures" }, { text: "💱 Spot Trade", callback_data: "aster:trade_spot" }]];
+  const modeLabel = isV3Direct ? "V3 Direct" : "API Wallet";
 
   await bot.sendMessage(chatId,
     `📈 *Aster DEX*\n` +
@@ -13099,14 +13092,13 @@ async function handleAsterMenu(chatId: number): Promise<void> {
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
-          ...tradeButtons,
+          [{ text: "🔄 Futures Trade", callback_data: "aster:trade_futures" }, { text: "💱 Spot Trade", callback_data: "aster:trade_spot" }],
           [{ text: "📊 Markets", callback_data: "aster:markets" }, { text: "💵 Fund Account", callback_data: "aster:fund" }],
           [{ text: "💰 Balances", callback_data: "aster:balance" }, { text: "📊 Positions", callback_data: "aster:positions" }],
           [{ text: "📋 Open Orders", callback_data: "aster:orders" }, { text: "📈 PnL", callback_data: "aster:pnl" }],
           [{ text: "🤖 AI Agent", callback_data: "aster:agent" }, { text: "⚙️ Risk Settings", callback_data: "aster:risk_settings" }],
+          [{ text: "🔧 Test Connection", callback_data: "aster:test_connection" }],
           [{ text: "🏆 Competition", callback_data: "aster:competition" }],
-          [{ text: "🔧 API Diagnostics", callback_data: "aster:api_diag" }],
-          ...(isV3Direct ? [[{ text: "🔑 Upgrade (Add API Key)", callback_data: "aster:connect" }]] : []),
           [{ text: "🔌 Disconnect", callback_data: "aster:disconnect" }, { text: "« Back", callback_data: "action:menu" }],
         ],
       },
@@ -13116,35 +13108,146 @@ async function handleAsterMenu(chatId: number): Promise<void> {
 
 async function getAsterClient(chatId: number): Promise<any> {
   const creds = await storage.getAsterCredentials(chatId.toString());
+  if (!creds) return null;
 
-  const wallet = getLinkedWallet(chatId);
-  const pk = wallet ? await resolvePrivateKey(chatId, wallet) : null;
+  const isV3Direct = creds.apiKey === "V3_DIRECT";
 
-  const isV3Direct = creds && creds.apiKey === "V3_DIRECT";
-
-  if (pk && wallet) {
-    const { createAsterV3FuturesClient, createAsterSpotClient } = await import("./aster-client");
-    const v3Futures = createAsterV3FuturesClient({
-      user: wallet,
-      signer: wallet,
-      signerPrivateKey: pk,
-    });
-    if (!isV3Direct && creds) {
-      const v1Spot = createAsterSpotClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
-      return { futures: v3Futures, spot: v1Spot };
-    }
-    return { futures: v3Futures, spot: null };
+  if (!isV3Direct && creds.apiKey && creds.apiSecret) {
+    const { createAsterClient, createAsterFuturesClient, createAsterSpotClient } = await import("./aster-client");
+    const futures = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+    const spot = createAsterSpotClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+    return { futures, spot };
   }
 
-  if (!creds || isV3Direct) return null;
+  if (isV3Direct) {
+    const wallet = getLinkedWallet(chatId);
+    const pk = wallet ? await resolvePrivateKey(chatId, wallet) : null;
+    if (pk && wallet) {
+      const { createAsterV3FuturesClient } = await import("./aster-client");
+      const v3Futures = createAsterV3FuturesClient({
+        user: wallet,
+        signer: wallet,
+        signerPrivateKey: pk,
+      });
+      return { futures: v3Futures, spot: null };
+    }
+  }
 
-  const { createAsterClient } = await import("./aster-client");
-  return createAsterClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+  return null;
 }
 
 async function handleAsterCallback(chatId: number, data: string): Promise<void> {
   if (!bot) return;
   const action = data.replace("aster:", "");
+
+  if (action === "api_help") {
+    await bot.sendMessage(chatId,
+      `🔑 *How to Get Your Aster API Key*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `*Step 1:* Go to asterdex.com and connect your wallet (MetaMask, Trust Wallet, etc.)\n\n` +
+      `*Step 2:* Click on your profile → *API Management* or *API Wallet*\n\n` +
+      `*Step 3:* Click "Create API Wallet" and name it (e.g. "Telegram Bot")\n\n` +
+      `*Step 4:* Approve the on-chain signature in your wallet\n\n` +
+      `*Step 5:* Copy the *API Key* and *API Secret* that are displayed\n\n` +
+      `*Step 6:* Come back here and tap "Connect with API Key"\n\n` +
+      `⚠️ *Important:*\n` +
+      `• Keep your API Secret safe — it's shown only once\n` +
+      `• The API Wallet is a sub-signer, not your main wallet\n` +
+      `• Your private key stays in your MetaMask — never shared\n` +
+      `• Enable "Futures Trading" permission when creating`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }],
+            [{ text: "« Aster Menu", callback_data: "action:aster" }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
+  if (action === "test_connection") {
+    await bot.sendMessage(chatId, "⏳ Testing Aster API connection...");
+    try {
+      const futuresClient = client.futures || client;
+
+      const results: string[] = [];
+
+      try {
+        const pingOk = await futuresClient.ping();
+        results.push(`✅ Ping: ${pingOk ? "OK" : "Failed"}`);
+      } catch (e: any) {
+        results.push(`❌ Ping: ${e.message?.substring(0, 80)}`);
+      }
+
+      try {
+        const bal = await futuresClient.balance();
+        if (Array.isArray(bal)) {
+          const usdt = bal.find((b: any) => b.asset === "USDT" || b.asset === "usdt");
+          results.push(`✅ Balance: ${usdt ? `$${parseFloat(usdt.availableBalance || usdt.balance || "0").toFixed(2)} USDT` : `${bal.length} assets found`}`);
+        } else {
+          results.push(`⚠️ Balance: Unexpected response`);
+        }
+      } catch (e: any) {
+        results.push(`❌ Balance: ${e.message?.substring(0, 100)}`);
+      }
+
+      try {
+        const pos = await futuresClient.positions();
+        const activePos = Array.isArray(pos) ? pos.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0) : [];
+        results.push(`✅ Positions: ${activePos.length} open`);
+      } catch (e: any) {
+        results.push(`❌ Positions: ${e.message?.substring(0, 100)}`);
+      }
+
+      try {
+        const ticker = await futuresClient.tickerPrice("BTCUSDT");
+        results.push(`✅ Market Data: BTC $${parseFloat(ticker?.price || "0").toFixed(0)}`);
+      } catch (e: any) {
+        results.push(`❌ Market Data: ${e.message?.substring(0, 80)}`);
+      }
+
+      let creds2: any = null;
+      try { creds2 = await storage.getAsterCredentials(chatId.toString()); } catch {}
+      const mode = creds2?.apiKey === "V3_DIRECT" ? "V3 Direct" : "API Wallet (HMAC)";
+
+      let msg = `🔧 *API Connection Test*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      msg += `Mode: *${mode}*\n\n`;
+      msg += results.join("\n") + "\n\n";
+
+      const hasErrors = results.some(r => r.startsWith("❌"));
+      if (hasErrors) {
+        msg += `⚠️ Some endpoints failed.\n`;
+        if (mode === "V3 Direct") {
+          msg += `\nYou're using V3 Direct mode. For full API access, switch to API Wallet mode:\n`;
+          msg += `1. Create an API Wallet on Aster DEX\n`;
+          msg += `2. Reconnect with your API Key + Secret\n`;
+          msg += `\nTap "Reconnect" below to set up API Wallet.`;
+        } else {
+          msg += `Check your API Key and Secret. They may be expired or have insufficient permissions.`;
+        }
+      } else {
+        msg += `✅ All systems operational!`;
+      }
+
+      await bot.sendMessage(chatId, msg, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            ...(hasErrors ? [[{ text: "🔑 Reconnect", callback_data: "aster:connect" }]] : []),
+            [{ text: "🔄 Test Again", callback_data: "aster:test_connection" }],
+            [{ text: "« Aster Menu", callback_data: "action:aster" }],
+          ],
+        },
+      });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `❌ Connection test failed: ${e.message?.substring(0, 200)}\n\nMake sure you've connected your API Key.`, {
+        reply_markup: { inline_keyboard: [[{ text: "🔑 Connect", callback_data: "aster:connect" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+      });
+    }
+    return;
+  }
 
   if (action === "auto_connect") {
     const wallet = getLinkedWallet(chatId);
@@ -13350,9 +13453,10 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   if (action === "connect") {
     pendingAsterConnect.set(chatId, { step: "api_key" });
     await bot.sendMessage(chatId,
-      "🔗 *Connect Aster DEX*\n\n" +
-      "Please send your Aster API Key:\n\n" +
-      "You can find your API key in your Aster account settings.\n\n" +
+      "🔗 *Connect Aster DEX — API Wallet*\n━━━━━━━━━━━━━━━━━━━━\n\n" +
+      "Please send your *API Key* now.\n\n" +
+      "This is the key from your Aster API Wallet.\n" +
+      "_(Not your private key — your API Key from Aster's API Management page)_\n\n" +
       "Type /cancel to abort.",
       { parse_mode: "Markdown" }
     );
