@@ -297,6 +297,23 @@ function renderDeposit(){
     h+='<div id="stf-status"></div></div>';
   }
   h+='<button class="btn btn-outline mt-2" style="width:100%" onclick="spotToFutures()">🔄 Move Spot → Futures</button>';
+
+  h+='<div class="card mt-3"><div class="section-title">💸 Withdraw USDT</div>';
+  h+='<div class="text-xs text-dim mb-2">Withdraw from Aster Futures to your BSC wallet. Min $1.</div>';
+  h+='<div class="flex gap-2 mb-2">';
+  var wAmts=[5,10,25,50];
+  for(var w=0;w<wAmts.length;w++){
+    h+='<button class="btn btn-outline flex-1" onclick="doWithdraw('+wAmts[w]+')">$'+wAmts[w]+'</button>';
+  }
+  h+='</div>';
+  h+='<div class="flex gap-2 mb-2">';
+  h+='<input id="withdraw-amount" type="number" placeholder="Amount" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card-bg);color:var(--text)">';
+  h+='<button class="btn btn-outline" onclick="doWithdrawCustom()">Withdraw</button>';
+  h+='</div>';
+  h+='<input id="withdraw-addr" type="text" placeholder="To address (default: your bot wallet)" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);font-size:11px;margin-bottom:8px">';
+  h+='<div id="withdraw-status"></div>';
+  h+='</div>';
+
   h+='<button class="btn btn-outline mt-2" onclick="loadDeposit()">↻ Refresh Balances</button>';
   el.innerHTML=h;
 }
@@ -315,6 +332,36 @@ async function doTransfer(amount){
       setTimeout(function(){fetchAll().then(function(){renderDeposit()})},5000);
     }else{
       st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Transfer failed')+'</span></div>';
+    }
+  }catch(e){
+    st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
+  }
+}
+
+function doWithdrawCustom(){
+  var el=document.getElementById('withdraw-amount');
+  var amt=el?parseFloat(el.value):0;
+  if(!amt||amt<1){toast('Enter amount ($1 minimum)','err');return}
+  doWithdraw(amt);
+}
+
+async function doWithdraw(amount){
+  if(!amount||amount<1){toast('Minimum withdrawal is $1','err');return}
+  var st=document.getElementById('withdraw-status');
+  if(!st){st={innerHTML:''}}
+  var addrEl=document.getElementById('withdraw-addr');
+  var toAddr=addrEl?addrEl.value.trim():'';
+  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Withdrawing $'+amount+' USDT... Moving Futures→Spot→BSC</span></div>';
+  try{
+    var body={amount:amount};
+    if(toAddr)body.toAddress=toAddr;
+    var r=await api('/api/miniapp/withdraw',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(r.success){
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span>'+(r.message||'Withdrawal initiated!')+'</span></div>';
+      toast('Withdrawal submitted!','ok');
+      setTimeout(function(){fetchAll().then(function(){renderDeposit()})},5000);
+    }else{
+      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Withdrawal failed')+'</span></div>';
     }
   }catch(e){
     st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';

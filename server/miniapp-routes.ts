@@ -247,6 +247,55 @@ export function registerMiniAppRoutes(app: Express) {
     }
   });
 
+  app.post("/api/miniapp/withdraw", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+
+      const { amount, toAddress } = req.body;
+      if (!amount || amount < 1) return res.status(400).json({ error: "Minimum withdrawal is $1" });
+
+      const activeWallet = getUserWalletAddress(parseInt(chatId));
+      const withdrawTo = toAddress || activeWallet;
+      if (!withdrawTo) return res.status(400).json({ error: "No withdrawal address. Provide a BSC address." });
+
+      console.log(`[MiniApp] withdraw request: chatId=${chatId}, amount=${amount}, to=${withdrawTo}`);
+
+      const client = await getAsterClient(parseInt(chatId));
+      if (!client) return res.status(400).json({ error: "Aster not connected" });
+
+      const fc = client.futures || client;
+
+      try {
+        console.log(`[MiniApp] Futures→Spot transfer: $${amount}`);
+        await fc.futuresToSpot("USDT", amount.toString());
+        console.log(`[MiniApp] Futures→Spot done`);
+      } catch (ftsErr: any) {
+        console.log(`[MiniApp] Futures→Spot failed: ${ftsErr.message?.substring(0, 150)}`);
+        return res.json({ success: false, error: `Failed to move funds from Futures to Spot: ${ftsErr.message?.substring(0, 150)}` });
+      }
+
+      await new Promise(r => setTimeout(r, 2000));
+
+      try {
+        console.log(`[MiniApp] On-chain withdraw: $${amount} to ${withdrawTo}`);
+        const result = await fc.withdrawOnChain("USDT", amount.toString(), withdrawTo, "BSC");
+        console.log(`[MiniApp] Withdraw success:`, JSON.stringify(result).substring(0, 200));
+        res.json({
+          success: true,
+          message: `Withdrawal of $${amount} USDT initiated to ${withdrawTo.substring(0, 8)}...${withdrawTo.slice(-4)}. Allow 5-10 minutes for on-chain confirmation.`,
+          withdrawId: result?.id || result?.withdrawId || null,
+        });
+      } catch (wErr: any) {
+        console.log(`[MiniApp] Withdraw failed: ${wErr.message?.substring(0, 200)}`);
+        res.json({ success: false, error: `Withdrawal failed: ${wErr.message?.substring(0, 150)}. Funds moved back to Spot — try again or withdraw manually on asterdex.com.` });
+      }
+    } catch (e: any) {
+      console.log(`[MiniApp] withdraw error: ${e.message?.substring(0, 200)}`);
+      res.status(500).json({ error: e.message?.substring(0, 200) });
+    }
+  });
+
   app.post("/api/miniapp/spot-to-futures", async (req: Request, res: Response) => {
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;

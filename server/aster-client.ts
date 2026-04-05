@@ -1061,6 +1061,23 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
       };
       return makeV3Request(baseUrl, "/fapi/v3/asset/wallet/transfer", user, signer, signerPrivateKey, { method: "POST", params });
     },
+
+    async withdrawOnChain(coin: string, amount: string, toAddress: string, network: string = "BSC"): Promise<any> {
+      const params: Record<string, string | number | boolean | undefined> = {
+        coin,
+        amount,
+        address: toAddress,
+        network,
+      };
+      try {
+        const result = await makeV3Request(baseUrl, "/sapi/v1/capital/withdraw/apply", user, signer, signerPrivateKey, { method: "POST", params });
+        console.log(`[AsterV3] withdraw success:`, JSON.stringify(result).substring(0, 300));
+        return result;
+      } catch (e: any) {
+        console.log(`[AsterV3] withdraw failed: ${e.message?.substring(0, 200)}`);
+        throw e;
+      }
+    },
   };
 }
 
