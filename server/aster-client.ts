@@ -297,18 +297,31 @@ function getV3Nonce(): string {
   return String(nowSec * 1_000_000 + _nonceCounter);
 }
 
+function buildV3QueryString(params: Record<string, string | number | boolean | undefined>): string {
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null) {
+      parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+    }
+  }
+  return parts.join("&");
+}
+
 async function signV3Params(
   params: Record<string, string | number | boolean | undefined>,
   user: string,
   signer: string,
   signerPrivateKey: string,
-): Promise<Record<string, string | number | boolean | undefined>> {
-  const signedParams = { ...params };
+): Promise<{ queryStringWithSig: string }> {
+  const signedParams: Record<string, string | number | boolean | undefined> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null) signedParams[k] = v;
+  }
   signedParams.nonce = getV3Nonce();
   signedParams.user = user;
   signedParams.signer = signer;
 
-  const queryString = buildQueryString(signedParams);
+  const queryString = buildV3QueryString(signedParams);
 
   const typedData = {
     ...EIP712_TYPED_DATA,
@@ -316,14 +329,18 @@ async function signV3Params(
   };
 
   const wallet = new Wallet(signerPrivateKey);
+  const signerAddr = wallet.address;
+  console.log(`[AsterV3Sign] msg=${queryString.substring(0, 200)}... signerAddr=${signerAddr} expectedSigner=${signer}`);
+  if (signerAddr.toLowerCase() !== signer.toLowerCase()) {
+    console.warn(`[AsterV3Sign] WARNING: wallet address ${signerAddr} does not match signer param ${signer}`);
+  }
   const signature = await wallet.signTypedData(
     typedData.domain,
     { Message: typedData.types.Message },
     typedData.message,
   );
 
-  signedParams.signature = signature;
-  return signedParams;
+  return { queryStringWithSig: queryString + "&signature=" + signature };
 }
 
 async function makeV3Request(
@@ -336,9 +353,7 @@ async function makeV3Request(
 ): Promise<any> {
   const { method = "GET", params = {} } = options;
 
-  const enrichedParams = { ...params, recvWindow: 30000 };
-  const signedParams = await signV3Params(enrichedParams, user, signer, signerPrivateKey);
-  const queryString = buildQueryString(signedParams);
+  const { queryStringWithSig } = await signV3Params(params as Record<string, string | number | boolean | undefined>, user, signer, signerPrivateKey);
 
   const headers: Record<string, string> = {
     "Content-Type": "application/x-www-form-urlencoded",
@@ -349,25 +364,12 @@ async function makeV3Request(
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    let url: string;
-    let fetchOptions: RequestInit;
-
-    if (method === "POST" || method === "PUT" || method === "DELETE") {
-      url = `${baseUrl}${path}`;
-      fetchOptions = {
-        method,
-        headers,
-        body: queryString,
-        signal: controller.signal,
-      };
-    } else {
-      url = `${baseUrl}${path}?${queryString}`;
-      fetchOptions = {
-        method,
-        headers,
-        signal: controller.signal,
-      };
-    }
+    const url = `${baseUrl}${path}?${queryStringWithSig}`;
+    const fetchOptions: RequestInit = {
+      method,
+      headers,
+      signal: controller.signal,
+    };
 
     console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 120)}...`);
     const response = await fetch(url, fetchOptions);

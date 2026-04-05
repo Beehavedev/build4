@@ -15366,28 +15366,28 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const checksumAddr = ethers.getAddress(address);
 
       function bqs(p: Record<string, any>): string {
-        const f: Record<string, string> = {};
-        for (const [k, v] of Object.entries(p)) if (v != null) f[k] = String(v);
-        return new URLSearchParams(f).toString();
+        const parts: string[] = [];
+        for (const [k, v] of Object.entries(p)) {
+          if (v != null) parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
+        }
+        return parts.join("&");
       }
 
       async function signP(params: Record<string, any>) {
         const p = { ...params, nonce: String(Math.trunc(Date.now() / 1000) * 1_000_000 + Math.floor(Math.random() * 999)), user: checksumAddr, signer: checksumAddr };
         const q = bqs(p);
-        p.signature = await w.signTypedData(EIP712D, EIP712T, { msg: q });
-        return p;
+        const sig = await w.signTypedData(EIP712D, EIP712T, { msg: q });
+        return { qs: q + "&signature=" + sig };
       }
 
       const FAPI = "https://fapi.asterdex.com";
 
-      async function tryV3(label: string, method: string, path: string, paramsInUrl: boolean) {
+      async function tryV3(label: string, method: string, path: string, _paramsInUrl: boolean) {
         try {
-          const sp = await signP({});
-          const q = bqs(sp);
-          const url = paramsInUrl ? `${FAPI}${path}?${q}` : `${FAPI}${path}`;
+          const { qs } = await signP({});
+          const url = `${FAPI}${path}?${qs}`;
           const h: Record<string, string> = { "User-Agent": "BUILD4/1.0", "Content-Type": "application/x-www-form-urlencoded" };
-          const body = paramsInUrl ? undefined : q;
-          const r = await fetch(url, { method, headers: h, body });
+          const r = await fetch(url, { method, headers: h });
           const t = await r.text();
           results.push(`${label}: ${r.status} ${t.substring(0, 120)}`);
         } catch (e: any) {
@@ -15399,9 +15399,8 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
       async function tryV3h(label: string, method: string, path: string, extraHeaders: Record<string, string> = {}, extraParams: Record<string, any> = {}) {
         try {
-          const sp = await signP(extraParams);
-          const q = bqs(sp);
-          const url = `${FAPI}${path}?${q}`;
+          const { qs } = await signP(extraParams);
+          const url = `${FAPI}${path}?${qs}`;
           const h: Record<string, string> = { "User-Agent": "BUILD4/1.0", "Content-Type": "application/x-www-form-urlencoded", ...extraHeaders };
           const r = await fetch(url, { method, headers: h });
           const t = await r.text();
@@ -15427,9 +15426,8 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       // Try without Content-Type
       async function tryNoContentType(label: string, path: string) {
         try {
-          const sp = await signP({});
-          const q = bqs(sp);
-          const url = `${FAPI}${path}?${q}`;
+          const { qs } = await signP({});
+          const url = `${FAPI}${path}?${qs}`;
           const r = await fetch(url, { method: "GET", headers: { "User-Agent": "BUILD4/1.0" } });
           const t = await r.text();
           results.push(`${label}: ${r.status} ${t.substring(0, 120)}`);
