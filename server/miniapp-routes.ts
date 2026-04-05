@@ -16,27 +16,56 @@ export function registerMiniAppRoutes(app: Express) {
 
       const futuresClient = client.futures || client;
 
-      const [balances, positions, income] = await Promise.all([
+      const [balances, accountData, positions, income] = await Promise.all([
         futuresClient.balance().catch((e: any) => { console.log(`[MiniApp] balance() error: ${e.message}`); return []; }),
+        futuresClient.account().catch((e: any) => { console.log(`[MiniApp] account() error: ${e.message}`); return null; }),
         futuresClient.positions().catch((e: any) => { console.log(`[MiniApp] positions() error: ${e.message}`); return []; }),
         futuresClient.income("REALIZED_PNL", 20).catch((e: any) => { console.log(`[MiniApp] income() error: ${e.message}`); return []; }),
       ]);
 
-      console.log(`[MiniApp] balance raw (type=${typeof balances}, isArray=${Array.isArray(balances)}): ${JSON.stringify(balances).substring(0, 300)}`);
+      console.log(`[MiniApp] balance raw (type=${typeof balances}, isArray=${Array.isArray(balances)}): ${JSON.stringify(balances).substring(0, 400)}`);
+      console.log(`[MiniApp] account raw: ${JSON.stringify(accountData).substring(0, 400)}`);
 
       let usdtBal: any = null;
-      if (Array.isArray(balances)) {
+      if (Array.isArray(balances) && balances.length > 0) {
         usdtBal = balances.find((b: any) => b.asset === "USDT" || b.asset === "usdt");
-      } else if (balances && typeof balances === "object") {
-        if ((balances as any).asset) {
-          usdtBal = balances;
-        } else if ((balances as any).totalCrossWalletBalance || (balances as any).availableBalance) {
-          usdtBal = { asset: "USDT", availableBalance: (balances as any).availableBalance || "0", crossWalletBalance: (balances as any).totalCrossWalletBalance || "0", balance: (balances as any).totalWalletBalance || "0" };
+      }
+
+      if (!usdtBal && accountData) {
+        const acctAssets = accountData.assets || [];
+        if (Array.isArray(acctAssets) && acctAssets.length > 0) {
+          usdtBal = acctAssets.find((a: any) => a.asset === "USDT" || a.asset === "usdt");
+        }
+        if (!usdtBal) {
+          const wb = accountData.totalWalletBalance || accountData.totalCrossWalletBalance;
+          const ab = accountData.availableBalance || accountData.totalCrossUnPnl !== undefined
+            ? String(parseFloat(accountData.totalWalletBalance || "0") + parseFloat(accountData.totalCrossUnPnl || "0"))
+            : "0";
+          if (wb && parseFloat(wb) > 0) {
+            usdtBal = {
+              asset: "USDT",
+              availableBalance: accountData.availableBalance || accountData.maxWithdrawAmount || wb,
+              crossWalletBalance: accountData.totalCrossWalletBalance || wb,
+              balance: accountData.totalWalletBalance || wb,
+            };
+          }
+        }
+      }
+
+      if (!usdtBal && balances && typeof balances === "object" && !Array.isArray(balances)) {
+        if ((balances as any).totalCrossWalletBalance || (balances as any).availableBalance || (balances as any).totalWalletBalance) {
+          usdtBal = {
+            asset: "USDT",
+            availableBalance: (balances as any).availableBalance || (balances as any).maxWithdrawAmount || "0",
+            crossWalletBalance: (balances as any).totalCrossWalletBalance || "0",
+            balance: (balances as any).totalWalletBalance || "0",
+          };
         }
       }
 
       const availBal = usdtBal ? parseFloat(usdtBal.availableBalance || usdtBal.crossWalletBalance || "0") : 0;
       const walletBal = usdtBal ? parseFloat(usdtBal.crossWalletBalance || usdtBal.balance || "0") : 0;
+      console.log(`[MiniApp] parsed: availBal=${availBal}, walletBal=${walletBal}, usdtBal=${JSON.stringify(usdtBal)?.substring(0, 200)}`);
 
       const openPositions = Array.isArray(positions)
         ? positions.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0)
