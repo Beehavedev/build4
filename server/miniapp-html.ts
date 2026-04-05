@@ -168,12 +168,12 @@ function startAutoRefresh(){
 
 async function fetchAll(){
   try{
-    const [a,m]=await Promise.all([api('/api/miniapp/account'),api('/api/miniapp/markets')]);
-    if(a.connected!==undefined)D=a;
-    if(m.markets)M=m;
+    const [a,m]=await Promise.all([api('/api/miniapp/account').catch(e=>{console.error('account err',e);return null}),api('/api/miniapp/markets').catch(e=>{console.error('markets err',e);return null})]);
+    if(a&&a.connected!==undefined){D={...D,...a}}
+    if(m&&m.markets)M=m;
     lastUpdate=Date.now();
-    $('hdr-updated').textContent='Updated';
-  }catch(e){console.error(e)}
+    try{$('hdr-updated').textContent='Updated'}catch(e){}
+  }catch(e){console.error('fetchAll error',e)}
 }
 
 function skeletonCard(lines=3){
@@ -185,7 +185,7 @@ function skeletonCard(lines=3){
 async function loadDash(){
   const el=$('p-dash');
   el.innerHTML=skeletonCard(4)+skeletonCard(2);
-  await fetchAll();
+  try{await fetchAll()}catch(e){console.error('loadDash fetch error',e)}
   renderDash();
   startAutoRefresh();
 }
@@ -193,7 +193,7 @@ async function loadDash(){
 function renderDash(){
   const el=$('p-dash');
   if(!D.connected){
-    el.innerHTML='<div class="card" style="text-align:center;padding:48px 24px"><div style="font-size:48px;margin-bottom:16px">🔗</div><div class="text-w fw-600" style="font-size:16px">Connect to Aster</div><div class="text-dim text-sm mt-2">Use the bot commands to connect your Aster DEX account first.</div></div>';
+    el.innerHTML='<div class="card" style="text-align:center;padding:48px 24px"><div style="font-size:48px;margin-bottom:16px">🔗</div><div class="text-w fw-600" style="font-size:16px">Connecting to Aster...</div><div class="text-dim text-sm mt-2">Loading your account data. If this persists, make sure the bot is running and you have used /start.</div><button class="btn btn-outline mt-3" onclick="loadDash()">↻ Retry</button></div>';
     return;
   }
   let h='';
