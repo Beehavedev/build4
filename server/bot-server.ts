@@ -307,6 +307,7 @@ async function toggleAgent(){
 async function loadTrade(){
   const el=document.getElementById('trade');
   if(!mkts)try{mkts=await api('/api/miniapp/markets')}catch(e){}
+  if(!acct)try{acct=await api('/api/miniapp/account')}catch(e){}
   const pairs=['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','DOGEUSDT'];
   let sel=pairs[0],lev=10;
   const getPrice=()=>(mkts?.markets?.find(m=>m.symbol===sel)?.price)||0;
@@ -318,14 +319,54 @@ async function loadTrade(){
     h+='</div>';
     if(price>0)h+='<div style="text-align:center;padding:16px 0"><div class="text-xs text-dim">'+sel+'</div><div class="value">\$'+fmt(price)+'</div></div>';
     h+='<hr style="border-color:var(--border);margin:12px 0"><div class="row text-sm"><span class="text-dim">Leverage</span><span class="mono text-white" style="font-weight:700">'+lev+'x</span></div><div class="slider-wrap" style="cursor:pointer" onclick="var r=this.getBoundingClientRect();var x=(event.clientX-r.left)/r.width;window._setLev(Math.max(1,Math.min(50,Math.round(x*50))))"><div class="slider-fill" style="width:'+(lev/50*100)+'%"></div></div><div class="row text-xs text-dim"><span>1x</span><span>50x</span></div>';
-    h+='<div class="label mt-3">Amount (USDT)</div><input id="trade-amt" class="input" type="number" placeholder="Enter amount">'+(acct?'<div class="text-xs text-dim mt-2">Available: \$'+fmt(acct.availableMargin)+'</div>':'');
-    h+='<div class="grid2 mt-4"><button class="btn btn-green" style="height:48px;font-size:15px" onclick="alert(\\'Trade execution coming soon\\')">📈 Long</button><button class="btn btn-red" style="height:48px;font-size:15px" onclick="alert(\\'Trade execution coming soon\\')">📉 Short</button></div>';
-    h+='<div class="text-xs text-dim mt-3" style="text-align:center">Trades execute via Aster DEX V3 Pro API</div></div>';
+    h+='<div class="label mt-3">Amount (USDT margin)</div><input id="trade-amt" class="input" type="number" placeholder="Enter margin amount">'+(acct?'<div class="text-xs text-dim mt-2">Available: \$'+fmt(acct.availableMargin)+'</div>':'');
+    if(price>0){h+='<div class="card mt-3" style="padding:10px 12px;background:var(--bg)"><div class="row text-xs"><span class="text-dim">Est. Position Size</span><span class="mono text-white" id="est-size">—</span></div><div class="row text-xs mt-2"><span class="text-dim">Notional Value</span><span class="mono text-white" id="est-notional">—</span></div></div>'}
+    h+='<div class="grid2 mt-4"><button class="btn btn-green" style="height:48px;font-size:15px" onclick="executeTrade(\\'BUY\\')">📈 Long</button><button class="btn btn-red" style="height:48px;font-size:15px" onclick="executeTrade(\\'SELL\\')">📉 Short</button></div>';
+    h+='<div id="trade-status"></div>';
+    if(acct&&acct.positions&&acct.positions.length>0){h+='<div class="card mt-3"><div class="text-sm text-white mb-2" style="font-weight:600">Open Positions</div>';acct.positions.forEach(p=>{h+='<div class="pos-row"><div class="row"><div><span class="badge '+(p.side==='LONG'?'badge-long':'badge-short')+'">'+p.side+'</span> <span class="text-white" style="font-weight:600;font-size:13px">'+p.symbol+'</span></div>'+pnl(p.unrealizedPnl)+'</div><div class="row mt-2"><span class="text-xs text-dim">'+p.size+' @ \$'+fmt(p.entryPrice)+'</span><button class="btn btn-outline btn-sm" style="width:auto;padding:4px 12px;font-size:11px" onclick="closePosition(\\''+p.symbol+'\\')">Close</button></div></div>'});h+='</div>'}
+    h+='<div class="text-xs text-dim mt-3" style="text-align:center">Market orders via Aster DEX V3 Pro API</div></div>';
     el.innerHTML=h;
+    const amtInput=document.getElementById('trade-amt');
+    if(amtInput){amtInput.addEventListener('input',()=>{const a=parseFloat(amtInput.value)||0;const n=a*lev;const q=price>0?(n/price):0;const es=document.getElementById('est-size');const en=document.getElementById('est-notional');if(es)es.textContent=q>0?q.toFixed(4)+' '+sel.replace('USDT',''):'—';if(en)en.textContent=n>0?'\$'+fmt(n):'—'})}
   }
-  window._selPair=(p)=>{sel=p;render()};
-  window._setLev=(v)=>{lev=v;render()};
+  window._selPair=(p)=>{sel=p;_tradeSel=p;render()};
+  window._setLev=(v)=>{lev=v;_tradeLev=v;render()};
+  _tradeSel=sel;_tradeLev=lev;
   render();
+}
+
+let _tradeSel='BTCUSDT',_tradeLev=10;
+async function executeTrade(side){
+  const amtEl=document.getElementById('trade-amt');
+  const amount=parseFloat(amtEl?.value||'0');
+  if(!amount||amount<=0){alert('Enter a margin amount');return}
+  const symbol=_tradeSel;
+  const lev=_tradeLev;
+  const st=document.getElementById('trade-status');
+  const price=(mkts?.markets?.find(m=>m.symbol===symbol)?.price)||0;
+  const dir=side==='BUY'?'LONG':'SHORT';
+  if(!confirm('Open '+dir+' '+symbol+' with \$'+amount+' margin at '+lev+'x leverage?'))return;
+  st.innerHTML='<div class="alert alert-info mt-3"><span class="spin" style="display:inline-block">⏳</span> Placing '+dir+' order...</div>';
+  try{
+    const r=await api('/api/miniapp/trade',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol,side,amount,leverage:lev})});
+    if(r.success){
+      st.innerHTML='<div class="alert alert-ok mt-3">✅ '+dir+' '+r.symbol+' filled!<br><span class="text-xs">Qty: '+r.quantity+' @ \$'+fmt(r.price)+'</span><br><span class="text-xs text-dim">Order ID: '+r.orderId+'</span></div>';
+      setTimeout(()=>{api('/api/miniapp/account').then(d=>{acct=d});api('/api/miniapp/markets').then(d=>{mkts=d})},2000);
+    }else{st.innerHTML='<div class="alert alert-err mt-3">❌ '+(r.error||'Order failed')+'</div>'}
+  }catch(e){st.innerHTML='<div class="alert alert-err mt-3">❌ '+e.message+'</div>'}
+}
+
+async function closePosition(symbol){
+  if(!confirm('Close entire '+symbol+' position?'))return;
+  const st=document.getElementById('trade-status');
+  st.innerHTML='<div class="alert alert-info mt-3"><span class="spin" style="display:inline-block">⏳</span> Closing '+symbol+'...</div>';
+  try{
+    const r=await api('/api/miniapp/close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol})});
+    if(r.success){
+      st.innerHTML='<div class="alert alert-ok mt-3">✅ '+symbol+' position closed<br><span class="text-xs">'+r.side+' '+r.quantity+' | Order ID: '+r.orderId+'</span></div>';
+      setTimeout(()=>{api('/api/miniapp/account').then(d=>{acct=d;loadTrade()})},2000);
+    }else{st.innerHTML='<div class="alert alert-err mt-3">❌ '+(r.error||'Close failed')+'</div>'}
+  }catch(e){st.innerHTML='<div class="alert alert-err mt-3">❌ '+e.message+'</div>'}
 }
 
 loadDashboard();

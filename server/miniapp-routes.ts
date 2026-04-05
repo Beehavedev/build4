@@ -246,6 +246,122 @@ export function registerMiniAppRoutes(app: Express) {
     }
   });
 
+  app.post("/api/miniapp/trade", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+
+      const { symbol, side, amount, leverage } = req.body;
+      if (!symbol || !side || !amount) return res.status(400).json({ error: "Missing symbol, side, or amount" });
+      if (!["BUY", "SELL"].includes(side)) return res.status(400).json({ error: "Side must be BUY or SELL" });
+      if (amount <= 0) return res.status(400).json({ error: "Amount must be positive" });
+
+      const client = await getAsterClient(parseInt(chatId));
+      if (!client) return res.status(400).json({ error: "Aster not connected" });
+
+      const fc = client.futures || client;
+
+      if (leverage && leverage > 0) {
+        try {
+          await fc.setLeverage(symbol, Math.min(Math.max(1, Math.round(leverage)), 125));
+        } catch (e: any) {
+          console.log(`[MiniApp] setLeverage warning: ${e.message}`);
+        }
+      }
+
+      const ticker = await fc.tickerPrice(symbol).catch(() => null);
+      const price = parseFloat(ticker?.price || "0");
+      if (price <= 0) return res.status(400).json({ error: `Cannot get price for ${symbol}` });
+
+      const lev = leverage || 10;
+      const notional = amount * lev;
+      let qty: number;
+
+      const stepSizes: Record<string, number> = {
+        BTCUSDT: 0.001, ETHUSDT: 0.01, SOLUSDT: 0.1, BNBUSDT: 0.01,
+        DOGEUSDT: 1, XRPUSDT: 0.1, ADAUSDT: 1, AVAXUSDT: 0.1,
+        DOTUSDT: 0.1, MATICUSDT: 1, LINKUSDT: 0.01, LTCUSDT: 0.001,
+      };
+      const step = stepSizes[symbol] || 0.001;
+      qty = Math.floor((notional / price) / step) * step;
+      if (qty <= 0) return res.status(400).json({ error: "Amount too small for this pair" });
+
+      const precision = step < 1 ? Math.ceil(-Math.log10(step)) : 0;
+      const qtyStr = qty.toFixed(precision);
+
+      console.log(`[MiniApp] Trade: ${side} ${qtyStr} ${symbol} @ ~$${price} (margin=$${amount}, lev=${lev}x)`);
+
+      const order = await fc.createOrder({
+        symbol,
+        side,
+        type: "MARKET",
+        quantity: qtyStr,
+      });
+
+      res.json({
+        success: true,
+        orderId: order.orderId || order.orderid,
+        symbol,
+        side,
+        quantity: qtyStr,
+        price,
+        leverage: lev,
+        margin: amount,
+        status: order.status || "FILLED",
+      });
+    } catch (e: any) {
+      console.error(`[MiniApp] Trade error: ${e.message}`);
+      res.status(500).json({ error: e.message?.substring(0, 200) });
+    }
+  });
+
+  app.post("/api/miniapp/close", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+
+      const { symbol } = req.body;
+      if (!symbol) return res.status(400).json({ error: "Missing symbol" });
+
+      const client = await getAsterClient(parseInt(chatId));
+      if (!client) return res.status(400).json({ error: "Aster not connected" });
+
+      const fc = client.futures || client;
+
+      const positions = await fc.positions();
+      const pos = Array.isArray(positions)
+        ? positions.find((p: any) => p.symbol === symbol && parseFloat(p.positionAmt || "0") !== 0)
+        : null;
+      if (!pos) return res.status(400).json({ error: `No open position for ${symbol}` });
+
+      const amt = parseFloat(pos.positionAmt || "0");
+      const closeSide = amt > 0 ? "SELL" : "BUY";
+      const absAmt = Math.abs(amt);
+
+      console.log(`[MiniApp] Close: ${closeSide} ${absAmt} ${symbol}`);
+
+      const order = await fc.createOrder({
+        symbol,
+        side: closeSide,
+        type: "MARKET",
+        quantity: absAmt.toString(),
+        reduceOnly: true,
+      });
+
+      res.json({
+        success: true,
+        orderId: order.orderId || order.orderid,
+        symbol,
+        side: closeSide,
+        quantity: absAmt,
+        status: order.status || "FILLED",
+      });
+    } catch (e: any) {
+      console.error(`[MiniApp] Close error: ${e.message}`);
+      res.status(500).json({ error: e.message?.substring(0, 200) });
+    }
+  });
+
   app.get("/api/miniapp/markets", async (req: Request, res: Response) => {
     try {
       const symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "DOGEUSDT"];
