@@ -4,7 +4,7 @@ import {
   tradingChallenges, challengeEntries, agentPnlSnapshots, copyTrades,
   type TradingChallenge, type ChallengeEntry, type CopyTrade,
 } from "@shared/schema";
-import { ethers } from "ethers";
+import * as ethers from "ethers";
 
 let dbInstance: ReturnType<typeof import("./db")["db"]> | null = null;
 function getDb() {

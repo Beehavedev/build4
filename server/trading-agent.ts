@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import * as ethers from "ethers";
 import { storage } from "./storage";
 import { log } from "./index";
 import { runInferenceWithFallback } from "./inference";

@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import * as ethers from "ethers";
 import { storage } from "./storage";
 import { postTweet } from "./twitter-client";
 import { log } from "./index";

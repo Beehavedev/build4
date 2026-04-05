@@ -1,5 +1,5 @@
 import TelegramBot from "node-telegram-bot-api";
-import { Wallet as EthWallet, getAddress as ethGetAddress, JsonRpcProvider, Contract as EthContract, formatUnits, formatEther, parseUnits, parseEther, id as ethId, zeroPadValue } from "ethers";
+import * as ethers from "ethers";
 import { runInferenceWithFallback, runInferenceMultiProvider, ChatMessage } from "./inference";
 import { storage } from "./storage";
 import { registerAgentOnchain, registerAgentERC8004, registerAgentBAP578, isOnchainReady, getExplorerUrl } from "./onchain";
@@ -1094,7 +1094,7 @@ async function collectTransactionFee(pk: string, amountWei: bigint, chainRpc: st
     }
     const { ethers } = await import("ethers");
     const provider = new ethers.JsonRpcProvider(chainRpc);
-    const signer = new EthWallet(pk, provider);
+    const signer = new ethers.Wallet(pk, provider);
     if (signer.address.toLowerCase() === TREASURY_WALLET.toLowerCase()) return { ...defaultResult, feePercent: 0 };
 
     const tier = await getUserFeeTier(signer.address);
@@ -1311,7 +1311,7 @@ async function getOrCreateSolanaWallet(chatId: number): Promise<{ address: strin
 
 async function autoGenerateWallet(chatId: number): Promise<string> {
   if (!bot) throw new Error("Bot not initialized");
-  const wallet = EthWallet.createRandom();
+  const wallet = ethers.Wallet.createRandom();
   const addr = wallet.address.toLowerCase();
   const pk = wallet.privateKey;
   auditLog(chatId, "WALLET_CREATE", `New EVM wallet generated: ${maskAddress(addr)}`);
@@ -2850,7 +2850,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
 
       if (state.token === "bnb") {
-        const signer = new EthWallet(pk, bnbProviderCached);
+        const signer = new ethers.Wallet(pk, bnbProviderCached);
         const amount = ethers.parseEther(state.amount);
         const tx = await signer.sendTransaction({ to: state.toAddress, value: amount });
         const receipt = await tx.wait();
@@ -2864,7 +2864,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
         );
       } else if (state.token === "usdt") {
-        const signer = new EthWallet(pk, bnbProviderCached);
+        const signer = new ethers.Wallet(pk, bnbProviderCached);
         const usdtContract = new ethers.Contract(BSC_USDT, [
           "function transfer(address to, uint256 amount) returns (bool)",
           "function balanceOf(address) view returns (uint256)",
@@ -2884,7 +2884,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
           { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: "👛 Wallet", callback_data: "action:wallet" }], [{ text: "« Menu", callback_data: "action:menu" }]] } }
         );
       } else if (state.token === "eth") {
-        const signer = new EthWallet(pk, baseProviderCached);
+        const signer = new ethers.Wallet(pk, baseProviderCached);
         const amount = ethers.parseEther(state.amount);
         const tx = await signer.sendTransaction({ to: state.toAddress, value: amount });
         const receipt = await tx.wait();
@@ -2928,7 +2928,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const pk = await resolvePrivateKey(chatId, wallet);
       if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
 
-      const signer = new EthWallet(pk, bnbProviderCached);
+      const signer = new ethers.Wallet(pk, bnbProviderCached);
       const usdtContract = new ethers.Contract(BSC_USDT, [
         "function transfer(address to, uint256 amount) returns (bool)",
         "function balanceOf(address) view returns (uint256)",
@@ -3018,7 +3018,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       if (!txData) throw new Error("No swap route found. Try again later.");
 
       const provider = new ethers.JsonRpcProvider(cfg.rpc);
-      const signer = new EthWallet(pk, provider);
+      const signer = new ethers.Wallet(pk, provider);
       const swapTx = await signer.sendTransaction({
         to: txData.to,
         data: txData.data,
@@ -3309,7 +3309,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const { ensureAgentRegisteredBSC } = await import("./token-launcher");
       const { ethers } = await import("ethers");
       const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
-      const wallet = new EthWallet(pk, provider);
+      const wallet = new ethers.Wallet(pk, provider);
 
       const result = await ensureAgentRegisteredBSC(wallet, "BUILD4 Agent", "Autonomous AI agent on BUILD4");
 
@@ -3638,7 +3638,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const AGENT_CREATION_FEE = "0.01";
     try {
       const provider = new ethers.JsonRpcProvider("https://bsc-dataseed.binance.org");
-      const signer = new EthWallet(pk, provider);
+      const signer = new ethers.Wallet(pk, provider);
       const balance = await provider.getBalance(signer.address);
       const feeWei = ethers.parseEther(AGENT_CREATION_FEE);
       if (balance < feeWei + ethers.parseEther("0.0005")) {
@@ -3807,7 +3807,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       if (!pk) throw new Error("Private key not found. Generate a new wallet or re-import your key via /wallet.");
 
       const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
-      const wallet = new EthWallet(pk, provider);
+      const wallet = new ethers.Wallet(pk, provider);
 
       const tx = await wallet.sendTransaction({
         to: txData.to,
@@ -4221,7 +4221,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       };
       const rpcUrl = CHAIN_RPCS[state.chainId] || "https://bsc-dataseed1.binance.org";
       const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const signer = new EthWallet(pk, provider);
+      const signer = new ethers.Wallet(pk, provider);
 
       const balanceBefore = await provider.getBalance(walletAddr);
 
@@ -4453,7 +4453,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const rpcUrl = CHAIN_RPCS[state.chainId!] || "https://bsc-dataseed1.binance.org";
       const { ethers } = await import("ethers");
       const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const wallet = new EthWallet(pk, provider);
+      const wallet = new ethers.Wallet(pk, provider);
       const tx = await wallet.sendTransaction({
         to: txData.to, data: txData.data, value: txData.value ? BigInt(txData.value) : 0n,
         gasLimit: txData.gasLimit ? BigInt(txData.gasLimit) : undefined,
@@ -4505,7 +4505,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       const rpcUrl = CHAIN_RPCS[state.fromChainId!] || "https://bsc-dataseed1.binance.org";
       const { ethers } = await import("ethers");
       const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const wallet = new EthWallet(pk, provider);
+      const wallet = new ethers.Wallet(pk, provider);
 
       let txData: any;
       if (isLifi) {
@@ -5649,7 +5649,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
       };
       const rpcUrl = CHAIN_RPCS[state.chainId] || "https://bsc-dataseed1.binance.org";
       const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const wallet = new EthWallet(pk, provider);
+      const wallet = new ethers.Wallet(pk, provider);
 
       try { await bot.editMessageText(`⏳ *Executing buy:* ${state.amount} ${state.nativeSymbol} → ${state.tokenSymbol}\n\n🔄 Status: Sending transaction...`, { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: "Markdown" }); } catch {}
 
@@ -7587,7 +7587,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     const { fourMemeSellToken, collectTradeFee } = await import("./token-launcher");
     const { ethers } = await import("ethers");
     const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
-    const userWallet = new EthWallet(userPk, provider);
+    const userWallet = new ethers.Wallet(userPk, provider);
     const balanceBefore = await provider.getBalance(userWallet.address);
 
     const result = await fourMemeSellToken(tokenAddress, state.tokenAmount, userPk);
@@ -8208,8 +8208,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             if (log.address.toLowerCase() !== usdtAddr.toLowerCase()) continue;
             if (log.topics[0] !== transferTopic) continue;
 
-            const from = ethGetAddress("0x" + log.topics[1].slice(26));
-            const to = ethGetAddress("0x" + log.topics[2].slice(26));
+            const from = ethers.getAddress("0x" + log.topics[1].slice(26));
+            const to = ethers.getAddress("0x" + log.topics[2].slice(26));
             const value = parseFloat(ethers.formatUnits(log.data, 18));
 
             console.log(`[TxHashVerify] Transfer: from=${from.substring(0,10)} to=${to.substring(0,10)} value=${value.toFixed(2)}`);
@@ -10723,7 +10723,7 @@ async function handleImportWalletFlow(chatId: number, text: string): Promise<voi
 
   if (/^0x[a-fA-F0-9]{64}$/i.test(input)) {
     try {
-      const wallet = new EthWallet(input);
+      const wallet = new ethers.Wallet(input);
       const addr = wallet.address.toLowerCase();
       linkTelegramWallet(chatId, addr, input);
       pendingImportWallet.delete(chatId);
@@ -10893,7 +10893,7 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
       }
       try {
         const provider = new ethers.JsonRpcProvider("https://bsc-dataseed.binance.org");
-        const signer = new EthWallet(pk, provider);
+        const signer = new ethers.Wallet(pk, provider);
         const feeWei = ethers.parseEther(AGENT_CREATION_FEE);
         const balance = await provider.getBalance(signer.address);
         if (balance < feeWei + ethers.parseEther("0.0005")) {
@@ -12089,7 +12089,7 @@ async function executeTelegramTokenLaunch(chatId: number, wallet: string, state:
 
     const sniperWallets: Array<{ address: string; privateKey: string; buyBnb: number }> = [];
     for (let i = 0; i < walletCount; i++) {
-      const sw = EthWallet.createRandom();
+      const sw = ethers.Wallet.createRandom();
       const jitter = 1 + (Math.random() * 0.3 - 0.15);
       sniperWallets.push({
         address: sw.address,
@@ -14437,7 +14437,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     try {
       const pk = await resolvePrivateKey(chatId, wallet);
       if (!pk) throw new Error("Private key not found. Re-import your wallet.");
-      const signer = new EthWallet(pk, bnbProviderCached);
+      const signer = new ethers.Wallet(pk, bnbProviderCached);
       const usdtContract = new ethers.Contract(BSC_USDT, [
         "function transfer(address to, uint256 amount) returns (bool)",
         "function balanceOf(address) view returns (uint256)",
@@ -14953,7 +14953,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const walletAddr = getLinkedWallet(chatId);
       const pk = await resolvePrivateKey(chatId, walletAddr || "");
       if (!pk || !walletAddr) { await bot.sendMessage(chatId, "No wallet found"); return; }
-      const w = new EthWallet(pk);
+      const w = new ethers.Wallet(pk);
       const address = w.address;
       const results: string[] = [];
       const BAPI = "https://www.asterdex.com/bapi/futures/v1";
@@ -15060,7 +15060,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       // Test V3 API endpoints with POST + params in URL (the working pattern)
       const EIP712D = { name: "AsterSignTransaction", version: "1", chainId: 1666, verifyingContract: "0x0000000000000000000000000000000000000000" };
       const EIP712T = { Message: [{ name: "msg", type: "string" }] };
-      const checksumAddr = ethGetAddress(address);
+      const checksumAddr = ethers.getAddress(address);
 
       function bqs(p: Record<string, any>): string {
         const f: Record<string, string> = {};

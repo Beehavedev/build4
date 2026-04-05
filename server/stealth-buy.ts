@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import * as ethers from "ethers";
 import { log } from "./index";
 
 const BASE_RPC = "https://mainnet.base.org";

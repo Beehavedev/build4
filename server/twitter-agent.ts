@@ -1,7 +1,7 @@
 import { storage } from "./storage";
 import { isTwitterConfigured, postTweet, getReplies, replyToTweet, getAccountInfo, getMentions, type TweetReply } from "./twitter-client";
 import { runInferenceWithFallback } from "./inference";
-import { ethers } from "ethers";
+import * as ethers from "ethers";
 
 import type { TwitterAgentPersonality } from "@shared/schema";
 
