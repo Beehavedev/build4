@@ -8,12 +8,29 @@ export function registerMiniAppRoutes(app: Express) {
       const chatId = req.headers["x-telegram-chat-id"] as string;
       if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
       const client = await getAsterClient(parseInt(chatId));
-      if (!client) return res.json({ error: "No client" });
+      if (!client) return res.json({ error: "No Aster client — check ASTER_PRIVATE_KEY, ASTER_USER_ADDRESS, ASTER_SIGNER_ADDRESS env vars" });
       const fc = client.futures || client;
+      const mode = client.mode || "unknown";
+      const hasSpot = !!client.spot;
       let balRaw: any = null, acctRaw: any = null, balErr: string | null = null, acctErr: string | null = null;
-      try { balRaw = await fc.balance(); } catch(e: any) { balErr = e.message?.substring(0, 300); }
-      try { acctRaw = await fc.account(); } catch(e: any) { acctErr = e.message?.substring(0, 300); }
-      res.json({ balRaw, acctRaw, balErr, acctErr });
+      try { balRaw = await fc.balance(); } catch(e: any) { balErr = e.message?.substring(0, 500); }
+      try { acctRaw = await fc.account(); } catch(e: any) { acctErr = e.message?.substring(0, 500); }
+
+      let parsed = { availBal: 0, walletBal: 0 };
+      if (Array.isArray(balRaw)) {
+        const usdt = balRaw.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+        if (usdt) {
+          parsed.availBal = parseFloat(usdt.availableBalance || usdt.crossWalletBalance || "0");
+          parsed.walletBal = parseFloat(usdt.balance || usdt.walletBalance || "0");
+        }
+      }
+      if (acctRaw && parsed.walletBal === 0) {
+        if (acctRaw.totalWalletBalance) parsed.walletBal = parseFloat(acctRaw.totalWalletBalance);
+        if (acctRaw.availableBalance) parsed.availBal = parseFloat(acctRaw.availableBalance);
+        if (acctRaw.maxWithdrawAmount) parsed.availBal = Math.max(parsed.availBal, parseFloat(acctRaw.maxWithdrawAmount));
+      }
+
+      res.json({ mode, hasSpot, balRaw, acctRaw, balErr, acctErr, parsed });
     } catch(e: any) { res.status(500).json({ error: e.message }); }
   });
 
