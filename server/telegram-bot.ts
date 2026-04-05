@@ -13116,6 +13116,18 @@ async function initOwnerAsterClient(): Promise<any> {
   if (ownerClientInitAttempted) return null;
   ownerClientInitAttempted = true;
 
+  const apiKey = process.env.ASTER_API_KEY;
+  const apiSecret = process.env.ASTER_API_SECRET;
+
+  if (apiKey && apiSecret) {
+    const { createAsterFuturesClient, createAsterSpotClient } = await import("./aster-client");
+    const futures = createAsterFuturesClient({ apiKey, apiSecret });
+    const spot = createAsterSpotClient({ apiKey, apiSecret });
+    cachedOwnerClient = { futures, spot, mode: "HMAC" };
+    console.log(`[Aster] Owner HMAC client initialized (apiKey=${apiKey.substring(0, 8)}...)`);
+    return cachedOwnerClient;
+  }
+
   const apiWalletKey = process.env.ASTER_API_WALLET_KEY;
   const userAddress = process.env.ASTER_USER_ADDRESS;
   const signerAddress = process.env.ASTER_SIGNER_ADDRESS;
@@ -13127,11 +13139,11 @@ async function initOwnerAsterClient(): Promise<any> {
       signer: signerAddress,
       signerPrivateKey: apiWalletKey,
     });
-    cachedOwnerClient = { futures, spot: null };
+    cachedOwnerClient = { futures, spot: null, mode: "V3" };
     console.log(`[Aster] Owner V3 client initialized: user=${userAddress.substring(0, 10)}... signer=${signerAddress.substring(0, 10)}...`);
     return cachedOwnerClient;
   }
-  console.log(`[Aster] No owner API wallet configured (ASTER_API_WALLET_KEY, ASTER_USER_ADDRESS, ASTER_SIGNER_ADDRESS)`);
+  console.log(`[Aster] No owner API configured. Set ASTER_API_KEY+ASTER_API_SECRET (HMAC) or ASTER_API_WALLET_KEY+ASTER_USER_ADDRESS+ASTER_SIGNER_ADDRESS (V3)`);
   return null;
 }
 
@@ -13204,82 +13216,97 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   }
 
   if (action === "test_connection") {
-    await bot.sendMessage(chatId, "⏳ Testing Aster API connection...");
+    await bot.sendMessage(chatId, "Testing Aster API connection...");
     try {
-      const futuresClient = client.futures || client;
+      if (!cachedOwnerClient) {
+        ownerClientInitAttempted = false;
+        await initOwnerAsterClient();
+      }
+      const asterClient = await getAsterClient(chatId);
+      if (!asterClient) {
+        await bot.sendMessage(chatId,
+          "No Aster API configured.\n\nSet up your connection:\n" +
+          "1. Go to asterdex.com/en/api-wallet\n" +
+          "2. Create a Pro API Wallet\n" +
+          "3. Add ASTER_API_KEY and ASTER_API_SECRET to Render env vars\n" +
+          "4. Redeploy and test again",
+          { reply_markup: { inline_keyboard: [
+            [{ text: "Connect with API Key", callback_data: "aster:connect" }],
+            [{ text: "Test Again", callback_data: "aster:test_connection" }],
+            [{ text: "Back", callback_data: "action:aster" }],
+          ] } }
+        );
+        return;
+      }
 
+      const futuresClient = asterClient.futures || asterClient;
+      const mode = asterClient.mode || "Unknown";
       const results: string[] = [];
 
       try {
         const pingOk = await futuresClient.ping();
-        results.push(`✅ Ping: ${pingOk ? "OK" : "Failed"}`);
+        results.push(`Ping: ${pingOk ? "OK" : "Failed"}`);
       } catch (e: any) {
-        results.push(`❌ Ping: ${e.message?.substring(0, 80)}`);
+        results.push(`Ping FAILED: ${e.message?.substring(0, 80)}`);
       }
 
       try {
         const bal = await futuresClient.balance();
         if (Array.isArray(bal)) {
           const usdt = bal.find((b: any) => b.asset === "USDT" || b.asset === "usdt");
-          results.push(`✅ Balance: ${usdt ? `$${parseFloat(usdt.availableBalance || usdt.balance || "0").toFixed(2)} USDT` : `${bal.length} assets found`}`);
+          results.push(`Balance: ${usdt ? `$${parseFloat(usdt.availableBalance || usdt.balance || "0").toFixed(2)} USDT` : `${bal.length} assets found`}`);
         } else {
-          results.push(`⚠️ Balance: Unexpected response`);
+          results.push(`Balance: Unexpected response format`);
         }
       } catch (e: any) {
-        results.push(`❌ Balance: ${e.message?.substring(0, 100)}`);
+        const msg = e.message || "";
+        if (msg.toLowerCase().includes("no aster user found") || msg.toLowerCase().includes("user not found")) {
+          results.push(`Balance FAILED: No Aster user found - create Pro API Wallet at asterdex.com/en/api-wallet`);
+        } else if (msg.toLowerCase().includes("api-key format invalid")) {
+          results.push(`Balance FAILED: API Key format invalid - check your key`);
+        } else {
+          results.push(`Balance FAILED: ${msg.substring(0, 120)}`);
+        }
       }
 
       try {
         const pos = await futuresClient.positions();
         const activePos = Array.isArray(pos) ? pos.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0) : [];
-        results.push(`✅ Positions: ${activePos.length} open`);
+        results.push(`Positions: ${activePos.length} open`);
       } catch (e: any) {
-        results.push(`❌ Positions: ${e.message?.substring(0, 100)}`);
+        results.push(`Positions FAILED: ${e.message?.substring(0, 100)}`);
       }
 
       try {
         const ticker = await futuresClient.tickerPrice("BTCUSDT");
-        results.push(`✅ Market Data: BTC $${parseFloat(ticker?.price || "0").toFixed(0)}`);
+        const price = ticker?.price || ticker?.lastPrice || (Array.isArray(ticker) ? ticker[0]?.price : null);
+        results.push(`Market Data: BTC $${parseFloat(price || "0").toFixed(0)}`);
       } catch (e: any) {
-        results.push(`❌ Market Data: ${e.message?.substring(0, 80)}`);
+        results.push(`Market Data FAILED: ${e.message?.substring(0, 80)}`);
       }
 
-      let creds2: any = null;
-      try { creds2 = await storage.getAsterCredentials(chatId.toString()); } catch {}
-      const mode = creds2?.apiKey === "V3_DIRECT" ? "V3 Direct" : "API Wallet (HMAC)";
-
-      let msg = `🔧 *API Connection Test*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
-      msg += `Mode: *${mode}*\n\n`;
+      const hasErrors = results.some(r => r.includes("FAILED"));
+      let msg = `API Connection Test\nMode: ${mode}\n\n`;
       msg += results.join("\n") + "\n\n";
 
-      const hasErrors = results.some(r => r.startsWith("❌"));
       if (hasErrors) {
-        msg += `⚠️ Some endpoints failed.\n`;
-        if (mode === "V3 Direct") {
-          msg += `\nYou're using V3 Direct mode. For full API access, switch to API Wallet mode:\n`;
-          msg += `1. Create an API Wallet on Aster DEX\n`;
-          msg += `2. Reconnect with your API Key + Secret\n`;
-          msg += `\nTap "Reconnect" below to set up API Wallet.`;
-        } else {
-          msg += `Check your API Key and Secret. They may be expired or have insufficient permissions.`;
-        }
+        msg += `Some endpoints failed. Check your API Key and Secret, or recreate your Pro API Wallet at asterdex.com/en/api-wallet`;
       } else {
-        msg += `✅ All systems operational!`;
+        msg += `All systems operational!`;
       }
 
       await bot.sendMessage(chatId, msg, {
-        parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            ...(hasErrors ? [[{ text: "🔑 Reconnect", callback_data: "aster:connect" }]] : []),
-            [{ text: "🔄 Test Again", callback_data: "aster:test_connection" }],
-            [{ text: "« Aster Menu", callback_data: "action:aster" }],
+            ...(hasErrors ? [[{ text: "Reconnect", callback_data: "aster:connect" }]] : []),
+            [{ text: "Test Again", callback_data: "aster:test_connection" }],
+            [{ text: "Aster Menu", callback_data: "action:aster" }],
           ],
         },
       });
     } catch (e: any) {
-      await bot.sendMessage(chatId, `❌ Connection test failed: ${e.message?.substring(0, 200)}\n\nMake sure you've connected your API Key.`, {
-        reply_markup: { inline_keyboard: [[{ text: "🔑 Connect", callback_data: "aster:connect" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+      await bot.sendMessage(chatId, `Connection test failed: ${e.message?.substring(0, 200)}\n\nMake sure you've set ASTER_API_KEY and ASTER_API_SECRET in Render env vars.`, {
+        reply_markup: { inline_keyboard: [[{ text: "Connect", callback_data: "aster:connect" }], [{ text: "Aster Menu", callback_data: "action:aster" }]] },
       });
     }
     return;
@@ -14688,16 +14715,51 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   if (action === "balance") {
     await bot.sendMessage(chatId, "Loading Aster account summary...");
     try {
-      const futuresClient = client.futures || client;
-      const wallet = getLinkedWallet(chatId);
-      const localPositions = await storage.getAsterLocalPositions(chatId.toString());
-      const allTrades = await storage.getAsterLocalTrades(chatId.toString());
+      const asterClient = await getAsterClient(chatId);
+      if (!asterClient) {
+        await bot.sendMessage(chatId, "No Aster API connected. Use Test Connection first.", {
+          reply_markup: { inline_keyboard: [[{ text: "Test Connection", callback_data: "aster:test_connection" }], [{ text: "Aster Menu", callback_data: "action:aster" }]] },
+        });
+        return;
+      }
+      const futuresClient = asterClient.futures || asterClient;
 
+      let balanceData: any[] = [];
+      let usdtBalance = 0;
+      let availableBalance = 0;
+      let crossUnPnl = 0;
+      let walletBalance = 0;
+      try {
+        balanceData = await futuresClient.balance();
+        if (Array.isArray(balanceData)) {
+          const usdt = balanceData.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+          if (usdt) {
+            usdtBalance = parseFloat(usdt.balance || usdt.crossWalletBalance || "0");
+            availableBalance = parseFloat(usdt.availableBalance || "0");
+            crossUnPnl = parseFloat(usdt.crossUnPnl || "0");
+            walletBalance = parseFloat(usdt.crossWalletBalance || usdt.balance || "0");
+          }
+        }
+      } catch {}
+
+      let positions: any[] = [];
+      let totalUpnl = 0;
+      try {
+        const allPos = await futuresClient.positions();
+        if (Array.isArray(allPos)) {
+          positions = allPos.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0);
+          for (const p of positions) {
+            totalUpnl += parseFloat(p.unRealizedProfit || "0");
+          }
+        }
+      } catch {}
+
+      const wallet = getLinkedWallet(chatId);
       let walletUsdt = 0;
       let walletBnb = 0;
       if (wallet) {
         try {
-          const [usdtBal, bnbBal] = await Promise.all([
+          const [uBal, bBal] = await Promise.all([
             (async () => {
               const c = new ethers.Contract(BSC_USDT, ["function balanceOf(address) view returns (uint256)"], bnbProviderCached);
               return parseFloat(ethers.formatUnits(await c.balanceOf(wallet), 18));
@@ -14707,71 +14769,53 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
               return parseFloat(ethers.formatEther(b));
             })(),
           ]);
-          walletUsdt = usdtBal;
-          walletBnb = bnbBal;
+          walletUsdt = uBal;
+          walletBnb = bBal;
         } catch {}
       }
 
-      const deposits = allTrades.filter((t: any) => t.type === "DEPOSIT");
-      const totalDeposited = deposits.reduce((sum: number, t: any) => sum + (t.price || 0), 0);
+      let msg = `Aster DEX - Account Status\n\n`;
 
-      let marginUsed = 0;
-      let totalUpnl = 0;
-      for (const p of localPositions) {
-        marginUsed += (p.quantity * p.entryPrice) / (p.leverage || 1);
-        let markPrice = 0;
-        try {
-          const ticker = await futuresClient.tickerPrice(p.symbol);
-          markPrice = parseFloat(ticker?.price || "0");
-        } catch {}
-        if (markPrice > 0) {
-          totalUpnl += p.side === "LONG"
-            ? (markPrice - p.entryPrice) * p.quantity
-            : (p.entryPrice - markPrice) * p.quantity;
+      msg += `Futures Account (USDT)\n`;
+      msg += `  Wallet Balance: $${walletBalance.toFixed(2)}\n`;
+      msg += `  Available: $${availableBalance.toFixed(2)}\n`;
+      msg += `  Unrealized PnL: ${crossUnPnl >= 0 ? "+" : ""}$${crossUnPnl.toFixed(2)}\n\n`;
+
+      if (positions.length > 0) {
+        msg += `Open Positions: ${positions.length}\n`;
+        for (const p of positions) {
+          const amt = parseFloat(p.positionAmt || "0");
+          const side = amt > 0 ? "LONG" : "SHORT";
+          const entry = parseFloat(p.entryPrice || "0");
+          const mark = parseFloat(p.markPrice || "0");
+          const upnl = parseFloat(p.unRealizedProfit || "0");
+          const lev = p.leverage || "?";
+          msg += `  ${p.symbol} ${side} ${lev}x\n`;
+          msg += `    Entry: $${entry.toFixed(2)} | Mark: $${mark.toFixed(2)}\n`;
+          msg += `    PnL: ${upnl >= 0 ? "+" : ""}$${upnl.toFixed(2)}\n`;
         }
-      }
-
-      const availableMargin = Math.max(totalDeposited - marginUsed, 0);
-
-      let msg = `💰 *Aster DEX — Account Status*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
-
-      msg += `💳 *Spot / Wallet Balance (BSC)*\n`;
-      msg += `  USDT: \`$${walletUsdt.toFixed(2)}\`\n`;
-      msg += `  BNB: \`${walletBnb.toFixed(4)}\`\n`;
-      if (wallet) msg += `  Address: \`${wallet.substring(0, 8)}...${wallet.substring(38)}\`\n`;
-      msg += `\n`;
-
-      msg += `🏦 *Futures Vault Margin*\n`;
-      msg += `  Total Deposited: \`$${totalDeposited.toFixed(2)}\`\n`;
-      msg += `  Margin in Use: \`$${marginUsed.toFixed(2)}\`\n`;
-      msg += `  Available: \`$${availableMargin.toFixed(2)}\`\n`;
-      msg += `\n`;
-
-      if (localPositions.length > 0) {
-        msg += `📊 *Open Positions: ${localPositions.length}*\n`;
-        for (const p of localPositions) {
-          msg += `  ${p.side === "LONG" ? "🟢" : "🔴"} ${p.symbol} ${p.side} ${p.leverage}x — qty \`${p.quantity}\`\n`;
-        }
-        msg += `${totalUpnl >= 0 ? "📈" : "📉"} Unrealized PnL: \`${totalUpnl >= 0 ? "+" : ""}$${totalUpnl.toFixed(2)}\`\n`;
+        msg += `\n`;
       } else {
-        msg += `📊 No open positions.\n`;
+        msg += `No open positions.\n\n`;
       }
 
-      msg += `\n📋 Trades tracked: \`${allTrades.length}\`\n`;
+      if (wallet) {
+        msg += `BSC Wallet\n`;
+        msg += `  USDT: $${walletUsdt.toFixed(2)}\n`;
+        msg += `  BNB: ${walletBnb.toFixed(4)}\n`;
+        msg += `  ${wallet.substring(0, 8)}...${wallet.substring(38)}\n\n`;
+      }
 
-      if (totalDeposited === 0 && walletUsdt < 1) {
-        msg += `\n⚠️ *No margin deposited.* Use Fund Account to deposit USDT into the futures vault.`;
-      } else if (totalDeposited === 0 && walletUsdt >= 1) {
-        msg += `\n💡 You have \`$${walletUsdt.toFixed(2)}\` USDT ready to deposit! Tap Fund Account.`;
+      if (walletBalance < 1 && walletUsdt < 1) {
+        msg += `No margin deposited. Use Fund Account to deposit USDT.`;
       }
 
       await bot.sendMessage(chatId, msg, {
-        parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "💵 Fund Account", callback_data: "aster:fund" }, { text: "📊 Positions", callback_data: "aster:positions" }],
-            [{ text: "📈 PnL", callback_data: "aster:pnl" }, { text: "🔄 Refresh", callback_data: "aster:balance" }],
-            [{ text: "« Aster Menu", callback_data: "action:aster" }],
+            [{ text: "Fund Account", callback_data: "aster:fund" }, { text: "Positions", callback_data: "aster:positions" }],
+            [{ text: "Refresh", callback_data: "aster:balance" }],
+            [{ text: "Aster Menu", callback_data: "action:aster" }],
           ],
         },
       });
@@ -15152,62 +15196,60 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   if (action === "positions") {
     await bot.sendMessage(chatId, "Loading futures positions...");
     try {
-      const localPositions = await storage.getAsterLocalPositions(chatId.toString());
+      const asterClient = await getAsterClient(chatId);
+      const futuresClient = asterClient?.futures || asterClient;
 
-      if (localPositions.length === 0) {
-        await bot.sendMessage(chatId, `No open positions tracked.\n\nPositions are tracked from orders placed through this bot.`, {
+      let apiPositions: any[] = [];
+      if (futuresClient) {
+        try {
+          const allPos = await futuresClient.positions();
+          if (Array.isArray(allPos)) {
+            apiPositions = allPos.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0);
+          }
+        } catch {}
+      }
+
+      if (apiPositions.length === 0) {
+        await bot.sendMessage(chatId, `No open positions.\n\nPlace a trade to get started.`, {
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🔄 New Trade", callback_data: "aster:trade_futures" }],
-              [{ text: "🔄 Refresh", callback_data: "aster:positions" }],
-              [{ text: "« Back", callback_data: "action:aster" }],
+              [{ text: "New Trade", callback_data: "aster:trade_futures" }],
+              [{ text: "Refresh", callback_data: "aster:positions" }],
+              [{ text: "Back", callback_data: "action:aster" }],
             ],
           },
         });
         return;
       }
 
-      const futuresClient = client.futures || client;
       const fmtP = (v: number) => v >= 1 ? v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : v.toPrecision(4);
-      let msg = `📊 *Futures Positions* (${localPositions.length})\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let msg = `Futures Positions (${apiPositions.length})\n\n`;
       let totalUpnl = 0;
       const closeButtons: TelegramBot.InlineKeyboardButton[][] = [];
 
-      for (const p of localPositions) {
-        const direction = p.side === "LONG" ? "🟢 LONG" : "🔴 SHORT";
-        let markPrice = 0;
-        try {
-          const ticker = await futuresClient.tickerPrice(p.symbol);
-          markPrice = parseFloat(ticker?.price || "0");
-        } catch { markPrice = 0; }
+      for (const p of apiPositions) {
+        const amt = parseFloat(p.positionAmt || "0");
+        const direction = amt > 0 ? "LONG" : "SHORT";
+        const entryPrice = parseFloat(p.entryPrice || "0");
+        const markPrice = parseFloat(p.markPrice || "0");
+        const upnl = parseFloat(p.unRealizedProfit || "0");
+        const lev = p.leverage || "?";
+        const notional = parseFloat(p.notional || "0");
 
-        const notional = p.quantity * (markPrice || p.entryPrice);
-        const margin = notional / p.leverage;
-        let upnl = 0;
-        if (markPrice > 0) {
-          upnl = p.side === "LONG"
-            ? (markPrice - p.entryPrice) * p.quantity
-            : (p.entryPrice - markPrice) * p.quantity;
-        }
         totalUpnl += upnl;
-        const roe = margin > 0 ? (upnl / margin * 100) : 0;
-        const pnlIcon = upnl >= 0 ? "📈" : "📉";
 
-        msg += `${direction} *${p.symbol}* ${p.leverage}x\n`;
-        msg += `   Size: \`${p.quantity}\` · Notional: \`$${fmtP(notional)}\`\n`;
-        msg += `   Entry: \`$${fmtP(p.entryPrice)}\``;
-        if (markPrice > 0) msg += ` → Mark: \`$${fmtP(markPrice)}\``;
-        msg += `\n`;
-        if (markPrice > 0) {
-          msg += `   ${pnlIcon} PnL: \`${upnl >= 0 ? "+" : ""}${upnl.toFixed(2)} USDT\` · ROE: \`${roe >= 0 ? "+" : ""}${roe.toFixed(1)}%\`\n`;
-        }
-        msg += "\n";
+        const margin = Math.abs(notional) / parseFloat(lev || "1");
+        const roe = margin > 0 ? (upnl / margin * 100) : 0;
+
+        msg += `${direction} ${p.symbol} ${lev}x\n`;
+        msg += `  Size: ${Math.abs(amt)} | Notional: $${fmtP(Math.abs(notional))}\n`;
+        msg += `  Entry: $${fmtP(entryPrice)} | Mark: $${fmtP(markPrice)}\n`;
+        msg += `  PnL: ${upnl >= 0 ? "+" : ""}${upnl.toFixed(2)} USDT (${roe >= 0 ? "+" : ""}${roe.toFixed(1)}%)\n\n`;
+
         const base = p.symbol.replace("USDT", "");
-        closeButtons.push([{ text: `❌ Close ${base}`, callback_data: `aster:close_pos_${p.symbol}` }]);
+        closeButtons.push([{ text: `Close ${base}`, callback_data: `aster:close_pos_${p.symbol}` }]);
       }
-      msg += `━━━━━━━━━━━━━━━━━━━━\n`;
-      msg += `Total uPnL: \`${totalUpnl >= 0 ? "+" : ""}${totalUpnl.toFixed(2)} USDT\`\n`;
-      msg += `_Tracked from bot orders + live prices_`;
+      msg += `Total uPnL: ${totalUpnl >= 0 ? "+" : ""}${totalUpnl.toFixed(2)} USDT`;
 
       const buttons: TelegramBot.InlineKeyboardButton[][] = [
         ...closeButtons,
