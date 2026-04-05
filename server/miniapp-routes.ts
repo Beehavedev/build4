@@ -175,10 +175,13 @@ export function registerMiniAppRoutes(app: Express) {
       if (!amount || amount < 0.5) return res.status(400).json({ error: "Minimum deposit is $0.50" });
 
       console.log(`[MiniApp] deposit request chatId=${chatId}, amount=${amount}`);
-      const walletRows = await storage.getTelegramWallets(chatId);
-      if (walletRows.length === 0) return res.status(400).json({ error: "No wallet linked to this chat. Use /start in the bot first." });
 
-      const walletAddr = walletRows[0].walletAddress;
+      const activeWallet = getUserWalletAddress(parseInt(chatId));
+      const walletRows = await storage.getTelegramWallets(chatId);
+      const walletAddr = activeWallet || (walletRows.length > 0 ? walletRows[0].walletAddress : null);
+      if (!walletAddr) return res.status(400).json({ error: "No wallet linked to this chat. Use /start in the bot first." });
+
+      console.log(`[MiniApp] deposit: activeWallet=${activeWallet}, dbFirst=${walletRows[0]?.walletAddress}, using=${walletAddr}`);
 
       const rawPk = await resolvePrivateKey(parseInt(chatId), walletAddr);
       if (!rawPk) return res.status(400).json({ error: "No private key available for auto-deposit. Send USDT manually to the vault address shown below." });
