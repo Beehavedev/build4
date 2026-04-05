@@ -10652,22 +10652,25 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     if (cmd === "deposit") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for deposit instructions!"); return; }
       const wallet = getLinkedWallet(chatId);
-      let msg = "Deposit USDT to Aster DEX Futures Vault\n\n";
+      let msg = "💰 Deposit USDT to Aster Futures (100% in-bot guided)\n\n";
+      msg += "Send your USDT here:\n\n";
       msg += "Network: BNB Smart Chain (BSC)\n";
       msg += "Token: USDT (BEP-20)\n\n";
-      msg += "Treasury / Vault Address:\n";
+      msg += "Vault / Treasury Address:\n";
       msg += "0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\n\n";
-      msg += "Steps:\n";
-      msg += "1. Open MetaMask / Trust Wallet / your wallet app\n";
-      msg += "2. Switch to BNB Smart Chain\n";
-      msg += "3. Send USDT (BEP-20) to the address above\n";
-      msg += "4. Wait 30-90 seconds for confirmation\n";
-      msg += "5. Come back here and type /status\n\n";
-      msg += "The bot will check your futures margin automatically.\n\n";
-      msg += "Warning: Only send USDT on BSC. Wrong network/token = risk of lost funds.\n";
-      msg += "You can try a small test amount first (e.g. $5-10).\n";
+      msg += "Exact Steps in your wallet (MetaMask / Trust Wallet etc.):\n";
+      msg += "1. Switch to BNB Smart Chain\n";
+      msg += "2. Select USDT\n";
+      msg += "3. Paste the address above\n";
+      msg += "4. Enter amount (e.g. 10)\n";
+      msg += "5. Send the transaction\n\n";
+      msg += "After sending:\n";
+      msg += "- Wait 1-3 minutes\n";
+      msg += "- Type /status here — the bot will refresh your futures margin\n\n";
+      msg += "If it still shows $0 after 5 minutes, reply with your transaction hash and I'll help you with the next step (internal Spot -> Futures transfer guide).\n\n";
+      msg += "⚠️ Only send USDT on BSC. Wrong network = funds at risk.";
       if (wallet) {
-        msg += `\nYour linked wallet: ${wallet.substring(0, 8)}...${wallet.substring(38)}`;
+        msg += `\n\nYour linked wallet: ${wallet.substring(0, 8)}...${wallet.substring(38)}`;
       }
       await bot.sendMessage(chatId, msg, {
         reply_markup: {
@@ -13550,22 +13553,25 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
   if (action === "deposit_info") {
     const wallet = getLinkedWallet(chatId);
-    let msg = "Deposit USDT to Aster DEX Futures Vault\n\n";
+    let msg = "💰 Deposit USDT to Aster Futures (100% in-bot guided)\n\n";
+    msg += "Send your USDT here:\n\n";
     msg += "Network: BNB Smart Chain (BSC)\n";
     msg += "Token: USDT (BEP-20)\n\n";
-    msg += "Treasury / Vault Address:\n";
+    msg += "Vault / Treasury Address:\n";
     msg += "0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\n\n";
-    msg += "Steps:\n";
-    msg += "1. Open MetaMask / Trust Wallet / your wallet app\n";
-    msg += "2. Switch to BNB Smart Chain\n";
-    msg += "3. Send USDT (BEP-20) to the address above\n";
-    msg += "4. Wait 30-90 seconds for confirmation\n";
-    msg += "5. Come back here and type /status\n\n";
-    msg += "The bot will check your futures margin automatically.\n\n";
-    msg += "Warning: Only send USDT on BSC. Wrong network/token = risk of lost funds.\n";
-    msg += "You can try a small test amount first (e.g. $5-10).\n";
+    msg += "Exact Steps in your wallet (MetaMask / Trust Wallet etc.):\n";
+    msg += "1. Switch to BNB Smart Chain\n";
+    msg += "2. Select USDT\n";
+    msg += "3. Paste the address above\n";
+    msg += "4. Enter amount (e.g. 10)\n";
+    msg += "5. Send the transaction\n\n";
+    msg += "After sending:\n";
+    msg += "- Wait 1-3 minutes\n";
+    msg += "- Type /status here — the bot will refresh your futures margin\n\n";
+    msg += "If it still shows $0 after 5 minutes, reply with your transaction hash and I'll help you with the next step (internal Spot -> Futures transfer guide).\n\n";
+    msg += "⚠️ Only send USDT on BSC. Wrong network = funds at risk.";
     if (wallet) {
-      msg += `\nYour wallet: ${wallet.substring(0, 8)}...${wallet.substring(38)}`;
+      msg += `\n\nYour wallet: ${wallet.substring(0, 8)}...${wallet.substring(38)}`;
     }
     await bot.sendMessage(chatId, msg, {
       reply_markup: {
@@ -15099,11 +15105,12 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       }
 
       if (walletBalance < 1 && walletUsdt < 1) {
-        msg += `No margin deposited.\n\n`;
-        msg += `To start trading, deposit USDT into the Futures Vault.\n`;
+        msg += `Your Futures Available Balance: $0.00\n\n`;
+        msg += `Send USDT here to start trading:\n`;
         msg += `Network: BNB Smart Chain (BSC) | Token: USDT (BEP-20)\n`;
-        msg += `Vault: 0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\n`;
-        msg += `Or use Fund Account below for in-bot deposit.`;
+        msg += `Vault: 0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\n\n`;
+        msg += `After sending, type /status to refresh.\n`;
+        msg += `If still $0 after 5 min, reply with your tx hash for help.`;
       }
 
       await bot.sendMessage(chatId, msg, {
@@ -16135,21 +16142,22 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         } catch {}
         userMsg = `❌ *Insufficient Margin*\n\n` +
           `Your Futures Available Balance: *$0.00 USDT*${marginInfo}\n\n` +
-          `To start trading you need to deposit USDT into the *Futures Vault*.\n\n` +
-          `*Deposit Instructions (do this in your wallet):*\n\n` +
+          `*Send your USDT here:*\n\n` +
           `Network: *BNB Smart Chain (BSC)*\n` +
           `Token: *USDT (BEP-20)*\n\n` +
-          `Treasury / Vault Address:\n` +
+          `*Vault / Treasury Address:*\n` +
           `\`0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\`\n\n` +
-          `*Steps:*\n` +
-          `1. Open MetaMask / Trust Wallet / your wallet app\n` +
-          `2. Switch to *BNB Smart Chain*\n` +
-          `3. Send *USDT (BEP-20)* to the address above\n` +
-          `4. Wait 30-90 seconds for confirmation\n` +
-          `5. Come back here and type */status*\n\n` +
-          `The bot will check your futures margin automatically.\n\n` +
-          `⚠️ Only send USDT on BSC. Wrong network/token = risk of lost funds.\n` +
-          `You can try a small test amount first (e.g. $5-10).`;
+          `*Exact Steps in your wallet (MetaMask / Trust Wallet etc.):*\n` +
+          `1. Switch to *BNB Smart Chain*\n` +
+          `2. Select *USDT*\n` +
+          `3. Paste the address above\n` +
+          `4. Enter amount (e.g. 10)\n` +
+          `5. Send the transaction\n\n` +
+          `*After sending:*\n` +
+          `- Wait 1-3 minutes\n` +
+          `- Type */status* here — the bot will refresh your futures margin\n\n` +
+          `If it still shows $0 after 5 minutes, reply with your transaction hash and I'll help you with the next step (internal Spot -> Futures transfer guide).\n\n` +
+          `⚠️ Only send USDT on BSC. Wrong network = funds at risk.`;
       } else if (errMsg.includes("-1121") || errMsg.toLowerCase().includes("invalid symbol")) {
         userMsg = `❌ *Invalid Symbol*\n\nThe pair \`${state.symbol}\` is not available on Aster DEX. Check the Markets page for available pairs.`;
       } else if (errMsg.includes("-4003") || errMsg.toLowerCase().includes("quantity") || errMsg.includes("LOT_SIZE") || errMsg.includes("MIN_NOTIONAL")) {
