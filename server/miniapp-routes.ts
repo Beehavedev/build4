@@ -181,11 +181,21 @@ export function registerMiniAppRoutes(app: Express) {
       const walletAddr = walletRows[0].walletAddress;
 
       const rawPk = await resolvePrivateKey(parseInt(chatId), walletAddr);
-      if (!rawPk) return res.status(400).json({ error: "No private key available for auto-deposit. Use the bot /fund command instead." });
+      if (!rawPk) return res.status(400).json({ error: "No private key available for auto-deposit. Send USDT manually to the vault address shown below." });
 
       const ethers = await import("ethers");
       const pkWallet = new ethers.Wallet(rawPk);
-      console.log(`[MiniApp] deposit: stored wallet=${walletAddr}, key derives to=${pkWallet.address}`);
+      const derivedAddr = pkWallet.address.toLowerCase();
+      const storedAddr = walletAddr.toLowerCase();
+      console.log(`[MiniApp] deposit: stored wallet=${storedAddr}, key derives to=${derivedAddr}`);
+
+      if (derivedAddr !== storedAddr) {
+        console.log(`[MiniApp] KEY MISMATCH: key belongs to ${derivedAddr}, not ${storedAddr}. Cannot auto-deposit.`);
+        return res.json({
+          success: false,
+          error: `Auto-deposit unavailable — wallet key mismatch. Please deposit manually:\n\n1. Open your external wallet app\n2. Send $${amount} USDT (BEP-20) on BSC to:\n0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\n3. Paste the TX hash below to verify`,
+        });
+      }
 
       const { asterV3Deposit } = await import("./aster-client");
       const result = await asterV3Deposit(rawPk, amount, 0);
