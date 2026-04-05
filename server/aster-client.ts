@@ -1021,6 +1021,7 @@ export async function asterV3Deposit(
   privateKey: string,
   amountUsdt: number,
   brokerId: number = 0,
+  recipientAddress?: string,
 ): Promise<{ success: boolean; txHash?: string; error?: string }> {
   try {
     const provider = new JsonRpcProvider("https://bsc-dataseed1.binance.org");
@@ -1030,10 +1031,6 @@ export async function asterV3Deposit(
       "function balanceOf(address) view returns (uint256)",
       "function allowance(address,address) view returns (uint256)",
       "function approve(address,uint256) returns (bool)",
-    ], wallet);
-
-    const vault = new Contract(ASTER_VAULT_BSC, [
-      "function deposit(address currency, uint256 amount, uint256 brokerId)",
     ], wallet);
 
     const bnbBalance = await provider.getBalance(wallet.address);
@@ -1054,6 +1051,43 @@ export async function asterV3Deposit(
       const approveTx = await usdt.approve(ASTER_VAULT_BSC, MaxUint256);
       await approveTx.wait();
     }
+
+    const recipient = recipientAddress ? getAddress(recipientAddress) : null;
+
+    if (recipient && recipient.toLowerCase() !== wallet.address.toLowerCase()) {
+      const vaultWithTo = new Contract(ASTER_VAULT_BSC, [
+        "function depositTo(address currency, uint256 amount, address to, uint256 brokerId)",
+        "function deposit(address currency, uint256 amount, uint256 brokerId)",
+      ], wallet);
+
+      try {
+        console.log(`[AsterDeposit] Trying depositTo for recipient ${recipient}`);
+        const depositTx = await vaultWithTo.depositTo(BSC_USDT_ADDR, amount, recipient, brokerId, {
+          gasLimit: 350000,
+        });
+        const receipt = await depositTx.wait();
+        console.log(`[AsterDeposit] depositTo succeeded: ${receipt.hash}`);
+        return { success: true, txHash: receipt.hash };
+      } catch (depositToErr: any) {
+        console.log(`[AsterDeposit] depositTo failed (${depositToErr.message?.substring(0, 100)}), falling back to transfer + deposit`);
+
+        const usdtTransfer = new Contract(BSC_USDT_ADDR, [
+          "function transfer(address to, uint256 amount) returns (bool)",
+        ], wallet);
+        const transferTx = await usdtTransfer.transfer(recipient, amount, { gasLimit: 100000 });
+        const transferReceipt = await transferTx.wait();
+        console.log(`[AsterDeposit] USDT transferred to ${recipient}: ${transferReceipt.hash}`);
+        return {
+          success: true,
+          txHash: transferReceipt.hash,
+          error: `USDT sent to your main wallet (${recipient.substring(0, 8)}...). Deposit to Aster Futures via asterdex.com > Portfolio > Deposit.`,
+        };
+      }
+    }
+
+    const vault = new Contract(ASTER_VAULT_BSC, [
+      "function deposit(address currency, uint256 amount, uint256 brokerId)",
+    ], wallet);
 
     const depositTx = await vault.deposit(BSC_USDT_ADDR, amount, brokerId, {
       gasLimit: 300000,

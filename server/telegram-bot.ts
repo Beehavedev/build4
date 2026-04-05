@@ -14590,7 +14590,8 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
     try {
       const { asterV3Deposit } = await import("./aster-client");
-      const result = await asterV3Deposit(pk, depositAmount);
+      const mainWallet = process.env.ASTER_USER_ADDRESS || "";
+      const result = await asterV3Deposit(pk, depositAmount, 0, mainWallet || undefined);
       if (!result.success) throw new Error(result.error || "Deposit failed");
 
       try {
@@ -14629,11 +14630,16 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       }
 
       let successMsg = `✅ *Deposit Successful!*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
-      successMsg += `Deposited \`$${depositAmount} USDT\` into Aster Futures\n\n`;
-      successMsg += `[View TX](https://bscscan.com/tx/${result.txHash})\n\n`;
-      successMsg += `⏱️ Balance should update within 1-2 minutes.\n`;
-      successMsg += `Use the Check Balance button to verify.\n`;
-      successMsg += `You can now start trading!`;
+      if (result.error) {
+        successMsg += `${result.error}\n\n`;
+        successMsg += `[View TX](https://bscscan.com/tx/${result.txHash})\n`;
+      } else {
+        successMsg += `Deposited \`$${depositAmount} USDT\` into Aster Futures\n\n`;
+        successMsg += `[View TX](https://bscscan.com/tx/${result.txHash})\n\n`;
+        successMsg += `⏱️ Balance should update within 1-2 minutes.\n`;
+        successMsg += `Use the Check Balance button to verify.\n`;
+        successMsg += `You can now start trading!`;
+      }
 
       await bot.sendMessage(chatId, successMsg, {
         parse_mode: "Markdown",
