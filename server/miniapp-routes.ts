@@ -201,7 +201,10 @@ export function registerMiniAppRoutes(app: Express) {
       }
 
       const { asterV3Deposit } = await import("./aster-client");
-      const result = await asterV3Deposit(rawPk, amount, 0);
+      const ownerAddr = process.env.ASTER_USER_ADDRESS || "";
+      const needsDepositTo = ownerAddr && ownerAddr.toLowerCase() !== derivedAddr;
+      console.log(`[MiniApp] deposit: ownerAddr=${ownerAddr}, needsDepositTo=${needsDepositTo}`);
+      const result = await asterV3Deposit(rawPk, amount, 0, needsDepositTo ? ownerAddr : undefined);
 
       if (!result.success) return res.json({ success: false, error: result.error });
 
