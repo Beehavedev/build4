@@ -118,6 +118,7 @@ export function registerMiniAppRoutes(app: Express) {
       }
 
       let bscBalance = 0;
+      let bnbBalance = 0;
       let walletAddr: string | null = null;
       try {
         walletAddr = getUserWalletAddress(parseInt(chatId));
@@ -135,9 +136,13 @@ export function registerMiniAppRoutes(app: Express) {
             ["function balanceOf(address) view returns (uint256)"],
             provider
           );
-          const bal = await usdt.balanceOf(walletAddr);
+          const [bal, bnbBal] = await Promise.all([
+            usdt.balanceOf(walletAddr),
+            provider.getBalance(walletAddr),
+          ]);
           bscBalance = parseFloat(ethers.formatUnits(bal, 18));
-          console.log(`[MiniApp] BSC USDT balance for ${walletAddr}: $${bscBalance}`);
+          bnbBalance = parseFloat(ethers.formatEther(bnbBal));
+          console.log(`[MiniApp] BSC balance for ${walletAddr}: $${bscBalance} USDT, ${bnbBalance} BNB`);
         }
       } catch (bscErr: any) {
         console.error(`[MiniApp] BSC balance fetch error:`, bscErr.message);
@@ -148,6 +153,7 @@ export function registerMiniAppRoutes(app: Express) {
         walletBalance: walletBal,
         availableMargin: availBal,
         bscBalance,
+        bnbBalance,
         bscWalletAddress: walletAddr,
         unrealizedPnl: totalUpnl,
         realizedPnl,

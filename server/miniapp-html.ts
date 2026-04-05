@@ -125,7 +125,7 @@ const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
 const VAULT='0x128463A60784c4D3f46c23Af3f65Ed859Ba87974';
-let D={connected:false,availableMargin:0,walletBalance:0,bscBalance:0,bscWalletAddress:'',unrealizedPnl:0,realizedPnl:0,wins:0,losses:0,positions:[],recentIncome:[]};
+let D={connected:false,availableMargin:0,walletBalance:0,bscBalance:0,bnbBalance:0,bscWalletAddress:'',unrealizedPnl:0,realizedPnl:0,wins:0,losses:0,positions:[],recentIncome:[]};
 let M={markets:[]};
 let AG=null;
 let lastUpdate=0;
@@ -252,7 +252,8 @@ function renderDeposit(){
   }else{
     h+='<div class="text-xs text-dim mt-1">No wallet linked</div>';
   }
-  h+='</div><div style="text-align:right"><div class="val" style="font-size:28px">$'+fmt(D.bscBalance)+'</div><div class="text-xs text-dim">USDT Balance</div></div></div></div>';
+  h+='</div><div style="text-align:right"><div class="val" style="font-size:28px">$'+fmt(D.bscBalance)+'</div><div class="text-xs text-dim">USDT Balance</div><div class="text-xs mt-1" style="color:'+(D.bnbBalance<0.001?'var(--red)':'var(--text2)')+'">'+D.bnbBalance.toFixed(4)+' BNB (gas)</div></div></div></div>';
+  if(D.bnbBalance<0.001){h+='<div class="alert alert-warn mt-0 mb-2"><span>⚠️</span><span>Low BNB! Send at least 0.001 BNB to your bot wallet for gas fees.</span></div>'}
 
   h+='<div class="card"><div class="label">Account Balances</div><div class="grid3 mt-2">';
   h+='<div style="text-align:center;padding:10px 8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">BSC Wallet</div><div class="val-sm text-w mt-1">$'+fmt(D.bscBalance)+'</div></div>';

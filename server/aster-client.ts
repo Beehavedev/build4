@@ -1084,10 +1084,10 @@ export async function asterV3Deposit(
     ], wallet);
 
     const bnbBalance = await provider.getBalance(wallet.address);
-    const minGas = parseEther("0.001");
+    const minGas = parseEther("0.0003");
     if (bnbBalance < minGas) {
       const bnbHave = parseFloat(formatEther(bnbBalance)).toFixed(6);
-      return { success: false, error: `Need BNB for gas fees. You have ${bnbHave} BNB — send at least 0.002 BNB (~$1) to your wallet to cover gas.` };
+      return { success: false, error: `Need BNB for gas fees. You have ${bnbHave} BNB in your bot wallet (${wallet.address.slice(0,6)}...${wallet.address.slice(-4)}). Send at least 0.001 BNB to this address to cover gas.` };
     }
 
     const amount = parseUnits(amountUsdt.toString(), 18);
