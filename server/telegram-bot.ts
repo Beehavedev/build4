@@ -14587,19 +14587,12 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       return;
     }
 
-    let instrMsg = `💵 *Deposit $${depositAmount} USDT — Instructions*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
-    instrMsg += `Send *$${depositAmount} USDT* from your wallet to the vault:\n\n`;
-    instrMsg += `*Network:* BNB Smart Chain (BSC)\n`;
-    instrMsg += `*Token:* USDT (BEP-20)\n\n`;
-    instrMsg += `*Vault Address:*\n\`${VAULT_ADDR}\`\n\n`;
-    instrMsg += `*Steps:*\n`;
-    instrMsg += `1. Open your wallet (MetaMask / Trust Wallet)\n`;
-    instrMsg += `2. Switch to BNB Smart Chain\n`;
-    instrMsg += `3. Select USDT\n`;
-    instrMsg += `4. Paste the vault address above\n`;
-    instrMsg += `5. Send $${depositAmount} USDT\n\n`;
-    instrMsg += `After sending, tap *Confirm TX Hash* below and paste your transaction hash. I'll verify it on-chain.\n\n`;
-    instrMsg += `⚠️ Only send USDT on BSC network.`;
+    let instrMsg = `✅ *Instruction received.*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+    instrMsg += `Now send *$${depositAmount} USDT* from your wallet to the vault address below.\n\n`;
+    instrMsg += `*Vault Address (BSC USDT):*\n\`${VAULT_ADDR}\`\n\n`;
+    instrMsg += `After sending, wait 2-5 minutes, then click *Refresh Balance* or type /status.\n\n`;
+    instrMsg += `Use *Confirm TX Hash* and paste your transaction hash if you want me to verify it on-chain.\n\n`;
+    instrMsg += `⚠️ Only send USDT on BNB Smart Chain (BSC). Wrong network = lost funds.`;
 
     await bot.sendMessage(chatId, instrMsg, {
       parse_mode: "Markdown",
@@ -14689,9 +14682,19 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         try { spotBal = await futuresClient.spotBalance(); } catch {}
       }
       if (spotBal < 0.01) {
-        await bot.sendMessage(chatId, "No USDT available in Spot to transfer. Deposits may still be processing (1-5 min).", {
-          reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh Balance", callback_data: "aster:refresh_balance" }], [{ text: "🔄 Retry", callback_data: "aster:spot_to_futures" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
-        });
+        const VAULT_ADDR = "0x128463A60784c4D3f46c23Af3f65Ed859Ba87974";
+        await bot.sendMessage(chatId,
+          `No USDT found in Spot account.\n\nPlease deposit USDT to the vault address first:\n\`${VAULT_ADDR}\`\n\nUse /deposit or the Fund Account button below. After depositing, wait 2-5 minutes then try again.`,
+          {
+            parse_mode: "Markdown",
+            reply_markup: { inline_keyboard: [
+              [{ text: "💵 Fund Account", callback_data: "aster:fund" }],
+              [{ text: "🔄 Refresh Balance", callback_data: "aster:refresh_balance" }],
+              [{ text: "🔄 Retry", callback_data: "aster:spot_to_futures" }],
+              [{ text: "« Aster Menu", callback_data: "action:aster" }],
+            ] },
+          }
+        );
         return;
       }
       await bot.sendMessage(chatId, `⏳ Transferring \`$${spotBal.toFixed(2)}\` USDT from Spot to Futures...`, { parse_mode: "Markdown" });
@@ -14748,7 +14751,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     await bot.sendMessage(chatId,
       "📋 *Confirm Deposit via TX Hash*\n━━━━━━━━━━━━━━━━━━━━\n\n" +
       "Paste your BSC transaction hash below.\n" +
-      "I'll verify the USDT transfer on-chain.\n\n" +
+      "I'll check whether the USDT went to the correct vault address and show the amount.\n\n" +
       "Example: `0xabc123...`\n\n" +
       "Or type /cancel to go back.",
       { parse_mode: "Markdown" }
@@ -15128,14 +15131,22 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         } catch {}
       }
 
+      const VAULT_ADDR = "0x128463A60784c4D3f46c23Af3f65Ed859Ba87974";
       let msg = `Aster DEX - Account Status\n\n`;
+
+      if (wallet) {
+        msg += `BSC Wallet (on-chain)\n`;
+        msg += `  USDT: $${walletUsdt.toFixed(2)}\n`;
+        msg += `  BNB: ${walletBnb.toFixed(4)}\n`;
+        msg += `  ${wallet.substring(0, 8)}...${wallet.substring(38)}\n\n`;
+      }
 
       if (balanceError) {
         msg += `Futures Balance: FAILED\n  ${balanceError}\n\n`;
       } else {
         msg += `Futures Account (USDT)\n`;
         msg += `  Wallet Balance: $${walletBalance.toFixed(2)}\n`;
-        msg += `  Available: $${availableBalance.toFixed(2)}\n`;
+        msg += `  Available Margin: $${availableBalance.toFixed(2)}\n`;
         msg += `  Unrealized PnL: ${crossUnPnl >= 0 ? "+" : ""}$${crossUnPnl.toFixed(2)}\n\n`;
       }
 
@@ -15166,34 +15177,24 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         msg += `No open positions.\n\n`;
       }
 
-      if (wallet) {
-        msg += `BSC Wallet (on-chain)\n`;
-        msg += `  USDT: $${walletUsdt.toFixed(2)}\n`;
-        msg += `  BNB: ${walletBnb.toFixed(4)}\n`;
-        msg += `  ${wallet.substring(0, 8)}...${wallet.substring(38)}\n\n`;
-      }
-
       if (walletBalance < 1 && spotUsdt > 0.5) {
-        msg += `💡 You have $${spotUsdt.toFixed(2)} USDT in Spot. Transfer to Futures to start trading!`;
+        msg += `💡 You have $${spotUsdt.toFixed(2)} USDT in Spot. Transfer to Futures to start trading!\n`;
       } else if (walletBalance < 1 && walletUsdt < 1 && spotUsdt < 0.5) {
-        msg += `💰 Deposit USDT to Activate Futures Trading\n\n`;
-        msg += `Send USDT here (BSC):\n`;
-        msg += `Network: BNB Smart Chain | Token: USDT (BEP-20)\n`;
-        msg += `Vault: 0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\n\n`;
-        msg += `After sending, wait 2-5 min then type /status.\n`;
-        msg += `If still $0 after 10 min, reply with your tx hash for help.`;
+        msg += `💰 To start trading, deposit USDT (BEP-20) on BSC to:\n`;
+        msg += `${VAULT_ADDR}\n\n`;
+        msg += `After sending, wait 2-5 min then tap Refresh or type /status.\n`;
       }
 
       const balButtons: TelegramBot.InlineKeyboardButton[][] = [];
       if (spotUsdt > 0.5 && walletBalance < 1) {
-        balButtons.push([{ text: "🔄 Transfer Spot -> Futures ($" + spotUsdt.toFixed(2) + ")", callback_data: "aster:spot_to_futures" }]);
+        balButtons.push([{ text: "🔄 Transfer Spot → Futures ($" + spotUsdt.toFixed(2) + ")", callback_data: "aster:spot_to_futures" }]);
       }
-      balButtons.push([{ text: "Fund Account", callback_data: "aster:fund" }, { text: "Positions", callback_data: "aster:positions" }]);
+      balButtons.push([{ text: "💵 Fund Account", callback_data: "aster:fund" }, { text: "📊 Positions", callback_data: "aster:positions" }]);
       if (walletBalance < 1 && spotUsdt < 0.5) {
-        balButtons.push([{ text: "🔄 Transfer Spot -> Futures", callback_data: "aster:spot_to_futures" }]);
+        balButtons.push([{ text: "🔄 Transfer Spot → Futures", callback_data: "aster:spot_to_futures" }]);
       }
-      balButtons.push([{ text: "Refresh", callback_data: "aster:balance" }]);
-      balButtons.push([{ text: "Aster Menu", callback_data: "action:aster" }]);
+      balButtons.push([{ text: "🔄 Refresh", callback_data: "aster:balance" }]);
+      balButtons.push([{ text: "« Aster Menu", callback_data: "action:aster" }]);
 
       await bot.sendMessage(chatId, msg, {
         reply_markup: { inline_keyboard: balButtons },
@@ -15267,18 +15268,17 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
           },
         });
       } else {
-        let msg = "No USDT found in Spot wallet to transfer.\n\n";
-        msg += "This can happen if:\n";
-        msg += "1. Your deposit hasn't arrived yet (wait 1-3 min)\n";
-        msg += "2. Funds are already in Futures (check balance)\n";
-        msg += "3. The vault deposit went to a different account\n\n";
-        msg += "If you deposited directly to the vault address, the funds may need time to appear in your Spot wallet first.";
+        const VAULT_ADDR = "0x128463A60784c4D3f46c23Af3f65Ed859Ba87974";
+        let msg = `No USDT found in Spot account.\n\n`;
+        msg += `Please deposit USDT to the vault address first:\n\`${VAULT_ADDR}\`\n\n`;
+        msg += `Use /deposit or the Fund Account button below.\nAfter depositing, wait 2-5 minutes then try again.`;
         await bot.sendMessage(chatId, msg, {
+          parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
-              [{ text: "💰 Check Balance", callback_data: "aster:balance" }],
-              [{ text: "🔄 Try Again", callback_data: "aster:spot_to_futures" }],
               [{ text: "💵 Fund Account", callback_data: "aster:fund" }],
+              [{ text: "🔄 Refresh Balance", callback_data: "aster:refresh_balance" }],
+              [{ text: "🔄 Try Again", callback_data: "aster:spot_to_futures" }],
               [{ text: "« Aster Menu", callback_data: "action:aster" }],
             ],
           },
@@ -16518,7 +16518,7 @@ async function handleAsterTradeFlow(chatId: number, text: string): Promise<void>
       return;
     }
 
-    await bot.sendMessage(chatId, "⏳ Verifying transaction on BSC...");
+    await bot.sendMessage(chatId, "⏳ Checking transaction on BSC...");
     sendTyping(chatId);
 
     const VAULT_ADDR = "0x128463A60784c4D3f46c23Af3f65Ed859Ba87974";
@@ -16666,19 +16666,12 @@ async function handleAsterTradeFlow(chatId: number, text: string): Promise<void>
     pendingAsterTrade.delete(chatId);
 
     const VAULT_ADDR = "0x128463A60784c4D3f46c23Af3f65Ed859Ba87974";
-    let instrMsg = `💵 *Deposit $${amount} USDT — Instructions*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
-    instrMsg += `Send *$${amount} USDT* from your wallet to the vault:\n\n`;
-    instrMsg += `*Network:* BNB Smart Chain (BSC)\n`;
-    instrMsg += `*Token:* USDT (BEP-20)\n\n`;
-    instrMsg += `*Vault Address:*\n\`${VAULT_ADDR}\`\n\n`;
-    instrMsg += `*Steps:*\n`;
-    instrMsg += `1. Open your wallet (MetaMask / Trust Wallet)\n`;
-    instrMsg += `2. Switch to BNB Smart Chain\n`;
-    instrMsg += `3. Select USDT\n`;
-    instrMsg += `4. Paste the vault address above\n`;
-    instrMsg += `5. Send $${amount} USDT\n\n`;
-    instrMsg += `After sending, tap *Confirm TX Hash* below and paste your transaction hash. I'll verify it on-chain.\n\n`;
-    instrMsg += `⚠️ Only send USDT on BSC network.`;
+    let instrMsg = `✅ *Instruction received.*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+    instrMsg += `Now send *$${amount} USDT* from your wallet to the vault address below.\n\n`;
+    instrMsg += `*Vault Address (BSC USDT):*\n\`${VAULT_ADDR}\`\n\n`;
+    instrMsg += `After sending, wait 2-5 minutes, then click *Refresh Balance* or type /status.\n\n`;
+    instrMsg += `Use *Confirm TX Hash* and paste your transaction hash if you want me to verify it on-chain.\n\n`;
+    instrMsg += `⚠️ Only send USDT on BNB Smart Chain (BSC). Wrong network = lost funds.`;
 
     await bot.sendMessage(chatId, instrMsg, {
       parse_mode: "Markdown",
