@@ -180,28 +180,43 @@ export function registerMiniAppRoutes(app: Express) {
       if (!rawPk) return res.status(400).json({ error: "Could not decrypt wallet key" });
 
       const { asterV3Deposit } = await import("./aster-client");
-      const userAddr = process.env.ASTER_USER_ADDRESS || walletAddr;
-      const result = await asterV3Deposit(rawPk, amount, 0, userAddr);
+      const result = await asterV3Deposit(rawPk, amount, 0);
 
       if (!result.success) return res.json({ success: false, error: result.error });
 
-      let transferred = false;
+      console.log(`[MiniApp] deposit TX success: ${result.txHash}`);
+
+      let spotTransferred = false;
+      let futuresTransferred = false;
       try {
         const client = await getAsterClient(parseInt(chatId));
         if (client) {
           const fc = client.futures || client;
+          console.log(`[MiniApp] Waiting 8s for vault credit...`);
+          await new Promise(r => setTimeout(r, 8000));
+
           if (fc.spotToFutures) {
-            await new Promise(r => setTimeout(r, 5000));
-            await fc.spotToFutures("USDT", amount.toString());
-            transferred = true;
+            try {
+              await fc.spotToFutures("USDT", amount.toString());
+              futuresTransferred = true;
+              console.log(`[MiniApp] Spot→Futures transfer done: $${amount}`);
+            } catch (stfErr: any) {
+              console.log(`[MiniApp] Spot→Futures failed: ${stfErr.message?.substring(0, 100)}`);
+            }
           }
         }
-      } catch {}
+      } catch (postErr: any) {
+        console.log(`[MiniApp] Post-deposit error: ${postErr.message?.substring(0, 100)}`);
+      }
 
       res.json({
         success: true,
         txHash: result.txHash,
-        spotToFuturesTransferred: transferred,
+        spotTransferred: true,
+        futuresTransferred,
+        message: futuresTransferred
+          ? `$${amount} deposited and moved to Futures — ready to trade!`
+          : `$${amount} deposited to Aster Spot. Use the bot to transfer Spot→Futures when ready.`,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message?.substring(0, 200) });

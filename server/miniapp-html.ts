@@ -295,13 +295,16 @@ function renderDeposit(){
 
 async function doTransfer(amount){
   const st=$('transfer-status');
-  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Initiating transfer of $'+fmt(amount)+' to Aster vault...</span></div>';
+  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Depositing $'+fmt(amount)+' to Aster... This may take 15-20 seconds.</span></div>';
   try{
     const r=await api('/api/miniapp/deposit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount})});
     if(r.success){
-      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><div><strong>Transfer submitted!</strong><br><span class="text-xs">$'+fmt(amount)+' USDT sent to vault. Should appear in your Spot account in 1-5 min.'+(r.txHash?'<br>TX: <a href="https://bscscan.com/tx/'+r.txHash+'" target="_blank" style="color:var(--green)">'+r.txHash.slice(0,14)+'... ↗</a>':'')+'</span></div></div>';
-      toast('✅ Transfer submitted!','ok');
-      setTimeout(()=>fetchAll().then(()=>renderDeposit()),10000);
+      var msg=r.message||'Deposit complete!';
+      var txLink=r.txHash?'<br><a href="https://bscscan.com/tx/'+r.txHash+'" target="_blank" style="color:var(--green);text-decoration:underline;font-size:11px">View TX on BscScan ↗</a>':'';
+      var icon=r.futuresTransferred?'🎉':'✅';
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>'+icon+'</span><div><strong>'+msg+'</strong>'+txLink+'</div></div>';
+      toast(icon+' '+msg,'ok');
+      setTimeout(function(){fetchAll().then(function(){renderDeposit()})},5000);
     }else{
       st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Transfer failed')+'</span></div>';
     }
