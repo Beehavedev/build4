@@ -1,0 +1,67 @@
+Build a **world-class Telegram Mini App** for Aster DEX autonomous AI trading that lives **alongside** the existing bot.
+
+Project Goal:
+Create "Aster Agent AI" — a beautiful, premium Mini App that users can open from the bot via "Open App" button, while keeping the existing text-based bot fully functional for quick commands.
+
+Technical Requirements:
+- Use React + TypeScript + Vite
+- Dark crypto theme (professional, modern, easy to read)
+- Integrate with @twa-dev/sdk for Telegram WebApp
+- Use TON Connect 2.0 for smooth wallet connection
+- Share the same backend as the current bot (call your existing Render API for Aster V3 Pro API calls)
+- Keep the current bot untouched — just add a Mini App that enhances it
+
+Mini App Structure:
+
+1. **Main Dashboard**
+   - Large display of Futures Available Margin
+   - Live PnL chart (use lightweight-charts)
+   - Open positions list with uPnL
+   - BSC on-chain balance
+   - "Refresh" button
+
+2. **Deposit Section** (Critical Fix)
+   - Clear visual steps for depositing USDT
+   - Show vault address with copy button + QR code
+   - "Confirm TX Hash" input with validation
+   - Honest status: "Waiting for Aster to credit funds..." 
+   - Never say "successful" until V3 API shows non-zero available margin
+
+3. **AI Agent Control**
+   - Big toggle: "Autonomous Agent ON / OFF"
+   - Risk per trade slider (0.5% – 3%)
+   - Max leverage setting
+   - Live reasoning panel (shows why the agent is entering/exiting trades)
+   - Performance stats (win rate, total PnL, drawdown)
+
+4. **Trade Panel**
+   - Quick market orders with leverage slider
+   - Order preview (margin required, liquidation price)
+   - One-click BUY/SELL for major pairs (BTCUSDT, SOLUSDT, etc.)
+
+5. **Settings**
+   - Preferred trading pairs
+   - Daily loss limit
+   - Notification preferences
+
+Integration Requirements:
+- Add a "Open Mini App" button in the existing bot's Aster Menu
+- The Mini App should call your existing backend endpoints for balance, positions, orders, etc.
+- Use the same Pro V3 EIP-712 authentication as the bot
+
+UX Principles:
+- Extremely honest about deposit status (no false "successful" messages)
+- Beautiful, smooth, responsive design
+- Clear separation: BSC Wallet → Spot → Futures Margin
+- Make users feel they are using a premium trading app
+
+First Priority:
+Build the Mini App skeleton with Dashboard + Deposit screen + "Open App" button in the bot.
+
+Then add the AI Agent control panel.
+
+Use Tailwind CSS + modern components for a premium look.
+
+Start building the Mini App now. Create all necessary files and make it ready to deploy (Vercel or similar).
+
+After building, tell me the GitHub repo URL or how to run it locally.

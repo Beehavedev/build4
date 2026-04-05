@@ -20,6 +20,7 @@ import { registerSeoPrerender } from "./seo-prerender";
 import { analyticsAuth, generateAnalyticsToken, constantTimeCompare } from "./admin-auth";
 import { launchToken, getTokenLaunches, getTokenLaunch, fourMemeGetTokenInfo, fourMemeEstimateBuy, fourMemeEstimateSell, fourMemeBuyToken, fourMemeSellToken, fourMemeGetTokenBalance } from "./token-launcher";
 import { TOKEN_LAUNCHPADS } from "@shared/schema";
+import { registerMiniAppRoutes } from "./miniapp-routes";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -38,6 +39,7 @@ export async function registerRoutes(
   app.use(visitorTrackingMiddleware());
   app.use("/uploads", express.static(path.resolve(process.cwd(), "public/uploads")));
   registerSeoPrerender(app);
+  registerMiniAppRoutes(app);
 
   const walletExportLimiter = new Map<string, number[]>();
   function checkWalletExportRate(chatId: string): boolean {

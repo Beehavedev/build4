@@ -13142,6 +13142,7 @@ async function handleAsterMenu(chatId: number): Promise<void> {
           [{ text: "🤖 AI Agent", callback_data: "aster:agent" }],
           [{ text: "🔧 Test Connection", callback_data: "aster:test_connection" }],
           [{ text: "🏆 Competition", callback_data: "aster:competition" }],
+          [{ text: "📱 Open Mini App", web_app: { url: `${process.env.RENDER_EXTERNAL_URL || process.env.APP_URL || "https://build4.world"}/miniapp?chatId=${chatId}` } }],
           [{ text: "🔌 Disconnect", callback_data: "aster:disconnect" }, { text: "« Back", callback_data: "action:menu" }],
         ],
       },
@@ -13199,7 +13200,7 @@ function getOwnerAsterClient(): any {
   return cachedOwnerClient;
 }
 
-async function getAsterClient(chatId: number): Promise<any> {
+export async function getAsterClient(chatId: number): Promise<any> {
   const ownerClient = getOwnerAsterClient();
   if (ownerClient) return ownerClient;
 

@@ -35,6 +35,13 @@ The project uses a monorepo with `client/` (React frontend), `server/` (Express 
 - **Technology**: Four Solidity contracts (0.8.24) using Hardhat and OpenZeppelin, targeting Base, BNB Chain, and XLayer.
 - **Core Contracts**: `AgentEconomyHub.sol`, `SkillMarketplace.sol`, `AgentReplication.sol`, and `ConstitutionRegistry.sol` manage agent economics and governance.
 
+### Telegram Mini App
+- **Route**: `/miniapp?chatId=<telegram_chat_id>` — accessible via "Open Mini App" button in bot's Aster Menu
+- **API Endpoints**: `/api/miniapp/account`, `/api/miniapp/deposit`, `/api/miniapp/agent`, `/api/miniapp/agent/toggle`, `/api/miniapp/trades`, `/api/miniapp/markets`
+- **Features**: Dashboard (balances, positions, PnL), auto-deposit (signs BSC transactions), AI Agent control (toggle, risk settings), trade panel, market prices
+- **Auth**: Uses `x-telegram-chat-id` header to identify user
+- **Files**: `client/src/pages/miniapp.tsx` (frontend), `server/miniapp-routes.ts` (API)
+
 ### Permissionless Open Protocol
 Standardized endpoints for agent discovery, wallet identity, skill listing, wallet activity lookup, and open execution with a free tier and HTTP 402 payment protocol.
 
