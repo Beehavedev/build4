@@ -13282,6 +13282,26 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const mode = asterClient.mode || "V3";
       const results: string[] = [];
 
+      if (mode === "V3") {
+        const pk = process.env.ASTER_PRIVATE_KEY || process.env.ASTER_API_WALLET_KEY || "";
+        const userAddr = process.env.ASTER_USER_ADDRESS || "";
+        const signerAddr = process.env.ASTER_SIGNER_ADDRESS || "";
+        try {
+          const { Wallet } = await import("ethers");
+          const w = new Wallet(pk);
+          const derivedAddr = w.address;
+          results.push(`Mode: V3 EIP-712`);
+          results.push(`Signer (derived from key): ${derivedAddr}`);
+          results.push(`Signer (env override): ${signerAddr || "(none - using derived)"}`);
+          results.push(`User (main wallet): ${userAddr || "(using derived signer)"}`);
+          if (signerAddr && signerAddr.toLowerCase() !== derivedAddr.toLowerCase()) {
+            results.push(`WARNING: ASTER_SIGNER_ADDRESS does not match derived key address!`);
+          }
+        } catch (e: any) {
+          results.push(`Key check: ${e.message?.substring(0, 100)}`);
+        }
+      }
+
       try {
         const pingOk = await futuresClient.ping();
         results.push(pingOk ? "Ping: OK" : "Ping: Failed");
