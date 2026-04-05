@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { ethers } from "ethers";
+import { Wallet, getAddress, JsonRpcProvider, Contract, formatUnits, formatEther, parseUnits, parseEther, MaxUint256 } from "ethers";
 
 interface AsterClientConfig {
   apiKey: string;
@@ -311,7 +311,7 @@ async function signV3Params(
     message: { msg: queryString },
   };
 
-  const wallet = new ethers.Wallet(signerPrivateKey);
+  const wallet = new Wallet(signerPrivateKey);
   const signature = await wallet.signTypedData(
     typedData.domain,
     { Message: typedData.types.Message },
@@ -384,7 +384,7 @@ async function makeV3Request(
 }
 
 export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: string): Promise<BrokerOnboardResult> {
-  const wallet = new ethers.Wallet(walletPrivateKey);
+  const wallet = new Wallet(walletPrivateKey);
   const address = wallet.address;
 
   try {
@@ -797,8 +797,8 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
 
 export function createAsterV3FuturesClient(config: AsterV3Config) {
   const baseUrl = config.futuresBaseUrl || DEFAULT_FUTURES_V3_BASE_URL;
-  const user = ethers.getAddress(config.user); // EIP-55 checksum
-  const signer = ethers.getAddress(config.signer); // EIP-55 checksum
+  const user = getAddress(config.user);
+  const signer = getAddress(config.signer);
   const { signerPrivateKey } = config;
 
   async function request(path: string, options: AsterRequestOptions = {}) {
@@ -991,35 +991,35 @@ export async function asterV3Deposit(
   brokerId: number = 0,
 ): Promise<{ success: boolean; txHash?: string; error?: string }> {
   try {
-    const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
-    const wallet = new ethers.Wallet(privateKey, provider);
+    const provider = new JsonRpcProvider("https://bsc-dataseed1.binance.org");
+    const wallet = new Wallet(privateKey, provider);
 
-    const usdt = new ethers.Contract(BSC_USDT_ADDR, [
+    const usdt = new Contract(BSC_USDT_ADDR, [
       "function balanceOf(address) view returns (uint256)",
       "function allowance(address,address) view returns (uint256)",
       "function approve(address,uint256) returns (bool)",
     ], wallet);
 
-    const vault = new ethers.Contract(ASTER_VAULT_BSC, [
+    const vault = new Contract(ASTER_VAULT_BSC, [
       "function deposit(address currency, uint256 amount, uint256 brokerId)",
     ], wallet);
 
     const bnbBalance = await provider.getBalance(wallet.address);
-    const minGas = ethers.parseEther("0.001");
+    const minGas = parseEther("0.001");
     if (bnbBalance < minGas) {
-      const bnbHave = parseFloat(ethers.formatEther(bnbBalance)).toFixed(6);
+      const bnbHave = parseFloat(formatEther(bnbBalance)).toFixed(6);
       return { success: false, error: `Need BNB for gas fees. You have ${bnbHave} BNB — send at least 0.002 BNB (~$1) to your wallet to cover gas.` };
     }
 
-    const amount = ethers.parseUnits(amountUsdt.toString(), 18);
+    const amount = parseUnits(amountUsdt.toString(), 18);
     const balance = await usdt.balanceOf(wallet.address);
     if (balance < amount) {
-      return { success: false, error: `Insufficient USDT. Have ${ethers.formatUnits(balance, 18)}, need ${amountUsdt}` };
+      return { success: false, error: `Insufficient USDT. Have ${formatUnits(balance, 18)}, need ${amountUsdt}` };
     }
 
     const allowance = await usdt.allowance(wallet.address, ASTER_VAULT_BSC);
     if (allowance < amount) {
-      const approveTx = await usdt.approve(ASTER_VAULT_BSC, ethers.MaxUint256);
+      const approveTx = await usdt.approve(ASTER_VAULT_BSC, MaxUint256);
       await approveTx.wait();
     }
 
