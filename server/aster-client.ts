@@ -756,11 +756,11 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
       if (!params.newClientOrderId) {
         params.newClientOrderId = `BUILD4_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       }
-      return request("/fapi/v1/order", { method: "POST", signed: true, params });
+      return request("/fapi/v3/order", { method: "POST", signed: true, params });
     },
 
     async cancelOrder(symbol: string, orderId: number): Promise<AsterOrder> {
-      return request("/fapi/v1/order", {
+      return request("/fapi/v3/order", {
         method: "DELETE",
         signed: true,
         params: { symbol, orderId },
@@ -768,7 +768,7 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
     },
 
     async cancelAllOrders(symbol: string): Promise<any> {
-      return request("/fapi/v1/allOpenOrders", {
+      return request("/fapi/v3/allOpenOrders", {
         method: "DELETE",
         signed: true,
         params: { symbol },
@@ -778,19 +778,19 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
     async openOrders(symbol?: string): Promise<AsterOrder[]> {
       const params: Record<string, string | number | boolean | undefined> = {};
       if (symbol) params.symbol = symbol;
-      return request("/fapi/v1/openOrders", { signed: true, params });
+      return request("/fapi/v3/openOrders", { signed: true, params });
     },
 
     async allOrders(symbol: string, limit: number = 50): Promise<AsterOrder[]> {
-      return request("/fapi/v1/allOrders", { signed: true, params: { symbol, limit } });
+      return request("/fapi/v3/allOrders", { signed: true, params: { symbol, limit } });
     },
 
     async userTrades(symbol: string, limit: number = 50): Promise<any[]> {
-      return request("/fapi/v1/userTrades", { signed: true, params: { symbol, limit } });
+      return request("/fapi/v3/userTrades", { signed: true, params: { symbol, limit } });
     },
 
     async setLeverage(symbol: string, leverage: number): Promise<any> {
-      return request("/fapi/v1/leverage", {
+      return request("/fapi/v3/leverage", {
         method: "POST",
         signed: true,
         params: { symbol, leverage },
@@ -798,7 +798,7 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
     },
 
     async setMarginType(symbol: string, marginType: "ISOLATED" | "CROSSED"): Promise<any> {
-      return request("/fapi/v1/marginType", {
+      return request("/fapi/v3/marginType", {
         method: "POST",
         signed: true,
         params: { symbol, marginType },
@@ -806,13 +806,13 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
     },
 
     async exchangeInfo(): Promise<any> {
-      return request("/fapi/v1/exchangeInfo");
+      return request("/fapi/v3/exchangeInfo");
     },
 
     async income(incomeType?: string, limit: number = 50): Promise<any[]> {
       const params: Record<string, string | number | boolean | undefined> = { limit };
       if (incomeType) params.incomeType = incomeType;
-      return request("/fapi/v1/income", { signed: true, params });
+      return request("/fapi/v3/income", { signed: true, params });
     },
   };
 }

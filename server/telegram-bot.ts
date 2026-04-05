@@ -13299,37 +13299,43 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
       let balanceOk = false;
       try {
-        const bal = await futuresClient.balance();
-        if (Array.isArray(bal)) {
-          const usdt = bal.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
-          if (usdt) {
-            results.push(`Balance: $${parseFloat(usdt.availableBalance || usdt.balance || "0").toFixed(2)} USDT available`);
-          } else {
-            results.push(`Balance: ${bal.length} asset(s) found`);
-          }
+        const acct = await futuresClient.account();
+        if (acct && typeof acct === "object" && !Array.isArray(acct) && (acct.totalWalletBalance || acct.availableBalance)) {
+          const wb = parseFloat(acct.totalWalletBalance || "0");
+          const ab = parseFloat(acct.availableBalance || "0");
+          const upnl = parseFloat(acct.totalUnrealizedProfit || "0");
+          results.push(`Account: $${wb.toFixed(2)} wallet | $${ab.toFixed(2)} available | ${upnl >= 0 ? "+" : ""}$${upnl.toFixed(2)} uPnL`);
           balanceOk = true;
-        } else if (bal && typeof bal === "object") {
-          const total = bal.totalWalletBalance || bal.totalMarginBalance || bal.availableBalance;
-          if (total) {
-            results.push(`Balance: $${parseFloat(total).toFixed(2)} USDT`);
-            balanceOk = true;
-          } else {
-            results.push(`Balance: Connected (keys: ${Object.keys(bal).slice(0, 6).join(", ")})`);
-            balanceOk = true;
+          if (wb < 1) {
+            results.push(`Funding: Deposit USDT to Futures Vault to start trading. Use /deposit`);
           }
         } else {
-          results.push(`Balance: Unexpected format`);
+          const bal = await futuresClient.balance();
+          if (Array.isArray(bal)) {
+            const usdt = bal.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+            if (usdt) {
+              results.push(`Balance: $${parseFloat(usdt.availableBalance || usdt.balance || "0").toFixed(2)} USDT available`);
+            } else {
+              results.push(`Balance: ${bal.length} asset(s) found`);
+            }
+            balanceOk = true;
+          } else {
+            results.push(`Balance: Connected (keys: ${Object.keys(acct || {}).slice(0, 8).join(", ")})`);
+            balanceOk = true;
+          }
         }
       } catch (e: any) {
         const msg = e.message || "";
-        if (msg.includes("Non-JSON")) {
-          results.push(`Balance: FAILED - endpoint returned HTML/non-JSON\n  ${msg.substring(0, 180)}`);
+        if (msg.includes("405")) {
+          results.push(`Account: FAILED - 405 Method Not Allowed. Check endpoint path and HTTP method.`);
+        } else if (msg.includes("Non-JSON")) {
+          results.push(`Account: FAILED - endpoint returned HTML/non-JSON\n  ${msg.substring(0, 180)}`);
         } else if (msg.toLowerCase().includes("no aster user") || msg.toLowerCase().includes("user not found")) {
-          results.push(`Balance: FAILED - No Aster user found for this wallet. Authorize API Wallet at asterdex.com/en/api-wallet`);
+          results.push(`Account: FAILED - No Aster user found. Authorize API Wallet at asterdex.com/en/api-wallet`);
         } else if (msg.toLowerCase().includes("signature") || msg.toLowerCase().includes("sign")) {
-          results.push(`Balance: FAILED - EIP-712 signature rejected. Check ASTER_PRIVATE_KEY matches the authorized API Wallet`);
+          results.push(`Account: FAILED - EIP-712 signature rejected. Check ASTER_PRIVATE_KEY matches the authorized API Wallet`);
         } else {
-          results.push(`Balance: FAILED - ${msg.substring(0, 180)}`);
+          results.push(`Account: FAILED - ${msg.substring(0, 180)}`);
         }
       }
 
