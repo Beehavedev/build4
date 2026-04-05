@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import { startTelegramBot, processWebhookUpdate, stopTelegramBot } from "./telegram-bot";
 import { restoreTradingPreferences, startTradingAgent, isTradingAgentRunning } from "./trading-agent";
 import { registerMiniAppRoutes } from "./miniapp-routes";
+import { getMiniAppHTML } from "./miniapp-html";
 import pg from "pg";
 
 process.on("uncaughtException", (err) => {
@@ -133,12 +134,17 @@ app.get("/health", (_req, res) => {
 registerMiniAppRoutes(app);
 
 app.get("/miniapp", (_req, res) => {
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Aster Agent AI</title>
+  const html = getMiniAppHTML();
+  res.status(200).set({"Content-Type":"text/html"}).end(html);
+});
+
+app.get("/miniapp-old", (_req, res) => {
+  res.redirect('/miniapp');
+});
+
+/* Old inline HTML removed — now served from miniapp-html.ts */
+
+if (false) { const html = `<!DOCTYPE html><html><head><title>OLD</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -369,12 +375,7 @@ async function closePosition(symbol){
   }catch(e){st.innerHTML='<div class="alert alert-err mt-3">❌ '+e.message+'</div>'}
 }
 
-loadDashboard();
-</script>
-</body>
-</html>`;
-  res.status(200).set({"Content-Type":"text/html"}).end(html);
-});
+x`; }
 
 app.post("/api/telegram/webhook/:token", (req, res) => {
   const token = req.params.token;

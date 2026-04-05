@@ -1,0 +1,75 @@
+You are now building **Aster Agent AI** — the absolute best autonomous AI trading Mini App for Aster DEX in the entire world.
+
+Current critical issues:
+- "invalid BytesLike value" error in Quick Deposit (malformed private key with colon)
+- Deposits to treasury are not crediting to Futures/Spot margin
+- Balances are not updating reliably
+- "Quick Deposit (Auto)" is dangerous and broken
+
+Goal: Create a premium, honest, intelligent, and beautiful Telegram Mini App that feels like a professional trading platform.
+
+Tech Stack:
+- React + TypeScript + Vite + Tailwind + shadcn/ui + @twa-dev/sdk
+- TON Connect 2.0 + EVM wallet support
+- Zustand for state
+- Lightweight-charts for live charts
+- Call your existing Render backend for Aster V3 Pro API (EIP-712)
+
+Core Principles (non-negotiable):
+- Brutally honest UX — never claim a deposit is successful until the V3 API shows real non-zero Futures Available Margin
+- Premium dark crypto design with smooth animations
+- Everything must feel trustworthy and professional
+- Keep the existing text bot fully functional — the Mini App is the rich visual companion
+
+Fixes & Features to Implement (in this exact order):
+
+1. **Immediate Critical Fix – Deposit Screen**
+   - Completely remove or disable the broken "Quick Deposit (Auto)" section (it is causing the BytesLike error)
+   - Make "Manual Deposit" the main and only flow for now
+   - Show clear vault address with:
+     - One-tap "Copy Address" button
+     - QR code for easy scanning
+     - "Tap to copy" visual feedback
+   - Add "Confirm TX Hash" with proper validation (66 chars, starts with 0x)
+   - After valid tx hash: verify on BSC (check it went to vault) and show realistic status ("Processing on Aster... usually 1-5 minutes")
+   - Auto-refresh balances after confirmed tx
+
+2. **World-Class Balance System**
+   - Real-time display of three balances:
+     - BSC On-chain Wallet (USDT + BNB)
+     - Spot Account
+     - Futures Available Margin (the only one that matters for trading)
+   - Clear visual separation with color coding
+   - Auto-refresh every 15 seconds when Mini App is open
+   - Show last updated timestamp
+
+3. **Wallet Linking (Premium Experience)**
+   - Add prominent "Connect Wallet" button using TON Connect + EVM support
+   - Once connected, show the user's address and allow one-click balance checks
+   - Store linked wallet per user in backend
+
+4. **Autonomous AI Agent – Make It Truly World-Class**
+   - Beautiful Agent tab with big ON/OFF toggle
+   - Live reasoning panel that shows step-by-step thoughts before every trade
+   - Configurable risk % (0.5% – 3% of Futures Available Margin)
+   - Max leverage setting, preferred pairs, daily loss limit
+   - Before every trade the agent must output clear reasoning like:
+     "Available margin: $47.30 → Risk 1% = $0.47 → Opening 12x long on BTCUSDT because EMA8 crossed EMA21 + RSI 28 (oversold)"
+   - Safety engine: never trade if margin < $10, daily loss limit, volatility circuit breaker
+
+5. **Overall Premium UX**
+   - Beautiful Dashboard with live PnL chart
+   - Smooth navigation (Dashboard → Deposit → Agent → Trade)
+   - Toast notifications for success/error
+   - Loading states everywhere
+   - Responsive and mobile-first (Telegram Mini App optimized)
+
+Priority Order:
+1. Fix the BytesLike error and make Deposit screen 100% reliable and honest
+2. Fix all balance displays with real-time updates
+3. Add wallet linking
+4. Build the intelligent autonomous AI agent with visible reasoning
+
+Make this Mini App feel like the most advanced and trustworthy Aster DEX trading experience in existence. Use modern, clean, professional code.
+
+Start implementing now. Focus first on fixing the Deposit screen and the BytesLike error completely.
