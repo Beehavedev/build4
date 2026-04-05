@@ -1011,6 +1011,38 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
       if (incomeType) params.incomeType = incomeType;
       return makeV3Request(baseUrl, "/fapi/v3/income", user, signer, signerPrivateKey, { method: "POST", params });
     },
+
+    async spotToFutures(asset: string, amount: string): Promise<any> {
+      const params: Record<string, string | number | boolean | undefined> = {
+        asset,
+        amount,
+        kindType: "SPOT_FUTURE",
+      };
+      try {
+        const result = await makeV3Request(baseUrl, "/fapi/v3/asset/wallet/transfer", user, signer, signerPrivateKey, { method: "POST", params });
+        console.log(`[AsterV3] spotToFutures success:`, JSON.stringify(result).substring(0, 300));
+        return result;
+      } catch (e: any) {
+        console.log(`[AsterV3] spotToFutures via /fapi/v3/ failed: ${e.message?.substring(0, 150)}`);
+        try {
+          const result2 = await makeV3Request(baseUrl, "/sapi/v1/asset/transfer", user, signer, signerPrivateKey, { method: "POST", params: { asset, amount, type: 1 } });
+          console.log(`[AsterV3] spotToFutures via /sapi/v1/ success:`, JSON.stringify(result2).substring(0, 300));
+          return result2;
+        } catch (e2: any) {
+          console.log(`[AsterV3] spotToFutures via /sapi/v1/ also failed: ${e2.message?.substring(0, 150)}`);
+          throw e;
+        }
+      }
+    },
+
+    async futuresToSpot(asset: string, amount: string): Promise<any> {
+      const params: Record<string, string | number | boolean | undefined> = {
+        asset,
+        amount,
+        kindType: "FUTURE_SPOT",
+      };
+      return makeV3Request(baseUrl, "/fapi/v3/asset/wallet/transfer", user, signer, signerPrivateKey, { method: "POST", params });
+    },
   };
 }
 

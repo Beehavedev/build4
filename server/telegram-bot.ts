@@ -15110,20 +15110,125 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         msg += `Network: BNB Smart Chain (BSC) | Token: USDT (BEP-20)\n`;
         msg += `Vault: 0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\n\n`;
         msg += `After sending, type /status to refresh.\n`;
-        msg += `If still $0 after 5 min, reply with your tx hash for help.`;
+        msg += `If still $0 after 5 min, try Spot -> Futures transfer below.`;
       }
 
+      const balButtons: TelegramBot.InlineKeyboardButton[][] = [
+        [{ text: "Fund Account", callback_data: "aster:fund" }, { text: "Positions", callback_data: "aster:positions" }],
+      ];
+      if (walletBalance < 1) {
+        balButtons.push([{ text: "🔄 Transfer Spot -> Futures", callback_data: "aster:spot_to_futures" }]);
+      }
+      balButtons.push([{ text: "Refresh", callback_data: "aster:balance" }]);
+      balButtons.push([{ text: "Aster Menu", callback_data: "action:aster" }]);
+
       await bot.sendMessage(chatId, msg, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "Fund Account", callback_data: "aster:fund" }, { text: "Positions", callback_data: "aster:positions" }],
-            [{ text: "Refresh", callback_data: "aster:balance" }],
-            [{ text: "Aster Menu", callback_data: "action:aster" }],
-          ],
-        },
+        reply_markup: { inline_keyboard: balButtons },
       });
     } catch (e: any) {
       await bot.sendMessage(chatId, `Failed to load account: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
+    }
+    return;
+  }
+
+  if (action === "spot_to_futures") {
+    await bot.sendMessage(chatId, "🔄 Checking Spot balance and transferring all USDT to Futures...");
+    try {
+      const asterClient = await getAsterClient(chatId);
+      if (!asterClient || !("spotToFutures" in asterClient)) {
+        await bot.sendMessage(chatId, "Aster V3 client not available. Make sure you have a V3 connection.", {
+          reply_markup: { inline_keyboard: [[{ text: "Test Connection", callback_data: "aster:test_connection" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+        });
+        return;
+      }
+
+      let spotBalance = "0";
+      try {
+        const spotClient = (asterClient as any);
+        const acct = await spotClient.account();
+        if (acct?.balances) {
+          const usdtBal = acct.balances.find((b: any) => b.asset === "USDT");
+          if (usdtBal) spotBalance = usdtBal.free || "0";
+        }
+      } catch {
+        try {
+          const balances = await (asterClient as any).balance();
+          if (Array.isArray(balances)) {
+            const usdtBal = balances.find((b: any) => b.asset === "USDT");
+            if (usdtBal) spotBalance = usdtBal.availableBalance || usdtBal.balance || "0";
+          }
+        } catch {}
+      }
+
+      const spotNum = parseFloat(spotBalance);
+
+      const transferAmounts = ["10", "7", "5", "3", "1", "0.5"];
+      let transferred = false;
+      let transferResult: any = null;
+      let transferAmount = "";
+
+      if (spotNum > 0.5) {
+        transferAmount = spotNum.toFixed(2);
+        try {
+          transferResult = await (asterClient as any).spotToFutures("USDT", transferAmount);
+          transferred = true;
+        } catch {}
+      }
+
+      if (!transferred) {
+        for (const amt of transferAmounts) {
+          try {
+            transferResult = await (asterClient as any).spotToFutures("USDT", amt);
+            transferred = true;
+            transferAmount = amt;
+            break;
+          } catch {}
+        }
+      }
+
+      if (transferred) {
+        let msg = "✅ Spot -> Futures Transfer Successful!\n\n";
+        msg += `Transferred: $${transferAmount} USDT\n`;
+        msg += `From: Spot Wallet\n`;
+        msg += `To: Futures Account\n\n`;
+        msg += "Your futures balance should update now. Tap Refresh below.";
+        await bot.sendMessage(chatId, msg, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "💰 Check Balance", callback_data: "aster:balance" }],
+              [{ text: "📈 Trade Futures", callback_data: "aster:trade_futures" }],
+              [{ text: "« Aster Menu", callback_data: "action:aster" }],
+            ],
+          },
+        });
+      } else {
+        let msg = "No USDT found in Spot wallet to transfer.\n\n";
+        msg += "This can happen if:\n";
+        msg += "1. Your deposit hasn't arrived yet (wait 1-3 min)\n";
+        msg += "2. Funds are already in Futures (check balance)\n";
+        msg += "3. The vault deposit went to a different account\n\n";
+        msg += "If you deposited directly to the vault address, the funds may need time to appear in your Spot wallet first.";
+        await bot.sendMessage(chatId, msg, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "💰 Check Balance", callback_data: "aster:balance" }],
+              [{ text: "🔄 Try Again", callback_data: "aster:spot_to_futures" }],
+              [{ text: "💵 Fund Account", callback_data: "aster:fund" }],
+              [{ text: "« Aster Menu", callback_data: "action:aster" }],
+            ],
+          },
+        });
+      }
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Transfer failed: ${e.message?.substring(0, 200)}\n\nTry again in a moment.`, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔄 Retry", callback_data: "aster:spot_to_futures" }],
+            [{ text: "💰 Check Balance", callback_data: "aster:balance" }],
+            [{ text: "« Aster Menu", callback_data: "action:aster" }],
+          ],
+        },
+      });
     }
     return;
   }
