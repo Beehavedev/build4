@@ -1,0 +1,70 @@
+The "Cannot access 'E' before initialization" error is a known circular import bug in the aster-connector-python package when importing Frenchie.
+
+We will temporarily switch to **raw HTTP requests** using requests + proper V3/Pro signing logic (this avoids the SDK entirely until the import bug is resolved).
+
+1. Update requirements.txt (remove or comment aster-connector-python for now):
+python-telegram-bot==20.8
+pandas
+ta
+web3
+requests
+python-dotenv
+
+2. Create a new file `aster_client.py` with this raw V3 client (handles HMAC signing like the SDK):
+
+```python
+import os
+import time
+import hmac
+import hashlib
+import requests
+from urllib.parse import urlencode
+
+class AsterTrader:
+    def __init__(self):
+        self.api_key = os.getenv("ASTER_API_KEY")
+        self.secret = os.getenv("ASTER_API_SECRET")
+        self.base_url = "https://api.asterdex.com"   # confirm exact base if different (often fapi.asterdex.com or similar)
+        self.recv_window = 30000
+
+    def _sign(self, params):
+        if not self.secret:
+            return ""
+        query_string = urlencode(sorted(params.items()))
+        signature = hmac.new(self.secret.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
+        return signature
+
+    def _request(self, method, endpoint, params=None, signed=False):
+        url = self.base_url + endpoint
+        headers = {"X-Api-Key": self.api_key} if self.api_key else {}
+        timestamp = int(time.time() * 1000)
+        
+        if params is None:
+            params = {}
+        params['timestamp'] = timestamp
+        params['recvWindow'] = self.recv_window
+
+        if signed:
+            params['signature'] = self._sign(params)
+
+        try:
+            if method.upper() == "GET":
+                response = requests.get(url, params=params, headers=headers, timeout=10)
+            else:
+                response = requests.post(url, params=params, headers=headers, timeout=10)
+            return response.json()
+        except Exception as e:
+            return {"error": str(e)}
+
+    def test_connection(self):
+        try:
+            # Test with a light private endpoint (adjust endpoint if needed based on Aster V3 docs)
+            result = self._request("GET", "/fapi/v3/account", signed=True)   # common for futures account
+            if "error" not in result and isinstance(result, dict):
+                return {"success": True, "message": "✅ Raw API connection successful! Account data received.", "data": str(result)[:500]}
+            else:
+                return {"success": False, "message": f"API responded but with issue: {result}"}
+        except Exception as e:
+            return {"success": False, "message": f"❌ Raw request error: {str(e)}"}
+
+    # Add other methods later: get_balance, get_positions, place_order, etc. using _request
