@@ -3,6 +3,20 @@ import { storage } from "./storage";
 import { getAsterClient, getUserWalletAddress, resolvePrivateKey } from "./telegram-bot";
 
 export function registerMiniAppRoutes(app: Express) {
+  app.get("/api/miniapp/debug-balance", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+      const client = await getAsterClient(parseInt(chatId));
+      if (!client) return res.json({ error: "No client" });
+      const fc = client.futures || client;
+      let balRaw: any = null, acctRaw: any = null, balErr: string | null = null, acctErr: string | null = null;
+      try { balRaw = await fc.balance(); } catch(e: any) { balErr = e.message?.substring(0, 300); }
+      try { acctRaw = await fc.account(); } catch(e: any) { acctErr = e.message?.substring(0, 300); }
+      res.json({ balRaw, acctRaw, balErr, acctErr });
+    } catch(e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   app.get("/api/miniapp/account", async (req: Request, res: Response) => {
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;

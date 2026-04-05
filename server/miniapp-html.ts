@@ -229,6 +229,8 @@ function renderDash(){
   }
 
   h+='<button class="btn btn-outline mt-2" onclick="loadDash()">↻ Refresh</button>';
+  h+='<button class="btn btn-outline mt-2" onclick="debugBalance()" style="font-size:10px">🔍 Debug API</button>';
+  h+='<pre id="debug-out" style="display:none;font-size:9px;background:var(--bg);padding:8px;border-radius:8px;overflow-x:auto;max-height:300px;margin-top:8px"></pre>';
   h+='<div class="timestamp">Updated '+timeAgo()+'</div>';
   el.innerHTML=h;
 }
@@ -335,6 +337,19 @@ async function doTransfer(amount){
     }
   }catch(e){
     st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
+  }
+}
+
+async function debugBalance(){
+  var el=document.getElementById('debug-out');
+  if(!el)return;
+  el.style.display='block';
+  el.textContent='Loading...';
+  try{
+    var r=await api('/api/miniapp/debug-balance');
+    el.textContent=JSON.stringify(r,null,2);
+  }catch(e){
+    el.textContent='Error: '+e.message;
   }
 }
 
