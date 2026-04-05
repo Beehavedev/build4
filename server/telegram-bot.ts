@@ -10649,6 +10649,35 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "deposit") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for deposit instructions!"); return; }
+      const wallet = getLinkedWallet(chatId);
+      let msg = "Deposit USDT to Aster DEX Futures Vault\n\n";
+      msg += "Network: BNB Smart Chain (BSC)\n";
+      msg += "Token: USDT (BEP-20)\n";
+      msg += "Vault Address:\n0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\n\n";
+      msg += "Instructions:\n";
+      msg += "1. Send USDT (BEP-20) from your BSC wallet to the vault address above\n";
+      msg += "2. Wait for the transaction to confirm (~15 seconds on BSC)\n";
+      msg += "3. Your deposit will appear in your Aster Futures balance within 1-2 minutes\n";
+      msg += "4. Type /status to check your updated balance\n\n";
+      msg += "Minimum deposit: $1 USDT\n";
+      msg += "Gas required: ~0.001 BNB for the transfer fee\n";
+      if (wallet) {
+        msg += `\nYour linked wallet: ${wallet.substring(0, 8)}...${wallet.substring(38)}`;
+      }
+      await bot.sendMessage(chatId, msg, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Fund via Bot Wallet", callback_data: "aster:fund" }],
+            [{ text: "Check Status", callback_data: "aster:full_status" }],
+            [{ text: "Main Menu", callback_data: "action:main" }],
+          ],
+        },
+      });
+      return;
+    }
+
     if (cmd === "chaos") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for chaos plans!"); return; }
       await ensureWallet(chatId);
@@ -13360,25 +13389,43 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       sections.push("Aster DEX - Full Status\n");
 
       let balanceSection = "Futures Vault\n";
+      let futuresBalance = 0;
       try {
-        const bal = await futuresClient.balance();
-        if (Array.isArray(bal)) {
-          const usdt = bal.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
-          if (usdt) {
-            balanceSection += `  Wallet Balance: $${parseFloat(usdt.crossWalletBalance || usdt.balance || "0").toFixed(2)}\n`;
-            balanceSection += `  Available Margin: $${parseFloat(usdt.availableBalance || "0").toFixed(2)}\n`;
-            balanceSection += `  Unrealized PnL: ${parseFloat(usdt.crossUnPnl || "0") >= 0 ? "+" : ""}$${parseFloat(usdt.crossUnPnl || "0").toFixed(2)}\n`;
-            balanceSection += `  Margin Balance: $${parseFloat(usdt.marginBalance || usdt.balance || "0").toFixed(2)}\n`;
-          } else {
-            balanceSection += `  ${bal.length} asset(s), no USDT found\n`;
+        const acct = await futuresClient.account();
+        if (acct && typeof acct === "object" && !Array.isArray(acct)) {
+          const wb = parseFloat(acct.totalWalletBalance || "0");
+          const ab = parseFloat(acct.availableBalance || acct.maxWithdrawAmount || "0");
+          const upnl = parseFloat(acct.totalUnrealizedProfit || "0");
+          const mb = parseFloat(acct.totalMarginBalance || "0");
+          futuresBalance = wb;
+          balanceSection += `  Wallet Balance: $${wb.toFixed(2)}\n`;
+          balanceSection += `  Available Margin: $${ab.toFixed(2)}\n`;
+          balanceSection += `  Margin Balance: $${mb.toFixed(2)}\n`;
+          balanceSection += `  Unrealized PnL: ${upnl >= 0 ? "+" : ""}$${upnl.toFixed(2)}\n`;
+          if (acct.positions && Array.isArray(acct.positions)) {
+            const activeFromAcct = acct.positions.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0);
+            if (activeFromAcct.length > 0) {
+              balanceSection += `  Active Positions: ${activeFromAcct.length}\n`;
+            }
           }
-        } else if (bal && typeof bal === "object") {
-          balanceSection += `  Wallet Balance: $${parseFloat(bal.totalWalletBalance || "0").toFixed(2)}\n`;
-          balanceSection += `  Available Margin: $${parseFloat(bal.availableBalance || bal.maxWithdrawAmount || "0").toFixed(2)}\n`;
-          balanceSection += `  Unrealized PnL: $${parseFloat(bal.totalUnrealizedProfit || "0").toFixed(2)}\n`;
+        } else {
+          const bal = await futuresClient.balance();
+          if (Array.isArray(bal)) {
+            const usdt = bal.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+            if (usdt) {
+              futuresBalance = parseFloat(usdt.crossWalletBalance || usdt.balance || "0");
+              balanceSection += `  Wallet Balance: $${futuresBalance.toFixed(2)}\n`;
+              balanceSection += `  Available Margin: $${parseFloat(usdt.availableBalance || "0").toFixed(2)}\n`;
+              balanceSection += `  Unrealized PnL: ${parseFloat(usdt.crossUnPnl || "0") >= 0 ? "+" : ""}$${parseFloat(usdt.crossUnPnl || "0").toFixed(2)}\n`;
+            } else {
+              balanceSection += `  ${bal.length} asset(s), no USDT found\n`;
+            }
+          } else {
+            balanceSection += `  Response keys: ${Object.keys(acct || {}).slice(0, 8).join(", ")}\n`;
+          }
         }
       } catch (e: any) {
-        balanceSection += `  Error: ${e.message?.substring(0, 120)}\n`;
+        balanceSection += `  Error: ${e.message?.substring(0, 150)}\n`;
       }
       sections.push(balanceSection);
 
@@ -13450,11 +13497,16 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         sections.push(walletSection);
       }
 
+      if (futuresBalance < 1) {
+        sections.push("Deposit $10+ USDT to your Futures Vault to start trading.\nUse /deposit for instructions.\n");
+      }
+
       await bot.sendMessage(chatId, sections.join("\n"), {
         reply_markup: {
           inline_keyboard: [
             [{ text: "Refresh", callback_data: "aster:full_status" }],
-            [{ text: "Fund Account", callback_data: "aster:fund" }],
+            ...(futuresBalance < 1 ? [[{ text: "Deposit Instructions", callback_data: "aster:deposit_info" }]] : []),
+            [{ text: "Fund via Bot Wallet", callback_data: "aster:fund" }],
             [{ text: "Aster Menu", callback_data: "action:aster" }],
           ],
         },
@@ -13464,6 +13516,33 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         reply_markup: { inline_keyboard: [[{ text: "Aster Menu", callback_data: "action:aster" }]] },
       });
     }
+    return;
+  }
+
+  if (action === "deposit_info") {
+    const wallet = getLinkedWallet(chatId);
+    let msg = "Deposit USDT to Aster DEX Futures Vault\n\n";
+    msg += "Network: BNB Smart Chain (BSC)\n";
+    msg += "Token: USDT (BEP-20)\n";
+    msg += "Vault Address:\n0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\n\n";
+    msg += "Instructions:\n";
+    msg += "1. Send USDT (BEP-20) to the vault address above\n";
+    msg += "2. Wait for BSC confirmation (~15 seconds)\n";
+    msg += "3. Balance appears in Aster Futures within 1-2 minutes\n";
+    msg += "4. Use /status to check your updated balance\n\n";
+    msg += "Minimum: $1 USDT | Gas: ~0.001 BNB\n";
+    if (wallet) {
+      msg += `\nYour wallet: ${wallet.substring(0, 8)}...${wallet.substring(38)}`;
+    }
+    await bot.sendMessage(chatId, msg, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "Fund via Bot Wallet", callback_data: "aster:fund" }],
+          [{ text: "Check Status", callback_data: "aster:full_status" }],
+          [{ text: "Aster Menu", callback_data: "action:aster" }],
+        ],
+      },
+    });
     return;
   }
 

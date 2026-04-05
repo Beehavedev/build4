@@ -386,6 +386,9 @@ async function makeV3Request(
     if (!response.ok) {
       const code = data?.code || response.status;
       const msg = data?.msg || data?.message || text.substring(0, 200);
+      if (response.status === 405) {
+        throw new Error(`Aster V3 API 405 Method Not Allowed on ${path} (tried ${method}). Endpoint may require ${method === "GET" ? "POST" : "GET"} instead.`);
+      }
       throw new Error(`Aster V3 API error ${code}: ${msg}`);
     }
 
@@ -697,33 +700,33 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
     },
 
     async balance(): Promise<AsterBalance[]> {
-      return request("/fapi/v2/balance", { signed: true });
+      return request("/fapi/v3/balance", { signed: true });
     },
 
     async account(): Promise<any> {
-      return request("/fapi/v2/account", { signed: true });
+      return request("/fapi/v3/account", { signed: true });
     },
 
     async accountWithJoinMargin(): Promise<any> {
-      return request("/fapi/v2/account", { signed: true });
+      return request("/fapi/v3/account", { signed: true });
     },
 
     async positionRisk(): Promise<AsterPosition[]> {
-      const data = await request("/fapi/v2/positionRisk", { signed: true });
+      const data = await request("/fapi/v3/positionRisk", { signed: true });
       if (Array.isArray(data)) return data;
       return [];
     },
 
     async positions(): Promise<AsterPosition[]> {
-      const data = await request("/fapi/v2/positionRisk", { signed: true });
+      const data = await request("/fapi/v3/positionRisk", { signed: true });
       if (Array.isArray(data)) return data;
       return [];
     },
 
     async testConnection(): Promise<{ success: boolean; data?: any; error?: string }> {
       try {
-        const bal = await request("/fapi/v2/balance", { signed: true });
-        return { success: true, data: bal };
+        const acct = await request("/fapi/v3/account", { signed: true });
+        return { success: true, data: acct };
       } catch (e: any) {
         return { success: false, error: e.message };
       }
@@ -902,52 +905,20 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
     },
 
     async balance(): Promise<AsterBalance[]> {
-      const endpoints = ["/fapi/v3/balance", "/fapi/v2/balance", "/fapi/v1/balance"];
-      for (const ep of endpoints) {
-        try {
-          const data = await makeV3Request(baseUrl, ep, user, signer, signerPrivateKey, { method: "POST" });
-          console.log(`[AsterV3] balance succeeded with endpoint: ${ep}`);
-          return data;
-        } catch (e: any) {
-          console.log(`[AsterV3] balance failed on ${ep}: ${e.message?.substring(0, 120)}`);
-          if (ep === endpoints[endpoints.length - 1]) throw e;
-        }
-      }
-      return [];
+      return makeV3Request(baseUrl, "/fapi/v3/balance", user, signer, signerPrivateKey, { method: "GET" });
     },
 
     async account(): Promise<any> {
-      const endpoints = ["/fapi/v3/account", "/fapi/v2/account", "/fapi/v1/account"];
-      for (const ep of endpoints) {
-        try {
-          const data = await makeV3Request(baseUrl, ep, user, signer, signerPrivateKey, { method: "POST" });
-          console.log(`[AsterV3] account succeeded with endpoint: ${ep}`);
-          return data;
-        } catch (e: any) {
-          console.log(`[AsterV3] account failed on ${ep}: ${e.message?.substring(0, 120)}`);
-          if (ep === endpoints[endpoints.length - 1]) throw e;
-        }
-      }
-      return null;
+      return makeV3Request(baseUrl, "/fapi/v3/account", user, signer, signerPrivateKey, { method: "GET" });
     },
 
     async accountWithJoinMargin(): Promise<any> {
-      return makeV3Request(baseUrl, "/fapi/v3/accountWithJoinMargin", user, signer, signerPrivateKey, { method: "POST" });
+      return makeV3Request(baseUrl, "/fapi/v3/account", user, signer, signerPrivateKey, { method: "GET" });
     },
 
     async positionRisk(): Promise<AsterPosition[]> {
-      const endpoints = ["/fapi/v3/positionRisk", "/fapi/v2/positionRisk", "/fapi/v1/positionRisk"];
-      for (const ep of endpoints) {
-        try {
-          const data = await makeV3Request(baseUrl, ep, user, signer, signerPrivateKey, { method: "POST" });
-          console.log(`[AsterV3] positionRisk succeeded with endpoint: ${ep}`);
-          if (Array.isArray(data)) return data;
-          return [];
-        } catch (e: any) {
-          console.log(`[AsterV3] positionRisk failed on ${ep}: ${e.message?.substring(0, 120)}`);
-          if (ep === endpoints[endpoints.length - 1]) throw e;
-        }
-      }
+      const data = await makeV3Request(baseUrl, "/fapi/v3/positionRisk", user, signer, signerPrivateKey, { method: "GET" });
+      if (Array.isArray(data)) return data;
       return [];
     },
 
@@ -957,8 +928,8 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
 
     async testConnection(): Promise<{ success: boolean; data?: any; error?: string }> {
       try {
-        const bal = await this.balance();
-        return { success: true, data: bal };
+        const acct = await this.account();
+        return { success: true, data: acct };
       } catch (e: any) {
         return { success: false, error: e.message };
       }
@@ -1004,15 +975,15 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
     async openOrders(symbol?: string): Promise<AsterOrder[]> {
       const params: Record<string, string | number | boolean | undefined> = {};
       if (symbol) params.symbol = symbol;
-      return makeV3Request(baseUrl, "/fapi/v3/openOrders", user, signer, signerPrivateKey, { method: "POST", params });
+      return makeV3Request(baseUrl, "/fapi/v3/openOrders", user, signer, signerPrivateKey, { method: "GET", params });
     },
 
     async allOrders(symbol: string, limit: number = 50): Promise<AsterOrder[]> {
-      return makeV3Request(baseUrl, "/fapi/v3/allOrders", user, signer, signerPrivateKey, { method: "POST", params: { symbol, limit } });
+      return makeV3Request(baseUrl, "/fapi/v3/allOrders", user, signer, signerPrivateKey, { method: "GET", params: { symbol, limit } });
     },
 
     async userTrades(symbol: string, limit: number = 50): Promise<any[]> {
-      return makeV3Request(baseUrl, "/fapi/v3/userTrades", user, signer, signerPrivateKey, { method: "POST", params: { symbol, limit } });
+      return makeV3Request(baseUrl, "/fapi/v3/userTrades", user, signer, signerPrivateKey, { method: "GET", params: { symbol, limit } });
     },
 
     async setLeverage(symbol: string, leverage: number): Promise<any> {
