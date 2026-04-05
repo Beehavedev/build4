@@ -23,49 +23,59 @@ export function registerMiniAppRoutes(app: Express) {
         futuresClient.income("REALIZED_PNL", 20).catch((e: any) => { console.log(`[MiniApp] income() error: ${e.message}`); return []; }),
       ]);
 
-      console.log(`[MiniApp] balance raw (type=${typeof balances}, isArray=${Array.isArray(balances)}): ${JSON.stringify(balances).substring(0, 400)}`);
-      console.log(`[MiniApp] account raw: ${JSON.stringify(accountData).substring(0, 400)}`);
+      console.log(`[MiniApp] balance raw: ${JSON.stringify(balances).substring(0, 500)}`);
+      console.log(`[MiniApp] account raw: ${JSON.stringify(accountData).substring(0, 500)}`);
 
-      let usdtBal: any = null;
-      if (Array.isArray(balances) && balances.length > 0) {
-        usdtBal = balances.find((b: any) => b.asset === "USDT" || b.asset === "usdt");
-      }
+      let availBal = 0;
+      let walletBal = 0;
 
-      if (!usdtBal && accountData) {
-        const acctAssets = accountData.assets || [];
-        if (Array.isArray(acctAssets) && acctAssets.length > 0) {
-          usdtBal = acctAssets.find((a: any) => a.asset === "USDT" || a.asset === "usdt");
-        }
-        if (!usdtBal) {
-          const wb = accountData.totalWalletBalance || accountData.totalCrossWalletBalance;
-          const ab = accountData.availableBalance || accountData.totalCrossUnPnl !== undefined
-            ? String(parseFloat(accountData.totalWalletBalance || "0") + parseFloat(accountData.totalCrossUnPnl || "0"))
-            : "0";
-          if (wb && parseFloat(wb) > 0) {
-            usdtBal = {
-              asset: "USDT",
-              availableBalance: accountData.availableBalance || accountData.maxWithdrawAmount || wb,
-              crossWalletBalance: accountData.totalCrossWalletBalance || wb,
-              balance: accountData.totalWalletBalance || wb,
-            };
+      function extractFromObj(obj: any): boolean {
+        if (!obj || typeof obj !== "object") return false;
+        const keys = Object.keys(obj);
+        for (const k of keys) {
+          const v = obj[k];
+          if (typeof v === "string" || typeof v === "number") {
+            const num = parseFloat(String(v));
+            if (!isNaN(num) && num > 0) {
+              const kl = k.toLowerCase();
+              if (kl.includes("availablebalance") || kl.includes("available") || kl.includes("maxwithdraw")) {
+                availBal = Math.max(availBal, num);
+              }
+              if (kl.includes("walletbalance") || kl.includes("crosswalletbalance") || kl.includes("balance") || kl.includes("totalwalletbalance")) {
+                walletBal = Math.max(walletBal, num);
+              }
+            }
           }
         }
+        return availBal > 0 || walletBal > 0;
       }
 
-      if (!usdtBal && balances && typeof balances === "object" && !Array.isArray(balances)) {
-        if ((balances as any).totalCrossWalletBalance || (balances as any).availableBalance || (balances as any).totalWalletBalance) {
-          usdtBal = {
-            asset: "USDT",
-            availableBalance: (balances as any).availableBalance || (balances as any).maxWithdrawAmount || "0",
-            crossWalletBalance: (balances as any).totalCrossWalletBalance || "0",
-            balance: (balances as any).totalWalletBalance || "0",
-          };
+      if (Array.isArray(balances) && balances.length > 0) {
+        const usdtBal = balances.find((b: any) => {
+          const a = (b.asset || "").toUpperCase();
+          return a === "USDT" || a === "USD";
+        });
+        if (usdtBal) extractFromObj(usdtBal);
+      }
+
+      if (availBal === 0 && walletBal === 0 && balances && typeof balances === "object" && !Array.isArray(balances)) {
+        extractFromObj(balances);
+      }
+
+      if (availBal === 0 && walletBal === 0 && accountData) {
+        if (Array.isArray(accountData.assets)) {
+          const usdtAsset = accountData.assets.find((a: any) => (a.asset || "").toUpperCase() === "USDT");
+          if (usdtAsset) extractFromObj(usdtAsset);
+        }
+        if (availBal === 0 && walletBal === 0) {
+          extractFromObj(accountData);
         }
       }
 
-      const availBal = usdtBal ? parseFloat(usdtBal.availableBalance || usdtBal.crossWalletBalance || "0") : 0;
-      const walletBal = usdtBal ? parseFloat(usdtBal.crossWalletBalance || usdtBal.balance || "0") : 0;
-      console.log(`[MiniApp] parsed: availBal=${availBal}, walletBal=${walletBal}, usdtBal=${JSON.stringify(usdtBal)?.substring(0, 200)}`);
+      if (availBal === 0 && walletBal > 0) availBal = walletBal;
+      if (walletBal === 0 && availBal > 0) walletBal = availBal;
+
+      console.log(`[MiniApp] parsed: availBal=${availBal}, walletBal=${walletBal}`);
 
       const openPositions = Array.isArray(positions)
         ? positions.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0)
@@ -388,6 +398,35 @@ export function registerMiniAppRoutes(app: Express) {
     } catch (e: any) {
       console.error(`[MiniApp] Close error: ${e.message}`);
       res.status(500).json({ error: e.message?.substring(0, 200) });
+    }
+  });
+
+  app.get("/api/miniapp/debug", async (_req: Request, res: Response) => {
+    try {
+      const { getAsterClient } = await import("./telegram-bot");
+      const client = await getAsterClient(0);
+      if (!client) return res.json({ error: "No Aster client", hasPrivateKey: !!process.env.ASTER_PRIVATE_KEY, hasUser: !!process.env.ASTER_USER_ADDRESS });
+      const fc = client.futures || client;
+      const [bal, acct] = await Promise.all([
+        fc.balance().catch((e: any) => ({ error: e.message })),
+        fc.account().catch((e: any) => ({ error: e.message })),
+      ]);
+      res.json({
+        balanceType: typeof bal,
+        balanceIsArray: Array.isArray(bal),
+        balance: JSON.parse(JSON.stringify(bal)).toString !== undefined ? bal : bal,
+        accountKeys: acct && typeof acct === "object" && !acct.error ? Object.keys(acct) : null,
+        accountAssetsSample: acct?.assets?.slice?.(0, 2) || null,
+        accountTopLevel: acct && typeof acct === "object" && !acct.error ? {
+          totalWalletBalance: acct.totalWalletBalance,
+          totalCrossWalletBalance: acct.totalCrossWalletBalance,
+          availableBalance: acct.availableBalance,
+          totalCrossUnPnl: acct.totalCrossUnPnl,
+          maxWithdrawAmount: acct.maxWithdrawAmount,
+        } : acct,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 
