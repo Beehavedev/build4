@@ -9,19 +9,32 @@ export function registerMiniAppRoutes(app: Express) {
       if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
 
       const client = await getAsterClient(parseInt(chatId));
-      if (!client) return res.json({ connected: false });
+      if (!client) {
+        console.log(`[MiniApp] No Aster client for chatId=${chatId}`);
+        return res.json({ connected: false });
+      }
 
       const futuresClient = client.futures || client;
 
       const [balances, positions, income] = await Promise.all([
-        futuresClient.balance().catch(() => []),
-        futuresClient.positions().catch(() => []),
-        futuresClient.income("REALIZED_PNL", 20).catch(() => []),
+        futuresClient.balance().catch((e: any) => { console.log(`[MiniApp] balance() error: ${e.message}`); return []; }),
+        futuresClient.positions().catch((e: any) => { console.log(`[MiniApp] positions() error: ${e.message}`); return []; }),
+        futuresClient.income("REALIZED_PNL", 20).catch((e: any) => { console.log(`[MiniApp] income() error: ${e.message}`); return []; }),
       ]);
 
-      const usdtBal = Array.isArray(balances)
-        ? balances.find((b: any) => b.asset === "USDT" || b.asset === "usdt")
-        : null;
+      console.log(`[MiniApp] balance raw (type=${typeof balances}, isArray=${Array.isArray(balances)}): ${JSON.stringify(balances).substring(0, 300)}`);
+
+      let usdtBal: any = null;
+      if (Array.isArray(balances)) {
+        usdtBal = balances.find((b: any) => b.asset === "USDT" || b.asset === "usdt");
+      } else if (balances && typeof balances === "object") {
+        if ((balances as any).asset) {
+          usdtBal = balances;
+        } else if ((balances as any).totalCrossWalletBalance || (balances as any).availableBalance) {
+          usdtBal = { asset: "USDT", availableBalance: (balances as any).availableBalance || "0", crossWalletBalance: (balances as any).totalCrossWalletBalance || "0", balance: (balances as any).totalWalletBalance || "0" };
+        }
+      }
+
       const availBal = usdtBal ? parseFloat(usdtBal.availableBalance || usdtBal.crossWalletBalance || "0") : 0;
       const walletBal = usdtBal ? parseFloat(usdtBal.crossWalletBalance || usdtBal.balance || "0") : 0;
 
@@ -239,7 +252,10 @@ export function registerMiniAppRoutes(app: Express) {
       const chatId = req.headers["x-telegram-chat-id"] as string;
       const client = chatId ? await getAsterClient(parseInt(chatId)) : null;
 
-      if (!client) return res.json({ markets: [] });
+      if (!client) {
+        console.log(`[MiniApp] markets: no client (chatId=${chatId || 'missing'})`);
+        return res.json({ markets: [] });
+      }
       const futuresClient = client.futures || client;
 
       const prices = await Promise.all(

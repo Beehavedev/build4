@@ -13201,6 +13201,9 @@ function getOwnerAsterClient(): any {
 }
 
 export async function getAsterClient(chatId: number): Promise<any> {
+  if (!cachedOwnerClient && !ownerClientInitAttempted) {
+    await initOwnerAsterClient();
+  }
   const ownerClient = getOwnerAsterClient();
   if (ownerClient) return ownerClient;
 
