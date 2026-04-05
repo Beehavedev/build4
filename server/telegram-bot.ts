@@ -14478,13 +14478,11 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         msg += `*Token:* USDT (BEP-20)\n\n`;
 
         const depositButtons: TelegramBot.InlineKeyboardButton[][] = [];
+        const VAULT_ADDR_FUND = "0x128463A60784c4D3f46c23Af3f65Ed859Ba87974";
         if (walletBal >= 1) {
-          msg += `✅ You have \`$${walletBal.toFixed(2)}\` USDT ready!\n`;
-          msg += `Choose an amount to deposit into Futures Vault:\n\n`;
-          msg += `*Steps:*\n`;
-          msg += `1. Select amount below\n`;
-          msg += `2. USDT moves on-chain to Aster's vault\n`;
-          msg += `3. Margin appears in ~1 min — then trade!\n`;
+          msg += `✅ You have \`$${walletBal.toFixed(2)}\` USDT in your wallet.\n`;
+          msg += `Choose an amount, then send from your wallet to the vault:\n\n`;
+          msg += `*Vault Address (BSC USDT):*\n\`${VAULT_ADDR_FUND}\`\n\n`;
           const presets = [10, 25, 50, 100].filter(v => v <= walletBal);
           if (presets.length > 0) {
             depositButtons.push(presets.map(v => ({ text: `💵 $${v}`, callback_data: `aster:v3dep_${v}` })));
@@ -14495,15 +14493,17 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
           msg += `✅ Your futures vault is funded and ready to trade!`;
         } else {
           msg += `⚠️ *No USDT in wallet.* To fund:\n\n`;
-          msg += `*Step 1:* Copy your wallet address above\n`;
-          msg += `*Step 2:* Send USDT (BEP-20) on BSC to that address\n`;
+          msg += `*Step 1:* Send USDT (BEP-20) on BSC to the vault:\n`;
+          msg += `\`${VAULT_ADDR_FUND}\`\n`;
           msg += `  _(from MetaMask, Trust Wallet, or any exchange)_\n`;
-          msg += `*Step 3:* Tap 🔄 Refresh below\n`;
-          msg += `*Step 4:* Choose deposit amount\n\n`;
+          msg += `*Step 2:* Wait 2-10 minutes\n`;
+          msg += `*Step 3:* Tap 🔄 Refresh or type /status\n\n`;
           msg += `⚠️ *Only send USDT on BSC network. Wrong chain = lost funds.*`;
         }
+        msg += `\n\n📋 After sending from your wallet, always use *Confirm TX Hash* with the transaction hash from your wallet so I can verify it.`;
         depositButtons.push([{ text: "📋 Confirm TX Hash", callback_data: "aster:confirm_deposit" }]);
-        depositButtons.push([{ text: "🔄 Refresh", callback_data: "aster:fund" }]);
+        depositButtons.push([{ text: "🔄 Refresh Balance", callback_data: "aster:refresh_balance" }]);
+        depositButtons.push([{ text: "🔄 Transfer Spot → Futures", callback_data: "aster:spot_to_futures" }]);
         depositButtons.push([{ text: "« Aster Menu", callback_data: "action:aster" }]);
         await bot.sendMessage(chatId, msg, {
           parse_mode: "Markdown",
@@ -16516,9 +16516,15 @@ async function handleAsterTradeFlow(chatId: number, text: string): Promise<void>
     pendingAsterTrade.delete(chatId);
     const txHash = input.trim();
     if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
-      await bot.sendMessage(chatId, "❌ Invalid transaction hash. It should be a 66-character hex string starting with 0x.\n\nTry again or tap Fund Account.", {
-        reply_markup: { inline_keyboard: [[{ text: "📋 Confirm TX Hash", callback_data: "aster:confirm_deposit" }], [{ text: "💵 Fund Account", callback_data: "aster:fund" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
-      });
+      await bot.sendMessage(chatId,
+        "❌ Invalid hash. It must be exactly 66 characters starting with 0x.\n\n" +
+        "Example: `0xd7f4b520a8e3c...ef414c`\n\n" +
+        "You can find this in your wallet's transaction history after sending. Tap Confirm TX Hash to try again.",
+        {
+          parse_mode: "Markdown",
+          reply_markup: { inline_keyboard: [[{ text: "📋 Confirm TX Hash", callback_data: "aster:confirm_deposit" }], [{ text: "💵 Fund Account", callback_data: "aster:fund" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+        }
+      );
       return;
     }
 
