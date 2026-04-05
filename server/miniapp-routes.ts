@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
-import { getAsterClient, getUserWalletAddress } from "./telegram-bot";
+import { getAsterClient, getUserWalletAddress, resolvePrivateKey } from "./telegram-bot";
 
 export function registerMiniAppRoutes(app: Express) {
   app.get("/api/miniapp/account", async (req: Request, res: Response) => {
@@ -179,11 +179,13 @@ export function registerMiniAppRoutes(app: Express) {
       if (walletRows.length === 0) return res.status(400).json({ error: "No wallet linked to this chat. Use /start in the bot first." });
 
       const walletAddr = walletRows[0].walletAddress;
-      const encPk = walletRows[0].encryptedPrivateKey;
-      if (!encPk) return res.status(400).json({ error: "No private key available for auto-deposit" });
 
-      const rawPk = await storage.getTelegramWalletPrivateKey(chatId, walletAddr);
-      if (!rawPk) return res.status(400).json({ error: "Could not decrypt wallet key" });
+      const rawPk = await resolvePrivateKey(parseInt(chatId), walletAddr);
+      if (!rawPk) return res.status(400).json({ error: "No private key available for auto-deposit. Use the bot /fund command instead." });
+
+      const ethers = await import("ethers");
+      const pkWallet = new ethers.Wallet(rawPk);
+      console.log(`[MiniApp] deposit: stored wallet=${walletAddr}, key derives to=${pkWallet.address}`);
 
       const { asterV3Deposit } = await import("./aster-client");
       const result = await asterV3Deposit(rawPk, amount, 0);

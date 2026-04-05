@@ -1366,7 +1366,7 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
   return addr;
 }
 
-async function resolvePrivateKey(chatId: number, walletAddr: string): Promise<string | null> {
+export async function resolvePrivateKey(chatId: number, walletAddr: string): Promise<string | null> {
   const lowerAddr = walletAddr.toLowerCase();
   const cacheKey = `${chatId}:${lowerAddr}`;
   const cached = inMemoryKeyCache.get(cacheKey);
