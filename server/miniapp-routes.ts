@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
-import { getAsterClient } from "./telegram-bot";
+import { getAsterClient, getUserWalletAddress } from "./telegram-bot";
 
 export function registerMiniAppRoutes(app: Express) {
   app.get("/api/miniapp/account", async (req: Request, res: Response) => {
@@ -120,20 +120,24 @@ export function registerMiniAppRoutes(app: Express) {
       let bscBalance = 0;
       let walletAddr: string | null = null;
       try {
-        const walletRows = await storage.getTelegramWallets(chatId);
-        walletAddr = walletRows.length > 0 ? walletRows[0].walletAddress : null;
-        console.log(`[MiniApp] BSC wallet lookup chatId=${chatId}, found=${walletRows.length}, addr=${walletAddr}`);
+        walletAddr = getUserWalletAddress(parseInt(chatId));
+        console.log(`[MiniApp] in-memory wallet for chatId=${chatId}: ${walletAddr}`);
+        if (!walletAddr) {
+          const walletRows = await storage.getTelegramWallets(chatId);
+          walletAddr = walletRows.length > 0 ? walletRows[0].walletAddress : null;
+          console.log(`[MiniApp] DB wallet fallback chatId=${chatId}, found=${walletRows.length}, addr=${walletAddr}`);
+        }
         if (walletAddr) {
-          const { Contract, JsonRpcProvider, formatUnits } = await import("ethers");
-          const provider = new JsonRpcProvider("https://bsc-dataseed1.binance.org");
-          const usdt = new Contract(
+          const ethers = await import("ethers");
+          const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+          const usdt = new ethers.Contract(
             "0x55d398326f99059fF775485246999027B3197955",
             ["function balanceOf(address) view returns (uint256)"],
             provider
           );
           const bal = await usdt.balanceOf(walletAddr);
-          bscBalance = parseFloat(formatUnits(bal, 18));
-          console.log(`[MiniApp] BSC USDT balance for ${walletAddr}: ${bscBalance}`);
+          bscBalance = parseFloat(ethers.formatUnits(bal, 18));
+          console.log(`[MiniApp] BSC USDT balance for ${walletAddr}: $${bscBalance}`);
         }
       } catch (bscErr: any) {
         console.error(`[MiniApp] BSC balance fetch error:`, bscErr.message);
@@ -162,10 +166,11 @@ export function registerMiniAppRoutes(app: Express) {
       const chatId = req.headers["x-telegram-chat-id"] as string;
       const { amount } = req.body;
       if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
-      if (!amount || amount < 1) return res.status(400).json({ error: "Minimum deposit is $1" });
+      if (!amount || amount < 0.5) return res.status(400).json({ error: "Minimum deposit is $0.50" });
 
+      console.log(`[MiniApp] deposit request chatId=${chatId}, amount=${amount}`);
       const walletRows = await storage.getTelegramWallets(chatId);
-      if (walletRows.length === 0) return res.status(400).json({ error: "No wallet linked" });
+      if (walletRows.length === 0) return res.status(400).json({ error: "No wallet linked to this chat. Use /start in the bot first." });
 
       const walletAddr = walletRows[0].walletAddress;
       const pk = walletRows[0].encryptedPrivateKey;

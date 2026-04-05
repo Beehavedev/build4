@@ -125,7 +125,7 @@ const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
 const VAULT='0x128463A60784c4D3f46c23Af3f65Ed859Ba87974';
-let D={connected:false,availableMargin:0,walletBalance:0,bscBalance:0,unrealizedPnl:0,realizedPnl:0,wins:0,losses:0,positions:[],recentIncome:[]};
+let D={connected:false,availableMargin:0,walletBalance:0,bscBalance:0,bscWalletAddress:'',unrealizedPnl:0,realizedPnl:0,wins:0,losses:0,positions:[],recentIncome:[]};
 let M={markets:[]};
 let AG=null;
 let lastUpdate=0;
@@ -232,34 +232,81 @@ function renderDash(){
   el.innerHTML=h;
 }
 
-function loadDeposit(){
+async function loadDeposit(){
   const el=$('p-deposit');
-  let h='<div class="section-title" style="font-size:16px">💰 Deposit USDT</div>';
+  el.innerHTML=skeletonCard(3)+skeletonCard(2);
+  if(!D.connected)await fetchAll();
+  renderDeposit();
+}
 
-  h+='<div class="card"><div class="label">Current Balances</div><div class="grid3 mt-2">';
-  h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">BSC</div><div class="val-xs text-w mt-1">$'+fmt(D.bscBalance)+'</div></div>';
-  h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Spot</div><div class="val-xs text-w mt-1">$'+fmt(D.walletBalance)+'</div></div>';
-  h+='<div style="text-align:center;padding:8px;background:var(--green-bg);border-radius:8px"><div class="text-xs" style="color:var(--green)">Futures</div><div class="val-xs text-w mt-1">$'+fmt(D.availableMargin)+'</div></div>';
+function shortAddr(a){return a?(a.slice(0,6)+'...'+a.slice(-4)):'-'}
+
+function renderDeposit(){
+  const el=$('p-deposit');
+  let h='<div class="section-title" style="font-size:16px">💰 Fund Your Account</div>';
+
+  h+='<div class="card card-accent"><div class="row" style="align-items:flex-start"><div style="flex:1"><div class="label">Your Bot Wallet (BSC)</div>';
+  if(D.bscWalletAddress){
+    h+='<div class="text-xs mono mt-1" style="color:var(--blue);cursor:pointer" onclick="navigator.clipboard.writeText(\''+D.bscWalletAddress+'\').then(()=>toast(\'Wallet address copied\',\'ok\'))">'+shortAddr(D.bscWalletAddress)+' 📋</div>';
+  }else{
+    h+='<div class="text-xs text-dim mt-1">No wallet linked</div>';
+  }
+  h+='</div><div style="text-align:right"><div class="val" style="font-size:28px">$'+fmt(D.bscBalance)+'</div><div class="text-xs text-dim">USDT Balance</div></div></div></div>';
+
+  h+='<div class="card"><div class="label">Account Balances</div><div class="grid3 mt-2">';
+  h+='<div style="text-align:center;padding:10px 8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">BSC Wallet</div><div class="val-sm text-w mt-1">$'+fmt(D.bscBalance)+'</div></div>';
+  h+='<div style="text-align:center;padding:10px 8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Spot</div><div class="val-sm text-w mt-1">$'+fmt(D.walletBalance)+'</div></div>';
+  h+='<div style="text-align:center;padding:10px 8px;background:var(--green-bg);border-radius:8px"><div class="text-xs" style="color:var(--green)">Futures</div><div class="val-sm text-w mt-1">$'+fmt(D.availableMargin)+'</div></div>';
   h+='</div></div>';
 
-  h+='<div class="card card-accent"><div class="section-title">📥 Deposit to Aster Vault</div>';
-  h+='<div class="text-xs text-dim mb-3">Send <strong style="color:#fff">USDT (BEP-20)</strong> on <strong style="color:#fff">BSC network</strong> to this vault address. Funds will appear in your Aster account within 1-5 minutes.</div>';
+  h+='<div class="card"><div class="section-title">📤 Transfer to Aster</div>';
+  h+='<div class="text-xs text-dim mb-3">Choose how much to deposit from your BSC wallet to start trading.</div>';
+  const transferAmts=[1,5,10,25];
+  h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">';
+  transferAmts.forEach(a=>{
+    const dis=D.bscBalance<a?'disabled style="opacity:.4;cursor:not-allowed"':'onclick="doTransfer('+a+')"';
+    h+='<button class="btn btn-outline" '+dis+'>$'+a+'</button>';
+  });
+  h+='</div>';
+  if(D.bscBalance>0){
+    h+='<button class="btn btn-green mt-3" style="width:100%" onclick="doTransfer('+Math.floor(D.bscBalance*100)/100+')">Transfer All ($'+fmt(D.bscBalance)+')</button>';
+  }
+  h+='<div id="transfer-status"></div>';
+  h+='</div>';
+
+  h+='<div class="card card-accent"><div class="section-title">📥 External Deposit</div>';
+  h+='<div class="text-xs text-dim mb-3">Or send <strong style="color:#fff">USDT (BEP-20)</strong> from an external wallet to the Aster vault:</div>';
   h+='<div class="vault-box" id="vault-box" onclick="copyVault()">'+VAULT+'<div class="text-xs mt-1" style="color:var(--text2)" id="copy-label">Tap to copy address</div></div>';
-  h+='<div class="alert alert-warn mt-3"><span>⚠️</span><span>Only send USDT on BSC (BNB Smart Chain). Sending other tokens or using a different network will result in permanent loss of funds.</span></div>';
+  h+='<div class="alert alert-warn mt-3"><span>⚠️</span><span>Only send USDT on BSC (BNB Smart Chain).</span></div>';
   h+='</div>';
 
   h+='<div class="card"><div class="section-title">🔍 Verify Deposit (TX Hash)</div>';
-  h+='<div class="text-xs text-dim mb-2">After sending, paste your BSC transaction hash to verify and track your deposit.</div>';
+  h+='<div class="text-xs text-dim mb-2">Paste your BSC transaction hash to verify and track your deposit.</div>';
   h+='<input id="txhash" class="input" placeholder="0x... (66 characters)" maxlength="66" oninput="validateTxHash()">';
   h+='<div id="txhash-err" class="text-xs mt-1" style="color:var(--red);display:none"></div>';
   h+='<button id="verify-btn" class="btn btn-green mt-3" disabled onclick="verifyDeposit()">Verify Transaction</button>';
   h+='<div id="verify-status"></div>';
   h+='</div>';
 
-  h+='<div class="card"><div class="section-title">ℹ️ How It Works</div>';
-  h+='<div class="text-xs text-dim" style="line-height:1.8">1. Send USDT (BEP-20) to the vault address above<br>2. Funds arrive in your Aster Spot account (1-5 min)<br>3. Transfer from Spot → Futures in the bot (/aster)<br>4. Start trading with your Futures margin</div></div>';
-
+  h+='<button class="btn btn-outline mt-2" onclick="loadDeposit()">↻ Refresh Balances</button>';
   el.innerHTML=h;
+}
+
+async function doTransfer(amount){
+  const st=$('transfer-status');
+  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Initiating transfer of $'+fmt(amount)+' to Aster vault...</span></div>';
+  try{
+    const r=await api('/api/miniapp/deposit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount})});
+    if(r.success){
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><div><strong>Transfer submitted!</strong><br><span class="text-xs">$'+fmt(amount)+' USDT sent to vault. Should appear in your Spot account in 1-5 min.'+(r.txHash?'<br>TX: <a href="https://bscscan.com/tx/'+r.txHash+'" target="_blank" style="color:var(--green)">'+r.txHash.slice(0,14)+'... ↗</a>':'')+'</span></div></div>';
+      toast('✅ Transfer submitted!','ok');
+      setTimeout(()=>fetchAll().then(()=>renderDeposit()),10000);
+    }else{
+      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Transfer failed')+'</span></div>';
+    }
+  }catch(e){
+    st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
+  }
 }
 
 function copyVault(){

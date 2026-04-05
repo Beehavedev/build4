@@ -975,6 +975,12 @@ function removeWallet(chatId: number, index: number): boolean {
   return true;
 }
 
+export function getUserWalletAddress(chatId: number): string | null {
+  const data = telegramWalletMap.get(chatId);
+  if (!data || data.wallets.length === 0) return null;
+  return data.wallets[data.active] || data.wallets[0];
+}
+
 export function getChatIdByWallet(wallet: string): number | undefined {
   const lowerWallet = wallet.toLowerCase();
   for (const [chatId, data] of telegramWalletMap.entries()) {
