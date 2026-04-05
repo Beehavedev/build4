@@ -15155,7 +15155,8 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     await bot.sendMessage(chatId, "🔄 Checking Spot balance and transferring all USDT to Futures...");
     try {
       const asterClient = await getAsterClient(chatId);
-      if (!asterClient || !("spotToFutures" in asterClient)) {
+      const futClient = asterClient?.futures || asterClient;
+      if (!futClient || !("spotToFutures" in futClient)) {
         await bot.sendMessage(chatId, "Aster V3 client not available. Make sure you have a V3 connection.", {
           reply_markup: { inline_keyboard: [[{ text: "Test Connection", callback_data: "aster:test_connection" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
         });
@@ -15164,21 +15165,12 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
       let spotBalance = "0";
       try {
-        const spotClient = (asterClient as any);
-        const acct = await spotClient.account();
-        if (acct?.balances) {
-          const usdtBal = acct.balances.find((b: any) => b.asset === "USDT");
+        const spotBalances = await futClient.spotBalance?.();
+        if (Array.isArray(spotBalances)) {
+          const usdtBal = spotBalances.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
           if (usdtBal) spotBalance = usdtBal.free || "0";
         }
-      } catch {
-        try {
-          const balances = await (asterClient as any).balance();
-          if (Array.isArray(balances)) {
-            const usdtBal = balances.find((b: any) => b.asset === "USDT");
-            if (usdtBal) spotBalance = usdtBal.availableBalance || usdtBal.balance || "0";
-          }
-        } catch {}
-      }
+      } catch {}
 
       const spotNum = parseFloat(spotBalance);
 
@@ -15190,7 +15182,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       if (spotNum > 0.5) {
         transferAmount = spotNum.toFixed(2);
         try {
-          transferResult = await (asterClient as any).spotToFutures("USDT", transferAmount);
+          transferResult = await futClient.spotToFutures("USDT", transferAmount);
           transferred = true;
         } catch {}
       }
@@ -15198,7 +15190,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       if (!transferred) {
         for (const amt of transferAmounts) {
           try {
-            transferResult = await (asterClient as any).spotToFutures("USDT", amt);
+            transferResult = await futClient.spotToFutures("USDT", amt);
             transferred = true;
             transferAmount = amt;
             break;
