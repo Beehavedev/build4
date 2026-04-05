@@ -39,6 +39,9 @@ async function buildForRender() {
   ];
 
   await rm("dist", { recursive: true, force: true });
+  const bundleInline = new Set(["ethers"]);
+  const externals = allDeps.filter((dep) => !bundleInline.has(dep));
+
   await esbuild({
     entryPoints: ["server/bot-server.ts"],
     platform: "node",
@@ -47,7 +50,7 @@ async function buildForRender() {
     outfile: "dist/index.cjs",
     define: { "process.env.NODE_ENV": '"production"' },
     minify: true,
-    external: allDeps,
+    external: externals,
     alias: {
       "@shared": "./shared",
     },
