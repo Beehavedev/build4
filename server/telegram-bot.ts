@@ -13138,7 +13138,8 @@ async function handleAsterMenu(chatId: number): Promise<void> {
           [{ text: "📊 Markets", callback_data: "aster:markets" }, { text: "💵 Fund Account", callback_data: "aster:fund" }],
           [{ text: "💰 Balances", callback_data: "aster:balance" }, { text: "📊 Positions", callback_data: "aster:positions" }],
           [{ text: "📋 Open Orders", callback_data: "aster:orders" }, { text: "📈 PnL", callback_data: "aster:pnl" }],
-          [{ text: "🤖 AI Agent", callback_data: "aster:agent" }, { text: "⚙️ Risk Settings", callback_data: "aster:risk_settings" }],
+          [{ text: "📜 Trade History", callback_data: "aster:trade_history" }, { text: "⚙️ Risk Settings", callback_data: "aster:risk_settings" }],
+          [{ text: "🤖 AI Agent", callback_data: "aster:agent" }],
           [{ text: "🔧 Test Connection", callback_data: "aster:test_connection" }],
           [{ text: "🏆 Competition", callback_data: "aster:competition" }],
           [{ text: "🔌 Disconnect", callback_data: "aster:disconnect" }, { text: "« Back", callback_data: "action:menu" }],
@@ -15729,7 +15730,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const buttons: TelegramBot.InlineKeyboardButton[][] = [
         ...closeButtons,
       ];
-      if (localPositions.length > 1) {
+      if (apiPositions.length > 1) {
         buttons.push([{ text: "🔴 Close ALL Positions", callback_data: "aster:close_all_positions" }]);
       }
       buttons.push([{ text: "🔄 Refresh", callback_data: "aster:positions" }, { text: "📈 PnL", callback_data: "aster:pnl" }]);
@@ -15799,69 +15800,151 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   }
 
   if (action === "pnl") {
-    await bot.sendMessage(chatId, "Loading PnL summary...");
+    await bot.sendMessage(chatId, "⏳ Loading PnL from Aster API...");
+    sendTyping(chatId);
     try {
       const futuresClient = client.futures || client;
-      const localPositions = await storage.getAsterLocalPositions(chatId.toString());
-      const allTrades = await storage.getAsterLocalTrades(chatId.toString());
 
+      const [apiPositions, incomeData, balances] = await Promise.all([
+        futuresClient.positions().catch(() => []),
+        futuresClient.income("REALIZED_PNL", 20).catch(() => []),
+        futuresClient.balance().catch(() => []),
+      ]);
+
+      const usdtBal = Array.isArray(balances) ? balances.find((b: any) => b.asset === "USDT" || b.asset === "usdt") : null;
+      const availBal = usdtBal ? parseFloat(usdtBal.availableBalance || usdtBal.crossWalletBalance || "0") : 0;
+      const walletBal = usdtBal ? parseFloat(usdtBal.crossWalletBalance || usdtBal.balance || "0") : 0;
+
+      const openPos = Array.isArray(apiPositions) ? apiPositions.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0) : [];
       let totalUpnl = 0;
       let positionDetails = "";
-      const fmtP = (v: number) => v >= 1 ? v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : v.toPrecision(4);
 
-      for (const p of localPositions) {
-        let markPrice = 0;
-        try {
-          const ticker = await futuresClient.tickerPrice(p.symbol);
-          markPrice = parseFloat(ticker?.price || "0");
-        } catch { markPrice = 0; }
-
-        let upnl = 0;
-        if (markPrice > 0) {
-          upnl = p.side === "LONG"
-            ? (markPrice - p.entryPrice) * p.quantity
-            : (p.entryPrice - markPrice) * p.quantity;
-        }
+      for (const p of openPos) {
+        const amt = parseFloat(p.positionAmt || "0");
+        const entry = parseFloat(p.entryPrice || "0");
+        const mark = parseFloat(p.markPrice || "0");
+        const upnl = parseFloat(p.unRealizedProfit || "0");
+        const lev = p.leverage || "?";
+        const side = amt > 0 ? "LONG" : "SHORT";
         totalUpnl += upnl;
-        const notional = p.quantity * (markPrice || p.entryPrice);
-        const margin = notional / p.leverage;
+        const notional = Math.abs(amt) * mark;
+        const margin = notional / parseFloat(lev || "1");
         const roe = margin > 0 ? (upnl / margin * 100) : 0;
-        const dir = p.side === "LONG" ? "🟢 LONG" : "🔴 SHORT";
-        positionDetails += `  ${dir} *${p.symbol}* ${p.leverage}x\n`;
-        positionDetails += `     \`${upnl >= 0 ? "+" : ""}${upnl.toFixed(2)} USDT\` · ROE: \`${roe >= 0 ? "+" : ""}${roe.toFixed(1)}%\`\n`;
+        positionDetails += `  ${amt > 0 ? "🟢" : "🔴"} *${p.symbol}* ${side} ${lev}x\n`;
+        positionDetails += `     Entry: \`$${entry.toFixed(2)}\` → Mark: \`$${mark.toFixed(2)}\`\n`;
+        positionDetails += `     PnL: \`${upnl >= 0 ? "+" : ""}$${upnl.toFixed(2)}\` · ROE: \`${roe >= 0 ? "+" : ""}${roe.toFixed(1)}%\`\n`;
       }
 
-      let msg = `📈 *PnL Summary*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
-      msg += `${totalUpnl >= 0 ? "📈" : "📉"} Unrealized: \`${totalUpnl >= 0 ? "+" : ""}$${totalUpnl.toFixed(2)}\`\n\n`;
-
-      if (localPositions.length > 0) {
-        msg += `*Open Positions (${localPositions.length}):*\n${positionDetails}\n`;
-      }
-
-      const closedTrades = allTrades.filter((t: any) => t.reduceOnly);
-      if (closedTrades.length > 0) {
-        msg += `*Recent Closed Trades:*\n`;
-        for (const t of closedTrades.slice(0, 8)) {
-          const ts = new Date(t.createdAt).toISOString().substring(5, 16).replace("T", " ");
-          msg += `  ${t.side === "BUY" ? "🟢" : "🔴"} ${t.symbol} ${t.side} \`${t.executedQty || t.quantity}\` @ \`$${(t.avgPrice || t.price).toFixed(2)}\` · ${ts}\n`;
+      let realizedPnl = 0;
+      let tradeCount = 0;
+      let wins = 0;
+      let losses = 0;
+      if (Array.isArray(incomeData)) {
+        for (const inc of incomeData) {
+          const amt = parseFloat(inc.income || "0");
+          realizedPnl += amt;
+          tradeCount++;
+          if (amt > 0) wins++;
+          else if (amt < 0) losses++;
         }
       }
 
-      msg += `\n📊 Total trades tracked: ${allTrades.length}`;
-      msg += `\n_Tracked from bot orders + live prices_`;
+      let msg = `📈 *PnL Summary (from Aster API)*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      msg += `💰 Wallet Balance: \`$${walletBal.toFixed(2)}\`\n`;
+      msg += `💳 Available Margin: \`$${availBal.toFixed(2)}\`\n\n`;
+
+      msg += `${totalUpnl >= 0 ? "📈" : "📉"} Unrealized PnL: \`${totalUpnl >= 0 ? "+" : ""}$${totalUpnl.toFixed(2)}\`\n`;
+      msg += `${realizedPnl >= 0 ? "✅" : "❌"} Realized PnL (recent): \`${realizedPnl >= 0 ? "+" : ""}$${realizedPnl.toFixed(2)}\`\n\n`;
+
+      if (openPos.length > 0) {
+        msg += `*Open Positions (${openPos.length}):*\n${positionDetails}\n`;
+      } else {
+        msg += `No open positions.\n\n`;
+      }
+
+      if (tradeCount > 0) {
+        const winRate = (wins + losses) > 0 ? ((wins / (wins + losses)) * 100).toFixed(0) : "—";
+        msg += `*Recent Realized Trades:* ${tradeCount}\n`;
+        msg += `  Wins: ${wins} · Losses: ${losses} · Win Rate: ${winRate}%\n`;
+
+        const recentIncome = (incomeData as any[]).slice(0, 5);
+        for (const inc of recentIncome) {
+          const amt = parseFloat(inc.income || "0");
+          const sym = inc.symbol || "???";
+          const ts = inc.time ? new Date(inc.time).toISOString().substring(5, 16).replace("T", " ") : "";
+          msg += `  ${amt >= 0 ? "🟢" : "🔴"} ${sym} \`${amt >= 0 ? "+" : ""}$${amt.toFixed(2)}\` · ${ts}\n`;
+        }
+      }
 
       await bot.sendMessage(chatId, msg, {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
             [{ text: "🔄 Refresh", callback_data: "aster:pnl" }, { text: "📊 Positions", callback_data: "aster:positions" }],
-            [{ text: "🏆 Competition", callback_data: "aster:competition" }],
+            [{ text: "📜 Trade History", callback_data: "aster:trade_history" }],
             [{ text: "« Aster Menu", callback_data: "action:aster" }],
           ],
         },
       });
     } catch (e: any) {
       await bot.sendMessage(chatId, `Failed to fetch PnL: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
+    }
+    return;
+  }
+
+  if (action === "trade_history") {
+    await bot.sendMessage(chatId, "⏳ Loading trade history from Aster API...");
+    sendTyping(chatId);
+    try {
+      const futuresClient = client.futures || client;
+      const trades = await futuresClient.userTrades("BTCUSDT", 20).catch(() => []);
+      const income = await futuresClient.income(undefined, 30).catch(() => []);
+
+      let msg = `📜 *Trade History (from Aster API)*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+      if (Array.isArray(trades) && trades.length > 0) {
+        msg += `*Recent Fills:*\n`;
+        for (const t of trades.slice(0, 10)) {
+          const side = t.side === "BUY" ? "🟢 BUY" : "🔴 SELL";
+          const qty = parseFloat(t.qty || "0");
+          const price = parseFloat(t.price || "0");
+          const pnl = parseFloat(t.realizedPnl || "0");
+          const ts = t.time ? new Date(t.time).toISOString().substring(5, 16).replace("T", " ") : "";
+          msg += `  ${side} ${t.symbol} \`${qty}\` @ \`$${price.toFixed(2)}\``;
+          if (pnl !== 0) msg += ` · PnL: \`${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}\``;
+          msg += ` · ${ts}\n`;
+        }
+      } else {
+        msg += `No recent trade fills found.\n`;
+      }
+
+      if (Array.isArray(income) && income.length > 0) {
+        msg += `\n*Income History (PnL, Fees, Funding):*\n`;
+        for (const inc of income.slice(0, 10)) {
+          const amt = parseFloat(inc.income || "0");
+          const type = (inc.incomeType || "").replace(/_/g, " ");
+          const sym = inc.symbol || "";
+          const ts = inc.time ? new Date(inc.time).toISOString().substring(5, 16).replace("T", " ") : "";
+          msg += `  ${amt >= 0 ? "🟢" : "🔴"} ${sym} ${type} \`${amt >= 0 ? "+" : ""}$${amt.toFixed(4)}\` · ${ts}\n`;
+        }
+      }
+
+      msg += `\n_Data from Aster V3 API_`;
+
+      await bot.sendMessage(chatId, msg, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔄 Refresh", callback_data: "aster:trade_history" }, { text: "📈 PnL", callback_data: "aster:pnl" }],
+            [{ text: "📊 Positions", callback_data: "aster:positions" }],
+            [{ text: "« Aster Menu", callback_data: "action:aster" }],
+          ],
+        },
+      });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Failed to load trade history: ${e.message?.substring(0, 200)}`, {
+        reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+      });
     }
     return;
   }
