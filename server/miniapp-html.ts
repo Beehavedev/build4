@@ -290,6 +290,13 @@ function renderDeposit(){
   h+='<div id="verify-status"></div>';
   h+='</div>';
 
+  if(D.walletBalance>0&&D.availableMargin===0){
+    h+='<div class="card card-accent"><div class="section-title">🔄 Transfer Spot → Futures</div>';
+    h+='<div class="text-xs text-dim mb-2">You have $'+fmt(D.walletBalance)+' in Spot. Transfer to Futures to start trading.</div>';
+    h+='<button class="btn btn-green" style="width:100%" onclick="spotToFutures()">Transfer $'+fmt(D.walletBalance)+' to Futures</button>';
+    h+='<div id="stf-status"></div></div>';
+  }
+  h+='<button class="btn btn-outline mt-2" style="width:100%" onclick="spotToFutures()">🔄 Move Spot → Futures</button>';
   h+='<button class="btn btn-outline mt-2" onclick="loadDeposit()">↻ Refresh Balances</button>';
   el.innerHTML=h;
 }
@@ -306,6 +313,24 @@ async function doTransfer(amount){
       st.innerHTML='<div class="alert alert-ok mt-3"><span>'+icon+'</span><div><strong>'+msg+'</strong>'+txLink+'</div></div>';
       toast(icon+' '+msg,'ok');
       setTimeout(function(){fetchAll().then(function(){renderDeposit()})},5000);
+    }else{
+      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Transfer failed')+'</span></div>';
+    }
+  }catch(e){
+    st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
+  }
+}
+
+async function spotToFutures(){
+  var st=document.getElementById('stf-status');
+  if(!st){toast('Transferring Spot to Futures...','info');st={innerHTML:''}}
+  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Transferring Spot → Futures...</span></div>';
+  try{
+    var r=await api('/api/miniapp/spot-to-futures',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+    if(r.success){
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>🎉</span><span>'+(r.message||'Transferred!')+'</span></div>';
+      toast('🎉 Funds moved to Futures!','ok');
+      setTimeout(function(){fetchAll().then(function(){renderDeposit()})},3000);
     }else{
       st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Transfer failed')+'</span></div>';
     }

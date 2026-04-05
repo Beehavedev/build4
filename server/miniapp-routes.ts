@@ -244,6 +244,41 @@ export function registerMiniAppRoutes(app: Express) {
     }
   });
 
+  app.post("/api/miniapp/spot-to-futures", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+
+      const client = await getAsterClient(parseInt(chatId));
+      if (!client) return res.status(400).json({ error: "Aster not connected" });
+
+      const fc = client.futures || client;
+
+      let spotBal = 0;
+      try {
+        const balances = await fc.balance();
+        if (Array.isArray(balances)) {
+          const usdt = balances.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+          if (usdt) spotBal = parseFloat(usdt.balance || usdt.walletBalance || "0");
+        }
+      } catch {}
+
+      const amount = req.body.amount || spotBal;
+      if (!amount || amount <= 0) return res.json({ success: false, error: "No Spot balance available to transfer. Deposit may still be processing — wait 2-3 minutes and try again." });
+
+      console.log(`[MiniApp] Spot→Futures transfer: $${amount}`);
+
+      if (!fc.spotToFutures) return res.json({ success: false, error: "Spot→Futures transfer not available on this API" });
+
+      await fc.spotToFutures("USDT", amount.toString());
+      console.log(`[MiniApp] Spot→Futures done: $${amount}`);
+      res.json({ success: true, amount, message: `$${amount} transferred to Futures — ready to trade!` });
+    } catch (e: any) {
+      console.log(`[MiniApp] Spot→Futures error: ${e.message?.substring(0, 150)}`);
+      res.status(500).json({ error: e.message?.substring(0, 200) });
+    }
+  });
+
   app.get("/api/miniapp/agent", async (req: Request, res: Response) => {
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;
