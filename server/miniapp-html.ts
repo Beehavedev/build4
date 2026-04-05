@@ -137,6 +137,7 @@ function pnlHtml(v){const p=v>=0;return '<span class="val-xs '+(p?'g+':'r-')+'">
 function pnlClass(v){return v>=0?'g+':'r-'}
 function api(path,opts={}){return fetch(path,{...opts,headers:{'x-telegram-chat-id':String(chatId),...(opts.headers||{})}}).then(r=>r.json())}
 function toast(msg,type='info'){const t=$('toast');t.className='toast show toast-'+type;t.innerHTML=msg;setTimeout(()=>t.classList.remove('show'),3500)}
+function copyAddr(el){var a=el.dataset.addr;if(a)navigator.clipboard.writeText(a).then(function(){toast('Copied!','ok')}).catch(function(){toast('Copy failed','err')})}
 function timeAgo(){if(!lastUpdate)return'';const s=Math.floor((Date.now()-lastUpdate)/1000);if(s<5)return'Just now';if(s<60)return s+'s ago';return Math.floor(s/60)+'m ago'}
 
 document.querySelectorAll('.tab').forEach(tab=>{
@@ -247,7 +248,7 @@ function renderDeposit(){
 
   h+='<div class="card card-accent"><div class="row" style="align-items:flex-start"><div style="flex:1"><div class="label">Your Bot Wallet (BSC)</div>';
   if(D.bscWalletAddress){
-    h+='<div class="text-xs mono mt-1" style="color:var(--blue);cursor:pointer" onclick="navigator.clipboard.writeText(\''+D.bscWalletAddress+'\').then(()=>toast(\'Wallet address copied\',\'ok\'))">'+shortAddr(D.bscWalletAddress)+' 📋</div>';
+    h+='<div class="text-xs mono mt-1" style="color:var(--blue);cursor:pointer" data-addr="'+D.bscWalletAddress+'" onclick="copyAddr(this)">'+shortAddr(D.bscWalletAddress)+' 📋</div>';
   }else{
     h+='<div class="text-xs text-dim mt-1">No wallet linked</div>';
   }
