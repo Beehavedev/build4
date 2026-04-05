@@ -822,7 +822,7 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
 
   async function request(path: string, options: AsterRequestOptions = {}) {
     const { method = "GET", params = {} } = options;
-    if (options.signed !== false && method !== "GET") {
+    if (options.signed !== false && (method !== "GET" || options.signed === true)) {
       return makeV3Request(baseUrl, path, user, signer, signerPrivateKey, options);
     }
     const queryString = buildQueryString(params);
@@ -833,7 +833,8 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
       const response = await fetch(url, { method, signal: controller.signal });
       clearTimeout(timeoutId);
       const text = await response.text();
-      try { return JSON.parse(text); } catch { throw new Error(`Invalid JSON: ${text.substring(0, 200)}`); }
+      console.log(`[AsterV3] unsigned ${method} ${path} status=${response.status} body=${text.substring(0, 300)}`);
+      try { return JSON.parse(text); } catch { throw new Error(`Non-JSON response from ${path} (status ${response.status}): ${text.substring(0, 300)}`); }
     } catch (e: any) {
       clearTimeout(timeoutId);
       throw e;

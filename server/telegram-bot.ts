@@ -10643,6 +10643,12 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "status") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for status!"); return; }
+      await handleAsterCallback(chatId, "aster:full_status");
+      return;
+    }
+
     if (cmd === "chaos") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for chaos plans!"); return; }
       await ensureWallet(chatId);
@@ -13116,6 +13122,28 @@ async function initOwnerAsterClient(): Promise<any> {
   if (ownerClientInitAttempted) return null;
   ownerClientInitAttempted = true;
 
+  const privateKey = process.env.ASTER_PRIVATE_KEY || process.env.ASTER_API_WALLET_KEY;
+  const userAddress = process.env.ASTER_USER_ADDRESS;
+  const signerAddress = process.env.ASTER_SIGNER_ADDRESS;
+
+  if (privateKey) {
+    const { createAsterV3FuturesClient } = await import("./aster-client");
+    const { Wallet } = await import("ethers");
+    const wallet = new Wallet(privateKey);
+    const derivedSigner = wallet.address;
+    const user = userAddress || derivedSigner;
+    const signer = signerAddress || derivedSigner;
+
+    const futures = createAsterV3FuturesClient({
+      user,
+      signer,
+      signerPrivateKey: privateKey,
+    });
+    cachedOwnerClient = { futures, spot: null, mode: "V3" };
+    console.log(`[Aster] Pro API V3 client initialized: user=${user.substring(0, 10)}... signer=${signer.substring(0, 10)}...`);
+    return cachedOwnerClient;
+  }
+
   const apiKey = process.env.ASTER_API_KEY;
   const apiSecret = process.env.ASTER_API_SECRET;
 
@@ -13128,22 +13156,7 @@ async function initOwnerAsterClient(): Promise<any> {
     return cachedOwnerClient;
   }
 
-  const apiWalletKey = process.env.ASTER_API_WALLET_KEY;
-  const userAddress = process.env.ASTER_USER_ADDRESS;
-  const signerAddress = process.env.ASTER_SIGNER_ADDRESS;
-
-  if (apiWalletKey && userAddress && signerAddress) {
-    const { createAsterV3FuturesClient } = await import("./aster-client");
-    const futures = createAsterV3FuturesClient({
-      user: userAddress,
-      signer: signerAddress,
-      signerPrivateKey: apiWalletKey,
-    });
-    cachedOwnerClient = { futures, spot: null, mode: "V3" };
-    console.log(`[Aster] Owner V3 client initialized: user=${userAddress.substring(0, 10)}... signer=${signerAddress.substring(0, 10)}...`);
-    return cachedOwnerClient;
-  }
-  console.log(`[Aster] No owner API configured. Set ASTER_API_KEY+ASTER_API_SECRET (HMAC) or ASTER_API_WALLET_KEY+ASTER_USER_ADDRESS+ASTER_SIGNER_ADDRESS (V3)`);
+  console.log(`[Aster] No owner API configured. Set ASTER_PRIVATE_KEY + ASTER_USER_ADDRESS (Pro API V3)`);
   return null;
 }
 
@@ -13190,24 +13203,22 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
   if (action === "api_help") {
     await bot.sendMessage(chatId,
-      `🔑 *How to Get Your Aster API Key*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `*Step 1:* Go to asterdex.com and connect your wallet (MetaMask, Trust Wallet, etc.)\n\n` +
-      `*Step 2:* Click on your profile → *API Management* or *API Wallet*\n\n` +
-      `*Step 3:* Click "Create API Wallet" and name it (e.g. "Telegram Bot")\n\n` +
-      `*Step 4:* Approve the on-chain signature in your wallet\n\n` +
-      `*Step 5:* Copy the *API Key* and *API Secret* that are displayed\n\n` +
-      `*Step 6:* Come back here and tap "Connect with API Key"\n\n` +
-      `⚠️ *Important:*\n` +
-      `• Keep your API Secret safe — it's shown only once\n` +
-      `• The API Wallet is a sub-signer, not your main wallet\n` +
-      `• Your private key stays in your MetaMask — never shared\n` +
-      `• Enable "Futures Trading" permission when creating`,
+      `How to Connect Aster Pro API (V3)\n\n` +
+      `Step 1: Go to asterdex.com and connect your wallet\n\n` +
+      `Step 2: Go to asterdex.com/en/api-wallet\n\n` +
+      `Step 3: Click "Authorize new API wallet"\n\n` +
+      `Step 4: Name it (e.g. "build4") and approve the on-chain tx\n\n` +
+      `Step 5: Enable "Read", "Perps trading", and "Spot trading" permissions\n\n` +
+      `Step 6: The API Wallet has its own address and private key. Set these env vars on Render:\n` +
+      `  ASTER_PRIVATE_KEY = API wallet private key\n` +
+      `  ASTER_USER_ADDRESS = your main wallet address\n` +
+      `  ASTER_SIGNER_ADDRESS = API wallet address\n\n` +
+      `Note: Aster stopped issuing traditional API Key+Secret on March 25, 2026. Pro API V3 uses EIP-712 signing.`,
       {
-        parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }],
-            [{ text: "« Aster Menu", callback_data: "action:aster" }],
+            [{ text: "Test Connection", callback_data: "aster:test_connection" }],
+            [{ text: "Aster Menu", callback_data: "action:aster" }],
           ],
         },
       }
@@ -13216,7 +13227,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   }
 
   if (action === "test_connection") {
-    await bot.sendMessage(chatId, "Testing Aster API connection...");
+    await bot.sendMessage(chatId, "Testing Aster Pro API V3 connection...");
     try {
       if (!cachedOwnerClient) {
         ownerClientInitAttempted = false;
@@ -13225,13 +13236,12 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const asterClient = await getAsterClient(chatId);
       if (!asterClient) {
         await bot.sendMessage(chatId,
-          "No Aster API configured.\n\nSet up your connection:\n" +
-          "1. Go to asterdex.com/en/api-wallet\n" +
-          "2. Create a Pro API Wallet\n" +
-          "3. Add ASTER_API_KEY and ASTER_API_SECRET to Render env vars\n" +
-          "4. Redeploy and test again",
+          "No Aster Pro API configured.\n\nRequired Render env vars:\n" +
+          "  ASTER_PRIVATE_KEY = your API Wallet private key\n" +
+          "  ASTER_USER_ADDRESS = your main wallet address\n\n" +
+          "Get the API Wallet private key from the wallet you used to authorize at asterdex.com/en/api-wallet",
           { reply_markup: { inline_keyboard: [
-            [{ text: "Connect with API Key", callback_data: "aster:connect" }],
+            [{ text: "Connect with Wallet", callback_data: "aster:connect" }],
             [{ text: "Test Again", callback_data: "aster:test_connection" }],
             [{ text: "Back", callback_data: "action:aster" }],
           ] } }
@@ -13240,43 +13250,57 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       }
 
       const futuresClient = asterClient.futures || asterClient;
-      const mode = asterClient.mode || "Unknown";
+      const mode = asterClient.mode || "V3";
       const results: string[] = [];
 
       try {
         const pingOk = await futuresClient.ping();
-        results.push(`Ping: ${pingOk ? "OK" : "Failed"}`);
+        results.push(pingOk ? "Ping: OK" : "Ping: Failed");
       } catch (e: any) {
-        results.push(`Ping FAILED: ${e.message?.substring(0, 80)}`);
+        results.push(`Ping: FAILED - ${e.message?.substring(0, 80)}`);
       }
 
       try {
+        const ticker = await futuresClient.tickerPrice("BTCUSDT");
+        const price = ticker?.price || ticker?.lastPrice || (Array.isArray(ticker) ? ticker[0]?.price : null);
+        results.push(`Market Data: BTC $${parseFloat(price || "0").toLocaleString()}`);
+      } catch (e: any) {
+        results.push(`Market Data: FAILED - ${e.message?.substring(0, 80)}`);
+      }
+
+      let balanceOk = false;
+      try {
         const bal = await futuresClient.balance();
         if (Array.isArray(bal)) {
-          const usdt = bal.find((b: any) => b.asset === "USDT" || b.asset === "usdt");
-          results.push(`Balance: ${usdt ? `$${parseFloat(usdt.availableBalance || usdt.balance || "0").toFixed(2)} USDT` : `${bal.length} assets found`}`);
-        } else if (bal && typeof bal === "object") {
-          const totalBalance = bal.totalWalletBalance || bal.totalMarginBalance || bal.availableBalance;
-          if (totalBalance) {
-            results.push(`Balance: $${parseFloat(totalBalance).toFixed(2)} USDT`);
+          const usdt = bal.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+          if (usdt) {
+            results.push(`Balance: $${parseFloat(usdt.availableBalance || usdt.balance || "0").toFixed(2)} USDT available`);
           } else {
-            results.push(`Balance: Connected (response keys: ${Object.keys(bal).slice(0, 5).join(", ")})`);
+            results.push(`Balance: ${bal.length} asset(s) found`);
+          }
+          balanceOk = true;
+        } else if (bal && typeof bal === "object") {
+          const total = bal.totalWalletBalance || bal.totalMarginBalance || bal.availableBalance;
+          if (total) {
+            results.push(`Balance: $${parseFloat(total).toFixed(2)} USDT`);
+            balanceOk = true;
+          } else {
+            results.push(`Balance: Connected (keys: ${Object.keys(bal).slice(0, 6).join(", ")})`);
+            balanceOk = true;
           }
         } else {
-          results.push(`Balance: Unexpected response format`);
+          results.push(`Balance: Unexpected format`);
         }
       } catch (e: any) {
         const msg = e.message || "";
-        if (msg.includes("Non-JSON response")) {
-          results.push(`Balance FAILED: Private endpoint returned non-JSON\n${msg.substring(0, 200)}`);
-        } else if (msg.toLowerCase().includes("no aster user found") || msg.toLowerCase().includes("user not found")) {
-          results.push(`Balance FAILED: No Aster user found - create Pro API Wallet at asterdex.com/en/api-wallet`);
-        } else if (msg.toLowerCase().includes("api-key format invalid")) {
-          results.push(`Balance FAILED: API Key format invalid - check your key`);
-        } else if (msg.toLowerCase().includes("signature")) {
-          results.push(`Balance FAILED: Signature error - API wallet key may be wrong\n${msg.substring(0, 150)}`);
+        if (msg.includes("Non-JSON")) {
+          results.push(`Balance: FAILED - endpoint returned HTML/non-JSON\n  ${msg.substring(0, 180)}`);
+        } else if (msg.toLowerCase().includes("no aster user") || msg.toLowerCase().includes("user not found")) {
+          results.push(`Balance: FAILED - No Aster user found for this wallet. Authorize API Wallet at asterdex.com/en/api-wallet`);
+        } else if (msg.toLowerCase().includes("signature") || msg.toLowerCase().includes("sign")) {
+          results.push(`Balance: FAILED - EIP-712 signature rejected. Check ASTER_PRIVATE_KEY matches the authorized API Wallet`);
         } else {
-          results.push(`Balance FAILED: ${msg.substring(0, 200)}`);
+          results.push(`Balance: FAILED - ${msg.substring(0, 180)}`);
         }
       }
 
@@ -13285,23 +13309,20 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         const activePos = Array.isArray(pos) ? pos.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0) : [];
         results.push(`Positions: ${activePos.length} open`);
       } catch (e: any) {
-        results.push(`Positions FAILED: ${e.message?.substring(0, 150)}`);
-      }
-
-      try {
-        const ticker = await futuresClient.tickerPrice("BTCUSDT");
-        const price = ticker?.price || ticker?.lastPrice || (Array.isArray(ticker) ? ticker[0]?.price : null);
-        results.push(`Market Data: BTC $${parseFloat(price || "0").toFixed(0)}`);
-      } catch (e: any) {
-        results.push(`Market Data FAILED: ${e.message?.substring(0, 80)}`);
+        results.push(`Positions: FAILED - ${e.message?.substring(0, 120)}`);
       }
 
       const hasErrors = results.some(r => r.includes("FAILED"));
-      let msg = `API Connection Test\nMode: ${mode}\n\n`;
+      let msg = "";
+      if (!hasErrors && balanceOk) {
+        msg += `Pro API V3 Connected\n\n`;
+      } else {
+        msg += `Pro API V3 Connection Test\nMode: ${mode}\n\n`;
+      }
       msg += results.join("\n") + "\n\n";
 
       if (hasErrors) {
-        msg += `Some endpoints failed. Check your API Key and Secret, or recreate your Pro API Wallet at asterdex.com/en/api-wallet`;
+        msg += `Some endpoints failed. Ensure ASTER_PRIVATE_KEY and ASTER_USER_ADDRESS are correct.\nAPI Wallet must be authorized at asterdex.com/en/api-wallet with Perps Trading enabled.`;
       } else {
         msg += `All systems operational!`;
       }
@@ -13311,13 +13332,136 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
           inline_keyboard: [
             ...(hasErrors ? [[{ text: "Reconnect", callback_data: "aster:connect" }]] : []),
             [{ text: "Test Again", callback_data: "aster:test_connection" }],
+            [{ text: "Full Status", callback_data: "aster:full_status" }],
             [{ text: "Aster Menu", callback_data: "action:aster" }],
           ],
         },
       });
     } catch (e: any) {
-      await bot.sendMessage(chatId, `Connection test failed: ${e.message?.substring(0, 200)}\n\nMake sure you've set ASTER_API_KEY and ASTER_API_SECRET in Render env vars.`, {
+      await bot.sendMessage(chatId, `Connection test error: ${e.message?.substring(0, 200)}\n\nSet ASTER_PRIVATE_KEY + ASTER_USER_ADDRESS in Render env vars.`, {
         reply_markup: { inline_keyboard: [[{ text: "Connect", callback_data: "aster:connect" }], [{ text: "Aster Menu", callback_data: "action:aster" }]] },
+      });
+    }
+    return;
+  }
+
+  if (action === "full_status") {
+    await bot.sendMessage(chatId, "Loading full Aster status...");
+    try {
+      const asterClient = await getAsterClient(chatId);
+      if (!asterClient) {
+        await bot.sendMessage(chatId, "No Aster API connected. Run Test Connection first.", {
+          reply_markup: { inline_keyboard: [[{ text: "Test Connection", callback_data: "aster:test_connection" }]] },
+        });
+        return;
+      }
+      const futuresClient = asterClient.futures || asterClient;
+      const sections: string[] = [];
+      sections.push("Aster DEX - Full Status\n");
+
+      let balanceSection = "Futures Vault\n";
+      try {
+        const bal = await futuresClient.balance();
+        if (Array.isArray(bal)) {
+          const usdt = bal.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+          if (usdt) {
+            balanceSection += `  Wallet Balance: $${parseFloat(usdt.crossWalletBalance || usdt.balance || "0").toFixed(2)}\n`;
+            balanceSection += `  Available Margin: $${parseFloat(usdt.availableBalance || "0").toFixed(2)}\n`;
+            balanceSection += `  Unrealized PnL: ${parseFloat(usdt.crossUnPnl || "0") >= 0 ? "+" : ""}$${parseFloat(usdt.crossUnPnl || "0").toFixed(2)}\n`;
+            balanceSection += `  Margin Balance: $${parseFloat(usdt.marginBalance || usdt.balance || "0").toFixed(2)}\n`;
+          } else {
+            balanceSection += `  ${bal.length} asset(s), no USDT found\n`;
+          }
+        } else if (bal && typeof bal === "object") {
+          balanceSection += `  Wallet Balance: $${parseFloat(bal.totalWalletBalance || "0").toFixed(2)}\n`;
+          balanceSection += `  Available Margin: $${parseFloat(bal.availableBalance || bal.maxWithdrawAmount || "0").toFixed(2)}\n`;
+          balanceSection += `  Unrealized PnL: $${parseFloat(bal.totalUnrealizedProfit || "0").toFixed(2)}\n`;
+        }
+      } catch (e: any) {
+        balanceSection += `  Error: ${e.message?.substring(0, 120)}\n`;
+      }
+      sections.push(balanceSection);
+
+      let posSection = "Open Positions\n";
+      try {
+        const allPos = await futuresClient.positions();
+        const active = Array.isArray(allPos) ? allPos.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0) : [];
+        if (active.length === 0) {
+          posSection += "  No open positions\n";
+        } else {
+          let totalPnl = 0;
+          for (const p of active) {
+            const amt = parseFloat(p.positionAmt || "0");
+            const side = amt > 0 ? "LONG" : "SHORT";
+            const entry = parseFloat(p.entryPrice || "0");
+            const mark = parseFloat(p.markPrice || "0");
+            const upnl = parseFloat(p.unRealizedProfit || "0");
+            const lev = p.leverage || "?";
+            totalPnl += upnl;
+            posSection += `  ${p.symbol} ${side} ${Math.abs(amt)} @ ${lev}x\n`;
+            posSection += `    Entry: $${entry.toFixed(2)} | Mark: $${mark.toFixed(2)}\n`;
+            posSection += `    uPnL: ${upnl >= 0 ? "+" : ""}$${upnl.toFixed(2)}\n`;
+          }
+          posSection += `  Total uPnL: ${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(2)}\n`;
+        }
+      } catch (e: any) {
+        posSection += `  Error: ${e.message?.substring(0, 120)}\n`;
+      }
+      sections.push(posSection);
+
+      let tradesSection = "Recent Trades\n";
+      try {
+        const trades = await futuresClient.userTrades("BTCUSDT", 5);
+        if (Array.isArray(trades) && trades.length > 0) {
+          for (const t of trades) {
+            const side = t.side || (t.buyer ? "BUY" : "SELL");
+            const price = parseFloat(t.price || "0");
+            const qty = parseFloat(t.qty || t.quantity || "0");
+            const pnl = t.realizedPnl ? parseFloat(t.realizedPnl) : null;
+            const time = t.time ? new Date(t.time).toLocaleString() : "";
+            tradesSection += `  ${side} ${t.symbol || "BTCUSDT"} ${qty} @ $${price.toFixed(2)}`;
+            if (pnl !== null) tradesSection += ` PnL: ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`;
+            if (time) tradesSection += `\n    ${time}`;
+            tradesSection += "\n";
+          }
+        } else {
+          tradesSection += "  No recent BTCUSDT trades\n";
+        }
+      } catch (e: any) {
+        tradesSection += `  Error: ${e.message?.substring(0, 100)}\n`;
+      }
+      sections.push(tradesSection);
+
+      const wallet = getLinkedWallet(chatId);
+      if (wallet) {
+        let walletSection = "BSC Wallet\n";
+        try {
+          const usdtContract = new ethers.Contract(BSC_USDT, ["function balanceOf(address) view returns (uint256)"], bnbProviderCached);
+          const [uBal, bBal] = await Promise.all([
+            usdtContract.balanceOf(wallet).then((b: any) => parseFloat(ethers.formatUnits(b, 18))),
+            bnbProviderCached.getBalance(wallet).then((b: any) => parseFloat(ethers.formatEther(b))),
+          ]);
+          walletSection += `  USDT: $${uBal.toFixed(2)}\n`;
+          walletSection += `  BNB: ${bBal.toFixed(4)}\n`;
+          walletSection += `  ${wallet.substring(0, 8)}...${wallet.substring(38)}\n`;
+        } catch {
+          walletSection += `  ${wallet.substring(0, 8)}...${wallet.substring(38)}\n`;
+        }
+        sections.push(walletSection);
+      }
+
+      await bot.sendMessage(chatId, sections.join("\n"), {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Refresh", callback_data: "aster:full_status" }],
+            [{ text: "Fund Account", callback_data: "aster:fund" }],
+            [{ text: "Aster Menu", callback_data: "action:aster" }],
+          ],
+        },
+      });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `Status error: ${e.message?.substring(0, 200)}`, {
+        reply_markup: { inline_keyboard: [[{ text: "Aster Menu", callback_data: "action:aster" }]] },
       });
     }
     return;
