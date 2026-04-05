@@ -14561,21 +14561,17 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       await bot.sendMessage(chatId, "❌ No wallet linked.", { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:aster" }]] } });
       return;
     }
-    const pk = await resolvePrivateKey(chatId, wallet);
-    if (!pk) {
-      await bot.sendMessage(chatId, "❌ Could not access wallet key. Re-import your wallet.", { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:aster" }]] } });
-      return;
-    }
 
     if (action === "v3dep_custom") {
       pendingAsterTrade.set(chatId, { step: "v3dep_amount", market: "futures" } as any);
       await bot.sendMessage(chatId,
-        "💵 *Deposit USDT to Aster Futures*\n━━━━━━━━━━━━━━━━━━━━\n\nEnter the amount of USDT to deposit (e.g. 10, 25, 50):\n\nOr type /cancel to go back.",
+        "💵 *Deposit USDT to Aster Futures*\n━━━━━━━━━━━━━━━━━━━━\n\nEnter the amount you want to deposit (e.g. 10, 25, 50):\n\nOr type /cancel to go back.",
         { parse_mode: "Markdown" }
       );
       return;
     }
 
+    const VAULT_ADDR = "0x128463A60784c4D3f46c23Af3f65Ed859Ba87974";
     let depositAmount: number;
     if (action === "v3dep_max") {
       const usdtContract = new ethers.Contract(BSC_USDT, ["function balanceOf(address) view returns (uint256)"], bnbProviderCached);
@@ -14591,81 +14587,137 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       return;
     }
 
-    if (!checkRateLimit(`tx:${chatId}`, 2, 30000)) {
-      await bot.sendMessage(chatId, "⏳ Please wait before sending another transaction.", { reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] } });
+    let instrMsg = `💵 *Deposit $${depositAmount} USDT — Instructions*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+    instrMsg += `Send *$${depositAmount} USDT* from your wallet to the vault:\n\n`;
+    instrMsg += `*Network:* BNB Smart Chain (BSC)\n`;
+    instrMsg += `*Token:* USDT (BEP-20)\n\n`;
+    instrMsg += `*Vault Address:*\n\`${VAULT_ADDR}\`\n\n`;
+    instrMsg += `*Steps:*\n`;
+    instrMsg += `1. Open your wallet (MetaMask / Trust Wallet)\n`;
+    instrMsg += `2. Switch to BNB Smart Chain\n`;
+    instrMsg += `3. Select USDT\n`;
+    instrMsg += `4. Paste the vault address above\n`;
+    instrMsg += `5. Send $${depositAmount} USDT\n\n`;
+    instrMsg += `After sending, tap *Confirm TX Hash* below and paste your transaction hash. I'll verify it on-chain.\n\n`;
+    instrMsg += `⚠️ Only send USDT on BSC network.`;
+
+    await bot.sendMessage(chatId, instrMsg, {
+      parse_mode: "Markdown",
+      disable_web_page_preview: true,
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📋 Confirm TX Hash", callback_data: "aster:confirm_deposit" }],
+          [{ text: "🔄 Refresh Balance", callback_data: "aster:refresh_balance" }],
+          [{ text: "🔄 Transfer Spot → Futures", callback_data: "aster:spot_to_futures" }],
+          [{ text: "« Fund Menu", callback_data: "aster:fund" }],
+        ],
+      },
+    });
+    return;
+  }
+
+  if (action === "refresh_balance") {
+    const wallet = getLinkedWallet(chatId);
+    if (!wallet) {
+      await bot.sendMessage(chatId, "❌ No wallet linked.", { reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] } });
       return;
     }
-
-    await bot.sendMessage(chatId, `⏳ Depositing \`$${depositAmount}\` USDT into Aster Futures vault...\nThis requires 1-2 on-chain transactions.`, { parse_mode: "Markdown" });
+    await bot.sendMessage(chatId, "⏳ Refreshing balances...");
     sendTyping(chatId);
-
     try {
-      const { asterV3Deposit } = await import("./aster-client");
-      const mainWallet = process.env.ASTER_USER_ADDRESS || "";
-      const result = await asterV3Deposit(pk, depositAmount, 0, mainWallet || undefined);
-      if (!result.success) throw new Error(result.error || "Deposit failed");
-
-      try {
-        await storage.saveAsterLocalTrade({
-          chatId: chatId.toString(),
-          orderId: result.txHash || "deposit",
-          symbol: "USDT",
-          side: "BUY",
-          type: "DEPOSIT",
-          quantity: depositAmount,
-          executedQty: depositAmount,
-          price: depositAmount,
-          avgPrice: 1,
-          status: "CONFIRMED",
-          reduceOnly: false,
-          leverage: 1,
-        });
-        console.log(`[AsterLocal] Saved deposit $${depositAmount} for ${chatId}`);
-      } catch {}
-
-      balanceCache.delete(wallet);
-
+      if (wallet) balanceCache.delete(wallet);
       const futuresClient = client.futures || client;
-      for (let i = 0; i < 3; i++) {
-        await new Promise(r => setTimeout(r, 2000));
-        try {
-          await futuresClient.noop();
-          const bal = await futuresClient.balance();
-          const usdtEntry = Array.isArray(bal) ? bal.find((b: any) => b.asset === "USDT" || b.asset === "usdt") : null;
-          const avail = usdtEntry ? parseFloat(usdtEntry.availableBalance || usdtEntry.crossWalletBalance || usdtEntry.balance || "0") : 0;
-          console.log(`[AsterFund] post-deposit balance check ${i + 1} for ${chatId}: $${avail}`);
-          if (avail > 0) break;
-        } catch (e: any) {
-          console.log(`[AsterFund] post-deposit check ${i + 1} error for ${chatId}:`, e.message?.substring(0, 200));
-        }
+      let futuresBal = 0;
+      let spotBal = 0;
+      try {
+        const balances = await futuresClient.balance();
+        const usdtEntry = Array.isArray(balances) ? balances.find((b: any) => b.asset === "USDT" || b.asset === "usdt") : null;
+        futuresBal = usdtEntry ? parseFloat(usdtEntry.availableBalance || usdtEntry.crossWalletBalance || usdtEntry.balance || "0") : 0;
+      } catch {}
+      if (futuresClient.spotBalance) {
+        try { spotBal = await futuresClient.spotBalance(); } catch {}
       }
+      const usdtContract = new ethers.Contract(BSC_USDT, ["function balanceOf(address) view returns (uint256)"], bnbProviderCached);
+      const walletBal = parseFloat(ethers.formatUnits(await usdtContract.balanceOf(wallet), 18));
 
-      let successMsg = `✅ *Deposit Successful!*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
-      if (result.error) {
-        successMsg += `${result.error}\n\n`;
-        successMsg += `[View TX](https://bscscan.com/tx/${result.txHash})\n`;
+      let msg = `💰 *Balance Refresh*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      msg += `💳 Wallet USDT (BSC): \`$${walletBal.toFixed(2)}\`\n`;
+      msg += `🏦 Futures Margin: \`$${futuresBal.toFixed(2)}\`\n`;
+      if (spotBal > 0) msg += `📊 Spot Account: \`$${spotBal.toFixed(2)}\`\n`;
+      msg += `\n`;
+      if (futuresBal > 0) {
+        msg += `✅ Futures account funded and ready to trade!`;
+      } else if (spotBal > 0) {
+        msg += `💡 Funds detected in Spot. Transfer them to Futures to start trading.`;
       } else {
-        successMsg += `Deposited \`$${depositAmount} USDT\` into Aster Futures\n\n`;
-        successMsg += `[View TX](https://bscscan.com/tx/${result.txHash})\n\n`;
-        successMsg += `⏱️ Balance should update within 1-2 minutes.\n`;
-        successMsg += `Use the Check Balance button to verify.\n`;
-        successMsg += `You can now start trading!`;
+        msg += `⏳ No margin yet. If you just deposited, wait 1-5 minutes and refresh again.`;
       }
 
-      await bot.sendMessage(chatId, successMsg, {
+      const btns: TelegramBot.InlineKeyboardButton[][] = [];
+      if (spotBal > 0) {
+        btns.push([{ text: "🔄 Transfer Spot → Futures", callback_data: "aster:spot_to_futures" }]);
+      }
+      if (futuresBal > 0) {
+        btns.push([{ text: "📈 Trade Futures", callback_data: "aster:trade_futures" }]);
+      }
+      btns.push([{ text: "🔄 Refresh Again", callback_data: "aster:refresh_balance" }]);
+      btns.push([{ text: "💵 Fund Account", callback_data: "aster:fund" }, { text: "« Aster Menu", callback_data: "action:aster" }]);
+
+      await bot.sendMessage(chatId, msg, {
         parse_mode: "Markdown",
-        disable_web_page_preview: true,
+        reply_markup: { inline_keyboard: btns },
+      });
+    } catch (e: any) {
+      await bot.sendMessage(chatId, `❌ Error refreshing balance: ${e.message?.substring(0, 150)}`, {
+        reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "aster:refresh_balance" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+      });
+    }
+    return;
+  }
+
+  if (action === "spot_to_futures") {
+    const futuresClient = client.futures || client;
+    if (!futuresClient.spotToFutures) {
+      await bot.sendMessage(chatId, "Spot → Futures transfer not available.", { reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] } });
+      return;
+    }
+    try {
+      await bot.sendMessage(chatId, "⏳ Checking Spot balance...");
+      sendTyping(chatId);
+      let spotBal = 0;
+      if (futuresClient.spotBalance) {
+        try { spotBal = await futuresClient.spotBalance(); } catch {}
+      }
+      if (spotBal < 0.01) {
+        await bot.sendMessage(chatId, "No USDT available in Spot to transfer. Deposits may still be processing (1-5 min).", {
+          reply_markup: { inline_keyboard: [[{ text: "🔄 Refresh Balance", callback_data: "aster:refresh_balance" }], [{ text: "🔄 Retry", callback_data: "aster:spot_to_futures" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+        });
+        return;
+      }
+      await bot.sendMessage(chatId, `⏳ Transferring \`$${spotBal.toFixed(2)}\` USDT from Spot to Futures...`, { parse_mode: "Markdown" });
+      sendTyping(chatId);
+      const result = await futuresClient.spotToFutures(spotBal);
+      console.log(`[AsterFund] spotToFutures result for ${chatId}:`, JSON.stringify(result).substring(0, 300));
+      const wallet = getLinkedWallet(chatId);
+      if (wallet) balanceCache.delete(wallet);
+
+      let msg = `✅ *Transfer Complete!*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      msg += `Moved \`$${spotBal.toFixed(2)} USDT\` from Spot → Futures\n\n`;
+      msg += `Your futures margin should now be updated. You can start trading!`;
+
+      await bot.sendMessage(chatId, msg, {
+        parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
             [{ text: "📈 Trade Futures", callback_data: "aster:trade_futures" }],
-            [{ text: "💰 Check Balance", callback_data: "aster:balance" }],
+            [{ text: "🔄 Refresh Balance", callback_data: "aster:refresh_balance" }],
             [{ text: "« Aster Menu", callback_data: "action:aster" }],
           ],
         },
       });
     } catch (e: any) {
-      await bot.sendMessage(chatId, `❌ Deposit failed: ${e.message?.substring(0, 200)}`, {
-        reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "aster:fund" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+      await bot.sendMessage(chatId, `❌ Transfer failed: ${e.message?.substring(0, 200)}`, {
+        reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "aster:spot_to_futures" }], [{ text: "🔄 Refresh Balance", callback_data: "aster:refresh_balance" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
       });
     }
     return;
@@ -16258,25 +16310,9 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
             `⚡ Leverage: \`${lev}x\` → Required margin: \`$${reqMargin.toFixed(2)}\`\n` +
             `💰 Your available balance: \`$${availBal.toFixed(2)} USDT\``;
         } catch {}
-        userMsg = `💰 *Deposit USDT to Activate Futures Trading*\n\n` +
-          `Your current Futures Available Margin: *$0.00 USDT*${marginInfo}\n\n` +
-          `*Send USDT here (BSC):*\n\n` +
-          `Network: *BNB Smart Chain*\n` +
-          `Token: *USDT (BEP-20)*\n\n` +
-          `*Vault Address:*\n` +
-          `\`0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\`\n\n` +
-          `*Exact Wallet Steps:*\n` +
-          `1. Open your wallet (MetaMask / Trust Wallet)\n` +
-          `2. Switch to *BNB Smart Chain*\n` +
-          `3. Select *USDT*\n` +
-          `4. Paste the address above\n` +
-          `5. Send your amount (try $5+ for testing)\n\n` +
-          `*After sending:*\n` +
-          `- Wait 2-5 minutes (sometimes longer for first deposit)\n` +
-          `- Type */status* — the bot will refresh your futures margin automatically.\n\n` +
-          `If it still shows $0 after 10 minutes, reply with your *transaction hash* and I'll guide the next step (possible Spot -> Futures transfer instructions).\n\n` +
-          `⚠️ Only use USDT on BSC. Wrong network/token risks losing funds.\n\n` +
-          `We will keep checking every time you run /status.`;
+        userMsg = `💰 *Insufficient Margin*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+          `You need to deposit USDT before trading.${marginInfo}\n\n` +
+          `Tap *Fund Account* below to get deposit instructions, or *Refresh Balance* if you already sent funds.`;
       } else if (errMsg.includes("-1121") || errMsg.toLowerCase().includes("invalid symbol")) {
         userMsg = `❌ *Invalid Symbol*\n\nThe pair \`${state.symbol}\` is not available on Aster DEX. Check the Markets page for available pairs.`;
       } else if (errMsg.includes("-4003") || errMsg.toLowerCase().includes("quantity") || errMsg.includes("LOT_SIZE") || errMsg.includes("MIN_NOTIONAL")) {
@@ -16291,6 +16327,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       const errButtons: TelegramBot.InlineKeyboardButton[][] = [];
       if (errMsg.includes("-2019") || errMsg.toLowerCase().includes("margin is insufficient")) {
         errButtons.push([{ text: "💵 Fund Account", callback_data: "aster:fund" }]);
+        errButtons.push([{ text: "🔄 Refresh Balance", callback_data: "aster:refresh_balance" }]);
       }
       errButtons.push([{ text: "💰 Check Balance", callback_data: "aster:balance" }, { text: "🔄 Try Again", callback_data: "aster:trade_futures" }]);
       errButtons.push([{ text: "« Aster Menu", callback_data: "action:aster" }]);
@@ -16476,7 +16513,7 @@ async function handleAsterTradeFlow(chatId: number, text: string): Promise<void>
     const txHash = input.trim();
     if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
       await bot.sendMessage(chatId, "❌ Invalid transaction hash. It should be a 66-character hex string starting with 0x.\n\nTry again or tap Fund Account.", {
-        reply_markup: { inline_keyboard: [[{ text: "💵 Fund Account", callback_data: "aster:fund" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
+        reply_markup: { inline_keyboard: [[{ text: "📋 Confirm TX Hash", callback_data: "aster:confirm_deposit" }], [{ text: "💵 Fund Account", callback_data: "aster:fund" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
       });
       return;
     }
@@ -16484,11 +16521,13 @@ async function handleAsterTradeFlow(chatId: number, text: string): Promise<void>
     await bot.sendMessage(chatId, "⏳ Verifying transaction on BSC...");
     sendTyping(chatId);
 
+    const VAULT_ADDR = "0x128463A60784c4D3f46c23Af3f65Ed859Ba87974";
+
     try {
       const receipt = await bnbProviderCached.getTransactionReceipt(txHash);
       if (!receipt) {
         await bot.sendMessage(chatId, "⏳ Transaction not found yet. It may still be pending.\n\nWait a minute and try again.", {
-          reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "aster:confirm_deposit" }], [{ text: "« Fund", callback_data: "aster:fund" }]] },
+          reply_markup: { inline_keyboard: [[{ text: "📋 Confirm TX Hash", callback_data: "aster:confirm_deposit" }], [{ text: "🔄 Refresh Balance", callback_data: "aster:refresh_balance" }], [{ text: "« Fund", callback_data: "aster:fund" }]] },
         });
         return;
       }
@@ -16496,14 +16535,23 @@ async function handleAsterTradeFlow(chatId: number, text: string): Promise<void>
       const wallet = getLinkedWallet(chatId);
       const success = receipt.status === 1;
       let depositAmount = 0;
+      let toVault = false;
+      let toAddress = "";
 
       if (success && receipt.logs) {
         for (const log of receipt.logs) {
           if (log.address.toLowerCase() === BSC_USDT.toLowerCase() && log.topics.length >= 3) {
             try {
+              const recipient = "0x" + log.topics[2].slice(26).toLowerCase();
               const value = BigInt(log.data);
               const amount = parseFloat(ethers.formatUnits(value, 18));
-              if (amount > 0) depositAmount = amount;
+              if (amount > 0) {
+                depositAmount = amount;
+                toAddress = recipient;
+                if (recipient === VAULT_ADDR.toLowerCase()) {
+                  toVault = true;
+                }
+              }
             } catch {}
           }
         }
@@ -16530,35 +16578,80 @@ async function handleAsterTradeFlow(chatId: number, text: string): Promise<void>
             executedQty: depositAmount,
             price: depositAmount,
             avgPrice: 1,
-            status: "CONFIRMED",
+            status: toVault ? "CONFIRMED" : "PENDING_TRANSFER",
             reduceOnly: false,
             leverage: 1,
           });
         } catch {}
       }
 
-      let msg = `✅ *Deposit Confirmed!*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
-      msg += `✅ Status: *Success*\n`;
-      msg += `💰 Amount: \`$${depositAmount > 0 ? depositAmount.toFixed(2) : "detected"} USDT\`\n`;
-      msg += `📦 Block: \`${receipt.blockNumber}\`\n`;
-      msg += `🔗 [View TX on BSCScan](https://bscscan.com/tx/${txHash})\n\n`;
-      msg += `⏱️ Margin should appear within 1-2 minutes.\n`;
-      msg += `You can now start trading!`;
+      if (wallet) balanceCache.delete(wallet);
 
-      await bot.sendMessage(chatId, msg, {
-        parse_mode: "Markdown",
-        disable_web_page_preview: true,
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "📈 Trade Futures", callback_data: "aster:trade_futures" }],
-            [{ text: "💰 Check Balance", callback_data: "aster:balance" }],
-            [{ text: "« Aster Menu", callback_data: "action:aster" }],
-          ],
-        },
-      });
+      if (toVault && depositAmount > 0) {
+        let msg = `✅ *Deposit Detected!*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+        msg += `✅ USDT transfer to Aster vault confirmed\n`;
+        msg += `💰 Amount: \`$${depositAmount.toFixed(2)} USDT\`\n`;
+        msg += `📦 Block: \`${receipt.blockNumber}\`\n`;
+        msg += `🔗 [View TX on BSCScan](https://bscscan.com/tx/${txHash})\n\n`;
+        msg += `⏱️ Balance should update in 1-5 minutes.\n`;
+        msg += `Funds typically land in *Spot* first, then need a Spot → Futures transfer.\n\n`;
+        msg += `Use *Refresh Balance* to check, or *Transfer Spot → Futures* once funds arrive.`;
+
+        await bot.sendMessage(chatId, msg, {
+          parse_mode: "Markdown",
+          disable_web_page_preview: true,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 Refresh Balance", callback_data: "aster:refresh_balance" }],
+              [{ text: "🔄 Transfer Spot → Futures", callback_data: "aster:spot_to_futures" }],
+              [{ text: "📈 Trade Futures", callback_data: "aster:trade_futures" }],
+              [{ text: "« Aster Menu", callback_data: "action:aster" }],
+            ],
+          },
+        });
+      } else if (depositAmount > 0) {
+        let msg = `⚠️ *USDT Transfer Found — Wrong Destination*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+        msg += `💰 Amount: \`$${depositAmount.toFixed(2)} USDT\`\n`;
+        msg += `📤 Sent to: \`${toAddress}\`\n`;
+        msg += `📦 Block: \`${receipt.blockNumber}\`\n`;
+        msg += `🔗 [View TX](https://bscscan.com/tx/${txHash})\n\n`;
+        msg += `⚠️ This USDT was NOT sent to the Aster vault.\n`;
+        msg += `Vault address: \`${VAULT_ADDR}\`\n\n`;
+        msg += `Please send USDT to the correct vault address above.`;
+
+        await bot.sendMessage(chatId, msg, {
+          parse_mode: "Markdown",
+          disable_web_page_preview: true,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "💵 Fund Account", callback_data: "aster:fund" }],
+              [{ text: "📋 Confirm Another TX", callback_data: "aster:confirm_deposit" }],
+              [{ text: "« Aster Menu", callback_data: "action:aster" }],
+            ],
+          },
+        });
+      } else {
+        let msg = `⚠️ *No USDT Transfer Found*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+        msg += `Transaction succeeded but no USDT transfer was detected in it.\n`;
+        msg += `📦 Block: \`${receipt.blockNumber}\`\n`;
+        msg += `🔗 [View TX](https://bscscan.com/tx/${txHash})\n\n`;
+        msg += `Make sure you sent USDT (BEP-20) on BSC to the vault address.`;
+
+        await bot.sendMessage(chatId, msg, {
+          parse_mode: "Markdown",
+          disable_web_page_preview: true,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "💵 Fund Account", callback_data: "aster:fund" }],
+              [{ text: "📋 Confirm Another TX", callback_data: "aster:confirm_deposit" }],
+              [{ text: "« Aster Menu", callback_data: "action:aster" }],
+            ],
+          },
+        });
+      }
     } catch (e: any) {
       await bot.sendMessage(chatId, `❌ Error verifying TX: ${e.message?.substring(0, 150)}\n\nCheck the hash and try again.`, {
-        reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "aster:confirm_deposit" }], [{ text: "« Fund", callback_data: "aster:fund" }]] },
+        reply_markup: { inline_keyboard: [[{ text: "📋 Confirm TX Hash", callback_data: "aster:confirm_deposit" }], [{ text: "« Fund", callback_data: "aster:fund" }]] },
       });
     }
     return;
@@ -16572,38 +16665,33 @@ async function handleAsterTradeFlow(chatId: number, text: string): Promise<void>
     }
     pendingAsterTrade.delete(chatId);
 
-    if (!checkRateLimit(`tx:${chatId}`, 2, 30000)) {
-      await bot.sendMessage(chatId, "⏳ Please wait before sending another transaction.", { reply_markup: { inline_keyboard: [[{ text: "« Aster Menu", callback_data: "action:aster" }]] } });
-      return;
-    }
-    const wallet = getLinkedWallet(chatId);
-    if (!wallet) return;
-    const pk = await resolvePrivateKey(chatId, wallet);
-    if (!pk) {
-      await bot.sendMessage(chatId, "❌ Could not access wallet key.", { reply_markup: { inline_keyboard: [[{ text: "« Back", callback_data: "action:aster" }]] } });
-      return;
-    }
+    const VAULT_ADDR = "0x128463A60784c4D3f46c23Af3f65Ed859Ba87974";
+    let instrMsg = `💵 *Deposit $${amount} USDT — Instructions*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+    instrMsg += `Send *$${amount} USDT* from your wallet to the vault:\n\n`;
+    instrMsg += `*Network:* BNB Smart Chain (BSC)\n`;
+    instrMsg += `*Token:* USDT (BEP-20)\n\n`;
+    instrMsg += `*Vault Address:*\n\`${VAULT_ADDR}\`\n\n`;
+    instrMsg += `*Steps:*\n`;
+    instrMsg += `1. Open your wallet (MetaMask / Trust Wallet)\n`;
+    instrMsg += `2. Switch to BNB Smart Chain\n`;
+    instrMsg += `3. Select USDT\n`;
+    instrMsg += `4. Paste the vault address above\n`;
+    instrMsg += `5. Send $${amount} USDT\n\n`;
+    instrMsg += `After sending, tap *Confirm TX Hash* below and paste your transaction hash. I'll verify it on-chain.\n\n`;
+    instrMsg += `⚠️ Only send USDT on BSC network.`;
 
-    await bot.sendMessage(chatId, `⏳ Depositing \`$${amount}\` USDT into Aster Futures vault...`, { parse_mode: "Markdown" });
-    sendTyping(chatId);
-    try {
-      const { asterV3Deposit } = await import("./aster-client");
-      const result = await asterV3Deposit(pk, amount);
-      if (!result.success) throw new Error(result.error || "Deposit failed");
-      balanceCache.delete(wallet);
-      await bot.sendMessage(chatId,
-        `✅ *Deposit Successful!*\n━━━━━━━━━━━━━━━━━━━━\n\nDeposited \`$${amount} USDT\` into Aster Futures\n\n[View TX](https://bscscan.com/tx/${result.txHash})\n\n⏱️ Balance updates within 1-2 minutes.`,
-        { parse_mode: "Markdown", disable_web_page_preview: true, reply_markup: { inline_keyboard: [
-          [{ text: "📈 Trade Futures", callback_data: "aster:trade_futures" }],
-          [{ text: "💰 Check Balance", callback_data: "aster:balance" }],
-          [{ text: "« Aster Menu", callback_data: "action:aster" }],
-        ] } }
-      );
-    } catch (e: any) {
-      await bot.sendMessage(chatId, `❌ Deposit failed: ${e.message?.substring(0, 200)}`, {
-        reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "aster:fund" }], [{ text: "« Aster Menu", callback_data: "action:aster" }]] },
-      });
-    }
+    await bot.sendMessage(chatId, instrMsg, {
+      parse_mode: "Markdown",
+      disable_web_page_preview: true,
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📋 Confirm TX Hash", callback_data: "aster:confirm_deposit" }],
+          [{ text: "🔄 Refresh Balance", callback_data: "aster:refresh_balance" }],
+          [{ text: "🔄 Transfer Spot → Futures", callback_data: "aster:spot_to_futures" }],
+          [{ text: "« Fund Menu", callback_data: "aster:fund" }],
+        ],
+      },
+    });
     return;
   }
 
