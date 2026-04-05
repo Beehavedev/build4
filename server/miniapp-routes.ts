@@ -118,12 +118,14 @@ export function registerMiniAppRoutes(app: Express) {
       }
 
       let bscBalance = 0;
+      let walletAddr: string | null = null;
       try {
-        const { Contract, JsonRpcProvider, formatUnits } = await import("ethers");
-        const provider = new JsonRpcProvider("https://bsc-dataseed1.binance.org");
         const walletRows = await storage.getTelegramWallets(chatId);
-        const walletAddr = walletRows.length > 0 ? walletRows[0].walletAddress : null;
+        walletAddr = walletRows.length > 0 ? walletRows[0].walletAddress : null;
+        console.log(`[MiniApp] BSC wallet lookup chatId=${chatId}, found=${walletRows.length}, addr=${walletAddr}`);
         if (walletAddr) {
+          const { Contract, JsonRpcProvider, formatUnits } = await import("ethers");
+          const provider = new JsonRpcProvider("https://bsc-dataseed1.binance.org");
           const usdt = new Contract(
             "0x55d398326f99059fF775485246999027B3197955",
             ["function balanceOf(address) view returns (uint256)"],
@@ -131,14 +133,18 @@ export function registerMiniAppRoutes(app: Express) {
           );
           const bal = await usdt.balanceOf(walletAddr);
           bscBalance = parseFloat(formatUnits(bal, 18));
+          console.log(`[MiniApp] BSC USDT balance for ${walletAddr}: ${bscBalance}`);
         }
-      } catch {}
+      } catch (bscErr: any) {
+        console.error(`[MiniApp] BSC balance fetch error:`, bscErr.message);
+      }
 
       res.json({
         connected: true,
         walletBalance: walletBal,
         availableMargin: availBal,
         bscBalance,
+        bscWalletAddress: walletAddr,
         unrealizedPnl: totalUpnl,
         realizedPnl,
         wins,
