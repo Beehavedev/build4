@@ -2622,6 +2622,7 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
     isRunning = true;
 
     loadWalletsFromDb().catch(e => console.error("[TelegramBot] Wallet load error:", e.message));
+    initOwnerAsterClient().catch(e => console.error("[Aster] Owner client init error:", e.message));
 
     const me = await bot.getMe();
     botUsername = me.username || null;
@@ -13055,7 +13056,8 @@ async function handleAsterMenu(chatId: number): Promise<void> {
   }
   const connected = !!creds;
 
-  if (!connected) {
+  const ownerClient = getOwnerAsterClient();
+  if (!connected && !ownerClient) {
     const buttons: TelegramBot.InlineKeyboardButton[][] = [];
     buttons.push([{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }]);
     buttons.push([{ text: "❓ How to Get API Key", callback_data: "aster:api_help" }]);
@@ -13081,7 +13083,7 @@ async function handleAsterMenu(chatId: number): Promise<void> {
   }
 
   const isV3Direct = creds && creds.apiKey === "V3_DIRECT";
-  const modeLabel = isV3Direct ? "V3 Direct" : "API Wallet";
+  const modeLabel = ownerClient ? "V3 API Wallet" : (isV3Direct ? "V3 Direct" : "API Wallet");
 
   await bot.sendMessage(chatId,
     `📈 *Aster DEX*\n` +
@@ -13106,14 +13108,48 @@ async function handleAsterMenu(chatId: number): Promise<void> {
   );
 }
 
+let cachedOwnerClient: any = null;
+let ownerClientInitAttempted = false;
+
+async function initOwnerAsterClient(): Promise<any> {
+  if (cachedOwnerClient) return cachedOwnerClient;
+  if (ownerClientInitAttempted) return null;
+  ownerClientInitAttempted = true;
+
+  const apiWalletKey = process.env.ASTER_API_WALLET_KEY;
+  const userAddress = process.env.ASTER_USER_ADDRESS;
+  const signerAddress = process.env.ASTER_SIGNER_ADDRESS;
+
+  if (apiWalletKey && userAddress && signerAddress) {
+    const { createAsterV3FuturesClient } = await import("./aster-client");
+    const futures = createAsterV3FuturesClient({
+      user: userAddress,
+      signer: signerAddress,
+      signerPrivateKey: apiWalletKey,
+    });
+    cachedOwnerClient = { futures, spot: null };
+    console.log(`[Aster] Owner V3 client initialized: user=${userAddress.substring(0, 10)}... signer=${signerAddress.substring(0, 10)}...`);
+    return cachedOwnerClient;
+  }
+  console.log(`[Aster] No owner API wallet configured (ASTER_API_WALLET_KEY, ASTER_USER_ADDRESS, ASTER_SIGNER_ADDRESS)`);
+  return null;
+}
+
+function getOwnerAsterClient(): any {
+  return cachedOwnerClient;
+}
+
 async function getAsterClient(chatId: number): Promise<any> {
+  const ownerClient = getOwnerAsterClient();
+  if (ownerClient) return ownerClient;
+
   const creds = await storage.getAsterCredentials(chatId.toString());
   if (!creds) return null;
 
   const isV3Direct = creds.apiKey === "V3_DIRECT";
 
   if (!isV3Direct && creds.apiKey && creds.apiSecret) {
-    const { createAsterClient, createAsterFuturesClient, createAsterSpotClient } = await import("./aster-client");
+    const { createAsterFuturesClient, createAsterSpotClient } = await import("./aster-client");
     const futures = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
     const spot = createAsterSpotClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
     return { futures, spot };
