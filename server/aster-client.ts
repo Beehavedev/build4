@@ -184,12 +184,13 @@ const REQUEST_TIMEOUT_MS = 20000;
 const BUILD4_AGENT_CODE = "BUILD4";
 
 function buildQueryString(params: Record<string, string | number | boolean | undefined>): string {
-  const filtered: Record<string, string> = {};
+  const filtered: [string, string][] = [];
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null) {
-      filtered[key] = String(value);
+      filtered.push([key, String(value)]);
     }
   }
+  filtered.sort((a, b) => a[0].localeCompare(b[0]));
   return new URLSearchParams(filtered).toString();
 }
 
@@ -209,6 +210,7 @@ async function makeRequest(
   const queryParams = { ...params } as Record<string, string | number | boolean | undefined>;
 
   if (signed) {
+    queryParams.recvWindow = queryParams.recvWindow || 30000;
     queryParams.timestamp = Date.now();
     const qs = buildQueryString(queryParams);
     queryParams.signature = hmacSign(qs, apiSecret);
@@ -226,6 +228,7 @@ async function makeRequest(
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
+    console.log(`[AsterHMAC] ${method} ${path} signed=${signed}`);
     const response = await fetch(url, {
       method,
       headers,
@@ -235,11 +238,12 @@ async function makeRequest(
     clearTimeout(timeoutId);
 
     const text = await response.text();
+    console.log(`[AsterHMAC] ${method} ${path} status=${response.status} content-type=${response.headers.get("content-type")} body=${text.substring(0, 500)}`);
     let data: any;
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error(`Invalid JSON response: ${text.substring(0, 200)}`);
+      throw new Error(`Non-JSON response from ${path} (status ${response.status}): ${text.substring(0, 300)}`);
     }
 
     if (!response.ok) {
@@ -332,36 +336,51 @@ async function makeV3Request(
 ): Promise<any> {
   const { method = "GET", params = {} } = options;
 
-  const signedParams = await signV3Params(params, user, signer, signerPrivateKey);
+  const enrichedParams = { ...params, recvWindow: 30000 };
+  const signedParams = await signV3Params(enrichedParams, user, signer, signerPrivateKey);
   const queryString = buildQueryString(signedParams);
-  const url = `${baseUrl}${path}?${queryString}`;
 
   const headers: Record<string, string> = {
     "Content-Type": "application/x-www-form-urlencoded",
     "User-Agent": "BUILD4/1.0",
   };
 
-  const fetchOptions: RequestInit = {
-    method,
-    headers,
-  };
-
   const controller = new AbortController();
-  fetchOptions.signal = controller.signal;
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
+    let url: string;
+    let fetchOptions: RequestInit;
+
+    if (method === "POST" || method === "PUT" || method === "DELETE") {
+      url = `${baseUrl}${path}`;
+      fetchOptions = {
+        method,
+        headers,
+        body: queryString,
+        signal: controller.signal,
+      };
+    } else {
+      url = `${baseUrl}${path}?${queryString}`;
+      fetchOptions = {
+        method,
+        headers,
+        signal: controller.signal,
+      };
+    }
+
+    console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 120)}...`);
     const response = await fetch(url, fetchOptions);
 
     clearTimeout(timeoutId);
 
     const text = await response.text();
-    console.log(`[AsterV3] ${method} ${path} status=${response.status} body=${text.substring(0, 400)}`);
+    console.log(`[AsterV3] ${method} ${path} status=${response.status} content-type=${response.headers.get("content-type")} body=${text.substring(0, 500)}`);
     let data: any;
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error(`Invalid JSON response: ${text.substring(0, 200)}`);
+      throw new Error(`Non-JSON response from ${path} (status ${response.status}): ${text.substring(0, 300)}`);
     }
 
     if (!response.ok) {
@@ -882,11 +901,33 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
     },
 
     async balance(): Promise<AsterBalance[]> {
-      return makeV3Request(baseUrl, "/fapi/v3/balance", user, signer, signerPrivateKey, { method: "POST" });
+      const endpoints = ["/fapi/v3/balance", "/fapi/v2/balance", "/fapi/v1/balance"];
+      for (const ep of endpoints) {
+        try {
+          const data = await makeV3Request(baseUrl, ep, user, signer, signerPrivateKey, { method: "POST" });
+          console.log(`[AsterV3] balance succeeded with endpoint: ${ep}`);
+          return data;
+        } catch (e: any) {
+          console.log(`[AsterV3] balance failed on ${ep}: ${e.message?.substring(0, 120)}`);
+          if (ep === endpoints[endpoints.length - 1]) throw e;
+        }
+      }
+      return [];
     },
 
     async account(): Promise<any> {
-      return makeV3Request(baseUrl, "/fapi/v3/account", user, signer, signerPrivateKey, { method: "POST" });
+      const endpoints = ["/fapi/v3/account", "/fapi/v2/account", "/fapi/v1/account"];
+      for (const ep of endpoints) {
+        try {
+          const data = await makeV3Request(baseUrl, ep, user, signer, signerPrivateKey, { method: "POST" });
+          console.log(`[AsterV3] account succeeded with endpoint: ${ep}`);
+          return data;
+        } catch (e: any) {
+          console.log(`[AsterV3] account failed on ${ep}: ${e.message?.substring(0, 120)}`);
+          if (ep === endpoints[endpoints.length - 1]) throw e;
+        }
+      }
+      return null;
     },
 
     async accountWithJoinMargin(): Promise<any> {
@@ -894,15 +935,32 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
     },
 
     async positionRisk(): Promise<AsterPosition[]> {
-      const data = await makeV3Request(baseUrl, "/fapi/v3/positionRisk", user, signer, signerPrivateKey, { method: "POST" });
-      if (Array.isArray(data)) return data;
+      const endpoints = ["/fapi/v3/positionRisk", "/fapi/v2/positionRisk", "/fapi/v1/positionRisk"];
+      for (const ep of endpoints) {
+        try {
+          const data = await makeV3Request(baseUrl, ep, user, signer, signerPrivateKey, { method: "POST" });
+          console.log(`[AsterV3] positionRisk succeeded with endpoint: ${ep}`);
+          if (Array.isArray(data)) return data;
+          return [];
+        } catch (e: any) {
+          console.log(`[AsterV3] positionRisk failed on ${ep}: ${e.message?.substring(0, 120)}`);
+          if (ep === endpoints[endpoints.length - 1]) throw e;
+        }
+      }
       return [];
     },
 
     async positions(): Promise<AsterPosition[]> {
-      const data = await makeV3Request(baseUrl, "/fapi/v3/positionRisk", user, signer, signerPrivateKey, { method: "POST" });
-      if (Array.isArray(data)) return data;
-      return [];
+      return this.positionRisk();
+    },
+
+    async testConnection(): Promise<{ success: boolean; data?: any; error?: string }> {
+      try {
+        const bal = await this.balance();
+        return { success: true, data: bal };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
     },
 
     async createOrder(orderParams: AsterNewOrderParams): Promise<AsterOrder> {

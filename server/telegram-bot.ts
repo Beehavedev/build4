@@ -13255,17 +13255,28 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         if (Array.isArray(bal)) {
           const usdt = bal.find((b: any) => b.asset === "USDT" || b.asset === "usdt");
           results.push(`Balance: ${usdt ? `$${parseFloat(usdt.availableBalance || usdt.balance || "0").toFixed(2)} USDT` : `${bal.length} assets found`}`);
+        } else if (bal && typeof bal === "object") {
+          const totalBalance = bal.totalWalletBalance || bal.totalMarginBalance || bal.availableBalance;
+          if (totalBalance) {
+            results.push(`Balance: $${parseFloat(totalBalance).toFixed(2)} USDT`);
+          } else {
+            results.push(`Balance: Connected (response keys: ${Object.keys(bal).slice(0, 5).join(", ")})`);
+          }
         } else {
           results.push(`Balance: Unexpected response format`);
         }
       } catch (e: any) {
         const msg = e.message || "";
-        if (msg.toLowerCase().includes("no aster user found") || msg.toLowerCase().includes("user not found")) {
+        if (msg.includes("Non-JSON response")) {
+          results.push(`Balance FAILED: Private endpoint returned non-JSON\n${msg.substring(0, 200)}`);
+        } else if (msg.toLowerCase().includes("no aster user found") || msg.toLowerCase().includes("user not found")) {
           results.push(`Balance FAILED: No Aster user found - create Pro API Wallet at asterdex.com/en/api-wallet`);
         } else if (msg.toLowerCase().includes("api-key format invalid")) {
           results.push(`Balance FAILED: API Key format invalid - check your key`);
+        } else if (msg.toLowerCase().includes("signature")) {
+          results.push(`Balance FAILED: Signature error - API wallet key may be wrong\n${msg.substring(0, 150)}`);
         } else {
-          results.push(`Balance FAILED: ${msg.substring(0, 120)}`);
+          results.push(`Balance FAILED: ${msg.substring(0, 200)}`);
         }
       }
 
@@ -13274,7 +13285,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         const activePos = Array.isArray(pos) ? pos.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0) : [];
         results.push(`Positions: ${activePos.length} open`);
       } catch (e: any) {
-        results.push(`Positions FAILED: ${e.message?.substring(0, 100)}`);
+        results.push(`Positions FAILED: ${e.message?.substring(0, 150)}`);
       }
 
       try {
@@ -14724,11 +14735,12 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       }
       const futuresClient = asterClient.futures || asterClient;
 
-      let balanceData: any[] = [];
+      let balanceData: any = null;
       let usdtBalance = 0;
       let availableBalance = 0;
       let crossUnPnl = 0;
       let walletBalance = 0;
+      let balanceError = "";
       try {
         balanceData = await futuresClient.balance();
         if (Array.isArray(balanceData)) {
@@ -14739,11 +14751,20 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
             crossUnPnl = parseFloat(usdt.crossUnPnl || "0");
             walletBalance = parseFloat(usdt.crossWalletBalance || usdt.balance || "0");
           }
+        } else if (balanceData && typeof balanceData === "object") {
+          walletBalance = parseFloat(balanceData.totalWalletBalance || balanceData.totalMarginBalance || "0");
+          availableBalance = parseFloat(balanceData.availableBalance || balanceData.maxWithdrawAmount || "0");
+          crossUnPnl = parseFloat(balanceData.totalUnrealizedProfit || "0");
+          usdtBalance = walletBalance;
         }
-      } catch {}
+      } catch (e: any) {
+        balanceError = e.message?.substring(0, 150) || "Unknown error";
+        console.error("[Balance] Error:", balanceError);
+      }
 
       let positions: any[] = [];
       let totalUpnl = 0;
+      let posError = "";
       try {
         const allPos = await futuresClient.positions();
         if (Array.isArray(allPos)) {
@@ -14752,7 +14773,10 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
             totalUpnl += parseFloat(p.unRealizedProfit || "0");
           }
         }
-      } catch {}
+      } catch (e: any) {
+        posError = e.message?.substring(0, 150) || "Unknown error";
+        console.error("[Positions] Error:", posError);
+      }
 
       const wallet = getLinkedWallet(chatId);
       let walletUsdt = 0;
@@ -14776,12 +14800,18 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
       let msg = `Aster DEX - Account Status\n\n`;
 
-      msg += `Futures Account (USDT)\n`;
-      msg += `  Wallet Balance: $${walletBalance.toFixed(2)}\n`;
-      msg += `  Available: $${availableBalance.toFixed(2)}\n`;
-      msg += `  Unrealized PnL: ${crossUnPnl >= 0 ? "+" : ""}$${crossUnPnl.toFixed(2)}\n\n`;
+      if (balanceError) {
+        msg += `Futures Balance: FAILED\n  ${balanceError}\n\n`;
+      } else {
+        msg += `Futures Account (USDT)\n`;
+        msg += `  Wallet Balance: $${walletBalance.toFixed(2)}\n`;
+        msg += `  Available: $${availableBalance.toFixed(2)}\n`;
+        msg += `  Unrealized PnL: ${crossUnPnl >= 0 ? "+" : ""}$${crossUnPnl.toFixed(2)}\n\n`;
+      }
 
-      if (positions.length > 0) {
+      if (posError) {
+        msg += `Positions: FAILED\n  ${posError}\n\n`;
+      } else if (positions.length > 0) {
         msg += `Open Positions: ${positions.length}\n`;
         for (const p of positions) {
           const amt = parseFloat(p.positionAmt || "0");
