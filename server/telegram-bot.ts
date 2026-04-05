@@ -5,7 +5,7 @@ import { storage } from "./storage";
 import { registerAgentOnchain, registerAgentERC8004, registerAgentBAP578, isOnchainReady, getExplorerUrl } from "./onchain";
 import { recordTelegramMessage, recordTelegramCallback, checkRateLimit } from "./performance-monitor";
 import { enqueueTask, registerTaskHandler } from "./task-queue";
-import { startAgent, stopAgent, getAgentStatus, getAgentConfig, setAgentConfig, getAgentState } from "./autonomous-agent";
+import { startAgent, stopAgent, getAgentStatus, getAgentConfig, setAgentConfig, getAgentState, setAgentFuturesClient } from "./autonomous-agent";
 import {
   getSmartMoneySignals,
   getLeaderboard,
@@ -15916,6 +15916,8 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       }
     };
 
+    const agentFc = client.futures || client;
+    setAgentFuturesClient(agentFc);
     const getClientFn = () => client;
     const started = await startAgent(chatIdStr, getClientFn, sendMsg);
 

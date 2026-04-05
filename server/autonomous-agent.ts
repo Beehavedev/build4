@@ -25,10 +25,11 @@ interface AgentState {
 
 const agentStates = new Map<string, AgentState>();
 
+const envRisk = parseFloat(process.env.AGENT_RISK_PERCENT || "1.0");
 const DEFAULT_CONFIG: AgentConfig = {
   symbol: "BTCUSDT",
   leverage: 10,
-  riskPercent: 1.0,
+  riskPercent: Math.max(0.5, Math.min(2.0, isNaN(envRisk) ? 1.0 : envRisk)),
   intervalMs: 60000,
   klineInterval: "5m",
   enabled: false,
@@ -205,7 +206,25 @@ function computeQuantity(symbol: string, usdtBalance: number, riskPercent: numbe
   return qty;
 }
 
+let _agentFuturesClient: any = null;
+export function setAgentFuturesClient(client: any) { _agentFuturesClient = client; }
+
 async function getAvailableBalance(chatId: string): Promise<number> {
+  if (_agentFuturesClient) {
+    try {
+      const balances = await _agentFuturesClient.balance();
+      const usdtEntry = Array.isArray(balances)
+        ? balances.find((b: any) => b.asset === "USDT" || b.asset === "usdt")
+        : null;
+      if (usdtEntry) {
+        const apiBal = parseFloat(usdtEntry.availableBalance || usdtEntry.crossWalletBalance || usdtEntry.balance || "0");
+        if (apiBal > 0) return apiBal;
+      }
+    } catch (e: any) {
+      console.log(`[Agent:${chatId}] API balance check failed, falling back to local: ${e.message?.substring(0, 100)}`);
+    }
+  }
+
   const allTrades = await storage.getAsterLocalTrades(chatId);
   const deposits = allTrades.filter((t: any) => t.type === "DEPOSIT");
   const totalDeposited = deposits.reduce((sum: number, t: any) => sum + (t.price || 0), 0);
@@ -243,7 +262,13 @@ async function openPosition(
   const availableBalance = await getAvailableBalance(chatId);
   if (availableBalance < 1) {
     console.log(`[Agent:${chatId}] Insufficient balance: $${availableBalance.toFixed(2)}`);
-    await sendMessage(`⚠️ Agent: Insufficient balance ($${availableBalance.toFixed(2)}). Fund your account to continue.`);
+    await sendMessage(
+      `⚠️ Agent paused — insufficient margin ($${availableBalance.toFixed(2)} USDT).\n\n` +
+      `Deposit USDT (BEP-20) on BSC to the vault:\n` +
+      `0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\n\n` +
+      `Then use /deposit → Confirm TX Hash.\n` +
+      `Agent will resume once balance > $1.`
+    );
     return;
   }
 

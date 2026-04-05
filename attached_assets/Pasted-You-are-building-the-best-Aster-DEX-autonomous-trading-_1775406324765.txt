@@ -1,0 +1,60 @@
+You are building the best Aster DEX autonomous trading Telegram bot in the world.
+
+Current status:
+- Pro API V3 connection is working (EIP-712 signing is successful)
+- Account Status shows Futures Available = $0.00 and Spot = $0.00 even after deposits
+- Users are confused because the bot says "Deposit Successful" but real funds don't appear in Futures margin
+- Everything must stay 100% inside Telegram — no forcing users to visit asterdex.com
+
+Your task: Completely overhaul the deposit + balance + trading flow to make it honest, professional, and user-friendly.
+
+Implement these improvements:
+
+1. **Deposit Flow (Most Important Fix)**
+   - When user clicks "Fund Account" or enters amount → NEVER say "Deposit Successful" immediately.
+   - Instead show:
+     "✅ Amount noted. Now send USDT from your wallet to the vault address below.
+      Then use 'Confirm TX Hash' with your transaction hash."
+
+   - Show the vault address clearly:
+     Network: BNB Smart Chain (BSC)
+     Token: USDT (BEP-20)
+     Address: 0x128463A60784c4D3f46c23Af3f65Ed859Ba87974
+
+2. **Confirm TX Hash Handler**
+   - Validate the hash is 66 characters and starts with "0x"
+   - If invalid: "❌ Invalid transaction hash. Must be 0x + 64 hex characters."
+   - If valid: "✅ Tx received on BSC. Checking deposit..."
+   - Tell user honestly: "Funds should appear in Spot or Futures within 2-10 minutes. Click Refresh or type /status."
+
+3. **Account Status (/status and "Check Balance")**
+   - Clearly separate:
+     - BSC On-chain Wallet (USDT)
+     - Spot Account (USDT)
+     - Futures Account (Available Margin + Unrealized PnL) ← this is what matters for trading
+   - If Futures Available == 0, show prominent message:
+     "No funds in Futures margin yet. Send USDT to the vault address and use Confirm TX Hash."
+
+4. **Transfer Spot → Futures**
+   - If Spot has balance but Futures is 0, show helpful guided instructions for the internal transfer (copy-paste friendly steps).
+
+5. **Autonomous Agent Safety**
+   - Before any trade: check real available margin
+   - If insufficient: show nice insufficient margin message + direct link to deposit flow
+   - Risk only 0.5–2% of actual Futures Available Margin per trade (make this configurable)
+
+6. **General UX**
+   - Keep the nice dark Aster Menu with buttons
+   - Use clean Markdown + emojis
+   - Add "Refresh" button that forces fresh API call
+   - Make all messages helpful and transparent
+
+Priority order:
+1. Fix deposit flow so users are never misled
+2. Make Confirm TX Hash actually useful
+3. Improve Account Status clarity
+4. Add safe autonomous trading once balance > 0
+
+After implementing, push to Render and test the full flow with a small deposit.
+
+Make the bot feel premium, honest, and professional.
