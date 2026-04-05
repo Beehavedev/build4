@@ -1012,6 +1012,24 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
       return makeV3Request(baseUrl, "/fapi/v3/income", user, signer, signerPrivateKey, { method: "POST", params });
     },
 
+    async spotBalance(): Promise<{ asset: string; free: string; locked: string }[]> {
+      try {
+        const result = await makeV3Request(baseUrl, "/sapi/v3/account", user, signer, signerPrivateKey, { method: "GET" });
+        if (result?.balances) return result.balances;
+        return [];
+      } catch (e1: any) {
+        console.log(`[AsterV3] /sapi/v3/account failed: ${e1.message?.substring(0, 100)}, trying /sapi/v1/account`);
+        try {
+          const result2 = await makeV3Request(baseUrl, "/sapi/v1/account", user, signer, signerPrivateKey, { method: "GET" });
+          if (result2?.balances) return result2.balances;
+          return [];
+        } catch (e2: any) {
+          console.log(`[AsterV3] /sapi/v1/account also failed: ${e2.message?.substring(0, 100)}`);
+          return [];
+        }
+      }
+    },
+
     async spotToFutures(asset: string, amount: string): Promise<any> {
       const params: Record<string, string | number | boolean | undefined> = {
         asset,

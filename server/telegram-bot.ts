@@ -15046,6 +15046,18 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         console.error("[Positions] Error:", posError);
       }
 
+      let spotUsdt = 0;
+      let spotError = "";
+      try {
+        const spotBalances = await (futuresClient as any).spotBalance?.();
+        if (Array.isArray(spotBalances)) {
+          const usdtSpot = spotBalances.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+          if (usdtSpot) spotUsdt = parseFloat(usdtSpot.free || "0");
+        }
+      } catch (e: any) {
+        spotError = e.message?.substring(0, 100) || "";
+      }
+
       const wallet = getLinkedWallet(chatId);
       let walletUsdt = 0;
       let walletBnb = 0;
@@ -15077,6 +15089,13 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         msg += `  Unrealized PnL: ${crossUnPnl >= 0 ? "+" : ""}$${crossUnPnl.toFixed(2)}\n\n`;
       }
 
+      msg += `Spot Account (USDT)\n`;
+      if (spotError) {
+        msg += `  Could not load Spot balance\n\n`;
+      } else {
+        msg += `  Available: $${spotUsdt.toFixed(2)}\n\n`;
+      }
+
       if (posError) {
         msg += `Positions: FAILED\n  ${posError}\n\n`;
       } else if (positions.length > 0) {
@@ -15098,25 +15117,26 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       }
 
       if (wallet) {
-        msg += `BSC Wallet\n`;
+        msg += `BSC Wallet (on-chain)\n`;
         msg += `  USDT: $${walletUsdt.toFixed(2)}\n`;
         msg += `  BNB: ${walletBnb.toFixed(4)}\n`;
         msg += `  ${wallet.substring(0, 8)}...${wallet.substring(38)}\n\n`;
       }
 
-      if (walletBalance < 1 && walletUsdt < 1) {
-        msg += `Your Futures Available Balance: $0.00\n\n`;
-        msg += `Send USDT here to start trading:\n`;
-        msg += `Network: BNB Smart Chain (BSC) | Token: USDT (BEP-20)\n`;
-        msg += `Vault: 0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\n\n`;
-        msg += `After sending, type /status to refresh.\n`;
-        msg += `If still $0 after 5 min, try Spot -> Futures transfer below.`;
+      if (walletBalance < 1 && spotUsdt > 0.5) {
+        msg += `You have $${spotUsdt.toFixed(2)} USDT in Spot. Transfer to Futures to start trading!`;
+      } else if (walletBalance < 1 && walletUsdt < 1 && spotUsdt < 0.5) {
+        msg += `No funds detected. Deposit USDT to get started:\n`;
+        msg += `Vault: 0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\n`;
+        msg += `Network: BSC | Token: USDT (BEP-20)`;
       }
 
-      const balButtons: TelegramBot.InlineKeyboardButton[][] = [
-        [{ text: "Fund Account", callback_data: "aster:fund" }, { text: "Positions", callback_data: "aster:positions" }],
-      ];
-      if (walletBalance < 1) {
+      const balButtons: TelegramBot.InlineKeyboardButton[][] = [];
+      if (spotUsdt > 0.5 && walletBalance < 1) {
+        balButtons.push([{ text: "🔄 Transfer Spot -> Futures ($" + spotUsdt.toFixed(2) + ")", callback_data: "aster:spot_to_futures" }]);
+      }
+      balButtons.push([{ text: "Fund Account", callback_data: "aster:fund" }, { text: "Positions", callback_data: "aster:positions" }]);
+      if (walletBalance < 1 && spotUsdt < 0.5) {
         balButtons.push([{ text: "🔄 Transfer Spot -> Futures", callback_data: "aster:spot_to_futures" }]);
       }
       balButtons.push([{ text: "Refresh", callback_data: "aster:balance" }]);
