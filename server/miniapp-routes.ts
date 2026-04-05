@@ -173,12 +173,15 @@ export function registerMiniAppRoutes(app: Express) {
       if (walletRows.length === 0) return res.status(400).json({ error: "No wallet linked to this chat. Use /start in the bot first." });
 
       const walletAddr = walletRows[0].walletAddress;
-      const pk = walletRows[0].encryptedPrivateKey;
-      if (!pk) return res.status(400).json({ error: "No private key available for auto-deposit" });
+      const encPk = walletRows[0].encryptedPrivateKey;
+      if (!encPk) return res.status(400).json({ error: "No private key available for auto-deposit" });
+
+      const rawPk = await storage.getTelegramWalletPrivateKey(chatId, walletAddr);
+      if (!rawPk) return res.status(400).json({ error: "Could not decrypt wallet key" });
 
       const { asterV3Deposit } = await import("./aster-client");
       const userAddr = process.env.ASTER_USER_ADDRESS || walletAddr;
-      const result = await asterV3Deposit(pk, amount, 0, userAddr);
+      const result = await asterV3Deposit(rawPk, amount, 0, userAddr);
 
       if (!result.success) return res.json({ success: false, error: result.error });
 
