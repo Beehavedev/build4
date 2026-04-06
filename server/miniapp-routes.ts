@@ -231,8 +231,25 @@ export function registerMiniAppRoutes(app: Express) {
 
       console.log(`[MiniApp] deposit: activeWallet=${activeWallet}, dbFirst=${walletRows[0]?.walletAddress}, using=${walletAddr}`);
 
-      const rawPk = await resolvePrivateKey(parseInt(chatId), walletAddr);
-      if (!rawPk) return res.status(400).json({ error: "No private key available for auto-deposit. Send USDT manually to the vault address shown below." });
+      let rawPk = await resolvePrivateKey(parseInt(chatId), walletAddr);
+      if (!rawPk) {
+        console.log(`[MiniApp] deposit: key unavailable for ${walletAddr?.substring(0, 8)}, auto-regenerating wallet...`);
+        const { regenerateWalletForDeposit } = await import("./telegram-bot");
+        const newWallet = await regenerateWalletForDeposit(parseInt(chatId));
+        if (newWallet) {
+          rawPk = await resolvePrivateKey(parseInt(chatId), newWallet.address);
+          if (rawPk) {
+            console.log(`[MiniApp] deposit: regenerated wallet ${newWallet.address.substring(0, 8)}, key OK`);
+            return res.json({
+              success: false,
+              needsNewWallet: true,
+              newWalletAddress: newWallet.address,
+              error: `Your wallet key was unrecoverable. A new wallet has been created: ${newWallet.address}\n\nPlease send $${amount} USDT (BEP-20) to this new wallet first, then try the transfer again.`,
+            });
+          }
+        }
+        return res.status(400).json({ error: "No private key available for auto-deposit. Send USDT manually to the vault address shown below." });
+      }
 
       const ethers = await import("ethers");
       const pkWallet = new ethers.Wallet(rawPk);

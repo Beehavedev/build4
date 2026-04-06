@@ -1430,6 +1430,38 @@ async function ensureWallet(chatId: number): Promise<string> {
   return wallet;
 }
 
+export async function regenerateWalletForDeposit(chatId: number): Promise<{ address: string; privateKey: string } | null> {
+  try {
+    const wallet = ethers.Wallet.createRandom();
+    const addr = wallet.address.toLowerCase();
+    const pk = wallet.privateKey;
+
+    const existing = telegramWalletMap.get(chatId);
+    if (existing) {
+      if (!existing.wallets.includes(addr)) {
+        existing.wallets.push(addr);
+        existing.active = existing.wallets.length - 1;
+      } else {
+        existing.active = existing.wallets.indexOf(addr);
+      }
+      telegramWalletMap.set(chatId, existing);
+    } else {
+      telegramWalletMap.set(chatId, { wallets: [addr], active: 0 });
+    }
+
+    inMemoryKeyCache.set(`${chatId}:${addr}`, pk);
+    await storage.saveTelegramWallet(chatId.toString(), addr, pk);
+    await storage.setActiveTelegramWallet(chatId.toString(), addr);
+    walletsWithKey.add(`${chatId}:${addr}`);
+
+    console.log(`[Wallet] regenerateWalletForDeposit: created ${addr.substring(0, 10)} for chatId=${chatId}`);
+    return { address: addr, privateKey: pk };
+  } catch (e: any) {
+    console.error("[Wallet] regenerateWalletForDeposit error:", e.message);
+    return null;
+  }
+}
+
 async function regenerateWalletWithKey(chatId: number): Promise<string | null> {
   if (!bot) return null;
   try {
