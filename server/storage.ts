@@ -515,6 +515,16 @@ export interface IStorage {
   getUserSkillConfigs(chatId: string): Promise<Array<{ skillId: string; enabled: boolean; config: Record<string, any> }>>;
   setUserSkillConfig(chatId: string, skillId: string, enabled: boolean, config: Record<string, any>): Promise<void>;
 
+  getPoolUser(chatId: string): Promise<any | null>;
+  upsertPoolUser(chatId: string, username?: string): Promise<any>;
+  createPoolDeposit(chatId: string, amount: number, txHash?: string, fromAddress?: string, method?: string): Promise<any>;
+  getPoolDeposits(chatId: string): Promise<any[]>;
+  updatePoolDepositStatus(id: number, status: string): Promise<void>;
+  getPoolStats(): Promise<{ totalDeposits: number; totalUsers: number; totalPnl: number }>;
+  getAllPoolUsers(): Promise<any[]>;
+  updatePoolUserShares(totalPoolBalance: number): Promise<void>;
+  createPoolSnapshot(data: { totalPoolBalance: number; totalDeposits: number; totalPnl: number; activeUsers: number; openPositions: number }): Promise<void>;
+
   seedInferenceProviders(): Promise<void>;
 
   createReward(chatId: string, rewardType: string, amount: string, description?: string, referenceId?: string): Promise<any>;
@@ -3454,6 +3464,112 @@ export class DatabaseStorage implements IStorage {
     } catch (e: any) {
       console.error("[AsterLocal] Failed to calculate positions:", e.message);
       return [];
+    }
+  }
+  async getPoolUser(chatId: string): Promise<any | null> {
+    try {
+      const result = await db.execute(sql`SELECT * FROM pool_users WHERE chat_id = ${chatId} LIMIT 1`);
+      return (result as any).rows?.[0] || null;
+    } catch { return null; }
+  }
+
+  async upsertPoolUser(chatId: string, username?: string): Promise<any> {
+    try {
+      const existing = await this.getPoolUser(chatId);
+      if (existing) {
+        if (username && !existing.telegram_username) {
+          await db.execute(sql`UPDATE pool_users SET telegram_username = ${username}, updated_at = now() WHERE chat_id = ${chatId}`);
+        }
+        return existing;
+      }
+      await db.execute(sql`INSERT INTO pool_users (chat_id, telegram_username) VALUES (${chatId}, ${username || null}) ON CONFLICT (chat_id) DO NOTHING`);
+      return await this.getPoolUser(chatId);
+    } catch (e: any) {
+      console.error("[Pool] upsertPoolUser error:", e.message);
+      return { chat_id: chatId, total_deposited: 0, current_share: 0, total_pnl: 0 };
+    }
+  }
+
+  async createPoolDeposit(chatId: string, amount: number, txHash?: string, fromAddress?: string, method?: string): Promise<any> {
+    try {
+      await this.upsertPoolUser(chatId);
+      const result = await db.execute(sql`INSERT INTO pool_deposits (chat_id, amount, tx_hash, from_address, method, status) VALUES (${chatId}, ${amount}, ${txHash || null}, ${fromAddress || null}, ${method || 'external'}, 'pending') RETURNING *`);
+      return (result as any).rows?.[0];
+    } catch (e: any) {
+      console.error("[Pool] createPoolDeposit error:", e.message);
+      return null;
+    }
+  }
+
+  async getPoolDeposits(chatId: string): Promise<any[]> {
+    try {
+      const result = await db.execute(sql`SELECT * FROM pool_deposits WHERE chat_id = ${chatId} ORDER BY created_at DESC LIMIT 50`);
+      return (result as any).rows || [];
+    } catch { return []; }
+  }
+
+  async updatePoolDepositStatus(id: number, status: string): Promise<void> {
+    try {
+      const now = status === 'verified' ? sql`now()` : status === 'credited' ? sql`now()` : sql`NULL`;
+      if (status === 'verified') {
+        await db.execute(sql`UPDATE pool_deposits SET status = ${status}, verified_at = now() WHERE id = ${id}`);
+      } else if (status === 'credited') {
+        await db.execute(sql`UPDATE pool_deposits SET status = ${status}, credited_at = now() WHERE id = ${id}`);
+        const dep = await db.execute(sql`SELECT chat_id, amount FROM pool_deposits WHERE id = ${id}`);
+        const row = (dep as any).rows?.[0];
+        if (row) {
+          await db.execute(sql`UPDATE pool_users SET total_deposited = total_deposited + ${row.amount}, updated_at = now() WHERE chat_id = ${row.chat_id}`);
+        }
+      } else {
+        await db.execute(sql`UPDATE pool_deposits SET status = ${status} WHERE id = ${id}`);
+      }
+    } catch (e: any) {
+      console.error("[Pool] updatePoolDepositStatus error:", e.message);
+    }
+  }
+
+  async getPoolStats(): Promise<{ totalDeposits: number; totalUsers: number; totalPnl: number }> {
+    try {
+      const result = await db.execute(sql`SELECT COUNT(*) as total_users, COALESCE(SUM(total_deposited), 0) as total_deposits, COALESCE(SUM(total_pnl), 0) as total_pnl FROM pool_users WHERE status = 'active'`);
+      const row = (result as any).rows?.[0];
+      return {
+        totalUsers: parseInt(row?.total_users || "0"),
+        totalDeposits: parseFloat(row?.total_deposits || "0"),
+        totalPnl: parseFloat(row?.total_pnl || "0"),
+      };
+    } catch { return { totalDeposits: 0, totalUsers: 0, totalPnl: 0 }; }
+  }
+
+  async getAllPoolUsers(): Promise<any[]> {
+    try {
+      const result = await db.execute(sql`SELECT * FROM pool_users WHERE status = 'active' ORDER BY total_deposited DESC`);
+      return (result as any).rows || [];
+    } catch { return []; }
+  }
+
+  async updatePoolUserShares(totalPoolBalance: number): Promise<void> {
+    try {
+      if (totalPoolBalance <= 0) return;
+      const users = await this.getAllPoolUsers();
+      const totalDeposited = users.reduce((s: number, u: any) => s + (parseFloat(u.total_deposited) || 0), 0);
+      if (totalDeposited <= 0) return;
+      for (const u of users) {
+        const dep = parseFloat(u.total_deposited) || 0;
+        const share = dep / totalDeposited;
+        const userBalance = share * totalPoolBalance;
+        const pnl = userBalance - dep;
+        await db.execute(sql`UPDATE pool_users SET current_share = ${share}, total_pnl = ${pnl}, updated_at = now() WHERE chat_id = ${u.chat_id}`);
+      }
+    } catch (e: any) {
+      console.error("[Pool] updatePoolUserShares error:", e.message);
+    }
+  }
+
+  async createPoolSnapshot(data: { totalPoolBalance: number; totalDeposits: number; totalPnl: number; activeUsers: number; openPositions: number }): Promise<void> {
+    try {
+      await db.execute(sql`INSERT INTO pool_snapshots (total_pool_balance, total_deposits, total_pnl, active_users, open_positions) VALUES (${data.totalPoolBalance}, ${data.totalDeposits}, ${data.totalPnl}, ${data.activeUsers}, ${data.openPositions})`);
+    } catch (e: any) {
+      console.error("[Pool] createPoolSnapshot error:", e.message);
     }
   }
 }

@@ -1700,6 +1700,61 @@ export const userTradingData = pgTable("user_trading_data", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const poolUsers = pgTable("pool_users", {
+  id: serial("id").primaryKey(),
+  chatId: varchar("chat_id", { length: 64 }).notNull().unique(),
+  telegramUsername: text("telegram_username"),
+  totalDeposited: doublePrecision("total_deposited").notNull().default(0),
+  currentShare: doublePrecision("current_share").notNull().default(0),
+  totalPnl: doublePrecision("total_pnl").notNull().default(0),
+  totalWithdrawn: doublePrecision("total_withdrawn").notNull().default(0),
+  status: varchar("status", { length: 32 }).notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertPoolUserSchema = createInsertSchema(poolUsers).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPoolUser = z.infer<typeof insertPoolUserSchema>;
+export type PoolUser = typeof poolUsers.$inferSelect;
+
+export const poolDeposits = pgTable("pool_deposits", {
+  id: serial("id").primaryKey(),
+  chatId: varchar("chat_id", { length: 64 }).notNull(),
+  txHash: varchar("tx_hash", { length: 128 }),
+  amount: doublePrecision("amount").notNull(),
+  status: varchar("status", { length: 32 }).notNull().default("pending"),
+  fromAddress: text("from_address"),
+  method: varchar("method", { length: 32 }).notNull().default("external"),
+  verifiedAt: timestamp("verified_at"),
+  creditedAt: timestamp("credited_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertPoolDepositSchema = createInsertSchema(poolDeposits).omit({ id: true, createdAt: true });
+export type InsertPoolDeposit = z.infer<typeof insertPoolDepositSchema>;
+export type PoolDeposit = typeof poolDeposits.$inferSelect;
+
+export const poolWithdrawals = pgTable("pool_withdrawals", {
+  id: serial("id").primaryKey(),
+  chatId: varchar("chat_id", { length: 64 }).notNull(),
+  amount: doublePrecision("amount").notNull(),
+  toAddress: text("to_address"),
+  txHash: varchar("tx_hash", { length: 128 }),
+  status: varchar("status", { length: 32 }).notNull().default("pending"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  processedAt: timestamp("processed_at"),
+});
+
+export const poolSnapshots = pgTable("pool_snapshots", {
+  id: serial("id").primaryKey(),
+  totalPoolBalance: doublePrecision("total_pool_balance").notNull(),
+  totalDeposits: doublePrecision("total_deposits").notNull(),
+  totalPnl: doublePrecision("total_pnl").notNull(),
+  activeUsers: integer("active_users").notNull().default(0),
+  openPositions: integer("open_positions").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const asterLocalTrades = pgTable("aster_local_trades", {
   id: serial("id").primaryKey(),
   chatId: varchar("chat_id", { length: 64 }).notNull(),

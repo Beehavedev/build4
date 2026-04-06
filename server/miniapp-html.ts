@@ -125,9 +125,10 @@ const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
 const VAULT='0x128463A60784c4D3f46c23Af3f65Ed859Ba87974';
-let D={connected:false,availableMargin:0,walletBalance:0,bscBalance:0,bnbBalance:0,bscWalletAddress:'',unrealizedPnl:0,realizedPnl:0,wins:0,losses:0,positions:[],recentIncome:[]};
+let D={connected:false,availableMargin:0,walletBalance:0,bscBalance:0,bnbBalance:0,bscWalletAddress:'',unrealizedPnl:0,realizedPnl:0,wins:0,losses:0,positions:[],recentIncome:[],spotBalance:0};
 let M={markets:[]};
 let AG=null;
+let P={user:null,deposits:[],stats:{totalDeposits:0,totalUsers:0,totalPnl:0},poolBalance:0,pnlPercent:0};
 let lastUpdate=0;
 let refreshTimer=null;
 
@@ -170,9 +171,14 @@ function startAutoRefresh(){
 
 async function fetchAll(){
   try{
-    const [a,m]=await Promise.all([api('/api/miniapp/account').catch(e=>{console.error('account err',e);return null}),api('/api/miniapp/markets').catch(e=>{console.error('markets err',e);return null})]);
+    const [a,m,pu]=await Promise.all([
+      api('/api/miniapp/account').catch(e=>{console.error('account err',e);return null}),
+      api('/api/miniapp/markets').catch(e=>{console.error('markets err',e);return null}),
+      api('/api/miniapp/pool/user').catch(e=>{console.error('pool err',e);return null}),
+    ]);
     if(a&&a.connected!==undefined){D={...D,...a}}
     if(m&&m.markets)M=m;
+    if(pu){P={...P,...pu}}
     lastUpdate=Date.now();
     try{$('hdr-updated').textContent='Updated'}catch(e){}
   }catch(e){console.error('fetchAll error',e)}
@@ -195,25 +201,41 @@ async function loadDash(){
 function renderDash(){
   const el=$('p-dash');
   if(!D.connected){
-    el.innerHTML='<div class="card" style="text-align:center;padding:48px 24px"><div style="font-size:48px;margin-bottom:16px">🔗</div><div class="text-w fw-600" style="font-size:16px">Connecting to Aster...</div><div class="text-dim text-sm mt-2">Loading your account data. If this persists, make sure the bot is running and you have used /start.</div><button class="btn btn-outline mt-3" onclick="loadDash()">↻ Retry</button></div>';
+    el.innerHTML='<div class="card" style="text-align:center;padding:48px 24px"><div style="font-size:48px;margin-bottom:16px">🔗</div><div class="text-w fw-600" style="font-size:16px">Connecting to Aster...</div><div class="text-dim text-sm mt-2">Loading your account data.</div><button class="btn btn-outline mt-3" onclick="loadDash()">↻ Retry</button></div>';
     return;
   }
   let h='';
-  h+='<div class="card card-accent"><div class="row"><div><div class="label">Futures Available Margin</div><div class="val">$'+fmt(D.availableMargin)+'</div></div><div style="text-align:right"><div class="label">Total Balance</div><div class="val-sm text-w">$'+fmt(D.walletBalance)+'</div></div></div>';
-  h+='<div class="grid3 mt-3">';
-  h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">BSC Wallet</div><div class="val-xs text-w mt-1">$'+fmt(D.bscBalance)+'</div></div>';
-  h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Spot</div><div class="val-xs text-w mt-1">$'+fmt(D.spotBalance||0)+'</div></div>';
-  h+='<div style="text-align:center;padding:8px;background:var(--green-bg);border-radius:8px"><div class="text-xs" style="color:var(--green)">Futures</div><div class="val-xs text-w mt-1">$'+fmt(D.walletBalance)+'</div></div>';
+  var pu=P.user||{};
+  var myDep=parseFloat(pu.total_deposited||'0');
+  var myShare=parseFloat(pu.current_share||'0');
+  var myPnl=parseFloat(pu.total_pnl||'0');
+  var poolBal=D.walletBalance||D.availableMargin||0;
+  var myValue=myShare>0?myShare*poolBal:myDep;
+  var poolUsers=P.stats?.totalUsers||0;
+
+  h+='<div class="card card-accent" style="position:relative;overflow:hidden">';
+  h+='<div style="position:absolute;top:-20px;right:-20px;width:120px;height:120px;background:radial-gradient(circle,rgba(14,203,129,0.15),transparent);border-radius:50%"></div>';
+  h+='<div class="label" style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text2)">Your Portfolio Value</div>';
+  h+='<div class="val" style="font-size:32px;margin:4px 0">$'+fmt(myValue)+'</div>';
+  h+='<div style="display:flex;gap:12px;margin-top:8px">';
+  h+='<div><span class="text-xs text-dim">Deposited</span><div class="val-xs text-w">$'+fmt(myDep)+'</div></div>';
+  h+='<div><span class="text-xs text-dim">Your PnL</span><div class="val-xs '+pnlClass(myPnl)+'">'+(myPnl>=0?'+':'')+' $'+fmt(Math.abs(myPnl))+'</div></div>';
+  h+='<div><span class="text-xs text-dim">Pool Share</span><div class="val-xs text-w">'+(myShare*100).toFixed(2)+'%</div></div>';
   h+='</div></div>';
 
-  h+='<div class="grid2">';
-  h+='<div class="card"><div class="label">Unrealized PnL</div><div class="val-sm '+pnlClass(D.unrealizedPnl)+'">'+(D.unrealizedPnl>=0?'+':'')+' $'+fmt(Math.abs(D.unrealizedPnl))+'</div></div>';
-  h+='<div class="card"><div class="label">Realized PnL</div><div class="val-sm '+pnlClass(D.realizedPnl)+'">'+(D.realizedPnl>=0?'+':'')+' $'+fmt(Math.abs(D.realizedPnl))+'</div>';
-  if(D.wins+D.losses>0)h+='<div class="text-xs text-dim mt-1">'+D.wins+'W / '+D.losses+'L · '+Math.round(D.wins/(D.wins+D.losses)*100)+'%</div>';
-  h+='</div></div>';
+  h+='<div class="card" style="background:linear-gradient(135deg,rgba(14,203,129,0.08),rgba(14,203,129,0.02))">';
+  h+='<div class="row"><div><div class="text-xs text-dim" style="letter-spacing:0.5px">POOL TOTAL BALANCE</div><div class="val-sm text-w" style="font-size:22px">$'+fmt(poolBal)+'</div></div>';
+  h+='<div style="text-align:right"><div class="text-xs text-dim">INVESTORS</div><div class="val-xs text-w">'+poolUsers+'</div></div></div>';
+  h+='<div class="grid3 mt-3">';
+  h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Futures Margin</div><div class="val-xs text-w mt-1">$'+fmt(D.availableMargin)+'</div></div>';
+  h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Unrealized PnL</div><div class="val-xs '+pnlClass(D.unrealizedPnl)+' mt-1">'+(D.unrealizedPnl>=0?'+':'')+' $'+fmt(Math.abs(D.unrealizedPnl))+'</div></div>';
+  h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Realized PnL</div><div class="val-xs '+pnlClass(D.realizedPnl)+' mt-1">'+(D.realizedPnl>=0?'+':'')+' $'+fmt(Math.abs(D.realizedPnl))+'</div></div>';
+  h+='</div>';
+  if(D.wins+D.losses>0){h+='<div class="text-xs text-dim mt-2" style="text-align:center">Win Rate: '+D.wins+'W / '+D.losses+'L ('+Math.round(D.wins/(D.wins+D.losses)*100)+'%)</div>'}
+  h+='</div>';
 
   if(D.positions&&D.positions.length>0){
-    h+='<div class="card"><div class="section-title">📊 Open Positions <span class="badge badge-info">'+D.positions.length+'</span></div>';
+    h+='<div class="card"><div class="section-title">Open Positions <span class="badge badge-info">'+D.positions.length+'</span></div>';
     D.positions.forEach(p=>{
       h+='<div class="pos-item"><div class="row"><div class="gap"><span class="badge '+(p.side==='LONG'?'badge-long':'badge-short')+'">'+p.side+'</span><span class="text-w fw-600 text-sm">'+p.symbol+'</span><span class="text-xs text-dim">'+p.leverage+'x</span></div>'+pnlHtml(p.unrealizedPnl)+'</div>';
       h+='<div class="row mt-1"><span class="text-xs text-dim mono">'+p.size+' @ $'+fmt(p.entryPrice)+'</span><span class="text-xs text-dim mono">Mark: $'+fmt(p.markPrice)+'</span></div></div>';
@@ -222,15 +244,11 @@ function renderDash(){
   }
 
   if(M.markets&&M.markets.length>0){
-    h+='<div class="card"><div class="section-title">📈 Markets</div><div class="grid2">';
+    h+='<div class="card"><div class="section-title">Markets</div><div class="grid2">';
     M.markets.forEach(m=>{
       if(m.price>0)h+='<div class="row" style="padding:6px 10px;background:var(--bg);border-radius:8px"><span class="text-xs text-dim">'+m.symbol.replace('USDT','')+'</span><span class="val-xs text-w">$'+fmt(m.price)+'</span></div>';
     });
     h+='</div></div>';
-  }
-
-  if(D.walletBalance===0&&D.availableMargin===0){
-    h+='<div class="alert alert-info mt-2"><span>⚠️</span><div style="font-size:12px"><strong>Balance is $0.00</strong><br>If your balance shows on asterdex.com but not here, add your <strong>main login wallet address</strong> as <code style="background:var(--bg);padding:2px 4px;border-radius:4px;font-size:10px">ASTER_PARENT_ADDRESS</code> in Render Environment Variables and redeploy.<br><span style="color:var(--text2);font-size:11px">This is the wallet you use to connect to asterdex.com (not the API wallet).</span></div></div>';
   }
 
   h+='<div style="display:flex;gap:8px;margin-top:8px">';
@@ -253,77 +271,52 @@ function shortAddr(a){return a?(a.slice(0,6)+'...'+a.slice(-4)):'-'}
 
 function renderDeposit(){
   const el=$('p-deposit');
-  let h='<div class="section-title" style="font-size:16px">💰 Fund Your Account</div>';
+  let h='';
+  var pu=P.user||{};
+  var myDep=parseFloat(pu.total_deposited||'0');
 
-  h+='<div class="card card-accent"><div class="row" style="align-items:flex-start"><div style="flex:1"><div class="label">Your Bot Wallet (BSC)</div>';
-  if(D.bscWalletAddress){
-    h+='<div class="text-xs mono mt-1" style="color:var(--blue);cursor:pointer" data-addr="'+D.bscWalletAddress+'" onclick="copyAddr(this)">'+shortAddr(D.bscWalletAddress)+' 📋</div>';
-  }else{
-    h+='<div class="text-xs text-dim mt-1">No wallet linked</div>';
+  h+='<div class="card card-accent" style="text-align:center;padding:20px">';
+  h+='<div class="label" style="font-size:13px;letter-spacing:0.5px">Deposit USDT to the AI Trading Pool</div>';
+  h+='<div style="font-size:11px;color:var(--text2);margin:8px 0 16px">Send <strong style="color:#fff">USDT (BEP-20)</strong> to the vault address below</div>';
+  h+='<div style="background:var(--bg);border-radius:12px;padding:16px;margin:0 auto;max-width:280px">';
+  h+='<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data='+VAULT+'&bgcolor=1a1d21&color=ffffff&margin=8" style="width:180px;height:180px;border-radius:8px;margin:0 auto;display:block" alt="Vault QR">';
+  h+='</div>';
+  h+='<div class="vault-box mt-3" id="vault-box" onclick="copyVault()" style="font-size:11px;word-break:break-all;cursor:pointer">'+VAULT+'<div class="text-xs mt-1" style="color:var(--green)" id="copy-label">Tap to copy</div></div>';
+  h+='<div class="alert alert-warn mt-3" style="text-align:left"><span>⚠️</span><span>Only send USDT on <strong>BSC (BNB Smart Chain)</strong>. Other networks will be lost.</span></div>';
+  h+='</div>';
+
+  h+='<div class="card"><div class="section-title">Confirm Your Deposit</div>';
+  h+='<div class="text-xs text-dim mb-2">After sending USDT, paste your BSC transaction hash to link the deposit to your account.</div>';
+  h+='<input id="pool-tx" class="input" placeholder="0x... transaction hash (66 chars)" maxlength="66" oninput="validatePoolTx()">';
+  h+='<input id="pool-amount" type="number" class="input mt-2" placeholder="Amount (USDT)" step="0.01" min="1">';
+  h+='<button id="pool-submit-btn" class="btn btn-green mt-3" style="width:100%" disabled onclick="submitPoolDeposit()">Submit Deposit</button>';
+  h+='<div id="pool-deposit-status"></div>';
+  h+='</div>';
+
+  if(P.deposits&&P.deposits.length>0){
+    h+='<div class="card"><div class="section-title">Your Deposits</div>';
+    P.deposits.forEach(function(d){
+      var statusColor=d.status==='credited'?'var(--green)':d.status==='verified'?'#f0b90b':'var(--text2)';
+      var statusIcon=d.status==='credited'?'✅':d.status==='verified'?'⏳':'🔄';
+      var txShort=d.tx_hash?(d.tx_hash.substring(0,10)+'...'):'—';
+      h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">';
+      h+='<div><div class="text-sm text-w fw-600">$'+fmt(d.amount)+'</div><div class="text-xs text-dim mono">'+txShort+'</div></div>';
+      h+='<div style="text-align:right"><span style="color:'+statusColor+';font-size:12px">'+statusIcon+' '+d.status+'</span>';
+      if(d.created_at){h+='<div class="text-xs text-dim">'+new Date(d.created_at).toLocaleDateString()+'</div>'}
+      h+='</div></div>';
+    });
+    h+='</div>';
   }
-  h+='</div><div style="text-align:right"><div class="val" style="font-size:28px">$'+fmt(D.bscBalance)+'</div><div class="text-xs text-dim">USDT Balance</div><div class="text-xs mt-1" style="color:'+(D.bnbBalance<0.001?'var(--red)':'var(--text2)')+'">'+D.bnbBalance.toFixed(4)+' BNB (gas)</div></div></div></div>';
-  if(D.bnbBalance<0.001){h+='<div class="alert alert-warn mt-0 mb-2"><span>⚠️</span><span>Low BNB! Send at least 0.001 BNB to your bot wallet for gas fees.</span></div>'}
 
-  h+='<div class="card"><div class="label">Account Balances</div><div class="grid3 mt-2">';
-  h+='<div style="text-align:center;padding:10px 8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">BSC Wallet</div><div class="val-sm text-w mt-1">$'+fmt(D.bscBalance)+'</div></div>';
-  h+='<div style="text-align:center;padding:10px 8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Spot</div><div class="val-sm text-w mt-1">$'+fmt(D.spotBalance||0)+'</div></div>';
-  h+='<div style="text-align:center;padding:10px 8px;background:var(--green-bg);border-radius:8px"><div class="text-xs" style="color:var(--green)">Futures</div><div class="val-sm text-w mt-1">$'+fmt(D.walletBalance)+'</div></div>';
+  h+='<div class="card" style="background:linear-gradient(135deg,rgba(14,203,129,0.05),transparent)">';
+  h+='<div class="section-title">Your Account Summary</div>';
+  h+='<div class="grid2 mt-2">';
+  h+='<div style="text-align:center;padding:12px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Total Deposited</div><div class="val-sm text-w mt-1">$'+fmt(myDep)+'</div></div>';
+  h+='<div style="text-align:center;padding:12px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Pool Margin</div><div class="val-sm text-w mt-1">$'+fmt(D.walletBalance)+'</div></div>';
   h+='</div></div>';
 
-  h+='<div class="card"><div class="section-title">📤 Transfer to Aster</div>';
-  h+='<div class="text-xs text-dim mb-3">Choose how much to deposit from your BSC wallet to start trading.</div>';
-  const transferAmts=[1,5,10,25];
-  h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">';
-  transferAmts.forEach(a=>{
-    const dis=D.bscBalance<a?'disabled style="opacity:.4;cursor:not-allowed"':'onclick="doTransfer('+a+')"';
-    h+='<button class="btn btn-outline" '+dis+'>$'+a+'</button>';
-  });
-  h+='</div>';
-  if(D.bscBalance>0){
-    h+='<button class="btn btn-green mt-3" style="width:100%" onclick="doTransfer('+Math.floor(D.bscBalance*100)/100+')">Transfer All ($'+fmt(D.bscBalance)+')</button>';
-  }
-  h+='<div id="transfer-status"></div>';
-  h+='</div>';
-
-  h+='<div class="card card-accent"><div class="section-title">📥 External Deposit</div>';
-  h+='<div class="text-xs text-dim mb-3">Or send <strong style="color:#fff">USDT (BEP-20)</strong> from an external wallet to the Aster vault:</div>';
-  h+='<div class="vault-box" id="vault-box" onclick="copyVault()">'+VAULT+'<div class="text-xs mt-1" style="color:var(--text2)" id="copy-label">Tap to copy address</div></div>';
-  h+='<div class="alert alert-warn mt-3"><span>⚠️</span><span>Only send USDT on BSC (BNB Smart Chain).</span></div>';
-  h+='</div>';
-
-  h+='<div class="card"><div class="section-title">🔍 Verify Deposit (TX Hash)</div>';
-  h+='<div class="text-xs text-dim mb-2">Paste your BSC transaction hash to verify and track your deposit.</div>';
-  h+='<input id="txhash" class="input" placeholder="0x... (66 characters)" maxlength="66" oninput="validateTxHash()">';
-  h+='<div id="txhash-err" class="text-xs mt-1" style="color:var(--red);display:none"></div>';
-  h+='<button id="verify-btn" class="btn btn-green mt-3" disabled onclick="verifyDeposit()">Verify Transaction</button>';
-  h+='<div id="verify-status"></div>';
-  h+='</div>';
-
-  if((D.spotBalance||0)>0){
-    h+='<div class="card card-accent"><div class="section-title">🔄 Transfer Spot → Futures</div>';
-    h+='<div class="text-xs text-dim mb-2">You have $'+fmt(D.spotBalance)+' in Spot. Transfer to Futures to start trading.</div>';
-    h+='<button class="btn btn-green" style="width:100%" onclick="spotToFutures()">Transfer $'+fmt(D.spotBalance)+' to Futures</button>';
-    h+='<div id="stf-status"></div></div>';
-  }
-  h+='<button class="btn btn-outline mt-2" style="width:100%" onclick="spotToFutures()">🔄 Move Spot → Futures</button>';
-
-  h+='<div class="card mt-3"><div class="section-title">💸 Withdraw USDT</div>';
-  h+='<div class="text-xs text-dim mb-2">Withdraw from Aster Futures to your BSC wallet. Min $1.</div>';
-  h+='<div class="flex gap-2 mb-2">';
-  var wAmts=[5,10,25,50];
-  for(var w=0;w<wAmts.length;w++){
-    h+='<button class="btn btn-outline flex-1" onclick="doWithdraw('+wAmts[w]+')">$'+wAmts[w]+'</button>';
-  }
-  h+='</div>';
-  h+='<div class="flex gap-2 mb-2">';
-  h+='<input id="withdraw-amount" type="number" placeholder="Amount" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card-bg);color:var(--text)">';
-  h+='<button class="btn btn-outline" onclick="doWithdrawCustom()">Withdraw</button>';
-  h+='</div>';
-  h+='<input id="withdraw-addr" type="text" placeholder="To address (default: your bot wallet)" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);font-size:11px;margin-bottom:8px">';
-  h+='<div id="withdraw-status"></div>';
-  h+='</div>';
-
-  h+='<button class="btn btn-outline mt-2" onclick="loadDeposit()">↻ Refresh Balances</button>';
+  h+='<button class="btn btn-outline mt-2" style="width:100%" onclick="loadDeposit()">↻ Refresh</button>';
+  h+='<div class="timestamp mt-2">Updated '+timeAgo()+'</div>';
   el.innerHTML=h;
 }
 
@@ -356,6 +349,40 @@ async function doTransfer(amount){
       setTimeout(function(){fetchAll().then(function(){renderDeposit()})},3000);
     }else{
       st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Transfer failed')+'</span></div>';
+    }
+  }catch(e){
+    st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
+  }
+}
+
+function validatePoolTx(){
+  var tx=document.getElementById('pool-tx');
+  var btn=document.getElementById('pool-submit-btn');
+  if(!tx||!btn)return;
+  var v=tx.value.trim();
+  btn.disabled=!(v.length===66&&v.startsWith('0x'));
+}
+
+async function submitPoolDeposit(){
+  var tx=document.getElementById('pool-tx');
+  var amt=document.getElementById('pool-amount');
+  var st=document.getElementById('pool-deposit-status');
+  if(!tx||!amt||!st)return;
+  var txHash=tx.value.trim();
+  var amount=parseFloat(amt.value);
+  if(!txHash||txHash.length!==66){toast('Enter a valid TX hash','err');return}
+  if(!amount||amount<=0){toast('Enter the deposit amount','err');return}
+  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Verifying deposit on BSC...</span></div>';
+  try{
+    var r=await api('/api/miniapp/pool/deposit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({txHash:txHash,amount:amount})});
+    if(r.success){
+      var icon=r.verified?'✅':'📥';
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>'+icon+'</span><div><strong>'+(r.message||'Deposit recorded!')+'</strong><br><a href="https://bscscan.com/tx/'+txHash+'" target="_blank" style="color:var(--green);font-size:11px">View on BscScan</a></div></div>';
+      toast(icon+' '+(r.message||'Deposit submitted!'),'ok');
+      tx.value='';amt.value='';
+      setTimeout(function(){fetchAll().then(function(){renderDeposit()})},2000);
+    }else{
+      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Failed')+'</span></div>';
     }
   }catch(e){
     st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';

@@ -831,4 +831,91 @@ export function registerMiniAppRoutes(app: Express) {
       res.status(500).json({ error: e.message?.substring(0, 200) });
     }
   });
+
+  app.get("/api/miniapp/pool/user", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+      const user = await storage.upsertPoolUser(chatId);
+      const deposits = await storage.getPoolDeposits(chatId);
+      const stats = await storage.getPoolStats();
+      res.json({ user, deposits, stats });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/miniapp/pool/deposit", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+      const { txHash, amount, fromAddress } = req.body;
+      if (!txHash || !amount || amount <= 0) return res.status(400).json({ error: "Invalid deposit data" });
+
+      const existing = await storage.getPoolDeposits(chatId);
+      const dupe = existing.find((d: any) => d.tx_hash === txHash);
+      if (dupe) return res.json({ success: true, deposit: dupe, message: "Deposit already recorded" });
+
+      let verifiedAmount = amount;
+      let verified = false;
+      try {
+        const bscRes = await fetch(`https://api.bscscan.com/api?module=proxy&action=eth_getTransactionReceipt&txhash=${txHash}&apikey=${process.env.BSCSCAN_API_KEY || 'YourApiKeyToken'}`);
+        const bscData = await bscRes.json();
+        if (bscData?.result?.status === "0x1") {
+          verified = true;
+          console.log(`[Pool] TX ${txHash.substring(0, 12)} verified on BSC for chatId=${chatId}`);
+        }
+      } catch (e: any) {
+        console.log(`[Pool] BSC verification failed for ${txHash.substring(0, 12)}: ${e.message?.substring(0, 100)}`);
+      }
+
+      const deposit = await storage.createPoolDeposit(chatId, verifiedAmount, txHash, fromAddress, "external");
+      if (verified && deposit) {
+        await storage.updatePoolDepositStatus(deposit.id, "verified");
+      }
+
+      res.json({ success: true, deposit, verified, message: verified ? "Deposit verified on BSC" : "Deposit recorded, awaiting verification" });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/miniapp/pool/credit", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+      const { depositId } = req.body;
+      if (!depositId) return res.status(400).json({ error: "Missing deposit ID" });
+      await storage.updatePoolDepositStatus(depositId, "credited");
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.get("/api/miniapp/pool/stats", async (req: Request, res: Response) => {
+    try {
+      const stats = await storage.getPoolStats();
+
+      let poolBalance = 0;
+      try {
+        const client = await getAsterClient(0);
+        if (client) {
+          const fc = client.futures || client;
+          const bal = await fc.balance().catch(() => []);
+          if (Array.isArray(bal)) {
+            const usdt = bal.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+            if (usdt) {
+              poolBalance = Math.max(
+                parseFloat(usdt.walletBalance || "0"),
+                parseFloat(usdt.availableBalance || "0"),
+                parseFloat(usdt.crossWalletBalance || "0")
+              );
+            }
+          }
+        }
+      } catch {}
+
+      res.json({
+        ...stats,
+        poolBalance,
+        totalPnl: poolBalance - stats.totalDeposits,
+        pnlPercent: stats.totalDeposits > 0 ? ((poolBalance - stats.totalDeposits) / stats.totalDeposits * 100) : 0,
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
 }
