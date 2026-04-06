@@ -13205,16 +13205,51 @@ async function initOwnerAsterClient(): Promise<any> {
     const { Wallet } = await import("ethers");
     const wallet = new Wallet(privateKey);
     const derivedSigner = wallet.address;
-    const user = userAddress || derivedSigner;
     const signer = signerAddress || derivedSigner;
 
+    const candidates = [
+      userAddress,
+      signerAddress,
+      derivedSigner,
+    ].filter((a): a is string => !!a);
+    const uniqueCandidates = [...new Set(candidates.map(a => a.toLowerCase()))];
+
+    for (const candidateUser of uniqueCandidates) {
+      try {
+        const testClient = createAsterV3FuturesClient({
+          user: candidateUser,
+          signer,
+          signerPrivateKey: privateKey,
+        });
+        const bal = await testClient.balance();
+        let hasBalance = false;
+        if (Array.isArray(bal)) {
+          const usdt = bal.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+          if (usdt) {
+            const wb = parseFloat(usdt.walletBalance || usdt.balance || usdt.crossWalletBalance || "0");
+            const ab = parseFloat(usdt.availableBalance || "0");
+            if (wb > 0 || ab > 0) hasBalance = true;
+          }
+        }
+        console.log(`[Aster] V3 balance check user=${candidateUser.substring(0, 10)}... hasBalance=${hasBalance}`);
+        if (hasBalance) {
+          cachedOwnerClient = { futures: testClient, spot: null, mode: "V3" };
+          console.log(`[Aster] Pro API V3 client initialized with user=${candidateUser.substring(0, 10)}... signer=${signer.substring(0, 10)}...`);
+          return cachedOwnerClient;
+        }
+      } catch (e: any) {
+        console.log(`[Aster] V3 candidate ${candidateUser.substring(0, 10)}... failed: ${e.message?.substring(0, 100)}`);
+      }
+    }
+
+    const user = userAddress || derivedSigner;
     const futures = createAsterV3FuturesClient({
       user,
       signer,
       signerPrivateKey: privateKey,
     });
     cachedOwnerClient = { futures, spot: null, mode: "V3" };
-    console.log(`[Aster] Pro API V3 client initialized: user=${user.substring(0, 10)}... signer=${signer.substring(0, 10)}...`);
+    console.log(`[Aster] Pro API V3 client initialized (default): user=${user.substring(0, 10)}... signer=${signer.substring(0, 10)}...`);
     return cachedOwnerClient;
   }
 
