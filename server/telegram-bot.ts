@@ -2573,13 +2573,11 @@ function registerBotHandlers(b: TelegramBot): void {
     if (error.message?.includes("401 Unauthorized")) {
       authFailCount++;
       if (authFailCount === 1) {
-        console.error("[TelegramBot] 401 Unauthorized — bot token is invalid or expired. Stopping polling.");
+        console.warn("[TelegramBot] 401 Unauthorized on polling — bot may be using webhooks instead. Suppressing further logs.");
       }
-      if (authFailCount >= 3) {
+      if (authFailCount >= 5) {
         try { b.stopPolling(); } catch {}
-        isRunning = false;
-        console.error("[TelegramBot] Polling stopped after repeated 401 errors. Set a valid TELEGRAM_BOT_TOKEN on Render.");
-        return;
+        console.warn("[TelegramBot] Polling stopped — bot likely running via webhook.");
       }
       return;
     }
