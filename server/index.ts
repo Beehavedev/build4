@@ -124,7 +124,21 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-app.use(helmet({
+const miniappCspMiddleware = (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader("Content-Security-Policy",
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' https://telegram.org; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data: https: blob:; " +
+    "connect-src 'self' https:; " +
+    "frame-ancestors https://web.telegram.org https://*.telegram.org; " +
+    "object-src 'none'; " +
+    "base-uri 'self'"
+  );
+  next();
+};
+
+const helmetMiddleware = helmet({
   contentSecurityPolicy: process.env.NODE_ENV === "production" ? {
     directives: {
       defaultSrc: ["'self'"],
@@ -144,7 +158,14 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
   crossOriginResourcePolicy: { policy: "cross-origin" },
   hsts: process.env.NODE_ENV === "production" ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
-}));
+});
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.path === "/miniapp" || req.path === "/miniapp-old") {
+    return miniappCspMiddleware(req, res, next);
+  }
+  helmetMiddleware(req, res, next);
+});
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

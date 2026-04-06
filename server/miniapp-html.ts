@@ -333,6 +333,15 @@ function renderDeposit(){
     h+='<div class="card" style="border:1px solid var(--green)">';
     h+='<div class="section-title" style="color:var(--green)">✅ Aster Trading Connected</div>';
     h+='<div class="text-xs text-dim">Your wallet is linked to Aster Futures and ready to trade.</div>';
+    h+='<div class="text-xs text-dim mt-3" style="cursor:pointer;text-decoration:underline" onclick="showReconnectFlow()">Change API Key / Reconnect</div>';
+    h+='<div id="reconnect-flow" style="display:none;margin-top:12px">';
+    h+='<button class="btn btn-outline mt-2" style="width:100%" onclick="autoLinkAster()">🔗 Auto-Reconnect</button>';
+    h+='<div class="text-xs text-dim mt-3">Or paste a new API Wallet private key:</div>';
+    h+='<input id="api-wallet-pk" type="password" class="input mt-2" placeholder="New API Wallet private key (0x...)" autocomplete="off">';
+    h+='<button class="btn btn-green mt-2" style="width:100%" onclick="linkAsterApi()">🔗 Link New API Key</button>';
+    h+='<div id="link-status"></div>';
+    h+='<div id="manual-link-status"></div>';
+    h+='</div>';
     h+='</div>';
   } else if(walletAddr) {
     h+='<div class="card card-accent" style="border:1px solid var(--yellow)">';
@@ -517,6 +526,11 @@ async function spotToFutures(){
 
 function showLinkFlow(){
   var el=$('link-flow');
+  if(el) el.style.display=el.style.display==='none'?'block':'none';
+}
+
+function showReconnectFlow(){
+  var el=$('reconnect-flow');
   if(el) el.style.display=el.style.display==='none'?'block':'none';
 }
 

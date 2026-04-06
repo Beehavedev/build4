@@ -140,7 +140,8 @@ app.get("/miniapp", (_req, res) => {
     "Cache-Control":"no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
     "Pragma":"no-cache",
     "Expires":"0",
-    "Surrogate-Control":"no-store"
+    "Surrogate-Control":"no-store",
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; connect-src 'self' https:; frame-ancestors https://web.telegram.org https://*.telegram.org; object-src 'none'; base-uri 'self'"
   }).end(html);
 });
 
