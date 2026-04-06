@@ -208,7 +208,7 @@ function renderDash(){
     h+='<div class="text-sm fw-600" style="color:var(--yellow)">Not Connected to Aster</div>';
     h+='<div class="text-xs text-dim mt-1">Connect to see your futures balance and start trading.</div>';
     h+='</div></div>';
-    h+='<button class="btn btn-green mt-2" style="width:100%" onclick="switchTab(\'deposit\')">🔗 Connect Now</button>';
+    h+='<button class="btn btn-green mt-2" style="width:100%" data-tab="deposit" onclick="switchTab(this.dataset.tab)">🔗 Connect Now</button>';
     h+='</div>';
   }
 
