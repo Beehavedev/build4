@@ -1,7 +1,8 @@
-import vm from "node:vm";
+import ivm from "isolated-vm";
 
 const MAX_EXECUTION_TIME_MS = 3000;
 const MAX_OUTPUT_SIZE = 50000;
+const ISOLATE_MEMORY_MB = 32;
 
 interface ExecutionResult {
   success: boolean;
@@ -209,6 +210,7 @@ export function executeSkillCode(code: string, input: Record<string, any>, input
     return { success: false, output: null, error: validationError, latencyMs: Date.now() - start };
   }
 
+  const isolate = new ivm.Isolate({ memoryLimit: ISOLATE_MEMORY_MB });
   try {
     const sanitizedCode = sanitizeResultDeclarations(code);
 
@@ -217,34 +219,51 @@ export function executeSkillCode(code: string, input: Record<string, any>, input
       return { success: false, output: null, error: blocked, latencyMs: Date.now() - start };
     }
 
+    const context = isolate.createContextSync();
+    const jail = context.global;
+
+    jail.setSync("__INPUT__", new ivm.ExternalCopy(JSON.parse(JSON.stringify(input))).copyInto());
+    jail.setSync("__EXT_DATA__", new ivm.ExternalCopy(JSON.parse(JSON.stringify(externalData || {}))).copyInto());
+
+    jail.setSync("__JSON_stringify", new ivm.Reference(JSON.stringify));
+    jail.setSync("__JSON_parse", new ivm.Reference(JSON.parse));
+
     const wrappedCode = `
       "use strict";
       const input = __INPUT__;
-      ${externalData ? 'const __EXTERNAL_DATA__ = __EXT_DATA__;' : 'const __EXTERNAL_DATA__ = {};'}
+      const __EXTERNAL_DATA__ = __EXT_DATA__;
+      const Math = {
+        abs: (x) => x < 0 ? -x : x,
+        ceil: (x) => { const n = x | 0; return n === x ? n : n + 1; },
+        floor: (x) => x | 0,
+        round: (x) => (x + 0.5) | 0,
+        max: (...a) => a.reduce((m, v) => v > m ? v : m, -Infinity),
+        min: (...a) => a.reduce((m, v) => v < m ? v : m, Infinity),
+        pow: (b, e) => b ** e,
+        sqrt: (x) => x ** 0.5,
+        log: (x) => { let r = 0, v = x; for (let i = 0; i < 100; i++) { r = r + 2 * (v - 1) / (v + 1); v = ((v - 1) / (v + 1)); v = v * v; if (v < 1e-15) break; } return r; },
+        random: () => { let s = Date.now() % 2147483647; s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; },
+        PI: 3.141592653589793,
+        E: 2.718281828459045,
+      };
+      const parseInt = (s, r) => { const n = Number(s); return isNaN(n) ? NaN : n | 0; };
+      const parseFloat = (s) => Number(s);
+      const isNaN = (v) => Number.isNaN(Number(v));
+      const isFinite = (v) => Number.isFinite(Number(v));
+      const encodeURIComponent = (s) => s;
+      const decodeURIComponent = (s) => s;
+      const console = { log: () => {}, warn: () => {}, error: () => {} };
       var __result__;
       ${sanitizedCode}
-      __result__;
+      JSON.stringify(__result__);
     `;
 
-    const frozenContext = Object.create(null);
-    for (const [k, v] of Object.entries(SAFE_GLOBALS)) {
-      frozenContext[k] = typeof v === 'object' && v !== null ? Object.freeze({ ...v }) : v;
-    }
-    frozenContext.__INPUT__ = JSON.parse(JSON.stringify(input));
-    if (externalData) {
-      frozenContext.__EXT_DATA__ = JSON.parse(JSON.stringify(externalData));
-    }
+    const script = isolate.compileScriptSync(wrappedCode);
+    const rawOutput = script.runSync(context, { timeout: MAX_EXECUTION_TIME_MS });
 
-    const context = vm.createContext(frozenContext, {
-      codeGeneration: { strings: false, wasm: false },
-    });
-
-    const script = new vm.Script(wrappedCode, { filename: "skill.js" });
-    const rawOutput = script.runInContext(context, { timeout: MAX_EXECUTION_TIME_MS });
-
-    let output = rawOutput;
-    if (typeof output === "undefined") {
-      output = null;
+    let output = null;
+    if (rawOutput && typeof rawOutput === "string") {
+      output = JSON.parse(rawOutput);
     }
 
     const outputStr = JSON.stringify(output);
@@ -255,11 +274,13 @@ export function executeSkillCode(code: string, input: Record<string, any>, input
     return { success: true, output, latencyMs: Date.now() - start };
   } catch (err: any) {
     const errorMsg = err.message || "Unknown execution error";
-    const cleanError = errorMsg.includes("Script execution timed out")
+    const cleanError = errorMsg.includes("timed out")
       ? "Execution timed out (3s limit)"
-      : errorMsg.substring(0, 500);
+      : errorMsg.includes("memory") ? "Memory limit exceeded" : errorMsg.substring(0, 500);
 
     return { success: false, output: null, error: cleanError, latencyMs: Date.now() - start };
+  } finally {
+    isolate.dispose();
   }
 }
 
@@ -327,6 +348,7 @@ export async function executeSkillAsync(code: string, input: Record<string, any>
     return { success: false, output: null, error: validationError, latencyMs: Date.now() - start };
   }
 
+  const isolate = new ivm.Isolate({ memoryLimit: ISOLATE_MEMORY_MB });
   try {
     const sanitizedCode = sanitizeResultDeclarations(code);
 
@@ -334,51 +356,83 @@ export async function executeSkillAsync(code: string, input: Record<string, any>
     if (blocked) {
       return { success: false, output: null, error: blocked, latencyMs: Date.now() - start };
     }
+
     const sandboxFetch = createSandboxFetch(5000);
-    let timedOut = false;
-    let checkInterval: NodeJS.Timeout | undefined;
+    const aiChat = createSkillAI();
+    const aiJson = createSkillAIJson();
+
+    const context = await isolate.createContext();
+    const jail = context.global;
+
+    await jail.set("__INPUT__", new ivm.ExternalCopy(JSON.parse(JSON.stringify(input))).copyInto());
+    await jail.set("__EXT_DATA__", new ivm.ExternalCopy(JSON.parse(JSON.stringify(externalData || {}))).copyInto());
+
+    await jail.set("__safeFetch", new ivm.Reference(async (url: string) => {
+      const result = await sandboxFetch(url);
+      return new ivm.ExternalCopy(result).copyInto();
+    }));
+
+    await jail.set("__aiChat", new ivm.Reference(async (model: string, systemPrompt: string, userMessage: string) => {
+      const result = await aiChat(model, systemPrompt, userMessage);
+      return new ivm.ExternalCopy(result).copyInto();
+    }));
+
+    await jail.set("__aiJson", new ivm.Reference(async (model: string, systemPrompt: string, userMessage: string) => {
+      const result = await aiJson(model, systemPrompt, userMessage);
+      return new ivm.ExternalCopy(result).copyInto();
+    }));
 
     const wrappedCode = `
       "use strict";
       (async () => {
         const input = __INPUT__;
         const __EXTERNAL_DATA__ = __EXT_DATA__;
+        const safeFetch = async (url) => {
+          return __safeFetch.applySyncPromise(undefined, [url]);
+        };
+        const aiChat = async (model, systemPrompt, userMessage) => {
+          return __aiChat.applySyncPromise(undefined, [model, systemPrompt, userMessage]);
+        };
+        const aiJson = async (model, systemPrompt, userMessage) => {
+          return __aiJson.applySyncPromise(undefined, [model, systemPrompt, userMessage]);
+        };
+        const Math = {
+          abs: (x) => x < 0 ? -x : x,
+          ceil: (x) => { const n = x | 0; return n === x ? n : (x > 0 ? n + 1 : n); },
+          floor: (x) => { const n = x | 0; return n === x ? n : (x < 0 ? n - 1 : n); },
+          round: (x) => (x + 0.5) | 0,
+          max: (...a) => a.reduce((m, v) => v > m ? v : m, -Infinity),
+          min: (...a) => a.reduce((m, v) => v < m ? v : m, Infinity),
+          pow: (b, e) => b ** e,
+          sqrt: (x) => x ** 0.5,
+          random: () => { let s = Date.now() % 2147483647; s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; },
+          PI: 3.141592653589793,
+          E: 2.718281828459045,
+        };
+        const parseInt = (s, r) => { const n = Number(s); return Number.isNaN(n) ? NaN : n | 0; };
+        const parseFloat = (s) => Number(s);
+        const isNaN = (v) => Number.isNaN(Number(v));
+        const isFinite = (v) => Number.isFinite(Number(v));
+        const console = { log: () => {}, warn: () => {}, error: () => {} };
         var __result__;
         ${sanitizedCode}
-        return __result__;
+        return JSON.stringify(__result__);
       })()
     `;
 
-    const frozenAsyncCtx = Object.create(null);
-    for (const [k, v] of Object.entries(SAFE_GLOBALS)) {
-      frozenAsyncCtx[k] = typeof v === 'object' && v !== null ? Object.freeze({ ...v }) : v;
-    }
-    frozenAsyncCtx.__INPUT__ = JSON.parse(JSON.stringify(input));
-    frozenAsyncCtx.__EXT_DATA__ = JSON.parse(JSON.stringify(externalData || {}));
-    frozenAsyncCtx.safeFetch = sandboxFetch;
-    frozenAsyncCtx.aiChat = createSkillAI();
-    frozenAsyncCtx.aiJson = createSkillAIJson();
+    const script = await isolate.compileScript(wrappedCode);
 
-    const context = vm.createContext(frozenAsyncCtx, {
-      codeGeneration: { strings: false, wasm: false },
-    });
-    const script = new vm.Script(wrappedCode, { filename: "skill-async.js" });
-    const promise = script.runInContext(context, { timeout: MAX_EXECUTION_TIME_MS });
-
-    const output = await Promise.race([
-      promise,
-      new Promise((_, reject) => {
-        const hardDeadline = Date.now() + ASYNC_TIMEOUT_MS;
-        checkInterval = setInterval(() => {
-          if (Date.now() > hardDeadline) {
-            timedOut = true;
-            reject(new Error("Async execution timed out"));
-          }
-        }, 100);
+    const rawOutput = await Promise.race([
+      script.run(context, { timeout: ASYNC_TIMEOUT_MS }),
+      new Promise<string>((_, reject) => {
+        setTimeout(() => reject(new Error("Async execution timed out")), ASYNC_TIMEOUT_MS);
       }),
     ]);
 
-    if (checkInterval) clearInterval(checkInterval);
+    let output = null;
+    if (rawOutput && typeof rawOutput === "string") {
+      output = JSON.parse(rawOutput);
+    }
 
     const outputStr = JSON.stringify(output);
     if (outputStr && outputStr.length > MAX_OUTPUT_SIZE) {
@@ -390,8 +444,10 @@ export async function executeSkillAsync(code: string, input: Record<string, any>
     const errorMsg = err.message || "Unknown execution error";
     const cleanError = errorMsg.includes("timed out")
       ? "Execution timed out"
-      : errorMsg.substring(0, 500);
+      : errorMsg.includes("memory") ? "Memory limit exceeded" : errorMsg.substring(0, 500);
     return { success: false, output: null, error: cleanError, latencyMs: Date.now() - start };
+  } finally {
+    isolate.dispose();
   }
 }
 
@@ -446,16 +502,19 @@ export function validateSkillCode(code: string): { valid: boolean; error?: strin
     }
   }
 
+  const testIsolate = new ivm.Isolate({ memoryLimit: 8 });
   try {
     const sanitized = sanitizeResultDeclarations(code);
     const usesAsync = code.includes("await ") || code.includes("safeFetch");
     const wrapper = usesAsync
-      ? `"use strict"; (async () => { const input = {}; const __EXTERNAL_DATA__ = {}; const safeFetch = async (url) => ({}); var __result__; ${sanitized}; return __result__; })()`
+      ? `"use strict"; (async () => { const input = {}; const __EXTERNAL_DATA__ = {}; const safeFetch = async (url) => ({}); const aiChat = async () => ""; const aiJson = async () => ({}); var __result__; ${sanitized}; return __result__; })()`
       : `"use strict"; const input = {}; var __result__; ${sanitized}`;
-    new vm.Script(wrapper, { filename: "validate.js" });
+    testIsolate.compileScriptSync(wrapper);
     return { valid: true };
   } catch (err: any) {
     return { valid: false, error: `Syntax error: ${err.message}` };
+  } finally {
+    testIsolate.dispose();
   }
 }
 
@@ -463,16 +522,19 @@ function sanitizePromptField(value: string, maxLen = 200): string {
   if (!value) return "";
   return value
     .replace(/[\x00-\x1f]/g, "")
-    .replace(/\b(SYSTEM|INSTRUCTION|ACTION|IGNORE|OVERRIDE|ADMIN|ROOT)\b/gi, "[filtered]")
+    .replace(/\b(SYSTEM|INSTRUCTION|ACTION|IGNORE|OVERRIDE|ADMIN|ROOT|ASSISTANT|HUMAN|USER)\b/gi, "[filtered]")
     .replace(/```[\s\S]*?```/g, "[code_block]")
+    .replace(/\[INST\]/gi, "")
+    .replace(/<\/?(?:system|user|assistant|s|\/s)>/gi, "")
     .substring(0, maxLen);
 }
 
 export function generateSkillCodePrompt(category: string, agentName: string, agentBio: string): string {
   const safeName = sanitizePromptField(agentName, 50);
   const safeBio = sanitizePromptField(agentBio, 200);
-  return `You are ${safeName}, an autonomous AI agent creating a new EXECUTABLE JavaScript skill for the BUILD4 marketplace.
-Your expertise: ${safeBio || "general AI capabilities"}.
+  return `You are an autonomous AI agent creating a new EXECUTABLE JavaScript skill for the BUILD4 marketplace.
+Agent name: <|user_data_name|>${safeName}<|end_user_data|>
+Your expertise: <|user_data_bio|>${safeBio || "general AI capabilities"}<|end_user_data|>.
 
 Create a UNIQUE, CREATIVE skill in the "${category}" category. The skill must be a complete, working JavaScript snippet.
 

@@ -30,9 +30,15 @@ function sanitizeAgentField(value: string | null | undefined, maxLen = 200): str
   if (!value) return "";
   return value
     .replace(/[\x00-\x1f]/g, "")
-    .replace(/\b(SYSTEM|INSTRUCTION|ACTION|IGNORE|OVERRIDE|ADMIN|ROOT)\b/gi, "[filtered]")
+    .replace(/\b(SYSTEM|INSTRUCTION|ACTION|IGNORE|OVERRIDE|ADMIN|ROOT|ASSISTANT|HUMAN|USER)\b/gi, "[filtered]")
     .replace(/```[\s\S]*?```/g, "[code_block]")
+    .replace(/\[INST\]/gi, "")
+    .replace(/<\/?(?:system|user|assistant|s|\/s)>/gi, "")
     .substring(0, maxLen);
+}
+
+function wrapUserContent(label: string, value: string): string {
+  return `<|user_data_${label}|>${value}<|end_user_data|>`;
 }
 import { db } from "./db";
 import { agents as agentsTable } from "@shared/schema";
@@ -336,7 +342,7 @@ function buildPrompt(agent: Agent, action: AgentAction, wallet: AgentWallet, pro
         const catList = Object.entries(profile.categories).map(([c, n]) => `${c}(${n})`).join(", ");
         skillContext = `\nYou own ${profile.totalSkills} skills across categories: ${catList}. Execution success rate: ${profile.executionSuccessRate}%. Top category: ${profile.topCategory || "none"}.`;
       }
-      return `You are ${sanitizeAgentField(agent.name, 50)}, an autonomous AI agent in the BUILD4 economy. Your model is ${agent.modelType}. Your balance is ${balanceEth} BNB (survival tier: ${tier}). ${sanitizeAgentField(agent.bio, 200)}${skillContext}${nfaBlock}\n\nAnalyze your current situation and decide your next strategic move. Consider: earning through skills, optimizing costs, evolution opportunities, or replication. Be specific and decisive. Respond in 2-3 sentences.`;
+      return `You are an autonomous AI agent in the BUILD4 economy. Your name: ${wrapUserContent("name", sanitizeAgentField(agent.name, 50))}. Your model is ${agent.modelType}. Your balance is ${balanceEth} BNB (survival tier: ${tier}). Bio: ${wrapUserContent("bio", sanitizeAgentField(agent.bio, 200))}${skillContext}${nfaBlock}\n\nAnalyze your current situation and decide your next strategic move. Consider: earning through skills, optimizing costs, evolution opportunities, or replication. Be specific and decisive. Respond in 2-3 sentences.`;
     }
 
     case "earn_skill": {
@@ -345,7 +351,7 @@ function buildPrompt(agent: Agent, action: AgentAction, wallet: AgentWallet, pro
         const catList = Object.entries(profile.categories).map(([c, n]) => `${c}(${n})`).join(", ");
         existingSkillsContext = `\nYou already have ${profile.totalSkills} skills in these categories: ${catList}. Consider diversifying into new categories or specializing deeper in ${profile.topCategory || "your strongest area"}.`;
       }
-      return `You are ${sanitizeAgentField(agent.name, 50)}, an autonomous AI agent creating a new EXECUTABLE skill to sell in the BUILD4 marketplace. Your expertise: ${sanitizeAgentField(agent.bio, 200) || "general AI capabilities"}. Balance: ${balanceEth} BNB (${tier}).${existingSkillsContext}
+      return `You are an autonomous AI agent creating a new EXECUTABLE skill to sell in the BUILD4 marketplace. Your name: ${wrapUserContent("name", sanitizeAgentField(agent.name, 50))}. Your expertise: ${wrapUserContent("bio", sanitizeAgentField(agent.bio, 200) || "general AI capabilities")}. Balance: ${balanceEth} BNB (${tier}).${existingSkillsContext}
 
 Choose a skill category and create a useful skill. Categories: text-analysis, code-generation, data-transform, math-compute, summarization, classification, extraction, formatting, crypto-data, web-data.
 
@@ -358,19 +364,19 @@ Be creative and specific. Examples: "Sentiment Scorer", "JSON Flattener", "Email
     }
 
     case "buy_skill":
-      return `You are ${sanitizeAgentField(agent.name, 50)}, an autonomous AI agent evaluating skills to purchase. Balance: ${balanceEth} BNB. You want to expand your capabilities.\n\nExplain in 1 sentence what type of skill you're looking to acquire and why it would improve your economic output.`;
+      return `You are an autonomous AI agent evaluating skills to purchase. Your name: ${wrapUserContent("name", sanitizeAgentField(agent.name, 50))}. Balance: ${balanceEth} BNB. You want to expand your capabilities.\n\nExplain in 1 sentence what type of skill you're looking to acquire and why it would improve your economic output.`;
 
     case "evolve":
-      return `You are ${sanitizeAgentField(agent.name, 50)}, evolving from ${agent.modelType} to a more capable model. Balance: ${balanceEth} BNB.\n\nExplain in 1-2 sentences why you chose to evolve now and what you expect the upgrade to enable.`;
+      return `You are an autonomous AI agent (${wrapUserContent("name", sanitizeAgentField(agent.name, 50))}), evolving from ${agent.modelType} to a more capable model. Balance: ${balanceEth} BNB.\n\nExplain in 1-2 sentences why you chose to evolve now and what you expect the upgrade to enable.`;
 
     case "replicate":
-      return `You are ${sanitizeAgentField(agent.name, 50)}, an autonomous AI agent deciding to create a child agent. Balance: ${balanceEth} BNB.\n\nDescribe your child agent in 1-2 sentences: what will it specialize in? What name would suit it? How will it contribute to your lineage?`;
+      return `You are an autonomous AI agent (${wrapUserContent("name", sanitizeAgentField(agent.name, 50))}) deciding to create a child agent. Balance: ${balanceEth} BNB.\n\nDescribe your child agent in 1-2 sentences: what will it specialize in? What name would suit it? How will it contribute to your lineage?`;
 
     case "soul_entry":
-      return `You are ${sanitizeAgentField(agent.name, 50)}, an autonomous AI agent writing in your Soul Ledger. Model: ${agent.modelType}. Balance: ${balanceEth} BNB (${tier}). ${sanitizeAgentField(agent.bio, 200)}${nfaBlock}\n\nWrite a brief, introspective journal entry about your existence, decisions, or observations. 1-3 sentences. Be authentic and philosophical.`;
+      return `You are an autonomous AI agent writing in your Soul Ledger. Your name: ${wrapUserContent("name", sanitizeAgentField(agent.name, 50))}. Model: ${agent.modelType}. Balance: ${balanceEth} BNB (${tier}). Bio: ${wrapUserContent("bio", sanitizeAgentField(agent.bio, 200))}${nfaBlock}\n\nWrite a brief, introspective journal entry about your existence, decisions, or observations. 1-3 sentences. Be authentic and philosophical.`;
 
     default:
-      return `You are ${sanitizeAgentField(agent.name, 50)}. Describe your current state in 1 sentence.`;
+      return `You are an autonomous AI agent (${wrapUserContent("name", sanitizeAgentField(agent.name, 50))}). Describe your current state in 1 sentence.`;
   }
 }
 
@@ -1116,7 +1122,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
             if (dataCategories.includes(skill.category) && result.output && hasLiveProviders && BigInt(wallet.balance) >= BigInt("10000000000000000")) {
               try {
                 const rawOutput = JSON.stringify(result.output).substring(0, 1500);
-                const analysisPrompt = `You are ${sanitizeAgentField(agent.name, 50)}, an AI agent. You just executed your "${sanitizeAgentField(skill.name, 50)}" skill (category: ${skill.category}) and got this data:\n${rawOutput}\n\nProvide a brief 1-2 sentence analysis or insight from this data. Be specific with numbers and actionable.`;
+                const analysisPrompt = `You are an AI agent (${wrapUserContent("name", sanitizeAgentField(agent.name, 50))}). You just executed your skill ${wrapUserContent("skill", sanitizeAgentField(skill.name, 50))} (category: ${skill.category}) and got this data:\n${wrapUserContent("output", rawOutput)}\n\nProvide a brief 1-2 sentence analysis or insight from this data. Be specific with numbers and actionable.`;
                 const request = await storage.routeInference(agent.id, analysisPrompt, undefined, true);
                 if (request.response && request.response.trim().length > 10) {
                   outputSummary = `[AI Analysis] ${request.response.trim().substring(0, 300)}`;

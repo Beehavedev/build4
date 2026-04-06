@@ -163,7 +163,7 @@ export async function registerRoutes(
 
 
   app.get("/api/privacy/config", (_req: Request, res: Response) => {
-    res.json({ contracts: ZERC20_CONTRACTS, chains: SUPPORTED_PRIVACY_CHAINS });
+    res.json({ contracts: ZERC20_CONTRACTS, chains: SUPPORTED_PRIVACY_CHAINS, _experimentalWarning: "ZERC20 privacy features use simulated ZK proofs. This is a technology preview and does NOT provide real cryptographic privacy." });
   });
 
   app.post("/api/privacy/prepare", async (req: Request, res: Response) => {
@@ -240,6 +240,7 @@ export async function registerRoutes(
         verifierAddress: prepared.verifierAddress,
         hubAddress: prepared.hubAddress,
         _securityNote: "Store the secret securely on your device. It will not be stored on the server and cannot be recovered.",
+        _experimentalWarning: "ZERC20 privacy features use simulated ZK proofs. This is a technology preview and does NOT provide real cryptographic privacy. Do not rely on this for sensitive transactions.",
       });
     } catch (e: any) {
       res.status(500).json({ error: "Internal server error" });
@@ -284,7 +285,7 @@ export async function registerRoutes(
         const updated = await storage.updatePrivacyTransferStatus(
           req.params.id, "completed", undefined, proofResult.proofId
         );
-        res.json({ transfer: updated, proof: proofResult });
+        res.json({ transfer: updated, proof: proofResult, _experimentalWarning: "ZERC20 privacy features use simulated ZK proofs. This is a technology preview and does NOT provide real cryptographic privacy." });
       } else {
         await storage.updatePrivacyTransferStatus(
           req.params.id, "failed", undefined, undefined, proofResult.error
@@ -302,7 +303,7 @@ export async function registerRoutes(
       res.status(404).json({ error: "Proof not found" });
       return;
     }
-    res.json(proof);
+    res.json({ ...proof, _experimentalWarning: "ZERC20 privacy features use simulated ZK proofs. This is a technology preview and does NOT provide real cryptographic privacy." });
   });
 
   app.post("/api/privacy/verify", async (req: Request, res: Response) => {
