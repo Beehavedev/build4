@@ -310,10 +310,52 @@ function renderDeposit(){
 
   h+='<div class="card" style="background:linear-gradient(135deg,rgba(14,203,129,0.05),transparent)">';
   h+='<div class="section-title">Your Account Summary</div>';
-  h+='<div class="grid2 mt-2">';
+  h+='<div class="grid3 mt-2">';
   h+='<div style="text-align:center;padding:12px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Total Deposited</div><div class="val-sm text-w mt-1">$'+fmt(myDep)+'</div></div>';
-  h+='<div style="text-align:center;padding:12px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Pool Margin</div><div class="val-sm text-w mt-1">$'+fmt(D.walletBalance)+'</div></div>';
+  h+='<div style="text-align:center;padding:12px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">BSC Wallet</div><div class="val-sm text-w mt-1">$'+fmt(D.bscBalance)+'</div></div>';
+  h+='<div style="text-align:center;padding:12px;background:var(--green-bg);border-radius:8px"><div class="text-xs" style="color:var(--green)">Futures</div><div class="val-sm text-w mt-1">$'+fmt(D.walletBalance)+'</div></div>';
   h+='</div></div>';
+
+  if(D.bscWalletAddress){
+    h+='<div class="card"><div class="section-title">Quick Deposit from BSC Wallet</div>';
+    h+='<div class="text-xs text-dim mb-2">Your bot wallet: <span class="mono" style="color:var(--blue);cursor:pointer" data-addr="'+D.bscWalletAddress+'" onclick="copyAddr(this)">'+shortAddr(D.bscWalletAddress)+' 📋</span> · $'+fmt(D.bscBalance)+' USDT</div>';
+    if(D.bnbBalance<0.001){h+='<div class="alert alert-warn mt-0 mb-2"><span>⚠️</span><span>Low BNB! Send at least 0.001 BNB for gas fees.</span></div>'}
+    h+='<div class="text-xs text-dim mb-3">Transfer USDT from your BSC wallet to Aster to start trading.</div>';
+    var transferAmts=[1,5,10,25];
+    h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">';
+    transferAmts.forEach(function(a){
+      var dis=D.bscBalance<a?'disabled style="opacity:.4;cursor:not-allowed"':'onclick="doTransfer('+a+')"';
+      h+='<button class="btn btn-outline" '+dis+'>$'+a+'</button>';
+    });
+    h+='</div>';
+    if(D.bscBalance>0){
+      h+='<button class="btn btn-green mt-3" style="width:100%" onclick="doTransfer('+Math.floor(D.bscBalance*100)/100+')">Transfer All ($'+fmt(D.bscBalance)+')</button>';
+    }
+    h+='<div id="transfer-status"></div>';
+    h+='</div>';
+  }
+
+  if((D.spotBalance||0)>0){
+    h+='<div class="card card-accent"><div class="section-title">Transfer Spot → Futures</div>';
+    h+='<div class="text-xs text-dim mb-2">You have $'+fmt(D.spotBalance)+' in Spot. Transfer to Futures to start trading.</div>';
+    h+='<button class="btn btn-green" style="width:100%" onclick="spotToFutures()">Transfer $'+fmt(D.spotBalance)+' to Futures</button>';
+    h+='<div id="stf-status"></div></div>';
+  }
+  h+='<button class="btn btn-outline mt-2" style="width:100%" onclick="spotToFutures()">🔄 Move Spot → Futures</button>';
+
+  h+='<div class="card mt-3"><div class="section-title">Withdraw USDT</div>';
+  h+='<div class="text-xs text-dim mb-2">Withdraw from Aster Futures to your BSC wallet. Min $1.</div>';
+  h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">';
+  var wAmts=[5,10,25,50];
+  wAmts.forEach(function(w){h+='<button class="btn btn-outline" onclick="doWithdraw('+w+')">$'+w+'</button>'});
+  h+='</div>';
+  h+='<div style="display:flex;gap:8px;margin-top:8px">';
+  h+='<input id="withdraw-amount" type="number" placeholder="Amount" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card-bg);color:var(--text)">';
+  h+='<button class="btn btn-outline" onclick="doWithdrawCustom()">Withdraw</button>';
+  h+='</div>';
+  h+='<input id="withdraw-addr" type="text" placeholder="To address (default: your bot wallet)" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);font-size:11px;margin-top:8px">';
+  h+='<div id="withdraw-status"></div>';
+  h+='</div>';
 
   h+='<button class="btn btn-outline mt-2" style="width:100%" onclick="loadDeposit()">↻ Refresh</button>';
   h+='<div class="timestamp mt-2">Updated '+timeAgo()+'</div>';
