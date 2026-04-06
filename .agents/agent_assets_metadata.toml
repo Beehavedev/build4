@@ -89,3 +89,9 @@ id = "TdpgORuZk0K8oo-jnEFiO"
 uri = "file://attached_assets/build4_10k_banner_v2.png"
 type = "image"
 title = "BUILD4 10K Users Banner (Brand Colors)"
+
+[[outputs]]
+id = "1Mzk9O1e-QlU9rOqFzdQN"
+uri = "file://attached_assets/build4-notice.png"
+type = "image"
+title = "BUILD4 Notice"
