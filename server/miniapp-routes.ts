@@ -75,6 +75,32 @@ export function registerMiniAppRoutes(app: Express) {
     } catch(e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  app.post("/api/miniapp/import-wallet", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+      const { privateKey } = req.body;
+      if (!privateKey) return res.status(400).json({ error: "Missing private key" });
+
+      const { Wallet } = await import("ethers");
+      let wallet: InstanceType<typeof Wallet>;
+      try {
+        wallet = new Wallet(privateKey);
+      } catch (e: any) {
+        return res.status(400).json({ error: "Invalid private key format" });
+      }
+
+      const address = wallet.address.toLowerCase();
+      console.log(`[MiniApp] Importing wallet ${address} for chatId=${chatId}`);
+
+      await storage.saveTelegramWallet(chatId, address, privateKey);
+
+      await storage.saveAsterCredentials(chatId, "V3_DIRECT", "V3_DIRECT");
+
+      res.json({ success: true, address });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   app.get("/api/miniapp/account", async (req: Request, res: Response) => {
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;

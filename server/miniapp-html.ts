@@ -273,9 +273,17 @@ function renderDeposit(){
     h+='</div>';
     h+='<div class="vault-box mt-3" style="font-size:11px;word-break:break-all;cursor:pointer" data-addr="'+walletAddr+'" onclick="copyAddr(this)">'+walletAddr+'<div class="text-xs mt-1" style="color:var(--green)">Tap to copy</div></div>';
   }else{
-    h+='<div class="text-sm text-dim" style="padding:20px">Loading wallet address...</div>';
+    h+='<div class="text-sm text-dim" style="padding:20px">No wallet connected yet.</div>';
   }
   h+='<div class="alert alert-warn mt-3" style="text-align:left"><span>⚠️</span><span>Only send USDT on <strong>BSC (BNB Smart Chain)</strong>. Other networks will be lost.</span></div>';
+  h+='</div>';
+
+  h+='<div class="card"><div class="section-title">🔑 Connect / Re-import Wallet</div>';
+  h+='<div class="text-xs text-dim mb-2">Paste your BSC wallet private key to link it to your account. This is needed to trade on Aster.</div>';
+  h+='<input id="import-pk" type="password" class="input" placeholder="Private key (0x...)" autocomplete="off">';
+  h+='<button class="btn btn-green mt-2" style="width:100%" onclick="importWallet()">Connect Wallet</button>';
+  h+='<div id="import-status"></div>';
+  h+='<div class="text-xs text-dim mt-2" style="color:var(--text3)">Your key is encrypted and stored securely. Never share it with anyone.</div>';
   h+='</div>';
 
   h+='<div class="card" style="background:linear-gradient(135deg,rgba(14,203,129,0.05),transparent)">';
@@ -441,7 +449,29 @@ async function spotToFutures(){
   }
 }
 
-
+async function importWallet(){
+  var pkInput=$('import-pk');
+  var st=$('import-status');
+  if(!pkInput||!st)return;
+  var pk=pkInput.value.trim();
+  if(!pk){toast('Enter your private key','err');return}
+  if(!pk.startsWith('0x'))pk='0x'+pk;
+  if(pk.length!==66){toast('Invalid private key length','err');return}
+  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Connecting wallet...</span></div>';
+  try{
+    var r=await api('/api/miniapp/import-wallet',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({privateKey:pk})});
+    if(r.success){
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><div><strong>Wallet connected!</strong><br><span class="mono text-xs" style="color:var(--green)">'+r.address+'</span></div></div>';
+      toast('✅ Wallet connected!','ok');
+      pkInput.value='';
+      setTimeout(function(){fetchAll().then(function(){renderDeposit()})},2000);
+    }else{
+      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Import failed')+'</span></div>';
+    }
+  }catch(e){
+    st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
+  }
+}
 
 function validateTxHash(){
   const v=$('txhash').value.trim();
