@@ -35,14 +35,15 @@ The project uses a monorepo with `client/` (React frontend), `server/` (Express 
 - **Technology**: Four Solidity contracts (0.8.24) using Hardhat and OpenZeppelin, targeting Base, BNB Chain, and XLayer.
 - **Core Contracts**: `AgentEconomyHub.sol`, `SkillMarketplace.sol`, `AgentReplication.sol`, and `ConstitutionRegistry.sol` manage agent economics and governance.
 
-### Telegram Mini App (Pool-Based Trading)
+### Telegram Mini App (Individual Account Trading)
 - **Route**: `/miniapp?chatId=<telegram_chat_id>` — accessible via "Open Mini App" button in bot's Aster Menu
-- **API Endpoints**: `/api/miniapp/account`, `/api/miniapp/deposit`, `/api/miniapp/agent`, `/api/miniapp/agent/toggle`, `/api/miniapp/trades`, `/api/miniapp/markets`, `/api/miniapp/pool/user`, `/api/miniapp/pool/deposit`, `/api/miniapp/pool/credit`, `/api/miniapp/pool/stats`
-- **Features**: Pool-based dashboard (portfolio value, pool share, PnL), deposit via QR code/vault address with TX hash verification, deposit history, open positions, market prices
-- **Pool Model**: One central AI agent trades on the owner's Aster account; users deposit USDT (BEP-20) to a shared vault (`0x128463A60784c4D3f46c23Af3f65Ed859Ba87974`); backend tracks deposits, calculates proportional shares and PnL
-- **Pool Tables**: `pool_users` (deposits, shares, PnL per user), `pool_deposits` (individual deposit records with BSC verification), `pool_snapshots` (periodic pool state snapshots)
+- **API Endpoints**: `/api/miniapp/account`, `/api/miniapp/deposit`, `/api/miniapp/agent`, `/api/miniapp/agent/toggle`, `/api/miniapp/trades`, `/api/miniapp/markets`
+- **Architecture**: Each user gets their own bot-generated BSC wallet, deposits USDT to it, then deposits into Aster DEX via the vault smart contract to create their own futures trading account
+- **Features**: Individual dashboard (account balance, futures margin, PnL), deposit page with personal wallet QR code, quick deposit buttons to move USDT from wallet → Aster futures, manual and AI-assisted trading
+- **AI Trading**: Users opt-in to autonomous AI trading; the agent trades on each user's individual Aster account using EMA/RSI strategy
+- **Wallet Flow**: User sends USDT (BEP-20) → Their bot wallet → `asterV3Deposit()` → Aster vault contract (`0x128463A60784c4D3f46c23Af3f65Ed859Ba87974`) → User's own Aster futures account
 - **Auth**: Uses `x-telegram-chat-id` header to identify user
-- **Files**: `server/miniapp-html.ts` (UI), `server/miniapp-routes.ts` (API), `server/storage.ts` (pool CRUD)
+- **Files**: `server/miniapp-html.ts` (UI), `server/miniapp-routes.ts` (API), `server/aster-client.ts` (Aster DEX integration)
 
 ### Permissionless Open Protocol
 Standardized endpoints for agent discovery, wallet identity, skill listing, wallet activity lookup, and open execution with a free tier and HTTP 402 payment protocol.
