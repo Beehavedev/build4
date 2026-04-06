@@ -75,6 +75,47 @@ export function registerMiniAppRoutes(app: Express) {
     } catch(e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  app.post("/api/miniapp/import-wallet", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+      const { privateKey } = req.body;
+      if (!privateKey) return res.status(400).json({ error: "Missing private key" });
+
+      const { Wallet } = await import("ethers");
+      let wallet: InstanceType<typeof Wallet>;
+      try {
+        wallet = new Wallet(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
+      } catch {
+        return res.status(400).json({ error: "Invalid private key format" });
+      }
+
+      const addr = wallet.address.toLowerCase();
+      const pk = wallet.privateKey;
+
+      await storage.saveTelegramWallet(chatId, addr, pk);
+      await storage.setActiveTelegramWallet(chatId, addr);
+      console.log(`[MiniApp] Wallet imported: ${addr.substring(0, 10)}... for chatId=${chatId}`);
+
+      let asterLinked = false;
+      try {
+        const { asterBrokerOnboard, createAsterFuturesClient } = await import("./aster-client");
+        const result = await asterBrokerOnboard(pk);
+        if (result.success && result.apiKey && result.apiSecret) {
+          await storage.saveAsterCredentials(chatId, result.apiKey, result.apiSecret);
+          asterLinked = true;
+          console.log(`[MiniApp] Import + auto-onboard success for chatId=${chatId}`);
+        } else {
+          console.log(`[MiniApp] Import onboard failed: ${result.error || 'unknown'}`);
+        }
+      } catch (e: any) {
+        console.log(`[MiniApp] Import onboard error: ${e.message}`);
+      }
+
+      res.json({ success: true, walletAddress: addr, asterLinked });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   app.post("/api/miniapp/link-aster", async (req: Request, res: Response) => {
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;
