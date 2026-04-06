@@ -13207,12 +13207,15 @@ async function initOwnerAsterClient(): Promise<any> {
     const derivedSigner = wallet.address;
     const signer = signerAddress || derivedSigner;
 
+    const parentAddress = process.env.ASTER_PARENT_ADDRESS;
     const candidates = [
+      parentAddress,
       userAddress,
       signerAddress,
       derivedSigner,
     ].filter((a): a is string => !!a);
     const uniqueCandidates = [...new Set(candidates.map(a => a.toLowerCase()))];
+    console.log(`[Aster] Trying ${uniqueCandidates.length} candidate user addresses: ${uniqueCandidates.map(c => c.substring(0, 10)).join(', ')}`);
 
     for (const candidateUser of uniqueCandidates) {
       try {
@@ -13242,7 +13245,7 @@ async function initOwnerAsterClient(): Promise<any> {
       }
     }
 
-    const user = userAddress || derivedSigner;
+    const user = parentAddress || userAddress || derivedSigner;
     const futures = createAsterV3FuturesClient({
       user,
       signer,

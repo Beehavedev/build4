@@ -1,0 +1,43 @@
+The core issue has been identified:
+
+Deposits show on the Aster DEX website, but the Mini App shows $0.00 in Futures because we are querying the wrong address in V3 API.
+
+The balance lives under the **parent/main wallet** that created the API Wallet (likely 0x7cfe1f14f44546d93fb9c0c3d55c693af5bf7b9f or similar), NOT the API Wallet signer address.
+
+Fix this properly and make it robust:
+
+1. **Add ASTER_PARENT_ADDRESS** to environment variables (make it required)
+   - Instruct the user to add their main wallet address (the one they use to log into asterdex.com) as ASTER_PARENT_ADDRESS in Render.
+
+2. **Update the Aster V3 Client (aster/client.ts)**
+   - When calling `/fapi/v3/account` or any balance/position endpoint, prioritize addresses in this order:
+     1. ASTER_PARENT_ADDRESS (if provided)
+     2. ASTER_USER_ADDRESS / ASTER_SIGNER_ADDRESS
+     3. Address derived from ASTER_PRIVATE_KEY
+   - Log clearly which address is being used for each request.
+
+3. **Improve Debug Information**
+   - Add a "Debug Info" section or button in the Mini App Dashboard that shows:
+     - Main Parent Address used
+     - Signer Address
+     - Derived Address from private key
+     - Raw response from /fapi/v3/account for each address tried
+     - Which one returned non-zero balance
+
+4. **Balance Refresh Logic**
+   - Use the parent address as the primary one for all balance and position calls.
+   - Keep auto-refresh every 10 seconds on Deposit and Dashboard tabs.
+   - Show "Last updated" timestamp.
+
+5. **User Instruction**
+   - If balance is still $0, show a clear message in the Mini App:
+     "Balance detected on Aster website but not in Mini App. 
+      Please add your main wallet address as ASTER_PARENT_ADDRESS in Render Environment Variables and redeploy."
+
+Make sure the code gracefully falls back and always tries the parent address first when available.
+
+Implement this change now, push to Render, and add the Debug Info panel so we can see exactly which address returns the balance.
+
+After deployment, the user should add ASTER_PARENT_ADDRESS = [their main login wallet] in Render and redeploy.
+
+This should finally make the Mini App balance match the Aster website.

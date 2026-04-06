@@ -230,7 +230,7 @@ function renderDash(){
   }
 
   if(D.walletBalance===0&&D.availableMargin===0){
-    h+='<div class="alert alert-info mt-2"><span>ℹ️</span><span>Balance is $0.00. If you recently deposited, funds may still be processing on Aster (2-10 min). Auto-refreshing every 10s.</span></div>';
+    h+='<div class="alert alert-info mt-2"><span>⚠️</span><div style="font-size:12px"><strong>Balance is $0.00</strong><br>If your balance shows on asterdex.com but not here, add your <strong>main login wallet address</strong> as <code style="background:var(--bg);padding:2px 4px;border-radius:4px;font-size:10px">ASTER_PARENT_ADDRESS</code> in Render Environment Variables and redeploy.<br><span style="color:var(--text2);font-size:11px">This is the wallet you use to connect to asterdex.com (not the API wallet).</span></div></div>';
   }
 
   h+='<div style="display:flex;gap:8px;margin-top:8px">';

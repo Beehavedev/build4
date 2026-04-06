@@ -190,7 +190,7 @@ export function registerMiniAppRoutes(app: Express) {
               console.log(`[MiniApp] Login discovery failed: ${e.message?.substring(0, 150)}`);
             }
 
-            const candidates = [...new Set([signerAddr, derivedAddr, userAddr, parentAddr, discoveredAddr].filter(Boolean).map(a => a.toLowerCase()))];
+            const candidates = [...new Set([parentAddr, discoveredAddr, signerAddr, derivedAddr, userAddr].filter(Boolean).map(a => a.toLowerCase()))];
             console.log(`[MiniApp] Trying ${candidates.length} candidate user addresses: ${candidates.map(c => c.substring(0, 10)).join(', ')}`);
 
             for (const candidateUser of candidates) {
