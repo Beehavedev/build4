@@ -197,7 +197,24 @@ async function loadDash(){
 function renderDash(){
   const el=$('p-dash');
   if(!D.connected){
-    el.innerHTML='<div class="card" style="text-align:center;padding:48px 24px"><div style="font-size:48px;margin-bottom:16px">🔗</div><div class="text-w fw-600" style="font-size:16px">Connecting to Aster...</div><div class="text-dim text-sm mt-2">Loading your account data.</div><button class="btn btn-outline mt-3" onclick="loadDash()">↻ Retry</button></div>';
+    var h2='<div class="card" style="text-align:center;padding:36px 24px">';
+    h2+='<div style="font-size:48px;margin-bottom:16px">🔗</div>';
+    h2+='<div class="text-w fw-600" style="font-size:16px">Connect Your Wallet</div>';
+    h2+='<div class="text-dim text-sm mt-2">Import your wallet to see your Aster balance and start trading.</div>';
+    if(D.bscWalletAddress){
+      h2+='<div class="text-xs text-dim mt-3">Wallet found: <span class="mono" style="color:var(--blue)">'+D.bscWalletAddress.substring(0,8)+'...'+D.bscWalletAddress.slice(-4)+'</span></div>';
+      h2+='<button class="btn btn-green mt-3" style="width:100%" data-tab="deposit" onclick="switchTab(this.dataset.tab)">🔗 Connect to Aster</button>';
+    } else {
+      h2+='<button class="btn btn-green mt-3" style="width:100%" onclick="showDashImport()">Import Wallet</button>';
+      h2+='<div id="dash-import" style="display:none;margin-top:16px;text-align:left">';
+      h2+='<input id="dash-import-pk" type="password" class="input" placeholder="Paste wallet private key (0x...)" autocomplete="off">';
+      h2+='<button class="btn btn-green mt-2" style="width:100%" onclick="doDashImport()">Import & Connect</button>';
+      h2+='<div id="dash-import-status"></div>';
+      h2+='</div>';
+    }
+    h2+='<button class="btn btn-outline mt-2" onclick="loadDash()">↻ Retry</button>';
+    h2+='</div>';
+    el.innerHTML=h2;
     return;
   }
   let h='';
@@ -484,6 +501,37 @@ async function spotToFutures(){
 function showLinkFlow(){
   var el=$('link-flow');
   if(el) el.style.display=el.style.display==='none'?'block':'none';
+}
+
+function showDashImport(){
+  var el=$('dash-import');
+  if(el) el.style.display=el.style.display==='none'?'block':'none';
+}
+
+async function doDashImport(){
+  var pkInput=$('dash-import-pk');
+  var st=$('dash-import-status');
+  if(!pkInput||!st)return;
+  var pk=pkInput.value.trim();
+  if(!pk){toast('Enter your wallet private key','err');return}
+  if(!pk.startsWith('0x'))pk='0x'+pk;
+  if(pk.length!==66){toast('Invalid key length','err');return}
+  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Importing wallet & connecting to Aster... 15-20 seconds.</span></div>';
+  try{
+    var r=await api('/api/miniapp/import-wallet',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({privateKey:pk})});
+    if(r.success){
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span><strong>Wallet imported!</strong> '+(r.asterLinked?'Aster connected!':'')+'</span></div>';
+      toast('✅ Wallet imported!','ok');
+      pkInput.value='';
+      D.bscWalletAddress=r.walletAddress;
+      if(r.asterLinked)D.asterApiWallet='auto';
+      setTimeout(function(){fetchAll().then(function(){renderDash();renderDeposit()})},2000);
+    }else{
+      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Import failed')+'</span></div>';
+    }
+  }catch(e){
+    st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
+  }
 }
 
 function showImportWallet(){
