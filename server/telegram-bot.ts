@@ -13196,63 +13196,47 @@ async function initOwnerAsterClient(): Promise<any> {
   if (ownerClientInitAttempted) return null;
   ownerClientInitAttempted = true;
 
+  const HARDCODED_USER = "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4";
+  const HARDCODED_SIGNER = "0xaac5f84303ee5cdbd19c265cee295cd5a36a26ee";
+
   const privateKey = process.env.ASTER_PRIVATE_KEY || process.env.ASTER_API_WALLET_KEY;
-  const userAddress = process.env.ASTER_USER_ADDRESS;
-  const signerAddress = process.env.ASTER_SIGNER_ADDRESS;
+  const userAddress = process.env.ASTER_USER_ADDRESS || HARDCODED_USER;
+  const signerAddress = process.env.ASTER_SIGNER_ADDRESS || HARDCODED_SIGNER;
 
   if (privateKey) {
     const { createAsterV3FuturesClient } = await import("./aster-client");
     const { Wallet } = await import("ethers");
     const wallet = new Wallet(privateKey);
     const derivedSigner = wallet.address;
-    const signer = signerAddress || derivedSigner;
 
-    const parentAddress = process.env.ASTER_PARENT_ADDRESS;
-    const candidates = [
-      parentAddress,
-      userAddress,
-      signerAddress,
-      derivedSigner,
-    ].filter((a): a is string => !!a);
-    const uniqueCandidates = [...new Set(candidates.map(a => a.toLowerCase()))];
-    console.log(`[Aster] Trying ${uniqueCandidates.length} candidate user addresses: ${uniqueCandidates.map(c => c.substring(0, 10)).join(', ')}`);
+    const user = userAddress;
+    const signer = signerAddress;
 
-    for (const candidateUser of uniqueCandidates) {
-      try {
-        const testClient = createAsterV3FuturesClient({
-          user: candidateUser,
-          signer,
-          signerPrivateKey: privateKey,
-        });
-        const bal = await testClient.balance();
-        let hasBalance = false;
-        if (Array.isArray(bal)) {
-          const usdt = bal.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
-          if (usdt) {
-            const wb = parseFloat(usdt.walletBalance || usdt.balance || usdt.crossWalletBalance || "0");
-            const ab = parseFloat(usdt.availableBalance || "0");
-            if (wb > 0 || ab > 0) hasBalance = true;
-          }
-        }
-        console.log(`[Aster] V3 balance check user=${candidateUser.substring(0, 10)}... hasBalance=${hasBalance}`);
-        if (hasBalance) {
-          cachedOwnerClient = { futures: testClient, spot: null, mode: "V3" };
-          console.log(`[Aster] Pro API V3 client initialized with user=${candidateUser.substring(0, 10)}... signer=${signer.substring(0, 10)}...`);
-          return cachedOwnerClient;
-        }
-      } catch (e: any) {
-        console.log(`[Aster] V3 candidate ${candidateUser.substring(0, 10)}... failed: ${e.message?.substring(0, 100)}`);
-      }
+    console.log(`[Aster] Init V3: user=${user} signer=${signer} derived=${derivedSigner}`);
+    if (derivedSigner.toLowerCase() !== signer.toLowerCase()) {
+      console.warn(`[Aster] WARNING: private key derives to ${derivedSigner} but signer is ${signer} — key mismatch!`);
     }
 
-    const user = parentAddress || userAddress || derivedSigner;
     const futures = createAsterV3FuturesClient({
       user,
       signer,
       signerPrivateKey: privateKey,
     });
+
+    try {
+      const bal = await futures.balance();
+      let balStr = "no data";
+      if (Array.isArray(bal)) {
+        const usdt = bal.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+        if (usdt) balStr = `wallet=${usdt.walletBalance} avail=${usdt.availableBalance}`;
+      }
+      console.log(`[Aster] V3 balance check: ${balStr}`);
+    } catch (e: any) {
+      console.error(`[Aster] V3 balance check failed: ${e.message?.substring(0, 200)}`);
+    }
+
     cachedOwnerClient = { futures, spot: null, mode: "V3" };
-    console.log(`[Aster] Pro API V3 client initialized (default): user=${user.substring(0, 10)}... signer=${signer.substring(0, 10)}...`);
+    console.log(`[Aster] Pro API V3 client ready: user=${user.substring(0, 12)}... signer=${signer.substring(0, 12)}...`);
     return cachedOwnerClient;
   }
 
@@ -13268,7 +13252,7 @@ async function initOwnerAsterClient(): Promise<any> {
     return cachedOwnerClient;
   }
 
-  console.log(`[Aster] No owner API configured. Set ASTER_PRIVATE_KEY + ASTER_USER_ADDRESS (Pro API V3)`);
+  console.log(`[Aster] No owner API configured. Set ASTER_PRIVATE_KEY in env vars.`);
   return null;
 }
 
