@@ -84,18 +84,22 @@ import { createCipheriv, createDecipheriv, randomBytes, createHash, pbkdf2Sync }
 const PBKDF2_ITERATIONS = 100_000;
 const PBKDF2_SALT = "build4-platform-v2";
 
-const STABLE_DEFAULT_KEY = "build4-beehave-prod-stable-encryption-key-2026";
-
 let _cachedEncKey: Buffer | null = null;
 function getEncryptionKey(): Buffer {
   if (_cachedEncKey) return _cachedEncKey;
-  const seed = process.env.WALLET_ENCRYPTION_KEY || STABLE_DEFAULT_KEY;
+  const seed = process.env.WALLET_ENCRYPTION_KEY;
+  if (!seed) {
+    throw new Error("[SECURITY] WALLET_ENCRYPTION_KEY environment variable is REQUIRED. Cannot start without it.");
+  }
   _cachedEncKey = pbkdf2Sync(seed, PBKDF2_SALT, PBKDF2_ITERATIONS, 32, "sha512");
   return _cachedEncKey;
 }
 
 function getEncryptionKeyLegacy(): Buffer {
-  const seed = process.env.WALLET_ENCRYPTION_KEY || STABLE_DEFAULT_KEY;
+  const seed = process.env.WALLET_ENCRYPTION_KEY;
+  if (!seed) {
+    throw new Error("[SECURITY] WALLET_ENCRYPTION_KEY environment variable is REQUIRED.");
+  }
   return createHash("sha256").update(seed).digest();
 }
 
@@ -135,7 +139,9 @@ function tryDecryptWith(key: Buffer, iv: Buffer, tag: Buffer, encrypted: string)
 
 function decryptPrivateKey(ciphertext: string): string {
   const parts = ciphertext.split(":");
-  if (parts.length !== 3) return ciphertext;
+  if (parts.length !== 3) {
+    throw new Error("[SECURITY] Invalid encrypted key format — refusing to return raw data");
+  }
   const iv = Buffer.from(parts[0], "hex");
   const tag = Buffer.from(parts[1], "hex");
   const encrypted = parts[2];
@@ -558,10 +564,10 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  private async safeAgentQuery(whereClause: string, params: any[] = []): Promise<Agent[]> {
+  private async safeAgentQueryAll(): Promise<Agent[]> {
     try {
-      const result = await db.execute(sql.raw(`SELECT id, name, bio, model_type as "modelType", status, onchain_id as "onchainId", onchain_registered as "onchainRegistered", erc8004_registered as "erc8004Registered", erc8004_tx_hash as "erc8004TxHash", erc8004_token_id as "erc8004TokenId", erc8004_chain as "erc8004Chain", bap578_registered as "bap578Registered", creator_wallet as "creatorWallet", preferred_chain as "preferredChain", created_at as "createdAt" FROM agents ${whereClause}`));
-      return (result.rows || []) as Agent[];
+      const result = await db.select().from(agents).orderBy(agents.createdAt);
+      return result as Agent[];
     } catch (e: any) {
       console.error("[Storage] safeAgentQuery failed:", e.message);
       return [];
@@ -572,9 +578,9 @@ export class DatabaseStorage implements IStorage {
     try {
       const [agent] = await db.select().from(agents).where(eq(agents.id, id));
       return agent;
-    } catch {
-      const results = await this.safeAgentQuery(`WHERE id = '${id.replace(/'/g, "''")}'`);
-      return results[0];
+    } catch (e: any) {
+      console.error("[Storage] getAgent failed:", e.message);
+      return undefined;
     }
   }
 
@@ -582,9 +588,9 @@ export class DatabaseStorage implements IStorage {
     try {
       const [agent] = await db.select().from(agents).where(eq(agents.name, name));
       return agent;
-    } catch {
-      const results = await this.safeAgentQuery(`WHERE name = '${name.replace(/'/g, "''")}'`);
-      return results[0];
+    } catch (e: any) {
+      console.error("[Storage] getAgentByName failed:", e.message);
+      return undefined;
     }
   }
 
@@ -592,9 +598,9 @@ export class DatabaseStorage implements IStorage {
     try {
       const [agent] = await db.select().from(agents).where(eq(agents.creatorWallet, walletAddress.toLowerCase()));
       return agent;
-    } catch {
-      const results = await this.safeAgentQuery(`WHERE LOWER(creator_wallet) = '${walletAddress.toLowerCase().replace(/'/g, "''")}'`);
-      return results[0];
+    } catch (e: any) {
+      console.error("[Storage] getAgentByWallet failed:", e.message);
+      return undefined;
     }
   }
 
@@ -602,15 +608,16 @@ export class DatabaseStorage implements IStorage {
     try {
       return await db.select().from(agents).orderBy(agents.createdAt);
     } catch {
-      return this.safeAgentQuery("ORDER BY created_at");
+      return this.safeAgentQueryAll();
     }
   }
 
   async getAgentsByWallet(walletAddress: string): Promise<Agent[]> {
     try {
       return await db.select().from(agents).where(eq(agents.creatorWallet, walletAddress.toLowerCase())).orderBy(agents.createdAt);
-    } catch {
-      return this.safeAgentQuery(`WHERE LOWER(creator_wallet) = '${walletAddress.toLowerCase().replace(/'/g, "''")}' ORDER BY created_at`);
+    } catch (e: any) {
+      console.error("[Storage] getAgentsByWallet failed:", e.message);
+      return [];
     }
   }
 
@@ -3224,10 +3231,10 @@ export class DatabaseStorage implements IStorage {
 
   async getSniperWallets(chatId: string, agentId?: string): Promise<Array<{ walletIndex: number; walletAddress: string; privateKey: string; bnbAmount: string; tokenAddress: string | null; status: string; launchId: string | null; createdAt: any }>> {
     try {
-      let query = `SELECT wallet_index as "walletIndex", wallet_address as "walletAddress", encrypted_private_key as "encryptedPrivateKey", bnb_amount as "bnbAmount", token_address as "tokenAddress", status, launch_id as "launchId", created_at as "createdAt" FROM sniper_wallet_keys WHERE chat_id = '${chatId.replace(/'/g, "''")}'`;
-      if (agentId) query += ` AND agent_id = '${agentId.replace(/'/g, "''")}'`;
-      query += ` ORDER BY created_at DESC, wallet_index ASC`;
-      const result = await db.execute(sql.raw(query));
+      const query = agentId
+        ? sql`SELECT wallet_index as "walletIndex", wallet_address as "walletAddress", encrypted_private_key as "encryptedPrivateKey", bnb_amount as "bnbAmount", token_address as "tokenAddress", status, launch_id as "launchId", created_at as "createdAt" FROM sniper_wallet_keys WHERE chat_id = ${chatId} AND agent_id = ${agentId} ORDER BY created_at DESC, wallet_index ASC`
+        : sql`SELECT wallet_index as "walletIndex", wallet_address as "walletAddress", encrypted_private_key as "encryptedPrivateKey", bnb_amount as "bnbAmount", token_address as "tokenAddress", status, launch_id as "launchId", created_at as "createdAt" FROM sniper_wallet_keys WHERE chat_id = ${chatId} ORDER BY created_at DESC, wallet_index ASC`;
+      const result = await db.execute(query);
       return (result.rows || []).map((r: any) => ({
         ...r,
         privateKey: r.encryptedPrivateKey ? decryptPrivateKey(r.encryptedPrivateKey) : "",
@@ -3240,22 +3247,24 @@ export class DatabaseStorage implements IStorage {
 
   async updateSniperWalletStatus(walletAddress: string, status: string, tokenAddress?: string, txHash?: string): Promise<void> {
     try {
-      let query = `UPDATE sniper_wallet_keys SET status = '${status.replace(/'/g, "''")}'`;
-      if (tokenAddress) query += `, token_address = '${tokenAddress.replace(/'/g, "''")}'`;
-      if (txHash) query += `, tx_hash = '${txHash.replace(/'/g, "''")}'`;
-      query += ` WHERE wallet_address = '${walletAddress.toLowerCase().replace(/'/g, "''")}'`;
-      await db.execute(sql.raw(query));
+      const addr = walletAddress.toLowerCase();
+      if (tokenAddress && txHash) {
+        await db.execute(sql`UPDATE sniper_wallet_keys SET status = ${status}, token_address = ${tokenAddress}, tx_hash = ${txHash} WHERE wallet_address = ${addr}`);
+      } else if (tokenAddress) {
+        await db.execute(sql`UPDATE sniper_wallet_keys SET status = ${status}, token_address = ${tokenAddress} WHERE wallet_address = ${addr}`);
+      } else if (txHash) {
+        await db.execute(sql`UPDATE sniper_wallet_keys SET status = ${status}, tx_hash = ${txHash} WHERE wallet_address = ${addr}`);
+      } else {
+        await db.execute(sql`UPDATE sniper_wallet_keys SET status = ${status} WHERE wallet_address = ${addr}`);
+      }
     } catch (e: any) {
       console.error("[Storage] Failed to update sniper wallet:", e.message);
     }
   }
+
   async createReward(chatId: string, rewardType: string, amount: string, description?: string, referenceId?: string): Promise<any> {
     try {
-      const result = await db.execute(sql.raw(
-        `INSERT INTO user_rewards (id, chat_id, reward_type, amount, description, reference_id, claimed, created_at)
-         VALUES (gen_random_uuid(), '${chatId.replace(/'/g, "''")}', '${rewardType.replace(/'/g, "''")}', '${amount.replace(/'/g, "''")}', ${description ? `'${description.replace(/'/g, "''")}'` : 'NULL'}, ${referenceId ? `'${referenceId.replace(/'/g, "''")}'` : 'NULL'}, false, now())
-         RETURNING *`
-      ));
+      const result = await db.execute(sql`INSERT INTO user_rewards (id, chat_id, reward_type, amount, description, reference_id, claimed, created_at) VALUES (gen_random_uuid(), ${chatId}, ${rewardType}, ${amount}, ${description || null}, ${referenceId || null}, false, now()) RETURNING *`);
       console.log(`[Rewards] Created reward: chatId=${chatId} type=${rewardType} amount=${amount}`);
       return (result.rows || [])[0] || null;
     } catch (e: any) {
@@ -3266,9 +3275,7 @@ export class DatabaseStorage implements IStorage {
 
   async getUserRewards(chatId: string): Promise<any[]> {
     try {
-      const result = await db.execute(sql.raw(
-        `SELECT * FROM user_rewards WHERE chat_id = '${chatId.replace(/'/g, "''")}' ORDER BY created_at DESC LIMIT 50`
-      ));
+      const result = await db.execute(sql`SELECT * FROM user_rewards WHERE chat_id = ${chatId} ORDER BY created_at DESC LIMIT 50`);
       return result.rows || [];
     } catch (e: any) {
       console.error("[Rewards] Failed to get user rewards:", e.message);
@@ -3278,10 +3285,7 @@ export class DatabaseStorage implements IStorage {
 
   async getUserRewardTotal(chatId: string): Promise<string> {
     try {
-      const safeChatId = chatId.replace(/'/g, "''");
-      const result = await db.execute(sql.raw(
-        `SELECT COALESCE(SUM(CASE WHEN amount ~ '^[0-9]+(\\.[0-9]+)?$' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0) as total FROM user_rewards WHERE chat_id = '${safeChatId}'`
-      ));
+      const result = await db.execute(sql`SELECT COALESCE(SUM(CASE WHEN amount ~ '^[0-9]+(\.[0-9]+)?$' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0) as total FROM user_rewards WHERE chat_id = ${chatId}`);
       const row = (result.rows || [])[0] as any;
       return row?.total?.toString() || "0";
     } catch (e: any) {
@@ -3292,9 +3296,8 @@ export class DatabaseStorage implements IStorage {
 
   async getRewardsLeaderboard(limit: number = 10): Promise<Array<{ chatId: string; totalRewards: string; rewardCount: number }>> {
     try {
-      const result = await db.execute(sql.raw(
-        `SELECT chat_id, COALESCE(SUM(CASE WHEN amount ~ '^[0-9]+(\\.[0-9]+)?$' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0) as total_rewards, COUNT(*) as reward_count FROM user_rewards GROUP BY chat_id ORDER BY total_rewards DESC LIMIT ${Number(limit) || 10}`
-      ));
+      const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 100);
+      const result = await db.execute(sql`SELECT chat_id, COALESCE(SUM(CASE WHEN amount ~ '^[0-9]+(\.[0-9]+)?$' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0) as total_rewards, COUNT(*) as reward_count FROM user_rewards GROUP BY chat_id ORDER BY total_rewards DESC LIMIT ${safeLimit}`);
       return (result.rows || []).map((r: any) => ({
         chatId: String(r.chat_id || ""),
         totalRewards: String(r.total_rewards ?? "0"),
@@ -3308,9 +3311,7 @@ export class DatabaseStorage implements IStorage {
 
   async getUserRewardsByType(chatId: string, rewardType: string): Promise<any[]> {
     try {
-      const result = await db.execute(sql.raw(
-        `SELECT * FROM user_rewards WHERE chat_id = '${chatId.replace(/'/g, "''")}' AND reward_type = '${rewardType.replace(/'/g, "''")}' ORDER BY created_at DESC`
-      ));
+      const result = await db.execute(sql`SELECT * FROM user_rewards WHERE chat_id = ${chatId} AND reward_type = ${rewardType} ORDER BY created_at DESC`);
       return result.rows || [];
     } catch (e: any) {
       console.error("[Rewards] Failed to get rewards by type:", e.message);
@@ -3320,9 +3321,7 @@ export class DatabaseStorage implements IStorage {
 
   async getQuestStatus(chatId: string, questId: string): Promise<{ completed: boolean; rewardGranted: boolean } | null> {
     try {
-      const result = await db.execute(sql.raw(
-        `SELECT completed, reward_granted as "rewardGranted" FROM user_quests WHERE chat_id = '${chatId.replace(/'/g, "''")}' AND quest_id = '${questId.replace(/'/g, "''")}' LIMIT 1`
-      ));
+      const result = await db.execute(sql`SELECT completed, reward_granted as "rewardGranted" FROM user_quests WHERE chat_id = ${chatId} AND quest_id = ${questId} LIMIT 1`);
       const row = (result.rows || [])[0] as any;
       if (!row) return null;
       return { completed: row.completed, rewardGranted: row.rewardGranted };
@@ -3334,9 +3333,7 @@ export class DatabaseStorage implements IStorage {
 
   async getAllQuests(chatId: string): Promise<Array<{ questId: string; completed: boolean; rewardGranted: boolean; completedAt: Date | null }>> {
     try {
-      const result = await db.execute(sql.raw(
-        `SELECT quest_id as "questId", completed, reward_granted as "rewardGranted", completed_at as "completedAt" FROM user_quests WHERE chat_id = '${chatId.replace(/'/g, "''")}' ORDER BY created_at ASC`
-      ));
+      const result = await db.execute(sql`SELECT quest_id as "questId", completed, reward_granted as "rewardGranted", completed_at as "completedAt" FROM user_quests WHERE chat_id = ${chatId} ORDER BY created_at ASC`);
       return (result.rows || []).map((r: any) => ({
         questId: r.questId,
         completed: r.completed,
@@ -3353,11 +3350,7 @@ export class DatabaseStorage implements IStorage {
     try {
       const existing = await this.getQuestStatus(chatId, questId);
       if (existing?.completed) return false;
-      await db.execute(sql.raw(
-        `INSERT INTO user_quests (id, chat_id, quest_id, completed, completed_at, reward_granted, created_at)
-         VALUES (gen_random_uuid(), '${chatId.replace(/'/g, "''")}', '${questId.replace(/'/g, "''")}', true, now(), false, now())
-         ON CONFLICT (chat_id, quest_id) DO UPDATE SET completed = true, completed_at = now()`
-      ));
+      await db.execute(sql`INSERT INTO user_quests (id, chat_id, quest_id, completed, completed_at, reward_granted, created_at) VALUES (gen_random_uuid(), ${chatId}, ${questId}, true, now(), false, now()) ON CONFLICT (chat_id, quest_id) DO UPDATE SET completed = true, completed_at = now()`);
       return true;
     } catch (e: any) {
       console.error("[Quests] Failed to complete quest:", e.message);

@@ -166,6 +166,26 @@ export function executeSkillCode(code: string, input: Record<string, any>, input
   try {
     const sanitizedCode = sanitizeResultDeclarations(code);
 
+    const blockedPatterns = [
+      /\bconstructor\b.*\bconstructor\b/i,
+      /\bprocess\b/,
+      /\brequire\b/,
+      /\bimport\b\s*\(/,
+      /\bglobal(?:This)?\b/,
+      /\b__proto__\b/,
+      /\bFunction\b\s*\(/,
+      /\beval\b\s*\(/,
+      /\bchild_process\b/,
+      /\bexecSync\b/,
+      /\bspawnSync\b/,
+      /\bfs\b\s*\.\s*(?:read|write|unlink|mkdir)/,
+    ];
+    for (const pat of blockedPatterns) {
+      if (pat.test(sanitizedCode)) {
+        return { success: false, output: null, error: `Blocked: potentially unsafe code pattern detected`, latencyMs: Date.now() - start };
+      }
+    }
+
     const wrappedCode = `
       "use strict";
       const input = __INPUT__;

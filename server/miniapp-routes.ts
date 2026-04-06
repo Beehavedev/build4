@@ -1,79 +1,51 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
 import { getAsterClient, getBotWalletAsterClient, getUserWalletAddress, resolvePrivateKey } from "./telegram-bot";
+import { createHmac } from "crypto";
+
+function validateTelegramInitData(initData: string, botToken: string): { valid: boolean; chatId?: string } {
+  try {
+    const params = new URLSearchParams(initData);
+    const hash = params.get("hash");
+    if (!hash) return { valid: false };
+    params.delete("hash");
+    const dataCheckArr = Array.from(params.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`);
+    const dataCheckString = dataCheckArr.join("\n");
+    const secretKey = createHmac("sha256", "WebAppData").update(botToken).digest();
+    const computedHash = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+    if (computedHash !== hash) return { valid: false };
+    const userStr = params.get("user");
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      return { valid: true, chatId: String(user.id) };
+    }
+    return { valid: true };
+  } catch {
+    return { valid: false };
+  }
+}
+
+function miniAppAuth(req: Request, res: Response, next: NextFunction) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const initData = req.headers["x-telegram-init-data"] as string;
+  if (initData && botToken) {
+    const result = validateTelegramInitData(initData, botToken);
+    if (result.valid && result.chatId) {
+      req.headers["x-telegram-chat-id"] = result.chatId;
+      return next();
+    }
+  }
+  const chatId = req.headers["x-telegram-chat-id"] as string;
+  if (chatId && /^\d+$/.test(chatId)) {
+    return next();
+  }
+  return res.status(401).json({ error: "Authentication required" });
+}
 
 export function registerMiniAppRoutes(app: Express) {
-  app.get("/api/miniapp/debug-balance", async (req: Request, res: Response) => {
-    try {
-      const chatId = req.headers["x-telegram-chat-id"] as string;
-      const privateKey = process.env.ASTER_PRIVATE_KEY || process.env.ASTER_API_WALLET_KEY;
-      if (!privateKey) return res.json({ error: "No ASTER_PRIVATE_KEY set" });
-
-      const { createAsterV3FuturesClient } = await import("./aster-client");
-      const { Wallet } = await import("ethers");
-      const wallet = new Wallet(privateKey);
-      const derivedAddr = wallet.address;
-      const signerAddr = process.env.ASTER_SIGNER_ADDRESS || derivedAddr;
-      const userAddr = process.env.ASTER_USER_ADDRESS || "";
-
-      const parentAddr = process.env.ASTER_PARENT_ADDRESS || "";
-
-      let discoveredAddr = "";
-      try {
-        const nonceRes = await fetch("https://pro-api.asterdex.com/public/future/web3/get-nonce", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "clientType": "web" },
-          body: JSON.stringify({ type: "LOGIN", sourceAddr: derivedAddr }),
-        });
-        const nonceData = await nonceRes.json();
-        if (nonceData?.data?.nonce) {
-          const loginMsg = `You are signing into Astherus ${nonceData.data.nonce}`;
-          const loginSig = await wallet.signMessage(loginMsg);
-          const loginRes = await fetch("https://pro-api.asterdex.com/public/future/web3/ae/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "clientType": "web" },
-            body: JSON.stringify({ signature: loginSig, sourceAddr: derivedAddr, chainId: 56 }),
-          });
-          const loginData = await loginRes.json();
-          const ld = loginData?.data;
-          if (ld) {
-            const pa = ld.address || ld.walletAddress || ld.userAddress || ld.parentAddress || ld.mainAddress || "";
-            if (pa && pa.startsWith("0x")) discoveredAddr = pa.toLowerCase();
-          }
-        }
-      } catch (e: any) {}
-
-      const candidates = [...new Set([userAddr, signerAddr, derivedAddr, parentAddr, discoveredAddr].filter(Boolean).map(a => a.toLowerCase()))];
-      const results: any[] = [];
-
-      for (const candidateUser of candidates) {
-        let balRaw: any = null, acctRaw: any = null, balErr: string | null = null, acctErr: string | null = null;
-        try {
-          const fc = createAsterV3FuturesClient({ user: candidateUser, signer: signerAddr, signerPrivateKey: privateKey });
-          try { balRaw = await fc.balance(); } catch(e: any) { balErr = e.message?.substring(0, 300); }
-          try { acctRaw = await fc.account(); } catch(e: any) { acctErr = e.message?.substring(0, 300); }
-        } catch(e: any) { balErr = "client create failed: " + e.message?.substring(0, 200); }
-
-        let availBal = 0, walletBal = 0;
-        if (Array.isArray(balRaw)) {
-          const usdt = balRaw.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
-          if (usdt) {
-            availBal = parseFloat(usdt.availableBalance || usdt.crossWalletBalance || "0");
-            walletBal = parseFloat(usdt.balance || usdt.walletBalance || "0");
-          }
-        }
-        if (acctRaw && walletBal === 0) {
-          if (acctRaw.totalWalletBalance) walletBal = parseFloat(acctRaw.totalWalletBalance);
-          if (acctRaw.availableBalance) availBal = parseFloat(acctRaw.availableBalance);
-        }
-
-        results.push({ user: candidateUser, label: candidateUser === userAddr.toLowerCase() ? "ASTER_USER_ADDRESS" : candidateUser === signerAddr.toLowerCase() ? "ASTER_SIGNER_ADDRESS" : "DERIVED_FROM_KEY", availBal, walletBal, balErr, acctErr, balRaw: JSON.stringify(balRaw)?.substring(0, 300), acctRaw: JSON.stringify(acctRaw)?.substring(0, 300) });
-      }
-
-      const winner = results.find(r => r.walletBal > 0 || r.availBal > 0);
-      res.json({ derivedAddr, signerAddr, userAddr, parentAddr, discoveredAddr: discoveredAddr || "none", candidates, results, winner: winner || "NONE - no address has balance", hint: winner ? `Set ASTER_USER_ADDRESS=${winner.user}` : "Try setting ASTER_PARENT_ADDRESS to the wallet that created your API wallet on asterdex.com" });
-    } catch(e: any) { res.status(500).json({ error: e.message }); }
-  });
+  app.use("/api/miniapp", miniAppAuth);
 
   app.post("/api/miniapp/import-wallet", async (req: Request, res: Response) => {
     try {

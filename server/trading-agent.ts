@@ -47,7 +47,7 @@ const MAX_POSITIONS_PER_USER = 5;
 const DEFAULT_BUY_AMOUNT_BNB = "0.1";
 const DEFAULT_TAKE_PROFIT = 2.0;
 const DEFAULT_STOP_LOSS = 0.8;
-const DEFAULT_SLIPPAGE = 15;
+const DEFAULT_SLIPPAGE = 5;
 const MIN_PROGRESS_FOR_ENTRY = 3;
 const MAX_PROGRESS_FOR_ENTRY = 65;
 const MIN_WALLET_BALANCE_BNB = 0.15;
@@ -1016,7 +1016,7 @@ function fallbackEvaluateTokens(tokens: FourMemeListingToken[]): TokenSignal | n
 }
 
 const SNIPER_SCORE_THRESHOLD = 75;
-const SNIPER_SLIPPAGE = 20;
+const SNIPER_SLIPPAGE = 10;
 
 function sniperEvaluate(token: FourMemeListingToken): { score: number; reasons: string[]; isSniper: boolean } {
   const progress = token.progressPercent;
@@ -3235,7 +3235,7 @@ let notifyCallback: ((chatId: number, message: string) => void) | null = null;
 const INSTANT_SNIPER_INTERVAL_MS = 1_000;
 const INSTANT_SNIPER_MAX_AGE_SECONDS = 300;
 const INSTANT_SNIPER_BUY_AMOUNT_BNB = "0.05";
-const INSTANT_SNIPER_SLIPPAGE = 25;
+const INSTANT_SNIPER_SLIPPAGE = 12;
 const INSTANT_SNIPER_MIN_RAISED_BNB = 0.5;
 const INSTANT_SNIPER_MIN_HOLDERS = 3;
 const INSTANT_SNIPER_MIN_PROGRESS = 1.0;

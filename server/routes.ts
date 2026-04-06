@@ -1257,11 +1257,13 @@ Agent types: Trading, Research, Social, DeFi, Security, Sniper. Agent creation i
       if (!["join", "create_agent", "refer_friend", "launch_token"].includes(questId)) {
         return res.status(400).json({ error: "Invalid questId" });
       }
+      const sanitizedWallet = wallet.toLowerCase().replace(/[^a-z0-9x]/g, "");
+      if (!/^0x[a-f0-9]{40}$/.test(sanitizedWallet)) {
+        return res.status(400).json({ error: "Invalid wallet address format" });
+      }
       const { db } = await import("./db");
       const { sql } = await import("drizzle-orm");
-      const result = await db.execute(sql.raw(
-        `SELECT chat_id FROM telegram_wallets WHERE LOWER(wallet_address) = LOWER('${wallet.replace(/'/g, "''")}') LIMIT 1`
-      ));
+      const result = await db.execute(sql`SELECT chat_id FROM telegram_wallets WHERE LOWER(wallet_address) = ${sanitizedWallet} LIMIT 1`);
       const row = (result.rows || [])[0] as any;
       if (!row?.chat_id) return res.json({ success: false, message: "No linked Telegram account found for this wallet" });
       const chatId = row.chat_id;

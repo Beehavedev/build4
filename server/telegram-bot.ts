@@ -189,7 +189,29 @@ let appBaseUrl: string | null = null;
 interface UserWallets { wallets: string[]; active: number }
 const telegramWalletMap = new Map<number, UserWallets>();
 const walletsWithKey = new Set<string>();
-const inMemoryKeyCache = new Map<string, string>();
+const KEY_CACHE_TTL_MS = 5 * 60 * 1000;
+const inMemoryKeyCache = new Map<string, { key: string; expiresAt: number }>();
+
+function setKeyCache(cacheKey: string, privateKey: string): void {
+  inMemoryKeyCache.set(cacheKey, { key: privateKey, expiresAt: Date.now() + KEY_CACHE_TTL_MS });
+}
+
+function getKeyCache(cacheKey: string): string | undefined {
+  const entry = inMemoryKeyCache.get(cacheKey);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expiresAt) {
+    inMemoryKeyCache.delete(cacheKey);
+    return undefined;
+  }
+  return entry.key;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of inMemoryKeyCache) {
+    if (now > v.expiresAt) inMemoryKeyCache.delete(k);
+  }
+}, 60_000);
 
 interface AgentCreationState { step: "name" | "bio" | "model"; name?: string; bio?: string; mandatory?: boolean }
 interface TaskState { step: "describe"; agentId: string; taskType: string; agentName: string }
@@ -1008,7 +1030,7 @@ export function linkTelegramWallet(chatId: number, wallet: string, privateKey?: 
 
   if (privateKey) {
     walletsWithKey.add(`${chatId}:${lower}`);
-    inMemoryKeyCache.set(`${chatId}:${lower}`, privateKey);
+    setKeyCache(`${chatId}:${lower}`, privateKey);
   }
 
   storage.saveTelegramWallet(chatId.toString(), lower, privateKey || undefined).then(() => {
@@ -1335,7 +1357,7 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
     telegramWalletMap.set(chatId, { wallets: [addr], active: 0 });
   }
 
-  inMemoryKeyCache.set(`${chatId}:${addr}`, pk);
+  setKeyCache(`${chatId}:${addr}`, pk);
   await storage.saveTelegramWallet(chatId.toString(), addr, pk);
   await storage.setActiveTelegramWallet(chatId.toString(), addr);
   walletsWithKey.add(`${chatId}:${addr}`);
@@ -1410,20 +1432,20 @@ async function autoOnboardAster(chatId: number, walletAddress: string, privateKe
 export async function resolvePrivateKey(chatId: number, walletAddr: string): Promise<string | null> {
   const lowerAddr = walletAddr.toLowerCase();
   const cacheKey = `${chatId}:${lowerAddr}`;
-  const cached = inMemoryKeyCache.get(cacheKey);
+  const cached = getKeyCache(cacheKey);
   if (cached) return cached;
 
   try {
     let pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), lowerAddr);
     if (pk) {
-      inMemoryKeyCache.set(cacheKey, pk);
+      setKeyCache(cacheKey, pk);
       walletsWithKey.add(cacheKey);
       return pk;
     }
     if (lowerAddr !== walletAddr) {
       pk = await storage.getTelegramWalletPrivateKey(chatId.toString(), walletAddr);
       if (pk) {
-        inMemoryKeyCache.set(cacheKey, pk);
+        setKeyCache(cacheKey, pk);
         walletsWithKey.add(cacheKey);
         return pk;
       }
@@ -1431,7 +1453,7 @@ export async function resolvePrivateKey(chatId: number, walletAddr: string): Pro
     pk = await storage.getPrivateKeyByWalletAddress(lowerAddr);
     if (pk) {
       await storage.saveTelegramWallet(chatId.toString(), lowerAddr, pk);
-      inMemoryKeyCache.set(cacheKey, pk);
+      setKeyCache(cacheKey, pk);
       walletsWithKey.add(cacheKey);
       console.log(`[Wallet] Recovered key for chatId=${chatId} wallet=${lowerAddr.substring(0, 8)}`);
       return pk;
@@ -1490,7 +1512,7 @@ export async function regenerateWalletForDeposit(chatId: number): Promise<{ addr
       telegramWalletMap.set(chatId, { wallets: [addr], active: 0 });
     }
 
-    inMemoryKeyCache.set(`${chatId}:${addr}`, pk);
+    setKeyCache(`${chatId}:${addr}`, pk);
     await storage.saveTelegramWallet(chatId.toString(), addr, pk);
     await storage.setActiveTelegramWallet(chatId.toString(), addr);
     walletsWithKey.add(`${chatId}:${addr}`);
