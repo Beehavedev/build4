@@ -953,4 +953,97 @@ export function registerMiniAppRoutes(app: Express) {
       });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
+
+  app.post("/api/miniapp/pool/bridge-now", async (req: Request, res: Response) => {
+    try {
+      const pk = process.env.ASTER_PRIVATE_KEY;
+      const ownerAddr = process.env.ASTER_USER_ADDRESS || "0xeb0616e044c55c1ca214ed3629fee3354bbf9826";
+      if (!pk) return res.status(400).json({ error: "No ASTER_PRIVATE_KEY" });
+
+      const { JsonRpcProvider, Wallet, Contract, formatUnits } = await import("ethers");
+      const provider = new JsonRpcProvider("https://bsc-dataseed1.binance.org");
+      const wallet = new Wallet(pk, provider);
+      const BSC_USDT = "0x55d398326f99059fF775485246999027B3197955";
+      const usdt = new Contract(BSC_USDT, ["function balanceOf(address) view returns (uint256)"], provider);
+      const rawBal = await usdt.balanceOf(wallet.address);
+      const usdtBal = parseFloat(formatUnits(rawBal, 18));
+
+      if (usdtBal < 0.01) {
+        return res.json({ success: false, error: `Holding wallet has $${usdtBal.toFixed(4)} USDT — nothing to bridge` });
+      }
+
+      const { asterV3Deposit } = await import("./aster-client");
+      console.log(`[Bridge] Manual trigger: forwarding $${usdtBal} USDT to Aster for ${ownerAddr.substring(0, 10)}...`);
+      const result = await asterV3Deposit(pk, usdtBal, 0, ownerAddr);
+
+      if (result.success) {
+        console.log(`[Bridge] SUCCESS: $${usdtBal} deposited to Aster. TX: ${result.txHash}`);
+      } else {
+        console.log(`[Bridge] FAILED: ${result.error}`);
+      }
+
+      res.json({ ...result, amount: usdtBal, holdingWallet: wallet.address, owner: ownerAddr });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.get("/api/miniapp/pool/holding-balance", async (req: Request, res: Response) => {
+    try {
+      const pk = process.env.ASTER_PRIVATE_KEY;
+      if (!pk) return res.status(400).json({ error: "No ASTER_PRIVATE_KEY" });
+
+      const { JsonRpcProvider, Wallet, Contract, formatUnits, formatEther } = await import("ethers");
+      const provider = new JsonRpcProvider("https://bsc-dataseed1.binance.org");
+      const wallet = new Wallet(pk, provider);
+      const BSC_USDT = "0x55d398326f99059fF775485246999027B3197955";
+      const usdt = new Contract(BSC_USDT, ["function balanceOf(address) view returns (uint256)"], provider);
+      const rawBal = await usdt.balanceOf(wallet.address);
+      const bnbBal = await provider.getBalance(wallet.address);
+
+      res.json({
+        holdingWallet: wallet.address,
+        usdtBalance: parseFloat(formatUnits(rawBal, 18)),
+        bnbBalance: parseFloat(formatEther(bnbBal)),
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  startAutoBridge();
+}
+
+let autoBridgeRunning = false;
+async function startAutoBridge() {
+  if (autoBridgeRunning) return;
+  autoBridgeRunning = true;
+  const INTERVAL_MS = 60_000;
+
+  setInterval(async () => {
+    try {
+      const pk = process.env.ASTER_PRIVATE_KEY;
+      if (!pk) return;
+
+      const { JsonRpcProvider, Wallet, Contract, formatUnits } = await import("ethers");
+      const provider = new JsonRpcProvider("https://bsc-dataseed1.binance.org");
+      const wallet = new Wallet(pk, provider);
+      const BSC_USDT = "0x55d398326f99059fF775485246999027B3197955";
+      const usdt = new Contract(BSC_USDT, ["function balanceOf(address) view returns (uint256)"], provider);
+      const rawBal = await usdt.balanceOf(wallet.address);
+      const usdtBal = parseFloat(formatUnits(rawBal, 18));
+
+      if (usdtBal >= 1) {
+        const ownerAddr = process.env.ASTER_USER_ADDRESS || "0xeb0616e044c55c1ca214ed3629fee3354bbf9826";
+        const { asterV3Deposit } = await import("./aster-client");
+        console.log(`[AutoBridge] Detected $${usdtBal} USDT in holding wallet. Forwarding to Aster...`);
+        const result = await asterV3Deposit(pk, usdtBal, 0, ownerAddr);
+        if (result.success) {
+          console.log(`[AutoBridge] SUCCESS: $${usdtBal} deposited to Aster. TX: ${result.txHash}`);
+        } else {
+          console.log(`[AutoBridge] FAILED: ${result.error}`);
+        }
+      }
+    } catch (e: any) {
+      console.error(`[AutoBridge] Error: ${e.message?.substring(0, 200)}`);
+    }
+  }, INTERVAL_MS);
+
+  console.log(`[AutoBridge] Started — checking holding wallet every ${INTERVAL_MS / 1000}s`);
 }
