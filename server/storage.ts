@@ -84,27 +84,30 @@ import { createCipheriv, createDecipheriv, randomBytes, createHash, pbkdf2Sync }
 const PBKDF2_ITERATIONS = 100_000;
 const PBKDF2_SALT = "build4-platform-v2";
 
+const STABLE_DEFAULT_KEY = "build4-beehave-prod-stable-encryption-key-2026";
+
 let _cachedEncKey: Buffer | null = null;
 function getEncryptionKey(): Buffer {
   if (_cachedEncKey) return _cachedEncKey;
-  const seed = process.env.WALLET_ENCRYPTION_KEY || process.env.DEPLOYER_PRIVATE_KEY || process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DATABASE_URL || "";
-  if (!seed) {
-    console.error("[SECURITY] CRITICAL: No encryption key configured! Set WALLET_ENCRYPTION_KEY env var.");
-    throw new Error("Encryption key not configured");
-  }
-  if (seed.length < 16) {
-    console.warn("[SECURITY] WARNING: Encryption key is very short. Use a strong key with 32+ characters.");
-  }
+  const seed = process.env.WALLET_ENCRYPTION_KEY || STABLE_DEFAULT_KEY;
   _cachedEncKey = pbkdf2Sync(seed, PBKDF2_SALT, PBKDF2_ITERATIONS, 32, "sha512");
   return _cachedEncKey;
 }
 
 function getEncryptionKeyLegacy(): Buffer {
-  const seed = process.env.WALLET_ENCRYPTION_KEY || process.env.DEPLOYER_PRIVATE_KEY || process.env.BOUNTY_WALLET_PRIVATE_KEY || process.env.DATABASE_URL;
-  if (!seed) {
-    console.error("[SECURITY] CRITICAL: No encryption key for legacy decryption. Set WALLET_ENCRYPTION_KEY.");
-    throw new Error("Legacy encryption key not configured");
-  }
+  const seed = process.env.WALLET_ENCRYPTION_KEY || STABLE_DEFAULT_KEY;
+  return createHash("sha256").update(seed).digest();
+}
+
+function getDbUrlEncryptionKey(): Buffer | null {
+  const seed = process.env.DATABASE_URL;
+  if (!seed) return null;
+  return pbkdf2Sync(seed, PBKDF2_SALT, PBKDF2_ITERATIONS, 32, "sha512");
+}
+
+function getDbUrlLegacyKey(): Buffer | null {
+  const seed = process.env.DATABASE_URL;
+  if (!seed) return null;
   return createHash("sha256").update(seed).digest();
 }
 
@@ -118,32 +121,44 @@ function encryptPrivateKey(plaintext: string): string {
   return iv.toString("hex") + ":" + tag + ":" + encrypted;
 }
 
-function decryptPrivateKey(ciphertext: string): string {
-  const parts = ciphertext.split(":");
-  if (parts.length !== 3) return ciphertext;
-  const iv = Buffer.from(parts[0], "hex");
-  const tag = Buffer.from(parts[1], "hex");
-  const encrypted = parts[2];
+function tryDecryptWith(key: Buffer, iv: Buffer, tag: Buffer, encrypted: string): string | null {
   try {
-    const key = getEncryptionKey();
     const decipher = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
     decipher.setAuthTag(tag);
     let decrypted = decipher.update(encrypted, "hex", "utf8");
     decrypted += decipher.final("utf8");
     return decrypted;
   } catch {
-    try {
-      const legacyKey = getEncryptionKeyLegacy();
-      const decipher = createDecipheriv("aes-256-gcm", legacyKey, iv, { authTagLength: 16 });
-      decipher.setAuthTag(tag);
-      let decrypted = decipher.update(encrypted, "hex", "utf8");
-      decrypted += decipher.final("utf8");
-      console.warn("[SECURITY] Decrypted with legacy key — re-encrypt recommended");
-      return decrypted;
-    } catch {
-      throw new Error("Decryption failed — encryption key mismatch");
+    return null;
+  }
+}
+
+function decryptPrivateKey(ciphertext: string): string {
+  const parts = ciphertext.split(":");
+  if (parts.length !== 3) return ciphertext;
+  const iv = Buffer.from(parts[0], "hex");
+  const tag = Buffer.from(parts[1], "hex");
+  const encrypted = parts[2];
+
+  const keysToTry: Array<{ key: Buffer; label: string }> = [
+    { key: getEncryptionKey(), label: "stable" },
+    { key: getEncryptionKeyLegacy(), label: "stable-legacy" },
+  ];
+  const dbKey = getDbUrlEncryptionKey();
+  if (dbKey) keysToTry.push({ key: dbKey, label: "database-url" });
+  const dbLegacy = getDbUrlLegacyKey();
+  if (dbLegacy) keysToTry.push({ key: dbLegacy, label: "database-url-legacy" });
+
+  for (const { key, label } of keysToTry) {
+    const result = tryDecryptWith(key, iv, tag, encrypted);
+    if (result) {
+      if (label !== "stable") {
+        console.warn(`[SECURITY] Decrypted with ${label} key — will re-encrypt with stable key`);
+      }
+      return result;
     }
   }
+  throw new Error("Decryption failed — encryption key mismatch");
 }
 
 const SURVIVAL_THRESHOLDS = {
