@@ -13274,6 +13274,20 @@ export async function getAsterClient(chatId: number): Promise<any> {
   return null;
 }
 
+export async function getBotWalletAsterClient(chatId: number): Promise<any> {
+  const wallet = getLinkedWallet(chatId);
+  if (!wallet) return null;
+  const pk = await resolvePrivateKey(chatId, wallet);
+  if (!pk) return null;
+  const { createAsterV3FuturesClient } = await import("./aster-client");
+  const v3Futures = createAsterV3FuturesClient({
+    user: wallet,
+    signer: wallet,
+    signerPrivateKey: pk,
+  });
+  return { futures: v3Futures, spot: null, walletAddress: wallet };
+}
+
 async function handleAsterCallback(chatId: number, data: string): Promise<void> {
   if (!bot) return;
   const action = data.replace("aster:", "");

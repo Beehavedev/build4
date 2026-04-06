@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
-import { getAsterClient, getUserWalletAddress, resolvePrivateKey } from "./telegram-bot";
+import { getAsterClient, getBotWalletAsterClient, getUserWalletAddress, resolvePrivateKey } from "./telegram-bot";
 
 export function registerMiniAppRoutes(app: Express) {
   app.get("/api/miniapp/debug-balance", async (req: Request, res: Response) => {
@@ -104,10 +104,7 @@ export function registerMiniAppRoutes(app: Express) {
         }
       }
 
-      if (availBal === 0 && walletBal > 0) availBal = walletBal;
-      if (walletBal === 0 && availBal > 0) walletBal = availBal;
-
-      console.log(`[MiniApp] parsed: availBal=${availBal}, walletBal=${walletBal}`);
+      console.log(`[MiniApp] parsed (owner): availBal=${availBal}, walletBal=${walletBal}`);
 
       const openPositions = Array.isArray(positions)
         ? positions.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0)
@@ -148,6 +145,44 @@ export function registerMiniAppRoutes(app: Express) {
           });
         }
       }
+
+      if (availBal === 0 && walletBal === 0) {
+        try {
+          const botClient = await getBotWalletAsterClient(parseInt(chatId));
+          if (botClient) {
+            console.log(`[MiniApp] Owner balance $0, trying bot wallet ${botClient.walletAddress}...`);
+            const botFc = botClient.futures;
+            const [botBal, botAcct] = await Promise.all([
+              botFc.balance().catch(() => []),
+              botFc.account().catch(() => null),
+            ]);
+            console.log(`[MiniApp] Bot wallet balance raw: ${JSON.stringify(botBal).substring(0, 500)}`);
+            console.log(`[MiniApp] Bot wallet account raw: ${JSON.stringify(botAcct).substring(0, 500)}`);
+            if (Array.isArray(botBal) && botBal.length > 0) {
+              const usdtBal = botBal.find((b: any) => (b.asset || "").toUpperCase() === "USDT" || (b.asset || "").toUpperCase() === "USD");
+              if (usdtBal) extractFromObj(usdtBal);
+            }
+            if (availBal === 0 && walletBal === 0 && botBal && typeof botBal === "object" && !Array.isArray(botBal)) {
+              extractFromObj(botBal);
+            }
+            if (availBal === 0 && walletBal === 0 && botAcct) {
+              if (Array.isArray(botAcct.assets)) {
+                const usdtAsset = botAcct.assets.find((a: any) => (a.asset || "").toUpperCase() === "USDT");
+                if (usdtAsset) extractFromObj(usdtAsset);
+              }
+              if (availBal === 0 && walletBal === 0) extractFromObj(botAcct);
+            }
+            if (availBal > 0 || walletBal > 0) {
+              console.log(`[MiniApp] Found balance via bot wallet: avail=$${availBal}, wallet=$${walletBal}`);
+            }
+          }
+        } catch (botErr: any) {
+          console.log(`[MiniApp] Bot wallet balance check error: ${botErr.message?.substring(0, 150)}`);
+        }
+      }
+
+      if (availBal === 0 && walletBal > 0) availBal = walletBal;
+      if (walletBal === 0 && availBal > 0) walletBal = availBal;
 
       let spotBalance = 0;
       try {
