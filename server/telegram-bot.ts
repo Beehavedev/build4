@@ -2559,6 +2559,9 @@ function registerBotHandlers(b: TelegramBot): void {
   });
 
   let conflictCount = 0;
+  let lastPollingErrorLog = 0;
+  let pollingErrorCount = 0;
+  let authFailCount = 0;
   b.on("polling_error", (error) => {
     if (error.message?.includes("409 Conflict")) {
       conflictCount++;
@@ -2567,7 +2570,26 @@ function registerBotHandlers(b: TelegramBot): void {
       }
       return;
     }
-    console.error("[TelegramBot] Polling error:", error.message);
+    if (error.message?.includes("401 Unauthorized")) {
+      authFailCount++;
+      if (authFailCount === 1) {
+        console.error("[TelegramBot] 401 Unauthorized — bot token is invalid or expired. Stopping polling.");
+      }
+      if (authFailCount >= 3) {
+        try { b.stopPolling(); } catch {}
+        isRunning = false;
+        console.error("[TelegramBot] Polling stopped after repeated 401 errors. Set a valid TELEGRAM_BOT_TOKEN on Render.");
+        return;
+      }
+      return;
+    }
+    pollingErrorCount++;
+    const now = Date.now();
+    if (now - lastPollingErrorLog > 60000) {
+      console.error(`[TelegramBot] Polling error (${pollingErrorCount} total): ${error.message}`);
+      lastPollingErrorLog = now;
+      pollingErrorCount = 0;
+    }
   });
 }
 

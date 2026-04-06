@@ -1427,7 +1427,10 @@ async function tick(): Promise<void> {
         continue;
       }
 
-      if (tier === "DEAD") continue;
+      if (tier === "DEAD") {
+        lastActionTime.set(agent.id, Date.now() + 300000);
+        continue;
+      }
 
       const capProfile = await getAgentCapabilityProfile(agent.id);
       const action = await decideAction(agent, wallet, capProfile);
