@@ -80,7 +80,8 @@ export function registerMiniAppRoutes(app: Express) {
       const chatId = req.headers["x-telegram-chat-id"] as string;
       if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
 
-      const client = await getAsterClient(parseInt(chatId));
+      const botClient = await getBotWalletAsterClient(parseInt(chatId));
+      const client = botClient || await getAsterClient(parseInt(chatId));
       if (!client) {
         console.log(`[MiniApp] No Aster client for chatId=${chatId}`);
         return res.json({ connected: false });
