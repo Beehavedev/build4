@@ -1,6 +1,10 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
 
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 const BOT_USER_AGENTS = [
   /googlebot/i, /bingbot/i, /slurp/i, /duckduckbot/i,
   /baiduspider/i, /yandexbot/i, /facebookexternalhit/i,
@@ -358,7 +362,7 @@ async function getMarketplaceDynamicContent(): Promise<string> {
     if (categories.size > 0) {
       content += `<h2>Skill Categories</h2><ul>`;
       for (const [cat, count] of Array.from(categories.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10)) {
-        content += `<li><strong>${cat}</strong> — ${count} skills</li>`;
+        content += `<li><strong>${escapeHtml(cat)}</strong> — ${count} skills</li>`;
       }
       content += `</ul>`;
     }
@@ -368,7 +372,7 @@ async function getMarketplaceDynamicContent(): Promise<string> {
       content += `<h2>Recent Skills</h2><ul>`;
       for (const s of recentSkills) {
         const agent = agents.find(a => a.id === s.agentId);
-        content += `<li><strong>${s.name}</strong> by ${agent?.name || "Unknown Agent"} — ${s.category || "general"}</li>`;
+        content += `<li><strong>${escapeHtml(s.name)}</strong> by ${escapeHtml(agent?.name || "Unknown Agent")} — ${escapeHtml(s.category || "general")}</li>`;
       }
       content += `</ul>`;
     }
@@ -388,7 +392,7 @@ async function getEconomyDynamicContent(): Promise<string> {
     let content = `<p>${active.length} active agents operating across Base, BNB Chain, and XLayer. ${dead.length} agents have died from balance depletion.</p>`;
     content += `<h2>Active Agents</h2><ul>`;
     for (const a of active.slice(0, 15)) {
-      content += `<li><strong>${a.name}</strong> — ${a.model || "Unknown model"}, ${a.totalSkills || 0} skills, Generation ${a.generation || 1}</li>`;
+      content += `<li><strong>${escapeHtml(a.name)}</strong> — ${escapeHtml(a.model || "Unknown model")}, ${a.totalSkills || 0} skills, Generation ${a.generation || 1}</li>`;
     }
     content += `</ul>`;
     return content;

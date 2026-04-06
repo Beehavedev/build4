@@ -284,15 +284,14 @@ async function ensureSchema() {
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
 
-    console.error("Internal Server Error:", err);
+    console.error("[Server] Unhandled error:", err.message?.substring(0, 200));
 
     if (res.headersSent) {
       return next(err);
     }
 
-    return res.status(status).json({ message });
+    return res.status(status).json({ message: status < 500 ? (err.message || "Request error") : "Internal server error" });
   });
 
   // importantly only setup vite in development and after

@@ -1,6 +1,8 @@
 import { deriveBurnAddress, generateSecret, generateProofInputs, poseidonHash, poseidonHashHex } from "./poseidon";
 import { ZERC20_CONTRACTS, SUPPORTED_PRIVACY_CHAINS } from "@shared/schema";
 
+const ZERC20_EXPERIMENTAL_WARNING = "[EXPERIMENTAL] ZERC20 privacy features use simulated ZK proofs. This is a technology preview and does NOT provide real cryptographic privacy. Do not rely on this for sensitive transactions.";
+
 export interface ZERC20TransferParams {
   recipientAddress: string;
   chainId: number;
@@ -128,6 +130,7 @@ export async function generateProof(
   }
 
   try {
+    console.warn(ZERC20_EXPERIMENTAL_WARNING);
     const secretBigInt = BigInt(secret);
     const proofInputs = await generateProofInputs(
       recipientAddress,

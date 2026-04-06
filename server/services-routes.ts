@@ -69,7 +69,7 @@ export function registerServicesRoutes(app: Express) {
 
       res.json({ apiKey: raw, id: apiKey.id, prefix, label: apiKey.label, message: "Save this key - it won't be shown again" });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -88,7 +88,7 @@ export function registerServicesRoutes(app: Express) {
         createdAt: k.createdAt,
       })));
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -106,7 +106,7 @@ export function registerServicesRoutes(app: Express) {
       await storage.revokeApiKey(req.params.keyId);
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -187,7 +187,7 @@ export function registerServicesRoutes(app: Express) {
         live: result.live,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -196,7 +196,7 @@ export function registerServicesRoutes(app: Express) {
       const usage = await storage.getApiUsageByWallet(req.params.walletAddress.toLowerCase(), 50);
       res.json(usage);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -214,7 +214,7 @@ export function registerServicesRoutes(app: Express) {
       }
       res.json({ providers: healthChecks, available, totalActive: available.length, totalConfigured: Object.keys(status).length });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -233,7 +233,7 @@ export function registerServicesRoutes(app: Express) {
       }
       res.json({ checked: new Date().toISOString(), results });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -298,7 +298,7 @@ export function registerServicesRoutes(app: Express) {
 
       res.json(job);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -308,7 +308,7 @@ export function registerServicesRoutes(app: Express) {
       const jobs = await storage.getOpenJobs(category);
       res.json(jobs);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -320,7 +320,7 @@ export function registerServicesRoutes(app: Express) {
       const submissions = await storage.getBountySubmissions(req.params.jobId);
       res.json({ ...job, submissions });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -371,7 +371,7 @@ export function registerServicesRoutes(app: Express) {
 
       res.json(submission);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -381,7 +381,7 @@ export function registerServicesRoutes(app: Express) {
       const feed = await storage.getBountyActivityFeed(limit);
       res.json(feed);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -439,7 +439,7 @@ export function registerServicesRoutes(app: Express) {
         res.status(404).json({ error: "Submission not found" });
       }
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -457,7 +457,7 @@ export function registerServicesRoutes(app: Express) {
       }
       res.json(plans);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -502,7 +502,7 @@ export function registerServicesRoutes(app: Express) {
 
       res.json({ subscription: sub, plan, expiresAt });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -531,7 +531,7 @@ export function registerServicesRoutes(app: Express) {
         },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -560,7 +560,7 @@ export function registerServicesRoutes(app: Express) {
 
       res.json(listing);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -571,7 +571,7 @@ export function registerServicesRoutes(app: Express) {
       const listings = await storage.getDataListings(category, limit);
       res.json(listings);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -581,7 +581,7 @@ export function registerServicesRoutes(app: Express) {
       if (!listing) return res.status(404).json({ error: "Listing not found" });
       res.json(listing);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -654,7 +654,7 @@ export function registerServicesRoutes(app: Express) {
         message: "Purchase complete. Data access granted.",
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -663,7 +663,7 @@ export function registerServicesRoutes(app: Express) {
       const listings = await storage.getDataListingsByAgent(req.params.agentId);
       res.json(listings);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -672,7 +672,7 @@ export function registerServicesRoutes(app: Express) {
       const purchases = await storage.getDataPurchasesByBuyer(req.params.walletAddress.toLowerCase());
       res.json(purchases);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -713,7 +713,7 @@ export function registerServicesRoutes(app: Express) {
         },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 }

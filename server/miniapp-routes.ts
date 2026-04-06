@@ -85,7 +85,7 @@ export function registerMiniAppRoutes(app: Express) {
       }
 
       res.json({ success: true, walletAddress: addr, asterLinked });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
   });
 
   app.post("/api/miniapp/link-aster", async (req: Request, res: Response) => {
@@ -126,7 +126,7 @@ export function registerMiniAppRoutes(app: Express) {
       console.log(`[MiniApp] Auto-onboarding Aster for chatId=${chatId} wallet=${parentAddress.substring(0, 10)}`);
       const { asterBrokerOnboard, createAsterFuturesClient } = await import("./aster-client");
       const result = await asterBrokerOnboard(pk);
-      console.log(`[MiniApp] Onboard result: success=${result.success} hasKey=${!!result.apiKey} error=${result.error || 'none'}`);
+      console.log(`[MiniApp] Onboard result: success=${result.success} hasKey=${!!result.apiKey}`);
 
       if (result.success && result.apiKey && result.apiSecret) {
         await storage.saveAsterCredentials(chatId, result.apiKey, result.apiSecret);
@@ -143,7 +143,7 @@ export function registerMiniAppRoutes(app: Express) {
       } else {
         res.json({ success: false, error: result.error || "Aster onboarding failed. You may need to link an API Wallet manually." });
       }
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
   });
 
   app.get("/api/miniapp/account", async (req: Request, res: Response) => {
@@ -172,7 +172,7 @@ export function registerMiniAppRoutes(app: Express) {
             });
             client = { futures: v3Futures, spot: null, walletAddress: parentAddress };
             asterApiWalletAddr = creds.apiKey;
-            console.log(`[MiniApp] Aster V3 client: user=${parentAddress.substring(0,10)}, signer=${creds.apiKey.substring(0,10)}`);
+            console.log(`[MiniApp] Aster V3 client: user=${parentAddress.substring(0,10)}, signer=set`);
           } else {
             const { createAsterFuturesClient } = await import("./aster-client");
             const hmacClient = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
@@ -414,7 +414,7 @@ export function registerMiniAppRoutes(app: Express) {
         recentIncome: incomeList,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message?.substring(0, 200) });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -509,7 +509,7 @@ export function registerMiniAppRoutes(app: Express) {
           : `$${amount} deposited to Aster Spot. Use the bot to transfer Spot→Futures when ready.`,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message?.substring(0, 200) });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -538,7 +538,7 @@ export function registerMiniAppRoutes(app: Express) {
         console.log(`[MiniApp] Futures→Spot done`);
       } catch (ftsErr: any) {
         console.log(`[MiniApp] Futures→Spot failed: ${ftsErr.message?.substring(0, 150)}`);
-        return res.json({ success: false, error: `Failed to move funds from Futures to Spot: ${ftsErr.message?.substring(0, 150)}` });
+        return res.json({ success: false, error: "Failed to move funds from Futures to Spot. Try again later." });
       }
 
       await new Promise(r => setTimeout(r, 2000));
@@ -554,11 +554,11 @@ export function registerMiniAppRoutes(app: Express) {
         });
       } catch (wErr: any) {
         console.log(`[MiniApp] Withdraw failed: ${wErr.message?.substring(0, 200)}`);
-        res.json({ success: false, error: `Withdrawal failed: ${wErr.message?.substring(0, 150)}. Funds moved back to Spot — try again or withdraw manually on asterdex.com.` });
+        res.json({ success: false, error: "Withdrawal failed. Funds moved back to Spot — try again or withdraw manually on asterdex.com." });
       }
     } catch (e: any) {
       console.log(`[MiniApp] withdraw error: ${e.message?.substring(0, 200)}`);
-      res.status(500).json({ error: e.message?.substring(0, 200) });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -593,7 +593,7 @@ export function registerMiniAppRoutes(app: Express) {
       res.json({ success: true, amount, message: `$${amount} transferred to Futures — ready to trade!` });
     } catch (e: any) {
       console.log(`[MiniApp] Spot→Futures error: ${e.message?.substring(0, 150)}`);
-      res.status(500).json({ error: e.message?.substring(0, 200) });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -624,7 +624,7 @@ export function registerMiniAppRoutes(app: Express) {
         } : null,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message?.substring(0, 200) });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -648,7 +648,7 @@ export function registerMiniAppRoutes(app: Express) {
         res.json({ running: true });
       }
     } catch (e: any) {
-      res.status(500).json({ error: e.message?.substring(0, 200) });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -684,7 +684,7 @@ export function registerMiniAppRoutes(app: Express) {
         })) : [],
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message?.substring(0, 200) });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -753,7 +753,7 @@ export function registerMiniAppRoutes(app: Express) {
       });
     } catch (e: any) {
       console.error(`[MiniApp] Trade error: ${e.message}`);
-      res.status(500).json({ error: e.message?.substring(0, 200) });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -800,7 +800,7 @@ export function registerMiniAppRoutes(app: Express) {
       });
     } catch (e: any) {
       console.error(`[MiniApp] Close error: ${e.message}`);
-      res.status(500).json({ error: e.message?.substring(0, 200) });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -829,7 +829,7 @@ export function registerMiniAppRoutes(app: Express) {
         } : acct,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -857,7 +857,7 @@ export function registerMiniAppRoutes(app: Express) {
       );
       res.json({ markets: prices });
     } catch (e: any) {
-      res.status(500).json({ error: e.message?.substring(0, 200) });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -869,7 +869,7 @@ export function registerMiniAppRoutes(app: Express) {
       const deposits = await storage.getPoolDeposits(chatId);
       const stats = await storage.getPoolStats();
       res.json({ user, deposits, stats });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
   });
 
   app.post("/api/miniapp/pool/deposit", async (req: Request, res: Response) => {
@@ -937,7 +937,7 @@ export function registerMiniAppRoutes(app: Express) {
         bridgeError: bridgeResult?.error || null,
         message,
       });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
   });
 
   app.post("/api/miniapp/pool/credit", async (req: Request, res: Response) => {
@@ -948,7 +948,7 @@ export function registerMiniAppRoutes(app: Express) {
       if (!depositId) return res.status(400).json({ error: "Missing deposit ID" });
       await storage.updatePoolDepositStatus(depositId, "credited");
       res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
   });
 
   app.get("/api/miniapp/pool/stats", async (req: Request, res: Response) => {
@@ -980,7 +980,7 @@ export function registerMiniAppRoutes(app: Express) {
         totalPnl: poolBalance - stats.totalDeposits,
         pnlPercent: stats.totalDeposits > 0 ? ((poolBalance - stats.totalDeposits) / stats.totalDeposits * 100) : 0,
       });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
   });
 
   app.post("/api/miniapp/pool/bridge-now", async (req: Request, res: Response) => {
@@ -1012,7 +1012,7 @@ export function registerMiniAppRoutes(app: Express) {
       }
 
       res.json({ ...result, amount: usdtBal, holdingWallet: wallet.address, owner: ownerAddr });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
   });
 
   app.get("/api/miniapp/pool/holding-balance", async (req: Request, res: Response) => {
@@ -1033,7 +1033,7 @@ export function registerMiniAppRoutes(app: Express) {
         usdtBalance: parseFloat(formatUnits(rawBal, 18)),
         bnbBalance: parseFloat(formatEther(bnbBal)),
       });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
   });
 
 }

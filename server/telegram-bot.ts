@@ -1393,7 +1393,7 @@ async function autoOnboardAster(chatId: number, walletAddress: string, privateKe
     console.log(`[Aster] Auto-onboarding wallet ${walletAddress.substring(0, 10)}... for chatId=${chatId}`);
 
     const result = await asterBrokerOnboard(privateKey);
-    console.log(`[Aster] Auto-onboard result: success=${result.success} uid=${result.uid} hasApiKey=${!!result.apiKey} error=${result.error || 'none'}`);
+    console.log(`[Aster] Auto-onboard result: success=${result.success} uid=${result.uid ? 'set' : 'none'} hasApiKey=${!!result.apiKey}`);
 
     if (result.success && result.apiKey && result.apiSecret) {
       await storage.saveAsterCredentials(chatId.toString(), result.apiKey, result.apiSecret);
@@ -1838,7 +1838,7 @@ async function verifyViaEtherscanV2(wallet: string, chainId: number, apiKey: str
         apikey: apiKey,
       });
       const apiUrl = `https://api.etherscan.io/v2/api?${params}`;
-      console.log(`[VerifyEtherscan] ${chainName} lookup=${lookupAddr.substring(0,10)} key=${apiKey.substring(0,6)}...`);
+      console.log(`[VerifyEtherscan] ${chainName} lookup=${lookupAddr.substring(0,10)}`);
       const resp = await fetch(apiUrl);
       const json = await resp.json() as any;
       console.log(`[VerifyEtherscan] ${chainName} status=${json.status} msg=${json.message} results=${Array.isArray(json.result) ? json.result.length : String(json.result).substring(0, 120)}`);
@@ -4986,8 +4986,11 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         });
       }
       await bot.sendMessage(chatId,
-        "✅ Trading agent ENABLED\n\nThe agent will scan Four.meme for new tokens and trade automatically. You'll be notified of every buy and sell.\n\nUse /tradestatus to check positions.",
-        { reply_markup: mainMenuKeyboard(undefined, chatId) }
+        "✅ Trading agent ENABLED\n\n" +
+        "The agent will scan Four.meme for new tokens and trade automatically. You'll be notified of every buy and sell.\n\n" +
+        "📋 *Fee Disclosure:* A 20% performance fee is charged on profitable trades only. No fee is charged on losing trades. All fees are transparently shown in trade notifications.\n\n" +
+        "Use /tradestatus to check positions.",
+        { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) }
       );
       return;
     }
@@ -7391,12 +7394,16 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     if (!state || state.agentId !== agentId) return;
 
     if (isPct) {
-      state.stealthBuyPercent = parseInt(value, 10);
+      const pctVal = parseInt(value, 10);
+      if (isNaN(pctVal) || pctVal < 0 || pctVal > 100) return;
+      state.stealthBuyPercent = pctVal;
       state.stealthBuyEth = undefined;
     } else if (value === "0") {
       state.stealthBuyEth = undefined;
       state.stealthBuyPercent = undefined;
     } else {
+      const ethVal = parseFloat(value);
+      if (isNaN(ethVal) || ethVal < 0 || ethVal > 100) return;
       state.stealthBuyEth = value;
       state.stealthBuyPercent = undefined;
     }
@@ -13333,7 +13340,7 @@ async function initOwnerAsterClient(): Promise<any> {
     const futures = createAsterFuturesClient({ apiKey, apiSecret });
     const spot = createAsterSpotClient({ apiKey, apiSecret });
     cachedOwnerClient = { futures, spot, mode: "HMAC" };
-    console.log(`[Aster] Owner HMAC client initialized (apiKey=${apiKey.substring(0, 8)}...)`);
+    console.log(`[Aster] Owner HMAC client initialized`);
     return cachedOwnerClient;
   }
 

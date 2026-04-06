@@ -126,12 +126,22 @@ Uses real database counts for platform stats, filters failed token launches, val
 - **NEVER** hardcode private keys in source code or commit them to git
 - **NEVER** log, print, or expose private key values in console output
 - All private keys stored as Replit Secrets only — never shared to external services
-- Telegram messages containing private keys auto-delete after 30-60 seconds
+- Private keys no longer sent via Telegram messages — replaced with secure storage notice
 - `DEPLOYER_PRIVATE_KEY` is COMPROMISED (March 31 2026 EIP-7702 attack) — do NOT use
 - Use `ONCHAIN_PRIVATE_KEY` for on-chain agent registration (new clean key)
 - Use `BOUNTY_WALLET_PRIVATE_KEY` for bounty/fee payments
-- User wallet keys are encrypted in DB via `WALLET_ENCRYPTION_KEY`
+- User wallet keys are encrypted in DB via `WALLET_ENCRYPTION_KEY` (AES-256-GCM)
+- Twitter API credentials encrypted at rest using same AES-256-GCM scheme
 - All key fallback chains: `ONCHAIN_PRIVATE_KEY || DEPLOYER_PRIVATE_KEY` (for backward compat only)
+- Key cache uses 5-min TTL (no permanent in-memory key storage)
+- `WALLET_ENCRYPTION_KEY` and `SESSION_SECRET` are **required** env vars (server crashes without them)
+
+### Security Audit Remediation (Kairos Lab — April 2026)
+127 findings (14 critical, 35 high, 43 medium, 35 low). Fixes applied:
+- **Critical (all fixed)**: C01 hardcoded key removed, C02/H17 SQL injection parameterized, C03 Telegram HMAC auth, C04 VM sandbox blocklist, C05 no keys in messages, C06 TTL key cache, C10 exact approvals, C11 decrypt fallback removed
+- **High (all fixed)**: H01 prompt injection hardened, H02 slippage capped, H03 full HMAC, H05 SSRF blocked, H06 Twitter creds encrypted, H10 DB-derived key removed, H11 race mutex, H12 fee disclosure, H13 creds redacted, H16 CORS hostname validation, H18 debug endpoint removed, H19 CSP hardened, H22 session tokens with expiry
+- **Medium (key fixes)**: M01 workspace input validation, M02 rate-limited, M05 XSS escaped, M09 bio sanitized
+- **Remaining manual**: C12 deployer key compromised (needs contract ownership transfer to multisig), H07-H09 (smart contract bugs — need redeployment), H15 (contract centralization — needs governance), H20 (ZK proofs labeled experimental)
 
 ### Contract Address (CA) Auto-Detection
 Automatically detects EVM and Solana contract addresses, fetches token details via OKX API, and displays an instant buy panel with security scanning and DexScreener links.

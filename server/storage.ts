@@ -2487,26 +2487,55 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createAgentTwitterAccount(data: InsertAgentTwitterAccount): Promise<AgentTwitterAccount> {
-    const [result] = await db.insert(agentTwitterAccounts).values(data).returning();
-    return result;
+    const encData = {
+      ...data,
+      twitterApiKey: encryptPrivateKey(data.twitterApiKey),
+      twitterApiSecret: encryptPrivateKey(data.twitterApiSecret),
+      twitterAccessToken: encryptPrivateKey(data.twitterAccessToken),
+      twitterAccessTokenSecret: encryptPrivateKey(data.twitterAccessTokenSecret),
+    };
+    const [result] = await db.insert(agentTwitterAccounts).values(encData).returning();
+    return this.decryptTwitterAccount(result);
+  }
+
+  private decryptTwitterAccount(account: AgentTwitterAccount): AgentTwitterAccount {
+    try {
+      return {
+        ...account,
+        twitterApiKey: account.twitterApiKey.includes(":") ? decryptPrivateKey(account.twitterApiKey) : account.twitterApiKey,
+        twitterApiSecret: account.twitterApiSecret.includes(":") ? decryptPrivateKey(account.twitterApiSecret) : account.twitterApiSecret,
+        twitterAccessToken: account.twitterAccessToken.includes(":") ? decryptPrivateKey(account.twitterAccessToken) : account.twitterAccessToken,
+        twitterAccessTokenSecret: account.twitterAccessTokenSecret.includes(":") ? decryptPrivateKey(account.twitterAccessTokenSecret) : account.twitterAccessTokenSecret,
+      };
+    } catch (e) {
+      console.error(`[Storage] Failed to decrypt Twitter credentials for agent ${account.agentId}`);
+      return account;
+    }
   }
 
   async getAgentTwitterAccount(agentId: string): Promise<AgentTwitterAccount | undefined> {
     const [result] = await db.select().from(agentTwitterAccounts).where(eq(agentTwitterAccounts.agentId, agentId));
-    return result;
+    return result ? this.decryptTwitterAccount(result) : undefined;
   }
 
   async getActiveAgentTwitterAccounts(): Promise<AgentTwitterAccount[]> {
-    return db.select().from(agentTwitterAccounts).where(eq(agentTwitterAccounts.enabled, 1));
+    const results = await db.select().from(agentTwitterAccounts).where(eq(agentTwitterAccounts.enabled, 1));
+    return results.map(r => this.decryptTwitterAccount(r));
   }
 
   async getAllAgentTwitterAccounts(): Promise<AgentTwitterAccount[]> {
-    return db.select().from(agentTwitterAccounts);
+    const results = await db.select().from(agentTwitterAccounts);
+    return results.map(r => this.decryptTwitterAccount(r));
   }
 
   async updateAgentTwitterAccount(agentId: string, data: Partial<AgentTwitterAccount>): Promise<AgentTwitterAccount | undefined> {
-    const [result] = await db.update(agentTwitterAccounts).set({ ...data, updatedAt: new Date() }).where(eq(agentTwitterAccounts.agentId, agentId)).returning();
-    return result;
+    const encData: Partial<AgentTwitterAccount> = { ...data, updatedAt: new Date() };
+    if (data.twitterApiKey) encData.twitterApiKey = encryptPrivateKey(data.twitterApiKey);
+    if (data.twitterApiSecret) encData.twitterApiSecret = encryptPrivateKey(data.twitterApiSecret);
+    if (data.twitterAccessToken) encData.twitterAccessToken = encryptPrivateKey(data.twitterAccessToken);
+    if (data.twitterAccessTokenSecret) encData.twitterAccessTokenSecret = encryptPrivateKey(data.twitterAccessTokenSecret);
+    const [result] = await db.update(agentTwitterAccounts).set(encData).where(eq(agentTwitterAccounts.agentId, agentId)).returning();
+    return result ? this.decryptTwitterAccount(result) : undefined;
   }
 
   async deleteAgentTwitterAccount(agentId: string): Promise<void> {

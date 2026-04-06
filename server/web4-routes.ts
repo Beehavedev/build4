@@ -399,7 +399,7 @@ ${urls}
       const activity = await storage.getRecentAgentActivity(limit);
       res.json(activity);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -409,7 +409,7 @@ ${urls}
       const leaderboard = await storage.getAgentLeaderboard(limit);
       res.json(leaderboard);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -437,7 +437,7 @@ ${urls}
         res.json(agents);
       }
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -447,7 +447,7 @@ ${urls}
       if (!agent) return res.status(404).json({ error: "Agent not found" });
       res.json(agent);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -524,7 +524,7 @@ ${urls}
         totalTransactions: allTx.length,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -535,7 +535,7 @@ ${urls}
       const balances = await getMultiChainBalances(req.params.agentId);
       res.json({ agentId: req.params.agentId, agentName: agent.name, balances });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -669,7 +669,7 @@ ${urls}
       }
       res.json({ success: true, txHash: regResult.txHash, chainId: regResult.chainId });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -686,7 +686,7 @@ ${urls}
       }
       res.json({ verified: true, txHash });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -774,7 +774,7 @@ ${urls}
       const updatedWallet = await storage.getWallet(agentId);
       res.json({ success: true, wallet: updatedWallet, txHash: normalizedTxHash, chain: chainName, currency, depositType: isDirectTransfer ? "direct" : "contract" });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -839,7 +839,7 @@ ${urls}
       });
     } catch (e: any) {
       console.error("[web4] Withdrawal error:", e.message);
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -851,7 +851,7 @@ ${urls}
       const lineage = await storage.getLineageAsChild(req.params.agentId);
       res.json({ wallet, transactions, lineage });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -872,7 +872,7 @@ ${urls}
         .map(tx => ({ type: tx.type, amount: tx.amount, description: tx.description, createdAt: tx.createdAt, txHash: tx.txHash, chainId: tx.chainId }));
       res.json({ breakdown, recentSpending });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -891,7 +891,7 @@ ${urls}
       const skills = await storage.getSkills();
       res.json(skills);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -900,7 +900,7 @@ ${urls}
       const skills = await storage.getSkills(req.params.agentId);
       res.json(skills);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -981,7 +981,7 @@ ${urls}
       const profile = await storage.getRuntimeProfile(req.params.agentId);
       res.json({ evolutions, currentProfile: profile });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1032,7 +1032,7 @@ ${urls}
       }
       res.json({ parent: parent ? { ...parent, agent: parentAgent } : null, children: childAgents });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1086,7 +1086,7 @@ ${urls}
         currentBalance: wallet?.balance || "0",
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1095,7 +1095,7 @@ ${urls}
       const laws = await storage.getConstitution(req.params.agentId);
       res.json(laws);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1104,7 +1104,7 @@ ${urls}
       const entries = await storage.getSoulEntries(req.params.agentId);
       res.json(entries);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1128,7 +1128,7 @@ ${urls}
       const logs = await storage.getAuditLogs(req.params.agentId);
       res.json(logs);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1142,7 +1142,7 @@ ${urls}
       }
       res.json(enriched);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1189,7 +1189,7 @@ ${urls}
 
       res.json({ agent, wallet, transactions, skills, evolutions, currentProfile: profile, survival, lineage: { parent, children } });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1198,7 +1198,7 @@ ${urls}
       const providers = await storage.getAllInferenceProviders();
       res.json(providers);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1229,7 +1229,7 @@ ${urls}
         configuredKeys: liveStatus,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1239,7 +1239,7 @@ ${urls}
       if (!provider) return res.status(404).json({ error: "Provider not found" });
       res.json(provider);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1248,7 +1248,7 @@ ${urls}
       const requests = await storage.getInferenceRequests(req.params.agentId);
       res.json(requests);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1275,7 +1275,7 @@ ${urls}
       await storage.seedInferenceProviders();
       res.json({ success: true, message: "Cleaned fake data and ensured inference providers exist" });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1309,7 +1309,7 @@ ${urls}
         },
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1318,7 +1318,7 @@ ${urls}
       startAgentRunner();
       res.json({ success: true, running: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1327,7 +1327,7 @@ ${urls}
       stopAgentRunner();
       res.json({ success: true, running: false });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1347,7 +1347,7 @@ ${urls}
       txs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       res.json(txs.slice(0, 100));
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1378,7 +1378,7 @@ ${urls}
         ],
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1403,7 +1403,7 @@ ${urls}
         },
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1417,7 +1417,7 @@ ${urls}
       };
       res.json({ ...summary, explorerBases, revenueWallet: getRevenueWalletAddress() });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1427,7 +1427,7 @@ ${urls}
       const history = await storage.getPlatformRevenue(limit);
       res.json(history);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1502,7 +1502,7 @@ ${urls}
       linkTelegramWallet(Number(chatId), wallet);
       return res.json({ success: true });
     } catch (e: any) {
-      return res.status(500).json({ error: e.message });
+      return res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1521,7 +1521,7 @@ ${urls}
       const result = await postBountyTweet(id, tweet, reward, winners, tweet);
       return res.json({ success: true, tweetId: result.tweetId, tweetUrl: result.tweetUrl, jobId: id });
     } catch (e: any) {
-      return res.status(500).json({ error: e.message });
+      return res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1546,7 +1546,7 @@ ${urls}
       }
       res.json({ deleted: toDelete.length, deletedIds: toDelete, remaining: allAgents.length - toDelete.length });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1564,7 +1564,7 @@ ${urls}
         },
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1609,7 +1609,7 @@ ${urls}
       }));
       res.json(enriched);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1635,7 +1635,7 @@ ${urls}
         })),
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1662,7 +1662,7 @@ ${urls}
         limit: FREE_EXECUTIONS_LIMIT,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1893,7 +1893,7 @@ ${urls}
         onchainAgents: Number(onchainAgents?.cnt || 0),
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1902,7 +1902,7 @@ ${urls}
       const leaderboard = await storage.getRewardsLeaderboard(20);
       res.json(leaderboard);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1917,7 +1917,7 @@ ${urls}
       }
       res.json({ ...stats, uniqueSkills: uniqueHashes.size });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1952,7 +1952,7 @@ ${urls}
       }
       res.json({ total: allSkills.length, repriced });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1965,7 +1965,7 @@ ${urls}
       });
       res.json(categoryCounts);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1984,7 +1984,7 @@ ${urls}
       }));
       res.json(enriched);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2163,7 +2163,7 @@ ${urls}
       }));
       res.json(enriched);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2321,7 +2321,7 @@ ${urls}
       if (e.name === "ZodError") {
         return res.status(400).json({ error: "Validation failed", details: e.errors });
       }
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2358,7 +2358,7 @@ ${urls}
         })),
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2395,7 +2395,7 @@ ${urls}
         total: executionsAsUser.length,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2443,7 +2443,7 @@ ${urls}
         });
       }
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2453,7 +2453,7 @@ ${urls}
       const platforms = getPlatformRegistry();
       res.json({ ...stats, knownPlatforms: platforms.length });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2462,7 +2462,7 @@ ${urls}
       const targets = await storage.getOutreachTargets();
       res.json(targets);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2471,7 +2471,7 @@ ${urls}
       const campaigns = await storage.getOutreachCampaigns();
       res.json(campaigns);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2485,7 +2485,7 @@ ${urls}
       const beacons = await runOnchainBeacon(baseUrl);
       res.json(beacons);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2494,7 +2494,7 @@ ${urls}
       const count = await seedKnownPlatforms();
       res.json({ seeded: count, message: `${count} new platforms added to outreach registry` });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2536,7 +2536,7 @@ ${urls}
         res.json({ campaign });
       }
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2561,7 +2561,7 @@ ${urls}
       });
       res.json({ campaign, results });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2596,7 +2596,7 @@ ${urls}
       const identities = await storage.getErc8004Identities(ownerWallet);
       res.json(identities);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2606,7 +2606,7 @@ ${urls}
       if (!identity) { res.status(404).json({ error: "Identity not found" }); return; }
       res.json(identity);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2638,7 +2638,7 @@ ${urls}
       const reputation = await storage.getErc8004Reputation(agentIdentityId);
       res.json(reputation);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2680,7 +2680,7 @@ ${urls}
         entries: allRepEntries,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2691,7 +2691,7 @@ ${urls}
       const validations = await storage.getErc8004Validations(agentIdentityId);
       res.json(validations);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2806,7 +2806,7 @@ ${urls}
         },
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2831,7 +2831,7 @@ ${urls}
         }));
       res.json({ agentId, totalEntries: entries?.length || 0, hashChain: hashes });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2899,7 +2899,7 @@ ${urls}
         } : { error: anchorResult.error },
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2989,7 +2989,7 @@ ${urls}
       const nfas = await storage.getBap578Nfas(ownerWallet);
       res.json(nfas);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2999,7 +2999,7 @@ ${urls}
       if (!nfa) { res.status(404).json({ error: "NFA not found" }); return; }
       res.json(nfa);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3043,7 +3043,7 @@ ${urls}
         res.json({ hasPersonality: false });
       }
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3075,7 +3075,7 @@ ${urls}
         ...JSON.parse(personality.fullProfile),
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3132,7 +3132,7 @@ ${urls}
         platformUrl: "https://build4.io",
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3183,7 +3183,7 @@ ${urls}
         ...personalityBlock,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3263,7 +3263,7 @@ ${urls}
 
       res.json({ agentId: agentDbId, agentName: agent.name, results });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3302,7 +3302,7 @@ ${urls}
         },
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3375,7 +3375,7 @@ ${urls}
 
       res.json({ totalAgents: allAgents.length, registrations: results });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3558,7 +3558,7 @@ ${urls}
         account: { id: account.id, agentId: account.agentId, twitterHandle: verifiedHandle, role: account.role, enabled: account.enabled },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3624,7 +3624,7 @@ ${urls}
         diagnostics,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3648,7 +3648,7 @@ ${urls}
       if (!result.success) return res.status(400).json({ error: result.error });
       res.json({ success: true, tweetText: result.tweetText });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3668,7 +3668,7 @@ ${urls}
       if (!result.success) return res.status(400).json({ error: result.error });
       res.json({ success: true, tweetText: result.tweetText });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3681,7 +3681,7 @@ ${urls}
       if (!result.success) return res.status(400).json({ error: result.error });
       res.json({ success: true, message: "Twitter agent started" });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3693,7 +3693,7 @@ ${urls}
       await stopAgentTwitter(agentId);
       res.json({ success: true, message: "Twitter agent stopped" });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3723,7 +3723,7 @@ ${urls}
       }
       res.json({ success: true, account: updated });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3736,7 +3736,7 @@ ${urls}
       await storage.deleteAgentTwitterAccount(agentId);
       res.json({ success: true, message: "Twitter disconnected" });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3748,7 +3748,7 @@ ${urls}
       const memos = await storage.getStrategyMemos(agentId, 20);
       res.json(memos);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3761,7 +3761,7 @@ ${urls}
       if (!active) return res.status(404).json({ error: "No active strategy found" });
       res.json(active);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3797,7 +3797,7 @@ ${urls}
         tweets: records,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3809,7 +3809,7 @@ ${urls}
       const items = await storage.getStrategyActionItems(agentId);
       res.json(items);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3827,7 +3827,7 @@ ${urls}
       if (!updated) return res.status(404).json({ error: "Action item not found" });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3837,7 +3837,7 @@ ${urls}
       const entries = await storage.getKnowledgeBase(agentId);
       res.json(entries);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3864,7 +3864,7 @@ ${urls}
       });
       res.json(entry);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3876,7 +3876,7 @@ ${urls}
       await storage.deleteKnowledgeEntry(entryId);
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3886,7 +3886,7 @@ ${urls}
       const conversations = await storage.getRecentConversations(agentId, 50);
       res.json(conversations);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3896,7 +3896,7 @@ ${urls}
       const collabs = await storage.getRecentCollaborations(agentId, 20);
       res.json(collabs);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3921,7 +3921,7 @@ ${urls}
         return res.status(501).json({ error: "Strategy cycle not available: " + importErr.message });
       }
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3971,7 +3971,7 @@ ${urls}
         console.error(`[TaskEngine] Task ${task.id} execution error:`, err.message)
       );
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3986,7 +3986,7 @@ ${urls}
       }
       res.json({ tasks, agents });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3997,7 +3997,7 @@ ${urls}
       const agent = await storage.getAgent(task.agentId);
       res.json({ task, agent: agent ? { name: agent.name, bio: agent.bio } : null });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4006,7 +4006,7 @@ ${urls}
       const tasks = await storage.getTasksByAgent(req.params.agentId, 30);
       res.json(tasks);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4015,7 +4015,7 @@ ${urls}
       const tasks = await storage.getTasksByCreator(req.params.wallet, 30);
       res.json(tasks);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4056,7 +4056,7 @@ ${urls}
       const data = await getSwapQuote({ chainId, fromTokenAddress: fromToken, toTokenAddress: toToken, amount, slippage });
       res.json(data);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4068,7 +4068,7 @@ ${urls}
       const data = await getSwapData({ chainId, fromTokenAddress: fromToken, toTokenAddress: toToken, amount, slippage, userWalletAddress });
       res.json(data);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4080,7 +4080,7 @@ ${urls}
       const data = await getApproveTransaction({ chainId, tokenContractAddress: tokenAddress, approveAmount: amount });
       res.json(data);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4092,7 +4092,7 @@ ${urls}
       const data = await getSupportedTokens(chainId);
       res.json(data);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4104,7 +4104,7 @@ ${urls}
       const data = await getTokenPrice(tokenAddress, chainId);
       res.json(data);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4116,7 +4116,7 @@ ${urls}
       const data = await getTokenMarketData({ chainId, tokenAddress });
       res.json(data);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4128,7 +4128,7 @@ ${urls}
       const data = await getTopTokens(chainId);
       res.json(data);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4140,7 +4140,7 @@ ${urls}
       const data = await getTrendingTokens(chainId);
       res.json(data);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4152,7 +4152,7 @@ ${urls}
       const data = await getTokenHolders({ chainId, tokenAddress });
       res.json(data);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4165,7 +4165,7 @@ ${urls}
       const data = await getCrossChainQuote({ fromChainId, toChainId, fromTokenAddress: fromToken, toTokenAddress: toToken, amount, slippage });
       res.json(data);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4178,7 +4178,7 @@ ${urls}
       const data = await getCrossChainSwap({ fromChainId, toChainId, fromTokenAddress: fromToken, toTokenAddress: toToken, amount, userWalletAddress, slippage });
       res.json(data);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4190,7 +4190,7 @@ ${urls}
       const data = await getCrossChainStatus({ chainId, txHash });
       res.json(data);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4200,7 +4200,7 @@ ${urls}
       const data = await getSupportedBridgeChains();
       res.json(data);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4212,7 +4212,7 @@ ${urls}
       const data = await getWalletTokenBalances({ address, chainId });
       res.json(data);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4224,7 +4224,7 @@ ${urls}
       if (installed) { try { version = await getOnchainOSVersion(); } catch {} }
       res.json({ installed, version, skills });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4244,7 +4244,7 @@ ${urls}
       const result = await runOnchainOSCommand(skill, command, params || {});
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 }

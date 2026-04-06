@@ -124,7 +124,7 @@ export async function registerRoutes(
       const stats = await storage.getVisitorStats(since);
       res.json(stats);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -140,7 +140,7 @@ export async function registerRoutes(
       }));
       res.json(redacted);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -157,7 +157,7 @@ export async function registerRoutes(
         recentPaths: stats.topPaths.slice(0, 5),
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -242,7 +242,7 @@ export async function registerRoutes(
         _securityNote: "Store the secret securely on your device. It will not be stored on the server and cannot be recovered.",
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -283,7 +283,7 @@ export async function registerRoutes(
         res.status(500).json({ error: proofResult.error, proof: proofResult });
       }
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -306,7 +306,7 @@ export async function registerRoutes(
       const result = await verifyCommitment(recipientAddress, secret, Number(chainId), burnAddress);
       res.json(result);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -323,7 +323,7 @@ export async function registerRoutes(
       const transfers = await storage.getPrivacyTransfers(req.params.agentId);
       res.json(transfers);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -336,7 +336,7 @@ export async function registerRoutes(
       }
       res.json(transfer);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -377,7 +377,7 @@ export async function registerRoutes(
       }
       res.json(transfer);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -386,7 +386,7 @@ export async function registerRoutes(
       const status = await getTwitterAgentStatus();
       res.json(status);
     } catch (e: any) {
-      res.json({ configured: isTwitterConfigured(), enabled: false, running: false, error: e.message });
+      res.json({ configured: isTwitterConfigured(), enabled: false, running: false, error: "Twitter agent status unavailable" });
     }
   });
 
@@ -395,7 +395,7 @@ export async function registerRoutes(
       const config = await storage.getTwitterAgentConfig();
       res.json(config || { id: "default", enabled: 0, pollingIntervalMs: 30000, minVerificationScore: 60, maxPayoutBnb: "0.02", defaultBountyBudget: "0.02", maxWinnersPerBounty: 10, agentId: null });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -409,7 +409,7 @@ export async function registerRoutes(
       }
       res.json(config);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -422,7 +422,7 @@ export async function registerRoutes(
       await runTwitterAgentCycle();
       res.json({ success: true, message: "Cycle completed" });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -439,7 +439,7 @@ export async function registerRoutes(
       const tweetText = generateBountyTweetText(taskDescription || "", reward, winners, customTweetText);
       res.json({ tweetText, charCount: tweetText.length });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -484,7 +484,7 @@ export async function registerRoutes(
       });
       res.json(bounty);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -493,7 +493,7 @@ export async function registerRoutes(
       const bounties = await storage.getTwitterBounties();
       res.json(bounties);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -502,7 +502,7 @@ export async function registerRoutes(
       const submissions = await storage.getTwitterSubmissions(req.params.id);
       res.json(submissions);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -512,7 +512,7 @@ export async function registerRoutes(
       await startTwitterAgent();
       res.json({ success: true, message: "Twitter agent started" });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -522,7 +522,7 @@ export async function registerRoutes(
       stopTwitterAgent();
       res.json({ success: true, message: "Twitter agent stopped" });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -532,7 +532,7 @@ export async function registerRoutes(
       const recentReplies = await storage.getRecentTwitterReplies(20);
       res.json({ personality: personality || null, recentReplies });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -541,7 +541,7 @@ export async function registerRoutes(
       const status = await getSupportAgentStatus();
       res.json(status);
     } catch (e: any) {
-      res.json({ configured: isTwitterConfigured(), enabled: false, running: false, error: e.message });
+      res.json({ configured: isTwitterConfigured(), enabled: false, running: false, error: "Support agent status unavailable" });
     }
   });
 
@@ -550,7 +550,7 @@ export async function registerRoutes(
       const config = await storage.getSupportAgentConfig();
       res.json(config || { id: "default", enabled: 0, pollingIntervalMs: 120000 });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -564,7 +564,7 @@ export async function registerRoutes(
       }
       res.json(config);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -574,7 +574,7 @@ export async function registerRoutes(
       await startSupportAgent();
       res.json({ success: true, message: "Support agent started" });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -584,7 +584,7 @@ export async function registerRoutes(
       stopSupportAgent();
       res.json({ success: true, message: "Support agent stopped" });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -597,7 +597,7 @@ export async function registerRoutes(
       await runSupportAgentCycle();
       res.json({ success: true, message: "Support cycle completed" });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -607,7 +607,7 @@ export async function registerRoutes(
       const tickets = await storage.getSupportTickets(status);
       res.json(tickets);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -620,7 +620,7 @@ export async function registerRoutes(
       }
       res.json(ticket);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -638,7 +638,7 @@ export async function registerRoutes(
       }
       res.json(ticket);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1002,6 +1002,14 @@ export async function registerRoutes(
       const { walletAddress, type } = req.body;
       if (!walletAddress || !type) {
         res.status(400).json({ error: "walletAddress and type required" });
+        return;
+      }
+      if (typeof walletAddress !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+        res.status(400).json({ error: "Invalid wallet address" });
+        return;
+      }
+      if (!["deploy", "inference", "storage"].includes(type)) {
+        res.status(400).json({ error: "Invalid usage type" });
         return;
       }
 
