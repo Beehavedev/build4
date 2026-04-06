@@ -232,7 +232,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0a0f0d');TG.setBackgroundColor('#0a0f0d')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
-const VAULT='0x128463A60784c4D3f46c23Af3f65Ed859Ba87974';
+const VAULT='0xaac5f84303ee5cdbd19c265cee295cd5a36a26ee';
 let acct=null,mkts=null,agentData=null;
 
 function fmt(n){return(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}

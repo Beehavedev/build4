@@ -124,7 +124,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
-const VAULT='0x128463A60784c4D3f46c23Af3f65Ed859Ba87974';
+const VAULT='0xaac5f84303ee5cdbd19c265cee295cd5a36a26ee';
 let D={connected:false,availableMargin:0,walletBalance:0,bscBalance:0,bnbBalance:0,bscWalletAddress:'',unrealizedPnl:0,realizedPnl:0,wins:0,losses:0,positions:[],recentIncome:[],spotBalance:0};
 let M={markets:[]};
 let AG=null;
@@ -418,11 +418,15 @@ async function submitPoolDeposit(){
   try{
     var r=await api('/api/miniapp/pool/deposit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({txHash:txHash,amount:amount})});
     if(r.success){
-      var icon=r.verified?'✅':'📥';
-      st.innerHTML='<div class="alert alert-ok mt-3"><span>'+icon+'</span><div><strong>'+(r.message||'Deposit recorded!')+'</strong><br><a href="https://bscscan.com/tx/'+txHash+'" target="_blank" style="color:var(--green);font-size:11px">View on BscScan</a></div></div>';
+      var icon=r.bridged?'🎉':r.verified?'✅':'📥';
+      var extra='';
+      if(r.bridged)extra='<br><span style="color:var(--green);font-size:11px">Auto-forwarded to Aster trading pool!</span>';
+      if(r.bridgeTx)extra+='<br><a href="https://bscscan.com/tx/'+r.bridgeTx+'" target="_blank" style="color:var(--green);font-size:11px">Bridge TX on BscScan</a>';
+      if(r.bridgeError)extra+='<br><span style="color:var(--red);font-size:11px">Bridge: '+r.bridgeError+'</span>';
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>'+icon+'</span><div><strong>'+(r.message||'Deposit recorded!')+'</strong>'+extra+'<br><a href="https://bscscan.com/tx/'+txHash+'" target="_blank" style="color:var(--green);font-size:11px">View deposit on BscScan</a></div></div>';
       toast(icon+' '+(r.message||'Deposit submitted!'),'ok');
       tx.value='';amt.value='';
-      setTimeout(function(){fetchAll().then(function(){renderDeposit()})},2000);
+      setTimeout(function(){fetchAll().then(function(){renderDeposit()})},3000);
     }else{
       st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Failed')+'</span></div>';
     }

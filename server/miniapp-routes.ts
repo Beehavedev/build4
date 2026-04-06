@@ -420,7 +420,7 @@ export function registerMiniAppRoutes(app: Express) {
             error: `Wallet key recovered. New wallet: ${newWallet.address}\n\nSend your USDT from your old wallet (${walletAddr}) to this new address, then try deposit again.`,
           });
         }
-        return res.status(400).json({ error: "Wallet key unavailable. Send USDT manually to vault: 0x128463A60784c4D3f46c23Af3f65Ed859Ba87974" });
+        return res.status(400).json({ error: "Wallet key unavailable. Send USDT manually to pool wallet: 0xaac5f84303ee5cdbd19c265cee295cd5a36a26ee" });
       }
 
       const ethers = await import("ethers");
@@ -433,7 +433,7 @@ export function registerMiniAppRoutes(app: Express) {
         console.log(`[MiniApp] KEY MISMATCH: key belongs to ${derivedAddr}, not ${storedAddr}. Cannot auto-deposit.`);
         return res.json({
           success: false,
-          error: `Auto-deposit unavailable — wallet key mismatch. Please deposit manually:\n\n1. Open your external wallet app\n2. Send $${amount} USDT (BEP-20) on BSC to:\n0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\n3. Paste the TX hash below to verify`,
+          error: `Auto-deposit unavailable — wallet key mismatch. Please deposit manually:\n\n1. Open your external wallet app\n2. Send $${amount} USDT (BEP-20) on BSC to:\n0xaac5f84303ee5cdbd19c265cee295cd5a36a26ee\n3. Paste the TX hash below to verify`,
         });
       }
 
@@ -854,7 +854,6 @@ export function registerMiniAppRoutes(app: Express) {
       const dupe = existing.find((d: any) => d.tx_hash === txHash);
       if (dupe) return res.json({ success: true, deposit: dupe, message: "Deposit already recorded" });
 
-      let verifiedAmount = amount;
       let verified = false;
       try {
         const bscRes = await fetch(`https://api.bscscan.com/api?module=proxy&action=eth_getTransactionReceipt&txhash=${txHash}&apikey=${process.env.BSCSCAN_API_KEY || 'YourApiKeyToken'}`);
@@ -867,12 +866,48 @@ export function registerMiniAppRoutes(app: Express) {
         console.log(`[Pool] BSC verification failed for ${txHash.substring(0, 12)}: ${e.message?.substring(0, 100)}`);
       }
 
-      const deposit = await storage.createPoolDeposit(chatId, verifiedAmount, txHash, fromAddress, "external");
+      const deposit = await storage.createPoolDeposit(chatId, amount, txHash, fromAddress, "external");
       if (verified && deposit) {
         await storage.updatePoolDepositStatus(deposit.id, "verified");
       }
 
-      res.json({ success: true, deposit, verified, message: verified ? "Deposit verified on BSC" : "Deposit recorded, awaiting verification" });
+      let bridgeResult: any = null;
+      if (verified && deposit) {
+        try {
+          const pk = process.env.ASTER_PRIVATE_KEY;
+          const ownerAddr = process.env.ASTER_USER_ADDRESS || "0xeb0616e044c55c1ca214ed3629fee3354bbf9826";
+          if (pk) {
+            const { asterV3Deposit } = await import("./aster-client");
+            console.log(`[Pool] Auto-bridge: forwarding $${amount} USDT from holding wallet to Aster for owner ${ownerAddr.substring(0, 10)}...`);
+            bridgeResult = await asterV3Deposit(pk, amount, 0, ownerAddr);
+            if (bridgeResult.success) {
+              console.log(`[Pool] Auto-bridge SUCCESS: $${amount} deposited to Aster. TX: ${bridgeResult.txHash}`);
+              await storage.updatePoolDepositStatus(deposit.id, "credited");
+            } else {
+              console.log(`[Pool] Auto-bridge failed: ${bridgeResult.error?.substring(0, 200)}`);
+            }
+          }
+        } catch (e: any) {
+          console.error(`[Pool] Auto-bridge error: ${e.message?.substring(0, 200)}`);
+          bridgeResult = { success: false, error: e.message?.substring(0, 200) };
+        }
+      }
+
+      const message = bridgeResult?.success
+        ? "Deposit verified and forwarded to Aster trading pool!"
+        : verified
+          ? "Deposit verified. Auto-bridge to Aster pending."
+          : "Deposit recorded, awaiting verification.";
+
+      res.json({
+        success: true,
+        deposit,
+        verified,
+        bridged: bridgeResult?.success || false,
+        bridgeTx: bridgeResult?.txHash || null,
+        bridgeError: bridgeResult?.error || null,
+        message,
+      });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
