@@ -80,17 +80,6 @@ export function registerMiniAppRoutes(app: Express) {
       const chatId = req.headers["x-telegram-chat-id"] as string;
       if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
       const { apiWalletPrivateKey } = req.body;
-      if (!apiWalletPrivateKey) return res.status(400).json({ error: "Missing API Wallet private key" });
-
-      const { Wallet } = await import("ethers");
-      let apiWallet: InstanceType<typeof Wallet>;
-      try {
-        apiWallet = new Wallet(apiWalletPrivateKey);
-      } catch (e: any) {
-        return res.status(400).json({ error: "Invalid private key format" });
-      }
-
-      const apiWalletAddress = apiWallet.address.toLowerCase();
 
       const wallets = await storage.getTelegramWallets(chatId);
       const activeWallet = wallets.find(w => w.isActive) || wallets[0];
@@ -100,26 +89,47 @@ export function registerMiniAppRoutes(app: Express) {
         return res.status(400).json({ error: "No bot wallet found. Generate a wallet first via the Telegram bot." });
       }
 
-      console.log(`[MiniApp] Linking Aster API wallet: signer=${apiWalletAddress}, parent=${parentAddress}, chatId=${chatId}`);
+      if (apiWalletPrivateKey) {
+        const { Wallet } = await import("ethers");
+        let apiWallet: InstanceType<typeof Wallet>;
+        try {
+          apiWallet = new Wallet(apiWalletPrivateKey);
+        } catch (e: any) {
+          return res.status(400).json({ error: "Invalid private key format" });
+        }
 
-      await storage.saveAsterCredentials(chatId, apiWalletAddress, apiWalletPrivateKey);
-
-      try {
-        const { createAsterV3FuturesClient } = await import("./aster-client");
-        const v3 = createAsterV3FuturesClient({
-          user: parentAddress,
-          signer: apiWalletAddress,
-          signerPrivateKey: apiWalletPrivateKey,
-        });
-        const bal = await v3.balance();
-        console.log(`[MiniApp] Post-link balance check: ${JSON.stringify(bal).substring(0, 500)}`);
-        const acct = await v3.account();
-        console.log(`[MiniApp] Post-link account check: ${JSON.stringify(acct).substring(0, 500)}`);
-      } catch (e: any) {
-        console.log(`[MiniApp] Post-link balance check failed: ${e.message}`);
+        const apiWalletAddress = apiWallet.address.toLowerCase();
+        console.log(`[MiniApp] Manual link: signer=${apiWalletAddress}, parent=${parentAddress}, chatId=${chatId}`);
+        await storage.saveAsterCredentials(chatId, apiWalletAddress, apiWalletPrivateKey);
+        res.json({ success: true, apiWalletAddress, parentAddress });
+        return;
       }
 
-      res.json({ success: true, apiWalletAddress, parentAddress });
+      const pk = await storage.getTelegramWalletPrivateKey(chatId, parentAddress);
+      if (!pk) {
+        return res.status(400).json({ error: "Cannot access wallet private key. Please re-import your wallet." });
+      }
+
+      console.log(`[MiniApp] Auto-onboarding Aster for chatId=${chatId} wallet=${parentAddress.substring(0, 10)}`);
+      const { asterBrokerOnboard, createAsterFuturesClient } = await import("./aster-client");
+      const result = await asterBrokerOnboard(pk);
+      console.log(`[MiniApp] Onboard result: success=${result.success} hasKey=${!!result.apiKey} error=${result.error || 'none'}`);
+
+      if (result.success && result.apiKey && result.apiSecret) {
+        await storage.saveAsterCredentials(chatId, result.apiKey, result.apiSecret);
+
+        try {
+          const client = createAsterFuturesClient({ apiKey: result.apiKey, apiSecret: result.apiSecret });
+          const bal = await client.balance();
+          console.log(`[MiniApp] Post-onboard balance: ${JSON.stringify(bal).substring(0, 300)}`);
+        } catch (e: any) {
+          console.log(`[MiniApp] Post-onboard balance check failed: ${e.message}`);
+        }
+
+        res.json({ success: true, apiWalletAddress: "auto", parentAddress });
+      } else {
+        res.json({ success: false, error: result.error || "Aster onboarding failed. You may need to link an API Wallet manually." });
+      }
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
@@ -137,7 +147,10 @@ export function registerMiniAppRoutes(app: Express) {
           const wallets = await storage.getTelegramWallets(chatId);
           const activeWallet = wallets.find(w => w.isActive) || wallets[0];
           const parentAddress = activeWallet?.walletAddress?.toLowerCase() || "";
-          if (parentAddress) {
+
+          const isV3ApiWallet = creds.apiKey.startsWith("0x") && creds.apiKey.length === 42;
+
+          if (isV3ApiWallet && parentAddress) {
             const { createAsterV3FuturesClient } = await import("./aster-client");
             const v3Futures = createAsterV3FuturesClient({
               user: parentAddress,
@@ -146,7 +159,13 @@ export function registerMiniAppRoutes(app: Express) {
             });
             client = { futures: v3Futures, spot: null, walletAddress: parentAddress };
             asterApiWalletAddr = creds.apiKey;
-            console.log(`[MiniApp] Aster client via API Wallet: user=${parentAddress.substring(0,10)}, signer=${creds.apiKey.substring(0,10)}`);
+            console.log(`[MiniApp] Aster V3 client: user=${parentAddress.substring(0,10)}, signer=${creds.apiKey.substring(0,10)}`);
+          } else {
+            const { createAsterFuturesClient } = await import("./aster-client");
+            const hmacClient = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+            client = { futures: hmacClient, spot: null, walletAddress: parentAddress };
+            asterApiWalletAddr = "auto";
+            console.log(`[MiniApp] Aster HMAC client for chatId=${chatId} (auto-onboarded)`);
           }
         }
       } catch (e: any) {

@@ -1363,7 +1363,48 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
     try { bot!.deleteMessage(chatId, pkMsg.message_id); } catch {}
   }, 30000);
 
+  autoOnboardAster(chatId, addr, pk).catch(e => {
+    console.log(`[Aster] Auto-onboard deferred error for chatId=${chatId}: ${e.message}`);
+  });
+
   return addr;
+}
+
+async function autoOnboardAster(chatId: number, walletAddress: string, privateKey: string): Promise<void> {
+  try {
+    const { asterBrokerOnboard, createAsterFuturesClient } = await import("./aster-client");
+    console.log(`[Aster] Auto-onboarding wallet ${walletAddress.substring(0, 10)}... for chatId=${chatId}`);
+
+    const result = await asterBrokerOnboard(privateKey);
+    console.log(`[Aster] Auto-onboard result: success=${result.success} uid=${result.uid} hasApiKey=${!!result.apiKey} error=${result.error || 'none'}`);
+
+    if (result.success && result.apiKey && result.apiSecret) {
+      await storage.saveAsterCredentials(chatId.toString(), result.apiKey, result.apiSecret);
+      console.log(`[Aster] Auto-onboard: saved API credentials for chatId=${chatId}`);
+
+      try {
+        const client = createAsterFuturesClient({ apiKey: result.apiKey, apiSecret: result.apiSecret });
+        const bal = await client.balance();
+        console.log(`[Aster] Auto-onboard: balance check OK — ${JSON.stringify(bal).substring(0, 200)}`);
+      } catch (e: any) {
+        console.log(`[Aster] Auto-onboard: balance check failed (may take time to activate): ${e.message}`);
+      }
+
+      if (bot) {
+        try {
+          await bot.sendMessage(chatId,
+            `✅ Aster DEX account linked automatically!\n\n` +
+            `Your wallet is now connected to Aster Futures. Deposit USDT and start trading.`,
+            { parse_mode: "Markdown" }
+          );
+        } catch {}
+      }
+    } else {
+      console.log(`[Aster] Auto-onboard failed for chatId=${chatId}: ${result.error || 'unknown'} debug=${result.debug || 'none'}`);
+    }
+  } catch (e: any) {
+    console.error(`[Aster] Auto-onboard error for chatId=${chatId}:`, e.message);
+  }
 }
 
 export async function resolvePrivateKey(chatId: number, walletAddr: string): Promise<string | null> {
@@ -1455,6 +1496,11 @@ export async function regenerateWalletForDeposit(chatId: number): Promise<{ addr
     walletsWithKey.add(`${chatId}:${addr}`);
 
     console.log(`[Wallet] regenerateWalletForDeposit: created ${addr.substring(0, 10)} for chatId=${chatId}`);
+
+    autoOnboardAster(chatId, addr, pk).catch(e => {
+      console.log(`[Aster] Auto-onboard deferred error (regenerate) for chatId=${chatId}: ${e.message}`);
+    });
+
     return { address: addr, privateKey: pk };
   } catch (e: any) {
     console.error("[Wallet] regenerateWalletForDeposit error:", e.message);

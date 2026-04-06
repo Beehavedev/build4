@@ -205,10 +205,10 @@ function renderDash(){
   if(!D.asterApiWallet){
     h+='<div class="card" style="border:1px solid var(--yellow);background:rgba(243,186,47,0.05)">';
     h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:20px">⚠️</span><div>';
-    h+='<div class="text-sm fw-600" style="color:var(--yellow)">Aster API Wallet Not Linked</div>';
-    h+='<div class="text-xs text-dim mt-1">Link your Aster API Wallet to see your futures balance and trade.</div>';
+    h+='<div class="text-sm fw-600" style="color:var(--yellow)">Not Connected to Aster</div>';
+    h+='<div class="text-xs text-dim mt-1">Connect to see your futures balance and start trading.</div>';
     h+='</div></div>';
-    h+='<button class="btn btn-green mt-2" style="width:100%" onclick="switchTab(\'deposit\')">🔗 Link Now</button>';
+    h+='<button class="btn btn-green mt-2" style="width:100%" onclick="switchTab(\'deposit\')">🔗 Connect Now</button>';
     h+='</div>';
   }
 
@@ -291,54 +291,26 @@ function renderDeposit(){
 
   if(D.asterApiWallet){
     h+='<div class="card" style="border:1px solid var(--green)">';
-    h+='<div class="section-title" style="color:var(--green)">✅ Aster API Wallet Linked</div>';
-    h+='<div class="text-xs text-dim">API Wallet: <span class="mono" style="color:var(--blue)">'+shortAddr(D.asterApiWallet)+'</span></div>';
-    h+='<div class="text-xs text-dim mt-1">Parent Wallet: <span class="mono" style="color:var(--blue)">'+shortAddr(walletAddr)+'</span></div>';
-    h+='<button class="btn btn-outline mt-3" style="width:100%" onclick="showLinkFlow()">Re-link API Wallet</button>';
+    h+='<div class="section-title" style="color:var(--green)">✅ Aster Trading Connected</div>';
+    h+='<div class="text-xs text-dim">Your wallet is linked to Aster Futures and ready to trade.</div>';
     h+='</div>';
-  } else {
+  } else if(walletAddr) {
     h+='<div class="card card-accent" style="border:1px solid var(--yellow)">';
-    h+='<div class="section-title" style="color:var(--yellow)">⚠️ Link Your Aster API Wallet</div>';
-    h+='<div class="text-xs" style="color:var(--text2);margin-bottom:12px">Your wallet is generated but Aster requires an <strong style="color:#fff">API Wallet</strong> to trade. Follow the steps below:</div>';
-    h+='<button class="btn btn-green" style="width:100%" onclick="showLinkFlow()">🔗 Link My Aster Account</button>';
+    h+='<div class="section-title" style="color:var(--yellow)">⚠️ Connect to Aster</div>';
+    h+='<div class="text-xs" style="color:var(--text2);margin-bottom:12px">Tap below to automatically connect your wallet to Aster Futures.</div>';
+    h+='<button class="btn btn-green" style="width:100%" onclick="autoLinkAster()">🔗 Connect to Aster (Auto)</button>';
+    h+='<div id="link-status"></div>';
+    h+='<div class="text-xs text-dim mt-3" style="cursor:pointer;text-decoration:underline" onclick="showLinkFlow()">Advanced: Link API Wallet manually</div>';
     h+='</div>';
+
+    h+='<div id="link-flow" style="display:none">';
+    h+='<div class="card"><div class="section-title">Manual: Paste API Wallet Key</div>';
+    h+='<div class="text-xs text-dim mb-2">If auto-connect failed, create an API Wallet at <a href="https://asterdex.com/en/api-wallet" target="_blank" style="color:var(--blue)">asterdex.com/en/api-wallet</a> and paste its private key here.</div>';
+    h+='<input id="api-wallet-pk" type="password" class="input" placeholder="API Wallet private key (0x...)" autocomplete="off">';
+    h+='<button class="btn btn-green mt-2" style="width:100%" onclick="linkAsterApi()">🔗 Link API Wallet</button>';
+    h+='<div id="manual-link-status"></div>';
+    h+='</div></div>';
   }
-
-  h+='<div id="link-flow" style="display:none">';
-
-  h+='<div class="card"><div class="section-title">Step 1: Connect Wallet to Aster</div>';
-  h+='<div class="text-xs text-dim mb-2">Open Aster DEX and connect your bot wallet using its private key.</div>';
-  if(walletAddr){
-    h+='<div class="text-xs text-dim mb-1">Your wallet address:</div>';
-    h+='<div class="vault-box" style="font-size:11px;word-break:break-all;cursor:pointer" data-addr="'+walletAddr+'" onclick="copyAddr(this)">'+walletAddr+'<span style="color:var(--green);margin-left:6px">📋</span></div>';
-  }
-  h+='<a href="https://asterdex.com" target="_blank" class="btn btn-outline mt-2" style="width:100%;display:block;text-align:center;text-decoration:none">Open asterdex.com ↗</a>';
-  h+='<div class="text-xs text-dim mt-2" style="line-height:1.6">';
-  h+='• Click <strong style="color:#fff">Connect Wallet</strong> on asterdex.com<br>';
-  h+='• Import your bot wallet using its private key<br>';
-  h+='• Make sure you see your address in the top-right</div>';
-  h+='</div>';
-
-  h+='<div class="card"><div class="section-title">Step 2: Create API Wallet</div>';
-  h+='<div class="text-xs text-dim mb-2">Create an API Wallet that this bot will use to trade on your behalf.</div>';
-  h+='<a href="https://asterdex.com/en/api-wallet" target="_blank" class="btn btn-outline mt-1" style="width:100%;display:block;text-align:center;text-decoration:none">Open API Wallet Page ↗</a>';
-  h+='<div class="text-xs text-dim mt-2" style="line-height:1.6">';
-  h+='• Click <strong style="color:#fff">"Authorize new API wallet"</strong><br>';
-  h+='• Name it (e.g. "BUILD4 Bot")<br>';
-  h+='• <strong style="color:#fff">Approve the on-chain signature</strong> (this costs a tiny gas fee)<br>';
-  h+='• Enable permissions: <strong style="color:var(--green)">Read + Perps Trading</strong><br>';
-  h+='• <strong style="color:var(--yellow)">⚠️ SAVE the API Wallet private key</strong> — you\'ll need it below</div>';
-  h+='</div>';
-
-  h+='<div class="card"><div class="section-title">Step 3: Paste API Wallet Key</div>';
-  h+='<div class="text-xs text-dim mb-2">Paste the <strong style="color:#fff">API Wallet private key</strong> from Step 2. This is NOT your main wallet key.</div>';
-  h+='<input id="api-wallet-pk" type="password" class="input" placeholder="API Wallet private key (0x...)" autocomplete="off">';
-  h+='<button class="btn btn-green mt-2" style="width:100%" onclick="linkAsterApi()">🔗 Link API Wallet</button>';
-  h+='<div id="link-status"></div>';
-  h+='<div class="text-xs text-dim mt-2" style="color:var(--text3)">Your key is encrypted and stored securely. Never share it with anyone.</div>';
-  h+='</div>';
-
-  h+='</div>';
 
   h+='<div class="card" style="background:linear-gradient(135deg,rgba(14,203,129,0.05),transparent)">';
   h+='<div class="section-title">Your Balances</div>';
@@ -508,25 +480,46 @@ function showLinkFlow(){
   if(el) el.style.display=el.style.display==='none'?'block':'none';
 }
 
+async function autoLinkAster(){
+  var st=$('link-status');
+  if(!st)return;
+  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Connecting to Aster... This may take 10-15 seconds.</span></div>';
+  try{
+    var r=await api('/api/miniapp/link-aster',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+    if(r.success){
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span><strong>Connected to Aster!</strong> Your account is ready.</span></div>';
+      toast('✅ Connected to Aster!','ok');
+      D.asterApiWallet=r.apiWalletAddress||'auto';
+      setTimeout(function(){fetchAll().then(function(){renderDeposit();renderDash()})},2000);
+    }else{
+      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Auto-connect failed.')+'<br>Try the manual option below.</span></div>';
+      showLinkFlow();
+    }
+  }catch(e){
+    st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
+    showLinkFlow();
+  }
+}
+
 async function linkAsterApi(){
   var pkInput=$('api-wallet-pk');
-  var st=$('link-status');
+  var st=$('manual-link-status');
   if(!pkInput||!st)return;
   var pk=pkInput.value.trim();
   if(!pk){toast('Enter your API Wallet private key','err');return}
   if(!pk.startsWith('0x'))pk='0x'+pk;
-  if(pk.length!==66){toast('Invalid private key length (should be 66 chars with 0x)','err');return}
-  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Linking API Wallet...</span></div>';
+  if(pk.length!==66){toast('Invalid key length','err');return}
+  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Linking...</span></div>';
   try{
     var r=await api('/api/miniapp/link-aster',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiWalletPrivateKey:pk})});
     if(r.success){
-      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><div><strong>API Wallet Linked!</strong><br>Signer: <span class="mono text-xs" style="color:var(--green)">'+r.apiWalletAddress+'</span><br>Parent: <span class="mono text-xs" style="color:var(--blue)">'+(r.parentAddress||'')+'</span></div></div>';
-      toast('✅ Aster API Wallet linked!','ok');
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span>API Wallet linked!</span></div>';
+      toast('✅ Linked!','ok');
       pkInput.value='';
       D.asterApiWallet=r.apiWalletAddress;
-      setTimeout(function(){fetchAll().then(function(){renderDeposit()})},2000);
+      setTimeout(function(){fetchAll().then(function(){renderDeposit();renderDash()})},2000);
     }else{
-      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Linking failed')+'</span></div>';
+      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Failed')+'</span></div>';
     }
   }catch(e){
     st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
