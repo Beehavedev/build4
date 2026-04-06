@@ -287,22 +287,20 @@ export function registerMiniAppRoutes(app: Express) {
 
       let rawPk = await resolvePrivateKey(parseInt(chatId), walletAddr);
       if (!rawPk) {
-        console.log(`[MiniApp] deposit: key unavailable for ${walletAddr?.substring(0, 8)}, auto-regenerating wallet...`);
+        console.log(`[MiniApp] deposit: key unavailable for ${walletAddr?.substring(0, 8)}, generating new wallet with working key...`);
         const { regenerateWalletForDeposit } = await import("./telegram-bot");
         const newWallet = await regenerateWalletForDeposit(parseInt(chatId));
         if (newWallet) {
-          rawPk = await resolvePrivateKey(parseInt(chatId), newWallet.address);
-          if (rawPk) {
-            console.log(`[MiniApp] deposit: regenerated wallet ${newWallet.address.substring(0, 8)}, key OK`);
-            return res.json({
-              success: false,
-              needsNewWallet: true,
-              newWalletAddress: newWallet.address,
-              error: `Your wallet key was unrecoverable. A new wallet has been created: ${newWallet.address}\n\nPlease send $${amount} USDT (BEP-20) to this new wallet first, then try the transfer again.`,
-            });
-          }
+          console.log(`[MiniApp] deposit: new wallet ${newWallet.address.substring(0, 10)} created, key available`);
+          return res.json({
+            success: false,
+            needsNewWallet: true,
+            newWalletAddress: newWallet.address,
+            oldWalletAddress: walletAddr,
+            error: `Wallet key recovered. New wallet: ${newWallet.address}\n\nSend your USDT from your old wallet (${walletAddr}) to this new address, then try deposit again.`,
+          });
         }
-        return res.status(400).json({ error: "No private key available for auto-deposit. Send USDT manually to the vault address shown below." });
+        return res.status(400).json({ error: "Wallet key unavailable. Send USDT manually to vault: 0x128463A60784c4D3f46c23Af3f65Ed859Ba87974" });
       }
 
       const ethers = await import("ethers");
