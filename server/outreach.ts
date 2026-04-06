@@ -2,6 +2,34 @@ import { storage } from "./storage";
 import { getRevenueWalletAddress, getContractAddresses, isOnchainReady, getSupportedChains } from "./onchain";
 import type { OutreachTarget, OutreachCampaign } from "@shared/schema";
 
+const BLOCKED_IP_RANGES = [
+  /^127\./,
+  /^10\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^192\.168\./,
+  /^169\.254\./,
+  /^0\./,
+  /^::1$/,
+  /^fd/,
+  /^fe80:/,
+  /^localhost$/i,
+];
+
+function isUrlSafe(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    if (parsed.protocol !== "https:") return false;
+    const host = parsed.hostname;
+    for (const pattern of BLOCKED_IP_RANGES) {
+      if (pattern.test(host)) return false;
+    }
+    if (parsed.port && !["443", "80", ""].includes(parsed.port)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const KNOWN_AGENT_PLATFORMS = [
   {
     platform: "fetch_ai",
@@ -495,6 +523,7 @@ export async function runHttpOutreach(baseUrl: string): Promise<{
       let methodsUsed: string[] = [];
 
       for (const url of urls) {
+        if (!isUrlSafe(url)) continue;
         try {
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 8000);
@@ -528,6 +557,7 @@ export async function runHttpOutreach(baseUrl: string): Promise<{
         ];
 
         for (const postUrl of postEndpoints) {
+          if (!isUrlSafe(postUrl)) continue;
           try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 8000);
@@ -554,36 +584,38 @@ export async function runHttpOutreach(baseUrl: string): Promise<{
           } catch (e: any) {}
         }
 
-        try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 8000);
+        if (isUrlSafe(target.discoveryUrl)) {
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 8000);
 
-          await fetch(target.discoveryUrl, {
-            method: "OPTIONS",
-            headers: {
-              ...headers,
-              "X-Build4-Announcement": JSON.stringify(payloads.recruitment),
-            },
-            signal: controller.signal,
-          });
+            await fetch(target.discoveryUrl, {
+              method: "OPTIONS",
+              headers: {
+                ...headers,
+                "X-Build4-Announcement": JSON.stringify(payloads.recruitment),
+              },
+              signal: controller.signal,
+            });
 
-          clearTimeout(timeout);
-          methodsUsed.push("OPTIONS");
-        } catch (e: any) {}
+            clearTimeout(timeout);
+            methodsUsed.push("OPTIONS");
+          } catch (e: any) {}
 
-        try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 8000);
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 8000);
 
-          await fetch(target.discoveryUrl, {
-            method: "HEAD",
-            headers,
-            signal: controller.signal,
-          });
+            await fetch(target.discoveryUrl, {
+              method: "HEAD",
+              headers,
+              signal: controller.signal,
+            });
 
-          clearTimeout(timeout);
-          methodsUsed.push("HEAD");
-        } catch (e: any) {}
+            clearTimeout(timeout);
+            methodsUsed.push("HEAD");
+          } catch (e: any) {}
+        }
       }
 
       const status = discoveredEndpoints.length > 0 ? "reached" : "probed";
@@ -643,6 +675,7 @@ export async function runDirectRecruitment(baseUrl: string): Promise<{
     ];
 
     for (const ep of recruitmentEndpoints) {
+      if (!isUrlSafe(ep.url)) continue;
       messaged++;
       try {
         const controller = new AbortController();

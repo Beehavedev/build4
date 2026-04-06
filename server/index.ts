@@ -106,8 +106,13 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const origin = req.headers.origin;
   if (origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o))) {
     res.setHeader("Access-Control-Allow-Origin", origin);
-  } else if (origin && (origin.includes("walletconnect") || origin.includes("bridge.walletconnect.org") || origin.includes("verify.walletconnect.com"))) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
+  } else if (origin) {
+    try {
+      const hostname = new URL(origin).hostname;
+      if (hostname === "bridge.walletconnect.org" || hostname === "verify.walletconnect.com" || hostname === "relay.walletconnect.com" || hostname.endsWith(".walletconnect.com") || hostname.endsWith(".walletconnect.org")) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+      }
+    } catch {}
   }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, x-api-key");
@@ -123,7 +128,7 @@ app.use(helmet({
   contentSecurityPolicy: process.env.NODE_ENV === "production" ? {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],

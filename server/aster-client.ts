@@ -228,7 +228,7 @@ async function makeRequest(
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    console.log(`[AsterHMAC] ${method} ${path} signed=${signed}`);
+    console.log(`[AsterHMAC] ${method} ${path} signed=[REDACTED]`);
     const response = await fetch(url, {
       method,
       headers,
@@ -238,7 +238,7 @@ async function makeRequest(
     clearTimeout(timeoutId);
 
     const text = await response.text();
-    console.log(`[AsterHMAC] ${method} ${path} status=${response.status} content-type=${response.headers.get("content-type")} body=${text.substring(0, 500)}`);
+    console.log(`[AsterHMAC] ${method} ${path} status=${response.status}`);
     let data: any;
     try {
       data = JSON.parse(text);
@@ -474,11 +474,9 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
     const allHeaders: Record<string, string> = {};
     loginRes.headers.forEach((v, k) => { allHeaders[k] = v.substring(0, 80); });
     debugParts.push(`login: uid=${uid} fields=[${dataFields.join(',')}] tokenFields=[${potentialTokens.map(t => `${t.field}(${t.value.length}ch)`).join(',')}] cookie=${loginCookies.length}ch hdrs=[${Object.keys(allHeaders).join(',')}]`);
-    console.log(`[Aster] Login parsed: uid=${uid} dataFields=${JSON.stringify(dataFields)} potentialTokens=${potentialTokens.map(t => `${t.field}(${t.value.length}ch)`).join(',')} cookieLen=${loginCookies.length} responseHeaders=${JSON.stringify(allHeaders).substring(0, 500)}`);
+    console.log(`[Aster] Login parsed: uid=${uid} cookieLen=${loginCookies.length}`);
     if (loginData?.data) {
-      for (const [k, v] of Object.entries(loginData.data)) {
-        console.log(`[Aster] Login data.${k} = type=${typeof v} len=${String(v).length} preview=${String(v).substring(0, 40)}`);
-      }
+      console.log(`[Aster] Login data fields: ${Object.keys(loginData.data).join(",")}`);
     }
 
     await new Promise(r => setTimeout(r, 500));
@@ -505,7 +503,7 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
       }
     }
     debugParts.push(`xsrf=${xsrfToken.length}ch cookies=[${parsedCookies.map(c => c.split('=')[0]).join(',')}]`);
-    console.log(`[Aster] XSRF token: ${xsrfToken.length}ch, cookie names: ${parsedCookies.map(c => c.split('=')[0]).join(',')}`);
+    console.log(`[Aster] XSRF token: ${xsrfToken.length}ch, cookies: ${parsedCookies.length} set`);
 
     const browserHeaders: Record<string, string> = {
       "Content-Type": "application/json",
@@ -1115,7 +1113,7 @@ export async function asterV3Deposit(
 
     const allowance = await usdt.allowance(wallet.address, ASTER_VAULT_BSC);
     if (allowance < amount) {
-      const approveTx = await usdt.approve(ASTER_VAULT_BSC, MaxUint256);
+      const approveTx = await usdt.approve(ASTER_VAULT_BSC, amount);
       await approveTx.wait();
     }
 

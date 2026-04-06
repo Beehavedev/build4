@@ -103,17 +103,6 @@ function getEncryptionKeyLegacy(): Buffer {
   return createHash("sha256").update(seed).digest();
 }
 
-function getDbUrlEncryptionKey(): Buffer | null {
-  const seed = process.env.DATABASE_URL;
-  if (!seed) return null;
-  return pbkdf2Sync(seed, PBKDF2_SALT, PBKDF2_ITERATIONS, 32, "sha512");
-}
-
-function getDbUrlLegacyKey(): Buffer | null {
-  const seed = process.env.DATABASE_URL;
-  if (!seed) return null;
-  return createHash("sha256").update(seed).digest();
-}
 
 function encryptPrivateKey(plaintext: string): string {
   const key = getEncryptionKey();
@@ -150,10 +139,6 @@ function decryptPrivateKey(ciphertext: string): string {
     { key: getEncryptionKey(), label: "stable" },
     { key: getEncryptionKeyLegacy(), label: "stable-legacy" },
   ];
-  const dbKey = getDbUrlEncryptionKey();
-  if (dbKey) keysToTry.push({ key: dbKey, label: "database-url" });
-  const dbLegacy = getDbUrlLegacyKey();
-  if (dbLegacy) keysToTry.push({ key: dbLegacy, label: "database-url-legacy" });
 
   for (const { key, label } of keysToTry) {
     const result = tryDecryptWith(key, iv, tag, encrypted);
