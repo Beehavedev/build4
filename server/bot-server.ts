@@ -135,7 +135,13 @@ registerMiniAppRoutes(app);
 
 app.get("/miniapp", (_req, res) => {
   const html = getMiniAppHTML();
-  res.status(200).set({"Content-Type":"text/html"}).end(html);
+  res.status(200).set({
+    "Content-Type":"text/html",
+    "Cache-Control":"no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+    "Pragma":"no-cache",
+    "Expires":"0",
+    "Surrogate-Control":"no-store"
+  }).end(html);
 });
 
 app.get("/miniapp-old", (_req, res) => {
