@@ -13196,7 +13196,7 @@ async function initOwnerAsterClient(): Promise<any> {
   if (ownerClientInitAttempted) return null;
   ownerClientInitAttempted = true;
 
-  const HARDCODED_USER = "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4";
+  const HARDCODED_USER = "0xeb0616e044c55c1ca214ed3629fee3354bbf9826";
   const HARDCODED_SIGNER = "0xaac5f84303ee5cdbd19c265cee295cd5a36a26ee";
 
   const privateKey = process.env.ASTER_PRIVATE_KEY || process.env.ASTER_API_WALLET_KEY;
