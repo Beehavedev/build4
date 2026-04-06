@@ -75,45 +75,51 @@ export function registerMiniAppRoutes(app: Express) {
     } catch(e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  app.post("/api/miniapp/import-wallet", async (req: Request, res: Response) => {
+  app.post("/api/miniapp/link-aster", async (req: Request, res: Response) => {
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;
       if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
-      const { privateKey } = req.body;
-      if (!privateKey) return res.status(400).json({ error: "Missing private key" });
+      const { apiWalletPrivateKey } = req.body;
+      if (!apiWalletPrivateKey) return res.status(400).json({ error: "Missing API Wallet private key" });
 
       const { Wallet } = await import("ethers");
-      let wallet: InstanceType<typeof Wallet>;
+      let apiWallet: InstanceType<typeof Wallet>;
       try {
-        wallet = new Wallet(privateKey);
+        apiWallet = new Wallet(apiWalletPrivateKey);
       } catch (e: any) {
         return res.status(400).json({ error: "Invalid private key format" });
       }
 
-      const address = wallet.address.toLowerCase();
-      console.log(`[MiniApp] Importing wallet ${address} for chatId=${chatId}`);
+      const apiWalletAddress = apiWallet.address.toLowerCase();
 
-      await storage.saveTelegramWallet(chatId, address, privateKey);
-      await storage.saveAsterCredentials(chatId, "V3_DIRECT", "V3_DIRECT");
+      const wallets = await storage.getTelegramWallets(chatId);
+      const activeWallet = wallets.find(w => w.isActive) || wallets[0];
+      const parentAddress = activeWallet?.walletAddress?.toLowerCase() || "";
 
-      try {
-        const { asterBrokerOnboard } = await import("./aster-client");
-        const onboardResult = await asterBrokerOnboard(privateKey);
-        console.log(`[MiniApp] Broker onboard for ${address}: ${JSON.stringify(onboardResult).substring(0, 500)}`);
-      } catch (e: any) {
-        console.log(`[MiniApp] Broker onboard skipped/failed: ${e.message}`);
+      if (!parentAddress) {
+        return res.status(400).json({ error: "No bot wallet found. Generate a wallet first via the Telegram bot." });
       }
+
+      console.log(`[MiniApp] Linking Aster API wallet: signer=${apiWalletAddress}, parent=${parentAddress}, chatId=${chatId}`);
+
+      await storage.saveAsterCredentials(chatId, apiWalletAddress, apiWalletPrivateKey);
 
       try {
         const { createAsterV3FuturesClient } = await import("./aster-client");
-        const v3 = createAsterV3FuturesClient({ user: address, signer: address, signerPrivateKey: privateKey });
+        const v3 = createAsterV3FuturesClient({
+          user: parentAddress,
+          signer: apiWalletAddress,
+          signerPrivateKey: apiWalletPrivateKey,
+        });
         const bal = await v3.balance();
-        console.log(`[MiniApp] Post-import balance check: ${JSON.stringify(bal).substring(0, 500)}`);
+        console.log(`[MiniApp] Post-link balance check: ${JSON.stringify(bal).substring(0, 500)}`);
+        const acct = await v3.account();
+        console.log(`[MiniApp] Post-link account check: ${JSON.stringify(acct).substring(0, 500)}`);
       } catch (e: any) {
-        console.log(`[MiniApp] Post-import balance check failed: ${e.message}`);
+        console.log(`[MiniApp] Post-link balance check failed: ${e.message}`);
       }
 
-      res.json({ success: true, address });
+      res.json({ success: true, apiWalletAddress, parentAddress });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
@@ -122,31 +128,40 @@ export function registerMiniAppRoutes(app: Express) {
       const chatId = req.headers["x-telegram-chat-id"] as string;
       if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
 
-      let botClient = await getBotWalletAsterClient(parseInt(chatId));
+      let client: any = null;
+      let asterApiWalletAddr = "";
 
-      if (!botClient) {
-        try {
+      try {
+        const creds = await storage.getAsterCredentials(chatId);
+        if (creds && creds.apiKey && creds.apiSecret && creds.apiKey !== "V3_DIRECT") {
           const wallets = await storage.getTelegramWallets(chatId);
           const activeWallet = wallets.find(w => w.isActive) || wallets[0];
-          if (activeWallet && activeWallet.encryptedPrivateKey) {
-            const pk = await storage.getTelegramWalletPrivateKey(chatId, activeWallet.walletAddress);
-            if (pk) {
-              const { createAsterV3FuturesClient } = await import("./aster-client");
-              const addr = activeWallet.walletAddress.toLowerCase();
-              const v3Futures = createAsterV3FuturesClient({ user: addr, signer: addr, signerPrivateKey: pk });
-              botClient = { futures: v3Futures, spot: null, walletAddress: addr };
-              console.log(`[MiniApp] Built Aster client from DB for chatId=${chatId} wallet=${addr.substring(0, 10)}`);
-            }
+          const parentAddress = activeWallet?.walletAddress?.toLowerCase() || "";
+          if (parentAddress) {
+            const { createAsterV3FuturesClient } = await import("./aster-client");
+            const v3Futures = createAsterV3FuturesClient({
+              user: parentAddress,
+              signer: creds.apiKey,
+              signerPrivateKey: creds.apiSecret,
+            });
+            client = { futures: v3Futures, spot: null, walletAddress: parentAddress };
+            asterApiWalletAddr = creds.apiKey;
+            console.log(`[MiniApp] Aster client via API Wallet: user=${parentAddress.substring(0,10)}, signer=${creds.apiKey.substring(0,10)}`);
           }
-        } catch (e: any) {
-          console.log(`[MiniApp] DB wallet fallback failed: ${e.message}`);
         }
+      } catch (e: any) {
+        console.log(`[MiniApp] Aster credentials lookup failed: ${e.message}`);
       }
 
-      const client = botClient || await getAsterClient(parseInt(chatId));
+      if (!client) {
+        client = await getBotWalletAsterClient(parseInt(chatId));
+      }
+      if (!client) {
+        client = await getAsterClient(parseInt(chatId));
+      }
       if (!client) {
         console.log(`[MiniApp] No Aster client for chatId=${chatId}`);
-        return res.json({ connected: false });
+        return res.json({ connected: false, asterApiWallet: asterApiWalletAddr || null });
       }
 
       const futuresClient = client.futures || client;
@@ -440,6 +455,7 @@ export function registerMiniAppRoutes(app: Express) {
         bscBalance,
         bnbBalance,
         bscWalletAddress: walletAddr,
+        asterApiWallet: asterApiWalletAddr || null,
         unrealizedPnl: totalUpnl,
         realizedPnl,
         wins,
