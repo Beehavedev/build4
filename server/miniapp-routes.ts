@@ -173,10 +173,30 @@ export function registerMiniAppRoutes(app: Express) {
       }
 
       if (!client) {
-        client = await getBotWalletAsterClient(parseInt(chatId));
-      }
-      if (!client) {
-        client = await getAsterClient(parseInt(chatId));
+        try {
+          const wallets = await storage.getTelegramWallets(chatId);
+          const activeWallet = wallets.find(w => w.isActive) || wallets[0];
+          const parentAddress = activeWallet?.walletAddress?.toLowerCase() || "";
+          if (parentAddress) {
+            const pk = await storage.getTelegramWalletPrivateKey(chatId, parentAddress);
+            if (pk) {
+              console.log(`[MiniApp] No credentials found, attempting auto-onboard for chatId=${chatId}`);
+              const { asterBrokerOnboard, createAsterFuturesClient } = await import("./aster-client");
+              const result = await asterBrokerOnboard(pk);
+              if (result.success && result.apiKey && result.apiSecret) {
+                await storage.saveAsterCredentials(chatId, result.apiKey, result.apiSecret);
+                const hmacClient = createAsterFuturesClient({ apiKey: result.apiKey, apiSecret: result.apiSecret });
+                client = { futures: hmacClient, spot: null, walletAddress: parentAddress };
+                asterApiWalletAddr = "auto";
+                console.log(`[MiniApp] Auto-onboard succeeded for chatId=${chatId}`);
+              } else {
+                console.log(`[MiniApp] Auto-onboard failed for chatId=${chatId}: ${result.error || 'unknown'}`);
+              }
+            }
+          }
+        } catch (e: any) {
+          console.log(`[MiniApp] Auto-onboard attempt failed: ${e.message}`);
+        }
       }
       if (!client) {
         console.log(`[MiniApp] No Aster client for chatId=${chatId}`);
