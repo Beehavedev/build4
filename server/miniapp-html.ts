@@ -124,11 +124,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
-const VAULT='0xaac5f84303ee5cdbd19c265cee295cd5a36a26ee';
 let D={connected:false,availableMargin:0,walletBalance:0,bscBalance:0,bnbBalance:0,bscWalletAddress:'',unrealizedPnl:0,realizedPnl:0,wins:0,losses:0,positions:[],recentIncome:[],spotBalance:0};
 let M={markets:[]};
 let AG=null;
-let P={user:null,deposits:[],stats:{totalDeposits:0,totalUsers:0,totalPnl:0},poolBalance:0,pnlPercent:0};
 let lastUpdate=0;
 let refreshTimer=null;
 
@@ -171,14 +169,12 @@ function startAutoRefresh(){
 
 async function fetchAll(){
   try{
-    const [a,m,pu]=await Promise.all([
+    const [a,m]=await Promise.all([
       api('/api/miniapp/account').catch(e=>{console.error('account err',e);return null}),
       api('/api/miniapp/markets').catch(e=>{console.error('markets err',e);return null}),
-      api('/api/miniapp/pool/user').catch(e=>{console.error('pool err',e);return null}),
     ]);
     if(a&&a.connected!==undefined){D={...D,...a}}
     if(m&&m.markets)M=m;
-    if(pu){P={...P,...pu}}
     lastUpdate=Date.now();
     try{$('hdr-updated').textContent='Updated'}catch(e){}
   }catch(e){console.error('fetchAll error',e)}
@@ -205,29 +201,23 @@ function renderDash(){
     return;
   }
   let h='';
-  var pu=P.user||{};
-  var myDep=parseFloat(pu.total_deposited||'0');
-  var myShare=parseFloat(pu.current_share||'0');
-  var myPnl=parseFloat(pu.total_pnl||'0');
-  var poolBal=D.walletBalance||D.availableMargin||0;
-  var myValue=myShare>0?myShare*poolBal:myDep;
-  var poolUsers=P.stats?.totalUsers||0;
+  var totalBal=(D.walletBalance||0)+(D.bscBalance||0)+(D.spotBalance||0);
+  var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
 
   h+='<div class="card card-accent" style="position:relative;overflow:hidden">';
   h+='<div style="position:absolute;top:-20px;right:-20px;width:120px;height:120px;background:radial-gradient(circle,rgba(14,203,129,0.15),transparent);border-radius:50%"></div>';
-  h+='<div class="label" style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text2)">Your Portfolio Value</div>';
-  h+='<div class="val" style="font-size:32px;margin:4px 0">$'+fmt(myValue)+'</div>';
+  h+='<div class="label" style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text2)">Your Account Balance</div>';
+  h+='<div class="val" style="font-size:32px;margin:4px 0">$'+fmt(totalBal)+'</div>';
   h+='<div style="display:flex;gap:12px;margin-top:8px">';
-  h+='<div><span class="text-xs text-dim">Deposited</span><div class="val-xs text-w">$'+fmt(myDep)+'</div></div>';
-  h+='<div><span class="text-xs text-dim">Your PnL</span><div class="val-xs '+pnlClass(myPnl)+'">'+(myPnl>=0?'+':'')+' $'+fmt(Math.abs(myPnl))+'</div></div>';
-  h+='<div><span class="text-xs text-dim">Pool Share</span><div class="val-xs text-w">'+(myShare*100).toFixed(2)+'%</div></div>';
+  h+='<div><span class="text-xs text-dim">Futures</span><div class="val-xs text-w">$'+fmt(D.walletBalance)+'</div></div>';
+  h+='<div><span class="text-xs text-dim">BSC Wallet</span><div class="val-xs text-w">$'+fmt(D.bscBalance)+'</div></div>';
+  h+='<div><span class="text-xs text-dim">Total PnL</span><div class="val-xs '+pnlClass(totalPnl)+'">'+(totalPnl>=0?'+':'')+' $'+fmt(Math.abs(totalPnl))+'</div></div>';
   h+='</div></div>';
 
   h+='<div class="card" style="background:linear-gradient(135deg,rgba(14,203,129,0.08),rgba(14,203,129,0.02))">';
-  h+='<div class="row"><div><div class="text-xs text-dim" style="letter-spacing:0.5px">POOL TOTAL BALANCE</div><div class="val-sm text-w" style="font-size:22px">$'+fmt(poolBal)+'</div></div>';
-  h+='<div style="text-align:right"><div class="text-xs text-dim">INVESTORS</div><div class="val-xs text-w">'+poolUsers+'</div></div></div>';
-  h+='<div class="grid3 mt-3">';
-  h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Futures Margin</div><div class="val-xs text-w mt-1">$'+fmt(D.availableMargin)+'</div></div>';
+  h+='<div class="section-title">Trading Account</div>';
+  h+='<div class="grid3 mt-2">';
+  h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Available Margin</div><div class="val-xs text-w mt-1">$'+fmt(D.availableMargin)+'</div></div>';
   h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Unrealized PnL</div><div class="val-xs '+pnlClass(D.unrealizedPnl)+' mt-1">'+(D.unrealizedPnl>=0?'+':'')+' $'+fmt(Math.abs(D.unrealizedPnl))+'</div></div>';
   h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Realized PnL</div><div class="val-xs '+pnlClass(D.realizedPnl)+' mt-1">'+(D.realizedPnl>=0?'+':'')+' $'+fmt(Math.abs(D.realizedPnl))+'</div></div>';
   h+='</div>';
@@ -272,55 +262,35 @@ function shortAddr(a){return a?(a.slice(0,6)+'...'+a.slice(-4)):'-'}
 function renderDeposit(){
   const el=$('p-deposit');
   let h='';
-  var pu=P.user||{};
-  var myDep=parseFloat(pu.total_deposited||'0');
+  var walletAddr=D.bscWalletAddress||'';
 
   h+='<div class="card card-accent" style="text-align:center;padding:20px">';
-  h+='<div class="label" style="font-size:13px;letter-spacing:0.5px">Deposit USDT to the AI Trading Pool</div>';
-  h+='<div style="font-size:11px;color:var(--text2);margin:8px 0 16px">Send <strong style="color:#fff">USDT (BEP-20)</strong> to the vault address below</div>';
-  h+='<div style="background:var(--bg);border-radius:12px;padding:16px;margin:0 auto;max-width:280px">';
-  h+='<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data='+VAULT+'&bgcolor=1a1d21&color=ffffff&margin=8" style="width:180px;height:180px;border-radius:8px;margin:0 auto;display:block" alt="Vault QR">';
-  h+='</div>';
-  h+='<div class="vault-box mt-3" id="vault-box" onclick="copyVault()" style="font-size:11px;word-break:break-all;cursor:pointer">'+VAULT+'<div class="text-xs mt-1" style="color:var(--green)" id="copy-label">Tap to copy</div></div>';
+  h+='<div class="label" style="font-size:13px;letter-spacing:0.5px">Fund Your Trading Account</div>';
+  h+='<div style="font-size:11px;color:var(--text2);margin:8px 0 16px">Send <strong style="color:#fff">USDT (BEP-20)</strong> to your personal wallet below</div>';
+  if(walletAddr){
+    h+='<div style="background:var(--bg);border-radius:12px;padding:16px;margin:0 auto;max-width:280px">';
+    h+='<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data='+walletAddr+'&bgcolor=1a1d21&color=ffffff&margin=8" style="width:180px;height:180px;border-radius:8px;margin:0 auto;display:block" alt="Wallet QR">';
+    h+='</div>';
+    h+='<div class="vault-box mt-3" style="font-size:11px;word-break:break-all;cursor:pointer" data-addr="'+walletAddr+'" onclick="copyAddr(this)">'+walletAddr+'<div class="text-xs mt-1" style="color:var(--green)">Tap to copy</div></div>';
+  }else{
+    h+='<div class="text-sm text-dim" style="padding:20px">Loading wallet address...</div>';
+  }
   h+='<div class="alert alert-warn mt-3" style="text-align:left"><span>⚠️</span><span>Only send USDT on <strong>BSC (BNB Smart Chain)</strong>. Other networks will be lost.</span></div>';
   h+='</div>';
 
-  h+='<div class="card"><div class="section-title">Confirm Your Deposit</div>';
-  h+='<div class="text-xs text-dim mb-2">After sending USDT, paste your BSC transaction hash to link the deposit to your account.</div>';
-  h+='<input id="pool-tx" class="input" placeholder="0x... transaction hash (66 chars)" maxlength="66" oninput="validatePoolTx()">';
-  h+='<input id="pool-amount" type="number" class="input mt-2" placeholder="Amount (USDT)" step="0.01" min="1">';
-  h+='<button id="pool-submit-btn" class="btn btn-green mt-3" style="width:100%" disabled onclick="submitPoolDeposit()">Submit Deposit</button>';
-  h+='<div id="pool-deposit-status"></div>';
-  h+='</div>';
-
-  if(P.deposits&&P.deposits.length>0){
-    h+='<div class="card"><div class="section-title">Your Deposits</div>';
-    P.deposits.forEach(function(d){
-      var statusColor=d.status==='credited'?'var(--green)':d.status==='verified'?'#f0b90b':'var(--text2)';
-      var statusIcon=d.status==='credited'?'✅':d.status==='verified'?'⏳':'🔄';
-      var txShort=d.tx_hash?(d.tx_hash.substring(0,10)+'...'):'—';
-      h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">';
-      h+='<div><div class="text-sm text-w fw-600">$'+fmt(d.amount)+'</div><div class="text-xs text-dim mono">'+txShort+'</div></div>';
-      h+='<div style="text-align:right"><span style="color:'+statusColor+';font-size:12px">'+statusIcon+' '+d.status+'</span>';
-      if(d.created_at){h+='<div class="text-xs text-dim">'+new Date(d.created_at).toLocaleDateString()+'</div>'}
-      h+='</div></div>';
-    });
-    h+='</div>';
-  }
-
   h+='<div class="card" style="background:linear-gradient(135deg,rgba(14,203,129,0.05),transparent)">';
-  h+='<div class="section-title">Your Account Summary</div>';
+  h+='<div class="section-title">Your Balances</div>';
   h+='<div class="grid3 mt-2">';
-  h+='<div style="text-align:center;padding:12px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Total Deposited</div><div class="val-sm text-w mt-1">$'+fmt(myDep)+'</div></div>';
   h+='<div style="text-align:center;padding:12px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">BSC Wallet</div><div class="val-sm text-w mt-1">$'+fmt(D.bscBalance)+'</div></div>';
+  h+='<div style="text-align:center;padding:12px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Spot</div><div class="val-sm text-w mt-1">$'+fmt(D.spotBalance)+'</div></div>';
   h+='<div style="text-align:center;padding:12px;background:var(--green-bg);border-radius:8px"><div class="text-xs" style="color:var(--green)">Futures</div><div class="val-sm text-w mt-1">$'+fmt(D.walletBalance)+'</div></div>';
   h+='</div></div>';
 
   if(D.bscWalletAddress){
-    h+='<div class="card"><div class="section-title">Quick Deposit from BSC Wallet</div>';
-    h+='<div class="text-xs text-dim mb-2">Your bot wallet: <span class="mono" style="color:var(--blue);cursor:pointer" data-addr="'+D.bscWalletAddress+'" onclick="copyAddr(this)">'+shortAddr(D.bscWalletAddress)+' 📋</span> · $'+fmt(D.bscBalance)+' USDT</div>';
-    if(D.bnbBalance<0.001){h+='<div class="alert alert-warn mt-0 mb-2"><span>⚠️</span><span>Low BNB! Send at least 0.001 BNB for gas fees.</span></div>'}
-    h+='<div class="text-xs text-dim mb-3">Transfer USDT from your BSC wallet to Aster to start trading.</div>';
+    h+='<div class="card"><div class="section-title">Deposit to Aster Futures</div>';
+    h+='<div class="text-xs text-dim mb-2">Your wallet: <span class="mono" style="color:var(--blue);cursor:pointer" data-addr="'+D.bscWalletAddress+'" onclick="copyAddr(this)">'+shortAddr(D.bscWalletAddress)+' 📋</span> · $'+fmt(D.bscBalance)+' USDT</div>';
+    if(D.bnbBalance<0.001){h+='<div class="alert alert-warn mt-0 mb-2"><span>⚠️</span><span>Low BNB! Send at least 0.001 BNB to your wallet for gas fees.</span></div>'}
+    h+='<div class="text-xs text-dim mb-3">Transfer USDT from your wallet into Aster Futures to start trading.</div>';
     var transferAmts=[1,5,10,25];
     h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">';
     transferAmts.forEach(function(a){
@@ -329,7 +299,7 @@ function renderDeposit(){
     });
     h+='</div>';
     if(D.bscBalance>0){
-      h+='<button class="btn btn-green mt-3" style="width:100%" onclick="doTransfer('+Math.floor(D.bscBalance*100)/100+')">Transfer All ($'+fmt(D.bscBalance)+')</button>';
+      h+='<button class="btn btn-green mt-3" style="width:100%" onclick="doTransfer('+Math.floor(D.bscBalance*100)/100+')">Deposit All ($'+fmt(D.bscBalance)+') to Aster</button>';
     }
     h+='<div id="transfer-status"></div>';
     h+='</div>';
@@ -397,43 +367,6 @@ async function doTransfer(amount){
   }
 }
 
-function validatePoolTx(){
-  var tx=document.getElementById('pool-tx');
-  var btn=document.getElementById('pool-submit-btn');
-  if(!tx||!btn)return;
-  var v=tx.value.trim();
-  btn.disabled=!(v.length===66&&v.startsWith('0x'));
-}
-
-async function submitPoolDeposit(){
-  var tx=document.getElementById('pool-tx');
-  var amt=document.getElementById('pool-amount');
-  var st=document.getElementById('pool-deposit-status');
-  if(!tx||!amt||!st)return;
-  var txHash=tx.value.trim();
-  var amount=parseFloat(amt.value);
-  if(!txHash||txHash.length!==66){toast('Enter a valid TX hash','err');return}
-  if(!amount||amount<=0){toast('Enter the deposit amount','err');return}
-  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Verifying deposit on BSC...</span></div>';
-  try{
-    var r=await api('/api/miniapp/pool/deposit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({txHash:txHash,amount:amount})});
-    if(r.success){
-      var icon=r.bridged?'🎉':r.verified?'✅':'📥';
-      var extra='';
-      if(r.bridged)extra='<br><span style="color:var(--green);font-size:11px">Auto-forwarded to Aster trading pool!</span>';
-      if(r.bridgeTx)extra+='<br><a href="https://bscscan.com/tx/'+r.bridgeTx+'" target="_blank" style="color:var(--green);font-size:11px">Bridge TX on BscScan</a>';
-      if(r.bridgeError)extra+='<br><span style="color:var(--red);font-size:11px">Bridge: '+r.bridgeError+'</span>';
-      st.innerHTML='<div class="alert alert-ok mt-3"><span>'+icon+'</span><div><strong>'+(r.message||'Deposit recorded!')+'</strong>'+extra+'<br><a href="https://bscscan.com/tx/'+txHash+'" target="_blank" style="color:var(--green);font-size:11px">View deposit on BscScan</a></div></div>';
-      toast(icon+' '+(r.message||'Deposit submitted!'),'ok');
-      tx.value='';amt.value='';
-      setTimeout(function(){fetchAll().then(function(){renderDeposit()})},3000);
-    }else{
-      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Failed')+'</span></div>';
-    }
-  }catch(e){
-    st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
-  }
-}
 
 async function forceRefresh(){
   toast('Refreshing...','info');
@@ -508,14 +441,7 @@ async function spotToFutures(){
   }
 }
 
-function copyVault(){
-  navigator.clipboard.writeText(VAULT).then(()=>{
-    $('vault-box').classList.add('copied');
-    $('copy-label').textContent='✓ Copied!';
-    toast('✓ Vault address copied','ok');
-    setTimeout(()=>{$('vault-box').classList.remove('copied');$('copy-label').textContent='Tap to copy address'},2000);
-  }).catch(()=>{toast('Copy failed — long press to select','err')});
-}
+
 
 function validateTxHash(){
   const v=$('txhash').value.trim();
