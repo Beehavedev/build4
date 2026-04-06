@@ -16,7 +16,34 @@ export function registerMiniAppRoutes(app: Express) {
       const signerAddr = process.env.ASTER_SIGNER_ADDRESS || derivedAddr;
       const userAddr = process.env.ASTER_USER_ADDRESS || "";
 
-      const candidates = [...new Set([userAddr, signerAddr, derivedAddr].filter(Boolean).map(a => a.toLowerCase()))];
+      const parentAddr = process.env.ASTER_PARENT_ADDRESS || "";
+
+      let discoveredAddr = "";
+      try {
+        const nonceRes = await fetch("https://pro-api.asterdex.com/public/future/web3/get-nonce", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "clientType": "web" },
+          body: JSON.stringify({ type: "LOGIN", sourceAddr: derivedAddr }),
+        });
+        const nonceData = await nonceRes.json();
+        if (nonceData?.data?.nonce) {
+          const loginMsg = `You are signing into Astherus ${nonceData.data.nonce}`;
+          const loginSig = await wallet.signMessage(loginMsg);
+          const loginRes = await fetch("https://pro-api.asterdex.com/public/future/web3/ae/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "clientType": "web" },
+            body: JSON.stringify({ signature: loginSig, sourceAddr: derivedAddr, chainId: 56 }),
+          });
+          const loginData = await loginRes.json();
+          const ld = loginData?.data;
+          if (ld) {
+            const pa = ld.address || ld.walletAddress || ld.userAddress || ld.parentAddress || ld.mainAddress || "";
+            if (pa && pa.startsWith("0x")) discoveredAddr = pa.toLowerCase();
+          }
+        }
+      } catch (e: any) {}
+
+      const candidates = [...new Set([userAddr, signerAddr, derivedAddr, parentAddr, discoveredAddr].filter(Boolean).map(a => a.toLowerCase()))];
       const results: any[] = [];
 
       for (const candidateUser of candidates) {
@@ -44,7 +71,7 @@ export function registerMiniAppRoutes(app: Express) {
       }
 
       const winner = results.find(r => r.walletBal > 0 || r.availBal > 0);
-      res.json({ derivedAddr, signerAddr, userAddr, candidates, results, winner: winner || "NONE - no address has balance", hint: winner ? `Set ASTER_USER_ADDRESS=${winner.user}` : "Check which address holds funds on asterdex.com" });
+      res.json({ derivedAddr, signerAddr, userAddr, parentAddr, discoveredAddr: discoveredAddr || "none", candidates, results, winner: winner || "NONE - no address has balance", hint: winner ? `Set ASTER_USER_ADDRESS=${winner.user}` : "Try setting ASTER_PARENT_ADDRESS to the wallet that created your API wallet on asterdex.com" });
     } catch(e: any) { res.status(500).json({ error: e.message }); }
   });
 
@@ -130,7 +157,41 @@ export function registerMiniAppRoutes(app: Express) {
             const derivedAddr = w.address;
             const signerAddr = process.env.ASTER_SIGNER_ADDRESS || derivedAddr;
             const userAddr = process.env.ASTER_USER_ADDRESS || "";
-            const candidates = [...new Set([signerAddr, derivedAddr, userAddr].filter(Boolean).map(a => a.toLowerCase()))];
+            const parentAddr = process.env.ASTER_PARENT_ADDRESS || "";
+
+            let discoveredAddr = "";
+            try {
+              const nonceRes = await fetch("https://pro-api.asterdex.com/public/future/web3/get-nonce", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "clientType": "web" },
+                body: JSON.stringify({ type: "LOGIN", sourceAddr: derivedAddr }),
+              });
+              const nonceData = await nonceRes.json();
+              if (nonceData?.data?.nonce) {
+                const loginMsg = `You are signing into Astherus ${nonceData.data.nonce}`;
+                const loginSig = await w.signMessage(loginMsg);
+                const loginRes = await fetch("https://pro-api.asterdex.com/public/future/web3/ae/login", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "clientType": "web" },
+                  body: JSON.stringify({ signature: loginSig, sourceAddr: derivedAddr, chainId: 56 }),
+                });
+                const loginData = await loginRes.json();
+                console.log(`[MiniApp] Aster login discovery: code=${loginData?.code} data=${JSON.stringify(loginData?.data).substring(0, 300)}`);
+                const ld = loginData?.data;
+                if (ld) {
+                  const possibleAddr = ld.address || ld.walletAddress || ld.userAddress || ld.parentAddress || ld.mainAddress || "";
+                  if (possibleAddr && possibleAddr.startsWith("0x")) {
+                    discoveredAddr = possibleAddr.toLowerCase();
+                    console.log(`[MiniApp] Discovered parent address from login: ${discoveredAddr}`);
+                  }
+                }
+              }
+            } catch (e: any) {
+              console.log(`[MiniApp] Login discovery failed: ${e.message?.substring(0, 150)}`);
+            }
+
+            const candidates = [...new Set([signerAddr, derivedAddr, userAddr, parentAddr, discoveredAddr].filter(Boolean).map(a => a.toLowerCase()))];
+            console.log(`[MiniApp] Trying ${candidates.length} candidate user addresses: ${candidates.map(c => c.substring(0, 10)).join(', ')}`);
 
             for (const candidateUser of candidates) {
               try {
