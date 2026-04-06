@@ -320,12 +320,13 @@ async function sendNativePayment(toAddress: string, amountBnb: string, chainKey?
     console.log(`[TwitterAgent] Payment on ${getChainLabel(targetChain)}: ${receipt.hash} (${amountBnb} ${getChainCurrency(targetChain)} -> ${toAddress})`);
     return { success: true, txHash: receipt.hash, chainKey: targetChain };
   } catch (e: any) {
-    console.error(`[TwitterAgent] Payment on ${getChainLabel(targetChain)} failed:`, e.message);
+    const safeMsg = (e.message || "Unknown error").replace(/0x[a-fA-F0-9]{64}/g, "[REDACTED_KEY]").substring(0, 200);
+    console.error(`[TwitterAgent] Payment on ${getChainLabel(targetChain)} failed: ${safeMsg}`);
     if (targetChain !== "bnbMainnet") {
       console.log(`[TwitterAgent] Falling back to BNB Chain for payment`);
       return sendNativePayment(toAddress, amountBnb, "bnbMainnet");
     }
-    return { success: false, error: e.message?.substring(0, 200) || "Unknown error" };
+    return { success: false, error: safeMsg };
   }
 }
 

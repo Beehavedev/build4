@@ -248,10 +248,19 @@ export async function registerRoutes(
 
   app.post("/api/privacy/transfer/:id/prove", async (req: Request, res: Response) => {
     try {
-      const { secret } = req.body;
+      const { secret, walletAddress } = req.body;
+      if (!walletAddress) {
+        res.status(400).json({ error: "walletAddress required for authorization" });
+        return;
+      }
       const transfer = await storage.getPrivacyTransfer(req.params.id);
       if (!transfer) {
         res.status(404).json({ error: "Transfer not found" });
+        return;
+      }
+      const proveAgent = await storage.getAgent(transfer.agentId);
+      if (!proveAgent || proveAgent.creatorWallet?.toLowerCase() !== walletAddress.toLowerCase()) {
+        res.status(403).json({ error: "Not authorized" });
         return;
       }
       if (transfer.status !== "deposited" && transfer.status !== "pending") {
@@ -313,12 +322,14 @@ export async function registerRoutes(
   app.get("/api/privacy/transfers/:agentId", async (req: Request, res: Response) => {
     try {
       const walletAddress = req.query.wallet as string;
-      if (walletAddress) {
-        const agent = await storage.getAgent(req.params.agentId);
-        if (!agent || agent.creatorWallet?.toLowerCase() !== walletAddress.toLowerCase()) {
-          res.status(403).json({ error: "Not authorized" });
-          return;
-        }
+      if (!walletAddress) {
+        res.status(400).json({ error: "wallet query parameter required" });
+        return;
+      }
+      const agent = await storage.getAgent(req.params.agentId);
+      if (!agent || agent.creatorWallet?.toLowerCase() !== walletAddress.toLowerCase()) {
+        res.status(403).json({ error: "Not authorized" });
+        return;
       }
       const transfers = await storage.getPrivacyTransfers(req.params.agentId);
       res.json(transfers);
@@ -329,9 +340,19 @@ export async function registerRoutes(
 
   app.get("/api/privacy/transfer/:id", async (req: Request, res: Response) => {
     try {
+      const walletAddress = req.query.wallet as string;
+      if (!walletAddress) {
+        res.status(400).json({ error: "wallet query parameter required" });
+        return;
+      }
       const transfer = await storage.getPrivacyTransfer(req.params.id);
       if (!transfer) {
         res.status(404).json({ error: "Transfer not found" });
+        return;
+      }
+      const transferAgent = await storage.getAgent(transfer.agentId);
+      if (!transferAgent || transferAgent.creatorWallet?.toLowerCase() !== walletAddress.toLowerCase()) {
+        res.status(403).json({ error: "Not authorized" });
         return;
       }
       res.json(transfer);
@@ -352,17 +373,19 @@ export async function registerRoutes(
         res.status(400).json({ error: "Invalid status" });
         return;
       }
+      if (!walletAddress) {
+        res.status(400).json({ error: "walletAddress required for authorization" });
+        return;
+      }
       const existing = await storage.getPrivacyTransfer(req.params.id);
       if (!existing) {
         res.status(404).json({ error: "Transfer not found" });
         return;
       }
-      if (walletAddress) {
-        const agent = await storage.getAgent(existing.agentId);
-        if (!agent || agent.creatorWallet?.toLowerCase() !== walletAddress.toLowerCase()) {
-          res.status(403).json({ error: "Not authorized" });
-          return;
-        }
+      const agent = await storage.getAgent(existing.agentId);
+      if (!agent || agent.creatorWallet?.toLowerCase() !== walletAddress.toLowerCase()) {
+        res.status(403).json({ error: "Not authorized" });
+        return;
       }
       const transfer = await storage.updatePrivacyTransferStatus(
         req.params.id, status, depositTxHash || withdrawalTxHash, proofId, errorMessage
@@ -1072,13 +1095,14 @@ export async function registerRoutes(
   });
 
   const builderChatRateLimit = new Map<string, { count: number; resetAt: number }>();
+  const MAX_BUILDER_REQUESTS_PER_MIN = 5;
   app.post("/api/builder/chat", async (req: Request, res: Response) => {
     try {
       const ip = req.ip || req.socket.remoteAddress || "unknown";
       const now = Date.now();
       const limit = builderChatRateLimit.get(ip);
       if (limit && limit.resetAt > now) {
-        if (limit.count >= 20) {
+        if (limit.count >= MAX_BUILDER_REQUESTS_PER_MIN) {
           res.status(429).json({ error: "Rate limited. Try again in a minute." });
           return;
         }

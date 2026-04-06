@@ -117,14 +117,29 @@ async function tryRESTApiFallback(skill: string, command: string, params: Record
   }
 }
 
+const SAFE_PARAM_PATTERN = /^[a-zA-Z0-9._\-:\/=@,\s]+$/;
+
 export async function runOnchainOSCommand(skill: string, command: string, params: Record<string, string> = {}): Promise<{ success: boolean; data: any; error?: string }> {
+  if (!SAFE_PARAM_PATTERN.test(skill) || !SAFE_PARAM_PATTERN.test(command)) {
+    return { success: false, data: null, error: "Invalid skill or command name" };
+  }
   const commandParts = command.split(" ");
   const args = [...commandParts];
 
   for (const [key, value] of Object.entries(params)) {
     if (key === "subcommand") continue;
     if (value !== undefined && value !== "") {
-      args.push(`--${key}`, value);
+      if (!SAFE_PARAM_PATTERN.test(key)) {
+        return { success: false, data: null, error: `Invalid parameter key: ${key.substring(0, 20)}` };
+      }
+      const sanitizedValue = String(value).substring(0, 500);
+      if (sanitizedValue.includes('\0') || sanitizedValue.includes('\n') || sanitizedValue.includes('\r')) {
+        return { success: false, data: null, error: `Invalid parameter value for ${key}` };
+      }
+      if (sanitizedValue.startsWith('-')) {
+        return { success: false, data: null, error: `Invalid parameter value for ${key}: cannot start with dash` };
+      }
+      args.push(`--${key}`, sanitizedValue);
     }
   }
 

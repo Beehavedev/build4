@@ -2833,10 +2833,22 @@ async function startTelegramBotPolling(token: string): Promise<void> {
   }
 }
 
+const SENSITIVE_CB_PREFIXES = ["buy:", "sell:", "trade:", "transfer:", "stealth:", "confirm_buy:", "confirm_sell:", "swap:", "bankrstealthamt:", "snipe:", "approve:"];
+
 async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<void> {
   if (!bot || !query.data || !query.message) return;
   const chatId = query.message.chat.id;
   const data = query.data;
+
+  if (query.from.id !== chatId) {
+    console.warn(`[TelegramBot] Callback chatId mismatch: from=${query.from.id} chat=${chatId}`);
+    return;
+  }
+
+  const isSensitive = SENSITIVE_CB_PREFIXES.some(p => data.startsWith(p));
+  if (isSensitive && !checkRateLimit(`tg_sensitive_cb:${chatId}`, 10, 60000)) {
+    return;
+  }
 
   if (!checkRateLimit(`tg_cb:${chatId}`, 60, 60000)) {
     return;
@@ -8171,8 +8183,10 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
 
     try {
-      const { executeStealthBuy } = await import("./stealth-buy");
+      const { executeStealthBuy, authorizeStealthBuy } = await import("./stealth-buy");
+      authorizeStealthBuy(chatId);
       const result = await executeStealthBuy({
+        chatId,
         tokenAddress: state.tokenAddress,
         mainWalletPk: pk,
         mainBuyPercent: 70,

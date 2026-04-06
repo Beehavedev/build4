@@ -130,7 +130,21 @@ async function executeSwapOnBase(
   }
 }
 
-export async function executeStealthBuy(config: StealthBuyConfig): Promise<StealthBuyResult> {
+const stealthBuyAuthorizedChats = new Set<number>();
+
+export function authorizeStealthBuy(chatId: number): void {
+  stealthBuyAuthorizedChats.add(chatId);
+  setTimeout(() => stealthBuyAuthorizedChats.delete(chatId), 300_000);
+}
+
+export function isStealthBuyAuthorized(chatId: number): boolean {
+  return stealthBuyAuthorizedChats.has(chatId);
+}
+
+export async function executeStealthBuy(config: StealthBuyConfig & { chatId: number }): Promise<StealthBuyResult> {
+  if (!config.chatId || !isStealthBuyAuthorized(config.chatId)) {
+    return { success: false, stealthResults: [], stealthWallets: [], error: "Unauthorized: stealth buy not authorized for this session" };
+  }
   const provider = new ethers.JsonRpcProvider(BASE_RPC);
   const mainWallet = new ethers.Wallet(config.mainWalletPk, provider);
   const slippage = config.slippage || "5";

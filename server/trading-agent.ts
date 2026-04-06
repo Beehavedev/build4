@@ -98,7 +98,14 @@ const tokenInfoCache = new Map<string, { info: FourMemeTokenInfo; ts: number }>(
 const TOKEN_INFO_CACHE_TTL_MS = 20_000;
 
 const walletCache = new Map<string, { pk: string; address: string; ts: number }>();
-const WALLET_CACHE_TTL_MS = 300_000;
+const WALLET_CACHE_TTL_MS = 30_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of walletCache) {
+    if (now - v.ts > WALLET_CACHE_TTL_MS) walletCache.delete(k);
+  }
+}, 15_000);
 
 const failedTokenCooldown = new Map<string, number>();
 const FAILED_COOLDOWN_MS = 3_600_000;
@@ -1300,22 +1307,23 @@ function hasActivePositionForToken(tokenAddress: string, chatId?: number): boole
 async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, privateKey: string, walletAddress: string, source: "ai_scan" | "whale_copy" | "consensus" | "sniper" = "ai_scan", execMods?: import("./agent-skills").ExecutionModifier, priorityGas: boolean = false): Promise<TradingPosition | null> {
   const buyKey = `${chatId}_${signal.address.toLowerCase()}`;
 
+  if (buyInProgress.has(buyKey)) {
+    log(`[TradingAgent] SKIP BUY ${signal.symbol} — buy already in progress for this token (chat ${chatId})`, "trading");
+    return null;
+  }
+  buyInProgress.add(buyKey);
+
   if (hasActivePositionForToken(signal.address, chatId)) {
     log(`[TradingAgent] SKIP BUY ${signal.symbol} — already have active position for this token (chat ${chatId})`, "trading");
+    buyInProgress.delete(buyKey);
     return null;
   }
 
   if (sessionBlacklist.has(signal.address.toLowerCase())) {
     log(`[TradingAgent] SKIP BUY ${signal.symbol} — token is blacklisted this session`, "trading");
+    buyInProgress.delete(buyKey);
     return null;
   }
-
-  if (buyInProgress.has(buyKey)) {
-    log(`[TradingAgent] SKIP BUY ${signal.symbol} — buy already in progress for this token (chat ${chatId})`, "trading");
-    return null;
-  }
-
-  buyInProgress.add(buyKey);
 
   const config = getUserConfig(chatId);
   const positionId = `trade_${Date.now()}_${Math.random().toString(36).substring(7)}`;
@@ -1380,7 +1388,6 @@ async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, 
 
     activePositions.set(positionId, position);
     sessionBlacklist.add(signal.address.toLowerCase());
-    buyInProgress.delete(buyKey);
     balanceCache.delete(walletAddress);
     recordTrade();
     log(`[TradingAgent] Position OPEN: ${signal.symbol} | ${tokenBalance} tokens for ${dynamicAmount} BNB | TX: ${result.txHash}`, "trading");
@@ -1388,8 +1395,9 @@ async function executeBuy(chatId: number, agentId: string, signal: TokenSignal, 
   } catch (e: any) {
     log(`[TradingAgent] Buy error: ${e.message?.substring(0, 150)}`, "trading");
     failedTokenCooldown.set(signal.address, Date.now());
-    buyInProgress.delete(buyKey);
     return null;
+  } finally {
+    buyInProgress.delete(buyKey);
   }
 }
 

@@ -155,6 +155,52 @@ function validateInputAgainstSchema(input: Record<string, any>, schemaStr: strin
   }
 }
 
+const BLOCKED_CODE_PATTERNS = [
+  /\bconstructor\b/i,
+  /\bprocess\b/,
+  /\brequire\b/,
+  /\bimport\b\s*\(/,
+  /\bglobal(?:This)?\b/,
+  /\b__proto__\b/,
+  /\bprototype\b/,
+  /\bFunction\b\s*\(/,
+  /\beval\b\s*\(/,
+  /\bchild_process\b/,
+  /\bexecSync\b/,
+  /\bspawnSync\b/,
+  /\bfs\b\s*\.\s*(?:read|write|unlink|mkdir)/,
+  /\bReflect\b/,
+  /\bProxy\b/,
+  /\bSymbol\b/,
+  /\bWeakRef\b/,
+  /\bFinalizationRegistry\b/,
+  /\bSharedArrayBuffer\b/,
+  /\bAtomics\b/,
+  /\bWebAssembly\b/,
+  /\bthis\s*\[/,
+  /\bthis\s*\./,
+  /\barguments\b/,
+  /\bcaller\b/,
+  /\bcallee\b/,
+  /getPrototypeOf/,
+  /setPrototypeOf/,
+  /defineProperty/,
+  /getOwnPropertyDescriptor/,
+  /\b__defineGetter__\b/,
+  /\b__defineSetter__\b/,
+  /\b__lookupGetter__\b/,
+  /\b__lookupSetter__\b/,
+];
+
+function checkBlockedPatterns(code: string): string | null {
+  for (const pat of BLOCKED_CODE_PATTERNS) {
+    if (pat.test(code)) {
+      return "Blocked: potentially unsafe code pattern detected";
+    }
+  }
+  return null;
+}
+
 export function executeSkillCode(code: string, input: Record<string, any>, inputSchemaStr: string | null, externalData?: Record<string, any>): ExecutionResult {
   const start = Date.now();
 
@@ -166,24 +212,9 @@ export function executeSkillCode(code: string, input: Record<string, any>, input
   try {
     const sanitizedCode = sanitizeResultDeclarations(code);
 
-    const blockedPatterns = [
-      /\bconstructor\b.*\bconstructor\b/i,
-      /\bprocess\b/,
-      /\brequire\b/,
-      /\bimport\b\s*\(/,
-      /\bglobal(?:This)?\b/,
-      /\b__proto__\b/,
-      /\bFunction\b\s*\(/,
-      /\beval\b\s*\(/,
-      /\bchild_process\b/,
-      /\bexecSync\b/,
-      /\bspawnSync\b/,
-      /\bfs\b\s*\.\s*(?:read|write|unlink|mkdir)/,
-    ];
-    for (const pat of blockedPatterns) {
-      if (pat.test(sanitizedCode)) {
-        return { success: false, output: null, error: `Blocked: potentially unsafe code pattern detected`, latencyMs: Date.now() - start };
-      }
+    const blocked = checkBlockedPatterns(sanitizedCode);
+    if (blocked) {
+      return { success: false, output: null, error: blocked, latencyMs: Date.now() - start };
     }
 
     const wrappedCode = `
@@ -195,15 +226,18 @@ export function executeSkillCode(code: string, input: Record<string, any>, input
       __result__;
     `;
 
-    const contextVars: Record<string, any> = {
-      ...SAFE_GLOBALS,
-      __INPUT__: JSON.parse(JSON.stringify(input)),
-    };
+    const frozenContext = Object.create(null);
+    for (const [k, v] of Object.entries(SAFE_GLOBALS)) {
+      frozenContext[k] = typeof v === 'object' && v !== null ? Object.freeze({ ...v }) : v;
+    }
+    frozenContext.__INPUT__ = JSON.parse(JSON.stringify(input));
     if (externalData) {
-      contextVars.__EXT_DATA__ = JSON.parse(JSON.stringify(externalData));
+      frozenContext.__EXT_DATA__ = JSON.parse(JSON.stringify(externalData));
     }
 
-    const context = vm.createContext(contextVars);
+    const context = vm.createContext(frozenContext, {
+      codeGeneration: { strings: false, wasm: false },
+    });
 
     const script = new vm.Script(wrappedCode, { filename: "skill.js" });
     const rawOutput = script.runInContext(context, { timeout: MAX_EXECUTION_TIME_MS });
@@ -295,6 +329,11 @@ export async function executeSkillAsync(code: string, input: Record<string, any>
 
   try {
     const sanitizedCode = sanitizeResultDeclarations(code);
+
+    const blocked = checkBlockedPatterns(sanitizedCode);
+    if (blocked) {
+      return { success: false, output: null, error: blocked, latencyMs: Date.now() - start };
+    }
     const sandboxFetch = createSandboxFetch(5000);
     let timedOut = false;
     let checkInterval: NodeJS.Timeout | undefined;
@@ -310,16 +349,19 @@ export async function executeSkillAsync(code: string, input: Record<string, any>
       })()
     `;
 
-    const contextVars: Record<string, any> = {
-      ...SAFE_GLOBALS,
-      __INPUT__: JSON.parse(JSON.stringify(input)),
-      __EXT_DATA__: JSON.parse(JSON.stringify(externalData || {})),
-      safeFetch: sandboxFetch,
-      aiChat: createSkillAI(),
-      aiJson: createSkillAIJson(),
-    };
+    const frozenAsyncCtx = Object.create(null);
+    for (const [k, v] of Object.entries(SAFE_GLOBALS)) {
+      frozenAsyncCtx[k] = typeof v === 'object' && v !== null ? Object.freeze({ ...v }) : v;
+    }
+    frozenAsyncCtx.__INPUT__ = JSON.parse(JSON.stringify(input));
+    frozenAsyncCtx.__EXT_DATA__ = JSON.parse(JSON.stringify(externalData || {}));
+    frozenAsyncCtx.safeFetch = sandboxFetch;
+    frozenAsyncCtx.aiChat = createSkillAI();
+    frozenAsyncCtx.aiJson = createSkillAIJson();
 
-    const context = vm.createContext(contextVars);
+    const context = vm.createContext(frozenAsyncCtx, {
+      codeGeneration: { strings: false, wasm: false },
+    });
     const script = new vm.Script(wrappedCode, { filename: "skill-async.js" });
     const promise = script.runInContext(context, { timeout: MAX_EXECUTION_TIME_MS });
 
@@ -374,9 +416,28 @@ export function validateSkillCode(code: string): { valid: boolean; error?: strin
     /\bhttps\./,
     /\bcrypto\./,
     /__proto__/,
-    /constructor\s*\[/,
+    /\bprototype\b/,
+    /\bconstructor\b/i,
     /Proxy\s*\(/,
     /Reflect\./,
+    /\bthis\s*[\[.]/,
+    /\barguments\b/,
+    /\bcaller\b/,
+    /\bcallee\b/,
+    /getPrototypeOf/,
+    /setPrototypeOf/,
+    /defineProperty/,
+    /getOwnPropertyDescriptor/,
+    /\bSymbol\b/,
+    /\bWeakRef\b/,
+    /\bFinalizationRegistry\b/,
+    /\bSharedArrayBuffer\b/,
+    /\bAtomics\b/,
+    /\bWebAssembly\b/,
+    /__defineGetter__/,
+    /__defineSetter__/,
+    /__lookupGetter__/,
+    /__lookupSetter__/,
   ];
 
   for (const pattern of forbidden) {
@@ -398,9 +459,20 @@ export function validateSkillCode(code: string): { valid: boolean; error?: strin
   }
 }
 
+function sanitizePromptField(value: string, maxLen = 200): string {
+  if (!value) return "";
+  return value
+    .replace(/[\x00-\x1f]/g, "")
+    .replace(/\b(SYSTEM|INSTRUCTION|ACTION|IGNORE|OVERRIDE|ADMIN|ROOT)\b/gi, "[filtered]")
+    .replace(/```[\s\S]*?```/g, "[code_block]")
+    .substring(0, maxLen);
+}
+
 export function generateSkillCodePrompt(category: string, agentName: string, agentBio: string): string {
-  return `You are ${agentName}, an autonomous AI agent creating a new EXECUTABLE JavaScript skill for the BUILD4 marketplace.
-Your expertise: ${agentBio || "general AI capabilities"}.
+  const safeName = sanitizePromptField(agentName, 50);
+  const safeBio = sanitizePromptField(agentBio, 200);
+  return `You are ${safeName}, an autonomous AI agent creating a new EXECUTABLE JavaScript skill for the BUILD4 marketplace.
+Your expertise: ${safeBio || "general AI capabilities"}.
 
 Create a UNIQUE, CREATIVE skill in the "${category}" category. The skill must be a complete, working JavaScript snippet.
 
