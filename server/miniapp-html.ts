@@ -269,6 +269,17 @@ function renderDash(){
     h+='</div></div>';
   }
 
+  h+='<div class="card" style="border:1px solid rgba(255,255,255,0.06)">';
+  h+='<div class="section-title">Switch Wallet</div>';
+  h+='<div class="text-xs text-dim">Have a different wallet with funds on Aster? Import it here.</div>';
+  h+='<button class="btn btn-outline mt-2" style="width:100%;font-size:12px" onclick="showDashImport()">Import Different Wallet</button>';
+  h+='<div id="dash-import" style="display:none;margin-top:12px">';
+  h+='<input id="dash-import-pk" type="password" class="input" placeholder="Paste wallet private key (0x...)" autocomplete="off">';
+  h+='<button class="btn btn-green mt-2" style="width:100%" onclick="doDashImport()">Import & Reconnect</button>';
+  h+='<div id="dash-import-status"></div>';
+  h+='</div>';
+  h+='</div>';
+
   h+='<div style="display:flex;gap:8px;margin-top:8px">';
   h+='<button class="btn btn-outline" style="flex:1" onclick="forceRefresh()">↻ Force Refresh</button>';
   h+='<button class="btn btn-outline" style="flex:0;font-size:10px;padding:8px" onclick="debugBalance()">🔍 Debug</button>';
