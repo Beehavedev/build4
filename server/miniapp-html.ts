@@ -159,12 +159,13 @@ function startAutoRefresh(){
   refreshTimer=setInterval(async()=>{
     try{
       const a=await api('/api/miniapp/account');
-      if(a.connected){D=a;lastUpdate=Date.now();$('hdr-updated').textContent=timeAgo();
+      if(a.connected){D=a;lastUpdate=Date.now();try{$('hdr-updated').textContent=timeAgo()}catch(e){}
         const activePage=document.querySelector('.page.active');
         if(activePage?.id==='p-dash')renderDash();
+        if(activePage?.id==='p-deposit')renderDeposit();
       }
     }catch(e){}
-  },15000);
+  },10000);
 }
 
 async function fetchAll(){
@@ -228,8 +229,14 @@ function renderDash(){
     h+='</div></div>';
   }
 
-  h+='<button class="btn btn-outline mt-2" onclick="loadDash()">↻ Refresh</button>';
-  h+='<button class="btn btn-outline mt-2" onclick="debugBalance()" style="font-size:10px">🔍 Debug API</button>';
+  if(D.walletBalance===0&&D.availableMargin===0){
+    h+='<div class="alert alert-info mt-2"><span>ℹ️</span><span>Balance is $0.00. If you recently deposited, funds may still be processing on Aster (2-10 min). Auto-refreshing every 10s.</span></div>';
+  }
+
+  h+='<div style="display:flex;gap:8px;margin-top:8px">';
+  h+='<button class="btn btn-outline" style="flex:1" onclick="forceRefresh()">↻ Force Refresh</button>';
+  h+='<button class="btn btn-outline" style="flex:0;font-size:10px;padding:8px" onclick="debugBalance()">🔍 Debug</button>';
+  h+='</div>';
   h+='<pre id="debug-out" style="display:none;font-size:9px;background:var(--bg);padding:8px;border-radius:8px;overflow-x:auto;max-height:300px;margin-top:8px"></pre>';
   h+='<div class="timestamp">Updated '+timeAgo()+'</div>';
   el.innerHTML=h;
@@ -329,15 +336,42 @@ async function doTransfer(amount){
       var msg=r.message||'Deposit complete!';
       var txLink=r.txHash?'<br><a href="https://bscscan.com/tx/'+r.txHash+'" target="_blank" style="color:var(--green);text-decoration:underline;font-size:11px">View TX on BscScan ↗</a>':'';
       var icon=r.futuresTransferred?'🎉':'✅';
-      st.innerHTML='<div class="alert alert-ok mt-3"><span>'+icon+'</span><div><strong>'+msg+'</strong>'+txLink+'</div></div>';
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>'+icon+'</span><div><strong>'+msg+'</strong>'+txLink+'<br><span style="font-size:11px;color:var(--text2)">Deposit detected on BSC ✓ — Waiting for Aster to credit to Futures margin (usually 2–10 minutes)</span></div></div>';
       toast(icon+' '+msg,'ok');
-      setTimeout(function(){fetchAll().then(function(){renderDeposit()})},5000);
+      var pollCount=0;
+      var pollTimer=setInterval(async function(){
+        pollCount++;
+        try{
+          var pa=await api('/api/miniapp/account');
+          if(pa.connected){D=pa;lastUpdate=Date.now();}
+          if(D.walletBalance>0||D.availableMargin>0){
+            clearInterval(pollTimer);
+            st.innerHTML='<div class="alert alert-ok mt-3" style="border-color:var(--green)"><span>🎉</span><div><strong>Funds now available in Futures!</strong><br><span style="color:var(--green)">$'+fmt(D.walletBalance)+' ready to trade</span>'+txLink+'</div></div>';
+            toast('🎉 Funds now available in Futures!','ok');
+            renderDeposit();
+          }
+        }catch(e){}
+        if(pollCount>=40)clearInterval(pollTimer);
+      },8000);
+      setTimeout(function(){fetchAll().then(function(){renderDeposit()})},3000);
     }else{
       st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Transfer failed')+'</span></div>';
     }
   }catch(e){
     st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
   }
+}
+
+async function forceRefresh(){
+  toast('Refreshing...','info');
+  try{
+    const a=await api('/api/miniapp/account');
+    if(a&&a.connected!==undefined){D={...D,...a};lastUpdate=Date.now()}
+    const activePage=document.querySelector('.page.active');
+    if(activePage?.id==='p-dash')renderDash();
+    if(activePage?.id==='p-deposit')renderDeposit();
+    toast('Updated!','ok');
+  }catch(e){toast('Refresh failed','err')}
 }
 
 async function debugBalance(){

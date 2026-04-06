@@ -1,0 +1,40 @@
+The user reports: Deposits now show correctly on the Aster DEX website, but the Mini App still shows $0.00 in Futures Available Margin (and sometimes Spot).
+
+This is a common sync delay with Aster V3 Pro API.
+
+Fix the Mini App + backend immediately to make balances reliable and fast:
+
+1. **Improve Balance Refresh Logic (Highest Priority)**
+   - In the Mini App (useAsterStore or balance hooks):
+     - Add a "Force Refresh" button that calls the backend with a fresh timestamp or cache-bust parameter.
+     - Auto-refresh every 10 seconds when the Deposit or Dashboard tab is active.
+     - Show a small "Last updated: X seconds ago" timestamp.
+
+2. **Backend Improvement (aster/client.ts or equivalent)**
+   - Update the getAccount / getBalance endpoint to:
+     - Use the most reliable V3 endpoint: `/fapi/v3/account` (this returns availableBalance, totalWalletBalance, unrealizedProfit)
+     - Add `timestamp` and `recvWindow=30000` to every private request.
+     - Add retry logic (up to 3 attempts with 3-second delay) when balance is still $0 after a confirmed deposit.
+     - Log the raw response so we can debug.
+
+3. **Deposit Screen Enhancements**
+   - After user confirms a TX Hash:
+     - Show "Deposit detected on BSC ✓ — Waiting for Aster to credit to Futures margin (usually 2–10 minutes)"
+     - Automatically start polling the balance every 8 seconds for the next 5 minutes.
+     - When Futures Available Margin becomes > 0, show a big green success animation and toast: "✅ Funds now available in Futures! You can start trading."
+
+4. **Wallet Linking**
+   - Add a clean "Connect Wallet" button using TON Connect + EVM support.
+   - Once connected, store the address and use it to show more accurate on-chain balance.
+   - Allow users to link multiple wallets if needed.
+
+5. **Overall Polish**
+   - Make all balance cards update in real-time when refresh is called.
+   - Show a helpful message when Futures = $0 but a recent deposit was confirmed: "Funds are processing on Aster. Please wait and refresh."
+   - Remove any remaining "Quick Deposit (Auto)" code that was causing BytesLike errors.
+
+Make the Mini App feel extremely responsive and trustworthy. Users should never wonder why their deposit isn't showing.
+
+Implement these changes now, push to production, and test with a small new deposit.
+
+After fixing, the Mini App balance should match the Aster website within a few minutes.

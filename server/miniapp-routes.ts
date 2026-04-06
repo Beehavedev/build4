@@ -6,31 +6,45 @@ export function registerMiniAppRoutes(app: Express) {
   app.get("/api/miniapp/debug-balance", async (req: Request, res: Response) => {
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;
-      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
-      const client = await getAsterClient(parseInt(chatId));
-      if (!client) return res.json({ error: "No Aster client — check ASTER_PRIVATE_KEY, ASTER_USER_ADDRESS, ASTER_SIGNER_ADDRESS env vars" });
-      const fc = client.futures || client;
-      const mode = client.mode || "unknown";
-      const hasSpot = !!client.spot;
-      let balRaw: any = null, acctRaw: any = null, balErr: string | null = null, acctErr: string | null = null;
-      try { balRaw = await fc.balance(); } catch(e: any) { balErr = e.message?.substring(0, 500); }
-      try { acctRaw = await fc.account(); } catch(e: any) { acctErr = e.message?.substring(0, 500); }
+      const privateKey = process.env.ASTER_PRIVATE_KEY || process.env.ASTER_API_WALLET_KEY;
+      if (!privateKey) return res.json({ error: "No ASTER_PRIVATE_KEY set" });
 
-      let parsed = { availBal: 0, walletBal: 0 };
-      if (Array.isArray(balRaw)) {
-        const usdt = balRaw.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
-        if (usdt) {
-          parsed.availBal = parseFloat(usdt.availableBalance || usdt.crossWalletBalance || "0");
-          parsed.walletBal = parseFloat(usdt.balance || usdt.walletBalance || "0");
+      const { createAsterV3FuturesClient } = await import("./aster-client");
+      const { Wallet } = await import("ethers");
+      const wallet = new Wallet(privateKey);
+      const derivedAddr = wallet.address;
+      const signerAddr = process.env.ASTER_SIGNER_ADDRESS || derivedAddr;
+      const userAddr = process.env.ASTER_USER_ADDRESS || "";
+
+      const candidates = [...new Set([userAddr, signerAddr, derivedAddr].filter(Boolean).map(a => a.toLowerCase()))];
+      const results: any[] = [];
+
+      for (const candidateUser of candidates) {
+        let balRaw: any = null, acctRaw: any = null, balErr: string | null = null, acctErr: string | null = null;
+        try {
+          const fc = createAsterV3FuturesClient({ user: candidateUser, signer: signerAddr, signerPrivateKey: privateKey });
+          try { balRaw = await fc.balance(); } catch(e: any) { balErr = e.message?.substring(0, 300); }
+          try { acctRaw = await fc.account(); } catch(e: any) { acctErr = e.message?.substring(0, 300); }
+        } catch(e: any) { balErr = "client create failed: " + e.message?.substring(0, 200); }
+
+        let availBal = 0, walletBal = 0;
+        if (Array.isArray(balRaw)) {
+          const usdt = balRaw.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+          if (usdt) {
+            availBal = parseFloat(usdt.availableBalance || usdt.crossWalletBalance || "0");
+            walletBal = parseFloat(usdt.balance || usdt.walletBalance || "0");
+          }
         }
-      }
-      if (acctRaw && parsed.walletBal === 0) {
-        if (acctRaw.totalWalletBalance) parsed.walletBal = parseFloat(acctRaw.totalWalletBalance);
-        if (acctRaw.availableBalance) parsed.availBal = parseFloat(acctRaw.availableBalance);
-        if (acctRaw.maxWithdrawAmount) parsed.availBal = Math.max(parsed.availBal, parseFloat(acctRaw.maxWithdrawAmount));
+        if (acctRaw && walletBal === 0) {
+          if (acctRaw.totalWalletBalance) walletBal = parseFloat(acctRaw.totalWalletBalance);
+          if (acctRaw.availableBalance) availBal = parseFloat(acctRaw.availableBalance);
+        }
+
+        results.push({ user: candidateUser, label: candidateUser === userAddr.toLowerCase() ? "ASTER_USER_ADDRESS" : candidateUser === signerAddr.toLowerCase() ? "ASTER_SIGNER_ADDRESS" : "DERIVED_FROM_KEY", availBal, walletBal, balErr, acctErr, balRaw: JSON.stringify(balRaw)?.substring(0, 300), acctRaw: JSON.stringify(acctRaw)?.substring(0, 300) });
       }
 
-      res.json({ mode, hasSpot, balRaw, acctRaw, balErr, acctErr, parsed });
+      const winner = results.find(r => r.walletBal > 0 || r.availBal > 0);
+      res.json({ derivedAddr, signerAddr, userAddr, candidates, results, winner: winner || "NONE - no address has balance", hint: winner ? `Set ASTER_USER_ADDRESS=${winner.user}` : "Check which address holds funds on asterdex.com" });
     } catch(e: any) { res.status(500).json({ error: e.message }); }
   });
 
@@ -105,6 +119,51 @@ export function registerMiniAppRoutes(app: Express) {
       }
 
       console.log(`[MiniApp] parsed (owner): availBal=${availBal}, walletBal=${walletBal}`);
+
+      if (availBal === 0 && walletBal === 0) {
+        const pk = process.env.ASTER_PRIVATE_KEY || process.env.ASTER_API_WALLET_KEY;
+        if (pk) {
+          try {
+            const { createAsterV3FuturesClient } = await import("./aster-client");
+            const { Wallet } = await import("ethers");
+            const w = new Wallet(pk);
+            const derivedAddr = w.address;
+            const signerAddr = process.env.ASTER_SIGNER_ADDRESS || derivedAddr;
+            const userAddr = process.env.ASTER_USER_ADDRESS || "";
+            const candidates = [...new Set([signerAddr, derivedAddr, userAddr].filter(Boolean).map(a => a.toLowerCase()))];
+
+            for (const candidateUser of candidates) {
+              try {
+                const testFc = createAsterV3FuturesClient({ user: candidateUser, signer: signerAddr, signerPrivateKey: pk });
+                const testBal = await testFc.balance();
+                console.log(`[MiniApp] fallback balance check user=${candidateUser.substring(0, 10)}... raw=${JSON.stringify(testBal).substring(0, 200)}`);
+                if (Array.isArray(testBal)) {
+                  const usdt = testBal.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+                  if (usdt) extractFromObj(usdt);
+                }
+                if (availBal > 0 || walletBal > 0) {
+                  console.log(`[MiniApp] FOUND balance with user=${candidateUser}: avail=${availBal} wallet=${walletBal}`);
+                  const testAcct = await testFc.account().catch(() => null);
+                  if (testAcct) {
+                    if (Array.isArray(testAcct.assets)) {
+                      const usdtAsset = testAcct.assets.find((a: any) => (a.asset || "").toUpperCase() === "USDT");
+                      if (usdtAsset) extractFromObj(usdtAsset);
+                    }
+                    extractFromObj(testAcct);
+                  }
+                  break;
+                }
+              } catch (e: any) {
+                console.log(`[MiniApp] fallback candidate ${candidateUser.substring(0, 10)}... err: ${e.message?.substring(0, 100)}`);
+              }
+            }
+          } catch (e: any) {
+            console.log(`[MiniApp] fallback scan failed: ${e.message?.substring(0, 200)}`);
+          }
+        }
+      }
+
+      console.log(`[MiniApp] final: availBal=${availBal}, walletBal=${walletBal}`);
 
       const openPositions = Array.isArray(positions)
         ? positions.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0)
