@@ -139,17 +139,23 @@ function toast(msg,type='info'){const t=$('toast');t.className='toast show toast
 function copyAddr(el){var a=el.dataset.addr;if(a)navigator.clipboard.writeText(a).then(function(){toast('Copied!','ok')}).catch(function(){toast('Copy failed','err')})}
 function timeAgo(){if(!lastUpdate)return'';const s=Math.floor((Date.now()-lastUpdate)/1000);if(s<5)return'Just now';if(s<60)return s+'s ago';return Math.floor(s/60)+'m ago'}
 
+function switchTab(tabId){
+  var targetId=tabId;
+  if(!targetId.startsWith('p-'))targetId='p-'+targetId;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  var targetTab=document.querySelector('.tab[data-tab="'+targetId+'"]');
+  if(targetTab)targetTab.classList.add('active');
+  var targetPage=$(targetId);
+  if(targetPage)targetPage.classList.add('active');
+  if(targetId==='p-dash')loadDash();
+  if(targetId==='p-deposit')loadDeposit();
+  if(targetId==='p-agent')loadAgent();
+  if(targetId==='p-trade')loadTrade();
+}
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click',()=>{
-    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-    tab.classList.add('active');
-    $(tab.dataset.tab).classList.add('active');
-    const id=tab.dataset.tab;
-    if(id==='p-dash')loadDash();
-    if(id==='p-deposit')loadDeposit();
-    if(id==='p-agent')loadAgent();
-    if(id==='p-trade')loadTrade();
+    switchTab(tab.dataset.tab);
   });
 });
 
