@@ -975,15 +975,12 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
       if (orderParams.reduceOnly !== undefined) params.reduceOnly = orderParams.reduceOnly;
       if (orderParams.closePosition !== undefined) params.closePosition = orderParams.closePosition;
       if (orderParams.positionSide) params.positionSide = orderParams.positionSide;
-      if (orderParams.newClientOrderId) params.newClientOrderId = orderParams.newClientOrderId;
       if (orderParams.quoteOrderQty) params.quoteOrderQty = orderParams.quoteOrderQty;
       if (orderParams.activationPrice) params.activationPrice = orderParams.activationPrice;
       if (orderParams.callbackRate) params.callbackRate = orderParams.callbackRate;
       if (orderParams.workingType) params.workingType = orderParams.workingType;
       if (orderParams.type === "LIMIT" && !params.timeInForce) params.timeInForce = "GTC";
-      if (!params.newClientOrderId) {
-        params.newClientOrderId = `BUILD4_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      }
+      if (orderParams.newClientOrderId) params.newClientOrderId = orderParams.newClientOrderId;
       return makeV3Request(baseUrl, "/fapi/v3/order", user, signer, signerPrivateKey, { method: "POST", params });
     },
 
