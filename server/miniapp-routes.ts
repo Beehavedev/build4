@@ -145,35 +145,7 @@ export function registerMiniAppRoutes(app: Express) {
 
       console.log(`[MiniApp] Auto-connecting Aster for chatId=${chatId} wallet=${parentAddress.substring(0, 10)}`);
 
-      const { createAsterV3FuturesClient } = await import("./aster-client");
-      const v3Client = createAsterV3FuturesClient({
-        user: parentAddress,
-        signer: parentAddress,
-        signerPrivateKey: pk,
-      });
-
-      try {
-        const testResult = await v3Client.testConnection();
-        console.log(`[MiniApp] V3 direct connection test: success=${testResult.success} ${testResult.error || ''}`);
-
-        if (testResult.success) {
-          await storage.saveAsterCredentials(chatId, parentAddress, pk);
-
-          try {
-            const bal = await v3Client.balance();
-            console.log(`[MiniApp] V3 post-connect balance: ${JSON.stringify(bal).substring(0, 300)}`);
-          } catch (balErr: any) {
-            console.log(`[MiniApp] V3 post-connect balance check failed: ${balErr.message}`);
-          }
-
-          res.json({ success: true, apiWalletAddress: parentAddress, parentAddress });
-          return;
-        }
-      } catch (v3Err: any) {
-        console.log(`[MiniApp] V3 direct connection failed: ${v3Err.message?.substring(0, 200)}`);
-      }
-
-      console.log(`[MiniApp] V3 direct failed, trying broker onboard for chatId=${chatId}`);
+      // Use broker onboard flow — never store the parent wallet private key directly
       const { asterBrokerOnboard, createAsterFuturesClient } = await import("./aster-client");
       const result = await asterBrokerOnboard(pk);
       console.log(`[MiniApp] Broker onboard result: success=${result.success} hasKey=${!!result.apiKey}`);
