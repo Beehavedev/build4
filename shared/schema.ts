@@ -1540,6 +1540,7 @@ export const asterCredentials = pgTable("aster_credentials", {
   chatId: text("chat_id").primaryKey(),
   encryptedApiKey: text("encrypted_api_key").notNull(),
   encryptedApiSecret: text("encrypted_api_secret").notNull(),
+  parentAddress: text("parent_address"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

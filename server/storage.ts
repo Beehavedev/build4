@@ -499,8 +499,9 @@ export interface IStorage {
     reasoning?: string; hourOfDay?: number;
   }): Promise<void>;
   getRecentTradeOutcomes(limit?: number): Promise<Array<any>>;
-  saveAsterCredentials(chatId: string, apiKey: string, apiSecret: string): Promise<AsterCredentials>;
-  getAsterCredentials(chatId: string): Promise<{ chatId: string; apiKey: string; apiSecret: string } | null>;
+  saveAsterCredentials(chatId: string, apiKey: string, apiSecret: string, parentAddr?: string): Promise<AsterCredentials>;
+  getAsterCredentials(chatId: string): Promise<{ chatId: string; apiKey: string; apiSecret: string; parentAddress?: string } | null>;
+  saveAsterParentAddress(chatId: string, parentAddress: string): Promise<void>;
   removeAsterCredentials(chatId: string): Promise<void>;
 
   getUserSkillConfigs(chatId: string): Promise<Array<{ skillId: string; enabled: boolean; config: Record<string, any> }>>;
@@ -3085,21 +3086,27 @@ export class DatabaseStorage implements IStorage {
     `);
   }
 
-  async saveAsterCredentials(chatId: string, apiKey: string, apiSecret: string): Promise<AsterCredentials> {
+  async saveAsterCredentials(chatId: string, apiKey: string, apiSecret: string, parentAddr?: string): Promise<AsterCredentials> {
     const encryptedApiKey = encryptPrivateKey(apiKey);
     const encryptedApiSecret = encryptPrivateKey(apiSecret);
+    const setFields: any = {
+      encryptedApiKey,
+      encryptedApiSecret,
+      createdAt: new Date(),
+    };
+    const insertFields: any = {
+      chatId,
+      encryptedApiKey,
+      encryptedApiSecret,
+    };
+    if (parentAddr) {
+      setFields.parentAddress = parentAddr.toLowerCase();
+      insertFields.parentAddress = parentAddr.toLowerCase();
+    }
     try {
-      const [row] = await db.insert(asterCredentials).values({
-        chatId,
-        encryptedApiKey,
-        encryptedApiSecret,
-      }).onConflictDoUpdate({
+      const [row] = await db.insert(asterCredentials).values(insertFields).onConflictDoUpdate({
         target: asterCredentials.chatId,
-        set: {
-          encryptedApiKey,
-          encryptedApiSecret,
-          createdAt: new Date(),
-        },
+        set: setFields,
       }).returning();
       return row;
     } catch (e: any) {
@@ -3110,15 +3117,12 @@ export class DatabaseStorage implements IStorage {
           chat_id TEXT PRIMARY KEY NOT NULL,
           encrypted_api_key TEXT NOT NULL,
           encrypted_api_secret TEXT NOT NULL,
+          parent_address TEXT,
           created_at TIMESTAMP DEFAULT now()
         )`);
-        const [row] = await db.insert(asterCredentials).values({
-          chatId,
-          encryptedApiKey,
-          encryptedApiSecret,
-        }).onConflictDoUpdate({
+        const [row] = await db.insert(asterCredentials).values(insertFields).onConflictDoUpdate({
           target: asterCredentials.chatId,
-          set: { encryptedApiKey, encryptedApiSecret, createdAt: new Date() },
+          set: setFields,
         }).returning();
         return row;
       }
@@ -3126,7 +3130,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getAsterCredentials(chatId: string): Promise<{ chatId: string; apiKey: string; apiSecret: string } | null> {
+  async getAsterCredentials(chatId: string): Promise<{ chatId: string; apiKey: string; apiSecret: string; parentAddress?: string } | null> {
     try {
       const rows = await db.select().from(asterCredentials).where(eq(asterCredentials.chatId, chatId));
       if (!rows.length) return null;
@@ -3135,6 +3139,7 @@ export class DatabaseStorage implements IStorage {
         chatId: row.chatId,
         apiKey: decryptPrivateKey(row.encryptedApiKey),
         apiSecret: decryptPrivateKey(row.encryptedApiSecret),
+        parentAddress: row.parentAddress || undefined,
       };
     } catch (e: any) {
       if (e.message?.includes("does not exist")) {
@@ -3142,6 +3147,22 @@ export class DatabaseStorage implements IStorage {
         return null;
       }
       throw e;
+    }
+  }
+
+  async saveAsterParentAddress(chatId: string, parentAddress: string): Promise<void> {
+    try {
+      await db.update(asterCredentials)
+        .set({ parentAddress: parentAddress.toLowerCase() })
+        .where(eq(asterCredentials.chatId, chatId));
+    } catch (e: any) {
+      console.log(`[Storage] saveAsterParentAddress error: ${e.message?.substring(0, 100)}`);
+      try {
+        await db.execute(sql`ALTER TABLE "aster_credentials" ADD COLUMN IF NOT EXISTS "parent_address" TEXT`);
+        await db.update(asterCredentials)
+          .set({ parentAddress: parentAddress.toLowerCase() })
+          .where(eq(asterCredentials.chatId, chatId));
+      } catch {}
     }
   }
 

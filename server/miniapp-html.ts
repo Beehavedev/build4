@@ -345,6 +345,9 @@ function renderDeposit(){
     h+='4. Enable <strong style="color:#fff">Perps Trading</strong><br>';
     h+='5. Copy the <strong style="color:#fff">private key</strong> and paste below</div>';
     h+='</div>';
+    h+='<div class="label mt-2">Your Aster Account Address</div>';
+    h+='<input id="api-wallet-parent" class="input" placeholder="Your main wallet address (0x06d6...)" autocomplete="off">';
+    h+='<div class="label mt-2">API Wallet Private Key</div>';
     h+='<input id="api-wallet-pk" type="password" class="input" placeholder="API Wallet private key (0x...)" autocomplete="off">';
     h+='<button class="btn btn-green mt-2" style="width:100%" onclick="linkAsterApi()">🔗 Link API Wallet</button>';
     h+='<div id="link-status"></div>';
@@ -364,6 +367,10 @@ function renderDeposit(){
     h+='<strong style="color:#fff">Step 4:</strong> Enable <strong style="color:var(--green)">Perps Trading</strong> permission<br>';
     h+='<strong style="color:#fff">Step 5:</strong> Copy the <strong style="color:var(--yellow)">private key</strong> it shows you</div>';
     h+='</div>';
+    h+='<div class="label mt-2">Your Aster Account Address</div>';
+    h+='<div class="text-xs text-dim" style="margin-bottom:4px">The wallet you used to log in to Aster (your parent/main wallet)</div>';
+    h+='<input id="api-wallet-parent" class="input" placeholder="0x... (your main wallet address)" autocomplete="off">';
+    h+='<div class="label mt-2">API Wallet Private Key</div>';
     h+='<input id="api-wallet-pk" type="password" class="input" placeholder="Paste your API Wallet private key here (0x...)" autocomplete="off">';
     h+='<button class="btn btn-green mt-2" style="width:100%" onclick="linkAsterApi()">🔗 Connect to Aster</button>';
     h+='<div id="link-status"></div>';
@@ -630,15 +637,19 @@ async function autoLinkAster(){
 
 async function linkAsterApi(){
   var pkInput=$('api-wallet-pk');
+  var parentInput=$('api-wallet-parent');
   var st=$('manual-link-status');
   if(!pkInput||!st)return;
   var pk=pkInput.value.trim();
+  var parentAddr=(parentInput?parentInput.value.trim():'');
+  if(!parentAddr){toast('Enter your Aster account address (the wallet you logged in with)','err');return}
+  if(!parentAddr.startsWith('0x')||parentAddr.length!==42){toast('Invalid Aster account address — must be 0x followed by 40 hex characters','err');return}
   if(!pk){toast('Enter your API Wallet private key','err');return}
   if(!pk.startsWith('0x'))pk='0x'+pk;
   if(pk.length!==66){toast('Invalid key length','err');return}
   st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Linking...</span></div>';
   try{
-    var r=await api('/api/miniapp/link-aster',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiWalletPrivateKey:pk})});
+    var r=await api('/api/miniapp/link-aster',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiWalletPrivateKey:pk,parentAddress:parentAddr})});
     if(r.success){
       st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span>API Wallet linked!</span></div>';
       toast('✅ Linked!','ok');

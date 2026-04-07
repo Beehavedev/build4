@@ -13380,9 +13380,13 @@ export async function getAsterClient(chatId: number): Promise<any> {
   const isV3ApiWallet = creds.apiKey?.startsWith("0x") && creds.apiKey?.length === 42;
 
   if (isV3ApiWallet && creds.apiSecret) {
-    const wallets = await storage.getTelegramWallets(chatId.toString());
-    const activeWallet = wallets.find((w: any) => w.isActive) || wallets[0];
-    const parentAddress = activeWallet?.walletAddress?.toLowerCase() || creds.apiKey;
+    let parentAddress = creds.parentAddress;
+    if (!parentAddress) {
+      const wallets = await storage.getTelegramWallets(chatId.toString());
+      const activeWallet = wallets.find((w: any) => w.isActive) || wallets[0];
+      parentAddress = activeWallet?.walletAddress?.toLowerCase() || creds.apiKey;
+    }
+    console.log(`[AsterClient] V3 API Wallet: user(parent)=${parentAddress}, signer=${creds.apiKey}`);
     const { createAsterV3FuturesClient } = await import("./aster-client");
     const v3Futures = createAsterV3FuturesClient({
       user: parentAddress,
