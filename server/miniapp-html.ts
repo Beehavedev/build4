@@ -136,6 +136,7 @@ function pnlHtml(v){const p=v>=0;return '<span class="val-xs '+(p?'g+':'r-')+'">
 function pnlClass(v){return v>=0?'g+':'r-'}
 function api(path,opts={}){return fetch(path,{...opts,headers:{'x-telegram-chat-id':String(chatId),...(opts.headers||{})}}).then(r=>r.json())}
 function toast(msg,type='info'){const t=$('toast');t.className='toast show toast-'+type;t.innerHTML=msg;setTimeout(()=>t.classList.remove('show'),3500)}
+function customConfirm(html){return new Promise(function(resolve){var ov=document.createElement('div');ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';var box=document.createElement('div');box.style.cssText='background:#1a1d21;border:1px solid #333;border-radius:12px;padding:20px;max-width:340px;width:100%;color:#e0e0e0;font-size:14px;line-height:1.6';box.innerHTML=html+'<div style="display:flex;gap:10px;margin-top:16px"><button id="cc-cancel" style="flex:1;padding:10px;border-radius:8px;border:1px solid #555;background:transparent;color:#e0e0e0;cursor:pointer;font-size:14px">Cancel</button><button id="cc-ok" style="flex:1;padding:10px;border-radius:8px;border:none;background:#0ecb81;color:#0b0e11;cursor:pointer;font-weight:600;font-size:14px">Confirm</button></div>';ov.appendChild(box);document.body.appendChild(ov);$('cc-ok').onclick=function(){document.body.removeChild(ov);resolve(true)};$('cc-cancel').onclick=function(){document.body.removeChild(ov);resolve(false)};ov.onclick=function(e){if(e.target===ov){document.body.removeChild(ov);resolve(false)}}})}
 function copyAddr(el){var a=el.dataset.addr;if(a)navigator.clipboard.writeText(a).then(function(){toast('Copied!','ok')}).catch(function(){toast('Copy failed','err')})}
 function timeAgo(){if(!lastUpdate)return'';const s=Math.floor((Date.now()-lastUpdate)/1000);if(s<5)return'Just now';if(s<60)return s+'s ago';return Math.floor(s/60)+'m ago'}
 
@@ -813,7 +814,8 @@ async function execTrade(side){
   const amt=parseFloat($('trade-amt')?.value||'0');
   if(!amt||amt<=0){toast('Enter a margin amount','err');return}
   const dir=side==='BUY'?'LONG':'SHORT';
-  if(!confirm('Open '+dir+' '+tradeSel+'\\n\\nMargin: $'+fmt(amt)+'\\nLeverage: '+tradeLev+'x\\nNotional: $'+fmt(amt*tradeLev)+'\\n\\nConfirm?'))return;
+  const ok=await customConfirm('<div style="font-weight:600;font-size:16px;margin-bottom:12px">Open '+dir+' '+tradeSel+'</div><div style="font-size:13px;color:#aaa">Margin: <strong style="color:#fff">$'+fmt(amt)+'</strong><br>Leverage: <strong style="color:#fff">'+tradeLev+'x</strong><br>Notional: <strong style="color:#fff">$'+fmt(amt*tradeLev)+'</strong></div>');
+  if(!ok)return;
   const st=$('trade-status');
   st.innerHTML='<div class="alert alert-info"><span>⏳</span><span>Placing '+dir+' order on '+tradeSel+'...</span></div>';
   try{
@@ -830,7 +832,8 @@ async function execTrade(side){
 }
 
 async function closePos(symbol){
-  if(!confirm('Close entire '+symbol+' position?'))return;
+  const ok=await customConfirm('<div style="font-weight:600;font-size:16px;margin-bottom:12px">Close Position</div><div style="font-size:13px;color:#aaa">Close entire <strong style="color:#fff">'+symbol+'</strong> position?</div>');
+  if(!ok)return;
   const st=$('trade-status');
   st.innerHTML='<div class="alert alert-info"><span>⏳</span><span>Closing '+symbol+'...</span></div>';
   try{

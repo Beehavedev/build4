@@ -783,7 +783,13 @@ export function registerMiniAppRoutes(app: Express) {
       });
     } catch (e: any) {
       console.error(`[MiniApp] Trade error: ${e.message}`);
-      res.status(500).json({ error: "Internal server error" });
+      const msg = e.message || "Trade failed";
+      const userMsg = msg.includes("insufficient") ? "Insufficient balance for this trade" :
+                      msg.includes("quantity") ? "Invalid quantity for this pair" :
+                      msg.includes("price") ? "Price error — try again" :
+                      msg.includes("leverage") ? "Leverage setting failed" :
+                      `Trade failed: ${msg.substring(0, 120)}`;
+      res.status(500).json({ error: userMsg });
     }
   });
 
