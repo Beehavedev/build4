@@ -674,14 +674,14 @@ async function sharePnl(posIdx){
     var lev=parseInt(p.leverage||5);
     imgParams='pct='+pctVal.toFixed(2)+'&pnl='+pnlVal.toFixed(2)+'&sym='+encodeURIComponent(sym)+'&side='+side+'&lev='+lev+'&ep='+entryP+'&mp='+markP+'&w='+w+'&l='+l+'&name='+encodeURIComponent(agentName)+'&ref='+ref;
     var pSign=pnlVal>=0?'+':'';
-    shareText=pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\\n\\nTrade on @AsterDEX via @build4bot\\nhttps://t.me/build4bot?start='+ref;
+    shareText=pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\\n\\nTrade on @AsterDEX via @build4_bot\\nhttps://t.me/build4_bot?start='+ref;
   }else{
     var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
     var pSign2=totalPnl>=0?'+':'';
     imgParams='pnl='+totalPnl.toFixed(2)+'&w='+w+'&l='+l+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName)+'&ref='+ref;
-    shareText=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @AsterDEX via @build4bot\\n';
+    shareText=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @AsterDEX via @build4_bot\\n';
     if(w+l>0)shareText+='Win Rate: '+Math.round(w/(w+l)*100)+'%\\n';
-    shareText+='\\nhttps://t.me/build4bot?start='+ref;
+    shareText+='\\nhttps://t.me/build4_bot?start='+ref;
   }
   toast('Generating card...','info');
   try{

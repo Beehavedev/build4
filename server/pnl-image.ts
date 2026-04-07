@@ -50,7 +50,7 @@ export async function generatePnlCardImage(p: PnlCardParams): Promise<Buffer> {
   const accentRgb = isProfit ? "14,203,129" : "246,70,93";
   const sideColor = p.side === "LONG" ? "#0ecb81" : "#f6465d";
   const refCode = p.ref || "build4";
-  const refLink = `t.me/build4bot?start=${refCode}`;
+  const refLink = `t.me/build4_bot?start=${refCode}`;
 
   const mascotFile = isProfit
     ? (p.pnlPercent > 50 ? "chad-profit.png" : "pepe-profit.jpg")
