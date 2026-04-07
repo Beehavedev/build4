@@ -306,10 +306,17 @@ async function runAgentLoop(
         }
       }
 
-      candidates.sort((a, b) => b.result.strength - a.result.strength);
+      const seen = new Set<string>();
+      const unique = candidates.filter(c => {
+        if (seen.has(c.symbol)) return false;
+        seen.add(c.symbol);
+        return true;
+      });
+      unique.sort((a, b) => b.result.strength - a.result.strength);
 
-      for (let i = 0; i < Math.min(slotsAvailable, candidates.length); i++) {
-        const c = candidates[i];
+      for (let i = 0; i < Math.min(slotsAvailable, unique.length); i++) {
+        const c = unique[i];
+        if (state.openPositions.has(c.symbol)) continue;
         await openPosition(chatId, futuresClient, state, c.symbol, c.side, c.result, sendMessage);
       }
     }
