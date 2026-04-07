@@ -265,26 +265,23 @@ async function makeRequest(
   }
 }
 
-const EIP712_TYPED_DATA = {
-  types: {
-    EIP712Domain: [
-      { name: "name", type: "string" },
-      { name: "version", type: "string" },
-      { name: "chainId", type: "uint256" },
-      { name: "verifyingContract", type: "address" },
-    ],
-    Message: [
-      { name: "msg", type: "string" },
-    ],
-  },
-  primaryType: "Message" as const,
-  domain: {
-    name: "AsterSignTransaction",
-    version: "1",
-    chainId: 1666,
-    verifyingContract: "0x0000000000000000000000000000000000000000",
-  },
+const EIP712_DOMAIN = {
+  name: "AsterSignTransaction",
+  version: "1",
+  chainId: 714,
+  verifyingContract: "0x0000000000000000000000000000000000000000",
 };
+
+const EIP712_TYPES = {
+  Message: [
+    { name: "msg", type: "string" },
+  ],
+};
+
+const STRICT_KEYS = [
+  "symbol", "side", "type", "quantity", "price",
+  "timeInForce", "leverage", "orderId",
+];
 
 let _lastNonceSec = 0;
 let _nonceCounter = 0;
@@ -316,34 +313,50 @@ async function signV3Params(
   signer: string,
   signerPrivateKey: string,
 ): Promise<{ queryStringWithSig: string }> {
-  const signedParams: Record<string, string | number | boolean | undefined> = {};
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null) signedParams[k] = v;
+  const nonce = (Date.now() * 1000).toString();
+
+  const TAIL_KEYS = ["recvWindow", "timestamp", "nonce", "user", "signer"];
+  const SKIP_KEYS = new Set([...STRICT_KEYS, ...TAIL_KEYS]);
+
+  const msgParts: string[] = [];
+  for (const key of STRICT_KEYS) {
+    if (params[key] !== undefined && params[key] !== null && params[key] !== "") {
+      msgParts.push(`${key}=${params[key]}`);
+    }
   }
-  signedParams.nonce = getV3Nonce();
-  signedParams.user = user;
-  signedParams.signer = signer;
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && !SKIP_KEYS.has(k)) {
+      msgParts.push(`${k}=${v}`);
+    }
+  }
+  if (params.recvWindow) msgParts.push(`recvWindow=${params.recvWindow}`);
+  if (params.timestamp) msgParts.push(`timestamp=${params.timestamp}`);
+  msgParts.push(`nonce=${nonce}`);
+  msgParts.push(`user=${user}`);
+  msgParts.push(`signer=${signer}`);
 
-  const queryString = buildV3QueryString(signedParams);
-
-  const typedData = {
-    ...EIP712_TYPED_DATA,
-    message: { msg: queryString },
-  };
+  const msgString = msgParts.join("&");
 
   const wallet = new Wallet(signerPrivateKey);
   const signerAddr = wallet.address;
-  console.log(`[AsterV3Sign] msg=${queryString.substring(0, 200)}... signerAddr=${signerAddr} expectedSigner=${signer}`);
+  console.log(`[AsterV3Sign] msg=${msgString.substring(0, 200)}... signerAddr=${signerAddr} expectedSigner=${signer}`);
   if (signerAddr.toLowerCase() !== signer.toLowerCase()) {
     console.warn(`[AsterV3Sign] WARNING: wallet address ${signerAddr} does not match signer param ${signer}`);
   }
   const signature = await wallet.signTypedData(
-    typedData.domain,
-    { Message: typedData.types.Message },
-    typedData.message,
+    EIP712_DOMAIN,
+    EIP712_TYPES,
+    { msg: msgString },
   );
 
-  return { queryStringWithSig: queryString + "&signature=" + signature };
+  const allParams: Record<string, string | number | boolean | undefined> = { ...params };
+  allParams.nonce = nonce;
+  allParams.user = user;
+  allParams.signer = signer;
+  allParams.signature = signature;
+  const queryString = buildV3QueryString(allParams);
+
+  return { queryStringWithSig: queryString };
 }
 
 async function makeV3Request(
@@ -367,12 +380,19 @@ async function makeV3Request(
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const url = `${baseUrl}${path}?${queryStringWithSig}`;
+    let url: string;
     const fetchOptions: RequestInit = {
       method,
       headers,
       signal: controller.signal,
     };
+
+    if (method === "POST" || method === "PUT" || method === "DELETE") {
+      url = `${baseUrl}${path}`;
+      fetchOptions.body = queryStringWithSig;
+    } else {
+      url = `${baseUrl}${path}?${queryStringWithSig}`;
+    }
 
     console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 120)}...`);
     const response = await fetch(url, fetchOptions);
