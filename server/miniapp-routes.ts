@@ -707,7 +707,13 @@ export function registerMiniAppRoutes(app: Express) {
         const client = await getAsterClient(parseInt(chatId));
         if (!client) return res.status(400).json({ error: "Aster not connected" });
         const getClientFn = () => client;
-        const sendMsg = async (msg: string) => {};
+        const { getBotInstance } = await import("./telegram-bot");
+        const sendMsg = async (msg: string) => {
+          try {
+            const bot = getBotInstance();
+            if (bot) await bot.sendMessage(parseInt(chatId), msg, { parse_mode: "Markdown" });
+          } catch (e: any) { console.log(`[Agent:${chatId}] sendMsg error:`, e.message?.substring(0, 100)); }
+        };
         await startAgent(chatId, getClientFn, sendMsg);
         res.json({ running: true });
       }

@@ -16,6 +16,7 @@ interface AgentState {
   lastSignal: Signal;
   lastCheck: number;
   tradeCount: number;
+  scanCount: number;
   errors: number;
   timer: ReturnType<typeof setTimeout> | null;
   currentPosition: "LONG" | "SHORT" | "NONE";
@@ -61,6 +62,7 @@ function createDefaultState(): AgentState {
     lastSignal: "HOLD",
     lastCheck: 0,
     tradeCount: 0,
+    scanCount: 0,
     errors: 0,
     timer: null,
     currentPosition: "NONE",
@@ -90,6 +92,18 @@ export async function startAgent(
   if (existingPos) {
     state.currentPosition = existingPos.side === "LONG" ? "LONG" : "SHORT";
   }
+
+  try {
+    await sendMessage(
+      `🤖 *Agent Started*\n` +
+      `Symbol: ${state.config.symbol}\n` +
+      `Leverage: ${state.config.leverage}x\n` +
+      `Risk: ${state.config.riskPercent}%\n` +
+      `Interval: ${state.config.klineInterval}\n` +
+      `Current position: ${state.currentPosition}\n` +
+      `Checking every ${Math.round(state.config.intervalMs / 1000)}s`
+    );
+  } catch {}
 
   runAgentLoop(chatId, getClient, sendMessage);
   return true;
@@ -135,6 +149,21 @@ async function runAgentLoop(
     state.lastReason = result.reason;
 
     console.log(`[Agent:${chatId}] ${state.config.symbol} signal=${result.signal} price=$${result.lastClose.toFixed(2)} pos=${state.currentPosition} | ${result.reason}`);
+
+    state.scanCount++;
+    if (state.scanCount % 5 === 1) {
+      try {
+        const signalEmoji = result.signal === "BUY" ? "🟢" : result.signal === "SELL" ? "🔴" : "⏸";
+        await sendMessage(
+          `${signalEmoji} *Agent Scan #${state.scanCount}*\n` +
+          `${state.config.symbol} @ $${result.lastClose.toFixed(2)}\n` +
+          `Signal: *${result.signal}* | Position: ${state.currentPosition}\n` +
+          `EMA8: ${result.ema8.toFixed(2)} | EMA21: ${result.ema21.toFixed(2)}\n` +
+          `RSI: ${result.rsiValue.toFixed(1)}\n` +
+          `_${result.reason}_`
+        );
+      } catch {}
+    }
 
     if (result.signal === "BUY" && state.currentPosition !== "LONG") {
       if (state.currentPosition === "SHORT") {
