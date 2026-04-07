@@ -470,6 +470,12 @@ function renderDash(){
   h+='</div>';
   h+='</div>';
 
+  h+='<div class="card" style="text-align:center;border:1px solid rgba(29,155,240,0.2);background:linear-gradient(135deg,rgba(29,155,240,0.06),transparent)">';
+  h+='<div class="text-sm fw-600 text-w">Share Your Performance</div>';
+  h+='<div class="text-xs text-dim mt-1">Show off your trading stats on X</div>';
+  h+='<button class="btn mt-2" style="background:#1d9bf0;color:#fff;font-weight:700;width:100%;height:44px;font-size:14px;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:8px" onclick="sharePnl()"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg> Share PnL Card</button>';
+  h+='</div>';
+
   h+='<div style="display:flex;gap:8px;margin-top:8px">';
   h+='<button class="btn btn-outline" style="flex:1" onclick="forceRefresh()">↻ Force Refresh</button>';
   h+='<button class="btn btn-outline" style="flex:0;font-size:10px;padding:8px" onclick="debugBalance()">🔍 Debug</button>';
@@ -652,6 +658,20 @@ async function doTransfer(amount){
 }
 
 
+function sharePnl(){
+  var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
+  var totalBal=(D.walletBalance||0)+(D.bscBalance||0);
+  var pSign=totalPnl>=0?'+':'';
+  var agentName=(AG&&AG.config&&AG.config.name)?AG.config.name:'Trader';
+  var cardUrl='https://build4-1.onrender.com/pnl?bal='+totalBal.toFixed(2)+'&pnl='+totalPnl.toFixed(2)+'&rpnl='+(D.realizedPnl||0).toFixed(2)+'&upnl='+(D.unrealizedPnl||0).toFixed(2)+'&w='+(D.wins||0)+'&l='+(D.losses||0)+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName);
+  var tweetText=pSign+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @AsterDEX via @build4bot 🤖\\n\\n';
+  tweetText+='Balance: $'+totalBal.toFixed(2)+'\\n';
+  if(D.wins+D.losses>0)tweetText+='Win Rate: '+Math.round(D.wins/(D.wins+D.losses)*100)+'% ('+D.wins+'W/'+D.losses+'L)\\n';
+  if((D.positions||[]).length>0)tweetText+=(D.positions||[]).length+' open position'+(D.positions.length>1?'s':'')+'\\n';
+  tweetText+='\\nTrade from Telegram 👇';
+  var twitterUrl='https://twitter.com/intent/tweet?text='+encodeURIComponent(tweetText)+'&url='+encodeURIComponent(cardUrl);
+  window.open(twitterUrl,'_blank');
+}
 async function forceRefresh(){
   toast('Refreshing...','info');
   try{

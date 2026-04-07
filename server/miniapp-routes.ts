@@ -62,6 +62,83 @@ export function registerMiniAppRoutes(app: Express) {
     res.redirect("/miniapp");
   });
 
+  app.get("/pnl", (req: Request, res: Response) => {
+    const q = req.query;
+    const bal = parseFloat(q.bal as string || "0");
+    const pnl = parseFloat(q.pnl as string || "0");
+    const rpnl = parseFloat(q.rpnl as string || "0");
+    const upnl = parseFloat(q.upnl as string || "0");
+    const wins = parseInt(q.w as string || "0");
+    const losses = parseInt(q.l as string || "0");
+    const pos = parseInt(q.pos as string || "0");
+    const name = decodeURIComponent(q.name as string || "Trader");
+    const pnlSign = pnl >= 0 ? "+" : "";
+    const pnlText = `${pnlSign}$${Math.abs(pnl).toFixed(2)}`;
+    const winRate = wins + losses > 0 ? Math.round(wins / (wins + losses) * 100) : 0;
+    const pnlColor = pnl >= 0 ? "#0ecb81" : "#f85149";
+    const accentRgb = pnl >= 0 ? "14,203,129" : "248,81,73";
+
+    const html = `<!DOCTYPE html><html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${name} | PnL Card — BUILD4</title>
+<meta property="og:title" content="${name}'s Trading Performance">
+<meta property="og:description" content="PnL: ${pnlText} | Balance: $${bal.toFixed(2)} | Win Rate: ${winRate}% (${wins}W/${losses}L) | ${pos} open positions">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="${name}'s Trading Performance — BUILD4">
+<meta name="twitter:description" content="PnL: ${pnlText} | Balance: $${bal.toFixed(2)} | Win Rate: ${winRate}% | Trade futures on Aster DEX via Telegram">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0e11;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:20px}
+.card{max-width:420px;width:100%;background:linear-gradient(145deg,#12161a,#1a1e24);border:1px solid rgba(${accentRgb},0.3);border-radius:20px;padding:32px;position:relative;overflow:hidden}
+.glow{position:absolute;top:-40px;right:-40px;width:200px;height:200px;background:radial-gradient(circle,rgba(${accentRgb},0.15),transparent);border-radius:50%}
+.glow2{position:absolute;bottom:-60px;left:-60px;width:180px;height:180px;background:radial-gradient(circle,rgba(${accentRgb},0.08),transparent);border-radius:50%}
+.header{display:flex;align-items:center;gap:12px;margin-bottom:24px;position:relative;z-index:1}
+.avatar{width:48px;height:48px;border-radius:14px;background:rgba(${accentRgb},0.15);display:flex;align-items:center;justify-content:center;font-size:24px}
+.name{color:#fff;font-size:18px;font-weight:700}
+.subtitle{color:#8a919e;font-size:12px;margin-top:2px}
+.pnl-section{text-align:center;padding:20px 0;position:relative;z-index:1}
+.pnl-label{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#8a919e;font-weight:500}
+.pnl-val{font-size:42px;font-weight:800;color:${pnlColor};font-family:'SF Mono',SFMono-Regular,Consolas,monospace;margin:8px 0;letter-spacing:-1px}
+.bal-val{font-size:14px;color:#aaa;font-family:'SF Mono',SFMono-Regular,Consolas,monospace}
+.stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:20px;position:relative;z-index:1}
+.stat{text-align:center;padding:12px 8px;background:rgba(255,255,255,0.03);border-radius:12px;border:1px solid rgba(255,255,255,0.05)}
+.stat-label{font-size:10px;color:#8a919e;text-transform:uppercase;letter-spacing:.5px;font-weight:500}
+.stat-val{font-size:16px;font-weight:700;margin-top:4px;font-family:'SF Mono',SFMono-Regular,Consolas,monospace}
+.green{color:#0ecb81}.red{color:#f85149}.white{color:#fff}
+.footer{margin-top:24px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}
+.brand{color:#8a919e;font-size:12px;font-weight:600;letter-spacing:.5px}
+.powered{color:#555;font-size:10px}
+.cta{margin-top:20px;text-align:center;position:relative;z-index:1}
+.cta a{display:inline-block;padding:12px 32px;background:linear-gradient(135deg,rgba(${accentRgb},0.9),rgba(${accentRgb},0.6));color:${pnl >= 0 ? '#0b0e11' : '#fff'};text-decoration:none;border-radius:12px;font-weight:700;font-size:14px}
+</style></head><body>
+<div class="card">
+<div class="glow"></div><div class="glow2"></div>
+<div class="header"><div class="avatar">🤖</div><div><div class="name">${name}</div><div class="subtitle">Aster DEX Futures</div></div></div>
+<div class="pnl-section">
+<div class="pnl-label">Total PnL</div>
+<div class="pnl-val">${pnlText}</div>
+<div class="bal-val">Balance: $${bal.toFixed(2)}</div>
+</div>
+<div class="stats">
+<div class="stat"><div class="stat-label">Win Rate</div><div class="stat-val ${winRate >= 50 ? 'green' : 'red'}">${winRate}%</div></div>
+<div class="stat"><div class="stat-label">W / L</div><div class="stat-val white"><span class="green">${wins}</span> / <span class="red">${losses}</span></div></div>
+<div class="stat"><div class="stat-label">Positions</div><div class="stat-val white">${pos}</div></div>
+</div>
+<div class="stats" style="grid-template-columns:1fr 1fr;margin-top:10px">
+<div class="stat"><div class="stat-label">Unrealized</div><div class="stat-val ${upnl >= 0 ? 'green' : 'red'}">${upnl >= 0 ? '+' : ''}$${Math.abs(upnl).toFixed(2)}</div></div>
+<div class="stat"><div class="stat-label">Realized</div><div class="stat-val ${rpnl >= 0 ? 'green' : 'red'}">${rpnl >= 0 ? '+' : ''}$${Math.abs(rpnl).toFixed(2)}</div></div>
+</div>
+<div class="footer"><span class="brand">BUILD4</span><span class="powered">Powered by Aster DEX</span></div>
+<div class="cta"><a href="https://t.me/build4bot">Start Trading on Telegram →</a></div>
+</div></body></html>`;
+
+    res.status(200).set({
+      "Content-Type": "text/html",
+      "Cache-Control": "public, max-age=60",
+    }).end(html);
+  });
+
   app.use("/api/miniapp", miniAppAuth);
 
   app.post("/api/miniapp/import-wallet", async (req: Request, res: Response) => {
