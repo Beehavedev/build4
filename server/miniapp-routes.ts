@@ -392,11 +392,11 @@ export function registerMiniAppRoutes(app: Express) {
       let walletAddr: string | null = null;
       try {
         walletAddr = getUserWalletAddress(parseInt(chatId));
-        console.log(`[MiniApp] in-memory wallet for chatId=${chatId}: ${walletAddr}`);
+        console.log(`[MiniApp] in-memory wallet for chatId=${chatId}: ${walletAddr?.substring(0, 10)}...`);
         if (!walletAddr) {
           const walletRows = await storage.getTelegramWallets(chatId);
           walletAddr = walletRows.length > 0 ? walletRows[0].walletAddress : null;
-          console.log(`[MiniApp] DB wallet fallback chatId=${chatId}, found=${walletRows.length}, addr=${walletAddr}`);
+          console.log(`[MiniApp] DB wallet fallback chatId=${chatId}, found=${walletRows.length}, addr=${walletAddr?.substring(0, 10)}...`);
         }
         if (walletAddr) {
           const ethers = await import("ethers");
@@ -412,7 +412,7 @@ export function registerMiniAppRoutes(app: Express) {
           ]);
           bscBalance = parseFloat(ethers.formatUnits(bal, 18));
           bnbBalance = parseFloat(ethers.formatEther(bnbBal));
-          console.log(`[MiniApp] BSC balance for ${walletAddr}: $${bscBalance} USDT, ${bnbBalance} BNB`);
+          console.log(`[MiniApp] BSC balance for ${walletAddr?.substring(0, 10)}...: $${bscBalance} USDT, ${bnbBalance} BNB`);
         }
       } catch (bscErr: any) {
         console.error(`[MiniApp] BSC balance fetch error:`, bscErr.message);
@@ -453,7 +453,7 @@ export function registerMiniAppRoutes(app: Express) {
       const walletAddr = activeWallet || (walletRows.length > 0 ? walletRows[0].walletAddress : null);
       if (!walletAddr) return res.status(400).json({ error: "No wallet linked to this chat. Use /start in the bot first." });
 
-      console.log(`[MiniApp] deposit: activeWallet=${activeWallet}, dbFirst=${walletRows[0]?.walletAddress}, using=${walletAddr}`);
+      console.log(`[MiniApp] deposit: activeWallet=${activeWallet?.substring(0, 10)}, dbFirst=${walletRows[0]?.walletAddress?.substring(0, 10)}, using=${walletAddr?.substring(0, 10)}`);
 
       let rawPk = await resolvePrivateKey(parseInt(chatId), walletAddr);
       if (!rawPk) {
@@ -477,10 +477,10 @@ export function registerMiniAppRoutes(app: Express) {
       const pkWallet = new ethers.Wallet(rawPk);
       const derivedAddr = pkWallet.address.toLowerCase();
       const storedAddr = walletAddr.toLowerCase();
-      console.log(`[MiniApp] deposit: stored wallet=${storedAddr}, key derives to=${derivedAddr}`);
+      console.log(`[MiniApp] deposit: stored wallet=${storedAddr.substring(0, 10)}..., key derives to=${derivedAddr.substring(0, 10)}...`);
 
       if (derivedAddr !== storedAddr) {
-        console.log(`[MiniApp] KEY MISMATCH: key belongs to ${derivedAddr}, not ${storedAddr}. Cannot auto-deposit.`);
+        console.log(`[MiniApp] KEY MISMATCH: key belongs to ${derivedAddr.substring(0, 10)}..., not ${storedAddr.substring(0, 10)}.... Cannot auto-deposit.`);
         return res.json({
           success: false,
           error: `Auto-deposit unavailable — wallet key mismatch. Please deposit manually:\n\n1. Open your external wallet app\n2. Send $${amount} USDT (BEP-20) on BSC to:\n0xaac5f84303ee5cdbd19c265cee295cd5a36a26ee\n3. Paste the TX hash below to verify`,

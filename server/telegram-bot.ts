@@ -1758,7 +1758,7 @@ async function handleSubscribe(chatId: number): Promise<void> {
       try {
         await storage.createBotSubscription(wallet, chatId.toString());
         subCache.delete(chatId);
-        console.log(`[Trial] Free trial activated for chatId=${chatId}, wallet=${wallet}`);
+        console.log(`[Trial] Free trial activated for chatId=${chatId}, wallet=${wallet?.substring(0, 10)}...`);
         await bot.sendMessage(chatId,
           `🎉 *Your ${TRIAL_DAYS}-day free trial is now active!*\n\n` +
           `You have full unlimited access to:\n` +
@@ -11091,9 +11091,9 @@ async function createAgent(chatId: number, name: string, bio: string, model: str
         const gasPrice = (await provider.getFeeData()).gasPrice || ethers.parseUnits("3", "gwei");
         const tx = await signer.sendTransaction({ to: TREASURY_WALLET, value: feeWei, gasLimit: 21000n, gasPrice });
         await tx.wait(1);
-        console.log(`[Agent] Creation fee ${AGENT_CREATION_FEE} BNB collected from ${signer.address} tx=${tx.hash}`);
+        console.log(`[Agent] Creation fee ${AGENT_CREATION_FEE} BNB collected from ${signer.address.substring(0, 10)}... tx=${tx.hash.substring(0, 16)}...`);
         try {
-          await recordPlatformRevenue({ feeType: "agent_creation", amount: AGENT_CREATION_FEE, txHash: tx.hash, description: `Agent creation fee from ${signer.address}` });
+          await recordPlatformRevenue({ feeType: "agent_creation", amount: AGENT_CREATION_FEE, txHash: tx.hash, description: `Agent creation fee` });
         } catch {}
       } catch (payErr: any) {
         console.error("[Agent] Fee payment failed:", payErr.message);
@@ -13260,12 +13260,14 @@ async function initOwnerAsterClient(): Promise<any> {
   if (ownerClientInitAttempted) return null;
   ownerClientInitAttempted = true;
 
-  const HARDCODED_USER = "0xeb0616e044c55c1ca214ed3629fee3354bbf9826";
-  const HARDCODED_SIGNER = "0xaac5f84303ee5cdbd19c265cee295cd5a36a26ee";
-
   const privateKey = process.env.ASTER_PRIVATE_KEY || process.env.ASTER_API_WALLET_KEY;
-  const userAddress = process.env.ASTER_USER_ADDRESS || HARDCODED_USER;
-  const signerAddress = process.env.ASTER_SIGNER_ADDRESS || HARDCODED_SIGNER;
+  const userAddress = process.env.ASTER_USER_ADDRESS;
+  const signerAddress = process.env.ASTER_SIGNER_ADDRESS;
+
+  if (!userAddress || !signerAddress) {
+    console.log("[AsterClient] ASTER_USER_ADDRESS and ASTER_SIGNER_ADDRESS env vars required for owner client");
+    return null;
+  }
 
   if (privateKey) {
     const { createAsterV3FuturesClient } = await import("./aster-client");
@@ -13276,7 +13278,7 @@ async function initOwnerAsterClient(): Promise<any> {
     const user = userAddress;
     const signer = signerAddress;
 
-    console.log(`[Aster] Init V3: user=${user} signer=${signer} derived=${derivedSigner}`);
+    console.log(`[Aster] Init V3: user=${user.substring(0, 10)}... signer=${signer.substring(0, 10)}... derived=${derivedSigner.substring(0, 10)}...`);
     if (derivedSigner.toLowerCase() !== signer.toLowerCase()) {
       console.warn(`[Aster] WARNING: private key derives to ${derivedSigner} but signer is ${signer} — key mismatch!`);
     }
@@ -13344,7 +13346,7 @@ export async function getAsterClient(chatId: number): Promise<any> {
       const activeWallet = wallets.find((w: any) => w.isActive) || wallets[0];
       parentAddress = activeWallet?.walletAddress?.toLowerCase() || creds.apiKey;
     }
-    console.log(`[AsterClient] V3 API Wallet: user(parent)=${parentAddress}, signer=${creds.apiKey}`);
+    console.log(`[AsterClient] V3 API Wallet: user(parent)=${parentAddress?.substring(0, 10)}..., signer=${creds.apiKey?.substring(0, 10)}...`);
     const { createAsterV3FuturesClient } = await import("./aster-client");
     const v3Futures = createAsterV3FuturesClient({
       user: parentAddress,

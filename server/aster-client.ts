@@ -441,8 +441,7 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
       }),
     });
     const loginData = await loginRes.json();
-    const loginDataStr = JSON.stringify(loginData).substring(0, 800);
-    console.log(`[Aster] Login response status=${loginRes.status} code=${loginData?.code} msg=${loginData?.message} hasData=${!!loginData?.data} dataKeys=${loginData?.data ? Object.keys(loginData.data).join(',') : 'none'}`, loginDataStr);
+    console.log(`[Aster] Login response status=${loginRes.status} code=${loginData?.code} msg=${loginData?.message} hasData=${!!loginData?.data} dataKeys=${loginData?.data ? Object.keys(loginData.data).join(',') : 'none'}`);
     if (loginData?.code !== "000000") {
       const msg = loginData?.message || loginData?.msg || "Unknown error";
       if (msg.toLowerCase().includes("region") || msg.toLowerCase().includes("not available")) {
