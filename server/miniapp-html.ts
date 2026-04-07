@@ -25,11 +25,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 .hdr-sub{font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px}
 .live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(63,185,80,.4)}50%{opacity:.7;box-shadow:0 0 0 6px rgba(63,185,80,0)}}
-.tabs{position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(11,14,17,.95);backdrop-filter:blur(12px);border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(4,1fr);height:60px;padding-bottom:env(safe-area-inset-bottom)}
-.tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10px;font-weight:500;color:var(--text3);cursor:pointer;border:none;background:none;transition:all .2s;position:relative}
+.tabs{position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(11,14,17,.95);backdrop-filter:blur(12px);border-top:1px solid var(--border);display:flex;height:52px;padding-bottom:env(safe-area-inset-bottom);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:9px;font-weight:500;color:var(--text3);cursor:pointer;border:none;background:none;transition:all .2s;position:relative;min-width:0;flex:1 0 auto;padding:4px 10px;white-space:nowrap}
 .tab.active{color:var(--green)}
-.tab.active::before{content:'';position:absolute;top:-1px;left:25%;right:25%;height:2px;background:var(--green);border-radius:0 0 2px 2px}
-.tab svg{width:20px;height:20px}
+.tab.active::before{content:'';position:absolute;top:-1px;left:20%;right:20%;height:2px;background:var(--green);border-radius:0 0 2px 2px}
+.tab svg{width:18px;height:18px}
 .page{padding:12px 16px 80px;display:none;animation:fadeIn .2s ease}
 .page.active{display:block}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
@@ -117,7 +118,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 <div id="p-deposit" class="page"></div>
 <div id="p-agent" class="page"></div>
 
-<div class="tabs" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none">
+<div class="tabs">
   <button class="tab active" data-tab="p-dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>Home</button>
   <button class="tab" data-tab="p-trade"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>Trade</button>
   <button class="tab" data-tab="p-positions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>Positions</button>
