@@ -298,13 +298,8 @@ function getV3Nonce(): string {
 }
 
 function buildV3QueryString(params: Record<string, string | number | boolean | undefined>): string {
-  const parts: string[] = [];
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null) {
-      parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
-    }
-  }
-  return parts.join("&");
+  const keys = Object.keys(params).filter(k => params[k] !== undefined && params[k] !== null).sort();
+  return keys.map(k => `${encodeURIComponent(k)}=${encodeURIComponent(String(params[k]))}`).join("&");
 }
 
 async function signV3Params(
@@ -366,14 +361,9 @@ async function makeV3Request(
       signal: controller.signal,
     };
 
-    if (method === "POST" || method === "PUT") {
-      url = `${baseUrl}${path}`;
-      fetchOptions.body = queryStringWithSig;
-    } else {
-      url = `${baseUrl}${path}?${queryStringWithSig}`;
-    }
+    url = `${baseUrl}${path}?${queryStringWithSig}`;
 
-    console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 120)}... bodyLen=${fetchOptions.body ? (fetchOptions.body as string).length : 0}`);
+    console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 200)}...`);
     const response = await fetch(url, fetchOptions);
 
     clearTimeout(timeoutId);
