@@ -278,22 +278,10 @@ const EIP712_TYPES = {
   ],
 };
 
-const V3_STRICT_KEY_ORDER = [
-  "symbol", "positionSide", "side", "type",
-  "timeInForce", "quantity", "price",
-  "leverage", "marginType", "dualSidePosition",
-  "orderId", "origClientOrderId", "newClientOrderId",
-  "reduceOnly", "closePosition", "activationPrice", "callbackRate", "workingType",
-  "startTime", "endTime", "limit", "incomeType",
-  "asset", "amount",
-  "listenKey",
-  "recvWindow", "timestamp",
-];
-
 let _lastNonceSec = 0;
 let _nonceCounter = 0;
 
-function getV3Nonce(): string {
+function getV3Nonce(): number {
   const nowSec = Math.trunc(Date.now() / 1000);
   if (nowSec === _lastNonceSec) {
     _nonceCounter++;
@@ -301,48 +289,12 @@ function getV3Nonce(): string {
     _lastNonceSec = nowSec;
     _nonceCounter = 0;
   }
-  return String(nowSec * 1_000_000 + _nonceCounter);
+  return nowSec * 1_000_000 + _nonceCounter;
 }
 
-function buildV3MsgString(params: Record<string, string | number | boolean | undefined>): string {
-  const parts: string[] = [];
-
-  for (const key of V3_STRICT_KEY_ORDER) {
-    if (params[key] !== undefined && params[key] !== null) {
-      parts.push(`${key}=${String(params[key])}`);
-    }
-  }
-
-  for (const key of Object.keys(params)) {
-    if (params[key] !== undefined && params[key] !== null && !V3_STRICT_KEY_ORDER.includes(key) && key !== "nonce" && key !== "user" && key !== "signer") {
-      parts.push(`${key}=${String(params[key])}`);
-    }
-  }
-
-  parts.push(`nonce=${params.nonce}`);
-  parts.push(`user=${params.user}`);
-  parts.push(`signer=${params.signer}`);
-
-  return parts.join("&");
-}
-
-function buildV3FullQueryString(params: Record<string, string | number | boolean | undefined>): string {
-  const parts: string[] = [];
-  for (const key of V3_STRICT_KEY_ORDER) {
-    if (params[key] !== undefined && params[key] !== null) {
-      parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`);
-    }
-  }
-  for (const key of Object.keys(params)) {
-    if (params[key] !== undefined && params[key] !== null && !V3_STRICT_KEY_ORDER.includes(key) && key !== "nonce" && key !== "user" && key !== "signer" && key !== "signature") {
-      parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`);
-    }
-  }
-  if (params.nonce !== undefined) parts.push(`nonce=${encodeURIComponent(String(params.nonce))}`);
-  if (params.user !== undefined) parts.push(`user=${encodeURIComponent(String(params.user))}`);
-  if (params.signer !== undefined) parts.push(`signer=${encodeURIComponent(String(params.signer))}`);
-  if (params.signature !== undefined) parts.push(`signature=${encodeURIComponent(String(params.signature))}`);
-  return parts.join("&");
+function buildSortedQueryString(params: Record<string, string | number | boolean | undefined>): string {
+  const keys = Object.keys(params).filter(k => params[k] !== undefined && params[k] !== null).sort();
+  return keys.map(k => `${k}=${String(params[k])}`).join("&");
 }
 
 async function signV3Params(
@@ -351,34 +303,41 @@ async function signV3Params(
   signer: string,
   signerPrivateKey: string,
 ): Promise<{ queryStringWithSig: string }> {
-  const signedParams: Record<string, string | number | boolean | undefined> = {};
+  const businessParams: Record<string, string | number | boolean | undefined> = {};
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null) signedParams[k] = v;
+    if (v !== undefined && v !== null) businessParams[k] = v;
   }
-  signedParams.timestamp = Date.now();
-  signedParams.recvWindow = signedParams.recvWindow || 5000;
-  signedParams.nonce = getV3Nonce();
-  signedParams.user = user;
-  signedParams.signer = signer;
+  businessParams.timestamp = Date.now();
+  if (!businessParams.recvWindow) businessParams.recvWindow = 5000;
 
-  const msgString = buildV3MsgString(signedParams);
+  const msgPayload = buildSortedQueryString(businessParams);
 
   const wallet = new Wallet(signerPrivateKey);
   const signerAddr = wallet.address;
-  console.log(`[AsterV3Sign] msg=${msgString.substring(0, 300)}... signerAddr=${signerAddr} expectedSigner=${signer}`);
+  console.log(`[AsterV3Sign] msg=${msgPayload.substring(0, 300)} signerAddr=${signerAddr} expectedSigner=${signer}`);
   if (signerAddr.toLowerCase() !== signer.toLowerCase()) {
     console.warn(`[AsterV3Sign] WARNING: wallet address ${signerAddr} does not match signer param ${signer}`);
   }
+
   const signature = await wallet.signTypedData(
     EIP712_DOMAIN,
     EIP712_TYPES,
-    { msg: msgString },
+    { msg: msgPayload },
   );
 
-  signedParams.signature = signature;
-  const queryStringWithSig = buildV3FullQueryString(signedParams);
+  const nonce = getV3Nonce();
 
-  return { queryStringWithSig };
+  const allParts: string[] = [];
+  const sortedKeys = Object.keys(businessParams).filter(k => businessParams[k] !== undefined && businessParams[k] !== null).sort();
+  for (const k of sortedKeys) {
+    allParts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(businessParams[k]))}`);
+  }
+  allParts.push(`nonce=${nonce}`);
+  allParts.push(`user=${encodeURIComponent(user)}`);
+  allParts.push(`signer=${encodeURIComponent(signer)}`);
+  allParts.push(`signature=${encodeURIComponent(signature)}`);
+
+  return { queryStringWithSig: allParts.join("&") };
 }
 
 async function makeV3Request(
