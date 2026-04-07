@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
 import { getAsterClient, getBotWalletAsterClient, getUserWalletAddress, resolvePrivateKey } from "./telegram-bot";
 import { createHmac } from "crypto";
+import { getMiniAppHTML } from "./miniapp-html";
 
 function validateTelegramInitData(initData: string, botToken: string): { valid: boolean; chatId?: string } {
   try {
@@ -45,6 +46,22 @@ function miniAppAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 export function registerMiniAppRoutes(app: Express) {
+  app.get("/miniapp", (_req: Request, res: Response) => {
+    const html = getMiniAppHTML();
+    res.status(200).set({
+      "Content-Type": "text/html",
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+      "Pragma": "no-cache",
+      "Expires": "0",
+      "Surrogate-Control": "no-store",
+      "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; connect-src 'self' https:; frame-ancestors https://web.telegram.org https://*.telegram.org; object-src 'none'; base-uri 'self'"
+    }).end(html);
+  });
+
+  app.get("/miniapp-old", (_req: Request, res: Response) => {
+    res.redirect("/miniapp");
+  });
+
   app.use("/api/miniapp", miniAppAuth);
 
   app.post("/api/miniapp/import-wallet", async (req: Request, res: Response) => {

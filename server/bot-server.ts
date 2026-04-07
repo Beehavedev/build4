@@ -6,7 +6,6 @@ import { fileURLToPath } from "url";
 import { startTelegramBot, processWebhookUpdate, stopTelegramBot } from "./telegram-bot";
 import { restoreTradingPreferences, startTradingAgent, isTradingAgentRunning } from "./trading-agent";
 import { registerMiniAppRoutes } from "./miniapp-routes";
-import { getMiniAppHTML } from "./miniapp-html";
 import pg from "pg";
 
 process.on("uncaughtException", (err) => {
@@ -133,24 +132,7 @@ app.get("/health", (_req, res) => {
 
 registerMiniAppRoutes(app);
 
-app.get("/miniapp", (_req, res) => {
-  const html = getMiniAppHTML();
-  res.status(200).set({
-    "Content-Type":"text/html",
-    "Cache-Control":"no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
-    "Pragma":"no-cache",
-    "Expires":"0",
-    "Surrogate-Control":"no-store",
-    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; connect-src 'self' https:; frame-ancestors https://web.telegram.org https://*.telegram.org; object-src 'none'; base-uri 'self'"
-  }).end(html);
-});
-
-app.get("/miniapp-old", (_req, res) => {
-  res.redirect('/miniapp');
-});
-
-/* Old inline HTML removed — now served from miniapp-html.ts */
-
+/* Dead old inline HTML removed — miniapp HTML now served from miniapp-routes.ts via getMiniAppHTML() */
 if (false) { const html = `<!DOCTYPE html><html><head><title>OLD</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
