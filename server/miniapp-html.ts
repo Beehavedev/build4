@@ -435,14 +435,13 @@ function renderDash(){
 
   if(D.positions&&D.positions.length>0){
     h+='<div class="card"><div class="section-title">Open Positions <span class="badge badge-info">'+D.positions.length+'</span></div>';
-    D.positions.forEach(p=>{
+    D.positions.forEach((p,idx)=>{
       var roe=p.roe||0;
       var liq=parseFloat(p.liquidationPrice||'0');
       var notional=p.notional||(p.size*p.markPrice);
       var margin=p.margin||(parseFloat(p.leverage||'1')>0?notional/parseFloat(p.leverage||'1'):0);
-      var cardBorder=(p.unrealizedPnl||0)>=0?'rgba(63,185,80,0.2)':'rgba(248,81,73,0.2)';
       h+='<div class="pos-item" style="border-left:3px solid '+((p.unrealizedPnl||0)>=0?'var(--green)':'var(--red)')+';padding-left:10px">';
-      h+='<div class="row"><div class="gap"><span class="badge '+(p.side==='LONG'?'badge-long':'badge-short')+'">'+p.side+'</span><span class="text-w fw-600 text-sm">'+p.symbol+'</span><span class="text-xs text-dim">'+p.leverage+'x</span></div>'+pnlHtml(p.unrealizedPnl)+'</div>';
+      h+='<div class="row"><div class="gap"><span class="badge '+(p.side==='LONG'?'badge-long':'badge-short')+'">'+p.side+'</span><span class="text-w fw-600 text-sm">'+p.symbol+'</span><span class="text-xs text-dim">'+p.leverage+'x</span></div><div class="gap">'+pnlHtml(p.unrealizedPnl)+'<button onclick="sharePnl('+idx+')" style="background:none;border:1px solid rgba(29,155,240,0.3);border-radius:6px;padding:3px 6px;cursor:pointer;display:flex;align-items:center" title="Share on X"><svg width="12" height="12" viewBox="0 0 24 24" fill="#1d9bf0"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></button></div></div>';
       h+='<div class="row mt-1"><span class="text-xs gv mono">'+p.size+' @ $'+fmt(p.entryPrice)+'</span><span class="text-xs mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'% ROE</span></div>';
       h+='<div class="row mt-1"><span class="text-xs gv mono">Mark: $'+fmt(p.markPrice)+'</span><span class="text-xs gv mono">Margin: $'+fmt(margin)+'</span></div>';
       if(liq>0){h+='<div class="row mt-1"><span class="text-xs mono" style="color:var(--red)">Liq: $'+fmt(liq)+'</span><span class="text-xs gv mono">'+fmt(Math.abs((p.markPrice-liq)/p.markPrice*100),1)+'% away</span></div>'}
@@ -658,17 +657,34 @@ async function doTransfer(amount){
 }
 
 
-function sharePnl(){
-  var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
-  var totalBal=(D.walletBalance||0)+(D.bscBalance||0);
-  var pSign=totalPnl>=0?'+':'';
+function sharePnl(posIdx){
   var agentName=(AG&&AG.config&&AG.config.name)?AG.config.name:'Trader';
-  var cardUrl='https://build4-1.onrender.com/pnl?bal='+totalBal.toFixed(2)+'&pnl='+totalPnl.toFixed(2)+'&rpnl='+(D.realizedPnl||0).toFixed(2)+'&upnl='+(D.unrealizedPnl||0).toFixed(2)+'&w='+(D.wins||0)+'&l='+(D.losses||0)+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName);
-  var tweetText=pSign+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @AsterDEX via @build4bot 🤖\\n\\n';
-  tweetText+='Balance: $'+totalBal.toFixed(2)+'\\n';
-  if(D.wins+D.losses>0)tweetText+='Win Rate: '+Math.round(D.wins/(D.wins+D.losses)*100)+'% ('+D.wins+'W/'+D.losses+'L)\\n';
-  if((D.positions||[]).length>0)tweetText+=(D.positions||[]).length+' open position'+(D.positions.length>1?'s':'')+'\\n';
-  tweetText+='\\nTrade from Telegram 👇';
+  var totalBal=(D.walletBalance||0)+(D.bscBalance||0);
+  var w=D.wins||0,l=D.losses||0;
+  if(typeof posIdx==='number'&&D.positions&&D.positions[posIdx]){
+    var p=D.positions[posIdx];
+    var pnlVal=parseFloat(p.unrealizedPnl||0);
+    var entryP=parseFloat(p.entryPrice||0);
+    var markP=parseFloat(p.markPrice||0);
+    var pctVal=entryP>0?((markP-entryP)/entryP*100*(p.positionSide==='SHORT'?-1:1)):0;
+    var sym=p.symbol||'BTCUSDT';
+    var side=p.positionSide||'LONG';
+    var lev=parseInt(p.leverage||5);
+    var cardUrl='https://build4-1.onrender.com/pnl?bal='+totalBal.toFixed(2)+'&pnl='+pnlVal.toFixed(2)+'&pct='+pctVal.toFixed(2)+'&sym='+encodeURIComponent(sym)+'&side='+side+'&lev='+lev+'&ep='+entryP+'&mp='+markP+'&w='+w+'&l='+l+'&name='+encodeURIComponent(agentName);
+    var pSign=pnlVal>=0?'+':'';
+    var tweetText=pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x) via @build4bot 🤖\\n';
+    tweetText+=pSign+'$'+Math.abs(pnlVal).toFixed(2)+' USDT unrealized\\n\\n';
+    tweetText+='Trade futures on @AsterDEX from Telegram 👇';
+  }else{
+    var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
+    var pSign2=totalPnl>=0?'+':'';
+    var cardUrl='https://build4-1.onrender.com/pnl?bal='+totalBal.toFixed(2)+'&pnl='+totalPnl.toFixed(2)+'&rpnl='+(D.realizedPnl||0).toFixed(2)+'&upnl='+(D.unrealizedPnl||0).toFixed(2)+'&w='+w+'&l='+l+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName);
+    var tweetText=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @AsterDEX via @build4bot 🤖\\n\\n';
+    tweetText+='Balance: $'+totalBal.toFixed(2)+'\\n';
+    if(w+l>0)tweetText+='Win Rate: '+Math.round(w/(w+l)*100)+'% ('+w+'W/'+l+'L)\\n';
+    if((D.positions||[]).length>0)tweetText+=(D.positions||[]).length+' open position'+(D.positions.length>1?'s':'')+'\\n';
+    tweetText+='\\nTrade from Telegram 👇';
+  }
   var twitterUrl='https://twitter.com/intent/tweet?text='+encodeURIComponent(tweetText)+'&url='+encodeURIComponent(cardUrl);
   window.open(twitterUrl,'_blank');
 }

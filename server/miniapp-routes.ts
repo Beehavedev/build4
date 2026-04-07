@@ -3,6 +3,7 @@ import { storage } from "./storage";
 import { getAsterClient, getBotWalletAsterClient, getUserWalletAddress, resolvePrivateKey } from "./telegram-bot";
 import { createHmac } from "crypto";
 import { getMiniAppHTML } from "./miniapp-html";
+import { generatePnlCardImage } from "./pnl-image";
 
 function validateTelegramInitData(initData: string, botToken: string): { valid: boolean; chatId?: string } {
   try {
@@ -62,6 +63,32 @@ export function registerMiniAppRoutes(app: Express) {
     res.redirect("/miniapp");
   });
 
+  app.get("/pnl/image", async (req: Request, res: Response) => {
+    try {
+      const q = req.query;
+      const imgBuf = await generatePnlCardImage({
+        pnlPercent: parseFloat(q.pct as string || "0"),
+        pnlUsd: parseFloat(q.pnl as string || "0"),
+        symbol: decodeURIComponent(q.sym as string || "BTCUSDT"),
+        side: (q.side as string || "LONG").toUpperCase(),
+        leverage: parseInt(q.lev as string || "5"),
+        entryPrice: parseFloat(q.ep as string || "0"),
+        markPrice: parseFloat(q.mp as string || "0"),
+        balance: parseFloat(q.bal as string || "0"),
+        name: decodeURIComponent(q.name as string || "Trader"),
+        wins: parseInt(q.w as string || "0"),
+        losses: parseInt(q.l as string || "0"),
+      });
+      res.status(200).set({
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=300",
+      }).end(imgBuf);
+    } catch (e: any) {
+      console.error("[pnl/image] Error:", e.message);
+      res.status(500).json({ error: "Failed to generate image" });
+    }
+  });
+
   app.get("/pnl", (req: Request, res: Response) => {
     const q = req.query;
     const bal = parseFloat(q.bal as string || "0");
@@ -72,21 +99,32 @@ export function registerMiniAppRoutes(app: Express) {
     const losses = parseInt(q.l as string || "0");
     const pos = parseInt(q.pos as string || "0");
     const name = decodeURIComponent(q.name as string || "Trader");
+    const pctParam = q.pct as string || "0";
+    const symParam = q.sym as string || "BTCUSDT";
+    const sideParam = q.side as string || "LONG";
+    const levParam = q.lev as string || "5";
+    const epParam = q.ep as string || "0";
+    const mpParam = q.mp as string || "0";
     const pnlSign = pnl >= 0 ? "+" : "";
     const pnlText = `${pnlSign}$${Math.abs(pnl).toFixed(2)}`;
     const winRate = wins + losses > 0 ? Math.round(wins / (wins + losses) * 100) : 0;
     const pnlColor = pnl >= 0 ? "#0ecb81" : "#f85149";
     const accentRgb = pnl >= 0 ? "14,203,129" : "248,81,73";
+    const ogImageUrl = `https://build4-1.onrender.com/pnl/image?pct=${pctParam}&pnl=${pnl}&sym=${encodeURIComponent(symParam)}&side=${sideParam}&lev=${levParam}&ep=${epParam}&mp=${mpParam}&bal=${bal}&name=${encodeURIComponent(name)}&w=${wins}&l=${losses}`;
 
     const html = `<!DOCTYPE html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${name} | PnL Card — BUILD4</title>
 <meta property="og:title" content="${name}'s Trading Performance">
 <meta property="og:description" content="PnL: ${pnlText} | Balance: $${bal.toFixed(2)} | Win Rate: ${winRate}% (${wins}W/${losses}L) | ${pos} open positions">
+<meta property="og:image" content="${ogImageUrl}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
 <meta property="og:type" content="website">
-<meta name="twitter:card" content="summary">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${name}'s Trading Performance — BUILD4">
 <meta name="twitter:description" content="PnL: ${pnlText} | Balance: $${bal.toFixed(2)} | Win Rate: ${winRate}% | Trade futures on Aster DEX via Telegram">
+<meta name="twitter:image" content="${ogImageUrl}">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0e11;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:20px}
