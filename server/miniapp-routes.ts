@@ -673,6 +673,7 @@ export function registerMiniAppRoutes(app: Express) {
       res.json({
         running: state?.running || false,
         config: {
+          name: config?.name || "My Agent",
           riskPercent: config?.riskPercent || 1.0,
           maxLeverage: config?.maxLeverage || 10,
           symbol: config?.symbol || "BTCUSDT",
@@ -701,8 +702,9 @@ export function registerMiniAppRoutes(app: Express) {
       const state = getAgentState(chatId);
       if (state?.running) return res.status(400).json({ error: "Stop the agent before changing config" });
 
-      const { symbol, riskPercent, leverage } = req.body;
+      const { name, symbol, riskPercent, leverage } = req.body;
       const updates: any = {};
+      if (name && typeof name === "string") updates.name = name.trim().substring(0, 24);
       if (symbol && typeof symbol === "string") updates.symbol = symbol.toUpperCase();
       if (riskPercent !== undefined) updates.riskPercent = Math.max(0.5, Math.min(3, parseFloat(riskPercent) || 1));
       if (leverage !== undefined) updates.leverage = Math.max(1, Math.min(50, parseInt(leverage) || 10));

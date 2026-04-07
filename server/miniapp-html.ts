@@ -899,7 +899,8 @@ function renderAgent(){
   const r=AG.running,c=AG.config,s=AG.stats;
   let h='<div class="section-title" style="font-size:16px">🤖 AI Trading Agent</div>';
 
-  h+='<div class="card '+(r?'card-accent':'')+'"><div class="row"><div class="gap"><div style="width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:'+(r?'var(--green-bg)':'var(--bg)')+'">🤖</div><div><div class="text-w fw-600">Autonomous Agent</div><div class="gap mt-1"><div class="live-dot" style="'+(r?'':'animation:none;background:var(--text3)')+'"></div><span class="text-xs '+(r?'gv':'text-dim')+'">'+(r?'Active — Trading':'Stopped')+'</span></div></div></div><div class="switch'+(r?' on':'')+'" onclick="toggleAgent()"></div></div>';
+  var agentName=c?.name||'My Agent';
+  h+='<div class="card '+(r?'card-accent':'')+'"><div class="row"><div class="gap"><div style="width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:'+(r?'var(--green-bg)':'var(--bg)')+'">🤖</div><div><div class="text-w fw-600" style="cursor:pointer" onclick="renameAgent()" id="agent-name-display">'+agentName+'</div><div class="gap mt-1"><div class="live-dot" style="'+(r?'':'animation:none;background:var(--text3)')+'"></div><span class="text-xs '+(r?'gv':'text-dim')+'">'+(r?'Active — Trading':'Stopped')+'</span></div></div></div><div class="switch'+(r?' on':'')+'" onclick="toggleAgent()"></div></div>';
   if(r&&c){h+='<div class="gap mt-3" style="flex-wrap:wrap"><span class="badge badge-long">'+c.symbol+'</span><span class="badge badge-info">'+c.maxLeverage+'x max</span><span class="badge badge-warn">'+c.riskPercent+'% risk</span></div>'}
   h+='</div>';
 
@@ -940,6 +941,30 @@ function setRisk(e){
   if(AG&&AG.config)AG.config.riskPercent=rounded;
   api('/api/miniapp/agent/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({riskPercent:rounded})}).catch(function(){});
   renderAgent();
+}
+async function renameAgent(){
+  if(AG&&AG.running){toast('Stop the agent first','err');return}
+  var cur=(AG&&AG.config&&AG.config.name)||'My Agent';
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  var box=document.createElement('div');
+  box.style.cssText='background:#1a1d21;border:1px solid #333;border-radius:12px;padding:20px;max-width:340px;width:100%;color:#e0e0e0';
+  box.innerHTML='<div style="font-weight:600;font-size:16px;margin-bottom:12px">Name Your Agent</div><input id="agent-name-input" class="input" type="text" maxlength="24" value="'+cur.replace(/"/g,'&quot;')+'" style="margin-bottom:16px" placeholder="e.g. Alpha Bot"><div style="display:flex;gap:10px"><button id="rn-cancel" style="flex:1;padding:10px;border-radius:8px;border:1px solid #555;background:transparent;color:#e0e0e0;cursor:pointer;font-size:14px">Cancel</button><button id="rn-save" style="flex:1;padding:10px;border-radius:8px;border:none;background:var(--green);color:#0b0e11;cursor:pointer;font-weight:600;font-size:14px">Save</button></div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  var inp=document.getElementById('agent-name-input');
+  inp.focus();inp.select();
+  document.getElementById('rn-save').onclick=async function(){
+    var n=inp.value.trim();
+    if(!n){toast('Enter a name','err');return}
+    try{
+      var r=await api('/api/miniapp/agent/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n})});
+      if(r.success){if(AG&&AG.config)AG.config.name=n;toast('Agent renamed to "'+n+'"','ok');renderAgent()}
+      else{toast(r.error||'Failed','err')}
+    }catch(e){toast('Error','err')}
+    document.body.removeChild(ov);
+  };
+  document.getElementById('rn-cancel').onclick=function(){document.body.removeChild(ov)};
+  ov.onclick=function(e){if(e.target===ov)document.body.removeChild(ov)};
 }
 async function setAgentSymbol(sym){
   if(AG&&AG.running){toast('Stop the agent first','err');return}

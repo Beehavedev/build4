@@ -2,6 +2,7 @@ import { emaCrossRsiStrategy, parseKlinesToCandles, type Signal, type StrategyRe
 import { storage } from "./storage";
 
 export interface AgentConfig {
+  name: string;
   symbol: string;
   leverage: number;
   riskPercent: number;
@@ -28,6 +29,7 @@ const agentStates = new Map<string, AgentState>();
 
 const envRisk = parseFloat(process.env.AGENT_RISK_PERCENT || "1.0");
 const DEFAULT_CONFIG: AgentConfig = {
+  name: "My Agent",
   symbol: "BTCUSDT",
   leverage: 10,
   riskPercent: Math.max(0.5, Math.min(2.0, isNaN(envRisk) ? 1.0 : envRisk)),
@@ -95,7 +97,7 @@ export async function startAgent(
 
   try {
     await sendMessage(
-      `🤖 *Agent Started*\n` +
+      `🤖 *${state.config.name} Started*\n` +
       `Symbol: ${state.config.symbol}\n` +
       `Leverage: ${state.config.leverage}x\n` +
       `Risk: ${state.config.riskPercent}%\n` +
@@ -155,7 +157,7 @@ async function runAgentLoop(
       try {
         const signalEmoji = result.signal === "BUY" ? "🟢" : result.signal === "SELL" ? "🔴" : "⏸";
         await sendMessage(
-          `${signalEmoji} *Agent Scan #${state.scanCount}*\n` +
+          `${signalEmoji} *${state.config.name} — Scan #${state.scanCount}*\n` +
           `${state.config.symbol} @ $${result.lastClose.toFixed(2)}\n` +
           `Signal: *${result.signal}* | Position: ${state.currentPosition}\n` +
           `EMA8: ${result.ema8.toFixed(2)} | EMA21: ${result.ema21.toFixed(2)}\n` +
