@@ -209,7 +209,8 @@ export function registerMiniAppRoutes(app: Express) {
         if (creds && creds.apiKey && creds.apiSecret && creds.apiKey !== "V3_DIRECT") {
           const wallets = await storage.getTelegramWallets(chatId);
           const activeWallet = wallets.find(w => w.isActive) || wallets[0];
-          const parentAddress = activeWallet?.walletAddress?.toLowerCase() || "";
+          const botWalletAddr = activeWallet?.walletAddress?.toLowerCase() || "";
+          const parentAddress = creds.parentAddress || botWalletAddr;
 
           const isV3ApiWallet = creds.apiKey.startsWith("0x") && creds.apiKey.length === 42;
 
