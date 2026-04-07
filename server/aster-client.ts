@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { Wallet, getAddress, JsonRpcProvider, Contract, formatUnits, formatEther, parseUnits, parseEther, MaxUint256 } from "ethers";
+import { Wallet, getAddress, JsonRpcProvider, Contract, formatUnits, formatEther, parseUnits, parseEther, MaxUint256, keccak256, toUtf8Bytes, getBytes } from "ethers";
 
 interface AsterClientConfig {
   apiKey: string;
@@ -303,31 +303,31 @@ async function signV3Params(
   signer: string,
   signerPrivateKey: string,
 ): Promise<{ queryStringWithSig: string }> {
-  const allParams: Record<string, string | number | boolean | undefined> = {};
+  const businessParams: Record<string, string | number | boolean | undefined> = {};
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null) allParams[k] = v;
+    if (v !== undefined && v !== null) businessParams[k] = v;
   }
-  allParams.timestamp = Date.now();
-  if (!allParams.recvWindow) allParams.recvWindow = 50000;
-  allParams.nonce = getV3Nonce();
-  allParams.user = user;
-  allParams.signer = signer;
+  businessParams.timestamp = Date.now();
+  if (!businessParams.recvWindow) businessParams.recvWindow = 50000;
 
-  const msgPayload = buildSortedQueryString(allParams);
+  const sortedQueryString = buildSortedQueryString(businessParams);
 
   const wallet = new Wallet(signerPrivateKey);
   const signerAddr = wallet.address;
-  console.log(`[AsterV3Sign] msg=${msgPayload.substring(0, 300)} signerAddr=${signerAddr} expectedSigner=${signer}`);
+  console.log(`[AsterV3Sign] sorted_qs=${sortedQueryString.substring(0, 300)} signerAddr=${signerAddr}`);
   if (signerAddr.toLowerCase() !== signer.toLowerCase()) {
     console.warn(`[AsterV3Sign] WARNING: wallet address ${signerAddr} does not match signer param ${signer}`);
   }
 
-  const signature = await wallet.signTypedData(
-    EIP712_DOMAIN,
-    EIP712_TYPES,
-    { msg: msgPayload },
-  );
+  const msgHash = keccak256(toUtf8Bytes(sortedQueryString));
+  const signature = await wallet.signMessage(getBytes(msgHash));
 
+  const nonce = getV3Nonce();
+
+  const allParams: Record<string, string | number | boolean | undefined> = { ...businessParams };
+  allParams.nonce = nonce;
+  allParams.user = user;
+  allParams.signer = signer;
   allParams.signature = signature;
 
   const finalParts: string[] = [];
