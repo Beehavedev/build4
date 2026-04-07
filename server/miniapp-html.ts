@@ -114,14 +114,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 <div id="p-positions" class="page"></div>
 <div id="p-orders" class="page"></div>
 <div id="p-markets" class="page"></div>
-<div id="p-history" class="page"></div>
 <div id="p-deposit" class="page"></div>
 <div id="p-agent" class="page"></div>
 
 <div class="tabs">
   <button class="tab active" data-tab="p-dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>Home</button>
   <button class="tab" data-tab="p-trade"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>Trade</button>
-  <button class="tab" data-tab="p-history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>History</button>
   <button class="tab" data-tab="p-positions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>Positions</button>
   <button class="tab" data-tab="p-orders"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg>Orders</button>
   <button class="tab" data-tab="p-markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Markets</button>
@@ -164,7 +162,6 @@ function switchTab(tabId){
   if(targetId==='p-positions')loadPositions();
   if(targetId==='p-orders')loadOrders();
   if(targetId==='p-markets')loadMarkets();
-  if(targetId==='p-history')loadHistory();
   if(targetId==='p-deposit')loadDeposit();
   if(targetId==='p-agent')loadAgent();
 }
@@ -260,31 +257,69 @@ async function closePosFromTab(symbol){
   }catch(e){toast('❌ '+e.message,'err')}
 }
 
+let ordersSubTab='open';
 async function loadOrders(){
   const el=$('p-orders');
   el.innerHTML=skeletonCard(3);
   try{
-    const r=await api('/api/miniapp/orders');
-    D.openOrders=r.openOrders||[];
-  }catch(e){D.openOrders=[]}
+    const [r1,r2]=await Promise.all([api('/api/miniapp/orders'),api('/api/miniapp/trades?symbol=BTCUSDT')]);
+    D.openOrders=r1.openOrders||[];
+    tradeHistory=r2.trades||[];
+    D.recentIncome=r2.income||[];
+  }catch(e){D.openOrders=[];tradeHistory=[];D.recentIncome=[]}
   renderOrders();
 }
 function renderOrders(){
   const el=$('p-orders');
   if(!D.connected){el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">📋</div><div class="text-w fw-600">Connect to view orders</div><div class="text-dim text-xs mt-2">Link your Aster account first</div></div>';return}
-  let h='<div class="section-title">📋 Open Orders</div>';
-  const orders=D.openOrders||[];
-  if(orders.length===0){
-    h+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">✅</div><div class="text-dim text-sm">No open orders</div><div class="text-xs text-dim2 mt-1">All orders have been filled or cancelled</div></div>';
+  let h='<div style="display:flex;gap:0;margin-bottom:12px;background:var(--card);border-radius:10px;padding:3px;border:1px solid var(--border)">';
+  h+='<button class="btn btn-sm" style="flex:1;border-radius:8px;font-size:12px;'+(ordersSubTab==='open'?'background:var(--green);color:#0b0e11;font-weight:700':'background:transparent;color:var(--text2);border:none')+'" onclick="ordersSubTab=\\'open\\';renderOrders()">Open Orders ('+(D.openOrders||[]).length+')</button>';
+  h+='<button class="btn btn-sm" style="flex:1;border-radius:8px;font-size:12px;'+(ordersSubTab==='history'?'background:var(--green);color:#0b0e11;font-weight:700':'background:transparent;color:var(--text2);border:none')+'" onclick="ordersSubTab=\\'history\\';renderOrders()">History</button>';
+  h+='</div>';
+  if(ordersSubTab==='open'){
+    const orders=D.openOrders||[];
+    if(orders.length===0){
+      h+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">✅</div><div class="text-dim text-sm">No open orders</div><div class="text-xs text-dim2 mt-1">All orders have been filled or cancelled</div></div>';
+    }else{
+      orders.forEach(function(o){
+        var isBuy=o.side==='BUY';
+        h+='<div class="card"><div class="row"><div class="gap"><span class="badge '+(isBuy?'badge-long':'badge-short')+'">'+o.side+'</span><span class="text-w fw-600">'+o.symbol+'</span></div><span class="badge badge-info">'+o.type+'</span></div>';
+        h+='<div class="grid2 mt-3"><div><div class="label">Price</div><div class="val-sm mono">$'+fmt(o.price)+'</div></div><div><div class="label">Quantity</div><div class="val-sm mono">'+o.origQty+'</div></div></div>';
+        if(o.executedQty>0){h+='<div class="mt-2"><div class="label">Filled</div><div class="val-xs mono">'+o.executedQty+' / '+o.origQty+'</div></div>'}
+        if(o.time){h+='<div class="timestamp">'+new Date(o.time).toLocaleString()+'</div>'}
+        h+='<div class="mt-2"><button class="btn btn-outline btn-sm" style="width:100%" onclick="cancelOrder(\\''+o.symbol+'\\','+o.orderId+')">Cancel Order</button></div></div>';
+      });
+    }
   }else{
-    orders.forEach(function(o){
-      var isBuy=o.side==='BUY';
-      h+='<div class="card"><div class="row"><div class="gap"><span class="badge '+(isBuy?'badge-long':'badge-short')+'">'+o.side+'</span><span class="text-w fw-600">'+o.symbol+'</span></div><span class="badge badge-info">'+o.type+'</span></div>';
-      h+='<div class="grid2 mt-3"><div><div class="label">Price</div><div class="val-sm mono">$'+fmt(o.price)+'</div></div><div><div class="label">Quantity</div><div class="val-sm mono">'+o.origQty+'</div></div></div>';
-      if(o.executedQty>0){h+='<div class="mt-2"><div class="label">Filled</div><div class="val-xs mono">'+o.executedQty+' / '+o.origQty+'</div></div>'}
-      if(o.time){h+='<div class="timestamp">'+new Date(o.time).toLocaleString()+'</div>'}
-      h+='<div class="mt-2"><button class="btn btn-outline btn-sm" style="width:100%" onclick="cancelOrder(\\''+o.symbol+'\\','+o.orderId+')">Cancel Order</button></div></div>';
-    });
+    if(tradeHistory.length===0&&(!D.recentIncome||D.recentIncome.length===0)){
+      h+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">📭</div><div class="text-dim text-sm">No trade history yet</div></div>';
+    }else{
+      if(tradeHistory.length>0){
+        h+='<div class="card"><div class="label mb-2">Recent Trades</div>';
+        tradeHistory.slice(0,20).forEach(function(t){
+          var isBuy=t.side==='BUY';
+          h+='<div class="pos-item"><div class="row"><div class="gap"><span class="badge '+(isBuy?'badge-long':'badge-short')+'">'+t.side+'</span><span class="text-w text-sm fw-600">'+t.symbol+'</span></div><span class="val-xs mono">'+t.qty+'</span></div>';
+          h+='<div class="row mt-1"><span class="text-xs text-dim mono">@ $'+fmt(t.price)+'</span>';
+          if(t.realizedPnl!==0){h+=pnlHtml(t.realizedPnl)}
+          h+='</div>';
+          if(t.time){h+='<div class="timestamp">'+new Date(t.time).toLocaleString()+'</div>'}
+          h+='</div>';
+        });
+        h+='</div>';
+      }
+      if(D.recentIncome&&D.recentIncome.length>0){
+        h+='<div class="card"><div class="label mb-2">Realized PnL History</div>';
+        var totalPnl=0;
+        D.recentIncome.forEach(function(i){
+          totalPnl+=i.amount||0;
+          h+='<div class="pos-item"><div class="row"><span class="text-sm text-w">'+(i.symbol||'—')+'</span>'+pnlHtml(i.amount||0)+'</div>';
+          h+='<div class="row mt-1"><span class="text-xs text-dim">'+(i.type||'PNL')+'</span>';
+          if(i.time){h+='<span class="timestamp" style="margin:0">'+new Date(i.time).toLocaleString()+'</span>'}
+          h+='</div></div>';
+        });
+        h+='<div class="row mt-2" style="padding:8px 0;border-top:1px solid var(--border)"><span class="text-sm fw-600 text-w">Total Realized</span>'+pnlHtml(totalPnl)+'</div></div>';
+      }
+    }
   }
   h+='<button class="btn btn-outline mt-2" onclick="loadOrders()">🔄 Refresh</button>';
   el.innerHTML=h;
@@ -327,52 +362,6 @@ function renderMarkets(){
   el.innerHTML=h;
 }
 
-async function loadHistory(){
-  const el=$('p-history');
-  el.innerHTML=skeletonCard(3);
-  try{
-    const r=await api('/api/miniapp/trades?symbol=BTCUSDT');
-    tradeHistory=r.trades||[];
-    D.recentIncome=r.income||[];
-  }catch(e){tradeHistory=[];D.recentIncome=[]}
-  renderHistory();
-}
-function renderHistory(){
-  const el=$('p-history');
-  if(!D.connected){el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">🕐</div><div class="text-w fw-600">Connect to view history</div><div class="text-dim text-xs mt-2">Link your Aster account first</div></div>';return}
-  let h='<div class="section-title">🕐 Trade History</div>';
-  if(tradeHistory.length===0&&(!D.recentIncome||D.recentIncome.length===0)){
-    h+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">📭</div><div class="text-dim text-sm">No trade history yet</div></div>';
-  }else{
-    if(tradeHistory.length>0){
-      h+='<div class="card"><div class="label mb-2">Recent Trades</div>';
-      tradeHistory.slice(0,20).forEach(function(t){
-        var isBuy=t.side==='BUY';
-        h+='<div class="pos-item"><div class="row"><div class="gap"><span class="badge '+(isBuy?'badge-long':'badge-short')+'">'+t.side+'</span><span class="text-w text-sm fw-600">'+t.symbol+'</span></div><span class="val-xs mono">'+t.qty+'</span></div>';
-        h+='<div class="row mt-1"><span class="text-xs text-dim mono">@ $'+fmt(t.price)+'</span>';
-        if(t.realizedPnl!==0){h+=pnlHtml(t.realizedPnl)}
-        h+='</div>';
-        if(t.time){h+='<div class="timestamp">'+new Date(t.time).toLocaleString()+'</div>'}
-        h+='</div>';
-      });
-      h+='</div>';
-    }
-    if(D.recentIncome&&D.recentIncome.length>0){
-      h+='<div class="card"><div class="label mb-2">Realized PnL History</div>';
-      var totalPnl=0;
-      D.recentIncome.forEach(function(i){
-        totalPnl+=i.amount||0;
-        h+='<div class="pos-item"><div class="row"><span class="text-sm text-w">'+(i.symbol||'—')+'</span>'+pnlHtml(i.amount||0)+'</div>';
-        h+='<div class="row mt-1"><span class="text-xs text-dim">'+(i.type||'PNL')+'</span>';
-        if(i.time){h+='<span class="timestamp" style="margin:0">'+new Date(i.time).toLocaleString()+'</span>'}
-        h+='</div></div>';
-      });
-      h+='<div class="row mt-2" style="padding:8px 0;border-top:1px solid var(--border)"><span class="text-sm fw-600 text-w">Total Realized</span>'+pnlHtml(totalPnl)+'</div></div>';
-    }
-  }
-  h+='<button class="btn btn-outline mt-2" onclick="loadHistory()">🔄 Refresh</button>';
-  el.innerHTML=h;
-}
 
 async function loadDash(){
   const el=$('p-dash');
