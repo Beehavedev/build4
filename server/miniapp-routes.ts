@@ -74,10 +74,10 @@ export function registerMiniAppRoutes(app: Express) {
         leverage: parseInt(q.lev as string || "5"),
         entryPrice: parseFloat(q.ep as string || "0"),
         markPrice: parseFloat(q.mp as string || "0"),
-        balance: parseFloat(q.bal as string || "0"),
         name: decodeURIComponent(q.name as string || "Trader"),
         wins: parseInt(q.w as string || "0"),
         losses: parseInt(q.l as string || "0"),
+        ref: decodeURIComponent(q.ref as string || "build4"),
       });
       res.status(200).set({
         "Content-Type": "image/png",
@@ -91,14 +91,12 @@ export function registerMiniAppRoutes(app: Express) {
 
   app.get("/pnl", (req: Request, res: Response) => {
     const q = req.query;
-    const bal = parseFloat(q.bal as string || "0");
     const pnl = parseFloat(q.pnl as string || "0");
-    const rpnl = parseFloat(q.rpnl as string || "0");
-    const upnl = parseFloat(q.upnl as string || "0");
     const wins = parseInt(q.w as string || "0");
     const losses = parseInt(q.l as string || "0");
     const pos = parseInt(q.pos as string || "0");
     const name = decodeURIComponent(q.name as string || "Trader");
+    const ref = decodeURIComponent(q.ref as string || "build4");
     const pctParam = q.pct as string || "0";
     const symParam = q.sym as string || "BTCUSDT";
     const sideParam = q.side as string || "LONG";
@@ -107,23 +105,26 @@ export function registerMiniAppRoutes(app: Express) {
     const mpParam = q.mp as string || "0";
     const pnlSign = pnl >= 0 ? "+" : "";
     const pnlText = `${pnlSign}$${Math.abs(pnl).toFixed(2)}`;
+    const pctVal = parseFloat(pctParam);
+    const pctText = `${pctVal >= 0 ? "+" : ""}${pctVal.toFixed(2)}%`;
     const winRate = wins + losses > 0 ? Math.round(wins / (wins + losses) * 100) : 0;
     const pnlColor = pnl >= 0 ? "#0ecb81" : "#f85149";
     const accentRgb = pnl >= 0 ? "14,203,129" : "248,81,73";
-    const ogImageUrl = `https://build4-1.onrender.com/pnl/image?pct=${pctParam}&pnl=${pnl}&sym=${encodeURIComponent(symParam)}&side=${sideParam}&lev=${levParam}&ep=${epParam}&mp=${mpParam}&bal=${bal}&name=${encodeURIComponent(name)}&w=${wins}&l=${losses}`;
+    const refLink = `https://t.me/build4bot?start=${ref}`;
+    const ogImageUrl = `https://build4-1.onrender.com/pnl/image?pct=${pctParam}&pnl=${pnl}&sym=${encodeURIComponent(symParam)}&side=${sideParam}&lev=${levParam}&ep=${epParam}&mp=${mpParam}&name=${encodeURIComponent(name)}&w=${wins}&l=${losses}&ref=${encodeURIComponent(ref)}`;
 
     const html = `<!DOCTYPE html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${name} | PnL Card — BUILD4</title>
 <meta property="og:title" content="${name}'s Trading Performance">
-<meta property="og:description" content="PnL: ${pnlText} | Balance: $${bal.toFixed(2)} | Win Rate: ${winRate}% (${wins}W/${losses}L) | ${pos} open positions">
+<meta property="og:description" content="PnL: ${pnlText} (${pctText}) | Win Rate: ${winRate}% (${wins}W/${losses}L) | Trade futures on Aster DEX via Telegram">
 <meta property="og:image" content="${ogImageUrl}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${name}'s Trading Performance — BUILD4">
-<meta name="twitter:description" content="PnL: ${pnlText} | Balance: $${bal.toFixed(2)} | Win Rate: ${winRate}% | Trade futures on Aster DEX via Telegram">
+<meta name="twitter:description" content="PnL: ${pnlText} (${pctText}) | Win Rate: ${winRate}% | Trade futures on Aster DEX via Telegram">
 <meta name="twitter:image" content="${ogImageUrl}">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -138,12 +139,15 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 .pnl-section{text-align:center;padding:20px 0;position:relative;z-index:1}
 .pnl-label{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#8a919e;font-weight:500}
 .pnl-val{font-size:42px;font-weight:800;color:${pnlColor};font-family:'SF Mono',SFMono-Regular,Consolas,monospace;margin:8px 0;letter-spacing:-1px}
-.bal-val{font-size:14px;color:#aaa;font-family:'SF Mono',SFMono-Regular,Consolas,monospace}
-.stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:20px;position:relative;z-index:1}
+.pct-val{font-size:18px;color:${pnlColor};font-family:'SF Mono',SFMono-Regular,Consolas,monospace;opacity:0.8}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px;position:relative;z-index:1}
 .stat{text-align:center;padding:12px 8px;background:rgba(255,255,255,0.03);border-radius:12px;border:1px solid rgba(255,255,255,0.05)}
 .stat-label{font-size:10px;color:#8a919e;text-transform:uppercase;letter-spacing:.5px;font-weight:500}
 .stat-val{font-size:16px;font-weight:700;margin-top:4px;font-family:'SF Mono',SFMono-Regular,Consolas,monospace}
 .green{color:#0ecb81}.red{color:#f85149}.white{color:#fff}
+.ref-section{margin-top:20px;padding:16px;background:rgba(${accentRgb},0.06);border:1px solid rgba(${accentRgb},0.2);border-radius:14px;text-align:center;position:relative;z-index:1}
+.ref-label{font-size:10px;color:#8a919e;text-transform:uppercase;letter-spacing:1px}
+.ref-code{font-size:22px;font-weight:800;color:rgba(${accentRgb},0.9);font-family:'SF Mono',SFMono-Regular,Consolas,monospace;margin:6px 0}
 .footer{margin-top:24px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}
 .brand{color:#8a919e;font-size:12px;font-weight:600;letter-spacing:.5px}
 .powered{color:#555;font-size:10px}
@@ -154,21 +158,21 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 <div class="glow"></div><div class="glow2"></div>
 <div class="header"><div class="avatar">🤖</div><div><div class="name">${name}</div><div class="subtitle">Aster DEX Futures</div></div></div>
 <div class="pnl-section">
-<div class="pnl-label">Total PnL</div>
+<div class="pnl-label">PnL</div>
 <div class="pnl-val">${pnlText}</div>
-<div class="bal-val">Balance: $${bal.toFixed(2)}</div>
+<div class="pct-val">${pctText}</div>
 </div>
 <div class="stats">
 <div class="stat"><div class="stat-label">Win Rate</div><div class="stat-val ${winRate >= 50 ? 'green' : 'red'}">${winRate}%</div></div>
 <div class="stat"><div class="stat-label">W / L</div><div class="stat-val white"><span class="green">${wins}</span> / <span class="red">${losses}</span></div></div>
-<div class="stat"><div class="stat-label">Positions</div><div class="stat-val white">${pos}</div></div>
 </div>
-<div class="stats" style="grid-template-columns:1fr 1fr;margin-top:10px">
-<div class="stat"><div class="stat-label">Unrealized</div><div class="stat-val ${upnl >= 0 ? 'green' : 'red'}">${upnl >= 0 ? '+' : ''}$${Math.abs(upnl).toFixed(2)}</div></div>
-<div class="stat"><div class="stat-label">Realized</div><div class="stat-val ${rpnl >= 0 ? 'green' : 'red'}">${rpnl >= 0 ? '+' : ''}$${Math.abs(rpnl).toFixed(2)}</div></div>
+<div class="ref-section">
+<div class="ref-label">Referral Code</div>
+<div class="ref-code">${ref.toUpperCase()}</div>
+<div style="font-size:12px;color:#8a919e;margin-top:4px">${refLink}</div>
 </div>
 <div class="footer"><span class="brand">BUILD4</span><span class="powered">Powered by Aster DEX</span></div>
-<div class="cta"><a href="https://t.me/build4bot">Start Trading on Telegram →</a></div>
+<div class="cta"><a href="${refLink}">Start Trading on Telegram →</a></div>
 </div></body></html>`;
 
     res.status(200).set({

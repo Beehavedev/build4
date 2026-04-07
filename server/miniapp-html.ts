@@ -657,10 +657,12 @@ async function doTransfer(amount){
 }
 
 
-function sharePnl(posIdx){
+async function sharePnl(posIdx){
   var agentName=(AG&&AG.config&&AG.config.name)?AG.config.name:'Trader';
-  var totalBal=(D.walletBalance||0)+(D.bscBalance||0);
   var w=D.wins||0,l=D.losses||0;
+  var ref='build4';
+  var imgParams='';
+  var shareText='';
   if(typeof posIdx==='number'&&D.positions&&D.positions[posIdx]){
     var p=D.positions[posIdx];
     var pnlVal=parseFloat(p.unrealizedPnl||0);
@@ -670,23 +672,40 @@ function sharePnl(posIdx){
     var sym=p.symbol||'BTCUSDT';
     var side=p.positionSide||'LONG';
     var lev=parseInt(p.leverage||5);
-    var cardUrl='https://build4-1.onrender.com/pnl?bal='+totalBal.toFixed(2)+'&pnl='+pnlVal.toFixed(2)+'&pct='+pctVal.toFixed(2)+'&sym='+encodeURIComponent(sym)+'&side='+side+'&lev='+lev+'&ep='+entryP+'&mp='+markP+'&w='+w+'&l='+l+'&name='+encodeURIComponent(agentName);
+    imgParams='pct='+pctVal.toFixed(2)+'&pnl='+pnlVal.toFixed(2)+'&sym='+encodeURIComponent(sym)+'&side='+side+'&lev='+lev+'&ep='+entryP+'&mp='+markP+'&w='+w+'&l='+l+'&name='+encodeURIComponent(agentName)+'&ref='+ref;
     var pSign=pnlVal>=0?'+':'';
-    var tweetText=pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x) via @build4bot 🤖\\n';
-    tweetText+=pSign+'$'+Math.abs(pnlVal).toFixed(2)+' USDT unrealized\\n\\n';
-    tweetText+='Trade futures on @AsterDEX from Telegram 👇';
+    shareText=pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\\n\\nTrade on @AsterDEX via @build4bot\\nhttps://t.me/build4bot?start='+ref;
   }else{
     var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
     var pSign2=totalPnl>=0?'+':'';
-    var cardUrl='https://build4-1.onrender.com/pnl?bal='+totalBal.toFixed(2)+'&pnl='+totalPnl.toFixed(2)+'&rpnl='+(D.realizedPnl||0).toFixed(2)+'&upnl='+(D.unrealizedPnl||0).toFixed(2)+'&w='+w+'&l='+l+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName);
-    var tweetText=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @AsterDEX via @build4bot 🤖\\n\\n';
-    tweetText+='Balance: $'+totalBal.toFixed(2)+'\\n';
-    if(w+l>0)tweetText+='Win Rate: '+Math.round(w/(w+l)*100)+'% ('+w+'W/'+l+'L)\\n';
-    if((D.positions||[]).length>0)tweetText+=(D.positions||[]).length+' open position'+(D.positions.length>1?'s':'')+'\\n';
-    tweetText+='\\nTrade from Telegram 👇';
+    imgParams='pnl='+totalPnl.toFixed(2)+'&w='+w+'&l='+l+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName)+'&ref='+ref;
+    shareText=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @AsterDEX via @build4bot\\n';
+    if(w+l>0)shareText+='Win Rate: '+Math.round(w/(w+l)*100)+'%\\n';
+    shareText+='\\nhttps://t.me/build4bot?start='+ref;
   }
-  var twitterUrl='https://twitter.com/intent/tweet?text='+encodeURIComponent(tweetText)+'&url='+encodeURIComponent(cardUrl);
-  window.open(twitterUrl,'_blank');
+  toast('Generating card...','info');
+  try{
+    var imgUrl='/pnl/image?'+imgParams;
+    var resp=await fetch(imgUrl);
+    if(!resp.ok)throw new Error('Image generation failed');
+    var blob=await resp.blob();
+    var file=new File([blob],'pnl-card.png',{type:'image/png'});
+    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+      await navigator.share({text:shareText,files:[file]});
+      toast('Shared!','ok');
+    }else{
+      var a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='pnl-card.png';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('Image downloaded — share it on X!','ok');
+    }
+  }catch(e){
+    if(e.name==='AbortError')return;
+    console.error('Share error:',e);
+    toast('Share failed: '+e.message,'err');
+  }
 }
 async function forceRefresh(){
   toast('Refreshing...','info');
