@@ -252,8 +252,10 @@ async function closePosFromTab(symbol){
   toast('⏳ Closing '+symbol+'...','info');
   try{
     const r=await api('/api/miniapp/close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol})});
-    if(r.success){toast('✅ '+symbol+' closed','ok');setTimeout(()=>{fetchAll().then(renderPositions)},2000)}
-    else{toast('❌ '+(r.error||'Close failed'),'err')}
+    if(r.success){
+      toast('✅ '+symbol+' closed'+(r.realizedPnl!==undefined?' | PnL: '+(r.realizedPnl>=0?'+':'')+fmt(r.realizedPnl)+' USDT':''),'ok');
+      await fetchAll();renderPositions();
+    }else{toast('❌ '+(r.error||'Close failed'),'err')}
   }catch(e){toast('❌ '+e.message,'err')}
 }
 
@@ -1079,10 +1081,11 @@ async function closePos(symbol){
   try{
     const r=await api('/api/miniapp/close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol})});
     if(r.success){
-      toast('✅ '+symbol+' closed','ok');
-      setTimeout(()=>{fetchAll().then(()=>{renderTrade()})},2000);
-    }else{toast('❌ '+(r.error||'Close failed'),'err')}
-  }catch(e){toast('❌ '+e.message,'err')}
+      toast('✅ '+symbol+' closed'+(r.realizedPnl!==undefined?' | PnL: '+(r.realizedPnl>=0?'+':'')+fmt(r.realizedPnl)+' USDT':''),'ok');
+      st.innerHTML='';
+      await fetchAll();renderTrade();
+    }else{toast('❌ '+(r.error||'Close failed'),'err');st.innerHTML=''}
+  }catch(e){toast('❌ '+e.message,'err');st.innerHTML=''}
 }
 
 loadDash();

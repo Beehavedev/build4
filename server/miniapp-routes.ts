@@ -912,6 +912,10 @@ export function registerMiniAppRoutes(app: Express) {
 
       console.log(`[MiniApp] Close: ${closeSide} ${absAmt} ${symbol}`);
 
+      const entryPrice = parseFloat(pos.entryPrice || "0");
+      const markPrice = parseFloat(pos.markPrice || "0");
+      const unrealizedPnl = parseFloat(pos.unRealizedProfit || pos.unrealizedPnl || "0");
+
       const order = await fc.createOrder({
         symbol,
         side: closeSide,
@@ -920,12 +924,17 @@ export function registerMiniAppRoutes(app: Express) {
         reduceOnly: true,
       });
 
+      const realizedPnl = parseFloat(order.realizedPnl || order.cumQuote || "0") || unrealizedPnl;
+
       res.json({
         success: true,
         orderId: order.orderId || order.orderid,
         symbol,
         side: closeSide,
         quantity: absAmt,
+        realizedPnl,
+        entryPrice,
+        closePrice: markPrice,
         status: order.status || "FILLED",
       });
     } catch (e: any) {
