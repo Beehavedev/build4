@@ -413,8 +413,9 @@ function renderDash(){
   var totalBal=(D.walletBalance||0)+(D.bscBalance||0)+(D.spotBalance||0);
   var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
 
-  h+='<div class="card card-accent" style="position:relative;overflow:hidden">';
-  h+='<div style="position:absolute;top:-20px;right:-20px;width:120px;height:120px;background:radial-gradient(circle,rgba(14,203,129,0.15),transparent);border-radius:50%"></div>';
+  var accentColor=totalPnl>=0?'14,203,129':'248,81,73';
+  h+='<div class="card" style="position:relative;overflow:hidden;border:1px solid '+(totalPnl>=0?'var(--green2)':'rgba(248,81,73,0.3)')+';background:linear-gradient(135deg,rgba('+accentColor+',0.08),transparent)">';
+  h+='<div style="position:absolute;top:-20px;right:-20px;width:120px;height:120px;background:radial-gradient(circle,rgba('+accentColor+',0.15),transparent);border-radius:50%"></div>';
   h+='<div class="label" style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text2)">Your Account Balance</div>';
   h+='<div class="val" style="font-size:32px;margin:4px 0">$'+fmt(totalBal)+'</div>';
   h+='<div style="display:flex;gap:12px;margin-top:8px">';
@@ -423,7 +424,8 @@ function renderDash(){
   h+='<div><span class="text-xs text-dim">Total PnL</span><div class="val-xs '+pnlClass(totalPnl)+'">'+(totalPnl>=0?'+':'')+' $'+fmt(Math.abs(totalPnl))+'</div></div>';
   h+='</div></div>';
 
-  h+='<div class="card" style="background:linear-gradient(135deg,rgba(14,203,129,0.08),rgba(14,203,129,0.02))">';
+  var tradingAccentColor=(D.unrealizedPnl||0)>=0?'14,203,129':'248,81,73';
+  h+='<div class="card" style="background:linear-gradient(135deg,rgba('+tradingAccentColor+',0.08),rgba('+tradingAccentColor+',0.02))">';
   h+='<div class="section-title">Trading Account</div>';
   h+='<div class="grid3 mt-2">';
   h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Available Margin</div><div class="val-xs text-w mt-1">$'+fmt(D.availableMargin)+'</div></div>';
