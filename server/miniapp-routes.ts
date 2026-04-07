@@ -941,58 +941,156 @@ export function registerMiniAppRoutes(app: Express) {
 
   app.get("/api/test-order", async (_req: Request, res: Response) => {
     try {
-      const { getAsterClient } = await import("./telegram-bot");
-      const client = await getAsterClient(0);
-      if (!client) return res.json({ error: "No Aster client configured", env: { hasPrivateKey: !!process.env.ASTER_PRIVATE_KEY, hasUser: !!process.env.ASTER_USER_ADDRESS, hasSigner: !!process.env.ASTER_SIGNER_ADDRESS } });
-      const fc = client.futures || client;
+      const { Wallet, TypedDataEncoder, getAddress } = await import("ethers");
 
-      const debug: any = { step: "init", timestamp: Date.now() };
+      const pk = process.env.ASTER_PRIVATE_KEY;
+      const userAddr = process.env.ASTER_USER_ADDRESS;
+      const signerAddr = process.env.ASTER_SIGNER_ADDRESS;
 
-      try {
-        debug.step = "balance";
-        const acct = await fc.account();
-        debug.balance = acct?.totalWalletBalance || acct?.availableBalance || "unknown";
-        debug.balanceOk = true;
-      } catch (e: any) {
-        debug.balanceError = e.message;
-        debug.balanceOk = false;
+      if (!pk) return res.json({ error: "No ASTER_PRIVATE_KEY env var" });
+      if (!userAddr) return res.json({ error: "No ASTER_USER_ADDRESS env var" });
+
+      const wallet = new Wallet(pk);
+      const derivedAddr = wallet.address;
+      const user = getAddress(userAddr);
+      const signer = signerAddr ? getAddress(signerAddr) : derivedAddr;
+
+      const results: any = {
+        config: {
+          user,
+          signer,
+          derivedFromKey: derivedAddr,
+          keyMatchesSigner: derivedAddr.toLowerCase() === signer.toLowerCase(),
+        },
+        variations: [],
+      };
+
+      const EIP712_DOMAIN = {
+        name: "AsterSignTransaction",
+        version: "1",
+        chainId: 1666,
+        verifyingContract: "0x0000000000000000000000000000000000000000",
+      };
+      const EIP712_TYPES = {
+        Message: [{ name: "msg", type: "string" }],
+      };
+
+      const nowSec = Math.trunc(Date.now() / 1000);
+      const nonce = nowSec * 1_000_000;
+
+      const businessParams: [string, string][] = [
+        ["symbol", "BTCUSDT"],
+        ["side", "BUY"],
+        ["type", "MARKET"],
+        ["quantity", "0.001"],
+      ];
+
+      const variations = [
+        {
+          name: "A: official docs (nonce,user,signer, urlencode, no asterChain, no body)",
+          order: [...businessParams, ["nonce", String(nonce)], ["user", user], ["signer", signer]],
+          useUrlencode: true,
+          withAsterChain: false,
+          strip0x: true,
+          sendBody: false,
+        },
+        {
+          name: "B: aster-code.py (asterChain,user,signer,nonce, plain join, with body)",
+          order: [...businessParams, ["asterChain", "Mainnet"], ["user", user], ["signer", signer], ["nonce", String(nonce)]],
+          useUrlencode: false,
+          withAsterChain: true,
+          strip0x: true,
+          sendBody: true,
+        },
+        {
+          name: "C: like B but no body",
+          order: [...businessParams, ["asterChain", "Mainnet"], ["user", user], ["signer", signer], ["nonce", String(nonce)]],
+          useUrlencode: false,
+          withAsterChain: true,
+          strip0x: true,
+          sendBody: false,
+        },
+        {
+          name: "D: like A but with 0x prefix on sig",
+          order: [...businessParams, ["nonce", String(nonce + 1)], ["user", user], ["signer", signer]],
+          useUrlencode: true,
+          withAsterChain: false,
+          strip0x: false,
+          sendBody: false,
+        },
+        {
+          name: "E: like B but with 0x prefix on sig",
+          order: [...businessParams, ["asterChain", "Mainnet"], ["user", user], ["signer", signer], ["nonce", String(nonce + 2)]],
+          useUrlencode: false,
+          withAsterChain: true,
+          strip0x: false,
+          sendBody: false,
+        },
+        {
+          name: "F: like A but plain join (no urlencode)",
+          order: [...businessParams, ["nonce", String(nonce + 3)], ["user", user], ["signer", signer]],
+          useUrlencode: false,
+          withAsterChain: false,
+          strip0x: true,
+          sendBody: false,
+        },
+      ];
+
+      for (const v of variations) {
+        const vResult: any = { name: v.name };
+        try {
+          let msgPayload: string;
+          if (v.useUrlencode) {
+            const usp = new URLSearchParams();
+            for (const [k, val] of v.order) usp.append(k, val);
+            msgPayload = usp.toString();
+          } else {
+            msgPayload = v.order.map(([k, val]) => `${k}=${val}`).join("&");
+          }
+
+          vResult.msgPayload = msgPayload;
+
+          const rawSig = await wallet.signTypedData(EIP712_DOMAIN, EIP712_TYPES, { msg: msgPayload });
+          const sig = v.strip0x ? rawSig.slice(2) : rawSig;
+
+          const fullQs = msgPayload + "&signature=" + sig;
+          const url = `https://fapi.asterdex.com/fapi/v3/order?${fullQs}`;
+
+          vResult.urlLength = url.length;
+          vResult.sigPrefix = sig.substring(0, 20) + "...";
+
+          const fetchOpts: RequestInit = {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+              "User-Agent": "PythonApp/1.0",
+            },
+          };
+
+          if (v.sendBody) {
+            fetchOpts.body = msgPayload;
+          }
+
+          const resp = await fetch(url, fetchOpts);
+          const text = await resp.text();
+          vResult.status = resp.status;
+          vResult.response = text.substring(0, 500);
+
+          try {
+            const json = JSON.parse(text);
+            vResult.code = json.code;
+            vResult.msg = json.msg;
+            if (!json.code || json.code === 200 || json.orderId) {
+              vResult.SUCCESS = true;
+            }
+          } catch {}
+        } catch (e: any) {
+          vResult.error = e.message;
+        }
+        results.variations.push(vResult);
       }
 
-      try {
-        debug.step = "ticker";
-        const ticker = await fc.tickerPrice("BTCUSDT");
-        debug.btcPrice = ticker?.price;
-      } catch (e: any) {
-        debug.tickerError = e.message;
-      }
-
-      try {
-        debug.step = "setLeverage";
-        const levResult = await fc.setLeverage("BTCUSDT", 5);
-        debug.leverageResult = levResult;
-        debug.leverageOk = true;
-      } catch (e: any) {
-        debug.leverageError = e.message;
-        debug.leverageOk = false;
-      }
-
-      try {
-        debug.step = "testOrder";
-        const order = await fc.createOrder({
-          symbol: "BTCUSDT",
-          side: "BUY",
-          type: "MARKET",
-          quantity: "0.001",
-        });
-        debug.orderResult = order;
-        debug.orderOk = true;
-      } catch (e: any) {
-        debug.orderError = e.message;
-        debug.orderOk = false;
-      }
-
-      debug.step = "done";
-      res.json(debug);
+      res.json(results);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
