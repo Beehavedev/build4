@@ -16325,12 +16325,22 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   }
 
   if (action === "agent_set_symbol") {
-    const symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT"];
-    await bot.sendMessage(chatId, "Select trading symbol:", {
+    const row1 = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
+    const row2 = ["BNBUSDT", "XRPUSDT", "DOGEUSDT"];
+    const row3 = ["SUIUSDT", "ADAUSDT", "AVAXUSDT"];
+    const row4 = ["LINKUSDT", "DOTUSDT", "LTCUSDT"];
+    const row5 = ["PEPEUSDT", "WIFUSDT", "ARBUSDT"];
+    const row6 = ["OPUSDT", "APTUSDT", "MATICUSDT"];
+    await bot.sendMessage(chatId, "Select trading pair for the agent:", {
       reply_markup: {
         inline_keyboard: [
-          symbols.slice(0, 3).map(s => ({ text: s, callback_data: `aster:agcfg_sym_${s}` })),
-          symbols.slice(3).map(s => ({ text: s, callback_data: `aster:agcfg_sym_${s}` })),
+          row1.map(s => ({ text: s.replace("USDT", ""), callback_data: `aster:agcfg_sym_${s}` })),
+          row2.map(s => ({ text: s.replace("USDT", ""), callback_data: `aster:agcfg_sym_${s}` })),
+          row3.map(s => ({ text: s.replace("USDT", ""), callback_data: `aster:agcfg_sym_${s}` })),
+          row4.map(s => ({ text: s.replace("USDT", ""), callback_data: `aster:agcfg_sym_${s}` })),
+          row5.map(s => ({ text: s.replace("USDT", ""), callback_data: `aster:agcfg_sym_${s}` })),
+          row6.map(s => ({ text: s.replace("USDT", ""), callback_data: `aster:agcfg_sym_${s}` })),
+          [{ text: "✏️ Custom Pair", callback_data: "aster:agcfg_sym_custom" }],
           [{ text: "« Back", callback_data: "aster:agent_config" }],
         ],
       },
@@ -16338,10 +16348,18 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     return;
   }
 
+  if (action === "agcfg_sym_custom") {
+    pendingAsterTrade.set(chatId, { step: "agent_custom_symbol" } as any);
+    await bot.sendMessage(chatId, "Enter the trading pair symbol (e.g. TONUSDT, NEARUSDT, ONDOUSDT):", {
+      reply_markup: { inline_keyboard: [[{ text: "« Cancel", callback_data: "aster:agent_config" }]] },
+    });
+    return;
+  }
+
   if (action?.startsWith("agcfg_sym_")) {
     const sym = action.replace("agcfg_sym_", "");
     setAgentConfig(chatId.toString(), { symbol: sym });
-    await bot.sendMessage(chatId, `Symbol set to \`${sym}\``, {
+    await bot.sendMessage(chatId, `✅ Agent symbol set to \`${sym}\``, {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: [[{ text: "« Config", callback_data: "aster:agent_config" }], [{ text: "🤖 Agent", callback_data: "aster:agent" }]] },
     });
@@ -16808,6 +16826,21 @@ async function handleAsterTradeFlow(chatId: number, text: string): Promise<void>
   if (!state) return;
 
   const input = text.trim().toUpperCase();
+
+  if ((state as any).step === "agent_custom_symbol") {
+    const sym = input.endsWith("USDT") ? input : input + "USDT";
+    if (!/^[A-Z]{2,20}USDT$/.test(sym)) {
+      await bot.sendMessage(chatId, "Invalid symbol. Enter a valid pair like TONUSDT, NEARUSDT. Or type /cancel.");
+      return;
+    }
+    setAgentConfig(chatId.toString(), { symbol: sym });
+    pendingAsterTrade.delete(chatId);
+    await bot.sendMessage(chatId, `✅ Agent symbol set to \`${sym}\``, {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [[{ text: "« Config", callback_data: "aster:agent_config" }], [{ text: "🤖 Agent", callback_data: "aster:agent" }]] },
+    });
+    return;
+  }
 
   if (state.step === "cancel_symbol") {
     if (!/^[A-Z]{2,20}$/.test(input)) {

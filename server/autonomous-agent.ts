@@ -191,19 +191,20 @@ function computeQuantity(symbol: string, usdtBalance: number, riskPercent: numbe
   const notional = riskAmount * leverage;
   let qty = notional / lastPrice;
 
-  if (symbol.includes("BTC")) {
-    qty = Math.floor(qty * 1000) / 1000;
-  } else if (symbol.includes("ETH")) {
-    qty = Math.floor(qty * 100) / 100;
-  } else if (symbol.includes("SOL") || symbol.includes("BNB")) {
-    qty = Math.floor(qty * 10) / 10;
-  } else if (symbol.includes("DOGE") || symbol.includes("XRP")) {
-    qty = Math.floor(qty);
-  } else {
-    qty = Math.floor(qty * 10) / 10;
-  }
+  const stepSizes: Record<string, number> = {
+    BTCUSDT: 0.001, ETHUSDT: 0.01, SOLUSDT: 0.1, BNBUSDT: 0.01,
+    DOGEUSDT: 1, XRPUSDT: 0.1, ADAUSDT: 1, AVAXUSDT: 0.1,
+    DOTUSDT: 0.1, MATICUSDT: 1, LINKUSDT: 0.01, LTCUSDT: 0.001,
+    SUIUSDT: 0.1, ARBUSDT: 0.1, OPUSDT: 0.1, APTUSDT: 0.01,
+    PEPEUSDT: 1, WIFUSDT: 0.1, NEARUSDT: 0.1, TONUSDT: 0.1,
+    ONDOUSDT: 0.1, FTMUSDT: 1, INJUSDT: 0.01, TIAUSDT: 0.1,
+    SEIUSDT: 1, STXUSDT: 0.1, RUNEUSDT: 0.1, JUPUSDT: 1,
+  };
+  const step = stepSizes[symbol] || (lastPrice > 1000 ? 0.001 : lastPrice > 100 ? 0.01 : lastPrice > 1 ? 0.1 : 1);
+  qty = Math.floor(qty / step) * step;
 
-  return qty;
+  const precision = step < 1 ? Math.ceil(-Math.log10(step)) : 0;
+  return parseFloat(qty.toFixed(precision));
 }
 
 let _agentFuturesClient: any = null;
