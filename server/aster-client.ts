@@ -268,7 +268,7 @@ async function makeRequest(
 const EIP712_DOMAIN = {
   name: "AsterSignTransaction",
   version: "1",
-  chainId: 714,
+  chainId: 1666,
   verifyingContract: "0x0000000000000000000000000000000000000000",
 };
 
@@ -313,50 +313,29 @@ async function signV3Params(
   signer: string,
   signerPrivateKey: string,
 ): Promise<{ queryStringWithSig: string }> {
-  const nonce = (Date.now() * 1000).toString();
-
-  const TAIL_KEYS = ["recvWindow", "timestamp", "nonce", "user", "signer"];
-  const SKIP_KEYS = new Set([...STRICT_KEYS, ...TAIL_KEYS]);
-
-  const msgParts: string[] = [];
-  for (const key of STRICT_KEYS) {
-    if (params[key] !== undefined && params[key] !== null && params[key] !== "") {
-      msgParts.push(`${key}=${params[key]}`);
-    }
-  }
+  const signedParams: Record<string, string | number | boolean | undefined> = {};
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && !SKIP_KEYS.has(k)) {
-      msgParts.push(`${k}=${v}`);
-    }
+    if (v !== undefined && v !== null) signedParams[k] = v;
   }
-  if (params.recvWindow) msgParts.push(`recvWindow=${params.recvWindow}`);
-  if (params.timestamp) msgParts.push(`timestamp=${params.timestamp}`);
-  msgParts.push(`nonce=${nonce}`);
-  msgParts.push(`user=${user}`);
-  msgParts.push(`signer=${signer}`);
+  signedParams.nonce = getV3Nonce();
+  signedParams.user = user;
+  signedParams.signer = signer;
 
-  const msgString = msgParts.join("&");
+  const queryString = buildV3QueryString(signedParams);
 
   const wallet = new Wallet(signerPrivateKey);
   const signerAddr = wallet.address;
-  console.log(`[AsterV3Sign] msg=${msgString.substring(0, 200)}... signerAddr=${signerAddr} expectedSigner=${signer}`);
+  console.log(`[AsterV3Sign] msg=${queryString.substring(0, 200)}... signerAddr=${signerAddr} expectedSigner=${signer}`);
   if (signerAddr.toLowerCase() !== signer.toLowerCase()) {
     console.warn(`[AsterV3Sign] WARNING: wallet address ${signerAddr} does not match signer param ${signer}`);
   }
   const signature = await wallet.signTypedData(
     EIP712_DOMAIN,
     EIP712_TYPES,
-    { msg: msgString },
+    { msg: queryString },
   );
 
-  const allParams: Record<string, string | number | boolean | undefined> = { ...params };
-  allParams.nonce = nonce;
-  allParams.user = user;
-  allParams.signer = signer;
-  allParams.signature = signature;
-  const queryString = buildV3QueryString(allParams);
-
-  return { queryStringWithSig: queryString };
+  return { queryStringWithSig: queryString + "&signature=" + signature };
 }
 
 async function makeV3Request(
@@ -380,19 +359,12 @@ async function makeV3Request(
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    let url: string;
+    const url = `${baseUrl}${path}?${queryStringWithSig}`;
     const fetchOptions: RequestInit = {
       method,
       headers,
       signal: controller.signal,
     };
-
-    if (method === "POST" || method === "PUT" || method === "DELETE") {
-      url = `${baseUrl}${path}`;
-      fetchOptions.body = queryStringWithSig;
-    } else {
-      url = `${baseUrl}${path}?${queryStringWithSig}`;
-    }
 
     console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 120)}...`);
     const response = await fetch(url, fetchOptions);
