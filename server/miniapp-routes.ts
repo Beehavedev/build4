@@ -779,9 +779,10 @@ export function registerMiniAppRoutes(app: Express) {
       if (amount <= 0) return res.status(400).json({ error: "Amount must be positive" });
 
       const client = await getAsterClient(parseInt(chatId));
-      if (!client) return res.status(400).json({ error: "Aster not connected" });
+      if (!client) return res.status(400).json({ error: "Aster not connected. Configure API wallet via /api command." });
 
       const fc = client.futures || client;
+      console.log(`[MiniApp] Trade client mode=${client.mode || "unknown"} chatId=${chatId}`);
 
       if (leverage && leverage > 0) {
         try {
@@ -936,6 +937,39 @@ export function registerMiniAppRoutes(app: Express) {
       });
     } catch (e: any) {
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/debug-config", async (_req: Request, res: Response) => {
+    try {
+      const { Wallet } = await import("ethers");
+      const pk = process.env.ASTER_PRIVATE_KEY;
+      const userAddr = process.env.ASTER_USER_ADDRESS;
+      const signerAddr = process.env.ASTER_SIGNER_ADDRESS;
+
+      let derivedAddr = "N/A";
+      if (pk) {
+        try { derivedAddr = new Wallet(pk).address; } catch { derivedAddr = "INVALID_KEY"; }
+      }
+
+      res.json({
+        hasPrivateKey: !!pk,
+        keyPrefix: pk ? pk.substring(0, 6) + "..." : "NOT_SET",
+        userAddress: userAddr || "NOT_SET",
+        signerAddress: signerAddr || "NOT_SET",
+        derivedFromKey: derivedAddr,
+        keyMatchesSigner: signerAddr ? derivedAddr.toLowerCase() === signerAddr.toLowerCase() : "N/A",
+        env: {
+          ASTER_PRIVATE_KEY: pk ? "SET" : "NOT_SET",
+          ASTER_USER_ADDRESS: userAddr ? "SET" : "NOT_SET",
+          ASTER_SIGNER_ADDRESS: signerAddr ? "SET" : "NOT_SET",
+          ASTER_API_KEY: process.env.ASTER_API_KEY ? "SET" : "NOT_SET",
+          ASTER_API_SECRET: process.env.ASTER_API_SECRET ? "SET" : "NOT_SET",
+          ASTER_API_WALLET_KEY: process.env.ASTER_API_WALLET_KEY ? "SET" : "NOT_SET",
+        },
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 
