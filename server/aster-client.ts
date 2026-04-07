@@ -293,11 +293,11 @@ function getV3Nonce(): number {
 }
 
 function buildV3QueryString(params: Record<string, string>): string {
-  const usp = new URLSearchParams();
+  const parts: string[] = [];
   for (const [k, v] of Object.entries(params)) {
-    usp.append(k, v);
+    parts.push(`${k}=${v}`);
   }
-  return usp.toString();
+  return parts.join("&");
 }
 
 async function signV3Params(
@@ -312,10 +312,11 @@ async function signV3Params(
     if (v !== undefined && v !== null) strParams[k] = String(v);
   }
 
-  const nonce = getV3Nonce();
-  strParams.nonce = String(nonce);
+  strParams.asterChain = "Mainnet";
   strParams.user = user;
   strParams.signer = signer;
+  const nonce = getV3Nonce();
+  strParams.nonce = String(nonce);
 
   const msgPayload = buildV3QueryString(strParams);
 
@@ -862,8 +863,8 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
 export function createAsterV3FuturesClient(config: AsterV3Config) {
   const v3BaseUrl = config.futuresBaseUrl || DEFAULT_FUTURES_V3_BASE_URL;
   const marketDataBaseUrl = DEFAULT_FUTURES_BASE_URL;
-  const user = getAddress(config.user);
-  const signer = getAddress(config.signer);
+  const user = config.user;
+  const signer = config.signer;
   const { signerPrivateKey } = config;
 
   async function request(path: string, options: AsterRequestOptions = {}) {
