@@ -678,14 +678,14 @@ function getPnlParams(posIdx){
     var pSign=pnlVal>=0?'+':'';
     return{
       imgParams:'pct='+pctVal.toFixed(2)+'&pnl='+pnlVal.toFixed(2)+'&sym='+encodeURIComponent(sym)+'&side='+side+'&lev='+lev+'&ep='+entryP+'&mp='+markP+'&w='+w+'&l='+l+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
-      tweetText:pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\n\nTrade on @AsterDEX via @build4_bot',
+      tweetText:pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\\n\\nTrade on @AsterDEX via @build4_bot',
       ref:ref
     };
   }
   var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
   var pSign2=totalPnl>=0?'+':'';
   var txt=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @AsterDEX via @build4_bot';
-  if(w+l>0)txt+='\nWin Rate: '+Math.round(w/(w+l)*100)+'%';
+  if(w+l>0)txt+='\\nWin Rate: '+Math.round(w/(w+l)*100)+'%';
   return{
     imgParams:'pnl='+totalPnl.toFixed(2)+'&w='+w+'&l='+l+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
     tweetText:txt,
