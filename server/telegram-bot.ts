@@ -13274,11 +13274,11 @@ async function initOwnerAsterClient(): Promise<any> {
     const derivedSigner = wallet.address;
 
     const user = userAddress;
-    const signer = signerAddress;
+    const signer = derivedSigner.toLowerCase();
 
     console.log(`[Aster] Init V3: user=${user} signer=${signer} derived=${derivedSigner}`);
-    if (derivedSigner.toLowerCase() !== signer.toLowerCase()) {
-      console.warn(`[Aster] WARNING: private key derives to ${derivedSigner} but signer is ${signer} — key mismatch!`);
+    if (derivedSigner.toLowerCase() !== signerAddress.toLowerCase()) {
+      console.warn(`[Aster] NOTE: ASTER_SIGNER_ADDRESS=${signerAddress} overridden by derived=${derivedSigner} from private key`);
     }
 
     const futures = createAsterV3FuturesClient({
@@ -13325,54 +13325,58 @@ function getOwnerAsterClient(): any {
 }
 
 export async function getAsterClient(chatId: number): Promise<any> {
+  const creds = await storage.getAsterCredentials(chatId.toString());
+
+  if (creds) {
+    const isV3Direct = creds.apiKey === "V3_DIRECT";
+    const isV3ApiWallet = creds.apiKey?.startsWith("0x") && creds.apiKey?.length === 42;
+
+    if (isV3ApiWallet && creds.apiSecret) {
+      let parentAddress = creds.parentAddress;
+      if (!parentAddress) {
+        const wallets = await storage.getTelegramWallets(chatId.toString());
+        const activeWallet = wallets.find((w: any) => w.isActive) || wallets[0];
+        parentAddress = activeWallet?.walletAddress?.toLowerCase() || creds.apiKey;
+      }
+      console.log(`[AsterClient] V3 API Wallet: user(parent)=${parentAddress}, signer=${creds.apiKey}`);
+      const { createAsterV3FuturesClient } = await import("./aster-client");
+      const v3Futures = createAsterV3FuturesClient({
+        user: parentAddress,
+        signer: creds.apiKey,
+        signerPrivateKey: creds.apiSecret,
+      });
+      return { futures: v3Futures, spot: null, mode: "user-v3-wallet" };
+    }
+
+    if (!isV3Direct && !isV3ApiWallet && creds.apiKey && creds.apiSecret) {
+      const { createAsterFuturesClient, createAsterSpotClient } = await import("./aster-client");
+      const futures = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+      const spot = createAsterSpotClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+      return { futures, spot, mode: "user-hmac" };
+    }
+
+    if (isV3Direct) {
+      const wallet = getLinkedWallet(chatId);
+      const pk = wallet ? await resolvePrivateKey(chatId, wallet) : null;
+      if (pk && wallet) {
+        const { createAsterV3FuturesClient } = await import("./aster-client");
+        const v3Futures = createAsterV3FuturesClient({
+          user: wallet,
+          signer: wallet,
+          signerPrivateKey: pk,
+        });
+        return { futures: v3Futures, spot: null, mode: "user-v3-direct" };
+      }
+    }
+  }
+
   if (!cachedOwnerClient && !ownerClientInitAttempted) {
     await initOwnerAsterClient();
   }
   const ownerClient = getOwnerAsterClient();
-  if (ownerClient) return ownerClient;
-
-  const creds = await storage.getAsterCredentials(chatId.toString());
-  if (!creds) return null;
-
-  const isV3Direct = creds.apiKey === "V3_DIRECT";
-  const isV3ApiWallet = creds.apiKey?.startsWith("0x") && creds.apiKey?.length === 42;
-
-  if (isV3ApiWallet && creds.apiSecret) {
-    let parentAddress = creds.parentAddress;
-    if (!parentAddress) {
-      const wallets = await storage.getTelegramWallets(chatId.toString());
-      const activeWallet = wallets.find((w: any) => w.isActive) || wallets[0];
-      parentAddress = activeWallet?.walletAddress?.toLowerCase() || creds.apiKey;
-    }
-    console.log(`[AsterClient] V3 API Wallet: user(parent)=${parentAddress}, signer=${creds.apiKey}`);
-    const { createAsterV3FuturesClient } = await import("./aster-client");
-    const v3Futures = createAsterV3FuturesClient({
-      user: parentAddress,
-      signer: creds.apiKey,
-      signerPrivateKey: creds.apiSecret,
-    });
-    return { futures: v3Futures, spot: null };
-  }
-
-  if (!isV3Direct && !isV3ApiWallet && creds.apiKey && creds.apiSecret) {
-    const { createAsterFuturesClient, createAsterSpotClient } = await import("./aster-client");
-    const futures = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
-    const spot = createAsterSpotClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
-    return { futures, spot };
-  }
-
-  if (isV3Direct) {
-    const wallet = getLinkedWallet(chatId);
-    const pk = wallet ? await resolvePrivateKey(chatId, wallet) : null;
-    if (pk && wallet) {
-      const { createAsterV3FuturesClient } = await import("./aster-client");
-      const v3Futures = createAsterV3FuturesClient({
-        user: wallet,
-        signer: wallet,
-        signerPrivateKey: pk,
-      });
-      return { futures: v3Futures, spot: null };
-    }
+  if (ownerClient) {
+    console.log(`[AsterClient] Using owner/admin client as fallback for chatId=${chatId}`);
+    return ownerClient;
   }
 
   return null;
