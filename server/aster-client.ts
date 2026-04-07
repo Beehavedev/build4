@@ -238,7 +238,7 @@ async function makeRequest(
     clearTimeout(timeoutId);
 
     const text = await response.text();
-    console.log(`[AsterHMAC] ${method} ${path} status=${response.status}`);
+    console.log(`[AsterHMAC] ${method} ${path} status=${response.status} body=${text.substring(0, 500)}`);
     let data: any;
     try {
       data = JSON.parse(text);
@@ -252,6 +252,9 @@ async function makeRequest(
       throw new Error(`Aster API error ${code}: ${msg}`);
     }
 
+    if (data && data.data && !Array.isArray(data)) {
+      return data.data;
+    }
     return data;
   } catch (e: any) {
     clearTimeout(timeoutId);
