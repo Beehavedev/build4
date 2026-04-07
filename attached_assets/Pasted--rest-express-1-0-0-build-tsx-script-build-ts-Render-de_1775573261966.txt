@@ -1,0 +1,41 @@
+
+> rest-express@1.0.0 build
+> tsx script/build.ts
+Render detected — building bot server only (no frontend)
+✘ [ERROR] The symbol "buildQueryString" has already been declared
+    server/aster-client.ts:295:9:
+      295 │ function buildQueryString(params: Record<string, string | number ...
+          ╵          ~~~~~~~~~~~~~~~~
+  The symbol "buildQueryString" was originally declared here:
+    server/aster-client.ts:186:9:
+      186 │ function buildQueryString(params: Record<string, string | number ...
+          ╵          ~~~~~~~~~~~~~~~~
+  Duplicate top-level function declarations are not allowed in an ECMAScript module. This file is considered to be an ECMAScript module because of the "export" keyword here:
+    server/aster-client.ts:1390:0:
+      1390 │ export type {
+           ╵ ~~~~~~
+▲ [WARNING] "import.meta" is not available with the "cjs" output format and will be empty [empty-import-meta]
+    server/index.ts:260:78:
+      260 │ ...'undefined' ? __dirname : new URL(".", import.meta.url).pathname;
+          ╵                                           ~~~~~~~~~~~
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+1 warning and 1 error
+Error: Build failed with 1 error:
+server/aster-client.ts:295:9: ERROR: The symbol "buildQueryString" has already been declared
+    at failureErrorWithLog (/opt/render/project/src/node_modules/esbuild/lib/main.js:1467:15)
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:926:25
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:878:52
+    at buildResponseToResult (/opt/render/project/src/node_modules/esbuild/lib/main.js:924:7)
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:951:16
+    at responseCallbacks.<computed> (/opt/render/project/src/node_modules/esbuild/lib/main.js:603:9)
+    at handleIncomingPacket (/opt/render/project/src/node_modules/esbuild/lib/main.js:658:12)
+    at Socket.readFromStdout (/opt/render/project/src/node_modules/esbuild/lib/main.js:581:7)
+    at Socket.emit (node:events:519:28)
+    at addChunk (node:internal/streams/readable:561:12) {
+  errors: [Getter/Setter],
+  warnings: [Getter/Setter]
+}
+==> Build failed 😞
+==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
+Menu
+Need better ways to work with logs? Try theRender CLI, Render MCP Server, or set up a log stream integration 

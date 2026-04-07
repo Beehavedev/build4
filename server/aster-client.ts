@@ -292,7 +292,7 @@ function getV3Nonce(): number {
   return nowSec * 1_000_000 + _nonceCounter;
 }
 
-function buildQueryString(params: Record<string, string | number | boolean | undefined>): string {
+function buildV3QueryString(params: Record<string, string | number | boolean | undefined>): string {
   const parts: string[] = [];
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null) {
@@ -321,7 +321,7 @@ async function signV3Params(
   const nonce = getV3Nonce();
   allParams.nonce = nonce;
 
-  const msgPayload = buildQueryString(allParams);
+  const msgPayload = buildV3QueryString(allParams);
 
   const wallet = new Wallet(signerPrivateKey);
   const signerAddr = wallet.address;
