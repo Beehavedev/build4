@@ -183,6 +183,7 @@ function startAutoRefresh(){
         const activePage=document.querySelector('.page.active');
         if(activePage?.id==='p-dash')renderDash();
         if(activePage?.id==='p-deposit')renderDeposit();
+        if(activePage?.id==='p-positions')renderPositions();
       }
     }catch(e){}
   },10000);
@@ -205,6 +206,165 @@ function skeletonCard(lines=3){
   let h='<div class="card">';
   for(let i=0;i<lines;i++)h+='<div class="skeleton mt-2" style="width:'+(60+Math.random()*40)+'%;height:'+(i===0?28:16)+'px"></div>';
   return h+'</div>';
+}
+
+async function loadPositions(){
+  const el=$('p-positions');
+  el.innerHTML=skeletonCard(3);
+  if(!D.connected){await fetchAll()}
+  renderPositions();
+}
+function renderPositions(){
+  const el=$('p-positions');
+  if(!D.connected){el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">📊</div><div class="text-w fw-600">Connect to view positions</div><div class="text-dim text-xs mt-2">Link your Aster account first</div></div>';return}
+  let h='<div class="section-title">📊 Open Positions</div>';
+  const pos=D.positions||[];
+  if(pos.length===0){
+    h+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">🎯</div><div class="text-dim text-sm">No open positions</div><div class="text-xs text-dim2 mt-1">Place a trade to get started</div></div>';
+  }else{
+    pos.forEach(function(p){
+      var side=parseFloat(p.positionAmt||p.size||'0')>0?'LONG':(parseFloat(p.positionAmt||p.size||'0')<0?'SHORT':(p.side||''));
+      var amt=Math.abs(parseFloat(p.positionAmt||p.size||'0'));
+      var entry=parseFloat(p.entryPrice||'0');
+      var mark=parseFloat(p.markPrice||'0');
+      var upnl=parseFloat(p.unrealizedPnl||p.unRealizedProfit||'0');
+      var lev=p.leverage||'-';
+      var liq=parseFloat(p.liquidationPrice||'0');
+      var roe=entry>0?(((mark-entry)/entry)*(side==='LONG'?1:-1)*parseFloat(String(lev)||'1')*100):0;
+      h+='<div class="card"><div class="row"><div class="gap"><span class="badge '+(side==='LONG'?'badge-long':'badge-short')+'">'+side+'</span><span class="text-w fw-600">'+p.symbol+'</span><span class="badge badge-info">'+lev+'x</span></div>'+pnlHtml(upnl)+'</div>';
+      h+='<div class="grid2 mt-3"><div><div class="label">Size</div><div class="val-sm mono">'+amt+'</div></div><div><div class="label">Entry</div><div class="val-sm mono">$'+fmt(entry)+'</div></div></div>';
+      h+='<div class="grid2 mt-2"><div><div class="label">Mark</div><div class="val-sm mono">$'+fmt(mark)+'</div></div><div><div class="label">ROE</div><div class="val-sm mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'%</div></div></div>';
+      if(liq>0){h+='<div class="mt-2"><div class="label">Liquidation</div><div class="val-xs mono" style="color:var(--red)">$'+fmt(liq)+'</div></div>'}
+      h+='<div class="mt-3"><button class="btn btn-red btn-sm" style="width:100%" onclick="closePosFromTab(\\''+p.symbol+'\\')">Close Position</button></div></div>';
+    });
+  }
+  h+='<div class="card mt-2"><div class="row"><span class="label">Total Unrealized PnL</span>'+pnlHtml(D.unrealizedPnl||0)+'</div></div>';
+  h+='<button class="btn btn-outline mt-2" onclick="fetchAll().then(renderPositions)">🔄 Refresh</button>';
+  el.innerHTML=h;
+}
+async function closePosFromTab(symbol){
+  const ok=await customConfirm('<div style="font-weight:600;font-size:16px;margin-bottom:12px">Close Position</div><div style="font-size:13px;color:#aaa">Close entire <strong style="color:#fff">'+symbol+'</strong> position?</div>');
+  if(!ok)return;
+  toast('⏳ Closing '+symbol+'...','info');
+  try{
+    const r=await api('/api/miniapp/close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol})});
+    if(r.success){toast('✅ '+symbol+' closed','ok');setTimeout(()=>{fetchAll().then(renderPositions)},2000)}
+    else{toast('❌ '+(r.error||'Close failed'),'err')}
+  }catch(e){toast('❌ '+e.message,'err')}
+}
+
+async function loadOrders(){
+  const el=$('p-orders');
+  el.innerHTML=skeletonCard(3);
+  try{
+    const r=await api('/api/miniapp/orders');
+    D.openOrders=r.openOrders||[];
+  }catch(e){D.openOrders=[]}
+  renderOrders();
+}
+function renderOrders(){
+  const el=$('p-orders');
+  if(!D.connected){el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">📋</div><div class="text-w fw-600">Connect to view orders</div><div class="text-dim text-xs mt-2">Link your Aster account first</div></div>';return}
+  let h='<div class="section-title">📋 Open Orders</div>';
+  const orders=D.openOrders||[];
+  if(orders.length===0){
+    h+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">✅</div><div class="text-dim text-sm">No open orders</div><div class="text-xs text-dim2 mt-1">All orders have been filled or cancelled</div></div>';
+  }else{
+    orders.forEach(function(o){
+      var isBuy=o.side==='BUY';
+      h+='<div class="card"><div class="row"><div class="gap"><span class="badge '+(isBuy?'badge-long':'badge-short')+'">'+o.side+'</span><span class="text-w fw-600">'+o.symbol+'</span></div><span class="badge badge-info">'+o.type+'</span></div>';
+      h+='<div class="grid2 mt-3"><div><div class="label">Price</div><div class="val-sm mono">$'+fmt(o.price)+'</div></div><div><div class="label">Quantity</div><div class="val-sm mono">'+o.origQty+'</div></div></div>';
+      if(o.executedQty>0){h+='<div class="mt-2"><div class="label">Filled</div><div class="val-xs mono">'+o.executedQty+' / '+o.origQty+'</div></div>'}
+      if(o.time){h+='<div class="timestamp">'+new Date(o.time).toLocaleString()+'</div>'}
+      h+='<div class="mt-2"><button class="btn btn-outline btn-sm" style="width:100%" onclick="cancelOrder(\\''+o.symbol+'\\','+o.orderId+')">Cancel Order</button></div></div>';
+    });
+  }
+  h+='<button class="btn btn-outline mt-2" onclick="loadOrders()">🔄 Refresh</button>';
+  el.innerHTML=h;
+}
+async function cancelOrder(symbol,orderId){
+  const ok=await customConfirm('<div style="font-weight:600;font-size:16px;margin-bottom:12px">Cancel Order</div><div style="font-size:13px;color:#aaa">Cancel order <strong style="color:#fff">#'+orderId+'</strong> on '+symbol+'?</div>');
+  if(!ok)return;
+  toast('⏳ Cancelling order...','info');
+  try{
+    const r=await api('/api/miniapp/cancel-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol,orderId})});
+    if(r.success){toast('✅ Order cancelled','ok');setTimeout(loadOrders,1500)}
+    else{toast('❌ '+(r.error||'Cancel failed'),'err')}
+  }catch(e){toast('❌ '+e.message,'err')}
+}
+
+async function loadMarkets(){
+  const el=$('p-markets');
+  el.innerHTML=skeletonCard(4);
+  if(!M.markets.length){await fetchAll()}
+  renderMarkets();
+}
+function renderMarkets(){
+  const el=$('p-markets');
+  let h='<div class="section-title">📈 Futures Markets</div>';
+  const mkts=M.markets||[];
+  if(mkts.length===0){
+    h+='<div class="card" style="text-align:center;padding:24px"><div class="text-dim text-sm">Loading market data...</div></div>';
+  }else{
+    mkts.forEach(function(m){
+      var chg=parseFloat(m.priceChangePercent||'0');
+      var vol=parseFloat(m.quoteVolume||m.volume||'0');
+      h+='<div class="card" style="cursor:pointer" onclick="tradeSel=\\''+m.symbol+'\\';switchTab(\\'p-trade\\')">';
+      h+='<div class="row"><span class="text-w fw-600">'+m.symbol.replace('USDT','')+'<span class="text-dim2" style="font-weight:400">/USDT</span></span><span class="val-sm mono">$'+fmt(parseFloat(m.price||m.lastPrice||'0'))+'</span></div>';
+      h+='<div class="row mt-2"><span class="text-xs text-dim">24h Change</span><span class="val-xs '+(chg>=0?'g+':'r-')+'">'+(chg>=0?'+':'')+fmt(chg,2)+'%</span></div>';
+      if(vol>0){h+='<div class="row mt-1"><span class="text-xs text-dim">24h Volume</span><span class="text-xs mono text-dim">$'+(vol>1e6?fmt(vol/1e6,1)+'M':fmt(vol,0))+'</span></div>'}
+      h+='</div>';
+    });
+  }
+  h+='<button class="btn btn-outline mt-2" onclick="fetchAll().then(renderMarkets)">🔄 Refresh</button>';
+  el.innerHTML=h;
+}
+
+async function loadHistory(){
+  const el=$('p-history');
+  el.innerHTML=skeletonCard(3);
+  try{
+    const r=await api('/api/miniapp/trades?symbol=BTCUSDT');
+    tradeHistory=r.trades||[];
+    D.recentIncome=r.income||[];
+  }catch(e){tradeHistory=[];D.recentIncome=[]}
+  renderHistory();
+}
+function renderHistory(){
+  const el=$('p-history');
+  if(!D.connected){el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">🕐</div><div class="text-w fw-600">Connect to view history</div><div class="text-dim text-xs mt-2">Link your Aster account first</div></div>';return}
+  let h='<div class="section-title">🕐 Trade History</div>';
+  if(tradeHistory.length===0&&(!D.recentIncome||D.recentIncome.length===0)){
+    h+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">📭</div><div class="text-dim text-sm">No trade history yet</div></div>';
+  }else{
+    if(tradeHistory.length>0){
+      h+='<div class="card"><div class="label mb-2">Recent Trades</div>';
+      tradeHistory.slice(0,20).forEach(function(t){
+        var isBuy=t.side==='BUY';
+        h+='<div class="pos-item"><div class="row"><div class="gap"><span class="badge '+(isBuy?'badge-long':'badge-short')+'">'+t.side+'</span><span class="text-w text-sm fw-600">'+t.symbol+'</span></div><span class="val-xs mono">'+t.qty+'</span></div>';
+        h+='<div class="row mt-1"><span class="text-xs text-dim mono">@ $'+fmt(t.price)+'</span>';
+        if(t.realizedPnl!==0){h+=pnlHtml(t.realizedPnl)}
+        h+='</div>';
+        if(t.time){h+='<div class="timestamp">'+new Date(t.time).toLocaleString()+'</div>'}
+        h+='</div>';
+      });
+      h+='</div>';
+    }
+    if(D.recentIncome&&D.recentIncome.length>0){
+      h+='<div class="card"><div class="label mb-2">Realized PnL History</div>';
+      var totalPnl=0;
+      D.recentIncome.forEach(function(i){
+        totalPnl+=i.amount||0;
+        h+='<div class="pos-item"><div class="row"><span class="text-sm text-w">'+(i.symbol||'—')+'</span>'+pnlHtml(i.amount||0)+'</div>';
+        h+='<div class="row mt-1"><span class="text-xs text-dim">'+(i.type||'PNL')+'</span>';
+        if(i.time){h+='<span class="timestamp" style="margin:0">'+new Date(i.time).toLocaleString()+'</span>'}
+        h+='</div></div>';
+      });
+      h+='<div class="row mt-2" style="padding:8px 0;border-top:1px solid var(--border)"><span class="text-sm fw-600 text-w">Total Realized</span>'+pnlHtml(totalPnl)+'</div></div>';
+    }
+  }
+  h+='<button class="btn btn-outline mt-2" onclick="loadHistory()">🔄 Refresh</button>';
+  el.innerHTML=h;
 }
 
 async function loadDash(){

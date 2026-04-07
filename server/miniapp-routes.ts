@@ -703,6 +703,35 @@ export function registerMiniAppRoutes(app: Express) {
     }
   });
 
+  app.get("/api/miniapp/orders", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+
+      const client = await getAsterClient(parseInt(chatId));
+      if (!client) return res.json({ openOrders: [] });
+
+      const futuresClient = client.futures || client;
+      const orders = await futuresClient.openOrders().catch(() => []);
+
+      res.json({
+        openOrders: Array.isArray(orders) ? orders.map((o: any) => ({
+          orderId: o.orderId,
+          symbol: o.symbol,
+          side: o.side,
+          type: o.type,
+          price: parseFloat(o.price || "0"),
+          origQty: parseFloat(o.origQty || "0"),
+          executedQty: parseFloat(o.executedQty || "0"),
+          status: o.status,
+          time: o.time || o.updateTime,
+        })) : [],
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.get("/api/miniapp/trades", async (req: Request, res: Response) => {
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;
@@ -858,6 +887,26 @@ export function registerMiniAppRoutes(app: Express) {
     } catch (e: any) {
       console.error(`[MiniApp] Close error: ${e.message}`);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/miniapp/cancel-order", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+
+      const { symbol, orderId } = req.body;
+      if (!symbol || !orderId) return res.status(400).json({ error: "Missing symbol or orderId" });
+
+      const client = await getAsterClient(parseInt(chatId));
+      if (!client) return res.status(400).json({ error: "Aster not connected" });
+
+      const fc = client.futures || client;
+      const result = await fc.cancelOrder(symbol, orderId);
+      res.json({ success: true, orderId: result.orderId || orderId, status: result.status || "CANCELED" });
+    } catch (e: any) {
+      console.error(`[MiniApp] Cancel order error: ${e.message}`);
+      res.status(500).json({ error: e.message?.substring(0, 120) || "Cancel failed" });
     }
   });
 
