@@ -308,7 +308,7 @@ async function signV3Params(
     if (v !== undefined && v !== null) businessParams[k] = v;
   }
   businessParams.timestamp = Date.now();
-  if (!businessParams.recvWindow) businessParams.recvWindow = 5000;
+  if (!businessParams.recvWindow) businessParams.recvWindow = 50000;
 
   const msgPayload = buildSortedQueryString(businessParams);
 
@@ -352,7 +352,7 @@ async function makeV3Request(
 
   const { queryStringWithSig } = await signV3Params(params as Record<string, string | number | boolean | undefined>, user, signer, signerPrivateKey);
 
-  const headers: Record<string, string> = {
+  const reqHeaders: Record<string, string> = {
     "Content-Type": "application/x-www-form-urlencoded",
     "User-Agent": "BUILD4/1.0",
   };
@@ -364,13 +364,18 @@ async function makeV3Request(
     let url: string;
     const fetchOptions: RequestInit = {
       method,
-      headers,
+      headers: reqHeaders,
       signal: controller.signal,
     };
 
-    url = `${baseUrl}${path}?${queryStringWithSig}`;
+    if (method === "GET") {
+      url = `${baseUrl}${path}?${queryStringWithSig}`;
+    } else {
+      url = `${baseUrl}${path}`;
+      fetchOptions.body = queryStringWithSig;
+    }
 
-    console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 200)}...`);
+    console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 200)}${method === "GET" ? "..." : ""} body=${method !== "GET" ? queryStringWithSig.substring(0, 300) : "none"}`);
     const response = await fetch(url, fetchOptions);
 
     clearTimeout(timeoutId);
