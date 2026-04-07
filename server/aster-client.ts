@@ -636,6 +636,12 @@ export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: s
   }
 }
 
+/** Check if an error is an endpoint-not-found type that warrants a v1→v3 fallback */
+function isEndpointError(e: any): boolean {
+  const msg = (e?.message || "").toLowerCase();
+  return msg.includes("404") || msg.includes("not found") || msg.includes("no matching") || msg.includes("endpoint");
+}
+
 export function createAsterFuturesClient(config: AsterClientConfig) {
   const baseUrl = config.futuresBaseUrl || DEFAULT_FUTURES_BASE_URL;
   const { apiKey, apiSecret } = config;
@@ -706,7 +712,8 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
       try {
         return await request("/fapi/v1/balance", { signed: true });
       } catch (e1: any) {
-        console.log(`[AsterHMAC] /fapi/v1/balance failed: ${e1.message?.substring(0, 100)}, trying /fapi/v3/balance`);
+        if (!isEndpointError(e1)) throw e1;
+        console.log(`[AsterHMAC] /fapi/v1/balance not available, trying /fapi/v3/balance`);
         return request("/fapi/v3/balance", { signed: true });
       }
     },
@@ -715,7 +722,8 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
       try {
         return await request("/fapi/v1/account", { signed: true });
       } catch (e1: any) {
-        console.log(`[AsterHMAC] /fapi/v1/account failed: ${e1.message?.substring(0, 100)}, trying /fapi/v3/account`);
+        if (!isEndpointError(e1)) throw e1;
+        console.log(`[AsterHMAC] /fapi/v1/account not available, trying /fapi/v3/account`);
         return request("/fapi/v3/account", { signed: true });
       }
     },
@@ -729,7 +737,8 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
       try {
         data = await request("/fapi/v1/positionRisk", { signed: true });
       } catch (e1: any) {
-        console.log(`[AsterHMAC] /fapi/v1/positionRisk failed: ${e1.message?.substring(0, 100)}, trying /fapi/v3/positionRisk`);
+        if (!isEndpointError(e1)) throw e1;
+        console.log(`[AsterHMAC] /fapi/v1/positionRisk not available, trying /fapi/v3/positionRisk`);
         data = await request("/fapi/v3/positionRisk", { signed: true });
       }
       if (Array.isArray(data)) return data;
@@ -776,7 +785,8 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
       try {
         return await request("/fapi/v1/order", { method: "POST", signed: true, params });
       } catch (e1: any) {
-        console.log(`[AsterHMAC] /fapi/v1/order failed: ${e1.message?.substring(0, 100)}, trying /fapi/v3/order`);
+        if (!isEndpointError(e1)) throw e1;
+        console.log(`[AsterHMAC] /fapi/v1/order not available, trying /fapi/v3/order`);
         return request("/fapi/v3/order", { method: "POST", signed: true, params });
       }
     },
@@ -784,7 +794,8 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
     async cancelOrder(symbol: string, orderId: number): Promise<AsterOrder> {
       try {
         return await request("/fapi/v1/order", { method: "DELETE", signed: true, params: { symbol, orderId } });
-      } catch {
+      } catch (e: any) {
+        if (!isEndpointError(e)) throw e;
         return request("/fapi/v3/order", { method: "DELETE", signed: true, params: { symbol, orderId } });
       }
     },
@@ -792,7 +803,8 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
     async cancelAllOrders(symbol: string): Promise<any> {
       try {
         return await request("/fapi/v1/allOpenOrders", { method: "DELETE", signed: true, params: { symbol } });
-      } catch {
+      } catch (e: any) {
+        if (!isEndpointError(e)) throw e;
         return request("/fapi/v3/allOpenOrders", { method: "DELETE", signed: true, params: { symbol } });
       }
     },
@@ -802,7 +814,8 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
       if (symbol) params.symbol = symbol;
       try {
         return await request("/fapi/v1/openOrders", { signed: true, params });
-      } catch {
+      } catch (e: any) {
+        if (!isEndpointError(e)) throw e;
         return request("/fapi/v3/openOrders", { signed: true, params });
       }
     },
@@ -810,7 +823,8 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
     async allOrders(symbol: string, limit: number = 50): Promise<AsterOrder[]> {
       try {
         return await request("/fapi/v1/allOrders", { signed: true, params: { symbol, limit } });
-      } catch {
+      } catch (e: any) {
+        if (!isEndpointError(e)) throw e;
         return request("/fapi/v3/allOrders", { signed: true, params: { symbol, limit } });
       }
     },
@@ -818,7 +832,8 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
     async userTrades(symbol: string, limit: number = 50): Promise<any[]> {
       try {
         return await request("/fapi/v1/userTrades", { signed: true, params: { symbol, limit } });
-      } catch {
+      } catch (e: any) {
+        if (!isEndpointError(e)) throw e;
         return request("/fapi/v3/userTrades", { signed: true, params: { symbol, limit } });
       }
     },
@@ -826,7 +841,8 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
     async setLeverage(symbol: string, leverage: number): Promise<any> {
       try {
         return await request("/fapi/v1/leverage", { method: "POST", signed: true, params: { symbol, leverage } });
-      } catch {
+      } catch (e: any) {
+        if (!isEndpointError(e)) throw e;
         return request("/fapi/v3/leverage", { method: "POST", signed: true, params: { symbol, leverage } });
       }
     },
@@ -834,7 +850,8 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
     async setMarginType(symbol: string, marginType: "ISOLATED" | "CROSSED"): Promise<any> {
       try {
         return await request("/fapi/v1/marginType", { method: "POST", signed: true, params: { symbol, marginType } });
-      } catch {
+      } catch (e: any) {
+        if (!isEndpointError(e)) throw e;
         return request("/fapi/v3/marginType", { method: "POST", signed: true, params: { symbol, marginType } });
       }
     },
@@ -848,7 +865,8 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
       if (incomeType) params.incomeType = incomeType;
       try {
         return await request("/fapi/v1/income", { signed: true, params });
-      } catch {
+      } catch (e: any) {
+        if (!isEndpointError(e)) throw e;
         return request("/fapi/v3/income", { signed: true, params });
       }
     },
