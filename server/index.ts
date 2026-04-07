@@ -201,7 +201,9 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const isMiniApp = req.path === "/miniapp" || req.path === "/miniapp-old";
   res.removeHeader("X-Powered-By");
   res.setHeader("X-Content-Type-Options", "nosniff");
-  if (!isMiniApp) {
+  if (isMiniApp) {
+    res.setHeader("X-Frame-Options", "ALLOW-FROM https://web.telegram.org");
+  } else {
     res.setHeader("X-Frame-Options", "DENY");
   }
   res.setHeader("X-XSS-Protection", "0");
