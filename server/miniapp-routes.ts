@@ -939,6 +939,65 @@ export function registerMiniAppRoutes(app: Express) {
     }
   });
 
+  app.get("/api/test-order", async (_req: Request, res: Response) => {
+    try {
+      const { getAsterClient } = await import("./telegram-bot");
+      const client = await getAsterClient(0);
+      if (!client) return res.json({ error: "No Aster client configured", env: { hasPrivateKey: !!process.env.ASTER_PRIVATE_KEY, hasUser: !!process.env.ASTER_USER_ADDRESS, hasSigner: !!process.env.ASTER_SIGNER_ADDRESS } });
+      const fc = client.futures || client;
+
+      const debug: any = { step: "init", timestamp: Date.now() };
+
+      try {
+        debug.step = "balance";
+        const acct = await fc.account();
+        debug.balance = acct?.totalWalletBalance || acct?.availableBalance || "unknown";
+        debug.balanceOk = true;
+      } catch (e: any) {
+        debug.balanceError = e.message;
+        debug.balanceOk = false;
+      }
+
+      try {
+        debug.step = "ticker";
+        const ticker = await fc.tickerPrice("BTCUSDT");
+        debug.btcPrice = ticker?.price;
+      } catch (e: any) {
+        debug.tickerError = e.message;
+      }
+
+      try {
+        debug.step = "setLeverage";
+        const levResult = await fc.setLeverage("BTCUSDT", 5);
+        debug.leverageResult = levResult;
+        debug.leverageOk = true;
+      } catch (e: any) {
+        debug.leverageError = e.message;
+        debug.leverageOk = false;
+      }
+
+      try {
+        debug.step = "testOrder";
+        const order = await fc.createOrder({
+          symbol: "BTCUSDT",
+          side: "BUY",
+          type: "MARKET",
+          quantity: "0.001",
+        });
+        debug.orderResult = order;
+        debug.orderOk = true;
+      } catch (e: any) {
+        debug.orderError = e.message;
+        debug.orderOk = false;
+      }
+
+      debug.step = "done";
+      res.json(debug);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/miniapp/markets", async (req: Request, res: Response) => {
     try {
       const symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "DOGEUSDT"];

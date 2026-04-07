@@ -308,7 +308,7 @@ async function signV3Params(
   signer: string,
   signerPrivateKey: string,
   _httpMethod: string = "GET",
-): Promise<{ queryStringWithSig: string }> {
+): Promise<{ queryStringWithSig: string; paramsWithoutSig: string }> {
   const allParams: Record<string, string | number | boolean | undefined> = {};
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null) allParams[k] = v;
@@ -325,20 +325,31 @@ async function signV3Params(
 
   const wallet = new Wallet(signerPrivateKey);
   const signerAddr = wallet.address;
-  console.log(`[AsterV3Sign] msg=${msgPayload.substring(0, 300)} signerAddr=${signerAddr}`);
+
+  console.log(`[AsterV3Sign] === SIGNING DEBUG ===`);
+  console.log(`[AsterV3Sign] user=${user}`);
+  console.log(`[AsterV3Sign] signer_param=${signer}`);
+  console.log(`[AsterV3Sign] wallet_addr=${signerAddr}`);
+  console.log(`[AsterV3Sign] addr_match=${signerAddr.toLowerCase() === signer.toLowerCase()}`);
+  console.log(`[AsterV3Sign] domain=${JSON.stringify(EIP712_DOMAIN)}`);
+  console.log(`[AsterV3Sign] msg=${msgPayload}`);
+
   if (signerAddr.toLowerCase() !== signer.toLowerCase()) {
     console.warn(`[AsterV3Sign] WARNING: wallet address ${signerAddr} does not match signer param ${signer}`);
   }
 
-  const signature = await wallet.signTypedData(
+  const rawSig = await wallet.signTypedData(
     EIP712_DOMAIN,
     EIP712_TYPES,
     { msg: msgPayload },
   );
 
+  const signature = rawSig.startsWith("0x") ? rawSig.slice(2) : rawSig;
+  console.log(`[AsterV3Sign] signature=${signature.substring(0, 40)}...`);
+
   const qsWithSig = msgPayload + "&signature=" + signature;
 
-  return { queryStringWithSig: qsWithSig };
+  return { queryStringWithSig: qsWithSig, paramsWithoutSig: msgPayload };
 }
 
 async function makeV3Request(
@@ -351,7 +362,7 @@ async function makeV3Request(
 ): Promise<any> {
   const { method = "GET", params = {} } = options;
 
-  const { queryStringWithSig } = await signV3Params(params as Record<string, string | number | boolean | undefined>, user, signer, signerPrivateKey, method);
+  const { queryStringWithSig, paramsWithoutSig } = await signV3Params(params as Record<string, string | number | boolean | undefined>, user, signer, signerPrivateKey, method);
 
   const reqHeaders: Record<string, string> = {
     "Content-Type": "application/x-www-form-urlencoded",
@@ -371,10 +382,11 @@ async function makeV3Request(
 
     url = `${baseUrl}${path}?${queryStringWithSig}`;
     if (method !== "GET") {
-      fetchOptions.body = queryStringWithSig;
+      fetchOptions.body = paramsWithoutSig;
     }
 
-    console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 200)}${method === "GET" ? "..." : ""} body=${method !== "GET" ? queryStringWithSig.substring(0, 300) : "none"}`);
+    console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 300)}`);
+    if (method !== "GET") console.log(`[AsterV3] body=${paramsWithoutSig.substring(0, 300)}`);
     const response = await fetch(url, fetchOptions);
 
     clearTimeout(timeoutId);
