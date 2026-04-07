@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { Wallet, getAddress, JsonRpcProvider, Contract, formatUnits, formatEther, parseUnits, parseEther, MaxUint256 } from "ethers";
+import { Wallet, getAddress, JsonRpcProvider, Contract, formatUnits, formatEther, parseUnits, parseEther, MaxUint256, keccak256, toUtf8Bytes, getBytes } from "ethers";
 
 interface AsterClientConfig {
   apiKey: string;
@@ -302,41 +302,59 @@ async function signV3Params(
   user: string,
   signer: string,
   signerPrivateKey: string,
+  httpMethod: string = "GET",
 ): Promise<{ queryStringWithSig: string }> {
-  const allParams: Record<string, string | number | boolean | undefined> = {};
+  const businessParams: Record<string, string | number | boolean | undefined> = {};
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null) allParams[k] = v;
+    if (v !== undefined && v !== null) businessParams[k] = v;
   }
-  allParams.timestamp = Date.now();
-  if (!allParams.recvWindow) allParams.recvWindow = 50000;
-  allParams.nonce = getV3Nonce();
-  allParams.user = user;
-  allParams.signer = signer;
-
-  const msgPayload = buildSortedQueryString(allParams);
+  businessParams.timestamp = Date.now();
+  if (!businessParams.recvWindow) businessParams.recvWindow = 50000;
 
   const wallet = new Wallet(signerPrivateKey);
   const signerAddr = wallet.address;
-  console.log(`[AsterV3Sign] msg=${msgPayload.substring(0, 300)} signerAddr=${signerAddr}`);
   if (signerAddr.toLowerCase() !== signer.toLowerCase()) {
     console.warn(`[AsterV3Sign] WARNING: wallet address ${signerAddr} does not match signer param ${signer}`);
   }
 
-  const signature = await wallet.signTypedData(
-    EIP712_DOMAIN,
-    EIP712_TYPES,
-    { msg: msgPayload },
-  );
+  let signature: string;
 
-  allParams.signature = signature;
+  if (httpMethod === "GET") {
+    const allForSig: Record<string, string | number | boolean | undefined> = { ...businessParams };
+    allForSig.nonce = getV3Nonce();
+    allForSig.user = user;
+    allForSig.signer = signer;
+    const msgPayload = buildSortedQueryString(allForSig);
+    console.log(`[AsterV3Sign] EIP712 msg=${msgPayload.substring(0, 300)}`);
+    signature = await wallet.signTypedData(EIP712_DOMAIN, EIP712_TYPES, { msg: msgPayload });
 
-  const finalParts: string[] = [];
-  const sortedKeys = Object.keys(allParams).filter(k => allParams[k] !== undefined && allParams[k] !== null).sort();
-  for (const k of sortedKeys) {
-    finalParts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(allParams[k]))}`);
+    allForSig.signature = signature;
+    const finalParts: string[] = [];
+    const sortedKeys = Object.keys(allForSig).filter(k => allForSig[k] !== undefined && allForSig[k] !== null).sort();
+    for (const k of sortedKeys) {
+      finalParts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(allForSig[k]))}`);
+    }
+    return { queryStringWithSig: finalParts.join("&") };
+  } else {
+    const sortedQs = buildSortedQueryString(businessParams);
+    console.log(`[AsterV3Sign] keccak msg=${sortedQs.substring(0, 300)}`);
+    const msgHash = keccak256(toUtf8Bytes(sortedQs));
+    signature = await wallet.signMessage(getBytes(msgHash));
+
+    const nonce = getV3Nonce();
+    const allParams: Record<string, string | number | boolean | undefined> = { ...businessParams };
+    allParams.nonce = nonce;
+    allParams.user = user;
+    allParams.signer = signer;
+    allParams.signature = signature;
+
+    const finalParts: string[] = [];
+    const sortedKeys = Object.keys(allParams).filter(k => allParams[k] !== undefined && allParams[k] !== null).sort();
+    for (const k of sortedKeys) {
+      finalParts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(allParams[k]))}`);
+    }
+    return { queryStringWithSig: finalParts.join("&") };
   }
-
-  return { queryStringWithSig: finalParts.join("&") };
 }
 
 async function makeV3Request(
@@ -349,7 +367,7 @@ async function makeV3Request(
 ): Promise<any> {
   const { method = "GET", params = {} } = options;
 
-  const { queryStringWithSig } = await signV3Params(params as Record<string, string | number | boolean | undefined>, user, signer, signerPrivateKey);
+  const { queryStringWithSig } = await signV3Params(params as Record<string, string | number | boolean | undefined>, user, signer, signerPrivateKey, method);
 
   const reqHeaders: Record<string, string> = {
     "Content-Type": "application/x-www-form-urlencoded",
