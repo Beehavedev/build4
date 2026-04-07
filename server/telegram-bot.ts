@@ -5,7 +5,7 @@ import { storage } from "./storage";
 import { registerAgentOnchain, registerAgentERC8004, registerAgentBAP578, isOnchainReady, getExplorerUrl } from "./onchain";
 import { recordTelegramMessage, recordTelegramCallback, checkRateLimit } from "./performance-monitor";
 import { enqueueTask, registerTaskHandler } from "./task-queue";
-import { startAgent, stopAgent, getAgentStatus, getAgentConfig, setAgentConfig, getAgentState, setAgentFuturesClient } from "./autonomous-agent";
+import { startAgent, stopAgent, getAgentStatus, getAgentConfig, setAgentConfig, getAgentState, setAgentFuturesClient, loadAgentConfigFromDb } from "./autonomous-agent";
 import {
   getSmartMoneySignals,
   getLeaderboard,
@@ -16182,7 +16182,10 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   }
 
   if (action === "agent") {
-    const config = getAgentConfig(chatId.toString());
+    let config = getAgentConfig(chatId.toString());
+    if (!config.name || config.name === "My Agent") {
+      config = await loadAgentConfigFromDb(chatId.toString());
+    }
     const state = getAgentState(chatId.toString());
     const isRunning = state?.running || false;
 
@@ -16302,7 +16305,10 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   }
 
   if (action === "agent_config") {
-    const config = getAgentConfig(chatId.toString());
+    let config = getAgentConfig(chatId.toString());
+    if (!config.name || config.name === "My Agent") {
+      config = await loadAgentConfigFromDb(chatId.toString());
+    }
     await bot.sendMessage(chatId,
       `⚙️ *Agent Configuration — Full Auto*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
       `🌐 Scans: *All 18 pairs*\n` +

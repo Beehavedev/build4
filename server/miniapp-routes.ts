@@ -785,8 +785,11 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const chatId = req.headers["x-telegram-chat-id"] as string;
       if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
 
-      const { getAgentConfig, getAgentState } = await import("./autonomous-agent");
-      const config = getAgentConfig(chatId);
+      const { getAgentConfig, getAgentState, loadAgentConfigFromDb } = await import("./autonomous-agent");
+      let config = getAgentConfig(chatId);
+      if (!config.name || config.name === "My Agent") {
+        config = await loadAgentConfigFromDb(chatId);
+      }
       const state = getAgentState(chatId);
 
       const localTrades = await storage.getAsterLocalTrades(chatId);

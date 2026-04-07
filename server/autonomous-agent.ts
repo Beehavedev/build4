@@ -59,6 +59,64 @@ export function getAgentConfig(chatId: string): AgentConfig {
   return state?.config || { ...DEFAULT_CONFIG };
 }
 
+export async function loadAgentConfigFromDb(chatId: string): Promise<AgentConfig> {
+  try {
+    const limits = await storage.getAsterTradingLimits(chatId);
+    if (limits) {
+      let saved: Partial<AgentConfig> = {};
+      try {
+        const raw = (limits as any).agentConfigJson;
+        if (raw && raw !== '{}') saved = JSON.parse(raw);
+      } catch {}
+      const config: AgentConfig = {
+        name: saved.name || DEFAULT_CONFIG.name,
+        maxLeverage: limits.maxLeverage ?? saved.maxLeverage ?? DEFAULT_CONFIG.maxLeverage,
+        riskPercent: saved.riskPercent ?? DEFAULT_CONFIG.riskPercent,
+        intervalMs: saved.intervalMs ?? DEFAULT_CONFIG.intervalMs,
+        klineInterval: saved.klineInterval ?? DEFAULT_CONFIG.klineInterval,
+        enabled: limits.autoTradeEnabled ?? saved.enabled ?? false,
+        maxOpenPositions: limits.maxOpenPositions ?? saved.maxOpenPositions ?? DEFAULT_CONFIG.maxOpenPositions,
+      };
+      let state = agentStates.get(chatId);
+      if (!state) {
+        state = createDefaultState();
+        agentStates.set(chatId, state);
+      }
+      state.config = config;
+      console.log(`[Agent:${chatId}] Loaded config from DB: name="${config.name}", maxLev=${config.maxLeverage}, risk=${config.riskPercent}%, positions=${config.maxOpenPositions}, enabled=${config.enabled}`);
+      return config;
+    }
+  } catch (e: any) {
+    console.warn(`[Agent:${chatId}] Failed to load config from DB: ${e.message?.substring(0, 100)}`);
+  }
+  return { ...DEFAULT_CONFIG };
+}
+
+async function saveAgentConfigToDb(chatId: string, config: AgentConfig): Promise<void> {
+  try {
+    const configJson = JSON.stringify({
+      name: config.name,
+      riskPercent: config.riskPercent,
+      intervalMs: config.intervalMs,
+      klineInterval: config.klineInterval,
+      maxLeverage: config.maxLeverage,
+      maxOpenPositions: config.maxOpenPositions,
+      enabled: config.enabled,
+    });
+    await storage.saveAsterTradingLimits(chatId, {
+      maxLeverage: config.maxLeverage,
+      maxOpenPositions: config.maxOpenPositions,
+      autoTradeEnabled: config.enabled,
+    });
+    const { db } = await import("./db");
+    const { sql } = await import("drizzle-orm");
+    await db.execute(sql`UPDATE aster_trading_limits SET agent_config_json = ${configJson} WHERE chat_id = ${chatId}`);
+    console.log(`[Agent:${chatId}] Saved config to DB: name="${config.name}"`);
+  } catch (e: any) {
+    console.warn(`[Agent:${chatId}] Failed to save config to DB: ${e.message?.substring(0, 100)}`);
+  }
+}
+
 export function setAgentConfig(chatId: string, partial: Partial<AgentConfig>): AgentConfig {
   let state = agentStates.get(chatId);
   if (!state) {
@@ -66,6 +124,7 @@ export function setAgentConfig(chatId: string, partial: Partial<AgentConfig>): A
     agentStates.set(chatId, state);
   }
   Object.assign(state.config, partial);
+  saveAgentConfigToDb(chatId, state.config);
   return state.config;
 }
 
@@ -96,9 +155,14 @@ export async function startAgent(
     agentStates.set(chatId, state);
   }
 
+  if (!state.config.name || state.config.name === DEFAULT_CONFIG.name) {
+    await loadAgentConfigFromDb(chatId);
+  }
+
   if (state.running) return false;
   state.running = true;
   state.config.enabled = true;
+  saveAgentConfigToDb(chatId, state.config);
   state.errors = 0;
 
   state.openPositions.clear();
