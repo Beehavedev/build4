@@ -176,7 +176,7 @@ interface BrokerOnboardResult {
 }
 
 const DEFAULT_FUTURES_BASE_URL = "https://fapi.asterdex.com";
-const DEFAULT_FUTURES_V3_BASE_URL = "https://fapi.asterdex.com";
+const DEFAULT_FUTURES_V3_BASE_URL = "https://fapi3.asterdex.com";
 const DEFAULT_SPOT_BASE_URL = "https://sapi.asterdex.com";
 const BROKER_BASE_URL = "https://www.asterdex.com/bapi/futures/v1";
 const WS_BASE_URL = "wss://fstream.asterdex.com";
@@ -292,14 +292,12 @@ function getV3Nonce(): number {
   return nowSec * 1_000_000 + _nonceCounter;
 }
 
-function buildV3QueryString(params: Record<string, string | number | boolean | undefined>): string {
-  const parts: string[] = [];
+function buildV3QueryString(params: Record<string, string>): string {
+  const usp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null) {
-      parts.push(`${k}=${String(v)}`);
-    }
+    usp.append(k, v);
   }
-  return parts.join("&");
+  return usp.toString();
 }
 
 async function signV3Params(
@@ -309,19 +307,17 @@ async function signV3Params(
   signerPrivateKey: string,
   _httpMethod: string = "GET",
 ): Promise<{ queryStringWithSig: string; paramsWithoutSig: string }> {
-  const allParams: Record<string, string | number | boolean | undefined> = {};
+  const strParams: Record<string, string> = {};
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null) allParams[k] = v;
+    if (v !== undefined && v !== null) strParams[k] = String(v);
   }
 
-  allParams.asterChain = "Mainnet";
-  allParams.user = user;
-  allParams.signer = signer;
-
   const nonce = getV3Nonce();
-  allParams.nonce = nonce;
+  strParams.nonce = String(nonce);
+  strParams.user = user;
+  strParams.signer = signer;
 
-  const msgPayload = buildV3QueryString(allParams);
+  const msgPayload = buildV3QueryString(strParams);
 
   const wallet = new Wallet(signerPrivateKey);
   const signerAddr = wallet.address;
@@ -332,7 +328,7 @@ async function signV3Params(
   console.log(`[AsterV3Sign] wallet_addr=${signerAddr}`);
   console.log(`[AsterV3Sign] addr_match=${signerAddr.toLowerCase() === signer.toLowerCase()}`);
   console.log(`[AsterV3Sign] domain=${JSON.stringify(EIP712_DOMAIN)}`);
-  console.log(`[AsterV3Sign] msg=${msgPayload}`);
+  console.log(`[AsterV3Sign] msg_to_sign=${msgPayload}`);
 
   if (signerAddr.toLowerCase() !== signer.toLowerCase()) {
     console.warn(`[AsterV3Sign] WARNING: wallet address ${signerAddr} does not match signer param ${signer}`);
@@ -381,12 +377,8 @@ async function makeV3Request(
     };
 
     url = `${baseUrl}${path}?${queryStringWithSig}`;
-    if (method !== "GET") {
-      fetchOptions.body = paramsWithoutSig;
-    }
 
-    console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 300)}`);
-    if (method !== "GET") console.log(`[AsterV3] body=${paramsWithoutSig.substring(0, 300)}`);
+    console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 400)}`);
     const response = await fetch(url, fetchOptions);
 
     clearTimeout(timeoutId);
