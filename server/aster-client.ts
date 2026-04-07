@@ -359,14 +359,21 @@ async function makeV3Request(
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const url = `${baseUrl}${path}?${queryStringWithSig}`;
+    let url: string;
     const fetchOptions: RequestInit = {
       method,
       headers,
       signal: controller.signal,
     };
 
-    console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 120)}...`);
+    if (method === "POST" || method === "PUT") {
+      url = `${baseUrl}${path}`;
+      fetchOptions.body = queryStringWithSig;
+    } else {
+      url = `${baseUrl}${path}?${queryStringWithSig}`;
+    }
+
+    console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 120)}... bodyLen=${fetchOptions.body ? (fetchOptions.body as string).length : 0}`);
     const response = await fetch(url, fetchOptions);
 
     clearTimeout(timeoutId);
