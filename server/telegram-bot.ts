@@ -2581,7 +2581,7 @@ function mainMenuKeyboard(_hasWallet?: boolean, chatId?: number): TelegramBot.In
   return {
     inline_keyboard: [
       [{ text: tr("menu.buyBuild4", c), callback_data: "action:buybuild4" }, { text: tr("menu.launch", c), callback_data: "action:launchtoken" }],
-      [{ text: tr("menu.trading", c), callback_data: "action:submenu_trading" }, { text: "📈 Futures (Aster)", callback_data: "action:aster" }],
+      [{ text: tr("menu.trading", c), callback_data: "action:submenu_trading" }, { text: "📈 Aster Trading", callback_data: "action:aster" }],
       [{ text: "🤖 Agents", callback_data: "action:submenu_agents" }, { text: tr("menu.market", c), callback_data: "action:submenu_market" }],
       [{ text: tr("menu.earn", c), callback_data: "action:submenu_earn" }],
       [{ text: tr("menu.portfolio", c), callback_data: "action:portfolio" }, { text: tr("menu.wallet", c), callback_data: "action:wallet" }],
@@ -6781,7 +6781,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         [{ text: tr("menu.buy", c), callback_data: "action:buy" }, { text: tr("menu.sell", c), callback_data: "action:sell" }],
         [{ text: tr("menu.swap", c), callback_data: "action:okxswap" }, { text: tr("menu.bridge", c), callback_data: "action:okxbridge" }],
         [{ text: "📋 Limit Orders", callback_data: "action:limitorders" }, { text: "👁️ Watchlist", callback_data: "action:watchlist" }],
-        [{ text: "📈 Futures (Aster)", callback_data: "action:aster" }, { text: "💎 Auto Trade", callback_data: "action:trade" }],
+        [{ text: "📈 Aster Trading", callback_data: "action:aster" }, { text: "💎 Auto Trade", callback_data: "action:trade" }],
         [{ text: "⚙️ Settings", callback_data: "action:settings" }],
         [{ text: tr("menu.back", c), callback_data: "action:menu" }],
       ]}
@@ -13232,62 +13232,20 @@ async function handleChaosPlanCallback(chatId: number, data: string): Promise<vo
 async function handleAsterMenu(chatId: number): Promise<void> {
   if (!bot) return;
 
-  let creds: any = null;
-  try {
-    creds = await storage.getAsterCredentials(chatId.toString());
-  } catch (e: any) {
-    console.error("[AsterMenu] Failed to get credentials:", e.message);
-  }
-  const connected = !!creds;
-
-  const ownerClient = getOwnerAsterClient();
-  if (!connected && !ownerClient) {
-    const buttons: TelegramBot.InlineKeyboardButton[][] = [];
-    buttons.push([{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }]);
-    buttons.push([{ text: "❓ How to Get API Key", callback_data: "aster:api_help" }]);
-    buttons.push([{ text: "« Back", callback_data: "action:menu" }]);
-
-    await bot.sendMessage(chatId,
-      `📈 *Aster DEX — Futures Trading*\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `_Powered by Aster DEX_\n\n` +
-      `Up to 150x leverage on BTC, ETH & more.\n` +
-      `Trade directly from Telegram.\n\n` +
-      `*To get started:*\n` +
-      `1. Create an API Wallet on Aster DEX\n` +
-      `2. Paste your API Key + Secret here\n` +
-      `3. Everything else happens in Telegram!\n\n` +
-      `Tap "How to Get API Key" for step-by-step instructions.`,
-      {
-        parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: buttons },
-      }
-    );
-    return;
-  }
-
-  const isV3Direct = creds && creds.apiKey === "V3_DIRECT";
-  const modeLabel = ownerClient ? "V3 API Wallet" : (isV3Direct ? "V3 Direct" : "API Wallet");
+  const miniAppUrl = `${process.env.RENDER_EXTERNAL_URL || process.env.APP_URL || "https://build4.world"}/miniapp?chatId=${chatId}`;
 
   await bot.sendMessage(chatId,
-    `📈 *Aster DEX*\n` +
-    `━━━━━━━━━━━━━━━━━━━━\n` +
-    `✅ Connected · ${modeLabel}\n\n` +
-    `Select an action below:`,
+    `📈 *Aster DEX — Futures Trading*\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `Trade perpetual futures directly from Telegram.\n` +
+    `Up to 150x leverage on BTC, ETH, SOL & more.\n\n` +
+    `Tap below to open the trading app:`,
     {
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "🔄 Futures Trade", callback_data: "aster:trade_futures" }, { text: "💱 Spot Trade", callback_data: "aster:trade_spot" }],
-          [{ text: "📊 Markets", callback_data: "aster:markets" }, { text: "💵 Fund Account", callback_data: "aster:fund" }],
-          [{ text: "💰 Balances", callback_data: "aster:balance" }, { text: "📊 Positions", callback_data: "aster:positions" }],
-          [{ text: "📋 Open Orders", callback_data: "aster:orders" }, { text: "📈 PnL", callback_data: "aster:pnl" }],
-          [{ text: "📜 Trade History", callback_data: "aster:trade_history" }, { text: "⚙️ Risk Settings", callback_data: "aster:risk_settings" }],
-          [{ text: "🤖 AI Agent", callback_data: "aster:agent" }],
-          [{ text: "🔧 Test Connection", callback_data: "aster:test_connection" }],
-          [{ text: "🏆 Competition", callback_data: "aster:competition" }],
-          [{ text: "📱 Open Mini App", web_app: { url: `${process.env.RENDER_EXTERNAL_URL || process.env.APP_URL || "https://build4.world"}/miniapp?chatId=${chatId}` } }],
-          [{ text: "🔌 Disconnect", callback_data: "aster:disconnect" }, { text: "« Back", callback_data: "action:menu" }],
+          [{ text: "📱 Open Aster Trading", web_app: { url: miniAppUrl } }],
+          [{ text: "« Back", callback_data: "action:menu" }],
         ],
       },
     }

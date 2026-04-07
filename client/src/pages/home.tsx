@@ -534,8 +534,8 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Aster DEX */}
-        <section className="relative z-10 mb-16 sm:mb-24">
+        {/* Aster DEX - hidden, use mini app */}
+        <section className="relative z-10 mb-16 sm:mb-24 hidden">
           <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <motion.div
               initial={{ opacity: 0, y: 30 }}
@@ -652,8 +652,8 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Aster DEX Trading Competition */}
-        <section className="relative z-10 mb-16 sm:mb-24">
+        {/* Aster DEX Trading Competition - hidden, use mini app */}
+        <section className="relative z-10 mb-16 sm:mb-24 hidden">
           <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <motion.div
               initial={{ opacity: 0, y: 30 }}
