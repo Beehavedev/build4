@@ -354,7 +354,7 @@ function renderDeposit(){
   } else if(walletAddr) {
     h+='<div class="card card-accent" style="border:1px solid var(--yellow)">';
     h+='<div class="section-title" style="color:var(--yellow)">🔗 Connect to Aster DEX</div>';
-    h+='<div class="text-xs" style="color:var(--text2);margin-bottom:12px;line-height:1.5">To trade futures, you need to link your Aster <strong style="color:#fff">API Wallet</strong>. This is NOT your main wallet key — it\'s a separate key created on Aster\'s website.</div>';
+    h+='<div class="text-xs" style="color:var(--text2);margin-bottom:12px;line-height:1.5">To trade futures, you need to link your Aster <strong style="color:#fff">API Wallet</strong>. This is NOT your main wallet key — it is a separate key created on the Aster website.</div>';
     h+='<div style="background:var(--bg);border-radius:8px;padding:12px;margin-bottom:12px">';
     h+='<div class="text-xs" style="color:var(--green);font-weight:600;margin-bottom:6px">How to get your API Wallet key:</div>';
     h+='<div class="text-xs" style="color:var(--text2);line-height:1.7">';
@@ -368,7 +368,7 @@ function renderDeposit(){
     h+='<button class="btn btn-green mt-2" style="width:100%" onclick="linkAsterApi()">🔗 Connect to Aster</button>';
     h+='<div id="link-status"></div>';
     h+='<div id="manual-link-status"></div>';
-    h+='<div class="text-xs text-dim mt-3" style="line-height:1.4">⚠️ This is NOT your main wallet key. It\'s a separate API Wallet key from <a href="https://asterdex.com/en/api-wallet" target="_blank" style="color:var(--blue)">Aster\'s API Wallet page</a>.</div>';
+    h+='<div class="text-xs text-dim mt-3" style="line-height:1.4">⚠️ This is NOT your main wallet key. It is a separate API Wallet key from <a href="https://asterdex.com/en/api-wallet" target="_blank" style="color:var(--blue)">the Aster API Wallet page</a>.</div>';
     h+='</div>';
   }
 
