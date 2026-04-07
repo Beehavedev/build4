@@ -904,11 +904,16 @@ function renderAgent(){
   h+='</div>';
 
   h+='<div class="card"><div class="section-title">⚙️ Configuration</div>';
-  h+='<div class="row text-sm"><span class="text-dim">Risk Per Trade</span><span class="mono text-w fw-600">'+(c?.riskPercent||1)+'%</span></div>';
+  var agentPairs=['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT','SUIUSDT','ADAUSDT','AVAXUSDT','LINKUSDT','DOTUSDT','LTCUSDT','PEPEUSDT','WIFUSDT','ARBUSDT','OPUSDT','APTUSDT','MATICUSDT'];
+  var curSym=c?.symbol||'BTCUSDT';
+  h+='<div class="label">Trading Pair</div>';
+  h+='<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">';
+  agentPairs.forEach(function(p){h+='<button class="btn btn-sm '+(curSym===p?'btn-green':'btn-outline')+'" style="font-size:11px;padding:4px 8px" onclick="setAgentSymbol(\\''+p+'\\')">'+p.replace('USDT','')+'</button>'});
+  h+='</div>';
+  h+='<div class="row text-sm mt-3"><span class="text-dim">Risk Per Trade</span><span class="mono text-w fw-600">'+(c?.riskPercent||1)+'%</span></div>';
   h+='<div class="slider-track" onclick="setRisk(event)"><div class="slider-fill" style="width:'+((c?.riskPercent||1)/3*100)+'%"></div><div class="slider-thumb" style="left:'+((c?.riskPercent||1)/3*100)+'%"></div></div>';
   h+='<div class="row text-xs text-dim2"><span>0.5% (Safe)</span><span>3% (Aggressive)</span></div>';
   h+='<div class="row text-sm mt-3"><span class="text-dim">Max Leverage</span><span class="mono text-w fw-600">'+(c?.maxLeverage||10)+'x</span></div>';
-  h+='<div class="row text-sm mt-3"><span class="text-dim">Trading Pair</span><span class="text-w fw-600">'+(c?.symbol||'BTCUSDT')+'</span></div>';
   if(D.availableMargin>0){h+='<div class="row text-sm mt-3"><span class="text-dim">Max Position</span><span class="mono text-w fw-600">$'+fmt(D.availableMargin*(c?.riskPercent||1)/100*(c?.maxLeverage||10))+'</span></div>'}
   h+='</div>';
 
@@ -933,7 +938,19 @@ function setRisk(e){
   const pct=Math.max(0.5,Math.min(3,((e.clientX-r.left)/r.width)*3));
   const rounded=Math.round(pct*10)/10;
   if(AG&&AG.config)AG.config.riskPercent=rounded;
+  api('/api/miniapp/agent/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({riskPercent:rounded})}).catch(function(){});
   renderAgent();
+}
+async function setAgentSymbol(sym){
+  if(AG&&AG.running){toast('Stop the agent first','err');return}
+  try{
+    const r=await api('/api/miniapp/agent/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym})});
+    if(r.success){
+      if(AG&&AG.config)AG.config.symbol=sym;
+      toast('Pair set to '+sym.replace('USDT','/USDT'),'ok');
+      renderAgent();
+    }else{toast(r.error||'Failed','err')}
+  }catch(e){toast('❌ '+e.message,'err')}
 }
 
 async function toggleAgent(){

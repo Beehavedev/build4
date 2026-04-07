@@ -692,6 +692,28 @@ export function registerMiniAppRoutes(app: Express) {
     }
   });
 
+  app.post("/api/miniapp/agent/config", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+
+      const { setAgentConfig, getAgentConfig, getAgentState } = await import("./autonomous-agent");
+      const state = getAgentState(chatId);
+      if (state?.running) return res.status(400).json({ error: "Stop the agent before changing config" });
+
+      const { symbol, riskPercent, leverage } = req.body;
+      const updates: any = {};
+      if (symbol && typeof symbol === "string") updates.symbol = symbol.toUpperCase();
+      if (riskPercent !== undefined) updates.riskPercent = Math.max(0.5, Math.min(3, parseFloat(riskPercent) || 1));
+      if (leverage !== undefined) updates.leverage = Math.max(1, Math.min(50, parseInt(leverage) || 10));
+
+      const config = setAgentConfig(chatId, updates);
+      res.json({ success: true, config });
+    } catch (e: any) {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.post("/api/miniapp/agent/toggle", async (req: Request, res: Response) => {
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;
