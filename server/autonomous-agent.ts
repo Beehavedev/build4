@@ -288,7 +288,11 @@ function computeQuantity(symbol: string, usdtBalance: number, riskPercent: numbe
   if (lastPrice <= 0 || usdtBalance <= 0) return 0;
 
   const riskAmount = usdtBalance * (riskPercent / 100);
-  const notional = riskAmount * leverage;
+  let notional = riskAmount * leverage;
+  const MIN_NOTIONAL = 6.0;
+  if (notional < MIN_NOTIONAL && usdtBalance * leverage >= MIN_NOTIONAL) {
+    notional = MIN_NOTIONAL;
+  }
   let qty = notional / lastPrice;
 
   const stepSizes: Record<string, number> = {
@@ -381,14 +385,12 @@ async function openPosition(
   if (lastPrice === 0) throw new Error(`Could not get price for ${symbol}`);
 
   const availableBalance = await getAvailableBalance(chatId, futuresClient);
-  if (availableBalance < 1) {
-    console.log(`[Agent:${chatId}] Insufficient balance: $${availableBalance.toFixed(2)}`);
+  if (availableBalance < 5) {
+    console.log(`[Agent:${chatId}] Insufficient balance: $${availableBalance.toFixed(2)} (need $5+ for Aster minimum)`);
     await sendMessage(
-      `⚠️ Agent paused — insufficient margin ($${availableBalance.toFixed(2)} USDT).\n\n` +
-      `Deposit USDT (BEP-20) on BSC to the vault:\n` +
-      `0x128463A60784c4D3f46c23Af3f65Ed859Ba87974\n\n` +
-      `Then use /deposit → Confirm TX Hash.\n` +
-      `Agent will resume once balance > $1.`
+      `⚠️ Agent skipped ${symbol} — balance too low ($${availableBalance.toFixed(2)} USDT).\n\n` +
+      `Aster requires minimum $5 notional per order.\n` +
+      `Deposit more USDT to your Aster account to trade.`
     );
     return;
   }
@@ -397,6 +399,12 @@ async function openPosition(
   const qty = computeQuantity(symbol, availableBalance, positionRisk, leverage, lastPrice);
   if (qty <= 0) {
     console.log(`[Agent:${chatId}] ${symbol} qty too small after rounding`);
+    return;
+  }
+
+  const notional = qty * lastPrice;
+  if (notional < 5.5) {
+    console.log(`[Agent:${chatId}] ${symbol} notional $${notional.toFixed(2)} below $5.50 minimum, skipping`);
     return;
   }
 
