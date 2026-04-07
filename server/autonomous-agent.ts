@@ -241,15 +241,17 @@ function computeQuantity(symbol: string, usdtBalance: number, riskPercent: numbe
 let _agentFuturesClient: any = null;
 export function setAgentFuturesClient(client: any) { _agentFuturesClient = client; }
 
-async function getAvailableBalance(chatId: string): Promise<number> {
-  if (_agentFuturesClient) {
+async function getAvailableBalance(chatId: string, futuresClient?: any): Promise<number> {
+  const client = futuresClient || _agentFuturesClient;
+  if (client) {
     try {
-      const balances = await _agentFuturesClient.balance();
+      const balances = await client.balance();
       const usdtEntry = Array.isArray(balances)
         ? balances.find((b: any) => b.asset === "USDT" || b.asset === "usdt")
         : null;
       if (usdtEntry) {
         const apiBal = parseFloat(usdtEntry.availableBalance || usdtEntry.crossWalletBalance || usdtEntry.balance || "0");
+        console.log(`[Agent:${chatId}] API balance: $${apiBal.toFixed(2)} (from ${futuresClient ? 'per-user' : 'shared'} client)`);
         if (apiBal > 0) return apiBal;
       }
     } catch (e: any) {
@@ -268,6 +270,7 @@ async function getAvailableBalance(chatId: string): Promise<number> {
   }
 
   const available = totalDeposited - marginUsed;
+  console.log(`[Agent:${chatId}] Local balance fallback: $${available.toFixed(2)} (deposited=$${totalDeposited.toFixed(2)}, marginUsed=$${marginUsed.toFixed(2)})`);
   return Math.max(available, 0);
 }
 
@@ -291,7 +294,7 @@ async function openPosition(
   const lastPrice = parseFloat(ticker?.price || "0");
   if (lastPrice === 0) throw new Error("Could not get current price");
 
-  const availableBalance = await getAvailableBalance(chatId);
+  const availableBalance = await getAvailableBalance(chatId, futuresClient);
   if (availableBalance < 1) {
     console.log(`[Agent:${chatId}] Insufficient balance: $${availableBalance.toFixed(2)}`);
     await sendMessage(
