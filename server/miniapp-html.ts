@@ -470,9 +470,11 @@ function renderDash(){
   h+='</div>';
 
   h+='<div class="card" style="text-align:center;border:1px solid rgba(29,155,240,0.2);background:linear-gradient(135deg,rgba(29,155,240,0.06),transparent)">';
-  h+='<div class="text-sm fw-600 text-w">Share Your Performance</div>';
-  h+='<div class="text-xs text-dim mt-1">Show off your trading stats on X</div>';
-  h+='<button class="btn mt-2" style="background:#1d9bf0;color:#fff;font-weight:700;width:100%;height:44px;font-size:14px;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:8px" onclick="sharePnl()"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg> Share PnL Card</button>';
+  h+='<div class="text-sm fw-600 text-w">Your PnL Card</div>';
+  h+='<div class="text-xs text-dim mt-1">Preview your card, then share on X</div>';
+  h+='<div id="pnl-card-preview" style="margin:12px auto;max-width:100%;border-radius:10px;overflow:hidden;background:#0b0e11;min-height:120px;position:relative"></div>';
+  h+='<button class="btn mt-2" style="background:#1d9bf0;color:#fff;font-weight:700;width:100%;height:44px;font-size:14px;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:8px" onclick="shareToX()" data-testid="button-share-x"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg> Share on X</button>';
+  h+='<button class="btn btn-outline mt-2" style="width:100%;height:38px;font-size:13px" onclick="downloadPnlCard()" data-testid="button-download-pnl">⬇ Download Image</button>';
   h+='</div>';
 
   h+='<div style="display:flex;gap:8px;margin-top:8px">';
@@ -482,6 +484,7 @@ function renderDash(){
   h+='<pre id="debug-out" style="display:none;font-size:9px;background:var(--bg);padding:8px;border-radius:8px;overflow-x:auto;max-height:300px;margin-top:8px"></pre>';
   h+='<div class="timestamp">Updated '+timeAgo()+'</div>';
   el.innerHTML=h;
+  setTimeout(loadPnlPreview,100);
 }
 
 async function loadDeposit(){
@@ -657,12 +660,12 @@ async function doTransfer(amount){
 }
 
 
-async function sharePnl(posIdx){
+var _pnlBaseUrl='https://build4-1.onrender.com';
+
+function getPnlParams(posIdx){
   var agentName=(AG&&AG.config&&AG.config.name)?AG.config.name:'Trader';
   var w=D.wins||0,l=D.losses||0;
   var ref='build4';
-  var imgParams='';
-  var shareText='';
   if(typeof posIdx==='number'&&D.positions&&D.positions[posIdx]){
     var p=D.positions[posIdx];
     var pnlVal=parseFloat(p.unrealizedPnl||0);
@@ -672,40 +675,64 @@ async function sharePnl(posIdx){
     var sym=p.symbol||'BTCUSDT';
     var side=p.positionSide||'LONG';
     var lev=parseInt(p.leverage||5);
-    imgParams='pct='+pctVal.toFixed(2)+'&pnl='+pnlVal.toFixed(2)+'&sym='+encodeURIComponent(sym)+'&side='+side+'&lev='+lev+'&ep='+entryP+'&mp='+markP+'&w='+w+'&l='+l+'&name='+encodeURIComponent(agentName)+'&ref='+ref;
     var pSign=pnlVal>=0?'+':'';
-    shareText=pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\\n\\nTrade on @AsterDEX via @build4_bot\\nhttps://t.me/build4_bot?start='+ref;
-  }else{
-    var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
-    var pSign2=totalPnl>=0?'+':'';
-    imgParams='pnl='+totalPnl.toFixed(2)+'&w='+w+'&l='+l+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName)+'&ref='+ref;
-    shareText=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @AsterDEX via @build4_bot\\n';
-    if(w+l>0)shareText+='Win Rate: '+Math.round(w/(w+l)*100)+'%\\n';
-    shareText+='\\nhttps://t.me/build4_bot?start='+ref;
+    return{
+      imgParams:'pct='+pctVal.toFixed(2)+'&pnl='+pnlVal.toFixed(2)+'&sym='+encodeURIComponent(sym)+'&side='+side+'&lev='+lev+'&ep='+entryP+'&mp='+markP+'&w='+w+'&l='+l+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
+      tweetText:pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\n\nTrade on @AsterDEX via @build4_bot',
+      ref:ref
+    };
   }
-  toast('Generating card...','info');
+  var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
+  var pSign2=totalPnl>=0?'+':'';
+  var txt=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @AsterDEX via @build4_bot';
+  if(w+l>0)txt+='\nWin Rate: '+Math.round(w/(w+l)*100)+'%';
+  return{
+    imgParams:'pnl='+totalPnl.toFixed(2)+'&w='+w+'&l='+l+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
+    tweetText:txt,
+    ref:ref
+  };
+}
+
+function loadPnlPreview(){
+  var el=document.getElementById('pnl-card-preview');
+  if(!el)return;
+  var pp=getPnlParams();
+  var imgUrl='/pnl/image?'+pp.imgParams;
+  el.innerHTML='<div style="text-align:center;padding:20px;color:#555;font-size:12px">Loading card...</div>';
+  var img=new Image();
+  img.onload=function(){el.innerHTML='';img.style.cssText='width:100%;display:block;border-radius:10px';el.appendChild(img)};
+  img.onerror=function(){el.innerHTML='<div style="text-align:center;padding:20px;color:#f6465d;font-size:12px">Failed to load card</div>'};
+  img.src=imgUrl;
+}
+
+function shareToX(posIdx){
+  var pp=getPnlParams(posIdx);
+  var pnlPageUrl=_pnlBaseUrl+'/pnl?'+pp.imgParams;
+  var tweetUrl='https://x.com/intent/tweet?text='+encodeURIComponent(pp.tweetText)+
+    '&url='+encodeURIComponent(pnlPageUrl);
+  window.open(tweetUrl,'_blank');
+}
+
+async function downloadPnlCard(posIdx){
+  var pp=getPnlParams(posIdx);
+  toast('Generating image...','info');
   try{
-    var imgUrl='/pnl/image?'+imgParams;
-    var resp=await fetch(imgUrl);
+    var resp=await fetch('/pnl/image?'+pp.imgParams);
     if(!resp.ok)throw new Error('Image generation failed');
     var blob=await resp.blob();
-    var file=new File([blob],'pnl-card.png',{type:'image/png'});
-    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
-      await navigator.share({text:shareText,files:[file]});
-      toast('Shared!','ok');
-    }else{
-      var a=document.createElement('a');
-      a.href=URL.createObjectURL(blob);
-      a.download='pnl-card.png';
-      a.click();
-      URL.revokeObjectURL(a.href);
-      toast('Image downloaded — share it on X!','ok');
-    }
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='build4-pnl.png';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('Image downloaded!','ok');
   }catch(e){
-    if(e.name==='AbortError')return;
-    console.error('Share error:',e);
-    toast('Share failed: '+e.message,'err');
+    toast('Download failed: '+e.message,'err');
   }
+}
+
+async function sharePnl(posIdx){
+  shareToX(posIdx);
 }
 async function forceRefresh(){
   toast('Refreshing...','info');
