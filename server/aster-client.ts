@@ -703,32 +703,46 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
     },
 
     async balance(): Promise<AsterBalance[]> {
-      return request("/fapi/v3/balance", { signed: true });
+      try {
+        return await request("/fapi/v1/balance", { signed: true });
+      } catch (e1: any) {
+        console.log(`[AsterHMAC] /fapi/v1/balance failed: ${e1.message?.substring(0, 100)}, trying /fapi/v3/balance`);
+        return request("/fapi/v3/balance", { signed: true });
+      }
     },
 
     async account(): Promise<any> {
-      return request("/fapi/v3/account", { signed: true });
+      try {
+        return await request("/fapi/v1/account", { signed: true });
+      } catch (e1: any) {
+        console.log(`[AsterHMAC] /fapi/v1/account failed: ${e1.message?.substring(0, 100)}, trying /fapi/v3/account`);
+        return request("/fapi/v3/account", { signed: true });
+      }
     },
 
     async accountWithJoinMargin(): Promise<any> {
-      return request("/fapi/v3/account", { signed: true });
+      return this.account();
     },
 
     async positionRisk(): Promise<AsterPosition[]> {
-      const data = await request("/fapi/v3/positionRisk", { signed: true });
+      let data: any;
+      try {
+        data = await request("/fapi/v1/positionRisk", { signed: true });
+      } catch (e1: any) {
+        console.log(`[AsterHMAC] /fapi/v1/positionRisk failed: ${e1.message?.substring(0, 100)}, trying /fapi/v3/positionRisk`);
+        data = await request("/fapi/v3/positionRisk", { signed: true });
+      }
       if (Array.isArray(data)) return data;
       return [];
     },
 
     async positions(): Promise<AsterPosition[]> {
-      const data = await request("/fapi/v3/positionRisk", { signed: true });
-      if (Array.isArray(data)) return data;
-      return [];
+      return this.positionRisk();
     },
 
     async testConnection(): Promise<{ success: boolean; data?: any; error?: string }> {
       try {
-        const acct = await request("/fapi/v3/account", { signed: true });
+        const acct = await this.account();
         return { success: true, data: acct };
       } catch (e: any) {
         return { success: false, error: e.message };
@@ -759,63 +773,84 @@ export function createAsterFuturesClient(config: AsterClientConfig) {
       if (!params.newClientOrderId) {
         params.newClientOrderId = `BUILD4_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       }
-      return request("/fapi/v3/order", { method: "POST", signed: true, params });
+      try {
+        return await request("/fapi/v1/order", { method: "POST", signed: true, params });
+      } catch (e1: any) {
+        console.log(`[AsterHMAC] /fapi/v1/order failed: ${e1.message?.substring(0, 100)}, trying /fapi/v3/order`);
+        return request("/fapi/v3/order", { method: "POST", signed: true, params });
+      }
     },
 
     async cancelOrder(symbol: string, orderId: number): Promise<AsterOrder> {
-      return request("/fapi/v3/order", {
-        method: "DELETE",
-        signed: true,
-        params: { symbol, orderId },
-      });
+      try {
+        return await request("/fapi/v1/order", { method: "DELETE", signed: true, params: { symbol, orderId } });
+      } catch {
+        return request("/fapi/v3/order", { method: "DELETE", signed: true, params: { symbol, orderId } });
+      }
     },
 
     async cancelAllOrders(symbol: string): Promise<any> {
-      return request("/fapi/v3/allOpenOrders", {
-        method: "DELETE",
-        signed: true,
-        params: { symbol },
-      });
+      try {
+        return await request("/fapi/v1/allOpenOrders", { method: "DELETE", signed: true, params: { symbol } });
+      } catch {
+        return request("/fapi/v3/allOpenOrders", { method: "DELETE", signed: true, params: { symbol } });
+      }
     },
 
     async openOrders(symbol?: string): Promise<AsterOrder[]> {
       const params: Record<string, string | number | boolean | undefined> = {};
       if (symbol) params.symbol = symbol;
-      return request("/fapi/v3/openOrders", { signed: true, params });
+      try {
+        return await request("/fapi/v1/openOrders", { signed: true, params });
+      } catch {
+        return request("/fapi/v3/openOrders", { signed: true, params });
+      }
     },
 
     async allOrders(symbol: string, limit: number = 50): Promise<AsterOrder[]> {
-      return request("/fapi/v3/allOrders", { signed: true, params: { symbol, limit } });
+      try {
+        return await request("/fapi/v1/allOrders", { signed: true, params: { symbol, limit } });
+      } catch {
+        return request("/fapi/v3/allOrders", { signed: true, params: { symbol, limit } });
+      }
     },
 
     async userTrades(symbol: string, limit: number = 50): Promise<any[]> {
-      return request("/fapi/v3/userTrades", { signed: true, params: { symbol, limit } });
+      try {
+        return await request("/fapi/v1/userTrades", { signed: true, params: { symbol, limit } });
+      } catch {
+        return request("/fapi/v3/userTrades", { signed: true, params: { symbol, limit } });
+      }
     },
 
     async setLeverage(symbol: string, leverage: number): Promise<any> {
-      return request("/fapi/v3/leverage", {
-        method: "POST",
-        signed: true,
-        params: { symbol, leverage },
-      });
+      try {
+        return await request("/fapi/v1/leverage", { method: "POST", signed: true, params: { symbol, leverage } });
+      } catch {
+        return request("/fapi/v3/leverage", { method: "POST", signed: true, params: { symbol, leverage } });
+      }
     },
 
     async setMarginType(symbol: string, marginType: "ISOLATED" | "CROSSED"): Promise<any> {
-      return request("/fapi/v3/marginType", {
-        method: "POST",
-        signed: true,
-        params: { symbol, marginType },
-      });
+      try {
+        return await request("/fapi/v1/marginType", { method: "POST", signed: true, params: { symbol, marginType } });
+      } catch {
+        return request("/fapi/v3/marginType", { method: "POST", signed: true, params: { symbol, marginType } });
+      }
     },
 
     async exchangeInfo(): Promise<any> {
-      return request("/fapi/v3/exchangeInfo");
+      return request("/fapi/v1/exchangeInfo");
     },
 
     async income(incomeType?: string, limit: number = 50): Promise<any[]> {
       const params: Record<string, string | number | boolean | undefined> = { limit };
       if (incomeType) params.incomeType = incomeType;
-      return request("/fapi/v3/income", { signed: true, params });
+      try {
+        return await request("/fapi/v1/income", { signed: true, params });
+      } catch {
+        return request("/fapi/v3/income", { signed: true, params });
+      }
     },
   };
 }
