@@ -41,7 +41,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 .val{font-size:24px;font-weight:700;color:#fff;font-family:'SF Mono',SFMono-Regular,Consolas,monospace;letter-spacing:-.5px}
 .val-sm{font-size:14px;font-weight:600;color:#fff;font-family:'SF Mono',SFMono-Regular,Consolas,monospace}
 .val-xs{font-size:12px;font-weight:600;font-family:'SF Mono',SFMono-Regular,Consolas,monospace}
-.g+{color:var(--green)}.r-{color:var(--red)}
+.gv{color:var(--green)}.r-{color:var(--red)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
 .row{display:flex;align-items:center;justify-content:space-between}
@@ -142,8 +142,8 @@ let refreshTimer=null;
 
 function $(id){return document.getElementById(id)}
 function fmt(n,d=2){return(n||0).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d})}
-function pnlHtml(v){const p=v>=0;return '<span class="val-xs '+(p?'g+':'r-')+'">'+(p?'+':'-')+'$'+fmt(Math.abs(v))+'</span>'}
-function pnlClass(v){return v>=0?'g+':'r-'}
+function pnlHtml(v){const p=v>=0;return '<span class="val-xs '+(p?'gv':'r-')+'">'+(p?'+':'-')+'$'+fmt(Math.abs(v))+'</span>'}
+function pnlClass(v){return v>=0?'gv':'r-'}
 function api(path,opts={}){return fetch(path,{...opts,headers:{'x-telegram-chat-id':String(chatId),...(opts.headers||{})}}).then(r=>r.json())}
 function toast(msg,type='info'){const t=$('toast');t.className='toast show toast-'+type;t.innerHTML=msg;setTimeout(()=>t.classList.remove('show'),3500)}
 function customConfirm(html){return new Promise(function(resolve){var ov=document.createElement('div');ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';var box=document.createElement('div');box.style.cssText='background:#1a1d21;border:1px solid #333;border-radius:12px;padding:20px;max-width:340px;width:100%;color:#e0e0e0;font-size:14px;line-height:1.6';box.innerHTML=html+'<div style="display:flex;gap:10px;margin-top:16px"><button id="cc-cancel" style="flex:1;padding:10px;border-radius:8px;border:1px solid #555;background:transparent;color:#e0e0e0;cursor:pointer;font-size:14px">Cancel</button><button id="cc-ok" style="flex:1;padding:10px;border-radius:8px;border:none;background:#0ecb81;color:#0b0e11;cursor:pointer;font-weight:600;font-size:14px">Confirm</button></div>';ov.appendChild(box);document.body.appendChild(ov);$('cc-ok').onclick=function(){document.body.removeChild(ov);resolve(true)};$('cc-cancel').onclick=function(){document.body.removeChild(ov);resolve(false)};ov.onclick=function(e){if(e.target===ov){document.body.removeChild(ov);resolve(false)}}})}
@@ -238,10 +238,10 @@ function renderPositions(){
       var cardBorder=upnl>=0?'rgba(63,185,80,0.3)':'rgba(248,81,73,0.3)';
       h+='<div class="card" style="border:1px solid '+cardBorder+'">';
       h+='<div class="row"><div class="gap"><span class="badge '+(side==='LONG'?'badge-long':'badge-short')+'">'+side+'</span><span class="text-w fw-600">'+p.symbol+'</span><span class="badge badge-info">'+lev+'x</span><span class="badge" style="background:rgba(59,130,246,0.1);color:var(--blue);font-size:10px">'+marginType+'</span></div>'+pnlHtml(upnl)+'</div>';
-      h+='<div class="grid2 mt-3"><div><div class="label">Size</div><div class="val-sm mono g+">'+amt+'</div></div><div><div class="label">Notional</div><div class="val-sm mono g+">$'+fmt(notional)+'</div></div></div>';
-      h+='<div class="grid2 mt-2"><div><div class="label">Entry Price</div><div class="val-sm mono g+">$'+fmt(entry)+'</div></div><div><div class="label">Mark Price</div><div class="val-sm mono g+">$'+fmt(mark)+'</div></div></div>';
-      h+='<div class="grid2 mt-2"><div><div class="label">ROE</div><div class="val-sm mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'%</div></div><div><div class="label">Margin</div><div class="val-sm mono g+">$'+fmt(margin)+'</div></div></div>';
-      if(liq>0){h+='<div class="mt-2" style="padding:8px;background:rgba(248,81,73,0.08);border-radius:8px;border:1px solid rgba(248,81,73,0.2)"><div class="row"><div><div class="label" style="color:var(--red)">⚠ Liquidation Price</div><div class="val-sm mono" style="color:var(--red)">$'+fmt(liq)+'</div></div><div style="text-align:right"><div class="label">Distance</div><div class="val-xs mono '+(Math.abs((mark-liq)/mark*100)>20?'g+':'r-')+'">'+fmt(Math.abs((mark-liq)/mark*100),1)+'%</div></div></div></div>'}
+      h+='<div class="grid2 mt-3"><div><div class="label">Size</div><div class="val-sm mono gv">'+amt+'</div></div><div><div class="label">Notional</div><div class="val-sm mono gv">$'+fmt(notional)+'</div></div></div>';
+      h+='<div class="grid2 mt-2"><div><div class="label">Entry Price</div><div class="val-sm mono gv">$'+fmt(entry)+'</div></div><div><div class="label">Mark Price</div><div class="val-sm mono gv">$'+fmt(mark)+'</div></div></div>';
+      h+='<div class="grid2 mt-2"><div><div class="label">ROE</div><div class="val-sm mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'%</div></div><div><div class="label">Margin</div><div class="val-sm mono gv">$'+fmt(margin)+'</div></div></div>';
+      if(liq>0){h+='<div class="mt-2" style="padding:8px;background:rgba(248,81,73,0.08);border-radius:8px;border:1px solid rgba(248,81,73,0.2)"><div class="row"><div><div class="label" style="color:var(--red)">⚠ Liquidation Price</div><div class="val-sm mono" style="color:var(--red)">$'+fmt(liq)+'</div></div><div style="text-align:right"><div class="label">Distance</div><div class="val-xs mono '+(Math.abs((mark-liq)/mark*100)>20?'gv':'r-')+'">'+fmt(Math.abs((mark-liq)/mark*100),1)+'%</div></div></div></div>'}
       h+='<div class="mt-3"><button class="btn btn-red btn-sm" style="width:100%" onclick="closePosFromTab(\\''+p.symbol+'\\')">Close Position</button></div></div>';
     });
   }
@@ -318,7 +318,7 @@ function renderMarkets(){
       var vol=parseFloat(m.quoteVolume||m.volume||'0');
       h+='<div class="card" style="cursor:pointer" onclick="tradeSel=\\''+m.symbol+'\\';switchTab(\\'p-trade\\')">';
       h+='<div class="row"><span class="text-w fw-600">'+m.symbol.replace('USDT','')+'<span class="text-dim2" style="font-weight:400">/USDT</span></span><span class="val-sm mono">$'+fmt(parseFloat(m.price||m.lastPrice||'0'))+'</span></div>';
-      h+='<div class="row mt-2"><span class="text-xs text-dim">24h Change</span><span class="val-xs '+(chg>=0?'g+':'r-')+'">'+(chg>=0?'+':'')+fmt(chg,2)+'%</span></div>';
+      h+='<div class="row mt-2"><span class="text-xs text-dim">24h Change</span><span class="val-xs '+(chg>=0?'gv':'r-')+'">'+(chg>=0?'+':'')+fmt(chg,2)+'%</span></div>';
       if(vol>0){h+='<div class="row mt-1"><span class="text-xs text-dim">24h Volume</span><span class="text-xs mono text-dim">$'+(vol>1e6?fmt(vol/1e6,1)+'M':fmt(vol,0))+'</span></div>'}
       h+='</div>';
     });
@@ -424,10 +424,10 @@ function renderDash(){
   h+='<div class="card" style="position:relative;overflow:hidden;border:1px solid '+(totalPnl>=0?'var(--green2)':'rgba(248,81,73,0.3)')+';background:linear-gradient(135deg,rgba('+accentColor+',0.08),transparent)">';
   h+='<div style="position:absolute;top:-20px;right:-20px;width:120px;height:120px;background:radial-gradient(circle,rgba('+accentColor+',0.15),transparent);border-radius:50%"></div>';
   h+='<div class="label" style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text2)">Your Account Balance</div>';
-  h+='<div class="val g+" style="font-size:32px;margin:4px 0">$'+fmt(totalBal)+'</div>';
+  h+='<div class="val gv" style="font-size:32px;margin:4px 0">$'+fmt(totalBal)+'</div>';
   h+='<div style="display:flex;gap:12px;margin-top:8px">';
-  h+='<div><span class="text-xs text-dim">Futures</span><div class="val-xs g+">$'+fmt(D.walletBalance)+'</div></div>';
-  h+='<div><span class="text-xs text-dim">BSC Wallet</span><div class="val-xs g+">$'+fmt(D.bscBalance)+'</div></div>';
+  h+='<div><span class="text-xs text-dim">Futures</span><div class="val-xs gv">$'+fmt(D.walletBalance)+'</div></div>';
+  h+='<div><span class="text-xs text-dim">BSC Wallet</span><div class="val-xs gv">$'+fmt(D.bscBalance)+'</div></div>';
   h+='<div><span class="text-xs text-dim">Total PnL</span><div class="val-xs '+pnlClass(totalPnl)+'">'+(totalPnl>=0?'+':'')+' $'+fmt(Math.abs(totalPnl))+'</div></div>';
   h+='</div></div>';
 
@@ -435,7 +435,7 @@ function renderDash(){
   h+='<div class="card" style="background:linear-gradient(135deg,rgba('+tradingAccentColor+',0.08),rgba('+tradingAccentColor+',0.02))">';
   h+='<div class="section-title">Trading Account</div>';
   h+='<div class="grid3 mt-2">';
-  h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Available Margin</div><div class="val-xs g+ mt-1">$'+fmt(D.availableMargin)+'</div></div>';
+  h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Available Margin</div><div class="val-xs gv mt-1">$'+fmt(D.availableMargin)+'</div></div>';
   h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Unrealized PnL</div><div class="val-xs '+pnlClass(D.unrealizedPnl)+' mt-1">'+(D.unrealizedPnl>=0?'+':'')+' $'+fmt(Math.abs(D.unrealizedPnl))+'</div></div>';
   h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Realized PnL</div><div class="val-xs '+pnlClass(D.realizedPnl)+' mt-1">'+(D.realizedPnl>=0?'+':'')+' $'+fmt(Math.abs(D.realizedPnl))+'</div></div>';
   h+='</div>';
@@ -452,9 +452,9 @@ function renderDash(){
       var cardBorder=(p.unrealizedPnl||0)>=0?'rgba(63,185,80,0.2)':'rgba(248,81,73,0.2)';
       h+='<div class="pos-item" style="border-left:3px solid '+((p.unrealizedPnl||0)>=0?'var(--green)':'var(--red)')+';padding-left:10px">';
       h+='<div class="row"><div class="gap"><span class="badge '+(p.side==='LONG'?'badge-long':'badge-short')+'">'+p.side+'</span><span class="text-w fw-600 text-sm">'+p.symbol+'</span><span class="text-xs text-dim">'+p.leverage+'x</span></div>'+pnlHtml(p.unrealizedPnl)+'</div>';
-      h+='<div class="row mt-1"><span class="text-xs g+ mono">'+p.size+' @ $'+fmt(p.entryPrice)+'</span><span class="text-xs mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'% ROE</span></div>';
-      h+='<div class="row mt-1"><span class="text-xs g+ mono">Mark: $'+fmt(p.markPrice)+'</span><span class="text-xs g+ mono">Margin: $'+fmt(margin)+'</span></div>';
-      if(liq>0){h+='<div class="row mt-1"><span class="text-xs mono" style="color:var(--red)">Liq: $'+fmt(liq)+'</span><span class="text-xs g+ mono">'+fmt(Math.abs((p.markPrice-liq)/p.markPrice*100),1)+'% away</span></div>'}
+      h+='<div class="row mt-1"><span class="text-xs gv mono">'+p.size+' @ $'+fmt(p.entryPrice)+'</span><span class="text-xs mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'% ROE</span></div>';
+      h+='<div class="row mt-1"><span class="text-xs gv mono">Mark: $'+fmt(p.markPrice)+'</span><span class="text-xs gv mono">Margin: $'+fmt(margin)+'</span></div>';
+      if(liq>0){h+='<div class="row mt-1"><span class="text-xs mono" style="color:var(--red)">Liq: $'+fmt(liq)+'</span><span class="text-xs gv mono">'+fmt(Math.abs((p.markPrice-liq)/p.markPrice*100),1)+'% away</span></div>'}
       h+='</div>';
     });
     h+='</div>';
@@ -910,7 +910,7 @@ function renderAgent(){
   const r=AG.running,c=AG.config,s=AG.stats;
   let h='<div class="section-title" style="font-size:16px">🤖 AI Trading Agent</div>';
 
-  h+='<div class="card '+(r?'card-accent':'')+'"><div class="row"><div class="gap"><div style="width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:'+(r?'var(--green-bg)':'var(--bg)')+'">🤖</div><div><div class="text-w fw-600">Autonomous Agent</div><div class="gap mt-1"><div class="live-dot" style="'+(r?'':'animation:none;background:var(--text3)')+'"></div><span class="text-xs '+(r?'g+':'text-dim')+'">'+(r?'Active — Trading':'Stopped')+'</span></div></div></div><div class="switch'+(r?' on':'')+'" onclick="toggleAgent()"></div></div>';
+  h+='<div class="card '+(r?'card-accent':'')+'"><div class="row"><div class="gap"><div style="width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:'+(r?'var(--green-bg)':'var(--bg)')+'">🤖</div><div><div class="text-w fw-600">Autonomous Agent</div><div class="gap mt-1"><div class="live-dot" style="'+(r?'':'animation:none;background:var(--text3)')+'"></div><span class="text-xs '+(r?'gv':'text-dim')+'">'+(r?'Active — Trading':'Stopped')+'</span></div></div></div><div class="switch'+(r?' on':'')+'" onclick="toggleAgent()"></div></div>';
   if(r&&c){h+='<div class="gap mt-3" style="flex-wrap:wrap"><span class="badge badge-long">'+c.symbol+'</span><span class="badge badge-info">'+c.maxLeverage+'x max</span><span class="badge badge-warn">'+c.riskPercent+'% risk</span></div>'}
   h+='</div>';
 
@@ -929,9 +929,9 @@ function renderAgent(){
     const wr=s.winCount+s.lossCount>0?Math.round(s.winCount/(s.winCount+s.lossCount)*100):0;
     h+='<div class="card"><div class="section-title">📊 Performance</div><div class="grid2">';
     h+='<div style="padding:10px;background:var(--bg);border-radius:8px;text-align:center"><div class="text-xs text-dim2">Total Trades</div><div class="val-sm text-w mt-1">'+s.tradeCount+'</div></div>';
-    h+='<div style="padding:10px;background:var(--bg);border-radius:8px;text-align:center"><div class="text-xs text-dim2">Win Rate</div><div class="val-sm '+(wr>=50?'g+':'r-')+' mt-1">'+wr+'%</div></div>';
+    h+='<div style="padding:10px;background:var(--bg);border-radius:8px;text-align:center"><div class="text-xs text-dim2">Win Rate</div><div class="val-sm '+(wr>=50?'gv':'r-')+' mt-1">'+wr+'%</div></div>';
     h+='<div style="padding:10px;background:var(--bg);border-radius:8px;text-align:center"><div class="text-xs text-dim2">Total PnL</div><div class="val-sm '+pnlClass(s.totalPnl)+' mt-1">'+(s.totalPnl>=0?'+':'')+' $'+fmt(Math.abs(s.totalPnl))+'</div></div>';
-    h+='<div style="padding:10px;background:var(--bg);border-radius:8px;text-align:center"><div class="text-xs text-dim2">W / L</div><div class="val-sm text-w mt-1"><span class="g+">'+s.winCount+'</span> / <span class="r-">'+s.lossCount+'</span></div></div>';
+    h+='<div style="padding:10px;background:var(--bg);border-radius:8px;text-align:center"><div class="text-xs text-dim2">W / L</div><div class="val-sm text-w mt-1"><span class="gv">'+s.winCount+'</span> / <span class="r-">'+s.lossCount+'</span></div></div>';
     h+='</div>';
     if(s.lastAction){h+='<div class="alert alert-info mt-3"><span>🧠</span><div><div class="text-xs fw-600" style="color:var(--blue)">Last Action</div><div class="text-sm text-w mt-1">'+s.lastAction+'</div>'+(s.lastReason?'<div class="text-xs text-dim mt-1">'+s.lastReason+'</div>':'')+'</div></div>'}
     h+='</div>';
@@ -997,8 +997,8 @@ function renderTrade(){
       var margin=p.margin||0;
       h+='<div class="pos-item" style="border-left:3px solid '+((p.unrealizedPnl||0)>=0?'var(--green)':'var(--red)')+';padding-left:10px">';
       h+='<div class="row"><div class="gap"><span class="badge '+(p.side==='LONG'?'badge-long':'badge-short')+'">'+p.side+'</span><span class="text-w fw-600 text-sm">'+p.symbol+'</span><span class="text-xs text-dim">'+p.leverage+'x</span></div>'+pnlHtml(p.unrealizedPnl)+'</div>';
-      h+='<div class="row mt-1"><span class="text-xs g+ mono">'+p.size+' @ $'+fmt(p.entryPrice)+'</span><span class="text-xs mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'%</span></div>';
-      if(liq>0){h+='<div class="row mt-1"><span class="text-xs mono" style="color:var(--red)">Liq: $'+fmt(liq)+'</span><span class="text-xs g+ mono">Margin: $'+fmt(margin)+'</span></div>'}
+      h+='<div class="row mt-1"><span class="text-xs gv mono">'+p.size+' @ $'+fmt(p.entryPrice)+'</span><span class="text-xs mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'%</span></div>';
+      if(liq>0){h+='<div class="row mt-1"><span class="text-xs mono" style="color:var(--red)">Liq: $'+fmt(liq)+'</span><span class="text-xs gv mono">Margin: $'+fmt(margin)+'</span></div>'}
       h+='<div class="mt-2"><button class="btn btn-outline btn-sm" style="font-size:11px;width:100%" onclick="closePos(\\''+p.symbol+'\\')">Close Position</button></div></div>';
     });
     h+='</div>';
