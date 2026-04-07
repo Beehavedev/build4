@@ -830,7 +830,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
           interval: config?.intervalMs ? Math.round(config.intervalMs / 1000) : 60,
         },
         stats: {
-          tradeCount: state?.tradeCount || 0,
+          tradeCount: Math.max(state?.tradeCount || 0, openTrades.length + closeTrades.length),
           scanCount: state?.scanCount || 0,
           winCount,
           lossCount,

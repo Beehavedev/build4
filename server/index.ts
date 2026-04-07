@@ -351,6 +351,17 @@ async function ensureSchema() {
         log("Agent runner disabled — only real user-initiated actions allowed. Set AGENT_RUNNER_ENABLED=true to enable autonomous mode.");
       }
 
+      if (process.env.NODE_ENV === "production") {
+        setTimeout(async () => {
+          try {
+            const { resumeEnabledAgents } = await import("./autonomous-agent");
+            await resumeEnabledAgents();
+          } catch (e: any) {
+            log(`Aster agent auto-resume error: ${e.message?.substring(0, 100)}`);
+          }
+        }, 8000);
+      }
+
       const CHAOS_CHECK_INTERVAL = 60_000;
       setInterval(async () => {
         try {

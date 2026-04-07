@@ -324,17 +324,18 @@ async function runAgentLoop(
     state.errors = 0;
   } catch (e: any) {
     state.errors++;
-    console.error(`[Agent:${chatId}] Error:`, e.message?.substring(0, 300));
+    console.error(`[Agent:${chatId}] Error #${state.errors}:`, e.message?.substring(0, 300));
     if (state.errors <= 3) {
       try {
         await sendMessage(`⚠️ Agent error (${state.errors}/3): ${e.message?.substring(0, 150)}`);
       } catch {}
     }
-    if (state.errors >= 10) {
+    if (state.errors >= 30) {
       state.running = false;
       state.config.enabled = false;
+      saveAgentConfigToDb(chatId, state.config);
       try {
-        await sendMessage(`🛑 Agent stopped after ${state.errors} consecutive errors.`);
+        await sendMessage(`🛑 Agent stopped after ${state.errors} consecutive errors. Restart from the Agent tab.`);
       } catch {}
       return;
     }
@@ -640,4 +641,58 @@ export function getAgentStatus(chatId: string): string {
   msg += `_Strategy: EMA(8/21) + RSI(14) multi-pair scanner_`;
 
   return msg;
+}
+
+export async function resumeEnabledAgents(): Promise<void> {
+  try {
+    const { db } = await import("./db");
+    const { sql } = await import("drizzle-orm");
+    const rows = (await db.execute(sql`SELECT chat_id FROM aster_trading_limits WHERE auto_trade_enabled = true`)).rows;
+    if (!rows || rows.length === 0) {
+      console.log("[Agent] No enabled agents to resume.");
+      return;
+    }
+    console.log(`[Agent] Found ${rows.length} enabled agent(s) to resume after restart.`);
+
+    for (const row of rows) {
+      const chatId = String((row as any).chat_id);
+      try {
+        const config = await loadAgentConfigFromDb(chatId);
+        if (!config.enabled) continue;
+
+        const creds = await storage.getAsterCredentials(chatId);
+        if (!creds) {
+          console.log(`[Agent:${chatId}] No Aster credentials, skipping resume.`);
+          continue;
+        }
+
+        const { createAsterFuturesClient } = await import("./aster-client");
+        const client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+        setAgentFuturesClient(client);
+
+        const sendMsg = async (msg: string) => {
+          try {
+            const botModule = await import("./telegram-bot");
+            const bot = (botModule as any).default || (botModule as any).bot;
+            if (bot?.sendMessage) {
+              await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
+            }
+          } catch {}
+        };
+
+        const getClientFn = () => ({ futures: client });
+        const started = await startAgent(chatId, getClientFn, sendMsg);
+        if (started) {
+          console.log(`[Agent:${chatId}] Resumed "${config.name}" after restart.`);
+          try {
+            await sendMsg(`🔄 *${config.name} auto-resumed* after server restart.\n\nAll settings preserved.`);
+          } catch {}
+        }
+      } catch (e: any) {
+        console.warn(`[Agent:${chatId}] Resume failed: ${e.message?.substring(0, 100)}`);
+      }
+    }
+  } catch (e: any) {
+    console.error(`[Agent] resumeEnabledAgents error: ${e.message?.substring(0, 100)}`);
+  }
 }
