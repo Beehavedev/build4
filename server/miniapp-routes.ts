@@ -129,12 +129,10 @@ export function registerMiniAppRoutes(app: Express) {
         }
 
         const apiWalletAddress = apiWallet.address.toLowerCase();
-        const userParentAddress = (req.body.parentAddress || "").trim().toLowerCase();
-        const effectiveParent = (userParentAddress && userParentAddress.startsWith("0x") && userParentAddress.length === 42)
-          ? userParentAddress : parentAddress;
-        console.log(`[MiniApp] Manual link: signer=${apiWalletAddress}, parent=${effectiveParent}, chatId=${chatId}`);
-        await storage.saveAsterCredentials(chatId, apiWalletAddress, apiWalletPrivateKey, effectiveParent);
-        res.json({ success: true, apiWalletAddress, parentAddress: effectiveParent });
+        // Always use the server-verified parent address from the user's active wallet
+        console.log(`[MiniApp] Manual link: signer=${apiWalletAddress}, parent=${parentAddress}, chatId=${chatId}`);
+        await storage.saveAsterCredentials(chatId, apiWalletAddress, apiWalletPrivateKey, parentAddress);
+        res.json({ success: true, apiWalletAddress, parentAddress });
         return;
       }
 
