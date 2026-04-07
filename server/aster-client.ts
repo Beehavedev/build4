@@ -303,14 +303,17 @@ async function signV3Params(
   signer: string,
   signerPrivateKey: string,
 ): Promise<{ queryStringWithSig: string }> {
-  const businessParams: Record<string, string | number | boolean | undefined> = {};
+  const allParams: Record<string, string | number | boolean | undefined> = {};
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null) businessParams[k] = v;
+    if (v !== undefined && v !== null) allParams[k] = v;
   }
-  businessParams.timestamp = Date.now();
-  if (!businessParams.recvWindow) businessParams.recvWindow = 50000;
+  allParams.timestamp = Date.now();
+  if (!allParams.recvWindow) allParams.recvWindow = 50000;
+  allParams.nonce = getV3Nonce();
+  allParams.user = user;
+  allParams.signer = signer;
 
-  const msgPayload = buildSortedQueryString(businessParams);
+  const msgPayload = buildSortedQueryString(allParams);
 
   const wallet = new Wallet(signerPrivateKey);
   const signerAddr = wallet.address;
@@ -325,19 +328,15 @@ async function signV3Params(
     { msg: msgPayload },
   );
 
-  const nonce = getV3Nonce();
+  allParams.signature = signature;
 
-  const allParts: string[] = [];
-  const sortedKeys = Object.keys(businessParams).filter(k => businessParams[k] !== undefined && businessParams[k] !== null).sort();
+  const finalParts: string[] = [];
+  const sortedKeys = Object.keys(allParams).filter(k => allParams[k] !== undefined && allParams[k] !== null).sort();
   for (const k of sortedKeys) {
-    allParts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(businessParams[k]))}`);
+    finalParts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(allParams[k]))}`);
   }
-  allParts.push(`nonce=${nonce}`);
-  allParts.push(`user=${encodeURIComponent(user)}`);
-  allParts.push(`signer=${encodeURIComponent(signer)}`);
-  allParts.push(`signature=${encodeURIComponent(signature)}`);
 
-  return { queryStringWithSig: allParts.join("&") };
+  return { queryStringWithSig: finalParts.join("&") };
 }
 
 async function makeV3Request(
