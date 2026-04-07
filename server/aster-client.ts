@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { Wallet, getAddress, JsonRpcProvider, Contract, formatUnits, formatEther, parseUnits, parseEther, MaxUint256, keccak256, toUtf8Bytes, getBytes } from "ethers";
+import { Wallet, getAddress, JsonRpcProvider, Contract, formatUnits, formatEther, parseUnits, parseEther, MaxUint256 } from "ethers";
 
 interface AsterClientConfig {
   apiKey: string;
@@ -292,9 +292,14 @@ function getV3Nonce(): number {
   return nowSec * 1_000_000 + _nonceCounter;
 }
 
-function buildSortedQueryString(params: Record<string, string | number | boolean | undefined>): string {
-  const keys = Object.keys(params).filter(k => params[k] !== undefined && params[k] !== null).sort();
-  return keys.map(k => `${k}=${String(params[k])}`).join("&");
+function buildQueryString(params: Record<string, string | number | boolean | undefined>): string {
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null) {
+      parts.push(`${k}=${String(v)}`);
+    }
+  }
+  return parts.join("&");
 }
 
 async function signV3Params(
@@ -302,59 +307,38 @@ async function signV3Params(
   user: string,
   signer: string,
   signerPrivateKey: string,
-  httpMethod: string = "GET",
+  _httpMethod: string = "GET",
 ): Promise<{ queryStringWithSig: string }> {
-  const businessParams: Record<string, string | number | boolean | undefined> = {};
+  const allParams: Record<string, string | number | boolean | undefined> = {};
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null) businessParams[k] = v;
+    if (v !== undefined && v !== null) allParams[k] = v;
   }
-  businessParams.timestamp = Date.now();
-  if (!businessParams.recvWindow) businessParams.recvWindow = 50000;
+
+  allParams.asterChain = "Mainnet";
+  allParams.user = user;
+  allParams.signer = signer;
+
+  const nonce = getV3Nonce();
+  allParams.nonce = nonce;
+
+  const msgPayload = buildQueryString(allParams);
 
   const wallet = new Wallet(signerPrivateKey);
   const signerAddr = wallet.address;
+  console.log(`[AsterV3Sign] msg=${msgPayload.substring(0, 300)} signerAddr=${signerAddr}`);
   if (signerAddr.toLowerCase() !== signer.toLowerCase()) {
     console.warn(`[AsterV3Sign] WARNING: wallet address ${signerAddr} does not match signer param ${signer}`);
   }
 
-  let signature: string;
+  const signature = await wallet.signTypedData(
+    EIP712_DOMAIN,
+    EIP712_TYPES,
+    { msg: msgPayload },
+  );
 
-  if (httpMethod === "GET") {
-    const allForSig: Record<string, string | number | boolean | undefined> = { ...businessParams };
-    allForSig.nonce = getV3Nonce();
-    allForSig.user = user;
-    allForSig.signer = signer;
-    const msgPayload = buildSortedQueryString(allForSig);
-    console.log(`[AsterV3Sign] EIP712 msg=${msgPayload.substring(0, 300)}`);
-    signature = await wallet.signTypedData(EIP712_DOMAIN, EIP712_TYPES, { msg: msgPayload });
+  const qsWithSig = msgPayload + "&signature=" + signature;
 
-    allForSig.signature = signature;
-    const finalParts: string[] = [];
-    const sortedKeys = Object.keys(allForSig).filter(k => allForSig[k] !== undefined && allForSig[k] !== null).sort();
-    for (const k of sortedKeys) {
-      finalParts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(allForSig[k]))}`);
-    }
-    return { queryStringWithSig: finalParts.join("&") };
-  } else {
-    const sortedQs = buildSortedQueryString(businessParams);
-    console.log(`[AsterV3Sign] keccak msg=${sortedQs.substring(0, 300)}`);
-    const msgHash = keccak256(toUtf8Bytes(sortedQs));
-    signature = await wallet.signMessage(getBytes(msgHash));
-
-    const nonce = getV3Nonce();
-    const allParams: Record<string, string | number | boolean | undefined> = { ...businessParams };
-    allParams.nonce = nonce;
-    allParams.user = user;
-    allParams.signer = signer;
-    allParams.signature = signature;
-
-    const finalParts: string[] = [];
-    const sortedKeys = Object.keys(allParams).filter(k => allParams[k] !== undefined && allParams[k] !== null).sort();
-    for (const k of sortedKeys) {
-      finalParts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(allParams[k]))}`);
-    }
-    return { queryStringWithSig: finalParts.join("&") };
-  }
+  return { queryStringWithSig: qsWithSig };
 }
 
 async function makeV3Request(
@@ -385,10 +369,8 @@ async function makeV3Request(
       signal: controller.signal,
     };
 
-    if (method === "GET") {
-      url = `${baseUrl}${path}?${queryStringWithSig}`;
-    } else {
-      url = `${baseUrl}${path}`;
+    url = `${baseUrl}${path}?${queryStringWithSig}`;
+    if (method !== "GET") {
       fetchOptions.body = queryStringWithSig;
     }
 
