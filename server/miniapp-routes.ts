@@ -123,10 +123,40 @@ export function registerMiniAppRoutes(app: Express) {
         return res.status(400).json({ error: "Cannot access wallet private key. Please re-import your wallet." });
       }
 
-      console.log(`[MiniApp] Auto-onboarding Aster for chatId=${chatId} wallet=${parentAddress.substring(0, 10)}`);
+      console.log(`[MiniApp] Auto-connecting Aster for chatId=${chatId} wallet=${parentAddress.substring(0, 10)}`);
+
+      const { createAsterV3FuturesClient } = await import("./aster-client");
+      const v3Client = createAsterV3FuturesClient({
+        user: parentAddress,
+        signer: parentAddress,
+        signerPrivateKey: pk,
+      });
+
+      try {
+        const testResult = await v3Client.testConnection();
+        console.log(`[MiniApp] V3 direct connection test: success=${testResult.success} ${testResult.error || ''}`);
+
+        if (testResult.success) {
+          await storage.saveAsterCredentials(chatId, parentAddress, pk);
+
+          try {
+            const bal = await v3Client.balance();
+            console.log(`[MiniApp] V3 post-connect balance: ${JSON.stringify(bal).substring(0, 300)}`);
+          } catch (balErr: any) {
+            console.log(`[MiniApp] V3 post-connect balance check failed: ${balErr.message}`);
+          }
+
+          res.json({ success: true, apiWalletAddress: parentAddress, parentAddress });
+          return;
+        }
+      } catch (v3Err: any) {
+        console.log(`[MiniApp] V3 direct connection failed: ${v3Err.message?.substring(0, 200)}`);
+      }
+
+      console.log(`[MiniApp] V3 direct failed, trying broker onboard for chatId=${chatId}`);
       const { asterBrokerOnboard, createAsterFuturesClient } = await import("./aster-client");
       const result = await asterBrokerOnboard(pk);
-      console.log(`[MiniApp] Onboard result: success=${result.success} hasKey=${!!result.apiKey}`);
+      console.log(`[MiniApp] Broker onboard result: success=${result.success} hasKey=${!!result.apiKey}`);
 
       if (result.success && result.apiKey && result.apiSecret) {
         await storage.saveAsterCredentials(chatId, result.apiKey, result.apiSecret);
@@ -134,14 +164,14 @@ export function registerMiniAppRoutes(app: Express) {
         try {
           const client = createAsterFuturesClient({ apiKey: result.apiKey, apiSecret: result.apiSecret });
           const bal = await client.balance();
-          console.log(`[MiniApp] Post-onboard balance: ${JSON.stringify(bal).substring(0, 300)}`);
+          console.log(`[MiniApp] Post-broker-onboard balance: ${JSON.stringify(bal).substring(0, 300)}`);
         } catch (e: any) {
-          console.log(`[MiniApp] Post-onboard balance check failed: ${e.message}`);
+          console.log(`[MiniApp] Post-broker-onboard balance check failed: ${e.message}`);
         }
 
         res.json({ success: true, apiWalletAddress: "auto", parentAddress });
       } else {
-        res.json({ success: false, error: result.error || "Aster onboarding failed. You may need to link an API Wallet manually." });
+        res.json({ success: false, error: result.error || "Aster connection failed. You may need to link an API Wallet manually." });
       }
     } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
   });
