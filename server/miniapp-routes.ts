@@ -789,23 +789,53 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const config = getAgentConfig(chatId);
       const state = getAgentState(chatId);
 
+      const localTrades = await storage.getAsterLocalTrades(chatId);
+      let totalPnl = 0;
+      let winCount = 0;
+      let lossCount = 0;
+      const openTrades = localTrades.filter((t: any) => !t.reduceOnly);
+      const closeTrades = localTrades.filter((t: any) => t.reduceOnly);
+      for (const ct of closeTrades) {
+        const matchOpen = openTrades.find((ot: any) => ot.symbol === ct.symbol && !ot.reduceOnly && ot.orderId !== ct.orderId);
+        if (matchOpen) {
+          const entryPrice = matchOpen.avgPrice || matchOpen.price || 0;
+          const exitPrice = ct.avgPrice || ct.price || 0;
+          const qty = ct.executedQty || ct.quantity || 0;
+          const pnl = matchOpen.side === "BUY"
+            ? (exitPrice - entryPrice) * qty
+            : (entryPrice - exitPrice) * qty;
+          totalPnl += pnl;
+          if (pnl >= 0) winCount++;
+          else lossCount++;
+        }
+      }
+
+      const openPositions: string[] = [];
+      if (state?.openPositions) {
+        for (const [sym, side] of state.openPositions) {
+          openPositions.push(`${side} ${sym}`);
+        }
+      }
+
       res.json({
         running: state?.running || false,
         config: {
           name: config?.name || "My Agent",
           riskPercent: config?.riskPercent || 1.0,
           maxLeverage: config?.maxLeverage || 10,
-          symbol: config?.symbol || "BTCUSDT",
-          interval: config?.interval || 60,
+          maxOpenPositions: config?.maxOpenPositions || 3,
+          interval: config?.intervalMs ? Math.round(config.intervalMs / 1000) : 60,
         },
-        stats: state ? {
-          tradeCount: state.tradeCount || 0,
-          winCount: state.winCount || 0,
-          lossCount: state.lossCount || 0,
-          totalPnl: state.totalPnl || 0,
-          lastAction: state.lastAction || null,
-          lastReason: state.lastReason || null,
-        } : null,
+        stats: {
+          tradeCount: state?.tradeCount || 0,
+          scanCount: state?.scanCount || 0,
+          winCount,
+          lossCount,
+          totalPnl,
+          lastAction: state?.lastAction || null,
+          lastReason: state?.lastReason || null,
+          openPositions,
+        },
       });
     } catch (e: any) {
       res.status(500).json({ error: "Internal server error" });
@@ -821,12 +851,13 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const state = getAgentState(chatId);
       if (state?.running) return res.status(400).json({ error: "Stop the agent before changing config" });
 
-      const { name, symbol, riskPercent, leverage } = req.body;
+      const { name, symbol, riskPercent, leverage, maxOpenPositions } = req.body;
       const updates: any = {};
       if (name && typeof name === "string") updates.name = name.trim().substring(0, 24);
       if (symbol && typeof symbol === "string") updates.symbol = symbol.toUpperCase();
       if (riskPercent !== undefined) updates.riskPercent = Math.max(0.5, Math.min(3, parseFloat(riskPercent) || 1));
-      if (leverage !== undefined) updates.leverage = Math.max(1, Math.min(50, parseInt(leverage) || 10));
+      if (leverage !== undefined) updates.maxLeverage = Math.max(1, Math.min(50, parseInt(leverage) || 10));
+      if (maxOpenPositions !== undefined) updates.maxOpenPositions = Math.max(1, Math.min(5, parseInt(maxOpenPositions) || 3));
 
       const config = setAgentConfig(chatId, updates);
       res.json({ success: true, config });

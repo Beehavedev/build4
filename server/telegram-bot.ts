@@ -16186,20 +16186,21 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     const state = getAgentState(chatId.toString());
     const isRunning = state?.running || false;
 
-    let msg = `🤖 *AI Trading Agent*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+    let msg = `🤖 *AI Trading Agent — Full Auto*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
     msg += `Status: ${isRunning ? "🟢 RUNNING" : "🔴 STOPPED"}\n`;
-    msg += `Symbol: \`${config.symbol}\`\n`;
-    msg += `Leverage: *${config.leverage}x*\n`;
-    msg += `Risk: \`${config.riskPercent}%\` per trade\n`;
-    msg += `Interval: \`${config.intervalMs / 1000}s\`\n`;
-    msg += `Timeframe: \`${config.klineInterval}\`\n`;
+    msg += `🌐 Scanning: *18 pairs*\n`;
+    msg += `⚡ Max Leverage: *${config.maxLeverage}x*\n`;
+    msg += `🎯 Risk: \`${config.riskPercent}%\` per trade\n`;
+    msg += `📍 Max Positions: *${config.maxOpenPositions || 3}*\n`;
+    msg += `📊 Timeframe: \`${config.klineInterval}\`\n`;
     if (state) {
-      msg += `Position: \`${state.currentPosition}\`\n`;
-      msg += `Trades: \`${state.tradeCount}\`\n`;
-      msg += `Last Signal: \`${state.lastSignal}\`\n`;
+      const openList = state.openPositions ? Array.from(state.openPositions.entries()).map(([s, side]: [string, string]) => `${side === "LONG" ? "🟢" : "🔴"} ${side} ${s}`).join("\n") : "";
+      if (openList) msg += `\n*Open:*\n${openList}\n`;
+      msg += `\n🔄 Trades: \`${state.tradeCount}\`\n`;
+      if (state.lastAction) msg += `📡 Last: _${state.lastAction}_\n`;
     }
-    msg += `\n_Strategy: EMA(8/21) crossover + RSI filter_\n`;
-    msg += `_The agent fetches candles, computes signals, and auto-trades._`;
+    msg += `\n_Strategy: EMA(8/21) + RSI(14) multi-pair scanner_\n`;
+    msg += `_Agent picks pairs, direction, leverage & timing._`;
 
     const buttons: TelegramBot.InlineKeyboardButton[][] = [];
     if (isRunning) {
@@ -16239,11 +16240,12 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     if (started) {
       const config = getAgentConfig(chatIdStr);
       await bot.sendMessage(chatId,
-        `🤖 *Agent Started!*\n\n` +
-        `Trading \`${config.symbol}\` with ${config.leverage}x leverage\n` +
-        `Risk: ${config.riskPercent}% per trade\n` +
-        `Checking every ${config.intervalMs / 1000}s\n\n` +
-        `The agent will auto-trade based on EMA/RSI signals.`,
+        `🤖 *Agent Started — Full Auto!*\n\n` +
+        `🌐 Scanning: *18 pairs*\n` +
+        `⚡ Max Leverage: ${config.maxLeverage}x\n` +
+        `🎯 Risk: ${config.riskPercent}% per trade\n` +
+        `📍 Max Positions: ${config.maxOpenPositions || 3}\n\n` +
+        `The agent will scan all pairs and pick the best opportunities.`,
         {
           parse_mode: "Markdown",
           reply_markup: {
@@ -16302,19 +16304,21 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   if (action === "agent_config") {
     const config = getAgentConfig(chatId.toString());
     await bot.sendMessage(chatId,
-      `⚙️ *Agent Configuration*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `Symbol: \`${config.symbol}\`\n` +
-      `Leverage: *${config.leverage}x*\n` +
-      `Risk: \`${config.riskPercent}%\` per trade\n` +
-      `Interval: \`${config.intervalMs / 1000}s\`\n` +
-      `Timeframe: \`${config.klineInterval}\`\n\n` +
+      `⚙️ *Agent Configuration — Full Auto*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `🌐 Scans: *All 18 pairs*\n` +
+      `⚡ Max Leverage: *${config.maxLeverage}x*\n` +
+      `🎯 Risk: \`${config.riskPercent}%\` per trade\n` +
+      `📍 Max Positions: *${config.maxOpenPositions || 3}*\n` +
+      `⏱️ Interval: \`${config.intervalMs / 1000}s\`\n` +
+      `📊 Timeframe: \`${config.klineInterval}\`\n\n` +
+      `_Agent picks pairs autonomously. You control risk limits._\n\n` +
       `Select what to change:`,
       {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "📌 Symbol", callback_data: "aster:agent_set_symbol" }, { text: "⚡ Leverage", callback_data: "aster:agent_set_leverage" }],
-            [{ text: "🎯 Risk %", callback_data: "aster:agent_set_risk" }, { text: "⏱️ Interval", callback_data: "aster:agent_set_interval" }],
+            [{ text: "⚡ Max Leverage", callback_data: "aster:agent_set_leverage" }, { text: "🎯 Risk %", callback_data: "aster:agent_set_risk" }],
+            [{ text: "📍 Max Positions", callback_data: "aster:agent_set_maxpos" }, { text: "⏱️ Interval", callback_data: "aster:agent_set_interval" }],
             [{ text: "📊 Timeframe", callback_data: "aster:agent_set_tf" }],
             [{ text: "« Agent Menu", callback_data: "aster:agent" }],
           ],
@@ -16324,51 +16328,10 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     return;
   }
 
-  if (action === "agent_set_symbol") {
-    const row1 = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
-    const row2 = ["BNBUSDT", "XRPUSDT", "DOGEUSDT"];
-    const row3 = ["SUIUSDT", "ADAUSDT", "AVAXUSDT"];
-    const row4 = ["LINKUSDT", "DOTUSDT", "LTCUSDT"];
-    const row5 = ["PEPEUSDT", "WIFUSDT", "ARBUSDT"];
-    const row6 = ["OPUSDT", "APTUSDT", "MATICUSDT"];
-    await bot.sendMessage(chatId, "Select trading pair for the agent:", {
-      reply_markup: {
-        inline_keyboard: [
-          row1.map(s => ({ text: s.replace("USDT", ""), callback_data: `aster:agcfg_sym_${s}` })),
-          row2.map(s => ({ text: s.replace("USDT", ""), callback_data: `aster:agcfg_sym_${s}` })),
-          row3.map(s => ({ text: s.replace("USDT", ""), callback_data: `aster:agcfg_sym_${s}` })),
-          row4.map(s => ({ text: s.replace("USDT", ""), callback_data: `aster:agcfg_sym_${s}` })),
-          row5.map(s => ({ text: s.replace("USDT", ""), callback_data: `aster:agcfg_sym_${s}` })),
-          row6.map(s => ({ text: s.replace("USDT", ""), callback_data: `aster:agcfg_sym_${s}` })),
-          [{ text: "✏️ Custom Pair", callback_data: "aster:agcfg_sym_custom" }],
-          [{ text: "« Back", callback_data: "aster:agent_config" }],
-        ],
-      },
-    });
-    return;
-  }
-
-  if (action === "agcfg_sym_custom") {
-    pendingAsterTrade.set(chatId, { step: "agent_custom_symbol" } as any);
-    await bot.sendMessage(chatId, "Enter the trading pair symbol (e.g. TONUSDT, NEARUSDT, ONDOUSDT):", {
-      reply_markup: { inline_keyboard: [[{ text: "« Cancel", callback_data: "aster:agent_config" }]] },
-    });
-    return;
-  }
-
-  if (action?.startsWith("agcfg_sym_")) {
-    const sym = action.replace("agcfg_sym_", "");
-    setAgentConfig(chatId.toString(), { symbol: sym });
-    await bot.sendMessage(chatId, `✅ Agent symbol set to \`${sym}\``, {
-      parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: [[{ text: "« Config", callback_data: "aster:agent_config" }], [{ text: "🤖 Agent", callback_data: "aster:agent" }]] },
-    });
-    return;
-  }
-
   if (action === "agent_set_leverage") {
     const levs = [3, 5, 10, 15, 20, 25];
-    await bot.sendMessage(chatId, "Select leverage:", {
+    await bot.sendMessage(chatId, "Select *max* leverage (agent auto-adjusts per pair volatility):", {
+      parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
           levs.slice(0, 3).map(l => ({ text: `${l}x`, callback_data: `aster:agcfg_lev_${l}` })),
@@ -16382,8 +16345,31 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
   if (action?.startsWith("agcfg_lev_")) {
     const lev = parseInt(action.replace("agcfg_lev_", ""));
-    setAgentConfig(chatId.toString(), { leverage: lev });
-    await bot.sendMessage(chatId, `Leverage set to *${lev}x*`, {
+    setAgentConfig(chatId.toString(), { maxLeverage: lev });
+    await bot.sendMessage(chatId, `Max leverage set to *${lev}x*`, {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: [[{ text: "« Config", callback_data: "aster:agent_config" }], [{ text: "🤖 Agent", callback_data: "aster:agent" }]] },
+    });
+    return;
+  }
+
+  if (action === "agent_set_maxpos") {
+    const opts = [1, 2, 3, 4, 5];
+    await bot.sendMessage(chatId, "Max simultaneous open positions:", {
+      reply_markup: {
+        inline_keyboard: [
+          opts.map(n => ({ text: `${n}`, callback_data: `aster:agcfg_maxpos_${n}` })),
+          [{ text: "« Back", callback_data: "aster:agent_config" }],
+        ],
+      },
+    });
+    return;
+  }
+
+  if (action?.startsWith("agcfg_maxpos_")) {
+    const n = parseInt(action.replace("agcfg_maxpos_", ""));
+    setAgentConfig(chatId.toString(), { maxOpenPositions: n });
+    await bot.sendMessage(chatId, `Max positions set to *${n}*`, {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: [[{ text: "« Config", callback_data: "aster:agent_config" }], [{ text: "🤖 Agent", callback_data: "aster:agent" }]] },
     });

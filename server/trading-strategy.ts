@@ -63,11 +63,12 @@ export interface StrategyResult {
   ema21: number;
   rsiValue: number;
   lastClose: number;
+  strength: number;
 }
 
 export function emaCrossRsiStrategy(candles: Candle[]): StrategyResult {
   if (candles.length < 22) {
-    return { signal: "HOLD", reason: "Not enough data", ema8: 0, ema21: 0, rsiValue: 50, lastClose: 0 };
+    return { signal: "HOLD", reason: "Not enough data", ema8: 0, ema21: 0, rsiValue: 50, lastClose: 0, strength: 0 };
   }
 
   const closes = candles.map(c => c.close);
@@ -83,18 +84,30 @@ export function emaCrossRsiStrategy(candles: Candle[]): StrategyResult {
 
   let signal: Signal = "HOLD";
   let reason = "";
+  let strength = 0;
+
+  const emaDiff = Math.abs(e8 - e21) / e21 * 100;
+  const prevE8 = ema8[lastIdx - 1];
+  const prevE21 = ema21[lastIdx - 1];
+  const justCrossed = (e8 > e21 && prevE8 <= prevE21) || (e8 < e21 && prevE8 >= prevE21);
 
   if (e8 > e21 && r < 70) {
     signal = "BUY";
+    strength = emaDiff * 10 + (70 - r) / 4;
+    if (justCrossed) strength += 20;
+    if (r < 40) strength += 15;
     reason = `EMA8 (${e8.toFixed(2)}) > EMA21 (${e21.toFixed(2)}), RSI ${r.toFixed(1)} < 70`;
   } else if (e8 < e21 && r > 30) {
     signal = "SELL";
+    strength = emaDiff * 10 + (r - 30) / 4;
+    if (justCrossed) strength += 20;
+    if (r > 60) strength += 15;
     reason = `EMA8 (${e8.toFixed(2)}) < EMA21 (${e21.toFixed(2)}), RSI ${r.toFixed(1)} > 30`;
   } else {
     reason = `EMA8=${e8.toFixed(2)} EMA21=${e21.toFixed(2)} RSI=${r.toFixed(1)} — no clear signal`;
   }
 
-  return { signal, reason, ema8: e8, ema21: e21, rsiValue: r, lastClose };
+  return { signal, reason, ema8: e8, ema21: e21, rsiValue: r, lastClose, strength: Math.round(strength * 10) / 10 };
 }
 
 export function parseKlinesToCandles(klines: any[]): Candle[] {

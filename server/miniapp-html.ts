@@ -957,22 +957,21 @@ function renderAgent(){
   let h='<div class="section-title" style="font-size:16px">🤖 AI Trading Agent</div>';
 
   var agentName=c?.name||'My Agent';
-  h+='<div class="card '+(r?'card-accent':'')+'"><div class="row"><div class="gap"><div style="width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:'+(r?'var(--green-bg)':'var(--bg)')+'">🤖</div><div><div class="text-w fw-600" style="cursor:pointer" onclick="renameAgent()" id="agent-name-display">'+agentName+'</div><div class="gap mt-1"><div class="live-dot" style="'+(r?'':'animation:none;background:var(--text3)')+'"></div><span class="text-xs '+(r?'gv':'text-dim')+'">'+(r?'Active — Trading':'Stopped')+'</span></div></div></div><div class="switch'+(r?' on':'')+'" onclick="toggleAgent()"></div></div>';
-  if(r&&c){h+='<div class="gap mt-3" style="flex-wrap:wrap"><span class="badge badge-long">'+c.symbol+'</span><span class="badge badge-info">'+c.maxLeverage+'x max</span><span class="badge badge-warn">'+c.riskPercent+'% risk</span></div>'}
+  h+='<div class="card '+(r?'card-accent':'')+'"><div class="row"><div class="gap"><div style="width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:'+(r?'var(--green-bg)':'var(--bg)')+'">🤖</div><div><div class="text-w fw-600" style="cursor:pointer" onclick="renameAgent()" id="agent-name-display">'+agentName+'</div><div class="gap mt-1"><div class="live-dot" style="'+(r?'':'animation:none;background:var(--text3)')+'"></div><span class="text-xs '+(r?'gv':'text-dim')+'">'+(r?'Full Auto — Scanning 18 pairs':'Stopped')+'</span></div></div></div><div class="switch'+(r?' on':'')+'" onclick="toggleAgent()"></div></div>';
+  if(r&&c){h+='<div class="gap mt-3" style="flex-wrap:wrap"><span class="badge badge-info">🌐 18 pairs</span><span class="badge badge-info">'+c.maxLeverage+'x max</span><span class="badge badge-warn">'+c.riskPercent+'% risk</span><span class="badge badge-long">'+(c.maxOpenPositions||3)+' max pos</span></div>'}
   h+='</div>';
 
   h+='<div class="card"><div class="section-title">⚙️ Configuration</div>';
-  var agentPairs=['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT','SUIUSDT','ADAUSDT','AVAXUSDT','LINKUSDT','DOTUSDT','LTCUSDT','PEPEUSDT','WIFUSDT','ARBUSDT','OPUSDT','APTUSDT','MATICUSDT'];
-  var curSym=c?.symbol||'BTCUSDT';
-  h+='<div class="label">Trading Pair</div>';
-  h+='<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">';
-  agentPairs.forEach(function(p){h+='<button class="btn btn-sm '+(curSym===p?'btn-green':'btn-outline')+'" style="font-size:11px;padding:4px 8px" onclick="setAgentSymbol(\\''+p+'\\')">'+p.replace('USDT','')+'</button>'});
-  h+='</div>';
+  h+='<div class="alert alert-info mb-3"><span>🌐</span><span>Agent scans all 18 pairs and picks the best opportunities. You control risk limits — the agent decides everything else.</span></div>';
   h+='<div class="row text-sm mt-3"><span class="text-dim">Risk Per Trade</span><span class="mono text-w fw-600">'+(c?.riskPercent||1)+'%</span></div>';
   h+='<div class="slider-track" onclick="setRisk(event)"><div class="slider-fill" style="width:'+((c?.riskPercent||1)/3*100)+'%"></div><div class="slider-thumb" style="left:'+((c?.riskPercent||1)/3*100)+'%"></div></div>';
   h+='<div class="row text-xs text-dim2"><span>0.5% (Safe)</span><span>3% (Aggressive)</span></div>';
   h+='<div class="row text-sm mt-3"><span class="text-dim">Max Leverage</span><span class="mono text-w fw-600">'+(c?.maxLeverage||10)+'x</span></div>';
-  if(D.availableMargin>0){h+='<div class="row text-sm mt-3"><span class="text-dim">Max Position</span><span class="mono text-w fw-600">$'+fmt(D.availableMargin*(c?.riskPercent||1)/100*(c?.maxLeverage||10))+'</span></div>'}
+  h+='<div class="row text-sm mt-3"><span class="text-dim">Max Open Positions</span><span class="mono text-w fw-600">'+(c?.maxOpenPositions||3)+'</span></div>';
+  h+='<div style="display:flex;gap:6px;margin-top:6px">';
+  [1,2,3,4,5].forEach(function(n){h+='<button class="btn btn-sm '+((c?.maxOpenPositions||3)===n?'btn-green':'btn-outline')+'" style="font-size:12px;padding:4px 10px" onclick="setMaxPositions('+n+')">'+n+'</button>'});
+  h+='</div>';
+  if(D.availableMargin>0){h+='<div class="row text-sm mt-3"><span class="text-dim">Max Per-Position</span><span class="mono text-w fw-600">$'+fmt(D.availableMargin*(c?.riskPercent||1)/100*(c?.maxLeverage||10)/(c?.maxOpenPositions||3))+'</span></div>'}
   h+='</div>';
 
   if(D.availableMargin>0&&D.availableMargin<10){h+='<div class="alert alert-warn mb-3"><span>⚠️</span><span>Futures margin is below $10. The agent will not trade until margin is at least $10 for safety.</span></div>'}
@@ -985,7 +984,17 @@ function renderAgent(){
     h+='<div style="padding:10px;background:var(--bg);border-radius:8px;text-align:center"><div class="text-xs text-dim2">Total PnL</div><div class="val-sm '+pnlClass(s.totalPnl)+' mt-1">'+(s.totalPnl>=0?'+':'')+' $'+fmt(Math.abs(s.totalPnl))+'</div></div>';
     h+='<div style="padding:10px;background:var(--bg);border-radius:8px;text-align:center"><div class="text-xs text-dim2">W / L</div><div class="val-sm text-w mt-1"><span class="gv">'+s.winCount+'</span> / <span class="r-">'+s.lossCount+'</span></div></div>';
     h+='</div>';
+    if(s.openPositions&&s.openPositions.length>0){
+      h+='<div class="mt-3"><div class="text-xs text-dim2 mb-2">Open Positions</div>';
+      s.openPositions.forEach(function(p){
+        var parts=p.split(' ');
+        var sd=parts[0],sy=parts[1]||'';
+        h+='<div class="row text-sm mb-1"><span>'+(sd==='LONG'?'🟢':'🔴')+' '+sd+' <b>'+sy+'</b></span></div>';
+      });
+      h+='</div>';
+    }
     if(s.lastAction){h+='<div class="alert alert-info mt-3"><span>🧠</span><div><div class="text-xs fw-600" style="color:var(--blue)">Last Action</div><div class="text-sm text-w mt-1">'+s.lastAction+'</div>'+(s.lastReason?'<div class="text-xs text-dim mt-1">'+s.lastReason+'</div>':'')+'</div></div>'}
+    if(s.scanCount){h+='<div class="text-xs text-dim mt-2" style="text-align:right">Scans completed: '+s.scanCount+'</div>'}
     h+='</div>';
   }
   el.innerHTML=h;
@@ -1023,13 +1032,13 @@ async function renameAgent(){
   document.getElementById('rn-cancel').onclick=function(){document.body.removeChild(ov)};
   ov.onclick=function(e){if(e.target===ov)document.body.removeChild(ov)};
 }
-async function setAgentSymbol(sym){
+async function setMaxPositions(n){
   if(AG&&AG.running){toast('Stop the agent first','err');return}
   try{
-    const r=await api('/api/miniapp/agent/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym})});
+    const r=await api('/api/miniapp/agent/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({maxOpenPositions:n})});
     if(r.success){
-      if(AG&&AG.config)AG.config.symbol=sym;
-      toast('Pair set to '+sym.replace('USDT','/USDT'),'ok');
+      if(AG&&AG.config)AG.config.maxOpenPositions=n;
+      toast('Max positions set to '+n,'ok');
       renderAgent();
     }else{toast(r.error||'Failed','err')}
   }catch(e){toast('❌ '+e.message,'err')}
