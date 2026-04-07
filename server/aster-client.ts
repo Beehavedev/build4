@@ -238,7 +238,7 @@ async function makeRequest(
     clearTimeout(timeoutId);
 
     const text = await response.text();
-    console.log(`[AsterHMAC] ${method} ${path} status=${response.status} body=${text.substring(0, 500)}`);
+    console.log(`[AsterHMAC] ${method} ${path} status=${response.status}`);
     let data: any;
     try {
       data = JSON.parse(text);
