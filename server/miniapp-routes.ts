@@ -314,15 +314,28 @@ export function registerMiniAppRoutes(app: Express) {
         const amt = parseFloat(p.positionAmt || "0");
         const upnl = parseFloat(p.unRealizedProfit || "0");
         totalUpnl += upnl;
+        const entryPrice = parseFloat(p.entryPrice || "0");
+        const markPrice = parseFloat(p.markPrice || "0");
+        const absAmt = Math.abs(amt);
+        const lev = parseFloat(p.leverage || "1");
+        const notional = parseFloat(p.notional || "0") || (absAmt * markPrice);
+        const margin = lev > 0 ? notional / lev : 0;
+        const roe = entryPrice > 0 ? (((markPrice - entryPrice) / entryPrice) * (amt > 0 ? 1 : -1) * lev * 100) : 0;
         return {
           symbol: p.symbol,
           side: amt > 0 ? "LONG" : "SHORT",
-          size: Math.abs(amt),
-          entryPrice: parseFloat(p.entryPrice || "0"),
-          markPrice: parseFloat(p.markPrice || "0"),
+          size: absAmt,
+          entryPrice,
+          markPrice,
           leverage: p.leverage || "1",
           unrealizedPnl: upnl,
-          notional: parseFloat(p.notional || "0"),
+          notional,
+          margin: parseFloat(margin.toFixed(2)),
+          roe: parseFloat(roe.toFixed(2)),
+          liquidationPrice: parseFloat(p.liquidationPrice || "0"),
+          marginType: p.marginType || "cross",
+          initialMargin: parseFloat(p.initialMargin || "0"),
+          maintMargin: parseFloat(p.maintMargin || "0"),
         };
       });
 

@@ -230,11 +230,18 @@ function renderPositions(){
       var upnl=parseFloat(p.unrealizedPnl||p.unRealizedProfit||'0');
       var lev=p.leverage||'-';
       var liq=parseFloat(p.liquidationPrice||'0');
-      var roe=entry>0?(((mark-entry)/entry)*(side==='LONG'?1:-1)*parseFloat(String(lev)||'1')*100):0;
-      h+='<div class="card"><div class="row"><div class="gap"><span class="badge '+(side==='LONG'?'badge-long':'badge-short')+'">'+side+'</span><span class="text-w fw-600">'+p.symbol+'</span><span class="badge badge-info">'+lev+'x</span></div>'+pnlHtml(upnl)+'</div>';
-      h+='<div class="grid2 mt-3"><div><div class="label">Size</div><div class="val-sm mono">'+amt+'</div></div><div><div class="label">Entry</div><div class="val-sm mono">$'+fmt(entry)+'</div></div></div>';
-      h+='<div class="grid2 mt-2"><div><div class="label">Mark</div><div class="val-sm mono">$'+fmt(mark)+'</div></div><div><div class="label">ROE</div><div class="val-sm mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'%</div></div></div>';
-      if(liq>0){h+='<div class="mt-2"><div class="label">Liquidation</div><div class="val-xs mono" style="color:var(--red)">$'+fmt(liq)+'</div></div>'}
+      var roe=p.roe||( entry>0?(((mark-entry)/entry)*(side==='LONG'?1:-1)*parseFloat(String(lev)||'1')*100):0 );
+      var notional=p.notional||(amt*mark);
+      var margin=p.margin||(parseFloat(String(lev)||'1')>0?notional/parseFloat(String(lev)||'1'):0);
+      var marginType=(p.marginType||'cross').toUpperCase();
+      var pnlColor=upnl>=0?'var(--green)':'var(--red)';
+      var cardBorder=upnl>=0?'rgba(63,185,80,0.3)':'rgba(248,81,73,0.3)';
+      h+='<div class="card" style="border:1px solid '+cardBorder+'">';
+      h+='<div class="row"><div class="gap"><span class="badge '+(side==='LONG'?'badge-long':'badge-short')+'">'+side+'</span><span class="text-w fw-600">'+p.symbol+'</span><span class="badge badge-info">'+lev+'x</span><span class="badge" style="background:rgba(59,130,246,0.1);color:var(--blue);font-size:10px">'+marginType+'</span></div>'+pnlHtml(upnl)+'</div>';
+      h+='<div class="grid2 mt-3"><div><div class="label">Size</div><div class="val-sm mono">'+amt+'</div></div><div><div class="label">Notional</div><div class="val-sm mono">$'+fmt(notional)+'</div></div></div>';
+      h+='<div class="grid2 mt-2"><div><div class="label">Entry Price</div><div class="val-sm mono">$'+fmt(entry)+'</div></div><div><div class="label">Mark Price</div><div class="val-sm mono">$'+fmt(mark)+'</div></div></div>';
+      h+='<div class="grid2 mt-2"><div><div class="label">ROE</div><div class="val-sm mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'%</div></div><div><div class="label">Margin</div><div class="val-sm mono">$'+fmt(margin)+'</div></div></div>';
+      if(liq>0){h+='<div class="mt-2" style="padding:8px;background:rgba(248,81,73,0.08);border-radius:8px;border:1px solid rgba(248,81,73,0.2)"><div class="row"><div><div class="label" style="color:var(--red)">⚠ Liquidation Price</div><div class="val-sm mono" style="color:var(--red)">$'+fmt(liq)+'</div></div><div style="text-align:right"><div class="label">Distance</div><div class="val-xs mono '+(Math.abs((mark-liq)/mark*100)>20?'g+':'r-')+'">'+fmt(Math.abs((mark-liq)/mark*100),1)+'%</div></div></div></div>'}
       h+='<div class="mt-3"><button class="btn btn-red btn-sm" style="width:100%" onclick="closePosFromTab(\\''+p.symbol+'\\')">Close Position</button></div></div>';
     });
   }
@@ -438,8 +445,17 @@ function renderDash(){
   if(D.positions&&D.positions.length>0){
     h+='<div class="card"><div class="section-title">Open Positions <span class="badge badge-info">'+D.positions.length+'</span></div>';
     D.positions.forEach(p=>{
-      h+='<div class="pos-item"><div class="row"><div class="gap"><span class="badge '+(p.side==='LONG'?'badge-long':'badge-short')+'">'+p.side+'</span><span class="text-w fw-600 text-sm">'+p.symbol+'</span><span class="text-xs text-dim">'+p.leverage+'x</span></div>'+pnlHtml(p.unrealizedPnl)+'</div>';
-      h+='<div class="row mt-1"><span class="text-xs text-dim mono">'+p.size+' @ $'+fmt(p.entryPrice)+'</span><span class="text-xs text-dim mono">Mark: $'+fmt(p.markPrice)+'</span></div></div>';
+      var roe=p.roe||0;
+      var liq=parseFloat(p.liquidationPrice||'0');
+      var notional=p.notional||(p.size*p.markPrice);
+      var margin=p.margin||(parseFloat(p.leverage||'1')>0?notional/parseFloat(p.leverage||'1'):0);
+      var cardBorder=(p.unrealizedPnl||0)>=0?'rgba(63,185,80,0.2)':'rgba(248,81,73,0.2)';
+      h+='<div class="pos-item" style="border-left:3px solid '+((p.unrealizedPnl||0)>=0?'var(--green)':'var(--red)')+';padding-left:10px">';
+      h+='<div class="row"><div class="gap"><span class="badge '+(p.side==='LONG'?'badge-long':'badge-short')+'">'+p.side+'</span><span class="text-w fw-600 text-sm">'+p.symbol+'</span><span class="text-xs text-dim">'+p.leverage+'x</span></div>'+pnlHtml(p.unrealizedPnl)+'</div>';
+      h+='<div class="row mt-1"><span class="text-xs text-dim mono">'+p.size+' @ $'+fmt(p.entryPrice)+'</span><span class="text-xs mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'% ROE</span></div>';
+      h+='<div class="row mt-1"><span class="text-xs text-dim mono">Mark: $'+fmt(p.markPrice)+'</span><span class="text-xs text-dim mono">Margin: $'+fmt(margin)+'</span></div>';
+      if(liq>0){h+='<div class="row mt-1"><span class="text-xs mono" style="color:var(--red)">Liq: $'+fmt(liq)+'</span><span class="text-xs text-dim mono">'+fmt(Math.abs((p.markPrice-liq)/p.markPrice*100),1)+'% away</span></div>'}
+      h+='</div>';
     });
     h+='</div>';
   }
@@ -976,8 +992,14 @@ function renderTrade(){
   if(D.positions&&D.positions.length>0){
     h+='<div class="card"><div class="section-title">📊 Open Positions</div>';
     D.positions.forEach(p=>{
-      h+='<div class="pos-item"><div class="row"><div class="gap"><span class="badge '+(p.side==='LONG'?'badge-long':'badge-short')+'">'+p.side+'</span><span class="text-w fw-600 text-sm">'+p.symbol+'</span></div>'+pnlHtml(p.unrealizedPnl)+'</div>';
-      h+='<div class="row mt-2"><span class="text-xs text-dim mono">'+p.size+' @ $'+fmt(p.entryPrice)+'</span><button class="btn btn-outline btn-sm" style="font-size:11px" onclick="closePos(\\''+p.symbol+'\\')">Close</button></div></div>';
+      var roe=p.roe||0;
+      var liq=parseFloat(p.liquidationPrice||'0');
+      var margin=p.margin||0;
+      h+='<div class="pos-item" style="border-left:3px solid '+((p.unrealizedPnl||0)>=0?'var(--green)':'var(--red)')+';padding-left:10px">';
+      h+='<div class="row"><div class="gap"><span class="badge '+(p.side==='LONG'?'badge-long':'badge-short')+'">'+p.side+'</span><span class="text-w fw-600 text-sm">'+p.symbol+'</span><span class="text-xs text-dim">'+p.leverage+'x</span></div>'+pnlHtml(p.unrealizedPnl)+'</div>';
+      h+='<div class="row mt-1"><span class="text-xs text-dim mono">'+p.size+' @ $'+fmt(p.entryPrice)+'</span><span class="text-xs mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'%</span></div>';
+      if(liq>0){h+='<div class="row mt-1"><span class="text-xs mono" style="color:var(--red)">Liq: $'+fmt(liq)+'</span><span class="text-xs text-dim mono">Margin: $'+fmt(margin)+'</span></div>'}
+      h+='<div class="mt-2"><button class="btn btn-outline btn-sm" style="font-size:11px;width:100%" onclick="closePos(\\''+p.symbol+'\\')">Close Position</button></div></div>';
     });
     h+='</div>';
   }
