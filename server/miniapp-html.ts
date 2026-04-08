@@ -704,11 +704,14 @@ function getPnlParams(posIdx){
     };
   }
   var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
+  var walBal=D.walletBalance||0;
+  var initialCap=walBal-totalPnl;
+  var overallPct=initialCap>0?(totalPnl/initialCap*100):0;
   var pSign2=totalPnl>=0?'+':'';
   var txt=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @AsterDEX via @build4_bot';
   if(w+l>0)txt+='\\nWin Rate: '+Math.round(w/(w+l)*100)+'%';
   return{
-    imgParams:'pnl='+totalPnl.toFixed(2)+'&w='+w+'&l='+l+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
+    imgParams:'pct='+overallPct.toFixed(2)+'&pnl='+totalPnl.toFixed(2)+'&w='+w+'&l='+l+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
     tweetText:txt,
     ref:ref
   };
