@@ -2636,17 +2636,14 @@ function registerBotHandlers(b: TelegramBot): void {
     if (error.message?.includes("401 Unauthorized")) {
       authFailCount++;
       if (authFailCount === 1) {
-        console.warn("[TelegramBot] 401 Unauthorized on polling — bot may be using webhooks instead. Suppressing further logs.");
-      }
-      if (authFailCount >= 5) {
+        console.warn("[TelegramBot] 401 on polling — using webhooks, stopping poller.");
         try { b.stopPolling(); } catch {}
-        console.warn("[TelegramBot] Polling stopped — bot likely running via webhook.");
       }
       return;
     }
     pollingErrorCount++;
     const now = Date.now();
-    if (now - lastPollingErrorLog > 60000) {
+    if (now - lastPollingErrorLog > 300000) {
       console.error(`[TelegramBot] Polling error (${pollingErrorCount} total): ${error.message}`);
       lastPollingErrorLog = now;
       pollingErrorCount = 0;
