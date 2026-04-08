@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, Component } from "react";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -57,14 +57,48 @@ function formatCompact(n: number | undefined | null): string {
   return n.toFixed(2);
 }
 
-function PnlBadge({ value, size = "sm" }: { value: number; size?: "sm" | "lg" }) {
-  const positive = value >= 0;
+function PnlBadge({ value, size = "sm" }: { value: number | undefined | null; size?: "sm" | "lg" }) {
+  const v = value ?? 0;
+  const positive = v >= 0;
   const cls = size === "lg" ? "text-lg font-bold" : "text-xs font-semibold";
   return (
     <span className={`font-mono ${cls} ${positive ? "text-emerald-400" : "text-red-400"}`} data-testid="text-pnl-value">
-      {positive ? "+" : ""}${formatUsd(value)}
+      {positive ? "+" : ""}${formatUsd(v)}
     </span>
   );
+}
+
+class FuturesErrorBoundary extends Component<
+  { children: any },
+  { hasError: boolean; error: string }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: "" };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error: error?.message || "Unknown error" };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-screen flex items-center justify-center bg-[hsl(160,10%,3%)] text-white">
+          <div className="text-center space-y-3">
+            <AlertTriangle className="w-8 h-8 text-yellow-400 mx-auto" />
+            <p className="text-sm font-semibold">Something went wrong</p>
+            <p className="text-xs text-gray-400 max-w-xs">{this.state.error}</p>
+            <button
+              onClick={() => { this.setState({ hasError: false, error: "" }); window.location.reload(); }}
+              className="px-4 py-2 text-xs bg-emerald-500/20 border border-emerald-500/30 rounded hover:bg-emerald-500/30 transition-colors"
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 function useWalletAddress() {
@@ -1147,7 +1181,7 @@ function ActivationBanner({ walletAddress, onConnected }: { walletAddress: strin
   );
 }
 
-export default function FuturesPage() {
+function FuturesPageInner() {
   const { address, connecting, error: walletError, connect, disconnect } = useWalletAddress();
   const [selectedPair, setSelectedPair] = useState("BTCUSDT");
   const [timeframe, setTimeframe] = useState("1h");
@@ -1652,5 +1686,13 @@ export default function FuturesPage() {
         ))}
       </div>
     </div>
+  );
+}
+
+export default function FuturesPage() {
+  return (
+    <FuturesErrorBoundary>
+      <FuturesPageInner />
+    </FuturesErrorBoundary>
   );
 }
