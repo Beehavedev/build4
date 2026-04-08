@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { Wallet, getAddress, JsonRpcProvider, Contract, formatUnits, formatEther, parseUnits, parseEther, MaxUint256 } from "ethers";
+import { Wallet, getAddress, Signature, JsonRpcProvider, Contract, formatUnits, formatEther, parseUnits, parseEther, MaxUint256 } from "ethers";
 
 interface AsterClientConfig {
   apiKey: string;
@@ -308,10 +308,12 @@ async function signV3Params(
   const hash = keccak256(encoded);
   const wallet = new Wallet(signerPrivateKey);
   const rawSig = await wallet.signMessage(getBytes(hash));
+  let sig = rawSig;
+  try { sig = Signature.from(rawSig).serialized; } catch {}
 
   console.log(`[AsterV3Sign] user=${user} signer=${signer} qs=${queryString.substring(0, 120)}`);
 
-  const qsWithSig = `${queryString}&nonce=${nonce}&user=${user}&signer=${signer}&signature=${rawSig}`;
+  const qsWithSig = `${queryString}&nonce=${nonce}&user=${user}&signer=${signer}&signature=${sig}`;
 
   return { queryStringWithSig: qsWithSig, paramsWithoutSig: queryString };
 }

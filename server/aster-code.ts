@@ -72,6 +72,7 @@ function getNonce(): string {
 function buildQueryString(params: Record<string, any>): string {
   return Object.entries(params)
     .filter(([_, v]) => v !== undefined && v !== null)
+    .sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => `${k}=${String(v)}`)
     .join("&");
 }
@@ -90,7 +91,12 @@ async function signV3(
   );
   const hash = keccak256(encoded);
   const wallet = new Wallet(signerPrivateKey);
-  return wallet.signMessage(getBytes(hash));
+  const rawSig = await wallet.signMessage(getBytes(hash));
+  try {
+    return Signature.from(rawSig).serialized;
+  } catch {
+    return rawSig;
+  }
 }
 
 async function makeSignedRequest(

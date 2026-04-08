@@ -371,9 +371,11 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const tradingAddr = tradingWallet.address;
       const tradingPk = tradingWallet.privateKey;
 
-      await storage.saveTelegramWallet(chatId, connectedAddr);
-      await storage.setActiveTelegramWallet(chatId, connectedAddr);
-      await storage.saveTelegramWallet(chatId, tradingAddr.toLowerCase(), tradingPk);
+      const existingWallets = await storage.getTelegramWallets(chatId);
+      if (!existingWallets || existingWallets.length === 0) {
+        await storage.saveTelegramWallet(chatId, connectedAddr);
+        await storage.setActiveTelegramWallet(chatId, connectedAddr);
+      }
 
       const sessionId = randomBytes(16).toString("hex");
       activationSessions.set(sessionId, {
@@ -707,6 +709,19 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         const evmWallets = wallets.filter(w => w.walletAddress && w.walletAddress.startsWith("0x"));
         let activeWallet = evmWallets.find(w => w.isActive) || evmWallets[0];
         let bscAddr = activeWallet?.walletAddress?.toLowerCase() || "";
+
+        if (bscAddr && evmWallets.length > 1) {
+          const hasPk = await storage.getTelegramWalletPrivateKey(chatId, bscAddr);
+          if (!hasPk) {
+            const fallback = evmWallets.find(w => w.walletAddress?.toLowerCase() !== bscAddr);
+            if (fallback) {
+              const fbPk = await storage.getTelegramWalletPrivateKey(chatId, fallback.walletAddress.toLowerCase());
+              if (fbPk) {
+                bscAddr = fallback.walletAddress.toLowerCase();
+              }
+            }
+          }
+        }
         if (!bscAddr && wallets.length > 0) {
           try {
             const { regenerateWalletForDeposit } = await import("./telegram-bot");
