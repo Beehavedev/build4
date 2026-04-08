@@ -39,12 +39,16 @@ The project uses a monorepo containing `client/` (React frontend), `server/` (Ex
 - **Features**: Individual dashboard, deposit page, quick deposit buttons, manual and AI-assisted trading. AI trading uses a multi-indicator strategy with self-learning confidence scoring.
 - **Auth**: Uses `x-telegram-chat-id` header for user identification.
 
-### Web Futures Page (`/futures`)
-- **Architecture**: Desktop-optimized futures trading interface at `/futures`. Users connect MetaMask/Web3 wallet, backend resolves wallet address → chatId via `telegram_wallets` table, giving access to the same account used in the Telegram bot.
-- **Features**: 3-column desktop layout (markets | account+positions | trade+agent), mobile tab layout. Account overview, open positions with close button, market price list (18 pairs), trading panel with leverage slider and long/short, AI agent controls, recent PnL history.
+### Web Futures Page (`/futures`) — Aster Agent Pro Trading Terminal
+- **Architecture**: Full-screen professional trading terminal at `/futures`. Institutional-grade dark UI with TradingView charting (lightweight-charts v4), real-time orderbook, trade ticket, and AI agent panel. Public visitors see live market data and charts; wallet connection enables trading.
+- **Layout**: Header bar (pair selector with search + favorites, price + 24h stats + funding rate, wallet balance). Center: TradingView candlestick + volume chart with 7 timeframes (1m-1W), fullscreen toggle, position entry overlays. Right panel: Trade ticket (Market/Limit orders, leverage 1-50x, risk % calculator, liquidation preview, fee estimates), Order Book (bid/ask with depth bars), Account overview. Bottom panel: Positions table (with close), Trade History, AI Agent controls.
+- **Mobile**: Bottom nav bar opens slide-up panels for all sections (Trade, Book, Positions, Agent, Account).
+- **Public APIs**: `/api/public/klines`, `/api/public/depth`, `/api/public/ticker`, `/api/public/funding`, `/api/public/markets` — all proxy to fapi.asterdex.com without auth.
 - **Auth**: `x-wallet-address` header → reverse lookup to chatId in miniAppAuth middleware. Same wallet = same account across Telegram mini app and web.
-- **Web Registration**: `/api/miniapp/web-register` endpoint (before auth middleware). New users connect MetaMask, click "Create Account" → generates synthetic chatId (`8` + hash digits), creates server-side bot wallet, auto-onboards to Aster via Code/Broker. Wallet-only users (no private key on server) get a separate bot wallet for trading.
+- **Web Registration**: `/api/miniapp/web-register` endpoint (before auth middleware). New users connect MetaMask, click "Create Account" → generates synthetic chatId (`8` + hash digits), creates server-side bot wallet, auto-onboards to Aster via Code/Broker.
+- **Keyboard Shortcuts**: B = Buy/Long, S = Sell/Short, Escape = close modals.
 - **Key files**: `client/src/pages/futures.tsx`, auth extension in `server/miniapp-routes.ts`.
+- **Dependencies**: `lightweight-charts@4.2.1` for TradingView-style charting.
 
 ### Permissionless Open Protocol
 Standardized endpoints facilitate agent discovery, wallet identity, skill listing, wallet activity lookup, and open execution, with a free tier and HTTP 402 payment protocol.

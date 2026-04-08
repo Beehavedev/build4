@@ -306,6 +306,59 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
     }
   });
 
+  app.get("/api/public/klines", async (req: Request, res: Response) => {
+    try {
+      const symbol = (req.query.symbol as string) || "BTCUSDT";
+      const interval = (req.query.interval as string) || "1h";
+      const limit = Math.min(parseInt(req.query.limit as string) || 300, 1000);
+      const resp = await fetch(`https://fapi.asterdex.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+      if (!resp.ok) return res.status(502).json({ error: "Upstream error" });
+      const data = await resp.json();
+      res.set("Cache-Control", "public, max-age=5").json(data);
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to fetch klines" });
+    }
+  });
+
+  app.get("/api/public/depth", async (req: Request, res: Response) => {
+    try {
+      const symbol = (req.query.symbol as string) || "BTCUSDT";
+      const validLimits = [5, 10, 20, 50, 100];
+      const requested = parseInt(req.query.limit as string) || 20;
+      const limit = validLimits.includes(requested) ? requested : 20;
+      const resp = await fetch(`https://fapi.asterdex.com/fapi/v1/depth?symbol=${symbol}&limit=${limit}`);
+      if (!resp.ok) return res.status(502).json({ error: "Upstream error" });
+      res.set("Cache-Control", "public, max-age=2").json(await resp.json());
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to fetch depth" });
+    }
+  });
+
+  app.get("/api/public/ticker", async (req: Request, res: Response) => {
+    try {
+      const symbol = req.query.symbol as string;
+      const url = symbol
+        ? `https://fapi.asterdex.com/fapi/v1/ticker/24hr?symbol=${symbol}`
+        : `https://fapi.asterdex.com/fapi/v1/ticker/24hr`;
+      const resp = await fetch(url);
+      if (!resp.ok) return res.status(502).json({ error: "Upstream error" });
+      res.set("Cache-Control", "public, max-age=3").json(await resp.json());
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to fetch ticker" });
+    }
+  });
+
+  app.get("/api/public/funding", async (req: Request, res: Response) => {
+    try {
+      const symbol = (req.query.symbol as string) || "BTCUSDT";
+      const resp = await fetch(`https://fapi.asterdex.com/fapi/v1/fundingRate?symbol=${symbol}&limit=1`);
+      if (!resp.ok) return res.status(502).json({ error: "Upstream error" });
+      res.set("Cache-Control", "public, max-age=10").json(await resp.json());
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to fetch funding" });
+    }
+  });
+
   app.use("/api/miniapp", miniAppAuth);
 
   app.post("/api/miniapp/import-wallet", async (req: Request, res: Response) => {
