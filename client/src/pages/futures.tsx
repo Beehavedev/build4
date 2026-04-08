@@ -832,6 +832,7 @@ function TradeTicket({
             {result.success ? "Order submitted!" : result.error}
           </div>
         )}
+        <div className="text-center text-[9px] text-muted-foreground/30">Powered by Aster DEX</div>
       </div>
     </div>
   );
@@ -1128,12 +1129,12 @@ function NotConnectedScreen({ walletAddress, onConnected }: { walletAddress: str
   return (
     <div className="flex flex-col items-center justify-center py-12 space-y-3">
       <Activity className="w-8 h-8 text-blue-400" />
-      <h3 className="text-sm font-semibold text-foreground" data-testid="text-connect-aster-title">Connect to Aster DEX</h3>
-      <p className="text-xs text-muted-foreground text-center max-w-xs">Your account is ready. Connect to start trading.</p>
+      <h3 className="text-sm font-semibold text-foreground" data-testid="text-connect-aster-title">Activate Trading</h3>
+      <p className="text-xs text-muted-foreground text-center max-w-xs">Your account is ready. Activate your trading connection to get started.</p>
       {error && <div className="p-2 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-xs">{error}</div>}
       <Button size="sm" onClick={handleConnect} disabled={connecting} data-testid="button-connect-aster">
         {connecting ? <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Zap className="w-3.5 h-3.5 mr-1.5" />}
-        {connecting ? "Connecting..." : "Connect to Aster DEX"}
+        {connecting ? "Activating..." : "Activate Trading"}
       </Button>
     </div>
   );
@@ -1162,7 +1163,7 @@ export default function FuturesPage() {
   const refreshMarkets = address ? refreshAuthMarkets : refreshPublicMarkets;
 
   const isNewUser = !!(accountError && (accountError.includes("not linked") || accountError.includes("not found") || accountError.includes("404")));
-  const isNotConnectedToAster = !!(address && account && !account.connected);
+  const isNotActivated = !!(address && account && !account.connected);
   const isFullyConnected = !!(address && account?.connected);
 
   useEffect(() => {
@@ -1321,7 +1322,7 @@ export default function FuturesPage() {
           <RegisterOrErrorScreen error={accountError!} walletAddress={address} onRegistered={refreshAccount} onRetry={refreshAccount} />
         </div>
       )}
-      {isNotConnectedToAster && (
+      {isNotActivated && (
         <div className="border-b border-white/[0.06] bg-[hsl(160,10%,4%)]">
           <NotConnectedScreen walletAddress={address!} onConnected={refreshAccount} />
         </div>
