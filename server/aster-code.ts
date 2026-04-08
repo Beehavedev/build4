@@ -80,11 +80,24 @@ function getNonce(): string {
   return String(_lastNonce);
 }
 
+const STRICT_KEY_ORDER = [
+  "symbol", "side", "type", "quantity", "price",
+  "timeInForce", "leverage", "orderId",
+];
+
 function buildQueryString(params: Record<string, any>): string {
-  return Object.entries(params)
-    .filter(([_, v]) => v !== undefined && v !== null)
-    .map(([k, v]) => `${k}=${String(v)}`)
-    .join("&");
+  const parts: string[] = [];
+  for (const k of STRICT_KEY_ORDER) {
+    if (k in params && params[k] !== undefined && params[k] !== null) {
+      parts.push(`${k}=${String(params[k])}`);
+    }
+  }
+  for (const [k, v] of Object.entries(params)) {
+    if (!STRICT_KEY_ORDER.includes(k) && v !== undefined && v !== null) {
+      parts.push(`${k}=${String(v)}`);
+    }
+  }
+  return parts.join("&");
 }
 
 async function signEIP712(privateKey: string, paramString: string): Promise<string> {
@@ -228,16 +241,17 @@ async function makeTradingRequest(
 
 export async function asterCodeApproveAgent(
   baseUrl: string,
-  userPrivateKey: string,
+  userAddress: string,
+  agentPrivateKey: string,
   params: ApproveAgentParams,
 ): Promise<any> {
-  const wallet = new Wallet(userPrivateKey);
+  const agentWallet = new Wallet(agentPrivateKey);
   const reqParams: Record<string, any> = {
+    nonce: getNonce(),
+    user: userAddress,
+    signer: agentWallet.address,
     agentAddress: params.agentAddress,
     permissions: "FUTURES",
-    nonce: getNonce(),
-    user: wallet.address,
-    signer: params.agentAddress,
   };
 
   if (params.ipWhitelist) reqParams.ipWhitelist = params.ipWhitelist;
@@ -248,25 +262,25 @@ export async function asterCodeApproveAgent(
     reqParams.maxFeeRate = params.maxFeeRate || "0.00001";
   }
 
-  return makeSignedRequest(baseUrl, "/fapi/v3/approveAgent", userPrivateKey, reqParams, "POST");
+  return makeSignedRequest(baseUrl, "/fapi/v3/approveAgent", agentPrivateKey, reqParams, "POST");
 }
 
 export async function asterCodeApproveBuilder(
   baseUrl: string,
-  userPrivateKey: string,
+  userAddress: string,
+  signerPrivateKey: string,
   params: ApproveBuilderParams,
-  signerAddress?: string,
 ): Promise<any> {
-  const wallet = new Wallet(userPrivateKey);
+  const signerWallet = new Wallet(signerPrivateKey);
   const reqParams: Record<string, any> = {
+    nonce: getNonce(),
+    user: userAddress,
+    signer: signerWallet.address,
     builder: params.builder,
     maxFeeRate: params.maxFeeRate,
-    nonce: getNonce(),
-    user: wallet.address,
-    signer: signerAddress || wallet.address,
   };
 
-  return makeSignedRequest(baseUrl, "/fapi/v3/approveBuilder", userPrivateKey, reqParams, "POST");
+  return makeSignedRequest(baseUrl, "/fapi/v3/approveBuilder", signerPrivateKey, reqParams, "POST");
 }
 
 export function prepareActivationPayloads(
@@ -520,7 +534,7 @@ export async function asterCodeOnboard(
 
     console.log(`[AsterCode] Step 2: Approving agent (signer)...`);
     try {
-      const agentResult = await asterCodeApproveAgent(baseUrl, userPrivateKey, {
+      const agentResult = await asterCodeApproveAgent(baseUrl, userAddress, signerPrivKey, {
         agentName,
         agentAddress: signerAddress,
         ipWhitelist: "",
@@ -549,11 +563,11 @@ export async function asterCodeOnboard(
     console.log(`[AsterCode] Step 3: Approving builder...`);
     let builderApproved = true;
     try {
-      const builderResult = await asterCodeApproveBuilder(baseUrl, userPrivateKey, {
+      const builderResult = await asterCodeApproveBuilder(baseUrl, userAddress, signerPrivKey, {
         builder: codeConfig.builderAddress,
         maxFeeRate: codeConfig.maxFeeRate,
         builderName: codeConfig.builderName,
-      }, signerAddress);
+      });
       console.log(`[AsterCode] approveBuilder result:`, JSON.stringify(builderResult).substring(0, 300));
       debugParts.push(`builder=OK`);
     } catch (builderErr: any) {

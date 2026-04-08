@@ -445,7 +445,9 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const expiry = Math.trunc(Date.now() / 1000 + 2 * 365 * 24 * 3600) * 1000;
 
       console.log(`[MiniApp] Step 2: approveAgent signer=${signerAddr.substring(0, 10)}`);
-      const agentResult = await asterCodeApproveAgent(baseUrl, tradingPk, {
+      const { Wallet: W2 } = await import("ethers");
+      const tradingWallet = new W2(tradingPk);
+      const agentResult = await asterCodeApproveAgent(baseUrl, tradingWallet.address, signerPk, {
         agentName,
         agentAddress: signerWallet.address,
         ipWhitelist: "",
@@ -463,11 +465,11 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       console.log(`[MiniApp] Step 3: approveBuilder`);
       try {
-        const builderResult = await asterCodeApproveBuilder(baseUrl, tradingPk, {
+        const builderResult = await asterCodeApproveBuilder(baseUrl, tradingWallet.address, signerPk, {
           builder: codeConfig.builderAddress,
           maxFeeRate: codeConfig.maxFeeRate,
           builderName: codeConfig.builderName,
-        }, signerWallet.address);
+        });
         console.log(`[MiniApp] approveBuilder result: ${JSON.stringify(builderResult).substring(0, 200)}`);
       } catch (bErr: any) {
         console.log(`[MiniApp] approveBuilder failed (may already exist): ${bErr.message}`);
