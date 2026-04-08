@@ -930,17 +930,45 @@ async function importWallet(){
 async function autoLinkAster(){
   var st=$('link-status');
   if(!st)return;
-  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Connecting to Aster... This may take 10-15 seconds.</span></div>';
+  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Step 1/3: Creating trading wallet...</span></div>';
   try{
-    var r=await api('/api/miniapp/link-aster',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
-    if(r.success){
-      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span><strong>Connected to Aster!</strong> Your account is ready.</span></div>';
+    var walletAddr=D.bscWalletAddress||'';
+    if(!walletAddr){toast('No wallet found','err');return}
+    var r1=await api('/api/miniapp/activate-trading',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({walletAddress:walletAddr})});
+    if(!r1.success){st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r1.error||'Failed to start activation')+'</span></div>';return}
+    if(r1.alreadyActive){
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span><strong>Already activated!</strong></span></div>';
+      D.asterApiWallet=r1.tradingWallet||'auto';
+      setTimeout(function(){fetchAll().then(function(){renderDeposit();renderDash()})},2000);
+      return;
+    }
+    var sessionId=r1.sessionId;
+    var tradingAddr=r1.tradingWalletAddress;
+    st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Step 2/3: Registering on Aster...</span></div>';
+    var nonceRes=await fetch('https://www.asterdex.com/bapi/futures/v1/public/future/web3/get-nonce',{method:'POST',headers:{'Content-Type':'application/json','clientType':'web'},body:JSON.stringify({type:'LOGIN',sourceAddr:tradingAddr})});
+    var nonceData=await nonceRes.json();
+    if(!nonceData||!nonceData.data||!nonceData.data.nonce){
+      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>Could not get registration nonce from Aster. Try again.</span></div>';
+      return;
+    }
+    var nonce=nonceData.data.nonce;
+    var sigRes=await api('/api/miniapp/sign-registration',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:sessionId,nonce:nonce})});
+    if(!sigRes.success){st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(sigRes.error||'Signing failed')+'</span></div>';return}
+    try{
+      var loginRes=await fetch('https://www.asterdex.com/bapi/futures/v1/public/future/web3/ae/login',{method:'POST',headers:{'Content-Type':'application/json','clientType':'web'},body:JSON.stringify({signature:sigRes.signature,sourceAddr:tradingAddr,chainId:56,agentCode:'BUILD4'})});
+      var loginData=await loginRes.json();
+      if(loginData&&loginData.code==='000000'){console.log('Browser registration ok')}
+      else{console.log('Browser registration response:',JSON.stringify(loginData))}
+    }catch(regErr){console.log('Browser registration failed (CORS), server fallback will handle it')}
+    st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Step 3/3: Approving agent & builder...</span></div>';
+    var r3=await api('/api/miniapp/complete-activation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:sessionId})});
+    if(r3.success){
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span><strong>Connected to Aster!</strong> Your account is ready to trade.</span></div>';
       toast('✅ Connected to Aster!','ok');
-      D.asterApiWallet=r.apiWalletAddress||'auto';
+      D.asterApiWallet=r3.signerAddress||'auto';
       setTimeout(function(){fetchAll().then(function(){renderDeposit();renderDash()})},2000);
     }else{
-      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Auto-connect failed.')+'<br>Try the manual option below.</span></div>';
-      showLinkFlow();
+      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r3.error||'Activation failed')+'</span></div>';
     }
   }catch(e){
     st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';

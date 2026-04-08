@@ -344,8 +344,14 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const connectedAddr = walletAddress.toLowerCase();
 
       const { createHash, randomBytes } = await import("crypto");
-      const hash = createHash("sha256").update(`web:${connectedAddr}`).digest("hex");
-      const chatId = "8" + hash.replace(/[^0-9]/g, "").substring(0, 14).padEnd(14, "0");
+      const telegramChatId = req.headers["x-telegram-chat-id"] as string;
+      let chatId: string;
+      if (telegramChatId && /^\d+$/.test(telegramChatId)) {
+        chatId = telegramChatId;
+      } else {
+        const hash = createHash("sha256").update(`web:${connectedAddr}`).digest("hex");
+        chatId = "8" + hash.replace(/[^0-9]/g, "").substring(0, 14).padEnd(14, "0");
+      }
 
       const { Wallet } = await import("ethers");
 
@@ -437,6 +443,29 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const codeConfig = getDefaultAsterCodeConfig();
       const baseUrl = codeConfig.fApiUrl || "https://fapi.asterdex.com";
 
+      try {
+        const tw = new Wallet(tradingPk);
+        const nonceRes = await fetch("https://www.asterdex.com/bapi/futures/v1/public/future/web3/get-nonce", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "clientType": "web" },
+          body: JSON.stringify({ type: "LOGIN", sourceAddr: tradingAddr }),
+        });
+        const nonceData = await nonceRes.json();
+        if (nonceData?.data?.nonce) {
+          const loginMsg = `You are signing into Astherus ${nonceData.data.nonce}`;
+          const sig = await tw.signMessage(loginMsg);
+          const loginRes = await fetch("https://www.asterdex.com/bapi/futures/v1/public/future/web3/ae/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "clientType": "web" },
+            body: JSON.stringify({ signature: sig, sourceAddr: tradingAddr, chainId: 56, agentCode: "BUILD4" }),
+          });
+          const loginData = await loginRes.json();
+          console.log(`[MiniApp] Server-side Aster registration: ${loginData?.code} ${loginData?.message || ""}`);
+        }
+      } catch (regErr: any) {
+        console.log(`[MiniApp] Server-side Aster registration fallback failed: ${regErr.message}`);
+      }
+
       const signerWallet = Wallet.createRandom();
       const signerAddr = signerWallet.address.toLowerCase();
       const signerPk = signerWallet.privateKey;
@@ -444,10 +473,9 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const agentName = `build4_${Date.now()}`;
       const expiry = Math.trunc(Date.now() / 1000 + 2 * 365 * 24 * 3600) * 1000;
 
-      console.log(`[MiniApp] Step 2: approveAgent signer=${signerAddr.substring(0, 10)}`);
-      const { Wallet: W2 } = await import("ethers");
-      const tradingWallet = new W2(tradingPk);
-      const agentResult = await asterCodeApproveAgent(baseUrl, tradingWallet.address, signerPk, {
+      console.log(`[MiniApp] Step 2: approveAgent user=${tradingAddr.substring(0, 10)} agent=${signerAddr.substring(0, 10)}`);
+      const tradingWallet = new Wallet(tradingPk);
+      const agentResult = await asterCodeApproveAgent(baseUrl, tradingWallet.address, tradingPk, {
         agentName,
         agentAddress: signerWallet.address,
         ipWhitelist: "",
@@ -465,7 +493,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       console.log(`[MiniApp] Step 3: approveBuilder`);
       try {
-        const builderResult = await asterCodeApproveBuilder(baseUrl, tradingWallet.address, signerPk, {
+        const builderResult = await asterCodeApproveBuilder(baseUrl, tradingWallet.address, tradingPk, {
           builder: codeConfig.builderAddress,
           maxFeeRate: codeConfig.maxFeeRate,
           builderName: codeConfig.builderName,

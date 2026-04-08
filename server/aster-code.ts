@@ -465,9 +465,9 @@ export async function asterCodeOnboard(
     const agentName = `build4_${Date.now()}`;
     const expiry = Math.trunc(Date.now() / 1000 + 2 * 365 * 24 * 3600) * 1000;
 
-    console.log(`[AsterCode] Step 2: Approving agent (signer)...`);
+    console.log(`[AsterCode] Step 2: Approving agent (user signs to approve signer)...`);
     try {
-      const agentResult = await asterCodeApproveAgent(baseUrl, userAddress, signerPrivKey, {
+      const agentResult = await asterCodeApproveAgent(baseUrl, userAddress, userPrivateKey, {
         agentName,
         agentAddress: signerAddress,
         ipWhitelist: "",
@@ -493,10 +493,10 @@ export async function asterCodeOnboard(
 
     await new Promise(r => setTimeout(r, 500));
 
-    console.log(`[AsterCode] Step 3: Approving builder...`);
+    console.log(`[AsterCode] Step 3: Approving builder (user signs)...`);
     let builderApproved = true;
     try {
-      const builderResult = await asterCodeApproveBuilder(baseUrl, userAddress, signerPrivKey, {
+      const builderResult = await asterCodeApproveBuilder(baseUrl, userAddress, userPrivateKey, {
         builder: codeConfig.builderAddress,
         maxFeeRate: codeConfig.maxFeeRate,
         builderName: codeConfig.builderName,
