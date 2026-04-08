@@ -533,32 +533,39 @@ function renderDeposit(){
     h+='</div>';
     h+='</div>';
   } else if(walletAddr) {
-    h+='<div class="card card-accent" style="border:1px solid var(--yellow)">';
-    h+='<div class="section-title" style="color:var(--yellow)">🔗 Connect to Aster DEX</div>';
-    h+='<div class="text-xs" style="color:var(--text2);margin-bottom:12px;line-height:1.5">To trade futures, you need to link your Aster <strong style="color:#fff">API Wallet</strong>. This is NOT your main wallet key — it is a separate key created on the Aster website.</div>';
-    h+='<div style="background:var(--bg);border-radius:8px;padding:12px;margin-bottom:12px">';
-    h+='<div class="text-xs" style="color:var(--green);font-weight:600;margin-bottom:8px">How to get your API Wallet private key:</div>';
-    h+='<div class="text-xs" style="color:var(--text2);line-height:1.8">';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">1</span><span>Open <a href="https://asterdex.com" target="_blank" style="color:var(--green)">asterdex.com</a> and connect your wallet (MetaMask, Trust Wallet, etc.)</span></div>';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">2</span><span>Click your profile icon (top right) → select <strong style="color:#fff">"API Wallet"</strong>, or go directly to <a href="https://asterdex.com/en/api-wallet" target="_blank" style="color:var(--green)">asterdex.com/en/api-wallet</a></span></div>';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">3</span><span>Click <strong style="color:#fff">"Create API Wallet"</strong> — sign the transaction in your wallet to confirm</span></div>';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">4</span><span>Toggle on <strong style="color:var(--green)">Perps Trading</strong> permission (required for futures trading)</span></div>';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px"><span style="background:var(--yellow);color:#000;border-radius:50%;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">5</span><span>Click <strong style="color:var(--yellow)">"Export Private Key"</strong> — Aster will show your API Wallet private key (starts with <code style="color:var(--yellow)">0x...</code>). Copy it!</span></div>';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start"><span style="background:var(--green);color:#000;border-radius:50%;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">6</span><span>Paste the private key and your main wallet address below</span></div>';
-    h+='</div></div>';
-    h+='<div style="background:rgba(100,149,237,0.08);border-radius:8px;padding:10px;margin-bottom:12px">';
-    h+='<div class="text-xs" style="color:var(--blue);line-height:1.5">💡 <strong>Your main wallet address</strong> = the wallet you used to log in to Aster (the one connected to MetaMask / Trust Wallet). You can find it at the top right of the Aster website.</div>';
+    h+='<div class="card card-accent" style="border:1px solid var(--green);background:linear-gradient(145deg,rgba(14,203,129,0.06),transparent)">';
+    h+='<div style="text-align:center;padding:8px 0 16px">';
+    h+='<div style="font-size:36px;margin-bottom:8px">🚀</div>';
+    h+='<div class="text-w fw-600" style="font-size:16px;margin-bottom:6px">Connect to Aster DEX</div>';
+    h+='<div class="text-xs text-dim" style="line-height:1.5;max-width:280px;margin:0 auto">One tap to connect your wallet and start trading futures</div>';
+    h+='</div>';
+    h+='<button class="btn btn-green" style="width:100%;padding:14px;font-size:15px;font-weight:700;border-radius:12px" onclick="autoLinkAster()">⚡ Quick Connect (1-Click)</button>';
+    h+='<div id="link-status"></div>';
+    h+='<div class="text-xs text-dim mt-3" style="text-align:center;line-height:1.5">Uses your bot wallet to connect directly to Aster.<br>No external setup needed.</div>';
+    h+='</div>';
+
+    h+='<div class="card" style="border:1px solid var(--border)">';
+    h+='<div class="text-xs text-dim" style="text-align:center;cursor:pointer;padding:4px" onclick="showManualLink()">Already have an Aster account? <span style="color:var(--blue);text-decoration:underline">Connect with API Wallet instead</span></div>';
+    h+='<div id="manual-link-flow" style="display:none;margin-top:12px">';
+    h+='<div class="section-title" style="color:var(--yellow);font-size:13px">🔗 Manual Connect with API Wallet</div>';
+    h+='<div class="text-xs text-dim" style="margin-bottom:10px;line-height:1.5">If you already have an Aster account with an API Wallet, paste your credentials below.</div>';
+    h+='<div style="background:var(--bg);border-radius:8px;padding:10px;margin-bottom:12px">';
+    h+='<div class="text-xs" style="color:var(--green);font-weight:600;margin-bottom:6px">How to get your API Wallet key:</div>';
+    h+='<div class="text-xs" style="color:var(--text2);line-height:1.7">';
+    h+='1. Go to <a href="https://asterdex.com/en/api-wallet" target="_blank" style="color:var(--green)">asterdex.com/en/api-wallet</a><br>';
+    h+='2. Log in and create or view your API Wallet<br>';
+    h+='3. Enable <strong style="color:#fff">Perps Trading</strong><br>';
+    h+='4. Click <strong style="color:var(--yellow)">"Export Private Key"</strong> and copy the key</div>';
     h+='</div>';
     h+='<div class="label mt-2">Your Aster Account Address</div>';
-    h+='<div class="text-xs text-dim" style="margin-bottom:4px">The wallet you used to log in to Aster (your parent/main wallet)</div>';
+    h+='<div class="text-xs text-dim" style="margin-bottom:4px">The wallet you used to log in to Aster</div>';
     h+='<input id="api-wallet-parent" class="input" placeholder="0x... (your main wallet address)" autocomplete="off">';
     h+='<div class="label mt-2">API Wallet Private Key</div>';
     h+='<div class="text-xs text-dim" style="margin-bottom:4px">From Aster → API Wallet → Export Private Key</div>';
-    h+='<input id="api-wallet-pk" type="password" class="input" placeholder="Paste your API Wallet private key here (0x...)" autocomplete="off">';
-    h+='<button class="btn btn-green mt-2" style="width:100%" onclick="linkAsterApi()">🔗 Connect to Aster</button>';
-    h+='<div id="link-status"></div>';
+    h+='<input id="api-wallet-pk" type="password" class="input" placeholder="Paste API Wallet private key (0x...)" autocomplete="off">';
+    h+='<button class="btn btn-green mt-2" style="width:100%" onclick="linkAsterApi()">🔗 Connect with API Wallet</button>';
     h+='<div id="manual-link-status"></div>';
-    h+='<div class="text-xs text-dim mt-3" style="line-height:1.4">⚠️ This is NOT your main wallet private key. It is a <strong style="color:#fff">separate API Wallet key</strong> created specifically for trading. Your main wallet stays safe.</div>';
+    h+='</div>';
     h+='</div>';
   }
 
@@ -583,15 +590,13 @@ function renderDeposit(){
     h+='<div class="card" style="border:1px solid rgba(14,203,129,0.3)">';
     h+='<div class="section-title" style="color:var(--green)">📋 How to Get Started</div>';
     h+='<div class="text-xs" style="color:var(--text2);line-height:1.8;margin-bottom:4px">';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">1</span><span>Go to <a href="https://asterdex.com" target="_blank" style="color:var(--green)">asterdex.com</a> and connect your wallet (MetaMask, Trust Wallet, etc.)</span></div>';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">2</span><span>Click your profile icon (top right) → <strong style="color:#fff">"API Wallet"</strong>, or go to <a href="https://asterdex.com/en/api-wallet" target="_blank" style="color:var(--green)">asterdex.com/en/api-wallet</a></span></div>';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">3</span><span>Click <strong style="color:#fff">"Create API Wallet"</strong>, sign the transaction, then enable <strong style="color:var(--green)">Perps Trading</strong></span></div>';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--yellow);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">4</span><span>Click <strong style="color:var(--yellow)">"Export Private Key"</strong> to get your API Wallet key (starts with <code style="color:var(--yellow)">0x...</code>). Copy it and paste in the form above along with your main wallet address</span></div>';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">5</span><span>Deposit USDT on Aster — go to <a href="https://asterdex.com/en/assets" target="_blank" style="color:var(--green)">Assets page</a> and deposit USDT via BSC network</span></div>';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--yellow);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">6</span><span><strong style="color:var(--yellow)">Important:</strong> Transfer from <strong style="color:#fff">Spot → Futures</strong> on the Aster website (Assets → Transfer) or use the button below. Deposits go to Spot by default!</span></div>';
+    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">1</span><span>Tap <strong style="color:var(--green)">⚡ Quick Connect</strong> above — connects your wallet to Aster in one click</span></div>';
+    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">2</span><span>Send <strong style="color:#fff">USDT (BEP-20)</strong> to your wallet address shown at the top of this page</span></div>';
+    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">3</span><span>Use the <strong style="color:#fff">Deposit to Aster</strong> button to move USDT into Aster Futures</span></div>';
+    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">4</span><span>Go to the <strong style="color:#fff">Agent</strong> tab, configure your settings, and start trading!</span></div>';
     h+='</div>';
     h+='<div style="background:rgba(255,193,7,0.08);border-radius:8px;padding:10px;margin-top:4px">';
-    h+='<div class="text-xs" style="color:var(--yellow);line-height:1.5">💡 <strong>Common issue:</strong> If your balance shows $0 after depositing, your funds are likely in <strong>Spot</strong> not <strong>Futures</strong>. You must transfer Spot → Futures on the Aster website or use our transfer button.</div>';
+    h+='<div class="text-xs" style="color:var(--yellow);line-height:1.5">💡 <strong>Common issue:</strong> If your balance shows $0 after depositing, your funds may be in <strong>Spot</strong> not <strong>Futures</strong>. Use the <strong>Spot → Futures</strong> transfer button below.</div>';
     h+='</div></div>';
   }
 
@@ -841,6 +846,11 @@ async function spotToFutures(){
 
 function showLinkFlow(){
   var el=$('link-flow');
+  if(el) el.style.display=el.style.display==='none'?'block':'none';
+}
+
+function showManualLink(){
+  var el=$('manual-link-flow');
   if(el) el.style.display=el.style.display==='none'?'block':'none';
 }
 
