@@ -1,4 +1,4 @@
-import { Wallet, getAddress } from "ethers";
+import { Wallet, getAddress, Signature } from "ethers";
 
 const DEFAULT_FAPI_URL = "https://fapi.asterdex.com";
 const REQUEST_TIMEOUT_MS = 20000;
@@ -280,6 +280,7 @@ export function prepareActivationPayloads(
 } {
   const checksumUser = getAddress(userAddress);
   const checksumAgent = getAddress(agentAddress);
+  const expiry = Math.trunc(Date.now() / 1000 + 2 * 365 * 24 * 3600) * 1000;
 
   const agentParams: Record<string, any> = {
     agentAddress: checksumAgent,
@@ -288,6 +289,9 @@ export function prepareActivationPayloads(
     user: checksumUser,
     signer: checksumAgent,
   };
+
+  if (expiry) agentParams.expiry = String(expiry);
+
   if (codeConfig.builderAddress) {
     agentParams.builder = getAddress(codeConfig.builderAddress);
     agentParams.maxFeeRate = codeConfig.maxFeeRate || "0.00001";
@@ -320,6 +324,18 @@ export function prepareActivationPayloads(
   };
 }
 
+function normalizeSignature(sig: string): string {
+  try {
+    const normalized = Signature.from(sig).serialized;
+    if (normalized !== sig) {
+      console.log(`[AsterCode] Signature normalized: v was ${parseInt(sig.slice(130, 132), 16)}, now ${parseInt(normalized.slice(130, 132), 16)}`);
+    }
+    return normalized;
+  } catch {
+    return sig;
+  }
+}
+
 export async function submitSignedActivation(
   baseUrl: string,
   agentParamString: string,
@@ -329,10 +345,14 @@ export async function submitSignedActivation(
 ): Promise<{ agentResult: any; builderResult: any }> {
   const fApiUrl = baseUrl || DEFAULT_FAPI_URL;
 
+  const normAgentSig = normalizeSignature(agentSignature);
+  const normBuilderSig = normalizeSignature(builderSignature);
+
   const controller1 = new AbortController();
   const t1 = setTimeout(() => controller1.abort(), REQUEST_TIMEOUT_MS);
-  const agentBody = `${agentParamString}&signature=${agentSignature}`;
+  const agentBody = `${agentParamString}&signature=${normAgentSig}`;
   console.log(`[AsterCode] submitSignedActivation approveAgent: ${agentParamString.substring(0, 200)}`);
+  console.log(`[AsterCode] approveAgent sig: ${normAgentSig.substring(0, 20)}...${normAgentSig.slice(-10)} len=${normAgentSig.length}`);
   const agentRes = await fetch(`${fApiUrl}/fapi/v3/approveAgent`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "BUILD4/1.0" },
@@ -350,7 +370,7 @@ export async function submitSignedActivation(
 
   const controller2 = new AbortController();
   const t2 = setTimeout(() => controller2.abort(), REQUEST_TIMEOUT_MS);
-  const builderBody = `${builderParamString}&signature=${builderSignature}`;
+  const builderBody = `${builderParamString}&signature=${normBuilderSig}`;
   console.log(`[AsterCode] submitSignedActivation approveBuilder: ${builderParamString.substring(0, 200)}`);
   const builderRes = await fetch(`${fApiUrl}/fapi/v3/approveBuilder`, {
     method: "POST",

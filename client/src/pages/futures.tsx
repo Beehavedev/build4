@@ -1160,47 +1160,23 @@ function ActivationBanner({ walletAddress, onConnected }: { walletAddress: strin
 
       const { sessionId, agentWalletAddress, approveAgentPayload, approveBuilderPayload } = prepData;
 
-      setStep("sign-agent");
-      const agentTypedData = {
-        types: {
-          EIP712Domain: [
-            { name: "name", type: "string" },
-            { name: "version", type: "string" },
-            { name: "chainId", type: "uint256" },
-            { name: "verifyingContract", type: "address" },
-          ],
-          ...approveAgentPayload.types,
-        },
-        domain: approveAgentPayload.domain,
-        primaryType: "Message",
-        message: approveAgentPayload.message,
-      };
+      const { BrowserProvider } = await import("ethers");
+      const provider = new BrowserProvider(ethereum);
+      const signer = await provider.getSigner();
 
-      const agentSig = await ethereum.request({
-        method: "eth_signTypedData_v4",
-        params: [walletAddress, JSON.stringify(agentTypedData)],
-      });
+      setStep("sign-agent");
+      const agentSig = await signer.signTypedData(
+        approveAgentPayload.domain,
+        approveAgentPayload.types,
+        approveAgentPayload.message,
+      );
 
       setStep("sign-builder");
-      const builderTypedData = {
-        types: {
-          EIP712Domain: [
-            { name: "name", type: "string" },
-            { name: "version", type: "string" },
-            { name: "chainId", type: "uint256" },
-            { name: "verifyingContract", type: "address" },
-          ],
-          ...approveBuilderPayload.types,
-        },
-        domain: approveBuilderPayload.domain,
-        primaryType: "Message",
-        message: approveBuilderPayload.message,
-      };
-
-      const builderSig = await ethereum.request({
-        method: "eth_signTypedData_v4",
-        params: [walletAddress, JSON.stringify(builderTypedData)],
-      });
+      const builderSig = await signer.signTypedData(
+        approveBuilderPayload.domain,
+        approveBuilderPayload.types,
+        approveBuilderPayload.message,
+      );
 
       setStep("submitting");
       const submitRes = await fetch("/api/miniapp/submit-activation", {
