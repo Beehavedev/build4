@@ -869,7 +869,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       if (symbol && typeof symbol === "string") updates.symbol = symbol.toUpperCase();
       if (riskPercent !== undefined) updates.riskPercent = Math.max(0.5, Math.min(3, parseFloat(riskPercent) || 1));
       if (leverage !== undefined) updates.maxLeverage = Math.max(1, Math.min(50, parseInt(leverage) || 10));
-      if (maxOpenPositions !== undefined) updates.maxOpenPositions = Math.max(1, Math.min(5, parseInt(maxOpenPositions) || 3));
+      if (maxOpenPositions !== undefined) updates.maxOpenPositions = Math.max(1, Math.min(10, parseInt(maxOpenPositions) || 3));
       if (takeProfitPct !== undefined) updates.takeProfitPct = Math.max(1, Math.min(50, parseFloat(takeProfitPct) || 5));
       if (stopLossPct !== undefined) updates.stopLossPct = Math.max(1, Math.min(20, parseFloat(stopLossPct) || 3));
       if (trailingStopPct !== undefined) updates.trailingStopPct = Math.max(0.5, Math.min(10, parseFloat(trailingStopPct) || 2));
