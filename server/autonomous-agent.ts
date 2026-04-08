@@ -736,6 +736,17 @@ async function closePosition(
       : (pos.entryPrice - closePrice) * filledQty;
   }
 
+  try {
+    const { db: dbConn } = await import("./db");
+    const { sql: sqlTag } = await import("drizzle-orm");
+    await dbConn.execute(sqlTag`
+      INSERT INTO aster_agent_trades (chat_id, symbol, side, entry_price, exit_price, quantity, leverage, pnl, pnl_pct, status, order_id, close_order_id, reason, opened_at, closed_at)
+      VALUES (${chatId}, ${symbol}, ${pos.side}, ${pos.entryPrice}, ${closePrice}, ${filledQty}, ${pos.leverage || state.config.maxLeverage}, ${pnl},
+        ${pos.entryPrice > 0 && filledQty > 0 ? (pnl / (pos.entryPrice * filledQty) * 100) : 0},
+        'CLOSED', ${String(pos.orderId || '')}, ${String(closeResult.orderId || '')}, ${reason || ''}, ${new Date(pos.openedAt || Date.now())}, now())
+    `);
+  } catch (e: any) { console.log(`[Agent] trade persist error: ${e.message?.substring(0, 80)}`); }
+
   if (posInfo && posInfo.entryConfidence > 0) {
     logTradeResult({
       rsi: posInfo.entryRsi,

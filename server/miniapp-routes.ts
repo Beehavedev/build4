@@ -999,6 +999,41 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         } catch (e2: any) { console.log(`[History] income fallback error: ${e2.message?.substring(0, 100)}`); }
       }
 
+      if (incomeData.length === 0) {
+        try {
+          const { db: dbConn } = await import("./db");
+          const { sql: sqlTag } = await import("drizzle-orm");
+          const dbTrades = await dbConn.execute(sqlTag`
+            SELECT symbol, side, pnl, entry_price, exit_price, quantity, leverage, closed_at, status
+            FROM aster_agent_trades
+            WHERE chat_id = ${chatId} AND pnl IS NOT NULL
+            ORDER BY closed_at DESC
+            LIMIT 50
+          `).catch(() => ({ rows: [] }));
+          if (dbTrades.rows && dbTrades.rows.length > 0) {
+            console.log(`[History] chatId=${chatId} Using DB fallback: ${dbTrades.rows.length} trades`);
+            for (const t of dbTrades.rows as any[]) {
+              const pnl = parseFloat(t.pnl || "0");
+              const ep = parseFloat(t.entry_price || "0");
+              const xp = parseFloat(t.exit_price || "0");
+              const qty = parseFloat(t.quantity || "0");
+              incomeData.push({
+                symbol: t.symbol,
+                income: String(pnl),
+                incomeType: "REALIZED_PNL",
+                time: String(t.closed_at ? new Date(t.closed_at).getTime() : 0),
+                _dbFallback: true,
+                _side: t.side,
+                _entryPrice: ep,
+                _exitPrice: xp,
+                _qty: qty,
+                _leverage: parseFloat(t.leverage || "0"),
+              });
+            }
+          }
+        } catch (e: any) { console.log(`[History] DB fallback error: ${e.message?.substring(0, 80)}`); }
+      }
+
       console.log(`[History] chatId=${chatId} positions=${Array.isArray(positions)?positions.length:'err'} income=${incomeData.length}`);
 
       const leverageMap: Record<string, number> = {};
@@ -1063,25 +1098,33 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
           let exitPrice = 0;
           let qty = parseFloat(inc.qty || inc.tradeQty || "0");
           let side = inc.positionSide || "";
+          let lev = leverageMap[symbol] || 0;
 
-          const symTrades = userTradesMap[symbol] || [];
-          const closeTrade = symTrades.find((t: any) => String(t.id) === String(tradeId) || (Math.abs(t.time - ts) < 2000 && parseFloat(t.realizedPnl || "0") !== 0));
-          if (closeTrade) {
-            exitPrice = parseFloat(closeTrade.price || "0");
-            qty = qty || parseFloat(closeTrade.qty || "0");
-            if (!side) side = closeTrade.positionSide || (closeTrade.side === "SELL" ? "LONG" : "SHORT");
+          if (inc._dbFallback) {
+            entryPrice = inc._entryPrice || 0;
+            exitPrice = inc._exitPrice || 0;
+            qty = inc._qty || qty;
+            side = inc._side || side;
+            lev = inc._leverage || lev;
+          } else {
+            const symTrades = userTradesMap[symbol] || [];
+            const closeTrade = symTrades.find((t: any) => String(t.id) === String(tradeId) || (Math.abs(t.time - ts) < 2000 && parseFloat(t.realizedPnl || "0") !== 0));
+            if (closeTrade) {
+              exitPrice = parseFloat(closeTrade.price || "0");
+              qty = qty || parseFloat(closeTrade.qty || "0");
+              if (!side) side = closeTrade.positionSide || (closeTrade.side === "SELL" ? "LONG" : "SHORT");
 
-            if (exitPrice > 0 && qty > 0 && pnl !== 0) {
-              if (side === "LONG" || side === "BUY") {
-                entryPrice = exitPrice - (pnl / qty);
-              } else {
-                entryPrice = exitPrice + (pnl / qty);
+              if (exitPrice > 0 && qty > 0 && pnl !== 0) {
+                if (side === "LONG" || side === "BUY") {
+                  entryPrice = exitPrice - (pnl / qty);
+                } else {
+                  entryPrice = exitPrice + (pnl / qty);
+                }
               }
             }
           }
 
           if (!side) side = pnl > 0 ? "LONG" : "SHORT";
-          const lev = leverageMap[symbol] || 0;
           const pctPnl = (entryPrice > 0 && qty > 0) ? (pnl / (entryPrice * qty) * 100) : 0;
 
           closedTrades.push({

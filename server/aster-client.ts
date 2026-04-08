@@ -1024,7 +1024,15 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
     },
 
     async userTrades(symbol: string, limit: number = 50): Promise<any[]> {
-      return makeV3Request(v3BaseUrl, "/fapi/v3/userTrades", user, signer, signerPrivateKey, { method: "GET", params: { symbol, limit } });
+      try {
+        const r = await makeV3Request(v3BaseUrl, "/fapi/v3/userTrades", user, signer, signerPrivateKey, { method: "GET", params: { symbol, limit } });
+        if (Array.isArray(r)) return r;
+      } catch (e: any) { console.log(`[AsterV3] userTrades GET failed for ${symbol}: ${e.message?.substring(0, 60)}`); }
+      try {
+        const r2 = await makeV3Request(v3BaseUrl, "/fapi/v3/userTrades", user, signer, signerPrivateKey, { method: "POST", params: { symbol, limit } });
+        if (Array.isArray(r2)) return r2;
+      } catch (e2: any) { /* silent */ }
+      return [];
     },
 
     async setLeverage(symbol: string, leverage: number): Promise<any> {
@@ -1048,7 +1056,25 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
     async income(incomeType?: string, limit: number = 50): Promise<any[]> {
       const params: Record<string, string | number | boolean | undefined> = { limit };
       if (incomeType) params.incomeType = incomeType;
-      return makeV3Request(v3BaseUrl, "/fapi/v3/income", user, signer, signerPrivateKey, { method: "POST", params });
+      try {
+        const result = await makeV3Request(v3BaseUrl, "/fapi/v3/income", user, signer, signerPrivateKey, { method: "POST", params });
+        if (Array.isArray(result) && result.length > 0) return result;
+      } catch (e: any) {
+        console.log(`[AsterV3] income POST failed: ${e.message?.substring(0, 80)}`);
+      }
+      try {
+        const result2 = await makeV3Request(v3BaseUrl, "/fapi/v3/income", user, signer, signerPrivateKey, { method: "GET", params });
+        if (Array.isArray(result2)) return result2;
+      } catch (e2: any) {
+        console.log(`[AsterV3] income GET also failed: ${e2.message?.substring(0, 80)}`);
+      }
+      try {
+        const result3 = await makeV3Request(v3BaseUrl, "/fapi/v1/income", user, signer, signerPrivateKey, { method: "GET", params });
+        if (Array.isArray(result3)) return result3;
+      } catch (e3: any) {
+        console.log(`[AsterV3] income v1 also failed: ${e3.message?.substring(0, 80)}`);
+      }
+      return [];
     },
 
     async spotBalance(): Promise<{ asset: string; free: string; locked: string }[]> {
