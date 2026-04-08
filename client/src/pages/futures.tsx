@@ -1103,7 +1103,7 @@ function RegisterOrErrorScreen({
   );
 }
 
-function NotConnectedScreen({ walletAddress, onConnected }: { walletAddress: string; onConnected: () => void }) {
+function ActivationBanner({ walletAddress, onConnected }: { walletAddress: string; onConnected: () => void }) {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1118,7 +1118,7 @@ function NotConnectedScreen({ walletAddress, onConnected }: { walletAddress: str
       });
       const data = await res.json();
       if (data.success) setTimeout(onConnected, 1500);
-      else setError(data.error || "Connection failed");
+      else setError(data.error || "Activation failed");
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -1127,15 +1127,20 @@ function NotConnectedScreen({ walletAddress, onConnected }: { walletAddress: str
   };
 
   return (
-    <div className="flex flex-col items-center justify-center py-12 space-y-3">
-      <Activity className="w-8 h-8 text-blue-400" />
-      <h3 className="text-sm font-semibold text-foreground" data-testid="text-connect-aster-title">Activate Trading</h3>
-      <p className="text-xs text-muted-foreground text-center max-w-xs">Your account is ready. Activate your trading connection to get started.</p>
-      {error && <div className="p-2 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-xs">{error}</div>}
-      <Button size="sm" onClick={handleConnect} disabled={connecting} data-testid="button-connect-aster">
-        {connecting ? <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Zap className="w-3.5 h-3.5 mr-1.5" />}
-        {connecting ? "Activating..." : "Activate Trading"}
-      </Button>
+    <div className="border-b border-yellow-500/10 bg-yellow-500/[0.03] px-4 py-2 flex items-center justify-between gap-3" data-testid="activation-banner">
+      <div className="flex items-center gap-2 text-[11px]">
+        <Zap className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+        <span className="text-yellow-300/80">Trading not yet activated.</span>
+        {error && <span className="text-red-400 ml-1">{error}</span>}
+      </div>
+      <button
+        onClick={handleConnect}
+        disabled={connecting}
+        className="px-3 py-1 text-[10px] font-semibold rounded bg-yellow-500/15 text-yellow-300 hover:bg-yellow-500/25 border border-yellow-500/20 transition-colors disabled:opacity-50 shrink-0"
+        data-testid="button-connect-aster"
+      >
+        {connecting ? "Activating..." : "Activate Now"}
+      </button>
     </div>
   );
 }
@@ -1165,6 +1170,7 @@ export default function FuturesPage() {
   const isNewUser = !!(accountError && (accountError.includes("not linked") || accountError.includes("not found") || accountError.includes("404")));
   const isNotActivated = !!(address && account && !account.connected);
   const isFullyConnected = !!(address && account?.connected);
+  const hasAccount = !!(address && account);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1277,7 +1283,7 @@ export default function FuturesPage() {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          {address && isFullyConnected && account && (
+          {hasAccount && account && (
             <div className="hidden md:flex items-center gap-3 text-[10px] mr-2">
               <div className="flex items-center gap-1.5">
                 <DollarSign className="w-3 h-3 text-emerald-400/60" />
@@ -1323,9 +1329,7 @@ export default function FuturesPage() {
         </div>
       )}
       {isNotActivated && (
-        <div className="border-b border-white/[0.06] bg-[hsl(160,10%,4%)]">
-          <NotConnectedScreen walletAddress={address!} onConnected={refreshAccount} />
-        </div>
+        <ActivationBanner walletAddress={address!} onConnected={refreshAccount} />
       )}
 
       <div className="flex-1 flex overflow-hidden">
@@ -1360,7 +1364,7 @@ export default function FuturesPage() {
               <TradingChart
                 symbol={selectedPair}
                 interval={timeframe}
-                positions={isFullyConnected ? account?.positions : undefined}
+                positions={hasAccount ? account?.positions : undefined}
               />
             </div>
           </div>
@@ -1368,7 +1372,7 @@ export default function FuturesPage() {
           <div className="h-[200px] border-t border-white/[0.06] flex flex-col shrink-0">
             <div className="h-7 border-b border-white/[0.04] flex items-center px-2 gap-0.5 shrink-0">
               {[
-                { id: "positions", label: "Positions", icon: Activity, count: isFullyConnected ? account?.positions?.length : undefined },
+                { id: "positions", label: "Positions", icon: Activity, count: hasAccount ? account?.positions?.length : undefined },
                 { id: "income", label: "Trade History", icon: Clock },
                 { id: "agent", label: "AI Agent", icon: Bot },
               ].map(tab => (
@@ -1392,7 +1396,7 @@ export default function FuturesPage() {
             </div>
             <div className="flex-1 overflow-y-auto">
               {bottomTab === "positions" && (
-                isFullyConnected && account ? (
+                hasAccount && account ? (
                   <PositionsTable positions={account.positions} walletAddress={address!} onRefresh={refreshAccount} />
                 ) : (
                   <div className="flex items-center justify-center h-full text-xs text-muted-foreground/40">
@@ -1402,7 +1406,7 @@ export default function FuturesPage() {
                 )
               )}
               {bottomTab === "income" && (
-                isFullyConnected && account ? (
+                hasAccount && account ? (
                   <div className="p-2">
                     {account.recentIncome.length === 0 ? (
                       <div className="flex items-center justify-center py-6 text-xs text-muted-foreground/40">No recent trades</div>
@@ -1433,7 +1437,7 @@ export default function FuturesPage() {
                 )
               )}
               {bottomTab === "agent" && (
-                isFullyConnected && address ? (
+                hasAccount && address ? (
                   <AgentPanel walletAddress={address} />
                 ) : (
                   <div className="flex items-center justify-center h-full text-xs text-muted-foreground/40">
@@ -1471,10 +1475,10 @@ export default function FuturesPage() {
           <div className="flex-1 overflow-y-auto">
             {rightTab === "trade" && (
               <TradeTicket
-                walletAddress={isFullyConnected ? address : null}
+                walletAddress={hasAccount ? address : null}
                 selectedPair={selectedPair}
                 currentPrice={currentPrice}
-                availableMargin={isFullyConnected && account ? account.availableMargin : 0}
+                availableMargin={hasAccount && account ? account.availableMargin : 0}
                 onTradeComplete={refreshAccount}
                 onConnect={connect}
               />
@@ -1484,7 +1488,7 @@ export default function FuturesPage() {
             )}
             {rightTab === "account" && (
               <div className="p-3 space-y-3">
-                {isFullyConnected && account ? (
+                {hasAccount && account ? (
                   <>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-[11px]">
@@ -1550,17 +1554,17 @@ export default function FuturesPage() {
             <div className="flex-1 overflow-y-auto">
               {mobilePanel === "trade" && (
                 <TradeTicket
-                  walletAddress={isFullyConnected ? address : null}
+                  walletAddress={hasAccount ? address : null}
                   selectedPair={selectedPair}
                   currentPrice={currentPrice}
-                  availableMargin={isFullyConnected && account ? account.availableMargin : 0}
+                  availableMargin={hasAccount && account ? account.availableMargin : 0}
                   onTradeComplete={() => { refreshAccount(); setMobilePanel(null); }}
                   onConnect={() => { connect(); setMobilePanel(null); }}
                 />
               )}
               {mobilePanel === "book" && <OrderBook symbol={selectedPair} />}
               {mobilePanel === "positions" && (
-                isFullyConnected && account ? (
+                hasAccount && account ? (
                   <PositionsTable positions={account.positions} walletAddress={address!} onRefresh={refreshAccount} />
                 ) : (
                   <div className="flex items-center justify-center py-12 text-xs text-muted-foreground/40">
@@ -1569,7 +1573,7 @@ export default function FuturesPage() {
                 )
               )}
               {mobilePanel === "agent" && (
-                isFullyConnected && address ? (
+                hasAccount && address ? (
                   <AgentPanel walletAddress={address} />
                 ) : (
                   <div className="flex items-center justify-center py-12 text-xs text-muted-foreground/40">
@@ -1579,7 +1583,7 @@ export default function FuturesPage() {
               )}
               {mobilePanel === "account" && (
                 <div className="p-3 space-y-3">
-                  {isFullyConnected && account ? (
+                  {hasAccount && account ? (
                     <>
                       <div className="space-y-2">
                         <div className="flex items-center justify-between text-[11px]">
