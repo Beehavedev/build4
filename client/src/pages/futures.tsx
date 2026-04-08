@@ -1140,96 +1140,47 @@ function RegisterOrErrorScreen({
 }
 
 function ActivationBanner({ walletAddress, onConnected }: { walletAddress: string; onConnected: () => void }) {
-  const [step, setStep] = useState<"idle" | "preparing" | "sign-agent" | "sign-builder" | "submitting">("idle");
+  const [activating, setActivating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleConnect = async () => {
-    setStep("preparing");
+  const handleActivate = async () => {
+    setActivating(true);
     setError(null);
     try {
-      const ethereum = (window as any).ethereum;
-      if (!ethereum) { setError("No Web3 wallet found"); setStep("idle"); return; }
-
-      const prepRes = await fetch("/api/miniapp/prepare-activation", {
+      const res = await fetch("/api/miniapp/activate-trading", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ walletAddress }),
       });
-      const prepData = await prepRes.json();
-      if (!prepData.success) { setError(prepData.error || "Preparation failed"); setStep("idle"); return; }
-
-      const { sessionId, agentWalletAddress, approveAgentPayload, approveBuilderPayload } = prepData;
-
-      const { BrowserProvider } = await import("ethers");
-      const provider = new BrowserProvider(ethereum);
-      const signer = await provider.getSigner();
-
-      setStep("sign-agent");
-      const agentSig = await signer.signTypedData(
-        approveAgentPayload.domain,
-        approveAgentPayload.types,
-        approveAgentPayload.message,
-      );
-
-      setStep("sign-builder");
-      const builderSig = await signer.signTypedData(
-        approveBuilderPayload.domain,
-        approveBuilderPayload.types,
-        approveBuilderPayload.message,
-      );
-
-      setStep("submitting");
-      const submitRes = await fetch("/api/miniapp/submit-activation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId,
-          agentSignature: agentSig,
-          builderSignature: builderSig,
-        }),
-      });
-      const submitData = await submitRes.json();
-      if (submitData.success) {
+      const data = await res.json();
+      if (data.success) {
         setTimeout(onConnected, 1500);
       } else {
-        setError(submitData.error || "Activation failed");
-        setStep("idle");
+        setError(data.error || "Activation failed");
+        setActivating(false);
       }
     } catch (e: any) {
-      if (e.code === 4001) {
-        setError("Signature rejected");
-      } else {
-        setError(e.message || "Signing failed");
-      }
-      setStep("idle");
+      setError(e.message || "Activation failed");
+      setActivating(false);
     }
   };
-
-  const stepLabels: Record<string, string> = {
-    preparing: "Preparing...",
-    "sign-agent": "Sign in wallet (1/2)...",
-    "sign-builder": "Sign in wallet (2/2)...",
-    submitting: "Submitting...",
-  };
-
-  const busy = step !== "idle";
 
   return (
     <div className="border-b border-yellow-500/10 bg-yellow-500/[0.03] px-4 py-2 flex items-center justify-between gap-3" data-testid="activation-banner">
       <div className="flex items-center gap-2 text-[11px]">
         <Zap className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
         <span className="text-yellow-300/80">
-          {busy ? stepLabels[step] : "Trading not yet activated."}
+          {activating ? "Activating trading account..." : "Trading not yet activated."}
         </span>
         {error && <span className="text-red-400 ml-1">{error}</span>}
       </div>
       <button
-        onClick={handleConnect}
-        disabled={busy}
+        onClick={handleActivate}
+        disabled={activating}
         className="px-3 py-1 text-[10px] font-semibold rounded bg-yellow-500/15 text-yellow-300 hover:bg-yellow-500/25 border border-yellow-500/20 transition-colors disabled:opacity-50 shrink-0"
         data-testid="button-connect-aster"
       >
-        {busy ? stepLabels[step] : "Activate Now"}
+        {activating ? "Activating..." : "Activate Now"}
       </button>
     </div>
   );

@@ -320,152 +320,77 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
     }
   });
 
-  const activationSessions = new Map<string, {
-    userAddr: string;
-    agentAddr: string;
-    chatId: string;
-    agentParamString: string;
-    builderParamString: string;
-    createdAt: number;
-  }>();
-
-  setInterval(() => {
-    const now = Date.now();
-    for (const [id, sess] of activationSessions) {
-      if (now - sess.createdAt > 5 * 60 * 1000) activationSessions.delete(id);
-    }
-  }, 60_000);
-
-  app.post("/api/miniapp/prepare-activation", async (req: Request, res: Response) => {
+  app.post("/api/miniapp/activate-trading", async (req: Request, res: Response) => {
     try {
       const { walletAddress } = req.body;
       if (!walletAddress || !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
         return res.status(400).json({ error: "Invalid wallet address" });
       }
-      const userAddr = walletAddress.toLowerCase();
+      const connectedAddr = walletAddress.toLowerCase();
 
-      const { createHash, randomBytes } = await import("crypto");
-      const hash = createHash("sha256").update(`web:${userAddr}`).digest("hex");
+      const { createHash } = await import("crypto");
+      const hash = createHash("sha256").update(`web:${connectedAddr}`).digest("hex");
       const chatId = "8" + hash.replace(/[^0-9]/g, "").substring(0, 14).padEnd(14, "0");
 
-      const { db } = await import("./db");
-      const { telegramWallets } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-      const existing = await db.select({ chatId: telegramWallets.chatId })
-        .from(telegramWallets)
-        .where(eq(telegramWallets.walletAddress, userAddr))
-        .limit(1);
-      if (!existing.length) {
-        await storage.saveTelegramWallet(chatId, userAddr);
-        await storage.setActiveTelegramWallet(chatId, userAddr);
+      const { Wallet } = await import("ethers");
+
+      const existingCreds = await storage.getAsterCredentials(chatId);
+      if (existingCreds) {
+        const parentAddr = existingCreds.parentAddress?.replace("astercode:", "") || connectedAddr;
+        console.log(`[MiniApp] User ${connectedAddr.substring(0, 10)} already activated, chatId=${chatId}, tradingWallet=${parentAddr.substring(0, 10)}`);
+        return res.json({
+          success: true,
+          tradingWallet: parentAddr,
+          parentAddress: parentAddr,
+          alreadyActive: true,
+        });
       }
 
-      const { Wallet } = await import("ethers");
-      const agentWallet = Wallet.createRandom();
-      const agentAddr = agentWallet.address.toLowerCase();
-      const agentPk = agentWallet.privateKey;
+      const tradingWallet = Wallet.createRandom();
+      const tradingAddr = tradingWallet.address.toLowerCase();
+      const tradingPk = tradingWallet.privateKey;
 
-      await storage.saveTelegramWallet(chatId, agentAddr, agentPk);
+      await storage.saveTelegramWallet(chatId, connectedAddr);
+      await storage.setActiveTelegramWallet(chatId, connectedAddr);
+      await storage.saveTelegramWallet(chatId, tradingAddr, tradingPk);
 
-      const { prepareActivationPayloads, getDefaultAsterCodeConfig } = await import("./aster-code");
+      console.log(`[MiniApp] Web activation: connected=${connectedAddr.substring(0, 10)} tradingWallet=${tradingAddr.substring(0, 10)} chatId=${chatId}`);
+
+      const { asterCodeOnboard, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");
       const codeConfig = getDefaultAsterCodeConfig();
-      const payloads = prepareActivationPayloads(userAddr, agentAddr, codeConfig);
 
-      const sessionId = randomBytes(32).toString("hex");
-      activationSessions.set(sessionId, {
-        userAddr,
-        agentAddr,
-        chatId,
-        agentParamString: payloads.approveAgentPayload.paramString,
-        builderParamString: payloads.approveBuilderPayload.paramString,
-        createdAt: Date.now(),
-      });
+      const onboardResult = await asterCodeOnboard(tradingPk, codeConfig);
 
-      console.log(`[MiniApp] Prepared activation for user=${userAddr.substring(0, 10)} agent=${agentAddr.substring(0, 10)} chatId=${chatId} session=${sessionId.substring(0, 8)}`);
+      if (!onboardResult.success) {
+        console.error(`[MiniApp] Web activation onboard failed: ${onboardResult.error}`);
+        return res.status(500).json({ error: `Activation failed: ${onboardResult.error}` });
+      }
+
+      console.log(`[MiniApp] Web activation onboard success: signer=${onboardResult.signerAddress?.substring(0, 10)} debug=${onboardResult.debug}`);
+
+      const signerAddr = onboardResult.signerAddress!.toLowerCase();
+      const signerPk = onboardResult.signerPrivateKey!;
+
+      await storage.saveTelegramWallet(chatId, signerAddr, signerPk);
+      await storage.saveAsterCredentials(chatId, signerAddr, signerPk, `astercode:${tradingAddr}`);
+
+      let balanceInfo: any = null;
+      try {
+        const client = createAsterCodeFuturesClient(tradingAddr, signerAddr, signerPk, codeConfig);
+        balanceInfo = await client.balance();
+        console.log(`[MiniApp] Post-activation balance: ${JSON.stringify(balanceInfo).substring(0, 300)}`);
+      } catch (balErr: any) {
+        console.log(`[MiniApp] Post-activation balance check: ${balErr.message}`);
+      }
 
       res.json({
         success: true,
-        sessionId,
-        agentWalletAddress: agentAddr,
-        approveAgentPayload: payloads.approveAgentPayload,
-        approveBuilderPayload: payloads.approveBuilderPayload,
+        tradingWallet: tradingAddr,
+        parentAddress: tradingAddr,
+        alreadyActive: false,
       });
     } catch (e: any) {
-      console.error("[MiniApp] prepare-activation error:", e.message);
-      res.status(500).json({ error: "Failed to prepare activation" });
-    }
-  });
-
-  app.post("/api/miniapp/submit-activation", async (req: Request, res: Response) => {
-    try {
-      const { sessionId, agentSignature, builderSignature } = req.body;
-
-      if (!sessionId || !agentSignature || !builderSignature) {
-        return res.status(400).json({ error: "Missing required fields" });
-      }
-
-      const session = activationSessions.get(sessionId);
-      if (!session) {
-        return res.status(400).json({ error: "Invalid or expired activation session. Please try again." });
-      }
-
-      if (Date.now() - session.createdAt > 5 * 60 * 1000) {
-        activationSessions.delete(sessionId);
-        return res.status(400).json({ error: "Activation session expired. Please try again." });
-      }
-
-      activationSessions.delete(sessionId);
-
-      const { userAddr, agentAddr, chatId, agentParamString, builderParamString } = session;
-
-      const { verifyTypedData } = await import("ethers");
-      const eip712Domain = { name: "AsterSignTransaction", version: "1", chainId: 1666, verifyingContract: "0x0000000000000000000000000000000000000000" };
-      const eip712Types = { Message: [{ name: "msg", type: "string" }] };
-
-      const recoveredAgent = verifyTypedData(eip712Domain, eip712Types, { msg: agentParamString }, agentSignature);
-      if (recoveredAgent.toLowerCase() !== userAddr) {
-        console.log(`[MiniApp] Signature mismatch: recovered=${recoveredAgent.toLowerCase()} expected=${userAddr}`);
-        return res.status(400).json({ error: "Agent approval signature does not match wallet address" });
-      }
-
-      const recoveredBuilder = verifyTypedData(eip712Domain, eip712Types, { msg: builderParamString }, builderSignature);
-      if (recoveredBuilder.toLowerCase() !== userAddr) {
-        return res.status(400).json({ error: "Builder approval signature does not match wallet address" });
-      }
-
-      console.log(`[MiniApp] Signatures verified for user=${userAddr.substring(0, 10)} agent=${agentAddr.substring(0, 10)}`);
-
-      const { submitSignedActivation, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");
-
-      const result = await submitSignedActivation(
-        getDefaultAsterCodeConfig().fApiUrl || "https://fapi.asterdex.com",
-        agentParamString,
-        agentSignature,
-        builderParamString,
-        builderSignature,
-      );
-
-      console.log(`[MiniApp] Activation submitted: agent=${JSON.stringify(result.agentResult).substring(0, 200)} builder=${JSON.stringify(result.builderResult).substring(0, 200)}`);
-
-      const agentPk = await storage.getTelegramWalletPrivateKey(chatId, agentAddr);
-      if (!agentPk) {
-        return res.status(400).json({ error: "Agent wallet not found. Please restart activation." });
-      }
-
-      await storage.saveAsterCredentials(chatId, agentAddr, agentPk, `astercode:${userAddr}`);
-
-      try {
-        const codeConfig = getDefaultAsterCodeConfig();
-        const client = createAsterCodeFuturesClient(userAddr, agentAddr, agentPk, codeConfig);
-        const bal = await client.balance();
-        console.log(`[MiniApp] Post-activation balance: ${JSON.stringify(bal).substring(0, 300)}`);
-      } catch (balErr: any) {
-        console.log(`[MiniApp] Post-activation balance check failed: ${balErr.message}`);
-      }
-
-      res.json({ success: true, agentWalletAddress: agentAddr, parentAddress: userAddr });
-    } catch (e: any) {
-      console.error("[MiniApp] submit-activation error:", e.message);
+      console.error("[MiniApp] activate-trading error:", e.message);
       res.status(500).json({ error: e.message || "Activation failed" });
     }
   });
