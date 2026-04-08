@@ -327,7 +327,8 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         const creds = await storage.getAsterCredentials(chatId);
         if (creds && creds.apiKey && creds.apiSecret && creds.apiKey !== "V3_DIRECT") {
           const wallets = await storage.getTelegramWallets(chatId);
-          const activeWallet = wallets.find(w => w.isActive) || wallets[0];
+          const evmWallets = wallets.filter(w => w.walletAddress && w.walletAddress.startsWith("0x"));
+          const activeWallet = evmWallets.find(w => w.isActive) || evmWallets[0];
           const botWalletAddr = activeWallet?.walletAddress?.toLowerCase() || "";
           const parentAddress = creds.parentAddress || botWalletAddr;
 
@@ -357,9 +358,17 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       if (!client) {
         const wallets = await storage.getTelegramWallets(chatId);
-        const activeWallet = wallets.find(w => w.isActive) || wallets[0];
-        const bscAddr = activeWallet?.walletAddress?.toLowerCase() || "";
-        console.log(`[MiniApp] No Aster client for chatId=${chatId}, wallet=${bscAddr ? bscAddr.substring(0,10) : 'none'}`);
+        const evmWallets = wallets.filter(w => w.walletAddress && w.walletAddress.startsWith("0x"));
+        let activeWallet = evmWallets.find(w => w.isActive) || evmWallets[0];
+        let bscAddr = activeWallet?.walletAddress?.toLowerCase() || "";
+        if (!bscAddr && wallets.length > 0) {
+          try {
+            const { regenerateWalletForDeposit } = await import("./telegram-bot");
+            const newW = await regenerateWalletForDeposit(parseInt(chatId));
+            if (newW) { bscAddr = newW.address.toLowerCase(); console.log(`[MiniApp] Auto-created EVM wallet ${bscAddr.substring(0,10)} for chatId=${chatId} (had sol: only)`); }
+          } catch (e: any) { console.log(`[MiniApp] Auto-create EVM wallet failed: ${e.message?.substring(0,80)}`); }
+        }
+        console.log(`[MiniApp] No Aster client for chatId=${chatId}, wallet=${bscAddr ? bscAddr.substring(0,10) : 'none'}, total=${wallets.length}, evm=${evmWallets.length}`);
         return res.json({ connected: false, asterApiWallet: null, bscWalletAddress: bscAddr || null, needsImport: !bscAddr });
       }
 
@@ -555,11 +564,20 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       let walletAddr: string | null = null;
       try {
         walletAddr = getUserWalletAddress(parseInt(chatId));
+        if (walletAddr && !walletAddr.startsWith("0x")) walletAddr = null;
         console.log(`[MiniApp] in-memory wallet for chatId=${chatId}: ${walletAddr}`);
         if (!walletAddr) {
           const walletRows = await storage.getTelegramWallets(chatId);
-          walletAddr = walletRows.length > 0 ? walletRows[0].walletAddress : null;
-          console.log(`[MiniApp] DB wallet fallback chatId=${chatId}, found=${walletRows.length}, addr=${walletAddr}`);
+          const evmRow = walletRows.find(w => w.walletAddress && w.walletAddress.startsWith("0x"));
+          walletAddr = evmRow?.walletAddress || null;
+          console.log(`[MiniApp] DB wallet fallback chatId=${chatId}, found=${walletRows.length}, evm=${walletAddr ? 'yes' : 'no'}`);
+          if (!walletAddr && walletRows.length > 0) {
+            try {
+              const { regenerateWalletForDeposit } = await import("./telegram-bot");
+              const newW = await regenerateWalletForDeposit(parseInt(chatId));
+              if (newW) { walletAddr = newW.address.toLowerCase(); console.log(`[MiniApp] Auto-created EVM wallet ${walletAddr.substring(0,10)} for connected user chatId=${chatId}`); }
+            } catch {}
+          }
         }
         if (walletAddr) {
           const ethers = await import("ethers");
@@ -611,12 +629,14 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       console.log(`[MiniApp] deposit request chatId=${chatId}, amount=${amount}`);
 
-      const activeWallet = getUserWalletAddress(parseInt(chatId));
+      let activeWallet = getUserWalletAddress(parseInt(chatId));
+      if (activeWallet && !activeWallet.startsWith("0x")) activeWallet = null;
       const walletRows = await storage.getTelegramWallets(chatId);
-      const walletAddr = activeWallet || (walletRows.length > 0 ? walletRows[0].walletAddress : null);
+      const evmRow = walletRows.find(w => w.walletAddress && w.walletAddress.startsWith("0x"));
+      const walletAddr = activeWallet || evmRow?.walletAddress || null;
       if (!walletAddr) return res.status(400).json({ error: "No wallet linked to this chat. Use /start in the bot first." });
 
-      console.log(`[MiniApp] deposit: activeWallet=${activeWallet}, dbFirst=${walletRows[0]?.walletAddress}, using=${walletAddr}`);
+      console.log(`[MiniApp] deposit: activeWallet=${activeWallet}, evmDb=${evmRow?.walletAddress}, using=${walletAddr}`);
 
       let rawPk = await resolvePrivateKey(parseInt(chatId), walletAddr);
       if (!rawPk) {
