@@ -346,14 +346,15 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       let asterLinked = false;
       try {
-        const { asterBrokerOnboard, createAsterFuturesClient } = await import("./aster-client");
-        const result = await asterBrokerOnboard(pk);
-        if (result.success && result.apiKey && result.apiSecret) {
-          await storage.saveAsterCredentials(chatId, result.apiKey, result.apiSecret);
+        const { asterCodeOnboard, getDefaultAsterCodeConfig } = await import("./aster-code");
+        const codeConfig = getDefaultAsterCodeConfig();
+        const codeResult = await asterCodeOnboard(pk, codeConfig);
+        if (codeResult.success && codeResult.signerAddress && codeResult.signerPrivateKey) {
+          await storage.saveAsterCredentials(chatId, codeResult.signerAddress, codeResult.signerPrivateKey, `astercode:${addr}`);
           asterLinked = true;
-          console.log(`[MiniApp] Import + auto-onboard success for chatId=${chatId}`);
+          console.log(`[MiniApp] Import + Aster Code onboard success for chatId=${chatId} agent=${codeResult.signerAddress.substring(0, 10)}`);
         } else {
-          console.log(`[MiniApp] Import onboard failed: ${result.error || 'unknown'}`);
+          console.log(`[MiniApp] Import onboard failed: ${codeResult.error || 'unknown'}`);
         }
       } catch (e: any) {
         console.log(`[MiniApp] Import onboard error: ${e.message}`);
