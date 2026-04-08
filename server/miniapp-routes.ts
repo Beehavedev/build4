@@ -455,6 +455,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
           marginType: p.marginType || "cross",
           initialMargin: parseFloat(p.initialMargin || "0"),
           maintMargin: parseFloat(p.maintMargin || "0"),
+          updateTime: parseInt(p.updateTime || "0"),
         };
       });
 

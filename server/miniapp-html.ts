@@ -143,6 +143,8 @@ let refreshTimer=null;
 
 function $(id){return document.getElementById(id)}
 function fmt(n,d=2){return(n||0).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d})}
+function fmtPrice(n){if(!n||n===0)return'$0.00';var a=Math.abs(n);if(a>=100)return'$'+fmt(n,2);if(a>=1)return'$'+fmt(n,4);if(a>=0.01)return'$'+fmt(n,6);return'$'+fmt(n,8)}
+function fmtDuration(ms){if(!ms||ms<=0)return'';var s=Math.floor(ms/1000);var d=Math.floor(s/86400);s%=86400;var h=Math.floor(s/3600);s%=3600;var m=Math.floor(s/60);s%=60;var parts=[];if(d>0)parts.push(d+'d');if(h>0)parts.push(h+'h');if(m>0)parts.push(m+'m');parts.push(s+'s');return parts.join(' ')}
 function pnlHtml(v){const p=v>=0;return '<span class="val-xs '+(p?'gv':'r-')+'">'+(p?'+':'-')+'$'+fmt(Math.abs(v))+'</span>'}
 function pnlClass(v){return v>=0?'gv':'r-'}
 function api(path,opts={}){return fetch(path,{...opts,headers:{'x-telegram-chat-id':String(chatId),...(opts.headers||{})}}).then(r=>r.json())}
@@ -225,7 +227,7 @@ function renderPositions(){
   if(pos.length===0){
     h+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">🎯</div><div class="text-dim text-sm">No open positions</div><div class="text-xs text-dim2 mt-1">Place a trade to get started</div></div>';
   }else{
-    pos.forEach(function(p){
+    pos.forEach(function(p,idx){
       var side=parseFloat(p.positionAmt||p.size||'0')>0?'LONG':(parseFloat(p.positionAmt||p.size||'0')<0?'SHORT':(p.side||''));
       var amt=Math.abs(parseFloat(p.positionAmt||p.size||'0'));
       var entry=parseFloat(p.entryPrice||'0');
@@ -239,18 +241,35 @@ function renderPositions(){
       var marginType=(p.marginType||'cross').toUpperCase();
       var pnlColor=upnl>=0?'var(--green)':'var(--red)';
       var cardBorder=upnl>=0?'rgba(63,185,80,0.3)':'rgba(248,81,73,0.3)';
+      var openTs=p.updateTime||0;
       h+='<div class="card" style="border:1px solid '+cardBorder+'">';
       h+='<div class="row"><div class="gap"><span class="badge '+(side==='LONG'?'badge-long':'badge-short')+'">'+side+'</span><span class="text-w fw-600">'+p.symbol+'</span><span class="badge badge-info">'+lev+'x</span><span class="badge" style="background:rgba(59,130,246,0.1);color:var(--blue);font-size:10px">'+marginType+'</span></div>'+pnlHtml(upnl)+'</div>';
+      if(openTs>0){h+='<div class="mt-2" style="display:flex;align-items:center;gap:6px"><span class="text-xs text-dim">⏱ Open since</span><span class="text-xs mono gv" id="pos-timer-'+idx+'" data-open-ts="'+openTs+'">'+fmtDuration(Date.now()-openTs)+'</span></div>'}
       h+='<div class="grid2 mt-3"><div><div class="label">Size</div><div class="val-sm mono gv">'+amt+'</div></div><div><div class="label">Notional</div><div class="val-sm mono gv">$'+fmt(notional)+'</div></div></div>';
-      h+='<div class="grid2 mt-2"><div><div class="label">Entry Price</div><div class="val-sm mono gv">$'+fmt(entry)+'</div></div><div><div class="label">Mark Price</div><div class="val-sm mono gv">$'+fmt(mark)+'</div></div></div>';
+      h+='<div class="grid2 mt-2"><div><div class="label">Entry Price</div><div class="val-sm mono gv">'+fmtPrice(entry)+'</div></div><div><div class="label">Mark Price</div><div class="val-sm mono gv">'+fmtPrice(mark)+'</div></div></div>';
       h+='<div class="grid2 mt-2"><div><div class="label">ROE</div><div class="val-sm mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'%</div></div><div><div class="label">Margin</div><div class="val-sm mono gv">$'+fmt(margin)+'</div></div></div>';
-      if(liq>0){h+='<div class="mt-2" style="padding:8px;background:rgba(248,81,73,0.08);border-radius:8px;border:1px solid rgba(248,81,73,0.2)"><div class="row"><div><div class="label" style="color:var(--red)">⚠ Liquidation Price</div><div class="val-sm mono" style="color:var(--red)">$'+fmt(liq)+'</div></div><div style="text-align:right"><div class="label">Distance</div><div class="val-xs mono '+(Math.abs((mark-liq)/mark*100)>20?'gv':'r-')+'">'+fmt(Math.abs((mark-liq)/mark*100),1)+'%</div></div></div></div>'}
+      if(liq>0){h+='<div class="mt-2" style="padding:8px;background:rgba(248,81,73,0.08);border-radius:8px;border:1px solid rgba(248,81,73,0.2)"><div class="row"><div><div class="label" style="color:var(--red)">⚠ Liquidation Price</div><div class="val-sm mono" style="color:var(--red)">'+fmtPrice(liq)+'</div></div><div style="text-align:right"><div class="label">Distance</div><div class="val-xs mono '+(Math.abs((mark-liq)/mark*100)>20?'gv':'r-')+'">'+fmt(Math.abs((mark-liq)/mark*100),1)+'%</div></div></div></div>'}
       h+='<div class="mt-3"><button class="btn btn-red btn-sm" style="width:100%" onclick="closePosFromTab(\\''+p.symbol+'\\')">Close Position</button></div></div>';
     });
   }
   h+='<div class="card mt-2"><div class="row"><span class="label">Total Unrealized PnL</span>'+pnlHtml(D.unrealizedPnl||0)+'</div></div>';
   h+='<button class="btn btn-outline mt-2" onclick="fetchAll().then(renderPositions)">🔄 Refresh</button>';
   el.innerHTML=h;
+  startPosTimers();
+}
+var posTimerInterval=null;
+function startPosTimers(){
+  if(posTimerInterval)clearInterval(posTimerInterval);
+  posTimerInterval=setInterval(function(){
+    var activePage=document.querySelector('.page.active');
+    if(!activePage||activePage.id!=='p-positions'){clearInterval(posTimerInterval);posTimerInterval=null;return}
+    for(var i=0;i<20;i++){
+      var el=document.getElementById('pos-timer-'+i);
+      if(!el)break;
+      var ts=parseInt(el.dataset.openTs||'0');
+      if(ts>0)el.textContent=fmtDuration(Date.now()-ts);
+    }
+  },1000);
 }
 async function closePosFromTab(symbol){
   const ok=await customConfirm('<div style="font-weight:600;font-size:16px;margin-bottom:12px">Close Position</div><div style="font-size:13px;color:#aaa">Close entire <strong style="color:#fff">'+symbol+'</strong> position?</div>');
@@ -459,8 +478,8 @@ function renderDash(){
       var margin=p.margin||(parseFloat(p.leverage||'1')>0?notional/parseFloat(p.leverage||'1'):0);
       h+='<div class="pos-item" style="border-left:3px solid '+((p.unrealizedPnl||0)>=0?'var(--green)':'var(--red)')+';padding-left:10px">';
       h+='<div class="row"><div class="gap"><span class="badge '+(p.side==='LONG'?'badge-long':'badge-short')+'">'+p.side+'</span><span class="text-w fw-600 text-sm">'+p.symbol+'</span><span class="text-xs text-dim">'+p.leverage+'x</span></div><div class="gap">'+pnlHtml(p.unrealizedPnl)+'<button onclick="sharePnl('+idx+')" style="background:none;border:1px solid rgba(29,155,240,0.3);border-radius:6px;padding:3px 6px;cursor:pointer;display:flex;align-items:center" title="Share on X"><svg width="12" height="12" viewBox="0 0 24 24" fill="#1d9bf0"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></button></div></div>';
-      h+='<div class="row mt-1"><span class="text-xs gv mono">'+p.size+' @ $'+fmt(p.entryPrice)+'</span><span class="text-xs mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'% ROE</span></div>';
-      h+='<div class="row mt-1"><span class="text-xs gv mono">Mark: $'+fmt(p.markPrice)+'</span><span class="text-xs gv mono">Margin: $'+fmt(margin)+'</span></div>';
+      h+='<div class="row mt-1"><span class="text-xs gv mono">'+p.size+' @ '+fmtPrice(p.entryPrice)+'</span><span class="text-xs mono '+pnlClass(roe)+'">'+(roe>=0?'+':'')+fmt(roe,1)+'% ROE</span></div>';
+      h+='<div class="row mt-1"><span class="text-xs gv mono">Mark: '+fmtPrice(p.markPrice)+'</span><span class="text-xs gv mono">Margin: $'+fmt(margin)+'</span></div>';
       if(liq>0){h+='<div class="row mt-1"><span class="text-xs mono" style="color:var(--red)">Liq: $'+fmt(liq)+'</span><span class="text-xs gv mono">'+fmt(Math.abs((p.markPrice-liq)/p.markPrice*100),1)+'% away</span></div>'}
       h+='</div>';
     });
