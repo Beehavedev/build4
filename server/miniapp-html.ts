@@ -560,7 +560,31 @@ function renderDeposit(){
   h+='<div style="text-align:center;padding:12px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">BSC Wallet</div><div class="val-sm text-w mt-1">$'+fmt(D.bscBalance)+'</div></div>';
   h+='<div style="text-align:center;padding:12px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Spot</div><div class="val-sm text-w mt-1">$'+fmt(D.spotBalance)+'</div></div>';
   h+='<div style="text-align:center;padding:12px;background:var(--green-bg);border-radius:8px"><div class="text-xs" style="color:var(--green)">Futures</div><div class="val-sm text-w mt-1">$'+fmt(D.walletBalance)+'</div></div>';
-  h+='</div></div>';
+  h+='</div>';
+  if((D.spotBalance||0)>0){
+    h+='<div style="margin-top:10px;padding:12px;background:rgba(255,193,7,0.08);border:1px solid rgba(255,193,7,0.3);border-radius:10px">';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:16px">⚠️</span><span class="text-xs fw-600" style="color:var(--yellow)">You have $'+fmt(D.spotBalance)+' stuck in Spot</span></div>';
+    h+='<div class="text-xs text-dim" style="line-height:1.5;margin-bottom:10px">Our bot trades on <strong style="color:#fff">Futures</strong> only. Spot balance cannot be used for trading. Transfer it now:</div>';
+    h+='<button class="btn btn-green" style="width:100%" onclick="spotToFutures()">Transfer $'+fmt(D.spotBalance)+' Spot → Futures</button>';
+    h+='<div id="stf-status"></div>';
+    h+='</div>';
+  }
+  h+='</div>';
+
+  if(!D.asterApiWallet){
+    h+='<div class="card" style="border:1px solid rgba(14,203,129,0.3)">';
+    h+='<div class="section-title" style="color:var(--green)">📋 How to Get Started</div>';
+    h+='<div class="text-xs" style="color:var(--text2);line-height:1.8;margin-bottom:4px">';
+    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">1</span><span>Go to <a href="https://asterdex.com" target="_blank" style="color:var(--green)">asterdex.com</a> and create an account (connect your wallet)</span></div>';
+    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">2</span><span>Go to <a href="https://asterdex.com/en/api-wallet" target="_blank" style="color:var(--green)">API Wallet page</a> and create an API Wallet with <strong style="color:#fff">Perps Trading</strong> enabled</span></div>';
+    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">3</span><span>Come back here and paste your <strong style="color:var(--yellow)">API Wallet private key</strong> + your <strong style="color:#fff">main wallet address</strong> in the form above</span></div>';
+    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">4</span><span>Deposit USDT on Aster — go to <a href="https://asterdex.com/en/assets" target="_blank" style="color:var(--green)">Assets page</a> and deposit USDT via BSC network</span></div>';
+    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">5</span><span><strong style="color:var(--yellow)">Important:</strong> Transfer from <strong style="color:#fff">Spot → Futures</strong> on Aster\'s website (Assets → Transfer) or use the button below</span></div>';
+    h+='</div>';
+    h+='<div style="background:rgba(255,193,7,0.08);border-radius:8px;padding:10px;margin-top:4px">';
+    h+='<div class="text-xs" style="color:var(--yellow);line-height:1.5">💡 <strong>Common issue:</strong> If your balance shows $0 after depositing, your funds are likely in <strong>Spot</strong> not <strong>Futures</strong>. You must transfer Spot → Futures on the Aster website or use our transfer button.</div>';
+    h+='</div></div>';
+  }
 
   if(D.bscWalletAddress){
     h+='<div class="card"><div class="section-title">Deposit to Aster Futures</div>';
@@ -581,13 +605,17 @@ function renderDeposit(){
     h+='</div>';
   }
 
+  h+='<div class="card" style="border:1px solid rgba(100,149,237,0.3)">';
+  h+='<div class="section-title" style="color:var(--blue)">🔄 Transfer Spot → Futures</div>';
+  h+='<div class="text-xs text-dim" style="line-height:1.5;margin-bottom:10px">If you deposited on Aster\'s website, your USDT lands in <strong style="color:#fff">Spot</strong> by default. Our bot trades on <strong style="color:var(--green)">Futures</strong> — you must transfer first.</div>';
   if((D.spotBalance||0)>0){
-    h+='<div class="card card-accent"><div class="section-title">Transfer Spot → Futures</div>';
-    h+='<div class="text-xs text-dim mb-2">You have $'+fmt(D.spotBalance)+' in Spot. Transfer to Futures to start trading.</div>';
-    h+='<button class="btn btn-green" style="width:100%" onclick="spotToFutures()">Transfer $'+fmt(D.spotBalance)+' to Futures</button>';
-    h+='<div id="stf-status"></div></div>';
+    h+='<button class="btn btn-green" style="width:100%" onclick="spotToFutures()">Transfer $'+fmt(D.spotBalance)+' Spot → Futures</button>';
+  } else {
+    h+='<button class="btn btn-outline" style="width:100%" onclick="spotToFutures()">🔄 Check & Transfer Spot → Futures</button>';
   }
-  h+='<button class="btn btn-outline mt-2" style="width:100%" onclick="spotToFutures()">🔄 Move Spot → Futures</button>';
+  h+='<div id="stf-status2"></div>';
+  h+='<div class="text-xs text-dim mt-2" style="line-height:1.4">You can also transfer on the Aster website: <a href="https://asterdex.com/en/assets" target="_blank" style="color:var(--blue)">Assets</a> → Transfer → Spot to Futures</div>';
+  h+='</div>';
 
   h+='<div class="card mt-3"><div class="section-title">Withdraw USDT</div>';
   h+='<div class="text-xs text-dim mb-2">Withdraw from Aster Futures to your BSC wallet. Min $1.</div>';
@@ -774,20 +802,28 @@ async function doWithdraw(amount){
 }
 
 async function spotToFutures(){
-  var st=document.getElementById('stf-status');
+  var st=document.getElementById('stf-status')||document.getElementById('stf-status2');
   if(!st){toast('Transferring Spot to Futures...','info');st={innerHTML:''}}
   st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Transferring Spot → Futures...</span></div>';
+  var st2=document.getElementById('stf-status2');
+  if(st2&&st2!==st)st2.innerHTML=st.innerHTML;
   try{
     var r=await api('/api/miniapp/spot-to-futures',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
     if(r.success){
-      st.innerHTML='<div class="alert alert-ok mt-3"><span>🎉</span><span>'+(r.message||'Transferred!')+'</span></div>';
+      var msg='<div class="alert alert-ok mt-3"><span>🎉</span><span>'+(r.message||'Transferred!')+'</span></div>';
+      st.innerHTML=msg;
+      if(st2&&st2!==st)st2.innerHTML=msg;
       toast('🎉 Funds moved to Futures!','ok');
       setTimeout(function(){fetchAll().then(function(){renderDeposit()})},3000);
     }else{
-      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Transfer failed')+'</span></div>';
+      var emsg='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Transfer failed')+'</span></div>';
+      st.innerHTML=emsg;
+      if(st2&&st2!==st)st2.innerHTML=emsg;
     }
   }catch(e){
-    st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
+    var emsg2='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
+    st.innerHTML=emsg2;
+    if(st2&&st2!==st)st2.innerHTML=emsg2;
   }
 }
 
