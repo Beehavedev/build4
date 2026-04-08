@@ -31,7 +31,7 @@ const allowlist = [
 ];
 
 async function buildForRender() {
-  console.log("Render detected — building bot server only (no frontend)");
+  console.log("Render detected — building full stack (frontend + bot server)");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));
   const allDeps = [
     ...Object.keys(pkg.dependencies || {}),
@@ -39,9 +39,15 @@ async function buildForRender() {
   ];
 
   await rm("dist", { recursive: true, force: true });
+
+  console.log("Building frontend (Vite)...");
+  await viteBuild();
+  console.log("Frontend built → dist/public/");
+
   const bundleInline = new Set(["ethers"]);
   const externals = allDeps.filter((dep) => !bundleInline.has(dep));
 
+  console.log("Building bot server...");
   await esbuild({
     entryPoints: ["server/bot-server.ts"],
     platform: "node",

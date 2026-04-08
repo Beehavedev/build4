@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import { startTelegramBot, processWebhookUpdate, stopTelegramBot } from "./telegram-bot";
 import { restoreTradingPreferences, startTradingAgent, isTradingAgentRunning } from "./trading-agent";
 import { registerMiniAppRoutes } from "./miniapp-routes";
+import { registerWeb4Routes } from "./web4-routes";
 import pg from "pg";
 
 process.on("uncaughtException", (err) => {
@@ -122,15 +123,18 @@ const httpServer = createServer(app);
 
 app.use(express.json());
 
-app.get("/", (_req, res) => {
-  res.status(200).send("BUILD4 Bot Server OK");
-});
-
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", uptime: process.uptime(), timestamp: Date.now() });
 });
 
 registerMiniAppRoutes(app);
+
+try {
+  registerWeb4Routes(app);
+  console.log("[BOT-SERVER] Web4 routes registered");
+} catch (e: any) {
+  console.warn("[BOT-SERVER] Web4 routes failed to register:", e.message?.substring(0, 100));
+}
 
 /* Dead old inline HTML removed — miniapp HTML now served from miniapp-routes.ts via getMiniAppHTML() */
 if (false) { const html = `<!DOCTYPE html><html><head><title>OLD</title>
@@ -375,6 +379,30 @@ app.post("/api/telegram/webhook/:token", (req, res) => {
   res.sendStatus(200);
   processWebhookUpdate(req.body);
 });
+
+const frontendDistPath = join(__dirname, "public");
+try {
+  const fs = require("fs");
+  if (fs.existsSync(frontendDistPath)) {
+    app.use(express.static(frontendDistPath));
+    app.use("/{*path}", (req: any, res: any, next: any) => {
+      if (req.path.startsWith("/api/") || req.path.startsWith("/webhook")) {
+        return next();
+      }
+      res.sendFile(join(frontendDistPath, "index.html"));
+    });
+    console.log(`[BOT-SERVER] Serving frontend from ${frontendDistPath}`);
+  } else {
+    app.get("/", (_req, res) => {
+      res.status(200).send("BUILD4 Bot Server OK");
+    });
+    console.log("[BOT-SERVER] No frontend build found, serving API only");
+  }
+} catch {
+  app.get("/", (_req, res) => {
+    res.status(200).send("BUILD4 Bot Server OK");
+  });
+}
 
 (async () => {
   await ensureSchema();
