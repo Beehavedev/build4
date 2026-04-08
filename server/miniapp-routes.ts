@@ -409,11 +409,12 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const { apiWalletPrivateKey } = req.body;
 
       const wallets = await storage.getTelegramWallets(chatId);
-      const activeWallet = wallets.find(w => w.isActive) || wallets[0];
+      const evmWallets = wallets.filter(w => w.walletAddress && w.walletAddress.startsWith("0x"));
+      const activeWallet = evmWallets.find(w => w.isActive) || evmWallets[0];
       const parentAddress = activeWallet?.walletAddress?.toLowerCase() || "";
 
       if (!parentAddress) {
-        return res.status(400).json({ error: "No bot wallet found. Generate a wallet first via the Telegram bot." });
+        return res.status(400).json({ error: "No wallet found. Please connect your wallet first." });
       }
 
       if (apiWalletPrivateKey) {
@@ -435,12 +436,38 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         return;
       }
 
-      const pk = await storage.getTelegramWalletPrivateKey(chatId, parentAddress);
+      let pk: string | null = null;
+      let onboardWalletAddr = parentAddress;
+
+      pk = await storage.getTelegramWalletPrivateKey(chatId, parentAddress);
+
       if (!pk) {
-        return res.status(400).json({ error: "Cannot access wallet private key. Please re-import your wallet." });
+        for (const w of evmWallets) {
+          if (w.walletAddress === parentAddress) continue;
+          const wAddr = w.walletAddress.toLowerCase();
+          const wPk = await storage.getTelegramWalletPrivateKey(chatId, wAddr);
+          if (wPk) {
+            pk = wPk;
+            onboardWalletAddr = wAddr;
+            console.log(`[MiniApp] Using bot wallet ${wAddr.substring(0, 10)} (active MetaMask has no key)`);
+            break;
+          }
+        }
       }
 
-      console.log(`[MiniApp] Auto-connecting Aster for chatId=${chatId} wallet=${parentAddress.substring(0, 10)}`);
+      if (!pk) {
+        console.log(`[MiniApp] No accessible private key for chatId=${chatId}, generating new bot wallet`);
+        const { Wallet } = await import("ethers");
+        const newBot = Wallet.createRandom();
+        const newAddr = newBot.address.toLowerCase();
+        const newPk = newBot.privateKey;
+        await storage.saveTelegramWallet(chatId, newAddr, newPk);
+        pk = newPk;
+        onboardWalletAddr = newAddr;
+        console.log(`[MiniApp] Generated new bot wallet ${newAddr.substring(0, 10)} for chatId=${chatId}`);
+      }
+
+      console.log(`[MiniApp] Auto-connecting Aster for chatId=${chatId} onboardWallet=${onboardWalletAddr.substring(0, 10)}`);
 
       console.log(`[MiniApp] Trying Aster Code onboard for chatId=${chatId}`);
       try {
@@ -450,17 +477,17 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         console.log(`[MiniApp] Aster Code onboard result: success=${codeResult.success} agent=${codeResult.agentApproved} builder=${codeResult.builderApproved} ${codeResult.error || ''}`);
 
         if (codeResult.success && codeResult.signerAddress && codeResult.signerPrivateKey) {
-          await storage.saveAsterCredentials(chatId, codeResult.signerAddress, codeResult.signerPrivateKey, `astercode:${parentAddress}`);
+          await storage.saveAsterCredentials(chatId, codeResult.signerAddress, codeResult.signerPrivateKey, `astercode:${onboardWalletAddr}`);
 
           try {
-            const codeClient = createAsterCodeFuturesClient(parentAddress, codeResult.signerAddress, codeResult.signerPrivateKey, codeConfig);
+            const codeClient = createAsterCodeFuturesClient(onboardWalletAddr, codeResult.signerAddress, codeResult.signerPrivateKey, codeConfig);
             const bal = await codeClient.balance();
             console.log(`[MiniApp] Aster Code post-connect balance: ${JSON.stringify(bal).substring(0, 300)}`);
           } catch (balErr: any) {
             console.log(`[MiniApp] Aster Code post-connect balance check failed: ${balErr.message}`);
           }
 
-          res.json({ success: true, apiWalletAddress: codeResult.signerAddress, parentAddress });
+          res.json({ success: true, apiWalletAddress: codeResult.signerAddress, parentAddress: onboardWalletAddr });
           return;
         }
       } catch (codeErr: any) {
@@ -470,8 +497,8 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       console.log(`[MiniApp] Aster Code failed, trying V3 direct for chatId=${chatId}`);
       const { createAsterV3FuturesClient } = await import("./aster-client");
       const v3Client = createAsterV3FuturesClient({
-        user: parentAddress,
-        signer: parentAddress,
+        user: onboardWalletAddr,
+        signer: onboardWalletAddr,
         signerPrivateKey: pk,
       });
 
@@ -480,7 +507,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         console.log(`[MiniApp] V3 direct connection test: success=${testResult.success} ${testResult.error || ''}`);
 
         if (testResult.success) {
-          await storage.saveAsterCredentials(chatId, parentAddress, pk);
+          await storage.saveAsterCredentials(chatId, onboardWalletAddr, pk);
 
           try {
             const bal = await v3Client.balance();
@@ -489,7 +516,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
             console.log(`[MiniApp] V3 post-connect balance check failed: ${balErr.message}`);
           }
 
-          res.json({ success: true, apiWalletAddress: parentAddress, parentAddress });
+          res.json({ success: true, apiWalletAddress: onboardWalletAddr, parentAddress: onboardWalletAddr });
           return;
         }
       } catch (v3Err: any) {
@@ -512,9 +539,9 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
           console.log(`[MiniApp] Post-broker-onboard balance check failed: ${e.message}`);
         }
 
-        res.json({ success: true, apiWalletAddress: "auto", parentAddress });
+        res.json({ success: true, apiWalletAddress: "auto", parentAddress: onboardWalletAddr });
       } else {
-        res.json({ success: false, error: result.error || "Aster connection failed. You may need to link an API Wallet manually." });
+        res.json({ success: false, error: result.error || "Aster connection failed. Please try again." });
       }
     } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
   });
