@@ -1129,23 +1129,8 @@ function renderAgent(){
   h+='</div>';
   if(D.availableMargin>0){h+='<div class="row text-sm mt-3"><span class="text-dim">Max Per-Position</span><span class="mono text-w fw-600">$'+fmt(D.availableMargin*(c?.riskPercent||1)/100*(c?.maxLeverage||10)/(c?.maxOpenPositions||3))+'</span></div>'}
 
-  h+='<div class="section-title mt-3">🎯 Exit Strategy</div>';
-  h+='<div class="row text-sm mt-2"><span class="text-dim">Take Profit</span><span class="mono gv fw-600">'+(c?.takeProfitPct||5)+'%</span></div>';
-  h+='<div style="display:flex;gap:6px;margin-top:6px">';
-  [3,5,8,10,15].forEach(function(n){h+='<button class="btn btn-sm '+((c?.takeProfitPct||5)===n?'btn-green':'btn-outline')+'" style="font-size:12px;padding:4px 10px" onclick="setExitParam(\\\'takeProfitPct\\\','+n+')">'+n+'%</button>'});
-  h+='</div>';
-  h+='<div class="row text-sm mt-2"><span class="text-dim">Stop Loss</span><span class="mono r- fw-600">'+(c?.stopLossPct||3)+'%</span></div>';
-  h+='<div style="display:flex;gap:6px;margin-top:6px">';
-  [2,3,5,7,10].forEach(function(n){h+='<button class="btn btn-sm '+((c?.stopLossPct||3)===n?'btn-green':'btn-outline')+'" style="font-size:12px;padding:4px 10px" onclick="setExitParam(\\\'stopLossPct\\\','+n+')">'+n+'%</button>'});
-  h+='</div>';
-  h+='<div class="row text-sm mt-2"><span class="text-dim">Trailing Stop</span><span class="mono text-w fw-600">'+(c?.trailingStopPct||2)+'%</span></div>';
-  h+='<div style="display:flex;gap:6px;margin-top:6px">';
-  [1,2,3,5].forEach(function(n){h+='<button class="btn btn-sm '+((c?.trailingStopPct||2)===n?'btn-green':'btn-outline')+'" style="font-size:12px;padding:4px 10px" onclick="setExitParam(\\\'trailingStopPct\\\','+n+')">'+n+'%</button>'});
-  h+='</div>';
-  h+='<div class="text-xs text-dim2 mt-2">Trailing stop activates after profit exceeds trail %. Auto-closes if profit drops back by trail amount.</div>';
-
-  h+='<div style="margin-top:16px;padding:12px;background:var(--bg);border-radius:10px"><div class="text-xs text-dim2 fw-600" style="margin-bottom:6px">🧠 Built-in AI Intelligence</div>';
-  h+='<div class="text-xs text-dim" style="line-height:1.5">Funding rate filter · Orderbook imbalance detection · Self-learning confidence model · EMA/RSI/MACD/BB/Volume analysis — all running automatically.</div></div>';
+  h+='<div style="margin-top:16px;padding:12px;background:var(--bg);border-radius:10px"><div class="text-xs text-dim2 fw-600" style="margin-bottom:6px">🧠 Built-in AI</div>';
+  h+='<div class="text-xs text-dim" style="line-height:1.5">TP/SL/Trailing stop · Funding rate filter · Orderbook imbalance · Self-learning confidence · EMA/RSI/MACD/BB/Volume — all managed automatically.</div></div>';
 
   h+='</div>';
 
