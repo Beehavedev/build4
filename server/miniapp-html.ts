@@ -1185,19 +1185,19 @@ async function renameAgent(){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
   var box=document.createElement('div');
   box.style.cssText='background:#1a1d21;border:1px solid #333;border-radius:12px;padding:20px;max-width:340px;width:100%;color:#e0e0e0';
-  box.innerHTML='<div style="font-weight:600;font-size:16px;margin-bottom:12px">Name Your Agent</div><input id="agent-name-input" class="input" type="text" maxlength="24" value="'+cur.replace(/"/g,'&quot;')+'" style="margin-bottom:16px" placeholder="e.g. Alpha Bot"><div style="display:flex;gap:10px"><button id="rn-cancel" style="flex:1;padding:10px;border-radius:8px;border:1px solid #555;background:transparent;color:#e0e0e0;cursor:pointer;font-size:14px">Cancel</button><button id="rn-save" style="flex:1;padding:10px;border-radius:8px;border:none;background:var(--green);color:#0b0e11;cursor:pointer;font-weight:600;font-size:14px">Save</button></div>';
+  box.innerHTML='<div style="font-weight:600;font-size:16px;margin-bottom:8px">Name Your Agent</div><div style="font-size:12px;color:#888;margin-bottom:12px">Must be unique — used in competitions & leaderboards</div><input id="agent-name-input" class="input" type="text" maxlength="24" minlength="2" value="'+cur.replace(/"/g,'&quot;')+'" style="margin-bottom:8px" placeholder="e.g. Alpha Bot"><div id="rn-err" style="color:#f6465d;font-size:12px;margin-bottom:10px;min-height:16px"></div><div style="display:flex;gap:10px"><button id="rn-cancel" style="flex:1;padding:10px;border-radius:8px;border:1px solid #555;background:transparent;color:#e0e0e0;cursor:pointer;font-size:14px">Cancel</button><button id="rn-save" style="flex:1;padding:10px;border-radius:8px;border:none;background:var(--green);color:#0b0e11;cursor:pointer;font-weight:600;font-size:14px">Save</button></div>';
   ov.appendChild(box);document.body.appendChild(ov);
   var inp=document.getElementById('agent-name-input');
   inp.focus();inp.select();
   document.getElementById('rn-save').onclick=async function(){
     var n=inp.value.trim();
-    if(!n){toast('Enter a name','err');return}
+    var errEl=document.getElementById('rn-err');
+    if(!n||n.length<2){errEl.textContent='Name must be at least 2 characters';return}
     try{
       var r=await api('/api/miniapp/agent/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n})});
-      if(r.success){if(AG&&AG.config)AG.config.name=n;toast('Agent renamed to "'+n+'"','ok');renderAgent()}
-      else{toast(r.error||'Failed','err')}
-    }catch(e){toast('Error','err')}
-    document.body.removeChild(ov);
+      if(r.success){if(AG&&AG.config)AG.config.name=n;toast('Agent renamed to "'+n+'"','ok');renderAgent();document.body.removeChild(ov)}
+      else{errEl.textContent=r.error||'Name not available';toast(r.error||'Failed','err')}
+    }catch(e){errEl.textContent='Error saving name';toast('Error','err')}
   };
   document.getElementById('rn-cancel').onclick=function(){document.body.removeChild(ov)};
   ov.onclick=function(e){if(e.target===ov)document.body.removeChild(ov)};

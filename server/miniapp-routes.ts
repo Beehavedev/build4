@@ -865,7 +865,27 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       const { name, symbol, riskPercent, leverage, maxOpenPositions, takeProfitPct, stopLossPct, trailingStopPct, fundingRateFilter, orderbookImbalanceThreshold, useConfidenceFilter, minConfidence } = req.body;
       const updates: any = {};
-      if (name && typeof name === "string") updates.name = name.trim().substring(0, 24);
+      if (name && typeof name === "string") {
+        const cleanName = name.trim().substring(0, 24);
+        if (cleanName.length >= 2) {
+          try {
+            const { db: dbConn } = await import("./db");
+            const { sql: sqlTag } = await import("drizzle-orm");
+            const existing = await dbConn.execute(sqlTag`
+              SELECT chat_id FROM aster_trading_limits 
+              WHERE agent_config_json::text ILIKE ${'%"name":"' + cleanName.replace(/["%\\]/g, '') + '"%'} 
+              AND chat_id != ${chatId}
+              LIMIT 1
+            `);
+            if (existing.rows && existing.rows.length > 0) {
+              return res.status(400).json({ error: `Agent name "${cleanName}" is already taken. Choose a unique name.` });
+            }
+          } catch (e: any) {
+            console.warn(`[Agent] Name uniqueness check failed: ${e.message?.substring(0, 80)}`);
+          }
+          updates.name = cleanName;
+        }
+      }
       if (symbol && typeof symbol === "string") updates.symbol = symbol.toUpperCase();
       if (riskPercent !== undefined) updates.riskPercent = Math.max(0.5, Math.min(3, parseFloat(riskPercent) || 1));
       if (leverage !== undefined) updates.maxLeverage = Math.max(1, Math.min(50, parseInt(leverage) || 10));
