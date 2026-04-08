@@ -807,10 +807,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
 
       const { getAgentConfig, getAgentState, loadAgentConfigFromDb } = await import("./autonomous-agent");
-      let config = getAgentConfig(chatId);
-      if (!config.name || config.name === "My Agent") {
-        config = await loadAgentConfigFromDb(chatId);
-      }
+      const config = await loadAgentConfigFromDb(chatId);
       const state = getAgentState(chatId);
 
       const localTrades = await storage.getAsterLocalTrades(chatId);
@@ -845,18 +842,18 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       res.json({
         running: state?.running || false,
         config: {
-          name: config?.name || "My Agent",
-          riskPercent: config?.riskPercent || 1.0,
-          maxLeverage: config?.maxLeverage || 10,
-          maxOpenPositions: config?.maxOpenPositions || 3,
+          name: config?.name ?? "My Agent",
+          riskPercent: config?.riskPercent ?? 1.0,
+          maxLeverage: config?.maxLeverage ?? 10,
+          maxOpenPositions: config?.maxOpenPositions ?? 3,
           interval: config?.intervalMs ? Math.round(config.intervalMs / 1000) : 60,
-          takeProfitPct: config?.takeProfitPct || 5,
-          stopLossPct: config?.stopLossPct || 3,
-          trailingStopPct: config?.trailingStopPct || 2,
+          takeProfitPct: config?.takeProfitPct ?? 5,
+          stopLossPct: config?.stopLossPct ?? 3,
+          trailingStopPct: config?.trailingStopPct ?? 2,
           fundingRateFilter: config?.fundingRateFilter !== false,
-          orderbookImbalanceThreshold: config?.orderbookImbalanceThreshold || 0.6,
+          orderbookImbalanceThreshold: config?.orderbookImbalanceThreshold ?? 0.6,
           useConfidenceFilter: config?.useConfidenceFilter !== false,
-          minConfidence: config?.minConfidence || 0.65,
+          minConfidence: config?.minConfidence ?? 0.65,
         },
         stats: {
           tradeCount: Math.max(state?.tradeCount || 0, openTrades.length + closeTrades.length),
@@ -907,7 +904,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         }
       }
       if (symbol && typeof symbol === "string") updates.symbol = symbol.toUpperCase();
-      if (riskPercent !== undefined) updates.riskPercent = Math.max(0.5, Math.min(3, parseFloat(riskPercent) || 1));
+      if (riskPercent !== undefined) updates.riskPercent = Math.max(0.5, Math.min(5, parseFloat(riskPercent) || 1));
       if (leverage !== undefined) updates.maxLeverage = Math.max(1, Math.min(50, parseInt(leverage) || 10));
       if (maxOpenPositions !== undefined) updates.maxOpenPositions = Math.max(1, Math.min(10, parseInt(maxOpenPositions) || 3));
       if (takeProfitPct !== undefined) updates.takeProfitPct = Math.max(1, Math.min(50, parseFloat(takeProfitPct) || 5));

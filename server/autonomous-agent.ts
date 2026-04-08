@@ -70,7 +70,7 @@ const envRisk = parseFloat(process.env.AGENT_RISK_PERCENT || "1.0");
 const DEFAULT_CONFIG: AgentConfig = {
   name: "My Agent",
   maxLeverage: 10,
-  riskPercent: Math.max(0.5, Math.min(2.0, isNaN(envRisk) ? 1.0 : envRisk)),
+  riskPercent: Math.max(0.5, Math.min(5.0, isNaN(envRisk) ? 1.0 : envRisk)),
   intervalMs: 60000,
   klineInterval: "5m",
   enabled: false,
