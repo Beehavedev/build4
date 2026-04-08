@@ -1,4 +1,4 @@
-import { Wallet } from "ethers";
+import { Wallet, getAddress } from "ethers";
 
 const DEFAULT_FAPI_URL = "https://fapi.asterdex.com";
 const REQUEST_TIMEOUT_MS = 20000;
@@ -278,27 +278,28 @@ export function prepareActivationPayloads(
   approveAgentPayload: { domain: typeof EIP712_DOMAIN; types: typeof EIP712_TYPES; message: { msg: string }; paramString: string };
   approveBuilderPayload: { domain: typeof EIP712_DOMAIN; types: typeof EIP712_TYPES; message: { msg: string }; paramString: string };
 } {
-  const expiry = Math.trunc(Date.now() / 1000 + 2 * 365 * 24 * 3600) * 1000;
+  const checksumUser = getAddress(userAddress);
+  const checksumAgent = getAddress(agentAddress);
 
   const agentParams: Record<string, any> = {
-    agentAddress,
+    agentAddress: checksumAgent,
     permissions: "FUTURES",
     nonce: getNonce(),
-    user: userAddress,
-    signer: agentAddress,
-    ipWhitelist: "",
-    expiry: String(expiry),
-    builder: codeConfig.builderAddress,
-    maxFeeRate: codeConfig.maxFeeRate,
+    user: checksumUser,
+    signer: checksumAgent,
   };
+  if (codeConfig.builderAddress) {
+    agentParams.builder = getAddress(codeConfig.builderAddress);
+    agentParams.maxFeeRate = codeConfig.maxFeeRate || "0.00001";
+  }
   const agentParamString = buildQueryString(agentParams);
 
   const builderParams: Record<string, any> = {
-    builder: codeConfig.builderAddress,
+    builder: getAddress(codeConfig.builderAddress),
     maxFeeRate: codeConfig.maxFeeRate,
     nonce: getNonce(),
-    user: userAddress,
-    signer: agentAddress,
+    user: checksumUser,
+    signer: checksumAgent,
   };
   const builderParamString = buildQueryString(builderParams);
 
