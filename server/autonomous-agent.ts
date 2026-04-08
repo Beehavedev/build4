@@ -871,8 +871,25 @@ export async function resumeEnabledAgents(): Promise<void> {
           continue;
         }
 
-        const { createAsterFuturesClient } = await import("./aster-client");
-        const client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+        let client: any;
+        const isV3ApiWallet = creds.apiKey?.startsWith("0x") && creds.apiKey?.length === 42;
+        const isAsterCode = creds.parentAddress?.startsWith("astercode:");
+
+        if (isV3ApiWallet && isAsterCode) {
+          const realParent = creds.parentAddress!.replace("astercode:", "");
+          const { createAsterCodeFuturesClient, getDefaultAsterCodeConfig } = await import("./aster-code");
+          client = createAsterCodeFuturesClient(realParent, creds.apiKey, creds.apiSecret, getDefaultAsterCodeConfig());
+          console.log(`[Agent:${chatId}] Using Aster Code client (builder mode)`);
+        } else if (isV3ApiWallet) {
+          const parentAddr = creds.parentAddress || creds.apiKey;
+          const { createAsterV3FuturesClient } = await import("./aster-client");
+          client = createAsterV3FuturesClient({ user: parentAddr, signer: creds.apiKey, signerPrivateKey: creds.apiSecret });
+          console.log(`[Agent:${chatId}] Using V3 API Wallet client`);
+        } else {
+          const { createAsterFuturesClient } = await import("./aster-client");
+          client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+          console.log(`[Agent:${chatId}] Using HMAC client`);
+        }
         setAgentFuturesClient(client);
 
         const sendMsg = async (msg: string) => {

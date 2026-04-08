@@ -13335,6 +13335,17 @@ export async function getAsterClient(chatId: number): Promise<any> {
         const activeWallet = wallets.find((w: any) => w.isActive) || wallets[0];
         parentAddress = activeWallet?.walletAddress?.toLowerCase() || creds.apiKey;
       }
+
+      const isAsterCode = parentAddress?.startsWith("astercode:");
+      if (isAsterCode) {
+        const realParent = parentAddress!.replace("astercode:", "");
+        console.log(`[AsterClient] Aster Code: user(parent)=${realParent}, signer=${creds.apiKey}`);
+        const { createAsterCodeFuturesClient, getDefaultAsterCodeConfig } = await import("./aster-code");
+        const codeConfig = getDefaultAsterCodeConfig();
+        const codeFutures = createAsterCodeFuturesClient(realParent, creds.apiKey, creds.apiSecret, codeConfig);
+        return { futures: codeFutures, spot: null, mode: "user-astercode" };
+      }
+
       console.log(`[AsterClient] V3 API Wallet: user(parent)=${parentAddress}, signer=${creds.apiKey}`);
       const { createAsterV3FuturesClient } = await import("./aster-client");
       const v3Futures = createAsterV3FuturesClient({

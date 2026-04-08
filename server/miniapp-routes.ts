@@ -264,6 +264,32 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       console.log(`[MiniApp] Auto-connecting Aster for chatId=${chatId} wallet=${parentAddress.substring(0, 10)}`);
 
+      console.log(`[MiniApp] Trying Aster Code onboard for chatId=${chatId}`);
+      try {
+        const { asterCodeOnboard, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");
+        const codeConfig = getDefaultAsterCodeConfig();
+        const codeResult = await asterCodeOnboard(pk, codeConfig);
+        console.log(`[MiniApp] Aster Code onboard result: success=${codeResult.success} agent=${codeResult.agentApproved} builder=${codeResult.builderApproved} ${codeResult.error || ''}`);
+
+        if (codeResult.success && codeResult.signerAddress && codeResult.signerPrivateKey) {
+          await storage.saveAsterCredentials(chatId, codeResult.signerAddress, codeResult.signerPrivateKey, `astercode:${parentAddress}`);
+
+          try {
+            const codeClient = createAsterCodeFuturesClient(parentAddress, codeResult.signerAddress, codeResult.signerPrivateKey, codeConfig);
+            const bal = await codeClient.balance();
+            console.log(`[MiniApp] Aster Code post-connect balance: ${JSON.stringify(bal).substring(0, 300)}`);
+          } catch (balErr: any) {
+            console.log(`[MiniApp] Aster Code post-connect balance check failed: ${balErr.message}`);
+          }
+
+          res.json({ success: true, apiWalletAddress: codeResult.signerAddress, parentAddress });
+          return;
+        }
+      } catch (codeErr: any) {
+        console.log(`[MiniApp] Aster Code onboard failed: ${codeErr.message?.substring(0, 200)}`);
+      }
+
+      console.log(`[MiniApp] Aster Code failed, trying V3 direct for chatId=${chatId}`);
       const { createAsterV3FuturesClient } = await import("./aster-client");
       const v3Client = createAsterV3FuturesClient({
         user: parentAddress,
@@ -335,15 +361,27 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
           const isV3ApiWallet = creds.apiKey.startsWith("0x") && creds.apiKey.length === 42;
 
           if (isV3ApiWallet && parentAddress) {
-            const { createAsterV3FuturesClient } = await import("./aster-client");
-            const v3Futures = createAsterV3FuturesClient({
-              user: parentAddress,
-              signer: creds.apiKey,
-              signerPrivateKey: creds.apiSecret,
-            });
-            client = { futures: v3Futures, spot: null, walletAddress: parentAddress };
-            asterApiWalletAddr = creds.apiKey;
-            console.log(`[MiniApp] Aster V3 client: user=${parentAddress.substring(0,10)}, signer=set`);
+            const isAsterCode = parentAddress.startsWith("astercode:");
+            const realParent = isAsterCode ? parentAddress.replace("astercode:", "") : parentAddress;
+
+            if (isAsterCode) {
+              const { createAsterCodeFuturesClient, getDefaultAsterCodeConfig } = await import("./aster-code");
+              const codeConfig = getDefaultAsterCodeConfig();
+              const codeFutures = createAsterCodeFuturesClient(realParent, creds.apiKey, creds.apiSecret, codeConfig);
+              client = { futures: codeFutures, spot: null, walletAddress: realParent };
+              asterApiWalletAddr = creds.apiKey;
+              console.log(`[MiniApp] Aster Code client: user=${realParent.substring(0,10)}, signer=${creds.apiKey.substring(0,10)}`);
+            } else {
+              const { createAsterV3FuturesClient } = await import("./aster-client");
+              const v3Futures = createAsterV3FuturesClient({
+                user: parentAddress,
+                signer: creds.apiKey,
+                signerPrivateKey: creds.apiSecret,
+              });
+              client = { futures: v3Futures, spot: null, walletAddress: parentAddress };
+              asterApiWalletAddr = creds.apiKey;
+              console.log(`[MiniApp] Aster V3 client: user=${parentAddress.substring(0,10)}, signer=set`);
+            }
           } else {
             const { createAsterFuturesClient } = await import("./aster-client");
             const hmacClient = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
