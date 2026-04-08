@@ -223,55 +223,16 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const hash = createHash("sha256").update(`web:${addr}`).digest("hex");
       const chatId = "8" + hash.replace(/[^0-9]/g, "").substring(0, 14).padEnd(14, "0");
 
-      const { Wallet } = await import("ethers");
-      const botWallet = Wallet.createRandom();
-      const botAddr = botWallet.address.toLowerCase();
-      const botPk = botWallet.privateKey;
-
       await storage.saveTelegramWallet(chatId, addr);
       await storage.setActiveTelegramWallet(chatId, addr);
 
-      await storage.saveTelegramWallet(chatId, botAddr, botPk);
-
-      console.log(`[WebRegister] New web user: metamask=${addr.substring(0, 10)} chatId=${chatId} botWallet=${botAddr.substring(0, 10)}`);
-
-      let asterLinked = false;
-      try {
-        const { asterCodeOnboard, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");
-        const codeConfig = getDefaultAsterCodeConfig();
-        const codeResult = await asterCodeOnboard(botPk, codeConfig);
-        console.log(`[WebRegister] Aster Code onboard: success=${codeResult.success} agent=${codeResult.agentApproved} builder=${codeResult.builderApproved}`);
-
-        if (codeResult.success && codeResult.signerAddress && codeResult.signerPrivateKey) {
-          await storage.saveAsterCredentials(chatId, codeResult.signerAddress, codeResult.signerPrivateKey, `astercode:${botAddr}`);
-          asterLinked = true;
-        }
-      } catch (codeErr: any) {
-        console.log(`[WebRegister] Aster Code failed: ${codeErr.message?.substring(0, 200)}`);
-      }
-
-      if (!asterLinked) {
-        try {
-          const { asterBrokerOnboard, createAsterFuturesClient } = await import("./aster-client");
-          const result = await asterBrokerOnboard(botPk);
-          if (result.success && result.apiKey && result.apiSecret) {
-            await storage.saveAsterCredentials(chatId, result.apiKey, result.apiSecret);
-            asterLinked = true;
-            console.log(`[WebRegister] Broker onboard success for chatId=${chatId}`);
-          }
-        } catch (brokerErr: any) {
-          console.log(`[WebRegister] Broker onboard failed: ${brokerErr.message?.substring(0, 200)}`);
-        }
-      }
-
-      await storage.setActiveTelegramWallet(chatId, addr);
+      console.log(`[WebRegister] New web user: metamask=${addr.substring(0, 10)} chatId=${chatId}`);
 
       res.json({
         success: true,
         chatId,
         walletAddress: addr,
-        botWalletAddress: botAddr,
-        asterLinked,
+        asterLinked: false,
         alreadyRegistered: false,
       });
     } catch (e: any) {
@@ -402,6 +363,156 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
     } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
   });
 
+  const activationSessions = new Map<string, {
+    userAddr: string;
+    agentAddr: string;
+    chatId: string;
+    agentParamString: string;
+    builderParamString: string;
+    createdAt: number;
+  }>();
+
+  setInterval(() => {
+    const now = Date.now();
+    for (const [id, sess] of activationSessions) {
+      if (now - sess.createdAt > 5 * 60 * 1000) activationSessions.delete(id);
+    }
+  }, 60_000);
+
+  app.post("/api/miniapp/prepare-activation", async (req: Request, res: Response) => {
+    try {
+      const { walletAddress } = req.body;
+      if (!walletAddress || !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+        return res.status(400).json({ error: "Invalid wallet address" });
+      }
+      const userAddr = walletAddress.toLowerCase();
+
+      const { createHash, randomBytes } = await import("crypto");
+      const hash = createHash("sha256").update(`web:${userAddr}`).digest("hex");
+      const chatId = "8" + hash.replace(/[^0-9]/g, "").substring(0, 14).padEnd(14, "0");
+
+      const { db } = await import("./db");
+      const { telegramWallets } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const existing = await db.select({ chatId: telegramWallets.chatId })
+        .from(telegramWallets)
+        .where(eq(telegramWallets.walletAddress, userAddr))
+        .limit(1);
+      if (!existing.length) {
+        await storage.saveTelegramWallet(chatId, userAddr);
+        await storage.setActiveTelegramWallet(chatId, userAddr);
+      }
+
+      const { Wallet } = await import("ethers");
+      const agentWallet = Wallet.createRandom();
+      const agentAddr = agentWallet.address.toLowerCase();
+      const agentPk = agentWallet.privateKey;
+
+      await storage.saveTelegramWallet(chatId, agentAddr, agentPk);
+
+      const { prepareActivationPayloads, getDefaultAsterCodeConfig } = await import("./aster-code");
+      const codeConfig = getDefaultAsterCodeConfig();
+      const payloads = prepareActivationPayloads(userAddr, agentAddr, codeConfig);
+
+      const sessionId = randomBytes(32).toString("hex");
+      activationSessions.set(sessionId, {
+        userAddr,
+        agentAddr,
+        chatId,
+        agentParamString: payloads.approveAgentPayload.paramString,
+        builderParamString: payloads.approveBuilderPayload.paramString,
+        createdAt: Date.now(),
+      });
+
+      console.log(`[MiniApp] Prepared activation for user=${userAddr.substring(0, 10)} agent=${agentAddr.substring(0, 10)} chatId=${chatId} session=${sessionId.substring(0, 8)}`);
+
+      res.json({
+        success: true,
+        sessionId,
+        agentWalletAddress: agentAddr,
+        approveAgentPayload: payloads.approveAgentPayload,
+        approveBuilderPayload: payloads.approveBuilderPayload,
+      });
+    } catch (e: any) {
+      console.error("[MiniApp] prepare-activation error:", e.message);
+      res.status(500).json({ error: "Failed to prepare activation" });
+    }
+  });
+
+  app.post("/api/miniapp/submit-activation", async (req: Request, res: Response) => {
+    try {
+      const { sessionId, agentSignature, builderSignature } = req.body;
+
+      if (!sessionId || !agentSignature || !builderSignature) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const session = activationSessions.get(sessionId);
+      if (!session) {
+        return res.status(400).json({ error: "Invalid or expired activation session. Please try again." });
+      }
+
+      if (Date.now() - session.createdAt > 5 * 60 * 1000) {
+        activationSessions.delete(sessionId);
+        return res.status(400).json({ error: "Activation session expired. Please try again." });
+      }
+
+      activationSessions.delete(sessionId);
+
+      const { userAddr, agentAddr, chatId, agentParamString, builderParamString } = session;
+
+      const { verifyTypedData } = await import("ethers");
+      const eip712Domain = { name: "AsterSignTransaction", version: "1", chainId: 1666, verifyingContract: "0x0000000000000000000000000000000000000000" };
+      const eip712Types = { Message: [{ name: "msg", type: "string" }] };
+
+      const recoveredAgent = verifyTypedData(eip712Domain, eip712Types, { msg: agentParamString }, agentSignature);
+      if (recoveredAgent.toLowerCase() !== userAddr) {
+        console.log(`[MiniApp] Signature mismatch: recovered=${recoveredAgent.toLowerCase()} expected=${userAddr}`);
+        return res.status(400).json({ error: "Agent approval signature does not match wallet address" });
+      }
+
+      const recoveredBuilder = verifyTypedData(eip712Domain, eip712Types, { msg: builderParamString }, builderSignature);
+      if (recoveredBuilder.toLowerCase() !== userAddr) {
+        return res.status(400).json({ error: "Builder approval signature does not match wallet address" });
+      }
+
+      console.log(`[MiniApp] Signatures verified for user=${userAddr.substring(0, 10)} agent=${agentAddr.substring(0, 10)}`);
+
+      const { submitSignedActivation, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");
+
+      const result = await submitSignedActivation(
+        getDefaultAsterCodeConfig().fApiUrl || "https://fapi.asterdex.com",
+        agentParamString,
+        agentSignature,
+        builderParamString,
+        builderSignature,
+      );
+
+      console.log(`[MiniApp] Activation submitted: agent=${JSON.stringify(result.agentResult).substring(0, 200)} builder=${JSON.stringify(result.builderResult).substring(0, 200)}`);
+
+      const agentPk = await storage.getTelegramWalletPrivateKey(chatId, agentAddr);
+      if (!agentPk) {
+        return res.status(400).json({ error: "Agent wallet not found. Please restart activation." });
+      }
+
+      await storage.saveAsterCredentials(chatId, agentAddr, agentPk, `astercode:${userAddr}`);
+
+      try {
+        const codeConfig = getDefaultAsterCodeConfig();
+        const client = createAsterCodeFuturesClient(userAddr, agentAddr, agentPk, codeConfig);
+        const bal = await client.balance();
+        console.log(`[MiniApp] Post-activation balance: ${JSON.stringify(bal).substring(0, 300)}`);
+      } catch (balErr: any) {
+        console.log(`[MiniApp] Post-activation balance check failed: ${balErr.message}`);
+      }
+
+      res.json({ success: true, agentWalletAddress: agentAddr, parentAddress: userAddr });
+    } catch (e: any) {
+      console.error("[MiniApp] submit-activation error:", e.message);
+      res.status(500).json({ error: e.message || "Activation failed" });
+    }
+  });
+
   app.post("/api/miniapp/link-aster", async (req: Request, res: Response) => {
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;
@@ -456,15 +567,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       }
 
       if (!pk) {
-        console.log(`[MiniApp] No accessible private key for chatId=${chatId}, generating new bot wallet`);
-        const { Wallet } = await import("ethers");
-        const newBot = Wallet.createRandom();
-        const newAddr = newBot.address.toLowerCase();
-        const newPk = newBot.privateKey;
-        await storage.saveTelegramWallet(chatId, newAddr, newPk);
-        pk = newPk;
-        onboardWalletAddr = newAddr;
-        console.log(`[MiniApp] Generated new bot wallet ${newAddr.substring(0, 10)} for chatId=${chatId}`);
+        return res.status(400).json({ error: "No accessible wallet key. Use the web activation flow with MetaMask." });
       }
 
       console.log(`[MiniApp] Auto-connecting Aster for chatId=${chatId} onboardWallet=${onboardWalletAddr.substring(0, 10)}`);
@@ -478,15 +581,6 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
         if (codeResult.success && codeResult.signerAddress && codeResult.signerPrivateKey) {
           await storage.saveAsterCredentials(chatId, codeResult.signerAddress, codeResult.signerPrivateKey, `astercode:${onboardWalletAddr}`);
-
-          try {
-            const codeClient = createAsterCodeFuturesClient(onboardWalletAddr, codeResult.signerAddress, codeResult.signerPrivateKey, codeConfig);
-            const bal = await codeClient.balance();
-            console.log(`[MiniApp] Aster Code post-connect balance: ${JSON.stringify(bal).substring(0, 300)}`);
-          } catch (balErr: any) {
-            console.log(`[MiniApp] Aster Code post-connect balance check failed: ${balErr.message}`);
-          }
-
           res.json({ success: true, apiWalletAddress: codeResult.signerAddress, parentAddress: onboardWalletAddr });
           return;
         }
@@ -494,55 +588,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         console.log(`[MiniApp] Aster Code onboard failed: ${codeErr.message?.substring(0, 200)}`);
       }
 
-      console.log(`[MiniApp] Aster Code failed, trying V3 direct for chatId=${chatId}`);
-      const { createAsterV3FuturesClient } = await import("./aster-client");
-      const v3Client = createAsterV3FuturesClient({
-        user: onboardWalletAddr,
-        signer: onboardWalletAddr,
-        signerPrivateKey: pk,
-      });
-
-      try {
-        const testResult = await v3Client.testConnection();
-        console.log(`[MiniApp] V3 direct connection test: success=${testResult.success} ${testResult.error || ''}`);
-
-        if (testResult.success) {
-          await storage.saveAsterCredentials(chatId, onboardWalletAddr, pk);
-
-          try {
-            const bal = await v3Client.balance();
-            console.log(`[MiniApp] V3 post-connect balance: ${JSON.stringify(bal).substring(0, 300)}`);
-          } catch (balErr: any) {
-            console.log(`[MiniApp] V3 post-connect balance check failed: ${balErr.message}`);
-          }
-
-          res.json({ success: true, apiWalletAddress: onboardWalletAddr, parentAddress: onboardWalletAddr });
-          return;
-        }
-      } catch (v3Err: any) {
-        console.log(`[MiniApp] V3 direct connection failed: ${v3Err.message?.substring(0, 200)}`);
-      }
-
-      console.log(`[MiniApp] V3 direct failed, trying broker onboard for chatId=${chatId}`);
-      const { asterBrokerOnboard, createAsterFuturesClient } = await import("./aster-client");
-      const result = await asterBrokerOnboard(pk);
-      console.log(`[MiniApp] Broker onboard result: success=${result.success} hasKey=${!!result.apiKey}`);
-
-      if (result.success && result.apiKey && result.apiSecret) {
-        await storage.saveAsterCredentials(chatId, result.apiKey, result.apiSecret);
-
-        try {
-          const client = createAsterFuturesClient({ apiKey: result.apiKey, apiSecret: result.apiSecret });
-          const bal = await client.balance();
-          console.log(`[MiniApp] Post-broker-onboard balance: ${JSON.stringify(bal).substring(0, 300)}`);
-        } catch (e: any) {
-          console.log(`[MiniApp] Post-broker-onboard balance check failed: ${e.message}`);
-        }
-
-        res.json({ success: true, apiWalletAddress: "auto", parentAddress: onboardWalletAddr });
-      } else {
-        res.json({ success: false, error: result.error || "Aster connection failed. Please try again." });
-      }
+      res.json({ success: false, error: "Activation failed. Use MetaMask signing flow on the web terminal." });
     } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
   });
 

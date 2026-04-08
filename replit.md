@@ -45,7 +45,7 @@ The project uses a monorepo containing `client/` (React frontend), `server/` (Ex
 - **Mobile**: Bottom nav bar opens slide-up panels for all sections (Trade, Book, Positions, Agent, Account).
 - **Public APIs**: `/api/public/klines`, `/api/public/depth`, `/api/public/ticker`, `/api/public/funding`, `/api/public/markets` — all proxy to fapi.asterdex.com without auth.
 - **Auth**: `x-wallet-address` header → reverse lookup to chatId in miniAppAuth middleware. Same wallet = same account across Telegram mini app and web.
-- **Web Registration**: `/api/miniapp/web-register` endpoint (before auth middleware). New users connect MetaMask, click "Create Account" → generates synthetic chatId (`8` + hash digits), creates server-side bot wallet, auto-onboards to Aster via Code/Broker.
+- **Web Registration**: `/api/miniapp/web-register` endpoint (before auth middleware). New users connect MetaMask, click "Create Account" → generates synthetic chatId (`8` + hash digits), saves MetaMask address. Aster activation happens separately via MetaMask signing flow (`prepare-activation` → `submit-activation`).
 - **Keyboard Shortcuts**: B = Buy/Long, S = Sell/Short, Escape = close modals.
 - **Key files**: `client/src/pages/futures.tsx`, auth extension in `server/miniapp-routes.ts`.
 - **Dependencies**: `lightweight-charts@4.2.1` for TradingView-style charting.
@@ -53,12 +53,17 @@ The project uses a monorepo containing `client/` (React frontend), `server/` (Ex
 ### Aster Code Integration (V3 EIP-712)
 - **Signing**: All V3 API calls use EIP-712 typed data with `Message { msg: "<param_string>" }`, domain `{ name: "AsterSignTransaction", version: "1", chainId: 1666, verifyingContract: "0x000..." }`.
 - **Nonce**: Microsecond UNIX timestamp (`Date.now() * 1000`), monotonically increasing.
-- **approveAgent**: Signed by user's main wallet. Params: `agentAddress`, `permissions` ("FUTURES"), `nonce`, `user`, `signer`, optional `builder`/`maxFeeRate`/`expiry`/`ipWhitelist`.
-- **approveBuilder**: Signed by user's main wallet. Params: `builder`, `maxFeeRate`, `nonce`, `user`, `signer`.
-- **Trading requests**: Signed by agent/signer private key, include `user` (main wallet) and `signer` (agent address).
-- **Broker registration**: Non-blocking — if broker login fails (e.g. region restriction), onboarding proceeds with direct V3 API calls.
+- **Web Activation Flow (MetaMask signing — no user private keys on server)**:
+  1. `POST /api/miniapp/prepare-activation` — server generates agent wallet, returns EIP-712 typed data payloads
+  2. Frontend calls `eth_signTypedData_v4` on MetaMask for `approveAgent` and `approveBuilder`
+  3. `POST /api/miniapp/submit-activation` — server receives signatures, submits to Aster API, saves agent credentials
+  4. Server only stores the agent wallet private key (which it generated). User's MetaMask key never leaves their browser.
+- **approveAgent**: Signed by user's MetaMask. Params: `agentAddress`, `permissions` ("FUTURES"), `nonce`, `user`, `signer`, optional `builder`/`maxFeeRate`/`expiry`/`ipWhitelist`.
+- **approveBuilder**: Signed by user's MetaMask. Params: `builder`, `maxFeeRate`, `nonce`, `user`, `signer`.
+- **Trading requests**: Signed by agent/signer private key (server-held), include `user` (MetaMask address) and `signer` (agent address).
+- **Telegram bot flow**: Uses `asterCodeOnboard()` with bot-generated wallet (server has key for both user and agent roles).
 - **Builder**: Address `0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4`, name `BUILD4`, feeRate `0.00001`.
-- **Key files**: `server/aster-code.ts` (V3 Code signing, approve, trading), `server/aster-client.ts` (legacy V1 broker).
+- **Key files**: `server/aster-code.ts` (V3 Code signing, approve, trading, `prepareActivationPayloads`, `submitSignedActivation`), `server/aster-client.ts` (legacy V1 broker).
 
 ### Permissionless Open Protocol
 Standardized endpoints facilitate agent discovery, wallet identity, skill listing, wallet activity lookup, and open execution, with a free tier and HTTP 402 payment protocol.

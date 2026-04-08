@@ -269,6 +269,106 @@ export async function asterCodeApproveBuilder(
   return makeSignedRequest(baseUrl, "/fapi/v3/approveBuilder", userPrivateKey, reqParams, "POST");
 }
 
+export function prepareActivationPayloads(
+  userAddress: string,
+  agentAddress: string,
+  codeConfig: AsterCodeConfig,
+): {
+  agentWalletAddress: string;
+  approveAgentPayload: { domain: typeof EIP712_DOMAIN; types: typeof EIP712_TYPES; message: { msg: string }; paramString: string };
+  approveBuilderPayload: { domain: typeof EIP712_DOMAIN; types: typeof EIP712_TYPES; message: { msg: string }; paramString: string };
+} {
+  const expiry = Math.trunc(Date.now() / 1000 + 2 * 365 * 24 * 3600) * 1000;
+
+  const agentParams: Record<string, any> = {
+    agentAddress,
+    permissions: "FUTURES",
+    nonce: getNonce(),
+    user: userAddress,
+    signer: agentAddress,
+    ipWhitelist: "",
+    expiry: String(expiry),
+    builder: codeConfig.builderAddress,
+    maxFeeRate: codeConfig.maxFeeRate,
+  };
+  const agentParamString = buildQueryString(agentParams);
+
+  const builderParams: Record<string, any> = {
+    builder: codeConfig.builderAddress,
+    maxFeeRate: codeConfig.maxFeeRate,
+    nonce: getNonce(),
+    user: userAddress,
+    signer: agentAddress,
+  };
+  const builderParamString = buildQueryString(builderParams);
+
+  return {
+    agentWalletAddress: agentAddress,
+    approveAgentPayload: {
+      domain: EIP712_DOMAIN,
+      types: EIP712_TYPES,
+      message: { msg: agentParamString },
+      paramString: agentParamString,
+    },
+    approveBuilderPayload: {
+      domain: EIP712_DOMAIN,
+      types: EIP712_TYPES,
+      message: { msg: builderParamString },
+      paramString: builderParamString,
+    },
+  };
+}
+
+export async function submitSignedActivation(
+  baseUrl: string,
+  agentParamString: string,
+  agentSignature: string,
+  builderParamString: string,
+  builderSignature: string,
+): Promise<{ agentResult: any; builderResult: any }> {
+  const fApiUrl = baseUrl || DEFAULT_FAPI_URL;
+
+  const controller1 = new AbortController();
+  const t1 = setTimeout(() => controller1.abort(), REQUEST_TIMEOUT_MS);
+  const agentBody = `${agentParamString}&signature=${agentSignature}`;
+  console.log(`[AsterCode] submitSignedActivation approveAgent: ${agentParamString.substring(0, 200)}`);
+  const agentRes = await fetch(`${fApiUrl}/fapi/v3/approveAgent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "BUILD4/1.0" },
+    body: agentBody,
+    signal: controller1.signal,
+  });
+  clearTimeout(t1);
+  const agentText = await agentRes.text();
+  console.log(`[AsterCode] approveAgent response: ${agentRes.status} ${agentText.substring(0, 500)}`);
+  let agentData: any;
+  try { agentData = JSON.parse(agentText); } catch { throw new Error(`approveAgent non-JSON: ${agentText.substring(0, 200)}`); }
+  if (!agentRes.ok) throw new Error(`approveAgent failed: ${agentData?.msg || agentData?.message || agentText.substring(0, 200)}`);
+
+  await new Promise(r => setTimeout(r, 500));
+
+  const controller2 = new AbortController();
+  const t2 = setTimeout(() => controller2.abort(), REQUEST_TIMEOUT_MS);
+  const builderBody = `${builderParamString}&signature=${builderSignature}`;
+  console.log(`[AsterCode] submitSignedActivation approveBuilder: ${builderParamString.substring(0, 200)}`);
+  const builderRes = await fetch(`${fApiUrl}/fapi/v3/approveBuilder`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "BUILD4/1.0" },
+    body: builderBody,
+    signal: controller2.signal,
+  });
+  clearTimeout(t2);
+  const builderText = await builderRes.text();
+  console.log(`[AsterCode] approveBuilder response: ${builderRes.status} ${builderText.substring(0, 500)}`);
+  let builderData: any;
+  try { builderData = JSON.parse(builderText); } catch { builderData = { raw: builderText }; }
+
+  return {
+    agentResult: agentData?.data !== undefined ? agentData.data : agentData,
+    builderResult: builderData?.data !== undefined ? builderData.data : builderData,
+  };
+}
+
 export async function asterCodeUpdateAgent(
   baseUrl: string,
   userPrivateKey: string,

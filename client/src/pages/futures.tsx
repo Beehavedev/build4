@@ -1140,42 +1140,120 @@ function RegisterOrErrorScreen({
 }
 
 function ActivationBanner({ walletAddress, onConnected }: { walletAddress: string; onConnected: () => void }) {
-  const [connecting, setConnecting] = useState(false);
+  const [step, setStep] = useState<"idle" | "preparing" | "sign-agent" | "sign-builder" | "submitting">("idle");
   const [error, setError] = useState<string | null>(null);
 
   const handleConnect = async () => {
-    setConnecting(true);
+    setStep("preparing");
     setError(null);
     try {
-      const res = await fetch("/api/miniapp/link-aster", {
+      const ethereum = (window as any).ethereum;
+      if (!ethereum) { setError("MetaMask not found"); setStep("idle"); return; }
+
+      const prepRes = await fetch("/api/miniapp/prepare-activation", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet-address": walletAddress },
-        body: JSON.stringify({}),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress }),
       });
-      const data = await res.json();
-      if (data.success) setTimeout(onConnected, 1500);
-      else setError(data.error || "Activation failed");
+      const prepData = await prepRes.json();
+      if (!prepData.success) { setError(prepData.error || "Preparation failed"); setStep("idle"); return; }
+
+      const { sessionId, agentWalletAddress, approveAgentPayload, approveBuilderPayload } = prepData;
+
+      setStep("sign-agent");
+      const agentTypedData = {
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          ...approveAgentPayload.types,
+        },
+        domain: approveAgentPayload.domain,
+        primaryType: "Message",
+        message: approveAgentPayload.message,
+      };
+
+      const agentSig = await ethereum.request({
+        method: "eth_signTypedData_v4",
+        params: [walletAddress, JSON.stringify(agentTypedData)],
+      });
+
+      setStep("sign-builder");
+      const builderTypedData = {
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          ...approveBuilderPayload.types,
+        },
+        domain: approveBuilderPayload.domain,
+        primaryType: "Message",
+        message: approveBuilderPayload.message,
+      };
+
+      const builderSig = await ethereum.request({
+        method: "eth_signTypedData_v4",
+        params: [walletAddress, JSON.stringify(builderTypedData)],
+      });
+
+      setStep("submitting");
+      const submitRes = await fetch("/api/miniapp/submit-activation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          agentSignature: agentSig,
+          builderSignature: builderSig,
+        }),
+      });
+      const submitData = await submitRes.json();
+      if (submitData.success) {
+        setTimeout(onConnected, 1500);
+      } else {
+        setError(submitData.error || "Activation failed");
+        setStep("idle");
+      }
     } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setConnecting(false);
+      if (e.code === 4001) {
+        setError("Signature rejected");
+      } else {
+        setError(e.message || "Signing failed");
+      }
+      setStep("idle");
     }
   };
+
+  const stepLabels: Record<string, string> = {
+    preparing: "Preparing...",
+    "sign-agent": "Sign in MetaMask (1/2)...",
+    "sign-builder": "Sign in MetaMask (2/2)...",
+    submitting: "Submitting...",
+  };
+
+  const busy = step !== "idle";
 
   return (
     <div className="border-b border-yellow-500/10 bg-yellow-500/[0.03] px-4 py-2 flex items-center justify-between gap-3" data-testid="activation-banner">
       <div className="flex items-center gap-2 text-[11px]">
         <Zap className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
-        <span className="text-yellow-300/80">Trading not yet activated.</span>
+        <span className="text-yellow-300/80">
+          {busy ? stepLabels[step] : "Trading not yet activated."}
+        </span>
         {error && <span className="text-red-400 ml-1">{error}</span>}
       </div>
       <button
         onClick={handleConnect}
-        disabled={connecting}
+        disabled={busy}
         className="px-3 py-1 text-[10px] font-semibold rounded bg-yellow-500/15 text-yellow-300 hover:bg-yellow-500/25 border border-yellow-500/20 transition-colors disabled:opacity-50 shrink-0"
         data-testid="button-connect-aster"
       >
-        {connecting ? "Activating..." : "Activate Now"}
+        {busy ? stepLabels[step] : "Activate Now"}
       </button>
     </div>
   );
