@@ -61,42 +61,19 @@ export interface AsterCodeOnboardResult {
   debug?: string;
 }
 
-const EIP712_DOMAIN_MAIN = {
-  name: "AsterSignTransaction",
-  version: "1",
-  chainId: 56,
-  verifyingContract: "0x0000000000000000000000000000000000000000",
-};
-
-const EIP712_DOMAIN_TRADING = {
+const EIP712_DOMAIN = {
   name: "AsterSignTransaction",
   version: "1",
   chainId: 1666,
   verifyingContract: "0x0000000000000000000000000000000000000000",
 };
 
-let _lastNonceSec = 0;
-let _nonceCounter = 0;
+const EIP712_TYPES = {
+  Message: [{ name: "msg", type: "string" }],
+};
 
-function getNonce(): number {
-  const nowSec = Math.trunc(Date.now() / 1000);
-  if (nowSec === _lastNonceSec) {
-    _nonceCounter++;
-  } else {
-    _lastNonceSec = nowSec;
-    _nonceCounter = 0;
-  }
-  return nowSec * 1_000_000 + _nonceCounter;
-}
-
-function capitalizeKey(key: string): string {
-  return key.charAt(0).toUpperCase() + key.slice(1);
-}
-
-function inferEIP712Type(value: any): string {
-  if (typeof value === "boolean") return "bool";
-  if (typeof value === "number" && Number.isInteger(value)) return "uint256";
-  return "string";
+function getNonce(): string {
+  return String(Math.trunc(Date.now() * 1000));
 }
 
 function buildQueryString(params: Record<string, any>): string {
@@ -106,54 +83,13 @@ function buildQueryString(params: Record<string, any>): string {
     .join("&");
 }
 
-async function signEIP712Main(
-  privateKey: string,
-  params: Record<string, any>,
-  primaryType: string,
-): Promise<string> {
-  const capitalizedParams: Record<string, any> = {};
-  const typeFields: { name: string; type: string }[] = [];
-
-  for (const [key, value] of Object.entries(params)) {
-    const capKey = capitalizeKey(key);
-    capitalizedParams[capKey] = value;
-    typeFields.push({ name: capKey, type: inferEIP712Type(value) });
-  }
-
-  const types: Record<string, { name: string; type: string }[]> = {
-    [primaryType]: typeFields,
-  };
-
+async function signEIP712(privateKey: string, paramString: string): Promise<string> {
   const wallet = new Wallet(privateKey);
-
-  console.log(`[AsterCode] signMain primaryType=${primaryType} user=${wallet.address.substring(0, 10)}...`);
-  console.log(`[AsterCode] signMain fields=${typeFields.map(f => `${f.name}:${f.type}`).join(",")}`);
-
   const signature = await wallet.signTypedData(
-    EIP712_DOMAIN_MAIN,
-    types,
-    capitalizedParams,
+    EIP712_DOMAIN,
+    EIP712_TYPES,
+    { msg: paramString },
   );
-
-  return signature;
-}
-
-async function signEIP712Trading(
-  privateKey: string,
-  message: string,
-): Promise<string> {
-  const types = {
-    Message: [{ name: "msg", type: "string" }],
-  };
-
-  const wallet = new Wallet(privateKey);
-
-  const signature = await wallet.signTypedData(
-    EIP712_DOMAIN_TRADING,
-    types,
-    { msg: message },
-  );
-
   return signature;
 }
 
@@ -418,21 +354,17 @@ export async function asterCodeOnboard(
     const userAddress = userWallet.address;
     console.log(`[AsterCode] Onboarding user=${userAddress.substring(0, 10)}... builder=${codeConfig.builderAddress.substring(0, 10)}...`);
 
-    console.log(`[AsterCode] Step 1: Ensuring user is registered on Aster...`);
+    console.log(`[AsterCode] Step 1: Attempting broker registration (non-blocking)...`);
     const regResult = await ensureAsterUserRegistered(userWallet);
-    if (!regResult.registered) {
-      console.log(`[AsterCode] User registration failed: ${regResult.error}`);
-      debugParts.push(`register=FAIL:${regResult.error?.substring(0, 60)}`);
-      return {
-        success: false,
-        error: `Aster user registration failed: ${regResult.error}`,
-        debug: debugParts.join(" | "),
-      };
+    if (regResult.registered) {
+      debugParts.push("register=OK");
+      console.log(`[AsterCode] Broker registration succeeded`);
+    } else {
+      debugParts.push(`register=SKIP:${regResult.error?.substring(0, 40)}`);
+      console.log(`[AsterCode] Broker registration skipped (${regResult.error}), proceeding with direct V3 onboard...`);
     }
-    debugParts.push("register=OK");
-    console.log(`[AsterCode] User registered on Aster`);
 
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 300));
 
     const signerWallet = Wallet.createRandom();
     const signerAddress = signerWallet.address;
