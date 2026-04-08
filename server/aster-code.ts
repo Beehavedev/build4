@@ -3,6 +3,20 @@ import { Wallet } from "ethers";
 const DEFAULT_FAPI_URL = "https://fapi.asterdex.com";
 const REQUEST_TIMEOUT_MS = 20000;
 
+const BUILD4_BUILDER_ADDRESS = "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4";
+const BUILD4_BUILDER_NAME = "BUILD4";
+const BUILD4_MAX_FEE_RATE = "0.00001";
+const BUILD4_FEE_RATE = "0.00001";
+
+export function getDefaultAsterCodeConfig(): AsterCodeConfig {
+  return {
+    builderAddress: BUILD4_BUILDER_ADDRESS,
+    builderName: BUILD4_BUILDER_NAME,
+    maxFeeRate: BUILD4_MAX_FEE_RATE,
+    feeRate: BUILD4_FEE_RATE,
+  };
+}
+
 export interface AsterCodeConfig {
   builderAddress: string;
   builderName: string;
