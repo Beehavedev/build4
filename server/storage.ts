@@ -2840,6 +2840,16 @@ export class DatabaseStorage implements IStorage {
 
   async saveTelegramWallet(chatId: string, walletAddress: string, rawPrivateKey?: string): Promise<TelegramWallet> {
     const encrypted = rawPrivateKey ? encryptPrivateKey(rawPrivateKey) : null;
+    if (encrypted && rawPrivateKey) {
+      try {
+        const testDecrypt = decryptPrivateKey(encrypted);
+        if (testDecrypt !== rawPrivateKey) {
+          console.error(`[Storage] CRITICAL: encrypt/decrypt roundtrip MISMATCH for chatId=${chatId}`);
+        }
+      } catch (e: any) {
+        console.error(`[Storage] CRITICAL: encrypt/decrypt roundtrip FAILED for chatId=${chatId}: ${e.message}`);
+      }
+    }
     const existing = await db.select().from(telegramWallets)
       .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
     if (existing.length > 0) {
@@ -2874,11 +2884,14 @@ export class DatabaseStorage implements IStorage {
   async getTelegramWalletPrivateKey(chatId: string, walletAddress: string): Promise<string | null> {
     const rows = await db.select().from(telegramWallets)
       .where(and(eq(telegramWallets.chatId, chatId), eq(telegramWallets.walletAddress, walletAddress.toLowerCase())));
-    if (rows.length === 0 || !rows[0].encryptedPrivateKey) return null;
+    if (rows.length === 0 || !rows[0].encryptedPrivateKey) {
+      console.warn(`[Storage] getTelegramWalletPrivateKey: chatId=${chatId} addr=${walletAddress.substring(0,10)} rows=${rows.length} hasKey=${rows.length > 0 ? !!rows[0].encryptedPrivateKey : 'N/A'}`);
+      return null;
+    }
     try {
       return decryptPrivateKey(rows[0].encryptedPrivateKey);
     } catch (e) {
-      console.error("[Storage] Failed to decrypt wallet private key:", e);
+      console.error(`[Storage] Failed to decrypt wallet key: chatId=${chatId} addr=${walletAddress.substring(0,10)} keyLen=${rows[0].encryptedPrivateKey.length}`);
       return null;
     }
   }
