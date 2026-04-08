@@ -1,4 +1,4 @@
-import { Wallet, getAddress, Signature, AbiCoder, keccak256, getBytes } from "ethers";
+import { Wallet, getAddress, Signature, AbiCoder, keccak256, getBytes, TypedDataEncoder } from "ethers";
 
 const DEFAULT_FAPI_URL = "https://fapi.asterdex.com";
 const REQUEST_TIMEOUT_MS = 20000;
@@ -242,38 +242,135 @@ async function makeTradingRequest(
   }
 }
 
+const EIP712_DOMAIN = {
+  name: "AsterSignTransaction",
+  version: "1",
+  chainId: 56,
+  verifyingContract: "0x0000000000000000000000000000000000000000",
+};
+
+function inferEip712Type(value: any): string {
+  if (typeof value === "boolean") return "bool";
+  if (typeof value === "number" || typeof value === "bigint") return "uint256";
+  return "string";
+}
+
+function capitalizeKey(k: string): string {
+  return k.charAt(0).toUpperCase() + k.slice(1);
+}
+
+async function signEip712(
+  privateKey: string,
+  primaryType: string,
+  message: Record<string, any>,
+): Promise<string> {
+  const capitalizedMsg: Record<string, any> = {};
+  const typeFields: Array<{ name: string; type: string }> = [];
+
+  for (const [k, v] of Object.entries(message)) {
+    const capKey = capitalizeKey(k);
+    capitalizedMsg[capKey] = v;
+    typeFields.push({ name: capKey, type: inferEip712Type(v) });
+  }
+
+  const types: Record<string, Array<{ name: string; type: string }>> = {
+    [primaryType]: typeFields,
+  };
+
+  const wallet = new Wallet(privateKey);
+  const sig = await wallet.signTypedData(EIP712_DOMAIN, types, capitalizedMsg);
+  return sig;
+}
+
+async function makeEip712Request(
+  baseUrl: string,
+  path: string,
+  privateKey: string,
+  params: Record<string, any>,
+  primaryType: string,
+): Promise<any> {
+  const signature = await signEip712(privateKey, primaryType, params);
+
+  const bodyParams: Record<string, any> = { ...params, signature, signatureChainId: 56 };
+
+  console.log(`[AsterCode] EIP712 POST ${path} primaryType=${primaryType} params=${JSON.stringify(params).substring(0, 300)}`);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const urlEncodedBody = Object.entries(bodyParams)
+      .filter(([_, v]) => v !== undefined && v !== null)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+      .join("&");
+
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "BUILD4/1.0",
+      },
+      body: urlEncodedBody,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    const text = await response.text();
+    console.log(`[AsterCode] EIP712 POST ${path} status=${response.status} body=${text.substring(0, 500)}`);
+
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Non-JSON response from ${path}: ${text.substring(0, 300)}`);
+    }
+
+    if (!response.ok) {
+      throw new Error(`AsterCode API error ${data?.code || response.status}: ${data?.msg || data?.message || text.substring(0, 200)}`);
+    }
+
+    return data?.data !== undefined ? data.data : data;
+  } catch (e: any) {
+    clearTimeout(timeoutId);
+    if (e.name === "AbortError") {
+      throw new Error(`AsterCode API timeout: POST ${path}`);
+    }
+    throw e;
+  }
+}
+
 export async function asterCodeApproveAgent(
   baseUrl: string,
   userAddress: string,
-  agentPrivateKey: string,
+  userPrivateKey: string,
   params: ApproveAgentParams,
 ): Promise<any> {
   const reqParams: Record<string, any> = {
+    agentName: params.agentName || `build4_${Date.now()}`,
     agentAddress: params.agentAddress,
+    ipWhitelist: params.ipWhitelist || "",
+    expired: params.expired || Math.trunc(Date.now() / 1000 + 2 * 365 * 24 * 3600) * 1000,
+    canSpotTrade: params.canSpotTrade ?? false,
+    canPerpTrade: params.canPerpTrade ?? true,
+    canWithdraw: params.canWithdraw ?? false,
   };
 
-  if (params.expired) reqParams.expiry = String(params.expired);
-
-  if (params.builder) {
-    reqParams.builder = params.builder;
-    reqParams.maxFeeRate = params.maxFeeRate || "0.00001";
-  }
-
-  return makeSignedRequest(baseUrl, "/fapi/v3/approveAgent", agentPrivateKey, reqParams, "POST", userAddress);
+  return makeEip712Request(baseUrl, "/fapi/v3/approveAgent", userPrivateKey, reqParams, "ApproveAgent");
 }
 
 export async function asterCodeApproveBuilder(
   baseUrl: string,
   userAddress: string,
-  signerPrivateKey: string,
+  userPrivateKey: string,
   params: ApproveBuilderParams,
 ): Promise<any> {
   const reqParams: Record<string, any> = {
     builder: params.builder,
-    maxFeeRate: params.maxFeeRate,
+    maxFeeRate: params.maxFeeRate || "0.00001",
+    builderName: params.builderName || "BUILD4",
   };
 
-  return makeSignedRequest(baseUrl, "/fapi/v3/approveBuilder", signerPrivateKey, reqParams, "POST", userAddress);
+  return makeEip712Request(baseUrl, "/fapi/v3/approveBuilder", userPrivateKey, reqParams, "ApproveBuilder");
 }
 
 
