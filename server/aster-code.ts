@@ -360,6 +360,52 @@ export async function asterCodeGetBuilders(
   return makeTradingRequest(baseUrl, "/fapi/v3/builder", userAddress, signerAddress, signerPrivateKey, {}, "GET");
 }
 
+const BROKER_BASE_URL = "https://www.asterdex.com/bapi/futures/v1";
+
+async function ensureAsterUserRegistered(wallet: InstanceType<typeof Wallet>): Promise<{ registered: boolean; error?: string }> {
+  const address = wallet.address;
+  try {
+    const nonceRes = await fetch(`${BROKER_BASE_URL}/public/future/web3/get-nonce`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "clientType": "web" },
+      body: JSON.stringify({ type: "LOGIN", sourceAddr: address }),
+    });
+    const nonceData = await nonceRes.json();
+    if (!nonceData?.data?.nonce) {
+      return { registered: false, error: `No login nonce: ${nonceData?.message || nonceData?.code || "unknown"}` };
+    }
+
+    const loginMessage = `You are signing into Astherus ${nonceData.data.nonce}`;
+    const loginSignature = await wallet.signMessage(loginMessage);
+
+    const loginRes = await fetch(`${BROKER_BASE_URL}/public/future/web3/ae/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "clientType": "web" },
+      body: JSON.stringify({
+        signature: loginSignature,
+        sourceAddr: address,
+        chainId: 56,
+        agentCode: "BUILD4",
+      }),
+    });
+    const loginData = await loginRes.json();
+    console.log(`[AsterCode] User registration login: code=${loginData?.code} msg=${loginData?.message || loginData?.msg || "none"}`);
+
+    if (loginData?.code === "000000") {
+      return { registered: true };
+    }
+
+    const msg = loginData?.message || loginData?.msg || "";
+    if (msg.toLowerCase().includes("region") || msg.toLowerCase().includes("not available")) {
+      return { registered: false, error: "Region restricted" };
+    }
+
+    return { registered: false, error: msg || `Login code: ${loginData?.code}` };
+  } catch (e: any) {
+    return { registered: false, error: e.message };
+  }
+}
+
 export async function asterCodeOnboard(
   userPrivateKey: string,
   codeConfig: AsterCodeConfig,
@@ -372,6 +418,22 @@ export async function asterCodeOnboard(
     const userAddress = userWallet.address;
     console.log(`[AsterCode] Onboarding user=${userAddress.substring(0, 10)}... builder=${codeConfig.builderAddress.substring(0, 10)}...`);
 
+    console.log(`[AsterCode] Step 1: Ensuring user is registered on Aster...`);
+    const regResult = await ensureAsterUserRegistered(userWallet);
+    if (!regResult.registered) {
+      console.log(`[AsterCode] User registration failed: ${regResult.error}`);
+      debugParts.push(`register=FAIL:${regResult.error?.substring(0, 60)}`);
+      return {
+        success: false,
+        error: `Aster user registration failed: ${regResult.error}`,
+        debug: debugParts.join(" | "),
+      };
+    }
+    debugParts.push("register=OK");
+    console.log(`[AsterCode] User registered on Aster`);
+
+    await new Promise(r => setTimeout(r, 500));
+
     const signerWallet = Wallet.createRandom();
     const signerAddress = signerWallet.address;
     const signerPrivKey = signerWallet.privateKey;
@@ -381,6 +443,7 @@ export async function asterCodeOnboard(
     const agentName = `build4_${Date.now()}`;
     const expiry = Math.trunc(Date.now() / 1000 + 2 * 365 * 24 * 3600) * 1000;
 
+    console.log(`[AsterCode] Step 2: Approving agent (signer)...`);
     try {
       const agentResult = await asterCodeApproveAgent(baseUrl, userPrivateKey, {
         agentName,
@@ -408,6 +471,7 @@ export async function asterCodeOnboard(
 
     await new Promise(r => setTimeout(r, 500));
 
+    console.log(`[AsterCode] Step 3: Approving builder...`);
     let builderApproved = true;
     try {
       const builderResult = await asterCodeApproveBuilder(baseUrl, userPrivateKey, {
