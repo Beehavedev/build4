@@ -964,15 +964,26 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       const fc = client.futures || client;
 
-      const [positions, incomeData, allPositionsRaw] = await Promise.all([
+      const [positions, incomeRaw] = await Promise.all([
         fc.positions().catch((e: any) => { console.log(`[History] positions error: ${e.message?.substring(0, 100)}`); return []; }),
-        fc.income("REALIZED_PNL", 500).catch((e: any) => { console.log(`[History] income error: ${e.message?.substring(0, 100)}`); return []; }),
-        fc.positions().catch(() => []),
+        fc.income("REALIZED_PNL", 100).catch((e: any) => { console.log(`[History] income REALIZED_PNL error: ${e.message?.substring(0, 100)}`); return []; }),
       ]);
 
+      let incomeData = Array.isArray(incomeRaw) ? incomeRaw : [];
+      if (incomeData.length === 0) {
+        try {
+          const allIncome = await fc.income(undefined, 100).catch(() => []);
+          if (Array.isArray(allIncome)) {
+            incomeData = allIncome.filter((i: any) => i.incomeType === "REALIZED_PNL" || parseFloat(i.income || "0") !== 0);
+          }
+        } catch (e2: any) { console.log(`[History] income fallback error: ${e2.message?.substring(0, 100)}`); }
+      }
+
+      console.log(`[History] chatId=${chatId} positions=${Array.isArray(positions)?positions.length:'err'} income=${incomeData.length}`);
+
       const leverageMap: Record<string, number> = {};
-      if (Array.isArray(allPositionsRaw)) {
-        for (const p of allPositionsRaw) {
+      if (Array.isArray(positions)) {
+        for (const p of positions) {
           if (p.symbol) leverageMap[p.symbol] = parseFloat(p.leverage || "1");
         }
       }
