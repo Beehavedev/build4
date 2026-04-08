@@ -101,7 +101,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 <div class="header">
   <div class="logo">⚡</div>
   <div>
-    <div class="hdr-title">Aster Agent AI</div>
+    <div class="hdr-title">Aster Agent AI <span style="font-size:9px;font-weight:600;color:#0b0e11;background:#f3ba2f;border-radius:4px;padding:1px 5px;margin-left:4px;vertical-align:middle;letter-spacing:0.5px">BETA</span></div>
     <div class="hdr-sub"><span class="live-dot"></span> Autonomous Trading</div>
   </div>
   <div style="margin-left:auto;text-align:right">
