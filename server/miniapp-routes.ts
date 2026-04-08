@@ -320,50 +320,6 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
     }
   });
 
-  app.use("/api/miniapp", miniAppAuth);
-
-  app.post("/api/miniapp/import-wallet", async (req: Request, res: Response) => {
-    try {
-      const chatId = req.headers["x-telegram-chat-id"] as string;
-      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
-      const { privateKey } = req.body;
-      if (!privateKey) return res.status(400).json({ error: "Missing private key" });
-
-      const { Wallet } = await import("ethers");
-      let wallet: InstanceType<typeof Wallet>;
-      try {
-        wallet = new Wallet(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
-      } catch {
-        return res.status(400).json({ error: "Invalid private key format" });
-      }
-
-      const addr = wallet.address.toLowerCase();
-      const pk = wallet.privateKey;
-
-      await storage.saveTelegramWallet(chatId, addr, pk);
-      await storage.setActiveTelegramWallet(chatId, addr);
-      console.log(`[MiniApp] Wallet imported: ${addr.substring(0, 10)}... for chatId=${chatId}`);
-
-      let asterLinked = false;
-      try {
-        const { asterCodeOnboard, getDefaultAsterCodeConfig } = await import("./aster-code");
-        const codeConfig = getDefaultAsterCodeConfig();
-        const codeResult = await asterCodeOnboard(pk, codeConfig);
-        if (codeResult.success && codeResult.signerAddress && codeResult.signerPrivateKey) {
-          await storage.saveAsterCredentials(chatId, codeResult.signerAddress, codeResult.signerPrivateKey, `astercode:${addr}`);
-          asterLinked = true;
-          console.log(`[MiniApp] Import + Aster Code onboard success for chatId=${chatId} agent=${codeResult.signerAddress.substring(0, 10)}`);
-        } else {
-          console.log(`[MiniApp] Import onboard failed: ${codeResult.error || 'unknown'}`);
-        }
-      } catch (e: any) {
-        console.log(`[MiniApp] Import onboard error: ${e.message}`);
-      }
-
-      res.json({ success: true, walletAddress: addr, asterLinked });
-    } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
-  });
-
   const activationSessions = new Map<string, {
     userAddr: string;
     agentAddr: string;
@@ -512,6 +468,50 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       console.error("[MiniApp] submit-activation error:", e.message);
       res.status(500).json({ error: e.message || "Activation failed" });
     }
+  });
+
+  app.use("/api/miniapp", miniAppAuth);
+
+  app.post("/api/miniapp/import-wallet", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+      const { privateKey } = req.body;
+      if (!privateKey) return res.status(400).json({ error: "Missing private key" });
+
+      const { Wallet } = await import("ethers");
+      let wallet: InstanceType<typeof Wallet>;
+      try {
+        wallet = new Wallet(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
+      } catch {
+        return res.status(400).json({ error: "Invalid private key format" });
+      }
+
+      const addr = wallet.address.toLowerCase();
+      const pk = wallet.privateKey;
+
+      await storage.saveTelegramWallet(chatId, addr, pk);
+      await storage.setActiveTelegramWallet(chatId, addr);
+      console.log(`[MiniApp] Wallet imported: ${addr.substring(0, 10)}... for chatId=${chatId}`);
+
+      let asterLinked = false;
+      try {
+        const { asterCodeOnboard, getDefaultAsterCodeConfig } = await import("./aster-code");
+        const codeConfig = getDefaultAsterCodeConfig();
+        const codeResult = await asterCodeOnboard(pk, codeConfig);
+        if (codeResult.success && codeResult.signerAddress && codeResult.signerPrivateKey) {
+          await storage.saveAsterCredentials(chatId, codeResult.signerAddress, codeResult.signerPrivateKey, `astercode:${addr}`);
+          asterLinked = true;
+          console.log(`[MiniApp] Import + Aster Code onboard success for chatId=${chatId} agent=${codeResult.signerAddress.substring(0, 10)}`);
+        } else {
+          console.log(`[MiniApp] Import onboard failed: ${codeResult.error || 'unknown'}`);
+        }
+      } catch (e: any) {
+        console.log(`[MiniApp] Import onboard error: ${e.message}`);
+      }
+
+      res.json({ success: true, walletAddress: addr, asterLinked });
+    } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
   });
 
   app.post("/api/miniapp/link-aster", async (req: Request, res: Response) => {
