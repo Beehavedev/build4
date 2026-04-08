@@ -1389,18 +1389,19 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
 
 async function autoOnboardAster(chatId: number, walletAddress: string, privateKey: string): Promise<void> {
   try {
-    const { asterBrokerOnboard, createAsterFuturesClient } = await import("./aster-client");
-    console.log(`[Aster] Auto-onboarding wallet ${walletAddress.substring(0, 10)}... for chatId=${chatId}`);
+    console.log(`[Aster] Auto-onboarding via Aster Code for wallet ${walletAddress.substring(0, 10)}... chatId=${chatId}`);
 
-    const result = await asterBrokerOnboard(privateKey);
-    console.log(`[Aster] Auto-onboard result: success=${result.success} uid=${result.uid ? 'set' : 'none'} hasApiKey=${!!result.apiKey}`);
+    const { asterCodeOnboard, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");
+    const codeConfig = getDefaultAsterCodeConfig();
+    const codeResult = await asterCodeOnboard(privateKey, codeConfig);
+    console.log(`[Aster] Aster Code onboard: success=${codeResult.success} agent=${codeResult.agentApproved} builder=${codeResult.builderApproved} ${codeResult.error || ''}`);
 
-    if (result.success && result.apiKey && result.apiSecret) {
-      await storage.saveAsterCredentials(chatId.toString(), result.apiKey, result.apiSecret);
-      console.log(`[Aster] Auto-onboard: saved API credentials for chatId=${chatId}`);
+    if (codeResult.success && codeResult.signerAddress && codeResult.signerPrivateKey) {
+      await storage.saveAsterCredentials(chatId.toString(), codeResult.signerAddress, codeResult.signerPrivateKey, `astercode:${walletAddress}`);
+      console.log(`[Aster] Auto-onboard: saved agent credentials for chatId=${chatId} agent=${codeResult.signerAddress.substring(0, 10)}`);
 
       try {
-        const client = createAsterFuturesClient({ apiKey: result.apiKey, apiSecret: result.apiSecret });
+        const client = createAsterCodeFuturesClient(walletAddress, codeResult.signerAddress, codeResult.signerPrivateKey, codeConfig);
         const bal = await client.balance();
         console.log(`[Aster] Auto-onboard: balance check OK — ${JSON.stringify(bal).substring(0, 200)}`);
       } catch (e: any) {
@@ -1410,14 +1411,14 @@ async function autoOnboardAster(chatId: number, walletAddress: string, privateKe
       if (bot) {
         try {
           await bot.sendMessage(chatId,
-            `✅ Aster DEX account linked automatically!\n\n` +
-            `Your wallet is now connected to Aster Futures. Deposit USDT and start trading.`,
+            `Aster DEX account linked automatically!\n\n` +
+            `Your wallet is now connected to Aster Futures via agent delegation. Deposit USDT and start trading.`,
             { parse_mode: "Markdown" }
           );
         } catch {}
       }
     } else {
-      console.log(`[Aster] Auto-onboard failed for chatId=${chatId}: ${result.error || 'unknown'} debug=${result.debug || 'none'}`);
+      console.log(`[Aster] Auto-onboard failed for chatId=${chatId}: ${codeResult.error || 'unknown'} debug=${codeResult.debug || 'none'}`);
     }
   } catch (e: any) {
     console.error(`[Aster] Auto-onboard error for chatId=${chatId}:`, e.message);
@@ -13765,193 +13766,75 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     const pk = await resolvePrivateKey(chatId, wallet);
     if (!pk) {
       await bot.sendMessage(chatId,
-        "⚠️ Could not access your wallet key. Please re-import your private key, then try 1-Tap Connect again.\n\nOr connect manually with an Aster API key.",
+        "Could not access your wallet key. Please re-import your private key, then try again.\n\nOr connect manually with an Aster API key.",
         { reply_markup: { inline_keyboard: [
-          [{ text: "👛 Import Wallet", callback_data: "action:linkwallet" }],
-          [{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }],
-          [{ text: "« Back", callback_data: "action:menu" }],
+          [{ text: "Import Wallet", callback_data: "action:linkwallet" }],
+          [{ text: "Connect with API Key", callback_data: "aster:connect" }],
+          [{ text: "Back", callback_data: "action:menu" }],
         ] } }
       );
       return;
     }
-    await bot.sendMessage(chatId, "⚡ Setting up your Aster DEX account...\nThis may take a few seconds.");
+    await bot.sendMessage(chatId, "Setting up your Aster DEX account via agent delegation...\nThis may take a few seconds.");
     try {
-      const { asterBrokerOnboard } = await import("./aster-client");
-      const result = await asterBrokerOnboard(pk);
-      if (!result.success || !result.apiKey || !result.apiSecret) {
-        const { createAsterV3FuturesClient } = await import("./aster-client");
-        const v3Client = createAsterV3FuturesClient({ user: wallet!, signer: wallet!, signerPrivateKey: pk });
-        if (result.userRegistered) {
-          console.log(`[Aster] Broker API key creation failed for ${chatId}: ${result.error}. User registered (uid=${result.uid}), attempting V3 direct.`);
-          let v3Working = false;
-          let balanceWorks = false;
-          for (let v3Attempt = 0; v3Attempt < 3; v3Attempt++) {
-            try {
-              if (v3Attempt > 0) await new Promise(r => setTimeout(r, 2000));
-              const noopRes = await v3Client.noop();
-              console.log(`[Aster] V3 noop init OK for ${chatId} (attempt ${v3Attempt + 1}):`, JSON.stringify(noopRes).substring(0, 200));
-              v3Working = true;
-              break;
-            } catch (noopErr: any) {
-              console.log(`[Aster] V3 noop init FAIL for ${chatId} (attempt ${v3Attempt + 1}):`, noopErr.message?.substring(0, 200));
-            }
-          }
-          if (v3Working) {
-            try {
-              const bal = await v3Client.balance();
-              console.log(`[Aster] V3 balance verify for ${chatId}: success, ${Array.isArray(bal) ? bal.length : 0} entries`);
-              balanceWorks = true;
-            } catch (verifyErr: any) {
-              console.error(`[Aster] V3 balance verify FAIL for ${chatId}:`, verifyErr.message?.substring(0, 200));
-              console.log(`[Aster] Attempting V3 account activation for ${chatId}...`);
-              const activationAttempts = [
-                { name: "listenKey", fn: () => v3Client.listenKey() },
-                { name: "account", fn: () => v3Client.account() },
-              ];
-              for (const attempt of activationAttempts) {
-                try {
-                  const res = await attempt.fn();
-                  console.log(`[Aster] V3 ${attempt.name} for ${chatId}: ${JSON.stringify(res).substring(0, 200)}`);
-                } catch (e: any) {
-                  console.log(`[Aster] V3 ${attempt.name} FAIL for ${chatId}: ${e.message?.substring(0, 100)}`);
-                }
-              }
-              await new Promise(r => setTimeout(r, 3000));
-              for (let balAttempt = 0; balAttempt < 3; balAttempt++) {
-                try {
-                  if (balAttempt > 0) await new Promise(r => setTimeout(r, 2000));
-                  const bal = await v3Client.balance();
-                  console.log(`[Aster] V3 balance re-verify for ${chatId} (attempt ${balAttempt + 1}): success`);
-                  balanceWorks = true;
-                  break;
-                } catch (e: any) {
-                  console.log(`[Aster] V3 balance re-verify FAIL for ${chatId} (attempt ${balAttempt + 1}): ${e.message?.substring(0, 100)}`);
-                }
-              }
-            }
-          }
-          const verified = balanceWorks;
-          await storage.saveAsterCredentials(chatId.toString(), "V3_DIRECT", "V3_DIRECT");
-          auditLog(chatId, "ASTER_V3_DIRECT", `Connected via V3 EIP-712 direct (user registered uid=${result.uid}, API key failed: ${result.error}, v3Working: ${v3Working}, balance verified: ${verified})`);
-          if (v3Working && balanceWorks) {
-            await bot.sendMessage(chatId,
-              `⚡ *Aster DEX — Connected via V3!*\n` +
-              `_Powered by Aster DEX_\n\n` +
-              `Connected using EIP-712 wallet signing (V3).\n` +
-              `Futures trading is fully available — no API keys needed!\n\n` +
-              `💡 Next step: Fund your futures account using the button below.`,
-              {
-                parse_mode: "Markdown",
-                reply_markup: {
-                  inline_keyboard: [
-                    [{ text: "💵 Fund Account", callback_data: "aster:fund" }],
-                    [{ text: "📊 Trade Futures", callback_data: "aster:trade_futures" }],
-                    [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
-                  ],
-                },
-              }
-            );
-          } else {
-            await bot.sendMessage(chatId,
-              `⚠️ Aster DEX — Partial Setup\n\n` +
-              `Your wallet was registered with Aster (uid: ${result.uid}), but the V3 trading API is not recognizing your wallet yet.\n\n` +
-              `This can happen if the futures account was not opened properly during setup.\n\n` +
-              `Note: If you deposited funds directly on-chain, they are safe in Aster's vault.`,
-              {
-                reply_markup: {
-                  inline_keyboard: [
-                    [{ text: "🔄 Retry Connection", callback_data: "aster:auto_connect" }],
-                    [{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }],
-                    [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
-                  ],
-                },
-              }
-            );
-            if (result.debug) {
-              try {
-                await bot.sendMessage(chatId, `Debug:\n${result.debug.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&').substring(0, 3500)}`);
-              } catch {}
-            }
-          }
-          return;
-        }
-        console.log(`[Aster] Broker onboard login failed for ${chatId}: ${result.error}. Attempting V3 noop registration...`);
+      const { asterCodeOnboard, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");
+      const codeConfig = getDefaultAsterCodeConfig();
+      const codeResult = await asterCodeOnboard(pk, codeConfig);
+      console.log(`[Aster] 1-Tap Code onboard for ${chatId}: success=${codeResult.success} agent=${codeResult.agentApproved} builder=${codeResult.builderApproved} ${codeResult.error || ''}`);
+
+      if (codeResult.success && codeResult.signerAddress && codeResult.signerPrivateKey) {
+        await storage.saveAsterCredentials(chatId.toString(), codeResult.signerAddress, codeResult.signerPrivateKey, `astercode:${wallet}`);
+
+        let balanceOk = false;
         try {
-          const noopResult = await v3Client.noop();
-          console.log(`[Aster] V3 noop result for ${chatId}:`, JSON.stringify(noopResult).substring(0, 300));
-          const balResult = await v3Client.balance();
-          console.log(`[Aster] V3 balance verify after noop for ${chatId}: success, ${Array.isArray(balResult) ? balResult.length : 0} entries`);
-          await storage.saveAsterCredentials(chatId.toString(), "V3_DIRECT", "V3_DIRECT");
-          auditLog(chatId, "ASTER_V3_DIRECT", `Connected via V3 noop registration (broker login failed: ${result.error})`);
-          await bot.sendMessage(chatId,
-            `⚡ *Aster DEX — Connected via V3!*\n` +
-            `_Powered by Aster DEX_\n\n` +
-            `Connected using EIP-712 wallet signing (V3).\n` +
-            `Futures trading is fully available — no API keys needed!\n\n` +
-            `💡 _Spot trading requires manual API key setup._`,
-            {
-              parse_mode: "Markdown",
-              reply_markup: {
-                inline_keyboard: [
-                  [{ text: "📊 Trade Futures", callback_data: "aster:trade_futures" }],
-                  [{ text: "💰 View Balances", callback_data: "aster:balance" }],
-                  [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
-                ],
-              },
-            }
-          );
-          return;
-        } catch (v3Err: any) {
-          console.error(`[Aster] V3 noop/verify also failed for ${chatId}:`, v3Err.message);
-          await bot.sendMessage(chatId,
-            `⚠️ Could not create your Aster DEX account\n\n` +
-            `Please try:\n` +
-            `1. Tap "Try Again" — it may take a moment to register\n` +
-            `2. Or connect manually with your Aster API key\n` +
-            `3. Make sure your wallet has some BNB for gas`,
-            {
-              reply_markup: {
-                inline_keyboard: [
-                  [{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }],
-                  [{ text: "🔄 Try Again", callback_data: "aster:auto_connect" }],
-                  [{ text: "« Back", callback_data: "action:aster" }],
-                ],
-              },
-            }
-          );
-          return;
+          const client = createAsterCodeFuturesClient(wallet, codeResult.signerAddress, codeResult.signerPrivateKey, codeConfig);
+          const bal = await client.balance();
+          console.log(`[Aster] 1-Tap balance check for ${chatId}: ${JSON.stringify(bal).substring(0, 200)}`);
+          balanceOk = true;
+        } catch (balErr: any) {
+          console.log(`[Aster] 1-Tap balance check failed for ${chatId}: ${balErr.message}`);
         }
+
+        auditLog(chatId, "ASTER_CODE_CONNECT", `Connected via Aster Code agent delegation, agent=${codeResult.signerAddress.substring(0, 10)}, balance=${balanceOk}`);
+        await bot.sendMessage(chatId,
+          `*Aster DEX — Connected!*\n` +
+          `_Powered by Aster Code_\n\n` +
+          `Your wallet is now connected via agent delegation.\n` +
+          `A trading agent has been approved to trade on your behalf.\n\n` +
+          `You're ready to trade!`,
+          {
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "Fund Account", callback_data: "aster:fund" }],
+                [{ text: "Trade Futures", callback_data: "aster:trade_futures" }],
+                [{ text: "Aster Menu", callback_data: "action:aster" }],
+              ],
+            },
+          }
+        );
+      } else {
+        const safeErr = (codeResult.error || "Unknown").substring(0, 150).replace(/[_*[\]()~`>#+=|{}.!-]/g, " ");
+        console.log(`[Aster] 1-Tap Code onboard failed for ${chatId}: ${codeResult.error} debug=${codeResult.debug}`);
+        await bot.sendMessage(chatId,
+          `Could not set up your Aster DEX account.\n\n` +
+          `Error: ${safeErr}\n\n` +
+          `Please try again or connect manually with an API key.`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "Retry", callback_data: "aster:auto_connect" }],
+                [{ text: "Connect with API Key", callback_data: "aster:connect" }],
+                [{ text: "Back", callback_data: "action:aster" }],
+              ],
+            },
+          }
+        );
       }
-      await storage.saveAsterCredentials(chatId.toString(), result.apiKey, result.apiSecret);
-      try {
-        const { createAsterV3FuturesClient } = await import("./aster-client");
-        const v3Init = createAsterV3FuturesClient({ user: wallet!, signer: wallet!, signerPrivateKey: pk });
-        await v3Init.noop();
-        console.log(`[Aster] V3 noop init after broker onboard for ${chatId}: success`);
-      } catch (noopErr: any) {
-        console.log(`[Aster] V3 noop init after broker onboard for ${chatId}: ${noopErr.message?.substring(0, 100)} (non-fatal)`);
-      }
-      auditLog(chatId, "ASTER_AUTO_CONNECT", `Aster auto-onboarded via broker API, uid=${result.uid}`);
-      await bot.sendMessage(chatId,
-        `⚡ *Aster DEX — Connected!*\n` +
-        `_Powered by Aster DEX_\n\n` +
-        `Your account has been created and API keys generated automatically.\n` +
-        `UID: ${result.uid}\n\n` +
-        `You're ready to trade!`,
-        {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "💰 View Balances", callback_data: "aster:balance" }],
-              [{ text: "📈 Aster Menu", callback_data: "action:aster" }],
-            ],
-          },
-        }
-      );
     } catch (e: any) {
-      const safeErr = (e.message || 'Unknown error').substring(0, 200).replace(/[_*[\]()~`>#+=|{}.!-]/g, ' ');
+      const safeErr = (e.message || "Unknown error").substring(0, 200).replace(/[_*[\]()~`>#+=|{}.!-]/g, " ");
       await bot.sendMessage(chatId, `Auto-setup error: ${safeErr}\n\nTry connecting manually.`, {
-        reply_markup: { inline_keyboard: [[{ text: "🔑 Connect with API Key", callback_data: "aster:connect" }], [{ text: "« Back", callback_data: "action:menu" }]] },
+        reply_markup: { inline_keyboard: [[{ text: "Connect with API Key", callback_data: "aster:connect" }], [{ text: "Back", callback_data: "action:menu" }]] },
       });
     }
     return;
