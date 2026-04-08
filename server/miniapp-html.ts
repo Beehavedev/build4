@@ -110,21 +110,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 </div>
 
 <div id="p-dash" class="page active"></div>
+<div id="p-portfolio" class="page"></div>
 <div id="p-trade" class="page"></div>
-<div id="p-positions" class="page"></div>
-<div id="p-orders" class="page"></div>
-<div id="p-markets" class="page"></div>
 <div id="p-deposit" class="page"></div>
 <div id="p-agent" class="page"></div>
-<div id="p-history" class="page"></div>
 
 <div class="tabs">
   <button class="tab active" data-tab="p-dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>Home</button>
-  <button class="tab" data-tab="p-history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>History</button>
-  <button class="tab" data-tab="p-positions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v6h-6"/></svg>Positions</button>
+  <button class="tab" data-tab="p-portfolio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v6h-6"/></svg>Portfolio</button>
   <button class="tab" data-tab="p-trade"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>Trade</button>
-  <button class="tab" data-tab="p-orders"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Orders</button>
-  <button class="tab" data-tab="p-markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 17 4-8 4 4 4-8"/></svg>Markets</button>
   <button class="tab" data-tab="p-deposit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8m-4-4h8"/></svg>Deposit</button>
   <button class="tab" data-tab="p-agent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg>Agent</button>
 </div>
@@ -140,6 +134,8 @@ let tradeHistory=[];
 let HIS=null;
 let lastUpdate=0;
 let refreshTimer=null;
+let portfolioSubTab='positions';
+let ordersSubTab='open';
 
 function $(id){return document.getElementById(id)}
 function fmt(n,d=2){return(n||0).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d})}
@@ -156,6 +152,10 @@ function timeAgo(){if(!lastUpdate)return'';const s=Math.floor((Date.now()-lastUp
 function switchTab(tabId){
   var targetId=tabId;
   if(!targetId.startsWith('p-'))targetId='p-'+targetId;
+  if(targetId==='p-positions'){targetId='p-portfolio';portfolioSubTab='positions'}
+  if(targetId==='p-orders'){targetId='p-portfolio';portfolioSubTab='orders'}
+  if(targetId==='p-history'){targetId='p-portfolio';portfolioSubTab='history'}
+  if(targetId==='p-markets'){targetId='p-trade'}
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   var targetTab=document.querySelector('.tab[data-tab="'+targetId+'"]');
@@ -164,12 +164,9 @@ function switchTab(tabId){
   if(targetPage)targetPage.classList.add('active');
   if(targetId==='p-dash')loadDash();
   if(targetId==='p-trade')loadTrade();
-  if(targetId==='p-positions')loadPositions();
-  if(targetId==='p-orders')loadOrders();
-  if(targetId==='p-markets')loadMarkets();
+  if(targetId==='p-portfolio')loadPortfolio();
   if(targetId==='p-deposit')loadDeposit();
   if(targetId==='p-agent')loadAgent();
-  if(targetId==='p-history')loadHistory();
 }
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click',()=>{
@@ -186,7 +183,7 @@ function startAutoRefresh(){
         const activePage=document.querySelector('.page.active');
         if(activePage?.id==='p-dash')renderDash();
         if(activePage?.id==='p-deposit')renderDeposit();
-        if(activePage?.id==='p-positions')renderPositions();
+        if(activePage?.id==='p-portfolio'&&portfolioSubTab==='positions')renderPortfolio();
       }
     }catch(e){}
   },10000);
@@ -213,16 +210,41 @@ function skeletonCard(lines=3){
   return h+'</div>';
 }
 
-async function loadPositions(){
-  const el=$('p-positions');
-  el.innerHTML=skeletonCard(3);
+async function loadPortfolio(){
+  const el=$('p-portfolio');
+  el.innerHTML=skeletonCard(3)+skeletonCard(3);
   if(!D.connected){await fetchAll()}
-  renderPositions();
+  if(portfolioSubTab==='orders'){
+    try{
+      const [r1,r2]=await Promise.all([api('/api/miniapp/orders'),api('/api/miniapp/trades?symbol=BTCUSDT')]);
+      D.openOrders=r1.openOrders||[];
+      tradeHistory=r2.trades||[];
+      D.recentIncome=r2.income||[];
+    }catch(e){D.openOrders=[];tradeHistory=[];D.recentIncome=[]}
+  }
+  if(portfolioSubTab==='history'){
+    try{HIS=await api('/api/miniapp/history')}catch(e){HIS={openPositions:[],closedTrades:[],pnlSummary:{day1:{pnl:0,wins:0,losses:0,total:0},day7:{pnl:0,wins:0,losses:0,total:0},allTime:{pnl:0,wins:0,losses:0,total:0}}}}
+  }
+  renderPortfolio();
 }
-function renderPositions(){
-  const el=$('p-positions');
-  if(!D.connected){el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">📊</div><div class="text-w fw-600">Connect to view positions</div><div class="text-dim text-xs mt-2">Link your Aster account first</div></div>';return}
-  let h='<div class="section-title">📊 Open Positions</div>';
+function renderPortfolio(){
+  const el=$('p-portfolio');
+  if(!D.connected){el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">📊</div><div class="text-w fw-600">Connect to view portfolio</div><div class="text-dim text-xs mt-2">Link your Aster account first</div></div>';return}
+  let h='<div style="display:flex;gap:0;margin-bottom:12px;background:var(--card);border-radius:10px;padding:3px;border:1px solid var(--border)">';
+  h+='<button class="btn btn-sm" style="flex:1;border-radius:8px;font-size:11px;padding:8px 4px;'+(portfolioSubTab==='positions'?'background:var(--green);color:#0b0e11;font-weight:700':'background:transparent;color:var(--text2);border:none')+'" onclick="portfolioSubTab=\\'positions\\';loadPortfolio()">Positions</button>';
+  h+='<button class="btn btn-sm" style="flex:1;border-radius:8px;font-size:11px;padding:8px 4px;'+(portfolioSubTab==='orders'?'background:var(--green);color:#0b0e11;font-weight:700':'background:transparent;color:var(--text2);border:none')+'" onclick="portfolioSubTab=\\'orders\\';loadPortfolio()">Orders</button>';
+  h+='<button class="btn btn-sm" style="flex:1;border-radius:8px;font-size:11px;padding:8px 4px;'+(portfolioSubTab==='history'?'background:var(--green);color:#0b0e11;font-weight:700':'background:transparent;color:var(--text2);border:none')+'" onclick="portfolioSubTab=\\'history\\';loadPortfolio()">History</button>';
+  h+='</div>';
+  if(portfolioSubTab==='positions'){h+=renderPositionsHTML()}
+  if(portfolioSubTab==='orders'){h+=renderOrdersHTML()}
+  if(portfolioSubTab==='history'){h+=renderHistoryHTML()}
+  el.innerHTML=h;
+  if(portfolioSubTab==='positions'){startPositionTimers()}
+}
+async function loadPositions(){portfolioSubTab='positions';loadPortfolio()}
+function renderPositions(){renderPortfolio()}
+function renderPositionsHTML(){
+  let h='<div class="section-title">Open Positions</div>';
   const pos=D.positions||[];
   if(pos.length===0){
     h+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">🎯</div><div class="text-dim text-sm">No open positions</div><div class="text-xs text-dim2 mt-1">Place a trade to get started</div></div>';
@@ -239,7 +261,6 @@ function renderPositions(){
       var notional=p.notional||(amt*mark);
       var margin=p.margin||(parseFloat(String(lev)||'1')>0?notional/parseFloat(String(lev)||'1'):0);
       var marginType=(p.marginType||'cross').toUpperCase();
-      var pnlColor=upnl>=0?'var(--green)':'var(--red)';
       var cardBorder=upnl>=0?'rgba(63,185,80,0.3)':'rgba(248,81,73,0.3)';
       var openTs=p.updateTime||0;
       h+='<div class="card" style="border:1px solid '+cardBorder+'">';
@@ -253,16 +274,15 @@ function renderPositions(){
     });
   }
   h+='<div class="card mt-2"><div class="row"><span class="label">Total Unrealized PnL</span>'+pnlHtml(D.unrealizedPnl||0)+'</div></div>';
-  h+='<button class="btn btn-outline mt-2" onclick="fetchAll().then(renderPositions)">🔄 Refresh</button>';
-  el.innerHTML=h;
-  startPosTimers();
+  return h;
 }
+function startPositionTimers(){startPosTimers()}
 var posTimerInterval=null;
 function startPosTimers(){
   if(posTimerInterval)clearInterval(posTimerInterval);
   posTimerInterval=setInterval(function(){
     var activePage=document.querySelector('.page.active');
-    if(!activePage||activePage.id!=='p-positions'){clearInterval(posTimerInterval);posTimerInterval=null;return}
+    if(!activePage||activePage.id!=='p-portfolio'||portfolioSubTab!=='positions'){clearInterval(posTimerInterval);posTimerInterval=null;return}
     for(var i=0;i<20;i++){
       var el=document.getElementById('pos-timer-'+i);
       if(!el)break;
@@ -284,73 +304,25 @@ async function closePosFromTab(symbol){
   }catch(e){toast('❌ '+e.message,'err')}
 }
 
-let ordersSubTab='open';
-async function loadOrders(){
-  const el=$('p-orders');
-  el.innerHTML=skeletonCard(3);
-  try{
-    const [r1,r2]=await Promise.all([api('/api/miniapp/orders'),api('/api/miniapp/trades?symbol=BTCUSDT')]);
-    D.openOrders=r1.openOrders||[];
-    tradeHistory=r2.trades||[];
-    D.recentIncome=r2.income||[];
-  }catch(e){D.openOrders=[];tradeHistory=[];D.recentIncome=[]}
-  renderOrders();
-}
-function renderOrders(){
-  const el=$('p-orders');
-  if(!D.connected){el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">📋</div><div class="text-w fw-600">Connect to view orders</div><div class="text-dim text-xs mt-2">Link your Aster account first</div></div>';return}
-  let h='<div style="display:flex;gap:0;margin-bottom:12px;background:var(--card);border-radius:10px;padding:3px;border:1px solid var(--border)">';
-  h+='<button class="btn btn-sm" style="flex:1;border-radius:8px;font-size:12px;'+(ordersSubTab==='open'?'background:var(--green);color:#0b0e11;font-weight:700':'background:transparent;color:var(--text2);border:none')+'" onclick="ordersSubTab=\\'open\\';renderOrders()">Open Orders ('+(D.openOrders||[]).length+')</button>';
-  h+='<button class="btn btn-sm" style="flex:1;border-radius:8px;font-size:12px;'+(ordersSubTab==='history'?'background:var(--green);color:#0b0e11;font-weight:700':'background:transparent;color:var(--text2);border:none')+'" onclick="ordersSubTab=\\'history\\';renderOrders()">History</button>';
-  h+='</div>';
-  if(ordersSubTab==='open'){
-    const orders=D.openOrders||[];
-    if(orders.length===0){
-      h+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">✅</div><div class="text-dim text-sm">No open orders</div><div class="text-xs text-dim2 mt-1">All orders have been filled or cancelled</div></div>';
-    }else{
-      orders.forEach(function(o){
-        var isBuy=o.side==='BUY';
-        h+='<div class="card"><div class="row"><div class="gap"><span class="badge '+(isBuy?'badge-long':'badge-short')+'">'+o.side+'</span><span class="text-w fw-600">'+o.symbol+'</span></div><span class="badge badge-info">'+o.type+'</span></div>';
-        h+='<div class="grid2 mt-3"><div><div class="label">Price</div><div class="val-sm mono">$'+fmt(o.price)+'</div></div><div><div class="label">Quantity</div><div class="val-sm mono">'+o.origQty+'</div></div></div>';
-        if(o.executedQty>0){h+='<div class="mt-2"><div class="label">Filled</div><div class="val-xs mono">'+o.executedQty+' / '+o.origQty+'</div></div>'}
-        if(o.time){h+='<div class="timestamp">'+new Date(o.time).toLocaleString()+'</div>'}
-        h+='<div class="mt-2"><button class="btn btn-outline btn-sm" style="width:100%" onclick="cancelOrder(\\''+o.symbol+'\\','+o.orderId+')">Cancel Order</button></div></div>';
-      });
-    }
+function renderOrdersHTML(){
+  let h='<div class="section-title">Open Orders</div>';
+  const orders=D.openOrders||[];
+  if(orders.length===0){
+    h+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">✅</div><div class="text-dim text-sm">No open orders</div><div class="text-xs text-dim2 mt-1">All orders have been filled or cancelled</div></div>';
   }else{
-    if(tradeHistory.length===0&&(!D.recentIncome||D.recentIncome.length===0)){
-      h+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">📭</div><div class="text-dim text-sm">No trade history yet</div></div>';
-    }else{
-      if(tradeHistory.length>0){
-        h+='<div class="card"><div class="label mb-2">Recent Trades</div>';
-        tradeHistory.slice(0,20).forEach(function(t){
-          var isBuy=t.side==='BUY';
-          h+='<div class="pos-item"><div class="row"><div class="gap"><span class="badge '+(isBuy?'badge-long':'badge-short')+'">'+t.side+'</span><span class="text-w text-sm fw-600">'+t.symbol+'</span></div><span class="val-xs mono">'+t.qty+'</span></div>';
-          h+='<div class="row mt-1"><span class="text-xs text-dim mono">@ $'+fmt(t.price)+'</span>';
-          if(t.realizedPnl!==0){h+=pnlHtml(t.realizedPnl)}
-          h+='</div>';
-          if(t.time){h+='<div class="timestamp">'+new Date(t.time).toLocaleString()+'</div>'}
-          h+='</div>';
-        });
-        h+='</div>';
-      }
-      if(D.recentIncome&&D.recentIncome.length>0){
-        h+='<div class="card"><div class="label mb-2">Realized PnL History</div>';
-        var totalPnl=0;
-        D.recentIncome.forEach(function(i){
-          totalPnl+=i.amount||0;
-          h+='<div class="pos-item"><div class="row"><span class="text-sm text-w">'+(i.symbol||'—')+'</span>'+pnlHtml(i.amount||0)+'</div>';
-          h+='<div class="row mt-1"><span class="text-xs text-dim">'+(i.type||'PNL')+'</span>';
-          if(i.time){h+='<span class="timestamp" style="margin:0">'+new Date(i.time).toLocaleString()+'</span>'}
-          h+='</div></div>';
-        });
-        h+='<div class="row mt-2" style="padding:8px 0;border-top:1px solid var(--border)"><span class="text-sm fw-600 text-w">Total Realized</span>'+pnlHtml(totalPnl)+'</div></div>';
-      }
-    }
+    orders.forEach(function(o){
+      var isBuy=o.side==='BUY';
+      h+='<div class="card"><div class="row"><div class="gap"><span class="badge '+(isBuy?'badge-long':'badge-short')+'">'+o.side+'</span><span class="text-w fw-600">'+o.symbol+'</span></div><span class="badge badge-info">'+o.type+'</span></div>';
+      h+='<div class="grid2 mt-3"><div><div class="label">Price</div><div class="val-sm mono">$'+fmt(o.price)+'</div></div><div><div class="label">Quantity</div><div class="val-sm mono">'+o.origQty+'</div></div></div>';
+      if(o.executedQty>0){h+='<div class="mt-2"><div class="label">Filled</div><div class="val-xs mono">'+o.executedQty+' / '+o.origQty+'</div></div>'}
+      if(o.time){h+='<div class="timestamp">'+new Date(o.time).toLocaleString()+'</div>'}
+      h+='<div class="mt-2"><button class="btn btn-outline btn-sm" style="width:100%" onclick="cancelOrder(\\''+o.symbol+'\\','+o.orderId+')">Cancel Order</button></div></div>';
+    });
   }
-  h+='<button class="btn btn-outline mt-2" onclick="loadOrders()">🔄 Refresh</button>';
-  el.innerHTML=h;
+  return h;
 }
+function loadOrders(){portfolioSubTab='orders';loadPortfolio()}
+function renderOrders(){renderPortfolio()}
 async function cancelOrder(symbol,orderId){
   const ok=await customConfirm('<div style="font-weight:600;font-size:16px;margin-bottom:12px">Cancel Order</div><div style="font-size:13px;color:#aaa">Cancel order <strong style="color:#fff">#'+orderId+'</strong> on '+symbol+'?</div>');
   if(!ok)return;
@@ -362,32 +334,8 @@ async function cancelOrder(symbol,orderId){
   }catch(e){toast('❌ '+e.message,'err')}
 }
 
-async function loadMarkets(){
-  const el=$('p-markets');
-  el.innerHTML=skeletonCard(4);
-  if(!M.markets.length){await fetchAll()}
-  renderMarkets();
-}
-function renderMarkets(){
-  const el=$('p-markets');
-  let h='<div class="section-title">📈 Futures Markets</div>';
-  const mkts=M.markets||[];
-  if(mkts.length===0){
-    h+='<div class="card" style="text-align:center;padding:24px"><div class="text-dim text-sm">Loading market data...</div></div>';
-  }else{
-    mkts.forEach(function(m){
-      var chg=parseFloat(m.priceChangePercent||'0');
-      var vol=parseFloat(m.quoteVolume||m.volume||'0');
-      h+='<div class="card" style="cursor:pointer" onclick="tradeSel=\\''+m.symbol+'\\';switchTab(\\'p-trade\\')">';
-      h+='<div class="row"><span class="text-w fw-600">'+m.symbol.replace('USDT','')+'<span class="text-dim2" style="font-weight:400">/USDT</span></span><span class="val-sm mono">$'+fmt(parseFloat(m.price||m.lastPrice||'0'))+'</span></div>';
-      h+='<div class="row mt-2"><span class="text-xs text-dim">24h Change</span><span class="val-xs '+(chg>=0?'gv':'r-')+'">'+(chg>=0?'+':'')+fmt(chg,2)+'%</span></div>';
-      if(vol>0){h+='<div class="row mt-1"><span class="text-xs text-dim">24h Volume</span><span class="text-xs mono text-dim">$'+(vol>1e6?fmt(vol/1e6,1)+'M':fmt(vol,0))+'</span></div>'}
-      h+='</div>';
-    });
-  }
-  h+='<button class="btn btn-outline mt-2" onclick="fetchAll().then(renderMarkets)">🔄 Refresh</button>';
-  el.innerHTML=h;
-}
+function loadMarkets(){switchTab('p-trade')}
+function renderMarkets(){}
 
 
 async function loadDash(){
@@ -1004,22 +952,15 @@ async function verifyDeposit(){
   $('verify-btn').disabled=false;
 }
 
-async function loadHistory(){
-  const el=$('p-history');
-  el.innerHTML=skeletonCard(4)+skeletonCard(3)+skeletonCard(3);
-  try{
-    HIS=await api('/api/miniapp/history');
-  }catch(e){HIS={openPositions:[],closedTrades:[],pnlSummary:{day1:{pnl:0,wins:0,losses:0,total:0},day7:{pnl:0,wins:0,losses:0,total:0},allTime:{pnl:0,wins:0,losses:0,total:0}}}}
-  renderHistory();
-}
+function loadHistory(){portfolioSubTab='history';loadPortfolio()}
+function renderHistory(){renderPortfolio()}
 
-function renderHistory(){
-  const el=$('p-history');
-  if(!HIS){el.innerHTML='<div class="card" style="text-align:center;padding:40px"><div style="font-size:36px">📊</div><div class="text-w fw-600 mt-2">Loading History...</div></div>';return}
+function renderHistoryHTML(){
+  if(!HIS){return '<div class="card" style="text-align:center;padding:40px"><div style="font-size:36px">📊</div><div class="text-w fw-600 mt-2">Loading History...</div></div>'}
   let h='';
   const ps=HIS.pnlSummary;
 
-  h+='<div class="section-title" style="font-size:16px">📊 PnL Overview</div>';
+  h+='<div class="section-title" style="font-size:16px">PnL Overview</div>';
   h+='<div class="card"><div style="display:flex;gap:8px;margin-bottom:12px">';
   h+='<button class="btn btn-sm" id="pnl-tab-1d" onclick="setPnlTab(1)" style="flex:1;font-size:12px;padding:6px">24h</button>';
   h+='<button class="btn btn-sm" id="pnl-tab-7d" onclick="setPnlTab(7)" style="flex:1;font-size:12px;padding:6px">7 Days</button>';
@@ -1044,23 +985,8 @@ function renderHistory(){
   h+=pnlBlock(ps.allTime,'all');
   h+='</div>';
 
-  if(HIS.openPositions&&HIS.openPositions.length>0){
-    h+='<div class="card"><div class="section-title">🟢 Open Positions <span class="badge badge-info">'+HIS.openPositions.length+'</span></div>';
-    HIS.openPositions.forEach(function(p){
-      var upnl=p.unrealizedPnl||0;
-      var borderColor=upnl>=0?'var(--green)':'var(--red)';
-      h+='<div style="border-left:3px solid '+borderColor+';padding:8px 0 8px 10px;margin-bottom:8px">';
-      h+='<div class="row"><div class="gap"><span class="badge '+(p.side==='LONG'?'badge-long':'badge-short')+'">'+p.side+'</span><span class="text-w fw-600 text-sm">'+p.symbol+'</span><span class="text-xs text-dim">'+p.leverage+'x</span></div>';
-      h+='<span class="val-xs '+(upnl>=0?'gv':'r-')+'">'+(upnl>=0?'+':'-')+'$'+fmt(Math.abs(upnl))+'</span></div>';
-      h+='<div class="row mt-1"><span class="text-xs text-dim">Qty: <span class="mono text-w">'+p.quantity+'</span></span><span class="text-xs text-dim">Entry: <span class="mono gv">$'+fmt(p.entryPrice,p.entryPrice<1?6:2)+'</span></span></div>';
-      if(p.markPrice){h+='<div class="row mt-1"><span class="text-xs text-dim">Mark: <span class="mono text-w">$'+fmt(p.markPrice,p.markPrice<1?6:2)+'</span></span></div>'}
-      h+='</div>';
-    });
-    h+='</div>';
-  }
-
   if(HIS.closedTrades&&HIS.closedTrades.length>0){
-    h+='<div class="card"><div class="section-title">📋 Position History <span class="badge badge-info">'+HIS.closedTrades.length+'</span></div>';
+    h+='<div class="card"><div class="section-title">Position History <span class="badge badge-info">'+HIS.closedTrades.length+'</span></div>';
     HIS.closedTrades.forEach(function(t){
       var isWin=t.pnl>=0;
       var sideClass=t.side==='LONG'||t.side==='BUY'?'badge-long':'badge-short';
@@ -1088,9 +1014,7 @@ function renderHistory(){
   }else{
     h+='<div class="card" style="text-align:center;padding:30px"><div style="font-size:36px;margin-bottom:8px">📭</div><div class="text-dim text-sm">No closed trades yet. Start the AI agent to begin trading.</div></div>';
   }
-
-  h+='<button class="btn btn-outline mt-2" style="width:100%" onclick="loadHistory()">↻ Refresh</button>';
-  el.innerHTML=h;
+  return h;
 }
 
 function setPnlTab(n){
