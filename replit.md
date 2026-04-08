@@ -45,7 +45,17 @@ The project uses a monorepo with `client/` (React frontend), `server/` (Express 
 - **Market Intelligence**: `server/market-intelligence.ts` — Funding rate caching (120s TTL), orderbook imbalance calculation, weighted confidence scoring with 9 features (RSI, MACD, BB, ATR, Volume, Strength, Funding, Imbalance, Aligned indicators). Self-improving: logs trade features + outcomes, retrains feature weights via discrimination power analysis every 20 trades
 - **Wallet Flow**: User sends USDT (BEP-20) → Their bot wallet → `asterV3Deposit()` → Aster vault contract (`0x128463A60784c4D3f46c23Af3f65Ed859Ba87974`) → User's own Aster futures account
 - **Auth**: Uses `x-telegram-chat-id` header to identify user
-- **Files**: `server/miniapp-html.ts` (UI), `server/miniapp-routes.ts` (API), `server/aster-client.ts` (Aster DEX integration)
+- **Files**: `server/miniapp-html.ts` (UI), `server/miniapp-routes.ts` (API), `server/aster-client.ts` (Aster DEX integration — legacy broker + V3 direct), `server/aster-code.ts` (Aster Code / Builder Code integration — new permissionless broker system)
+
+### Aster Code Integration (server/aster-code.ts)
+- **What**: Aster's new permissionless Builder Code system — no Aster approval needed to become a broker
+- **Architecture**: Three roles — User (bot wallet), Signer/Agent (separate keypair per user), Builder (BUILD4 platform wallet earns fee revenue)
+- **Two signing modes**: `main=True` (chainId 56, dynamic EIP-712 typed data for authorization calls like approveAgent/approveBuilder) and `main=False` (chainId 1666, Message.msg for trading calls — same as existing V3)
+- **Onboarding flow**: `asterCodeOnboard(userPrivateKey, config)` → generates signer, calls approveAgent + approveBuilder, returns signer keypair
+- **Trading client**: `createAsterCodeFuturesClient()` — same API surface as existing V3 client but auto-injects `builder` + `feeRate` into every order
+- **Builder prerequisites**: Builder wallet must be registered on Aster with 100 ASTER token balance in contract account
+- **Fee model**: `feeRate` param on each order (capped by `maxFeeRate` approved by user) — BUILD4 earns this fee
+- **Status**: Built alongside existing code, not yet wired into onboarding/trading flows
 
 ### Permissionless Open Protocol
 Standardized endpoints for agent discovery, wallet identity, skill listing, wallet activity lookup, and open execution with a free tier and HTTP 402 payment protocol.
