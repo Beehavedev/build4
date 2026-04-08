@@ -110,7 +110,7 @@ function useWalletAddress() {
 
   const connect = useCallback(async () => {
     if (!window.ethereum) {
-      setError("MetaMask or a Web3 wallet is required");
+      setError("No Web3 wallet found (MetaMask, OKX, etc.)");
       return;
     }
     setConnecting(true);
@@ -1148,7 +1148,7 @@ function ActivationBanner({ walletAddress, onConnected }: { walletAddress: strin
     setError(null);
     try {
       const ethereum = (window as any).ethereum;
-      if (!ethereum) { setError("MetaMask not found"); setStep("idle"); return; }
+      if (!ethereum) { setError("No Web3 wallet found"); setStep("idle"); return; }
 
       const prepRes = await fetch("/api/miniapp/prepare-activation", {
         method: "POST",
@@ -1231,8 +1231,8 @@ function ActivationBanner({ walletAddress, onConnected }: { walletAddress: strin
 
   const stepLabels: Record<string, string> = {
     preparing: "Preparing...",
-    "sign-agent": "Sign in MetaMask (1/2)...",
-    "sign-builder": "Sign in MetaMask (2/2)...",
+    "sign-agent": "Sign in wallet (1/2)...",
+    "sign-builder": "Sign in wallet (2/2)...",
     submitting: "Submitting...",
   };
 
