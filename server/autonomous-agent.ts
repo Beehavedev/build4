@@ -1,4 +1,5 @@
 import { emaCrossRsiStrategy, parseKlinesToCandles, type Signal, type StrategyResult } from "./trading-strategy";
+import { evaluateEntry, logTradeResult, getIntelStatus, type IntelConfig, type MarketIntel } from "./market-intelligence";
 import { storage } from "./storage";
 
 const ALL_PAIRS = [
@@ -18,6 +19,12 @@ export interface AgentConfig {
   takeProfitPct: number;
   stopLossPct: number;
   trailingStopPct: number;
+  fundingRateFilter: boolean;
+  maxFundingRateLong: number;
+  minFundingRateShort: number;
+  orderbookImbalanceThreshold: number;
+  useConfidenceFilter: boolean;
+  minConfidence: number;
   symbol?: string;
 }
 
@@ -31,6 +38,16 @@ interface PositionInfo {
   entryPrice: number;
   peakPnlPct: number;
   openedAt: number;
+  entryStrength: number;
+  entryRsi: number;
+  entryMacdHist: number;
+  entryBbPctB: number;
+  entryAtr: number;
+  entryVolRatio: number;
+  entryFunding: number;
+  entryImbalance: number;
+  entryAligned: number;
+  entryConfidence: number;
 }
 
 interface AgentState {
@@ -61,6 +78,12 @@ const DEFAULT_CONFIG: AgentConfig = {
   takeProfitPct: 5.0,
   stopLossPct: 3.0,
   trailingStopPct: 2.0,
+  fundingRateFilter: true,
+  maxFundingRateLong: 0.001,
+  minFundingRateShort: -0.001,
+  orderbookImbalanceThreshold: 0.6,
+  useConfidenceFilter: true,
+  minConfidence: 0.65,
 };
 
 export function getAgentState(chatId: string): AgentState | undefined {
@@ -121,6 +144,12 @@ async function saveAgentConfigToDb(chatId: string, config: AgentConfig): Promise
       takeProfitPct: config.takeProfitPct,
       stopLossPct: config.stopLossPct,
       trailingStopPct: config.trailingStopPct,
+      fundingRateFilter: config.fundingRateFilter,
+      maxFundingRateLong: config.maxFundingRateLong,
+      minFundingRateShort: config.minFundingRateShort,
+      orderbookImbalanceThreshold: config.orderbookImbalanceThreshold,
+      useConfidenceFilter: config.useConfidenceFilter,
+      minConfidence: config.minConfidence,
     });
     await storage.saveAsterTradingLimits(chatId, {
       maxLeverage: config.maxLeverage,
@@ -193,6 +222,9 @@ export async function startAgent(
         entryPrice: p.entryPrice || 0,
         peakPnlPct: 0,
         openedAt: Date.now(),
+        entryStrength: 0, entryRsi: 50, entryMacdHist: 0, entryBbPctB: 0.5,
+        entryAtr: 0, entryVolRatio: 1, entryFunding: 0, entryImbalance: 0.5,
+        entryAligned: 0, entryConfidence: 0,
       });
     }
   }
@@ -202,12 +234,17 @@ export async function startAgent(
     const posList = posCount > 0
       ? Array.from(state.openPositions.entries()).map(([s, info]) => `${info.side} ${s}`).join(", ")
       : "None";
+    const intelFlags = [];
+    if (state.config.fundingRateFilter) intelFlags.push("💰 Funding");
+    if (state.config.useConfidenceFilter) intelFlags.push(`🧠 AI ${(state.config.minConfidence * 100).toFixed(0)}%`);
+    intelFlags.push("📊 MACD+BB+Vol");
     await sendMessage(
       `🤖 *${state.config.name} Started — Full Auto*\n` +
       `Scanning: *${ALL_PAIRS.length} pairs*\n` +
       `Max Leverage: ${state.config.maxLeverage}x | TP: ${state.config.takeProfitPct}% | SL: ${state.config.stopLossPct}%\n` +
       `Risk: ${state.config.riskPercent}% | Trailing: ${state.config.trailingStopPct}%\n` +
       `Max Positions: ${state.config.maxOpenPositions}\n` +
+      `Intel: ${intelFlags.join(" | ")}\n` +
       `Open: ${posList}\n` +
       `Checking every ${Math.round(state.config.intervalMs / 1000)}s`
     );
@@ -304,6 +341,9 @@ async function runAgentLoop(
           entryPrice: p.entryPrice || 0,
           peakPnlPct: 0,
           openedAt: Date.now(),
+          entryStrength: 0, entryRsi: 50, entryMacdHist: 0, entryBbPctB: 0.5,
+          entryAtr: 0, entryVolRatio: 1, entryFunding: 0, entryImbalance: 0.5,
+          entryAligned: 0, entryConfidence: 0,
         });
       }
     }
@@ -348,6 +388,18 @@ async function runAgentLoop(
         }
       }
 
+      if (!closeReason && state.config.fundingRateFilter) {
+        try {
+          const { getFundingRate } = await import("./market-intelligence");
+          const funding = await getFundingRate(futuresClient, symbol);
+          if (info.side === "LONG" && funding > 0.003) {
+            closeReason = `💰 Funding rate too high for LONG (${(funding * 100).toFixed(4)}% > 0.3%)`;
+          } else if (info.side === "SHORT" && funding < -0.003) {
+            closeReason = `💰 Funding rate too negative for SHORT (${(funding * 100).toFixed(4)}% < -0.3%)`;
+          }
+        } catch {}
+      }
+
       if (closeReason) {
         console.log(`[Agent:${chatId}] Closing ${info.side} ${symbol}: ${closeReason}`);
         await closePosition(chatId, futuresClient, state, symbol, sendMessage, closeReason);
@@ -378,10 +430,33 @@ async function runAgentLoop(
       });
       unique.sort((a, b) => b.result.strength - a.result.strength);
 
-      for (let i = 0; i < Math.min(slotsAvailable, unique.length); i++) {
+      const intelConfig: IntelConfig = {
+        fundingRateFilter: state.config.fundingRateFilter,
+        maxFundingRateLong: state.config.maxFundingRateLong,
+        minFundingRateShort: state.config.minFundingRateShort,
+        orderbookImbalanceThreshold: state.config.orderbookImbalanceThreshold,
+        useConfidenceFilter: state.config.useConfidenceFilter,
+        minConfidence: state.config.minConfidence,
+      };
+
+      for (let i = 0; i < Math.min(slotsAvailable + 2, unique.length); i++) {
+        if (state.openPositions.size >= state.config.maxOpenPositions) break;
         const c = unique[i];
         if (state.openPositions.has(c.symbol)) continue;
-        await openPosition(chatId, futuresClient, state, c.symbol, c.side, c.result, sendMessage);
+
+        try {
+          const intel = await evaluateEntry(futuresClient, c.symbol, c.side, c.result, intelConfig);
+
+          if (!intel.fundingFavorable || !intel.orderbookFavorable || intel.rejectReason) {
+            console.log(`[Agent:${chatId}] Rejected ${c.side} ${c.symbol}: ${intel.rejectReason} (confidence: ${(intel.confidence * 100).toFixed(0)}%)`);
+            continue;
+          }
+
+          await openPosition(chatId, futuresClient, state, c.symbol, c.side, c.result, sendMessage, intel);
+        } catch (e: any) {
+          console.log(`[Agent:${chatId}] Intel eval failed for ${c.symbol}: ${e.message?.substring(0, 80)}`);
+          await openPosition(chatId, futuresClient, state, c.symbol, c.side, c.result, sendMessage);
+        }
       }
     }
 
@@ -505,6 +580,7 @@ async function openPosition(
   side: "BUY" | "SELL",
   result: StrategyResult,
   sendMessage: (msg: string) => Promise<void>,
+  intel?: MarketIntel,
 ) {
   const leverage = chooseLeverage(symbol, state.config.maxLeverage, result.strength);
 
@@ -576,12 +652,24 @@ async function openPosition(
     entryPrice: entryP,
     peakPnlPct: 0,
     openedAt: Date.now(),
+    entryStrength: result.strength,
+    entryRsi: result.rsiValue,
+    entryMacdHist: result.macdHistogram,
+    entryBbPctB: result.bollingerPercentB,
+    entryAtr: result.atrValue,
+    entryVolRatio: result.volumeRatio,
+    entryFunding: intel?.fundingRate || 0,
+    entryImbalance: intel?.orderbookImbalance || 0.5,
+    entryAligned: result.alignedIndicators,
+    entryConfidence: intel?.confidence || 0,
   });
   state.tradeCount++;
   state.lastAction = `${positionSide} ${symbol}`;
   state.lastReason = result.reason;
 
   const icon = side === "BUY" ? "🟢" : "🔴";
+  const confStr = intel ? ` | 🧠 ${(intel.confidence * 100).toFixed(0)}%` : "";
+  const fundStr = intel ? ` | 💰 ${(intel.fundingRate * 100).toFixed(4)}%` : "";
   await sendMessage(
     `🚀 *Auto Trade — ${symbol}*\n` +
     `━━━━━━━━━━━━━━━━━━━━\n\n` +
@@ -589,7 +677,7 @@ async function openPosition(
     `📦 Qty: \`${filledQty || qty}\`\n` +
     `💲 Price: \`$${(avgPrice || lastPrice).toFixed(2)}\`\n` +
     `⚡ Leverage: *${leverage}x* (auto)\n` +
-    `💪 Signal Strength: *${result.strength}*\n` +
+    `💪 Strength: *${result.strength}* | Aligned: *${result.alignedIndicators}*${confStr}${fundStr}\n` +
     `📊 ${result.reason}\n\n` +
     `📋 Order: \`${orderResult.orderId}\`\n` +
     `📍 Open: ${state.openPositions.size}/${state.config.maxOpenPositions}`
@@ -638,6 +726,7 @@ async function closePosition(
     leverage: pos.leverage || state.config.maxLeverage,
   });
 
+  const posInfo = state.openPositions.get(symbol);
   state.openPositions.delete(symbol);
 
   let pnl = 0;
@@ -645,6 +734,20 @@ async function closePosition(
     pnl = pos.side === "LONG"
       ? (closePrice - pos.entryPrice) * filledQty
       : (pos.entryPrice - closePrice) * filledQty;
+  }
+
+  if (posInfo && posInfo.entryConfidence > 0) {
+    logTradeResult({
+      rsi: posInfo.entryRsi,
+      macdHist: posInfo.entryMacdHist,
+      bbPercentB: posInfo.entryBbPctB,
+      atr: posInfo.entryAtr,
+      volumeRatio: posInfo.entryVolRatio,
+      strength: posInfo.entryStrength,
+      fundingRate: posInfo.entryFunding,
+      imbalance: posInfo.entryImbalance,
+      aligned: posInfo.entryAligned,
+    }, pnl > 0);
   }
 
   state.lastAction = `Closed ${pos.side} ${symbol}`;
@@ -711,7 +814,9 @@ export function getAgentStatus(chatId: string): string {
   msg += `🔄 Trades: \`${state.tradeCount}\`\n`;
   msg += `⚠️ Errors: \`${state.errors}\`\n`;
   msg += `🕐 Last Scan: ${lastCheck}\n\n`;
-  msg += `_Strategy: EMA(8/21) + RSI(14) multi-pair scanner_`;
+  const intelStat = getIntelStatus();
+  msg += `🧠 ML Model: ${intelStat.tradeCount} samples, ${(intelStat.winRate * 100).toFixed(0)}% win rate\n`;
+  msg += `_Strategy: EMA + RSI + MACD + BB + Funding + Orderbook_`;
 
   return msg;
 }

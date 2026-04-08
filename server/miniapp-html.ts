@@ -985,7 +985,7 @@ function renderAgent(){
 
   var agentName=c?.name||'My Agent';
   h+='<div class="card '+(r?'card-accent':'')+'"><div class="row"><div class="gap"><div style="width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:'+(r?'var(--green-bg)':'var(--bg)')+'">🤖</div><div><div class="text-w fw-600" style="cursor:pointer" onclick="renameAgent()" id="agent-name-display">'+agentName+'</div><div class="gap mt-1"><div class="live-dot" style="'+(r?'':'animation:none;background:var(--text3)')+'"></div><span class="text-xs '+(r?'gv':'text-dim')+'">'+(r?'Full Auto — Scanning 18 pairs':'Stopped')+'</span></div></div></div><div class="switch'+(r?' on':'')+'" onclick="toggleAgent()"></div></div>';
-  if(r&&c){h+='<div class="gap mt-3" style="flex-wrap:wrap"><span class="badge badge-info">🌐 18 pairs</span><span class="badge badge-info">'+c.maxLeverage+'x max</span><span class="badge badge-warn">'+c.riskPercent+'% risk</span><span class="badge badge-long">'+(c.maxOpenPositions||3)+' max pos</span></div>'}
+  if(r&&c){h+='<div class="gap mt-3" style="flex-wrap:wrap"><span class="badge badge-info">🌐 18 pairs</span><span class="badge badge-info">'+c.maxLeverage+'x max</span><span class="badge badge-warn">'+c.riskPercent+'% risk</span><span class="badge badge-long">'+(c.maxOpenPositions||3)+' max pos</span>'+(c.fundingRateFilter!==false?'<span class="badge badge-info">💰 Funding</span>':'')+(c.useConfidenceFilter!==false?'<span class="badge badge-info">🧠 AI</span>':'')+'</div>'}
   h+='</div>';
 
   h+='<div class="card"><div class="section-title">⚙️ Configuration</div>';
@@ -1014,6 +1014,23 @@ function renderAgent(){
   [1,2,3,5].forEach(function(n){h+='<button class="btn btn-sm '+((c?.trailingStopPct||2)===n?'btn-green':'btn-outline')+'" style="font-size:12px;padding:4px 10px" onclick="setExitParam(\\\'trailingStopPct\\\','+n+')">'+n+'%</button>'});
   h+='</div>';
   h+='<div class="text-xs text-dim2 mt-2">Trailing stop activates after profit exceeds trail %. Auto-closes if profit drops back by trail amount.</div>';
+
+  h+='<div class="section-title mt-3">🧠 AI Intelligence</div>';
+  var fr=c?.fundingRateFilter!==false;
+  var cf=c?.useConfidenceFilter!==false;
+  h+='<div class="row text-sm mt-2"><span class="text-dim">Funding Rate Filter</span><div class="switch'+(fr?' on':'')+'" style="transform:scale(0.7)" onclick="setExitParam(\\\'fundingRateFilter\\\','+(fr?'false':'true')+')"></div></div>';
+  h+='<div class="text-xs text-dim2">Rejects longs when funding is too high (paying fees) and shorts when too negative</div>';
+  h+='<div class="row text-sm mt-2"><span class="text-dim">Orderbook Filter</span><span class="mono text-w fw-600">'+((c?.orderbookImbalanceThreshold||0.6)*100).toFixed(0)+'%</span></div>';
+  h+='<div style="display:flex;gap:6px;margin-top:6px">';
+  [50,55,60,65,70].forEach(function(n){var v=n/100;h+='<button class="btn btn-sm '+(Math.round((c?.orderbookImbalanceThreshold||0.6)*100)===n?'btn-green':'btn-outline')+'" style="font-size:12px;padding:4px 10px" onclick="setExitParam(\\\'orderbookImbalanceThreshold\\\','+v+')">'+n+'%</button>'});
+  h+='</div>';
+  h+='<div class="text-xs text-dim2 mt-1">Only trades when orderbook pressure aligns with signal direction</div>';
+  h+='<div class="row text-sm mt-2"><span class="text-dim">AI Confidence Filter</span><div class="switch'+(cf?' on':'')+'" style="transform:scale(0.7)" onclick="setExitParam(\\\'useConfidenceFilter\\\','+(cf?'false':'true')+')"></div></div>';
+  h+='<div class="row text-sm mt-2"><span class="text-dim">Min Confidence</span><span class="mono text-w fw-600">'+((c?.minConfidence||0.65)*100).toFixed(0)+'%</span></div>';
+  h+='<div style="display:flex;gap:6px;margin-top:6px">';
+  [50,55,60,65,70,75,80].forEach(function(n){var v=n/100;h+='<button class="btn btn-sm '+(Math.round((c?.minConfidence||0.65)*100)===n?'btn-green':'btn-outline')+'" style="font-size:12px;padding:4px 10px" onclick="setExitParam(\\\'minConfidence\\\','+v+')">'+n+'%</button>'});
+  h+='</div>';
+  h+='<div class="text-xs text-dim2 mt-1">Self-learning model scores each trade. Retrains every 20 trades for continuous improvement.</div>';
 
   h+='</div>';
 
@@ -1093,7 +1110,14 @@ async function setExitParam(key,val){
     const r=await api('/api/miniapp/agent/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(r.success){
       if(AG&&AG.config)AG.config[key]=val;
-      toast(key.replace('Pct','').replace(/([A-Z])/g,' $1')+' set to '+val+'%','ok');
+      var label=key.replace('Pct','').replace(/([A-Z])/g,' $1');
+      if(typeof val==='boolean'||val==='true'||val==='false'){
+        toast(label+(val===true||val==='true'?' enabled':' disabled'),'ok');
+      }else if(val<1){
+        toast(label+' set to '+(val*100).toFixed(0)+'%','ok');
+      }else{
+        toast(label+' set to '+val+'%','ok');
+      }
       renderAgent();
     }else{toast(r.error||'Failed','err')}
   }catch(e){toast('❌ '+e.message,'err')}

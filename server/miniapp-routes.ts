@@ -832,6 +832,10 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
           takeProfitPct: config?.takeProfitPct || 5,
           stopLossPct: config?.stopLossPct || 3,
           trailingStopPct: config?.trailingStopPct || 2,
+          fundingRateFilter: config?.fundingRateFilter !== false,
+          orderbookImbalanceThreshold: config?.orderbookImbalanceThreshold || 0.6,
+          useConfidenceFilter: config?.useConfidenceFilter !== false,
+          minConfidence: config?.minConfidence || 0.65,
         },
         stats: {
           tradeCount: Math.max(state?.tradeCount || 0, openTrades.length + closeTrades.length),
@@ -858,7 +862,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const state = getAgentState(chatId);
       if (state?.running) return res.status(400).json({ error: "Stop the agent before changing config" });
 
-      const { name, symbol, riskPercent, leverage, maxOpenPositions, takeProfitPct, stopLossPct, trailingStopPct } = req.body;
+      const { name, symbol, riskPercent, leverage, maxOpenPositions, takeProfitPct, stopLossPct, trailingStopPct, fundingRateFilter, orderbookImbalanceThreshold, useConfidenceFilter, minConfidence } = req.body;
       const updates: any = {};
       if (name && typeof name === "string") updates.name = name.trim().substring(0, 24);
       if (symbol && typeof symbol === "string") updates.symbol = symbol.toUpperCase();
@@ -868,6 +872,10 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       if (takeProfitPct !== undefined) updates.takeProfitPct = Math.max(1, Math.min(50, parseFloat(takeProfitPct) || 5));
       if (stopLossPct !== undefined) updates.stopLossPct = Math.max(1, Math.min(20, parseFloat(stopLossPct) || 3));
       if (trailingStopPct !== undefined) updates.trailingStopPct = Math.max(0.5, Math.min(10, parseFloat(trailingStopPct) || 2));
+      if (fundingRateFilter !== undefined) updates.fundingRateFilter = fundingRateFilter === true || fundingRateFilter === "true";
+      if (orderbookImbalanceThreshold !== undefined) updates.orderbookImbalanceThreshold = Math.max(0.4, Math.min(0.8, parseFloat(orderbookImbalanceThreshold) || 0.6));
+      if (useConfidenceFilter !== undefined) updates.useConfidenceFilter = useConfidenceFilter === true || useConfidenceFilter === "true";
+      if (minConfidence !== undefined) updates.minConfidence = Math.max(0.3, Math.min(0.9, parseFloat(minConfidence) || 0.65));
 
       const config = setAgentConfig(chatId, updates);
       res.json({ success: true, config });

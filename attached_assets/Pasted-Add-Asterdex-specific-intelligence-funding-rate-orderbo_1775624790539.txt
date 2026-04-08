@@ -1,0 +1,59 @@
+Add Asterdex-specific intelligence (funding rate + orderbook filter)Add to AgentConfig:python
+    funding_rate_filter: bool = True
+    max_funding_rate_long: float = 0.001   # only long if funding ≤ this (you receive funding)
+    min_funding_rate_short: float = -0.001 # only short if funding ≥ this
+    orderbook_imbalance_threshold: float = 0.6  # only trade if imbalance > 60% in our direction
+
+2. Add these new helper functionspython
+def get_funding_rate(self, symbol: str) -> float:
+    # Use CCXT or direct API: return current/predicted funding rate for the pair
+    return self.exchange.fetch_funding_rate(symbol)['fundingRate']
+
+def get_orderbook_imbalance(self, symbol: str, depth: int = 20) -> float:
+    # Fetch orderbook and calculate buy/sell pressure imbalance (0 to 1)
+    ob = self.exchange.fetch_order_book(symbol, limit=depth)
+    bid_vol = sum([x[1] for x in ob['bids']])
+    ask_vol = sum([x[1] for x in ob['asks']])
+    return bid_vol / (bid_vol + ask_vol) if bid_vol + ask_vol > 0 else 0.5
+
+3. Upgrade the entry logic (only take god-tier setups)Before opening any position, add this strict filter:python
+def should_enter(self, symbol: str, signal: str, df: pd.DataFrame) -> bool:
+    if not self.config.funding_rate_filter:
+        return True
+    
+    funding = self.get_funding_rate(symbol)
+    imbalance = self.get_orderbook_imbalance(symbol)
+    
+    if signal == "long":
+        if funding > self.config.max_funding_rate_long:
+            return False  # paying funding = bad
+        if imbalance < self.config.orderbook_imbalance_threshold:
+            return False  # weak buy pressure
+    else:  # short
+        if funding < self.config.min_funding_rate_short:
+            return False
+        if imbalance > (1 - self.config.orderbook_imbalance_threshold):
+            return False  # weak sell pressure
+    
+    # Add multi-timeframe + extra indicators (MACD, Bollinger, volume spike, etc.)
+    # Only enter if 3+ signals align
+    return True
+
+4. Add simple ML confidence score (makes it "AI smart")Install if needed: scikit-learn
+Create a lightweight RandomForest classifier that predicts win probability based on:RSI, ATR, MACD, volume, funding rate, orderbook imbalance, higher-timeframe trend
+
+Train it live on historical data every 100 trades (self-improving).Add to config:python
+    use_ml_filter: bool = True
+    ml_min_confidence: float = 0.75  # only trade if model says >75% win prob
+
+5. Self-optimization loopLog every trade (entry/exit reason, PnL, features) to a CSV or SQLite
+Every 24h or 200 trades: retrain ML model + optionally adjust TP/SL multipliers via simple grid search on recent data
+
+6. Final instructions to Replit AgentDo this step-by-step:Add the new config fields + helper functions.
+Upgrade entry logic with funding + orderbook + ML filter.
+Update manage_positions() to also check funding rate for early exits if it turns against us.
+Add trade logging + basic ML model (use sklearn.RandomForestClassifier).
+Show me the updated code files when done.
+
+Keep everything clean, commented, and backward-compatible. Use existing exchange_client (CCXT aster).This will make the agents dramatically smarter than 99% of Asterdex bots out there.Start now.
+
