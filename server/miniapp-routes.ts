@@ -320,6 +320,21 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
     }
   });
 
+  const activationSessions = new Map<string, {
+    connectedAddr: string;
+    tradingAddr: string;
+    tradingPk: string;
+    chatId: string;
+    createdAt: number;
+  }>();
+
+  setInterval(() => {
+    const now = Date.now();
+    for (const [id, sess] of activationSessions) {
+      if (now - sess.createdAt > 10 * 60 * 1000) activationSessions.delete(id);
+    }
+  }, 60_000);
+
   app.post("/api/miniapp/activate-trading", async (req: Request, res: Response) => {
     try {
       const { walletAddress } = req.body;
@@ -328,7 +343,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       }
       const connectedAddr = walletAddress.toLowerCase();
 
-      const { createHash } = await import("crypto");
+      const { createHash, randomBytes } = await import("crypto");
       const hash = createHash("sha256").update(`web:${connectedAddr}`).digest("hex");
       const chatId = "8" + hash.replace(/[^0-9]/g, "").substring(0, 14).padEnd(14, "0");
 
@@ -337,7 +352,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const existingCreds = await storage.getAsterCredentials(chatId);
       if (existingCreds) {
         const parentAddr = existingCreds.parentAddress?.replace("astercode:", "") || connectedAddr;
-        console.log(`[MiniApp] User ${connectedAddr.substring(0, 10)} already activated, chatId=${chatId}, tradingWallet=${parentAddr.substring(0, 10)}`);
+        console.log(`[MiniApp] User ${connectedAddr.substring(0, 10)} already activated, chatId=${chatId}`);
         return res.json({
           success: true,
           tradingWallet: parentAddr,
@@ -347,32 +362,119 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       }
 
       const tradingWallet = Wallet.createRandom();
-      const tradingAddr = tradingWallet.address.toLowerCase();
+      const tradingAddr = tradingWallet.address;
       const tradingPk = tradingWallet.privateKey;
 
       await storage.saveTelegramWallet(chatId, connectedAddr);
       await storage.setActiveTelegramWallet(chatId, connectedAddr);
-      await storage.saveTelegramWallet(chatId, tradingAddr, tradingPk);
+      await storage.saveTelegramWallet(chatId, tradingAddr.toLowerCase(), tradingPk);
 
-      console.log(`[MiniApp] Web activation: connected=${connectedAddr.substring(0, 10)} tradingWallet=${tradingAddr.substring(0, 10)} chatId=${chatId}`);
+      const sessionId = randomBytes(16).toString("hex");
+      activationSessions.set(sessionId, {
+        connectedAddr,
+        tradingAddr,
+        tradingPk,
+        chatId,
+        createdAt: Date.now(),
+      });
 
-      const { asterCodeOnboard, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");
-      const codeConfig = getDefaultAsterCodeConfig();
+      console.log(`[MiniApp] Activation phase1: connected=${connectedAddr.substring(0, 10)} trading=${tradingAddr.substring(0, 10)} chatId=${chatId} session=${sessionId.substring(0, 8)}`);
 
-      const onboardResult = await asterCodeOnboard(tradingPk, codeConfig);
+      res.json({
+        success: true,
+        phase: "register",
+        sessionId,
+        tradingWalletAddress: tradingAddr,
+      });
+    } catch (e: any) {
+      console.error("[MiniApp] activate-trading error:", e.message);
+      res.status(500).json({ error: e.message || "Failed to start activation" });
+    }
+  });
 
-      if (!onboardResult.success) {
-        console.error(`[MiniApp] Web activation onboard failed: ${onboardResult.error}`);
-        return res.status(500).json({ error: `Activation failed: ${onboardResult.error}` });
+  app.post("/api/miniapp/sign-registration", async (req: Request, res: Response) => {
+    try {
+      const { sessionId, nonce } = req.body;
+      if (!sessionId || !nonce) {
+        return res.status(400).json({ error: "Missing sessionId or nonce" });
+      }
+      const session = activationSessions.get(sessionId);
+      if (!session) {
+        return res.status(400).json({ error: "Invalid or expired session" });
       }
 
-      console.log(`[MiniApp] Web activation onboard success: signer=${onboardResult.signerAddress?.substring(0, 10)} debug=${onboardResult.debug}`);
+      const { Wallet } = await import("ethers");
+      const wallet = new Wallet(session.tradingPk);
+      const loginMessage = `You are signing into Astherus ${nonce}`;
+      const signature = await wallet.signMessage(loginMessage);
 
-      const signerAddr = onboardResult.signerAddress!.toLowerCase();
-      const signerPk = onboardResult.signerPrivateKey!;
+      console.log(`[MiniApp] Signed registration nonce for ${session.tradingAddr.substring(0, 10)}`);
+      res.json({ success: true, signature });
+    } catch (e: any) {
+      console.error("[MiniApp] sign-registration error:", e.message);
+      res.status(500).json({ error: e.message || "Signing failed" });
+    }
+  });
+
+  app.post("/api/miniapp/complete-activation", async (req: Request, res: Response) => {
+    try {
+      const { sessionId } = req.body;
+      if (!sessionId) {
+        return res.status(400).json({ error: "Missing sessionId" });
+      }
+      const session = activationSessions.get(sessionId);
+      if (!session) {
+        return res.status(400).json({ error: "Invalid or expired session" });
+      }
+      activationSessions.delete(sessionId);
+
+      const { tradingAddr, tradingPk, chatId, connectedAddr } = session;
+
+      console.log(`[MiniApp] Completing activation for trading=${tradingAddr.substring(0, 10)} chatId=${chatId}`);
+
+      const { Wallet } = await import("ethers");
+      const { asterCodeApproveAgent, asterCodeApproveBuilder, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");
+      const codeConfig = getDefaultAsterCodeConfig();
+      const baseUrl = codeConfig.fApiUrl || "https://fapi.asterdex.com";
+
+      const signerWallet = Wallet.createRandom();
+      const signerAddr = signerWallet.address.toLowerCase();
+      const signerPk = signerWallet.privateKey;
+
+      const agentName = `build4_${Date.now()}`;
+      const expiry = Math.trunc(Date.now() / 1000 + 2 * 365 * 24 * 3600) * 1000;
+
+      console.log(`[MiniApp] Step 2: approveAgent signer=${signerAddr.substring(0, 10)}`);
+      const agentResult = await asterCodeApproveAgent(baseUrl, tradingPk, {
+        agentName,
+        agentAddress: signerWallet.address,
+        ipWhitelist: "",
+        expired: expiry,
+        canSpotTrade: false,
+        canPerpTrade: true,
+        canWithdraw: false,
+        builder: codeConfig.builderAddress,
+        maxFeeRate: codeConfig.maxFeeRate,
+        builderName: codeConfig.builderName,
+      });
+      console.log(`[MiniApp] approveAgent result: ${JSON.stringify(agentResult).substring(0, 200)}`);
+
+      await new Promise(r => setTimeout(r, 500));
+
+      console.log(`[MiniApp] Step 3: approveBuilder`);
+      try {
+        const builderResult = await asterCodeApproveBuilder(baseUrl, tradingPk, {
+          builder: codeConfig.builderAddress,
+          maxFeeRate: codeConfig.maxFeeRate,
+          builderName: codeConfig.builderName,
+        }, signerWallet.address);
+        console.log(`[MiniApp] approveBuilder result: ${JSON.stringify(builderResult).substring(0, 200)}`);
+      } catch (bErr: any) {
+        console.log(`[MiniApp] approveBuilder failed (may already exist): ${bErr.message}`);
+      }
 
       await storage.saveTelegramWallet(chatId, signerAddr, signerPk);
-      await storage.saveAsterCredentials(chatId, signerAddr, signerPk, `astercode:${tradingAddr}`);
+      await storage.saveAsterCredentials(chatId, signerAddr, signerPk, `astercode:${tradingAddr.toLowerCase()}`);
 
       let balanceInfo: any = null;
       try {
@@ -385,12 +487,11 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       res.json({
         success: true,
-        tradingWallet: tradingAddr,
-        parentAddress: tradingAddr,
-        alreadyActive: false,
+        tradingWallet: tradingAddr.toLowerCase(),
+        parentAddress: tradingAddr.toLowerCase(),
       });
     } catch (e: any) {
-      console.error("[MiniApp] activate-trading error:", e.message);
+      console.error("[MiniApp] complete-activation error:", e.message);
       res.status(500).json({ error: e.message || "Activation failed" });
     }
   });

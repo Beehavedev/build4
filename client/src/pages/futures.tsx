@@ -1139,12 +1139,60 @@ function RegisterOrErrorScreen({
   );
 }
 
+const BROKER_BASE = "https://www.asterdex.com/bapi/futures/v1";
+
+async function registerWalletOnAster(sessionId: string, tradingAddress: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const nonceRes = await fetch(`${BROKER_BASE}/public/future/web3/get-nonce`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "clientType": "web" },
+      body: JSON.stringify({ type: "LOGIN", sourceAddr: tradingAddress }),
+    });
+    const nonceData = await nonceRes.json();
+    if (!nonceData?.data?.nonce) {
+      return { ok: false, error: `No nonce: ${nonceData?.message || "unknown"}` };
+    }
+
+    const signRes = await fetch("/api/miniapp/sign-registration", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, nonce: nonceData.data.nonce }),
+    });
+    const signData = await signRes.json();
+    if (!signData.success) {
+      return { ok: false, error: signData.error || "Signing failed" };
+    }
+
+    const loginRes = await fetch(`${BROKER_BASE}/public/future/web3/ae/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "clientType": "web" },
+      body: JSON.stringify({
+        signature: signData.signature,
+        sourceAddr: tradingAddress,
+        chainId: 56,
+        agentCode: "BUILD4",
+      }),
+    });
+    const loginData = await loginRes.json();
+    if (loginData?.code === "000000") {
+      return { ok: true };
+    }
+    return { ok: false, error: loginData?.message || loginData?.msg || "Registration failed" };
+  } catch (e: any) {
+    if (e.message?.includes("Failed to fetch") || e.message?.includes("CORS") || e.name === "TypeError") {
+      return { ok: false, error: "CORS_BLOCKED" };
+    }
+    return { ok: false, error: e.message || "Registration error" };
+  }
+}
+
 function ActivationBanner({ walletAddress, onConnected }: { walletAddress: string; onConnected: () => void }) {
-  const [activating, setActivating] = useState(false);
+  const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const activating = status !== "";
 
   const handleActivate = async () => {
-    setActivating(true);
+    setStatus("Creating trading wallet...");
     setError(null);
     try {
       const res = await fetch("/api/miniapp/activate-trading", {
@@ -1153,15 +1201,49 @@ function ActivationBanner({ walletAddress, onConnected }: { walletAddress: strin
         body: JSON.stringify({ walletAddress }),
       });
       const data = await res.json();
-      if (data.success) {
+
+      if (data.alreadyActive) {
+        setTimeout(onConnected, 1000);
+        return;
+      }
+
+      if (!data.success) {
+        setError(data.error || "Failed to create wallet");
+        setStatus("");
+        return;
+      }
+
+      const { sessionId, tradingWalletAddress } = data;
+
+      setStatus("Registering on Aster DEX...");
+      const regResult = await registerWalletOnAster(sessionId, tradingWalletAddress);
+
+      if (!regResult.ok) {
+        if (regResult.error === "CORS_BLOCKED") {
+          console.log("[Activation] Browser registration blocked by CORS, trying server-side fallback...");
+        } else {
+          console.log(`[Activation] Browser registration: ${regResult.error}, proceeding anyway...`);
+        }
+      }
+
+      setStatus("Activating trading account...");
+      const completeRes = await fetch("/api/miniapp/complete-activation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      const completeData = await completeRes.json();
+
+      if (completeData.success) {
+        setStatus("Activated!");
         setTimeout(onConnected, 1500);
       } else {
-        setError(data.error || "Activation failed");
-        setActivating(false);
+        setError(completeData.error || "Activation failed");
+        setStatus("");
       }
     } catch (e: any) {
       setError(e.message || "Activation failed");
-      setActivating(false);
+      setStatus("");
     }
   };
 
@@ -1170,7 +1252,7 @@ function ActivationBanner({ walletAddress, onConnected }: { walletAddress: strin
       <div className="flex items-center gap-2 text-[11px]">
         <Zap className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
         <span className="text-yellow-300/80">
-          {activating ? "Activating trading account..." : "Trading not yet activated."}
+          {activating ? status : "Trading not yet activated."}
         </span>
         {error && <span className="text-red-400 ml-1">{error}</span>}
       </div>
