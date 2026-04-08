@@ -943,6 +943,129 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
     }
   });
 
+  app.get("/api/miniapp/history", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+
+      const allTrades = await storage.getAsterLocalTrades(chatId);
+      const localPositions = await storage.getAsterLocalPositions(chatId);
+
+      const now = Date.now();
+      const day1 = now - 24 * 60 * 60 * 1000;
+      const day7 = now - 7 * 24 * 60 * 60 * 1000;
+
+      const openPositions = localPositions.filter((p: any) => p.quantity > 0).map((p: any) => ({
+        symbol: p.symbol,
+        side: p.side,
+        quantity: p.quantity,
+        entryPrice: p.entryPrice,
+        leverage: p.leverage,
+      }));
+
+      const tradesBySymbol: Record<string, any[]> = {};
+      for (const t of allTrades) {
+        if (t.type === "DEPOSIT") continue;
+        if (!tradesBySymbol[t.symbol]) tradesBySymbol[t.symbol] = [];
+        tradesBySymbol[t.symbol].push(t);
+      }
+
+      const closedTrades: any[] = [];
+      for (const [symbol, trades] of Object.entries(tradesBySymbol)) {
+        const sorted = trades.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        let openQty = 0;
+        let openCost = 0;
+        let openSide = "";
+        let openLeverage = 1;
+        let openTime = 0;
+
+        for (const t of sorted) {
+          const qty = t.executedQty || t.quantity;
+          const price = t.avgPrice || t.price || 0;
+          const ts = new Date(t.createdAt).getTime();
+
+          if (openQty === 0) {
+            openSide = t.side;
+            openQty = qty;
+            openCost = qty * price;
+            openLeverage = t.leverage;
+            openTime = ts;
+          } else if (t.side === openSide) {
+            openCost += qty * price;
+            openQty += qty;
+          } else {
+            const closedQty = Math.min(qty, openQty);
+            const entryAvg = openQty > 0 ? openCost / openQty : price;
+            const pnl = openSide === "BUY"
+              ? (price - entryAvg) * closedQty
+              : (entryAvg - price) * closedQty;
+
+            closedTrades.push({
+              symbol,
+              side: openSide === "BUY" ? "LONG" : "SHORT",
+              quantity: closedQty,
+              entryPrice: entryAvg,
+              exitPrice: price,
+              pnl,
+              leverage: openLeverage,
+              openedAt: openTime,
+              closedAt: ts,
+            });
+
+            openQty -= closedQty;
+            if (openQty <= 0.0000001) {
+              const remaining = qty - closedQty;
+              if (remaining > 0.0000001) {
+                openSide = t.side;
+                openQty = remaining;
+                openCost = remaining * price;
+                openLeverage = t.leverage;
+                openTime = ts;
+              } else {
+                openQty = 0;
+                openCost = 0;
+              }
+            } else {
+              openCost = (openQty) * (openCost / (openQty + closedQty));
+            }
+          }
+        }
+      }
+
+      closedTrades.sort((a, b) => b.closedAt - a.closedAt);
+
+      let pnl1d = 0, pnl7d = 0, pnlAll = 0;
+      let wins1d = 0, losses1d = 0, wins7d = 0, losses7d = 0, winsAll = 0, lossesAll = 0;
+
+      for (const ct of closedTrades) {
+        pnlAll += ct.pnl;
+        if (ct.pnl > 0) winsAll++; else lossesAll++;
+
+        if (ct.closedAt >= day7) {
+          pnl7d += ct.pnl;
+          if (ct.pnl > 0) wins7d++; else losses7d++;
+        }
+        if (ct.closedAt >= day1) {
+          pnl1d += ct.pnl;
+          if (ct.pnl > 0) wins1d++; else losses1d++;
+        }
+      }
+
+      res.json({
+        openPositions,
+        closedTrades: closedTrades.slice(0, 50),
+        pnlSummary: {
+          day1: { pnl: pnl1d, wins: wins1d, losses: losses1d, total: wins1d + losses1d },
+          day7: { pnl: pnl7d, wins: wins7d, losses: losses7d, total: wins7d + losses7d },
+          allTime: { pnl: pnlAll, wins: winsAll, losses: lossesAll, total: winsAll + lossesAll },
+        },
+      });
+    } catch (e: any) {
+      console.error("[History] Error:", e.message?.substring(0, 100));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.get("/api/miniapp/trades", async (req: Request, res: Response) => {
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;
