@@ -13,6 +13,8 @@ interface AsterV3Config {
   signer: string;
   signerPrivateKey: string;
   futuresBaseUrl?: string;
+  builder?: string;
+  feeRate?: number;
 }
 
 interface AsterRequestOptions {
@@ -265,6 +267,8 @@ async function makeRequest(
   }
 }
 
+const V3_TRADING_CHAIN_ID = 1666;
+
 let _lastNonceSec = 0;
 let _nonceCounter = 0;
 
@@ -279,43 +283,34 @@ function getV3Nonce(): number {
   return nowSec * 1_000_000 + _nonceCounter;
 }
 
-async function signV3Params(
-  params: Record<string, string | number | boolean | undefined>,
-  user: string,
-  signer: string,
-  signerPrivateKey: string,
-  _httpMethod: string = "GET",
-): Promise<{ queryStringWithSig: string; paramsWithoutSig: string }> {
-  const strParams: Record<string, string> = {};
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null) strParams[k] = String(v);
-  }
-
-  strParams.timestamp = String(Date.now());
-
-  const queryString = Object.entries(strParams)
-    .map(([k, v]) => `${k}=${v}`)
+function buildV3QueryString(params: Record<string, any>): string {
+  return Object.entries(params)
+    .filter(([_, v]) => v !== undefined && v !== null)
+    .map(([k, v]) => {
+      if (typeof v === "boolean") return `${k}=${v ? "True" : "False"}`;
+      return `${k}=${String(v)}`;
+    })
     .join("&");
+}
 
-  const nonce = getV3Nonce();
-
-  const { AbiCoder, keccak256, getBytes } = await import("ethers");
-  const abiCoder = AbiCoder.defaultAbiCoder();
-  const encoded = abiCoder.encode(
-    ["string", "address", "address", "uint64"],
-    [queryString, user, signer, BigInt(nonce)],
-  );
-  const hash = keccak256(encoded);
+async function signV3Trading(signerPrivateKey: string, queryString: string): Promise<string> {
   const wallet = new Wallet(signerPrivateKey);
-  const rawSig = await wallet.signMessage(getBytes(hash));
-  let sig = rawSig;
-  try { sig = Signature.from(rawSig).serialized; } catch {}
 
-  console.log(`[AsterV3Sign] user=${user} signer=${signer} qs=${queryString.substring(0, 120)}`);
+  const domain = {
+    name: "AsterSignTransaction",
+    version: "1",
+    chainId: V3_TRADING_CHAIN_ID,
+    verifyingContract: "0x0000000000000000000000000000000000000000",
+  };
 
-  const qsWithSig = `${queryString}&nonce=${nonce}&user=${user}&signer=${signer}&signature=${sig}`;
+  const types = {
+    Message: [{ name: "msg", type: "string" }],
+  };
 
-  return { queryStringWithSig: qsWithSig, paramsWithoutSig: queryString };
+  const message = { msg: queryString };
+
+  const sig = await wallet.signTypedData(domain, types, message);
+  return sig;
 }
 
 async function makeV3Request(
@@ -328,7 +323,19 @@ async function makeV3Request(
 ): Promise<any> {
   const { method = "GET", params = {} } = options;
 
-  const { queryStringWithSig, paramsWithoutSig } = await signV3Params(params as Record<string, string | number | boolean | undefined>, user, signer, signerPrivateKey, method);
+  const fullParams: Record<string, any> = { ...params };
+  fullParams.asterChain = "Mainnet";
+  fullParams.user = user;
+  fullParams.signer = signer;
+  fullParams.nonce = getV3Nonce();
+
+  const queryString = buildV3QueryString(fullParams);
+
+  const signature = await signV3Trading(signerPrivateKey, queryString);
+
+  const urlWithSig = `${baseUrl}${path}?${queryString}&signature=${signature}`;
+
+  console.log(`[AsterV3] ${method} ${path} qs=${queryString.substring(0, 200)}`);
 
   const reqHeaders: Record<string, string> = {
     "Content-Type": "application/x-www-form-urlencoded",
@@ -339,22 +346,23 @@ async function makeV3Request(
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    let url: string;
     const fetchOptions: RequestInit = {
       method,
       headers: reqHeaders,
       signal: controller.signal,
     };
 
-    url = `${baseUrl}${path}?${queryStringWithSig}`;
+    if (method === "POST" || method === "DELETE") {
+      fetchOptions.body = `${queryString}&signature=${signature}`;
+    }
 
-    console.log(`[AsterV3] ${method} ${path} url=${url.substring(0, 400)}`);
+    const url = (method === "GET") ? urlWithSig : `${baseUrl}${path}?${queryString}&signature=${signature}`;
+
     const response = await fetch(url, fetchOptions);
-
     clearTimeout(timeoutId);
 
     const text = await response.text();
-    console.log(`[AsterV3] ${method} ${path} status=${response.status} content-type=${response.headers.get("content-type")} body=${text.substring(0, 500)}`);
+    console.log(`[AsterV3] ${method} ${path} status=${response.status} body=${text.substring(0, 500)}`);
     let data: any;
     try {
       data = JSON.parse(text);
@@ -365,9 +373,6 @@ async function makeV3Request(
     if (!response.ok) {
       const code = data?.code || response.status;
       const msg = data?.msg || data?.message || text.substring(0, 200);
-      if (response.status === 405) {
-        throw new Error(`Aster V3 API 405 Method Not Allowed on ${path} (tried ${method}). Endpoint may require ${method === "GET" ? "POST" : "GET"} instead.`);
-      }
       throw new Error(`Aster V3 API error ${code}: ${msg}`);
     }
 
@@ -835,6 +840,8 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
   const user = config.user;
   const signer = config.signer;
   const { signerPrivateKey } = config;
+  const builderAddress = config.builder;
+  const builderFeeRate = config.feeRate ?? 0.00001;
 
   async function request(path: string, options: AsterRequestOptions = {}) {
     const { method = "GET", params = {} } = options;
@@ -967,6 +974,10 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
       if (orderParams.workingType) params.workingType = orderParams.workingType;
       if (orderParams.type === "LIMIT" && !params.timeInForce) params.timeInForce = "GTC";
       if (orderParams.newClientOrderId) params.newClientOrderId = orderParams.newClientOrderId;
+      if (builderAddress) {
+        params.builder = builderAddress;
+        params.feeRate = builderFeeRate;
+      }
       return makeV3Request(v3BaseUrl, "/fapi/v3/order", user, signer, signerPrivateKey, { method: "POST", params });
     },
 

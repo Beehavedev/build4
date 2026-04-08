@@ -1,4 +1,4 @@
-import { Wallet, getAddress, Signature, AbiCoder, keccak256, getBytes, TypedDataEncoder } from "ethers";
+import { Wallet, getAddress, Signature } from "ethers";
 
 const DEFAULT_FAPI_URL = "https://fapi.asterdex.com";
 const REQUEST_TIMEOUT_MS = 20000;
@@ -77,96 +77,29 @@ function buildQueryString(params: Record<string, any>): string {
     .join("&");
 }
 
+const TRADING_CHAIN_ID = 1666;
+
 async function signV3(
   queryString: string,
-  userAddress: string,
-  signerAddress: string,
-  nonce: string,
   signerPrivateKey: string,
 ): Promise<string> {
-  const abiCoder = AbiCoder.defaultAbiCoder();
-  const encoded = abiCoder.encode(
-    ["string", "address", "address", "uint64"],
-    [queryString, userAddress, signerAddress, BigInt(nonce)],
-  );
-  const hash = keccak256(encoded);
   const wallet = new Wallet(signerPrivateKey);
-  const rawSig = await wallet.signMessage(getBytes(hash));
-  try {
-    return Signature.from(rawSig).serialized;
-  } catch {
-    return rawSig;
-  }
-}
 
-async function makeSignedRequest(
-  baseUrl: string,
-  path: string,
-  signerPrivateKey: string,
-  params: Record<string, any>,
-  method: "GET" | "POST" | "DELETE" = "POST",
-  userAddress?: string,
-): Promise<any> {
-  const signerWallet = new Wallet(signerPrivateKey);
-  const user = userAddress || params.user || signerWallet.address;
-  const signer = params.signer || signerWallet.address;
-  const nonce = params.nonce || getNonce();
-  const timestamp = params.timestamp || String(Date.now());
+  const domain = {
+    name: "AsterSignTransaction",
+    version: "1",
+    chainId: TRADING_CHAIN_ID,
+    verifyingContract: "0x0000000000000000000000000000000000000000",
+  };
 
-  const tradingParams = { ...params };
-  delete tradingParams.user;
-  delete tradingParams.signer;
-  delete tradingParams.nonce;
-  delete tradingParams.timestamp;
-  delete tradingParams.signature;
+  const types = {
+    Message: [{ name: "msg", type: "string" }],
+  };
 
-  tradingParams.timestamp = timestamp;
+  const message = { msg: queryString };
 
-  const queryString = buildQueryString(tradingParams);
-
-  const signature = await signV3(queryString, user, signer, nonce, signerPrivateKey);
-
-  console.log(`[AsterCode] ${method} ${path} qs=${queryString.substring(0, 200)} user=${user.substring(0,10)} signer=${signer.substring(0,10)}`);
-
-  const body = `${queryString}&nonce=${nonce}&user=${user}&signer=${signer}&signature=${signature}`;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(`${baseUrl}${path}`, {
-      method,
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "BUILD4/1.0",
-      },
-      body,
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-    const text = await response.text();
-    console.log(`[AsterCode] ${method} ${path} status=${response.status} body=${text.substring(0, 500)}`);
-
-    let data: any;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error(`Non-JSON response from ${path}: ${text.substring(0, 300)}`);
-    }
-
-    if (!response.ok) {
-      throw new Error(`AsterCode API error ${data?.code || response.status}: ${data?.msg || data?.message || text.substring(0, 200)}`);
-    }
-
-    return data?.data !== undefined ? data.data : data;
-  } catch (e: any) {
-    clearTimeout(timeoutId);
-    if (e.name === "AbortError") {
-      throw new Error(`AsterCode API timeout: ${method} ${path}`);
-    }
-    throw e;
-  }
+  const sig = await wallet.signTypedData(domain, types, message);
+  return sig;
 }
 
 async function makeTradingRequest(
@@ -178,15 +111,18 @@ async function makeTradingRequest(
   params: Record<string, any>,
   method: "GET" | "POST" | "DELETE" = "GET",
 ): Promise<any> {
-  const nonce = getNonce();
-  const timestamp = String(Date.now());
+  const fullParams: Record<string, any> = {
+    ...params,
+    asterChain: "Mainnet",
+    user: userAddress,
+    signer: signerAddress,
+    nonce: getNonce(),
+  };
 
-  const tradingParams = { ...params, timestamp };
+  const queryString = buildQueryString(fullParams);
+  const signature = await signV3(queryString, signerPrivateKey);
 
-  const queryString = buildQueryString(tradingParams);
-  const signature = await signV3(queryString, userAddress, signerAddress, nonce, signerPrivateKey);
-
-  const fullParams = `${queryString}&nonce=${nonce}&user=${userAddress}&signer=${signerAddress}&signature=${signature}`;
+  const fullParamStr = `${queryString}&signature=${signature}`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -194,7 +130,7 @@ async function makeTradingRequest(
   try {
     let response: Response;
     if (method === "GET") {
-      const url = `${baseUrl}${path}?${fullParams}`;
+      const url = `${baseUrl}${path}?${fullParamStr}`;
       console.log(`[AsterCode] trading GET ${path} qs=${queryString.substring(0, 200)}`);
       response = await fetch(url, {
         method: "GET",
@@ -203,13 +139,13 @@ async function makeTradingRequest(
       });
     } else {
       console.log(`[AsterCode] trading ${method} ${path} qs=${queryString.substring(0, 200)}`);
-      response = await fetch(`${baseUrl}${path}`, {
+      response = await fetch(`${baseUrl}${path}?${fullParamStr}`, {
         method,
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           "User-Agent": "BUILD4/1.0",
         },
-        body: fullParams,
+        body: fullParamStr,
         signal: controller.signal,
       });
     }

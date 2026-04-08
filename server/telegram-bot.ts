@@ -13353,6 +13353,8 @@ export async function getAsterClient(chatId: number): Promise<any> {
         user: parentAddress,
         signer: creds.apiKey,
         signerPrivateKey: creds.apiSecret,
+        builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
+        feeRate: 0.00001,
       });
       return { futures: v3Futures, spot: null, mode: "user-v3-wallet" };
     }
@@ -13373,6 +13375,8 @@ export async function getAsterClient(chatId: number): Promise<any> {
           user: wallet,
           signer: wallet,
           signerPrivateKey: pk,
+          builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
+          feeRate: 0.00001,
         });
         return { futures: v3Futures, spot: null, mode: "user-v3-direct" };
       }

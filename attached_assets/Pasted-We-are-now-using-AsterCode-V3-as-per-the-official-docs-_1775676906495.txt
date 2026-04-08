@@ -1,0 +1,40 @@
+We are now using AsterCode (V3) as per the official docs:
+- Product: https://www.asterdex.com/en/aster-code
+- Integration flow: https://asterdex.github.io/aster-api-website/asterCode/integration-flow/
+- Demo: https://github.com/asterdex/API-demo/tree/main/aster-code-demo
+- API doc: https://github.com/asterdex/api-docs/blob/master/aster-finance-futures-api-v3.md
+
+Current error: "Aster V3 API error -1000: Signature check failed" when placing trades.
+
+Fix the order placement first, then build the best trading interface in the world.
+
+**Step 1: Fix Signature (Immediate)**
+- Follow the official AsterCode flow: Builder + Agent model.
+- Implement /fapi/v3/approveAgent and /fapi/v3/approveBuilder if not already done.
+- For order placement, use the exact EIP-712 domain, types, and message structure from the official demo and docs.
+- Use the correct parent/main wallet (0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4) as primary.
+- Add full debug logging for domain, types, message, signer address, signature, and raw Aster response.
+
+**Step 2: Build the World-Class Trading Interface (Desktop First)**
+Create a premium, institutional-grade trading terminal that surpasses Aster DEX and Binance.
+
+Use React + TypeScript + Vite + Tailwind + shadcn/ui + lightweight-charts.
+
+Key screens/features:
+- Full-screen advanced chart with multiple timeframes, indicators (EMA, RSI, MACD, Bollinger), drawing tools
+- Smart trade ticket with leverage slider, real-time margin/liquidation preview, risk % calculator
+- Live order book + depth chart
+- Positions panel with real-time PnL, one-click close/reduce
+- Integrated AI Agent panel with live reasoning feed
+- Top bar with wallet balances, pair selector, funding rate, open interest
+- Drag-and-drop layout support
+- Keyboard shortcuts (B = Buy, S = Sell, etc.)
+- Professional dark theme with glassmorphism and smooth animations
+
+Make the interface feel faster, cleaner, and more intelligent than Binance or Aster's own UI.
+
+Start by fixing the signature error completely (with debug logs), then implement the main trading terminal layout (chart + trade ticket + positions + AI panel).
+
+Make it the best trading interface ever built for Aster DEX.
+
+Implement now and push to production.
