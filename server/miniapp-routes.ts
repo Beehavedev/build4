@@ -687,7 +687,31 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
           } catch (e: any) { console.log(`[MiniApp] Auto-create EVM wallet failed: ${e.message?.substring(0,80)}`); }
         }
         console.log(`[MiniApp] No Aster client for chatId=${chatId}, wallet=${bscAddr ? bscAddr.substring(0,10) : 'none'}, total=${wallets.length}, evm=${evmWallets.length}`);
-        return res.json({ connected: false, asterApiWallet: null, bscWalletAddress: bscAddr || null, needsImport: !bscAddr });
+
+        let bscBal = 0;
+        let bnbBal = 0;
+        if (bscAddr) {
+          try {
+            const ethers = await import("ethers");
+            const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+            const usdt = new ethers.Contract(
+              "0x55d398326f99059fF775485246999027B3197955",
+              ["function balanceOf(address) view returns (uint256)"],
+              provider
+            );
+            const [bal, bnb] = await Promise.all([
+              usdt.balanceOf(bscAddr),
+              provider.getBalance(bscAddr),
+            ]);
+            bscBal = parseFloat(ethers.formatUnits(bal, 18));
+            bnbBal = parseFloat(ethers.formatEther(bnb));
+            console.log(`[MiniApp] BSC balance (no client) ${bscAddr.substring(0,10)}: $${bscBal} USDT, ${bnbBal} BNB`);
+          } catch (e: any) {
+            console.log(`[MiniApp] BSC balance fetch error (no client): ${e.message?.substring(0, 100)}`);
+          }
+        }
+
+        return res.json({ connected: false, asterApiWallet: null, bscWalletAddress: bscAddr || null, needsImport: !bscAddr, bscBalance: bscBal, bnbBalance: bnbBal });
       }
 
       const futuresClient = client.futures || client;
