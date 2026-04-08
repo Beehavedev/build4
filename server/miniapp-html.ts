@@ -354,8 +354,14 @@ function renderDash(){
     h2+='<div class="text-w fw-600" style="font-size:16px">Connect Your Wallet</div>';
     h2+='<div class="text-dim text-sm mt-2">Import your wallet to see your Aster balance and start trading.</div>';
     if(D.bscWalletAddress){
-      h2+='<div class="text-xs text-dim mt-3">Wallet found: <span class="mono" style="color:var(--blue)">'+D.bscWalletAddress.substring(0,8)+'...'+D.bscWalletAddress.slice(-4)+'</span></div>';
-      h2+='<button class="btn btn-green mt-3" style="width:100%" data-tab="deposit" onclick="switchTab(this.dataset.tab)">🔗 Connect to Aster</button>';
+      h2+='<div class="text-xs text-dim mt-3">Wallet: <span class="mono" style="color:var(--blue)">'+D.bscWalletAddress.substring(0,8)+'...'+D.bscWalletAddress.slice(-4)+'</span></div>';
+      if(D.bscBalance>0||D.bnbBalance>0){
+        h2+='<div style="display:flex;gap:12px;justify-content:center;margin-top:8px">';
+        h2+='<div><span class="text-xs text-dim">USDT</span><div class="val-xs gv">$'+fmt(D.bscBalance)+'</div></div>';
+        h2+='<div><span class="text-xs text-dim">BNB</span><div class="val-xs">'+D.bnbBalance.toFixed(4)+'</div></div>';
+        h2+='</div>';
+      }
+      h2+='<button class="btn btn-green mt-3" style="width:100%" data-tab="deposit" onclick="switchTab(this.dataset.tab)">🔗 Activate Trading</button>';
     } else {
       h2+='<button class="btn btn-green mt-3" style="width:100%" onclick="showDashImport()">Import Wallet</button>';
       h2+='<div id="dash-import" style="display:none;margin-top:16px;text-align:left">';
