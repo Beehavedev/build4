@@ -1,0 +1,73 @@
+We now have a working Aster V3 backend.
+
+Your new task: Build the **best trading interface in the world** — significantly better than Aster DEX itself and Binance.
+
+Target: **Web desktop** (full-screen professional experience, highly responsive, optimized for large screens, but still works well on tablet).
+
+Project name: **Aster Agent Pro Trading Terminal**
+
+Tech Stack:
+- React 18 + TypeScript + Vite
+- Tailwind CSS + shadcn/ui + Radix UI
+- lightweight-charts (TradingView) or advanced charting library
+- Zustand for state
+- Lucide icons
+- Beautiful dark professional theme with subtle glassmorphism and smooth animations
+
+Core Goal:
+Create a premium, institutional-grade trading terminal that feels more advanced, beautiful, and intelligent than Binance or Aster DEX's own interface.
+
+Must-Have World-Class Features:
+
+1. **Advanced Charting Area** (Center stage)
+   - Full-screen TradingView-style chart with multiple timeframes (1m to 1W)
+   - Built-in technical indicators (EMA, RSI, MACD, Bollinger, Volume, etc.)
+   - Drawing tools, Fibonacci, trend lines
+   - Multiple chart layouts (1, 2, 4 charts)
+   - Overlay for open positions and liquidation levels
+
+2. **Smart Trade Ticket** (Right sidebar)
+   - One-click Market / Limit orders
+   - Leverage slider with real-time margin & liquidation preview
+   - Risk % calculator (e.g. "Risk 1% of available margin")
+   - Estimated PnL, fees, and liquidation price shown live
+
+3. **Order Book + Depth Chart**
+   - Real-time order book with cumulative volume
+   - Visual depth chart
+
+4. **Positions & Portfolio Panel**
+   - Live list of open positions with real-time PnL (green/red)
+   - Unrealized PnL, margin used, leverage
+   - One-click close, reduce, or add to position
+
+5. **Integrated AI Agent Panel** (Left or bottom drawer)
+   - Live reasoning feed: "Why the agent is entering this trade"
+   - Current market analysis, confidence level
+   - Toggle Autonomous Mode with risk settings
+
+6. **Top Bar & Navigation**
+   - Wallet balance (Futures + Spot + BSC)
+   - Pair selector with search and favorites
+   - Funding rate, open interest, 24h volume
+   - Connection status to Aster V3
+
+7. **Premium Polish**
+   - Fully customizable layout (drag & drop panels)
+   - Keyboard shortcuts (B = Buy, S = Sell, etc.)
+   - Smooth animations and micro-interactions
+   - Professional typography and color coding
+   - Toast notifications and sound alerts (optional)
+
+Integration:
+- Use the existing Aster V3 backend endpoints (balance, positions, place order, klines, etc.)
+- Real-time updates via polling or WebSocket if available
+- Keep the Mini App in mind (this desktop terminal can be embedded or run alongside)
+
+Make this interface feel like the most advanced trading terminal ever built inside Telegram — clean, fast, intelligent, and beautiful.
+
+Start building the main Trading Terminal layout now with the chart + trade ticket + positions panel.
+
+Focus on making it visually stunning and highly functional.
+
+Begin immediately.

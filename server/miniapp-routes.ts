@@ -280,6 +280,32 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
     }
   });
 
+  app.get("/api/public/markets", async (_req: Request, res: Response) => {
+    try {
+      const symbols = [
+        "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "DOGEUSDT",
+        "XRPUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT",
+        "MATICUSDT", "LTCUSDT", "UNIUSDT", "APTUSDT", "ARBUSDT",
+        "OPUSDT", "SUIUSDT", "NEARUSDT",
+      ];
+      const prices = await Promise.all(
+        symbols.map(async (sym) => {
+          try {
+            const resp = await fetch(`https://fapi.asterdex.com/fapi/v1/ticker/price?symbol=${sym}`);
+            if (!resp.ok) return { symbol: sym, price: 0 };
+            const data = await resp.json();
+            return { symbol: sym, price: parseFloat(data?.price || "0") };
+          } catch {
+            return { symbol: sym, price: 0 };
+          }
+        })
+      );
+      res.set("Cache-Control", "public, max-age=5").json({ markets: prices });
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to fetch markets" });
+    }
+  });
+
   app.use("/api/miniapp", miniAppAuth);
 
   app.post("/api/miniapp/import-wallet", async (req: Request, res: Response) => {
@@ -1734,7 +1760,12 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
   app.get("/api/miniapp/markets", async (req: Request, res: Response) => {
     try {
-      const symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "DOGEUSDT"];
+      const symbols = [
+        "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "DOGEUSDT",
+        "XRPUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT",
+        "MATICUSDT", "LTCUSDT", "UNIUSDT", "APTUSDT", "ARBUSDT",
+        "OPUSDT", "SUIUSDT", "NEARUSDT",
+      ];
       const chatId = req.headers["x-telegram-chat-id"] as string;
       const client = chatId ? await getAsterClient(parseInt(chatId)) : null;
 

@@ -104,6 +104,25 @@ function useWalletAddress() {
   return { address, connecting, error, connect, disconnect };
 }
 
+function usePublicApi<T>(endpoint: string) {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(endpoint);
+      if (res.ok) setData(await res.json());
+    } catch {} finally {
+      setLoading(false);
+    }
+  }, [endpoint]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  return { data, loading, refresh };
+}
+
 function useWebApi<T>(endpoint: string, walletAddress: string | null, deps: any[] = []) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -206,50 +225,24 @@ const TRADING_PAIRS = [
   "OPUSDT", "SUIUSDT", "NEARUSDT",
 ];
 
-function ConnectWalletScreen({ onConnect, connecting, error }: { onConnect: () => void; connecting: boolean; error: string | null }) {
-  return (
-    <div className="min-h-[80vh] flex items-center justify-center">
-      <Card className="max-w-md w-full border-border/50 bg-card/50 backdrop-blur-sm">
-        <CardContent className="p-8 text-center space-y-6">
-          <div className="w-20 h-20 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto">
-            <Wallet className="w-10 h-10 text-emerald-400" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold text-foreground mb-2" data-testid="text-connect-title">Connect Wallet</h2>
-            <p className="text-muted-foreground text-sm">
-              Connect your BSC wallet to access Aster DEX futures trading.
-              Use the same wallet you linked in the Telegram bot.
-            </p>
-          </div>
-          {error && (
-            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-              {error}
-            </div>
+function AccountOverview({ account, onRefresh, onConnect }: { account: AccountData | null; onRefresh: () => void; onConnect?: () => void }) {
+  if (!account) {
+    return (
+      <Card className="bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border-emerald-500/20">
+        <CardContent className="p-6 text-center space-y-3">
+          <Wallet className="w-8 h-8 text-emerald-400 mx-auto" />
+          <div className="text-sm text-muted-foreground">Connect your wallet to view balances and start trading</div>
+          {onConnect && (
+            <Button size="sm" onClick={onConnect} data-testid="button-connect-inline">
+              <Wallet className="w-3.5 h-3.5 mr-1.5" />
+              Connect Wallet
+            </Button>
           )}
-          <Button
-            size="lg"
-            className="w-full h-12 font-semibold"
-            onClick={onConnect}
-            disabled={connecting}
-            data-testid="button-connect-wallet"
-          >
-            {connecting ? (
-              <RefreshCw className="w-4 h-4 animate-spin mr-2" />
-            ) : (
-              <Wallet className="w-4 h-4 mr-2" />
-            )}
-            {connecting ? "Connecting..." : "Connect MetaMask"}
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Supports MetaMask, OKX Wallet, and other EVM wallets
-          </p>
         </CardContent>
       </Card>
-    </div>
-  );
-}
+    );
+  }
 
-function AccountOverview({ account, onRefresh }: { account: AccountData; onRefresh: () => void }) {
   return (
     <div className="space-y-4" data-testid="account-overview">
       <Card className="bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border-emerald-500/20">
@@ -422,12 +415,14 @@ function TradingPanel({
   currentPrice,
   availableMargin,
   onTradeComplete,
+  onConnect,
 }: {
-  walletAddress: string;
+  walletAddress: string | null;
   selectedPair: string;
   currentPrice: number;
   availableMargin: number;
   onTradeComplete: () => void;
+  onConnect?: () => void;
 }) {
   const [leverage, setLeverage] = useState(10);
   const [tradeAmount, setTradeAmount] = useState("");
@@ -435,6 +430,10 @@ function TradingPanel({
   const [result, setResult] = useState<{ success: boolean; error?: string } | null>(null);
 
   const handleTrade = async (side: "BUY" | "SELL") => {
+    if (!walletAddress) {
+      onConnect?.();
+      return;
+    }
     const amount = parseFloat(tradeAmount);
     if (!amount || amount < 1) return;
     setSubmitting(side);
@@ -548,34 +547,45 @@ function TradingPanel({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        {!walletAddress ? (
           <Button
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold h-11"
-            disabled={!amount || amount < 1 || !!submitting}
-            onClick={() => handleTrade("BUY")}
-            data-testid="button-long"
+            className="w-full h-11 font-semibold"
+            onClick={() => onConnect?.()}
+            data-testid="button-connect-to-trade"
           >
-            {submitting === "BUY" ? (
-              <RefreshCw className="w-4 h-4 animate-spin mr-1.5" />
-            ) : (
-              <TrendingUp className="w-4 h-4 mr-1.5" />
-            )}
-            Long
+            <Wallet className="w-4 h-4 mr-1.5" />
+            Connect Wallet to Trade
           </Button>
-          <Button
-            className="bg-red-600 hover:bg-red-700 text-white font-semibold h-11"
-            disabled={!amount || amount < 1 || !!submitting}
-            onClick={() => handleTrade("SELL")}
-            data-testid="button-short"
-          >
-            {submitting === "SELL" ? (
-              <RefreshCw className="w-4 h-4 animate-spin mr-1.5" />
-            ) : (
-              <TrendingDown className="w-4 h-4 mr-1.5" />
-            )}
-            Short
-          </Button>
-        </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold h-11"
+              disabled={!amount || amount < 1 || !!submitting}
+              onClick={() => handleTrade("BUY")}
+              data-testid="button-long"
+            >
+              {submitting === "BUY" ? (
+                <RefreshCw className="w-4 h-4 animate-spin mr-1.5" />
+              ) : (
+                <TrendingUp className="w-4 h-4 mr-1.5" />
+              )}
+              Long
+            </Button>
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold h-11"
+              disabled={!amount || amount < 1 || !!submitting}
+              onClick={() => handleTrade("SELL")}
+              data-testid="button-short"
+            >
+              {submitting === "SELL" ? (
+                <RefreshCw className="w-4 h-4 animate-spin mr-1.5" />
+              ) : (
+                <TrendingDown className="w-4 h-4 mr-1.5" />
+              )}
+              Short
+            </Button>
+          </div>
+        )}
 
         {result && (
           <div className={`p-3 rounded-lg border text-sm ${
@@ -969,17 +979,28 @@ export default function FuturesPage() {
 
   const { data: account, loading: accountLoading, error: accountError, refresh: refreshAccount } =
     useWebApi<AccountData>("/api/miniapp/account", address);
-  const { data: markets, refresh: refreshMarkets } =
+  const { data: publicMarkets, refresh: refreshPublicMarkets } =
+    usePublicApi<MarketData>("/api/public/markets");
+  const { data: authMarkets, refresh: refreshAuthMarkets } =
     useWebApi<MarketData>("/api/miniapp/markets", address);
 
+  const markets = authMarkets || publicMarkets;
+  const refreshMarkets = address ? refreshAuthMarkets : refreshPublicMarkets;
+
+  const isNewUser = !!(accountError && (accountError.includes("not linked") || accountError.includes("not found") || accountError.includes("404")));
+  const isNotConnectedToAster = !!(address && account && !account.connected);
+  const isFullyConnected = !!(address && account?.connected);
+
   useEffect(() => {
-    if (!address) return;
     const interval = setInterval(() => {
-      refreshAccount();
-      refreshMarkets();
-    }, 30000);
+      refreshPublicMarkets();
+      if (address) {
+        refreshAccount();
+        refreshAuthMarkets();
+      }
+    }, 15000);
     return () => clearInterval(interval);
-  }, [address, refreshAccount, refreshMarkets]);
+  }, [address, refreshAccount, refreshPublicMarkets, refreshAuthMarkets]);
 
   const currentPrice = markets?.markets?.find((m) => m.symbol === selectedPair)?.price || 0;
 
@@ -1060,126 +1081,146 @@ export default function FuturesPage() {
         )}
       </nav>
 
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
-        {!address ? (
-          <ConnectWalletScreen onConnect={connect} connecting={connecting} error={walletError} />
-        ) : accountLoading && !account ? (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-3 space-y-4">
-              <Skeleton className="h-48 w-full" />
-              <Skeleton className="h-96 w-full" />
-            </div>
-            <div className="lg:col-span-6 space-y-4">
-              <Skeleton className="h-32 w-full" />
-              <Skeleton className="h-64 w-full" />
-            </div>
-            <div className="lg:col-span-3 space-y-4">
-              <Skeleton className="h-48 w-full" />
-              <Skeleton className="h-64 w-full" />
-            </div>
-          </div>
-        ) : accountError ? (
+      {(isNewUser && address) && (
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 pt-4">
           <RegisterOrErrorScreen
-            error={accountError}
+            error={accountError!}
             walletAddress={address}
             onRegistered={refreshAccount}
             onRetry={refreshAccount}
           />
-        ) : !account?.connected ? (
-          <NotConnectedScreen walletAddress={address} onConnected={refreshAccount} />
-        ) : (
-          <>
-            <div className="hidden lg:grid grid-cols-12 gap-6">
-              <div className="col-span-3 space-y-4">
-                {markets?.markets && (
-                  <MarketsPanel
-                    markets={markets.markets}
-                    selectedPair={selectedPair}
-                    onSelect={setSelectedPair}
-                  />
-                )}
-              </div>
+        </div>
+      )}
 
-              <div className="col-span-6 space-y-4">
-                <AccountOverview account={account} onRefresh={refreshAccount} />
+      {isNotConnectedToAster && (
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 pt-4">
+          <NotConnectedScreen walletAddress={address!} onConnected={refreshAccount} />
+        </div>
+      )}
+
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
+        <div className="hidden lg:grid grid-cols-12 gap-6">
+          <div className="col-span-3 space-y-4">
+            {markets?.markets && (
+              <MarketsPanel
+                markets={markets.markets}
+                selectedPair={selectedPair}
+                onSelect={setSelectedPair}
+              />
+            )}
+          </div>
+
+          <div className="col-span-6 space-y-4">
+            <AccountOverview
+              account={isFullyConnected ? account : null}
+              onRefresh={refreshAccount}
+              onConnect={connect}
+            />
+            {isFullyConnected && account && (
+              <>
                 <PositionsPanel
                   positions={account.positions}
-                  walletAddress={address}
+                  walletAddress={address!}
                   onRefresh={refreshAccount}
                 />
                 <RecentIncomePanel income={account.recentIncome} />
-              </div>
+              </>
+            )}
+          </div>
 
-              <div className="col-span-3 space-y-4">
-                <TradingPanel
-                  walletAddress={address}
-                  selectedPair={selectedPair}
-                  currentPrice={currentPrice}
-                  availableMargin={account.availableMargin}
-                  onTradeComplete={refreshAccount}
-                />
-                <AgentPanel walletAddress={address} />
-              </div>
-            </div>
+          <div className="col-span-3 space-y-4">
+            <TradingPanel
+              walletAddress={isFullyConnected ? address : null}
+              selectedPair={selectedPair}
+              currentPrice={currentPrice}
+              availableMargin={isFullyConnected && account ? account.availableMargin : 0}
+              onTradeComplete={refreshAccount}
+              onConnect={connect}
+            />
+            {isFullyConnected && address && (
+              <AgentPanel walletAddress={address} />
+            )}
+          </div>
+        </div>
 
-            <div className="lg:hidden">
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="w-full grid grid-cols-4 mb-4">
-                  <TabsTrigger value="trade" className="text-xs" data-testid="tab-trade">
-                    <ArrowUpDown className="w-3.5 h-3.5 mr-1" />
-                    Trade
-                  </TabsTrigger>
-                  <TabsTrigger value="account" className="text-xs" data-testid="tab-account">
-                    <Wallet className="w-3.5 h-3.5 mr-1" />
-                    Account
-                  </TabsTrigger>
-                  <TabsTrigger value="markets" className="text-xs" data-testid="tab-markets">
-                    <BarChart3 className="w-3.5 h-3.5 mr-1" />
-                    Markets
-                  </TabsTrigger>
-                  <TabsTrigger value="agent" className="text-xs" data-testid="tab-agent">
-                    <Bot className="w-3.5 h-3.5 mr-1" />
-                    Agent
-                  </TabsTrigger>
-                </TabsList>
+        <div className="lg:hidden">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="w-full grid grid-cols-4 mb-4">
+              <TabsTrigger value="trade" className="text-xs" data-testid="tab-trade">
+                <ArrowUpDown className="w-3.5 h-3.5 mr-1" />
+                Trade
+              </TabsTrigger>
+              <TabsTrigger value="account" className="text-xs" data-testid="tab-account">
+                <Wallet className="w-3.5 h-3.5 mr-1" />
+                Account
+              </TabsTrigger>
+              <TabsTrigger value="markets" className="text-xs" data-testid="tab-markets">
+                <BarChart3 className="w-3.5 h-3.5 mr-1" />
+                Markets
+              </TabsTrigger>
+              <TabsTrigger value="agent" className="text-xs" data-testid="tab-agent">
+                <Bot className="w-3.5 h-3.5 mr-1" />
+                Agent
+              </TabsTrigger>
+            </TabsList>
 
-                <TabsContent value="trade" className="space-y-4 mt-0">
-                  <TradingPanel
-                    walletAddress={address}
-                    selectedPair={selectedPair}
-                    currentPrice={currentPrice}
-                    availableMargin={account.availableMargin}
-                    onTradeComplete={refreshAccount}
-                  />
-                </TabsContent>
+            <TabsContent value="trade" className="space-y-4 mt-0">
+              <TradingPanel
+                walletAddress={isFullyConnected ? address : null}
+                selectedPair={selectedPair}
+                currentPrice={currentPrice}
+                availableMargin={isFullyConnected && account ? account.availableMargin : 0}
+                onTradeComplete={refreshAccount}
+                onConnect={connect}
+              />
+            </TabsContent>
 
-                <TabsContent value="account" className="space-y-4 mt-0">
-                  <AccountOverview account={account} onRefresh={refreshAccount} />
+            <TabsContent value="account" className="space-y-4 mt-0">
+              <AccountOverview
+                account={isFullyConnected ? account : null}
+                onRefresh={refreshAccount}
+                onConnect={connect}
+              />
+              {isFullyConnected && account && (
+                <>
                   <PositionsPanel
                     positions={account.positions}
-                    walletAddress={address}
+                    walletAddress={address!}
                     onRefresh={refreshAccount}
                   />
                   <RecentIncomePanel income={account.recentIncome} />
-                </TabsContent>
+                </>
+              )}
+            </TabsContent>
 
-                <TabsContent value="markets" className="mt-0">
-                  {markets?.markets && (
-                    <MarketsPanel
-                      markets={markets.markets}
-                      selectedPair={selectedPair}
-                      onSelect={(s) => { setSelectedPair(s); setActiveTab("trade"); }}
-                    />
-                  )}
-                </TabsContent>
+            <TabsContent value="markets" className="mt-0">
+              {markets?.markets && (
+                <MarketsPanel
+                  markets={markets.markets}
+                  selectedPair={selectedPair}
+                  onSelect={(s) => { setSelectedPair(s); setActiveTab("trade"); }}
+                />
+              )}
+            </TabsContent>
 
-                <TabsContent value="agent" className="mt-0">
-                  <AgentPanel walletAddress={address} />
-                </TabsContent>
-              </Tabs>
-            </div>
-          </>
-        )}
+            <TabsContent value="agent" className="mt-0">
+              {isFullyConnected && address ? (
+                <AgentPanel walletAddress={address} />
+              ) : (
+                <Card className="border-border/50">
+                  <CardContent className="p-6 text-center space-y-3">
+                    <Bot className="w-8 h-8 text-muted-foreground mx-auto" />
+                    <div className="text-sm text-muted-foreground">Connect your wallet to configure the AI trading agent</div>
+                    <Button size="sm" onClick={connect} data-testid="button-connect-agent">
+                      <Wallet className="w-3.5 h-3.5 mr-1.5" />
+                      Connect Wallet
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
     </div>
   );
