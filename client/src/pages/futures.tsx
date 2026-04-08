@@ -107,10 +107,12 @@ function useWalletAddress() {
   });
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showWalletPicker, setShowWalletPicker] = useState(false);
+  const wcProviderRef = useRef<any>(null);
 
-  const connect = useCallback(async () => {
+  const connectMetaMask = useCallback(async () => {
     if (!window.ethereum) {
-      setError("No Web3 wallet found (MetaMask, OKX, etc.)");
+      setError("No browser wallet detected. Use WalletConnect instead.");
       return;
     }
     setConnecting(true);
@@ -121,6 +123,7 @@ function useWalletAddress() {
         const addr = accounts[0].toLowerCase();
         setAddress(addr);
         localStorage.setItem("futures_wallet", addr);
+        localStorage.setItem("futures_wallet_type", "metamask");
       }
     } catch (e: any) {
       setError(e.message || "Failed to connect wallet");
@@ -129,9 +132,97 @@ function useWalletAddress() {
     }
   }, []);
 
+  const connectWalletConnect = useCallback(async () => {
+    setConnecting(true);
+    setError(null);
+    try {
+      let projectId = "";
+      try {
+        const cfgRes = await fetch("/api/web4/walletconnect-config");
+        const cfg = await cfgRes.json();
+        projectId = cfg.projectId || "";
+      } catch {}
+      if (!projectId) {
+        setError("WalletConnect not configured on this server.");
+        setConnecting(false);
+        return;
+      }
+      const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
+      if (wcProviderRef.current) {
+        try { await wcProviderRef.current.disconnect(); } catch {}
+        wcProviderRef.current = null;
+      }
+      const wcProvider = await EthereumProvider.init({
+        projectId,
+        chains: [56],
+        optionalChains: [1, 56, 97],
+        showQrModal: true,
+        metadata: {
+          name: "BUILD4",
+          description: "BUILD4 Perpetual Futures Trading",
+          url: window.location.origin,
+          icons: [`${window.location.origin}/favicon.ico`],
+        },
+        rpcMap: {
+          1: "https://eth.drpc.org",
+          56: "https://bsc-dataseed1.binance.org",
+          97: "https://data-seed-prebsc-1-s1.binance.org:8545",
+        },
+      });
+      wcProviderRef.current = wcProvider;
+      wcProvider.on("disconnect", () => {
+        setAddress(null);
+        localStorage.removeItem("futures_wallet");
+        localStorage.removeItem("futures_wallet_type");
+        wcProviderRef.current = null;
+      });
+      wcProvider.on("accountsChanged", (accounts: string[]) => {
+        if (accounts.length > 0) {
+          const addr = accounts[0].toLowerCase();
+          setAddress(addr);
+          localStorage.setItem("futures_wallet", addr);
+        } else {
+          setAddress(null);
+          localStorage.removeItem("futures_wallet");
+        }
+      });
+      const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error("Connection timed out")), 120000));
+      await Promise.race([wcProvider.enable(), timeout]);
+      const accounts = wcProvider.accounts;
+      if (accounts && accounts.length > 0) {
+        const addr = accounts[0].toLowerCase();
+        setAddress(addr);
+        localStorage.setItem("futures_wallet", addr);
+        localStorage.setItem("futures_wallet_type", "walletconnect");
+      }
+    } catch (e: any) {
+      const msg = e.message || "";
+      if (msg.includes("User closed") || msg.includes("modal_closed") || msg.includes("user rejected")) {
+        setError(null);
+      } else {
+        setError(msg || "WalletConnect failed");
+      }
+    } finally {
+      setConnecting(false);
+    }
+  }, []);
+
+  const connect = useCallback(async () => {
+    if (window.ethereum) {
+      setShowWalletPicker(true);
+    } else {
+      await connectWalletConnect();
+    }
+  }, [connectWalletConnect]);
+
   const disconnect = useCallback(() => {
     setAddress(null);
     localStorage.removeItem("futures_wallet");
+    localStorage.removeItem("futures_wallet_type");
+    if (wcProviderRef.current) {
+      try { wcProviderRef.current.disconnect(); } catch {}
+      wcProviderRef.current = null;
+    }
   }, []);
 
   useEffect(() => {
@@ -149,7 +240,20 @@ function useWalletAddress() {
     return () => { window.ethereum?.removeListener("accountsChanged", handleChange); };
   }, [disconnect]);
 
-  return { address, connecting, error, connect, disconnect };
+  useEffect(() => {
+    const savedType = (() => { try { return localStorage.getItem("futures_wallet_type"); } catch { return null; } })();
+    if (savedType === "metamask" && window.ethereum) {
+      window.ethereum.request({ method: "eth_accounts" }).then((accounts: string[]) => {
+        if (accounts.length > 0) {
+          const addr = accounts[0].toLowerCase();
+          setAddress(addr);
+          localStorage.setItem("futures_wallet", addr);
+        }
+      }).catch(() => {});
+    }
+  }, []);
+
+  return { address, connecting, error, connect, disconnect, showWalletPicker, setShowWalletPicker, connectMetaMask, connectWalletConnect };
 }
 
 function usePublicApi<T>(endpoint: string) {
@@ -1269,7 +1373,7 @@ function ActivationBanner({ walletAddress, onConnected }: { walletAddress: strin
 }
 
 function FuturesPageInner() {
-  const { address, connecting, error: walletError, connect, disconnect } = useWalletAddress();
+  const { address, connecting, error: walletError, connect, disconnect, showWalletPicker, setShowWalletPicker, connectMetaMask, connectWalletConnect } = useWalletAddress();
   const [selectedPair, setSelectedPair] = useState("BTCUSDT");
   const [timeframe, setTimeframe] = useState("1h");
   const [pairSelectorOpen, setPairSelectorOpen] = useState(false);
@@ -1461,6 +1565,54 @@ function FuturesPageInner() {
           )}
         </div>
       </header>
+
+      {showWalletPicker && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setShowWalletPicker(false)} data-testid="wallet-picker-overlay">
+          <div className="bg-[hsl(160,10%,6%)] border border-white/10 rounded-xl p-5 w-[320px] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-white">Connect Wallet</h3>
+              <button onClick={() => setShowWalletPicker(false)} className="text-muted-foreground hover:text-white p-1" data-testid="button-close-picker">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-2">
+              {window.ethereum && (
+                <button
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors text-left"
+                  onClick={() => { setShowWalletPicker(false); connectMetaMask(); }}
+                  data-testid="button-connect-metamask"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center text-lg">🦊</div>
+                  <div>
+                    <div className="text-sm font-semibold text-white">Browser Wallet</div>
+                    <div className="text-[10px] text-muted-foreground">MetaMask, OKX, Rabby</div>
+                  </div>
+                </button>
+              )}
+              <button
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors text-left"
+                onClick={() => { setShowWalletPicker(false); connectWalletConnect(); }}
+                data-testid="button-connect-walletconnect"
+              >
+                <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-lg">🔗</div>
+                <div>
+                  <div className="text-sm font-semibold text-white">WalletConnect</div>
+                  <div className="text-[10px] text-muted-foreground">Mobile wallets, Trust, MetaMask Mobile</div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {walletError && (
+        <div className="border-b border-red-500/20 bg-red-500/[0.05] px-4 py-1.5 flex items-center justify-between" data-testid="wallet-error-banner">
+          <span className="text-[11px] text-red-400">{walletError}</span>
+          <button onClick={connect} className="text-[10px] text-emerald-400 hover:text-emerald-300 underline ml-2" data-testid="button-retry-connect">
+            Retry
+          </button>
+        </div>
+      )}
 
       {(isNewUser && address) && (
         <div className="border-b border-white/[0.06] bg-[hsl(160,10%,4%)]">
