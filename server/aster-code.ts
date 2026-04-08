@@ -282,16 +282,39 @@ async function signEip712(
   return sig;
 }
 
+let _eip712NonceCounter = 0;
+let _eip712LastSec = 0;
+
+function generateNonce(): number {
+  const nowSec = Math.trunc(Date.now() / 1000);
+  if (nowSec === _eip712LastSec) {
+    _eip712NonceCounter++;
+  } else {
+    _eip712LastSec = nowSec;
+    _eip712NonceCounter = 0;
+  }
+  return nowSec * 1_000_000 + _eip712NonceCounter;
+}
+
 async function makeEip712Request(
   baseUrl: string,
   path: string,
   privateKey: string,
   params: Record<string, any>,
   primaryType: string,
+  userAddress?: string,
 ): Promise<any> {
-  const signature = await signEip712(privateKey, primaryType, params);
+  const wallet = new Wallet(privateKey);
+  const fullParams: Record<string, any> = {
+    ...params,
+    asterChain: "Mainnet",
+    user: userAddress || wallet.address,
+    nonce: generateNonce(),
+  };
 
-  const bodyParams: Record<string, any> = { ...params, signature, signatureChainId: 56 };
+  const signature = await signEip712(privateKey, primaryType, fullParams);
+
+  const bodyParams: Record<string, any> = { ...fullParams, signature, signatureChainId: 56 };
 
   console.log(`[AsterCode] EIP712 POST ${path} primaryType=${primaryType} params=${JSON.stringify(params).substring(0, 300)}`);
 
@@ -301,7 +324,12 @@ async function makeEip712Request(
   try {
     const urlEncodedBody = Object.entries(bodyParams)
       .filter(([_, v]) => v !== undefined && v !== null)
-      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+      .map(([k, v]) => {
+        let strVal: string;
+        if (typeof v === "boolean") strVal = v ? "True" : "False";
+        else strVal = String(v);
+        return `${encodeURIComponent(k)}=${encodeURIComponent(strVal)}`;
+      })
       .join("&");
 
     const response = await fetch(`${baseUrl}${path}`, {
@@ -386,60 +414,6 @@ function normalizeSignature(sig: string): string {
   }
 }
 
-export async function submitSignedActivation(
-  baseUrl: string,
-  agentParamString: string,
-  agentSignature: string,
-  builderParamString: string,
-  builderSignature: string,
-): Promise<{ agentResult: any; builderResult: any }> {
-  const fApiUrl = baseUrl || DEFAULT_FAPI_URL;
-
-  const normAgentSig = normalizeSignature(agentSignature);
-  const normBuilderSig = normalizeSignature(builderSignature);
-
-  const controller1 = new AbortController();
-  const t1 = setTimeout(() => controller1.abort(), REQUEST_TIMEOUT_MS);
-  const agentBody = `${agentParamString}&signature=${normAgentSig}`;
-  console.log(`[AsterCode] submitSignedActivation approveAgent: ${agentParamString.substring(0, 200)}`);
-  console.log(`[AsterCode] approveAgent sig: ${normAgentSig.substring(0, 20)}...${normAgentSig.slice(-10)} len=${normAgentSig.length}`);
-  const agentRes = await fetch(`${fApiUrl}/fapi/v3/approveAgent`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "BUILD4/1.0" },
-    body: agentBody,
-    signal: controller1.signal,
-  });
-  clearTimeout(t1);
-  const agentText = await agentRes.text();
-  console.log(`[AsterCode] approveAgent response: ${agentRes.status} ${agentText.substring(0, 500)}`);
-  let agentData: any;
-  try { agentData = JSON.parse(agentText); } catch { throw new Error(`approveAgent non-JSON: ${agentText.substring(0, 200)}`); }
-  if (!agentRes.ok) throw new Error(`approveAgent failed: ${agentData?.msg || agentData?.message || agentText.substring(0, 200)}`);
-
-  await new Promise(r => setTimeout(r, 500));
-
-  const controller2 = new AbortController();
-  const t2 = setTimeout(() => controller2.abort(), REQUEST_TIMEOUT_MS);
-  const builderBody = `${builderParamString}&signature=${normBuilderSig}`;
-  console.log(`[AsterCode] submitSignedActivation approveBuilder: ${builderParamString.substring(0, 200)}`);
-  const builderRes = await fetch(`${fApiUrl}/fapi/v3/approveBuilder`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "BUILD4/1.0" },
-    body: builderBody,
-    signal: controller2.signal,
-  });
-  clearTimeout(t2);
-  const builderText = await builderRes.text();
-  console.log(`[AsterCode] approveBuilder response: ${builderRes.status} ${builderText.substring(0, 500)}`);
-  let builderData: any;
-  try { builderData = JSON.parse(builderText); } catch { builderData = { raw: builderText }; }
-
-  return {
-    agentResult: agentData?.data !== undefined ? agentData.data : agentData,
-    builderResult: builderData?.data !== undefined ? builderData.data : builderData,
-  };
-}
-
 export async function asterCodeUpdateAgent(
   baseUrl: string,
   userPrivateKey: string,
@@ -450,7 +424,7 @@ export async function asterCodeUpdateAgent(
     agentAddress,
     ...updates,
   };
-  return makeSignedRequest(baseUrl, "/fapi/v3/updateAgent", userPrivateKey, reqParams, "POST");
+  return makeEip712Request(baseUrl, "/fapi/v3/updateAgent", userPrivateKey, reqParams, "UpdateAgent");
 }
 
 export async function asterCodeDeleteAgent(
@@ -458,7 +432,8 @@ export async function asterCodeDeleteAgent(
   userPrivateKey: string,
   agentAddress: string,
 ): Promise<any> {
-  return makeSignedRequest(baseUrl, "/fapi/v3/agent", userPrivateKey, { agentAddress }, "DELETE");
+  const reqParams: Record<string, any> = { agentAddress };
+  return makeEip712Request(baseUrl, "/fapi/v3/agent", userPrivateKey, reqParams, "DelAgent");
 }
 
 export async function asterCodeGetAgents(
