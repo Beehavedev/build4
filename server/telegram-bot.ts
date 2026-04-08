@@ -15714,7 +15714,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         const nonce = String(Math.trunc(Date.now() * 1000) + Math.floor(Math.random() * 999));
         const abiCoder = ethers.AbiCoder.defaultAbiCoder();
         const encoded = abiCoder.encode(
-          ["string", "address", "address", "uint256"],
+          ["string", "address", "address", "uint64"],
           [queryString, checksumAddr, checksumAddr, BigInt(nonce)],
         );
         const hash = ethers.keccak256(encoded);

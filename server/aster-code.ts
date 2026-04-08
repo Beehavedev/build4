@@ -85,7 +85,7 @@ async function signV3(
 ): Promise<string> {
   const abiCoder = AbiCoder.defaultAbiCoder();
   const encoded = abiCoder.encode(
-    ["string", "address", "address", "uint256"],
+    ["string", "address", "address", "uint64"],
     [queryString, userAddress, signerAddress, BigInt(nonce)],
   );
   const hash = keccak256(encoded);

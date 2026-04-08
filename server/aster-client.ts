@@ -302,7 +302,7 @@ async function signV3Params(
   const { AbiCoder, keccak256, getBytes } = await import("ethers");
   const abiCoder = AbiCoder.defaultAbiCoder();
   const encoded = abiCoder.encode(
-    ["string", "address", "address", "uint256"],
+    ["string", "address", "address", "uint64"],
     [queryString, user, signer, BigInt(nonce)],
   );
   const hash = keccak256(encoded);
