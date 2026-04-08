@@ -29,7 +29,7 @@ function validateTelegramInitData(initData: string, botToken: string): { valid: 
   }
 }
 
-function miniAppAuth(req: Request, res: Response, next: NextFunction) {
+async function miniAppAuth(req: Request, res: Response, next: NextFunction) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const initData = req.headers["x-telegram-init-data"] as string;
   if (initData && botToken) {
@@ -42,6 +42,25 @@ function miniAppAuth(req: Request, res: Response, next: NextFunction) {
   const chatId = req.headers["x-telegram-chat-id"] as string;
   if (chatId && /^\d+$/.test(chatId)) {
     return next();
+  }
+  const walletAddress = (req.headers["x-wallet-address"] as string || "").toLowerCase().trim();
+  if (walletAddress && /^0x[a-f0-9]{40}$/.test(walletAddress)) {
+    try {
+      const { db } = await import("./db");
+      const { telegramWallets } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const rows = await db.select({ chatId: telegramWallets.chatId })
+        .from(telegramWallets)
+        .where(eq(telegramWallets.walletAddress, walletAddress))
+        .limit(1);
+      if (rows.length > 0 && rows[0].chatId) {
+        req.headers["x-telegram-chat-id"] = rows[0].chatId;
+        return next();
+      }
+    } catch (e: any) {
+      console.log(`[WebAuth] wallet lookup error: ${e.message}`);
+    }
+    return res.status(404).json({ error: "Wallet not linked. Please connect via the Telegram bot first." });
   }
   return res.status(401).json({ error: "Authentication required" });
 }

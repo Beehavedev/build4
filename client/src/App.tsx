@@ -30,6 +30,7 @@ import AgentBuilder from "@/pages/agent-builder";
 import AgentStore from "@/pages/agent-store";
 import TelegramBotPage from "@/pages/pricing";
 import MiniApp from "@/pages/miniapp";
+import Futures from "@/pages/futures";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -61,6 +62,7 @@ function Router() {
       <Route path="/pricing">{() => { window.location.href = "/agentic_bot"; return null; }}</Route>
       <Route path="/agent-store" component={AgentStore} />
       <Route path="/miniapp" component={MiniApp} />
+      <Route path="/futures" component={Futures} />
       <Route path="/sdk">{() => { window.location.href = "/build"; return null; }}</Route>
       <Route component={NotFound} />
     </Switch>
