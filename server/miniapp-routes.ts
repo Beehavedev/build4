@@ -130,7 +130,7 @@ export function registerMiniAppRoutes(app: Express) {
     const pnlColor = pnl >= 0 ? "#0ecb81" : "#f85149";
     const accentRgb = pnl >= 0 ? "14,203,129" : "248,81,73";
     const refLink = `https://t.me/build4_bot?start=${ref}`;
-    const ogImageUrl = `https://build4-1.onrender.com/pnl/image?pct=${pctParam}&pnl=${pnl}&sym=${encodeURIComponent(symParam)}&side=${sideParam}&lev=${levParam}&ep=${epParam}&mp=${mpParam}&name=${encodeURIComponent(name)}&w=${wins}&l=${losses}&ref=${encodeURIComponent(ref)}`;
+    const ogImageUrl = `https://build4.io/pnl/image?pct=${pctParam}&pnl=${pnl}&sym=${encodeURIComponent(symParam)}&side=${sideParam}&lev=${levParam}&ep=${epParam}&mp=${mpParam}&name=${encodeURIComponent(name)}&w=${wins}&l=${losses}&ref=${encodeURIComponent(ref)}`;
 
     const html = `<!DOCTYPE html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

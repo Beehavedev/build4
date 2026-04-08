@@ -686,7 +686,7 @@ async function doTransfer(amount){
 }
 
 
-var _pnlBaseUrl='https://build4-1.onrender.com';
+var _pnlBaseUrl='https://build4.io';
 
 function getPnlParams(posIdx){
   var agentName=(AG&&AG.config&&AG.config.name)?AG.config.name:'Trader';
