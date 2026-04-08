@@ -1191,8 +1191,24 @@ function FuturesPageInner() {
   const [chartFullscreen, setChartFullscreen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<string | null>(null);
 
-  const { data: account, loading: accountLoading, error: accountError, refresh: refreshAccount } =
+  const { data: rawAccount, loading: accountLoading, error: accountError, refresh: refreshAccount } =
     useWebApi<AccountData>("/api/miniapp/account", address);
+
+  const account = useMemo<AccountData | null>(() => {
+    if (!rawAccount) return null;
+    return {
+      connected: rawAccount.connected ?? false,
+      walletBalance: rawAccount.walletBalance ?? 0,
+      availableMargin: rawAccount.availableMargin ?? 0,
+      bscBalance: rawAccount.bscBalance ?? 0,
+      unrealizedPnl: rawAccount.unrealizedPnl ?? 0,
+      realizedPnl: rawAccount.realizedPnl ?? 0,
+      wins: rawAccount.wins ?? 0,
+      losses: rawAccount.losses ?? 0,
+      positions: rawAccount.positions ?? [],
+      recentIncome: rawAccount.recentIncome ?? [],
+    };
+  }, [rawAccount]);
   const { data: publicMarkets, refresh: refreshPublicMarkets } =
     usePublicApi<MarketData>("/api/public/markets");
   const { data: authMarkets, refresh: refreshAuthMarkets } =
