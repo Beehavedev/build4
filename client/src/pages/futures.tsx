@@ -761,6 +761,206 @@ function RecentIncomePanel({ income }: { income: IncomeEntry[] }) {
   );
 }
 
+function RegisterOrErrorScreen({
+  error,
+  walletAddress,
+  onRegistered,
+  onRetry,
+}: {
+  error: string;
+  walletAddress: string;
+  onRegistered: () => void;
+  onRetry: () => void;
+}) {
+  const [registering, setRegistering] = useState(false);
+  const [regError, setRegError] = useState<string | null>(null);
+  const [regResult, setRegResult] = useState<{ success: boolean; asterLinked: boolean; botWalletAddress?: string } | null>(null);
+
+  const isNotLinked = error.includes("not linked") || error.includes("not found") || error.includes("404");
+
+  const handleRegister = async () => {
+    setRegistering(true);
+    setRegError(null);
+    try {
+      const res = await fetch("/api/miniapp/web-register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setRegResult(data);
+        setTimeout(onRegistered, 1500);
+      } else {
+        setRegError(data.error || "Registration failed");
+      }
+    } catch (e: any) {
+      setRegError(e.message);
+    } finally {
+      setRegistering(false);
+    }
+  };
+
+  if (regResult?.success) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center">
+          <Check className="w-8 h-8 text-emerald-400" />
+        </div>
+        <h3 className="text-lg font-semibold text-foreground" data-testid="text-register-success">Account Created!</h3>
+        <p className="text-muted-foreground text-sm text-center max-w-md">
+          {regResult.asterLinked
+            ? "Your account is set up and connected to Aster DEX. Loading your dashboard..."
+            : "Your account is created. Aster DEX connection will be completed shortly. Loading..."}
+        </p>
+        <RefreshCw className="w-5 h-5 text-emerald-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (isNotLinked) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <div className="w-20 h-20 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+          <Zap className="w-10 h-10 text-emerald-400" />
+        </div>
+        <h3 className="text-xl font-bold text-foreground" data-testid="text-register-title">Welcome to BUILD4 Futures</h3>
+        <p className="text-muted-foreground text-sm text-center max-w-md">
+          Trade perpetual futures on Aster DEX with AI-powered autonomous agents.
+          Create your account in one click to get started.
+        </p>
+
+        <Card className="max-w-md w-full border-border/50">
+          <CardContent className="p-6 space-y-4">
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-card/80 border border-border/30">
+              <Wallet className="w-5 h-5 text-emerald-400 shrink-0" />
+              <div className="min-w-0">
+                <div className="text-xs text-muted-foreground">Your Wallet</div>
+                <div className="text-sm font-mono text-foreground truncate" data-testid="text-register-wallet">
+                  {walletAddress}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <Shield className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                <span>A secure trading wallet is generated server-side for your account</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Bot className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span>AI trading agent included — enable it anytime</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <ArrowUpDown className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                <span>18 trading pairs with up to 50x leverage on Aster DEX</span>
+              </div>
+            </div>
+
+            {regError && (
+              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                {regError}
+              </div>
+            )}
+
+            <Button
+              size="lg"
+              className="w-full h-12 font-semibold"
+              onClick={handleRegister}
+              disabled={registering}
+              data-testid="button-register"
+            >
+              {registering ? (
+                <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <Zap className="w-4 h-4 mr-2" />
+              )}
+              {registering ? "Creating Account..." : "Create Account"}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+      <div className="w-16 h-16 rounded-full bg-yellow-500/10 flex items-center justify-center">
+        <AlertTriangle className="w-8 h-8 text-yellow-500" />
+      </div>
+      <h3 className="text-lg font-semibold text-foreground">Connection Issue</h3>
+      <p className="text-muted-foreground text-sm text-center max-w-md" data-testid="text-error-message">
+        {error}
+      </p>
+      <Button variant="outline" onClick={onRetry} data-testid="button-retry">
+        <RefreshCw className="w-4 h-4 mr-1.5" />
+        Retry
+      </Button>
+    </div>
+  );
+}
+
+function NotConnectedScreen({ walletAddress, onConnected }: { walletAddress: string; onConnected: () => void }) {
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleConnect = async () => {
+    setConnecting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/miniapp/link-aster", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-wallet-address": walletAddress,
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTimeout(onConnected, 1500);
+      } else {
+        setError(data.error || "Connection failed");
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+      <div className="w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center">
+        <Activity className="w-8 h-8 text-blue-400" />
+      </div>
+      <h3 className="text-lg font-semibold text-foreground" data-testid="text-connect-aster-title">Connect to Aster DEX</h3>
+      <p className="text-muted-foreground text-sm text-center max-w-md">
+        Your account is set up. Connect to Aster DEX to start trading futures.
+      </p>
+      {error && (
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm max-w-md text-center">
+          {error}
+        </div>
+      )}
+      <Button
+        size="lg"
+        className="h-12 font-semibold px-8"
+        onClick={handleConnect}
+        disabled={connecting}
+        data-testid="button-connect-aster"
+      >
+        {connecting ? (
+          <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+        ) : (
+          <Zap className="w-4 h-4 mr-2" />
+        )}
+        {connecting ? "Connecting..." : "Connect to Aster DEX"}
+      </Button>
+    </div>
+  );
+}
+
 export default function FuturesPage() {
   const { address, connecting, error: walletError, connect, disconnect } = useWalletAddress();
   const [selectedPair, setSelectedPair] = useState("BTCUSDT");
@@ -879,44 +1079,14 @@ export default function FuturesPage() {
             </div>
           </div>
         ) : accountError ? (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-            <div className="w-16 h-16 rounded-full bg-yellow-500/10 flex items-center justify-center">
-              <AlertTriangle className="w-8 h-8 text-yellow-500" />
-            </div>
-            <h3 className="text-lg font-semibold text-foreground">Connection Issue</h3>
-            <p className="text-muted-foreground text-sm text-center max-w-md" data-testid="text-error-message">
-              {accountError}
-            </p>
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={refreshAccount} data-testid="button-retry">
-                <RefreshCw className="w-4 h-4 mr-1.5" />
-                Retry
-              </Button>
-              <Button variant="outline" asChild>
-                <a href="https://t.me/build4_bot" target="_blank" rel="noopener" data-testid="link-telegram-bot">
-                  Open Telegram Bot
-                  <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
-                </a>
-              </Button>
-            </div>
-          </div>
+          <RegisterOrErrorScreen
+            error={accountError}
+            walletAddress={address}
+            onRegistered={refreshAccount}
+            onRetry={refreshAccount}
+          />
         ) : !account?.connected ? (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-            <div className="w-16 h-16 rounded-full bg-yellow-500/10 flex items-center justify-center">
-              <AlertTriangle className="w-8 h-8 text-yellow-500" />
-            </div>
-            <h3 className="text-lg font-semibold text-foreground">Not Connected to Aster DEX</h3>
-            <p className="text-muted-foreground text-sm text-center max-w-md">
-              Your wallet is found but not yet connected to Aster DEX.
-              Use the Telegram bot to complete Quick Connect first.
-            </p>
-            <Button variant="outline" asChild>
-              <a href="https://t.me/build4_bot" target="_blank" rel="noopener" data-testid="link-setup-bot">
-                Setup via Telegram Bot
-                <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
-              </a>
-            </Button>
-          </div>
+          <NotConnectedScreen walletAddress={address} onConnected={refreshAccount} />
         ) : (
           <>
             <div className="hidden lg:grid grid-cols-12 gap-6">

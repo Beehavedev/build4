@@ -200,6 +200,86 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
     }).end(html);
   });
 
+  app.post("/api/miniapp/web-register", async (req: Request, res: Response) => {
+    try {
+      const { walletAddress } = req.body;
+      if (!walletAddress || !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+        return res.status(400).json({ error: "Invalid wallet address" });
+      }
+      const addr = walletAddress.toLowerCase();
+
+      const { db } = await import("./db");
+      const { telegramWallets } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const existing = await db.select({ chatId: telegramWallets.chatId })
+        .from(telegramWallets)
+        .where(eq(telegramWallets.walletAddress, addr))
+        .limit(1);
+      if (existing.length > 0) {
+        return res.json({ success: true, chatId: existing[0].chatId, alreadyRegistered: true });
+      }
+
+      const { createHash } = await import("crypto");
+      const hash = createHash("sha256").update(`web:${addr}`).digest("hex");
+      const chatId = "8" + hash.replace(/[^0-9]/g, "").substring(0, 14).padEnd(14, "0");
+
+      const { Wallet } = await import("ethers");
+      const botWallet = Wallet.createRandom();
+      const botAddr = botWallet.address.toLowerCase();
+      const botPk = botWallet.privateKey;
+
+      await storage.saveTelegramWallet(chatId, addr);
+      await storage.setActiveTelegramWallet(chatId, addr);
+
+      await storage.saveTelegramWallet(chatId, botAddr, botPk);
+
+      console.log(`[WebRegister] New web user: metamask=${addr.substring(0, 10)} chatId=${chatId} botWallet=${botAddr.substring(0, 10)}`);
+
+      let asterLinked = false;
+      try {
+        const { asterCodeOnboard, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");
+        const codeConfig = getDefaultAsterCodeConfig();
+        const codeResult = await asterCodeOnboard(botPk, codeConfig);
+        console.log(`[WebRegister] Aster Code onboard: success=${codeResult.success} agent=${codeResult.agentApproved} builder=${codeResult.builderApproved}`);
+
+        if (codeResult.success && codeResult.signerAddress && codeResult.signerPrivateKey) {
+          await storage.saveAsterCredentials(chatId, codeResult.signerAddress, codeResult.signerPrivateKey, `astercode:${botAddr}`);
+          asterLinked = true;
+        }
+      } catch (codeErr: any) {
+        console.log(`[WebRegister] Aster Code failed: ${codeErr.message?.substring(0, 200)}`);
+      }
+
+      if (!asterLinked) {
+        try {
+          const { asterBrokerOnboard, createAsterFuturesClient } = await import("./aster-client");
+          const result = await asterBrokerOnboard(botPk);
+          if (result.success && result.apiKey && result.apiSecret) {
+            await storage.saveAsterCredentials(chatId, result.apiKey, result.apiSecret);
+            asterLinked = true;
+            console.log(`[WebRegister] Broker onboard success for chatId=${chatId}`);
+          }
+        } catch (brokerErr: any) {
+          console.log(`[WebRegister] Broker onboard failed: ${brokerErr.message?.substring(0, 200)}`);
+        }
+      }
+
+      await storage.setActiveTelegramWallet(chatId, addr);
+
+      res.json({
+        success: true,
+        chatId,
+        walletAddress: addr,
+        botWalletAddress: botAddr,
+        asterLinked,
+        alreadyRegistered: false,
+      });
+    } catch (e: any) {
+      console.error("[WebRegister] Error:", e.message);
+      res.status(500).json({ error: "Registration failed. Please try again." });
+    }
+  });
+
   app.use("/api/miniapp", miniAppAuth);
 
   app.post("/api/miniapp/import-wallet", async (req: Request, res: Response) => {

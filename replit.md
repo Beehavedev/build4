@@ -43,6 +43,7 @@ The project uses a monorepo containing `client/` (React frontend), `server/` (Ex
 - **Architecture**: Desktop-optimized futures trading interface at `/futures`. Users connect MetaMask/Web3 wallet, backend resolves wallet address → chatId via `telegram_wallets` table, giving access to the same account used in the Telegram bot.
 - **Features**: 3-column desktop layout (markets | account+positions | trade+agent), mobile tab layout. Account overview, open positions with close button, market price list (18 pairs), trading panel with leverage slider and long/short, AI agent controls, recent PnL history.
 - **Auth**: `x-wallet-address` header → reverse lookup to chatId in miniAppAuth middleware. Same wallet = same account across Telegram mini app and web.
+- **Web Registration**: `/api/miniapp/web-register` endpoint (before auth middleware). New users connect MetaMask, click "Create Account" → generates synthetic chatId (`8` + hash digits), creates server-side bot wallet, auto-onboards to Aster via Code/Broker. Wallet-only users (no private key on server) get a separate bot wallet for trading.
 - **Key files**: `client/src/pages/futures.tsx`, auth extension in `server/miniapp-routes.ts`.
 
 ### Permissionless Open Protocol
