@@ -265,19 +265,6 @@ async function makeRequest(
   }
 }
 
-const EIP712_DOMAIN = {
-  name: "AsterSignTransaction",
-  version: "1",
-  chainId: 1666,
-  verifyingContract: "0x0000000000000000000000000000000000000000",
-};
-
-const EIP712_TYPES = {
-  Message: [
-    { name: "msg", type: "string" },
-  ],
-};
-
 let _lastNonceSec = 0;
 let _nonceCounter = 0;
 
@@ -292,14 +279,6 @@ function getV3Nonce(): number {
   return nowSec * 1_000_000 + _nonceCounter;
 }
 
-function buildV3QueryString(params: Record<string, string>): string {
-  const parts: string[] = [];
-  for (const [k, v] of Object.entries(params)) {
-    parts.push(`${k}=${v}`);
-  }
-  return parts.join("&");
-}
-
 async function signV3Params(
   params: Record<string, string | number | boolean | undefined>,
   user: string,
@@ -312,41 +291,29 @@ async function signV3Params(
     if (v !== undefined && v !== null) strParams[k] = String(v);
   }
 
-  strParams.asterChain = "Mainnet";
-  strParams.user = user;
-  strParams.signer = signer;
+  strParams.timestamp = String(Date.now());
+
+  const queryString = Object.entries(strParams)
+    .map(([k, v]) => `${k}=${v}`)
+    .join("&");
+
   const nonce = getV3Nonce();
-  strParams.nonce = String(nonce);
 
-  const msgPayload = buildV3QueryString(strParams);
-
-  const wallet = new Wallet(signerPrivateKey);
-  const signerAddr = wallet.address;
-
-  console.log(`[AsterV3Sign] === SIGNING DEBUG ===`);
-  console.log(`[AsterV3Sign] user=${user}`);
-  console.log(`[AsterV3Sign] signer_param=${signer}`);
-  console.log(`[AsterV3Sign] wallet_addr=${signerAddr}`);
-  console.log(`[AsterV3Sign] addr_match=${signerAddr.toLowerCase() === signer.toLowerCase()}`);
-  console.log(`[AsterV3Sign] domain=${JSON.stringify(EIP712_DOMAIN)}`);
-  console.log(`[AsterV3Sign] msg_to_sign=${msgPayload}`);
-
-  if (signerAddr.toLowerCase() !== signer.toLowerCase()) {
-    console.warn(`[AsterV3Sign] WARNING: wallet address ${signerAddr} does not match signer param ${signer}`);
-  }
-
-  const rawSig = await wallet.signTypedData(
-    EIP712_DOMAIN,
-    EIP712_TYPES,
-    { msg: msgPayload },
+  const { AbiCoder, keccak256, getBytes } = await import("ethers");
+  const abiCoder = AbiCoder.defaultAbiCoder();
+  const encoded = abiCoder.encode(
+    ["string", "address", "address", "uint256"],
+    [queryString, user, signer, BigInt(nonce)],
   );
+  const hash = keccak256(encoded);
+  const wallet = new Wallet(signerPrivateKey);
+  const rawSig = await wallet.signMessage(getBytes(hash));
 
-  const signature = rawSig.startsWith("0x") ? rawSig.slice(2) : rawSig;
-  console.log(`[AsterV3Sign] signature=${signature.substring(0, 40)}...`);
+  console.log(`[AsterV3Sign] user=${user} signer=${signer} qs=${queryString.substring(0, 120)}`);
 
-  const qsWithSig = msgPayload + "&signature=" + signature;
+  const qsWithSig = `${queryString}&nonce=${nonce}&user=${user}&signer=${signer}&signature=${rawSig}`;
 
-  return { queryStringWithSig: qsWithSig, paramsWithoutSig: msgPayload };
+  return { queryStringWithSig: qsWithSig, paramsWithoutSig: queryString };
 }
 
 async function makeV3Request(

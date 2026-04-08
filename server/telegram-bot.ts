@@ -15702,24 +15702,24 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         "Accept": "application/json, text/plain, */*",
       };
 
-      // Test V3 API endpoints with POST + params in URL (the working pattern)
-      const EIP712D = { name: "AsterSignTransaction", version: "1", chainId: 1666, verifyingContract: "0x0000000000000000000000000000000000000000" };
-      const EIP712T = { Message: [{ name: "msg", type: "string" }] };
       const checksumAddr = ethers.getAddress(address);
 
-      function bqs(p: Record<string, any>): string {
-        const parts: string[] = [];
-        for (const [k, v] of Object.entries(p)) {
-          if (v != null) parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
-        }
-        return parts.join("&");
-      }
-
       async function signP(params: Record<string, any>) {
-        const p = { ...params, nonce: String(Math.trunc(Date.now() / 1000) * 1_000_000 + Math.floor(Math.random() * 999)), user: checksumAddr, signer: checksumAddr };
-        const q = bqs(p);
-        const sig = await w.signTypedData(EIP712D, EIP712T, { msg: q });
-        return { qs: q + "&signature=" + sig };
+        const timestamp = String(Date.now());
+        const tradingParams = { ...params, timestamp };
+        const queryString = Object.entries(tradingParams)
+          .filter(([_, v]) => v != null)
+          .map(([k, v]) => `${k}=${String(v)}`)
+          .join("&");
+        const nonce = String(Math.trunc(Date.now() * 1000) + Math.floor(Math.random() * 999));
+        const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+        const encoded = abiCoder.encode(
+          ["string", "address", "address", "uint256"],
+          [queryString, checksumAddr, checksumAddr, BigInt(nonce)],
+        );
+        const hash = ethers.keccak256(encoded);
+        const sig = await w.signMessage(ethers.getBytes(hash));
+        return { qs: `${queryString}&nonce=${nonce}&user=${checksumAddr}&signer=${checksumAddr}&signature=${sig}` };
       }
 
       const FAPI = "https://fapi.asterdex.com";

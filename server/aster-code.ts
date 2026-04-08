@@ -1,4 +1,4 @@
-import { Wallet, getAddress, Signature } from "ethers";
+import { Wallet, getAddress, Signature, AbiCoder, keccak256, getBytes } from "ethers";
 
 const DEFAULT_FAPI_URL = "https://fapi.asterdex.com";
 const REQUEST_TIMEOUT_MS = 20000;
@@ -61,17 +61,6 @@ export interface AsterCodeOnboardResult {
   debug?: string;
 }
 
-const EIP712_DOMAIN = {
-  name: "AsterSignTransaction",
-  version: "1",
-  chainId: 1666,
-  verifyingContract: "0x0000000000000000000000000000000000000000",
-};
-
-const EIP712_TYPES = {
-  Message: [{ name: "msg", type: "string" }],
-};
-
 let _lastNonce = 0;
 
 function getNonce(): string {
@@ -80,54 +69,60 @@ function getNonce(): string {
   return String(_lastNonce);
 }
 
-const STRICT_KEY_ORDER = [
-  "symbol", "side", "type", "quantity", "price",
-  "timeInForce", "leverage", "orderId",
-];
-
 function buildQueryString(params: Record<string, any>): string {
-  const parts: string[] = [];
-  for (const k of STRICT_KEY_ORDER) {
-    if (k in params && params[k] !== undefined && params[k] !== null) {
-      parts.push(`${k}=${String(params[k])}`);
-    }
-  }
-  for (const [k, v] of Object.entries(params)) {
-    if (!STRICT_KEY_ORDER.includes(k) && v !== undefined && v !== null) {
-      parts.push(`${k}=${String(v)}`);
-    }
-  }
-  return parts.join("&");
+  return Object.entries(params)
+    .filter(([_, v]) => v !== undefined && v !== null)
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join("&");
 }
 
-async function signEIP712(privateKey: string, paramString: string): Promise<string> {
-  const wallet = new Wallet(privateKey);
-  const signature = await wallet.signTypedData(
-    EIP712_DOMAIN,
-    EIP712_TYPES,
-    { msg: paramString },
+async function signV3(
+  queryString: string,
+  userAddress: string,
+  signerAddress: string,
+  nonce: string,
+  signerPrivateKey: string,
+): Promise<string> {
+  const abiCoder = AbiCoder.defaultAbiCoder();
+  const encoded = abiCoder.encode(
+    ["string", "address", "address", "uint256"],
+    [queryString, userAddress, signerAddress, BigInt(nonce)],
   );
-  return signature;
+  const hash = keccak256(encoded);
+  const wallet = new Wallet(signerPrivateKey);
+  return wallet.signMessage(getBytes(hash));
 }
 
 async function makeSignedRequest(
   baseUrl: string,
   path: string,
-  privateKey: string,
+  signerPrivateKey: string,
   params: Record<string, any>,
   method: "GET" | "POST" | "DELETE" = "POST",
+  userAddress?: string,
 ): Promise<any> {
-  const wallet = new Wallet(privateKey);
-  const allParams = { ...params };
-  if (!allParams.user) allParams.user = wallet.address;
-  if (!allParams.nonce) allParams.nonce = getNonce();
+  const signerWallet = new Wallet(signerPrivateKey);
+  const user = userAddress || params.user || signerWallet.address;
+  const signer = params.signer || signerWallet.address;
+  const nonce = params.nonce || getNonce();
+  const timestamp = params.timestamp || String(Date.now());
 
-  const paramString = buildQueryString(allParams);
-  const signature = await signEIP712(privateKey, paramString);
+  const tradingParams = { ...params };
+  delete tradingParams.user;
+  delete tradingParams.signer;
+  delete tradingParams.nonce;
+  delete tradingParams.timestamp;
+  delete tradingParams.signature;
 
-  console.log(`[AsterCode] ${method} ${path} msg=${paramString.substring(0, 200)}`);
+  tradingParams.timestamp = timestamp;
 
-  const body = `${paramString}&signature=${signature}`;
+  const queryString = buildQueryString(tradingParams);
+
+  const signature = await signV3(queryString, user, signer, nonce, signerPrivateKey);
+
+  console.log(`[AsterCode] ${method} ${path} qs=${queryString.substring(0, 200)} user=${user.substring(0,10)} signer=${signer.substring(0,10)}`);
+
+  const body = `${queryString}&nonce=${nonce}&user=${user}&signer=${signer}&signature=${signature}`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -177,13 +172,15 @@ async function makeTradingRequest(
   params: Record<string, any>,
   method: "GET" | "POST" | "DELETE" = "GET",
 ): Promise<any> {
-  const allParams = { ...params };
-  allParams.user = userAddress;
-  allParams.signer = signerAddress;
-  allParams.nonce = getNonce();
+  const nonce = getNonce();
+  const timestamp = String(Date.now());
 
-  const paramString = buildQueryString(allParams);
-  const signature = await signEIP712(signerPrivateKey, paramString);
+  const tradingParams = { ...params, timestamp };
+
+  const queryString = buildQueryString(tradingParams);
+  const signature = await signV3(queryString, userAddress, signerAddress, nonce, signerPrivateKey);
+
+  const fullParams = `${queryString}&nonce=${nonce}&user=${userAddress}&signer=${signerAddress}&signature=${signature}`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -191,22 +188,22 @@ async function makeTradingRequest(
   try {
     let response: Response;
     if (method === "GET") {
-      const url = `${baseUrl}${path}?${paramString}&signature=${signature}`;
-      console.log(`[AsterCode] trading GET ${path} params=${paramString.substring(0, 200)}`);
+      const url = `${baseUrl}${path}?${fullParams}`;
+      console.log(`[AsterCode] trading GET ${path} qs=${queryString.substring(0, 200)}`);
       response = await fetch(url, {
         method: "GET",
         headers: { "User-Agent": "BUILD4/1.0" },
         signal: controller.signal,
       });
     } else {
-      console.log(`[AsterCode] trading ${method} ${path} params=${paramString.substring(0, 200)}`);
+      console.log(`[AsterCode] trading ${method} ${path} qs=${queryString.substring(0, 200)}`);
       response = await fetch(`${baseUrl}${path}`, {
         method,
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           "User-Agent": "BUILD4/1.0",
         },
-        body: `${paramString}&signature=${signature}`,
+        body: fullParams,
         signal: controller.signal,
       });
     }
@@ -245,16 +242,10 @@ export async function asterCodeApproveAgent(
   agentPrivateKey: string,
   params: ApproveAgentParams,
 ): Promise<any> {
-  const agentWallet = new Wallet(agentPrivateKey);
   const reqParams: Record<string, any> = {
-    nonce: getNonce(),
-    user: userAddress,
-    signer: agentWallet.address,
     agentAddress: params.agentAddress,
-    permissions: "FUTURES",
   };
 
-  if (params.ipWhitelist) reqParams.ipWhitelist = params.ipWhitelist;
   if (params.expired) reqParams.expiry = String(params.expired);
 
   if (params.builder) {
@@ -262,7 +253,7 @@ export async function asterCodeApproveAgent(
     reqParams.maxFeeRate = params.maxFeeRate || "0.00001";
   }
 
-  return makeSignedRequest(baseUrl, "/fapi/v3/approveAgent", agentPrivateKey, reqParams, "POST");
+  return makeSignedRequest(baseUrl, "/fapi/v3/approveAgent", agentPrivateKey, reqParams, "POST", userAddress);
 }
 
 export async function asterCodeApproveBuilder(
@@ -271,72 +262,14 @@ export async function asterCodeApproveBuilder(
   signerPrivateKey: string,
   params: ApproveBuilderParams,
 ): Promise<any> {
-  const signerWallet = new Wallet(signerPrivateKey);
   const reqParams: Record<string, any> = {
-    nonce: getNonce(),
-    user: userAddress,
-    signer: signerWallet.address,
     builder: params.builder,
     maxFeeRate: params.maxFeeRate,
   };
 
-  return makeSignedRequest(baseUrl, "/fapi/v3/approveBuilder", signerPrivateKey, reqParams, "POST");
+  return makeSignedRequest(baseUrl, "/fapi/v3/approveBuilder", signerPrivateKey, reqParams, "POST", userAddress);
 }
 
-export function prepareActivationPayloads(
-  userAddress: string,
-  agentAddress: string,
-  codeConfig: AsterCodeConfig,
-): {
-  agentWalletAddress: string;
-  approveAgentPayload: { domain: typeof EIP712_DOMAIN; types: typeof EIP712_TYPES; message: { msg: string }; paramString: string };
-  approveBuilderPayload: { domain: typeof EIP712_DOMAIN; types: typeof EIP712_TYPES; message: { msg: string }; paramString: string };
-} {
-  const checksumUser = getAddress(userAddress);
-  const checksumAgent = getAddress(agentAddress);
-  const expiry = Math.trunc(Date.now() / 1000 + 2 * 365 * 24 * 3600) * 1000;
-
-  const agentParams: Record<string, any> = {
-    agentAddress: checksumAgent,
-    permissions: "FUTURES",
-    nonce: getNonce(),
-    user: checksumUser,
-    signer: checksumAgent,
-  };
-
-  if (expiry) agentParams.expiry = String(expiry);
-
-  if (codeConfig.builderAddress) {
-    agentParams.builder = getAddress(codeConfig.builderAddress);
-    agentParams.maxFeeRate = codeConfig.maxFeeRate || "0.00001";
-  }
-  const agentParamString = buildQueryString(agentParams);
-
-  const builderParams: Record<string, any> = {
-    builder: getAddress(codeConfig.builderAddress),
-    maxFeeRate: codeConfig.maxFeeRate,
-    nonce: getNonce(),
-    user: checksumUser,
-    signer: checksumAgent,
-  };
-  const builderParamString = buildQueryString(builderParams);
-
-  return {
-    agentWalletAddress: agentAddress,
-    approveAgentPayload: {
-      domain: EIP712_DOMAIN,
-      types: EIP712_TYPES,
-      message: { msg: agentParamString },
-      paramString: agentParamString,
-    },
-    approveBuilderPayload: {
-      domain: EIP712_DOMAIN,
-      types: EIP712_TYPES,
-      message: { msg: builderParamString },
-      paramString: builderParamString,
-    },
-  };
-}
 
 function normalizeSignature(sig: string): string {
   try {
