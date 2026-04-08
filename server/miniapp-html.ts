@@ -1106,7 +1106,7 @@ function renderAgent(){
   h+='<div class="row text-sm mt-3"><span class="text-dim">Max Leverage</span><span class="mono text-w fw-600">'+(c?.maxLeverage||10)+'x</span></div>';
   h+='<div class="row text-sm mt-3"><span class="text-dim">Max Open Positions</span><span class="mono text-w fw-600">'+(c?.maxOpenPositions||3)+'</span></div>';
   h+='<div style="display:flex;gap:6px;margin-top:6px">';
-  [1,2,3,4,5].forEach(function(n){h+='<button class="btn btn-sm '+((c?.maxOpenPositions||3)===n?'btn-green':'btn-outline')+'" style="font-size:12px;padding:4px 10px" onclick="setMaxPositions('+n+')">'+n+'</button>'});
+  [1,2,3,5,7,10].forEach(function(n){h+='<button class="btn btn-sm '+((c?.maxOpenPositions||3)===n?'btn-green':'btn-outline')+'" style="font-size:12px;padding:4px 10px" onclick="setMaxPositions('+n+')">'+n+'</button>'});
   h+='</div>';
   if(D.availableMargin>0){h+='<div class="row text-sm mt-3"><span class="text-dim">Max Per-Position</span><span class="mono text-w fw-600">$'+fmt(D.availableMargin*(c?.riskPercent||1)/100*(c?.maxLeverage||10)/(c?.maxOpenPositions||3))+'</span></div>'}
 
