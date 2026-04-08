@@ -16197,7 +16197,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
     msg += `📍 Max Positions: *${config.maxOpenPositions || 3}*\n`;
     msg += `📊 Timeframe: \`${config.klineInterval}\`\n`;
     if (state) {
-      const openList = state.openPositions ? Array.from(state.openPositions.entries()).map(([s, side]: [string, string]) => `${side === "LONG" ? "🟢" : "🔴"} ${side} ${s}`).join("\n") : "";
+      const openList = state.openPositions ? Array.from(state.openPositions.entries()).map(([s, info]: [string, any]) => `${(info.side || info) === "LONG" ? "🟢" : "🔴"} ${info.side || info} ${s}`).join("\n") : "";
       if (openList) msg += `\n*Open:*\n${openList}\n`;
       msg += `\n🔄 Trades: \`${state.tradeCount}\`\n`;
       if (state.lastAction) msg += `📡 Last: _${state.lastAction}_\n`;

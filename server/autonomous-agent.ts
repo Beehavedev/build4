@@ -15,12 +15,22 @@ export interface AgentConfig {
   klineInterval: string;
   enabled: boolean;
   maxOpenPositions: number;
+  takeProfitPct: number;
+  stopLossPct: number;
+  trailingStopPct: number;
   symbol?: string;
 }
 
 interface PairScan {
   symbol: string;
   result: StrategyResult;
+}
+
+interface PositionInfo {
+  side: "LONG" | "SHORT";
+  entryPrice: number;
+  peakPnlPct: number;
+  openedAt: number;
 }
 
 interface AgentState {
@@ -31,7 +41,7 @@ interface AgentState {
   scanCount: number;
   errors: number;
   timer: ReturnType<typeof setTimeout> | null;
-  openPositions: Map<string, "LONG" | "SHORT">;
+  openPositions: Map<string, PositionInfo>;
   lastScans: PairScan[];
   lastAction: string;
   lastReason: string;
@@ -48,6 +58,9 @@ const DEFAULT_CONFIG: AgentConfig = {
   klineInterval: "5m",
   enabled: false,
   maxOpenPositions: 3,
+  takeProfitPct: 5.0,
+  stopLossPct: 3.0,
+  trailingStopPct: 2.0,
 };
 
 export function getAgentState(chatId: string): AgentState | undefined {
@@ -76,6 +89,9 @@ export async function loadAgentConfigFromDb(chatId: string): Promise<AgentConfig
         klineInterval: saved.klineInterval ?? DEFAULT_CONFIG.klineInterval,
         enabled: limits.autoTradeEnabled ?? saved.enabled ?? false,
         maxOpenPositions: limits.maxOpenPositions ?? saved.maxOpenPositions ?? DEFAULT_CONFIG.maxOpenPositions,
+        takeProfitPct: saved.takeProfitPct ?? DEFAULT_CONFIG.takeProfitPct,
+        stopLossPct: saved.stopLossPct ?? DEFAULT_CONFIG.stopLossPct,
+        trailingStopPct: saved.trailingStopPct ?? DEFAULT_CONFIG.trailingStopPct,
       };
       let state = agentStates.get(chatId);
       if (!state) {
@@ -102,6 +118,9 @@ async function saveAgentConfigToDb(chatId: string, config: AgentConfig): Promise
       maxLeverage: config.maxLeverage,
       maxOpenPositions: config.maxOpenPositions,
       enabled: config.enabled,
+      takeProfitPct: config.takeProfitPct,
+      stopLossPct: config.stopLossPct,
+      trailingStopPct: config.trailingStopPct,
     });
     await storage.saveAsterTradingLimits(chatId, {
       maxLeverage: config.maxLeverage,
@@ -169,20 +188,25 @@ export async function startAgent(
   const localPositions = await storage.getAsterLocalPositions(chatId);
   for (const p of localPositions) {
     if (p.quantity > 0) {
-      state.openPositions.set(p.symbol, p.side === "LONG" ? "LONG" : "SHORT");
+      state.openPositions.set(p.symbol, {
+        side: p.side === "LONG" ? "LONG" : "SHORT",
+        entryPrice: p.entryPrice || 0,
+        peakPnlPct: 0,
+        openedAt: Date.now(),
+      });
     }
   }
 
   try {
     const posCount = state.openPositions.size;
     const posList = posCount > 0
-      ? Array.from(state.openPositions.entries()).map(([s, side]) => `${side} ${s}`).join(", ")
+      ? Array.from(state.openPositions.entries()).map(([s, info]) => `${info.side} ${s}`).join(", ")
       : "None";
     await sendMessage(
       `🤖 *${state.config.name} Started — Full Auto*\n` +
       `Scanning: *${ALL_PAIRS.length} pairs*\n` +
-      `Max Leverage: ${state.config.maxLeverage}x\n` +
-      `Risk: ${state.config.riskPercent}%\n` +
+      `Max Leverage: ${state.config.maxLeverage}x | TP: ${state.config.takeProfitPct}% | SL: ${state.config.stopLossPct}%\n` +
+      `Risk: ${state.config.riskPercent}% | Trailing: ${state.config.trailingStopPct}%\n` +
       `Max Positions: ${state.config.maxOpenPositions}\n` +
       `Open: ${posList}\n` +
       `Checking every ${Math.round(state.config.intervalMs / 1000)}s`
@@ -254,7 +278,7 @@ async function runAgentLoop(
         const topBuys = buySignals.slice(0, 3).map(s => `🟢 ${s.symbol} (${s.result.strength})`).join("\n") || "None";
         const topSells = sellSignals.slice(0, 3).map(s => `🔴 ${s.symbol} (${s.result.strength})`).join("\n") || "None";
         const openList = state.openPositions.size > 0
-          ? Array.from(state.openPositions.entries()).map(([s, side]) => `${side === "LONG" ? "🟢" : "🔴"} ${side} ${s}`).join("\n")
+          ? Array.from(state.openPositions.entries()).map(([s, info]) => `${info.side === "LONG" ? "🟢" : "🔴"} ${info.side} ${s}`).join("\n")
           : "None";
         await sendMessage(
           `📡 *${state.config.name} — Scan #${state.scanCount}*\n` +
@@ -275,18 +299,58 @@ async function runAgentLoop(
     }
     for (const p of localPositions) {
       if (p.quantity > 0 && !state.openPositions.has(p.symbol)) {
-        state.openPositions.set(p.symbol, p.side === "LONG" ? "LONG" : "SHORT");
+        state.openPositions.set(p.symbol, {
+          side: p.side === "LONG" ? "LONG" : "SHORT",
+          entryPrice: p.entryPrice || 0,
+          peakPnlPct: 0,
+          openedAt: Date.now(),
+        });
       }
     }
 
-    for (const [symbol, side] of state.openPositions.entries()) {
+    for (const [symbol, info] of Array.from(state.openPositions.entries())) {
       const scan = scans.find(s => s.symbol === symbol);
-      if (!scan) continue;
+      const markPrice = scan?.result.lastClose || 0;
+      let closeReason = "";
 
-      if (side === "LONG" && scan.result.signal === "SELL") {
-        await closePosition(chatId, futuresClient, state, symbol, sendMessage);
-      } else if (side === "SHORT" && scan.result.signal === "BUY") {
-        await closePosition(chatId, futuresClient, state, symbol, sendMessage);
+      if (markPrice > 0 && info.entryPrice > 0) {
+        const pnlPct = info.side === "LONG"
+          ? ((markPrice - info.entryPrice) / info.entryPrice) * 100
+          : ((info.entryPrice - markPrice) / info.entryPrice) * 100;
+
+        if (pnlPct > info.peakPnlPct) {
+          info.peakPnlPct = pnlPct;
+        }
+
+        if (pnlPct >= state.config.takeProfitPct) {
+          closeReason = `🎯 Take Profit hit (${pnlPct.toFixed(2)}% ≥ ${state.config.takeProfitPct}%)`;
+        } else if (pnlPct <= -state.config.stopLossPct) {
+          closeReason = `🛑 Stop Loss hit (${pnlPct.toFixed(2)}% ≤ -${state.config.stopLossPct}%)`;
+        } else if (info.peakPnlPct >= state.config.trailingStopPct && pnlPct < info.peakPnlPct - state.config.trailingStopPct) {
+          closeReason = `📉 Trailing Stop (peak ${info.peakPnlPct.toFixed(2)}% → ${pnlPct.toFixed(2)}%, trail ${state.config.trailingStopPct}%)`;
+        }
+
+        if (!closeReason && scan) {
+          const rsiVal = scan.result.rsiValue;
+          if (info.side === "LONG" && rsiVal > 78 && pnlPct > 1) {
+            closeReason = `📊 RSI overbought exit (RSI ${rsiVal.toFixed(1)}, PnL +${pnlPct.toFixed(2)}%)`;
+          } else if (info.side === "SHORT" && rsiVal < 22 && pnlPct > 1) {
+            closeReason = `📊 RSI oversold exit (RSI ${rsiVal.toFixed(1)}, PnL +${pnlPct.toFixed(2)}%)`;
+          }
+        }
+      }
+
+      if (!closeReason && scan) {
+        if (info.side === "LONG" && scan.result.signal === "SELL" && scan.result.strength >= 5) {
+          closeReason = `🔄 Signal reversal (SELL strength ${scan.result.strength})`;
+        } else if (info.side === "SHORT" && scan.result.signal === "BUY" && scan.result.strength >= 5) {
+          closeReason = `🔄 Signal reversal (BUY strength ${scan.result.strength})`;
+        }
+      }
+
+      if (closeReason) {
+        console.log(`[Agent:${chatId}] Closing ${info.side} ${symbol}: ${closeReason}`);
+        await closePosition(chatId, futuresClient, state, symbol, sendMessage, closeReason);
       }
     }
 
@@ -506,7 +570,13 @@ async function openPosition(
   });
 
   const positionSide = side === "BUY" ? "LONG" : "SHORT";
-  state.openPositions.set(symbol, positionSide);
+  const entryP = avgPrice || lastPrice;
+  state.openPositions.set(symbol, {
+    side: positionSide,
+    entryPrice: entryP,
+    peakPnlPct: 0,
+    openedAt: Date.now(),
+  });
   state.tradeCount++;
   state.lastAction = `${positionSide} ${symbol}`;
   state.lastReason = result.reason;
@@ -532,6 +602,7 @@ async function closePosition(
   state: AgentState,
   symbol: string,
   sendMessage: (msg: string) => Promise<void>,
+  reason?: string,
 ) {
   const localPositions = await storage.getAsterLocalPositions(chatId);
   const pos = localPositions.find(p => p.symbol === symbol);
@@ -577,18 +648,19 @@ async function closePosition(
   }
 
   state.lastAction = `Closed ${pos.side} ${symbol}`;
-  state.lastReason = `PnL: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} USDT`;
+  state.lastReason = reason || `PnL: ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} USDT`;
 
   const pnlIcon = pnl >= 0 ? "✅" : "❌";
-  await sendMessage(
+  let closeMsg =
     `📤 *Position Closed — ${symbol}*\n` +
     `━━━━━━━━━━━━━━━━━━━━\n\n` +
     `${pos.side === "LONG" ? "🟢" : "🔴"} ${pos.side} *${symbol}*\n` +
     `📦 Qty: \`${filledQty}\`\n` +
-    `💲 Entry: \`$${pos.entryPrice.toFixed(2)}\` → Exit: \`$${closePrice.toFixed(2)}\`\n` +
-    `${pnlIcon} Realized PnL: \`${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} USDT\`\n\n` +
-    `📍 Open: ${state.openPositions.size}/${state.config.maxOpenPositions}`
-  );
+    `💲 Entry: \`$${pos.entryPrice.toFixed(pos.entryPrice < 1 ? 6 : 2)}\` → Exit: \`$${closePrice.toFixed(closePrice < 1 ? 6 : 2)}\`\n` +
+    `${pnlIcon} Realized PnL: \`${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} USDT\`\n`;
+  if (reason) closeMsg += `\n📋 *Reason:* _${reason}_\n`;
+  closeMsg += `\n📍 Open: ${state.openPositions.size}/${state.config.maxOpenPositions}`;
+  await sendMessage(closeMsg);
 }
 
 export function getAgentStatus(chatId: string): string {
@@ -610,7 +682,8 @@ export function getAgentStatus(chatId: string): string {
 
   if (state.openPositions.size > 0) {
     msg += `*Open Positions:*\n`;
-    for (const [sym, side] of state.openPositions) {
+    for (const [sym, info] of state.openPositions) {
+      const side = typeof info === "string" ? info : info.side;
       msg += `${side === "LONG" ? "🟢" : "🔴"} ${side} ${sym}\n`;
     }
     msg += `\n`;

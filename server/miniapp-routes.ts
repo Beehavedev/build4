@@ -815,7 +815,8 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       const openPositions: string[] = [];
       if (state?.openPositions) {
-        for (const [sym, side] of state.openPositions) {
+        for (const [sym, info] of state.openPositions) {
+          const side = typeof info === 'string' ? info : info.side;
           openPositions.push(`${side} ${sym}`);
         }
       }
@@ -828,6 +829,9 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
           maxLeverage: config?.maxLeverage || 10,
           maxOpenPositions: config?.maxOpenPositions || 3,
           interval: config?.intervalMs ? Math.round(config.intervalMs / 1000) : 60,
+          takeProfitPct: config?.takeProfitPct || 5,
+          stopLossPct: config?.stopLossPct || 3,
+          trailingStopPct: config?.trailingStopPct || 2,
         },
         stats: {
           tradeCount: Math.max(state?.tradeCount || 0, openTrades.length + closeTrades.length),
@@ -854,13 +858,16 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const state = getAgentState(chatId);
       if (state?.running) return res.status(400).json({ error: "Stop the agent before changing config" });
 
-      const { name, symbol, riskPercent, leverage, maxOpenPositions } = req.body;
+      const { name, symbol, riskPercent, leverage, maxOpenPositions, takeProfitPct, stopLossPct, trailingStopPct } = req.body;
       const updates: any = {};
       if (name && typeof name === "string") updates.name = name.trim().substring(0, 24);
       if (symbol && typeof symbol === "string") updates.symbol = symbol.toUpperCase();
       if (riskPercent !== undefined) updates.riskPercent = Math.max(0.5, Math.min(3, parseFloat(riskPercent) || 1));
       if (leverage !== undefined) updates.maxLeverage = Math.max(1, Math.min(50, parseInt(leverage) || 10));
       if (maxOpenPositions !== undefined) updates.maxOpenPositions = Math.max(1, Math.min(5, parseInt(maxOpenPositions) || 3));
+      if (takeProfitPct !== undefined) updates.takeProfitPct = Math.max(1, Math.min(50, parseFloat(takeProfitPct) || 5));
+      if (stopLossPct !== undefined) updates.stopLossPct = Math.max(1, Math.min(20, parseFloat(stopLossPct) || 3));
+      if (trailingStopPct !== undefined) updates.trailingStopPct = Math.max(0.5, Math.min(10, parseFloat(trailingStopPct) || 2));
 
       const config = setAgentConfig(chatId, updates);
       res.json({ success: true, config });
