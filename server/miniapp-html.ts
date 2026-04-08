@@ -1025,9 +1025,13 @@ function renderHistory(){
   if(HIS.openPositions&&HIS.openPositions.length>0){
     h+='<div class="card"><div class="section-title">🟢 Open Positions <span class="badge badge-info">'+HIS.openPositions.length+'</span></div>';
     HIS.openPositions.forEach(function(p){
-      h+='<div style="border-left:3px solid var(--green);padding:8px 0 8px 10px;margin-bottom:8px">';
-      h+='<div class="row"><div class="gap"><span class="badge '+(p.side==='LONG'?'badge-long':'badge-short')+'">'+p.side+'</span><span class="text-w fw-600 text-sm">'+p.symbol+'</span><span class="text-xs text-dim">'+p.leverage+'x</span></div></div>';
+      var upnl=p.unrealizedPnl||0;
+      var borderColor=upnl>=0?'var(--green)':'var(--red)';
+      h+='<div style="border-left:3px solid '+borderColor+';padding:8px 0 8px 10px;margin-bottom:8px">';
+      h+='<div class="row"><div class="gap"><span class="badge '+(p.side==='LONG'?'badge-long':'badge-short')+'">'+p.side+'</span><span class="text-w fw-600 text-sm">'+p.symbol+'</span><span class="text-xs text-dim">'+p.leverage+'x</span></div>';
+      h+='<span class="val-xs '+(upnl>=0?'gv':'r-')+'">'+(upnl>=0?'+':'-')+'$'+fmt(Math.abs(upnl))+'</span></div>';
       h+='<div class="row mt-1"><span class="text-xs text-dim">Qty: <span class="mono text-w">'+p.quantity+'</span></span><span class="text-xs text-dim">Entry: <span class="mono gv">$'+fmt(p.entryPrice,p.entryPrice<1?6:2)+'</span></span></div>';
+      if(p.markPrice){h+='<div class="row mt-1"><span class="text-xs text-dim">Mark: <span class="mono text-w">$'+fmt(p.markPrice,p.markPrice<1?6:2)+'</span></span></div>'}
       h+='</div>';
     });
     h+='</div>';
@@ -1039,11 +1043,13 @@ function renderHistory(){
       var isWin=t.pnl>=0;
       var ago='';
       if(t.closedAt){var diff=Date.now()-t.closedAt;if(diff<3600000)ago=Math.floor(diff/60000)+'m ago';else if(diff<86400000)ago=Math.floor(diff/3600000)+'h ago';else ago=Math.floor(diff/86400000)+'d ago'}
+      var sideClass=t.side==='LONG'||t.side==='BUY'?'badge-long':'badge-short';
+      var sideLabel=t.side==='BUY'?'LONG':t.side==='SELL'?'SHORT':t.side;
       h+='<div style="border-left:3px solid '+(isWin?'var(--green)':'var(--red)')+';padding:8px 0 8px 10px;margin-bottom:8px">';
-      h+='<div class="row"><div class="gap"><span class="badge '+(t.side==='LONG'?'badge-long':'badge-short')+'">'+t.side+'</span><span class="text-w fw-600 text-sm">'+t.symbol+'</span><span class="text-xs text-dim">'+t.leverage+'x</span></div>';
+      h+='<div class="row"><div class="gap"><span class="badge '+sideClass+'">'+sideLabel+'</span><span class="text-w fw-600 text-sm">'+t.symbol+'</span></div>';
       h+='<span class="val-xs '+(isWin?'gv':'r-')+'">'+(isWin?'+':'-')+'$'+fmt(Math.abs(t.pnl))+'</span></div>';
-      h+='<div class="row mt-1"><span class="text-xs text-dim">Entry: <span class="mono text-w">$'+fmt(t.entryPrice,t.entryPrice<1?6:2)+'</span></span><span class="text-xs text-dim">Exit: <span class="mono text-w">$'+fmt(t.exitPrice,t.exitPrice<1?6:2)+'</span></span></div>';
-      h+='<div class="row mt-1"><span class="text-xs text-dim">Qty: '+fmt(t.quantity,4)+'</span>'+(ago?'<span class="text-xs text-dim">'+ago+'</span>':'')+'</div>';
+      if(t.entryPrice>0&&t.exitPrice>0){h+='<div class="row mt-1"><span class="text-xs text-dim">Entry: <span class="mono text-w">$'+fmt(t.entryPrice,t.entryPrice<1?6:2)+'</span></span><span class="text-xs text-dim">Exit: <span class="mono text-w">$'+fmt(t.exitPrice,t.exitPrice<1?6:2)+'</span></span></div>'}
+      h+='<div class="row mt-1">'+(t.quantity>0?'<span class="text-xs text-dim">Qty: '+fmt(t.quantity,4)+'</span>':'')+(ago?'<span class="text-xs text-dim">'+ago+'</span>':'')+'</div>';
       h+='</div>';
     });
     h+='</div>';

@@ -948,108 +948,86 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const chatId = req.headers["x-telegram-chat-id"] as string;
       if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
 
-      const allTrades = await storage.getAsterLocalTrades(chatId);
-      const localPositions = await storage.getAsterLocalPositions(chatId);
+      const client = await getAsterClient(parseInt(chatId));
+      if (!client) {
+        return res.json({
+          openPositions: [],
+          closedTrades: [],
+          pnlSummary: {
+            day1: { pnl: 0, wins: 0, losses: 0, total: 0 },
+            day7: { pnl: 0, wins: 0, losses: 0, total: 0 },
+            allTime: { pnl: 0, wins: 0, losses: 0, total: 0 },
+          },
+        });
+      }
+
+      const fc = client.futures || client;
+
+      const [positions, incomeData] = await Promise.all([
+        fc.positions().catch((e: any) => { console.log(`[History] positions error: ${e.message?.substring(0, 100)}`); return []; }),
+        fc.income("REALIZED_PNL", 500).catch((e: any) => { console.log(`[History] income error: ${e.message?.substring(0, 100)}`); return []; }),
+      ]);
+
+      const openPositions = Array.isArray(positions)
+        ? positions.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0).map((p: any) => {
+          const amt = parseFloat(p.positionAmt || "0");
+          const entryPrice = parseFloat(p.entryPrice || "0");
+          const markPrice = parseFloat(p.markPrice || "0");
+          const lev = parseFloat(p.leverage || "1");
+          const upnl = parseFloat(p.unRealizedProfit || "0");
+          return {
+            symbol: p.symbol,
+            side: amt > 0 ? "LONG" : "SHORT",
+            quantity: Math.abs(amt),
+            entryPrice,
+            markPrice,
+            leverage: lev,
+            unrealizedPnl: upnl,
+          };
+        })
+        : [];
 
       const now = Date.now();
       const day1 = now - 24 * 60 * 60 * 1000;
       const day7 = now - 7 * 24 * 60 * 60 * 1000;
 
-      const openPositions = localPositions.filter((p: any) => p.quantity > 0).map((p: any) => ({
-        symbol: p.symbol,
-        side: p.side,
-        quantity: p.quantity,
-        entryPrice: p.entryPrice,
-        leverage: p.leverage,
-      }));
-
-      const tradesBySymbol: Record<string, any[]> = {};
-      for (const t of allTrades) {
-        if (t.type === "DEPOSIT") continue;
-        if (!tradesBySymbol[t.symbol]) tradesBySymbol[t.symbol] = [];
-        tradesBySymbol[t.symbol].push(t);
-      }
-
       const closedTrades: any[] = [];
-      for (const [symbol, trades] of Object.entries(tradesBySymbol)) {
-        const sorted = trades.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-        let openQty = 0;
-        let openCost = 0;
-        let openSide = "";
-        let openLeverage = 1;
-        let openTime = 0;
+      let pnl1d = 0, pnl7d = 0, pnlAll = 0;
+      let wins1d = 0, losses1d = 0, wins7d = 0, losses7d = 0, winsAll = 0, lossesAll = 0;
 
-        for (const t of sorted) {
-          const qty = t.executedQty || t.quantity;
-          const price = t.avgPrice || t.price || 0;
-          const ts = new Date(t.createdAt).getTime();
+      if (Array.isArray(incomeData)) {
+        for (const inc of incomeData) {
+          const pnl = parseFloat(inc.income || "0");
+          if (pnl === 0) continue;
+          const ts = parseInt(inc.time || "0");
+          const symbol = inc.symbol || "UNKNOWN";
 
-          if (openQty === 0) {
-            openSide = t.side;
-            openQty = qty;
-            openCost = qty * price;
-            openLeverage = t.leverage;
-            openTime = ts;
-          } else if (t.side === openSide) {
-            openCost += qty * price;
-            openQty += qty;
-          } else {
-            const closedQty = Math.min(qty, openQty);
-            const entryAvg = openQty > 0 ? openCost / openQty : price;
-            const pnl = openSide === "BUY"
-              ? (price - entryAvg) * closedQty
-              : (entryAvg - price) * closedQty;
+          closedTrades.push({
+            symbol,
+            side: inc.positionSide || (pnl > 0 ? "WIN" : "LOSS"),
+            pnl,
+            closedAt: ts,
+            quantity: parseFloat(inc.qty || inc.tradeQty || "0"),
+            entryPrice: 0,
+            exitPrice: 0,
+            leverage: 0,
+          });
 
-            closedTrades.push({
-              symbol,
-              side: openSide === "BUY" ? "LONG" : "SHORT",
-              quantity: closedQty,
-              entryPrice: entryAvg,
-              exitPrice: price,
-              pnl,
-              leverage: openLeverage,
-              openedAt: openTime,
-              closedAt: ts,
-            });
+          pnlAll += pnl;
+          if (pnl > 0) winsAll++; else lossesAll++;
 
-            openQty -= closedQty;
-            if (openQty <= 0.0000001) {
-              const remaining = qty - closedQty;
-              if (remaining > 0.0000001) {
-                openSide = t.side;
-                openQty = remaining;
-                openCost = remaining * price;
-                openLeverage = t.leverage;
-                openTime = ts;
-              } else {
-                openQty = 0;
-                openCost = 0;
-              }
-            } else {
-              openCost = (openQty) * (openCost / (openQty + closedQty));
-            }
+          if (ts >= day7) {
+            pnl7d += pnl;
+            if (pnl > 0) wins7d++; else losses7d++;
+          }
+          if (ts >= day1) {
+            pnl1d += pnl;
+            if (pnl > 0) wins1d++; else losses1d++;
           }
         }
       }
 
-      closedTrades.sort((a, b) => b.closedAt - a.closedAt);
-
-      let pnl1d = 0, pnl7d = 0, pnlAll = 0;
-      let wins1d = 0, losses1d = 0, wins7d = 0, losses7d = 0, winsAll = 0, lossesAll = 0;
-
-      for (const ct of closedTrades) {
-        pnlAll += ct.pnl;
-        if (ct.pnl > 0) winsAll++; else lossesAll++;
-
-        if (ct.closedAt >= day7) {
-          pnl7d += ct.pnl;
-          if (ct.pnl > 0) wins7d++; else losses7d++;
-        }
-        if (ct.closedAt >= day1) {
-          pnl1d += ct.pnl;
-          if (ct.pnl > 0) wins1d++; else losses1d++;
-        }
-      }
+      closedTrades.sort((a: any, b: any) => b.closedAt - a.closedAt);
 
       res.json({
         openPositions,
