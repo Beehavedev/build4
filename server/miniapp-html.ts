@@ -1060,18 +1060,28 @@ function renderHistory(){
   }
 
   if(HIS.closedTrades&&HIS.closedTrades.length>0){
-    h+='<div class="card"><div class="section-title">📋 Closed Trades <span class="badge badge-info">'+HIS.closedTrades.length+'</span></div>';
+    h+='<div class="card"><div class="section-title">📋 Position History <span class="badge badge-info">'+HIS.closedTrades.length+'</span></div>';
     HIS.closedTrades.forEach(function(t){
       var isWin=t.pnl>=0;
-      var ago='';
-      if(t.closedAt){var diff=Date.now()-t.closedAt;if(diff<3600000)ago=Math.floor(diff/60000)+'m ago';else if(diff<86400000)ago=Math.floor(diff/3600000)+'h ago';else ago=Math.floor(diff/86400000)+'d ago'}
       var sideClass=t.side==='LONG'||t.side==='BUY'?'badge-long':'badge-short';
       var sideLabel=t.side==='BUY'?'LONG':t.side==='SELL'?'SHORT':t.side;
-      h+='<div style="border-left:3px solid '+(isWin?'var(--green)':'var(--red)')+';padding:8px 0 8px 10px;margin-bottom:8px">';
-      h+='<div class="row"><div class="gap"><span class="badge '+sideClass+'">'+sideLabel+'</span><span class="text-w fw-600 text-sm">'+t.symbol+'</span></div>';
-      h+='<span class="val-xs '+(isWin?'gv':'r-')+'">'+(isWin?'+':'-')+'$'+fmt(Math.abs(t.pnl))+'</span></div>';
-      if(t.entryPrice>0&&t.exitPrice>0){h+='<div class="row mt-1"><span class="text-xs text-dim">Entry: <span class="mono text-w">$'+fmt(t.entryPrice,t.entryPrice<1?6:2)+'</span></span><span class="text-xs text-dim">Exit: <span class="mono text-w">$'+fmt(t.exitPrice,t.exitPrice<1?6:2)+'</span></span></div>'}
-      h+='<div class="row mt-1">'+(t.quantity>0?'<span class="text-xs text-dim">Qty: '+fmt(t.quantity,4)+'</span>':'')+(ago?'<span class="text-xs text-dim">'+ago+'</span>':'')+'</div>';
+      var timeStr='';
+      if(t.closedAt){var d=new Date(t.closedAt);timeStr=d.getFullYear()+'-'+(''+(d.getMonth()+1)).padStart(2,'0')+'-'+(''+(d.getDate())).padStart(2,'0')+' '+(''+(d.getHours())).padStart(2,'0')+':'+(''+(d.getMinutes())).padStart(2,'0')}
+      h+='<div style="border-left:3px solid '+(isWin?'var(--green)':'var(--red)')+';padding:10px 0 10px 12px;margin-bottom:10px;background:rgba('+(isWin?'14,203,129':'248,81,73')+',0.03);border-radius:0 8px 8px 0">';
+      h+='<div class="row"><div class="gap"><span class="text-w fw-600 text-sm">'+t.symbol+'</span><span class="badge '+sideClass+'" style="font-size:9px">'+sideLabel+(t.leverage>0?' · '+t.leverage+'x':'')+'</span><span class="badge" style="background:rgba(14,203,129,0.1);color:var(--green);font-size:9px">Closed</span></div>';
+      h+='<div style="text-align:right"><span class="val-xs '+(isWin?'gv':'r-')+' fw-600">'+(isWin?'+':'')+fmt(t.pnl,2)+' USDT</span>';
+      if(t.pctPnl!==0){h+='<div class="text-xs '+(isWin?'gv':'r-')+'">'+(t.pctPnl>=0?'+':'')+fmt(t.pctPnl,2)+'%</div>'}
+      h+='</div></div>';
+      if(t.entryPrice>0||t.exitPrice>0){
+        h+='<div class="grid2 mt-2">';
+        h+='<div><div class="text-xs text-dim2">Entry Price</div><div class="text-xs mono text-w mt-1">'+fmtPrice(t.entryPrice)+'</div></div>';
+        h+='<div><div class="text-xs text-dim2">Avg. Close Price</div><div class="text-xs mono text-w mt-1">'+fmtPrice(t.exitPrice)+'</div></div>';
+        h+='</div>';
+      }
+      h+='<div class="grid2 mt-2">';
+      if(t.quantity>0){h+='<div><div class="text-xs text-dim2">Closed</div><div class="text-xs mono text-w mt-1">'+fmt(t.quantity,4)+' '+t.symbol.replace('USDT','')+'</div></div>'}
+      if(timeStr){h+='<div><div class="text-xs text-dim2">Time Closed</div><div class="text-xs mono text-w mt-1">'+timeStr+'</div></div>'}
+      h+='</div>';
       h+='</div>';
     });
     h+='</div>';

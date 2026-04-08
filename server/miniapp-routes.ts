@@ -964,10 +964,18 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       const fc = client.futures || client;
 
-      const [positions, incomeData] = await Promise.all([
+      const [positions, incomeData, allPositionsRaw] = await Promise.all([
         fc.positions().catch((e: any) => { console.log(`[History] positions error: ${e.message?.substring(0, 100)}`); return []; }),
         fc.income("REALIZED_PNL", 500).catch((e: any) => { console.log(`[History] income error: ${e.message?.substring(0, 100)}`); return []; }),
+        fc.positions().catch(() => []),
       ]);
+
+      const leverageMap: Record<string, number> = {};
+      if (Array.isArray(allPositionsRaw)) {
+        for (const p of allPositionsRaw) {
+          if (p.symbol) leverageMap[p.symbol] = parseFloat(p.leverage || "1");
+        }
+      }
 
       const openPositions = Array.isArray(positions)
         ? positions.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0).map((p: any) => {
@@ -996,22 +1004,66 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       let pnl1d = 0, pnl7d = 0, pnlAll = 0;
       let wins1d = 0, losses1d = 0, wins7d = 0, losses7d = 0, winsAll = 0, lossesAll = 0;
 
+      const uniqueSymbols = new Set<string>();
+      if (Array.isArray(incomeData)) {
+        for (const inc of incomeData) {
+          if (inc.symbol) uniqueSymbols.add(inc.symbol);
+        }
+      }
+
+      const userTradesMap: Record<string, any[]> = {};
+      const symbolArr = Array.from(uniqueSymbols).slice(0, 10);
+      const tradeResults = await Promise.all(
+        symbolArr.map(sym => fc.userTrades(sym, 100).catch(() => []))
+      );
+      symbolArr.forEach((sym, i) => {
+        if (Array.isArray(tradeResults[i])) userTradesMap[sym] = tradeResults[i];
+      });
+
       if (Array.isArray(incomeData)) {
         for (const inc of incomeData) {
           const pnl = parseFloat(inc.income || "0");
           if (pnl === 0) continue;
           const ts = parseInt(inc.time || "0");
           const symbol = inc.symbol || "UNKNOWN";
+          const tradeId = inc.tradeId || inc.tranId || "";
+
+          let entryPrice = 0;
+          let exitPrice = 0;
+          let qty = parseFloat(inc.qty || inc.tradeQty || "0");
+          let side = inc.positionSide || "";
+
+          const symTrades = userTradesMap[symbol] || [];
+          const closeTrade = symTrades.find((t: any) => String(t.id) === String(tradeId) || (Math.abs(t.time - ts) < 2000 && parseFloat(t.realizedPnl || "0") !== 0));
+          if (closeTrade) {
+            exitPrice = parseFloat(closeTrade.price || "0");
+            qty = qty || parseFloat(closeTrade.qty || "0");
+            if (!side) side = closeTrade.positionSide || (closeTrade.side === "SELL" ? "LONG" : "SHORT");
+
+            if (exitPrice > 0 && qty > 0 && pnl !== 0) {
+              if (side === "LONG" || side === "BUY") {
+                entryPrice = exitPrice - (pnl / qty);
+              } else {
+                entryPrice = exitPrice + (pnl / qty);
+              }
+            }
+          }
+
+          if (!side) side = pnl > 0 ? "LONG" : "SHORT";
+          const lev = leverageMap[symbol] || 0;
+          const pctPnl = (entryPrice > 0 && qty > 0) ? (pnl / (entryPrice * qty) * 100) : 0;
 
           closedTrades.push({
             symbol,
-            side: inc.positionSide || (pnl > 0 ? "WIN" : "LOSS"),
+            side,
             pnl,
+            pctPnl: parseFloat(pctPnl.toFixed(2)),
             closedAt: ts,
-            quantity: parseFloat(inc.qty || inc.tradeQty || "0"),
-            entryPrice: 0,
-            exitPrice: 0,
-            leverage: 0,
+            quantity: qty,
+            entryPrice: parseFloat(entryPrice.toFixed(8)),
+            exitPrice: parseFloat(exitPrice.toFixed(8)),
+            leverage: lev,
+            status: "Closed",
           });
 
           pnlAll += pnl;
