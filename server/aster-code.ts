@@ -72,8 +72,12 @@ const EIP712_TYPES = {
   Message: [{ name: "msg", type: "string" }],
 };
 
+let _lastNonce = 0;
+
 function getNonce(): string {
-  return String(Math.trunc(Date.now() * 1000));
+  const nowMicros = Math.trunc(Date.now() * 1000);
+  _lastNonce = Math.max(nowMicros, _lastNonce + 1);
+  return String(_lastNonce);
 }
 
 function buildQueryString(params: Record<string, any>): string {
@@ -93,41 +97,36 @@ async function signEIP712(privateKey: string, paramString: string): Promise<stri
   return signature;
 }
 
-async function makeMainRequest(
+async function makeSignedRequest(
   baseUrl: string,
   path: string,
-  userPrivateKey: string,
+  privateKey: string,
   params: Record<string, any>,
-  primaryType: string,
-  method: "POST" | "DELETE" = "POST",
+  method: "GET" | "POST" | "DELETE" = "POST",
 ): Promise<any> {
+  const wallet = new Wallet(privateKey);
   const allParams = { ...params };
-  allParams.asterChain = "Mainnet";
+  if (!allParams.user) allParams.user = wallet.address;
+  if (!allParams.nonce) allParams.nonce = getNonce();
 
-  const wallet = new Wallet(userPrivateKey);
-  allParams.user = wallet.address;
-  allParams.nonce = getNonce();
+  const paramString = buildQueryString(allParams);
+  const signature = await signEIP712(privateKey, paramString);
 
-  const signature = await signEIP712Main(userPrivateKey, allParams, primaryType);
+  console.log(`[AsterCode] ${method} ${path} msg=${paramString.substring(0, 200)}`);
 
-  allParams.signature = signature;
-  allParams.signatureChainId = 56;
-
-  const queryString = buildQueryString(allParams);
-  const url = `${baseUrl}${path}?${queryString}`;
-
-  console.log(`[AsterCode] ${method} ${path} url=${url.substring(0, 400)}`);
+  const body = `${paramString}&signature=${signature}`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
+    const response = await fetch(`${baseUrl}${path}`, {
       method,
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         "User-Agent": "BUILD4/1.0",
       },
+      body,
       signal: controller.signal,
     });
 
@@ -166,30 +165,38 @@ async function makeTradingRequest(
   method: "GET" | "POST" | "DELETE" = "GET",
 ): Promise<any> {
   const allParams = { ...params };
-  allParams.asterChain = "Mainnet";
   allParams.user = userAddress;
   allParams.signer = signerAddress;
   allParams.nonce = getNonce();
 
-  const queryString = buildQueryString(allParams);
-  const signature = await signEIP712Trading(signerPrivateKey, queryString);
-
-  const url = `${baseUrl}${path}?${queryString}&signature=${signature}`;
-
-  console.log(`[AsterCode] trading ${method} ${path} url=${url.substring(0, 400)}`);
+  const paramString = buildQueryString(allParams);
+  const signature = await signEIP712(signerPrivateKey, paramString);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "BUILD4/1.0",
-      },
-      signal: controller.signal,
-    });
+    let response: Response;
+    if (method === "GET") {
+      const url = `${baseUrl}${path}?${paramString}&signature=${signature}`;
+      console.log(`[AsterCode] trading GET ${path} params=${paramString.substring(0, 200)}`);
+      response = await fetch(url, {
+        method: "GET",
+        headers: { "User-Agent": "BUILD4/1.0" },
+        signal: controller.signal,
+      });
+    } else {
+      console.log(`[AsterCode] trading ${method} ${path} params=${paramString.substring(0, 200)}`);
+      response = await fetch(`${baseUrl}${path}`, {
+        method,
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "BUILD4/1.0",
+        },
+        body: `${paramString}&signature=${signature}`,
+        signal: controller.signal,
+      });
+    }
 
     clearTimeout(timeoutId);
     const text = await response.text();
@@ -224,37 +231,42 @@ export async function asterCodeApproveAgent(
   userPrivateKey: string,
   params: ApproveAgentParams,
 ): Promise<any> {
+  const wallet = new Wallet(userPrivateKey);
   const reqParams: Record<string, any> = {
-    agentName: params.agentName,
     agentAddress: params.agentAddress,
-    ipWhitelist: params.ipWhitelist || "",
-    expired: params.expired || Math.trunc(Date.now() / 1000 + 365 * 24 * 3600) * 1000,
-    canSpotTrade: params.canSpotTrade ?? false,
-    canPerpTrade: params.canPerpTrade ?? true,
-    canWithdraw: params.canWithdraw ?? false,
+    permissions: "FUTURES",
+    nonce: getNonce(),
+    user: wallet.address,
+    signer: params.agentAddress,
   };
+
+  if (params.ipWhitelist) reqParams.ipWhitelist = params.ipWhitelist;
+  if (params.expired) reqParams.expiry = String(params.expired);
 
   if (params.builder) {
     reqParams.builder = params.builder;
     reqParams.maxFeeRate = params.maxFeeRate || "0.00001";
-    if (params.builderName) reqParams.builderName = params.builderName;
   }
 
-  return makeMainRequest(baseUrl, "/fapi/v3/approveAgent", userPrivateKey, reqParams, "ApproveAgent");
+  return makeSignedRequest(baseUrl, "/fapi/v3/approveAgent", userPrivateKey, reqParams, "POST");
 }
 
 export async function asterCodeApproveBuilder(
   baseUrl: string,
   userPrivateKey: string,
   params: ApproveBuilderParams,
+  signerAddress?: string,
 ): Promise<any> {
+  const wallet = new Wallet(userPrivateKey);
   const reqParams: Record<string, any> = {
     builder: params.builder,
     maxFeeRate: params.maxFeeRate,
+    nonce: getNonce(),
+    user: wallet.address,
+    signer: signerAddress || wallet.address,
   };
-  if (params.builderName) reqParams.builderName = params.builderName;
 
-  return makeMainRequest(baseUrl, "/fapi/v3/approveBuilder", userPrivateKey, reqParams, "ApproveBuilder");
+  return makeSignedRequest(baseUrl, "/fapi/v3/approveBuilder", userPrivateKey, reqParams, "POST");
 }
 
 export async function asterCodeUpdateAgent(
@@ -267,7 +279,7 @@ export async function asterCodeUpdateAgent(
     agentAddress,
     ...updates,
   };
-  return makeMainRequest(baseUrl, "/fapi/v3/updateAgent", userPrivateKey, reqParams, "UpdateAgent");
+  return makeSignedRequest(baseUrl, "/fapi/v3/updateAgent", userPrivateKey, reqParams, "POST");
 }
 
 export async function asterCodeDeleteAgent(
@@ -275,7 +287,7 @@ export async function asterCodeDeleteAgent(
   userPrivateKey: string,
   agentAddress: string,
 ): Promise<any> {
-  return makeMainRequest(baseUrl, "/fapi/v3/agent", userPrivateKey, { agentAddress }, "DelAgent", "DELETE");
+  return makeSignedRequest(baseUrl, "/fapi/v3/agent", userPrivateKey, { agentAddress }, "DELETE");
 }
 
 export async function asterCodeGetAgents(
@@ -300,12 +312,17 @@ const BROKER_BASE_URL = "https://www.asterdex.com/bapi/futures/v1";
 
 async function ensureAsterUserRegistered(wallet: InstanceType<typeof Wallet>): Promise<{ registered: boolean; error?: string }> {
   const address = wallet.address;
+  const BROKER_TIMEOUT = 10000;
   try {
+    const nonceCtrl = new AbortController();
+    const nonceTimer = setTimeout(() => nonceCtrl.abort(), BROKER_TIMEOUT);
     const nonceRes = await fetch(`${BROKER_BASE_URL}/public/future/web3/get-nonce`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "clientType": "web" },
       body: JSON.stringify({ type: "LOGIN", sourceAddr: address }),
+      signal: nonceCtrl.signal,
     });
+    clearTimeout(nonceTimer);
     const nonceData = await nonceRes.json();
     if (!nonceData?.data?.nonce) {
       return { registered: false, error: `No login nonce: ${nonceData?.message || nonceData?.code || "unknown"}` };
@@ -314,6 +331,8 @@ async function ensureAsterUserRegistered(wallet: InstanceType<typeof Wallet>): P
     const loginMessage = `You are signing into Astherus ${nonceData.data.nonce}`;
     const loginSignature = await wallet.signMessage(loginMessage);
 
+    const loginCtrl = new AbortController();
+    const loginTimer = setTimeout(() => loginCtrl.abort(), BROKER_TIMEOUT);
     const loginRes = await fetch(`${BROKER_BASE_URL}/public/future/web3/ae/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "clientType": "web" },
@@ -323,7 +342,9 @@ async function ensureAsterUserRegistered(wallet: InstanceType<typeof Wallet>): P
         chainId: 56,
         agentCode: "BUILD4",
       }),
+      signal: loginCtrl.signal,
     });
+    clearTimeout(loginTimer);
     const loginData = await loginRes.json();
     console.log(`[AsterCode] User registration login: code=${loginData?.code} msg=${loginData?.message || loginData?.msg || "none"}`);
 
@@ -338,6 +359,7 @@ async function ensureAsterUserRegistered(wallet: InstanceType<typeof Wallet>): P
 
     return { registered: false, error: msg || `Login code: ${loginData?.code}` };
   } catch (e: any) {
+    if (e.name === "AbortError") return { registered: false, error: "Broker timeout" };
     return { registered: false, error: e.message };
   }
 }
@@ -410,7 +432,7 @@ export async function asterCodeOnboard(
         builder: codeConfig.builderAddress,
         maxFeeRate: codeConfig.maxFeeRate,
         builderName: codeConfig.builderName,
-      });
+      }, signerAddress);
       console.log(`[AsterCode] approveBuilder result:`, JSON.stringify(builderResult).substring(0, 300));
       debugParts.push(`builder=OK`);
     } catch (builderErr: any) {

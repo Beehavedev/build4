@@ -50,6 +50,16 @@ The project uses a monorepo containing `client/` (React frontend), `server/` (Ex
 - **Key files**: `client/src/pages/futures.tsx`, auth extension in `server/miniapp-routes.ts`.
 - **Dependencies**: `lightweight-charts@4.2.1` for TradingView-style charting.
 
+### Aster Code Integration (V3 EIP-712)
+- **Signing**: All V3 API calls use EIP-712 typed data with `Message { msg: "<param_string>" }`, domain `{ name: "AsterSignTransaction", version: "1", chainId: 1666, verifyingContract: "0x000..." }`.
+- **Nonce**: Microsecond UNIX timestamp (`Date.now() * 1000`), monotonically increasing.
+- **approveAgent**: Signed by user's main wallet. Params: `agentAddress`, `permissions` ("FUTURES"), `nonce`, `user`, `signer`, optional `builder`/`maxFeeRate`/`expiry`/`ipWhitelist`.
+- **approveBuilder**: Signed by user's main wallet. Params: `builder`, `maxFeeRate`, `nonce`, `user`, `signer`.
+- **Trading requests**: Signed by agent/signer private key, include `user` (main wallet) and `signer` (agent address).
+- **Broker registration**: Non-blocking — if broker login fails (e.g. region restriction), onboarding proceeds with direct V3 API calls.
+- **Builder**: Address `0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4`, name `BUILD4`, feeRate `0.00001`.
+- **Key files**: `server/aster-code.ts` (V3 Code signing, approve, trading), `server/aster-client.ts` (legacy V1 broker).
+
 ### Permissionless Open Protocol
 Standardized endpoints facilitate agent discovery, wallet identity, skill listing, wallet activity lookup, and open execution, with a free tier and HTTP 402 payment protocol.
 

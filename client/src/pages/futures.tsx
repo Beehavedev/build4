@@ -41,14 +41,16 @@ declare global {
   }
 }
 
-function formatUsd(n: number): string {
+function formatUsd(n: number | undefined | null): string {
+  if (n == null || isNaN(n)) return "0.00";
   if (Math.abs(n) >= 100) return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (Math.abs(n) >= 1) return n.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
   if (Math.abs(n) >= 0.01) return n.toLocaleString("en-US", { minimumFractionDigits: 6, maximumFractionDigits: 6 });
   return n.toLocaleString("en-US", { minimumFractionDigits: 8, maximumFractionDigits: 8 });
 }
 
-function formatCompact(n: number): string {
+function formatCompact(n: number | undefined | null): string {
+  if (n == null || isNaN(n)) return "0";
   if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
   if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
   if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
