@@ -101,11 +101,11 @@ export async function loadAgentConfigFromDb(chatId: string): Promise<AgentConfig
     if (limits) {
       let saved: Partial<AgentConfig> = {};
       try {
-        const raw = (limits as any).agentConfigJson;
+        const raw = limits.agentConfigJson;
         if (raw && raw !== '{}') saved = JSON.parse(raw);
       } catch {}
       const config: AgentConfig = {
-        name: saved.name || DEFAULT_CONFIG.name,
+        name: saved.name ?? DEFAULT_CONFIG.name,
         maxLeverage: limits.maxLeverage ?? saved.maxLeverage ?? DEFAULT_CONFIG.maxLeverage,
         riskPercent: saved.riskPercent ?? DEFAULT_CONFIG.riskPercent,
         intervalMs: saved.intervalMs ?? DEFAULT_CONFIG.intervalMs,
@@ -115,6 +115,12 @@ export async function loadAgentConfigFromDb(chatId: string): Promise<AgentConfig
         takeProfitPct: saved.takeProfitPct ?? DEFAULT_CONFIG.takeProfitPct,
         stopLossPct: saved.stopLossPct ?? DEFAULT_CONFIG.stopLossPct,
         trailingStopPct: saved.trailingStopPct ?? DEFAULT_CONFIG.trailingStopPct,
+        fundingRateFilter: saved.fundingRateFilter ?? DEFAULT_CONFIG.fundingRateFilter,
+        maxFundingRateLong: saved.maxFundingRateLong ?? DEFAULT_CONFIG.maxFundingRateLong,
+        minFundingRateShort: saved.minFundingRateShort ?? DEFAULT_CONFIG.minFundingRateShort,
+        orderbookImbalanceThreshold: saved.orderbookImbalanceThreshold ?? DEFAULT_CONFIG.orderbookImbalanceThreshold,
+        useConfidenceFilter: saved.useConfidenceFilter ?? DEFAULT_CONFIG.useConfidenceFilter,
+        minConfidence: saved.minConfidence ?? DEFAULT_CONFIG.minConfidence,
       };
       let state = agentStates.get(chatId);
       if (!state) {
@@ -151,15 +157,25 @@ async function saveAgentConfigToDb(chatId: string, config: AgentConfig): Promise
       useConfidenceFilter: config.useConfidenceFilter,
       minConfidence: config.minConfidence,
     });
-    await storage.saveAsterTradingLimits(chatId, {
+    const { db } = await import("./db");
+    const { asterTradingLimits } = await import("../shared/schema");
+    await db.insert(asterTradingLimits).values({
+      chatId,
       maxLeverage: config.maxLeverage,
       maxOpenPositions: config.maxOpenPositions,
       autoTradeEnabled: config.enabled,
+      agentConfigJson: configJson,
+    }).onConflictDoUpdate({
+      target: asterTradingLimits.chatId,
+      set: {
+        maxLeverage: config.maxLeverage,
+        maxOpenPositions: config.maxOpenPositions,
+        autoTradeEnabled: config.enabled,
+        agentConfigJson: configJson,
+        updatedAt: new Date(),
+      },
     });
-    const { db } = await import("./db");
-    const { sql } = await import("drizzle-orm");
-    await db.execute(sql`UPDATE aster_trading_limits SET agent_config_json = ${configJson} WHERE chat_id = ${chatId}`);
-    console.log(`[Agent:${chatId}] Saved config to DB: name="${config.name}"`);
+    console.log(`[Agent:${chatId}] Saved config to DB: name="${config.name}", risk=${config.riskPercent}%`);
   } catch (e: any) {
     console.warn(`[Agent:${chatId}] Failed to save config to DB: ${e.message?.substring(0, 100)}`);
   }

@@ -1111,6 +1111,7 @@ export const asterTradingLimits = pgTable("aster_trading_limits", {
   dailyPnlUsdt: doublePrecision("daily_pnl_usdt").notNull().default(0),
   dailyPnlResetAt: timestamp("daily_pnl_reset_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  agentConfigJson: text("agent_config_json").default("{}"),
 });
 export type AsterTradingLimit = typeof asterTradingLimits.$inferSelect;
 
