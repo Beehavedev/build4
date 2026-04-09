@@ -528,6 +528,60 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
     }
   });
 
+  app.post("/api/miniapp/link-bot-wallet", async (req: Request, res: Response) => {
+    try {
+      const { walletAddress, botWalletAddress } = req.body;
+      if (!walletAddress || !botWalletAddress) {
+        return res.status(400).json({ error: "Missing wallet addresses" });
+      }
+      const metamask = walletAddress.toLowerCase().trim();
+      const botWallet = botWalletAddress.toLowerCase().trim();
+      if (!/^0x[a-f0-9]{40}$/.test(metamask) || !/^0x[a-f0-9]{40}$/.test(botWallet)) {
+        return res.status(400).json({ error: "Invalid wallet address format" });
+      }
+
+      const { db } = await import("./db");
+      const { telegramWallets, asterCredentials: asterCredsTable } = await import("@shared/schema");
+      const { eq, sql: sqlTag } = await import("drizzle-orm");
+
+      const botRows = await db.select({ chatId: telegramWallets.chatId })
+        .from(telegramWallets)
+        .where(eq(telegramWallets.walletAddress, botWallet))
+        .limit(1);
+
+      if (botRows.length === 0) {
+        return res.status(404).json({ error: "Bot wallet not found. Make sure you copied the correct address from the Telegram bot." });
+      }
+      const realChatId = botRows[0].chatId;
+
+      let creds = await storage.getAsterCredentials(realChatId);
+      if (!creds) {
+        const credRows = await db.select({ chatId: asterCredsTable.chatId })
+          .from(asterCredsTable)
+          .where(sqlTag`parent_address LIKE ${"astercode:" + botWallet}`)
+          .limit(1);
+        if (credRows.length > 0) {
+          creds = await storage.getAsterCredentials(credRows[0].chatId);
+        }
+      }
+
+      if (!creds) {
+        return res.status(404).json({ error: "No Aster trading credentials found for this bot wallet. Make sure you activated trading in the Telegram miniapp first." });
+      }
+
+      await db.update(telegramWallets)
+        .set({ chatId: realChatId })
+        .where(eq(telegramWallets.walletAddress, metamask));
+
+      console.log(`[LinkBotWallet] Linked MetaMask ${metamask.substring(0, 10)} → realChatId=${realChatId} (botWallet=${botWallet.substring(0, 10)})`);
+
+      res.json({ success: true, message: "Account linked! Your balance should now appear." });
+    } catch (e: any) {
+      console.error("[LinkBotWallet] Error:", e.message);
+      res.status(500).json({ error: "Failed to link wallet. Please try again." });
+    }
+  });
+
   app.use("/api/miniapp", miniAppAuth);
 
   app.post("/api/miniapp/import-wallet", async (req: Request, res: Response) => {

@@ -718,10 +718,42 @@ function PairSelector({ selected, onSelect, onClose, favorites, toggleFav }: { s
   );
 }
 
+function LinkBotWallet({ wallet, onDone }: { wallet: string; onDone: () => void }) {
+  const [botAddr, setBotAddr] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const link = async () => {
+    if (!botAddr || !/^0x[a-fA-F0-9]{40}$/.test(botAddr.trim())) { setError("Enter a valid wallet address (0x...)"); return; }
+    setWorking(true); setError(null);
+    try {
+      const res = await fetch("/api/miniapp/link-bot-wallet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ walletAddress: wallet, botWalletAddress: botAddr.trim() }) });
+      const data = await res.json();
+      if (data.error) { setError(data.error); setWorking(false); return; }
+      setSuccess(true);
+      setTimeout(() => { onDone(); }, 1500);
+    } catch (e: any) { setError(e.message || "Link failed"); } finally { setWorking(false); }
+  };
+  if (success) return <div className="text-center py-4"><div className="text-emerald-400 text-sm font-semibold">Linked! Refreshing...</div></div>;
+  return (
+    <div className="space-y-3" data-testid="link-bot-wallet">
+      <div className="text-xs text-zinc-400 leading-relaxed">Already activated via the Telegram bot? Paste your bot wallet address below to link your account and see your balance here.</div>
+      <div className="text-[10px] text-zinc-600 leading-relaxed">Find your wallet address in the Telegram bot: tap /start or check the Wallet tab in the miniapp.</div>
+      <input value={botAddr} onChange={e => setBotAddr(e.target.value)} placeholder="0x... (bot wallet address)" data-testid="input-bot-wallet"
+        className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-xs text-white placeholder:text-zinc-600 focus:border-emerald-500/50 focus:outline-none font-mono" />
+      {error && <div className="text-xs text-red-400 bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
+      <Button onClick={link} disabled={working || !botAddr} data-testid="button-link-wallet" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white border-0 h-9 text-xs">
+        {working ? <><RefreshCw className="w-3 h-3 animate-spin mr-1.5" />Linking...</> : "Link Bot Wallet"}
+      </Button>
+    </div>
+  );
+}
+
 function ActivationFlow({ wallet, onDone }: { wallet: string; onDone: () => void }) {
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+  const [showLink, setShowLink] = useState(false);
   const activate = async () => {
     setWorking(true); setError(null);
     try {
@@ -738,13 +770,17 @@ function ActivationFlow({ wallet, onDone }: { wallet: string; onDone: () => void
       const tradingAddress = actData.tradingWalletAddress;
       if (!tradingAddress) { setError("No trading address returned"); setWorking(false); return; }
       setStep(3);
-      const nonceRes = await fetch("https://www.asterdex.com/bapi/futures/v1/public/future/web3/get-nonce", { method: "POST", headers: { "Content-Type": "application/json", "clientType": "web" }, body: JSON.stringify({ type: "LOGIN", sourceAddr: tradingAddress }) });
-      const nonceData = await nonceRes.json();
-      if (!nonceData?.data?.nonce) { setError("Failed to get registration nonce from Aster DEX"); setWorking(false); return; }
-      const signRes = await fetch("/api/miniapp/sign-registration", { method: "POST", headers: { "Content-Type": "application/json", "x-wallet-address": wallet }, body: JSON.stringify({ sessionId, nonce: nonceData.data.nonce }) });
-      const signData = await signRes.json();
-      if (!signData.signature) { setError("Failed to sign registration"); setWorking(false); return; }
-      await fetch("https://www.asterdex.com/bapi/futures/v1/public/future/web3/ae/login", { method: "POST", headers: { "Content-Type": "application/json", "clientType": "web" }, body: JSON.stringify({ signature: signData.signature, sourceAddr: tradingAddress, chainId: 56, agentCode: "BUILD4" }) });
+      try {
+        const nonceRes = await fetch("https://www.asterdex.com/bapi/futures/v1/public/future/web3/get-nonce", { method: "POST", headers: { "Content-Type": "application/json", "clientType": "web" }, body: JSON.stringify({ type: "LOGIN", sourceAddr: tradingAddress }) });
+        const nonceData = await nonceRes.json();
+        if (nonceData?.data?.nonce) {
+          const signRes = await fetch("/api/miniapp/sign-registration", { method: "POST", headers: { "Content-Type": "application/json", "x-wallet-address": wallet }, body: JSON.stringify({ sessionId, nonce: nonceData.data.nonce }) });
+          const signData = await signRes.json();
+          if (signData.signature) {
+            try { await fetch("https://www.asterdex.com/bapi/futures/v1/public/future/web3/ae/login", { method: "POST", headers: { "Content-Type": "application/json", "clientType": "web" }, body: JSON.stringify({ signature: signData.signature, sourceAddr: tradingAddress, chainId: 56, agentCode: "BUILD4" }) }); } catch {}
+          }
+        }
+      } catch { }
       setStep(4);
       const complRes = await fetch("/api/miniapp/complete-activation", { method: "POST", headers: { "Content-Type": "application/json", "x-wallet-address": wallet }, body: JSON.stringify({ sessionId }) });
       const complData = await complRes.json();
@@ -772,9 +808,20 @@ function ActivationFlow({ wallet, onDone }: { wallet: string; onDone: () => void
         </div>
       )}
       {error && <div className="text-xs text-red-400 bg-red-500/10 p-2.5 rounded-md border border-red-500/20">{error}</div>}
-      <Button onClick={activate} disabled={working} data-testid="button-activate" className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white border-0 shadow-lg px-8 h-10">
-        {working ? <><RefreshCw className="w-4 h-4 animate-spin mr-2" />Step {step}/4...</> : "Activate Now"}
-      </Button>
+      {!showLink && (
+        <>
+          <Button onClick={activate} disabled={working} data-testid="button-activate" className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white border-0 shadow-lg px-8 h-10">
+            {working ? <><RefreshCw className="w-4 h-4 animate-spin mr-2" />Step {step}/4...</> : "Activate Now"}
+          </Button>
+          <button onClick={() => setShowLink(true)} className="block mx-auto text-[10px] text-zinc-600 hover:text-zinc-400 underline transition-colors" data-testid="button-show-link">Already activated via Telegram?</button>
+        </>
+      )}
+      {showLink && (
+        <div className="border border-zinc-800 rounded-lg p-4 bg-zinc-900/50">
+          <LinkBotWallet wallet={wallet} onDone={onDone} />
+          <button onClick={() => setShowLink(false)} className="mt-2 text-[10px] text-zinc-600 hover:text-zinc-400 underline" data-testid="button-hide-link">Back to new activation</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -809,6 +856,7 @@ function FuturesTerminal() {
   const [showIndicators, setShowIndicators] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(() => { try { const s = localStorage.getItem("futures_favs"); return s ? new Set(JSON.parse(s)) : new Set(["BTCUSDT", "ETHUSDT", "SOLUSDT"]); } catch { return new Set(["BTCUSDT", "ETHUSDT", "SOLUSDT"]); } });
   const [registered, setRegistered] = useState(false);
+  const [showLinkDialog, setShowLinkDialog] = useState(false);
 
   useEffect(() => {
     if (!address) { setRegistered(false); return; }
@@ -987,6 +1035,9 @@ function FuturesTerminal() {
                 <span className="text-zinc-600 mr-1">Available</span>
                 <span className="text-emerald-400 font-mono font-medium">${fmt(acct.availableMargin)}</span>
               </div>
+              {acct.walletBalance === 0 && acct.availableMargin === 0 && (
+                <button onClick={() => setShowLinkDialog(true)} className="text-amber-400/70 hover:text-amber-400 underline transition-colors" data-testid="button-link-hint">Link Telegram</button>
+              )}
               {acct.unrealizedPnl !== 0 && (
                 <div className={cn("bg-zinc-900/40 rounded-md px-2.5 py-1 border", acct.unrealizedPnl >= 0 ? "border-emerald-500/10" : "border-red-500/10")}>
                   <span className="text-zinc-600 mr-1">uPnL</span>
@@ -1095,6 +1146,17 @@ function FuturesTerminal() {
       {showPicker && <WalletPicker onMM={connectMM} onWC={connectWC} onClose={() => setShowPicker(false)} />}
       {showIndicators && <div className="fixed inset-0 z-30" onClick={() => setShowIndicators(false)} />}
       {showPairs && <div className="fixed inset-0 z-30" onClick={() => setShowPairs(false)} />}
+      {showLinkDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowLinkDialog(false)}>
+          <div className="bg-[#0d0e10] border border-zinc-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-sm font-bold text-white">Link Telegram Bot Wallet</h3>
+              <button onClick={() => setShowLinkDialog(false)} className="text-zinc-600 hover:text-zinc-300 transition-colors">&times;</button>
+            </div>
+            <LinkBotWallet wallet={address} onDone={() => { setShowLinkDialog(false); window.location.reload(); }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
