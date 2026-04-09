@@ -13283,6 +13283,8 @@ async function initOwnerAsterClient(): Promise<any> {
       user,
       signer,
       signerPrivateKey: privateKey,
+      builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
+      feeRate: 0.00001,
     });
 
     try {
@@ -13405,6 +13407,8 @@ export async function getBotWalletAsterClient(chatId: number): Promise<any> {
     user: wallet,
     signer: wallet,
     signerPrivateKey: pk,
+    builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
+    feeRate: 0.00001,
   });
   return { futures: v3Futures, spot: null, walletAddress: wallet };
 }

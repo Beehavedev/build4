@@ -18,6 +18,9 @@ import {
   type AsterFundingRate,
   type AsterPosition,
 } from "./aster-client";
+
+const BUILD4_BUILDER_ADDRESS = "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4";
+const BUILD4_FEE_RATE = 0.00001;
 import {
   type UserSkillState,
   mergeSkillStates,
@@ -2469,6 +2472,8 @@ async function getAsterUsersWithCredentials(): Promise<Array<{ chatId: number; c
             user: evmWallet.walletAddress,
             signer: evmWallet.walletAddress,
             signerPrivateKey: pk,
+            builder: BUILD4_BUILDER_ADDRESS,
+            feeRate: BUILD4_FEE_RATE,
           });
           result.push({ chatId, client: v3Client });
         } else {
@@ -2931,6 +2936,8 @@ async function checkAsterPositions(notifyFn: (chatId: number, message: string) =
           user: evmWallet.walletAddress,
           signer: evmWallet.walletAddress,
           signerPrivateKey: pk,
+          builder: BUILD4_BUILDER_ADDRESS,
+          feeRate: BUILD4_FEE_RATE,
         });
       } else {
         client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
@@ -3112,6 +3119,7 @@ async function updateCompetitionStats(notifyFn: (chatId: number, message: string
             if (!pk) continue;
             client = createAsterV3FuturesClient({
               user: evmWallet.walletAddress, signer: evmWallet.walletAddress, signerPrivateKey: pk,
+              builder: BUILD4_BUILDER_ADDRESS, feeRate: BUILD4_FEE_RATE,
             });
           } else {
             client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
