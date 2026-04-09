@@ -13695,7 +13695,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
           let totalPnl = 0;
           for (const p of active) {
             const amt = parseFloat(p.positionAmt || "0");
-            const side = amt > 0 ? "LONG" : "SHORT";
+            const side = p.positionSide === "LONG" || p.positionSide === "SHORT" ? p.positionSide : (amt > 0 ? "LONG" : "SHORT");
             const entry = parseFloat(p.entryPrice || "0");
             const mark = parseFloat(p.markPrice || "0");
             const upnl = parseFloat(p.unRealizedProfit || "0");
@@ -15337,7 +15337,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         msg += `Open Positions: ${positions.length}\n`;
         for (const p of positions) {
           const amt = parseFloat(p.positionAmt || "0");
-          const side = amt > 0 ? "LONG" : "SHORT";
+          const side = p.positionSide === "LONG" || p.positionSide === "SHORT" ? p.positionSide : (amt > 0 ? "LONG" : "SHORT");
           const entry = parseFloat(p.entryPrice || "0");
           const mark = parseFloat(p.markPrice || "0");
           const upnl = parseFloat(p.unRealizedProfit || "0");
@@ -15879,7 +15879,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
 
       for (const p of apiPositions) {
         const amt = parseFloat(p.positionAmt || "0");
-        const direction = amt > 0 ? "LONG" : "SHORT";
+        const direction = p.positionSide === "LONG" || p.positionSide === "SHORT" ? p.positionSide : (amt > 0 ? "LONG" : "SHORT");
         const entryPrice = parseFloat(p.entryPrice || "0");
         const markPrice = parseFloat(p.markPrice || "0");
         const upnl = parseFloat(p.unRealizedProfit || "0");
@@ -15999,7 +15999,7 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
         const mark = parseFloat(p.markPrice || "0");
         const upnl = parseFloat(p.unRealizedProfit || "0");
         const lev = p.leverage || "?";
-        const side = amt > 0 ? "LONG" : "SHORT";
+        const side = p.positionSide === "LONG" || p.positionSide === "SHORT" ? p.positionSide : (amt > 0 ? "LONG" : "SHORT");
         totalUpnl += upnl;
         const notional = Math.abs(amt) * mark;
         const margin = notional / parseFloat(lev || "1");

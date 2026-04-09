@@ -926,10 +926,11 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         const lev = parseFloat(p.leverage || "1");
         const notional = parseFloat(p.notional || "0") || (absAmt * markPrice);
         const margin = lev > 0 ? notional / lev : 0;
-        const roe = entryPrice > 0 ? (((markPrice - entryPrice) / entryPrice) * (amt > 0 ? 1 : -1) * lev * 100) : 0;
+        const side = p.positionSide === "LONG" || p.positionSide === "SHORT" ? p.positionSide : (amt > 0 ? "LONG" : "SHORT");
+        const roe = entryPrice > 0 ? (((markPrice - entryPrice) / entryPrice) * (side === "LONG" ? 1 : -1) * lev * 100) : 0;
         return {
           symbol: p.symbol,
-          side: amt > 0 ? "LONG" : "SHORT",
+          side,
           size: absAmt,
           entryPrice,
           markPrice,
@@ -1606,7 +1607,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
           const upnl = parseFloat(p.unRealizedProfit || "0");
           return {
             symbol: p.symbol,
-            side: amt > 0 ? "LONG" : "SHORT",
+            side: p.positionSide === "LONG" || p.positionSide === "SHORT" ? p.positionSide : (amt > 0 ? "LONG" : "SHORT"),
             quantity: Math.abs(amt),
             entryPrice,
             markPrice,
