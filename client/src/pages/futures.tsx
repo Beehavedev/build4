@@ -739,9 +739,9 @@ function TradesPanel({ wallet, symbol }: { wallet: string; symbol: string }) {
 
 type PresetKey = "conservative" | "balanced" | "degen";
 const PRESET_META: Record<PresetKey, { label: string; icon: string; desc: string; color: string; border: string; bg: string }> = {
-  conservative: { label: "Conservative", icon: "🛡", desc: "Low risk, tight stops, high confidence filter", color: "text-blue-400", border: "border-blue-500/30", bg: "bg-blue-500/8" },
-  balanced: { label: "Balanced", icon: "⚖", desc: "Moderate risk, standard thresholds", color: "text-amber-400", border: "border-amber-500/30", bg: "bg-amber-500/8" },
-  degen: { label: "Degen", icon: "🔥", desc: "High risk, wide stops, trades everything", color: "text-red-400", border: "border-red-500/30", bg: "bg-red-500/8" },
+  conservative: { label: "Conservative", icon: "🛡", desc: "Low risk, tight stops, high confidence filter", color: "text-blue-400", border: "border-blue-500/30", bg: "bg-blue-500/10" },
+  balanced: { label: "Balanced", icon: "⚖", desc: "Moderate risk, standard thresholds", color: "text-amber-400", border: "border-amber-500/30", bg: "bg-amber-500/10" },
+  degen: { label: "Degen", icon: "🔥", desc: "High risk, wide stops, trades everything", color: "text-red-400", border: "border-red-500/30", bg: "bg-red-500/10" },
 };
 
 function detectPreset(config: AgentData["config"]): PresetKey | null {
