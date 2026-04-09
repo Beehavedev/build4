@@ -322,6 +322,76 @@ export async function asterCodeApproveAgent(
   return makeEip712Request(baseUrl, "/fapi/v3/approveAgent", userPrivateKey, reqParams, "ApproveAgent");
 }
 
+export function buildEip712TypedData(
+  primaryType: string,
+  params: Record<string, any>,
+  userAddress: string,
+): { domain: any; types: any; message: any; fullParams: Record<string, any> } {
+  const fullParams: Record<string, any> = {
+    ...params,
+    asterChain: "Mainnet",
+    user: userAddress,
+    nonce: generateNonce(),
+  };
+
+  const capitalizedMsg: Record<string, any> = {};
+  const typeFields: Array<{ name: string; type: string }> = [];
+  for (const [k, v] of Object.entries(fullParams)) {
+    const capKey = capitalizeKey(k);
+    capitalizedMsg[capKey] = v;
+    typeFields.push({ name: capKey, type: inferEip712Type(v) });
+  }
+
+  return {
+    domain: EIP712_DOMAIN,
+    types: { [primaryType]: typeFields },
+    message: capitalizedMsg,
+    fullParams,
+  };
+}
+
+export async function submitSignedEip712(
+  baseUrl: string,
+  path: string,
+  fullParams: Record<string, any>,
+  signature: string,
+): Promise<any> {
+  const bodyParams: Record<string, any> = { ...fullParams, signature, signatureChainId: 56 };
+
+  const urlEncodedBody = Object.entries(bodyParams)
+    .filter(([_, v]) => v !== undefined && v !== null)
+    .map(([k, v]) => {
+      let strVal: string;
+      if (typeof v === "boolean") strVal = v ? "True" : "False";
+      else strVal = String(v);
+      return `${encodeURIComponent(k)}=${encodeURIComponent(strVal)}`;
+    })
+    .join("&");
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "BUILD4/1.0" },
+      body: urlEncodedBody,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    const text = await response.text();
+    console.log(`[AsterCode] submitSigned POST ${path} status=${response.status} body=${text.substring(0, 500)}`);
+    let data: any;
+    try { data = JSON.parse(text); } catch { throw new Error(`Non-JSON from ${path}: ${text.substring(0, 300)}`); }
+    if (!response.ok) throw new Error(`AsterCode API error ${data?.code || response.status}: ${data?.msg || data?.message || text.substring(0, 200)}`);
+    return data?.data !== undefined ? data.data : data;
+  } catch (e: any) {
+    clearTimeout(timeoutId);
+    if (e.name === "AbortError") throw new Error(`AsterCode API timeout: POST ${path}`);
+    throw e;
+  }
+}
+
 export async function asterCodeApproveBuilder(
   baseUrl: string,
   userAddress: string,

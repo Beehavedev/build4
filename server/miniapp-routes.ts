@@ -404,18 +404,12 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const existingCreds = await storage.getAsterCredentials(chatId);
       if (existingCreds) {
         const parentAddr = existingCreds.parentAddress?.replace("astercode:", "") || connectedAddr;
-        console.log(`[MiniApp] User ${connectedAddr.substring(0, 10)} already activated, chatId=${chatId}`);
-        return res.json({
-          success: true,
-          tradingWallet: parentAddr,
-          parentAddress: parentAddr,
-          alreadyActive: true,
-        });
+        if (parentAddr.toLowerCase() === connectedAddr) {
+          console.log(`[MiniApp] User ${connectedAddr.substring(0, 10)} already activated with correct wallet, chatId=${chatId}`);
+          return res.json({ success: true, tradingWallet: connectedAddr, parentAddress: connectedAddr, alreadyActive: true });
+        }
+        console.log(`[MiniApp] User ${connectedAddr.substring(0, 10)} has stale creds (parent=${parentAddr.substring(0,10)}), re-activating with MetaMask wallet`);
       }
-
-      const tradingWallet = Wallet.createRandom();
-      const tradingAddr = tradingWallet.address;
-      const tradingPk = tradingWallet.privateKey;
 
       const existingWallets = await storage.getTelegramWallets(chatId);
       if (!existingWallets || existingWallets.length === 0) {
@@ -423,107 +417,17 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         await storage.setActiveTelegramWallet(chatId, connectedAddr);
       }
 
-      const sessionId = randomBytes(16).toString("hex");
-      activationSessions.set(sessionId, {
-        connectedAddr,
-        tradingAddr,
-        tradingPk,
-        chatId,
-        createdAt: Date.now(),
-      });
-
-      console.log(`[MiniApp] Activation phase1: connected=${connectedAddr.substring(0, 10)} trading=${tradingAddr.substring(0, 10)} chatId=${chatId} session=${sessionId.substring(0, 8)}`);
-
-      res.json({
-        success: true,
-        phase: "register",
-        sessionId,
-        tradingWalletAddress: tradingAddr,
-      });
-    } catch (e: any) {
-      console.error("[MiniApp] activate-trading error:", e.message);
-      res.status(500).json({ error: e.message || "Failed to start activation" });
-    }
-  });
-
-  app.post("/api/miniapp/sign-registration", async (req: Request, res: Response) => {
-    try {
-      const { sessionId, nonce } = req.body;
-      if (!sessionId || !nonce) {
-        return res.status(400).json({ error: "Missing sessionId or nonce" });
-      }
-      const session = activationSessions.get(sessionId);
-      if (!session) {
-        return res.status(400).json({ error: "Invalid or expired session" });
-      }
-
-      const { Wallet } = await import("ethers");
-      const wallet = new Wallet(session.tradingPk);
-      const loginMessage = `You are signing into Astherus ${nonce}`;
-      const signature = await wallet.signMessage(loginMessage);
-
-      console.log(`[MiniApp] Signed registration nonce for ${session.tradingAddr.substring(0, 10)}`);
-      res.json({ success: true, signature });
-    } catch (e: any) {
-      console.error("[MiniApp] sign-registration error:", e.message);
-      res.status(500).json({ error: e.message || "Signing failed" });
-    }
-  });
-
-  app.post("/api/miniapp/complete-activation", async (req: Request, res: Response) => {
-    try {
-      const { sessionId } = req.body;
-      if (!sessionId) {
-        return res.status(400).json({ error: "Missing sessionId" });
-      }
-      const session = activationSessions.get(sessionId);
-      if (!session) {
-        return res.status(400).json({ error: "Invalid or expired session" });
-      }
-      activationSessions.delete(sessionId);
-
-      const { tradingAddr, tradingPk, chatId, connectedAddr } = session;
-
-      console.log(`[MiniApp] Completing activation for trading=${tradingAddr.substring(0, 10)} chatId=${chatId}`);
-
-      const { Wallet } = await import("ethers");
-      const { asterCodeApproveAgent, asterCodeApproveBuilder, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");
-      const codeConfig = getDefaultAsterCodeConfig();
-      const baseUrl = codeConfig.fApiUrl || "https://fapi.asterdex.com";
-
-      try {
-        const tw = new Wallet(tradingPk);
-        const nonceRes = await fetch("https://www.asterdex.com/bapi/futures/v1/public/future/web3/get-nonce", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "clientType": "web" },
-          body: JSON.stringify({ type: "LOGIN", sourceAddr: tradingAddr }),
-        });
-        const nonceData = await nonceRes.json();
-        if (nonceData?.data?.nonce) {
-          const loginMsg = `You are signing into Astherus ${nonceData.data.nonce}`;
-          const sig = await tw.signMessage(loginMsg);
-          const loginRes = await fetch("https://www.asterdex.com/bapi/futures/v1/public/future/web3/ae/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "clientType": "web" },
-            body: JSON.stringify({ signature: sig, sourceAddr: tradingAddr, chainId: 56, agentCode: "BUILD4" }),
-          });
-          const loginData = await loginRes.json();
-          console.log(`[MiniApp] Server-side Aster registration: ${loginData?.code} ${loginData?.message || ""}`);
-        }
-      } catch (regErr: any) {
-        console.log(`[MiniApp] Server-side Aster registration fallback failed: ${regErr.message}`);
-      }
-
       const signerWallet = Wallet.createRandom();
       const signerAddr = signerWallet.address.toLowerCase();
       const signerPk = signerWallet.privateKey;
 
+      const { buildEip712TypedData, getDefaultAsterCodeConfig } = await import("./aster-code");
+      const codeConfig = getDefaultAsterCodeConfig();
+
       const agentName = `build4_${Date.now()}`;
       const expiry = Math.trunc(Date.now() / 1000 + 2 * 365 * 24 * 3600) * 1000;
 
-      console.log(`[MiniApp] Step 2: approveAgent user=${tradingAddr.substring(0, 10)} agent=${signerAddr.substring(0, 10)}`);
-      const tradingWallet = new Wallet(tradingPk);
-      const agentResult = await asterCodeApproveAgent(baseUrl, tradingWallet.address, tradingPk, {
+      const agentTypedData = buildEip712TypedData("ApproveAgent", {
         agentName,
         agentAddress: signerWallet.address,
         ipWhitelist: "",
@@ -531,32 +435,80 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         canSpotTrade: false,
         canPerpTrade: true,
         canWithdraw: false,
+      }, connectedAddr);
+
+      const builderTypedData = buildEip712TypedData("ApproveBuilder", {
         builder: codeConfig.builderAddress,
         maxFeeRate: codeConfig.maxFeeRate,
         builderName: codeConfig.builderName,
+      }, connectedAddr);
+
+      const sessionId = randomBytes(16).toString("hex");
+      activationSessions.set(sessionId, {
+        connectedAddr,
+        tradingAddr: connectedAddr,
+        tradingPk: signerPk,
+        chatId,
+        createdAt: Date.now(),
+        signerAddr,
+        signerPk,
+        agentFullParams: agentTypedData.fullParams,
+        builderFullParams: builderTypedData.fullParams,
       });
+
+      console.log(`[MiniApp] Activation: user=${connectedAddr.substring(0, 10)} signer=${signerAddr.substring(0, 10)} chatId=${chatId} session=${sessionId.substring(0, 8)}`);
+
+      res.json({
+        success: true,
+        phase: "sign",
+        sessionId,
+        signerAddress: signerAddr,
+        agentTypedData: { domain: agentTypedData.domain, types: agentTypedData.types, message: agentTypedData.message, primaryType: "ApproveAgent" },
+        builderTypedData: { domain: builderTypedData.domain, types: builderTypedData.types, message: builderTypedData.message, primaryType: "ApproveBuilder" },
+      });
+    } catch (e: any) {
+      console.error("[MiniApp] activate-trading error:", e.message);
+      res.status(500).json({ error: e.message || "Failed to start activation" });
+    }
+  });
+
+  app.post("/api/miniapp/complete-activation", async (req: Request, res: Response) => {
+    try {
+      const { sessionId, agentSignature, builderSignature } = req.body;
+      if (!sessionId) return res.status(400).json({ error: "Missing sessionId" });
+      if (!agentSignature) return res.status(400).json({ error: "Missing agentSignature — please sign the agent approval in MetaMask" });
+
+      const session = activationSessions.get(sessionId);
+      if (!session) return res.status(400).json({ error: "Invalid or expired session" });
+      activationSessions.delete(sessionId);
+
+      const { connectedAddr, chatId, signerAddr, signerPk, agentFullParams, builderFullParams } = session as any;
+
+      console.log(`[MiniApp] Completing MetaMask activation for user=${connectedAddr.substring(0, 10)} signer=${signerAddr.substring(0, 10)} chatId=${chatId}`);
+
+      const { submitSignedEip712, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");
+      const codeConfig = getDefaultAsterCodeConfig();
+      const baseUrl = codeConfig.fApiUrl || "https://fapi.asterdex.com";
+
+      const agentResult = await submitSignedEip712(baseUrl, "/fapi/v3/approveAgent", agentFullParams, agentSignature);
       console.log(`[MiniApp] approveAgent result: ${JSON.stringify(agentResult).substring(0, 200)}`);
 
-      await new Promise(r => setTimeout(r, 500));
-
-      console.log(`[MiniApp] Step 3: approveBuilder`);
-      try {
-        const builderResult = await asterCodeApproveBuilder(baseUrl, tradingWallet.address, tradingPk, {
-          builder: codeConfig.builderAddress,
-          maxFeeRate: codeConfig.maxFeeRate,
-          builderName: codeConfig.builderName,
-        });
-        console.log(`[MiniApp] approveBuilder result: ${JSON.stringify(builderResult).substring(0, 200)}`);
-      } catch (bErr: any) {
-        console.log(`[MiniApp] approveBuilder failed (may already exist): ${bErr.message}`);
+      if (builderSignature && builderFullParams) {
+        await new Promise(r => setTimeout(r, 300));
+        try {
+          const builderResult = await submitSignedEip712(baseUrl, "/fapi/v3/approveBuilder", builderFullParams, builderSignature);
+          console.log(`[MiniApp] approveBuilder result: ${JSON.stringify(builderResult).substring(0, 200)}`);
+        } catch (bErr: any) {
+          console.log(`[MiniApp] approveBuilder failed (may already exist): ${bErr.message}`);
+        }
       }
 
       await storage.saveTelegramWallet(chatId, signerAddr, signerPk);
-      await storage.saveAsterCredentials(chatId, signerAddr, signerPk, `astercode:${tradingAddr.toLowerCase()}`);
+      await storage.saveAsterCredentials(chatId, signerAddr, signerPk, `astercode:${connectedAddr}`);
 
       let balanceInfo: any = null;
       try {
-        const client = createAsterCodeFuturesClient(tradingAddr, signerAddr, signerPk, codeConfig);
+        const client = createAsterCodeFuturesClient(connectedAddr, signerAddr, signerPk, codeConfig);
         balanceInfo = await client.balance();
         console.log(`[MiniApp] Post-activation balance: ${JSON.stringify(balanceInfo).substring(0, 300)}`);
       } catch (balErr: any) {
@@ -565,8 +517,8 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       res.json({
         success: true,
-        tradingWallet: tradingAddr.toLowerCase(),
-        parentAddress: tradingAddr.toLowerCase(),
+        tradingWallet: connectedAddr,
+        parentAddress: connectedAddr,
       });
     } catch (e: any) {
       console.error("[MiniApp] complete-activation error:", e.message);
@@ -810,10 +762,16 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
             if (isAsterCode) {
               const { createAsterCodeFuturesClient, getDefaultAsterCodeConfig } = await import("./aster-code");
               const codeConfig = getDefaultAsterCodeConfig();
-              const codeFutures = createAsterCodeFuturesClient(realParent, creds.apiKey, creds.apiSecret, codeConfig);
-              client = { futures: codeFutures, spot: null, walletAddress: realParent };
+              let effectiveUser = realParent;
+              const walletMismatch = connectedWalletAddr && connectedWalletAddr !== realParent.toLowerCase();
+              if (walletMismatch) {
+                console.log(`[MiniApp] Connected wallet ${connectedWalletAddr.substring(0,10)} differs from stored parent ${realParent.substring(0,10)} — signer may not be authorized for this wallet, will need re-activation`);
+                return res.json({ connected: false, needsReactivation: true, asterApiWallet: null, bscWalletAddress: connectedWalletAddr, bscBalance: 0, bnbBalance: 0, message: "Your wallet changed. Please re-activate to link your current wallet." });
+              }
+              const codeFutures = createAsterCodeFuturesClient(effectiveUser, creds.apiKey, creds.apiSecret, codeConfig);
+              client = { futures: codeFutures, spot: null, walletAddress: effectiveUser };
               asterApiWalletAddr = creds.apiKey;
-              console.log(`[MiniApp] Aster Code client: user=${realParent.substring(0,10)}, signer=${creds.apiKey.substring(0,10)}`);
+              console.log(`[MiniApp] Aster Code client: user=${effectiveUser.substring(0,10)}, signer=${creds.apiKey.substring(0,10)}`);
             } else {
               const { createAsterV3FuturesClient } = await import("./aster-client");
               const v3Futures = createAsterV3FuturesClient({

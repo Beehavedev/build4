@@ -945,6 +945,20 @@ function ActivationFlow({ wallet, onDone }: { wallet: string; onDone: () => void
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+
+  const signTypedDataWithMetaMask = async (typedData: any): Promise<string> => {
+    if (!window.ethereum) throw new Error("MetaMask not available");
+    const { domain, types, message } = typedData;
+    const msgParams = JSON.stringify({
+      types: { EIP712Domain: [{ name: "name", type: "string" }, { name: "version", type: "string" }, { name: "chainId", type: "uint256" }, { name: "verifyingContract", type: "address" }], ...types },
+      primaryType: typedData.primaryType,
+      domain,
+      message,
+    });
+    const sig = await window.ethereum.request({ method: "eth_signTypedData_v4", params: [wallet, msgParams] });
+    return sig as string;
+  };
+
   const activate = async () => {
     setWorking(true); setError(null);
     try {
@@ -952,33 +966,43 @@ function ActivationFlow({ wallet, onDone }: { wallet: string; onDone: () => void
       const regRes = await fetch("/api/miniapp/web-register", { method: "POST", headers: { "Content-Type": "application/json", "x-wallet-address": wallet }, body: JSON.stringify({ walletAddress: wallet }) });
       const regData = await regRes.json();
       if (regData.error && !regData.error.includes("already")) { setError(regData.error); setWorking(false); return; }
+
       setStep(2);
       const actRes = await fetch("/api/miniapp/activate-trading", { method: "POST", headers: { "Content-Type": "application/json", "x-wallet-address": wallet }, body: JSON.stringify({ walletAddress: wallet }) });
       const actData = await actRes.json();
       if (actData.error) { setError(actData.error); setWorking(false); return; }
       if (actData.alreadyActive) { setStep(5); onDone(); return; }
+
       const sessionId = actData.sessionId;
-      const tradingAddress = actData.tradingWalletAddress;
-      if (!tradingAddress) { setError("No trading address returned"); setWorking(false); return; }
+
       setStep(3);
+      let agentSignature: string;
       try {
-        const nonceRes = await fetch("https://www.asterdex.com/bapi/futures/v1/public/future/web3/get-nonce", { method: "POST", headers: { "Content-Type": "application/json", "clientType": "web" }, body: JSON.stringify({ type: "LOGIN", sourceAddr: tradingAddress }) });
-        const nonceData = await nonceRes.json();
-        if (nonceData?.data?.nonce) {
-          const signRes = await fetch("/api/miniapp/sign-registration", { method: "POST", headers: { "Content-Type": "application/json", "x-wallet-address": wallet }, body: JSON.stringify({ sessionId, nonce: nonceData.data.nonce }) });
-          const signData = await signRes.json();
-          if (signData.signature) {
-            try { await fetch("https://www.asterdex.com/bapi/futures/v1/public/future/web3/ae/login", { method: "POST", headers: { "Content-Type": "application/json", "clientType": "web" }, body: JSON.stringify({ signature: signData.signature, sourceAddr: tradingAddress, chainId: 56, agentCode: "BUILD4" }) }); } catch {}
-          }
-        }
-      } catch { }
+        agentSignature = await signTypedDataWithMetaMask(actData.agentTypedData);
+      } catch (e: any) {
+        setError("Agent approval signature rejected. Please try again and approve the signature in your wallet.");
+        setWorking(false); return;
+      }
+
       setStep(4);
-      const complRes = await fetch("/api/miniapp/complete-activation", { method: "POST", headers: { "Content-Type": "application/json", "x-wallet-address": wallet }, body: JSON.stringify({ sessionId }) });
+      let builderSignature: string | null = null;
+      try {
+        builderSignature = await signTypedDataWithMetaMask(actData.builderTypedData);
+      } catch (e: any) {
+        console.log("Builder signature skipped:", e.message);
+      }
+
+      const complRes = await fetch("/api/miniapp/complete-activation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-wallet-address": wallet },
+        body: JSON.stringify({ sessionId, agentSignature, builderSignature }),
+      });
       const complData = await complRes.json();
       if (complData.error) { setError(complData.error); setWorking(false); return; }
       setStep(5); onDone();
     } catch (e: any) { setError(e.message || "Activation failed"); } finally { setWorking(false); }
   };
+
   return (
     <div className="p-8 text-center space-y-5" data-testid="activation-flow">
       <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center border border-emerald-500/10 shadow-[0_0_40px_rgba(34,197,94,0.08)]">
@@ -986,11 +1010,11 @@ function ActivationFlow({ wallet, onDone }: { wallet: string; onDone: () => void
       </div>
       <div>
         <h3 className="text-base font-bold text-white mb-1">Activate Trading</h3>
-        <p className="text-xs text-zinc-500 max-w-xs mx-auto">Your wallet signature is your identity. Activate once to start trading perpetual futures with up to 125x leverage.</p>
+        <p className="text-xs text-zinc-500 max-w-xs mx-auto">Sign with your wallet to authorize BUILD4 to trade on your behalf. Your existing Aster DEX balances will be available instantly.</p>
       </div>
       {step > 0 && (
         <div className="text-xs space-y-1.5 text-left max-w-xs mx-auto">
-          {["Registering wallet...", "Creating trading agent...", "Registering on Aster DEX...", "Approving agent on-chain...", "Done!"].map((label, i) => (
+          {["Registering wallet...", "Preparing authorization...", "Sign agent approval in wallet...", "Submitting to Aster DEX...", "Done!"].map((label, i) => (
             <div key={i} className={cn("flex items-center gap-2 transition-all", step > i ? "text-emerald-400" : step === i + 1 ? "text-white" : "text-zinc-600")}>
               {step > i + 1 ? <div className="w-4 h-4 rounded-full bg-emerald-500/20 flex items-center justify-center text-[8px]">&#10003;</div> : step === i + 1 ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <div className="w-4 h-4 rounded-full border border-zinc-700" />}
               {i + 1}. {label}
@@ -1002,7 +1026,7 @@ function ActivationFlow({ wallet, onDone }: { wallet: string; onDone: () => void
       <Button onClick={activate} disabled={working} data-testid="button-activate" className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white border-0 shadow-lg px-8 h-10">
         {working ? <><RefreshCw className="w-4 h-4 animate-spin mr-2" />Step {step}/4...</> : "Activate Now"}
       </Button>
-      <p className="text-[10px] text-zinc-600 max-w-xs mx-auto">Same wallet = same account. If you imported this wallet into the Telegram bot, your balances sync automatically.</p>
+      <p className="text-[10px] text-zinc-600 max-w-xs mx-auto">Uses your existing Aster DEX account. Same wallet = same balances you see on asterdex.com.</p>
     </div>
   );
 }
