@@ -880,7 +880,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
     return "Hey! Welcome to BUILD4 — decentralized infrastructure for autonomous AI agents. What can I help you with? Try /help to see all commands.";
   }
   if (lower.includes("help") || lower.includes("command"))
-    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n🎯 /quests — Earn $B4 quests\n🏆 /rewards — $B4 rewards dashboard\n💰 /fees — Fee tiers & discounts\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — Swap (multi-chain)\n🌉 /bridge — Cross-chain bridge\n📋 /limit — Limit orders\n👁️ /watchlist — Price watchlist & alerts\n⚙️ /settings — Trading settings\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
+    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n🎯 /quests — Earn $B4 quests\n🏆 /rewards — $B4 rewards dashboard\n💰 /fees — Fee tiers & discounts\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — Swap (multi-chain)\n🌉 /bridge — Cross-chain bridge\n📋 /limit — Limit orders\n👁️ /watchlist — Price watchlist & alerts\n⚙️ /settings — Trading settings\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n⚡ /hyperliquid — Hyperliquid perps\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
   if (lower.includes("thank"))
     return "You're welcome! Let me know if you need anything else. 🤝";
 
@@ -2588,6 +2588,7 @@ function mainMenuKeyboard(_hasWallet?: boolean, chatId?: number): TelegramBot.In
     inline_keyboard: [
       [{ text: tr("menu.buyBuild4", c), callback_data: "action:buybuild4" }, { text: tr("menu.launch", c), callback_data: "action:launchtoken" }],
       [{ text: tr("menu.trading", c), callback_data: "action:submenu_trading" }, { text: "📈 Aster Trading", callback_data: "action:aster" }],
+      [{ text: "⚡ Hyperliquid", callback_data: "action:hyperliquid" }],
       [{ text: "🤖 Agents", callback_data: "action:submenu_agents" }, { text: tr("menu.market", c), callback_data: "action:submenu_market" }],
       [{ text: tr("menu.earn", c), callback_data: "action:submenu_earn" }],
       [{ text: tr("menu.portfolio", c), callback_data: "action:portfolio" }, { text: tr("menu.wallet", c), callback_data: "action:wallet" }],
@@ -2769,6 +2770,7 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
       { command: "challenge", description: "Trading Agent Challenges" },
       { command: "copytrade", description: "Copy top agent trades" },
       { command: "aster", description: "Aster DEX futures & spot trading" },
+      { command: "hyperliquid", description: "Hyperliquid perpetual futures trading" },
       { command: "lang", description: "Switch language / 切换语言" },
       { command: "help", description: "Show all commands" },
     ]).then(() => {
@@ -5306,6 +5308,11 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
+  if (data === "action:hyperliquid") {
+    await handleHyperliquidMenu(chatId);
+    return;
+  }
+
   if (data === "action:aster") {
     await handleAsterMenu(chatId);
     return;
@@ -6784,8 +6791,8 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
         [{ text: tr("menu.buy", c), callback_data: "action:buy" }, { text: tr("menu.sell", c), callback_data: "action:sell" }],
         [{ text: tr("menu.swap", c), callback_data: "action:okxswap" }, { text: tr("menu.bridge", c), callback_data: "action:okxbridge" }],
         [{ text: "📋 Limit Orders", callback_data: "action:limitorders" }, { text: "👁️ Watchlist", callback_data: "action:watchlist" }],
-        [{ text: "📈 Aster Trading", callback_data: "action:aster" }, { text: "💎 Auto Trade", callback_data: "action:trade" }],
-        [{ text: "⚙️ Settings", callback_data: "action:settings" }],
+        [{ text: "📈 Aster Trading", callback_data: "action:aster" }, { text: "⚡ Hyperliquid", callback_data: "action:hyperliquid" }],
+        [{ text: "💎 Auto Trade", callback_data: "action:trade" }, { text: "⚙️ Settings", callback_data: "action:settings" }],
         [{ text: tr("menu.back", c), callback_data: "action:menu" }],
       ]}
     });
@@ -10789,6 +10796,12 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "hyperliquid" || cmd === "hl") {
+      if (isGroup) { await bot.sendMessage(chatId, "DM me for Hyperliquid trading!"); return; }
+      await handleHyperliquidMenu(chatId);
+      return;
+    }
+
     if (cmd === "status") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for status!"); return; }
       await handleAsterCallback(chatId, "aster:full_status");
@@ -13230,6 +13243,31 @@ async function handleChaosPlanCallback(chatId: number, data: string): Promise<vo
     await bot.sendMessage(chatId, "Chaos plan cancelled.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
     return;
   }
+}
+
+async function handleHyperliquidMenu(chatId: number): Promise<void> {
+  if (!bot) return;
+  const baseUrl = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL || "https://build4.world";
+  const hlUrl = `${baseUrl}/hyperliquid?chatId=${chatId}`;
+  await bot.sendMessage(chatId,
+    `⚡ *Hyperliquid — Perpetual Futures*\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `Trade perps on Hyperliquid L1 — the fastest on-chain orderbook.\n` +
+    `Up to 50x leverage on 500+ assets.\n\n` +
+    `✅ Deep liquidity & tight spreads\n` +
+    `✅ Self-custody — your keys, your funds\n` +
+    `✅ No KYC required\n\n` +
+    `Tap below to open the trading terminal:`,
+    {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "⚡ Open Hyperliquid Terminal", web_app: { url: hlUrl } }],
+          [{ text: "« Back", callback_data: "action:menu" }],
+        ],
+      },
+    }
+  );
 }
 
 async function handleAsterMenu(chatId: number): Promise<void> {
