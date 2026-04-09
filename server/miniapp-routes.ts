@@ -924,9 +924,14 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         const markPrice = parseFloat(p.markPrice || "0");
         const absAmt = Math.abs(amt);
         const lev = parseFloat(p.leverage || "1");
-        const notional = parseFloat(p.notional || "0") || (absAmt * markPrice);
-        const margin = lev > 0 ? notional / lev : 0;
-        const side = p.positionSide === "LONG" || p.positionSide === "SHORT" ? p.positionSide : (amt > 0 ? "LONG" : "SHORT");
+        const rawNotional = parseFloat(p.notional || "0");
+        const notional = rawNotional || (absAmt * markPrice);
+        const margin = lev > 0 ? Math.abs(notional) / lev : 0;
+        const side = p.positionSide === "LONG" || p.positionSide === "SHORT"
+          ? p.positionSide
+          : rawNotional !== 0
+            ? (rawNotional > 0 ? "LONG" : "SHORT")
+            : (amt > 0 ? "LONG" : "SHORT");
         const roe = entryPrice > 0 ? (((markPrice - entryPrice) / entryPrice) * (side === "LONG" ? 1 : -1) * lev * 100) : 0;
         return {
           symbol: p.symbol,
@@ -1605,9 +1610,14 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
           const markPrice = parseFloat(p.markPrice || "0");
           const lev = parseFloat(p.leverage || "1");
           const upnl = parseFloat(p.unRealizedProfit || "0");
+          const rawNotional = parseFloat(p.notional || "0");
           return {
             symbol: p.symbol,
-            side: p.positionSide === "LONG" || p.positionSide === "SHORT" ? p.positionSide : (amt > 0 ? "LONG" : "SHORT"),
+            side: p.positionSide === "LONG" || p.positionSide === "SHORT"
+              ? p.positionSide
+              : rawNotional !== 0
+                ? (rawNotional > 0 ? "LONG" : "SHORT")
+                : (amt > 0 ? "LONG" : "SHORT"),
             quantity: Math.abs(amt),
             entryPrice,
             markPrice,
@@ -1858,7 +1868,11 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       if (!pos) return res.status(400).json({ error: `No open position for ${symbol}` });
 
       const amt = parseFloat(pos.positionAmt || "0");
-      const closeSide = amt > 0 ? "SELL" : "BUY";
+      const rawNot = parseFloat(pos.notional || "0");
+      const isLong = pos.positionSide === "LONG" || pos.positionSide === "SHORT"
+        ? pos.positionSide === "LONG"
+        : rawNot !== 0 ? rawNot > 0 : amt > 0;
+      const closeSide = isLong ? "SELL" : "BUY";
       const absAmt = Math.abs(amt);
 
       console.log(`[MiniApp] Close: ${closeSide} ${absAmt} ${symbol}`);
