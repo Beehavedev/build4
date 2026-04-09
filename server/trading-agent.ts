@@ -764,20 +764,20 @@ function getWinRate(): { rate: number; total: number } {
 function getAdaptiveConfidenceThreshold(): number {
   const { rate, total } = getWinRate();
   let base: number;
-  if (total < 3) base = 55;
-  else if (rate >= 60) base = 45;
-  else if (rate >= 45) base = 55;
-  else if (rate >= 30) base = 65;
-  else if (rate >= 20) base = 75;
-  else base = 80;
+  if (total < 5) base = 35;
+  else if (rate >= 60) base = 30;
+  else if (rate >= 45) base = 40;
+  else if (rate >= 30) base = 50;
+  else if (rate >= 20) base = 60;
+  else base = 65;
 
-  if (learnedPatterns && learnedPatterns.sampleSize >= 10) {
+  if (learnedPatterns && learnedPatterns.sampleSize >= 15) {
     const currentHour = new Date().getUTCHours();
     if (learnedPatterns.worstHours.includes(currentHour)) {
-      base = Math.min(base + 10, 90);
+      base = Math.min(base + 5, 75);
     }
-    if (learnedPatterns.profitFactor < 0.8 && learnedPatterns.sampleSize >= 15) {
-      base = Math.min(base + 10, 90);
+    if (learnedPatterns.profitFactor < 0.8 && learnedPatterns.sampleSize >= 20) {
+      base = Math.min(base + 5, 75);
     }
   }
 
@@ -2732,7 +2732,7 @@ REASONING: [concise explanation citing specific indicators]`;
     const confidence = parseInt(confidenceMatch?.[1] || "0");
     const reasoning = reasoningMatch?.[1]?.trim() || "AI analysis";
 
-    const adaptiveThreshold = totalCount >= 5 && parseInt(winRate) < 35 ? 65 : 50;
+    const adaptiveThreshold = totalCount >= 5 && parseInt(winRate) < 25 ? 55 : 35;
     if (confidence < adaptiveThreshold) return null;
 
     const market = markets.find(m => m.ticker.symbol === symbolStr);

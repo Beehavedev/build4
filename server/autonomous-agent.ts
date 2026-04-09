@@ -81,9 +81,9 @@ const DEFAULT_CONFIG: AgentConfig = {
   fundingRateFilter: true,
   maxFundingRateLong: 0.001,
   minFundingRateShort: -0.001,
-  orderbookImbalanceThreshold: 0.6,
+  orderbookImbalanceThreshold: 0.5,
   useConfidenceFilter: true,
-  minConfidence: 0.65,
+  minConfidence: 0.45,
 };
 
 export function getAgentState(chatId: string): AgentState | undefined {
