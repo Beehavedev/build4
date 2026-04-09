@@ -188,9 +188,103 @@ function computeBB(data: number[], period: number, mult: number): { upper: numbe
   return { upper, middle, lower };
 }
 
-type IndicatorType = "ema9" | "ema21" | "ema50" | "sma20" | "sma50" | "bb20";
-const INDICATOR_LABELS: Record<IndicatorType, string> = { ema9: "EMA 9", ema21: "EMA 21", ema50: "EMA 50", sma20: "SMA 20", sma50: "SMA 50", bb20: "BB 20" };
-const INDICATOR_COLORS: Record<IndicatorType, string> = { ema9: "#f59e0b", ema21: "#3b82f6", ema50: "#a855f7", sma20: "#06b6d4", sma50: "#ec4899", bb20: "#6366f1" };
+function computeRSI(data: number[], period: number): number[] {
+  const result: number[] = [];
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 0; i < data.length; i++) {
+    if (i === 0) { result.push(NaN); continue; }
+    const change = data[i] - data[i - 1];
+    const gain = change > 0 ? change : 0;
+    const loss = change < 0 ? -change : 0;
+    if (i < period) { avgGain += gain; avgLoss += loss; result.push(NaN); continue; }
+    if (i === period) { avgGain = (avgGain + gain) / period; avgLoss = (avgLoss + loss) / period; }
+    else { avgGain = (avgGain * (period - 1) + gain) / period; avgLoss = (avgLoss * (period - 1) + loss) / period; }
+    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    result.push(100 - (100 / (1 + rs)));
+  }
+  return result;
+}
+
+function computeMACD(data: number[], fast = 12, slow = 26, signal = 9): { macd: number[]; signal: number[]; histogram: number[] } {
+  const emaFast = computeEMA(data, fast);
+  const emaSlow = computeEMA(data, slow);
+  const macdLine: number[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (isNaN(emaFast[i]) || isNaN(emaSlow[i])) { macdLine.push(NaN); continue; }
+    macdLine.push(emaFast[i] - emaSlow[i]);
+  }
+  const validMacd = macdLine.filter(v => !isNaN(v));
+  const signalLine = computeEMA(validMacd, signal);
+  const fullSignal: number[] = [];
+  let si = 0;
+  for (let i = 0; i < macdLine.length; i++) {
+    if (isNaN(macdLine[i])) { fullSignal.push(NaN); continue; }
+    fullSignal.push(si < signalLine.length ? signalLine[si] : NaN);
+    si++;
+  }
+  const histogram: number[] = [];
+  for (let i = 0; i < macdLine.length; i++) {
+    if (isNaN(macdLine[i]) || isNaN(fullSignal[i])) { histogram.push(NaN); continue; }
+    histogram.push(macdLine[i] - fullSignal[i]);
+  }
+  return { macd: macdLine, signal: fullSignal, histogram };
+}
+
+type IndicatorType = "ema9" | "ema21" | "ema50" | "sma20" | "sma50" | "bb20" | "rsi14" | "macd";
+const INDICATOR_LABELS: Record<IndicatorType, string> = { ema9: "EMA 9", ema21: "EMA 21", ema50: "EMA 50", sma20: "SMA 20", sma50: "SMA 50", bb20: "BB 20", rsi14: "RSI 14", macd: "MACD" };
+const INDICATOR_COLORS: Record<IndicatorType, string> = { ema9: "#f59e0b", ema21: "#3b82f6", ema50: "#a855f7", sma20: "#06b6d4", sma50: "#ec4899", bb20: "#6366f1", rsi14: "#22d3ee", macd: "#f472b6" };
+
+function SubChart({ type, rawData }: { type: "rsi14" | "macd"; rawData: any[] }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (!ref.current || !rawData.length) return;
+    const chart = createChart(ref.current, {
+      layout: { background: { type: ColorType.Solid, color: "#08090b" }, textColor: "#3f3f46", fontFamily: "'Inter', sans-serif", fontSize: 9 },
+      grid: { vertLines: { color: "#18181b" }, horzLines: { color: "#18181b" } },
+      crosshair: { mode: CrosshairMode.Normal, vertLine: { visible: false }, horzLine: { color: "#3f3f46", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#27272a" } },
+      rightPriceScale: { borderColor: "#18181b", scaleMargins: { top: 0.08, bottom: 0.08 } },
+      timeScale: { visible: false },
+      handleScroll: true, handleScale: true,
+    });
+    chartRef.current = chart;
+    const closes = rawData.map((k: any) => parseFloat(k.close || k[4]));
+    const times = rawData.map((k: any) => (k.openTime || k[0]) / 1000);
+
+    if (type === "rsi14") {
+      const rsi = computeRSI(closes, 14);
+      const s = chart.addLineSeries({ color: "#22d3ee", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: true });
+      s.setData(rsi.map((v, i) => isNaN(v) ? null : { time: times[i], value: v }).filter(Boolean));
+      const ob = chart.addLineSeries({ color: "#ef444440", lineWidth: 1, lineStyle: LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+      ob.setData(times.map(t => ({ time: t, value: 70 })));
+      const os = chart.addLineSeries({ color: "#22c55e40", lineWidth: 1, lineStyle: LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+      os.setData(times.map(t => ({ time: t, value: 30 })));
+    } else {
+      const macd = computeMACD(closes);
+      const ml = chart.addLineSeries({ color: "#f472b6", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
+      ml.setData(macd.macd.map((v, i) => isNaN(v) ? null : { time: times[i], value: v }).filter(Boolean));
+      const sl = chart.addLineSeries({ color: "#fb923c", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+      sl.setData(macd.signal.map((v, i) => isNaN(v) ? null : { time: times[i], value: v }).filter(Boolean));
+      const hist = chart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
+      hist.setData(macd.histogram.map((v, i) => isNaN(v) ? null : { time: times[i], value: v, color: v >= 0 ? "rgba(34,197,94,0.4)" : "rgba(239,68,68,0.4)" }).filter(Boolean));
+    }
+    chart.timeScale().fitContent();
+    const ro = new ResizeObserver(entries => { const { width, height } = entries[0].contentRect; chart.applyOptions({ width, height }); });
+    ro.observe(ref.current);
+    return () => { ro.disconnect(); chart.remove(); };
+  }, [rawData, type]);
+
+  return (
+    <div className="border-t border-zinc-800/40">
+      <div className="flex items-center gap-2 px-2 py-0.5 bg-[#08090b]">
+        <span className="text-[9px] font-medium" style={{ color: type === "rsi14" ? "#22d3ee" : "#f472b6" }}>{type === "rsi14" ? "RSI 14" : "MACD 12,26,9"}</span>
+        {type === "rsi14" && <span className="text-[8px] text-zinc-600">70/30</span>}
+      </div>
+      <div ref={ref} className="w-full h-[80px]" />
+    </div>
+  );
+}
 
 function TradingChart({ symbol, interval, indicators, positions }: { symbol: string; interval: string; indicators: IndicatorType[]; positions: Pos[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -199,6 +293,11 @@ function TradingChart({ symbol, interval, indicators, positions }: { symbol: str
   const volRef = useRef<any>(null);
   const overlayRef = useRef<any[]>([]);
   const rawRef = useRef<any[]>([]);
+  const [rawData, setRawData] = useState<any[]>([]);
+
+  const hasRSI = indicators.includes("rsi14");
+  const hasMACD = indicators.includes("macd");
+  const overlayIndicators = indicators.filter(i => i !== "rsi14" && i !== "macd");
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -231,6 +330,7 @@ function TradingChart({ symbol, interval, indicators, positions }: { symbol: str
         const raw = await r.json();
         if (!Array.isArray(raw) || cancelled) return;
         rawRef.current = raw;
+        setRawData(raw);
         const candles = raw.map((k: any) => ({ time: (k.openTime || k[0]) / 1000, open: parseFloat(k.open || k[1]), high: parseFloat(k.high || k[2]), low: parseFloat(k.low || k[3]), close: parseFloat(k.close || k[4]) })).filter((c: any) => c.time > 0 && !isNaN(c.open));
         const vols = raw.map((k: any) => ({ time: (k.openTime || k[0]) / 1000, value: parseFloat(k.volume || k[5] || "0"), color: parseFloat(k.close || k[4]) >= parseFloat(k.open || k[1]) ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)" }));
         if (!cancelled && seriesRef.current) { seriesRef.current.setData(candles); volRef.current?.setData(vols); chartRef.current?.timeScale().fitContent(); }
@@ -248,7 +348,7 @@ function TradingChart({ symbol, interval, indicators, positions }: { symbol: str
     const closes = raw.map((k: any) => parseFloat(k.close || k[4]));
     const times = raw.map((k: any) => (k.openTime || k[0]) / 1000);
 
-    for (const ind of indicators) {
+    for (const ind of overlayIndicators) {
       if (ind === "bb20") {
         const bb = computeBB(closes, 20, 2);
         const colors = ["#6366f1", "#6366f180", "#6366f1"];
@@ -265,7 +365,7 @@ function TradingChart({ symbol, interval, indicators, positions }: { symbol: str
         overlayRef.current.push(s);
       }
     }
-  }, [indicators, symbol, interval]);
+  }, [overlayIndicators, symbol, interval]);
 
   useEffect(() => {
     if (!seriesRef.current || !positions.length) return;
@@ -285,7 +385,13 @@ function TradingChart({ symbol, interval, indicators, positions }: { symbol: str
     return () => { lines.forEach(l => { try { seriesRef.current.removePriceLine(l); } catch {} }); };
   }, [positions, symbol]);
 
-  return <div ref={containerRef} className="w-full h-full" data-testid="chart-container" />;
+  return (
+    <div className="w-full h-full flex flex-col">
+      <div ref={containerRef} className="flex-1 min-h-0" data-testid="chart-container" />
+      {hasRSI && rawData.length > 0 && <SubChart type="rsi14" rawData={rawData} />}
+      {hasMACD && rawData.length > 0 && <SubChart type="macd" rawData={rawData} />}
+    </div>
+  );
 }
 
 function OrderBook({ symbol }: { symbol: string }) {

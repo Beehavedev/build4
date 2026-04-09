@@ -1,0 +1,51 @@
+We have a working base at https://build4.io/futures.
+
+Now upgrade it to a **world-class trading terminal** that beats Binance Futures and Hyperliquid in usability, intelligence, and beauty.
+
+Current weaknesses:
+- Basic chart (no indicators, no drawing tools, limited timeframes)
+- Simple trade ticket (no risk calculator, no live preview)
+- No AI Agent reasoning panel
+- Layout feels basic and not customizable
+- Missing professional polish
+
+Transform it into an institutional-grade terminal with these upgrades:
+
+**Priority 1: Advanced Charting (Center)**
+- Add full indicator menu (EMA, RSI, MACD, Bollinger Bands, Volume, etc.)
+- Drawing tools (trend lines, Fibonacci, rectangles)
+- Multiple timeframe pills (1m to 1W) with clean design
+- Multi-chart layout support (1/2/4 charts)
+- Overlay open positions and liquidation levels on the chart
+
+**Priority 2: Smart Trade Ticket (Right Sidebar)**
+- Market / Limit / Stop tabs
+- Leverage slider with live margin requirement and liquidation price
+- Risk % calculator ("Risk 1% of available margin" → auto quantity)
+- One-click % buttons (25%, 50%, 75%, 100%)
+- Real-time estimated PnL and fees
+
+**Priority 3: AI Agent Intelligence**
+- Dedicated AI Agent panel showing live reasoning ("Why I'm entering this trade...")
+- Confidence score and market analysis
+- Toggle for Autonomous Mode with risk settings
+- Performance metrics (win rate, PnL, drawdown)
+
+**Priority 4: Layout & Polish**
+- Top bar with wallet summary, pair selector, funding rate, open interest
+- Order book with cumulative volume
+- Positions panel with one-click close/reduce
+- Keyboard shortcuts (B = Buy, S = Sell, etc.)
+- Smooth animations, glassmorphism, excellent typography
+- Drag-and-drop panel layout (advanced but nice to have)
+
+**Technical**
+- Use lightweight-charts or better charting library
+- Real-time updates
+- Keep using existing Aster V3 backend
+
+Start implementing now. Focus first on upgrading the chart with indicators and the trade ticket with risk calculator.
+
+Make this the most beautiful and intelligent trading interface for Aster DEX.
+
+Begin immediately.
