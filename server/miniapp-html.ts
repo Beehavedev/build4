@@ -1118,6 +1118,28 @@ function renderAgent(){
   if(r&&c){h+='<div class="gap mt-3" style="flex-wrap:wrap"><span class="badge badge-info">🌐 18 pairs</span><span class="badge badge-info">'+c.maxLeverage+'x max</span><span class="badge badge-warn">'+c.riskPercent+'% risk</span><span class="badge badge-long">'+(c.maxOpenPositions||3)+' max pos</span><span class="badge badge-info">🧠 AI</span></div>'}
   h+='</div>';
 
+  if(!r){
+    h+='<div class="card"><div class="section-title">🎯 Strategy</div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">';
+    var presets=[
+      {key:'conservative',icon:'🛡',label:'Conservative',color:'#3b82f6',desc:'Low risk, tight stops'},
+      {key:'balanced',icon:'⚖️',label:'Balanced',color:'#f59e0b',desc:'Moderate risk & reward'},
+      {key:'degen',icon:'🔥',label:'Degen',color:'#ef4444',desc:'High risk, trades everything'}
+    ];
+    var curPreset=detectPreset(c);
+    presets.forEach(function(p){
+      var isActive=curPreset===p.key;
+      h+='<button onclick="applyPreset(\''+p.key+'\')" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 6px;border-radius:10px;border:1px solid '+(isActive?p.color+'66':'#333')+';background:'+(isActive?p.color+'18':'#1a1d21')+';cursor:pointer;position:relative">';
+      h+='<span style="font-size:20px">'+p.icon+'</span>';
+      h+='<span style="font-size:11px;font-weight:700;color:'+(isActive?p.color:'#999')+'">'+p.label+'</span>';
+      if(isActive)h+='<div style="position:absolute;top:6px;right:6px;width:6px;height:6px;border-radius:50%;background:'+p.color+'"></div>';
+      h+='</button>';
+    });
+    h+='</div>';
+    if(curPreset){var cp=presets.find(function(p){return p.key===curPreset});if(cp)h+='<div class="text-xs mt-2" style="color:'+cp.color+';padding:6px 10px;background:'+cp.color+'15;border-radius:6px">'+cp.desc+'</div>'}
+    h+='</div>';
+  }
+
   h+='<div class="card"><div class="section-title">⚙️ Configuration</div>';
   h+='<div class="alert alert-info mb-3"><span>🌐</span><span>Agent scans all 18 pairs with multi-indicator AI analysis. You set risk limits — the agent handles everything else.</span></div>';
   h+='<div class="row text-sm mt-3"><span class="text-dim">Risk Per Trade</span><span class="mono text-w fw-600">'+(c?.riskPercent||1)+'%</span></div>';
@@ -1161,6 +1183,25 @@ function renderAgent(){
   el.innerHTML=h;
 }
 
+function detectPreset(c){
+  if(!c)return null;
+  if(c.riskPercent<=0.5&&c.maxLeverage<=5&&(c.minConfidence||0)>=0.6)return'conservative';
+  if(c.riskPercent>=2.5&&c.maxLeverage>=20)return'degen';
+  if(c.riskPercent>=1&&c.riskPercent<=2&&c.maxLeverage>=8&&c.maxLeverage<=15)return'balanced';
+  return null;
+}
+async function applyPreset(key){
+  if(AG&&AG.running){toast('Stop the agent before changing strategy','err');return}
+  try{
+    var r=await api('/api/miniapp/agent/preset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preset:key})});
+    if(r.success){
+      AG.config=r.config;
+      var labels={conservative:'Conservative 🛡',balanced:'Balanced ⚖️',degen:'Degen 🔥'};
+      toast('Strategy set to '+labels[key],'ok');
+      renderAgent();
+    }else{toast(r.error||'Failed','err')}
+  }catch(e){toast('Error applying preset','err')}
+}
 function setRisk(e){
   const r=e.currentTarget.getBoundingClientRect();
   const pct=Math.max(0.5,Math.min(3,((e.clientX-r.left)/r.width)*3));
