@@ -853,42 +853,10 @@ function PairSelector({ selected, onSelect, onClose, favorites, toggleFav }: { s
   );
 }
 
-function LinkBotWallet({ wallet, onDone }: { wallet: string; onDone: () => void }) {
-  const [botAddr, setBotAddr] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [working, setWorking] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const link = async () => {
-    if (!botAddr || !/^0x[a-fA-F0-9]{40}$/.test(botAddr.trim())) { setError("Enter a valid wallet address (0x...)"); return; }
-    setWorking(true); setError(null);
-    try {
-      const res = await fetch("/api/miniapp/link-bot-wallet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ walletAddress: wallet, botWalletAddress: botAddr.trim() }) });
-      const data = await res.json();
-      if (data.error) { setError(data.error); setWorking(false); return; }
-      setSuccess(true);
-      setTimeout(() => { onDone(); }, 1500);
-    } catch (e: any) { setError(e.message || "Link failed"); } finally { setWorking(false); }
-  };
-  if (success) return <div className="text-center py-4"><div className="text-emerald-400 text-sm font-semibold">Linked! Refreshing...</div></div>;
-  return (
-    <div className="space-y-3" data-testid="link-bot-wallet">
-      <div className="text-xs text-zinc-400 leading-relaxed">Already activated via the Telegram bot? Paste your bot wallet address below to link your account and see your balance here.</div>
-      <div className="text-[10px] text-zinc-600 leading-relaxed">Find your wallet address in the Telegram bot: tap /start or check the Wallet tab in the miniapp.</div>
-      <input value={botAddr} onChange={e => setBotAddr(e.target.value)} placeholder="0x... (bot wallet address)" data-testid="input-bot-wallet"
-        className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-xs text-white placeholder:text-zinc-600 focus:border-emerald-500/50 focus:outline-none font-mono" />
-      {error && <div className="text-xs text-red-400 bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
-      <Button onClick={link} disabled={working || !botAddr} data-testid="button-link-wallet" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white border-0 h-9 text-xs">
-        {working ? <><RefreshCw className="w-3 h-3 animate-spin mr-1.5" />Linking...</> : "Link Bot Wallet"}
-      </Button>
-    </div>
-  );
-}
-
 function ActivationFlow({ wallet, onDone }: { wallet: string; onDone: () => void }) {
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
-  const [showLink, setShowLink] = useState(false);
   const activate = async () => {
     setWorking(true); setError(null);
     try {
@@ -930,11 +898,11 @@ function ActivationFlow({ wallet, onDone }: { wallet: string; onDone: () => void
       </div>
       <div>
         <h3 className="text-base font-bold text-white mb-1">Activate Trading</h3>
-        <p className="text-xs text-zinc-500 max-w-xs mx-auto">Set up your Aster DEX trading agent to start trading perpetual futures with up to 125x leverage.</p>
+        <p className="text-xs text-zinc-500 max-w-xs mx-auto">Your wallet signature is your identity. Activate once to start trading perpetual futures with up to 125x leverage.</p>
       </div>
       {step > 0 && (
         <div className="text-xs space-y-1.5 text-left max-w-xs mx-auto">
-          {["Registering wallet...", "Creating trading wallet...", "Registering on Aster DEX...", "Approving agent on-chain...", "Done!"].map((label, i) => (
+          {["Registering wallet...", "Creating trading agent...", "Registering on Aster DEX...", "Approving agent on-chain...", "Done!"].map((label, i) => (
             <div key={i} className={cn("flex items-center gap-2 transition-all", step > i ? "text-emerald-400" : step === i + 1 ? "text-white" : "text-zinc-600")}>
               {step > i + 1 ? <div className="w-4 h-4 rounded-full bg-emerald-500/20 flex items-center justify-center text-[8px]">&#10003;</div> : step === i + 1 ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <div className="w-4 h-4 rounded-full border border-zinc-700" />}
               {i + 1}. {label}
@@ -943,20 +911,10 @@ function ActivationFlow({ wallet, onDone }: { wallet: string; onDone: () => void
         </div>
       )}
       {error && <div className="text-xs text-red-400 bg-red-500/10 p-2.5 rounded-md border border-red-500/20">{error}</div>}
-      {!showLink && (
-        <>
-          <Button onClick={activate} disabled={working} data-testid="button-activate" className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white border-0 shadow-lg px-8 h-10">
-            {working ? <><RefreshCw className="w-4 h-4 animate-spin mr-2" />Step {step}/4...</> : "Activate Now"}
-          </Button>
-          <button onClick={() => setShowLink(true)} className="block mx-auto text-[10px] text-zinc-600 hover:text-zinc-400 underline transition-colors" data-testid="button-show-link">Already activated via Telegram?</button>
-        </>
-      )}
-      {showLink && (
-        <div className="border border-zinc-800 rounded-lg p-4 bg-zinc-900/50">
-          <LinkBotWallet wallet={wallet} onDone={onDone} />
-          <button onClick={() => setShowLink(false)} className="mt-2 text-[10px] text-zinc-600 hover:text-zinc-400 underline" data-testid="button-hide-link">Back to new activation</button>
-        </div>
-      )}
+      <Button onClick={activate} disabled={working} data-testid="button-activate" className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white border-0 shadow-lg px-8 h-10">
+        {working ? <><RefreshCw className="w-4 h-4 animate-spin mr-2" />Step {step}/4...</> : "Activate Now"}
+      </Button>
+      <p className="text-[10px] text-zinc-600 max-w-xs mx-auto">Same wallet = same account. If you imported this wallet into the Telegram bot, your balances sync automatically.</p>
     </div>
   );
 }
