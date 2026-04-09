@@ -286,6 +286,7 @@ function getV3Nonce(): number {
 function buildV3QueryString(params: Record<string, any>): string {
   return Object.entries(params)
     .filter(([_, v]) => v !== undefined && v !== null)
+    .sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => {
       if (typeof v === "boolean") return `${k}=${v ? "True" : "False"}`;
       return `${k}=${String(v)}`;
