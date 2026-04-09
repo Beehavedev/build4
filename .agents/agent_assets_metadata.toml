@@ -36,6 +36,12 @@ uri = "file://attached_assets/generated_images/aster_ninja_blue.png"
 type = "image"
 title = "green ninja defender"
 
+[[generated]]
+id = "SOWA06M6_BbsPmk2ojtG-"
+uri = "file://attached_assets/hyperliquid_build4_banner.png"
+type = "image"
+title = "Hyperliquid BUILD4 partnership banner"
+
 [[outputs]]
 id = "JBjCUwiEHNM3bqg5OGXfp"
 uri = "file://attached_assets/generated_images/build4_xlayer_banner.png"
@@ -95,3 +101,9 @@ id = "1Mzk9O1e-QlU9rOqFzdQN"
 uri = "file://attached_assets/build4-notice.png"
 type = "image"
 title = "BUILD4 Notice"
+
+[[outputs]]
+id = "C99CsgSLgm19GvD_ylkw_"
+uri = "file://attached_assets/hyperliquid_build4_banner.png"
+type = "image"
+title = "Hyperliquid x BUILD4 Banner"
