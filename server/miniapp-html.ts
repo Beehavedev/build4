@@ -351,8 +351,8 @@ function renderDash(){
   if(!D.connected){
     var h2='<div class="card" style="text-align:center;padding:36px 24px">';
     h2+='<div style="font-size:48px;margin-bottom:16px">🔗</div>';
-    h2+='<div class="text-w fw-600" style="font-size:16px">Connect Your Wallet</div>';
-    h2+='<div class="text-dim text-sm mt-2">Import your wallet to see your Aster balance and start trading.</div>';
+    h2+='<div class="text-w fw-600" style="font-size:16px">Activate Trading</div>';
+    h2+='<div class="text-dim text-sm mt-2">One tap to connect and start trading futures.</div>';
     if(D.bscWalletAddress){
       h2+='<div class="text-xs text-dim mt-3">Wallet: <span class="mono" style="color:var(--blue)">'+D.bscWalletAddress.substring(0,8)+'...'+D.bscWalletAddress.slice(-4)+'</span></div>';
       if(D.bscBalance>0||D.bnbBalance>0){
@@ -361,14 +361,9 @@ function renderDash(){
         h2+='<div><span class="text-xs text-dim">BNB</span><div class="val-xs">'+D.bnbBalance.toFixed(4)+'</div></div>';
         h2+='</div>';
       }
-      h2+='<button class="btn btn-green mt-3" style="width:100%" data-tab="deposit" onclick="switchTab(this.dataset.tab)">🔗 Activate Trading</button>';
+      h2+='<button class="btn btn-green mt-3" style="width:100%" data-tab="deposit" onclick="switchTab(this.dataset.tab)">⚡ Quick Connect</button>';
     } else {
-      h2+='<button class="btn btn-green mt-3" style="width:100%" onclick="showDashImport()">Import Wallet</button>';
-      h2+='<div id="dash-import" style="display:none;margin-top:16px;text-align:left">';
-      h2+='<input id="dash-import-pk" type="password" class="input" placeholder="Paste wallet private key (0x...)" autocomplete="off">';
-      h2+='<button class="btn btn-green mt-2" style="width:100%" onclick="doDashImport()">Import & Connect</button>';
-      h2+='<div id="dash-import-status"></div>';
-      h2+='</div>';
+      h2+='<button class="btn btn-green mt-3" style="width:100%" data-tab="deposit" onclick="switchTab(this.dataset.tab)">⚡ Quick Connect</button>';
     }
     h2+='<button class="btn btn-outline mt-2" onclick="loadDash()">↻ Retry</button>';
     h2+='</div>';
@@ -500,13 +495,7 @@ function renderDeposit(){
     h+='</div>';
     h+='<div class="vault-box mt-3" style="font-size:11px;word-break:break-all;cursor:pointer" data-addr="'+walletAddr+'" onclick="copyAddr(this)">'+walletAddr+'<div class="text-xs mt-1" style="color:var(--green)">Tap to copy</div></div>';
   }else{
-    h+='<div class="text-sm text-dim" style="padding:20px">No wallet connected yet.</div>';
-    h+='<button class="btn btn-outline mt-2" style="width:80%" onclick="showImportWallet()">Import Existing Wallet</button>';
-    h+='<div id="import-wallet-flow" style="display:none;margin-top:12px;text-align:left">';
-    h+='<input id="import-pk" type="password" class="input" placeholder="Paste wallet private key (0x...)" autocomplete="off">';
-    h+='<button class="btn btn-green mt-2" style="width:100%" onclick="importWallet()">Import & Connect</button>';
-    h+='<div id="import-status"></div>';
-    h+='</div>';
+    h+='<div class="text-sm text-dim" style="padding:20px">No wallet yet. Use /start in the bot to create one.</div>';
   }
   h+='<div class="alert alert-warn mt-3" style="text-align:left"><span>⚠️</span><span>Only send USDT on <strong>BSC (BNB Smart Chain)</strong>. Other networks will be lost.</span></div>';
   h+='</div>';
@@ -550,27 +539,18 @@ function renderDeposit(){
     h+='<div class="text-xs text-dim mt-3" style="text-align:center;line-height:1.5">Uses your bot wallet to connect directly to Aster.<br>No external setup needed.</div>';
     h+='</div>';
 
+    h+='<div style="text-align:center;margin-top:8px">';
+    h+='<div class="text-xs text-dim" style="cursor:pointer;padding:4px" onclick="showManualLink()">Advanced: <span style="color:var(--text3);text-decoration:underline">connect with API Wallet</span></div>';
+    h+='<div id="manual-link-flow" style="display:none;margin-top:8px;text-align:left">';
     h+='<div class="card" style="border:1px solid var(--border)">';
-    h+='<div class="text-xs text-dim" style="text-align:center;cursor:pointer;padding:4px" onclick="showManualLink()">Already have an Aster account? <span style="color:var(--blue);text-decoration:underline">Connect with API Wallet instead</span></div>';
-    h+='<div id="manual-link-flow" style="display:none;margin-top:12px">';
-    h+='<div class="section-title" style="color:var(--yellow);font-size:13px">🔗 Manual Connect with API Wallet</div>';
-    h+='<div class="text-xs text-dim" style="margin-bottom:10px;line-height:1.5">If you already have an Aster account with an API Wallet, paste your credentials below.</div>';
-    h+='<div style="background:var(--bg);border-radius:8px;padding:10px;margin-bottom:12px">';
-    h+='<div class="text-xs" style="color:var(--green);font-weight:600;margin-bottom:6px">How to get your API Wallet key:</div>';
-    h+='<div class="text-xs" style="color:var(--text2);line-height:1.7">';
-    h+='1. Go to <a href="https://asterdex.com/en/api-wallet" target="_blank" style="color:var(--green)">asterdex.com/en/api-wallet</a><br>';
-    h+='2. Log in and create or view your API Wallet<br>';
-    h+='3. Enable <strong style="color:#fff">Perps Trading</strong><br>';
-    h+='4. Click <strong style="color:var(--yellow)">"Export Private Key"</strong> and copy the key</div>';
-    h+='</div>';
-    h+='<div class="label mt-2">Your Aster Account Address</div>';
-    h+='<div class="text-xs text-dim" style="margin-bottom:4px">The wallet you used to log in to Aster</div>';
-    h+='<input id="api-wallet-parent" class="input" placeholder="0x... (your main wallet address)" autocomplete="off">';
+    h+='<div class="text-xs text-dim" style="margin-bottom:8px;line-height:1.5">Only use this if you already have an Aster DEX account with an API Wallet set up.</div>';
+    h+='<div class="label mt-2">Aster Account Address</div>';
+    h+='<input id="api-wallet-parent" class="input" placeholder="0x... (your main wallet)" autocomplete="off">';
     h+='<div class="label mt-2">API Wallet Private Key</div>';
-    h+='<div class="text-xs text-dim" style="margin-bottom:4px">From Aster → API Wallet → Export Private Key</div>';
-    h+='<input id="api-wallet-pk" type="password" class="input" placeholder="Paste API Wallet private key (0x...)" autocomplete="off">';
-    h+='<button class="btn btn-green mt-2" style="width:100%" onclick="linkAsterApi()">🔗 Connect with API Wallet</button>';
+    h+='<input id="api-wallet-pk" type="password" class="input" placeholder="0x..." autocomplete="off">';
+    h+='<button class="btn btn-green mt-2" style="width:100%" onclick="linkAsterApi()">🔗 Connect</button>';
     h+='<div id="manual-link-status"></div>';
+    h+='</div>';
     h+='</div>';
     h+='</div>';
   }
@@ -594,15 +574,14 @@ function renderDeposit(){
 
   if(!D.asterApiWallet){
     h+='<div class="card" style="border:1px solid rgba(14,203,129,0.3)">';
-    h+='<div class="section-title" style="color:var(--green)">📋 How to Get Started</div>';
+    h+='<div class="section-title" style="color:var(--green)">📋 Get Started in 3 Steps</div>';
     h+='<div class="text-xs" style="color:var(--text2);line-height:1.8;margin-bottom:4px">';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">1</span><span>Tap <strong style="color:var(--green)">⚡ Quick Connect</strong> above — connects your wallet to Aster in one click</span></div>';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">2</span><span>Send <strong style="color:#fff">USDT (BEP-20)</strong> to your wallet address shown at the top of this page</span></div>';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">3</span><span>Use the <strong style="color:#fff">Deposit to Aster</strong> button to move USDT into Aster Futures</span></div>';
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">4</span><span>Go to the <strong style="color:#fff">Agent</strong> tab, configure your settings, and start trading!</span></div>';
+    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">1</span><span>Tap <strong style="color:var(--green)">⚡ Quick Connect</strong> above — automatic, no setup needed</span></div>';
+    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">2</span><span>Send <strong style="color:#fff">USDT (BEP-20)</strong> to your wallet address, then tap <strong style="color:#fff">Deposit to Aster</strong></span></div>';
+    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><span style="background:var(--green);color:#000;border-radius:50%;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">3</span><span>Go to <strong style="color:#fff">Agent</strong> tab and start trading!</span></div>';
     h+='</div>';
     h+='<div style="background:rgba(255,193,7,0.08);border-radius:8px;padding:10px;margin-top:4px">';
-    h+='<div class="text-xs" style="color:var(--yellow);line-height:1.5">💡 <strong>Common issue:</strong> If your balance shows $0 after depositing, your funds may be in <strong>Spot</strong> not <strong>Futures</strong>. Use the <strong>Spot → Futures</strong> transfer button below.</div>';
+    h+='<div class="text-xs" style="color:var(--yellow);line-height:1.5">💡 If your balance shows $0 after depositing, your funds may be in <strong>Spot</strong> not <strong>Futures</strong>. Use the <strong>Spot → Futures</strong> transfer button below.</div>';
     h+='</div></div>';
   }
 
@@ -930,37 +909,34 @@ async function importWallet(){
 async function autoLinkAster(){
   var st=$('link-status');
   if(!st)return;
-  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Step 1/3: Creating trading wallet...</span></div>';
+  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Step 1/2: Setting up your trading wallet...</span></div>';
   try{
     var walletAddr=D.bscWalletAddress||'';
     if(!walletAddr){toast('No wallet found','err');return}
     var r1=await api('/api/miniapp/activate-trading',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({walletAddress:walletAddr})});
     if(!r1.success){st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r1.error||'Failed to start activation')+'</span></div>';return}
     if(r1.alreadyActive){
-      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span><strong>Already activated!</strong></span></div>';
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span><strong>Already activated!</strong> Your account is ready.</span></div>';
       D.asterApiWallet=r1.tradingWallet||'auto';
       setTimeout(function(){fetchAll().then(function(){renderDeposit();renderDash()})},2000);
       return;
     }
     var sessionId=r1.sessionId;
     var tradingAddr=r1.tradingWalletAddress;
-    st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Step 2/3: Registering on Aster...</span></div>';
-    var nonceRes=await fetch('https://www.asterdex.com/bapi/futures/v1/public/future/web3/get-nonce',{method:'POST',headers:{'Content-Type':'application/json','clientType':'web'},body:JSON.stringify({type:'LOGIN',sourceAddr:tradingAddr})});
-    var nonceData=await nonceRes.json();
-    if(!nonceData||!nonceData.data||!nonceData.data.nonce){
-      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>Could not get registration nonce from Aster. Try again.</span></div>';
-      return;
-    }
-    var nonce=nonceData.data.nonce;
-    var sigRes=await api('/api/miniapp/sign-registration',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:sessionId,nonce:nonce})});
-    if(!sigRes.success){st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(sigRes.error||'Signing failed')+'</span></div>';return}
     try{
-      var loginRes=await fetch('https://www.asterdex.com/bapi/futures/v1/public/future/web3/ae/login',{method:'POST',headers:{'Content-Type':'application/json','clientType':'web'},body:JSON.stringify({signature:sigRes.signature,sourceAddr:tradingAddr,chainId:56,agentCode:'BUILD4'})});
-      var loginData=await loginRes.json();
-      if(loginData&&loginData.code==='000000'){console.log('Browser registration ok')}
-      else{console.log('Browser registration response:',JSON.stringify(loginData))}
-    }catch(regErr){console.log('Browser registration failed (CORS), server fallback will handle it')}
-    st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Step 3/3: Approving agent & builder...</span></div>';
+      var nonceRes=await fetch('https://www.asterdex.com/bapi/futures/v1/public/future/web3/get-nonce',{method:'POST',headers:{'Content-Type':'application/json','clientType':'web'},body:JSON.stringify({type:'LOGIN',sourceAddr:tradingAddr})});
+      var nonceData=await nonceRes.json();
+      if(nonceData&&nonceData.data&&nonceData.data.nonce){
+        var nonce=nonceData.data.nonce;
+        var sigRes=await api('/api/miniapp/sign-registration',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:sessionId,nonce:nonce})});
+        if(sigRes.success&&sigRes.signature){
+          try{
+            await fetch('https://www.asterdex.com/bapi/futures/v1/public/future/web3/ae/login',{method:'POST',headers:{'Content-Type':'application/json','clientType':'web'},body:JSON.stringify({signature:sigRes.signature,sourceAddr:tradingAddr,chainId:56,agentCode:'BUILD4'})});
+          }catch(loginErr){console.log('Browser login skipped (CORS ok)')}
+        }
+      }
+    }catch(regErr){console.log('Browser registration skipped, server will handle it')}
+    st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Step 2/2: Activating trading agent...</span></div>';
     var r3=await api('/api/miniapp/complete-activation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:sessionId})});
     if(r3.success){
       st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span><strong>Connected to Aster!</strong> Your account is ready to trade.</span></div>';
@@ -968,11 +944,10 @@ async function autoLinkAster(){
       D.asterApiWallet=r3.signerAddress||'auto';
       setTimeout(function(){fetchAll().then(function(){renderDeposit();renderDash()})},2000);
     }else{
-      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r3.error||'Activation failed')+'</span></div>';
+      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r3.error||'Activation failed. Please try again.')+'</span></div>';
     }
   }catch(e){
-    st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
-    showLinkFlow();
+    st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>Connection failed: '+e.message+'. Please try again.</span></div>';
   }
 }
 
