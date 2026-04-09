@@ -8,6 +8,8 @@ import {
   TrendingUp, TrendingDown, RefreshCw, Activity, BarChart3, X, ChevronDown,
   LogOut, AlertTriangle, Wallet, Zap, Search, Bot, Settings, Play, Square,
   ChevronUp, Minus, Plus, Star, StarOff, Eye, EyeOff, Maximize2, LayoutGrid,
+  ArrowLeftRight, Shield, Target, Clock, Flame, Brain, Crosshair,
+  Percent, DollarSign, BarChart2, LineChart, Layers,
 } from "lucide-react";
 import { createChart, ColorType, CrosshairMode, LineStyle } from "lightweight-charts";
 
@@ -231,11 +233,56 @@ function computeMACD(data: number[], fast = 12, slow = 26, signal = 9): { macd: 
   return { macd: macdLine, signal: fullSignal, histogram };
 }
 
-type IndicatorType = "ema9" | "ema21" | "ema50" | "sma20" | "sma50" | "bb20" | "rsi14" | "macd";
-const INDICATOR_LABELS: Record<IndicatorType, string> = { ema9: "EMA 9", ema21: "EMA 21", ema50: "EMA 50", sma20: "SMA 20", sma50: "SMA 50", bb20: "BB 20", rsi14: "RSI 14", macd: "MACD" };
-const INDICATOR_COLORS: Record<IndicatorType, string> = { ema9: "#f59e0b", ema21: "#3b82f6", ema50: "#a855f7", sma20: "#06b6d4", sma50: "#ec4899", bb20: "#6366f1", rsi14: "#22d3ee", macd: "#f472b6" };
+function computeStochastic(highs: number[], lows: number[], closes: number[], kPeriod = 14, dPeriod = 3): { k: number[]; d: number[] } {
+  const kValues: number[] = [];
+  for (let i = 0; i < closes.length; i++) {
+    if (i < kPeriod - 1) { kValues.push(NaN); continue; }
+    let highest = -Infinity, lowest = Infinity;
+    for (let j = i - kPeriod + 1; j <= i; j++) { highest = Math.max(highest, highs[j]); lowest = Math.min(lowest, lows[j]); }
+    const range = highest - lowest;
+    kValues.push(range === 0 ? 50 : ((closes[i] - lowest) / range) * 100);
+  }
+  const dValues = computeSMA(kValues.map(v => isNaN(v) ? 0 : v), dPeriod);
+  return { k: kValues, d: dValues };
+}
 
-function SubChart({ type, rawData }: { type: "rsi14" | "macd"; rawData: any[] }) {
+function computeIchimoku(highs: number[], lows: number[], closes: number[]): { tenkan: number[]; kijun: number[]; senkouA: number[]; senkouB: number[]; chikou: number[] } {
+  const midline = (h: number[], l: number[], period: number, idx: number): number => {
+    if (idx < period - 1) return NaN;
+    let hi = -Infinity, lo = Infinity;
+    for (let j = idx - period + 1; j <= idx; j++) { hi = Math.max(hi, h[j]); lo = Math.min(lo, l[j]); }
+    return (hi + lo) / 2;
+  };
+  const len = closes.length;
+  const tenkan: number[] = [], kijun: number[] = [], senkouA: number[] = [], senkouB: number[] = [], chikou: number[] = [];
+  for (let i = 0; i < len; i++) {
+    tenkan.push(midline(highs, lows, 9, i));
+    kijun.push(midline(highs, lows, 26, i));
+    const a = (!isNaN(tenkan[i]) && !isNaN(kijun[i])) ? (tenkan[i] + kijun[i]) / 2 : NaN;
+    senkouA.push(a);
+    senkouB.push(midline(highs, lows, 52, i));
+    chikou.push(closes[i]);
+  }
+  return { tenkan, kijun, senkouA, senkouB, chikou };
+}
+
+type IndicatorType = "ema9" | "ema21" | "ema50" | "sma20" | "sma50" | "bb20" | "rsi14" | "macd" | "stoch" | "ichimoku" | "vwap";
+
+const INDICATOR_LABELS: Record<IndicatorType, string> = {
+  ema9: "EMA 9", ema21: "EMA 21", ema50: "EMA 50", sma20: "SMA 20", sma50: "SMA 50",
+  bb20: "BB 20", rsi14: "RSI 14", macd: "MACD", stoch: "Stochastic", ichimoku: "Ichimoku", vwap: "VWAP",
+};
+const INDICATOR_COLORS: Record<IndicatorType, string> = {
+  ema9: "#f59e0b", ema21: "#3b82f6", ema50: "#a855f7", sma20: "#06b6d4", sma50: "#ec4899",
+  bb20: "#6366f1", rsi14: "#22d3ee", macd: "#f472b6", stoch: "#8b5cf6", ichimoku: "#10b981", vwap: "#f97316",
+};
+
+const INDICATOR_CATEGORIES = {
+  overlay: ["ema9", "ema21", "ema50", "sma20", "sma50", "bb20", "ichimoku", "vwap"] as IndicatorType[],
+  subchart: ["rsi14", "macd", "stoch"] as IndicatorType[],
+};
+
+function SubChart({ type, rawData }: { type: "rsi14" | "macd" | "stoch"; rawData: any[] }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
 
@@ -251,6 +298,8 @@ function SubChart({ type, rawData }: { type: "rsi14" | "macd"; rawData: any[] })
     });
     chartRef.current = chart;
     const closes = rawData.map((k: any) => parseFloat(k.close || k[4]));
+    const highs = rawData.map((k: any) => parseFloat(k.high || k[2]));
+    const lows = rawData.map((k: any) => parseFloat(k.low || k[3]));
     const times = rawData.map((k: any) => (k.openTime || k[0]) / 1000);
 
     if (type === "rsi14") {
@@ -261,6 +310,16 @@ function SubChart({ type, rawData }: { type: "rsi14" | "macd"; rawData: any[] })
       ob.setData(times.map(t => ({ time: t, value: 70 })));
       const os = chart.addLineSeries({ color: "#22c55e40", lineWidth: 1, lineStyle: LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
       os.setData(times.map(t => ({ time: t, value: 30 })));
+    } else if (type === "stoch") {
+      const stoch = computeStochastic(highs, lows, closes);
+      const kLine = chart.addLineSeries({ color: "#8b5cf6", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: true });
+      kLine.setData(stoch.k.map((v, i) => isNaN(v) ? null : { time: times[i], value: v }).filter(Boolean));
+      const dLine = chart.addLineSeries({ color: "#f59e0b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+      dLine.setData(stoch.d.map((v, i) => isNaN(v) ? null : { time: times[i], value: v }).filter(Boolean));
+      const ob = chart.addLineSeries({ color: "#ef444430", lineWidth: 1, lineStyle: LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+      ob.setData(times.map(t => ({ time: t, value: 80 })));
+      const os = chart.addLineSeries({ color: "#22c55e30", lineWidth: 1, lineStyle: LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+      os.setData(times.map(t => ({ time: t, value: 20 })));
     } else {
       const macd = computeMACD(closes);
       const ml = chart.addLineSeries({ color: "#f472b6", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
@@ -276,11 +335,15 @@ function SubChart({ type, rawData }: { type: "rsi14" | "macd"; rawData: any[] })
     return () => { ro.disconnect(); chart.remove(); };
   }, [rawData, type]);
 
+  const label = type === "rsi14" ? "RSI 14" : type === "stoch" ? "Stoch 14,3" : "MACD 12,26,9";
+  const color = type === "rsi14" ? "#22d3ee" : type === "stoch" ? "#8b5cf6" : "#f472b6";
+
   return (
     <div className="border-t border-zinc-800/40">
       <div className="flex items-center gap-2 px-2 py-0.5 bg-[#08090b]">
-        <span className="text-[9px] font-medium" style={{ color: type === "rsi14" ? "#22d3ee" : "#f472b6" }}>{type === "rsi14" ? "RSI 14" : "MACD 12,26,9"}</span>
+        <span className="text-[9px] font-medium" style={{ color }}>{label}</span>
         {type === "rsi14" && <span className="text-[8px] text-zinc-600">70/30</span>}
+        {type === "stoch" && <span className="text-[8px] text-zinc-600">80/20</span>}
       </div>
       <div ref={ref} className="w-full h-[80px]" />
     </div>
@@ -298,7 +361,8 @@ function TradingChart({ symbol, interval, indicators, positions }: { symbol: str
 
   const hasRSI = indicators.includes("rsi14");
   const hasMACD = indicators.includes("macd");
-  const overlayIndicators = useMemo(() => indicators.filter(i => i !== "rsi14" && i !== "macd"), [indicators]);
+  const hasStoch = indicators.includes("stoch");
+  const overlayIndicators = useMemo(() => indicators.filter(i => i !== "rsi14" && i !== "macd" && i !== "stoch"), [indicators]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -347,6 +411,8 @@ function TradingChart({ symbol, interval, indicators, positions }: { symbol: str
     const raw = rawRef.current;
     if (!raw.length) return;
     const closes = raw.map((k: any) => parseFloat(k.close || k[4]));
+    const highs = raw.map((k: any) => parseFloat(k.high || k[2]));
+    const lows = raw.map((k: any) => parseFloat(k.low || k[3]));
     const times = raw.map((k: any) => (k.openTime || k[0]) / 1000);
 
     for (const ind of overlayIndicators) {
@@ -358,6 +424,32 @@ function TradingChart({ symbol, interval, indicators, positions }: { symbol: str
           s.setData(arr.map((v, i) => isNaN(v) ? null : { time: times[i], value: v }).filter(Boolean));
           overlayRef.current.push(s);
         });
+      } else if (ind === "ichimoku") {
+        const ichi = computeIchimoku(highs, lows, closes);
+        const tenkanS = chartRef.current.addLineSeries({ color: "#2563eb", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+        tenkanS.setData(ichi.tenkan.map((v, i) => isNaN(v) ? null : { time: times[i], value: v }).filter(Boolean));
+        overlayRef.current.push(tenkanS);
+        const kijunS = chartRef.current.addLineSeries({ color: "#dc2626", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+        kijunS.setData(ichi.kijun.map((v, i) => isNaN(v) ? null : { time: times[i], value: v }).filter(Boolean));
+        overlayRef.current.push(kijunS);
+        const saS = chartRef.current.addLineSeries({ color: "#22c55e50", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+        saS.setData(ichi.senkouA.map((v, i) => isNaN(v) ? null : { time: times[i], value: v }).filter(Boolean));
+        overlayRef.current.push(saS);
+        const sbS = chartRef.current.addLineSeries({ color: "#ef444450", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+        sbS.setData(ichi.senkouB.map((v, i) => isNaN(v) ? null : { time: times[i], value: v }).filter(Boolean));
+        overlayRef.current.push(sbS);
+      } else if (ind === "vwap") {
+        const vols = raw.map((k: any) => parseFloat(k.volume || k[5] || "0"));
+        const vwapArr: number[] = [];
+        let cumVol = 0, cumPV = 0;
+        for (let i = 0; i < closes.length; i++) {
+          const tp = (highs[i] + lows[i] + closes[i]) / 3;
+          cumPV += tp * vols[i]; cumVol += vols[i];
+          vwapArr.push(cumVol > 0 ? cumPV / cumVol : tp);
+        }
+        const s = chartRef.current.addLineSeries({ color: "#f97316", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, lineStyle: LineStyle.Dotted });
+        s.setData(vwapArr.map((v, i) => ({ time: times[i], value: v })));
+        overlayRef.current.push(s);
       } else {
         const period = parseInt(ind.replace(/\D/g, ""));
         const vals = ind.startsWith("ema") ? computeEMA(closes, period) : computeSMA(closes, period);
@@ -378,8 +470,21 @@ function TradingChart({ symbol, interval, indicators, positions }: { symbol: str
       axisLabelVisible: true,
       title: `${p.side === "BUY" ? "L" : "S"} ${fmtPrice(p.entryPrice)}`,
     }));
+    const liqMarkers = positions.filter(p => p.symbol === symbol).map(p => {
+      const lev = parseInt(p.leverage) || 10;
+      const dir = p.side === "BUY" ? 1 : -1;
+      const liqP = p.entryPrice * (1 - dir * 0.95 / lev);
+      return {
+        price: liqP,
+        color: "#ef444460",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: true,
+        title: `LIQ ${fmtPrice(liqP)}`,
+      };
+    });
     const lines: any[] = [];
-    markers.forEach(m => {
+    [...markers, ...liqMarkers].forEach(m => {
       const line = seriesRef.current.createPriceLine(m);
       lines.push(line);
     });
@@ -391,6 +496,7 @@ function TradingChart({ symbol, interval, indicators, positions }: { symbol: str
       <div ref={containerRef} className="flex-1 min-h-0" data-testid="chart-container" />
       {hasRSI && rawData.length > 0 && <SubChart type="rsi14" rawData={rawData} />}
       {hasMACD && rawData.length > 0 && <SubChart type="macd" rawData={rawData} />}
+      {hasStoch && rawData.length > 0 && <SubChart type="stoch" rawData={rawData} />}
     </div>
   );
 }
@@ -419,21 +525,21 @@ function OrderBook({ symbol }: { symbol: string }) {
         <span>Price</span><span className="text-right">Size</span><span className="text-right">Total</span>
       </div>
       {asksCum.map((a, i) => (
-        <div key={"a" + i} className="grid grid-cols-3 px-2 py-[1.5px] relative group cursor-pointer">
+        <div key={"a" + i} className="grid grid-cols-3 px-2 py-[1.5px] relative group cursor-pointer hover:bg-zinc-800/20 transition-colors">
           <div className="absolute right-0 top-0 bottom-0 bg-red-500/[0.06] transition-all" style={{ width: `${(a.cum / maxCum) * 100}%` }} />
           <span className="text-red-400 relative z-10">{fmtPrice(parseFloat(a.p))}</span>
           <span className="text-right text-zinc-500 relative z-10">{parseFloat(a.q).toFixed(3)}</span>
           <span className="text-right text-zinc-600 relative z-10">{a.cum.toFixed(3)}</span>
         </div>
       ))}
-      <div className="px-2 py-1.5 border-y border-zinc-800/40 flex items-center justify-center gap-2">
-        <span className="text-sm font-bold text-white" data-testid="text-spread-price">{bids[0] ? fmtPrice(parseFloat(bids[0][0])) : "—"}</span>
+      <div className="px-2 py-1.5 border-y border-zinc-800/40 flex items-center justify-center gap-2 bg-zinc-900/30">
+        <span className="text-sm font-bold text-white" data-testid="text-spread-price">{bids[0] ? fmtPrice(parseFloat(bids[0][0])) : "\u2014"}</span>
         {bids[0] && asks[asks.length - 1] && (
           <span className="text-[9px] text-zinc-600">Spread {fmt(parseFloat(asks[asks.length - 1][0]) - parseFloat(bids[0][0]), 2)}</span>
         )}
       </div>
       {bidsCum.map((b, i) => (
-        <div key={"b" + i} className="grid grid-cols-3 px-2 py-[1.5px] relative group cursor-pointer">
+        <div key={"b" + i} className="grid grid-cols-3 px-2 py-[1.5px] relative group cursor-pointer hover:bg-zinc-800/20 transition-colors">
           <div className="absolute right-0 top-0 bottom-0 bg-emerald-500/[0.06] transition-all" style={{ width: `${(b.cum / maxCum) * 100}%` }} />
           <span className="text-emerald-400 relative z-10">{fmtPrice(parseFloat(b.p))}</span>
           <span className="text-right text-zinc-500 relative z-10">{parseFloat(b.q).toFixed(3)}</span>
@@ -453,6 +559,8 @@ function TradeTicket({ symbol, wallet, price, availableMargin, onSuccess, acctDa
   const [leverage, setLeverage] = useState(10);
   const [riskMode, setRiskMode] = useState(false);
   const [riskPct, setRiskPct] = useState(1);
+  const [tpPct, setTpPct] = useState("");
+  const [slPct, setSlPct] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -470,6 +578,28 @@ function TradeTicket({ symbol, wallet, price, availableMargin, onSuccess, acctDa
     return price * (1 - dir * 0.95 / leverage);
   }, [price, margin, leverage, side]);
   const breakeven = price > 0 ? price * (1 + (side === "BUY" ? 1 : -1) * fee / notional) : 0;
+  const tpPrice = useMemo(() => {
+    if (!tpPct || !price) return null;
+    const pct = parseFloat(tpPct);
+    if (isNaN(pct)) return null;
+    return side === "BUY" ? price * (1 + pct / 100) : price * (1 - pct / 100);
+  }, [tpPct, price, side]);
+  const slPrice = useMemo(() => {
+    if (!slPct || !price) return null;
+    const pct = parseFloat(slPct);
+    if (isNaN(pct)) return null;
+    return side === "BUY" ? price * (1 - pct / 100) : price * (1 + pct / 100);
+  }, [slPct, price, side]);
+  const estPnlTp = tpPrice && margin ? (Math.abs(tpPrice - price) / price) * notional * (side === "BUY" ? 1 : 1) - fee : null;
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const lev = (e as CustomEvent).detail;
+      if (lev) setLeverage(lev);
+    };
+    window.addEventListener("setLeverage", handler);
+    return () => window.removeEventListener("setLeverage", handler);
+  }, []);
 
   const submit = async () => {
     if (!margin || margin <= 0) return;
@@ -492,53 +622,63 @@ function TradeTicket({ symbol, wallet, price, availableMargin, onSuccess, acctDa
 
   const isBuy = side === "BUY";
   const pctButtons = [25, 50, 75, 100];
+  const marginPct = availableMargin > 0 ? (margin / availableMargin * 100) : 0;
 
   return (
     <div className="p-3 space-y-2.5" data-testid="trade-ticket">
       <div className="flex gap-1">
         <button onClick={() => setSide("BUY")} data-testid="button-buy"
-          className={cn("flex-1 py-2.5 text-xs font-bold rounded-md transition-all duration-200", isBuy ? "bg-emerald-500 text-white shadow-[0_0_20px_rgba(34,197,94,0.15)]" : "bg-zinc-800/60 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300")}>LONG</button>
+          className={cn("flex-1 py-2.5 text-xs font-bold rounded-lg transition-all duration-200 relative overflow-hidden",
+            isBuy ? "bg-emerald-500 text-white shadow-[0_0_20px_rgba(34,197,94,0.2)]" : "bg-zinc-800/60 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300")}>
+          {isBuy && <div className="absolute inset-0 bg-gradient-to-r from-emerald-400/20 to-transparent" />}
+          <span className="relative">LONG</span>
+        </button>
         <button onClick={() => setSide("SELL")} data-testid="button-sell"
-          className={cn("flex-1 py-2.5 text-xs font-bold rounded-md transition-all duration-200", !isBuy ? "bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.15)]" : "bg-zinc-800/60 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300")}>SHORT</button>
+          className={cn("flex-1 py-2.5 text-xs font-bold rounded-lg transition-all duration-200 relative overflow-hidden",
+            !isBuy ? "bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.2)]" : "bg-zinc-800/60 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300")}>
+          {!isBuy && <div className="absolute inset-0 bg-gradient-to-r from-red-400/20 to-transparent" />}
+          <span className="relative">SHORT</span>
+        </button>
       </div>
 
-      <div className="flex gap-0.5 bg-zinc-900/50 rounded-md p-0.5">
+      <div className="flex gap-0.5 bg-zinc-900/60 rounded-lg p-0.5 border border-zinc-800/20">
         {(["MARKET", "LIMIT", "STOP"] as const).map(t => (
           <button key={t} onClick={() => setOrderType(t)}
-            className={cn("flex-1 py-1 text-[10px] rounded transition-all", orderType === t ? "bg-zinc-700/80 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300")}>{t === "STOP" ? "Stop" : t.charAt(0) + t.slice(1).toLowerCase()}</button>
+            className={cn("flex-1 py-1.5 text-[10px] rounded-md transition-all font-medium", orderType === t ? "bg-zinc-700/80 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300")}>{t === "STOP" ? "Stop" : t.charAt(0) + t.slice(1).toLowerCase()}</button>
         ))}
       </div>
 
       {orderType !== "MARKET" && (
         <div>
-          <label className="text-[9px] text-zinc-500 uppercase tracking-wider mb-1 block">{orderType === "STOP" ? "Stop Price" : "Limit Price"}</label>
+          <label className="text-[9px] text-zinc-500 uppercase tracking-wider mb-1 block font-medium">{orderType === "STOP" ? "Stop Price" : "Limit Price"}</label>
           <Input value={orderType === "STOP" ? stopPrice : limitPrice} onChange={e => orderType === "STOP" ? setStopPrice(e.target.value) : setLimitPrice(e.target.value)}
-            placeholder={fmtPrice(price)} className="h-7 bg-zinc-900/80 border-zinc-800/60 text-xs font-mono focus:border-zinc-600 transition-colors" data-testid="input-limit-price" />
+            placeholder={fmtPrice(price)} className="h-8 bg-zinc-900/80 border-zinc-800/60 text-xs font-mono focus:border-zinc-600 transition-colors" data-testid="input-limit-price" />
         </div>
       )}
 
       <div>
         <div className="flex justify-between items-center mb-1">
-          <label className="text-[9px] text-zinc-500 uppercase tracking-wider">Margin (USDT)</label>
-          <button onClick={() => setRiskMode(!riskMode)} className={cn("text-[9px] px-1.5 py-0.5 rounded transition-all", riskMode ? "bg-amber-500/20 text-amber-400" : "text-zinc-600 hover:text-zinc-400")} data-testid="button-risk-mode">
-            Risk %
+          <label className="text-[9px] text-zinc-500 uppercase tracking-wider font-medium">Margin (USDT)</label>
+          <button onClick={() => setRiskMode(!riskMode)} className={cn("text-[9px] px-2 py-0.5 rounded-md transition-all font-medium flex items-center gap-1", riskMode ? "bg-amber-500/20 text-amber-400 border border-amber-500/20" : "text-zinc-600 hover:text-zinc-400 border border-transparent")} data-testid="button-risk-mode">
+            <Percent className="w-2.5 h-2.5" /> Risk %
           </button>
         </div>
         {riskMode ? (
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
               <Slider value={[riskPct]} onValueChange={v => setRiskPct(v[0])} min={0.5} max={10} step={0.5} className="flex-1" data-testid="slider-risk" />
-              <span className="text-xs font-mono text-amber-400 w-10 text-right">{riskPct}%</span>
+              <span className="text-xs font-mono text-amber-400 w-12 text-right font-bold">{riskPct}%</span>
             </div>
-            <div className="text-[9px] text-zinc-500">= ${fmt(margin)} of ${fmt(availableMargin)} available</div>
+            <div className="text-[9px] text-zinc-500">= <span className="text-amber-400 font-mono font-medium">${fmt(margin)}</span> of ${fmt(availableMargin)} available</div>
           </div>
         ) : (
           <>
-            <Input value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className="h-7 bg-zinc-900/80 border-zinc-800/60 text-xs font-mono focus:border-zinc-600 transition-colors" data-testid="input-margin" />
-            <div className="flex gap-1 mt-1">
+            <Input value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className="h-8 bg-zinc-900/80 border-zinc-800/60 text-xs font-mono focus:border-zinc-600 transition-colors" data-testid="input-margin" />
+            <div className="flex gap-1 mt-1.5">
               {pctButtons.map(pct => (
                 <button key={pct} onClick={() => setAmount(fmt(availableMargin * pct / 100, 2))} data-testid={`button-pct-${pct}`}
-                  className="flex-1 py-0.5 text-[9px] bg-zinc-800/40 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/80 transition-colors">{pct}%</button>
+                  className={cn("flex-1 py-1 text-[9px] rounded-md font-medium transition-all border",
+                    margin > 0 && Math.abs(marginPct - pct) < 2 ? "bg-zinc-700/60 text-white border-zinc-600/40" : "bg-zinc-800/40 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/80 border-zinc-800/20")}>{pct}%</button>
               ))}
             </div>
           </>
@@ -546,37 +686,63 @@ function TradeTicket({ symbol, wallet, price, availableMargin, onSuccess, acctDa
       </div>
 
       <div>
-        <div className="flex justify-between text-[9px] text-zinc-500 mb-1 uppercase tracking-wider">
-          <span>Leverage</span><span className="text-white font-bold normal-case text-[11px]">{leverage}x</span>
+        <div className="flex justify-between text-[9px] text-zinc-500 mb-1.5 uppercase tracking-wider font-medium">
+          <span>Leverage</span>
+          <span className={cn("text-sm font-bold font-mono normal-case tracking-normal", leverage >= 50 ? "text-red-400" : leverage >= 20 ? "text-amber-400" : "text-white")}>{leverage}x</span>
         </div>
         <Slider value={[leverage]} onValueChange={v => setLeverage(v[0])} min={1} max={125} step={1} className="py-0.5" data-testid="slider-leverage" />
-        <div className="flex gap-0.5 mt-1">
+        <div className="flex gap-0.5 mt-1.5">
           {[1, 2, 5, 10, 20, 50, 75, 125].map(l => (
             <button key={l} onClick={() => setLeverage(l)}
-              className={cn("flex-1 py-0.5 text-[8px] rounded transition-all", leverage === l ? "bg-zinc-700 text-white" : "bg-zinc-800/30 text-zinc-600 hover:text-zinc-400")}>{l}x</button>
+              className={cn("flex-1 py-1 text-[8px] rounded-md transition-all font-medium border",
+                leverage === l ? "bg-zinc-700 text-white border-zinc-600/40" : "bg-zinc-800/30 text-zinc-600 hover:text-zinc-400 border-zinc-800/20",
+                l >= 50 && leverage === l && "bg-red-500/15 border-red-500/20 text-red-400")}>{l}x</button>
           ))}
         </div>
       </div>
 
+      <div className="grid grid-cols-2 gap-1.5">
+        <div>
+          <label className="text-[8px] text-zinc-600 uppercase tracking-wider mb-0.5 block">TP %</label>
+          <Input value={tpPct} onChange={e => setTpPct(e.target.value)} placeholder="—" className="h-6 bg-zinc-900/60 border-zinc-800/40 text-[10px] font-mono focus:border-emerald-500/30 text-emerald-400 placeholder:text-zinc-700" data-testid="input-tp" />
+        </div>
+        <div>
+          <label className="text-[8px] text-zinc-600 uppercase tracking-wider mb-0.5 block">SL %</label>
+          <Input value={slPct} onChange={e => setSlPct(e.target.value)} placeholder="—" className="h-6 bg-zinc-900/60 border-zinc-800/40 text-[10px] font-mono focus:border-red-500/30 text-red-400 placeholder:text-zinc-700" data-testid="input-sl" />
+        </div>
+      </div>
+
       {margin > 0 && (
-        <div className="bg-zinc-900/40 rounded-md p-2 space-y-1 text-[9px] border border-zinc-800/30">
-          <div className="flex justify-between"><span className="text-zinc-600">Size</span><span className="text-zinc-300 font-mono">{qty.toFixed(4)} {symbol.replace("USDT","")}</span></div>
-          <div className="flex justify-between"><span className="text-zinc-600">Notional</span><span className="text-zinc-300 font-mono">${fmtK(notional)}</span></div>
-          <div className="flex justify-between"><span className="text-zinc-600">Liq. Price</span><span className={cn("font-mono", isBuy ? "text-red-400" : "text-emerald-400")}>${fmtPrice(liqPrice)}</span></div>
-          <div className="flex justify-between"><span className="text-zinc-600">Breakeven</span><span className="text-zinc-400 font-mono">${fmtPrice(breakeven)}</span></div>
-          <div className="flex justify-between"><span className="text-zinc-600">Fee (est.)</span><span className="text-zinc-500 font-mono">${fmt(fee, 4)}</span></div>
+        <div className="bg-zinc-900/50 rounded-lg p-2.5 space-y-1 border border-zinc-800/30">
+          <div className="text-[8px] text-zinc-600 uppercase tracking-wider font-semibold mb-1">Order Preview</div>
+          <div className="flex justify-between"><span className="text-[9px] text-zinc-500">Size</span><span className="text-[10px] text-zinc-200 font-mono">{qty.toFixed(4)} {symbol.replace("USDT","")}</span></div>
+          <div className="flex justify-between"><span className="text-[9px] text-zinc-500">Notional</span><span className="text-[10px] text-zinc-200 font-mono">${fmtK(notional)}</span></div>
+          <div className="flex justify-between"><span className="text-[9px] text-zinc-500">Margin Used</span><span className="text-[10px] text-zinc-300 font-mono">${fmt(margin)} <span className="text-zinc-600">({marginPct.toFixed(0)}%)</span></span></div>
+          <div className="h-px bg-zinc-800/30 my-0.5" />
+          <div className="flex justify-between"><span className="text-[9px] text-zinc-500">Liq. Price</span><span className={cn("text-[10px] font-mono font-medium", isBuy ? "text-red-400" : "text-emerald-400")}>${fmtPrice(liqPrice)}</span></div>
+          <div className="flex justify-between"><span className="text-[9px] text-zinc-500">Breakeven</span><span className="text-[10px] text-zinc-400 font-mono">${fmtPrice(breakeven)}</span></div>
+          {tpPrice && <div className="flex justify-between"><span className="text-[9px] text-zinc-500">TP Price</span><span className="text-[10px] text-emerald-400 font-mono">${fmtPrice(tpPrice)}</span></div>}
+          {slPrice && <div className="flex justify-between"><span className="text-[9px] text-zinc-500">SL Price</span><span className="text-[10px] text-red-400 font-mono">${fmtPrice(slPrice)}</span></div>}
+          {estPnlTp && <div className="flex justify-between"><span className="text-[9px] text-zinc-500">Est. PnL at TP</span><span className="text-[10px] text-emerald-400 font-mono font-medium">+${fmt(estPnlTp)}</span></div>}
+          <div className="flex justify-between"><span className="text-[9px] text-zinc-500">Fee (est.)</span><span className="text-[10px] text-zinc-600 font-mono">${fmt(fee, 4)}</span></div>
         </div>
       )}
 
       <Button onClick={submit} disabled={submitting || !margin} data-testid="button-submit-order"
-        className={cn("w-full h-10 font-bold text-sm rounded-md transition-all duration-200",
-          isBuy ? "bg-emerald-500 hover:bg-emerald-400 shadow-[0_0_30px_rgba(34,197,94,0.12)]" : "bg-red-500 hover:bg-red-400 shadow-[0_0_30px_rgba(239,68,68,0.12)]",
+        className={cn("w-full h-11 font-bold text-sm rounded-lg transition-all duration-200 relative overflow-hidden",
+          isBuy ? "bg-emerald-500 hover:bg-emerald-400 shadow-[0_0_30px_rgba(34,197,94,0.15)]" : "bg-red-500 hover:bg-red-400 shadow-[0_0_30px_rgba(239,68,68,0.15)]",
           "text-white border-0 disabled:opacity-40")}>
-        {submitting ? <RefreshCw className="w-4 h-4 animate-spin" /> : `${isBuy ? "Long" : "Short"} ${symbol.replace("USDT", "")}`}
+        {submitting ? <RefreshCw className="w-4 h-4 animate-spin" /> : (
+          <span className="flex items-center gap-2">
+            {isBuy ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+            {isBuy ? "Long" : "Short"} {symbol.replace("USDT", "")}
+            {margin > 0 && <span className="text-xs opacity-75 font-normal ml-1">${fmt(margin)}</span>}
+          </span>
+        )}
       </Button>
 
       {result && (
-        <div className={cn("text-[10px] p-2 rounded-md animate-in fade-in duration-300",
+        <div className={cn("text-[10px] p-2.5 rounded-lg animate-in fade-in slide-in-from-bottom-2 duration-300",
           result.ok ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20")} data-testid="text-order-result">
           {result.msg}
         </div>
@@ -625,23 +791,42 @@ function TradeTicket({ symbol, wallet, price, availableMargin, onSuccess, acctDa
 
 function PositionsPanel({ positions, wallet, onRefresh }: { positions: Pos[]; wallet: string; onRefresh: () => void }) {
   const [closing, setClosing] = useState<string | null>(null);
+  const [reversing, setReversing] = useState<string | null>(null);
   const handleClose = async (sym: string) => { setClosing(sym); try { await post("/api/miniapp/close", wallet, { symbol: sym }); onRefresh(); } catch {} finally { setClosing(null); } };
+  const handleReverse = async (pos: Pos) => {
+    setReversing(pos.symbol);
+    try {
+      await post("/api/miniapp/close", wallet, { symbol: pos.symbol });
+      const newSide = pos.side === "BUY" ? "SELL" : "BUY";
+      await post("/api/miniapp/trade", wallet, { symbol: pos.symbol, side: newSide, amount: Math.abs(pos.notional / parseInt(pos.leverage)), leverage: parseInt(pos.leverage) });
+      onRefresh();
+    } catch {} finally { setReversing(null); }
+  };
   const totalPnl = positions.reduce((s, p) => s + (p.unrealizedPnl || 0), 0);
 
-  if (!positions.length) return <div className="p-6 text-center text-zinc-600 text-xs">No open positions</div>;
+  if (!positions.length) return (
+    <div className="p-8 text-center">
+      <div className="w-10 h-10 mx-auto rounded-xl bg-zinc-800/30 flex items-center justify-center mb-2">
+        <BarChart3 className="w-5 h-5 text-zinc-700" />
+      </div>
+      <p className="text-zinc-600 text-xs">No open positions</p>
+      <p className="text-zinc-700 text-[10px] mt-0.5">Your positions will appear here</p>
+    </div>
+  );
 
   return (
     <div data-testid="positions-panel">
-      <div className="grid grid-cols-[1fr_80px_80px_80px_90px_60px] gap-2 px-3 py-1.5 text-[9px] text-zinc-600 uppercase tracking-wider border-b border-zinc-800/30">
-        <span>Symbol</span><span className="text-right">Size</span><span className="text-right">Entry</span><span className="text-right">Mark</span><span className="text-right">PnL</span><span className="text-right">Action</span>
+      <div className="grid grid-cols-[1fr_70px_70px_70px_90px_80px] gap-2 px-3 py-1.5 text-[9px] text-zinc-600 uppercase tracking-wider border-b border-zinc-800/30 font-medium">
+        <span>Symbol</span><span className="text-right">Size</span><span className="text-right">Entry</span><span className="text-right">Mark</span><span className="text-right">PnL</span><span className="text-right">Actions</span>
       </div>
       {positions.map((p, i) => {
         const pnlPct = p.entryPrice > 0 ? ((p.markPrice - p.entryPrice) / p.entryPrice * 100 * (p.side === "BUY" ? 1 : -1)) : 0;
         return (
-          <div key={i} className="grid grid-cols-[1fr_80px_80px_80px_90px_60px] gap-2 px-3 py-2 items-center border-b border-zinc-800/20 hover:bg-zinc-800/10 transition-colors" data-testid={`position-${p.symbol}`}>
+          <div key={i} className={cn("grid grid-cols-[1fr_70px_70px_70px_90px_80px] gap-2 px-3 py-2 items-center border-b border-zinc-800/20 transition-all",
+            p.unrealizedPnl >= 0 ? "hover:bg-emerald-500/[0.03]" : "hover:bg-red-500/[0.03]")} data-testid={`position-${p.symbol}`}>
             <div className="flex items-center gap-1.5">
               <span className="text-[11px] font-bold text-white">{p.symbol.replace("USDT", "")}</span>
-              <Badge variant="outline" className={cn("text-[8px] px-1 py-0 border-0 font-medium", p.side === "BUY" ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400")}>
+              <Badge variant="outline" className={cn("text-[8px] px-1.5 py-0 border-0 font-bold rounded-md", p.side === "BUY" ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400")}>
                 {p.side === "BUY" ? "LONG" : "SHORT"} {p.leverage}x
               </Badge>
             </div>
@@ -656,17 +841,21 @@ function PositionsPanel({ positions, wallet, onRefresh }: { positions: Pos[]; wa
                 ({pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%)
               </span>
             </div>
-            <div className="text-right">
+            <div className="text-right flex items-center justify-end gap-1">
+              <button onClick={() => handleReverse(p)} disabled={reversing === p.symbol} data-testid={`button-reverse-${p.symbol}`}
+                className="text-[8px] px-1.5 py-0.5 bg-zinc-800/80 rounded-md text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title="Reverse position">
+                {reversing === p.symbol ? "..." : <ArrowLeftRight className="w-3 h-3" />}
+              </button>
               <button onClick={() => handleClose(p.symbol)} disabled={closing === p.symbol} data-testid={`button-close-${p.symbol}`}
-                className="text-[9px] px-2 py-0.5 bg-zinc-800/80 rounded text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-all">
+                className="text-[8px] px-2 py-0.5 bg-zinc-800/80 rounded-md text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-all font-medium">
                 {closing === p.symbol ? "..." : "Close"}
               </button>
             </div>
           </div>
         );
       })}
-      <div className="px-3 py-2 flex justify-between items-center">
-        <span className="text-[10px] text-zinc-500">{positions.length} position{positions.length !== 1 ? "s" : ""}</span>
+      <div className="px-3 py-2 flex justify-between items-center bg-zinc-900/20">
+        <span className="text-[10px] text-zinc-500 font-medium">{positions.length} position{positions.length !== 1 ? "s" : ""}</span>
         <span className={cn("text-[11px] font-bold font-mono", totalPnl >= 0 ? "text-emerald-400" : "text-red-400")}>
           Total: {totalPnl >= 0 ? "+" : ""}{fmt(totalPnl)} USDT
         </span>
@@ -685,23 +874,30 @@ function OrdersPanel({ wallet }: { wallet: string }) {
 
   if (loading) return <div className="p-4"><Skeleton className="w-full h-8 bg-zinc-900" /></div>;
   const orders = data?.openOrders || [];
-  if (!orders.length) return <div className="p-6 text-center text-zinc-600 text-xs">No open orders</div>;
+  if (!orders.length) return (
+    <div className="p-8 text-center">
+      <div className="w-10 h-10 mx-auto rounded-xl bg-zinc-800/30 flex items-center justify-center mb-2">
+        <Clock className="w-5 h-5 text-zinc-700" />
+      </div>
+      <p className="text-zinc-600 text-xs">No open orders</p>
+    </div>
+  );
 
   return (
     <div>
-      <div className="grid grid-cols-[1fr_60px_60px_80px_80px_60px] gap-2 px-3 py-1.5 text-[9px] text-zinc-600 uppercase tracking-wider border-b border-zinc-800/30">
+      <div className="grid grid-cols-[1fr_60px_60px_80px_80px_60px] gap-2 px-3 py-1.5 text-[9px] text-zinc-600 uppercase tracking-wider border-b border-zinc-800/30 font-medium">
         <span>Symbol</span><span>Side</span><span>Type</span><span className="text-right">Price</span><span className="text-right">Qty</span><span className="text-right">Action</span>
       </div>
       {orders.map((o, i) => (
         <div key={i} className="grid grid-cols-[1fr_60px_60px_80px_80px_60px] gap-2 px-3 py-2 items-center border-b border-zinc-800/20 hover:bg-zinc-800/10 text-[10px]">
           <span className="font-bold text-white">{o.symbol.replace("USDT", "")}</span>
-          <Badge variant="outline" className={cn("text-[8px] px-1 py-0 border-0 w-fit", o.side === "BUY" ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400")}>{o.side}</Badge>
+          <Badge variant="outline" className={cn("text-[8px] px-1 py-0 border-0 w-fit font-bold", o.side === "BUY" ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400")}>{o.side}</Badge>
           <span className="text-zinc-500">{o.type}</span>
           <span className="text-right font-mono text-zinc-300">{fmtPrice(o.price)}</span>
           <span className="text-right font-mono text-zinc-400">{o.origQty}</span>
           <div className="text-right">
             <button onClick={() => cancelOrder(o.orderId, o.symbol)} disabled={cancelling === o.orderId}
-              className="text-[9px] px-2 py-0.5 bg-zinc-800/80 rounded text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-all">
+              className="text-[9px] px-2 py-0.5 bg-zinc-800/80 rounded-md text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-all font-medium">
               {cancelling === o.orderId ? "..." : "Cancel"}
             </button>
           </div>
@@ -715,21 +911,28 @@ function TradesPanel({ wallet, symbol }: { wallet: string; symbol: string }) {
   const { data, loading } = useApi<{ trades: TradeData[]; income: any[] }>(`/api/miniapp/trades?symbol=${symbol}`, wallet);
   if (loading) return <div className="p-4"><Skeleton className="w-full h-8 bg-zinc-900" /></div>;
   const trades = data?.trades || [];
-  if (!trades.length) return <div className="p-6 text-center text-zinc-600 text-xs">No recent trades</div>;
+  if (!trades.length) return (
+    <div className="p-8 text-center">
+      <div className="w-10 h-10 mx-auto rounded-xl bg-zinc-800/30 flex items-center justify-center mb-2">
+        <Activity className="w-5 h-5 text-zinc-700" />
+      </div>
+      <p className="text-zinc-600 text-xs">No recent trades</p>
+    </div>
+  );
 
   return (
     <div>
-      <div className="grid grid-cols-[1fr_50px_80px_80px_80px] gap-2 px-3 py-1.5 text-[9px] text-zinc-600 uppercase tracking-wider border-b border-zinc-800/30">
+      <div className="grid grid-cols-[1fr_50px_80px_80px_80px] gap-2 px-3 py-1.5 text-[9px] text-zinc-600 uppercase tracking-wider border-b border-zinc-800/30 font-medium">
         <span>Symbol</span><span>Side</span><span className="text-right">Price</span><span className="text-right">Qty</span><span className="text-right">PnL</span>
       </div>
       {trades.slice(0, 20).map((t, i) => (
-        <div key={i} className="grid grid-cols-[1fr_50px_80px_80px_80px] gap-2 px-3 py-1.5 items-center border-b border-zinc-800/20 text-[10px]">
+        <div key={i} className="grid grid-cols-[1fr_50px_80px_80px_80px] gap-2 px-3 py-1.5 items-center border-b border-zinc-800/20 text-[10px] hover:bg-zinc-800/10 transition-colors">
           <span className="text-white font-medium">{t.symbol.replace("USDT", "")}</span>
-          <span className={t.side === "BUY" ? "text-emerald-400" : "text-red-400"}>{t.side}</span>
+          <span className={cn("font-medium", t.side === "BUY" ? "text-emerald-400" : "text-red-400")}>{t.side}</span>
           <span className="text-right font-mono text-zinc-400">{fmtPrice(t.price)}</span>
           <span className="text-right font-mono text-zinc-400">{t.qty.toFixed(4)}</span>
-          <span className={cn("text-right font-mono", t.realizedPnl >= 0 ? "text-emerald-400" : "text-red-400")}>
-            {t.realizedPnl !== 0 ? `${t.realizedPnl >= 0 ? "+" : ""}${fmt(t.realizedPnl)}` : "—"}
+          <span className={cn("text-right font-mono font-medium", t.realizedPnl >= 0 ? "text-emerald-400" : "text-red-400")}>
+            {t.realizedPnl !== 0 ? `${t.realizedPnl >= 0 ? "+" : ""}${fmt(t.realizedPnl)}` : "\u2014"}
           </span>
         </div>
       ))}
@@ -739,9 +942,9 @@ function TradesPanel({ wallet, symbol }: { wallet: string; symbol: string }) {
 
 type PresetKey = "conservative" | "balanced" | "degen";
 const PRESET_META: Record<PresetKey, { label: string; icon: string; desc: string; color: string; border: string; bg: string }> = {
-  conservative: { label: "Conservative", icon: "🛡", desc: "Low risk, tight stops, high confidence filter", color: "text-blue-400", border: "border-blue-500/30", bg: "bg-blue-500/10" },
-  balanced: { label: "Balanced", icon: "⚖", desc: "Moderate risk, standard thresholds", color: "text-amber-400", border: "border-amber-500/30", bg: "bg-amber-500/10" },
-  degen: { label: "Degen", icon: "🔥", desc: "High risk, wide stops, trades everything", color: "text-red-400", border: "border-red-500/30", bg: "bg-red-500/10" },
+  conservative: { label: "Conservative", icon: "\ud83d\udee1", desc: "Low risk, tight stops, high confidence filter", color: "text-blue-400", border: "border-blue-500/30", bg: "bg-blue-500/10" },
+  balanced: { label: "Balanced", icon: "\u2696", desc: "Moderate risk, standard thresholds", color: "text-amber-400", border: "border-amber-500/30", bg: "bg-amber-500/10" },
+  degen: { label: "Degen", icon: "\ud83d\udd25", desc: "High risk, wide stops, trades everything", color: "text-red-400", border: "border-red-500/30", bg: "bg-red-500/10" },
 };
 
 function detectPreset(config: AgentData["config"]): PresetKey | null {
@@ -755,8 +958,18 @@ function AgentPanel({ wallet }: { wallet: string }) {
   const { data: agent, loading, refresh } = useApi<AgentData>("/api/miniapp/agent", wallet);
   const [toggling, setToggling] = useState(false);
   const [settingPreset, setSettingPreset] = useState<string | null>(null);
+  const [reasonHistory, setReasonHistory] = useState<{ text: string; action: string | null; time: number }[]>([]);
 
-  useEffect(() => { if (!wallet) return; const iv = setInterval(refresh, 10000); return () => clearInterval(iv); }, [wallet, refresh]);
+  useEffect(() => { if (!wallet) return; const iv = setInterval(refresh, 8000); return () => clearInterval(iv); }, [wallet, refresh]);
+
+  useEffect(() => {
+    if (!agent?.stats.lastReason) return;
+    setReasonHistory(prev => {
+      const last = prev[0];
+      if (last && last.text === agent.stats.lastReason) return prev;
+      return [{ text: agent.stats.lastReason!, action: agent.stats.lastAction, time: Date.now() }, ...prev].slice(0, 10);
+    });
+  }, [agent?.stats.lastReason, agent?.stats.lastAction]);
 
   const toggle = async () => {
     setToggling(true);
@@ -776,7 +989,7 @@ function AgentPanel({ wallet }: { wallet: string }) {
 
   const totalTrades = agent.stats.winCount + agent.stats.lossCount;
   const winRate = totalTrades > 0 ? (agent.stats.winCount / totalTrades) * 100 : 0;
-  const winRateStr = totalTrades > 0 ? winRate.toFixed(0) + "%" : "—";
+  const winRateStr = totalTrades > 0 ? winRate.toFixed(0) + "%" : "\u2014";
   const confidence = totalTrades > 0 ? Math.min(Math.max(winRate, 10), 95) : 50;
   const confColor = confidence >= 65 ? "#22c55e" : confidence >= 45 ? "#f59e0b" : "#ef4444";
   const currentPreset = detectPreset(agent.config);
@@ -786,17 +999,22 @@ function AgentPanel({ wallet }: { wallet: string }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="relative">
-            <Bot className={cn("w-4 h-4", agent.running ? "text-emerald-400" : "text-zinc-600")} />
-            {agent.running && <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(34,197,94,0.5)]" />}
+            <div className={cn("w-8 h-8 rounded-xl flex items-center justify-center", agent.running ? "bg-emerald-500/15 border border-emerald-500/20" : "bg-zinc-800/40 border border-zinc-800/30")}>
+              <Brain className={cn("w-4 h-4", agent.running ? "text-emerald-400" : "text-zinc-600")} />
+            </div>
+            {agent.running && <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />}
           </div>
           <div>
             <span className="text-xs font-bold text-white">{agent.config.name}</span>
-            <span className={cn("ml-2 text-[9px]", agent.running ? "text-emerald-400" : "text-zinc-600")}>{agent.running ? "LIVE" : "IDLE"}</span>
+            <div className="flex items-center gap-1">
+              <div className={cn("w-1.5 h-1.5 rounded-full", agent.running ? "bg-emerald-400" : "bg-zinc-600")} />
+              <span className={cn("text-[9px] font-medium", agent.running ? "text-emerald-400" : "text-zinc-600")}>{agent.running ? "LIVE TRADING" : "IDLE"}</span>
+            </div>
           </div>
         </div>
         <button onClick={toggle} disabled={toggling} data-testid="button-agent-toggle"
-          className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-semibold transition-all",
-            agent.running ? "bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.05)]" : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 shadow-[0_0_10px_rgba(34,197,94,0.05)]")}>
+          className={cn("flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold transition-all",
+            agent.running ? "bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 shadow-[0_0_12px_rgba(239,68,68,0.08)]" : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 shadow-[0_0_12px_rgba(34,197,94,0.08)]")}>
           {toggling ? <RefreshCw className="w-3 h-3 animate-spin" /> : agent.running ? <><Square className="w-3 h-3" /> Stop</> : <><Play className="w-3 h-3" /> Start</>}
         </button>
       </div>
@@ -811,7 +1029,7 @@ function AgentPanel({ wallet }: { wallet: string }) {
               return (
                 <button key={key} onClick={() => applyPreset(key)} disabled={!!settingPreset} data-testid={`preset-${key}`}
                   className={cn("relative flex flex-col items-center gap-1 py-2 px-1.5 rounded-lg text-center transition-all border",
-                    active ? `${meta.bg} ${meta.border} ${meta.color}` : "bg-zinc-900/30 border-zinc-800/20 text-zinc-500 hover:bg-zinc-800/40 hover:text-zinc-300")}>
+                    active ? `${meta.bg} ${meta.border} ${meta.color} shadow-sm` : "bg-zinc-900/30 border-zinc-800/20 text-zinc-500 hover:bg-zinc-800/40 hover:text-zinc-300")}>
                   {settingPreset === key ? <RefreshCw className="w-4 h-4 animate-spin" /> : <span className="text-sm">{meta.icon}</span>}
                   <span className="text-[9px] font-bold">{meta.label}</span>
                   {active && <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-current" />}
@@ -827,64 +1045,71 @@ function AgentPanel({ wallet }: { wallet: string }) {
         </div>
       )}
 
-      {totalTrades > 0 && (
-        <div className="bg-zinc-900/30 rounded-lg p-2.5 border border-zinc-800/20">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[8px] text-zinc-600 uppercase tracking-wider">Confidence</span>
-            <span className="text-[11px] font-bold font-mono" style={{ color: confColor }}>{confidence.toFixed(0)}%</span>
-          </div>
-          <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-            <div className="h-full rounded-full transition-all duration-700" style={{ width: `${confidence}%`, background: `linear-gradient(90deg, ${confColor}80, ${confColor})` }} />
-          </div>
+      <div className="bg-zinc-900/40 rounded-xl p-2.5 border border-zinc-800/20">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[8px] text-zinc-500 uppercase tracking-wider font-semibold">Confidence</span>
+          <span className="text-sm font-bold font-mono" style={{ color: confColor }}>{confidence.toFixed(0)}%</span>
         </div>
-      )}
+        <div className="h-2 bg-zinc-800 rounded-full overflow-hidden relative">
+          <div className="h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${confidence}%`, background: `linear-gradient(90deg, ${confColor}60, ${confColor})` }} />
+          <div className="absolute top-0 h-full w-px bg-zinc-600/50" style={{ left: "45%" }} />
+          <div className="absolute top-0 h-full w-px bg-zinc-600/50" style={{ left: "65%" }} />
+        </div>
+        <div className="flex justify-between mt-1 text-[7px] text-zinc-700 font-medium">
+          <span>Low</span><span>Medium</span><span>High</span>
+        </div>
+      </div>
 
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className="grid grid-cols-2 gap-1.5">
         {[
-          { label: "Trades", value: String(agent.stats.tradeCount), color: "text-white" },
-          { label: "Win", value: winRateStr, color: "text-emerald-400" },
-          { label: "PnL", value: (agent.stats.totalPnl >= 0 ? "+" : "") + fmt(agent.stats.totalPnl), color: agent.stats.totalPnl >= 0 ? "text-emerald-400" : "text-red-400" },
-          { label: "Scans", value: String(agent.stats.scanCount), color: "text-zinc-300" },
+          { label: "Win Rate", value: winRateStr, sub: `${agent.stats.winCount}W / ${agent.stats.lossCount}L`, color: winRate >= 50 ? "text-emerald-400" : "text-red-400", icon: Target },
+          { label: "Total PnL", value: (agent.stats.totalPnl >= 0 ? "+" : "") + fmt(agent.stats.totalPnl), sub: `${agent.stats.tradeCount} trades`, color: agent.stats.totalPnl >= 0 ? "text-emerald-400" : "text-red-400", icon: DollarSign },
+          { label: "Scans", value: String(agent.stats.scanCount), sub: "market analyses", color: "text-cyan-400", icon: Search },
+          { label: "Active Pos", value: String(agent.stats.openPositions.length), sub: agent.stats.openPositions.length > 0 ? agent.stats.openPositions.map(p => p.split(" ")[1] || p).join(", ") : "none", color: "text-zinc-300", icon: Layers },
         ].map(s => (
-          <div key={s.label} className="bg-zinc-900/40 rounded-md p-1.5 text-center border border-zinc-800/15">
-            <div className="text-[7px] text-zinc-600 uppercase tracking-wider mb-0.5">{s.label}</div>
-            <div className={cn("text-[10px] font-bold font-mono", s.color)}>{s.value}</div>
+          <div key={s.label} className="bg-zinc-900/40 rounded-lg p-2 border border-zinc-800/15 group hover:border-zinc-800/30 transition-all">
+            <div className="flex items-center gap-1 mb-1">
+              <s.icon className="w-2.5 h-2.5 text-zinc-600" />
+              <span className="text-[7px] text-zinc-600 uppercase tracking-wider font-semibold">{s.label}</span>
+            </div>
+            <div className={cn("text-sm font-bold font-mono leading-none", s.color)}>{s.value}</div>
+            <div className="text-[7px] text-zinc-600 mt-0.5 truncate">{s.sub}</div>
           </div>
         ))}
       </div>
 
-      {agent.stats.lastReason && (
-        <div className="bg-gradient-to-br from-zinc-900/50 to-zinc-900/20 rounded-lg p-2.5 border border-zinc-800/20 backdrop-blur-sm">
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <Activity className="w-3 h-3 text-cyan-400" />
-            <span className="text-[8px] text-cyan-400/80 uppercase tracking-wider font-semibold">AI Reasoning</span>
+      {reasonHistory.length > 0 && (
+        <div className="rounded-xl border border-zinc-800/20 overflow-hidden">
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-zinc-900/60 border-b border-zinc-800/20">
+            <Brain className="w-3 h-3 text-cyan-400" />
+            <span className="text-[8px] text-cyan-400/80 uppercase tracking-wider font-bold">AI Reasoning Feed</span>
+            {agent.running && <div className="ml-auto flex items-center gap-1"><div className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" /><span className="text-[7px] text-emerald-400/60">LIVE</span></div>}
           </div>
-          <div className="text-[10px] text-zinc-300 leading-relaxed">{agent.stats.lastReason}</div>
-          {agent.stats.lastAction && (
-            <div className="mt-1.5 flex items-center gap-1.5">
-              <Zap className="w-2.5 h-2.5 text-amber-400" />
-              <span className="text-[9px] text-amber-400/80 font-medium">{agent.stats.lastAction}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {agent.stats.openPositions.length > 0 && (
-        <div>
-          <div className="text-[8px] text-zinc-600 uppercase tracking-wider mb-1">Active Positions</div>
-          <div className="flex flex-wrap gap-1">
-            {agent.stats.openPositions.map((pos, i) => (
-              <Badge key={i} variant="outline" className={cn("text-[8px] border-0 font-medium", pos.startsWith("BUY") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400")}>{pos}</Badge>
+          <div className="max-h-[200px] overflow-y-auto">
+            {reasonHistory.map((entry, i) => (
+              <div key={i} className={cn("px-2.5 py-2 border-b border-zinc-800/10 transition-all", i === 0 ? "bg-zinc-900/20" : "")}>
+                <div className="text-[10px] text-zinc-300 leading-relaxed">{entry.text}</div>
+                {entry.action && (
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <Zap className="w-2.5 h-2.5 text-amber-400" />
+                    <span className="text-[9px] text-amber-400/80 font-medium">{entry.action}</span>
+                  </div>
+                )}
+                <div className="text-[7px] text-zinc-700 mt-0.5">{new Date(entry.time).toLocaleTimeString()}</div>
+              </div>
             ))}
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[9px] bg-zinc-900/20 rounded-md p-2 border border-zinc-800/10">
-        <div className="flex justify-between text-zinc-500"><span>Risk</span><span className="text-zinc-300">{agent.config.riskPercent}%</span></div>
-        <div className="flex justify-between text-zinc-500"><span>Max Lev</span><span className="text-zinc-300">{agent.config.maxLeverage}x</span></div>
-        <div className="flex justify-between text-zinc-500"><span>TP</span><span className="text-emerald-400/80">{agent.config.takeProfitPct}%</span></div>
-        <div className="flex justify-between text-zinc-500"><span>SL</span><span className="text-red-400/80">{agent.config.stopLossPct}%</span></div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[9px] bg-zinc-900/20 rounded-lg p-2 border border-zinc-800/10">
+        <div className="text-[7px] text-zinc-600 uppercase tracking-wider font-semibold col-span-2 mb-0.5">Configuration</div>
+        <div className="flex justify-between text-zinc-500"><span>Risk</span><span className="text-zinc-300 font-mono">{agent.config.riskPercent}%</span></div>
+        <div className="flex justify-between text-zinc-500"><span>Max Lev</span><span className="text-zinc-300 font-mono">{agent.config.maxLeverage}x</span></div>
+        <div className="flex justify-between text-zinc-500"><span>TP</span><span className="text-emerald-400/80 font-mono">{agent.config.takeProfitPct}%</span></div>
+        <div className="flex justify-between text-zinc-500"><span>SL</span><span className="text-red-400/80 font-mono">{agent.config.stopLossPct}%</span></div>
+        <div className="flex justify-between text-zinc-500"><span>Min Conf</span><span className="text-zinc-300 font-mono">{(agent.config.minConfidence * 100).toFixed(0)}%</span></div>
+        <div className="flex justify-between text-zinc-500"><span>Max Pos</span><span className="text-zinc-300 font-mono">{agent.config.maxOpenPositions}</span></div>
       </div>
     </div>
   );
@@ -905,15 +1130,15 @@ function PairSelector({ selected, onSelect, onClose, favorites, toggleFav }: { s
   }, [marketsResp, search, sortBy, favorites]);
 
   return (
-    <div className="absolute top-0 left-0 z-50 bg-[#0d0e10] border border-zinc-800/60 rounded-lg shadow-2xl w-[320px] max-h-[420px] overflow-hidden backdrop-blur-xl" data-testid="pair-selector">
-      <div className="p-2 border-b border-zinc-800/40 flex items-center gap-2">
+    <div className="absolute top-0 left-0 z-50 bg-[#0d0e10] border border-zinc-800/60 rounded-xl shadow-2xl w-[320px] max-h-[420px] overflow-hidden backdrop-blur-xl" data-testid="pair-selector">
+      <div className="p-2.5 border-b border-zinc-800/40 flex items-center gap-2">
         <Search className="w-3.5 h-3.5 text-zinc-600" />
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search pairs..." className="flex-1 bg-transparent text-xs text-white outline-none placeholder:text-zinc-600" autoFocus data-testid="input-search-pair" />
         <button onClick={onClose} className="text-zinc-600 hover:text-white transition-colors"><X className="w-3.5 h-3.5" /></button>
       </div>
-      <div className="flex gap-2 px-2 py-1.5 border-b border-zinc-800/30">
+      <div className="flex gap-2 px-2.5 py-1.5 border-b border-zinc-800/30">
         {(["name", "volume", "change"] as const).map(s => (
-          <button key={s} onClick={() => setSortBy(s)} className={cn("text-[9px] px-1.5 py-0.5 rounded transition-all", sortBy === s ? "bg-zinc-700/60 text-white" : "text-zinc-600 hover:text-zinc-400")}>
+          <button key={s} onClick={() => setSortBy(s)} className={cn("text-[9px] px-2 py-0.5 rounded-md transition-all font-medium", sortBy === s ? "bg-zinc-700/60 text-white" : "text-zinc-600 hover:text-zinc-400")}>
             {s === "name" ? "Name" : s === "volume" ? "Volume" : "Change"}
           </button>
         ))}
@@ -1132,11 +1357,8 @@ function FuturesTerminal() {
         const levMap: Record<string, number> = { "1": 1, "2": 2, "3": 5, "4": 10, "5": 20, "6": 50, "7": 75, "8": 100, "9": 125 };
         const lev = levMap[e.key];
         if (lev) {
-          const slider = document.querySelector('[data-testid="slider-leverage"]');
-          if (slider) {
-            const event = new CustomEvent("setLeverage", { detail: lev });
-            window.dispatchEvent(event);
-          }
+          const event = new CustomEvent("setLeverage", { detail: lev });
+          window.dispatchEvent(event);
         }
       }
     };
@@ -1153,6 +1375,7 @@ function FuturesTerminal() {
   const oi = ticker?.openInterest || 0;
   const positions = acct?.positions || [];
   const availableMargin = acct?.availableMargin || 0;
+  const totalUpnl = positions.reduce((s, p) => s + (p.unrealizedPnl || 0), 0);
 
   if (!address) {
     return (
@@ -1206,7 +1429,7 @@ function FuturesTerminal() {
       <div className="h-11 border-b border-zinc-800/40 flex items-center px-3 gap-3 shrink-0 bg-[#0c0d0f]">
         <div className="relative">
           <button onClick={() => setShowPairs(!showPairs)} data-testid="button-pair-selector"
-            className="flex items-center gap-1.5 hover:bg-zinc-800/40 px-2.5 py-1.5 rounded-md transition-all group">
+            className="flex items-center gap-1.5 hover:bg-zinc-800/40 px-2.5 py-1.5 rounded-lg transition-all group">
             <span className="text-sm font-bold">{selectedPair.replace("USDT", "")}</span>
             <span className="text-[10px] text-zinc-500">/USDT</span>
             <span className="text-[10px] text-zinc-700">PERP</span>
@@ -1218,7 +1441,7 @@ function FuturesTerminal() {
         <div className="w-px h-5 bg-zinc-800/60" />
 
         <span className={cn("text-base font-bold font-mono tabular-nums", change >= 0 ? "text-emerald-400" : "text-red-400")} data-testid="text-price">{fmtPrice(price)}</span>
-        <span className={cn("text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded", change >= 0 ? "text-emerald-400 bg-emerald-500/8" : "text-red-400 bg-red-500/8")}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span>
+        <span className={cn("text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded-md font-medium", change >= 0 ? "text-emerald-400 bg-emerald-500/10" : "text-red-400 bg-red-500/10")}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span>
 
         <div className="hidden lg:flex items-center gap-3 text-[10px] text-zinc-500 ml-2">
           <div><span className="text-zinc-600 mr-1">24h H</span><span className="text-zinc-300 font-mono">{fmtPrice(high)}</span></div>
@@ -1230,33 +1453,33 @@ function FuturesTerminal() {
 
         <div className="ml-auto flex items-center gap-2">
           {acct && (
-            <div className="hidden md:flex items-center gap-3 text-[10px]">
-              <div className="bg-zinc-900/40 rounded-md px-2.5 py-1 border border-zinc-800/20" data-testid="text-futures-balance">
+            <div className="hidden md:flex items-center gap-2 text-[10px]">
+              <div className="bg-zinc-900/50 rounded-lg px-2.5 py-1.5 border border-zinc-800/20" data-testid="text-futures-balance">
                 <span className="text-zinc-600 mr-1">Futures</span>
-                <span className="text-white font-mono font-medium">${fmt(acct.walletBalance)}</span>
+                <span className="text-white font-mono font-bold">${fmt(acct.walletBalance)}</span>
               </div>
-              <div className="bg-zinc-900/40 rounded-md px-2.5 py-1 border border-zinc-800/20" data-testid="text-available-margin">
-                <span className="text-zinc-600 mr-1">Available</span>
-                <span className="text-emerald-400 font-mono font-medium">${fmt(acct.availableMargin)}</span>
+              <div className="bg-zinc-900/50 rounded-lg px-2.5 py-1.5 border border-zinc-800/20" data-testid="text-available-margin">
+                <span className="text-zinc-600 mr-1">Avail</span>
+                <span className="text-emerald-400 font-mono font-bold">${fmt(acct.availableMargin)}</span>
               </div>
+              {totalUpnl !== 0 && (
+                <div className={cn("rounded-lg px-2.5 py-1.5 border", totalUpnl >= 0 ? "bg-emerald-500/5 border-emerald-500/15" : "bg-red-500/5 border-red-500/15")}>
+                  <span className="text-zinc-600 mr-1">uPnL</span>
+                  <span className={cn("font-mono font-bold", totalUpnl >= 0 ? "text-emerald-400" : "text-red-400")}>
+                    {totalUpnl >= 0 ? "+" : ""}{fmt(totalUpnl)}
+                  </span>
+                </div>
+              )}
               {(acct.spotBalance || 0) > 0 && (
-                <div className="bg-zinc-900/40 rounded-md px-2.5 py-1 border border-amber-500/15" data-testid="text-spot-balance">
+                <div className="bg-zinc-900/50 rounded-lg px-2.5 py-1.5 border border-amber-500/15" data-testid="text-spot-balance">
                   <span className="text-zinc-600 mr-1">Spot</span>
-                  <span className="text-amber-400 font-mono font-medium">${fmt(acct.spotBalance)}</span>
+                  <span className="text-amber-400 font-mono font-bold">${fmt(acct.spotBalance)}</span>
                 </div>
               )}
               {(acct.bscBalance || 0) > 0.01 && (
-                <div className="bg-zinc-900/40 rounded-md px-2.5 py-1 border border-cyan-500/15" data-testid="text-bsc-balance">
+                <div className="bg-zinc-900/50 rounded-lg px-2.5 py-1.5 border border-cyan-500/15" data-testid="text-bsc-balance">
                   <span className="text-zinc-600 mr-1">BSC</span>
-                  <span className="text-cyan-400 font-mono font-medium">${fmt(acct.bscBalance)}</span>
-                </div>
-              )}
-              {acct.unrealizedPnl !== 0 && (
-                <div className={cn("bg-zinc-900/40 rounded-md px-2.5 py-1 border", acct.unrealizedPnl >= 0 ? "border-emerald-500/10" : "border-red-500/10")}>
-                  <span className="text-zinc-600 mr-1">uPnL</span>
-                  <span className={cn("font-mono font-medium", acct.unrealizedPnl >= 0 ? "text-emerald-400" : "text-red-400")}>
-                    {acct.unrealizedPnl >= 0 ? "+" : ""}{fmt(acct.unrealizedPnl)}
-                  </span>
+                  <span className="text-cyan-400 font-mono font-bold">${fmt(acct.bscBalance)}</span>
                 </div>
               )}
             </div>
@@ -1273,38 +1496,42 @@ function FuturesTerminal() {
           <div className="h-8 border-b border-zinc-800/30 flex items-center px-2 gap-0.5 shrink-0 bg-[#0c0d0f]">
             {TF.map(tf => (
               <button key={tf} onClick={() => setTf(tf)} data-testid={`tf-${tf}`}
-                className={cn("px-2 py-0.5 text-[10px] rounded transition-all", interval === tf ? "bg-zinc-700/60 text-white" : "text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800/30")}>{tf}</button>
+                className={cn("px-2 py-1 text-[10px] rounded-md transition-all font-medium", interval === tf ? "bg-zinc-700/60 text-white" : "text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800/30")}>{tf}</button>
             ))}
             <div className="w-px h-4 bg-zinc-800/40 mx-1" />
             <div className="relative">
-              <button onClick={() => setShowIndicators(!showIndicators)} className={cn("px-2 py-0.5 text-[10px] rounded flex items-center gap-1 transition-all", indicators.length > 0 ? "text-amber-400 bg-amber-500/8" : "text-zinc-600 hover:text-zinc-400")} data-testid="button-indicators">
-                <BarChart3 className="w-3 h-3" /> Indicators
+              <button onClick={() => setShowIndicators(!showIndicators)} className={cn("px-2 py-1 text-[10px] rounded-md flex items-center gap-1 transition-all font-medium", indicators.length > 0 ? "text-amber-400 bg-amber-500/10 border border-amber-500/15" : "text-zinc-600 hover:text-zinc-400")} data-testid="button-indicators">
+                <BarChart3 className="w-3 h-3" /> Indicators {indicators.length > 0 && <span className="text-[8px] bg-amber-500/20 px-1 rounded-sm">{indicators.length}</span>}
               </button>
               {showIndicators && (
-                <div className="absolute top-7 left-0 z-40 bg-[#0d0e10]/95 backdrop-blur-xl border border-zinc-800/50 rounded-lg shadow-2xl p-2 w-48">
-                  <div className="text-[8px] text-zinc-600 uppercase tracking-wider px-2 py-1 font-semibold">Overlays</div>
-                  {(["ema9", "ema21", "ema50", "sma20", "sma50", "bb20"] as IndicatorType[]).map(ind => (
+                <div className="absolute top-8 left-0 z-40 bg-[#0d0e10]/95 backdrop-blur-xl border border-zinc-800/50 rounded-xl shadow-2xl p-2.5 w-52">
+                  <div className="text-[8px] text-zinc-500 uppercase tracking-wider px-2 py-1 font-bold flex items-center gap-1.5">
+                    <LineChart className="w-3 h-3" /> Overlays
+                  </div>
+                  {INDICATOR_CATEGORIES.overlay.map(ind => (
                     <button key={ind} onClick={() => toggleIndicator(ind)}
-                      className={cn("w-full text-left px-2 py-1.5 text-[10px] rounded flex items-center gap-2 transition-all",
+                      className={cn("w-full text-left px-2 py-1.5 text-[10px] rounded-md flex items-center gap-2 transition-all",
                         indicators.includes(ind) ? "bg-zinc-800/60 text-white" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/30")}>
                       <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: INDICATOR_COLORS[ind] }} />
                       {INDICATOR_LABELS[ind]}
                       {indicators.includes(ind) && <span className="ml-auto text-emerald-400 text-[9px]">&#10003;</span>}
                     </button>
                   ))}
-                  <div className="my-1 border-t border-zinc-800/30" />
-                  <div className="text-[8px] text-zinc-600 uppercase tracking-wider px-2 py-1 font-semibold">Sub-Charts</div>
-                  {(["rsi14", "macd"] as IndicatorType[]).map(ind => (
+                  <div className="my-1.5 border-t border-zinc-800/30" />
+                  <div className="text-[8px] text-zinc-500 uppercase tracking-wider px-2 py-1 font-bold flex items-center gap-1.5">
+                    <BarChart2 className="w-3 h-3" /> Sub-Charts
+                  </div>
+                  {INDICATOR_CATEGORIES.subchart.map(ind => (
                     <button key={ind} onClick={() => toggleIndicator(ind)}
-                      className={cn("w-full text-left px-2 py-1.5 text-[10px] rounded flex items-center gap-2 transition-all",
+                      className={cn("w-full text-left px-2 py-1.5 text-[10px] rounded-md flex items-center gap-2 transition-all",
                         indicators.includes(ind) ? "bg-zinc-800/60 text-white" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/30")}>
                       <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: INDICATOR_COLORS[ind] }} />
                       {INDICATOR_LABELS[ind]}
                       {indicators.includes(ind) && <span className="ml-auto text-emerald-400 text-[9px]">&#10003;</span>}
                     </button>
                   ))}
-                  <div className="mt-1 pt-1 border-t border-zinc-800/30">
-                    <button onClick={() => { setIndicators([]); localStorage.setItem("futures_ind", "[]"); }} className="w-full text-left px-2 py-1 text-[9px] text-zinc-600 hover:text-zinc-400">Clear all</button>
+                  <div className="mt-1.5 pt-1.5 border-t border-zinc-800/30">
+                    <button onClick={() => { setIndicators([]); localStorage.setItem("futures_ind", "[]"); }} className="w-full text-left px-2 py-1 text-[9px] text-zinc-600 hover:text-zinc-400 rounded-md hover:bg-zinc-800/20 transition-all">Clear all</button>
                   </div>
                 </div>
               )}
@@ -1312,7 +1539,7 @@ function FuturesTerminal() {
             {indicators.length > 0 && (
               <div className="hidden lg:flex items-center gap-0.5 ml-1">
                 {indicators.map(ind => (
-                  <button key={ind} onClick={() => toggleIndicator(ind)} className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-zinc-800/40 hover:bg-zinc-800/70 transition-all group" title={`Remove ${INDICATOR_LABELS[ind]}`}>
+                  <button key={ind} onClick={() => toggleIndicator(ind)} className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] bg-zinc-800/40 hover:bg-zinc-800/70 transition-all group border border-zinc-800/20" title={`Remove ${INDICATOR_LABELS[ind]}`}>
                     <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: INDICATOR_COLORS[ind] }} />
                     <span className="text-zinc-400 group-hover:text-zinc-200">{INDICATOR_LABELS[ind]}</span>
                     <X className="w-2.5 h-2.5 text-zinc-600 group-hover:text-zinc-300" />
@@ -1330,12 +1557,12 @@ function FuturesTerminal() {
             <div className="h-7 border-b border-zinc-800/30 flex items-center px-2 gap-3 shrink-0">
               {(["positions", "orders", "trades"] as const).map(tab => (
                 <button key={tab} onClick={() => setBottomTab(tab)} data-testid={`tab-${tab}`}
-                  className={cn("text-[10px] pb-0.5 transition-all relative", bottomTab === tab ? "text-white" : "text-zinc-600 hover:text-zinc-400")}>
+                  className={cn("text-[10px] pb-0.5 transition-all relative font-medium", bottomTab === tab ? "text-white" : "text-zinc-600 hover:text-zinc-400")}>
                   {tab === "positions" ? `Positions (${positions.length})` : tab.charAt(0).toUpperCase() + tab.slice(1)}
-                  {bottomTab === tab && <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-emerald-400" />}
+                  {bottomTab === tab && <div className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-emerald-400 rounded-full" />}
                 </button>
               ))}
-              <button onClick={refreshAcct} className="ml-auto text-zinc-700 hover:text-zinc-500 transition-colors p-0.5 rounded" data-testid="button-refresh-positions"><RefreshCw className="w-3 h-3" /></button>
+              <button onClick={refreshAcct} className="ml-auto text-zinc-700 hover:text-zinc-400 transition-colors p-0.5 rounded" data-testid="button-refresh-positions"><RefreshCw className="w-3 h-3" /></button>
             </div>
             <div className="flex-1 overflow-y-auto overflow-x-auto">
               {bottomTab === "positions" && <PositionsPanel positions={positions} wallet={address} onRefresh={refreshAcct} />}
@@ -1345,10 +1572,10 @@ function FuturesTerminal() {
           </div>
         </div>
 
-        <div className="w-[290px] border-l border-zinc-800/40 flex flex-col shrink-0 bg-[#0c0d0f] hidden md:flex">
+        <div className="w-[300px] border-l border-zinc-800/40 flex flex-col shrink-0 bg-[#0c0d0f] hidden md:flex">
           <div className="flex-1 min-h-0 overflow-hidden border-b border-zinc-800/40 flex flex-col">
             <div className="h-7 border-b border-zinc-800/30 flex items-center px-2 shrink-0">
-              <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-medium">Order Book</span>
+              <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-bold">Order Book</span>
             </div>
             <div className="flex-1 overflow-y-auto">
               <OrderBook symbol={selectedPair} />
@@ -1356,13 +1583,13 @@ function FuturesTerminal() {
           </div>
 
           <div className="flex flex-col overflow-hidden" style={{ maxHeight: "55%" }}>
-            <div className="h-7 border-b border-zinc-800/30 flex items-center px-2 gap-2 shrink-0">
+            <div className="h-8 border-b border-zinc-800/30 flex items-center px-2 gap-2 shrink-0">
               {(["trade", "agent"] as const).map(tab => (
                 <button key={tab} onClick={() => setRightTab(tab)}
-                  className={cn("text-[9px] uppercase tracking-wider font-medium transition-all relative pb-0.5",
+                  className={cn("text-[9px] uppercase tracking-wider font-bold transition-all relative pb-0.5 flex items-center gap-1",
                     rightTab === tab ? "text-white" : "text-zinc-600 hover:text-zinc-400")}>
-                  {tab === "trade" ? "Trade" : "AI Agent"}
-                  {rightTab === tab && <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-emerald-400" />}
+                  {tab === "trade" ? <><Target className="w-3 h-3" /> Trade</> : <><Brain className="w-3 h-3" /> AI Agent</>}
+                  {rightTab === tab && <div className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-emerald-400 rounded-full" />}
                 </button>
               ))}
             </div>

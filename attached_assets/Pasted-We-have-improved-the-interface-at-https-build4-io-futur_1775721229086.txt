@@ -1,0 +1,59 @@
+We have improved the interface at https://build4.io/futures, but it's still not world-class.
+
+Current state:
+- Chart has basic EMAs
+- Positions panel shows data
+- AI Agent tab exists
+- Layout is functional but basic
+
+Make it truly world-class — better than Binance Futures, Bybit, and Hyperliquid in 2026.
+
+Implement these upgrades in priority order:
+
+**Priority 1: Chart Excellence (Most Important)**
+- Add full indicator selector (dropdown or modal) with EMA, RSI, MACD, Bollinger Bands, Volume, Stochastic, Ichimoku, etc.
+- Add drawing tools toolbar (trend line, Fibonacci retracement, horizontal/vertical lines, rectangle, text)
+- Improve timeframe selector with clean pills and "More" option
+- Show open position lines and liquidation levels directly on the chart
+- Add crosshair with detailed tooltip (price, volume, indicators)
+
+**Priority 2: Smart Trade Ticket (Right Panel)**
+- Redesign trade ticket with tabs: Market | Limit | Stop
+- Add Risk % calculator: "Risk 1% of available margin" → auto-calculates quantity
+- Live preview: Margin required, Liquidation price, Estimated PnL
+- One-click percentage buttons (25%, 50%, 75%, 100%)
+- Leverage slider with visual feedback
+
+**Priority 3: AI Agent Panel (Make it the Star)**
+- Expand the AI Agent section
+- Show live reasoning in a clean feed: "Analyzing BTC... EMA9 crossed EMA21 upward + RSI 32 (oversold) → Opening Long at 10x"
+- Confidence meter
+- Current strategy summary
+- Performance stats: Win rate, Total PnL this week, Max drawdown
+
+**Priority 4: Layout & Polish**
+- Top bar: Clean balance summary (Futures, Available, uPnL) with green/red coloring
+- Better color coding for LONG (green) / SHORT (red)
+- Positions panel with one-click "Close" and "Reverse" buttons
+- Keyboard shortcuts (B = Buy Market, S = Sell Market, numbers for leverage)
+- Smooth animations and loading states
+- Professional typography and spacing
+
+**Priority 5: Advanced Features**
+- Order book with cumulative volume bars
+- Trade history tab
+- "My Agent" LIVE status with Stop button
+- Settings for risk %, max leverage, TP/SL defaults
+
+Technical:
+- Keep using the existing Aster V3 backend
+- Make sure all data updates in real-time (polling is fine for now)
+
+Start implementing now.
+
+Focus first on:
+1. Adding more indicators and drawing tools to the chart
+2. Upgrading the trade ticket with risk calculator and live preview
+3. Enhancing the AI Agent reasoning panel
+
+Make every pixel feel premium and professional.
