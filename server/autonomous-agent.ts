@@ -511,6 +511,33 @@ function scheduleNext(
   }, state.config.intervalMs);
 }
 
+let _exchangeInfoCache: Record<string, { quantityPrecision: number; stepSize: number; pricePrecision: number }> = {};
+let _exchangeInfoLastFetch = 0;
+
+async function loadExchangeInfo(futuresClient?: any): Promise<void> {
+  const now = Date.now();
+  if (now - _exchangeInfoLastFetch < 300_000 && Object.keys(_exchangeInfoCache).length > 0) return;
+  try {
+    const client = futuresClient || _agentFuturesClient;
+    if (!client?.exchangeInfo) return;
+    const info = await client.exchangeInfo();
+    const symbols = info?.symbols || [];
+    for (const s of symbols) {
+      const sym = s.symbol || s.pair;
+      if (!sym) continue;
+      const qp = s.quantityPrecision ?? 3;
+      const pp = s.pricePrecision ?? 2;
+      const lotFilter = (s.filters || []).find((f: any) => f.filterType === "LOT_SIZE");
+      const stepSize = lotFilter?.stepSize ? parseFloat(lotFilter.stepSize) : Math.pow(10, -qp);
+      _exchangeInfoCache[sym] = { quantityPrecision: qp, stepSize, pricePrecision: pp };
+    }
+    _exchangeInfoLastFetch = now;
+    console.log(`[ExchangeInfo] Cached ${Object.keys(_exchangeInfoCache).length} symbols`);
+  } catch (e: any) {
+    console.log(`[ExchangeInfo] Failed to fetch: ${e.message}`);
+  }
+}
+
 function computeQuantity(symbol: string, usdtBalance: number, riskPercent: number, leverage: number, lastPrice: number): number {
   if (lastPrice <= 0 || usdtBalance <= 0) return 0;
 
@@ -522,19 +549,17 @@ function computeQuantity(symbol: string, usdtBalance: number, riskPercent: numbe
   }
   let qty = notional / lastPrice;
 
-  const stepSizes: Record<string, number> = {
-    BTCUSDT: 0.001, ETHUSDT: 0.01, SOLUSDT: 0.1, BNBUSDT: 0.01,
-    DOGEUSDT: 1, XRPUSDT: 0.1, ADAUSDT: 1, AVAXUSDT: 0.1,
-    DOTUSDT: 0.1, MATICUSDT: 1, LINKUSDT: 0.01, LTCUSDT: 0.001,
-    SUIUSDT: 0.1, ARBUSDT: 0.1, OPUSDT: 0.1, APTUSDT: 0.01,
-    PEPEUSDT: 1, WIFUSDT: 0.1, NEARUSDT: 0.1, TONUSDT: 0.1,
-    ONDOUSDT: 0.1, FTMUSDT: 1, INJUSDT: 0.01, TIAUSDT: 0.1,
-    SEIUSDT: 1, STXUSDT: 0.1, RUNEUSDT: 0.1, JUPUSDT: 1,
-  };
-  const step = stepSizes[symbol] || (lastPrice > 1000 ? 0.001 : lastPrice > 100 ? 0.01 : lastPrice > 1 ? 0.1 : 1);
+  const info = _exchangeInfoCache[symbol];
+  let step: number;
+  let precision: number;
+  if (info) {
+    step = info.stepSize;
+    precision = info.quantityPrecision;
+  } else {
+    step = lastPrice > 1000 ? 0.001 : lastPrice > 100 ? 0.01 : lastPrice > 1 ? 0.1 : 1;
+    precision = step < 1 ? Math.ceil(-Math.log10(step)) : 0;
+  }
   qty = Math.floor(qty / step) * step;
-
-  const precision = step < 1 ? Math.ceil(-Math.log10(step)) : 0;
   return parseFloat(qty.toFixed(precision));
 }
 
@@ -607,6 +632,8 @@ async function openPosition(
       console.warn(`[Agent:${chatId}] Leverage warning for ${symbol}: ${e.message?.substring(0, 100)}`);
     }
   }
+
+  await loadExchangeInfo(futuresClient);
 
   const ticker = await futuresClient.tickerPrice(symbol);
   const lastPrice = parseFloat(ticker?.price || "0");
