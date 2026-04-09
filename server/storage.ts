@@ -71,6 +71,7 @@ import {
   type TelegramBotReferral, telegramBotReferrals,
   tradingPreferences,
   type AsterCredentials, asterCredentials,
+  hyperliquidCredentials,
   type AsterTradingLimit, asterTradingLimits,
   tradeOutcomes,
   agentSkillConfigs,
@@ -503,6 +504,10 @@ export interface IStorage {
   getAsterCredentials(chatId: string): Promise<{ chatId: string; apiKey: string; apiSecret: string; parentAddress?: string } | null>;
   saveAsterParentAddress(chatId: string, parentAddress: string): Promise<void>;
   removeAsterCredentials(chatId: string): Promise<void>;
+
+  saveHyperliquidCredentials(chatId: string, userAddress: string, agentKey?: string, agentAddress?: string, isMainnet?: boolean): Promise<any>;
+  getHyperliquidCredentials(chatId: string): Promise<{ chatId: string; userAddress: string; agentKey?: string; agentAddress?: string; isMainnet: boolean } | null>;
+  removeHyperliquidCredentials(chatId: string): Promise<void>;
 
   getUserSkillConfigs(chatId: string): Promise<Array<{ skillId: string; enabled: boolean; config: Record<string, any> }>>;
   setUserSkillConfig(chatId: string, skillId: string, enabled: boolean, config: Record<string, any>): Promise<void>;
@@ -3603,6 +3608,68 @@ export class DatabaseStorage implements IStorage {
       }
     } catch (e: any) {
       console.error("[Pool] updatePoolUserShares error:", e.message);
+    }
+  }
+
+  async saveHyperliquidCredentials(chatId: string, userAddress: string, agentKey?: string, agentAddress?: string, isMainnet: boolean = true): Promise<any> {
+    const insertFields: any = {
+      chatId,
+      userAddress: userAddress.toLowerCase(),
+      isMainnet,
+    };
+    if (agentKey) {
+      insertFields.encryptedAgentKey = encryptPrivateKey(agentKey);
+      insertFields.agentAddress = agentAddress?.toLowerCase() || null;
+    }
+    try {
+      const [row] = await db.insert(hyperliquidCredentials).values(insertFields).onConflictDoUpdate({
+        target: hyperliquidCredentials.chatId,
+        set: { ...insertFields, createdAt: new Date() },
+      }).returning();
+      return row;
+    } catch (e: any) {
+      if (e.message?.includes("does not exist")) {
+        await db.execute(sql`CREATE TABLE IF NOT EXISTS "hyperliquid_credentials" (
+          chat_id TEXT PRIMARY KEY NOT NULL,
+          user_address TEXT NOT NULL,
+          encrypted_agent_key TEXT,
+          agent_address TEXT,
+          is_mainnet BOOLEAN NOT NULL DEFAULT true,
+          created_at TIMESTAMP DEFAULT now()
+        )`);
+        const [row] = await db.insert(hyperliquidCredentials).values(insertFields).onConflictDoUpdate({
+          target: hyperliquidCredentials.chatId,
+          set: { ...insertFields, createdAt: new Date() },
+        }).returning();
+        return row;
+      }
+      throw e;
+    }
+  }
+
+  async getHyperliquidCredentials(chatId: string): Promise<{ chatId: string; userAddress: string; agentKey?: string; agentAddress?: string; isMainnet: boolean } | null> {
+    try {
+      const rows = await db.select().from(hyperliquidCredentials).where(eq(hyperliquidCredentials.chatId, chatId));
+      if (!rows.length) return null;
+      const row = rows[0];
+      return {
+        chatId: row.chatId,
+        userAddress: row.userAddress,
+        agentKey: row.encryptedAgentKey ? decryptPrivateKey(row.encryptedAgentKey) : undefined,
+        agentAddress: row.agentAddress || undefined,
+        isMainnet: row.isMainnet,
+      };
+    } catch (e: any) {
+      if (e.message?.includes("does not exist")) return null;
+      throw e;
+    }
+  }
+
+  async removeHyperliquidCredentials(chatId: string): Promise<void> {
+    try {
+      await db.delete(hyperliquidCredentials).where(eq(hyperliquidCredentials.chatId, chatId));
+    } catch (e: any) {
+      if (!e.message?.includes("does not exist")) throw e;
     }
   }
 

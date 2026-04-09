@@ -1773,3 +1773,30 @@ export const asterLocalTrades = pgTable("aster_local_trades", {
   leverage: integer("leverage").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const hyperliquidCredentials = pgTable("hyperliquid_credentials", {
+  chatId: text("chat_id").primaryKey(),
+  userAddress: text("user_address").notNull(),
+  encryptedAgentKey: text("encrypted_agent_key"),
+  agentAddress: text("agent_address"),
+  isMainnet: boolean("is_mainnet").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertHyperliquidCredentialsSchema = createInsertSchema(hyperliquidCredentials).omit({ createdAt: true });
+export type InsertHyperliquidCredentials = z.infer<typeof insertHyperliquidCredentialsSchema>;
+export type HyperliquidCredentials = typeof hyperliquidCredentials.$inferSelect;
+
+export const hyperliquidTradingLimits = pgTable("hyperliquid_trading_limits", {
+  chatId: text("chat_id").primaryKey(),
+  maxDailyLossUsdt: doublePrecision("max_daily_loss_usdt").notNull().default(100),
+  maxPositionSizeUsdt: doublePrecision("max_position_size_usdt").notNull().default(50),
+  maxLeverage: integer("max_leverage").notNull().default(10),
+  maxOpenPositions: integer("max_open_positions").notNull().default(3),
+  autoTradeEnabled: boolean("auto_trade_enabled").notNull().default(false),
+  dailyPnlUsdt: doublePrecision("daily_pnl_usdt").notNull().default(0),
+  dailyPnlResetAt: timestamp("daily_pnl_reset_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  agentConfigJson: text("agent_config_json").default("{}"),
+});
+export type HyperliquidTradingLimit = typeof hyperliquidTradingLimits.$inferSelect;

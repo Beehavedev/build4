@@ -1,0 +1,55 @@
+We are now building **Build4 Hyperliquid Agent AI** — the world-class autonomous AI trading platform for Hyperliquid, mirroring what we did for Aster DEX but even better.
+
+Official Hyperliquid Resources to use:
+- Main Docs: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api
+- Exchange Endpoint (for placing orders): https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint
+- Official Python SDK: https://github.com/hyperliquid-dex/hyperliquid-python-sdk
+- Testnet: https://api.hyperliquid-testnet.xyz
+- Mainnet: https://api.hyperliquid.xyz
+
+Goal:
+Create a premium Telegram Mini App + backend where users can:
+- Connect/link their wallet
+- Create or link an API wallet on Hyperliquid (guided)
+- Let our autonomous AI agents trade **on their own Hyperliquid account** autonomously
+- Have a beautiful, professional trading interface that surpasses Binance and Hyperliquid’s own UI
+
+Architecture:
+- Telegram Mini App (React + TypeScript + Vite + Tailwind + shadcn/ui)
+- Backend on Render (Node.js/TypeScript) sharing the same logic as the Aster project
+- PostgreSQL for multi-user data (deposits, linked API keys, trade history, PnL shares)
+- Use the official Hyperliquid Python SDK where possible, or raw signed requests
+
+Key Features to Build (World-Class Level):
+
+1. **Smooth Onboarding Wizard in Mini App**
+   - Wallet connection (TON Connect + EVM)
+   - Guided "Create / Link API Wallet on Hyperliquid" (user signs once)
+   - Store encrypted API credentials per user
+
+2. **Premium Trading Terminal (Desktop + Mobile)**
+   - Advanced chart with indicators, drawing tools, multi-timeframe
+   - Smart trade ticket with risk % calculator and live preview
+   - Live order book + depth chart
+   - Positions panel with one-click actions
+   - Top bar with real-time balances and market data
+
+3. **Autonomous AI Agent (The Star Feature)**
+   - Live reasoning panel showing step-by-step decisions
+   - Configurable risk (0.5–3% of available margin)
+   - Safety limits (max leverage, daily loss limit, volatility breaker)
+   - Performance dashboard (win rate, PnL, drawdown)
+
+4. **Multi-User Scaling**
+   - Support thousands of users with their own linked Hyperliquid accounts
+   - Central pool fallback option
+   - Secure per-user credential storage
+
+First Priority:
+- Build the guided wallet linking / API Wallet setup wizard
+- Fix balance querying using the correct Hyperliquid API structure
+- Create the beautiful main trading terminal layout (chart + trade ticket + positions + AI panel)
+
+Make every screen feel premium, fast, and intelligent. Use the official Hyperliquid SDK and API docs for all calls.
+
+Start building now. Make this the best Hyperliquid autonomous trading platform in existence.
