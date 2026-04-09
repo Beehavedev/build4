@@ -486,20 +486,46 @@ function ActivationFlow({ wallet, onDone }: { wallet: string; onDone: () => void
       });
       const actData = await actRes.json();
       if (actData.error) { setError(actData.error); setWorking(false); return; }
-      if (actData.alreadyActive) { setStep(4); onDone(); return; }
+      if (actData.alreadyActive) { setStep(5); onDone(); return; }
       const sessionId = actData.sessionId;
       const tradingAddress = actData.tradingWalletAddress;
       if (!tradingAddress) { setError("No trading address returned"); setWorking(false); return; }
 
       setStep(3);
+      const nonceRes = await fetch("https://www.asterdex.com/bapi/futures/v1/public/future/web3/get-nonce", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "clientType": "web" },
+        body: JSON.stringify({ type: "LOGIN", sourceAddr: tradingAddress }),
+      });
+      const nonceData = await nonceRes.json();
+      if (!nonceData?.data?.nonce) { setError("Failed to get registration nonce from Aster DEX"); setWorking(false); return; }
+
+      const signRes = await fetch("/api/miniapp/sign-registration", {
+        method: "POST", headers: { "Content-Type": "application/json", "x-wallet-address": wallet },
+        body: JSON.stringify({ sessionId, nonce: nonceData.data.nonce }),
+      });
+      const signData = await signRes.json();
+      if (!signData.signature) { setError("Failed to sign registration"); setWorking(false); return; }
+
+      const loginRes = await fetch("https://www.asterdex.com/bapi/futures/v1/public/future/web3/ae/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "clientType": "web" },
+        body: JSON.stringify({ signature: signData.signature, sourceAddr: tradingAddress, chainId: 56, agentCode: "BUILD4" }),
+      });
+      const loginData = await loginRes.json();
+      if (loginData?.code !== "000000" && loginData?.code !== 0) {
+        console.log("Aster login response:", loginData);
+      }
+
+      setStep(4);
       const complRes = await fetch("/api/miniapp/complete-activation", {
         method: "POST", headers: { "Content-Type": "application/json", "x-wallet-address": wallet },
-        body: JSON.stringify({ sessionId, tradingAddress, connectedAddress: wallet }),
+        body: JSON.stringify({ sessionId }),
       });
       const complData = await complRes.json();
       if (complData.error) { setError(complData.error); setWorking(false); return; }
 
-      setStep(4);
+      setStep(5);
       onDone();
     } catch (e: any) {
       setError(e.message || "Activation failed");
@@ -518,14 +544,15 @@ function ActivationFlow({ wallet, onDone }: { wallet: string; onDone: () => void
       {step > 0 && (
         <div className="text-xs space-y-1 text-left max-w-xs mx-auto">
           <div className={step >= 1 ? "text-emerald-400" : "text-zinc-600"}>1. Registering wallet...</div>
-          <div className={step >= 2 ? "text-emerald-400" : "text-zinc-600"}>2. Creating trading agent...</div>
-          <div className={step >= 3 ? "text-emerald-400" : "text-zinc-600"}>3. Approving agent on-chain...</div>
-          <div className={step >= 4 ? "text-emerald-400" : "text-zinc-600"}>4. Done!</div>
+          <div className={step >= 2 ? "text-emerald-400" : "text-zinc-600"}>2. Creating trading wallet...</div>
+          <div className={step >= 3 ? "text-emerald-400" : "text-zinc-600"}>3. Registering on Aster DEX...</div>
+          <div className={step >= 4 ? "text-emerald-400" : "text-zinc-600"}>4. Approving agent on-chain...</div>
+          <div className={step >= 5 ? "text-emerald-400" : "text-zinc-600"}>5. Done!</div>
         </div>
       )}
       {error && <div className="text-xs text-red-400 bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
       <Button onClick={activate} disabled={working} data-testid="button-activate" className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white border-0 shadow-lg">
-        {working ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : null}{working ? `Step ${step}/3...` : "Activate Now"}
+        {working ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : null}{working ? `Step ${step}/4...` : "Activate Now"}
       </Button>
     </div>
   );
