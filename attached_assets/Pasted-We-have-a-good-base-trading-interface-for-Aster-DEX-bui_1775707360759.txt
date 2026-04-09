@@ -1,0 +1,68 @@
+We have a good base trading interface for Aster DEX (build4.io/futures).
+
+Now upgrade it to be **world-class**, clearly better than Binance Futures and Aster's own UI.
+
+Target: Professional desktop trading terminal with institutional feel.
+
+Add these features and improvements:
+
+**1. Chart Enhancements (Make it the best)**
+- Multiple timeframe selector with clean pills (1m, 3m, 5m, 15m, 30m, 1h, 4h, 1D, 1W)
+- Full indicator menu (EMA, SMA, RSI, MACD, Bollinger Bands, Volume Profile, Ichimoku, etc.)
+- Drawing tools toolbar (trend lines, Fibonacci, rectangles, text)
+- Multi-chart layout (1, 2, 4 charts side by side)
+- Overlay open positions and liquidation levels on the chart
+- Crosshair with price + time tooltip
+
+**2. Advanced Trade Ticket (Right Panel)**
+- Market / Limit / Stop-Limit tabs
+- Leverage slider with real-time margin requirement and liquidation price preview
+- Risk calculator: "Risk 1% of available margin" → auto-calculates quantity
+- One-click percentage buttons (25%, 50%, 75%, 100%)
+- Estimated PnL, fees, and breakeven price shown live
+
+**3. Order Book & Depth**
+- Real-time order book with cumulative volume bars
+- Visual depth chart (optional but nice)
+- Highlight user's own orders if any
+
+**4. Positions & Orders Panel (Bottom or Left)**
+- Live positions with color-coded unrealized PnL
+- One-click "Close", "Reduce", "Add to position"
+- Open orders list with cancel button
+- Trade history (filled orders)
+
+**5. AI Agent Integration (New Panel or Sidebar)**
+- Dedicated AI Agent section showing live reasoning
+- "Why this trade?" explanation
+- Confidence score
+- Toggle Autonomous Mode with risk % slider
+
+**6. Top Bar & Global Features**
+- Wallet summary: Total Balance, Available Margin, Unrealized PnL (big numbers)
+- Pair selector with search, favorites, and volume filter
+- Funding rate, 24h change, open interest
+- Connection status to Aster V3
+- Keyboard shortcuts (B = Buy market, S = Sell market, numbers for leverage)
+
+**7. Polish & Professional Feel**
+- Smooth animations and transitions
+- Glassmorphism / subtle shadows
+- Dark mode with excellent contrast
+- Loading skeletons
+- Sound alerts for fills (optional)
+- Responsive (works on large desktop and tablet)
+
+Technical:
+- Use lightweight-charts or advanced charting library
+- Real-time updates via polling or WebSocket
+- Keep using the existing Aster V3 backend
+
+Start implementing these upgrades now. Focus first on:
+- Improving the chart with indicators and drawing tools
+- Upgrading the trade ticket with risk calculator and live preview
+- Adding the AI Agent reasoning panel
+
+Make this the most beautiful and functional trading interface ever built for Aster DEX.
+
+Begin immediately.
