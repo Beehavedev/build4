@@ -1389,6 +1389,11 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
 
 async function autoOnboardAster(chatId: number, walletAddress: string, privateKey: string): Promise<void> {
   try {
+    const BUILD4_BUILDER = "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4";
+    if (walletAddress.toLowerCase() === BUILD4_BUILDER.toLowerCase()) {
+      console.warn(`[Aster] Refusing to onboard builder address as user wallet for chatId=${chatId}`);
+      return;
+    }
     console.log(`[Aster] Auto-onboarding via Aster Code for wallet ${walletAddress.substring(0, 10)}... chatId=${chatId}`);
 
     const { asterCodeOnboard, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");

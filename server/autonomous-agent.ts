@@ -879,7 +879,7 @@ export async function resumeEnabledAgents(): Promise<void> {
           const realParent = creds.parentAddress!.replace("astercode:", "");
           const { createAsterCodeFuturesClient, getDefaultAsterCodeConfig } = await import("./aster-code");
           client = createAsterCodeFuturesClient(realParent, creds.apiKey, creds.apiSecret, getDefaultAsterCodeConfig());
-          console.log(`[Agent:${chatId}] Using Aster Code client (builder mode)`);
+          console.log(`[Agent:${chatId}] Using Aster Code client (builder mode) user=${realParent.substring(0,10)}`);
         } else if (isV3ApiWallet) {
           const parentAddr = creds.parentAddress || creds.apiKey;
           const { createAsterV3FuturesClient } = await import("./aster-client");

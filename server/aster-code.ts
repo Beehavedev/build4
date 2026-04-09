@@ -743,9 +743,11 @@ export function createAsterCodeFuturesClient(
         symbol: orderParams.symbol,
         side: orderParams.side,
         type: orderParams.type,
-        builder: builderAddress,
-        feeRate,
       };
+      if (builderAddress && builderAddress.toLowerCase() !== userAddress.toLowerCase()) {
+        params.builder = builderAddress;
+        params.feeRate = feeRate;
+      }
       if (orderParams.quantity) params.quantity = orderParams.quantity;
       if (orderParams.price) params.price = orderParams.price;
       if (orderParams.stopPrice) params.stopPrice = orderParams.stopPrice;

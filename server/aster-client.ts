@@ -975,7 +975,7 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
       if (orderParams.workingType) params.workingType = orderParams.workingType;
       if (orderParams.type === "LIMIT" && !params.timeInForce) params.timeInForce = "GTC";
       if (orderParams.newClientOrderId) params.newClientOrderId = orderParams.newClientOrderId;
-      if (builderAddress) {
+      if (builderAddress && builderAddress.toLowerCase() !== user.toLowerCase()) {
         params.builder = builderAddress;
         params.feeRate = builderFeeRate;
       }
