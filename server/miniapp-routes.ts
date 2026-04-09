@@ -1389,6 +1389,65 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
     }
   });
 
+  app.post("/api/miniapp/agent/preset", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+
+      const { setAgentConfig, getAgentState } = await import("./autonomous-agent");
+      const state = getAgentState(chatId);
+      if (state?.running) return res.status(400).json({ error: "Stop the agent before changing preset" });
+
+      const { preset } = req.body;
+      const presets: Record<string, any> = {
+        conservative: {
+          riskPercent: 0.5,
+          maxLeverage: 5,
+          maxOpenPositions: 2,
+          takeProfitPct: 3.0,
+          stopLossPct: 2.0,
+          trailingStopPct: 1.5,
+          orderbookImbalanceThreshold: 0.6,
+          useConfidenceFilter: true,
+          minConfidence: 0.65,
+          fundingRateFilter: true,
+        },
+        balanced: {
+          riskPercent: 1.5,
+          maxLeverage: 10,
+          maxOpenPositions: 3,
+          takeProfitPct: 5.0,
+          stopLossPct: 3.0,
+          trailingStopPct: 2.0,
+          orderbookImbalanceThreshold: 0.5,
+          useConfidenceFilter: true,
+          minConfidence: 0.45,
+          fundingRateFilter: true,
+        },
+        degen: {
+          riskPercent: 3.0,
+          maxLeverage: 25,
+          maxOpenPositions: 5,
+          takeProfitPct: 8.0,
+          stopLossPct: 5.0,
+          trailingStopPct: 3.0,
+          orderbookImbalanceThreshold: 0.4,
+          useConfidenceFilter: false,
+          minConfidence: 0.3,
+          fundingRateFilter: false,
+        },
+      };
+
+      const config = presets[preset];
+      if (!config) return res.status(400).json({ error: "Invalid preset. Use: conservative, balanced, or degen" });
+
+      const result = setAgentConfig(chatId, config);
+      res.json({ success: true, preset, config: result });
+    } catch (e: any) {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.post("/api/miniapp/agent/config", async (req: Request, res: Response) => {
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;

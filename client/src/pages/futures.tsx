@@ -730,15 +730,38 @@ function TradesPanel({ wallet, symbol }: { wallet: string; symbol: string }) {
   );
 }
 
+type PresetKey = "conservative" | "balanced" | "degen";
+const PRESET_META: Record<PresetKey, { label: string; icon: string; desc: string; color: string; border: string; bg: string }> = {
+  conservative: { label: "Conservative", icon: "🛡", desc: "Low risk, tight stops, high confidence filter", color: "text-blue-400", border: "border-blue-500/30", bg: "bg-blue-500/8" },
+  balanced: { label: "Balanced", icon: "⚖", desc: "Moderate risk, standard thresholds", color: "text-amber-400", border: "border-amber-500/30", bg: "bg-amber-500/8" },
+  degen: { label: "Degen", icon: "🔥", desc: "High risk, wide stops, trades everything", color: "text-red-400", border: "border-red-500/30", bg: "bg-red-500/8" },
+};
+
+function detectPreset(config: AgentData["config"]): PresetKey | null {
+  if (config.riskPercent <= 0.5 && config.maxLeverage <= 5 && config.minConfidence >= 0.6) return "conservative";
+  if (config.riskPercent >= 2.5 && config.maxLeverage >= 20) return "degen";
+  if (config.riskPercent >= 1 && config.riskPercent <= 2 && config.maxLeverage >= 8 && config.maxLeverage <= 15) return "balanced";
+  return null;
+}
+
 function AgentPanel({ wallet }: { wallet: string }) {
   const { data: agent, loading, refresh } = useApi<AgentData>("/api/miniapp/agent", wallet);
   const [toggling, setToggling] = useState(false);
+  const [settingPreset, setSettingPreset] = useState<string | null>(null);
 
   useEffect(() => { if (!wallet) return; const iv = setInterval(refresh, 10000); return () => clearInterval(iv); }, [wallet, refresh]);
 
   const toggle = async () => {
     setToggling(true);
     try { await post("/api/miniapp/agent/toggle", wallet, {}); refresh(); } catch {} finally { setToggling(false); }
+  };
+
+  const applyPreset = async (preset: PresetKey) => {
+    setSettingPreset(preset);
+    try {
+      const r = await post("/api/miniapp/agent/preset", wallet, { preset });
+      if (r.success) refresh();
+    } catch {} finally { setSettingPreset(null); }
   };
 
   if (loading) return <div className="p-3 space-y-2"><Skeleton className="w-full h-6 bg-zinc-900" /><Skeleton className="w-full h-4 bg-zinc-900" /><Skeleton className="w-3/4 h-4 bg-zinc-900" /></div>;
@@ -749,6 +772,7 @@ function AgentPanel({ wallet }: { wallet: string }) {
   const winRateStr = totalTrades > 0 ? winRate.toFixed(0) + "%" : "—";
   const confidence = totalTrades > 0 ? Math.min(Math.max(winRate, 10), 95) : 50;
   const confColor = confidence >= 65 ? "#22c55e" : confidence >= 45 ? "#f59e0b" : "#ef4444";
+  const currentPreset = detectPreset(agent.config);
 
   return (
     <div className="p-3 space-y-3" data-testid="agent-panel">
@@ -769,6 +793,32 @@ function AgentPanel({ wallet }: { wallet: string }) {
           {toggling ? <RefreshCw className="w-3 h-3 animate-spin" /> : agent.running ? <><Square className="w-3 h-3" /> Stop</> : <><Play className="w-3 h-3" /> Start</>}
         </button>
       </div>
+
+      {!agent.running && (
+        <div className="space-y-1.5" data-testid="preset-selector">
+          <div className="text-[8px] text-zinc-600 uppercase tracking-wider font-semibold">Strategy</div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {(["conservative", "balanced", "degen"] as PresetKey[]).map(key => {
+              const meta = PRESET_META[key];
+              const active = currentPreset === key;
+              return (
+                <button key={key} onClick={() => applyPreset(key)} disabled={!!settingPreset} data-testid={`preset-${key}`}
+                  className={cn("relative flex flex-col items-center gap-1 py-2 px-1.5 rounded-lg text-center transition-all border",
+                    active ? `${meta.bg} ${meta.border} ${meta.color}` : "bg-zinc-900/30 border-zinc-800/20 text-zinc-500 hover:bg-zinc-800/40 hover:text-zinc-300")}>
+                  {settingPreset === key ? <RefreshCw className="w-4 h-4 animate-spin" /> : <span className="text-sm">{meta.icon}</span>}
+                  <span className="text-[9px] font-bold">{meta.label}</span>
+                  {active && <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-current" />}
+                </button>
+              );
+            })}
+          </div>
+          {currentPreset && (
+            <div className={cn("text-[8px] px-2 py-1 rounded", PRESET_META[currentPreset].bg, PRESET_META[currentPreset].color)}>
+              {PRESET_META[currentPreset].desc}
+            </div>
+          )}
+        </div>
+      )}
 
       {totalTrades > 0 && (
         <div className="bg-zinc-900/30 rounded-lg p-2.5 border border-zinc-800/20">
