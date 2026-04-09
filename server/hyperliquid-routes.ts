@@ -287,9 +287,20 @@ export function registerHyperliquidRoutes(app: Express) {
       }
       const creds = await storage.getHyperliquidCredentials(chatId);
       if (!creds) return res.status(400).json({ error: "Link wallet first" });
-      const { r, s, v } = JSON.parse(typeof signature === "string" ? signature : JSON.stringify(signature));
+      let r: string, s: string, v: number;
+      if (typeof signature === "string" && signature.startsWith("0x")) {
+        const { ethers } = await import("ethers");
+        const parsed = ethers.Signature.from(signature);
+        r = parsed.r; s = parsed.s; v = parsed.v;
+      } else if (typeof signature === "object" && signature.r) {
+        r = signature.r; s = signature.s; v = typeof signature.v === "number" ? signature.v : parseInt(signature.v);
+      } else {
+        return res.status(400).json({ error: "Invalid signature format" });
+      }
       const action: any = {
         type: "approveAgent",
+        hyperliquidChain: "Mainnet",
+        signatureChainId: "0x66eee",
         agentAddress,
         agentName: agentName || "",
         nonce,
@@ -305,7 +316,9 @@ export function registerHyperliquidRoutes(app: Express) {
           vaultAddress: null,
         }),
       });
-      const result = await response.json();
+      const responseText = await response.text();
+      let result: any;
+      try { result = JSON.parse(responseText); } catch { result = { error: responseText }; }
       if (result?.status === "ok") {
         await storage.saveHyperliquidCredentials(chatId, creds.userAddress, agentKey, agentAddress);
         res.json({ success: true, agentAddress });

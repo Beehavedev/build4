@@ -807,13 +807,15 @@ function SetupModal({ wallet, hlStatus, onClose, onRefresh }: {
         method: "POST",
         headers: hlHeaders(wallet.address),
         body: JSON.stringify({
-          signature: { r, s, v },
+          signature: { r, s, v: Number(v) },
           agentKey: prepData.agentKey,
           agentAddress: prepData.agentAddress,
           nonce: prepData.nonce,
         }),
       });
-      const submitData = await submitRes.json();
+      const submitText = await submitRes.text();
+      let submitData: any;
+      try { submitData = JSON.parse(submitText); } catch { submitData = { error: submitText }; }
       if (submitData.success) {
         setNewAgentKey(prepData.agentKey);
         onRefresh();
