@@ -199,7 +199,8 @@ function computeRSI(data: number[], period: number): number[] {
     if (i < period) { avgGain += gain; avgLoss += loss; result.push(NaN); continue; }
     if (i === period) { avgGain = (avgGain + gain) / period; avgLoss = (avgLoss + loss) / period; }
     else { avgGain = (avgGain * (period - 1) + gain) / period; avgLoss = (avgLoss * (period - 1) + loss) / period; }
-    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    if (avgLoss === 0) { result.push(100); continue; }
+    const rs = avgGain / avgLoss;
     result.push(100 - (100 / (1 + rs)));
   }
   return result;
@@ -297,7 +298,7 @@ function TradingChart({ symbol, interval, indicators, positions }: { symbol: str
 
   const hasRSI = indicators.includes("rsi14");
   const hasMACD = indicators.includes("macd");
-  const overlayIndicators = indicators.filter(i => i !== "rsi14" && i !== "macd");
+  const overlayIndicators = useMemo(() => indicators.filter(i => i !== "rsi14" && i !== "macd"), [indicators]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -712,62 +713,90 @@ function AgentPanel({ wallet }: { wallet: string }) {
   if (loading) return <div className="p-3 space-y-2"><Skeleton className="w-full h-6 bg-zinc-900" /><Skeleton className="w-full h-4 bg-zinc-900" /><Skeleton className="w-3/4 h-4 bg-zinc-900" /></div>;
   if (!agent) return <div className="p-4 text-center text-xs text-zinc-600">Agent not available</div>;
 
-  const winRate = (agent.stats.winCount + agent.stats.lossCount) > 0
-    ? ((agent.stats.winCount / (agent.stats.winCount + agent.stats.lossCount)) * 100).toFixed(0) : "—";
+  const totalTrades = agent.stats.winCount + agent.stats.lossCount;
+  const winRate = totalTrades > 0 ? (agent.stats.winCount / totalTrades) * 100 : 0;
+  const winRateStr = totalTrades > 0 ? winRate.toFixed(0) + "%" : "—";
+  const confidence = totalTrades > 0 ? Math.min(Math.max(winRate, 10), 95) : 50;
+  const confColor = confidence >= 65 ? "#22c55e" : confidence >= 45 ? "#f59e0b" : "#ef4444";
 
   return (
     <div className="p-3 space-y-3" data-testid="agent-panel">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className={cn("w-2 h-2 rounded-full", agent.running ? "bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(34,197,94,0.5)]" : "bg-zinc-600")} />
-          <span className="text-xs font-bold text-white">{agent.config.name}</span>
+          <div className="relative">
+            <Bot className={cn("w-4 h-4", agent.running ? "text-emerald-400" : "text-zinc-600")} />
+            {agent.running && <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(34,197,94,0.5)]" />}
+          </div>
+          <div>
+            <span className="text-xs font-bold text-white">{agent.config.name}</span>
+            <span className={cn("ml-2 text-[9px]", agent.running ? "text-emerald-400" : "text-zinc-600")}>{agent.running ? "LIVE" : "IDLE"}</span>
+          </div>
         </div>
         <button onClick={toggle} disabled={toggling} data-testid="button-agent-toggle"
-          className={cn("flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium transition-all",
-            agent.running ? "bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20" : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20")}>
+          className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-semibold transition-all",
+            agent.running ? "bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.05)]" : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 shadow-[0_0_10px_rgba(34,197,94,0.05)]")}>
           {toggling ? <RefreshCw className="w-3 h-3 animate-spin" /> : agent.running ? <><Square className="w-3 h-3" /> Stop</> : <><Play className="w-3 h-3" /> Start</>}
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
+      {totalTrades > 0 && (
+        <div className="bg-zinc-900/30 rounded-lg p-2.5 border border-zinc-800/20">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[8px] text-zinc-600 uppercase tracking-wider">Confidence</span>
+            <span className="text-[11px] font-bold font-mono" style={{ color: confColor }}>{confidence.toFixed(0)}%</span>
+          </div>
+          <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all duration-700" style={{ width: `${confidence}%`, background: `linear-gradient(90deg, ${confColor}80, ${confColor})` }} />
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-4 gap-1.5">
         {[
           { label: "Trades", value: String(agent.stats.tradeCount), color: "text-white" },
-          { label: "Win Rate", value: winRate + "%", color: "text-emerald-400" },
+          { label: "Win", value: winRateStr, color: "text-emerald-400" },
           { label: "PnL", value: (agent.stats.totalPnl >= 0 ? "+" : "") + fmt(agent.stats.totalPnl), color: agent.stats.totalPnl >= 0 ? "text-emerald-400" : "text-red-400" },
+          { label: "Scans", value: String(agent.stats.scanCount), color: "text-zinc-300" },
         ].map(s => (
-          <div key={s.label} className="bg-zinc-900/40 rounded p-1.5 text-center border border-zinc-800/20">
-            <div className="text-[8px] text-zinc-600 uppercase tracking-wider">{s.label}</div>
-            <div className={cn("text-[11px] font-bold font-mono", s.color)}>{s.value}</div>
+          <div key={s.label} className="bg-zinc-900/40 rounded-md p-1.5 text-center border border-zinc-800/15">
+            <div className="text-[7px] text-zinc-600 uppercase tracking-wider mb-0.5">{s.label}</div>
+            <div className={cn("text-[10px] font-bold font-mono", s.color)}>{s.value}</div>
           </div>
         ))}
       </div>
 
       {agent.stats.lastReason && (
-        <div className="bg-zinc-900/30 rounded-md p-2 border border-zinc-800/20">
-          <div className="text-[8px] text-zinc-600 uppercase tracking-wider mb-1">Last Decision</div>
+        <div className="bg-gradient-to-br from-zinc-900/50 to-zinc-900/20 rounded-lg p-2.5 border border-zinc-800/20 backdrop-blur-sm">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Activity className="w-3 h-3 text-cyan-400" />
+            <span className="text-[8px] text-cyan-400/80 uppercase tracking-wider font-semibold">AI Reasoning</span>
+          </div>
           <div className="text-[10px] text-zinc-300 leading-relaxed">{agent.stats.lastReason}</div>
           {agent.stats.lastAction && (
-            <div className="mt-1 text-[9px] text-zinc-500">Action: <span className="text-zinc-300">{agent.stats.lastAction}</span></div>
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <Zap className="w-2.5 h-2.5 text-amber-400" />
+              <span className="text-[9px] text-amber-400/80 font-medium">{agent.stats.lastAction}</span>
+            </div>
           )}
         </div>
       )}
 
       {agent.stats.openPositions.length > 0 && (
         <div>
-          <div className="text-[8px] text-zinc-600 uppercase tracking-wider mb-1">Open Positions</div>
+          <div className="text-[8px] text-zinc-600 uppercase tracking-wider mb-1">Active Positions</div>
           <div className="flex flex-wrap gap-1">
             {agent.stats.openPositions.map((pos, i) => (
-              <Badge key={i} variant="outline" className={cn("text-[8px] border-0", pos.startsWith("BUY") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400")}>{pos}</Badge>
+              <Badge key={i} variant="outline" className={cn("text-[8px] border-0 font-medium", pos.startsWith("BUY") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400")}>{pos}</Badge>
             ))}
           </div>
         </div>
       )}
 
-      <div className="space-y-1 text-[9px]">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[9px] bg-zinc-900/20 rounded-md p-2 border border-zinc-800/10">
         <div className="flex justify-between text-zinc-500"><span>Risk</span><span className="text-zinc-300">{agent.config.riskPercent}%</span></div>
-        <div className="flex justify-between text-zinc-500"><span>Max Leverage</span><span className="text-zinc-300">{agent.config.maxLeverage}x</span></div>
-        <div className="flex justify-between text-zinc-500"><span>TP / SL</span><span className="text-zinc-300">{agent.config.takeProfitPct}% / {agent.config.stopLossPct}%</span></div>
-        <div className="flex justify-between text-zinc-500"><span>Scans</span><span className="text-zinc-300">{agent.stats.scanCount}</span></div>
+        <div className="flex justify-between text-zinc-500"><span>Max Lev</span><span className="text-zinc-300">{agent.config.maxLeverage}x</span></div>
+        <div className="flex justify-between text-zinc-500"><span>TP</span><span className="text-emerald-400/80">{agent.config.takeProfitPct}%</span></div>
+        <div className="flex justify-between text-zinc-500"><span>SL</span><span className="text-red-400/80">{agent.config.stopLossPct}%</span></div>
       </div>
     </div>
   );
@@ -1171,11 +1200,23 @@ function FuturesTerminal() {
             <div className="w-px h-4 bg-zinc-800/40 mx-1" />
             <div className="relative">
               <button onClick={() => setShowIndicators(!showIndicators)} className={cn("px-2 py-0.5 text-[10px] rounded flex items-center gap-1 transition-all", indicators.length > 0 ? "text-amber-400 bg-amber-500/8" : "text-zinc-600 hover:text-zinc-400")} data-testid="button-indicators">
-                <BarChart3 className="w-3 h-3" /> {indicators.length > 0 ? indicators.length : "Ind."}
+                <BarChart3 className="w-3 h-3" /> Indicators
               </button>
               {showIndicators && (
-                <div className="absolute top-7 left-0 z-40 bg-[#0d0e10] border border-zinc-800/50 rounded-lg shadow-2xl p-2 w-44">
-                  {(Object.keys(INDICATOR_LABELS) as IndicatorType[]).map(ind => (
+                <div className="absolute top-7 left-0 z-40 bg-[#0d0e10]/95 backdrop-blur-xl border border-zinc-800/50 rounded-lg shadow-2xl p-2 w-48">
+                  <div className="text-[8px] text-zinc-600 uppercase tracking-wider px-2 py-1 font-semibold">Overlays</div>
+                  {(["ema9", "ema21", "ema50", "sma20", "sma50", "bb20"] as IndicatorType[]).map(ind => (
+                    <button key={ind} onClick={() => toggleIndicator(ind)}
+                      className={cn("w-full text-left px-2 py-1.5 text-[10px] rounded flex items-center gap-2 transition-all",
+                        indicators.includes(ind) ? "bg-zinc-800/60 text-white" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/30")}>
+                      <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: INDICATOR_COLORS[ind] }} />
+                      {INDICATOR_LABELS[ind]}
+                      {indicators.includes(ind) && <span className="ml-auto text-emerald-400 text-[9px]">&#10003;</span>}
+                    </button>
+                  ))}
+                  <div className="my-1 border-t border-zinc-800/30" />
+                  <div className="text-[8px] text-zinc-600 uppercase tracking-wider px-2 py-1 font-semibold">Sub-Charts</div>
+                  {(["rsi14", "macd"] as IndicatorType[]).map(ind => (
                     <button key={ind} onClick={() => toggleIndicator(ind)}
                       className={cn("w-full text-left px-2 py-1.5 text-[10px] rounded flex items-center gap-2 transition-all",
                         indicators.includes(ind) ? "bg-zinc-800/60 text-white" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/30")}>
@@ -1190,6 +1231,17 @@ function FuturesTerminal() {
                 </div>
               )}
             </div>
+            {indicators.length > 0 && (
+              <div className="hidden lg:flex items-center gap-0.5 ml-1">
+                {indicators.map(ind => (
+                  <button key={ind} onClick={() => toggleIndicator(ind)} className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-zinc-800/40 hover:bg-zinc-800/70 transition-all group" title={`Remove ${INDICATOR_LABELS[ind]}`}>
+                    <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: INDICATOR_COLORS[ind] }} />
+                    <span className="text-zinc-400 group-hover:text-zinc-200">{INDICATOR_LABELS[ind]}</span>
+                    <X className="w-2.5 h-2.5 text-zinc-600 group-hover:text-zinc-300" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex-1 min-h-0">
