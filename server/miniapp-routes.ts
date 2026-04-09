@@ -47,8 +47,8 @@ async function miniAppAuth(req: Request, res: Response, next: NextFunction) {
   if (walletAddress && /^0x[a-f0-9]{40}$/.test(walletAddress)) {
     try {
       const { db } = await import("./db");
-      const { telegramWallets } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
+      const { telegramWallets, asterCredentials: asterCredsTable } = await import("@shared/schema");
+      const { eq, sql: sqlTag } = await import("drizzle-orm");
       const rows = await db.select({ chatId: telegramWallets.chatId })
         .from(telegramWallets)
         .where(eq(telegramWallets.walletAddress, walletAddress))
@@ -57,10 +57,34 @@ async function miniAppAuth(req: Request, res: Response, next: NextFunction) {
         req.headers["x-telegram-chat-id"] = rows[0].chatId;
         return next();
       }
+      const credRows = await db.select({ chatId: asterCredsTable.chatId })
+        .from(asterCredsTable)
+        .where(eq(asterCredsTable.parentAddress, walletAddress))
+        .limit(1);
+      if (credRows.length > 0 && credRows[0].chatId) {
+        req.headers["x-telegram-chat-id"] = credRows[0].chatId;
+        return next();
+      }
+      const credRows2 = await db.select({ chatId: asterCredsTable.chatId })
+        .from(asterCredsTable)
+        .where(sqlTag`parent_address LIKE ${"astercode:" + walletAddress}`)
+        .limit(1);
+      if (credRows2.length > 0 && credRows2[0].chatId) {
+        req.headers["x-telegram-chat-id"] = credRows2[0].chatId;
+        return next();
+      }
+      const credRows3 = await db.select({ chatId: asterCredsTable.chatId })
+        .from(asterCredsTable)
+        .where(eq(asterCredsTable.apiKey, walletAddress))
+        .limit(1);
+      if (credRows3.length > 0 && credRows3[0].chatId) {
+        req.headers["x-telegram-chat-id"] = credRows3[0].chatId;
+        return next();
+      }
     } catch (e: any) {
       console.log(`[WebAuth] wallet lookup error: ${e.message}`);
     }
-    return res.status(404).json({ error: "Wallet not linked. Please connect via the Telegram bot first." });
+    return res.status(404).json({ error: "Wallet not registered. Please activate trading first." });
   }
   return res.status(401).json({ error: "Authentication required" });
 }
@@ -209,14 +233,36 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const addr = walletAddress.toLowerCase();
 
       const { db } = await import("./db");
-      const { telegramWallets } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
+      const { telegramWallets, asterCredentials: asterCredsTable } = await import("@shared/schema");
+      const { eq, sql: sqlTag } = await import("drizzle-orm");
+
       const existing = await db.select({ chatId: telegramWallets.chatId })
         .from(telegramWallets)
         .where(eq(telegramWallets.walletAddress, addr))
         .limit(1);
       if (existing.length > 0) {
         return res.json({ success: true, chatId: existing[0].chatId, alreadyRegistered: true });
+      }
+
+      let foundChatId: string | null = null;
+      try {
+        const cr1 = await db.select({ chatId: asterCredsTable.chatId }).from(asterCredsTable).where(eq(asterCredsTable.parentAddress, addr)).limit(1);
+        if (cr1.length > 0) foundChatId = cr1[0].chatId;
+        if (!foundChatId) {
+          const cr2 = await db.select({ chatId: asterCredsTable.chatId }).from(asterCredsTable).where(sqlTag`parent_address LIKE ${"astercode:" + addr}`).limit(1);
+          if (cr2.length > 0) foundChatId = cr2[0].chatId;
+        }
+        if (!foundChatId) {
+          const cr3 = await db.select({ chatId: asterCredsTable.chatId }).from(asterCredsTable).where(eq(asterCredsTable.apiKey, addr)).limit(1);
+          if (cr3.length > 0) foundChatId = cr3[0].chatId;
+        }
+      } catch {}
+
+      if (foundChatId) {
+        await storage.saveTelegramWallet(foundChatId, addr);
+        await storage.setActiveTelegramWallet(foundChatId, addr);
+        console.log(`[WebRegister] Auto-linked wallet ${addr.substring(0, 10)} to existing chatId=${foundChatId} via asterCredentials`);
+        return res.json({ success: true, chatId: foundChatId, alreadyRegistered: true });
       }
 
       const { createHash } = await import("crypto");
@@ -226,7 +272,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       await storage.saveTelegramWallet(chatId, addr);
       await storage.setActiveTelegramWallet(chatId, addr);
 
-      console.log(`[WebRegister] New web user: metamask=${addr.substring(0, 10)} chatId=${chatId}`);
+      console.log(`[WebRegister] New web user: wallet=${addr.substring(0, 10)} chatId=${chatId}`);
 
       res.json({
         success: true,

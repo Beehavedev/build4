@@ -949,7 +949,6 @@ function FuturesTerminal() {
   const [showIndicators, setShowIndicators] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(() => { try { const s = localStorage.getItem("futures_favs"); return s ? new Set(JSON.parse(s)) : new Set(["BTCUSDT", "ETHUSDT", "SOLUSDT"]); } catch { return new Set(["BTCUSDT", "ETHUSDT", "SOLUSDT"]); } });
   const [registered, setRegistered] = useState(false);
-  const [showLinkDialog, setShowLinkDialog] = useState(false);
 
   useEffect(() => {
     if (!address) { setRegistered(false); return; }
@@ -1128,9 +1127,6 @@ function FuturesTerminal() {
                 <span className="text-zinc-600 mr-1">Available</span>
                 <span className="text-emerald-400 font-mono font-medium">${fmt(acct.availableMargin)}</span>
               </div>
-              {acct.walletBalance === 0 && acct.availableMargin === 0 && (
-                <button onClick={() => setShowLinkDialog(true)} className="text-amber-400/70 hover:text-amber-400 underline transition-colors" data-testid="button-link-hint">Link Telegram</button>
-              )}
               {acct.unrealizedPnl !== 0 && (
                 <div className={cn("bg-zinc-900/40 rounded-md px-2.5 py-1 border", acct.unrealizedPnl >= 0 ? "border-emerald-500/10" : "border-red-500/10")}>
                   <span className="text-zinc-600 mr-1">uPnL</span>
@@ -1262,17 +1258,6 @@ function FuturesTerminal() {
       {showPicker && <WalletPicker onMM={connectMM} onWC={connectWC} onClose={() => setShowPicker(false)} />}
       {showIndicators && <div className="fixed inset-0 z-30" onClick={() => setShowIndicators(false)} />}
       {showPairs && <div className="fixed inset-0 z-30" onClick={() => setShowPairs(false)} />}
-      {showLinkDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowLinkDialog(false)}>
-          <div className="bg-[#0d0e10] border border-zinc-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-sm font-bold text-white">Link Telegram Bot Wallet</h3>
-              <button onClick={() => setShowLinkDialog(false)} className="text-zinc-600 hover:text-zinc-300 transition-colors">&times;</button>
-            </div>
-            <LinkBotWallet wallet={address} onDone={() => { setShowLinkDialog(false); window.location.reload(); }} />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
