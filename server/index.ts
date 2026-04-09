@@ -64,6 +64,7 @@ if (ENFORCE_CLOUDFLARE) {
     if (req.path === "/_health" || req.path === "/healthz") return next();
     if (req.headers["x-replit-cluster"]) return next();
     if (req.path === "/miniapp" || req.path === "/miniapp-old" || req.path.startsWith("/api/miniapp")) return next();
+    if (req.path === "/hyperliquid" || req.path.startsWith("/api/hl/") || req.path.startsWith("/assets/")) return next();
 
     const realIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
       || req.socket.remoteAddress || "";
