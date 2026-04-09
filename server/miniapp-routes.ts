@@ -659,10 +659,43 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       let client: any = null;
       let asterApiWalletAddr = "";
 
+      const connectedWalletAddr = (req.headers["x-wallet-address"] as string || "").toLowerCase().trim();
+
       try {
-        const creds = await storage.getAsterCredentials(chatId);
+        let creds = await storage.getAsterCredentials(chatId);
+
+        if (!creds && connectedWalletAddr) {
+          try {
+            const { db: dbConn } = await import("./db");
+            const { asterCredentials: asterCredsTable } = await import("@shared/schema");
+            const { eq } = await import("drizzle-orm");
+            const rows = await dbConn.select({ chatId: asterCredsTable.chatId }).from(asterCredsTable).where(eq(asterCredsTable.parentAddress, connectedWalletAddr)).limit(1);
+            if (rows.length > 0) {
+              creds = await storage.getAsterCredentials(rows[0].chatId);
+              if (creds) console.log(`[MiniApp] Found Aster creds via parentAddress fallback: wallet=${connectedWalletAddr.substring(0,10)} origChatId=${rows[0].chatId}`);
+            }
+          } catch (e: any) {
+            console.log(`[MiniApp] parentAddress fallback lookup failed: ${e.message?.substring(0, 100)}`);
+          }
+        }
+
+        if (!creds && connectedWalletAddr) {
+          try {
+            const { db: dbConn } = await import("./db");
+            const { asterCredentials: asterCredsTable } = await import("@shared/schema");
+            const { sql: sqlTag } = await import("drizzle-orm");
+            const rows = await dbConn.select({ chatId: asterCredsTable.chatId }).from(asterCredsTable).where(sqlTag`parent_address LIKE ${"astercode:" + connectedWalletAddr}`).limit(1);
+            if (rows.length > 0) {
+              creds = await storage.getAsterCredentials(rows[0].chatId);
+              if (creds) console.log(`[MiniApp] Found Aster creds via astercode: prefix fallback: wallet=${connectedWalletAddr.substring(0,10)}`);
+            }
+          } catch (e: any) {
+            console.log(`[MiniApp] astercode fallback lookup failed: ${e.message?.substring(0, 100)}`);
+          }
+        }
+
         if (creds && creds.apiKey && creds.apiSecret && creds.apiKey !== "V3_DIRECT") {
-          const wallets = await storage.getTelegramWallets(chatId);
+          const wallets = await storage.getTelegramWallets(creds.chatId || chatId);
           const evmWallets = wallets.filter(w => w.walletAddress && w.walletAddress.startsWith("0x"));
           const activeWallet = evmWallets.find(w => w.isActive) || evmWallets[0];
           const botWalletAddr = activeWallet?.walletAddress?.toLowerCase() || "";

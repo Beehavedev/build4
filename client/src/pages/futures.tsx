@@ -808,6 +808,25 @@ function FuturesTerminal() {
   const [indicators, setIndicators] = useState<IndicatorType[]>(() => { try { const s = localStorage.getItem("futures_ind"); return s ? JSON.parse(s) : ["ema9", "ema21"]; } catch { return ["ema9", "ema21"]; } });
   const [showIndicators, setShowIndicators] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(() => { try { const s = localStorage.getItem("futures_favs"); return s ? new Set(JSON.parse(s)) : new Set(["BTCUSDT", "ETHUSDT", "SOLUSDT"]); } catch { return new Set(["BTCUSDT", "ETHUSDT", "SOLUSDT"]); } });
+  const [registered, setRegistered] = useState(false);
+
+  useEffect(() => {
+    if (!address) { setRegistered(false); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        await fetch("/api/miniapp/web-register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ walletAddress: address }),
+        });
+        if (!cancelled) setRegistered(true);
+      } catch {
+        if (!cancelled) setRegistered(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [address]);
 
   const toggleFav = useCallback((s: string) => {
     setFavorites(prev => { const n = new Set(prev); if (n.has(s)) n.delete(s); else n.add(s); localStorage.setItem("futures_favs", JSON.stringify([...n])); return n; });
@@ -819,7 +838,8 @@ function FuturesTerminal() {
   useEffect(() => { localStorage.setItem("futures_pair", selectedPair); }, [selectedPair]);
   useEffect(() => { localStorage.setItem("futures_tf", interval); }, [interval]);
 
-  const { data: acct, loading: acctLoading, refresh: refreshAcct } = useApi<AcctData>("/api/miniapp/account", address);
+  const effectiveWallet = registered ? address : null;
+  const { data: acct, loading: acctLoading, refresh: refreshAcct } = useApi<AcctData>("/api/miniapp/account", effectiveWallet);
   const { data: rawTicker } = usePub<any>(`/api/public/ticker?symbol=${selectedPair}`, 5000);
   const { data: rawFunding } = usePub<any>(`/api/public/funding?symbol=${selectedPair}`, 30000);
 
