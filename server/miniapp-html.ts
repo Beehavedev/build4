@@ -1129,7 +1129,7 @@ function renderAgent(){
     var curPreset=detectPreset(c);
     presets.forEach(function(p){
       var isActive=curPreset===p.key;
-      h+='<button onclick="applyPreset(\''+p.key+'\')" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 6px;border-radius:10px;border:1px solid '+(isActive?p.color+'66':'#333')+';background:'+(isActive?p.color+'18':'#1a1d21')+';cursor:pointer;position:relative">';
+      h+='<button onclick="applyPreset(\\''+p.key+'\\')" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 6px;border-radius:10px;border:1px solid '+(isActive?p.color+'66':'#333')+';background:'+(isActive?p.color+'18':'#1a1d21')+';cursor:pointer;position:relative">';
       h+='<span style="font-size:20px">'+p.icon+'</span>';
       h+='<span style="font-size:11px;font-weight:700;color:'+(isActive?p.color:'#999')+'">'+p.label+'</span>';
       if(isActive)h+='<div style="position:absolute;top:6px;right:6px;width:6px;height:6px;border-radius:50%;background:'+p.color+'"></div>';
