@@ -682,10 +682,10 @@ function getPnlParams(posIdx){
     var pnlVal=parseFloat(p.unrealizedPnl||0);
     var entryP=parseFloat(p.entryPrice||0);
     var markP=parseFloat(p.markPrice||0);
-    var pctVal=entryP>0?((markP-entryP)/entryP*100*(p.positionSide==='SHORT'?-1:1)):0;
-    var sym=p.symbol||'BTCUSDT';
-    var side=p.positionSide||'LONG';
+    var side=p.side||'LONG';
     var lev=parseInt(p.leverage||5);
+    var pctVal=p.roe!==undefined?p.roe:(entryP>0?((markP-entryP)/entryP*100*(side==='SHORT'?-1:1)*lev):0);
+    var sym=p.symbol||'BTCUSDT';
     var pSign=pnlVal>=0?'+':'';
     return{
       imgParams:'pct='+pctVal.toFixed(2)+'&pnl='+pnlVal.toFixed(2)+'&sym='+encodeURIComponent(sym)+'&side='+side+'&lev='+lev+'&ep='+entryP+'&mp='+markP+'&w='+w+'&l='+l+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
