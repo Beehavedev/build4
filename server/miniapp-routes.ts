@@ -1083,10 +1083,13 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         console.error(`[MiniApp] BSC balance fetch error:`, bscErr.message);
       }
 
+      const marginBalance = walletBal + totalUpnl;
+
       res.json({
         connected: true,
         walletBalance: walletBal,
         availableMargin: availBal,
+        marginBalance,
         spotBalance,
         bscBalance,
         bnbBalance,

@@ -127,7 +127,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
-let D={connected:false,availableMargin:0,walletBalance:0,bscBalance:0,bnbBalance:0,bscWalletAddress:'',unrealizedPnl:0,realizedPnl:0,wins:0,losses:0,positions:[],recentIncome:[],spotBalance:0,openOrders:[]};
+let D={connected:false,availableMargin:0,walletBalance:0,marginBalance:0,bscBalance:0,bnbBalance:0,bscWalletAddress:'',unrealizedPnl:0,realizedPnl:0,wins:0,losses:0,positions:[],recentIncome:[],spotBalance:0,openOrders:[]};
 let M={markets:[]};
 let AG=null;
 let tradeHistory=[];
@@ -382,18 +382,19 @@ function renderDash(){
     h+='</div>';
   }
 
-  var totalBal=(D.walletBalance||0)+(D.bscBalance||0)+(D.spotBalance||0);
+  var perpAccount=D.marginBalance||(D.walletBalance||0)+(D.unrealizedPnl||0);
   var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
 
   var accentColor=totalPnl>=0?'14,203,129':'248,81,73';
   h+='<div class="card" style="position:relative;overflow:hidden;border:1px solid '+(totalPnl>=0?'var(--green2)':'rgba(248,81,73,0.3)')+';background:linear-gradient(135deg,rgba('+accentColor+',0.08),transparent)">';
   h+='<div style="position:absolute;top:-20px;right:-20px;width:120px;height:120px;background:radial-gradient(circle,rgba('+accentColor+',0.15),transparent);border-radius:50%"></div>';
-  h+='<div class="label" style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text2)">Your Account Balance</div>';
-  h+='<div class="val gv" style="font-size:32px;margin:4px 0">$'+fmt(totalBal)+'</div>';
-  h+='<div style="display:flex;gap:12px;margin-top:8px">';
-  h+='<div><span class="text-xs text-dim">Futures</span><div class="val-xs gv">$'+fmt(D.walletBalance)+'</div></div>';
+  h+='<div class="label" style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text2)">Perpetual Account</div>';
+  h+='<div class="val gv" style="font-size:32px;margin:4px 0">$'+fmt(perpAccount)+'</div>';
+  h+='<div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap">';
+  h+='<div><span class="text-xs text-dim">Available</span><div class="val-xs gv">$'+fmt(D.availableMargin)+'</div></div>';
+  h+='<div><span class="text-xs text-dim">In Positions</span><div class="val-xs" style="color:var(--blue)">$'+fmt(Math.max(0,perpAccount-(D.availableMargin||0)))+'</div></div>';
   h+='<div><span class="text-xs text-dim">BSC Wallet</span><div class="val-xs gv">$'+fmt(D.bscBalance)+'</div></div>';
-  h+='<div><span class="text-xs text-dim">Total PnL</span><div class="val-xs '+pnlClass(totalPnl)+'">'+(totalPnl>=0?'+':'')+' $'+fmt(Math.abs(totalPnl))+'</div></div>';
+  h+='<div><span class="text-xs text-dim">Unrealized PnL</span><div class="val-xs '+pnlClass(D.unrealizedPnl)+'">'+(D.unrealizedPnl>=0?'+':'')+' $'+fmt(Math.abs(D.unrealizedPnl))+'</div></div>';
   h+='</div></div>';
 
   var tradingAccentColor=(D.unrealizedPnl||0)>=0?'14,203,129':'248,81,73';
@@ -555,12 +556,14 @@ function renderDeposit(){
     h+='</div>';
   }
 
+  var perpAcctP=D.marginBalance||(D.walletBalance||0)+(D.unrealizedPnl||0);
   h+='<div class="card" style="background:linear-gradient(135deg,rgba(14,203,129,0.05),transparent)">';
   h+='<div class="section-title">Your Balances</div>';
+  h+='<div style="text-align:center;padding:14px;background:var(--green-bg);border-radius:10px;margin-bottom:8px"><div class="text-xs" style="color:var(--green);letter-spacing:1px;text-transform:uppercase">Perpetual Account</div><div class="val" style="font-size:26px;color:#fff;margin-top:4px">$'+fmt(perpAcctP)+'</div></div>';
   h+='<div class="grid3 mt-2">';
+  h+='<div style="text-align:center;padding:12px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Available</div><div class="val-sm text-w mt-1">$'+fmt(D.availableMargin)+'</div></div>';
   h+='<div style="text-align:center;padding:12px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">BSC Wallet</div><div class="val-sm text-w mt-1">$'+fmt(D.bscBalance)+'</div></div>';
   h+='<div style="text-align:center;padding:12px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Spot</div><div class="val-sm text-w mt-1">$'+fmt(D.spotBalance)+'</div></div>';
-  h+='<div style="text-align:center;padding:12px;background:var(--green-bg);border-radius:8px"><div class="text-xs" style="color:var(--green)">Futures</div><div class="val-sm text-w mt-1">$'+fmt(D.walletBalance)+'</div></div>';
   h+='</div>';
   if((D.spotBalance||0)>0){
     h+='<div style="margin-top:10px;padding:12px;background:rgba(255,193,7,0.08);border:1px solid rgba(255,193,7,0.3);border-radius:10px">';
