@@ -710,16 +710,63 @@ function getPnlParams(posIdx){
   };
 }
 
-function loadPnlPreview(){
+function loadPnlPreview(posIdx){
   var el=document.getElementById('pnl-card-preview');
   if(!el)return;
-  var pp=getPnlParams();
-  var imgUrl='/pnl/image?'+pp.imgParams;
-  el.innerHTML='<div style="text-align:center;padding:20px;color:#555;font-size:12px">Loading card...</div>';
-  var img=new Image();
-  img.onload=function(){el.innerHTML='';img.style.cssText='width:100%;display:block;border-radius:10px';el.appendChild(img)};
-  img.onerror=function(){el.innerHTML='<div style="text-align:center;padding:20px;color:#f6465d;font-size:12px">Failed to load card</div>'};
-  img.src=imgUrl;
+  var pp=getPnlParams(posIdx);
+  var params=new URLSearchParams(pp.imgParams);
+  var pct=parseFloat(params.get('pct')||'0');
+  var pnlUsd=parseFloat(params.get('pnl')||'0');
+  var sym=params.get('sym')||'';
+  var side=params.get('side')||'';
+  var lev=params.get('lev')||'';
+  var ep=parseFloat(params.get('ep')||'0');
+  var mp=parseFloat(params.get('mp')||'0');
+  var w=params.get('w')||'0';
+  var l=params.get('l')||'0';
+  var name=params.get('name')||'Trader';
+  var ref=params.get('ref')||'build4';
+  var isProfit=pct>=0;
+  var pnlColor=isProfit?'#0ecb81':'#f6465d';
+  var accentRgb=isProfit?'14,203,129':'246,70,93';
+  var sideColor=side==='LONG'?'#0ecb81':'#f6465d';
+  var winRate=(parseInt(w)+parseInt(l))>0?Math.round(parseInt(w)/(parseInt(w)+parseInt(l))*100):0;
+  var hasTrade=sym&&ep>0;
+  var pctText=(isProfit?'+':'')+pct.toFixed(2)+'%';
+  var pnlSign=pnlUsd>=0?'+':'';
+  var fP=function(v){return v>=1?v.toLocaleString('en-US',{maximumFractionDigits:2}):v.toPrecision(4)};
+  var h='<div style="background:#0b0e11;border-radius:10px;padding:20px;position:relative;overflow:hidden;border-top:3px solid '+pnlColor+'">';
+  h+='<div style="position:absolute;top:0;left:15%;width:200px;height:200px;background:radial-gradient(circle,rgba('+accentRgb+',0.12),transparent);border-radius:50%"></div>';
+  h+='<div style="position:relative;z-index:1">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
+  h+='<div style="font-family:monospace;font-size:18px;font-weight:900;color:#fff;letter-spacing:2px">BUILD4</div>';
+  h+='<div style="font-size:10px;color:#555;padding:4px 8px;border:1px solid rgba(255,255,255,0.08);border-radius:6px">ASTER DEX FUTURES</div>';
+  h+='</div>';
+  if(hasTrade){
+    h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">';
+    h+='<span style="background:'+sideColor+'22;color:'+sideColor+';padding:3px 10px;border-radius:5px;font-size:12px;font-weight:700">'+side+'</span>';
+    h+='<span style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);padding:3px 8px;border-radius:5px;font-family:monospace;font-size:12px;color:#ccc">'+lev+'x</span>';
+    h+='<span style="font-size:14px;font-weight:700;color:#fff">'+sym+'</span>';
+    h+='</div>';
+  } else {
+    h+='<div style="font-size:14px;font-weight:600;color:#8a919e;margin-bottom:12px">Overall Performance</div>';
+  }
+  h+='<div style="font-family:monospace;font-size:42px;font-weight:900;color:'+pnlColor+';letter-spacing:-2px;line-height:1.1">'+pctText+'</div>';
+  h+='<div style="font-family:monospace;font-size:16px;color:'+pnlColor+';opacity:0.85;margin-top:4px">'+pnlSign+'$'+Math.abs(pnlUsd).toFixed(2)+' USDT</div>';
+  if(hasTrade){
+    h+='<div style="display:flex;gap:8px;margin-top:12px">';
+    h+='<div style="flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:8px 10px"><div style="font-size:9px;color:#555;letter-spacing:1px">ENTRY</div><div style="font-family:monospace;font-size:14px;font-weight:700;color:#fff;margin-top:2px">$'+fP(ep)+'</div></div>';
+    h+='<div style="flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:8px 10px"><div style="font-size:9px;color:#555;letter-spacing:1px">MARK</div><div style="font-family:monospace;font-size:14px;font-weight:700;color:#fff;margin-top:2px">$'+fP(mp)+'</div></div>';
+    h+='</div>';
+  }
+  h+='<div style="display:flex;gap:8px;margin-top:8px">';
+  h+='<div style="flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:8px 10px"><div style="font-size:9px;color:#555;letter-spacing:1px">WIN RATE</div><div style="font-family:monospace;font-size:14px;font-weight:700;color:'+(winRate>=50?'#0ecb81':'#f6465d')+';margin-top:2px">'+winRate+'%</div></div>';
+  h+='<div style="flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:8px 10px"><div style="font-size:9px;color:#555;letter-spacing:1px">W / L</div><div style="font-family:monospace;font-size:14px;font-weight:700;color:#fff;margin-top:2px">'+w+' / '+l+'</div></div>';
+  h+='</div>';
+  h+='<div style="margin-top:12px;padding:8px 12px;background:rgba('+accentRgb+',0.05);border:1px solid rgba('+accentRgb+',0.15);border-radius:8px"><div style="font-size:8px;color:#555;letter-spacing:1px">JOIN</div><div style="font-family:monospace;font-size:12px;font-weight:700;color:rgba('+accentRgb+',0.9)">t.me/build4_bot?start='+ref+'</div></div>';
+  h+='<div style="margin-top:8px;font-size:10px;color:#444;border-top:1px solid rgba(255,255,255,0.04);padding-top:8px">'+name+' · Autonomous AI Futures Trading</div>';
+  h+='</div></div>';
+  el.innerHTML=h;
 }
 
 function shareToX(posIdx){
@@ -734,8 +781,9 @@ async function downloadPnlCard(posIdx){
   var pp=getPnlParams(posIdx);
   toast('Generating image...','info');
   try{
-    var resp=await fetch('/pnl/image?'+pp.imgParams);
-    if(!resp.ok)throw new Error('Image generation failed');
+    var baseUrl=location.origin||_pnlBaseUrl;
+    var resp=await fetch(baseUrl+'/pnl/image?'+pp.imgParams);
+    if(!resp.ok)throw new Error('Image generation failed ('+resp.status+')');
     var blob=await resp.blob();
     var a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
