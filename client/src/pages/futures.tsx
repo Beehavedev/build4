@@ -598,16 +598,23 @@ function TradeTicket({ symbol, wallet, price, availableMargin, onSuccess, acctDa
               You have <span className="font-mono font-bold">${fmt(acctData.bscBalance)}</span> USDT on BSC. Deposit via the Telegram bot: <span className="font-mono text-cyan-300">/deposit</span>
             </div>
           )}
-          {(acctData.spotBalance || 0) <= 0 && (acctData.bscBalance || 0) <= 0.01 && acctData.bscWalletAddress && (
-            <div className="text-[9px] text-zinc-500 space-y-1">
-              <div>Send USDT (BEP-20) to your bot wallet:</div>
-              <div className="font-mono text-[8px] text-zinc-400 bg-zinc-800/60 rounded px-2 py-1 break-all select-all cursor-pointer" title="Click to copy" onClick={() => { navigator.clipboard.writeText(acctData.bscWalletAddress || ""); }}>{acctData.bscWalletAddress}</div>
-              <div className="text-[8px] text-zinc-600">Then use <span className="font-mono text-zinc-500">/deposit</span> in the Telegram bot</div>
-            </div>
-          )}
-          {(acctData.spotBalance || 0) <= 0 && (acctData.bscBalance || 0) <= 0.01 && !acctData.bscWalletAddress && (
-            <div className="text-[9px] text-zinc-500">
-              Use the <span className="font-mono text-zinc-400">@build4bot</span> Telegram bot to deposit USDT and start trading.
+          {(acctData.spotBalance || 0) <= 0 && (acctData.bscBalance || 0) <= 0.01 && (
+            <div className="text-[9px] text-zinc-500 space-y-1.5">
+              <div className="text-zinc-400">To start trading, deposit USDT to your futures account:</div>
+              <div className="space-y-1 text-[8px]">
+                <div className="flex items-center gap-1.5 text-cyan-400">
+                  <span className="w-3.5 h-3.5 rounded-full bg-cyan-500/20 flex items-center justify-center text-[7px] font-bold">1</span>
+                  Open <span className="font-mono font-semibold">@build4bot</span> on Telegram
+                </div>
+                <div className="flex items-center gap-1.5 text-cyan-400">
+                  <span className="w-3.5 h-3.5 rounded-full bg-cyan-500/20 flex items-center justify-center text-[7px] font-bold">2</span>
+                  Send USDT (BEP-20) to your deposit address shown in <span className="font-mono">/wallet</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-cyan-400">
+                  <span className="w-3.5 h-3.5 rounded-full bg-cyan-500/20 flex items-center justify-center text-[7px] font-bold">3</span>
+                  Use <span className="font-mono">/deposit</span> to move funds into your futures account
+                </div>
+              </div>
             </div>
           )}
         </div>
