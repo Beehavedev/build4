@@ -136,7 +136,7 @@ async function post(url: string, wallet: string, body: any) {
 }
 
 interface Pos { symbol: string; side: string; size: number; entryPrice: number; markPrice: number; leverage: string; unrealizedPnl: number; notional: number; }
-interface AcctData { connected: boolean; walletBalance: number; availableMargin: number; bscBalance: number; unrealizedPnl: number; realizedPnl: number; positions: Pos[]; }
+interface AcctData { connected: boolean; walletBalance: number; availableMargin: number; bscBalance: number; spotBalance: number; bnbBalance: number; bscWalletAddress: string | null; unrealizedPnl: number; realizedPnl: number; positions: Pos[]; }
 interface MktItem { symbol: string; price: number; change24h: number; volume24h: number; high24h: number; low24h: number; }
 interface TickerData { symbol: string; price: number; change24h: number; volume24h: number; high24h: number; low24h: number; markPrice?: number; indexPrice?: number; fundingRate?: number; openInterest?: number; }
 interface OrderData { orderId: string; symbol: string; side: string; type: string; price: number; origQty: number; executedQty: number; status: string; time: number; }
@@ -444,7 +444,7 @@ function OrderBook({ symbol }: { symbol: string }) {
   );
 }
 
-function TradeTicket({ symbol, wallet, price, availableMargin, onSuccess }: { symbol: string; wallet: string; price: number; availableMargin: number; onSuccess: () => void }) {
+function TradeTicket({ symbol, wallet, price, availableMargin, onSuccess, acctData }: { symbol: string; wallet: string; price: number; availableMargin: number; onSuccess: () => void; acctData?: AcctData | null }) {
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT" | "STOP">("MARKET");
   const [amount, setAmount] = useState("");
@@ -579,6 +579,37 @@ function TradeTicket({ symbol, wallet, price, availableMargin, onSuccess }: { sy
         <div className={cn("text-[10px] p-2 rounded-md animate-in fade-in duration-300",
           result.ok ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20")} data-testid="text-order-result">
           {result.msg}
+        </div>
+      )}
+
+      {availableMargin <= 0 && acctData && (
+        <div className="mt-2 p-2.5 rounded-lg bg-zinc-900/60 border border-zinc-800/30 space-y-2" data-testid="deposit-info">
+          <div className="text-[10px] text-zinc-400 font-medium flex items-center gap-1.5">
+            <Wallet className="w-3 h-3 text-amber-400" />
+            Fund your account to trade
+          </div>
+          {(acctData.spotBalance || 0) > 0 && (
+            <div className="text-[9px] text-amber-400 bg-amber-500/8 rounded px-2 py-1.5 border border-amber-500/10">
+              You have <span className="font-mono font-bold">${fmt(acctData.spotBalance)}</span> in your Spot wallet. Transfer it to Futures via the Telegram bot: <span className="font-mono text-amber-300">/transfer</span>
+            </div>
+          )}
+          {(acctData.bscBalance || 0) > 0.01 && (
+            <div className="text-[9px] text-cyan-400 bg-cyan-500/8 rounded px-2 py-1.5 border border-cyan-500/10">
+              You have <span className="font-mono font-bold">${fmt(acctData.bscBalance)}</span> USDT on BSC. Deposit via the Telegram bot: <span className="font-mono text-cyan-300">/deposit</span>
+            </div>
+          )}
+          {(acctData.spotBalance || 0) <= 0 && (acctData.bscBalance || 0) <= 0.01 && acctData.bscWalletAddress && (
+            <div className="text-[9px] text-zinc-500 space-y-1">
+              <div>Send USDT (BEP-20) to your bot wallet:</div>
+              <div className="font-mono text-[8px] text-zinc-400 bg-zinc-800/60 rounded px-2 py-1 break-all select-all cursor-pointer" title="Click to copy" onClick={() => { navigator.clipboard.writeText(acctData.bscWalletAddress || ""); }}>{acctData.bscWalletAddress}</div>
+              <div className="text-[8px] text-zinc-600">Then use <span className="font-mono text-zinc-500">/deposit</span> in the Telegram bot</div>
+            </div>
+          )}
+          {(acctData.spotBalance || 0) <= 0 && (acctData.bscBalance || 0) <= 0.01 && !acctData.bscWalletAddress && (
+            <div className="text-[9px] text-zinc-500">
+              Use the <span className="font-mono text-zinc-400">@build4bot</span> Telegram bot to deposit USDT and start trading.
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1119,14 +1150,26 @@ function FuturesTerminal() {
         <div className="ml-auto flex items-center gap-2">
           {acct && (
             <div className="hidden md:flex items-center gap-3 text-[10px]">
-              <div className="bg-zinc-900/40 rounded-md px-2.5 py-1 border border-zinc-800/20">
-                <span className="text-zinc-600 mr-1">Balance</span>
+              <div className="bg-zinc-900/40 rounded-md px-2.5 py-1 border border-zinc-800/20" data-testid="text-futures-balance">
+                <span className="text-zinc-600 mr-1">Futures</span>
                 <span className="text-white font-mono font-medium">${fmt(acct.walletBalance)}</span>
               </div>
-              <div className="bg-zinc-900/40 rounded-md px-2.5 py-1 border border-zinc-800/20">
+              <div className="bg-zinc-900/40 rounded-md px-2.5 py-1 border border-zinc-800/20" data-testid="text-available-margin">
                 <span className="text-zinc-600 mr-1">Available</span>
                 <span className="text-emerald-400 font-mono font-medium">${fmt(acct.availableMargin)}</span>
               </div>
+              {(acct.spotBalance || 0) > 0 && (
+                <div className="bg-zinc-900/40 rounded-md px-2.5 py-1 border border-amber-500/15" data-testid="text-spot-balance">
+                  <span className="text-zinc-600 mr-1">Spot</span>
+                  <span className="text-amber-400 font-mono font-medium">${fmt(acct.spotBalance)}</span>
+                </div>
+              )}
+              {(acct.bscBalance || 0) > 0.01 && (
+                <div className="bg-zinc-900/40 rounded-md px-2.5 py-1 border border-cyan-500/15" data-testid="text-bsc-balance">
+                  <span className="text-zinc-600 mr-1">BSC</span>
+                  <span className="text-cyan-400 font-mono font-medium">${fmt(acct.bscBalance)}</span>
+                </div>
+              )}
               {acct.unrealizedPnl !== 0 && (
                 <div className={cn("bg-zinc-900/40 rounded-md px-2.5 py-1 border", acct.unrealizedPnl >= 0 ? "border-emerald-500/10" : "border-red-500/10")}>
                   <span className="text-zinc-600 mr-1">uPnL</span>
@@ -1243,7 +1286,7 @@ function FuturesTerminal() {
               ))}
             </div>
             <div className="flex-1 overflow-y-auto">
-              {rightTab === "trade" && <TradeTicket symbol={selectedPair} wallet={address} price={price} availableMargin={availableMargin} onSuccess={refreshAcct} />}
+              {rightTab === "trade" && <TradeTicket symbol={selectedPair} wallet={address} price={price} availableMargin={availableMargin} onSuccess={refreshAcct} acctData={acct} />}
               {rightTab === "agent" && <AgentPanel wallet={address} />}
             </div>
           </div>
