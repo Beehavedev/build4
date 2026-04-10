@@ -431,41 +431,36 @@ export function getIntelStatus(): { tradeCount: number; winRate: number; weights
   };
 }
 
-const aiCache = new Map<string, { verdict: string; reasoning: string; ts: number }>();
+const aiCache = new Map<string, { verdict: string; reasoning: string; models: string; ts: number }>();
 const AI_CACHE_TTL = 300_000;
 
 interface AIFilterResult {
   verdict: "GO" | "WEAK" | "REJECT";
   reasoning: string;
+  models?: string;
 }
 
-async function aiSignalFilter(
+interface SingleModelResult {
+  verdict: "GO" | "WEAK" | "REJECT";
+  reasoning: string;
+  model: string;
+}
+
+function buildAnalysisPrompt(
   symbol: string,
   side: "BUY" | "SELL",
   result: StrategyResult,
   funding: number,
   imbalance: number,
-): Promise<AIFilterResult> {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) {
-    return { verdict: "GO", reasoning: "No AI key configured" };
-  }
-
-  const cacheKey = `${symbol}-${side}-${Math.floor(Date.now() / AI_CACHE_TTL)}`;
-  const cached = aiCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < AI_CACHE_TTL) {
-    return { verdict: cached.verdict as any, reasoning: cached.reasoning };
-  }
-
+): string {
   const regime = result.regime;
   const symWR = symbolStats[symbol];
   const regWR = regimeStats[regime?.regime || "RANGING"];
-
   const recentTrades = tradeHistory.slice(-20);
   const recentWins = recentTrades.filter(t => t.won).length;
   const recentLosses = recentTrades.length - recentWins;
 
-  const prompt = `You are a crypto perpetual futures trading risk analyst. Evaluate this trade signal and respond with ONLY a JSON object.
+  return `You are a crypto perpetual futures trading risk analyst. Evaluate this trade signal and respond with ONLY a JSON object.
 
 SIGNAL: ${side} ${symbol}
 PRICE: $${result.lastClose.toFixed(2)}
@@ -500,58 +495,131 @@ Rules:
 - WEAK if only 2 or fewer indicators align
 - WEAK if recent win rate is below 30%
 - GO if strong trend alignment with 3+ indicators`;
+}
 
+function parseAIResponse(content: string): { verdict: string; reasoning: string } {
   try {
-    const response = await fetch("https://api.x.ai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "grok-3-mini-fast",
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 100,
-        temperature: 0.1,
-      }),
-    });
-
-    if (!response.ok) {
-      console.log(`[Intel] AI API returned ${response.status}`);
-      return { verdict: "GO", reasoning: "AI API error, proceeding" };
-    }
-
-    const data = await response.json() as any;
-    const content = data.choices?.[0]?.message?.content?.trim() || "";
-
-    let parsed: any;
-    try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content);
-    } catch {
-      console.log(`[Intel] AI response parse failed: ${content.substring(0, 100)}`);
-      return { verdict: "GO", reasoning: "AI parse error, proceeding" };
-    }
-
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content);
     const verdict = (parsed.verdict || "GO").toUpperCase();
     const reasoning = parsed.reasoning || "No reasoning";
-
     const validVerdicts = ["GO", "WEAK", "REJECT"];
-    const finalVerdict = validVerdicts.includes(verdict) ? verdict : "GO";
-
-    aiCache.set(cacheKey, { verdict: finalVerdict, reasoning, ts: Date.now() });
-
-    if (aiCache.size > 100) {
-      const now = Date.now();
-      for (const [k, v] of aiCache) {
-        if (now - v.ts > AI_CACHE_TTL) aiCache.delete(k);
-      }
-    }
-
-    console.log(`[Intel] AI filter for ${side} ${symbol}: ${finalVerdict} — ${reasoning}`);
-    return { verdict: finalVerdict as any, reasoning };
-  } catch (e: any) {
-    console.log(`[Intel] AI filter request failed: ${e.message?.substring(0, 80)}`);
-    return { verdict: "GO", reasoning: "AI request failed, proceeding" };
+    return { verdict: validVerdicts.includes(verdict) ? verdict : "GO", reasoning };
+  } catch {
+    return { verdict: "GO", reasoning: "Parse error" };
   }
+}
+
+async function callGrok(prompt: string): Promise<SingleModelResult> {
+  const apiKey = process.env.XAI_API_KEY;
+  if (!apiKey) return { verdict: "GO", reasoning: "No Grok key", model: "grok" };
+
+  const response = await fetch("https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: "grok-3-mini-fast",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 100,
+      temperature: 0.1,
+    }),
+  });
+
+  if (!response.ok) throw new Error(`Grok API ${response.status}`);
+  const data = await response.json() as any;
+  const content = data.choices?.[0]?.message?.content?.trim() || "";
+  const { verdict, reasoning } = parseAIResponse(content);
+  return { verdict: verdict as any, reasoning, model: "grok" };
+}
+
+async function callClaude(prompt: string): Promise<SingleModelResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return { verdict: "GO", reasoning: "No Claude key", model: "claude" };
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 100,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.1,
+    }),
+  });
+
+  if (!response.ok) throw new Error(`Claude API ${response.status}`);
+  const data = await response.json() as any;
+  const content = data.content?.[0]?.text?.trim() || "";
+  const { verdict, reasoning } = parseAIResponse(content);
+  return { verdict: verdict as any, reasoning, model: "claude" };
+}
+
+const VERDICT_RANK: Record<string, number> = { REJECT: 0, WEAK: 1, GO: 2 };
+
+function consensusVerdict(results: SingleModelResult[]): AIFilterResult {
+  if (results.length === 0) return { verdict: "GO", reasoning: "No AI models available", models: "none" };
+  if (results.length === 1) return { verdict: results[0].verdict, reasoning: `[${results[0].model}] ${results[0].reasoning}`, models: results[0].model };
+
+  const anyReject = results.find(r => r.verdict === "REJECT");
+  if (anyReject) {
+    return {
+      verdict: "REJECT",
+      reasoning: `[${anyReject.model}] ${anyReject.reasoning}`,
+      models: results.map(r => `${r.model}:${r.verdict}`).join(", "),
+    };
+  }
+
+  const sorted = [...results].sort((a, b) => VERDICT_RANK[a.verdict] - VERDICT_RANK[b.verdict]);
+  const strictest = sorted[0];
+
+  return {
+    verdict: strictest.verdict,
+    reasoning: results.map(r => `[${r.model}] ${r.reasoning}`).join(" | "),
+    models: results.map(r => `${r.model}:${r.verdict}`).join(", "),
+  };
+}
+
+async function aiSignalFilter(
+  symbol: string,
+  side: "BUY" | "SELL",
+  result: StrategyResult,
+  funding: number,
+  imbalance: number,
+): Promise<AIFilterResult> {
+  const hasGrok = !!process.env.XAI_API_KEY;
+  const hasClaude = !!process.env.ANTHROPIC_API_KEY;
+  if (!hasGrok && !hasClaude) {
+    return { verdict: "GO", reasoning: "No AI keys configured" };
+  }
+
+  const cacheKey = `${symbol}-${side}-${Math.floor(Date.now() / AI_CACHE_TTL)}`;
+  const cached = aiCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < AI_CACHE_TTL) {
+    return { verdict: cached.verdict as any, reasoning: cached.reasoning, models: cached.models };
+  }
+
+  const prompt = buildAnalysisPrompt(symbol, side, result, funding, imbalance);
+
+  const calls: Promise<SingleModelResult>[] = [];
+  if (hasClaude) calls.push(callClaude(prompt).catch(e => ({ verdict: "GO" as const, reasoning: `Claude error: ${e.message?.substring(0, 40)}`, model: "claude" })));
+  if (hasGrok) calls.push(callGrok(prompt).catch(e => ({ verdict: "GO" as const, reasoning: `Grok error: ${e.message?.substring(0, 40)}`, model: "grok" })));
+
+  const results = await Promise.all(calls);
+  const final = consensusVerdict(results);
+
+  aiCache.set(cacheKey, { verdict: final.verdict, reasoning: final.reasoning, models: final.models || "", ts: Date.now() });
+
+  if (aiCache.size > 100) {
+    const now = Date.now();
+    for (const [k, v] of aiCache) {
+      if (now - v.ts > AI_CACHE_TTL) aiCache.delete(k);
+    }
+  }
+
+  console.log(`[Intel] AI consensus for ${side} ${symbol}: ${final.verdict} (${final.models}) — ${final.reasoning.substring(0, 120)}`);
+  return final;
 }
