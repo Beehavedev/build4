@@ -86,9 +86,9 @@ const DEFAULT_CONFIG: AgentConfig = {
   minConfidence: 0.65,
 };
 
-const COOLDOWN_AFTER_CLOSE_MS = 300_000;
-const CIRCUIT_BREAKER_PAUSE_MS = 1_800_000;
-const MAX_CONSECUTIVE_LOSSES_BEFORE_PAUSE = 3;
+const COOLDOWN_AFTER_CLOSE_MS = 120_000;
+const CIRCUIT_BREAKER_PAUSE_MS = 900_000;
+const MAX_CONSECUTIVE_LOSSES_BEFORE_PAUSE = 4;
 const MAX_RISK_PERCENT = 1.0;
 
 export function getAgentState(chatId: string): AgentState | undefined {
@@ -290,7 +290,7 @@ export async function startAgent(
       `⚡ Max Leverage: *${state.config.maxLeverage}x*\n` +
       `📍 Max Positions: *${state.config.maxOpenPositions}*\n` +
       `🚫 Daily Loss Limit: *${state.config.dailyLossLimitPct}%*\n` +
-      `🔒 Circuit Breaker: ${MAX_CONSECUTIVE_LOSSES_BEFORE_PAUSE} losses → 30min pause\n\n` +
+      `🔒 Circuit Breaker: ${MAX_CONSECUTIVE_LOSSES_BEFORE_PAUSE} losses → 15min pause\n\n` +
       `Open: ${posList}\n` +
       `Scanning every ${Math.round(state.config.intervalMs / 1000)}s`
     );

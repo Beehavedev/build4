@@ -229,13 +229,13 @@ export function logTradeResult(features: any, won: boolean): void {
 }
 
 export function getSymbolConfidenceThreshold(symbol: string): number {
-  const BASE_THRESHOLD = 70;
+  const BASE_THRESHOLD = 60;
   const stat = symbolStats[symbol];
   if (!stat || stat.total < 10) return BASE_THRESHOLD;
   const wr = stat.wins / stat.total;
-  if (wr < 0.40) return Math.min(90, BASE_THRESHOLD + 10);
-  if (wr < 0.45) return Math.min(85, BASE_THRESHOLD + 5);
-  if (wr > 0.65) return Math.max(65, BASE_THRESHOLD - 5);
+  if (wr < 0.35) return Math.min(75, BASE_THRESHOLD + 15);
+  if (wr < 0.40) return Math.min(70, BASE_THRESHOLD + 10);
+  if (wr > 0.60) return Math.max(50, BASE_THRESHOLD - 10);
   return BASE_THRESHOLD;
 }
 
