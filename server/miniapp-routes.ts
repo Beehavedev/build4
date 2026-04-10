@@ -169,7 +169,7 @@ export function registerMiniAppRoutes(app: Express) {
     const pnlText = `${pnlSign}$${Math.abs(pnl).toFixed(2)}`;
     const pctVal = parseFloat(pctParam);
     const pctText = `${pctVal >= 0 ? "+" : ""}${pctVal.toFixed(2)}%`;
-    const winRate = wins + losses > 0 ? Math.round(wins / (wins + losses) * 100) : 0;
+
     const pnlColor = pnl >= 0 ? "#0ecb81" : "#f85149";
     const accentRgb = pnl >= 0 ? "14,203,129" : "248,81,73";
     const refLink = `https://t.me/BUILD4_BOT?start=${ref}`;
@@ -179,14 +179,14 @@ export function registerMiniAppRoutes(app: Express) {
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${name} | PnL Card — BUILD4</title>
 <meta property="og:title" content="${name}'s Trading Performance">
-<meta property="og:description" content="PnL: ${pnlText} (${pctText}) | Win Rate: ${winRate}% (${wins}W/${losses}L) | Trade futures on Aster DEX via Telegram">
+<meta property="og:description" content="PnL: ${pnlText} (${pctText}) | Trade futures on Aster DEX via Telegram">
 <meta property="og:image" content="${ogImageUrl}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${name}'s Trading Performance — BUILD4">
-<meta name="twitter:description" content="PnL: ${pnlText} (${pctText}) | Win Rate: ${winRate}% | Trade futures on Aster DEX via Telegram">
+<meta name="twitter:description" content="PnL: ${pnlText} (${pctText}) | Trade futures on Aster DEX via Telegram">
 <meta name="twitter:image" content="${ogImageUrl}">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -223,10 +223,6 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 <div class="pnl-label">PnL</div>
 <div class="pnl-val">${pnlText}</div>
 <div class="pct-val">${pctText}</div>
-</div>
-<div class="stats">
-<div class="stat"><div class="stat-label">Win Rate</div><div class="stat-val ${winRate >= 50 ? 'green' : 'red'}">${winRate}%</div></div>
-<div class="stat"><div class="stat-label">W / L</div><div class="stat-val white"><span class="green">${wins}</span> / <span class="red">${losses}</span></div></div>
 </div>
 <div class="ref-section">
 <div class="ref-label">Referral Code</div>
