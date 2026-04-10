@@ -1265,6 +1265,64 @@ function renderAgent(){
     if(s.scanCount){h+='<div class="text-xs text-dim mt-2" style="text-align:right">Scans: '+s.scanCount+'</div>'}
     h+='</div>';
   }
+
+  var L=AG.learning;
+  if(L&&L.totalTrades>0){
+    h+='<div class="card"><div class="section-title">🧬 Adaptive Learning</div>';
+    h+='<div style="padding:10px;background:#0ecb8110;border-radius:8px;border-left:3px solid var(--green);margin-bottom:10px">';
+    h+='<div class="text-xs text-dim2">The agent learns from every trade. It adjusts confidence thresholds per pair, avoids poor trading hours, adapts to market regimes, and blocks correlated positions.</div>';
+    h+='</div>';
+    h+='<div class="row text-sm"><span class="text-dim">Total Trades Learned</span><span class="mono text-w fw-600">'+L.totalTrades+'</span></div>';
+    h+='<div class="row text-sm mt-1"><span class="text-dim">Overall Win Rate</span><span class="mono '+(L.overallWinRate>=0.5?'gv':'r-')+' fw-600">'+(L.overallWinRate*100).toFixed(1)+'%</span></div>';
+
+    var thKeys=Object.keys(L.symbolThresholds||{});
+    if(thKeys.length>0){
+      h+='<div class="mt-3"><div class="text-xs text-dim2 fw-600 mb-2">Per-Symbol Confidence Thresholds</div>';
+      thKeys.forEach(function(sym){
+        var th=L.symbolThresholds[sym];
+        var isRaised=th>70;var isLowered=th<70;
+        var color=isRaised?'#f6465d':isLowered?'#0ecb81':'var(--text3)';
+        var label=isRaised?' (raised)':isLowered?' (lowered)':'';
+        h+='<div class="row text-xs" style="padding:3px 0"><span class="mono text-w">'+sym.replace('USDT','')+'</span><span class="mono" style="color:'+color+'">'+th+'%'+label+'</span></div>';
+      });
+      h+='</div>';
+    }
+
+    if(L.blockedHours&&L.blockedHours.length>0){
+      h+='<div class="mt-3"><div class="text-xs text-dim2 fw-600 mb-1">🚫 Blocked Hours (UTC)</div>';
+      h+='<div class="text-xs r-">'+L.blockedHours.sort(function(a,b){return a-b}).map(function(h){return h+':00'}).join(', ')+'</div>';
+      h+='<div class="text-xs text-dim mt-1">Agent skips these hours due to &lt;30% historical win rate</div>';
+      h+='</div>';
+    }
+    if(L.bestHours&&L.bestHours.length>0){
+      h+='<div class="mt-2"><div class="text-xs text-dim2 fw-600 mb-1">✅ Best Hours (UTC)</div>';
+      h+='<div class="text-xs gv">'+L.bestHours.sort(function(a,b){return a-b}).map(function(h){return h+':00'}).join(', ')+'</div>';
+      h+='</div>';
+    }
+
+    var regKeys=Object.keys(L.regimePerformance||{});
+    if(regKeys.length>0){
+      h+='<div class="mt-3"><div class="text-xs text-dim2 fw-600 mb-2">Regime Performance</div>';
+      regKeys.forEach(function(reg){
+        var rp=L.regimePerformance[reg];
+        var wr=(rp.winRate*100).toFixed(0);
+        h+='<div class="row text-xs" style="padding:3px 0"><span class="text-w">'+reg+'</span><span class="mono '+(rp.winRate>=0.5?'gv':'r-')+'">'+wr+'% ('+rp.total+' trades)</span></div>';
+      });
+      h+='</div>';
+    }
+
+    h+='<div class="mt-3"><div class="text-xs text-dim2 fw-600 mb-2">Correlation Groups</div>';
+    h+='<div class="text-xs text-dim" style="line-height:1.6">';
+    (L.correlationGroups||[]).forEach(function(g){
+      if(g.length>1) h+=g.map(function(s){return s.replace('USDT','')}).join(' ↔ ')+'<br>';
+    });
+    h+='</div>';
+    h+='<div class="text-xs text-dim mt-1">Agent blocks same-direction entries on correlated pairs</div>';
+    h+='</div>';
+
+    h+='</div>';
+  }
+
   el.innerHTML=h;
 }
 

@@ -1332,6 +1332,12 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const circuitBreakerUntil = (state as any)?.circuitBreakerUntil || 0;
       const lastReasoning = (state as any)?.lastReasoning || "";
 
+      let learning: any = null;
+      try {
+        const { getLearningInsights } = await import("./market-intelligence");
+        learning = getLearningInsights();
+      } catch {}
+
       const positionDetails: any[] = [];
       if (state?.openPositions) {
         for (const [sym, info] of state.openPositions) {
@@ -1374,6 +1380,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
           positionDetails,
           reasoningLog: reasoningLog.slice(-10),
         },
+        learning,
       });
     } catch (e: any) {
       res.status(500).json({ error: "Internal server error" });

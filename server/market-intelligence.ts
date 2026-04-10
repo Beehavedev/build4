@@ -78,6 +78,10 @@ export interface TradeMemory {
   reason: string;
   reasoning: string;
   closedAt: number;
+  regime?: string;
+  hour?: number;
+  durationMin?: number;
+  leverage?: number;
 }
 
 export interface ClaudeDecision {
@@ -94,8 +98,18 @@ export interface ClaudeDecision {
 let tradeMemory: TradeMemory[] = [];
 let symbolStats: Record<string, { wins: number; losses: number; total: number }> = {};
 let regimeStats: Record<string, { wins: number; losses: number; total: number }> = {};
+let hourStats: Record<number, { wins: number; losses: number; total: number }> = {};
+let symbolRegimeStats: Record<string, { wins: number; losses: number; total: number }> = {};
 let _learningLoaded = false;
 let _persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+const CORRELATION_GROUPS: string[][] = [
+  ["BTCUSDT", "ETHUSDT"],
+  ["SOLUSDT", "SUIUSDT"],
+  ["DOGEUSDT", "XRPUSDT"],
+  ["ADAUSDT", "AVAXUSDT", "LINKUSDT"],
+  ["BNBUSDT"],
+];
 
 export async function loadLearningFromDb(chatId?: string): Promise<void> {
   if (_learningLoaded) return;
@@ -111,6 +125,11 @@ export async function loadLearningFromDb(chatId?: string): Promise<void> {
       } catch {}
       try { symbolStats = JSON.parse(row.symbol_stats_json || "{}"); } catch {}
       try { regimeStats = JSON.parse(row.regime_stats_json || "{}"); } catch {}
+      try {
+        const extra = JSON.parse(row.weights_json || "{}");
+        if (extra.hourStats) hourStats = extra.hourStats;
+        if (extra.symbolRegimeStats) symbolRegimeStats = extra.symbolRegimeStats;
+      } catch {}
       _learningLoaded = true;
       const wins = tradeMemory.filter(t => t.pnl > 0).length;
       console.log(`[Intel] Loaded memory from DB: ${tradeMemory.length} trades, ${(tradeMemory.length > 0 ? wins / tradeMemory.length * 100 : 0).toFixed(1)}% win rate`);
@@ -129,10 +148,12 @@ async function persistLearningToDb(): Promise<void> {
     const { db } = await import("./db");
     const { sql } = await import("drizzle-orm");
     const wins = tradeMemory.filter(t => t.pnl > 0).length;
+    const extraJson = JSON.stringify({ hourStats, symbolRegimeStats });
     await db.execute(sql`
       INSERT INTO aster_agent_learning (id, chat_id, weights_json, trade_history_json, symbol_stats_json, regime_stats_json, total_trades, total_wins, updated_at)
-      VALUES ('global', 'global', '{}', ${JSON.stringify(tradeMemory.slice(-100))}, ${JSON.stringify(symbolStats)}, ${JSON.stringify(regimeStats)}, ${tradeMemory.length}, ${wins}, NOW())
+      VALUES ('global', 'global', ${extraJson}, ${JSON.stringify(tradeMemory.slice(-100))}, ${JSON.stringify(symbolStats)}, ${JSON.stringify(regimeStats)}, ${tradeMemory.length}, ${wins}, NOW())
       ON CONFLICT (id) DO UPDATE SET
+        weights_json = EXCLUDED.weights_json,
         trade_history_json = EXCLUDED.trade_history_json,
         symbol_stats_json = EXCLUDED.symbol_stats_json,
         regime_stats_json = EXCLUDED.regime_stats_json,
@@ -159,10 +180,34 @@ export function recordTradeResult(trade: TradeMemory): void {
   if (tradeMemory.length > 100) tradeMemory.splice(0, tradeMemory.length - 100);
 
   const sym = trade.symbol || "UNKNOWN";
+  const won = trade.pnl > 0;
+
   if (!symbolStats[sym]) symbolStats[sym] = { wins: 0, losses: 0, total: 0 };
   symbolStats[sym].total++;
-  if (trade.pnl > 0) symbolStats[sym].wins++;
+  if (won) symbolStats[sym].wins++;
   else symbolStats[sym].losses++;
+
+  if (trade.regime) {
+    const reg = trade.regime;
+    if (!regimeStats[reg]) regimeStats[reg] = { wins: 0, losses: 0, total: 0 };
+    regimeStats[reg].total++;
+    if (won) regimeStats[reg].wins++;
+    else regimeStats[reg].losses++;
+
+    const symReg = `${sym}_${reg}`;
+    if (!symbolRegimeStats[symReg]) symbolRegimeStats[symReg] = { wins: 0, losses: 0, total: 0 };
+    symbolRegimeStats[symReg].total++;
+    if (won) symbolRegimeStats[symReg].wins++;
+    else symbolRegimeStats[symReg].losses++;
+  }
+
+  if (trade.hour !== undefined) {
+    const h = trade.hour;
+    if (!hourStats[h]) hourStats[h] = { wins: 0, losses: 0, total: 0 };
+    hourStats[h].total++;
+    if (won) hourStats[h].wins++;
+    else hourStats[h].losses++;
+  }
 
   schedulePersist();
 }
@@ -183,7 +228,105 @@ export function logTradeResult(features: any, won: boolean): void {
   schedulePersist();
 }
 
-export function getIntelStatus(): { tradeCount: number; winRate: number; weights: any; symbolStats: typeof symbolStats; regimeStats: typeof regimeStats } {
+export function getSymbolConfidenceThreshold(symbol: string): number {
+  const BASE_THRESHOLD = 70;
+  const stat = symbolStats[symbol];
+  if (!stat || stat.total < 10) return BASE_THRESHOLD;
+  const wr = stat.wins / stat.total;
+  if (wr < 0.40) return Math.min(90, BASE_THRESHOLD + 10);
+  if (wr < 0.45) return Math.min(85, BASE_THRESHOLD + 5);
+  if (wr > 0.65) return Math.max(65, BASE_THRESHOLD - 5);
+  return BASE_THRESHOLD;
+}
+
+export function isHourBlocked(hour: number): boolean {
+  const stat = hourStats[hour];
+  if (!stat || stat.total < 10) return false;
+  const wr = stat.wins / stat.total;
+  return wr < 0.30;
+}
+
+export function getBestTradingHours(): { best: number[]; worst: number[]; stats: typeof hourStats } {
+  const best: number[] = [];
+  const worst: number[] = [];
+  for (const [h, stat] of Object.entries(hourStats)) {
+    if (stat.total < 5) continue;
+    const wr = stat.wins / stat.total;
+    if (wr >= 0.60) best.push(Number(h));
+    if (wr < 0.35) worst.push(Number(h));
+  }
+  return { best, worst, stats: { ...hourStats } };
+}
+
+export function getCorrelatedOpenPositions(symbol: string, openPositions: Map<string, { side: string }>): string[] {
+  const group = CORRELATION_GROUPS.find(g => g.includes(symbol));
+  if (!group) return [];
+  const conflicts: string[] = [];
+  for (const [openSym, info] of openPositions) {
+    if (openSym === symbol) continue;
+    if (group.includes(openSym)) {
+      conflicts.push(`${info.side} ${openSym}`);
+    }
+  }
+  return conflicts;
+}
+
+export function isCorrelationBlocked(symbol: string, side: "LONG" | "SHORT", openPositions: Map<string, { side: string }>): boolean {
+  const group = CORRELATION_GROUPS.find(g => g.includes(symbol));
+  if (!group) return false;
+  for (const [openSym, info] of openPositions) {
+    if (openSym === symbol) continue;
+    if (group.includes(openSym) && info.side === side) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function getRegimeWinRate(regime: string): { winRate: number; total: number } | null {
+  const stat = regimeStats[regime];
+  if (!stat || stat.total < 5) return null;
+  return { winRate: stat.wins / stat.total, total: stat.total };
+}
+
+export function getSymbolRegimeWinRate(symbol: string, regime: string): { winRate: number; total: number } | null {
+  const key = `${symbol}_${regime}`;
+  const stat = symbolRegimeStats[key];
+  if (!stat || stat.total < 3) return null;
+  return { winRate: stat.wins / stat.total, total: stat.total };
+}
+
+export function getLearningInsights(): {
+  symbolThresholds: Record<string, number>;
+  blockedHours: number[];
+  bestHours: number[];
+  regimePerformance: Record<string, { winRate: number; total: number }>;
+  correlationGroups: string[][];
+  totalTrades: number;
+  overallWinRate: number;
+} {
+  const symbolThresholds: Record<string, number> = {};
+  for (const sym of Object.keys(symbolStats)) {
+    symbolThresholds[sym] = getSymbolConfidenceThreshold(sym);
+  }
+  const { best, worst } = getBestTradingHours();
+  const regPerf: Record<string, { winRate: number; total: number }> = {};
+  for (const [reg, stat] of Object.entries(regimeStats)) {
+    if (stat.total >= 3) regPerf[reg] = { winRate: stat.wins / stat.total, total: stat.total };
+  }
+  const wins = tradeMemory.filter(t => t.pnl > 0).length;
+  return {
+    symbolThresholds,
+    blockedHours: worst.filter(h => isHourBlocked(h)),
+    bestHours: best,
+    regimePerformance: regPerf,
+    correlationGroups: CORRELATION_GROUPS,
+    totalTrades: tradeMemory.length,
+    overallWinRate: tradeMemory.length > 0 ? wins / tradeMemory.length : 0,
+  };
+}
+
+export function getIntelStatus(): { tradeCount: number; winRate: number; weights: any; symbolStats: typeof symbolStats; regimeStats: typeof regimeStats; hourStats: typeof hourStats; learning: ReturnType<typeof getLearningInsights> } {
   const wins = tradeMemory.filter(t => t.pnl > 0).length;
   return {
     tradeCount: tradeMemory.length,
@@ -191,6 +334,8 @@ export function getIntelStatus(): { tradeCount: number; winRate: number; weights
     weights: {},
     symbolStats: { ...symbolStats },
     regimeStats: { ...regimeStats },
+    hourStats: { ...hourStats },
+    learning: getLearningInsights(),
   };
 }
 
@@ -222,6 +367,19 @@ function buildClaudePrompt(
 
   const symStat = symbolStats[snapshot.symbol];
   const symWR = symStat ? `${(symStat.wins / symStat.total * 100).toFixed(0)}% (${symStat.total} trades)` : "No history";
+
+  const currentHour = new Date().getUTCHours();
+  const hourStat = hourStats[currentHour];
+  const hourWR = hourStat && hourStat.total >= 5 ? `${(hourStat.wins / hourStat.total * 100).toFixed(0)}% (${hourStat.total} trades)` : "Insufficient data";
+
+  const regStat = regimeStats[snapshot.overallRegime];
+  const regWR = regStat && regStat.total >= 5 ? `${(regStat.wins / regStat.total * 100).toFixed(0)}% (${regStat.total} trades)` : "Insufficient data";
+
+  const symRegStat = symbolRegimeStats[`${snapshot.symbol}_${snapshot.overallRegime}`];
+  const symRegWR = symRegStat && symRegStat.total >= 3 ? `${(symRegStat.wins / symRegStat.total * 100).toFixed(0)}% (${symRegStat.total})` : "N/A";
+
+  const confThreshold = getSymbolConfidenceThreshold(snapshot.symbol);
+  const { best: bestHours, worst: worstHours } = getBestTradingHours();
 
   const levelsStr = snapshot.nearestSupport
     ? `Nearest Support: $${snapshot.nearestSupport.toFixed(2)} (${snapshot.distToSupportPct?.toFixed(2)}% away)\n`
@@ -264,6 +422,14 @@ MARKET CONTEXT:
 Funding Rate: ${(funding * 100).toFixed(4)}%
 Orderbook Imbalance: ${(imbalance * 100).toFixed(1)}% (>50% = more buyers)
 ${snapshot.symbol} Win Rate: ${symWR}
+
+LEARNING INSIGHTS (from historical trades):
+Current Hour (${currentHour} UTC) Win Rate: ${hourWR}${worstHours.includes(currentHour) ? " ⚠️ HISTORICALLY POOR HOUR" : ""}${bestHours.includes(currentHour) ? " ✅ HISTORICALLY STRONG HOUR" : ""}
+${snapshot.overallRegime} Regime Win Rate: ${regWR}
+${snapshot.symbol} in ${snapshot.overallRegime}: ${symRegWR}
+Dynamic Confidence Threshold for ${snapshot.symbol}: ${confThreshold}%${confThreshold > 70 ? " (RAISED due to poor history)" : confThreshold < 70 ? " (lowered due to strong history)" : ""}
+${bestHours.length > 0 ? `Best Trading Hours (UTC): ${bestHours.sort((a,b)=>a-b).join(", ")}` : ""}
+${worstHours.length > 0 ? `Avoid Trading Hours (UTC): ${worstHours.sort((a,b)=>a-b).join(", ")}` : ""}
 
 RECENT TRADE HISTORY (last 5):
 ${memoryStr}

@@ -3,6 +3,8 @@ import {
   getClaudeTradeDecision, getClaudeExitDecision,
   recordTradeResult, getIntelStatus, loadLearningFromDb,
   getTradeMemory, getFundingRate,
+  getSymbolConfidenceThreshold, isHourBlocked, isCorrelationBlocked,
+  getLearningInsights,
   type ClaudeDecision, type TradeMemory,
 } from "./market-intelligence";
 import { storage } from "./storage";
@@ -63,6 +65,7 @@ interface AgentState {
   consecutiveLosses: number;
   lastTradeCloseTime: number;
   circuitBreakerUntil: number;
+  lastRegime: string;
 }
 
 const agentStates = new Map<string, AgentState>();
@@ -212,6 +215,7 @@ function createDefaultState(): AgentState {
     consecutiveLosses: 0,
     lastTradeCloseTime: 0,
     circuitBreakerUntil: 0,
+    lastRegime: "UNKNOWN",
   };
 }
 
@@ -452,6 +456,15 @@ async function runAgentLoop(
 
     const currentPositionsList = Array.from(state.openPositions.entries()).map(([s, i]) => `${i.side} ${s}`);
 
+    const currentHour = new Date().getUTCHours();
+    if (isHourBlocked(currentHour)) {
+      state.lastAction = `Scan #${state.scanCount} — Hour ${currentHour} UTC blocked`;
+      state.lastReason = "Historically poor performance this hour — sitting out";
+      addReasoningLog(state, "ALL", "HOUR_BLOCKED", `Hour ${currentHour} UTC has <30% win rate — skipping scan`, 0);
+      scheduleNext(chatId, getClient, sendMessage);
+      return;
+    }
+
     let bestDecision: { decision: ClaudeDecision; snapshot: MarketSnapshot } | null = null;
 
     for (const symbol of SCAN_PAIRS) {
@@ -475,10 +488,22 @@ async function runAgentLoop(
 
         addReasoningLog(state, symbol, decision.action, decision.reasoning, decision.confidence);
 
-        if (decision.action !== "HOLD" && decision.confidence >= 70) {
-          if (!bestDecision || decision.confidence > bestDecision.decision.confidence) {
-            bestDecision = { decision, snapshot };
-          }
+        if (decision.action === "HOLD") continue;
+
+        const dynThreshold = getSymbolConfidenceThreshold(symbol);
+        if (decision.confidence < dynThreshold) {
+          addReasoningLog(state, symbol, "THRESHOLD_BLOCKED", `Confidence ${decision.confidence}% < dynamic threshold ${dynThreshold}% for ${symbol}`, decision.confidence);
+          continue;
+        }
+
+        const tradeSide: "LONG" | "SHORT" = decision.action === "OPEN_LONG" ? "LONG" : "SHORT";
+        if (isCorrelationBlocked(symbol, tradeSide, state.openPositions)) {
+          addReasoningLog(state, symbol, "CORR_BLOCKED", `${tradeSide} ${symbol} blocked — correlated pair already open same direction`, decision.confidence);
+          continue;
+        }
+
+        if (!bestDecision || decision.confidence > bestDecision.decision.confidence) {
+          bestDecision = { decision, snapshot };
         }
       } catch (e: any) {
         console.log(`[Agent:${chatId}] Scan ${symbol} failed: ${e.message?.substring(0, 80)}`);
@@ -488,6 +513,7 @@ async function runAgentLoop(
     if (bestDecision) {
       const { decision, snapshot } = bestDecision;
       const side: "BUY" | "SELL" = decision.action === "OPEN_LONG" ? "BUY" : "SELL";
+      state.lastRegime = snapshot.overallRegime || "UNKNOWN";
       await openPosition(chatId, futuresClient, state, snapshot.symbol, side, decision, snapshot.price, balance, sendMessage);
     } else {
       state.lastAction = `Scan #${state.scanCount} — No setup found`;
@@ -852,6 +878,8 @@ async function closePosition(
     state.consecutiveLosses = 0;
   }
 
+  const openedAt = posInfo?.openedAt || Date.now();
+  const durationMin = (Date.now() - openedAt) / 60_000;
   recordTradeResult({
     symbol,
     side: pos.side === "LONG" ? "LONG" : "SHORT",
@@ -862,6 +890,10 @@ async function closePosition(
     reason: reason || "",
     reasoning: posInfo?.reasoning || "",
     closedAt: Date.now(),
+    regime: state.lastRegime || "UNKNOWN",
+    hour: new Date(openedAt).getUTCHours(),
+    durationMin: Math.round(durationMin),
+    leverage: pos.leverage || state.config.maxLeverage,
   });
 
   try {
