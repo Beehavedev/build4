@@ -669,7 +669,12 @@ async function openPosition(
   const perPositionRisk = effectiveRisk / state.config.maxOpenPositions;
   const stopLossPct = Math.max(decision.suggestedStopLoss, 0.5);
 
-  const qty = computeQuantity(symbol, availableBalance, perPositionRisk, leverage, lastPrice, stopLossPct);
+  if (stopLossPct > 10) {
+    console.log(`[Agent:${chatId}] ${symbol} stop-loss ${stopLossPct}% too wide, capping at 5%`);
+  }
+  const clampedSL = Math.min(stopLossPct, 5);
+
+  const qty = computeQuantity(symbol, availableBalance, perPositionRisk, leverage, lastPrice, clampedSL);
   if (qty <= 0) {
     console.log(`[Agent:${chatId}] ${symbol} qty too small after sizing`);
     return;
@@ -708,16 +713,38 @@ async function openPosition(
 
   const positionSide = side === "BUY" ? "LONG" : "SHORT";
   const entryP = avgPrice || lastPrice;
+  const effectiveQty = filledQty || qty;
+
+  try {
+    const slSide = side === "BUY" ? "SELL" : "BUY";
+    const slPrice = side === "BUY"
+      ? entryP * (1 - clampedSL / 100)
+      : entryP * (1 + clampedSL / 100);
+    const info = _exchangeInfoCache[symbol];
+    const pricePrecision = info?.pricePrecision ?? (entryP > 1000 ? 2 : entryP > 1 ? 4 : 6);
+    await futuresClient.createOrder({
+      symbol,
+      side: slSide,
+      type: "STOP_MARKET",
+      stopPrice: slPrice.toFixed(pricePrecision),
+      quantity: String(effectiveQty),
+      reduceOnly: true,
+    });
+    console.log(`[Agent:${chatId}] On-exchange SL placed for ${symbol} at $${slPrice.toFixed(pricePrecision)}`);
+  } catch (slErr: any) {
+    console.warn(`[Agent:${chatId}] Failed to place on-exchange SL for ${symbol}: ${slErr.message?.substring(0, 150)}`);
+  }
+
   state.openPositions.set(symbol, {
     side: positionSide,
     entryPrice: entryP,
     peakPnlPct: 0,
     openedAt: Date.now(),
-    stopLossPct,
+    stopLossPct: clampedSL,
     takeProfitPct: decision.suggestedTakeProfit,
     leverage,
     reasoning: decision.reasoning,
-    quantity: filledQty || qty,
+    quantity: effectiveQty,
   });
   state.tradeCount++;
   state.lastAction = `${positionSide} ${symbol}`;
@@ -756,6 +783,17 @@ async function closePosition(
   if (!pos || pos.quantity <= 0) {
     state.openPositions.delete(symbol);
     return;
+  }
+
+  try {
+    const openOrders = await futuresClient.openOrders(symbol);
+    for (const order of openOrders) {
+      if (order.type === "STOP_MARKET" || order.type === "TAKE_PROFIT_MARKET") {
+        await futuresClient.cancelOrder(symbol, order.orderId).catch(() => {});
+      }
+    }
+  } catch (cancelErr: any) {
+    console.warn(`[Agent:${chatId}] Failed to cancel open orders for ${symbol}: ${cancelErr.message?.substring(0, 80)}`);
   }
 
   const closeSide = pos.side === "LONG" ? "SELL" : "BUY";

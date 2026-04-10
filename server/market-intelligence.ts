@@ -391,20 +391,29 @@ async function callClaude(prompt: string, maxTokens: number = 300): Promise<stri
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("No analysis key configured");
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: maxTokens,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.15,
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: maxTokens,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.15,
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const errText = await response.text().catch(() => "");
@@ -445,6 +454,12 @@ export async function getClaudeTradeDecision(
   const decision = parseClaudeDecision(content);
 
   decision.suggestedLeverage = Math.min(decision.suggestedLeverage, maxLeverage);
+
+  if (decision.action === "LONG" && decision.suggestedStopLoss <= 0) {
+    decision.suggestedStopLoss = 1.5;
+  } else if (decision.action === "SHORT" && decision.suggestedStopLoss <= 0) {
+    decision.suggestedStopLoss = 1.5;
+  }
 
   if (decision.confidence < 70 && decision.action !== "HOLD") {
     decision.action = "HOLD";
