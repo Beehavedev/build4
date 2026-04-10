@@ -166,3 +166,8 @@ The Agent Store provides searchable agents with stats, a real-time activity feed
 - **DexScreener**: Charting data.
 - **Raydium LaunchLab, Bankr, Flap.sh, Four.meme, XLayer**: Token launch platforms.
 - **Aster DEX**: Centralized futures and spot trading integration (V1 HMAC + V3 EIP-712 signing, broker auto-onboarding API, WebSocket streams, advanced order types).
+
+### Aster Deposit Routing (Critical)
+- **Vault deposit routing**: When depositing from a user's bot wallet to Aster, `depositTo()` is used to credit the **parent address** (the Aster Code account owner). Previously `deposit()` was used which credited the caller (bot wallet) instead of the parent account, causing funds to appear in the wrong Aster account.
+- **Recovery mechanism**: The spot-to-futures transfer endpoint checks the bot wallet's own Aster spot balance if the parent account shows $0, and attempts to recover misrouted funds.
+- **Spot balance query**: The account endpoint now uses `futuresClient.spotBalance()` for Aster Code clients (where `client.spot` is null).

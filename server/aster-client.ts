@@ -1170,7 +1170,24 @@ export async function asterV3Deposit(
       "function depositTo(address currency, uint256 amount, address to, uint256 brokerId)",
     ], wallet);
 
-    console.log(`[AsterDeposit] Depositing ${amountUsdt} USDT from ${wallet.address.substring(0, 10)}... via deposit() (credits caller/parent account)`);
+    const recipient = recipientAddress ? getAddress(recipientAddress) : null;
+
+    if (recipient) {
+      console.log(`[AsterDeposit] Depositing ${amountUsdt} USDT from ${wallet.address.substring(0, 10)}... via depositTo → ${recipient.substring(0, 10)}`);
+      try {
+        const depositTx = await vault.depositTo(BSC_USDT_ADDR, amount, recipient, brokerId, {
+          gasLimit: 350000,
+        });
+        const receipt = await depositTx.wait();
+        console.log(`[AsterDeposit] depositTo succeeded: ${receipt.hash}`);
+        return { success: true, txHash: receipt.hash };
+      } catch (depositToErr: any) {
+        console.log(`[AsterDeposit] depositTo failed: ${depositToErr.message?.substring(0, 150)}`);
+        return { success: false, error: `Aster vault depositTo failed (recipient=${recipient.substring(0, 10)}): ${depositToErr.message?.substring(0, 200)}` };
+      }
+    }
+
+    console.log(`[AsterDeposit] Depositing ${amountUsdt} USDT from ${wallet.address.substring(0, 10)}... via deposit() (credits caller)`);
     try {
       const depositTx = await vault.deposit(BSC_USDT_ADDR, amount, brokerId, {
         gasLimit: 300000,
@@ -1180,22 +1197,6 @@ export async function asterV3Deposit(
       return { success: true, txHash: receipt.hash };
     } catch (depositErr: any) {
       console.log(`[AsterDeposit] deposit() failed: ${depositErr.message?.substring(0, 150)}`);
-
-      const recipient = recipientAddress ? getAddress(recipientAddress) : null;
-      if (recipient) {
-        try {
-          console.log(`[AsterDeposit] Trying depositTo for recipient ${recipient}`);
-          const depositTx = await vault.depositTo(BSC_USDT_ADDR, amount, recipient, brokerId, {
-            gasLimit: 350000,
-          });
-          const receipt = await depositTx.wait();
-          console.log(`[AsterDeposit] depositTo succeeded: ${receipt.hash}`);
-          return { success: true, txHash: receipt.hash };
-        } catch (depositToErr: any) {
-          console.log(`[AsterDeposit] depositTo also failed: ${depositToErr.message?.substring(0, 150)}`);
-        }
-      }
-
       return { success: false, error: `Aster vault deposit failed: ${depositErr.message?.substring(0, 200)}` };
     }
   } catch (e: any) {

@@ -1030,14 +1030,24 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       let spotBalance = 0;
       try {
-        const spotClient = client.spot;
-        if (spotClient && spotClient.account) {
-          const spotAcct = await spotClient.account();
-          if (spotAcct && Array.isArray(spotAcct.balances)) {
-            const usdtSpot = spotAcct.balances.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
-            if (usdtSpot) spotBalance = parseFloat(usdtSpot.free || "0");
+        if (futuresClient.spotBalance) {
+          const spotBalances = await futuresClient.spotBalance();
+          if (Array.isArray(spotBalances)) {
+            const usdtSpot = spotBalances.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+            if (usdtSpot) spotBalance = parseFloat(usdtSpot.free || usdtSpot.balance || "0");
           }
-          console.log(`[MiniApp] Spot balance: $${spotBalance}`);
+          console.log(`[MiniApp] Spot balance (via futuresClient.spotBalance): $${spotBalance}`);
+        }
+        if (spotBalance <= 0) {
+          const spotClient = client.spot;
+          if (spotClient && spotClient.account) {
+            const spotAcct = await spotClient.account();
+            if (spotAcct && Array.isArray(spotAcct.balances)) {
+              const usdtSpot = spotAcct.balances.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+              if (usdtSpot) spotBalance = parseFloat(usdtSpot.free || "0");
+            }
+            console.log(`[MiniApp] Spot balance (via spot client): $${spotBalance}`);
+          }
         }
       } catch (spotErr: any) {
         console.log(`[MiniApp] Spot balance error: ${spotErr.message?.substring(0, 100)}`);
@@ -1158,10 +1168,30 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       }
 
       const { asterV3Deposit } = await import("./aster-client");
-      const ownerAddr = process.env.ASTER_USER_ADDRESS || "";
-      const needsDepositTo = ownerAddr && ownerAddr.toLowerCase() !== derivedAddr;
-      console.log(`[MiniApp] deposit: ownerAddr=${ownerAddr}, needsDepositTo=${needsDepositTo}`);
-      const result = await asterV3Deposit(rawPk, amount, 0, needsDepositTo ? ownerAddr : undefined);
+
+      let depositRecipient: string | undefined;
+      try {
+        const creds = await storage.getAsterCredentials(chatId);
+        if (creds?.parentAddress) {
+          const parentAddr = creds.parentAddress.startsWith("astercode:")
+            ? creds.parentAddress.replace("astercode:", "")
+            : creds.parentAddress;
+          if (parentAddr.toLowerCase() !== derivedAddr) {
+            depositRecipient = parentAddr;
+            console.log(`[MiniApp] deposit: routing to Aster parent account ${parentAddr.substring(0, 10)} via depositTo`);
+          }
+        }
+      } catch {}
+
+      if (!depositRecipient) {
+        const ownerAddr = process.env.ASTER_USER_ADDRESS || "";
+        if (ownerAddr && ownerAddr.toLowerCase() !== derivedAddr) {
+          depositRecipient = ownerAddr;
+        }
+      }
+
+      console.log(`[MiniApp] deposit: recipient=${depositRecipient || "self (caller)"}`);
+      const result = await asterV3Deposit(rawPk, amount, 0, depositRecipient);
 
       if (!result.success) return res.json({ success: false, error: result.error });
 
@@ -1265,23 +1295,112 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       let spotBal = 0;
       try {
-        const balances = await fc.balance();
-        if (Array.isArray(balances)) {
-          const usdt = balances.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
-          if (usdt) spotBal = parseFloat(usdt.balance || usdt.walletBalance || "0");
+        if (fc.spotBalance) {
+          const spotBalances = await fc.spotBalance();
+          if (Array.isArray(spotBalances)) {
+            const usdt = spotBalances.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+            if (usdt) spotBal = parseFloat(usdt.free || usdt.balance || "0");
+          }
+        }
+        if (spotBal <= 0) {
+          const balances = await fc.balance();
+          if (Array.isArray(balances)) {
+            const usdt = balances.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+            if (usdt) spotBal = parseFloat(usdt.balance || usdt.walletBalance || "0");
+          }
         }
       } catch {}
 
-      const amount = req.body.amount || spotBal;
+      let amount = req.body.amount || spotBal;
+
+      if ((!amount || amount <= 0)) {
+        try {
+          const walletAddr = getUserWalletAddress(parseInt(chatId));
+          if (walletAddr) {
+            const pk = await resolvePrivateKey(parseInt(chatId), walletAddr);
+            if (pk) {
+              const { createAsterV3FuturesClient } = await import("./aster-client");
+              const botFc = createAsterV3FuturesClient({
+                user: walletAddr,
+                signer: walletAddr,
+                signerPrivateKey: pk,
+                builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
+                feeRate: 0.00001,
+              });
+
+              let botSpot = 0;
+              if (botFc.spotBalance) {
+                const sbs = await botFc.spotBalance();
+                if (Array.isArray(sbs)) {
+                  const u = sbs.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
+                  if (u) botSpot = parseFloat(u.free || u.balance || "0");
+                }
+              }
+
+              if (botSpot > 0) {
+                console.log(`[MiniApp] Recovery: Found $${botSpot} in bot wallet ${walletAddr.substring(0, 10)} Aster spot (deposited to wrong account)`);
+
+                if (botFc.spotToFutures) {
+                  try {
+                    await botFc.spotToFutures("USDT", botSpot.toString());
+                    console.log(`[MiniApp] Recovery: Transferred $${botSpot} spot→futures on bot wallet directly`);
+                    return res.json({ success: true, amount: botSpot, recovered: true, message: `$${botSpot} recovered from misrouted deposit and moved to Futures — ready to trade!` });
+                  } catch (stfErr: any) {
+                    console.log(`[MiniApp] Recovery spot→futures on bot wallet failed: ${stfErr.message?.substring(0, 150)}`);
+                  }
+                }
+
+                const creds = await storage.getAsterCredentials(chatId);
+                if (creds?.parentAddress) {
+                  const parentAddr = creds.parentAddress.startsWith("astercode:")
+                    ? creds.parentAddress.replace("astercode:", "")
+                    : creds.parentAddress;
+
+                  if (botFc.withdrawOnChain) {
+                    try {
+                      await botFc.withdrawOnChain("USDT", botSpot.toString(), walletAddr);
+                      console.log(`[MiniApp] Recovery: Withdrew $${botSpot} from bot Aster spot to on-chain`);
+                      await new Promise(r => setTimeout(r, 8000));
+
+                      const ethers = await import("ethers");
+                      const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+                      const bnbBal = await provider.getBalance(walletAddr);
+                      if (bnbBal >= ethers.parseEther("0.0003")) {
+                        const { asterV3Deposit } = await import("./aster-client");
+                        const redeposit = await asterV3Deposit(pk, botSpot, 0, parentAddr);
+                        if (redeposit.success) {
+                          console.log(`[MiniApp] Recovery: Re-deposited $${botSpot} to parent ${parentAddr.substring(0, 10)}`);
+                          await new Promise(r => setTimeout(r, 8000));
+                          amount = botSpot;
+                        }
+                      }
+                    } catch (recErr: any) {
+                      console.log(`[MiniApp] Recovery withdraw/redeposit failed: ${recErr.message?.substring(0, 150)}`);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (recoveryErr: any) {
+          console.log(`[MiniApp] Recovery check error: ${recoveryErr.message?.substring(0, 150)}`);
+        }
+      }
+
       if (!amount || amount <= 0) return res.json({ success: false, error: "No Spot balance available to transfer. Deposit may still be processing — wait 2-3 minutes and try again." });
 
       console.log(`[MiniApp] Spot→Futures transfer: $${amount}`);
 
       if (!fc.spotToFutures) return res.json({ success: false, error: "Spot→Futures transfer not available on this API" });
 
-      await fc.spotToFutures("USDT", amount.toString());
-      console.log(`[MiniApp] Spot→Futures done: $${amount}`);
-      res.json({ success: true, amount, message: `$${amount} transferred to Futures — ready to trade!` });
+      try {
+        await fc.spotToFutures("USDT", amount.toString());
+        console.log(`[MiniApp] Spot→Futures done: $${amount}`);
+        res.json({ success: true, amount, message: `$${amount} transferred to Futures — ready to trade!` });
+      } catch (stfErr: any) {
+        console.log(`[MiniApp] Spot→Futures error: ${stfErr.message?.substring(0, 150)}`);
+        res.json({ success: false, error: `Transfer failed: ${stfErr.message?.substring(0, 100)}. Try again in a few minutes.` });
+      }
     } catch (e: any) {
       console.log(`[MiniApp] Spot→Futures error: ${e.message?.substring(0, 150)}`);
       res.status(500).json({ error: "Internal server error" });
