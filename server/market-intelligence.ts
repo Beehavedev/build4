@@ -1,5 +1,5 @@
 import { storage } from "./storage";
-import type { StrategyResult } from "./trading-strategy";
+import type { StrategyResult, MarketSnapshot, TimeframeAnalysis, KeyLevel } from "./trading-strategy";
 import type { MarketRegime, RegimeInfo } from "./trading-strategy";
 
 export interface MarketIntel {
@@ -68,6 +68,424 @@ export async function getOrderbookImbalance(futuresClient: any, symbol: string, 
   }
 }
 
+export interface TradeMemory {
+  symbol: string;
+  side: "LONG" | "SHORT";
+  entryPrice: number;
+  exitPrice: number;
+  pnl: number;
+  pnlPct: number;
+  reason: string;
+  reasoning: string;
+  closedAt: number;
+}
+
+export interface ClaudeDecision {
+  action: "OPEN_LONG" | "OPEN_SHORT" | "HOLD" | "CLOSE";
+  confidence: number;
+  reasoning: string;
+  riskAssessment: string;
+  suggestedStopLoss: number;
+  suggestedTakeProfit: number;
+  suggestedLeverage: number;
+  keyFactors: string[];
+}
+
+let tradeMemory: TradeMemory[] = [];
+let symbolStats: Record<string, { wins: number; losses: number; total: number }> = {};
+let regimeStats: Record<string, { wins: number; losses: number; total: number }> = {};
+let _learningLoaded = false;
+let _persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+export async function loadLearningFromDb(chatId?: string): Promise<void> {
+  if (_learningLoaded) return;
+  try {
+    const { db } = await import("./db");
+    const { sql } = await import("drizzle-orm");
+    const rows = (await db.execute(sql`SELECT * FROM aster_agent_learning ORDER BY updated_at DESC LIMIT 1`)).rows;
+    if (rows && rows.length > 0) {
+      const row = rows[0] as any;
+      try {
+        const hist = JSON.parse(row.trade_history_json || "[]");
+        if (Array.isArray(hist)) tradeMemory = hist.slice(-100);
+      } catch {}
+      try { symbolStats = JSON.parse(row.symbol_stats_json || "{}"); } catch {}
+      try { regimeStats = JSON.parse(row.regime_stats_json || "{}"); } catch {}
+      _learningLoaded = true;
+      const wins = tradeMemory.filter(t => t.pnl > 0).length;
+      console.log(`[Intel] Loaded memory from DB: ${tradeMemory.length} trades, ${(tradeMemory.length > 0 ? wins / tradeMemory.length * 100 : 0).toFixed(1)}% win rate`);
+    } else {
+      _learningLoaded = true;
+      console.log(`[Intel] No memory found in DB, starting fresh`);
+    }
+  } catch (e: any) {
+    _learningLoaded = true;
+    console.log(`[Intel] Failed to load memory from DB: ${e.message?.substring(0, 80)}`);
+  }
+}
+
+async function persistLearningToDb(): Promise<void> {
+  try {
+    const { db } = await import("./db");
+    const { sql } = await import("drizzle-orm");
+    const wins = tradeMemory.filter(t => t.pnl > 0).length;
+    await db.execute(sql`
+      INSERT INTO aster_agent_learning (id, chat_id, weights_json, trade_history_json, symbol_stats_json, regime_stats_json, total_trades, total_wins, updated_at)
+      VALUES ('global', 'global', '{}', ${JSON.stringify(tradeMemory.slice(-100))}, ${JSON.stringify(symbolStats)}, ${JSON.stringify(regimeStats)}, ${tradeMemory.length}, ${wins}, NOW())
+      ON CONFLICT (id) DO UPDATE SET
+        trade_history_json = EXCLUDED.trade_history_json,
+        symbol_stats_json = EXCLUDED.symbol_stats_json,
+        regime_stats_json = EXCLUDED.regime_stats_json,
+        total_trades = EXCLUDED.total_trades,
+        total_wins = EXCLUDED.total_wins,
+        updated_at = NOW()
+    `);
+    console.log(`[Intel] Persisted memory: ${tradeMemory.length} trades, ${wins} wins`);
+  } catch (e: any) {
+    console.log(`[Intel] Failed to persist memory: ${e.message?.substring(0, 80)}`);
+  }
+}
+
+function schedulePersist(): void {
+  if (_persistTimer) clearTimeout(_persistTimer);
+  _persistTimer = setTimeout(() => {
+    persistLearningToDb();
+    _persistTimer = null;
+  }, 5000);
+}
+
+export function recordTradeResult(trade: TradeMemory): void {
+  tradeMemory.push(trade);
+  if (tradeMemory.length > 100) tradeMemory.splice(0, tradeMemory.length - 100);
+
+  const sym = trade.symbol || "UNKNOWN";
+  if (!symbolStats[sym]) symbolStats[sym] = { wins: 0, losses: 0, total: 0 };
+  symbolStats[sym].total++;
+  if (trade.pnl > 0) symbolStats[sym].wins++;
+  else symbolStats[sym].losses++;
+
+  schedulePersist();
+}
+
+export function logTradeResult(features: any, won: boolean): void {
+  const sym = features.symbol || "UNKNOWN";
+  if (!symbolStats[sym]) symbolStats[sym] = { wins: 0, losses: 0, total: 0 };
+  symbolStats[sym].total++;
+  if (won) symbolStats[sym].wins++;
+  else symbolStats[sym].losses++;
+
+  const reg = features.regime || "UNKNOWN";
+  if (!regimeStats[reg]) regimeStats[reg] = { wins: 0, losses: 0, total: 0 };
+  regimeStats[reg].total++;
+  if (won) regimeStats[reg].wins++;
+  else regimeStats[reg].losses++;
+
+  schedulePersist();
+}
+
+export function getIntelStatus(): { tradeCount: number; winRate: number; weights: any; symbolStats: typeof symbolStats; regimeStats: typeof regimeStats } {
+  const wins = tradeMemory.filter(t => t.pnl > 0).length;
+  return {
+    tradeCount: tradeMemory.length,
+    winRate: tradeMemory.length > 0 ? wins / tradeMemory.length : 0,
+    weights: {},
+    symbolStats: { ...symbolStats },
+    regimeStats: { ...regimeStats },
+  };
+}
+
+export function getTradeMemory(): TradeMemory[] {
+  return [...tradeMemory];
+}
+
+function buildTFSummary(tf: TimeframeAnalysis): string {
+  return `[${tf.timeframe}] Price: $${tf.lastClose.toFixed(2)} | EMA8: ${tf.ema8.toFixed(2)}, EMA21: ${tf.ema21.toFixed(2)}, EMA50: ${tf.ema50.toFixed(2)} | RSI: ${tf.rsi.toFixed(1)} | MACD hist: ${tf.macdHistogram.toFixed(6)} | BB%B: ${tf.bbPercentB.toFixed(3)} | ATR: ${tf.atrPct.toFixed(2)}% | Vol: ${tf.volumeRatio.toFixed(2)}x | Trend: ${tf.trend} | Regime: ${tf.regime.regime} (ADX ${tf.regime.adxValue.toFixed(1)}, Chop ${tf.regime.choppiness.toFixed(0)})`;
+}
+
+function buildClaudePrompt(
+  snapshot: MarketSnapshot,
+  funding: number,
+  imbalance: number,
+  balance: number,
+  riskPct: number,
+  maxLeverage: number,
+  currentPositions: string[],
+  dailyPnl: number,
+  dailyLossLimit: number,
+  consecutiveLosses: number,
+  memory: TradeMemory[],
+): string {
+  const recentMemory = memory.slice(-15);
+  const recentWins = recentMemory.filter(t => t.pnl > 0).length;
+  const recentLosses = recentMemory.length - recentWins;
+  const recentWR = recentMemory.length > 0 ? (recentWins / recentMemory.length * 100).toFixed(0) : "N/A";
+
+  const symStat = symbolStats[snapshot.symbol];
+  const symWR = symStat ? `${(symStat.wins / symStat.total * 100).toFixed(0)}% (${symStat.total} trades)` : "No history";
+
+  const levelsStr = snapshot.nearestSupport
+    ? `Nearest Support: $${snapshot.nearestSupport.toFixed(2)} (${snapshot.distToSupportPct?.toFixed(2)}% away)\n`
+    : "";
+  const resStr = snapshot.nearestResistance
+    ? `Nearest Resistance: $${snapshot.nearestResistance.toFixed(2)} (${snapshot.distToResistancePct?.toFixed(2)}% away)\n`
+    : "";
+
+  const memoryStr = recentMemory.length > 0
+    ? recentMemory.slice(-5).map(t =>
+        `  ${t.side} ${t.symbol}: ${t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(2)} USDT (${t.pnlPct >= 0 ? "+" : ""}${t.pnlPct.toFixed(1)}%) — ${t.reason}`
+      ).join("\n")
+    : "  No recent trades";
+
+  return `You are a professional crypto perpetual futures trader managing a real money account. Your goal is CONSISTENT PROFITABILITY with strict risk management. You must be VERY selective — only trade high-probability setups.
+
+CURRENT STATE:
+Account Balance: $${balance.toFixed(2)} USDT
+Risk Per Trade: ${riskPct}% ($${(balance * riskPct / 100).toFixed(2)} max risk)
+Max Leverage: ${maxLeverage}x
+Daily PnL: ${dailyPnl >= 0 ? "+" : ""}$${dailyPnl.toFixed(2)} (limit: -$${(balance * dailyLossLimit / 100).toFixed(2)})
+Consecutive Losses: ${consecutiveLosses}
+Current Open Positions: ${currentPositions.length > 0 ? currentPositions.join(", ") : "None"}
+
+SYMBOL: ${snapshot.symbol}
+Current Price: $${snapshot.price.toFixed(2)}
+
+MULTI-TIMEFRAME ANALYSIS:
+${buildTFSummary(snapshot.tf5m)}
+${buildTFSummary(snapshot.tf15m)}
+${buildTFSummary(snapshot.tf1h)}
+
+Overall Trend Alignment: ${snapshot.overallTrend}
+Overall Regime: ${snapshot.overallRegime}
+
+KEY LEVELS:
+${levelsStr}${resStr}${!levelsStr && !resStr ? "No significant levels detected\n" : ""}
+
+MARKET CONTEXT:
+Funding Rate: ${(funding * 100).toFixed(4)}%
+Orderbook Imbalance: ${(imbalance * 100).toFixed(1)}% (>50% = more buyers)
+${snapshot.symbol} Win Rate: ${symWR}
+
+RECENT TRADE HISTORY (last 5):
+${memoryStr}
+Recent Performance: ${recentWR}% win rate (${recentWins}W/${recentLosses}L from last ${recentMemory.length} trades)
+
+YOUR TRADING RULES (MANDATORY):
+1. ONLY trade when 2+ timeframes agree on direction
+2. NEVER trade in RANGING regime on any timeframe
+3. NEVER trade against the 1h trend
+4. Require RSI confirmation (not overbought for longs, not oversold for shorts)
+5. After 3 consecutive losses, be EXTRA cautious — need 3/3 timeframe alignment
+6. Funding rate should favor your direction
+7. Price should not be within 0.3% of a strong resistance (for longs) or support (for shorts)
+8. NEVER chase — if you missed the move, wait for pullback
+9. Minimum 1.5:1 reward-to-risk ratio
+10. If daily loss exceeds ${dailyLossLimit}% of balance, HOLD everything
+
+Respond with ONLY this JSON (no markdown, no explanation):
+{
+  "action": "OPEN_LONG" | "OPEN_SHORT" | "HOLD",
+  "confidence": 0-100,
+  "reasoning": "2-3 sentences explaining your complete analysis",
+  "riskAssessment": "1 sentence on the main risk",
+  "suggestedStopLoss": <percentage below/above entry, e.g. 1.5>,
+  "suggestedTakeProfit": <percentage target, e.g. 3.0>,
+  "suggestedLeverage": <number between 2 and ${maxLeverage}>,
+  "keyFactors": ["factor1", "factor2", "factor3"]
+}
+
+IMPORTANT: Default to HOLD. Only recommend OPEN_LONG or OPEN_SHORT when you see a genuinely high-probability setup with clear edge. Confidence below 70 = HOLD.`;
+}
+
+function buildExitPrompt(
+  symbol: string,
+  side: "LONG" | "SHORT",
+  entryPrice: number,
+  currentPrice: number,
+  pnlPct: number,
+  holdDurationMin: number,
+  snapshot: MarketSnapshot,
+  funding: number,
+  stopLoss: number,
+  takeProfit: number,
+): string {
+  return `You are managing an open ${side} position on ${symbol}.
+
+POSITION:
+Side: ${side}
+Entry: $${entryPrice.toFixed(2)}
+Current: $${currentPrice.toFixed(2)}
+PnL: ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%
+Hold Time: ${holdDurationMin.toFixed(0)} minutes
+Stop Loss: -${stopLoss.toFixed(1)}% | Take Profit: +${takeProfit.toFixed(1)}%
+
+CURRENT MARKET:
+${buildTFSummary(snapshot.tf5m)}
+${buildTFSummary(snapshot.tf15m)}
+Funding: ${(funding * 100).toFixed(4)}%
+Overall Trend: ${snapshot.overallTrend}
+
+Should this position be closed early, or held?
+
+Rules:
+- Close if trend has reversed on 2+ timeframes
+- Close if RSI is extreme (>75 for LONG, <25 for SHORT) and profit > 0.5%
+- Close if you detect a clear momentum shift
+- Keep if the original thesis is intact and trend is favorable
+
+Respond with ONLY JSON:
+{
+  "action": "HOLD" | "CLOSE",
+  "reasoning": "1-2 sentences",
+  "urgency": "low" | "medium" | "high"
+}`;
+}
+
+const aiCache = new Map<string, { decision: ClaudeDecision; ts: number }>();
+const AI_CACHE_TTL = 180_000;
+
+function parseClaudeDecision(content: string): ClaudeDecision {
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content);
+    const validActions = ["OPEN_LONG", "OPEN_SHORT", "HOLD", "CLOSE"];
+    const action = validActions.includes(parsed.action) ? parsed.action : "HOLD";
+    return {
+      action,
+      confidence: Math.min(100, Math.max(0, parsed.confidence || 0)),
+      reasoning: parsed.reasoning || "No reasoning provided",
+      riskAssessment: parsed.riskAssessment || "Unknown risk",
+      suggestedStopLoss: Math.max(0.5, Math.min(10, parsed.suggestedStopLoss || 2)),
+      suggestedTakeProfit: Math.max(1, Math.min(20, parsed.suggestedTakeProfit || 4)),
+      suggestedLeverage: Math.max(2, Math.min(50, parsed.suggestedLeverage || 5)),
+      keyFactors: Array.isArray(parsed.keyFactors) ? parsed.keyFactors.slice(0, 5) : [],
+    };
+  } catch {
+    return {
+      action: "HOLD",
+      confidence: 0,
+      reasoning: "Failed to parse analysis — defaulting to HOLD for safety",
+      riskAssessment: "Parse error",
+      suggestedStopLoss: 2,
+      suggestedTakeProfit: 4,
+      suggestedLeverage: 3,
+      keyFactors: ["parse_error"],
+    };
+  }
+}
+
+function parseExitDecision(content: string): { action: "HOLD" | "CLOSE"; reasoning: string; urgency: string } {
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content);
+    return {
+      action: parsed.action === "CLOSE" ? "CLOSE" : "HOLD",
+      reasoning: parsed.reasoning || "No reasoning",
+      urgency: parsed.urgency || "low",
+    };
+  } catch {
+    return { action: "HOLD", reasoning: "Parse error — holding position", urgency: "low" };
+  }
+}
+
+async function callClaude(prompt: string, maxTokens: number = 300): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("No analysis key configured");
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: maxTokens,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.15,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`Analysis API ${response.status}: ${errText.substring(0, 100)}`);
+  }
+  const data = await response.json() as any;
+  return data.content?.[0]?.text?.trim() || "";
+}
+
+export async function getClaudeTradeDecision(
+  snapshot: MarketSnapshot,
+  futuresClient: any,
+  balance: number,
+  riskPct: number,
+  maxLeverage: number,
+  currentPositions: string[],
+  dailyPnl: number,
+  dailyLossLimit: number,
+  consecutiveLosses: number,
+): Promise<ClaudeDecision> {
+  const cacheKey = `${snapshot.symbol}-${Math.floor(Date.now() / AI_CACHE_TTL)}`;
+  const cached = aiCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < AI_CACHE_TTL) {
+    return cached.decision;
+  }
+
+  const [funding, imbalance] = await Promise.all([
+    getFundingRate(futuresClient, snapshot.symbol),
+    getOrderbookImbalance(futuresClient, snapshot.symbol),
+  ]);
+
+  const prompt = buildClaudePrompt(
+    snapshot, funding, imbalance, balance, riskPct, maxLeverage,
+    currentPositions, dailyPnl, dailyLossLimit, consecutiveLosses, tradeMemory,
+  );
+
+  const content = await callClaude(prompt, 400);
+  const decision = parseClaudeDecision(content);
+
+  decision.suggestedLeverage = Math.min(decision.suggestedLeverage, maxLeverage);
+
+  if (decision.confidence < 70 && decision.action !== "HOLD") {
+    decision.action = "HOLD";
+    decision.reasoning = `Confidence ${decision.confidence}% below 70% threshold — ${decision.reasoning}`;
+  }
+
+  aiCache.set(cacheKey, { decision, ts: Date.now() });
+
+  if (aiCache.size > 100) {
+    const now = Date.now();
+    for (const [k, v] of aiCache) {
+      if (now - v.ts > AI_CACHE_TTL) aiCache.delete(k);
+    }
+  }
+
+  console.log(`[Intel] Decision for ${snapshot.symbol}: ${decision.action} (${decision.confidence}%) — ${decision.reasoning.substring(0, 120)}`);
+  return decision;
+}
+
+export async function getClaudeExitDecision(
+  symbol: string,
+  side: "LONG" | "SHORT",
+  entryPrice: number,
+  currentPrice: number,
+  pnlPct: number,
+  holdDurationMin: number,
+  snapshot: MarketSnapshot,
+  futuresClient: any,
+  stopLoss: number,
+  takeProfit: number,
+): Promise<{ action: "HOLD" | "CLOSE"; reasoning: string; urgency: string }> {
+  const funding = await getFundingRate(futuresClient, symbol);
+
+  const prompt = buildExitPrompt(symbol, side, entryPrice, currentPrice, pnlPct, holdDurationMin, snapshot, funding, stopLoss, takeProfit);
+  const content = await callClaude(prompt, 200);
+  const decision = parseExitDecision(content);
+
+  console.log(`[Intel] Exit check ${side} ${symbol}: ${decision.action} (${decision.urgency}) — ${decision.reasoning.substring(0, 100)}`);
+  return decision;
+}
+
 export async function evaluateEntry(
   futuresClient: any,
   symbol: string,
@@ -80,7 +498,7 @@ export async function evaluateEntry(
     orderbookImbalance: 0.5,
     fundingFavorable: true,
     orderbookFavorable: true,
-    confidence: 0,
+    confidence: 0.5,
     rejectReason: "",
     regimeLabel: result.regime?.regime || "RANGING",
   };
@@ -97,12 +515,12 @@ export async function evaluateEntry(
     if (side === "BUY") {
       intel.fundingFavorable = funding <= config.maxFundingRateLong;
       if (!intel.fundingFavorable) {
-        intel.rejectReason = `Funding rate ${(funding * 100).toFixed(4)}% too high for LONG (max ${(config.maxFundingRateLong * 100).toFixed(4)}%)`;
+        intel.rejectReason = `Funding rate ${(funding * 100).toFixed(4)}% too high for LONG`;
       }
     } else {
       intel.fundingFavorable = funding >= config.minFundingRateShort;
       if (!intel.fundingFavorable) {
-        intel.rejectReason = `Funding rate ${(funding * 100).toFixed(4)}% too negative for SHORT (min ${(config.minFundingRateShort * 100).toFixed(4)}%)`;
+        intel.rejectReason = `Funding rate ${(funding * 100).toFixed(4)}% too negative for SHORT`;
       }
     }
   }
@@ -110,514 +528,14 @@ export async function evaluateEntry(
   if (side === "BUY") {
     intel.orderbookFavorable = imbalance >= config.orderbookImbalanceThreshold;
     if (!intel.orderbookFavorable && !intel.rejectReason) {
-      intel.rejectReason = `Orderbook imbalance ${(imbalance * 100).toFixed(1)}% too weak for BUY (need ${(config.orderbookImbalanceThreshold * 100).toFixed(0)}%+)`;
+      intel.rejectReason = `Orderbook imbalance ${(imbalance * 100).toFixed(1)}% too weak for BUY`;
     }
   } else {
     intel.orderbookFavorable = imbalance <= (1 - config.orderbookImbalanceThreshold);
     if (!intel.orderbookFavorable && !intel.rejectReason) {
-      intel.rejectReason = `Orderbook imbalance ${(imbalance * 100).toFixed(1)}% too strong for SELL (need <${((1 - config.orderbookImbalanceThreshold) * 100).toFixed(0)}%)`;
-    }
-  }
-
-  intel.confidence = computeConfidence(side, result, funding, imbalance);
-
-  const symbolWinRate = getSymbolWinRate(symbol);
-  if (symbolWinRate !== null && symbolWinRate < 0.25 && symbolStats[symbol]?.total >= 5) {
-    intel.confidence *= 0.5;
-    if (!intel.rejectReason) {
-      intel.rejectReason = `${symbol} has only ${(symbolWinRate * 100).toFixed(0)}% win rate (${symbolStats[symbol].total} trades)`;
-    }
-  }
-
-  const regimeWR = getRegimeWinRate(result.regime?.regime || "RANGING");
-  if (regimeWR !== null && regimeWR < 0.3) {
-    intel.confidence *= 0.6;
-  }
-
-  if (config.useConfidenceFilter && intel.confidence < config.minConfidence && !intel.rejectReason) {
-    intel.rejectReason = `Confidence ${(intel.confidence * 100).toFixed(0)}% below minimum ${(config.minConfidence * 100).toFixed(0)}%`;
-  }
-
-  if (!intel.rejectReason && intel.fundingFavorable && intel.orderbookFavorable && intel.confidence >= config.minConfidence) {
-    try {
-      const aiResult = await aiSignalFilter(symbol, side, result, funding, imbalance);
-      intel.aiVerdict = aiResult.verdict;
-      intel.aiReasoning = aiResult.reasoning;
-      if (aiResult.verdict === "REJECT") {
-        intel.rejectReason = `Smart filter: ${aiResult.reasoning}`;
-      } else if (aiResult.verdict === "WEAK") {
-        intel.confidence *= 0.7;
-        if (intel.confidence < config.minConfidence) {
-          intel.rejectReason = `Confidence reduced to ${(intel.confidence * 100).toFixed(0)}% (${aiResult.reasoning})`;
-        }
-      }
-    } catch (e: any) {
-      console.log(`[Intel] AI filter error (proceeding without): ${e.message?.substring(0, 80)}`);
+      intel.rejectReason = `Orderbook imbalance ${(imbalance * 100).toFixed(1)}% too strong for SELL`;
     }
   }
 
   return intel;
-}
-
-interface TradeFeatures {
-  rsi: number;
-  macdHist: number;
-  bbPercentB: number;
-  atr: number;
-  volumeRatio: number;
-  strength: number;
-  fundingRate: number;
-  imbalance: number;
-  aligned: number;
-  regime?: MarketRegime;
-  symbol?: string;
-}
-
-let tradeHistory: { features: TradeFeatures; won: boolean }[] = [];
-let featureWeights = {
-  rsi: 0.12,
-  macd: 0.15,
-  bb: 0.10,
-  atr: 0.05,
-  volume: 0.10,
-  strength: 0.18,
-  funding: 0.10,
-  imbalance: 0.12,
-  aligned: 0.08,
-};
-
-let symbolStats: Record<string, { wins: number; losses: number; total: number }> = {};
-let regimeStats: Record<string, { wins: number; losses: number; total: number }> = {};
-let _learningLoaded = false;
-let _persistTimer: ReturnType<typeof setTimeout> | null = null;
-
-export async function loadLearningFromDb(chatId?: string): Promise<void> {
-  if (_learningLoaded) return;
-  try {
-    const { db } = await import("./db");
-    const { sql } = await import("drizzle-orm");
-    const rows = (await db.execute(sql`SELECT * FROM aster_agent_learning ORDER BY updated_at DESC LIMIT 1`)).rows;
-    if (rows && rows.length > 0) {
-      const row = rows[0] as any;
-      try { featureWeights = { ...featureWeights, ...JSON.parse(row.weights_json || "{}") }; } catch {}
-      try {
-        const hist = JSON.parse(row.trade_history_json || "[]");
-        if (Array.isArray(hist)) tradeHistory = hist.slice(-500);
-      } catch {}
-      try { symbolStats = JSON.parse(row.symbol_stats_json || "{}"); } catch {}
-      try { regimeStats = JSON.parse(row.regime_stats_json || "{}"); } catch {}
-      _learningLoaded = true;
-      const wins = tradeHistory.filter(t => t.won).length;
-      console.log(`[Intel] Loaded learning from DB: ${tradeHistory.length} trades, ${(tradeHistory.length > 0 ? wins / tradeHistory.length * 100 : 0).toFixed(1)}% win rate, ${Object.keys(symbolStats).length} symbols tracked`);
-    } else {
-      _learningLoaded = true;
-      console.log(`[Intel] No learning data found in DB, starting fresh`);
-    }
-  } catch (e: any) {
-    _learningLoaded = true;
-    console.log(`[Intel] Failed to load learning from DB: ${e.message?.substring(0, 80)}`);
-  }
-}
-
-async function persistLearningToDb(): Promise<void> {
-  try {
-    const { db } = await import("./db");
-    const { sql } = await import("drizzle-orm");
-    const wins = tradeHistory.filter(t => t.won).length;
-    await db.execute(sql`
-      INSERT INTO aster_agent_learning (id, chat_id, weights_json, trade_history_json, symbol_stats_json, regime_stats_json, total_trades, total_wins, updated_at)
-      VALUES ('global', 'global', ${JSON.stringify(featureWeights)}, ${JSON.stringify(tradeHistory.slice(-500))}, ${JSON.stringify(symbolStats)}, ${JSON.stringify(regimeStats)}, ${tradeHistory.length}, ${wins}, NOW())
-      ON CONFLICT (id) DO UPDATE SET
-        weights_json = EXCLUDED.weights_json,
-        trade_history_json = EXCLUDED.trade_history_json,
-        symbol_stats_json = EXCLUDED.symbol_stats_json,
-        regime_stats_json = EXCLUDED.regime_stats_json,
-        total_trades = EXCLUDED.total_trades,
-        total_wins = EXCLUDED.total_wins,
-        updated_at = NOW()
-    `);
-    console.log(`[Intel] Persisted learning to DB: ${tradeHistory.length} trades, ${wins} wins`);
-  } catch (e: any) {
-    console.log(`[Intel] Failed to persist learning: ${e.message?.substring(0, 80)}`);
-  }
-}
-
-function schedulePersist(): void {
-  if (_persistTimer) clearTimeout(_persistTimer);
-  _persistTimer = setTimeout(() => {
-    persistLearningToDb();
-    _persistTimer = null;
-  }, 5000);
-}
-
-function computeConfidence(
-  side: "BUY" | "SELL",
-  result: StrategyResult,
-  funding: number,
-  imbalance: number,
-): number {
-  let score = 0;
-
-  const rsiScore = side === "BUY"
-    ? Math.max(0, Math.min(1, (60 - result.rsiValue) / 40))
-    : Math.max(0, Math.min(1, (result.rsiValue - 40) / 40));
-  score += rsiScore * featureWeights.rsi;
-
-  const macdScore = side === "BUY"
-    ? (result.macdHistogram > 0 ? Math.min(1, result.macdHistogram / (Math.abs(result.lastClose) * 0.002 + 0.001)) : 0)
-    : (result.macdHistogram < 0 ? Math.min(1, Math.abs(result.macdHistogram) / (Math.abs(result.lastClose) * 0.002 + 0.001)) : 0);
-  score += macdScore * featureWeights.macd;
-
-  const bbScore = side === "BUY"
-    ? Math.max(0, Math.min(1, 1 - result.bollingerPercentB))
-    : Math.max(0, Math.min(1, result.bollingerPercentB));
-  score += bbScore * featureWeights.bb;
-
-  const atrPct = result.atrValue / (result.lastClose || 1);
-  const atrScore = Math.max(0, Math.min(1, atrPct * 50));
-  score += atrScore * featureWeights.atr;
-
-  const volScore = Math.max(0, Math.min(1, (result.volumeRatio - 0.8) / 2));
-  score += volScore * featureWeights.volume;
-
-  const strengthScore = Math.max(0, Math.min(1, result.strength / 40));
-  score += strengthScore * featureWeights.strength;
-
-  const fundingScore = side === "BUY"
-    ? (funding <= 0 ? 1 : Math.max(0, 1 - funding * 500))
-    : (funding >= 0 ? 1 : Math.max(0, 1 + funding * 500));
-  score += fundingScore * featureWeights.funding;
-
-  const imbScore = side === "BUY"
-    ? Math.max(0, Math.min(1, (imbalance - 0.3) / 0.4))
-    : Math.max(0, Math.min(1, (0.7 - imbalance) / 0.4));
-  score += imbScore * featureWeights.imbalance;
-
-  const alignedScore = Math.max(0, Math.min(1, (result.alignedIndicators - 1) / 4));
-  score += alignedScore * featureWeights.aligned;
-
-  const regime = result.regime;
-  if (regime) {
-    if ((side === "BUY" && regime.regime === "TRENDING_UP") || (side === "SELL" && regime.regime === "TRENDING_DOWN")) {
-      score *= 1.2;
-    } else if (regime.regime === "RANGING") {
-      score *= 0.5;
-    } else if (regime.regime === "VOLATILE") {
-      score *= 0.7;
-    }
-  }
-
-  return Math.max(0, Math.min(1, score));
-}
-
-export function logTradeResult(features: TradeFeatures, won: boolean): void {
-  tradeHistory.push({ features, won });
-  if (tradeHistory.length > 500) tradeHistory.splice(0, tradeHistory.length - 500);
-
-  const sym = features.symbol || "UNKNOWN";
-  if (!symbolStats[sym]) symbolStats[sym] = { wins: 0, losses: 0, total: 0 };
-  symbolStats[sym].total++;
-  if (won) symbolStats[sym].wins++;
-  else symbolStats[sym].losses++;
-
-  const reg = features.regime || "UNKNOWN";
-  if (!regimeStats[reg]) regimeStats[reg] = { wins: 0, losses: 0, total: 0 };
-  regimeStats[reg].total++;
-  if (won) regimeStats[reg].wins++;
-  else regimeStats[reg].losses++;
-
-  if (tradeHistory.length >= 10 && tradeHistory.length % 10 === 0) {
-    retrainWeights();
-  }
-
-  schedulePersist();
-}
-
-function getSymbolWinRate(symbol: string): number | null {
-  const s = symbolStats[symbol];
-  if (!s || s.total < 3) return null;
-  return s.wins / s.total;
-}
-
-function getRegimeWinRate(regime: string): number | null {
-  const r = regimeStats[regime];
-  if (!r || r.total < 3) return null;
-  return r.wins / r.total;
-}
-
-function retrainWeights(): void {
-  if (tradeHistory.length < 10) return;
-
-  const recent = tradeHistory.slice(-200);
-  const wins = recent.filter(t => t.won);
-  const losses = recent.filter(t => !t.won);
-  if (wins.length === 0 || losses.length === 0) return;
-
-  const avgWin = averageFeatures(wins.map(t => t.features));
-  const avgLoss = averageFeatures(losses.map(t => t.features));
-
-  const keys: (keyof typeof featureWeights)[] = ["rsi", "macd", "bb", "atr", "volume", "strength", "funding", "imbalance", "aligned"];
-  const featureMap: Record<string, keyof TradeFeatures> = {
-    rsi: "rsi", macd: "macdHist", bb: "bbPercentB", atr: "atr",
-    volume: "volumeRatio", strength: "strength", funding: "fundingRate",
-    imbalance: "imbalance", aligned: "aligned",
-  };
-
-  const newWeights = { ...featureWeights };
-  for (const key of keys) {
-    const fKey = featureMap[key];
-    const winVal = avgWin[fKey] as number;
-    const lossVal = avgLoss[fKey] as number;
-    const diff = Math.abs(winVal - lossVal);
-    const combined = (Math.abs(winVal) + Math.abs(lossVal)) / 2 || 1;
-    const discriminationPower = diff / combined;
-    newWeights[key] = featureWeights[key] * (1 + discriminationPower * 0.3);
-  }
-
-  const total = Object.values(newWeights).reduce((a, b) => a + b, 0);
-  for (const key of keys) {
-    newWeights[key] = newWeights[key] / total;
-  }
-
-  featureWeights = newWeights;
-  const winRate = wins.length / recent.length * 100;
-  console.log(`[Intel] Weights retrained on ${recent.length} trades. Win rate: ${winRate.toFixed(1)}%`);
-
-  const symbolSummary = Object.entries(symbolStats)
-    .filter(([, s]) => s.total >= 3)
-    .sort((a, b) => (b[1].wins / b[1].total) - (a[1].wins / a[1].total))
-    .map(([sym, s]) => `${sym}: ${(s.wins / s.total * 100).toFixed(0)}% (${s.total})`)
-    .join(", ");
-  if (symbolSummary) {
-    console.log(`[Intel] Symbol performance: ${symbolSummary}`);
-  }
-}
-
-function averageFeatures(features: TradeFeatures[]): TradeFeatures {
-  const sum: TradeFeatures = { rsi: 0, macdHist: 0, bbPercentB: 0, atr: 0, volumeRatio: 0, strength: 0, fundingRate: 0, imbalance: 0, aligned: 0 };
-  for (const f of features) {
-    sum.rsi += f.rsi;
-    sum.macdHist += f.macdHist;
-    sum.bbPercentB += f.bbPercentB;
-    sum.atr += f.atr;
-    sum.volumeRatio += f.volumeRatio;
-    sum.strength += f.strength;
-    sum.fundingRate += f.fundingRate;
-    sum.imbalance += f.imbalance;
-    sum.aligned += f.aligned;
-  }
-  const n = features.length || 1;
-  return {
-    rsi: sum.rsi / n,
-    macdHist: sum.macdHist / n,
-    bbPercentB: sum.bbPercentB / n,
-    atr: sum.atr / n,
-    volumeRatio: sum.volumeRatio / n,
-    strength: sum.strength / n,
-    fundingRate: sum.fundingRate / n,
-    imbalance: sum.imbalance / n,
-    aligned: sum.aligned / n,
-  };
-}
-
-export function getIntelStatus(): { tradeCount: number; winRate: number; weights: typeof featureWeights; symbolStats: typeof symbolStats; regimeStats: typeof regimeStats } {
-  const wins = tradeHistory.filter(t => t.won).length;
-  return {
-    tradeCount: tradeHistory.length,
-    winRate: tradeHistory.length > 0 ? wins / tradeHistory.length : 0,
-    weights: { ...featureWeights },
-    symbolStats: { ...symbolStats },
-    regimeStats: { ...regimeStats },
-  };
-}
-
-const aiCache = new Map<string, { verdict: string; reasoning: string; ts: number }>();
-const AI_CACHE_TTL = 300_000;
-
-interface AIFilterResult {
-  verdict: "GO" | "WEAK" | "REJECT";
-  reasoning: string;
-}
-
-interface SingleModelResult {
-  verdict: "GO" | "WEAK" | "REJECT";
-  reasoning: string;
-  model: string;
-}
-
-function buildAnalysisPrompt(
-  symbol: string,
-  side: "BUY" | "SELL",
-  result: StrategyResult,
-  funding: number,
-  imbalance: number,
-): string {
-  const regime = result.regime;
-  const symWR = symbolStats[symbol];
-  const regWR = regimeStats[regime?.regime || "RANGING"];
-  const recentTrades = tradeHistory.slice(-20);
-  const recentWins = recentTrades.filter(t => t.won).length;
-  const recentLosses = recentTrades.length - recentWins;
-
-  return `You are a crypto perpetual futures trading risk analyst. Evaluate this trade signal and respond with ONLY a JSON object.
-
-SIGNAL: ${side} ${symbol}
-PRICE: $${result.lastClose.toFixed(2)}
-INDICATORS:
-- EMA8: ${result.ema8.toFixed(2)}, EMA21: ${result.ema21.toFixed(2)} (diff: ${((result.ema8 - result.ema21) / result.ema21 * 100).toFixed(3)}%)
-- RSI(14): ${result.rsiValue.toFixed(1)}
-- MACD Histogram: ${result.macdHistogram.toFixed(6)}
-- Bollinger %B: ${result.bollingerPercentB.toFixed(3)}
-- ATR: ${result.atrValue.toFixed(4)} (${(result.atrValue / result.lastClose * 100).toFixed(2)}% of price)
-- Volume Ratio: ${result.volumeRatio.toFixed(2)}x avg
-- Signal Strength: ${result.strength}
-- Aligned Indicators: ${result.alignedIndicators}/6
-
-MARKET REGIME: ${regime?.regime || "UNKNOWN"}
-- ADX: ${regime?.adxValue?.toFixed(1) || "N/A"} (>25 = trending)
-- +DI: ${regime?.plusDI?.toFixed(1) || "N/A"}, -DI: ${regime?.minusDI?.toFixed(1) || "N/A"}
-- Choppiness: ${regime?.choppiness?.toFixed(1) || "N/A"} (<50 = trending)
-
-MARKET CONTEXT:
-- Funding Rate: ${(funding * 100).toFixed(4)}%
-- Orderbook Imbalance: ${(imbalance * 100).toFixed(1)}% bids
-${symWR ? `- ${symbol} historical: ${symWR.wins}W/${symWR.losses}L (${(symWR.wins / symWR.total * 100).toFixed(0)}% win rate)` : "- No history for this symbol"}
-${regWR ? `- ${regime?.regime} regime: ${regWR.wins}W/${regWR.losses}L (${(regWR.wins / regWR.total * 100).toFixed(0)}% win rate)` : ""}
-- Recent 20 trades: ${recentWins}W/${recentLosses}L
-
-Respond with ONLY this JSON (no markdown, no explanation):
-{"verdict":"GO|WEAK|REJECT","reasoning":"one sentence max 80 chars"}
-
-Rules:
-- REJECT if signal contradicts regime (e.g., BUY in TRENDING_DOWN)
-- REJECT if RSI is in extreme zone for the direction (BUY with RSI>65, SELL with RSI<35)
-- WEAK if only 2 or fewer indicators align
-- WEAK if recent win rate is below 30%
-- GO if strong trend alignment with 3+ indicators`;
-}
-
-function parseAIResponse(content: string): { verdict: string; reasoning: string } {
-  try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content);
-    const verdict = (parsed.verdict || "GO").toUpperCase();
-    const reasoning = parsed.reasoning || "No reasoning";
-    const validVerdicts = ["GO", "WEAK", "REJECT"];
-    return { verdict: validVerdicts.includes(verdict) ? verdict : "GO", reasoning };
-  } catch {
-    return { verdict: "GO", reasoning: "Parse error" };
-  }
-}
-
-async function callGrok(prompt: string): Promise<SingleModelResult> {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) return { verdict: "GO", reasoning: "No key", model: "m1" };
-
-  const response = await fetch("https://api.x.ai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: "grok-3-mini-fast",
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: 100,
-      temperature: 0.1,
-    }),
-  });
-
-  if (!response.ok) throw new Error(`M1 API ${response.status}`);
-  const data = await response.json() as any;
-  const content = data.choices?.[0]?.message?.content?.trim() || "";
-  const { verdict, reasoning } = parseAIResponse(content);
-  return { verdict: verdict as any, reasoning, model: "m1" };
-}
-
-async function callClaude(prompt: string): Promise<SingleModelResult> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return { verdict: "GO", reasoning: "No key", model: "m2" };
-
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 100,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.1,
-    }),
-  });
-
-  if (!response.ok) throw new Error(`M2 API ${response.status}`);
-  const data = await response.json() as any;
-  const content = data.content?.[0]?.text?.trim() || "";
-  const { verdict, reasoning } = parseAIResponse(content);
-  return { verdict: verdict as any, reasoning, model: "m2" };
-}
-
-const VERDICT_RANK: Record<string, number> = { REJECT: 0, WEAK: 1, GO: 2 };
-
-function consensusVerdict(results: SingleModelResult[]): AIFilterResult {
-  if (results.length === 0) return { verdict: "GO", reasoning: "No analysis available" };
-  if (results.length === 1) return { verdict: results[0].verdict, reasoning: results[0].reasoning };
-
-  const anyReject = results.find(r => r.verdict === "REJECT");
-  if (anyReject) {
-    return {
-      verdict: "REJECT",
-      reasoning: anyReject.reasoning,
-    };
-  }
-
-  const sorted = [...results].sort((a, b) => VERDICT_RANK[a.verdict] - VERDICT_RANK[b.verdict]);
-  const strictest = sorted[0];
-
-  return {
-    verdict: strictest.verdict,
-    reasoning: strictest.reasoning,
-  };
-}
-
-async function aiSignalFilter(
-  symbol: string,
-  side: "BUY" | "SELL",
-  result: StrategyResult,
-  funding: number,
-  imbalance: number,
-): Promise<AIFilterResult> {
-  const hasGrok = !!process.env.XAI_API_KEY;
-  const hasClaude = !!process.env.ANTHROPIC_API_KEY;
-  if (!hasGrok && !hasClaude) {
-    return { verdict: "GO", reasoning: "No AI keys configured" };
-  }
-
-  const cacheKey = `${symbol}-${side}-${Math.floor(Date.now() / AI_CACHE_TTL)}`;
-  const cached = aiCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < AI_CACHE_TTL) {
-    return { verdict: cached.verdict as any, reasoning: cached.reasoning };
-  }
-
-  const prompt = buildAnalysisPrompt(symbol, side, result, funding, imbalance);
-
-  const calls: Promise<SingleModelResult>[] = [];
-  if (hasClaude) calls.push(callClaude(prompt).catch(e => ({ verdict: "GO" as const, reasoning: `M2 error: ${e.message?.substring(0, 40)}`, model: "m2" })));
-  if (hasGrok) calls.push(callGrok(prompt).catch(e => ({ verdict: "GO" as const, reasoning: `M1 error: ${e.message?.substring(0, 40)}`, model: "m1" })));
-
-  const results = await Promise.all(calls);
-  const final = consensusVerdict(results);
-
-  aiCache.set(cacheKey, { verdict: final.verdict, reasoning: final.reasoning, ts: Date.now() });
-
-  if (aiCache.size > 100) {
-    const now = Date.now();
-    for (const [k, v] of aiCache) {
-      if (now - v.ts > AI_CACHE_TTL) aiCache.delete(k);
-    }
-  }
-
-  const internalModels = results.map(r => `${r.model}:${r.verdict}`).join(",");
-  console.log(`[Intel] AI consensus for ${side} ${symbol}: ${final.verdict} (${internalModels}) — ${final.reasoning.substring(0, 120)}`);
-  return final;
 }

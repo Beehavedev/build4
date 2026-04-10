@@ -1,9 +1,10 @@
-interface Candle {
+export interface Candle {
   open: number;
   high: number;
   low: number;
   close: number;
   volume: number;
+  timestamp?: number;
 }
 
 function ema(data: number[], period: number): number[] {
@@ -253,6 +254,175 @@ export interface StrategyResult {
   dynamicTP: number;
 }
 
+export interface KeyLevel {
+  price: number;
+  type: "support" | "resistance";
+  strength: number;
+  touches: number;
+}
+
+export function findKeyLevels(candles: Candle[], proximity: number = 0.003): KeyLevel[] {
+  if (candles.length < 20) return [];
+
+  const pivots: { price: number; type: "high" | "low" }[] = [];
+  for (let i = 2; i < candles.length - 2; i++) {
+    const c = candles[i];
+    if (c.high > candles[i-1].high && c.high > candles[i-2].high && c.high > candles[i+1].high && c.high > candles[i+2].high) {
+      pivots.push({ price: c.high, type: "high" });
+    }
+    if (c.low < candles[i-1].low && c.low < candles[i-2].low && c.low < candles[i+1].low && c.low < candles[i+2].low) {
+      pivots.push({ price: c.low, type: "low" });
+    }
+  }
+
+  const clusters: KeyLevel[] = [];
+  for (const p of pivots) {
+    let merged = false;
+    for (const cl of clusters) {
+      if (Math.abs(p.price - cl.price) / cl.price < proximity) {
+        cl.price = (cl.price * cl.touches + p.price) / (cl.touches + 1);
+        cl.touches++;
+        cl.strength = Math.min(10, cl.touches * 2);
+        merged = true;
+        break;
+      }
+    }
+    if (!merged) {
+      clusters.push({
+        price: p.price,
+        type: p.type === "high" ? "resistance" : "support",
+        strength: 2,
+        touches: 1,
+      });
+    }
+  }
+
+  return clusters.filter(c => c.touches >= 2).sort((a, b) => b.strength - a.strength).slice(0, 8);
+}
+
+export interface TimeframeAnalysis {
+  timeframe: string;
+  ema8: number;
+  ema21: number;
+  ema50: number;
+  rsi: number;
+  macdHistogram: number;
+  bbPercentB: number;
+  atrValue: number;
+  atrPct: number;
+  volumeRatio: number;
+  lastClose: number;
+  regime: RegimeInfo;
+  trend: "BULLISH" | "BEARISH" | "NEUTRAL";
+  keyLevels: KeyLevel[];
+}
+
+export function analyzeTimeframe(candles: Candle[], tfLabel: string): TimeframeAnalysis {
+  const closes = candles.map(c => c.close);
+  const lastClose = closes.length > 0 ? closes[closes.length - 1] : 0;
+  const regime = detectMarketRegime(candles);
+
+  if (candles.length < 26) {
+    return {
+      timeframe: tfLabel, ema8: lastClose, ema21: lastClose, ema50: lastClose,
+      rsi: 50, macdHistogram: 0, bbPercentB: 0.5, atrValue: 0, atrPct: 0,
+      volumeRatio: 1, lastClose, regime, trend: "NEUTRAL", keyLevels: [],
+    };
+  }
+
+  const ema8Arr = ema(closes, 8);
+  const ema21Arr = ema(closes, 21);
+  const ema50Arr = closes.length >= 50 ? ema(closes, 50) : ema(closes, 21);
+  const rsiValues = rsi(closes, 14);
+  const macdResult = macd(closes);
+  const bbResult = bollingerBands(closes);
+  const atrVal = atr(candles);
+  const volRatio = volumeSpike(candles);
+  const keyLevels = findKeyLevels(candles);
+
+  const lastIdx = closes.length - 1;
+  const e8 = ema8Arr[lastIdx];
+  const e21 = ema21Arr[lastIdx];
+  const e50 = ema50Arr[lastIdx];
+  const r = rsiValues[lastIdx];
+
+  let trend: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
+  if (e8 > e21 && e21 > e50 && r > 45) trend = "BULLISH";
+  else if (e8 < e21 && e21 < e50 && r < 55) trend = "BEARISH";
+
+  return {
+    timeframe: tfLabel,
+    ema8: e8,
+    ema21: e21,
+    ema50: e50,
+    rsi: r,
+    macdHistogram: macdResult.histogram,
+    bbPercentB: bbResult.percentB,
+    atrValue: atrVal,
+    atrPct: lastClose > 0 ? (atrVal / lastClose) * 100 : 0,
+    volumeRatio: volRatio,
+    lastClose,
+    regime,
+    trend,
+    keyLevels,
+  };
+}
+
+export interface MarketSnapshot {
+  symbol: string;
+  price: number;
+  tf5m: TimeframeAnalysis;
+  tf15m: TimeframeAnalysis;
+  tf1h: TimeframeAnalysis;
+  overallTrend: "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL";
+  overallRegime: MarketRegime;
+  nearestSupport: number | null;
+  nearestResistance: number | null;
+  distToSupportPct: number | null;
+  distToResistancePct: number | null;
+}
+
+export function buildMarketSnapshot(
+  symbol: string,
+  candles5m: Candle[],
+  candles15m: Candle[],
+  candles1h: Candle[],
+): MarketSnapshot {
+  const tf5m = analyzeTimeframe(candles5m, "5m");
+  const tf15m = analyzeTimeframe(candles15m, "15m");
+  const tf1h = analyzeTimeframe(candles1h, "1h");
+  const price = tf5m.lastClose;
+
+  const trends = [tf5m.trend, tf15m.trend, tf1h.trend];
+  const bullCount = trends.filter(t => t === "BULLISH").length;
+  const bearCount = trends.filter(t => t === "BEARISH").length;
+  let overallTrend: "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL" = "NEUTRAL";
+  if (bullCount >= 2 && bearCount === 0) overallTrend = "BULLISH";
+  else if (bearCount >= 2 && bullCount === 0) overallTrend = "BEARISH";
+  else if (bullCount > 0 && bearCount > 0) overallTrend = "MIXED";
+
+  const allLevels = [...tf15m.keyLevels, ...tf1h.keyLevels];
+  const supports = allLevels.filter(l => l.type === "support" && l.price < price).sort((a, b) => b.price - a.price);
+  const resistances = allLevels.filter(l => l.type === "resistance" && l.price > price).sort((a, b) => a.price - b.price);
+
+  const nearestSupport = supports.length > 0 ? supports[0].price : null;
+  const nearestResistance = resistances.length > 0 ? resistances[0].price : null;
+
+  return {
+    symbol,
+    price,
+    tf5m,
+    tf15m,
+    tf1h,
+    overallTrend,
+    overallRegime: tf15m.regime.regime,
+    nearestSupport,
+    nearestResistance,
+    distToSupportPct: nearestSupport ? ((price - nearestSupport) / price) * 100 : null,
+    distToResistancePct: nearestResistance ? ((nearestResistance - price) / price) * 100 : null,
+  };
+}
+
 export function emaCrossRsiStrategy(candles: Candle[]): StrategyResult {
   const regime = detectMarketRegime(candles);
   const empty: StrategyResult = { signal: "HOLD", reason: "Not enough data", ema8: 0, ema21: 0, rsiValue: 50, lastClose: 0, strength: 0, macdHistogram: 0, bollingerPercentB: 0.5, atrValue: 0, volumeRatio: 1, alignedIndicators: 0, regime, dynamicSL: 3, dynamicTP: 5 };
@@ -318,22 +488,14 @@ export function emaCrossRsiStrategy(candles: Candle[]): StrategyResult {
     strength = emaDiff * 10 + (70 - r) / 4;
     if (justCrossed) strength += 20;
     if (r < 40) strength += 15;
-
     aligned = 1;
     if (bullishMacd) { strength += 8; aligned++; }
     if (bullishBb) { strength += 6; aligned++; }
     if (bullishRsi) { strength += 4; aligned++; }
     if (bullishVol) { strength += 5; aligned++; }
     if (bullishRegime) { strength += 12; aligned++; }
-
-    if (regime.regime === "VOLATILE") {
-      strength *= 0.6;
-    }
-
-    if (bearishRegime) {
-      strength *= 0.3;
-    }
-
+    if (regime.regime === "VOLATILE") strength *= 0.6;
+    if (bearishRegime) strength *= 0.3;
     const parts = [`EMA↑`, `RSI ${r.toFixed(0)}`];
     if (bullishMacd) parts.push(`MACD↑`);
     if (bullishBb) parts.push(`BB low`);
@@ -345,22 +507,14 @@ export function emaCrossRsiStrategy(candles: Candle[]): StrategyResult {
     strength = emaDiff * 10 + (r - 30) / 4;
     if (justCrossed) strength += 20;
     if (r > 60) strength += 15;
-
     aligned = 1;
     if (bearishMacd) { strength += 8; aligned++; }
     if (bearishBb) { strength += 6; aligned++; }
     if (bearishRsi) { strength += 4; aligned++; }
     if (bearishVol) { strength += 5; aligned++; }
     if (bearishRegime) { strength += 12; aligned++; }
-
-    if (regime.regime === "VOLATILE") {
-      strength *= 0.6;
-    }
-
-    if (bullishRegime) {
-      strength *= 0.3;
-    }
-
+    if (regime.regime === "VOLATILE") strength *= 0.6;
+    if (bullishRegime) strength *= 0.3;
     const parts = [`EMA↓`, `RSI ${r.toFixed(0)}`];
     if (bearishMacd) parts.push(`MACD↓`);
     if (bearishBb) parts.push(`BB high`);
@@ -372,21 +526,15 @@ export function emaCrossRsiStrategy(candles: Candle[]): StrategyResult {
   }
 
   return {
-    signal,
-    reason,
-    ema8: e8,
-    ema21: e21,
-    rsiValue: r,
-    lastClose,
+    signal, reason,
+    ema8: e8, ema21: e21, rsiValue: r, lastClose,
     strength: Math.round(strength * 10) / 10,
     macdHistogram: macdResult.histogram,
     bollingerPercentB: bbResult.percentB,
     atrValue: atrVal,
     volumeRatio: volRatio,
     alignedIndicators: aligned,
-    regime,
-    dynamicSL,
-    dynamicTP,
+    regime, dynamicSL, dynamicTP,
   };
 }
 
@@ -399,6 +547,7 @@ export function parseKlinesToCandles(klines: any[]): Candle[] {
         low: parseFloat(k[3]),
         close: parseFloat(k[4]),
         volume: parseFloat(k[5]),
+        timestamp: parseInt(k[0]),
       };
     }
     return {
@@ -407,6 +556,7 @@ export function parseKlinesToCandles(klines: any[]): Candle[] {
       low: parseFloat(k.low),
       close: parseFloat(k.close),
       volume: parseFloat(k.volume),
+      timestamp: k.openTime || k.timestamp || 0,
     };
   }).filter(c => !isNaN(c.close) && c.close > 0);
 }

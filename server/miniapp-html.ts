@@ -1165,17 +1165,61 @@ function renderAgent(){
   let h='<div class="section-title" style="font-size:16px">🤖 AI Trading Agent</div>';
 
   var agentName=c?.name||'My Agent';
-  h+='<div class="card '+(r?'card-accent':'')+'"><div class="row"><div class="gap"><div style="width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:'+(r?'var(--green-bg)':'var(--bg)')+'">🤖</div><div><div class="text-w fw-600" style="cursor:pointer" onclick="renameAgent()" id="agent-name-display">'+agentName+'</div><div class="gap mt-1"><div class="live-dot" style="'+(r?'':'animation:none;background:var(--text3)')+'"></div><span class="text-xs '+(r?'gv':'text-dim')+'">'+(r?'Full Auto — Scanning 18 pairs':'Stopped')+'</span></div></div></div><div class="switch'+(r?' on':'')+'" onclick="toggleAgent()"></div></div>';
-  if(r&&c){h+='<div class="gap mt-3" style="flex-wrap:wrap"><span class="badge badge-info">🌐 18 pairs</span><span class="badge badge-info">'+c.maxLeverage+'x max</span><span class="badge badge-warn">'+c.riskPercent+'% risk</span><span class="badge badge-long">'+(c.maxOpenPositions||3)+' max pos</span><span class="badge badge-info">🧠 AI</span></div>'}
+  h+='<div class="card '+(r?'card-accent':'')+'"><div class="row"><div class="gap"><div style="width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:'+(r?'var(--green-bg)':'var(--bg)')+'">🧠</div><div><div class="text-w fw-600" style="cursor:pointer" onclick="renameAgent()" id="agent-name-display">'+agentName+'</div><div class="gap mt-1"><div class="live-dot" style="'+(r?'':'animation:none;background:var(--text3)')+'"></div><span class="text-xs '+(r?'gv':'text-dim')+'">'+(r?'AI-Powered — Multi-Timeframe':'Stopped')+'</span></div></div></div><div class="switch'+(r?' on':'')+'" onclick="toggleAgent()"></div></div>';
+  if(r&&c){
+    h+='<div class="gap mt-3" style="flex-wrap:wrap"><span class="badge badge-info">📊 10 pairs</span><span class="badge badge-info">'+c.maxLeverage+'x max</span><span class="badge badge-warn">'+c.riskPercent+'% risk</span><span class="badge badge-long">'+(c.maxOpenPositions||2)+' max pos</span></div>';
+    h+='<div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">';
+    h+='<div style="padding:8px;background:'+(s.dailyPnl>=0?'#0ecb8118':'#f6465d18')+';border-radius:8px;text-align:center"><div class="text-xs text-dim2">Daily PnL</div><div class="text-sm fw-600 '+(s.dailyPnl>=0?'gv':'r-')+'">'+(s.dailyPnl>=0?'+':'')+' $'+(Math.abs(s.dailyPnl||0)).toFixed(2)+'</div></div>';
+    h+='<div style="padding:8px;background:var(--bg);border-radius:8px;text-align:center"><div class="text-xs text-dim2">Streak</div><div class="text-sm fw-600 '+((s.consecutiveLosses||0)>0?'r-':'gv')+'">'+((s.consecutiveLosses||0)>0?s.consecutiveLosses+' losses':'Clean')+'</div></div>';
+    h+='<div style="padding:8px;background:'+(s.circuitBreakerActive?'#f6465d18':'var(--bg)')+';border-radius:8px;text-align:center"><div class="text-xs text-dim2">Safety</div><div class="text-sm fw-600 '+(s.circuitBreakerActive?'r-':'gv')+'">'+(s.circuitBreakerActive?'⏸ Paused':'✅ Active')+'</div></div>';
+    h+='</div>';
+  }
   h+='</div>';
+
+  if(r&&s&&s.lastReasoning){
+    h+='<div class="card"><div class="section-title">🧠 Live Reasoning</div>';
+    h+='<div style="padding:10px;background:#1e2328;border-radius:8px;border-left:3px solid var(--blue)">';
+    h+='<div class="text-sm text-w" style="line-height:1.5;font-style:italic">'+s.lastReasoning+'</div>';
+    if(s.lastAction){h+='<div class="text-xs text-dim mt-2">'+s.lastAction+'</div>'}
+    h+='</div>';
+    if(s.reasoningLog&&s.reasoningLog.length>0){
+      h+='<div class="mt-3"><div class="text-xs text-dim2 mb-2">Recent Decisions</div>';
+      s.reasoningLog.slice().reverse().slice(0,5).forEach(function(log){
+        var color=log.action.includes('OPEN')?'var(--green)':log.action==='HOLD'?'var(--text3)':'var(--blue)';
+        var ago=Math.round((Date.now()-log.ts)/60000);
+        h+='<div style="padding:6px 8px;margin-bottom:4px;background:var(--bg);border-radius:6px;border-left:2px solid '+color+'">';
+        h+='<div class="row"><span class="text-xs fw-600" style="color:'+color+'">'+log.symbol+' '+log.action+'</span><span class="text-xs text-dim">'+ago+'m ago</span></div>';
+        h+='<div class="text-xs text-dim mt-1" style="line-height:1.4">'+log.reasoning.substring(0,120)+'</div>';
+        if(log.confidence>0){h+='<div class="text-xs mt-1" style="color:'+color+'">Confidence: '+log.confidence+'%</div>'}
+        h+='</div>';
+      });
+      h+='</div>';
+    }
+    h+='</div>';
+  }
+
+  if(r&&s&&s.positionDetails&&s.positionDetails.length>0){
+    h+='<div class="card"><div class="section-title">📍 Open Positions</div>';
+    s.positionDetails.forEach(function(p){
+      var icon=p.side==='LONG'?'🟢':'🔴';
+      h+='<div style="padding:10px;background:var(--bg);border-radius:8px;margin-bottom:8px">';
+      h+='<div class="row"><span class="text-sm fw-600 text-w">'+icon+' '+p.side+' '+p.symbol+'</span><span class="badge badge-info">'+p.leverage+'x</span></div>';
+      h+='<div class="row text-xs mt-2"><span class="text-dim">Entry</span><span class="mono text-w">$'+(p.entryPrice||0).toFixed(2)+'</span></div>';
+      h+='<div class="row text-xs mt-1"><span class="text-dim">Stop Loss</span><span class="mono r-">-'+(p.stopLoss||0).toFixed(1)+'%</span></div>';
+      h+='<div class="row text-xs mt-1"><span class="text-dim">Take Profit</span><span class="mono gv">+'+(p.takeProfit||0).toFixed(1)+'%</span></div>';
+      if(p.reasoning){h+='<div class="text-xs text-dim mt-2" style="font-style:italic;line-height:1.4;border-top:1px solid #333;padding-top:6px">'+p.reasoning.substring(0,150)+'</div>'}
+      h+='</div>';
+    });
+    h+='</div>';
+  }
 
   if(!r){
     h+='<div class="card"><div class="section-title">🎯 Strategy</div>';
     h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">';
     var presets=[
-      {key:'conservative',icon:'🛡',label:'Conservative',color:'#3b82f6',desc:'Low risk, tight stops'},
-      {key:'balanced',icon:'⚖️',label:'Balanced',color:'#f59e0b',desc:'Moderate risk & reward'},
-      {key:'degen',icon:'🔥',label:'Degen',color:'#ef4444',desc:'High risk, trades everything'}
+      {key:'conservative',icon:'🛡',label:'Conservative',color:'#3b82f6',desc:'0.5% risk, 5x leverage, 1 position'},
+      {key:'balanced',icon:'⚖️',label:'Balanced',color:'#f59e0b',desc:'1% risk, 10x leverage, 2 positions'},
+      {key:'degen',icon:'🔥',label:'Aggressive',color:'#ef4444',desc:'1% risk, 15x leverage, 3 positions'}
     ];
     var curPreset=detectPreset(c);
     presets.forEach(function(p){
@@ -1192,23 +1236,23 @@ function renderAgent(){
   }
 
   h+='<div class="card"><div class="section-title">⚙️ Configuration</div>';
-  h+='<div class="alert alert-info mb-3"><span>🌐</span><span>Agent scans all 18 pairs with multi-indicator AI analysis. You set risk limits — the agent handles everything else.</span></div>';
+  h+='<div class="alert alert-info mb-3"><span>🧠</span><span>AI analyzes 10 pairs across 3 timeframes (5m/15m/1h). Strict risk rules enforced at code level — max 1% risk, hard stop-loss, daily loss limit, circuit breakers.</span></div>';
   h+='<div class="row text-sm mt-3"><span class="text-dim">Risk Per Trade</span><span class="mono text-w fw-600">'+(c?.riskPercent||1)+'%</span></div>';
-  h+='<div class="slider-track" onclick="setRisk(event)"><div class="slider-fill" style="width:'+((c?.riskPercent||1)/3*100)+'%"></div><div class="slider-thumb" style="left:'+((c?.riskPercent||1)/3*100)+'%"></div></div>';
-  h+='<div class="row text-xs text-dim2"><span>0.5% (Safe)</span><span>3% (Aggressive)</span></div>';
+  h+='<div class="slider-track" onclick="setRisk(event)"><div class="slider-fill" style="width:'+((c?.riskPercent||0.5)/1*100)+'%"></div><div class="slider-thumb" style="left:'+((c?.riskPercent||0.5)/1*100)+'%"></div></div>';
+  h+='<div class="row text-xs text-dim2"><span>0.1% (Ultra Safe)</span><span>1.0% (Max)</span></div>';
   h+='<div class="row text-sm mt-3"><span class="text-dim">Max Leverage</span><span class="mono text-w fw-600">'+(c?.maxLeverage||10)+'x</span></div>';
-  h+='<div class="row text-sm mt-3"><span class="text-dim">Max Open Positions</span><span class="mono text-w fw-600">'+(c?.maxOpenPositions||3)+'</span></div>';
+  h+='<div class="row text-sm mt-3"><span class="text-dim">Max Open Positions</span><span class="mono text-w fw-600">'+(c?.maxOpenPositions||2)+'</span></div>';
   h+='<div style="display:flex;gap:6px;margin-top:6px">';
-  [1,2,3,5,7,10].forEach(function(n){h+='<button class="btn btn-sm '+((c?.maxOpenPositions||3)===n?'btn-green':'btn-outline')+'" style="font-size:12px;padding:4px 10px" onclick="setMaxPositions('+n+')">'+n+'</button>'});
+  [1,2,3].forEach(function(n){h+='<button class="btn btn-sm '+((c?.maxOpenPositions||2)===n?'btn-green':'btn-outline')+'" style="font-size:12px;padding:4px 10px" onclick="setMaxPositions('+n+')">'+n+'</button>'});
   h+='</div>';
-  if(D.availableMargin>0){h+='<div class="row text-sm mt-3"><span class="text-dim">Max Per-Position</span><span class="mono text-w fw-600">$'+fmt(D.availableMargin*(c?.riskPercent||1)/100*(c?.maxLeverage||10)/(c?.maxOpenPositions||3))+'</span></div>'}
+  h+='<div class="row text-sm mt-3"><span class="text-dim">Daily Loss Limit</span><span class="mono r-">-'+(c?.dailyLossLimitPct||3)+'%</span></div>';
 
-  h+='<div style="margin-top:16px;padding:12px;background:var(--bg);border-radius:10px"><div class="text-xs text-dim2 fw-600" style="margin-bottom:6px">🧠 Built-in AI</div>';
-  h+='<div class="text-xs text-dim" style="line-height:1.5">TP/SL/Trailing stop · Funding rate filter · Orderbook imbalance · Self-learning confidence · EMA/RSI/MACD/BB/Volume — all managed automatically.</div></div>';
+  h+='<div style="margin-top:16px;padding:12px;background:var(--bg);border-radius:10px"><div class="text-xs text-dim2 fw-600" style="margin-bottom:6px">🔒 Safety Rules (Always Active)</div>';
+  h+='<div class="text-xs text-dim" style="line-height:1.8">✅ Max 1% risk per trade (enforced)<br>✅ Hard stop-loss on every trade<br>✅ 3 consecutive losses → 30min pause<br>✅ 5min cooldown after closing (no revenge trading)<br>✅ Daily loss limit stops all trading<br>✅ Multi-timeframe trend confirmation required</div></div>';
 
   h+='</div>';
 
-  if(D.availableMargin>0&&D.availableMargin<10){h+='<div class="alert alert-warn mb-3"><span>⚠️</span><span>Futures margin is below $10. The agent will not trade until margin is at least $10 for safety.</span></div>'}
+  if(D.availableMargin>0&&D.availableMargin<10){h+='<div class="alert alert-warn mb-3"><span>⚠️</span><span>Futures margin is below $10. The agent requires at least $10 for safety.</span></div>'}
 
   if(s){
     const wr=s.winCount+s.lossCount>0?Math.round(s.winCount/(s.winCount+s.lossCount)*100):0;
@@ -1218,17 +1262,7 @@ function renderAgent(){
     h+='<div style="padding:10px;background:var(--bg);border-radius:8px;text-align:center"><div class="text-xs text-dim2">Total PnL</div><div class="val-sm '+pnlClass(s.totalPnl)+' mt-1">'+(s.totalPnl>=0?'+':'')+' $'+fmt(Math.abs(s.totalPnl))+'</div></div>';
     h+='<div style="padding:10px;background:var(--bg);border-radius:8px;text-align:center"><div class="text-xs text-dim2">W / L</div><div class="val-sm text-w mt-1"><span class="gv">'+s.winCount+'</span> / <span class="r-">'+s.lossCount+'</span></div></div>';
     h+='</div>';
-    if(s.openPositions&&s.openPositions.length>0){
-      h+='<div class="mt-3"><div class="text-xs text-dim2 mb-2">Open Positions</div>';
-      s.openPositions.forEach(function(p){
-        var parts=p.split(' ');
-        var sd=parts[0],sy=parts[1]||'';
-        h+='<div class="row text-sm mb-1"><span>'+(sd==='LONG'?'🟢':'🔴')+' '+sd+' <b>'+sy+'</b></span></div>';
-      });
-      h+='</div>';
-    }
-    if(s.lastAction){h+='<div class="alert alert-info mt-3"><span>🧠</span><div><div class="text-xs fw-600" style="color:var(--blue)">Last Action</div><div class="text-sm text-w mt-1">'+s.lastAction+'</div>'+(s.lastReason?'<div class="text-xs text-dim mt-1">'+s.lastReason+'</div>':'')+'</div></div>'}
-    if(s.scanCount){h+='<div class="text-xs text-dim mt-2" style="text-align:right">Scans completed: '+s.scanCount+'</div>'}
+    if(s.scanCount){h+='<div class="text-xs text-dim mt-2" style="text-align:right">Scans: '+s.scanCount+'</div>'}
     h+='</div>';
   }
   el.innerHTML=h;
@@ -1236,9 +1270,9 @@ function renderAgent(){
 
 function detectPreset(c){
   if(!c)return null;
-  if(c.riskPercent<=0.5&&c.maxLeverage<=5&&(c.minConfidence||0)>=0.6)return'conservative';
-  if(c.riskPercent>=2.5&&c.maxLeverage>=20)return'degen';
-  if(c.riskPercent>=1&&c.riskPercent<=2&&c.maxLeverage>=8&&c.maxLeverage<=15)return'balanced';
+  if(c.riskPercent<=0.5&&c.maxLeverage<=5&&c.maxOpenPositions<=1)return'conservative';
+  if(c.riskPercent>=1&&c.maxLeverage>=15&&c.maxOpenPositions>=3)return'degen';
+  if(c.riskPercent>=0.8&&c.riskPercent<=1&&c.maxLeverage>=8&&c.maxLeverage<=12)return'balanced';
   return null;
 }
 async function applyPreset(key){
@@ -1255,7 +1289,7 @@ async function applyPreset(key){
 }
 function setRisk(e){
   const r=e.currentTarget.getBoundingClientRect();
-  const pct=Math.max(0.5,Math.min(3,((e.clientX-r.left)/r.width)*3));
+  const pct=Math.max(0.1,Math.min(1.0,((e.clientX-r.left)/r.width)*1.0));
   const rounded=Math.round(pct*10)/10;
   if(AG&&AG.config)AG.config.riskPercent=rounded;
   api('/api/miniapp/agent/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({riskPercent:rounded})}).catch(function(){});

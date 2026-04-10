@@ -1326,21 +1326,37 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         }
       }
 
+      const reasoningLog = (state as any)?.reasoningLog || [];
+      const dailyPnl = (state as any)?.dailyPnl || 0;
+      const consecutiveLosses = (state as any)?.consecutiveLosses || 0;
+      const circuitBreakerUntil = (state as any)?.circuitBreakerUntil || 0;
+      const lastReasoning = (state as any)?.lastReasoning || "";
+
+      const positionDetails: any[] = [];
+      if (state?.openPositions) {
+        for (const [sym, info] of state.openPositions) {
+          const i = info as any;
+          positionDetails.push({
+            symbol: sym,
+            side: i.side,
+            entryPrice: i.entryPrice,
+            stopLoss: i.stopLossPct,
+            takeProfit: i.takeProfitPct,
+            leverage: i.leverage,
+            reasoning: i.reasoning,
+            openedAt: i.openedAt,
+          });
+        }
+      }
+
       res.json({
         running: state?.running || false,
         config: {
           name: config?.name ?? "My Agent",
           riskPercent: config?.riskPercent ?? 1.0,
           maxLeverage: config?.maxLeverage ?? 10,
-          maxOpenPositions: config?.maxOpenPositions ?? 3,
-          interval: config?.intervalMs ? Math.round(config.intervalMs / 1000) : 60,
-          takeProfitPct: config?.takeProfitPct ?? 5,
-          stopLossPct: config?.stopLossPct ?? 3,
-          trailingStopPct: config?.trailingStopPct ?? 2,
-          fundingRateFilter: config?.fundingRateFilter !== false,
-          orderbookImbalanceThreshold: config?.orderbookImbalanceThreshold ?? 0.6,
-          useConfidenceFilter: config?.useConfidenceFilter !== false,
-          minConfidence: config?.minConfidence ?? 0.65,
+          maxOpenPositions: config?.maxOpenPositions ?? 2,
+          dailyLossLimitPct: (config as any)?.dailyLossLimitPct ?? 3.0,
         },
         stats: {
           tradeCount: Math.max(state?.tradeCount || 0, openTrades.length + closeTrades.length),
@@ -1348,9 +1364,15 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
           winCount,
           lossCount,
           totalPnl,
+          dailyPnl,
+          consecutiveLosses,
+          circuitBreakerActive: circuitBreakerUntil > Date.now(),
           lastAction: state?.lastAction || null,
           lastReason: state?.lastReason || null,
+          lastReasoning,
           openPositions,
+          positionDetails,
+          reasoningLog: reasoningLog.slice(-10),
         },
       });
     } catch (e: any) {
@@ -1372,37 +1394,22 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         conservative: {
           riskPercent: 0.5,
           maxLeverage: 5,
-          maxOpenPositions: 2,
-          takeProfitPct: 3.0,
-          stopLossPct: 2.0,
-          trailingStopPct: 1.5,
-          orderbookImbalanceThreshold: 0.6,
-          useConfidenceFilter: true,
-          minConfidence: 0.65,
+          maxOpenPositions: 1,
+          dailyLossLimitPct: 2.0,
           fundingRateFilter: true,
         },
         balanced: {
-          riskPercent: 1.5,
+          riskPercent: 1.0,
           maxLeverage: 10,
-          maxOpenPositions: 3,
-          takeProfitPct: 5.0,
-          stopLossPct: 3.0,
-          trailingStopPct: 2.0,
-          orderbookImbalanceThreshold: 0.5,
-          useConfidenceFilter: true,
-          minConfidence: 0.45,
+          maxOpenPositions: 2,
+          dailyLossLimitPct: 3.0,
           fundingRateFilter: true,
         },
         degen: {
-          riskPercent: 3.0,
-          maxLeverage: 25,
-          maxOpenPositions: 5,
-          takeProfitPct: 8.0,
-          stopLossPct: 5.0,
-          trailingStopPct: 3.0,
-          orderbookImbalanceThreshold: 0.4,
-          useConfidenceFilter: false,
-          minConfidence: 0.3,
+          riskPercent: 1.0,
+          maxLeverage: 15,
+          maxOpenPositions: 3,
+          dailyLossLimitPct: 5.0,
           fundingRateFilter: false,
         },
       };
