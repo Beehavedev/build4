@@ -9708,6 +9708,79 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "astats" && !isGroup) {
+      const adminChatIdAstats = process.env.ADMIN_CHAT_ID;
+      if (!adminChatIdAstats || chatId.toString() !== adminChatIdAstats) return;
+      try {
+        const { db } = await import("./db");
+        const { sql } = await import("drizzle-orm");
+
+        const [asterUserCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_credentials`)).rows;
+        const [autoCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_trading_limits WHERE auto_trade_enabled = true`)).rows;
+        const [limitsCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_trading_limits`)).rows;
+
+        const asterUsersDetail = (await db.execute(sql`
+          SELECT ac.chat_id, ac.parent_address, ac.created_at,
+            atl.auto_trade_enabled, atl.max_leverage, atl.daily_pnl_usdt, atl.max_position_size_usdt,
+            atl.agent_config_json
+          FROM aster_credentials ac
+          LEFT JOIN aster_trading_limits atl ON ac.chat_id = atl.chat_id
+          ORDER BY ac.created_at DESC
+        `)).rows;
+
+        const [learningCount] = (await db.execute(sql`SELECT COUNT(*) as cnt, COALESCE(SUM(total_trades),0) as trades, COALESCE(SUM(total_wins),0) as wins FROM aster_agent_learning`)).rows;
+
+        let tradeHistoryStats = { total: 0, volume: 0, pnl: 0 };
+        try {
+          const [th] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_agent_trades`)).rows;
+          tradeHistoryStats.total = Number(th?.cnt || 0);
+        } catch {}
+
+        const [totalBotUsers] = (await db.execute(sql`SELECT COUNT(DISTINCT chat_id) as cnt FROM telegram_wallets`)).rows;
+
+        let userLines = "";
+        for (const u of asterUsersDetail as any[]) {
+          const cid = u.chat_id;
+          const auto = u.auto_trade_enabled ? "✅" : "❌";
+          const lev = u.max_leverage || "-";
+          const posSize = u.max_position_size_usdt || "-";
+          const dailyPnl = u.daily_pnl_usdt ? `$${Number(u.daily_pnl_usdt).toFixed(2)}` : "$0";
+          const parent = u.parent_address ? (u.parent_address.substring(0, 12) + "...") : "none";
+          const joined = u.created_at ? new Date(u.created_at).toLocaleDateString() : "?";
+          let agentName = "-";
+          try {
+            if (u.agent_config_json) {
+              const cfg = typeof u.agent_config_json === "string" ? JSON.parse(u.agent_config_json) : u.agent_config_json;
+              agentName = cfg.name || "-";
+            }
+          } catch {}
+          userLines += `\n<code>${cid}</code>\n  Agent: ${agentName} | Auto: ${auto} | Lev: ${lev}x\n  Pos: $${posSize} | Daily PnL: ${dailyPnl}\n  Parent: ${parent} | Joined: ${joined}\n`;
+        }
+
+        const totalTrades = Number((learningCount as any)?.trades || 0);
+        const totalWins = Number((learningCount as any)?.wins || 0);
+        const winRate = totalTrades > 0 ? ((totalWins / totalTrades) * 100).toFixed(1) : "0";
+
+        await bot.sendMessage(chatId,
+          `📊 <b>Aster DEX Stats</b>\n\n` +
+          `<b>👥 Users</b>\n` +
+          `• Total Bot Users: <b>${Number(totalBotUsers?.cnt || 0)}</b>\n` +
+          `• Aster Connected: <b>${Number(asterUserCount?.cnt || 0)}</b>\n` +
+          `• Trading Limits Set: <b>${Number(limitsCount?.cnt || 0)}</b>\n` +
+          `• Auto-Trade On: <b>${Number(autoCount?.cnt || 0)}</b>\n\n` +
+          `<b>📈 Trading</b>\n` +
+          `• Agent Trades Logged: <b>${totalTrades}</b>\n` +
+          `• Agent Wins: <b>${totalWins}</b> (${winRate}%)\n` +
+          `• Trade Records: <b>${tradeHistoryStats.total}</b>\n\n` +
+          `<b>👤 User Details</b>${userLines || "\nNo users yet"}`,
+          { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, chatId) }
+        );
+      } catch (e: any) {
+        await bot.sendMessage(chatId, `Could not fetch Aster stats: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
+      }
+      return;
+    }
+
     if (cmd === "activatesub" && !isGroup) {
       const adminChatIdAct = process.env.ADMIN_CHAT_ID;
       if (!adminChatIdAct || chatId.toString() !== adminChatIdAct) return;
