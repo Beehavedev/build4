@@ -37,7 +37,7 @@ The project uses a monorepo containing `client/` (React frontend), `server/` (Ex
 
 ### Telegram Mini App (Individual Account Trading)
 - **Architecture**: Each user gets a bot-generated BSC wallet, deposits USDT, and then deposits into Aster DEX via a vault smart contract. Aster trading uses the Aster Code agent delegation pattern: bot generates a separate agent wallet, signs `approveAgent`/`approveBuilder` with the user wallet, and trades via the agent key. User wallet key is only used for deposit transactions and initial Aster approval — never sent to Aster for trading.
-- **Features**: Individual dashboard, deposit page, quick deposit buttons, manual and AI-assisted trading. AI trading uses a multi-indicator strategy with self-learning confidence scoring.
+- **Features**: Individual dashboard, deposit page, quick deposit buttons, manual and AI-assisted trading. AI trading uses a multi-indicator strategy (EMA+RSI+MACD+BB+ADX) with Grok AI signal filtering, market regime detection (TRENDING/RANGING/VOLATILE via ADX+Choppiness Index), persistent DB-backed learning (per-symbol and per-regime win rate tracking, auto-retraining weights), and dynamic ATR-based risk management (volatility-adjusted position sizing, regime-aware leverage, dynamic SL/TP).
 - **Auth**: Uses `x-telegram-chat-id` header for user identification.
 
 ### Web Futures Page (`/futures`) — Aster Agent Pro Trading Terminal

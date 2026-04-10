@@ -1115,6 +1115,19 @@ export const asterTradingLimits = pgTable("aster_trading_limits", {
 });
 export type AsterTradingLimit = typeof asterTradingLimits.$inferSelect;
 
+export const asterAgentLearning = pgTable("aster_agent_learning", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  chatId: text("chat_id").notNull(),
+  weightsJson: text("weights_json").notNull().default("{}"),
+  tradeHistoryJson: text("trade_history_json").notNull().default("[]"),
+  symbolStatsJson: text("symbol_stats_json").notNull().default("{}"),
+  regimeStatsJson: text("regime_stats_json").notNull().default("{}"),
+  totalTrades: integer("total_trades").notNull().default(0),
+  totalWins: integer("total_wins").notNull().default(0),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type AsterAgentLearning = typeof asterAgentLearning.$inferSelect;
+
 export const telegramBotSubscriptions = pgTable("telegram_bot_subscriptions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   walletAddress: text("wallet_address").notNull(),

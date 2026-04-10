@@ -109,6 +109,130 @@ function volumeSpike(candles: Candle[], lookback: number = 20): number {
   return candles[candles.length - 1].volume / avgVol;
 }
 
+function adx(candles: Candle[], period: number = 14): { adxValue: number; plusDI: number; minusDI: number } {
+  if (candles.length < period * 2 + 1) return { adxValue: 0, plusDI: 50, minusDI: 50 };
+
+  const plusDMs: number[] = [];
+  const minusDMs: number[] = [];
+  const trueRanges: number[] = [];
+
+  for (let i = 1; i < candles.length; i++) {
+    const high = candles[i].high;
+    const low = candles[i].low;
+    const prevHigh = candles[i - 1].high;
+    const prevLow = candles[i - 1].low;
+    const prevClose = candles[i - 1].close;
+
+    const upMove = high - prevHigh;
+    const downMove = prevLow - low;
+
+    plusDMs.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDMs.push(downMove > upMove && downMove > 0 ? downMove : 0);
+    trueRanges.push(Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose)));
+  }
+
+  let smoothPlusDM = plusDMs.slice(0, period).reduce((a, b) => a + b, 0);
+  let smoothMinusDM = minusDMs.slice(0, period).reduce((a, b) => a + b, 0);
+  let smoothTR = trueRanges.slice(0, period).reduce((a, b) => a + b, 0);
+
+  const dxValues: number[] = [];
+
+  for (let i = period; i < plusDMs.length; i++) {
+    if (i > period) {
+      smoothPlusDM = smoothPlusDM - smoothPlusDM / period + plusDMs[i];
+      smoothMinusDM = smoothMinusDM - smoothMinusDM / period + minusDMs[i];
+      smoothTR = smoothTR - smoothTR / period + trueRanges[i];
+    }
+
+    const pdi = smoothTR > 0 ? (smoothPlusDM / smoothTR) * 100 : 0;
+    const mdi = smoothTR > 0 ? (smoothMinusDM / smoothTR) * 100 : 0;
+    const diSum = pdi + mdi;
+    const dx = diSum > 0 ? (Math.abs(pdi - mdi) / diSum) * 100 : 0;
+    dxValues.push(dx);
+  }
+
+  if (dxValues.length < period) return { adxValue: 0, plusDI: 50, minusDI: 50 };
+
+  let adxVal = dxValues.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < dxValues.length; i++) {
+    adxVal = (adxVal * (period - 1) + dxValues[i]) / period;
+  }
+
+  const lastPDI = smoothTR > 0 ? (smoothPlusDM / smoothTR) * 100 : 50;
+  const lastMDI = smoothTR > 0 ? (smoothMinusDM / smoothTR) * 100 : 50;
+
+  return { adxValue: adxVal, plusDI: lastPDI, minusDI: lastMDI };
+}
+
+function detectChoppiness(candles: Candle[], period: number = 14): number {
+  if (candles.length < period + 1) return 50;
+  const slice = candles.slice(-period - 1);
+  const trueRanges: number[] = [];
+  let highestHigh = -Infinity;
+  let lowestLow = Infinity;
+  for (let i = 1; i < slice.length; i++) {
+    const h = slice[i].high;
+    const l = slice[i].low;
+    const pc = slice[i - 1].close;
+    trueRanges.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+    if (h > highestHigh) highestHigh = h;
+    if (l < lowestLow) lowestLow = l;
+  }
+  const atrSum = trueRanges.reduce((a, b) => a + b, 0);
+  const range = highestHigh - lowestLow;
+  if (range <= 0) return 100;
+  return (Math.log10(atrSum / range) / Math.log10(period)) * 100;
+}
+
+export type MarketRegime = "TRENDING_UP" | "TRENDING_DOWN" | "RANGING" | "VOLATILE";
+
+export interface RegimeInfo {
+  regime: MarketRegime;
+  adxValue: number;
+  plusDI: number;
+  minusDI: number;
+  choppiness: number;
+  trendStrength: number;
+  atrPct: number;
+}
+
+export function detectMarketRegime(candles: Candle[]): RegimeInfo {
+  const adxResult = adx(candles);
+  const chop = detectChoppiness(candles);
+  const atrVal = atr(candles);
+  const lastClose = candles.length > 0 ? candles[candles.length - 1].close : 1;
+  const atrPct = (atrVal / lastClose) * 100;
+
+  let regime: MarketRegime;
+  let trendStrength = 0;
+
+  if (adxResult.adxValue >= 25 && chop < 50) {
+    if (adxResult.plusDI > adxResult.minusDI) {
+      regime = "TRENDING_UP";
+      trendStrength = Math.min(100, adxResult.adxValue * 1.5);
+    } else {
+      regime = "TRENDING_DOWN";
+      trendStrength = Math.min(100, adxResult.adxValue * 1.5);
+    }
+  } else if (atrPct > 3.0 || (adxResult.adxValue < 20 && chop > 60 && atrPct > 1.5)) {
+    regime = "VOLATILE";
+    trendStrength = 0;
+  } else {
+    regime = "RANGING";
+    trendStrength = 0;
+  }
+
+  return {
+    regime,
+    adxValue: adxResult.adxValue,
+    plusDI: adxResult.plusDI,
+    minusDI: adxResult.minusDI,
+    choppiness: chop,
+    trendStrength,
+    atrPct,
+  };
+}
+
 export type Signal = "BUY" | "SELL" | "HOLD";
 
 export interface StrategyResult {
@@ -124,10 +248,14 @@ export interface StrategyResult {
   atrValue: number;
   volumeRatio: number;
   alignedIndicators: number;
+  regime: RegimeInfo;
+  dynamicSL: number;
+  dynamicTP: number;
 }
 
 export function emaCrossRsiStrategy(candles: Candle[]): StrategyResult {
-  const empty: StrategyResult = { signal: "HOLD", reason: "Not enough data", ema8: 0, ema21: 0, rsiValue: 50, lastClose: 0, strength: 0, macdHistogram: 0, bollingerPercentB: 0.5, atrValue: 0, volumeRatio: 1, alignedIndicators: 0 };
+  const regime = detectMarketRegime(candles);
+  const empty: StrategyResult = { signal: "HOLD", reason: "Not enough data", ema8: 0, ema21: 0, rsiValue: 50, lastClose: 0, strength: 0, macdHistogram: 0, bollingerPercentB: 0.5, atrValue: 0, volumeRatio: 1, alignedIndicators: 0, regime, dynamicSL: 3, dynamicTP: 5 };
   if (candles.length < 26) return empty;
 
   const closes = candles.map(c => c.close);
@@ -145,6 +273,22 @@ export function emaCrossRsiStrategy(candles: Candle[]): StrategyResult {
   const r = rsiValues[lastIdx];
   const lastClose = closes[lastIdx];
 
+  const atrPct = lastClose > 0 ? (atrVal / lastClose) * 100 : 1;
+  const dynamicSL = Math.max(1.0, Math.min(8.0, atrPct * 2.0));
+  const dynamicTP = Math.max(2.0, Math.min(15.0, atrPct * 3.0));
+
+  if (regime.regime === "RANGING") {
+    return {
+      signal: "HOLD",
+      reason: `RANGING market (ADX ${regime.adxValue.toFixed(1)}, Chop ${regime.choppiness.toFixed(0)}) — avoiding false signals`,
+      ema8: e8, ema21: e21, rsiValue: r, lastClose,
+      strength: 0, macdHistogram: macdResult.histogram,
+      bollingerPercentB: bbResult.percentB, atrValue: atrVal,
+      volumeRatio: volRatio, alignedIndicators: 0,
+      regime, dynamicSL, dynamicTP,
+    };
+  }
+
   let signal: Signal = "HOLD";
   let reason = "";
   let strength = 0;
@@ -160,12 +304,14 @@ export function emaCrossRsiStrategy(candles: Candle[]): StrategyResult {
   const bullishBb = bbResult.percentB < 0.3;
   const bullishRsi = r < 45;
   const bullishVol = volRatio > 1.3;
+  const bullishRegime = regime.regime === "TRENDING_UP";
 
   const bearishEma = e8 < e21;
   const bearishMacd = macdResult.histogram < 0;
   const bearishBb = bbResult.percentB > 0.7;
   const bearishRsi = r > 55;
   const bearishVol = volRatio > 1.3;
+  const bearishRegime = regime.regime === "TRENDING_DOWN";
 
   if (bullishEma && r < 70) {
     signal = "BUY";
@@ -178,11 +324,21 @@ export function emaCrossRsiStrategy(candles: Candle[]): StrategyResult {
     if (bullishBb) { strength += 6; aligned++; }
     if (bullishRsi) { strength += 4; aligned++; }
     if (bullishVol) { strength += 5; aligned++; }
+    if (bullishRegime) { strength += 12; aligned++; }
+
+    if (regime.regime === "VOLATILE") {
+      strength *= 0.6;
+    }
+
+    if (bearishRegime) {
+      strength *= 0.3;
+    }
 
     const parts = [`EMA↑`, `RSI ${r.toFixed(0)}`];
     if (bullishMacd) parts.push(`MACD↑`);
     if (bullishBb) parts.push(`BB low`);
     if (bullishVol) parts.push(`Vol ${volRatio.toFixed(1)}x`);
+    parts.push(`${regime.regime} ADX${regime.adxValue.toFixed(0)}`);
     reason = parts.join(" | ");
   } else if (bearishEma && r > 30) {
     signal = "SELL";
@@ -195,14 +351,24 @@ export function emaCrossRsiStrategy(candles: Candle[]): StrategyResult {
     if (bearishBb) { strength += 6; aligned++; }
     if (bearishRsi) { strength += 4; aligned++; }
     if (bearishVol) { strength += 5; aligned++; }
+    if (bearishRegime) { strength += 12; aligned++; }
+
+    if (regime.regime === "VOLATILE") {
+      strength *= 0.6;
+    }
+
+    if (bullishRegime) {
+      strength *= 0.3;
+    }
 
     const parts = [`EMA↓`, `RSI ${r.toFixed(0)}`];
     if (bearishMacd) parts.push(`MACD↓`);
     if (bearishBb) parts.push(`BB high`);
     if (bearishVol) parts.push(`Vol ${volRatio.toFixed(1)}x`);
+    parts.push(`${regime.regime} ADX${regime.adxValue.toFixed(0)}`);
     reason = parts.join(" | ");
   } else {
-    reason = `EMA8=${e8.toFixed(2)} EMA21=${e21.toFixed(2)} RSI=${r.toFixed(1)} — no clear signal`;
+    reason = `EMA8=${e8.toFixed(2)} EMA21=${e21.toFixed(2)} RSI=${r.toFixed(1)} ${regime.regime} — no clear signal`;
   }
 
   return {
@@ -218,6 +384,9 @@ export function emaCrossRsiStrategy(candles: Candle[]): StrategyResult {
     atrValue: atrVal,
     volumeRatio: volRatio,
     alignedIndicators: aligned,
+    regime,
+    dynamicSL,
+    dynamicTP,
   };
 }
 

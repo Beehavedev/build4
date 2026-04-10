@@ -1,5 +1,5 @@
-import { emaCrossRsiStrategy, parseKlinesToCandles, type Signal, type StrategyResult } from "./trading-strategy";
-import { evaluateEntry, logTradeResult, getIntelStatus, type IntelConfig, type MarketIntel } from "./market-intelligence";
+import { emaCrossRsiStrategy, parseKlinesToCandles, type Signal, type StrategyResult, type MarketRegime } from "./trading-strategy";
+import { evaluateEntry, logTradeResult, getIntelStatus, loadLearningFromDb, type IntelConfig, type MarketIntel } from "./market-intelligence";
 import { storage } from "./storage";
 
 const ALL_PAIRS = [
@@ -48,6 +48,10 @@ interface PositionInfo {
   entryImbalance: number;
   entryAligned: number;
   entryConfidence: number;
+  entryRegime: MarketRegime;
+  dynamicSL: number;
+  dynamicTP: number;
+  trailingActivation: number;
 }
 
 interface AgentState {
@@ -229,6 +233,8 @@ export async function startAgent(
   saveAgentConfigToDb(chatId, state.config);
   state.errors = 0;
 
+  await loadLearningFromDb(chatId);
+
   state.openPositions.clear();
   const localPositions = await storage.getAsterLocalPositions(chatId);
   for (const p of localPositions) {
@@ -241,6 +247,7 @@ export async function startAgent(
         entryStrength: 0, entryRsi: 50, entryMacdHist: 0, entryBbPctB: 0.5,
         entryAtr: 0, entryVolRatio: 1, entryFunding: 0, entryImbalance: 0.5,
         entryAligned: 0, entryConfidence: 0,
+        entryRegime: "RANGING", dynamicSL: 3, dynamicTP: 5, trailingActivation: 2,
       });
     }
   }
@@ -252,8 +259,11 @@ export async function startAgent(
       : "None";
     const intelFlags = [];
     if (state.config.fundingRateFilter) intelFlags.push("💰 Funding");
-    if (state.config.useConfidenceFilter) intelFlags.push(`🧠 AI ${(state.config.minConfidence * 100).toFixed(0)}%`);
-    intelFlags.push("📊 MACD+BB+Vol");
+    if (state.config.useConfidenceFilter) intelFlags.push(`🧠 Conf ${(state.config.minConfidence * 100).toFixed(0)}%`);
+    intelFlags.push("📊 MACD+BB+Vol+ADX");
+    intelFlags.push("🤖 AI Filter");
+    intelFlags.push("📈 Regime");
+    intelFlags.push("🎯 ATR Risk");
     await sendMessage(
       `🤖 *${state.config.name} Started — Full Auto*\n` +
       `Scanning: *${ALL_PAIRS.length} pairs*\n` +
@@ -360,6 +370,7 @@ async function runAgentLoop(
           entryStrength: 0, entryRsi: 50, entryMacdHist: 0, entryBbPctB: 0.5,
           entryAtr: 0, entryVolRatio: 1, entryFunding: 0, entryImbalance: 0.5,
           entryAligned: 0, entryConfidence: 0,
+          entryRegime: "RANGING", dynamicSL: 3, dynamicTP: 5, trailingActivation: 2,
         });
       }
     }
@@ -378,12 +389,16 @@ async function runAgentLoop(
           info.peakPnlPct = pnlPct;
         }
 
-        if (pnlPct >= state.config.takeProfitPct) {
-          closeReason = `🎯 Take Profit hit (${pnlPct.toFixed(2)}% ≥ ${state.config.takeProfitPct}%)`;
-        } else if (pnlPct <= -state.config.stopLossPct) {
-          closeReason = `🛑 Stop Loss hit (${pnlPct.toFixed(2)}% ≤ -${state.config.stopLossPct}%)`;
-        } else if (info.peakPnlPct >= state.config.trailingStopPct && pnlPct < info.peakPnlPct - state.config.trailingStopPct) {
-          closeReason = `📉 Trailing Stop (peak ${info.peakPnlPct.toFixed(2)}% → ${pnlPct.toFixed(2)}%, trail ${state.config.trailingStopPct}%)`;
+        const effectiveSL = info.dynamicSL || state.config.stopLossPct;
+        const effectiveTP = info.dynamicTP || state.config.takeProfitPct;
+        const effectiveTrail = info.trailingActivation || state.config.trailingStopPct;
+
+        if (pnlPct >= effectiveTP) {
+          closeReason = `🎯 Take Profit hit (${pnlPct.toFixed(2)}% ≥ ${effectiveTP.toFixed(1)}% ATR-TP)`;
+        } else if (pnlPct <= -effectiveSL) {
+          closeReason = `🛑 Stop Loss hit (${pnlPct.toFixed(2)}% ≤ -${effectiveSL.toFixed(1)}% ATR-SL)`;
+        } else if (info.peakPnlPct >= effectiveTrail && pnlPct < info.peakPnlPct - effectiveTrail) {
+          closeReason = `📉 Trailing Stop (peak ${info.peakPnlPct.toFixed(2)}% → ${pnlPct.toFixed(2)}%, trail ${effectiveTrail.toFixed(1)}%)`;
         }
 
         if (!closeReason && scan) {
@@ -599,7 +614,7 @@ async function getAvailableBalance(chatId: string, futuresClient?: any): Promise
   return Math.max(available, 0);
 }
 
-function chooseLeverage(symbol: string, maxLeverage: number, strength: number): number {
+function chooseLeverage(symbol: string, maxLeverage: number, strength: number, regime?: MarketRegime): number {
   const volatilityTier: Record<string, number> = {
     BTCUSDT: 1, ETHUSDT: 1, BNBUSDT: 1.2, SOLUSDT: 1.5,
     XRPUSDT: 1.3, DOGEUSDT: 2, PEPEUSDT: 2.5, WIFUSDT: 2.5,
@@ -608,9 +623,20 @@ function chooseLeverage(symbol: string, maxLeverage: number, strength: number): 
     APTUSDT: 1.5, MATICUSDT: 1.5,
   };
   const vol = volatilityTier[symbol] || 1.5;
-  const baseLev = Math.max(2, Math.min(maxLeverage, Math.round(maxLeverage / vol)));
+  let baseLev = Math.max(2, Math.min(maxLeverage, Math.round(maxLeverage / vol)));
   const strengthBonus = strength > 30 ? 2 : strength > 15 ? 1 : 0;
-  return Math.min(maxLeverage, baseLev + strengthBonus);
+
+  let regimeMultiplier = 1.0;
+  if (regime === "VOLATILE") {
+    regimeMultiplier = 0.5;
+  } else if (regime === "RANGING") {
+    regimeMultiplier = 0.6;
+  } else if (regime === "TRENDING_UP" || regime === "TRENDING_DOWN") {
+    regimeMultiplier = 1.0;
+  }
+
+  const finalLev = Math.max(2, Math.min(maxLeverage, Math.round((baseLev + strengthBonus) * regimeMultiplier)));
+  return finalLev;
 }
 
 async function openPosition(
@@ -623,7 +649,8 @@ async function openPosition(
   sendMessage: (msg: string) => Promise<void>,
   intel?: MarketIntel,
 ) {
-  const leverage = chooseLeverage(symbol, state.config.maxLeverage, result.strength);
+  const regime = result.regime?.regime;
+  const leverage = chooseLeverage(symbol, state.config.maxLeverage, result.strength, regime);
 
   try {
     await futuresClient.setLeverage(symbol, leverage);
@@ -650,7 +677,15 @@ async function openPosition(
     return;
   }
 
-  const positionRisk = state.config.riskPercent / state.config.maxOpenPositions;
+  let volAdjust = 1.0;
+  const atrPct = result.atrValue > 0 ? (result.atrValue / lastPrice) * 100 : 1;
+  if (atrPct > 2.0) volAdjust = 0.5;
+  else if (atrPct > 1.5) volAdjust = 0.7;
+  else if (atrPct < 0.5) volAdjust = 1.3;
+
+  if (regime === "VOLATILE") volAdjust *= 0.6;
+
+  const positionRisk = (state.config.riskPercent / state.config.maxOpenPositions) * volAdjust;
   const qty = computeQuantity(symbol, availableBalance, positionRisk, leverage, lastPrice);
   if (qty <= 0) {
     console.log(`[Agent:${chatId}] ${symbol} qty too small after rounding`);
@@ -705,6 +740,10 @@ async function openPosition(
     entryImbalance: intel?.orderbookImbalance || 0.5,
     entryAligned: result.alignedIndicators,
     entryConfidence: intel?.confidence || 0,
+    entryRegime: result.regime?.regime || "RANGING",
+    dynamicSL: result.dynamicSL || state.config.stopLossPct,
+    dynamicTP: result.dynamicTP || state.config.takeProfitPct,
+    trailingActivation: Math.max(1.0, (result.dynamicSL || state.config.trailingStopPct) * 0.8),
   });
   state.tradeCount++;
   state.lastAction = `${positionSide} ${symbol}`;
@@ -713,14 +752,19 @@ async function openPosition(
   const icon = side === "BUY" ? "🟢" : "🔴";
   const confStr = intel ? ` | 🧠 ${(intel.confidence * 100).toFixed(0)}%` : "";
   const fundStr = intel ? ` | 💰 ${(intel.fundingRate * 100).toFixed(4)}%` : "";
+  const aiStr = intel?.aiVerdict ? ` | 🤖 AI: ${intel.aiVerdict}` : "";
+  const regimeStr = result.regime ? `📈 Regime: ${result.regime.regime} (ADX ${result.regime.adxValue.toFixed(0)})\n` : "";
+  const riskStr = `🎯 ATR-SL: ${result.dynamicSL?.toFixed(1) || "?"}% | ATR-TP: ${result.dynamicTP?.toFixed(1) || "?"}%`;
   await sendMessage(
     `🚀 *Auto Trade — ${symbol}*\n` +
     `━━━━━━━━━━━━━━━━━━━━\n\n` +
     `${icon} ${positionSide} *${symbol}*\n` +
     `📦 Qty: \`${filledQty || qty}\`\n` +
     `💲 Price: \`$${(avgPrice || lastPrice).toFixed(2)}\`\n` +
-    `⚡ Leverage: *${leverage}x* (auto)\n` +
-    `💪 Strength: *${result.strength}* | Aligned: *${result.alignedIndicators}*${confStr}${fundStr}\n` +
+    `⚡ Leverage: *${leverage}x* (regime-aware)\n` +
+    `💪 Strength: *${result.strength}* | Aligned: *${result.alignedIndicators}*${confStr}${fundStr}${aiStr}\n` +
+    `${regimeStr}` +
+    `${riskStr}\n` +
     `📊 ${result.reason}\n\n` +
     `📋 Order: \`${orderResult.orderId}\`\n` +
     `📍 Open: ${state.openPositions.size}/${state.config.maxOpenPositions}`
@@ -790,7 +834,7 @@ async function closePosition(
     `);
   } catch (e: any) { console.log(`[Agent] trade persist error: ${e.message?.substring(0, 80)}`); }
 
-  if (posInfo && posInfo.entryConfidence > 0) {
+  if (posInfo) {
     logTradeResult({
       rsi: posInfo.entryRsi,
       macdHist: posInfo.entryMacdHist,
@@ -801,6 +845,8 @@ async function closePosition(
       fundingRate: posInfo.entryFunding,
       imbalance: posInfo.entryImbalance,
       aligned: posInfo.entryAligned,
+      regime: posInfo.entryRegime,
+      symbol: symbol,
     }, pnl > 0);
   }
 
@@ -869,14 +915,31 @@ export function getAgentStatus(chatId: string): string {
   msg += `⚠️ Errors: \`${state.errors}\`\n`;
   msg += `🕐 Last Scan: ${lastCheck}\n\n`;
   const intelStat = getIntelStatus();
-  msg += `🧠 ML Model: ${intelStat.tradeCount} samples, ${(intelStat.winRate * 100).toFixed(0)}% win rate\n`;
-  msg += `_Strategy: EMA + RSI + MACD + BB + Funding + Orderbook_`;
+  msg += `🧠 AI Learning: ${intelStat.tradeCount} trades, ${(intelStat.winRate * 100).toFixed(0)}% win rate\n`;
+
+  const topSymbols = Object.entries(intelStat.symbolStats || {})
+    .filter(([, s]) => s.total >= 3)
+    .sort((a, b) => (b[1].wins / b[1].total) - (a[1].wins / a[1].total))
+    .slice(0, 3)
+    .map(([sym, s]) => `${sym.replace("USDT","")}: ${(s.wins / s.total * 100).toFixed(0)}%`)
+    .join(", ");
+  if (topSymbols) msg += `📊 Top: ${topSymbols}\n`;
+
+  const regimePerf = Object.entries(intelStat.regimeStats || {})
+    .filter(([, s]) => s.total >= 2)
+    .map(([r, s]) => `${r}: ${(s.wins / s.total * 100).toFixed(0)}%`)
+    .join(", ");
+  if (regimePerf) msg += `📈 Regime WR: ${regimePerf}\n`;
+
+  msg += `_Strategy: EMA+RSI+MACD+BB+ADX+AI | ATR Risk | Regime Filter_`;
 
   return msg;
 }
 
 export async function resumeEnabledAgents(): Promise<void> {
   try {
+    await loadLearningFromDb();
+
     const { db } = await import("./db");
     const { sql } = await import("drizzle-orm");
     const rows = (await db.execute(sql`SELECT chat_id FROM aster_trading_limits WHERE auto_trade_enabled = true`)).rows;
