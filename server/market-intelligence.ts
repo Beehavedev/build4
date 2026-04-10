@@ -144,11 +144,11 @@ export async function evaluateEntry(
       intel.aiVerdict = aiResult.verdict;
       intel.aiReasoning = aiResult.reasoning;
       if (aiResult.verdict === "REJECT") {
-        intel.rejectReason = `AI filter: ${aiResult.reasoning}`;
+        intel.rejectReason = `Smart filter: ${aiResult.reasoning}`;
       } else if (aiResult.verdict === "WEAK") {
         intel.confidence *= 0.7;
         if (intel.confidence < config.minConfidence) {
-          intel.rejectReason = `AI reduced confidence to ${(intel.confidence * 100).toFixed(0)}% (${aiResult.reasoning})`;
+          intel.rejectReason = `Confidence reduced to ${(intel.confidence * 100).toFixed(0)}% (${aiResult.reasoning})`;
         }
       }
     } catch (e: any) {
@@ -431,13 +431,12 @@ export function getIntelStatus(): { tradeCount: number; winRate: number; weights
   };
 }
 
-const aiCache = new Map<string, { verdict: string; reasoning: string; models: string; ts: number }>();
+const aiCache = new Map<string, { verdict: string; reasoning: string; ts: number }>();
 const AI_CACHE_TTL = 300_000;
 
 interface AIFilterResult {
   verdict: "GO" | "WEAK" | "REJECT";
   reasoning: string;
-  models?: string;
 }
 
 interface SingleModelResult {
@@ -512,7 +511,7 @@ function parseAIResponse(content: string): { verdict: string; reasoning: string 
 
 async function callGrok(prompt: string): Promise<SingleModelResult> {
   const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) return { verdict: "GO", reasoning: "No Grok key", model: "grok" };
+  if (!apiKey) return { verdict: "GO", reasoning: "No key", model: "m1" };
 
   const response = await fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
@@ -525,16 +524,16 @@ async function callGrok(prompt: string): Promise<SingleModelResult> {
     }),
   });
 
-  if (!response.ok) throw new Error(`Grok API ${response.status}`);
+  if (!response.ok) throw new Error(`M1 API ${response.status}`);
   const data = await response.json() as any;
   const content = data.choices?.[0]?.message?.content?.trim() || "";
   const { verdict, reasoning } = parseAIResponse(content);
-  return { verdict: verdict as any, reasoning, model: "grok" };
+  return { verdict: verdict as any, reasoning, model: "m1" };
 }
 
 async function callClaude(prompt: string): Promise<SingleModelResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return { verdict: "GO", reasoning: "No Claude key", model: "claude" };
+  if (!apiKey) return { verdict: "GO", reasoning: "No key", model: "m2" };
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -551,25 +550,24 @@ async function callClaude(prompt: string): Promise<SingleModelResult> {
     }),
   });
 
-  if (!response.ok) throw new Error(`Claude API ${response.status}`);
+  if (!response.ok) throw new Error(`M2 API ${response.status}`);
   const data = await response.json() as any;
   const content = data.content?.[0]?.text?.trim() || "";
   const { verdict, reasoning } = parseAIResponse(content);
-  return { verdict: verdict as any, reasoning, model: "claude" };
+  return { verdict: verdict as any, reasoning, model: "m2" };
 }
 
 const VERDICT_RANK: Record<string, number> = { REJECT: 0, WEAK: 1, GO: 2 };
 
 function consensusVerdict(results: SingleModelResult[]): AIFilterResult {
-  if (results.length === 0) return { verdict: "GO", reasoning: "No AI models available", models: "none" };
-  if (results.length === 1) return { verdict: results[0].verdict, reasoning: `[${results[0].model}] ${results[0].reasoning}`, models: results[0].model };
+  if (results.length === 0) return { verdict: "GO", reasoning: "No analysis available" };
+  if (results.length === 1) return { verdict: results[0].verdict, reasoning: results[0].reasoning };
 
   const anyReject = results.find(r => r.verdict === "REJECT");
   if (anyReject) {
     return {
       verdict: "REJECT",
-      reasoning: `[${anyReject.model}] ${anyReject.reasoning}`,
-      models: results.map(r => `${r.model}:${r.verdict}`).join(", "),
+      reasoning: anyReject.reasoning,
     };
   }
 
@@ -578,8 +576,7 @@ function consensusVerdict(results: SingleModelResult[]): AIFilterResult {
 
   return {
     verdict: strictest.verdict,
-    reasoning: results.map(r => `[${r.model}] ${r.reasoning}`).join(" | "),
-    models: results.map(r => `${r.model}:${r.verdict}`).join(", "),
+    reasoning: strictest.reasoning,
   };
 }
 
@@ -599,19 +596,19 @@ async function aiSignalFilter(
   const cacheKey = `${symbol}-${side}-${Math.floor(Date.now() / AI_CACHE_TTL)}`;
   const cached = aiCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < AI_CACHE_TTL) {
-    return { verdict: cached.verdict as any, reasoning: cached.reasoning, models: cached.models };
+    return { verdict: cached.verdict as any, reasoning: cached.reasoning };
   }
 
   const prompt = buildAnalysisPrompt(symbol, side, result, funding, imbalance);
 
   const calls: Promise<SingleModelResult>[] = [];
-  if (hasClaude) calls.push(callClaude(prompt).catch(e => ({ verdict: "GO" as const, reasoning: `Claude error: ${e.message?.substring(0, 40)}`, model: "claude" })));
-  if (hasGrok) calls.push(callGrok(prompt).catch(e => ({ verdict: "GO" as const, reasoning: `Grok error: ${e.message?.substring(0, 40)}`, model: "grok" })));
+  if (hasClaude) calls.push(callClaude(prompt).catch(e => ({ verdict: "GO" as const, reasoning: `M2 error: ${e.message?.substring(0, 40)}`, model: "m2" })));
+  if (hasGrok) calls.push(callGrok(prompt).catch(e => ({ verdict: "GO" as const, reasoning: `M1 error: ${e.message?.substring(0, 40)}`, model: "m1" })));
 
   const results = await Promise.all(calls);
   const final = consensusVerdict(results);
 
-  aiCache.set(cacheKey, { verdict: final.verdict, reasoning: final.reasoning, models: final.models || "", ts: Date.now() });
+  aiCache.set(cacheKey, { verdict: final.verdict, reasoning: final.reasoning, ts: Date.now() });
 
   if (aiCache.size > 100) {
     const now = Date.now();
@@ -620,6 +617,7 @@ async function aiSignalFilter(
     }
   }
 
-  console.log(`[Intel] AI consensus for ${side} ${symbol}: ${final.verdict} (${final.models}) — ${final.reasoning.substring(0, 120)}`);
+  const internalModels = results.map(r => `${r.model}:${r.verdict}`).join(",");
+  console.log(`[Intel] AI consensus for ${side} ${symbol}: ${final.verdict} (${internalModels}) — ${final.reasoning.substring(0, 120)}`);
   return final;
 }

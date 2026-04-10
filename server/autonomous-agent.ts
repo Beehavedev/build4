@@ -261,7 +261,7 @@ export async function startAgent(
     if (state.config.fundingRateFilter) intelFlags.push("💰 Funding");
     if (state.config.useConfidenceFilter) intelFlags.push(`🧠 Conf ${(state.config.minConfidence * 100).toFixed(0)}%`);
     intelFlags.push("📊 MACD+BB+Vol+ADX");
-    intelFlags.push("🤖 AI Filter");
+    intelFlags.push("🤖 Smart Filter");
     intelFlags.push("📈 Regime");
     intelFlags.push("🎯 ATR Risk");
     await sendMessage(
@@ -752,7 +752,7 @@ async function openPosition(
   const icon = side === "BUY" ? "🟢" : "🔴";
   const confStr = intel ? ` | 🧠 ${(intel.confidence * 100).toFixed(0)}%` : "";
   const fundStr = intel ? ` | 💰 ${(intel.fundingRate * 100).toFixed(4)}%` : "";
-  const aiStr = intel?.aiVerdict ? ` | 🤖 AI: ${intel.aiVerdict}` : "";
+  const aiStr = intel?.aiVerdict ? ` | 🤖 ${intel.aiVerdict}` : "";
   const regimeStr = result.regime ? `📈 Regime: ${result.regime.regime} (ADX ${result.regime.adxValue.toFixed(0)})\n` : "";
   const riskStr = `🎯 ATR-SL: ${result.dynamicSL?.toFixed(1) || "?"}% | ATR-TP: ${result.dynamicTP?.toFixed(1) || "?"}%`;
   await sendMessage(
@@ -915,7 +915,7 @@ export function getAgentStatus(chatId: string): string {
   msg += `⚠️ Errors: \`${state.errors}\`\n`;
   msg += `🕐 Last Scan: ${lastCheck}\n\n`;
   const intelStat = getIntelStatus();
-  msg += `🧠 AI Learning: ${intelStat.tradeCount} trades, ${(intelStat.winRate * 100).toFixed(0)}% win rate\n`;
+  msg += `🧠 Intelligence: ${intelStat.tradeCount} trades, ${(intelStat.winRate * 100).toFixed(0)}% win rate\n`;
 
   const topSymbols = Object.entries(intelStat.symbolStats || {})
     .filter(([, s]) => s.total >= 3)
@@ -931,7 +931,7 @@ export function getAgentStatus(chatId: string): string {
     .join(", ");
   if (regimePerf) msg += `📈 Regime WR: ${regimePerf}\n`;
 
-  msg += `_Strategy: EMA+RSI+MACD+BB+ADX+AI | ATR Risk | Regime Filter_`;
+  msg += `_Smart Strategy | Adaptive Risk | Regime Filter_`;
 
   return msg;
 }
