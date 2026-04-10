@@ -695,8 +695,8 @@ function getPnlParams(posIdx){
     var pSign=pnlVal>=0?'+':'';
     return{
       imgParams:'pct='+pctVal.toFixed(2)+'&pnl='+pnlVal.toFixed(2)+'&sym='+encodeURIComponent(sym)+'&side='+side+'&lev='+lev+'&ep='+entryP+'&mp='+markP+'&w='+w+'&l='+l+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
-      tweetText:pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\\n\\nTrade on @Aster_DEX\\nhttps://t.me/BUILD4_BOT',
-      tgText:pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\\n\\nTrade on Aster DEX\\nhttps://t.me/BUILD4_BOT',
+      tweetText:pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\\n\\nTrade on @Aster_DEX',
+      tgText:pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\\n\\nTrade on Aster DEX',
       ref:ref
     };
   }
@@ -707,7 +707,6 @@ function getPnlParams(posIdx){
   var pSign2=totalPnl>=0?'+':'';
   var txt=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @Aster_DEX';
   var tgTxt=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on Aster DEX';
-  txt+='\\nhttps://t.me/BUILD4_BOT';tgTxt+='\\nhttps://t.me/BUILD4_BOT';
   return{
     imgParams:'pct='+overallPct.toFixed(2)+'&pnl='+totalPnl.toFixed(2)+'&w='+w+'&l='+l+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
     tweetText:txt,

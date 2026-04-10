@@ -39,7 +39,7 @@ export async function generatePnlCardImage(p: PnlCardParams): Promise<Buffer> {
   const sideColor = p.side === "LONG" ? "#0ecb81" : "#f6465d";
   const refCode = p.ref || "build4";
   const refLink = `t.me/build4_bot?start=${refCode}`;
-  const winRate = p.wins + p.losses > 0 ? Math.round(p.wins / (p.wins + p.losses) * 100) : 0;
+
   const pnlSign = p.pnlUsd >= 0 ? "+" : "";
   const hasTrade = p.symbol && p.symbol !== "BTCUSDT" || p.entryPrice > 0;
   const showPrices = p.entryPrice > 0 && p.markPrice > 0;
