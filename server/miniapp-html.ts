@@ -459,7 +459,10 @@ function renderDash(){
   h+='<div class="text-sm fw-600 text-w">Your PnL Card</div>';
   h+='<div class="text-xs text-dim mt-1">Preview your card, then share on X</div>';
   h+='<div id="pnl-card-preview" style="margin:12px auto;max-width:100%;border-radius:10px;overflow:hidden;background:#0b0e11;min-height:120px;position:relative"></div>';
-  h+='<button class="btn mt-2" style="background:#1d9bf0;color:#fff;font-weight:700;width:100%;height:44px;font-size:14px;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:8px" onclick="shareToX()" data-testid="button-share-x"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg> Share on X</button>';
+  h+='<div style="display:flex;gap:8px;margin-top:8px">';
+  h+='<button class="btn" style="flex:1;background:#1d9bf0;color:#fff;font-weight:700;height:44px;font-size:13px;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:6px" onclick="shareToX()" data-testid="button-share-x"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg> Share on X</button>';
+  h+='<button class="btn" style="flex:1;background:#2AABEE;color:#fff;font-weight:700;height:44px;font-size:13px;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:6px" onclick="shareToTelegram()" data-testid="button-share-tg"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg> Share on TG</button>';
+  h+='</div>';
   h+='<button class="btn btn-outline mt-2" style="width:100%;height:38px;font-size:13px" onclick="downloadPnlCard()" data-testid="button-download-pnl">⬇ Download Image</button>';
   h+='</div>';
 
@@ -692,7 +695,8 @@ function getPnlParams(posIdx){
     var pSign=pnlVal>=0?'+':'';
     return{
       imgParams:'pct='+pctVal.toFixed(2)+'&pnl='+pnlVal.toFixed(2)+'&sym='+encodeURIComponent(sym)+'&side='+side+'&lev='+lev+'&ep='+entryP+'&mp='+markP+'&w='+w+'&l='+l+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
-      tweetText:pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\\n\\nTrade on @Aster_DEX via https://t.me/BUILD4_BOT',
+      tweetText:pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\\n\\nTrade on @Aster_DEX via @BUILD4_BOT',
+      tgText:pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\\n\\nTrade on Aster DEX via https://t.me/BUILD4_BOT',
       ref:ref
     };
   }
@@ -701,11 +705,13 @@ function getPnlParams(posIdx){
   var initialCap=walBal-totalPnl;
   var overallPct=initialCap>0?(totalPnl/initialCap*100):0;
   var pSign2=totalPnl>=0?'+':'';
-  var txt=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @Aster_DEX via https://t.me/BUILD4_BOT';
-  if(w+l>0)txt+='\\nWin Rate: '+Math.round(w/(w+l)*100)+'%';
+  var txt=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @Aster_DEX via @BUILD4_BOT';
+  var tgTxt=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on Aster DEX via https://t.me/BUILD4_BOT';
+  if(w+l>0){txt+='\\nWin Rate: '+Math.round(w/(w+l)*100)+'%';tgTxt+='\\nWin Rate: '+Math.round(w/(w+l)*100)+'%';}
   return{
     imgParams:'pct='+overallPct.toFixed(2)+'&pnl='+totalPnl.toFixed(2)+'&w='+w+'&l='+l+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
     tweetText:txt,
+    tgText:tgTxt,
     ref:ref
   };
 }
@@ -775,6 +781,13 @@ function shareToX(posIdx){
   var tweetUrl='https://x.com/intent/tweet?text='+encodeURIComponent(pp.tweetText)+
     '&url='+encodeURIComponent(pnlPageUrl);
   window.open(tweetUrl,'_blank');
+}
+function shareToTelegram(posIdx){
+  var pp=getPnlParams(posIdx);
+  var pnlPageUrl=_pnlBaseUrl+'/pnl?'+pp.imgParams;
+  var shareUrl='https://t.me/share/url?url='+encodeURIComponent(pnlPageUrl)+
+    '&text='+encodeURIComponent(pp.tgText);
+  window.open(shareUrl,'_blank');
 }
 
 async function downloadPnlCard(posIdx){

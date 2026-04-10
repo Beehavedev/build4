@@ -106,9 +106,21 @@ export function registerMiniAppRoutes(app: Express) {
     res.redirect("/miniapp");
   });
 
+  const pnlImageCache = new Map<string, { buf: Buffer; ts: number }>();
+  const PNL_CACHE_TTL = 600_000;
+
   app.get("/pnl/image", async (req: Request, res: Response) => {
     try {
       const q = req.query;
+      const cacheKey = `${q.pct}|${q.pnl}|${q.sym}|${q.side}|${q.lev}|${q.ep}|${q.mp}|${q.name}|${q.w}|${q.l}`;
+      const cached = pnlImageCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < PNL_CACHE_TTL) {
+        return res.status(200).set({
+          "Content-Type": "image/png",
+          "Cache-Control": "public, max-age=600",
+        }).end(cached.buf);
+      }
+
       const imgBuf = await generatePnlCardImage({
         pnlPercent: parseFloat(q.pct as string || "0"),
         pnlUsd: parseFloat(q.pnl as string || "0"),
@@ -122,9 +134,16 @@ export function registerMiniAppRoutes(app: Express) {
         losses: parseInt(q.l as string || "0"),
         ref: decodeURIComponent(q.ref as string || "build4"),
       });
+
+      pnlImageCache.set(cacheKey, { buf: imgBuf, ts: Date.now() });
+      if (pnlImageCache.size > 200) {
+        const oldest = [...pnlImageCache.entries()].sort((a, b) => a[1].ts - b[1].ts);
+        for (let i = 0; i < 50; i++) pnlImageCache.delete(oldest[i][0]);
+      }
+
       res.status(200).set({
         "Content-Type": "image/png",
-        "Cache-Control": "public, max-age=300",
+        "Cache-Control": "public, max-age=600",
       }).end(imgBuf);
     } catch (e: any) {
       console.error("[pnl/image] Error:", e.message);
@@ -153,7 +172,7 @@ export function registerMiniAppRoutes(app: Express) {
     const winRate = wins + losses > 0 ? Math.round(wins / (wins + losses) * 100) : 0;
     const pnlColor = pnl >= 0 ? "#0ecb81" : "#f85149";
     const accentRgb = pnl >= 0 ? "14,203,129" : "248,81,73";
-    const refLink = `https://t.me/build4_bot?start=${ref}`;
+    const refLink = `https://t.me/BUILD4_BOT?start=${ref}`;
     const ogImageUrl = `https://build4.io/pnl/image?pct=${pctParam}&pnl=${pnl}&sym=${encodeURIComponent(symParam)}&side=${sideParam}&lev=${levParam}&ep=${epParam}&mp=${mpParam}&name=${encodeURIComponent(name)}&w=${wins}&l=${losses}&ref=${encodeURIComponent(ref)}`;
 
     const html = `<!DOCTYPE html><html><head>
