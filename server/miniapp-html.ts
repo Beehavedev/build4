@@ -1438,7 +1438,7 @@ async function loadTrade(){
 
 function renderTrade(){
   const el=$('p-trade');
-  const pairs=['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','DOGEUSDT'];
+  const pairs=['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','DOGEUSDT','XRPUSDT','SUIUSDT','ADAUSDT','AVAXUSDT','LINKUSDT'];
   const price=(M.markets.find(m=>m.symbol===tradeSel)?.price)||0;
 
   let h='<div class="section-title" style="font-size:16px">⚡ Quick Trade</div>';
