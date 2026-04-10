@@ -405,7 +405,6 @@ function renderDash(){
   h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Unrealized PnL</div><div class="val-xs '+pnlClass(D.unrealizedPnl)+' mt-1">'+(D.unrealizedPnl>=0?'+':'')+' $'+fmt(Math.abs(D.unrealizedPnl))+'</div></div>';
   h+='<div style="text-align:center;padding:8px;background:var(--bg);border-radius:8px"><div class="text-xs text-dim2">Realized PnL</div><div class="val-xs '+pnlClass(D.realizedPnl)+' mt-1">'+(D.realizedPnl>=0?'+':'')+' $'+fmt(Math.abs(D.realizedPnl))+'</div></div>';
   h+='</div>';
-  if(D.wins+D.losses>0){h+='<div class="text-xs text-dim mt-2" style="text-align:center">Win Rate: '+D.wins+'W / '+D.losses+'L ('+Math.round(D.wins/(D.wins+D.losses)*100)+'%)</div>'}
   h+='</div>';
 
   if(HIS&&HIS.pnlSummary){
@@ -735,7 +734,7 @@ function loadPnlPreview(posIdx){
   var pnlColor=isProfit?'#0ecb81':'#f6465d';
   var accentRgb=isProfit?'14,203,129':'246,70,93';
   var sideColor=side==='LONG'?'#0ecb81':'#f6465d';
-  var winRate=(parseInt(w)+parseInt(l))>0?Math.round(parseInt(w)/(parseInt(w)+parseInt(l))*100):0;
+
   var hasTrade=sym&&ep>0;
   var pctText=(isProfit?'+':'')+pct.toFixed(2)+'%';
   var pnlSign=pnlUsd>=0?'+':'';
@@ -764,10 +763,6 @@ function loadPnlPreview(posIdx){
     h+='<div style="flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:8px 10px"><div style="font-size:9px;color:#555;letter-spacing:1px">MARK</div><div style="font-family:monospace;font-size:14px;font-weight:700;color:#fff;margin-top:2px">$'+fP(mp)+'</div></div>';
     h+='</div>';
   }
-  h+='<div style="display:flex;gap:8px;margin-top:8px">';
-  h+='<div style="flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:8px 10px"><div style="font-size:9px;color:#555;letter-spacing:1px">WIN RATE</div><div style="font-family:monospace;font-size:14px;font-weight:700;color:'+(winRate>=50?'#0ecb81':'#f6465d')+';margin-top:2px">'+winRate+'%</div></div>';
-  h+='<div style="flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:8px 10px"><div style="font-size:9px;color:#555;letter-spacing:1px">W / L</div><div style="font-family:monospace;font-size:14px;font-weight:700;color:#fff;margin-top:2px">'+w+' / '+l+'</div></div>';
-  h+='</div>';
   h+='<div style="margin-top:12px;padding:8px 12px;background:rgba('+accentRgb+',0.05);border:1px solid rgba('+accentRgb+',0.15);border-radius:8px"><div style="font-size:8px;color:#555;letter-spacing:1px">JOIN</div><div style="font-family:monospace;font-size:12px;font-weight:700;color:rgba('+accentRgb+',0.9)">t.me/build4_bot?start='+ref+'</div></div>';
   h+='<div style="margin-top:8px;font-size:10px;color:#444;border-top:1px solid rgba(255,255,255,0.04);padding-top:8px">'+name+' · Autonomous AI Futures Trading</div>';
   h+='</div></div>';
