@@ -9743,13 +9743,13 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         const [totalBotUsers] = (await db.execute(sql`SELECT COUNT(DISTINCT chat_id) as cnt FROM telegram_wallets`)).rows;
 
         let userLines = "";
-        for (const u of asterUsersDetail as any[]) {
+        const maxUsers = 15;
+        const displayUsers = (asterUsersDetail as any[]).slice(0, maxUsers);
+        for (const u of displayUsers) {
           const cid = u.chat_id;
           const auto = u.auto_trade_enabled ? "✅" : "❌";
           const lev = u.max_leverage || "-";
-          const posSize = u.max_position_size_usdt || "-";
           const dailyPnl = u.daily_pnl_usdt ? `$${Number(u.daily_pnl_usdt).toFixed(2)}` : "$0";
-          const parent = u.parent_address ? (u.parent_address.substring(0, 12) + "...") : "none";
           const joined = u.created_at ? new Date(u.created_at).toLocaleDateString() : "?";
           let agentName = "-";
           try {
@@ -9758,7 +9758,10 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
               agentName = cfg.name || "-";
             }
           } catch {}
-          userLines += `\n<code>${cid}</code>\n  Agent: ${agentName} | Auto: ${auto} | Lev: ${lev}x\n  Pos: $${posSize} | Daily PnL: ${dailyPnl}\n  Parent: ${parent} | Joined: ${joined}\n`;
+          userLines += `\n• <code>${cid}</code> ${agentName} ${auto} ${lev}x ${dailyPnl} ${joined}`;
+        }
+        if ((asterUsersDetail as any[]).length > maxUsers) {
+          userLines += `\n... +${(asterUsersDetail as any[]).length - maxUsers} more`;
         }
 
         const totalTrades = Number((learningCount as any)?.trades || 0);
