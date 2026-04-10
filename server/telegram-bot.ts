@@ -9728,7 +9728,11 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           ORDER BY ac.created_at DESC
         `)).rows;
 
-        const [learningCount] = (await db.execute(sql`SELECT COUNT(*) as cnt, COALESCE(SUM(total_trades),0) as trades, COALESCE(SUM(total_wins),0) as wins FROM aster_agent_learning`)).rows;
+        let learningCount: any = { cnt: 0, trades: 0, wins: 0 };
+        try {
+          const [lc] = (await db.execute(sql`SELECT COUNT(*) as cnt, COALESCE(SUM(total_trades),0) as trades, COALESCE(SUM(total_wins),0) as wins FROM aster_agent_learning`)).rows;
+          learningCount = lc || learningCount;
+        } catch {}
 
         let tradeHistoryStats = { total: 0, volume: 0, pnl: 0 };
         try {
