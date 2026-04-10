@@ -707,7 +707,6 @@ function getPnlParams(posIdx){
   var pSign2=totalPnl>=0?'+':'';
   var txt=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @Aster_DEX';
   var tgTxt=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on Aster DEX';
-  if(w+l>0){txt+='\\nWin Rate: '+Math.round(w/(w+l)*100)+'%';tgTxt+='\\nWin Rate: '+Math.round(w/(w+l)*100)+'%';}
   txt+='\\nhttps://t.me/BUILD4_BOT';tgTxt+='\\nhttps://t.me/BUILD4_BOT';
   return{
     imgParams:'pct='+overallPct.toFixed(2)+'&pnl='+totalPnl.toFixed(2)+'&w='+w+'&l='+l+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName)+'&ref='+ref,

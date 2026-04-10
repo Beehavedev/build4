@@ -113,14 +113,7 @@ export async function generatePnlCardImage(p: PnlCardParams): Promise<Buffer> {
   <text x="340" y="374" font-family="SF Mono,Consolas,monospace" font-size="22" font-weight="700" fill="#ffffff">$${p.markPrice.toFixed(p.markPrice < 1 ? 6 : 2)}</text>
   ` : ''}
 
-  <!-- Stats row -->
-  <rect x="60" y="${showPrices ? 415 : 320}" width="180" height="70" rx="10" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
-  <text x="80" y="${showPrices ? 440 : 345}" font-family="Arial,sans-serif" font-size="11" fill="#555" letter-spacing="1.5">WIN RATE</text>
-  <text x="80" y="${showPrices ? 469 : 374}" font-family="SF Mono,Consolas,monospace" font-size="22" font-weight="700" fill="${winRate >= 50 ? '#0ecb81' : '#f6465d'}">${winRate}%</text>
-
-  <rect x="260" y="${showPrices ? 415 : 320}" width="180" height="70" rx="10" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
-  <text x="280" y="${showPrices ? 440 : 345}" font-family="Arial,sans-serif" font-size="11" fill="#555" letter-spacing="1.5">W / L</text>
-  <text x="280" y="${showPrices ? 469 : 374}" font-family="SF Mono,Consolas,monospace" font-size="22" font-weight="700" fill="#ffffff">${p.wins} / ${p.losses}</text>
+  <!-- Stats row removed -->
 
   <!-- Referral section -->
   <rect x="60" y="${CARD_H - 120}" width="${CARD_W - 120}" height="60" rx="12" fill="rgba(${accentRgb},0.05)" stroke="rgba(${accentRgb},0.15)" stroke-width="1"/>
