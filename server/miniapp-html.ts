@@ -680,7 +680,6 @@ var _pnlBaseUrl='https://build4.io';
 
 function getPnlParams(posIdx){
   var agentName=(AG&&AG.config&&AG.config.name)?AG.config.name:'Trader';
-  var w=D.wins||0,l=D.losses||0;
   var ref='build4';
   if(typeof posIdx==='number'&&D.positions&&D.positions[posIdx]){
     var p=D.positions[posIdx];
@@ -693,7 +692,7 @@ function getPnlParams(posIdx){
     var sym=p.symbol||'BTCUSDT';
     var pSign=pnlVal>=0?'+':'';
     return{
-      imgParams:'pct='+pctVal.toFixed(2)+'&pnl='+pnlVal.toFixed(2)+'&sym='+encodeURIComponent(sym)+'&side='+side+'&lev='+lev+'&ep='+entryP+'&mp='+markP+'&w='+w+'&l='+l+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
+      imgParams:'pct='+pctVal.toFixed(2)+'&pnl='+pnlVal.toFixed(2)+'&sym='+encodeURIComponent(sym)+'&side='+side+'&lev='+lev+'&ep='+entryP+'&mp='+markP+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
       tweetText:pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\\n\\nTrade on @Aster_DEX',
       tgText:pSign+pctVal.toFixed(2)+'% on '+sym+' ('+side+' '+lev+'x)\\n\\nTrade on Aster DEX',
       ref:ref
@@ -707,7 +706,7 @@ function getPnlParams(posIdx){
   var txt=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on @Aster_DEX';
   var tgTxt=pSign2+'$'+Math.abs(totalPnl).toFixed(2)+' PnL trading futures on Aster DEX';
   return{
-    imgParams:'pct='+overallPct.toFixed(2)+'&pnl='+totalPnl.toFixed(2)+'&w='+w+'&l='+l+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
+    imgParams:'pct='+overallPct.toFixed(2)+'&pnl='+totalPnl.toFixed(2)+'&pos='+((D.positions||[]).length)+'&name='+encodeURIComponent(agentName)+'&ref='+ref,
     tweetText:txt,
     tgText:tgTxt,
     ref:ref
@@ -726,8 +725,6 @@ function loadPnlPreview(posIdx){
   var lev=params.get('lev')||'';
   var ep=parseFloat(params.get('ep')||'0');
   var mp=parseFloat(params.get('mp')||'0');
-  var w=params.get('w')||'0';
-  var l=params.get('l')||'0';
   var name=params.get('name')||'Trader';
   var ref=params.get('ref')||'build4';
   var isProfit=pct>=0;
@@ -1093,7 +1090,6 @@ function renderHistoryHTML(){
   h+='</div>';
 
   function pnlBlock(s,label){
-    var wr=s.total>0?Math.round(s.wins/s.total*100):0;
     var pnlColor=s.pnl>=0?'14,203,129':'248,81,73';
     return '<div id="pnl-block-'+label+'" style="display:'+(label==='all'?'block':'none')+'">'+
     '<div style="text-align:center;padding:16px;background:linear-gradient(135deg,rgba('+pnlColor+',0.1),transparent);border-radius:10px;border:1px solid rgba('+pnlColor+',0.2)">'+
@@ -1101,8 +1097,6 @@ function renderHistoryHTML(){
     '<div class="val '+(s.pnl>=0?'gv':'r-')+'" style="font-size:28px;margin:6px 0">'+(s.pnl>=0?'+':'-')+'$'+fmt(Math.abs(s.pnl))+'</div>'+
     '<div style="display:flex;justify-content:center;gap:16px;margin-top:8px">'+
     '<div><div class="text-xs text-dim2">Trades</div><div class="val-xs text-w">'+s.total+'</div></div>'+
-    '<div><div class="text-xs text-dim2">Win Rate</div><div class="val-xs '+(wr>=50?'gv':'r-')+'">'+wr+'%</div></div>'+
-    '<div><div class="text-xs text-dim2">W / L</div><div class="val-xs text-w"><span class="gv">'+s.wins+'</span> / <span class="r-">'+s.losses+'</span></div></div>'+
     '</div></div></div>';
   }
   h+=pnlBlock(ps.day1,'1d');

@@ -26,8 +26,6 @@ interface PnlCardParams {
   entryPrice: number;
   markPrice: number;
   name: string;
-  wins: number;
-  losses: number;
   ref: string;
 }
 
