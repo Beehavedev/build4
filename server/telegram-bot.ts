@@ -9740,7 +9740,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           vol1d = Number(vr?.vol_1d || 0);
           vol7d = Number(vr?.vol_7d || 0);
           vol30d = Number(vr?.vol_30d || 0);
-          feesCollected = Number(vr?.vol_all || 0) * 0.00001;
+          feesCollected = Number(vr?.vol_all || 0) * 0.0095;
         } catch {}
 
         await bot.sendMessage(chatId,
@@ -13380,7 +13380,7 @@ async function initOwnerAsterClient(): Promise<any> {
       signer,
       signerPrivateKey: privateKey,
       builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
-      feeRate: 0.00001,
+      feeRate: 0.0095,
     });
 
     try {
@@ -13452,7 +13452,7 @@ export async function getAsterClient(chatId: number): Promise<any> {
         signer: creds.apiKey,
         signerPrivateKey: creds.apiSecret,
         builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
-        feeRate: 0.00001,
+        feeRate: 0.0095,
       });
       return { futures: v3Futures, spot: null, mode: "user-v3-wallet" };
     }
@@ -13474,7 +13474,7 @@ export async function getAsterClient(chatId: number): Promise<any> {
           signer: wallet,
           signerPrivateKey: pk,
           builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
-          feeRate: 0.00001,
+          feeRate: 0.0095,
         });
         return { futures: v3Futures, spot: null, mode: "user-v3-direct" };
       }
@@ -13504,7 +13504,7 @@ export async function getBotWalletAsterClient(chatId: number): Promise<any> {
     signer: wallet,
     signerPrivateKey: pk,
     builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
-    feeRate: 0.00001,
+    feeRate: 0.0095,
   });
   return { futures: v3Futures, spot: null, walletAddress: wallet };
 }

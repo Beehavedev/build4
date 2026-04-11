@@ -794,7 +794,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
                 signer: creds.apiKey,
                 signerPrivateKey: creds.apiSecret,
                 builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
-                feeRate: 0.00001,
+                feeRate: 0.0095,
               });
               client = { futures: v3Futures, spot: null, walletAddress: parentAddress };
               asterApiWalletAddr = creds.apiKey;
@@ -999,14 +999,14 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
             if (pk) {
               const { createAsterV3FuturesClient } = await import("./aster-client");
-              botFc = createAsterV3FuturesClient({ user: botWalletAddr, signer: botWalletAddr, signerPrivateKey: pk, builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4", feeRate: 0.00001 });
+              botFc = createAsterV3FuturesClient({ user: botWalletAddr, signer: botWalletAddr, signerPrivateKey: pk, builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4", feeRate: 0.0095 });
               console.log(`[MiniApp] Trying bot wallet ${botWalletAddr.substring(0, 10)} with own key`);
             } else {
               const asterPk = process.env.ASTER_PRIVATE_KEY;
               const asterSigner = process.env.ASTER_SIGNER_ADDRESS;
               if (asterPk) {
                 const { createAsterV3FuturesClient } = await import("./aster-client");
-                botFc = createAsterV3FuturesClient({ user: botWalletAddr, signer: asterSigner || botWalletAddr, signerPrivateKey: asterPk, builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4", feeRate: 0.00001 });
+                botFc = createAsterV3FuturesClient({ user: botWalletAddr, signer: asterSigner || botWalletAddr, signerPrivateKey: asterPk, builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4", feeRate: 0.0095 });
                 console.log(`[MiniApp] Trying bot wallet ${botWalletAddr.substring(0, 10)} with ASTER_PRIVATE_KEY signer`);
               }
             }
@@ -1343,7 +1343,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
                 signer: walletAddr,
                 signerPrivateKey: pk,
                 builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
-                feeRate: 0.00001,
+                feeRate: 0.0095,
               });
 
               let botSpot = 0;

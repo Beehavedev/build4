@@ -842,7 +842,7 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
   const signer = config.signer;
   const { signerPrivateKey } = config;
   const builderAddress = config.builder;
-  const builderFeeRate = config.feeRate ?? 0.00001;
+  const builderFeeRate = config.feeRate ?? 0.0095;
 
   async function request(path: string, options: AsterRequestOptions = {}) {
     const { method = "GET", params = {} } = options;
