@@ -250,7 +250,7 @@ function renderPositionsHTML(){
     h+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">🎯</div><div class="text-dim text-sm">No open positions</div><div class="text-xs text-dim2 mt-1">Place a trade to get started</div></div>';
   }else{
     pos.forEach(function(p,idx){
-      var side=parseFloat(p.positionAmt||p.size||'0')>0?'LONG':(parseFloat(p.positionAmt||p.size||'0')<0?'SHORT':(p.side||''));
+      var side=p.side||(parseFloat(p.positionAmt||'0')>0?'LONG':(parseFloat(p.positionAmt||'0')<0?'SHORT':'LONG'));
       var amt=Math.abs(parseFloat(p.positionAmt||p.size||'0'));
       var entry=parseFloat(p.entryPrice||'0');
       var mark=parseFloat(p.markPrice||'0');
