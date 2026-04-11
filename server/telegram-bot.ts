@@ -9761,7 +9761,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
                   client = createAsterCodeFuturesClient(parentAddr, creds.apiKey, creds.apiSecret, getDefaultAsterCodeConfig());
                 } else if (isV3) {
                   const { createAsterV3FuturesClient } = await import("./aster-client");
-                  client = createAsterV3FuturesClient({ user: parentAddr, signer: creds.apiKey, signerPrivateKey: creds.apiSecret, builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4", feeRate: 0.0095 });
+                  client = createAsterV3FuturesClient({ user: parentAddr, signer: creds.apiKey, signerPrivateKey: creds.apiSecret, builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4", feeRate: 0.001 });
                 } else {
                   const { createAsterFuturesClient } = await import("./aster-client");
                   client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
@@ -9791,7 +9791,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
               } catch { failed++; }
             }
 
-            const feesCollected = totalVol * 0.00001;
+            const feesCollected = totalVol * 0.001;
             await bot.sendMessage(volChatId,
               `📈 <b>Volume Report</b> (${processed} traders scanned)\n\n` +
               `• Daily: <b>${fmtUsd(vol1d)}</b>\n` +
@@ -9820,7 +9820,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         const { asterCodeApproveBuilder } = await import("./aster-code");
 
         const allCreds = (await db.execute(sql`SELECT chat_id FROM aster_credentials`)).rows;
-        await bot.sendMessage(chatId, `🔄 Re-approving builder for ${allCreds.length} users at 0.95% fee rate...`);
+        await bot.sendMessage(chatId, `🔄 Re-approving builder for ${allCreds.length} users at 0.1% fee rate...`);
 
         let success = 0, failed = 0;
         const errors: string[] = [];
@@ -9855,7 +9855,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
               userPrivateKey,
               {
                 builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
-                maxFeeRate: "0.0095",
+                maxFeeRate: "0.001",
                 builderName: "BUILD4",
               }
             );
@@ -13499,7 +13499,7 @@ async function initOwnerAsterClient(): Promise<any> {
       signer,
       signerPrivateKey: privateKey,
       builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
-      feeRate: 0.0095,
+      feeRate: 0.001,
     });
 
     try {
@@ -13571,7 +13571,7 @@ export async function getAsterClient(chatId: number): Promise<any> {
         signer: creds.apiKey,
         signerPrivateKey: creds.apiSecret,
         builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
-        feeRate: 0.0095,
+        feeRate: 0.001,
       });
       return { futures: v3Futures, spot: null, mode: "user-v3-wallet" };
     }
@@ -13593,7 +13593,7 @@ export async function getAsterClient(chatId: number): Promise<any> {
           signer: wallet,
           signerPrivateKey: pk,
           builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
-          feeRate: 0.0095,
+          feeRate: 0.001,
         });
         return { futures: v3Futures, spot: null, mode: "user-v3-direct" };
       }
@@ -13623,7 +13623,7 @@ export async function getBotWalletAsterClient(chatId: number): Promise<any> {
     signer: wallet,
     signerPrivateKey: pk,
     builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
-    feeRate: 0.0095,
+    feeRate: 0.001,
   });
   return { futures: v3Futures, spot: null, walletAddress: wallet };
 }

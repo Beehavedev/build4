@@ -1014,7 +1014,7 @@ export async function resumeEnabledAgents(): Promise<void> {
         } else if (isV3ApiWallet) {
           const parentAddr = creds.parentAddress || creds.apiKey;
           const { createAsterV3FuturesClient } = await import("./aster-client");
-          client = createAsterV3FuturesClient({ user: parentAddr, signer: creds.apiKey, signerPrivateKey: creds.apiSecret, builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4", feeRate: 0.0095 });
+          client = createAsterV3FuturesClient({ user: parentAddr, signer: creds.apiKey, signerPrivateKey: creds.apiSecret, builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4", feeRate: 0.001 });
         } else {
           const { createAsterFuturesClient } = await import("./aster-client");
           client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });

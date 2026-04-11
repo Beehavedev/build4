@@ -20,7 +20,7 @@ import {
 } from "./aster-client";
 
 const BUILD4_BUILDER_ADDRESS = "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4";
-const BUILD4_FEE_RATE = 0.0095;
+const BUILD4_FEE_RATE = 0.001;
 import {
   type UserSkillState,
   mergeSkillStates,

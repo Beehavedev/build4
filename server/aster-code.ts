@@ -5,8 +5,8 @@ const REQUEST_TIMEOUT_MS = 20000;
 
 const BUILD4_BUILDER_ADDRESS = "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4";
 const BUILD4_BUILDER_NAME = "BUILD4";
-const BUILD4_MAX_FEE_RATE = "0.0095";
-const BUILD4_FEE_RATE = "0.0095";
+const BUILD4_MAX_FEE_RATE = "0.001";
+const BUILD4_FEE_RATE = "0.001";
 
 export function getDefaultAsterCodeConfig(): AsterCodeConfig {
   return {
@@ -400,7 +400,7 @@ export async function asterCodeApproveBuilder(
 ): Promise<any> {
   const reqParams: Record<string, any> = {
     builder: params.builder,
-    maxFeeRate: params.maxFeeRate || "0.0095",
+    maxFeeRate: params.maxFeeRate || "0.001",
     builderName: params.builderName || "BUILD4",
   };
 
