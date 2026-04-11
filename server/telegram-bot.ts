@@ -9715,80 +9715,44 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         const { db } = await import("./db");
         const { sql } = await import("drizzle-orm");
 
-        const [asterUserCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_credentials`)).rows;
-        const [autoCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_trading_limits WHERE auto_trade_enabled = true`)).rows;
-        const [limitsCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_trading_limits`)).rows;
+        const fmtUsd = (n: number) => n >= 1000 ? `$${(n/1000).toFixed(2)}k` : `$${n.toFixed(2)}`;
 
-        const asterUsersDetail = (await db.execute(sql`
-          SELECT ac.chat_id, ac.parent_address, ac.created_at,
-            atl.auto_trade_enabled, atl.max_leverage, atl.daily_pnl_usdt, atl.max_position_size_usdt,
-            atl.agent_config_json
-          FROM aster_credentials ac
-          LEFT JOIN aster_trading_limits atl ON ac.chat_id = atl.chat_id
-          ORDER BY ac.created_at DESC
-        `)).rows;
+        const [tgUsers] = (await db.execute(sql`SELECT COUNT(DISTINCT chat_id) as cnt FROM telegram_wallets`)).rows;
+        const [activeWallets] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM telegram_wallets WHERE wallet_address IS NOT NULL`)).rows;
+        const [asterTraders] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_credentials`)).rows;
 
-        let learningCount: any = { cnt: 0, trades: 0, wins: 0 };
+        const now = Date.now();
+        const day1 = new Date(now - 24*60*60*1000).toISOString();
+        const day7 = new Date(now - 7*24*60*60*1000).toISOString();
+        const day30 = new Date(now - 30*24*60*60*1000).toISOString();
+
+        let vol1d = 0, vol7d = 0, vol30d = 0, feesCollected = 0;
         try {
-          const [lc] = (await db.execute(sql`SELECT COUNT(*) as cnt, COALESCE(SUM(total_trades),0) as trades, COALESCE(SUM(total_wins),0) as wins FROM aster_agent_learning`)).rows;
-          learningCount = lc || learningCount;
-        } catch {}
-
-        let tradeHistoryStats = { total: 0, volume: 0, pnl: 0 };
-        try {
-          const [th] = (await db.execute(sql`
-            SELECT COUNT(*) as cnt,
-              COALESCE(SUM(ABS(COALESCE(quantity,0) * COALESCE(entry_price,0))),0) as volume,
-              COALESCE(SUM(COALESCE(pnl,0)),0) as total_pnl
+          const volQuery = (await db.execute(sql`
+            SELECT
+              COALESCE(SUM(CASE WHEN opened_at >= ${day1}::timestamp THEN ABS(COALESCE(quantity,0) * COALESCE(entry_price,0)) ELSE 0 END), 0) as vol_1d,
+              COALESCE(SUM(CASE WHEN opened_at >= ${day7}::timestamp THEN ABS(COALESCE(quantity,0) * COALESCE(entry_price,0)) ELSE 0 END), 0) as vol_7d,
+              COALESCE(SUM(CASE WHEN opened_at >= ${day30}::timestamp THEN ABS(COALESCE(quantity,0) * COALESCE(entry_price,0)) ELSE 0 END), 0) as vol_30d,
+              COALESCE(SUM(ABS(COALESCE(quantity,0) * COALESCE(entry_price,0))), 0) as vol_all
             FROM aster_agent_trades
           `)).rows;
-          tradeHistoryStats.total = Number(th?.cnt || 0);
-          tradeHistoryStats.volume = Number(th?.volume || 0);
-          tradeHistoryStats.pnl = Number(th?.total_pnl || 0);
+          const vr = volQuery[0] as any;
+          vol1d = Number(vr?.vol_1d || 0);
+          vol7d = Number(vr?.vol_7d || 0);
+          vol30d = Number(vr?.vol_30d || 0);
+          feesCollected = Number(vr?.vol_all || 0) * 0.00001;
         } catch {}
 
-        const [totalBotUsers] = (await db.execute(sql`SELECT COUNT(DISTINCT chat_id) as cnt FROM telegram_wallets`)).rows;
-
-        let userLines = "";
-        const maxUsers = 15;
-        const displayUsers = (asterUsersDetail as any[]).slice(0, maxUsers);
-        for (const u of displayUsers) {
-          const cid = u.chat_id;
-          const auto = u.auto_trade_enabled ? "✅" : "❌";
-          const lev = u.max_leverage || "-";
-          const dailyPnl = u.daily_pnl_usdt ? `$${Number(u.daily_pnl_usdt).toFixed(2)}` : "$0";
-          const joined = u.created_at ? new Date(u.created_at).toLocaleDateString() : "?";
-          let agentName = "-";
-          try {
-            if (u.agent_config_json) {
-              const cfg = typeof u.agent_config_json === "string" ? JSON.parse(u.agent_config_json) : u.agent_config_json;
-              agentName = cfg.name || "-";
-            }
-          } catch {}
-          userLines += `\n• <code>${cid}</code> ${agentName} ${auto} ${lev}x ${dailyPnl} ${joined}`;
-        }
-        if ((asterUsersDetail as any[]).length > maxUsers) {
-          userLines += `\n... +${(asterUsersDetail as any[]).length - maxUsers} more`;
-        }
-
-        const totalTrades = Number((learningCount as any)?.trades || 0);
-        const totalWins = Number((learningCount as any)?.wins || 0);
-        const winRate = totalTrades > 0 ? ((totalWins / totalTrades) * 100).toFixed(1) : "0";
-
         await bot.sendMessage(chatId,
-          `📊 <b>Aster DEX Stats</b>\n\n` +
-          `<b>👥 Users</b>\n` +
-          `• Total Bot Users: <b>${Number(totalBotUsers?.cnt || 0)}</b>\n` +
-          `• Aster Connected: <b>${Number(asterUserCount?.cnt || 0)}</b>\n` +
-          `• Trading Limits Set: <b>${Number(limitsCount?.cnt || 0)}</b>\n` +
-          `• Auto-Trade On: <b>${Number(autoCount?.cnt || 0)}</b>\n\n` +
-          `<b>📈 Trading</b>\n` +
-          `• Agent Trades Logged: <b>${totalTrades}</b>\n` +
-          `• Agent Wins: <b>${totalWins}</b> (${winRate}%)\n` +
-          `• Trade Records: <b>${tradeHistoryStats.total}</b>\n` +
-          `• Total Volume: <b>$${tradeHistoryStats.volume.toFixed(2)}</b>\n` +
-          `• Total PnL: <b>${tradeHistoryStats.pnl >= 0 ? '+' : ''}$${tradeHistoryStats.pnl.toFixed(2)}</b>\n\n` +
-          `<b>👤 User Details</b>${userLines || "\nNo users yet"}`,
+          `📊 <b>BUILD4 Platform Stats</b>\n\n` +
+          `👥 Telegram Users: <b>${Number(tgUsers?.cnt || 0)}</b>\n` +
+          `💼 Active Wallets: <b>${Number(activeWallets?.cnt || 0)}</b>\n` +
+          `⚡ Aster DEX Traders: <b>${Number(asterTraders?.cnt || 0)}</b>\n\n` +
+          `📈 <b>Volume</b>\n` +
+          `• Daily: <b>${fmtUsd(vol1d)}</b>\n` +
+          `• 7 Days: <b>${fmtUsd(vol7d)}</b>\n` +
+          `• 30 Days: <b>${fmtUsd(vol30d)}</b>\n\n` +
+          `💰 Fees Collected: <b>${fmtUsd(feesCollected)}</b>`,
           { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
       } catch (e: any) {
