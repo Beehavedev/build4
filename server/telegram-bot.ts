@@ -9743,9 +9743,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             let processed = 0, failed = 0;
 
             const allCreds = (await volDb.execute(volSql`SELECT chat_id FROM aster_credentials`)).rows;
-            const topSymbols = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT"];
 
-            const BATCH_SIZE = 10;
+            const BATCH_SIZE = 15;
             for (let i = 0; i < allCreds.length; i += BATCH_SIZE) {
               const batch = allCreds.slice(i, i + BATCH_SIZE);
               const batchResults = await Promise.allSettled(batch.map(async (row: any) => {
@@ -9769,24 +9768,28 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
                   client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
                 }
 
-                const symResults = await Promise.allSettled(topSymbols.map(async (sym) => {
-                  const trades = await Promise.race([
-                    client.userTrades(sym, 500),
-                    new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 3000))
-                  ]);
-                  if (!Array.isArray(trades)) return;
-                  for (const t of trades as any[]) {
-                    const qty = Math.abs(parseFloat(t.qty || "0"));
-                    const price = parseFloat(t.price || "0");
-                    const quoteQty = parseFloat(t.quoteQty || "0");
-                    const notional = quoteQty > 0 ? quoteQty : qty * price;
-                    const tradeTime = parseInt(t.time || "0");
-                    totalVol += notional;
-                    if (tradeTime >= cutoff1d) vol1d += notional;
-                    if (tradeTime >= cutoff7d) vol7d += notional;
-                    if (tradeTime >= cutoff30d) vol30d += notional;
+                const incomeRecords = await Promise.race([
+                  client.income(undefined, 1000),
+                  new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 4000))
+                ]) as any[];
+
+                if (!Array.isArray(incomeRecords)) return;
+                for (const r of incomeRecords) {
+                  const amt = Math.abs(parseFloat(r.income || "0"));
+                  const t = parseInt(r.time || "0");
+                  if (r.incomeType === "COMMISSION" || r.incomeType === "TRADING_FEE") {
+                    const estVol = amt / 0.0005;
+                    totalVol += estVol;
+                    if (t >= cutoff1d) vol1d += estVol;
+                    if (t >= cutoff7d) vol7d += estVol;
+                    if (t >= cutoff30d) vol30d += estVol;
+                  } else if (r.incomeType === "REALIZED_PNL") {
+                    totalVol += amt * 10;
+                    if (t >= cutoff1d) vol1d += amt * 10;
+                    if (t >= cutoff7d) vol7d += amt * 10;
+                    if (t >= cutoff30d) vol30d += amt * 10;
                   }
-                }));
+                }
                 processed++;
               }));
               for (const r of batchResults) { if (r.status === "rejected") failed++; }
@@ -9795,11 +9798,11 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             const feesCollected = totalVol * 0.001;
             await bot.sendMessage(volChatId,
               `📈 <b>Volume Report</b> (${processed} traders scanned)\n\n` +
-              `• Daily: <b>${fmtUsd(vol1d)}</b>\n` +
-              `• 7 Days: <b>${fmtUsd(vol7d)}</b>\n` +
-              `• 30 Days: <b>${fmtUsd(vol30d)}</b>\n` +
-              `• All Time: <b>${fmtUsd(totalVol)}</b>\n\n` +
-              `💰 Fees Collected: <b>${fmtUsd(feesCollected)}</b>`,
+              `• Daily: <b>~${fmtUsd(vol1d)}</b>\n` +
+              `• 7 Days: <b>~${fmtUsd(vol7d)}</b>\n` +
+              `• 30 Days: <b>~${fmtUsd(vol30d)}</b>\n` +
+              `• All Time: <b>~${fmtUsd(totalVol)}</b>\n\n` +
+              `💰 Est. Fees: <b>~${fmtUsd(feesCollected)}</b>`,
               { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, volChatId) }
             );
           } catch (e: any) {
