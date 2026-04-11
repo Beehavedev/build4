@@ -382,7 +382,7 @@ function renderDash(){
     h+='</div>';
   }
 
-  var perpAccount=D.marginBalance||(D.walletBalance||0)+(D.unrealizedPnl||0);
+  var perpAccount=(D.availableMargin||0)+(D.positionMargin||0)+(D.unrealizedPnl||0);
   var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
 
   var accentColor=totalPnl>=0?'14,203,129':'248,81,73';
