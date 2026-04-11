@@ -392,7 +392,7 @@ function renderDash(){
   h+='<div class="val gv" style="font-size:32px;margin:4px 0">$'+fmt(perpAccount)+'</div>';
   h+='<div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap">';
   h+='<div><span class="text-xs text-dim">Available</span><div class="val-xs gv">$'+fmt(D.availableMargin)+'</div></div>';
-  h+='<div><span class="text-xs text-dim">In Positions</span><div class="val-xs" style="color:var(--blue)">$'+fmt(Math.max(0,perpAccount-(D.availableMargin||0)))+'</div></div>';
+  h+='<div><span class="text-xs text-dim">In Positions</span><div class="val-xs" style="color:var(--blue)">$'+fmt(D.positionMargin||0)+'</div></div>';
   h+='<div><span class="text-xs text-dim">BSC Wallet</span><div class="val-xs gv">$'+fmt(D.bscBalance)+'</div></div>';
   h+='<div><span class="text-xs text-dim">Unrealized PnL</span><div class="val-xs '+pnlClass(D.unrealizedPnl)+'">'+(D.unrealizedPnl>=0?'+':'')+' $'+fmt(Math.abs(D.unrealizedPnl))+'</div></div>';
   h+='</div></div>';

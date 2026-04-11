@@ -967,6 +967,8 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         };
       });
 
+      const totalPositionMargin = positionList.reduce((sum: number, p: any) => sum + (p.margin || 0), 0);
+
       let realizedPnl = 0;
       let wins = 0;
       let losses = 0;
@@ -1125,6 +1127,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         wins,
         losses,
         positions: positionList,
+        positionMargin: totalPositionMargin,
         recentIncome: incomeList,
       });
     } catch (e: any) {
