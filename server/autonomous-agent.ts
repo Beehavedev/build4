@@ -256,6 +256,12 @@ export async function startAgent(
   saveAgentConfigToDb(chatId, state.config);
   state.errors = 0;
 
+  try {
+    const { db } = await import("./db");
+    const { sql } = await import("drizzle-orm");
+    await db.execute(sql`UPDATE aster_trading_limits SET auto_trade_enabled = true, updated_at = now() WHERE chat_id = ${chatId}`);
+  } catch {}
+
   await loadLearningFromDb(chatId);
 
   state.openPositions.clear();
@@ -309,6 +315,13 @@ export function stopAgent(chatId: string): boolean {
     clearTimeout(state.timer);
     state.timer = null;
   }
+
+  import("./db").then(({ db }) =>
+    import("drizzle-orm").then(({ sql }) =>
+      db.execute(sql`UPDATE aster_trading_limits SET auto_trade_enabled = false, updated_at = now() WHERE chat_id = ${chatId}`)
+    )
+  ).catch(() => {});
+
   return true;
 }
 
