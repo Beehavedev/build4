@@ -9722,26 +9722,59 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         const [asterTraders] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_credentials`)).rows;
 
         const now = Date.now();
-        const day1 = new Date(now - 24*60*60*1000).toISOString();
-        const day7 = new Date(now - 7*24*60*60*1000).toISOString();
-        const day30 = new Date(now - 30*24*60*60*1000).toISOString();
+        const cutoff1d = now - 24*60*60*1000;
+        const cutoff7d = now - 7*24*60*60*1000;
+        const cutoff30d = now - 30*24*60*60*1000;
 
-        let vol1d = 0, vol7d = 0, vol30d = 0, feesCollected = 0;
-        try {
-          const volQuery = (await db.execute(sql`
-            SELECT
-              COALESCE(SUM(CASE WHEN opened_at >= ${day1}::timestamp THEN ABS(COALESCE(quantity,0) * COALESCE(entry_price,0)) ELSE 0 END), 0) as vol_1d,
-              COALESCE(SUM(CASE WHEN opened_at >= ${day7}::timestamp THEN ABS(COALESCE(quantity,0) * COALESCE(entry_price,0)) ELSE 0 END), 0) as vol_7d,
-              COALESCE(SUM(CASE WHEN opened_at >= ${day30}::timestamp THEN ABS(COALESCE(quantity,0) * COALESCE(entry_price,0)) ELSE 0 END), 0) as vol_30d,
-              COALESCE(SUM(ABS(COALESCE(quantity,0) * COALESCE(entry_price,0))), 0) as vol_all
-            FROM aster_agent_trades
-          `)).rows;
-          const vr = volQuery[0] as any;
-          vol1d = Number(vr?.vol_1d || 0);
-          vol7d = Number(vr?.vol_7d || 0);
-          vol30d = Number(vr?.vol_30d || 0);
-          feesCollected = Number(vr?.vol_all || 0) * 0.0095;
-        } catch {}
+        let vol1d = 0, vol7d = 0, vol30d = 0, totalVol = 0;
+
+        await bot.sendMessage(chatId, `⏳ Fetching live volume from Aster for ${Number(asterTraders?.cnt || 0)} traders...`);
+
+        const allCreds = (await db.execute(sql`SELECT chat_id FROM aster_credentials`)).rows;
+        const symbols = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","SUIUSDT","ADAUSDT","AVAXUSDT","LINKUSDT"];
+
+        for (const row of allCreds) {
+          const cid = String((row as any).chat_id);
+          try {
+            const creds = await storage.getAsterCredentials(cid);
+            if (!creds) continue;
+
+            const parentAddr = creds.parentAddress || creds.apiKey;
+            const isAsterCode = creds.parentAddress && creds.parentAddress.startsWith("0x") && creds.apiKey.startsWith("0x") && creds.apiKey !== creds.parentAddress;
+            const isV3 = creds.apiSecret && creds.apiSecret.startsWith("0x") && creds.apiSecret.length === 66;
+
+            let client: any = null;
+            if (isAsterCode) {
+              const { createAsterCodeFuturesClient, getDefaultAsterCodeConfig } = await import("./aster-code");
+              client = createAsterCodeFuturesClient(parentAddr, creds.apiKey, creds.apiSecret, getDefaultAsterCodeConfig());
+            } else if (isV3) {
+              const { createAsterV3FuturesClient } = await import("./aster-client");
+              client = createAsterV3FuturesClient({ user: parentAddr, signer: creds.apiKey, signerPrivateKey: creds.apiSecret, builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4", feeRate: 0.0095 });
+            } else {
+              const { createAsterFuturesClient } = await import("./aster-client");
+              client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+            }
+
+            for (const sym of symbols) {
+              try {
+                const trades = await client.userTrades(sym, 500);
+                if (!Array.isArray(trades)) continue;
+                for (const t of trades) {
+                  const quoteQty = parseFloat(t.quoteQty || t.qty || "0") * parseFloat(t.price || "1");
+                  const tradeVol = Math.abs(parseFloat(t.quoteQty || "0") || quoteQty);
+                  const tradeTime = parseInt(t.time || "0");
+                  totalVol += tradeVol;
+                  if (tradeTime >= cutoff1d) vol1d += tradeVol;
+                  if (tradeTime >= cutoff7d) vol7d += tradeVol;
+                  if (tradeTime >= cutoff30d) vol30d += tradeVol;
+                }
+              } catch {}
+            }
+            await new Promise(r => setTimeout(r, 200));
+          } catch {}
+        }
+
+        const feesCollected = totalVol * 0.0095;
 
         await bot.sendMessage(chatId,
           `📊 <b>BUILD4 Platform Stats</b>\n\n` +
@@ -9751,7 +9784,8 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           `📈 <b>Volume</b>\n` +
           `• Daily: <b>${fmtUsd(vol1d)}</b>\n` +
           `• 7 Days: <b>${fmtUsd(vol7d)}</b>\n` +
-          `• 30 Days: <b>${fmtUsd(vol30d)}</b>\n\n` +
+          `• 30 Days: <b>${fmtUsd(vol30d)}</b>\n` +
+          `• All Time: <b>${fmtUsd(totalVol)}</b>\n\n` +
           `💰 Fees Collected: <b>${fmtUsd(feesCollected)}</b>`,
           { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
