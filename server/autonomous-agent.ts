@@ -66,6 +66,7 @@ interface AgentState {
   lastTradeCloseTime: number;
   circuitBreakerUntil: number;
   lastRegime: string;
+  symbolCooldowns: Map<string, number>;
 }
 
 const agentStates = new Map<string, AgentState>();
@@ -216,6 +217,7 @@ function createDefaultState(): AgentState {
     lastTradeCloseTime: 0,
     circuitBreakerUntil: 0,
     lastRegime: "UNKNOWN",
+    symbolCooldowns: new Map(),
   };
 }
 
@@ -493,8 +495,11 @@ async function runAgentLoop(
 
     let bestDecision: { decision: ClaudeDecision; snapshot: MarketSnapshot } | null = null;
 
+    const SYMBOL_COOLDOWN_MS = 300_000;
     for (const symbol of SCAN_PAIRS) {
       if (state.openPositions.has(symbol)) continue;
+      const symCooldown = state.symbolCooldowns.get(symbol);
+      if (symCooldown && now - symCooldown < SYMBOL_COOLDOWN_MS) continue;
       try {
         const { candles5m, candles15m, candles1h } = await fetchMultiTFCandles(futuresClient, symbol);
         if (candles5m.length < 26 || candles15m.length < 26) continue;
@@ -904,6 +909,7 @@ async function closePosition(
 
   state.dailyPnl += pnl;
   state.lastTradeCloseTime = Date.now();
+  state.symbolCooldowns.set(symbol, Date.now());
 
   if (pnl < 0) {
     state.consecutiveLosses++;
