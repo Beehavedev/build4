@@ -9732,6 +9732,22 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
         const allCreds = (await db.execute(sql`SELECT chat_id FROM aster_credentials`)).rows;
 
+        let allSymbols: string[] = [];
+        try {
+          const { createAsterFuturesClient } = await import("./aster-client");
+          const infoClient = createAsterFuturesClient({ apiKey: "", apiSecret: "" });
+          const info = await infoClient.exchangeInfo();
+          if (info?.symbols) {
+            allSymbols = info.symbols
+              .filter((s: any) => s.status === "TRADING" && (s.quoteAsset === "USDT" || s.symbol?.endsWith("USDT")))
+              .map((s: any) => s.symbol);
+          }
+        } catch {}
+        if (allSymbols.length === 0) {
+          allSymbols = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","SUIUSDT","ADAUSDT","AVAXUSDT","LINKUSDT","TONUSDT","PEPEUSDT","WIFUSDT","ARBUSDT","OPUSDT","MATICUSDT","DOTUSDT","NEARUSDT","APTUSDT","INJUSDT"];
+        }
+
+        let processedUsers = 0;
         for (const row of allCreds) {
           const cid = String((row as any).chat_id);
           try {
@@ -9754,22 +9770,25 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
               client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
             }
 
-            try {
-              const income = await client.income(undefined, 1000);
-              if (Array.isArray(income)) {
-                for (const inc of income) {
-                  if ((inc.incomeType || "") === "REALIZED_PNL" || (inc.incomeType || "") === "COMMISSION") {
-                    const amt = Math.abs(parseFloat(inc.income || "0"));
-                    const incTime = parseInt(inc.time || "0");
-                    totalVol += amt;
-                    if (incTime >= cutoff1d) vol1d += amt;
-                    if (incTime >= cutoff7d) vol7d += amt;
-                    if (incTime >= cutoff30d) vol30d += amt;
-                  }
+            for (const sym of allSymbols) {
+              try {
+                const trades = await client.userTrades(sym, 1000);
+                if (!Array.isArray(trades) || trades.length === 0) continue;
+                for (const t of trades) {
+                  const qty = Math.abs(parseFloat(t.qty || "0"));
+                  const price = parseFloat(t.price || "0");
+                  const quoteQty = parseFloat(t.quoteQty || "0");
+                  const notional = quoteQty > 0 ? quoteQty : qty * price;
+                  const tradeTime = parseInt(t.time || "0");
+                  totalVol += notional;
+                  if (tradeTime >= cutoff1d) vol1d += notional;
+                  if (tradeTime >= cutoff7d) vol7d += notional;
+                  if (tradeTime >= cutoff30d) vol30d += notional;
                 }
-              }
-            } catch {}
-            await new Promise(r => setTimeout(r, 200));
+              } catch {}
+            }
+            processedUsers++;
+            await new Promise(r => setTimeout(r, 100));
           } catch {}
         }
 
