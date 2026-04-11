@@ -9791,7 +9791,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
               } catch { failed++; }
             }
 
-            const feesCollected = totalVol * 0.0095;
+            const feesCollected = totalVol * 0.00001;
             await bot.sendMessage(volChatId,
               `📈 <b>Volume Report</b> (${processed} traders scanned)\n\n` +
               `• Daily: <b>${fmtUsd(vol1d)}</b>\n` +
@@ -9830,13 +9830,29 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             const creds = await storage.getAsterCredentials(cid);
             if (!creds) { failed++; errors.push(`${cid}: no creds`); continue; }
 
-            const parentAddr = creds.parentAddress || creds.apiKey;
-            const privateKey = creds.apiSecret;
+            const parentAddr = creds.parentAddress
+              ? creds.parentAddress.replace("astercode:", "")
+              : creds.apiKey;
+
+            let userPrivateKey: string | null = null;
+
+            const isAsterCode = creds.parentAddress?.startsWith("astercode:");
+            if (isAsterCode) {
+              userPrivateKey = await resolvePrivateKey(parseInt(cid), parentAddr);
+            } else {
+              userPrivateKey = creds.apiSecret;
+            }
+
+            if (!userPrivateKey) {
+              failed++;
+              errors.push(`${cid}: no private key`);
+              continue;
+            }
 
             await asterCodeApproveBuilder(
               "https://fapi.asterdex.com",
               parentAddr,
-              privateKey,
+              userPrivateKey,
               {
                 builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
                 maxFeeRate: "0.0095",
@@ -9844,7 +9860,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
               }
             );
             success++;
-            await new Promise(r => setTimeout(r, 500));
+            await new Promise(r => setTimeout(r, 300));
           } catch (e: any) {
             failed++;
             errors.push(`${cid}: ${e.message?.substring(0, 60)}`);
