@@ -9761,6 +9761,59 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
+    if (cmd === "areapprove" && !isGroup) {
+      const adminChatIdReapprove = process.env.ADMIN_CHAT_ID;
+      if (!adminChatIdReapprove || chatId.toString() !== adminChatIdReapprove) return;
+      try {
+        const { db } = await import("./db");
+        const { sql } = await import("drizzle-orm");
+        const { asterCodeApproveBuilder } = await import("./aster-code");
+
+        const allCreds = (await db.execute(sql`SELECT chat_id FROM aster_credentials`)).rows;
+        await bot.sendMessage(chatId, `🔄 Re-approving builder for ${allCreds.length} users at 0.95% fee rate...`);
+
+        let success = 0, failed = 0;
+        const errors: string[] = [];
+        for (const row of allCreds) {
+          const cid = String((row as any).chat_id);
+          try {
+            const creds = await storage.getAsterCredentials(cid);
+            if (!creds) { failed++; errors.push(`${cid}: no creds`); continue; }
+
+            const parentAddr = creds.parentAddress || creds.apiKey;
+            const privateKey = creds.apiSecret;
+
+            await asterCodeApproveBuilder(
+              "https://api.aster.exchange",
+              parentAddr,
+              privateKey,
+              {
+                builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
+                maxFeeRate: "0.0095",
+                builderName: "BUILD4",
+              }
+            );
+            success++;
+            await new Promise(r => setTimeout(r, 500));
+          } catch (e: any) {
+            failed++;
+            errors.push(`${cid}: ${e.message?.substring(0, 60)}`);
+          }
+        }
+
+        let msg = `✅ Builder re-approval complete\n\n` +
+          `• Success: <b>${success}</b>\n` +
+          `• Failed: <b>${failed}</b>`;
+        if (errors.length > 0) {
+          msg += `\n\n<b>Errors:</b>\n` + errors.slice(0, 10).map(e => `• <code>${e}</code>`).join("\n");
+        }
+        await bot.sendMessage(chatId, msg, { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, chatId) });
+      } catch (e: any) {
+        await bot.sendMessage(chatId, `Re-approval failed: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
+      }
+      return;
+    }
+
     if (cmd === "activatesub" && !isGroup) {
       const adminChatIdAct = process.env.ADMIN_CHAT_ID;
       if (!adminChatIdAct || chatId.toString() !== adminChatIdAct) return;
