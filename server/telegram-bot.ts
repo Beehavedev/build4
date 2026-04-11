@@ -9721,92 +9721,90 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         const [activeWallets] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM telegram_wallets WHERE wallet_address IS NOT NULL`)).rows;
         const [asterTraders] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_credentials`)).rows;
 
-        const now = Date.now();
-        const cutoff1d = now - 24*60*60*1000;
-        const cutoff7d = now - 7*24*60*60*1000;
-        const cutoff30d = now - 30*24*60*60*1000;
-
-        let vol1d = 0, vol7d = 0, vol30d = 0, totalVol = 0;
-
-        await bot.sendMessage(chatId, `⏳ Fetching live volume from Aster for ${Number(asterTraders?.cnt || 0)} traders...`);
-
-        const allCreds = (await db.execute(sql`SELECT chat_id FROM aster_credentials`)).rows;
-
-        let allSymbols: string[] = [];
-        try {
-          const { createAsterFuturesClient } = await import("./aster-client");
-          const infoClient = createAsterFuturesClient({ apiKey: "", apiSecret: "" });
-          const info = await infoClient.exchangeInfo();
-          if (info?.symbols) {
-            allSymbols = info.symbols
-              .filter((s: any) => s.status === "TRADING" && (s.quoteAsset === "USDT" || s.symbol?.endsWith("USDT")))
-              .map((s: any) => s.symbol);
-          }
-        } catch {}
-        if (allSymbols.length === 0) {
-          allSymbols = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","SUIUSDT","ADAUSDT","AVAXUSDT","LINKUSDT","TONUSDT","PEPEUSDT","WIFUSDT","ARBUSDT","OPUSDT","MATICUSDT","DOTUSDT","NEARUSDT","APTUSDT","INJUSDT"];
-        }
-
-        let processedUsers = 0;
-        for (const row of allCreds) {
-          const cid = String((row as any).chat_id);
-          try {
-            const creds = await storage.getAsterCredentials(cid);
-            if (!creds) continue;
-
-            const parentAddr = creds.parentAddress || creds.apiKey;
-            const isAsterCode = creds.parentAddress && creds.parentAddress.startsWith("0x") && creds.apiKey.startsWith("0x") && creds.apiKey !== creds.parentAddress;
-            const isV3 = creds.apiSecret && creds.apiSecret.startsWith("0x") && creds.apiSecret.length === 66;
-
-            let client: any = null;
-            if (isAsterCode) {
-              const { createAsterCodeFuturesClient, getDefaultAsterCodeConfig } = await import("./aster-code");
-              client = createAsterCodeFuturesClient(parentAddr, creds.apiKey, creds.apiSecret, getDefaultAsterCodeConfig());
-            } else if (isV3) {
-              const { createAsterV3FuturesClient } = await import("./aster-client");
-              client = createAsterV3FuturesClient({ user: parentAddr, signer: creds.apiKey, signerPrivateKey: creds.apiSecret, builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4", feeRate: 0.0095 });
-            } else {
-              const { createAsterFuturesClient } = await import("./aster-client");
-              client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
-            }
-
-            for (const sym of allSymbols) {
-              try {
-                const trades = await client.userTrades(sym, 1000);
-                if (!Array.isArray(trades) || trades.length === 0) continue;
-                for (const t of trades) {
-                  const qty = Math.abs(parseFloat(t.qty || "0"));
-                  const price = parseFloat(t.price || "0");
-                  const quoteQty = parseFloat(t.quoteQty || "0");
-                  const notional = quoteQty > 0 ? quoteQty : qty * price;
-                  const tradeTime = parseInt(t.time || "0");
-                  totalVol += notional;
-                  if (tradeTime >= cutoff1d) vol1d += notional;
-                  if (tradeTime >= cutoff7d) vol7d += notional;
-                  if (tradeTime >= cutoff30d) vol30d += notional;
-                }
-              } catch {}
-            }
-            processedUsers++;
-            await new Promise(r => setTimeout(r, 100));
-          } catch {}
-        }
-
-        const feesCollected = totalVol * 0.0095;
-
         await bot.sendMessage(chatId,
           `📊 <b>BUILD4 Platform Stats</b>\n\n` +
           `👥 Telegram Users: <b>${Number(tgUsers?.cnt || 0)}</b>\n` +
           `💼 Active Wallets: <b>${Number(activeWallets?.cnt || 0)}</b>\n` +
           `⚡ Aster DEX Traders: <b>${Number(asterTraders?.cnt || 0)}</b>\n\n` +
-          `📈 <b>Volume</b>\n` +
-          `• Daily: <b>${fmtUsd(vol1d)}</b>\n` +
-          `• 7 Days: <b>${fmtUsd(vol7d)}</b>\n` +
-          `• 30 Days: <b>${fmtUsd(vol30d)}</b>\n` +
-          `• All Time: <b>${fmtUsd(totalVol)}</b>\n\n` +
-          `💰 Fees Collected: <b>${fmtUsd(feesCollected)}</b>`,
-          { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, chatId) }
+          `⏳ <i>Volume is being calculated in background...</i>`,
+          { parse_mode: "HTML" }
         );
+
+        const volChatId = chatId;
+        const volDb = db;
+        const volSql = sql;
+        (async () => {
+          try {
+            const now = Date.now();
+            const cutoff1d = now - 24*60*60*1000;
+            const cutoff7d = now - 7*24*60*60*1000;
+            const cutoff30d = now - 30*24*60*60*1000;
+            let vol1d = 0, vol7d = 0, vol30d = 0, totalVol = 0;
+            let processed = 0, failed = 0;
+
+            const allCreds = (await volDb.execute(volSql`SELECT chat_id FROM aster_credentials`)).rows;
+            const topSymbols = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","SUIUSDT","ADAUSDT","AVAXUSDT","LINKUSDT"];
+
+            for (const row of allCreds) {
+              const cid = String((row as any).chat_id);
+              try {
+                const creds = await storage.getAsterCredentials(cid);
+                if (!creds) continue;
+
+                const parentAddr = creds.parentAddress || creds.apiKey;
+                const isAsterCode = creds.parentAddress && creds.parentAddress.startsWith("0x") && creds.apiKey.startsWith("0x") && creds.apiKey !== creds.parentAddress;
+                const isV3 = creds.apiSecret && creds.apiSecret.startsWith("0x") && creds.apiSecret.length === 66;
+
+                let client: any = null;
+                if (isAsterCode) {
+                  const { createAsterCodeFuturesClient, getDefaultAsterCodeConfig } = await import("./aster-code");
+                  client = createAsterCodeFuturesClient(parentAddr, creds.apiKey, creds.apiSecret, getDefaultAsterCodeConfig());
+                } else if (isV3) {
+                  const { createAsterV3FuturesClient } = await import("./aster-client");
+                  client = createAsterV3FuturesClient({ user: parentAddr, signer: creds.apiKey, signerPrivateKey: creds.apiSecret, builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4", feeRate: 0.0095 });
+                } else {
+                  const { createAsterFuturesClient } = await import("./aster-client");
+                  client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+                }
+
+                for (const sym of topSymbols) {
+                  try {
+                    const trades = await Promise.race([
+                      client.userTrades(sym, 1000),
+                      new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000))
+                    ]);
+                    if (!Array.isArray(trades) || trades.length === 0) continue;
+                    for (const t of trades as any[]) {
+                      const qty = Math.abs(parseFloat(t.qty || "0"));
+                      const price = parseFloat(t.price || "0");
+                      const quoteQty = parseFloat(t.quoteQty || "0");
+                      const notional = quoteQty > 0 ? quoteQty : qty * price;
+                      const tradeTime = parseInt(t.time || "0");
+                      totalVol += notional;
+                      if (tradeTime >= cutoff1d) vol1d += notional;
+                      if (tradeTime >= cutoff7d) vol7d += notional;
+                      if (tradeTime >= cutoff30d) vol30d += notional;
+                    }
+                  } catch {}
+                }
+                processed++;
+              } catch { failed++; }
+            }
+
+            const feesCollected = totalVol * 0.0095;
+            await bot.sendMessage(volChatId,
+              `📈 <b>Volume Report</b> (${processed} traders scanned)\n\n` +
+              `• Daily: <b>${fmtUsd(vol1d)}</b>\n` +
+              `• 7 Days: <b>${fmtUsd(vol7d)}</b>\n` +
+              `• 30 Days: <b>${fmtUsd(vol30d)}</b>\n` +
+              `• All Time: <b>${fmtUsd(totalVol)}</b>\n\n` +
+              `💰 Fees Collected: <b>${fmtUsd(feesCollected)}</b>`,
+              { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, volChatId) }
+            );
+          } catch (e: any) {
+            await bot.sendMessage(volChatId, `Volume fetch failed: ${e.message?.substring(0, 100)}`).catch(() => {});
+          }
+        })();
       } catch (e: any) {
         await bot.sendMessage(chatId, `Could not fetch Aster stats: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
       }
