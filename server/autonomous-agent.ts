@@ -392,7 +392,7 @@ async function runAgentLoop(
 
     const balance = await getAvailableBalance(chatId, futuresClient);
     const dailyLossLimit = balance * (state.config.dailyLossLimitPct / 100);
-    if (state.dailyPnl <= -dailyLossLimit) {
+    if (dailyLossLimit > 0 && state.dailyPnl <= -dailyLossLimit) {
       state.lastAction = "🛑 Daily loss limit reached";
       state.lastReason = `Lost $${Math.abs(state.dailyPnl).toFixed(2)} today (limit: $${dailyLossLimit.toFixed(2)})`;
       addReasoningLog(state, "ALL", "DAILY_LIMIT", state.lastReason, 0);
@@ -532,10 +532,9 @@ async function runAgentLoop(
 
       const decision = batchDecisions.get(symbol);
       if (!decision) continue;
+      if (decision.action === "HOLD") continue;
 
       addReasoningLog(state, symbol, decision.action, decision.reasoning, decision.confidence);
-
-      if (decision.action === "HOLD") continue;
 
       const dynThreshold = getSymbolConfidenceThreshold(symbol);
       if (decision.confidence < dynThreshold) {

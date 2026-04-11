@@ -1168,7 +1168,7 @@ function renderAgent(){
   var agentName=c?.name||'My Agent';
   h+='<div class="card '+(r?'card-accent':'')+'"><div class="row"><div class="gap"><div style="width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:'+(r?'var(--green-bg)':'var(--bg)')+'">🧠</div><div><div class="text-w fw-600" style="cursor:pointer" onclick="renameAgent()" id="agent-name-display">'+agentName+'</div><div class="gap mt-1"><div class="live-dot" style="'+(r?'':'animation:none;background:var(--text3)')+'"></div><span class="text-xs '+(r?'gv':'text-dim')+'">'+(r?'AI-Powered — Multi-Timeframe':'Stopped')+'</span></div></div></div><div class="switch'+(r?' on':'')+'" onclick="toggleAgent()"></div></div>';
   if(r&&c){
-    h+='<div class="gap mt-3" style="flex-wrap:wrap"><span class="badge badge-info">📊 10 pairs</span><span class="badge badge-info">'+c.maxLeverage+'x max</span><span class="badge badge-warn">'+c.riskPercent+'% risk</span><span class="badge badge-long">'+(c.maxOpenPositions||2)+' max pos</span></div>';
+    h+='<div class="gap mt-3" style="flex-wrap:wrap"><span class="badge badge-info">📊 All pairs</span><span class="badge badge-info">'+c.maxLeverage+'x max</span><span class="badge badge-warn">'+c.riskPercent+'% risk</span><span class="badge badge-long">'+(c.maxOpenPositions||2)+' max pos</span></div>';
     h+='<div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">';
     h+='<div style="padding:8px;background:'+(s.dailyPnl>=0?'#0ecb8118':'#f6465d18')+';border-radius:8px;text-align:center"><div class="text-xs text-dim2">Daily PnL</div><div class="text-sm fw-600 '+(s.dailyPnl>=0?'gv':'r-')+'">'+(s.dailyPnl>=0?'+':'')+' $'+(Math.abs(s.dailyPnl||0)).toFixed(2)+'</div></div>';
     h+='<div style="padding:8px;background:var(--bg);border-radius:8px;text-align:center"><div class="text-xs text-dim2">Streak</div><div class="text-sm fw-600 '+((s.consecutiveLosses||0)>0?'r-':'gv')+'">'+((s.consecutiveLosses||0)>0?s.consecutiveLosses+' losses':'Clean')+'</div></div>';
@@ -1237,7 +1237,7 @@ function renderAgent(){
   }
 
   h+='<div class="card"><div class="section-title">⚙️ Configuration</div>';
-  h+='<div class="alert alert-info mb-3"><span>🧠</span><span>AI analyzes 10 pairs across 3 timeframes (5m/15m/1h). Strict risk rules enforced at code level — max 1% risk, hard stop-loss, daily loss limit, circuit breakers.</span></div>';
+  h+='<div class="alert alert-info mb-3"><span>🧠</span><span>AI analyzes all USDT pairs across 3 timeframes (5m/15m/1h) in a single shared scan. Strict risk rules enforced at code level — max 1% risk, hard stop-loss, daily loss limit, circuit breakers.</span></div>';
   h+='<div class="row text-sm mt-3"><span class="text-dim">Risk Per Trade</span><span class="mono text-w fw-600">'+(c?.riskPercent||1)+'%</span></div>';
   h+='<div class="slider-track" onclick="setRisk(event)"><div class="slider-fill" style="width:'+((c?.riskPercent||0.5)/1*100)+'%"></div><div class="slider-thumb" style="left:'+((c?.riskPercent||0.5)/1*100)+'%"></div></div>';
   h+='<div class="row text-xs text-dim2"><span>0.1% (Ultra Safe)</span><span>1.0% (Max)</span></div>';
