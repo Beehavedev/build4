@@ -475,10 +475,6 @@ async function runAgentLoop(
 
         const snapshot = buildMarketSnapshot(symbol, candles5m, candles15m, candles1h);
 
-        if (snapshot.overallRegime === "RANGING") {
-          continue;
-        }
-
         const decision = await getClaudeTradeDecision(
           snapshot, futuresClient, balance,
           state.config.riskPercent, state.config.maxLeverage,

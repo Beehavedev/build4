@@ -229,13 +229,13 @@ export function logTradeResult(features: any, won: boolean): void {
 }
 
 export function getSymbolConfidenceThreshold(symbol: string): number {
-  const BASE_THRESHOLD = 60;
+  const BASE_THRESHOLD = 50;
   const stat = symbolStats[symbol];
   if (!stat || stat.total < 10) return BASE_THRESHOLD;
   const wr = stat.wins / stat.total;
-  if (wr < 0.35) return Math.min(75, BASE_THRESHOLD + 15);
-  if (wr < 0.40) return Math.min(70, BASE_THRESHOLD + 10);
-  if (wr > 0.60) return Math.max(50, BASE_THRESHOLD - 10);
+  if (wr < 0.35) return Math.min(65, BASE_THRESHOLD + 15);
+  if (wr < 0.40) return Math.min(60, BASE_THRESHOLD + 10);
+  if (wr > 0.60) return Math.max(40, BASE_THRESHOLD - 10);
   return BASE_THRESHOLD;
 }
 
@@ -394,7 +394,7 @@ function buildClaudePrompt(
       ).join("\n")
     : "  No recent trades";
 
-  return `You are a professional crypto perpetual futures trader managing a real money account. Your goal is CONSISTENT PROFITABILITY with strict risk management. You must be VERY selective — only trade high-probability setups.
+  return `You are a professional crypto perpetual futures trader managing a real money account. Your goal is CONSISTENT PROFITABILITY with disciplined risk management. Look for setups with reasonable edge — you don't need perfect conditions, just favorable odds.
 
 CURRENT STATE:
 Account Balance: $${balance.toFixed(2)} USDT
@@ -459,7 +459,12 @@ Respond with ONLY this JSON (no markdown, no explanation):
   "keyFactors": ["factor1", "factor2", "factor3"]
 }
 
-IMPORTANT: Default to HOLD. Only recommend OPEN_LONG or OPEN_SHORT when you see a genuinely high-probability setup with clear edge. Confidence below 70 = HOLD.`;
+GUIDELINES:
+- Recommend OPEN_LONG or OPEN_SHORT when you see a setup with favorable risk/reward and reasonable confluence (2+ supporting indicators).
+- Use HOLD only when signals genuinely conflict or there is no clear direction.
+- Confidence 50+ with good R:R = valid trade. Don't overthink — act on setups with edge.
+- In trending markets, trade WITH the trend even if momentum isn't perfect.
+- In ranging markets, look for mean-reversion setups at range extremes.`;
 }
 
 function buildExitPrompt(
