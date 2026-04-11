@@ -16341,8 +16341,15 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
   }
 
   if (action === "agent_start") {
-    const futuresClient = client.futures || client;
     const chatIdStr = chatId.toString();
+
+    const client = await getAsterClient(chatId);
+    if (!client || !client.futures) {
+      await bot.sendMessage(chatId, "❌ No Aster account connected. Please connect first.", {
+        reply_markup: { inline_keyboard: [[{ text: "🔗 Connect", callback_data: "aster:connect" }], [{ text: "« Back", callback_data: "aster:agent" }]] },
+      });
+      return;
+    }
 
     const sendMsg = async (msg: string) => {
       try {
@@ -16353,7 +16360,8 @@ async function handleAsterCallback(chatId: number, data: string): Promise<void> 
       }
     };
 
-    const agentFc = client.futures || client;
+    console.log(`[Agent:${chatIdStr}] Starting agent, client mode: ${client.mode}`);
+    const agentFc = client.futures;
     setAgentFuturesClient(agentFc);
     const getClientFn = () => client;
     const started = await startAgent(chatIdStr, getClientFn, sendMsg);
