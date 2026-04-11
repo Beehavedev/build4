@@ -525,9 +525,9 @@ Respond with ONLY JSON:
 const aiCache = new Map<string, { decision: ClaudeDecision; ts: number }>();
 const AI_CACHE_TTL = 90_000;
 
-const batchCache = new Map<string, { decision: ClaudeDecision; ts: number }>();
-let batchScanRunning = false;
-const BATCH_CACHE_TTL = 120_000;
+const sharedCache = new Map<string, { decision: ClaudeDecision; ts: number }>();
+let sharedScanRunning = false;
+const SHARED_CACHE_TTL = 120_000;
 
 function getSnapshotScore(snapshot: MarketSnapshot): number {
   let score = 0;
@@ -557,159 +557,32 @@ function getSnapshotScore(snapshot: MarketSnapshot): number {
   return score;
 }
 
-function buildBatchPrompt(
-  snapshots: { snapshot: MarketSnapshot; funding: number; imbalance: number }[],
-  maxLeverage: number,
-): string {
-  const recentMemory = tradeMemory.slice(-15);
-  const recentWins = recentMemory.filter(t => t.pnl > 0).length;
-  const recentLosses = recentMemory.length - recentWins;
-  const recentWR = recentMemory.length > 0 ? (recentWins / recentMemory.length * 100).toFixed(0) : "N/A";
-
-  const currentHour = new Date().getUTCHours();
-  const { best: bestHours, worst: worstHours } = getBestTradingHours();
-
-  const memoryStr = recentMemory.length > 0
-    ? recentMemory.slice(-5).map(t =>
-        `  ${t.side} ${t.symbol}: ${t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(2)} USDT (${t.pnlPct >= 0 ? "+" : ""}${t.pnlPct.toFixed(1)}%) — ${t.reason}`
-      ).join("\n")
-    : "  No recent trades";
-
-  let pairsBlock = "";
-  for (const { snapshot, funding, imbalance } of snapshots) {
-    const symStat = symbolStats[snapshot.symbol];
-    const symWR = symStat ? `${(symStat.wins / symStat.total * 100).toFixed(0)}% (${symStat.total})` : "N/A";
-    const confThreshold = getSymbolConfidenceThreshold(snapshot.symbol);
-
-    const levelsStr = snapshot.nearestSupport
-      ? `Support: $${snapshot.nearestSupport.toFixed(2)} (${snapshot.distToSupportPct?.toFixed(2)}%) `
-      : "";
-    const resStr = snapshot.nearestResistance
-      ? `Resistance: $${snapshot.nearestResistance.toFixed(2)} (${snapshot.distToResistancePct?.toFixed(2)}%)`
-      : "";
-
-    pairsBlock += `\n--- ${snapshot.symbol} @ $${snapshot.price.toFixed(snapshot.price < 1 ? 6 : 2)} ---
-${buildTFSummary(snapshot.tf5m)}
-${buildTFSummary(snapshot.tf15m)}
-${buildTFSummary(snapshot.tf1h)}
-Trend: ${snapshot.overallTrend} | Regime: ${snapshot.overallRegime}
-Funding: ${(funding * 100).toFixed(4)}% | OB Imbalance: ${(imbalance * 100).toFixed(1)}%
-${levelsStr}${resStr}
-History: ${symWR} | Threshold: ${confThreshold}%
-`;
-  }
-
-  return `You are a professional crypto perpetual futures trader. Analyze ALL pairs below and decide which ones to trade.
-
-MARKET OVERVIEW (${snapshots.length} pairs):
-${pairsBlock}
-
-LEARNING:
-Current Hour: ${currentHour} UTC${worstHours.includes(currentHour) ? " ⚠️ POOR HOUR" : ""}${bestHours.includes(currentHour) ? " ✅ STRONG HOUR" : ""}
-${bestHours.length > 0 ? `Best Hours: ${bestHours.sort((a,b)=>a-b).join(", ")}` : ""}
-Recent Performance: ${recentWR}% WR (${recentWins}W/${recentLosses}L from ${recentMemory.length} trades)
-
-RECENT TRADES:
-${memoryStr}
-
-YOUR RULES:
-1. Trade when 2+ timeframes agree — strong preference
-2. RANGING markets: look for breakouts or mean-reversion at extremes
-3. Prefer trading with 1h trend, counter-trend scalps OK at key levels
-4. RSI extremes are opportunities: oversold = long, overbought = short
-5. Consider funding rate but don't block strong setups
-6. Minimum 1.2:1 reward-to-risk ratio
-
-POSITION SIZING (confidence controls size):
-- 80+: Full size | 60-79: Standard | 50-59: 70% | 40-49: 40%
-
-For EACH pair, respond with a JSON entry. Return a JSON array:
-[
-  {
-    "symbol": "BTCUSDT",
-    "action": "OPEN_LONG" | "OPEN_SHORT" | "HOLD",
-    "confidence": 0-100,
-    "reasoning": "1-2 sentences",
-    "riskAssessment": "1 sentence",
-    "suggestedStopLoss": 1.5,
-    "suggestedTakeProfit": 3.0,
-    "suggestedLeverage": ${Math.min(maxLeverage, 10)},
-    "keyFactors": ["factor1", "factor2"]
-  }
-]
-
-GUIDELINES:
-- You MUST find trades. HOLD should be rare. Your job is to identify the best entries.
-- Recommend OPEN_LONG or OPEN_SHORT for any pair with reasonable edge.
-- HOLD ONLY when signals are completely contradictory.
-- Confidence 40+ = valid trade. A slight edge is enough.
-- Be decisive. Rank the best setups highest.
-- Return decisions for ALL ${snapshots.length} pairs.`;
-}
-
-function parseBatchDecisions(content: string): Map<string, ClaudeDecision> {
-  const results = new Map<string, ClaudeDecision>();
-  try {
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
-    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content);
-    if (!Array.isArray(parsed)) return results;
-    for (const item of parsed) {
-      if (!item.symbol) continue;
-      const validActions = ["OPEN_LONG", "OPEN_SHORT", "HOLD"];
-      const action = validActions.includes(item.action) ? item.action : "HOLD";
-      results.set(item.symbol, {
-        action,
-        confidence: Math.min(100, Math.max(0, item.confidence || 0)),
-        reasoning: item.reasoning || "No reasoning",
-        riskAssessment: item.riskAssessment || "Unknown risk",
-        suggestedStopLoss: Math.max(0.5, Math.min(10, item.suggestedStopLoss || 2)),
-        suggestedTakeProfit: Math.max(1, Math.min(20, item.suggestedTakeProfit || 4)),
-        suggestedLeverage: Math.max(2, Math.min(50, item.suggestedLeverage || 5)),
-        keyFactors: Array.isArray(item.keyFactors) ? item.keyFactors.slice(0, 5) : [],
-      });
-    }
-  } catch (e: any) {
-    console.log(`[Intel] Failed to parse batch decisions: ${e.message?.substring(0, 100)}`);
-  }
-  return results;
-}
-
 export async function runSharedBatchScan(
   futuresClient: any,
   symbols: string[],
   maxLeverage: number = 10,
 ): Promise<Map<string, ClaudeDecision>> {
-  if (batchScanRunning) {
-    const cached = new Map<string, ClaudeDecision>();
-    for (const sym of symbols) {
-      const c = batchCache.get(sym);
-      if (c && Date.now() - c.ts < BATCH_CACHE_TTL) cached.set(sym, c.decision);
-    }
-    return cached;
-  }
-
   const now = Date.now();
-  const freshCached = new Map<string, ClaudeDecision>();
-  const staleSymbols: string[] = [];
+  const results = new Map<string, ClaudeDecision>();
+
   for (const sym of symbols) {
-    const c = batchCache.get(sym);
-    if (c && now - c.ts < BATCH_CACHE_TTL) {
-      freshCached.set(sym, c.decision);
-    } else {
-      staleSymbols.push(sym);
+    const c = sharedCache.get(sym);
+    if (c && now - c.ts < SHARED_CACHE_TTL) {
+      results.set(sym, c.decision);
     }
   }
 
-  if (staleSymbols.length === 0) return freshCached;
+  const staleSymbols = symbols.filter(s => !results.has(s));
+  if (staleSymbols.length === 0 || sharedScanRunning) return results;
 
-  batchScanRunning = true;
+  sharedScanRunning = true;
   try {
-    const snapshotData: { snapshot: MarketSnapshot; funding: number; imbalance: number }[] = [];
+    const snapshotData: { symbol: string; snapshot: MarketSnapshot; funding: number; imbalance: number }[] = [];
 
-    const batchSize = 5;
-    for (let i = 0; i < staleSymbols.length; i += batchSize) {
-      const batch = staleSymbols.slice(i, i + batchSize);
-      const results = await Promise.all(batch.map(async (symbol) => {
+    const fetchBatchSize = 5;
+    for (let i = 0; i < staleSymbols.length; i += fetchBatchSize) {
+      const batch = staleSymbols.slice(i, i + fetchBatchSize);
+      const fetched = await Promise.all(batch.map(async (symbol) => {
         try {
           const [klines5m, klines15m, klines1h] = await Promise.all([
             futuresClient.klines(symbol, "5m", 100).catch(() => []),
@@ -733,76 +606,84 @@ export async function runSharedBatchScan(
             getFundingRate(futuresClient, symbol),
             getOrderbookImbalance(futuresClient, symbol),
           ]);
-          return { snapshot, funding, imbalance };
-        } catch (e: any) {
-          console.log(`[BatchScan] ${symbol} data fetch failed: ${e.message?.substring(0, 80)}`);
+          return { symbol, snapshot, funding, imbalance };
+        } catch {
           return null;
         }
       }));
-      for (const r of results) {
+      for (const r of fetched) {
         if (r) snapshotData.push(r);
       }
     }
 
-    if (snapshotData.length === 0) {
-      return freshCached;
-    }
+    if (snapshotData.length === 0) return results;
 
-    snapshotData.sort((a, b) => {
-      const scoreA = getSnapshotScore(a.snapshot);
-      const scoreB = getSnapshotScore(b.snapshot);
-      return scoreB - scoreA;
-    });
-    const MAX_PAIRS_PER_BATCH = 20;
-    const topSnapshots = snapshotData.slice(0, MAX_PAIRS_PER_BATCH);
+    snapshotData.sort((a, b) => getSnapshotScore(b.snapshot) - getSnapshotScore(a.snapshot));
+    const MAX_PAIRS_TO_ANALYZE = 15;
+    const topPairs = snapshotData.slice(0, MAX_PAIRS_TO_ANALYZE);
 
-    for (const skipped of snapshotData.slice(MAX_PAIRS_PER_BATCH)) {
-      const holdDecision: ClaudeDecision = {
-        action: "HOLD", confidence: 0, reasoning: "Pre-filtered: weak technical setup",
+    for (const skipped of snapshotData.slice(MAX_PAIRS_TO_ANALYZE)) {
+      const holdDec: ClaudeDecision = {
+        action: "HOLD", confidence: 0, reasoning: "Low technical score — skipped",
         riskAssessment: "N/A", suggestedStopLoss: 2, suggestedTakeProfit: 4,
-        suggestedLeverage: 3, keyFactors: ["filtered"],
+        suggestedLeverage: 3, keyFactors: [],
       };
-      batchCache.set(skipped.snapshot.symbol, { decision: holdDecision, ts: Date.now() });
-      freshCached.set(skipped.snapshot.symbol, holdDecision);
+      sharedCache.set(skipped.symbol, { decision: holdDec, ts: now });
     }
 
-    console.log(`[BatchScan] Pre-filtered ${snapshotData.length} → ${topSnapshots.length} pairs for Claude analysis`);
+    console.log(`[SharedScan] Fetched ${snapshotData.length} pairs, analyzing top ${topPairs.length} with Claude (per-pair focused calls)`);
 
-    const prompt = buildBatchPrompt(topSnapshots, maxLeverage);
-    const maxTokens = Math.max(600, topSnapshots.length * 120);
-    const content = await callClaude(prompt, Math.min(maxTokens, 4000));
-    const decisions = parseBatchDecisions(content);
+    const claudeBatchSize = 3;
+    for (let i = 0; i < topPairs.length; i += claudeBatchSize) {
+      const batch = topPairs.slice(i, i + claudeBatchSize);
+      const decisions = await Promise.all(batch.map(async ({ symbol, snapshot, funding, imbalance }) => {
+        try {
+          const prompt = buildClaudePrompt(
+            snapshot, funding, imbalance, 100, 1.0, maxLeverage,
+            [], 0, 3, 0, tradeMemory,
+          );
+          const content = await callClaude(prompt, 400);
+          const decision = parseClaudeDecision(content);
+          decision.suggestedLeverage = Math.min(decision.suggestedLeverage, maxLeverage);
+          if (decision.suggestedStopLoss <= 0) decision.suggestedStopLoss = 1.5;
+          return { symbol, decision };
+        } catch (e: any) {
+          console.log(`[SharedScan] ${symbol} Claude call failed: ${e.message?.substring(0, 80)}`);
+          return null;
+        }
+      }));
 
-    const ts = Date.now();
-    for (const [sym, dec] of decisions) {
-      dec.suggestedLeverage = Math.min(dec.suggestedLeverage, maxLeverage);
-      if (dec.suggestedStopLoss <= 0) dec.suggestedStopLoss = 1.5;
-      batchCache.set(sym, { decision: dec, ts });
-      aiCache.set(`${sym}-${Math.floor(ts / AI_CACHE_TTL)}`, { decision: dec, ts });
-      freshCached.set(sym, dec);
-    }
-
-    if (batchCache.size > 200) {
-      for (const [k, v] of batchCache) {
-        if (ts - v.ts > BATCH_CACHE_TTL * 2) batchCache.delete(k);
+      for (const r of decisions) {
+        if (r) {
+          sharedCache.set(r.symbol, { decision: r.decision, ts: Date.now() });
+          results.set(r.symbol, r.decision);
+          console.log(`[SharedScan] ${r.symbol}: ${r.decision.action} (${r.decision.confidence}%) — ${r.decision.reasoning.substring(0, 80)}`);
+        }
       }
     }
 
-    const tradeCount = Array.from(decisions.values()).filter(d => d.action !== "HOLD").length;
-    console.log(`[BatchScan] Analyzed ${snapshotData.length} pairs in 1 call — ${tradeCount} trade signals, ${decisions.size - tradeCount} HOLDs`);
+    if (sharedCache.size > 200) {
+      const cutoff = Date.now() - SHARED_CACHE_TTL * 3;
+      for (const [k, v] of sharedCache) {
+        if (v.ts < cutoff) sharedCache.delete(k);
+      }
+    }
 
-    return freshCached;
+    const tradeSignals = Array.from(results.values()).filter(d => d.action !== "HOLD").length;
+    console.log(`[SharedScan] Complete — ${tradeSignals} trade signals from ${topPairs.length} analyzed pairs`);
+
+    return results;
   } catch (e: any) {
-    console.log(`[BatchScan] Error: ${e.message?.substring(0, 150)}`);
-    return freshCached;
+    console.log(`[SharedScan] Error: ${e.message?.substring(0, 150)}`);
+    return results;
   } finally {
-    batchScanRunning = false;
+    sharedScanRunning = false;
   }
 }
 
 export function getBatchDecision(symbol: string): ClaudeDecision | null {
-  const cached = batchCache.get(symbol);
-  if (cached && Date.now() - cached.ts < BATCH_CACHE_TTL) return cached.decision;
+  const cached = sharedCache.get(symbol);
+  if (cached && Date.now() - cached.ts < SHARED_CACHE_TTL) return cached.decision;
   return null;
 }
 
