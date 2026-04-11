@@ -9736,8 +9736,15 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
         let tradeHistoryStats = { total: 0, volume: 0, pnl: 0 };
         try {
-          const [th] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM aster_agent_trades`)).rows;
+          const [th] = (await db.execute(sql`
+            SELECT COUNT(*) as cnt,
+              COALESCE(SUM(ABS(COALESCE(quantity,0) * COALESCE(entry_price,0))),0) as volume,
+              COALESCE(SUM(COALESCE(pnl,0)),0) as total_pnl
+            FROM aster_agent_trades
+          `)).rows;
           tradeHistoryStats.total = Number(th?.cnt || 0);
+          tradeHistoryStats.volume = Number(th?.volume || 0);
+          tradeHistoryStats.pnl = Number(th?.total_pnl || 0);
         } catch {}
 
         const [totalBotUsers] = (await db.execute(sql`SELECT COUNT(DISTINCT chat_id) as cnt FROM telegram_wallets`)).rows;
@@ -9778,7 +9785,9 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           `<b>📈 Trading</b>\n` +
           `• Agent Trades Logged: <b>${totalTrades}</b>\n` +
           `• Agent Wins: <b>${totalWins}</b> (${winRate}%)\n` +
-          `• Trade Records: <b>${tradeHistoryStats.total}</b>\n\n` +
+          `• Trade Records: <b>${tradeHistoryStats.total}</b>\n` +
+          `• Total Volume: <b>$${tradeHistoryStats.volume.toFixed(2)}</b>\n` +
+          `• Total PnL: <b>${tradeHistoryStats.pnl >= 0 ? '+' : ''}$${tradeHistoryStats.pnl.toFixed(2)}</b>\n\n` +
           `<b>👤 User Details</b>${userLines || "\nNo users yet"}`,
           { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, chatId) }
         );
