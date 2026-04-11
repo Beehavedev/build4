@@ -525,6 +525,287 @@ Respond with ONLY JSON:
 const aiCache = new Map<string, { decision: ClaudeDecision; ts: number }>();
 const AI_CACHE_TTL = 90_000;
 
+const batchCache = new Map<string, { decision: ClaudeDecision; ts: number }>();
+let batchScanRunning = false;
+const BATCH_CACHE_TTL = 120_000;
+
+function getSnapshotScore(snapshot: MarketSnapshot): number {
+  let score = 0;
+  const tf5 = snapshot.tf5m;
+  const tf15 = snapshot.tf15m;
+  const tf1h = snapshot.tf1h;
+
+  if (tf5.trend === tf15.trend && tf5.trend !== "NEUTRAL") score += 3;
+  if (tf15.trend === tf1h.trend && tf15.trend !== "NEUTRAL") score += 3;
+  if (tf5.trend === tf15.trend && tf15.trend === tf1h.trend && tf5.trend !== "NEUTRAL") score += 4;
+
+  if (tf5.regime?.regime === "TRENDING") score += 2;
+  if (tf15.regime?.regime === "TRENDING") score += 2;
+  if (tf1h.regime?.regime === "TRENDING") score += 1;
+
+  if (tf5.volumeRatio > 1.5) score += 2;
+  if (tf15.volumeRatio > 1.3) score += 1;
+
+  if (tf5.rsi < 30 || tf5.rsi > 70) score += 1;
+  if (tf15.rsi < 30 || tf15.rsi > 70) score += 1;
+
+  const emaCross5 = Math.abs(tf5.ema8 - tf5.ema21) / tf5.lastClose * 100;
+  if (emaCross5 > 0.1) score += 1;
+
+  if (tf5.atrPct > 0.3) score += 1;
+
+  return score;
+}
+
+function buildBatchPrompt(
+  snapshots: { snapshot: MarketSnapshot; funding: number; imbalance: number }[],
+  maxLeverage: number,
+): string {
+  const recentMemory = tradeMemory.slice(-15);
+  const recentWins = recentMemory.filter(t => t.pnl > 0).length;
+  const recentLosses = recentMemory.length - recentWins;
+  const recentWR = recentMemory.length > 0 ? (recentWins / recentMemory.length * 100).toFixed(0) : "N/A";
+
+  const currentHour = new Date().getUTCHours();
+  const { best: bestHours, worst: worstHours } = getBestTradingHours();
+
+  const memoryStr = recentMemory.length > 0
+    ? recentMemory.slice(-5).map(t =>
+        `  ${t.side} ${t.symbol}: ${t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(2)} USDT (${t.pnlPct >= 0 ? "+" : ""}${t.pnlPct.toFixed(1)}%) — ${t.reason}`
+      ).join("\n")
+    : "  No recent trades";
+
+  let pairsBlock = "";
+  for (const { snapshot, funding, imbalance } of snapshots) {
+    const symStat = symbolStats[snapshot.symbol];
+    const symWR = symStat ? `${(symStat.wins / symStat.total * 100).toFixed(0)}% (${symStat.total})` : "N/A";
+    const confThreshold = getSymbolConfidenceThreshold(snapshot.symbol);
+
+    const levelsStr = snapshot.nearestSupport
+      ? `Support: $${snapshot.nearestSupport.toFixed(2)} (${snapshot.distToSupportPct?.toFixed(2)}%) `
+      : "";
+    const resStr = snapshot.nearestResistance
+      ? `Resistance: $${snapshot.nearestResistance.toFixed(2)} (${snapshot.distToResistancePct?.toFixed(2)}%)`
+      : "";
+
+    pairsBlock += `\n--- ${snapshot.symbol} @ $${snapshot.price.toFixed(snapshot.price < 1 ? 6 : 2)} ---
+${buildTFSummary(snapshot.tf5m)}
+${buildTFSummary(snapshot.tf15m)}
+${buildTFSummary(snapshot.tf1h)}
+Trend: ${snapshot.overallTrend} | Regime: ${snapshot.overallRegime}
+Funding: ${(funding * 100).toFixed(4)}% | OB Imbalance: ${(imbalance * 100).toFixed(1)}%
+${levelsStr}${resStr}
+History: ${symWR} | Threshold: ${confThreshold}%
+`;
+  }
+
+  return `You are a professional crypto perpetual futures trader. Analyze ALL pairs below and decide which ones to trade.
+
+MARKET OVERVIEW (${snapshots.length} pairs):
+${pairsBlock}
+
+LEARNING:
+Current Hour: ${currentHour} UTC${worstHours.includes(currentHour) ? " ⚠️ POOR HOUR" : ""}${bestHours.includes(currentHour) ? " ✅ STRONG HOUR" : ""}
+${bestHours.length > 0 ? `Best Hours: ${bestHours.sort((a,b)=>a-b).join(", ")}` : ""}
+Recent Performance: ${recentWR}% WR (${recentWins}W/${recentLosses}L from ${recentMemory.length} trades)
+
+RECENT TRADES:
+${memoryStr}
+
+YOUR RULES:
+1. Trade when 2+ timeframes agree — strong preference
+2. RANGING markets: look for breakouts or mean-reversion at extremes
+3. Prefer trading with 1h trend, counter-trend scalps OK at key levels
+4. RSI extremes are opportunities: oversold = long, overbought = short
+5. Consider funding rate but don't block strong setups
+6. Minimum 1.2:1 reward-to-risk ratio
+
+POSITION SIZING (confidence controls size):
+- 80+: Full size | 60-79: Standard | 50-59: 70% | 40-49: 40%
+
+For EACH pair, respond with a JSON entry. Return a JSON array:
+[
+  {
+    "symbol": "BTCUSDT",
+    "action": "OPEN_LONG" | "OPEN_SHORT" | "HOLD",
+    "confidence": 0-100,
+    "reasoning": "1-2 sentences",
+    "riskAssessment": "1 sentence",
+    "suggestedStopLoss": 1.5,
+    "suggestedTakeProfit": 3.0,
+    "suggestedLeverage": ${Math.min(maxLeverage, 10)},
+    "keyFactors": ["factor1", "factor2"]
+  }
+]
+
+GUIDELINES:
+- You MUST find trades. HOLD should be rare. Your job is to identify the best entries.
+- Recommend OPEN_LONG or OPEN_SHORT for any pair with reasonable edge.
+- HOLD ONLY when signals are completely contradictory.
+- Confidence 40+ = valid trade. A slight edge is enough.
+- Be decisive. Rank the best setups highest.
+- Return decisions for ALL ${snapshots.length} pairs.`;
+}
+
+function parseBatchDecisions(content: string): Map<string, ClaudeDecision> {
+  const results = new Map<string, ClaudeDecision>();
+  try {
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content);
+    if (!Array.isArray(parsed)) return results;
+    for (const item of parsed) {
+      if (!item.symbol) continue;
+      const validActions = ["OPEN_LONG", "OPEN_SHORT", "HOLD"];
+      const action = validActions.includes(item.action) ? item.action : "HOLD";
+      results.set(item.symbol, {
+        action,
+        confidence: Math.min(100, Math.max(0, item.confidence || 0)),
+        reasoning: item.reasoning || "No reasoning",
+        riskAssessment: item.riskAssessment || "Unknown risk",
+        suggestedStopLoss: Math.max(0.5, Math.min(10, item.suggestedStopLoss || 2)),
+        suggestedTakeProfit: Math.max(1, Math.min(20, item.suggestedTakeProfit || 4)),
+        suggestedLeverage: Math.max(2, Math.min(50, item.suggestedLeverage || 5)),
+        keyFactors: Array.isArray(item.keyFactors) ? item.keyFactors.slice(0, 5) : [],
+      });
+    }
+  } catch (e: any) {
+    console.log(`[Intel] Failed to parse batch decisions: ${e.message?.substring(0, 100)}`);
+  }
+  return results;
+}
+
+export async function runSharedBatchScan(
+  futuresClient: any,
+  symbols: string[],
+  maxLeverage: number = 10,
+): Promise<Map<string, ClaudeDecision>> {
+  if (batchScanRunning) {
+    const cached = new Map<string, ClaudeDecision>();
+    for (const sym of symbols) {
+      const c = batchCache.get(sym);
+      if (c && Date.now() - c.ts < BATCH_CACHE_TTL) cached.set(sym, c.decision);
+    }
+    return cached;
+  }
+
+  const now = Date.now();
+  const freshCached = new Map<string, ClaudeDecision>();
+  const staleSymbols: string[] = [];
+  for (const sym of symbols) {
+    const c = batchCache.get(sym);
+    if (c && now - c.ts < BATCH_CACHE_TTL) {
+      freshCached.set(sym, c.decision);
+    } else {
+      staleSymbols.push(sym);
+    }
+  }
+
+  if (staleSymbols.length === 0) return freshCached;
+
+  batchScanRunning = true;
+  try {
+    const snapshotData: { snapshot: MarketSnapshot; funding: number; imbalance: number }[] = [];
+
+    const batchSize = 5;
+    for (let i = 0; i < staleSymbols.length; i += batchSize) {
+      const batch = staleSymbols.slice(i, i + batchSize);
+      const results = await Promise.all(batch.map(async (symbol) => {
+        try {
+          const [klines5m, klines15m, klines1h] = await Promise.all([
+            futuresClient.klines(symbol, "5m", 100).catch(() => []),
+            futuresClient.klines(symbol, "15m", 100).catch(() => []),
+            futuresClient.klines(symbol, "1h", 60).catch(() => []),
+          ]);
+          const { buildMarketSnapshot } = await import("./trading-strategy");
+          const parseKlines = (k: any[]) => k.map((c: any) => ({
+            open: parseFloat(c[1] || c.open || "0"),
+            high: parseFloat(c[2] || c.high || "0"),
+            low: parseFloat(c[3] || c.low || "0"),
+            close: parseFloat(c[4] || c.close || "0"),
+            volume: parseFloat(c[5] || c.volume || "0"),
+          }));
+          const c5m = parseKlines(klines5m);
+          const c15m = parseKlines(klines15m);
+          const c1h = parseKlines(klines1h);
+          if (c5m.length < 26 || c15m.length < 26) return null;
+          const snapshot = buildMarketSnapshot(symbol, c5m, c15m, c1h);
+          const [funding, imbalance] = await Promise.all([
+            getFundingRate(futuresClient, symbol),
+            getOrderbookImbalance(futuresClient, symbol),
+          ]);
+          return { snapshot, funding, imbalance };
+        } catch (e: any) {
+          console.log(`[BatchScan] ${symbol} data fetch failed: ${e.message?.substring(0, 80)}`);
+          return null;
+        }
+      }));
+      for (const r of results) {
+        if (r) snapshotData.push(r);
+      }
+    }
+
+    if (snapshotData.length === 0) {
+      return freshCached;
+    }
+
+    snapshotData.sort((a, b) => {
+      const scoreA = getSnapshotScore(a.snapshot);
+      const scoreB = getSnapshotScore(b.snapshot);
+      return scoreB - scoreA;
+    });
+    const MAX_PAIRS_PER_BATCH = 20;
+    const topSnapshots = snapshotData.slice(0, MAX_PAIRS_PER_BATCH);
+
+    for (const skipped of snapshotData.slice(MAX_PAIRS_PER_BATCH)) {
+      const holdDecision: ClaudeDecision = {
+        action: "HOLD", confidence: 0, reasoning: "Pre-filtered: weak technical setup",
+        riskAssessment: "N/A", suggestedStopLoss: 2, suggestedTakeProfit: 4,
+        suggestedLeverage: 3, keyFactors: ["filtered"],
+      };
+      batchCache.set(skipped.snapshot.symbol, { decision: holdDecision, ts: Date.now() });
+      freshCached.set(skipped.snapshot.symbol, holdDecision);
+    }
+
+    console.log(`[BatchScan] Pre-filtered ${snapshotData.length} → ${topSnapshots.length} pairs for Claude analysis`);
+
+    const prompt = buildBatchPrompt(topSnapshots, maxLeverage);
+    const maxTokens = Math.max(600, topSnapshots.length * 120);
+    const content = await callClaude(prompt, Math.min(maxTokens, 4000));
+    const decisions = parseBatchDecisions(content);
+
+    const ts = Date.now();
+    for (const [sym, dec] of decisions) {
+      dec.suggestedLeverage = Math.min(dec.suggestedLeverage, maxLeverage);
+      if (dec.suggestedStopLoss <= 0) dec.suggestedStopLoss = 1.5;
+      batchCache.set(sym, { decision: dec, ts });
+      aiCache.set(`${sym}-${Math.floor(ts / AI_CACHE_TTL)}`, { decision: dec, ts });
+      freshCached.set(sym, dec);
+    }
+
+    if (batchCache.size > 200) {
+      for (const [k, v] of batchCache) {
+        if (ts - v.ts > BATCH_CACHE_TTL * 2) batchCache.delete(k);
+      }
+    }
+
+    const tradeCount = Array.from(decisions.values()).filter(d => d.action !== "HOLD").length;
+    console.log(`[BatchScan] Analyzed ${snapshotData.length} pairs in 1 call — ${tradeCount} trade signals, ${decisions.size - tradeCount} HOLDs`);
+
+    return freshCached;
+  } catch (e: any) {
+    console.log(`[BatchScan] Error: ${e.message?.substring(0, 150)}`);
+    return freshCached;
+  } finally {
+    batchScanRunning = false;
+  }
+}
+
+export function getBatchDecision(symbol: string): ClaudeDecision | null {
+  const cached = batchCache.get(symbol);
+  if (cached && Date.now() - cached.ts < BATCH_CACHE_TTL) return cached.decision;
+  return null;
+}
+
 function parseClaudeDecision(content: string): ClaudeDecision {
   try {
     const jsonMatch = content.match(/\{[\s\S]*\}/);

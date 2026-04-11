@@ -4,15 +4,39 @@ import {
   recordTradeResult, getIntelStatus, loadLearningFromDb,
   getTradeMemory, getFundingRate,
   getSymbolConfidenceThreshold, isHourBlocked, isCorrelationBlocked,
-  getLearningInsights,
+  getLearningInsights, runSharedBatchScan, getBatchDecision,
   type ClaudeDecision, type TradeMemory,
 } from "./market-intelligence";
 import { storage } from "./storage";
 
-const SCAN_PAIRS = [
+const DEFAULT_SCAN_PAIRS = [
   "BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT",
   "SUIUSDT","ADAUSDT","AVAXUSDT","LINKUSDT",
 ];
+let _allUsdtPairs: string[] = [];
+let _pairsLastFetch = 0;
+
+async function getAllTradablePairs(futuresClient: any): Promise<string[]> {
+  const now = Date.now();
+  if (_allUsdtPairs.length > 0 && now - _pairsLastFetch < 600_000) return _allUsdtPairs;
+  try {
+    const info = await futuresClient.exchangeInfo();
+    const symbols = info?.symbols || [];
+    _allUsdtPairs = symbols
+      .filter((s: any) => {
+        const sym = s.symbol || s.pair || "";
+        return sym.endsWith("USDT") && (s.status === "TRADING" || !s.status);
+      })
+      .map((s: any) => s.symbol || s.pair)
+      .filter(Boolean);
+    _pairsLastFetch = now;
+    console.log(`[Agent] Loaded ${_allUsdtPairs.length} tradable USDT pairs`);
+    return _allUsdtPairs;
+  } catch (e: any) {
+    console.log(`[Agent] Failed to fetch pairs: ${e.message?.substring(0, 80)}`);
+    return _allUsdtPairs.length > 0 ? _allUsdtPairs : DEFAULT_SCAN_PAIRS;
+  }
+}
 
 export interface AgentConfig {
   name: string;
@@ -293,7 +317,7 @@ export async function startAgent(
       `🤖 *${state.config.name} Activated*\n` +
       `━━━━━━━━━━━━━━━━━━━━\n\n` +
       `🧠 AI-Powered Analysis\n` +
-      `📊 Scanning: *${SCAN_PAIRS.length} pairs* (multi-timeframe)\n` +
+      `📊 Scanning: *all USDT pairs* (shared batch analysis)\n` +
       `🛡 Risk: *${state.config.riskPercent}%* per trade (max 1%)\n` +
       `⚡ Max Leverage: *${state.config.maxLeverage}x*\n` +
       `📍 Max Positions: *${state.config.maxOpenPositions}*\n` +
@@ -493,58 +517,57 @@ async function runAgentLoop(
       return;
     }
 
-    let bestDecision: { decision: ClaudeDecision; snapshot: MarketSnapshot } | null = null;
-
     const SYMBOL_COOLDOWN_MS = 300_000;
-    for (const symbol of SCAN_PAIRS) {
+    const allPairs = await getAllTradablePairs(futuresClient);
+    const scanPairs = allPairs.length > 0 ? allPairs : DEFAULT_SCAN_PAIRS;
+
+    const batchDecisions = await runSharedBatchScan(futuresClient, scanPairs, state.config.maxLeverage);
+
+    let bestDecision: { decision: ClaudeDecision; symbol: string; price: number; regime: string } | null = null;
+
+    for (const symbol of scanPairs) {
       if (state.openPositions.has(symbol)) continue;
       const symCooldown = state.symbolCooldowns.get(symbol);
       if (symCooldown && now - symCooldown < SYMBOL_COOLDOWN_MS) continue;
-      try {
-        const { candles5m, candles15m, candles1h } = await fetchMultiTFCandles(futuresClient, symbol);
-        if (candles5m.length < 26 || candles15m.length < 26) continue;
 
-        const snapshot = buildMarketSnapshot(symbol, candles5m, candles15m, candles1h);
+      const decision = batchDecisions.get(symbol);
+      if (!decision) continue;
 
-        const decision = await getClaudeTradeDecision(
-          snapshot, futuresClient, balance,
-          state.config.riskPercent, state.config.maxLeverage,
-          currentPositionsList, state.dailyPnl,
-          state.config.dailyLossLimitPct, state.consecutiveLosses,
-        );
+      addReasoningLog(state, symbol, decision.action, decision.reasoning, decision.confidence);
 
-        addReasoningLog(state, symbol, decision.action, decision.reasoning, decision.confidence);
+      if (decision.action === "HOLD") continue;
 
-        if (decision.action === "HOLD") continue;
+      const dynThreshold = getSymbolConfidenceThreshold(symbol);
+      if (decision.confidence < dynThreshold) {
+        addReasoningLog(state, symbol, "THRESHOLD_BLOCKED", `Confidence ${decision.confidence}% < dynamic threshold ${dynThreshold}% for ${symbol}`, decision.confidence);
+        continue;
+      }
 
-        const dynThreshold = getSymbolConfidenceThreshold(symbol);
-        if (decision.confidence < dynThreshold) {
-          addReasoningLog(state, symbol, "THRESHOLD_BLOCKED", `Confidence ${decision.confidence}% < dynamic threshold ${dynThreshold}% for ${symbol}`, decision.confidence);
-          continue;
-        }
+      const tradeSide: "LONG" | "SHORT" = decision.action === "OPEN_LONG" ? "LONG" : "SHORT";
+      if (isCorrelationBlocked(symbol, tradeSide, state.openPositions)) {
+        addReasoningLog(state, symbol, "CORR_BLOCKED", `${tradeSide} ${symbol} blocked — correlated pair already open same direction`, decision.confidence);
+        continue;
+      }
 
-        const tradeSide: "LONG" | "SHORT" = decision.action === "OPEN_LONG" ? "LONG" : "SHORT";
-        if (isCorrelationBlocked(symbol, tradeSide, state.openPositions)) {
-          addReasoningLog(state, symbol, "CORR_BLOCKED", `${tradeSide} ${symbol} blocked — correlated pair already open same direction`, decision.confidence);
-          continue;
-        }
-
-        if (!bestDecision || decision.confidence > bestDecision.decision.confidence) {
-          bestDecision = { decision, snapshot };
-        }
-      } catch (e: any) {
-        console.log(`[Agent:${chatId}] Scan ${symbol} failed: ${e.message?.substring(0, 80)}`);
+      if (!bestDecision || decision.confidence > bestDecision.decision.confidence) {
+        try {
+          const ticker = await futuresClient.tickerPrice(symbol);
+          const price = parseFloat(ticker?.price || "0");
+          if (price > 0) {
+            bestDecision = { decision, symbol, price, regime: "UNKNOWN" };
+          }
+        } catch {}
       }
     }
 
     if (bestDecision) {
-      const { decision, snapshot } = bestDecision;
+      const { decision, symbol, price, regime } = bestDecision;
       const side: "BUY" | "SELL" = decision.action === "OPEN_LONG" ? "BUY" : "SELL";
-      state.lastRegime = snapshot.overallRegime || "UNKNOWN";
-      await openPosition(chatId, futuresClient, state, snapshot.symbol, side, decision, snapshot.price, balance, sendMessage);
+      state.lastRegime = regime;
+      await openPosition(chatId, futuresClient, state, symbol, side, decision, price, balance, sendMessage);
     } else {
       state.lastAction = `Scan #${state.scanCount} — No setup found`;
-      state.lastReason = "Waiting for high-probability opportunity";
+      state.lastReason = `Scanned ${scanPairs.length} pairs — waiting for opportunity`;
     }
 
     if (state.scanCount % 10 === 1) {
