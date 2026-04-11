@@ -446,6 +446,13 @@ YOUR TRADING RULES:
 8. Minimum 1.2:1 reward-to-risk ratio
 9. If daily loss exceeds ${dailyLossLimit}% of balance, HOLD everything
 
+POSITION SIZING (your confidence directly controls size):
+- Confidence 80+: Full position size (high conviction, strong setup)
+- Confidence 60-79: Standard size
+- Confidence 50-59: 70% size (moderate edge)
+- Confidence 40-49: 40% size (small edge, worth taking)
+Be honest with confidence — it directly impacts money at risk.
+
 Respond with ONLY this JSON (no markdown, no explanation):
 {
   "action": "OPEN_LONG" | "OPEN_SHORT" | "HOLD",
@@ -501,8 +508,11 @@ Should this position be closed early, or held?
 Rules:
 - Close if trend has reversed on 2+ timeframes
 - Close if RSI is extreme (>75 for LONG, <25 for SHORT) and profit > 0.5%
-- Close if you detect a clear momentum shift
-- Keep if the original thesis is intact and trend is favorable
+- Close immediately if you detect a clear reversal pattern (bearish engulfing on long, bullish engulfing on short) on 5M or 15M
+- Close if momentum is fading and position has been open > 30 minutes with minimal gain
+- If trailing stop is active (stop moved to breakeven or higher), do NOT override it with HOLD — let the mechanical exit work
+- Keep if the original thesis is intact, trend is favorable, and momentum supports continuation
+- In profitable positions with strong trend alignment, lean toward HOLD — let winners run
 
 Respond with ONLY JSON:
 {

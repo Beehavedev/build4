@@ -414,14 +414,27 @@ async function runAgentLoop(
 
         if (pnlPct > info.peakPnlPct) info.peakPnlPct = pnlPct;
 
+        if (info.peakPnlPct >= info.stopLossPct * 1.5 && !info.trailingStopPct) {
+          info.trailingStopPct = 0;
+          console.log(`[Agent:${chatId}] ${symbol} moved stop to breakeven (peak: +${info.peakPnlPct.toFixed(2)}%)`);
+        }
+
+        if (info.peakPnlPct >= info.stopLossPct * 2 && info.trailingStopPct !== undefined) {
+          info.trailingStopPct = info.peakPnlPct * 0.6;
+        }
+
         let closeReason = "";
 
-        if (pnlPct <= -info.stopLossPct) {
+        const effectiveStop = info.trailingStopPct !== undefined
+          ? info.trailingStopPct
+          : -info.stopLossPct;
+
+        if (info.trailingStopPct !== undefined && pnlPct < effectiveStop) {
+          closeReason = `📉 Trailing stop: peak +${info.peakPnlPct.toFixed(2)}% → +${pnlPct.toFixed(2)}% (floor: +${effectiveStop.toFixed(2)}%)`;
+        } else if (pnlPct <= -info.stopLossPct) {
           closeReason = `🛑 HARD STOP-LOSS: ${pnlPct.toFixed(2)}% (limit: -${info.stopLossPct.toFixed(1)}%)`;
         } else if (pnlPct >= info.takeProfitPct) {
           closeReason = `🎯 Take Profit: +${pnlPct.toFixed(2)}% (target: +${info.takeProfitPct.toFixed(1)}%)`;
-        } else if (info.peakPnlPct > 1.5 && pnlPct < info.peakPnlPct * 0.5) {
-          closeReason = `📉 Trailing: peak +${info.peakPnlPct.toFixed(2)}% → +${pnlPct.toFixed(2)}% (gave back >50%)`;
         }
 
         if (!closeReason) {
@@ -702,6 +715,23 @@ async function openPosition(
 
   const effectiveRisk = Math.min(state.config.riskPercent, MAX_RISK_PERCENT);
   const perPositionRisk = effectiveRisk / state.config.maxOpenPositions;
+
+  let convictionMultiplier = 1.0;
+  if (decision.confidence >= 80) {
+    convictionMultiplier = 1.2;
+  } else if (decision.confidence >= 60) {
+    convictionMultiplier = 1.0;
+  } else if (decision.confidence >= 50) {
+    convictionMultiplier = 0.7;
+  } else {
+    convictionMultiplier = 0.4;
+  }
+
+  if (state.consecutiveLosses >= 3) {
+    convictionMultiplier *= 0.7;
+  }
+
+  const adjustedRisk = perPositionRisk * convictionMultiplier;
   const stopLossPct = Math.max(decision.suggestedStopLoss, 0.5);
 
   if (stopLossPct > 10) {
@@ -709,7 +739,7 @@ async function openPosition(
   }
   const clampedSL = Math.min(stopLossPct, 5);
 
-  const qty = computeQuantity(symbol, availableBalance, perPositionRisk, leverage, lastPrice, clampedSL);
+  const qty = computeQuantity(symbol, availableBalance, adjustedRisk, leverage, lastPrice, clampedSL);
   if (qty <= 0) {
     console.log(`[Agent:${chatId}] ${symbol} qty too small after sizing`);
     return;
@@ -796,8 +826,8 @@ async function openPosition(
     `📦 Size: \`${(filledQty || qty).toFixed(4)}\` ($${notional.toFixed(2)})\n` +
     `⚡ Leverage: *${leverage}x*\n` +
     `🛡 SL: *-${stopLossPct.toFixed(1)}%* | TP: *+${decision.suggestedTakeProfit.toFixed(1)}%*\n` +
-    `💰 Risk: $${riskUsd} (${perPositionRisk.toFixed(2)}%)\n` +
-    `📊 Confidence: *${decision.confidence}%*\n\n` +
+    `💰 Risk: $${riskUsd} (${adjustedRisk.toFixed(2)}%)\n` +
+    `📊 Confidence: *${decision.confidence}%* — Size: *${(convictionMultiplier * 100).toFixed(0)}%*\n\n` +
     `🧠 *Reasoning:*\n_${decision.reasoning}_\n\n` +
     `⚠️ _${decision.riskAssessment}_\n\n` +
     `🔑 ${decision.keyFactors.slice(0, 3).join(" | ")}\n` +

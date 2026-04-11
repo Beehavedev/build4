@@ -1,0 +1,22 @@
+08:22You're right, my apologies for the misdirection — that was a spot DEX prompt dropped into a perps context, totally wrong domain.
+Since your current prompt is already well-tailored and the real blocker was those code layers forcing HOLD, the actual improvements worth making are surgical. Here are focused prompt additions for each of your four areas:
+
+1. Better entry timing
+Add this to your entry logic section:
+
+Before entering, confirm alignment across all three timeframes. Do not enter if the 1H trend opposes the 15M and 5M signals, even if EMA crossover is clean. Require at least 2 of 3 timeframes to agree on direction. On the 5M entry candle, verify volume is at or above the 20-period average — low-volume crossovers are false signals. If RSI is above 70 (long) or below 30 (short) at entry, reduce position size by 30% — you are entering late.
+
+
+2. Smarter exit logic
+
+Once in profit by 1.5× the initial stop distance, move stop-loss to breakeven. At 2× profit, switch to a trailing stop of 40% of the highest unrealized gain. Do not override a trailing stop with a hold decision — exits are mechanical once trailing is active. If price action forms a clear reversal pattern (bearish engulfing on long, bullish engulfing on short) on the 5M or 15M before TP is hit, exit immediately without waiting for stop trigger. Let Claude evaluate ambiguous exits — present the current candle pattern, RSI, and unrealized PnL and ask: "Should I exit, hold, or tighten stop?"
+
+
+3. Learning from wins/losses per pair
+
+After every 5 trades on a given pair, review: win rate, average winner vs. average loser, and which entry condition was present on losing trades. If a pair has below 40% win rate over 10+ trades, reduce position size by 50% until a 5-trade winning streak resets confidence. Log which timeframe signal led each trade — if 5M-led entries are consistently underperforming 15M-led entries, deprioritize 5M-only signals.
+
+
+4. Position sizing based on conviction
+
+Score each setup before entry: +1 for each of — 3TF alignment, volume confirmation, RSI not in extreme zone, clean structure (no nearby major S/R within 0.5%). Max score is 4. Size positions as: score 4 = full size, score 3 = 70%, score 2 = 40%, score 1 = skip. Never enter a score-1 setup regardless of signal strength. High conviction (score 4) on a trending pair that has already won the last 2 trades may increase size by 20% above base.
