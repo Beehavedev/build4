@@ -9784,7 +9784,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             const privateKey = creds.apiSecret;
 
             await asterCodeApproveBuilder(
-              "https://api.aster.exchange",
+              "https://fapi.asterdex.com",
               parentAddr,
               privateKey,
               {
