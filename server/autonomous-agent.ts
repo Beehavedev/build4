@@ -317,7 +317,7 @@ export async function startAgent(
       `🤖 *${state.config.name} Activated*\n` +
       `━━━━━━━━━━━━━━━━━━━━\n\n` +
       `🧠 AI-Powered Analysis\n` +
-      `📊 Scanning: *all USDT pairs* (shared batch analysis)\n` +
+      `📊 Scanning: *all USDT pairs* (per-pair focused analysis)\n` +
       `🛡 Risk: *${state.config.riskPercent}%* per trade (max 1%)\n` +
       `⚡ Max Leverage: *${state.config.maxLeverage}x*\n` +
       `📍 Max Positions: *${state.config.maxOpenPositions}*\n` +
@@ -938,7 +938,7 @@ async function closePosition(
     if (state.consecutiveLosses >= MAX_CONSECUTIVE_LOSSES_BEFORE_PAUSE) {
       state.circuitBreakerUntil = Date.now() + CIRCUIT_BREAKER_PAUSE_MS;
       try {
-        await sendMessage(`🔒 *Circuit Breaker Activated*\n${state.consecutiveLosses} consecutive losses. Pausing for 30 minutes to prevent further losses.`);
+        await sendMessage(`🔒 *Circuit Breaker Activated*\n${state.consecutiveLosses} consecutive losses. Pausing for 15 minutes to prevent further losses.`);
       } catch {}
     }
   } else {

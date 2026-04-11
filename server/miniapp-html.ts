@@ -1237,7 +1237,7 @@ function renderAgent(){
   }
 
   h+='<div class="card"><div class="section-title">⚙️ Configuration</div>';
-  h+='<div class="alert alert-info mb-3"><span>🧠</span><span>AI analyzes all USDT pairs across 3 timeframes (5m/15m/1h) in a single shared scan. Strict risk rules enforced at code level — max 1% risk, hard stop-loss, daily loss limit, circuit breakers.</span></div>';
+  h+='<div class="alert alert-info mb-3"><span>🧠</span><span>AI analyzes all USDT pairs across 3 timeframes (5m/15m/1h) with focused per-pair analysis. Strict risk rules enforced at code level — max 1% risk, hard stop-loss, daily loss limit, circuit breakers.</span></div>';
   h+='<div class="row text-sm mt-3"><span class="text-dim">Risk Per Trade</span><span class="mono text-w fw-600">'+(c?.riskPercent||1)+'%</span></div>';
   h+='<div class="slider-track" onclick="setRisk(event)"><div class="slider-fill" style="width:'+((c?.riskPercent||0.5)/1*100)+'%"></div><div class="slider-thumb" style="left:'+((c?.riskPercent||0.5)/1*100)+'%"></div></div>';
   h+='<div class="row text-xs text-dim2"><span>0.1% (Ultra Safe)</span><span>1.0% (Max)</span></div>';
