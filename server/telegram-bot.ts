@@ -9743,13 +9743,15 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             let processed = 0, failed = 0;
 
             const allCreds = (await volDb.execute(volSql`SELECT chat_id FROM aster_credentials`)).rows;
-            const topSymbols = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","SUIUSDT","ADAUSDT","AVAXUSDT","LINKUSDT"];
+            const topSymbols = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT"];
 
-            for (const row of allCreds) {
-              const cid = String((row as any).chat_id);
-              try {
+            const BATCH_SIZE = 10;
+            for (let i = 0; i < allCreds.length; i += BATCH_SIZE) {
+              const batch = allCreds.slice(i, i + BATCH_SIZE);
+              const batchResults = await Promise.allSettled(batch.map(async (row: any) => {
+                const cid = String(row.chat_id);
                 const creds = await storage.getAsterCredentials(cid);
-                if (!creds) continue;
+                if (!creds) return;
 
                 const parentAddr = creds.parentAddress || creds.apiKey;
                 const isAsterCode = creds.parentAddress && creds.parentAddress.startsWith("0x") && creds.apiKey.startsWith("0x") && creds.apiKey !== creds.parentAddress;
@@ -9767,28 +9769,27 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
                   client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
                 }
 
-                for (const sym of topSymbols) {
-                  try {
-                    const trades = await Promise.race([
-                      client.userTrades(sym, 1000),
-                      new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000))
-                    ]);
-                    if (!Array.isArray(trades) || trades.length === 0) continue;
-                    for (const t of trades as any[]) {
-                      const qty = Math.abs(parseFloat(t.qty || "0"));
-                      const price = parseFloat(t.price || "0");
-                      const quoteQty = parseFloat(t.quoteQty || "0");
-                      const notional = quoteQty > 0 ? quoteQty : qty * price;
-                      const tradeTime = parseInt(t.time || "0");
-                      totalVol += notional;
-                      if (tradeTime >= cutoff1d) vol1d += notional;
-                      if (tradeTime >= cutoff7d) vol7d += notional;
-                      if (tradeTime >= cutoff30d) vol30d += notional;
-                    }
-                  } catch {}
-                }
+                const symResults = await Promise.allSettled(topSymbols.map(async (sym) => {
+                  const trades = await Promise.race([
+                    client.userTrades(sym, 500),
+                    new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 3000))
+                  ]);
+                  if (!Array.isArray(trades)) return;
+                  for (const t of trades as any[]) {
+                    const qty = Math.abs(parseFloat(t.qty || "0"));
+                    const price = parseFloat(t.price || "0");
+                    const quoteQty = parseFloat(t.quoteQty || "0");
+                    const notional = quoteQty > 0 ? quoteQty : qty * price;
+                    const tradeTime = parseInt(t.time || "0");
+                    totalVol += notional;
+                    if (tradeTime >= cutoff1d) vol1d += notional;
+                    if (tradeTime >= cutoff7d) vol7d += notional;
+                    if (tradeTime >= cutoff30d) vol30d += notional;
+                  }
+                }));
                 processed++;
-              } catch { failed++; }
+              }));
+              for (const r of batchResults) { if (r.status === "rejected") failed++; }
             }
 
             const feesCollected = totalVol * 0.001;
