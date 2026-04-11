@@ -229,13 +229,13 @@ export function logTradeResult(features: any, won: boolean): void {
 }
 
 export function getSymbolConfidenceThreshold(symbol: string): number {
-  const BASE_THRESHOLD = 50;
+  const BASE_THRESHOLD = 40;
   const stat = symbolStats[symbol];
   if (!stat || stat.total < 10) return BASE_THRESHOLD;
   const wr = stat.wins / stat.total;
-  if (wr < 0.35) return Math.min(65, BASE_THRESHOLD + 15);
-  if (wr < 0.40) return Math.min(60, BASE_THRESHOLD + 10);
-  if (wr > 0.60) return Math.max(40, BASE_THRESHOLD - 10);
+  if (wr < 0.30) return Math.min(55, BASE_THRESHOLD + 15);
+  if (wr < 0.40) return Math.min(50, BASE_THRESHOLD + 10);
+  if (wr > 0.60) return Math.max(35, BASE_THRESHOLD - 5);
   return BASE_THRESHOLD;
 }
 
@@ -435,17 +435,16 @@ RECENT TRADE HISTORY (last 5):
 ${memoryStr}
 Recent Performance: ${recentWR}% win rate (${recentWins}W/${recentLosses}L from last ${recentMemory.length} trades)
 
-YOUR TRADING RULES (MANDATORY):
-1. ONLY trade when 2+ timeframes agree on direction
-2. NEVER trade in RANGING regime on any timeframe
-3. NEVER trade against the 1h trend
-4. Require RSI confirmation (not overbought for longs, not oversold for shorts)
-5. After 3 consecutive losses, be EXTRA cautious — need 3/3 timeframe alignment
-6. Funding rate should favor your direction
-7. Price should not be within 0.3% of a strong resistance (for longs) or support (for shorts)
-8. NEVER chase — if you missed the move, wait for pullback
-9. Minimum 1.5:1 reward-to-risk ratio
-10. If daily loss exceeds ${dailyLossLimit}% of balance, HOLD everything
+YOUR TRADING RULES:
+1. Trade when 2+ timeframes agree on direction — strong preference
+2. In RANGING markets, look for breakout setups or mean-reversion at extremes
+3. Prefer trading with the 1h trend, but counter-trend scalps are OK at key levels
+4. RSI extremes are opportunities, not blockers — oversold = potential long, overbought = potential short
+5. After 3 consecutive losses, reduce position size but keep trading good setups
+6. Consider funding rate but don't let it block a strong technical setup
+7. Be cautious near strong support/resistance but breakouts through them are high-conviction trades
+8. Minimum 1.2:1 reward-to-risk ratio
+9. If daily loss exceeds ${dailyLossLimit}% of balance, HOLD everything
 
 Respond with ONLY this JSON (no markdown, no explanation):
 {
@@ -460,11 +459,13 @@ Respond with ONLY this JSON (no markdown, no explanation):
 }
 
 GUIDELINES:
-- Recommend OPEN_LONG or OPEN_SHORT when you see a setup with favorable risk/reward and reasonable confluence (2+ supporting indicators).
-- Use HOLD only when signals genuinely conflict or there is no clear direction.
-- Confidence 50+ with good R:R = valid trade. Don't overthink — act on setups with edge.
-- In trending markets, trade WITH the trend even if momentum isn't perfect.
-- In ranging markets, look for mean-reversion setups at range extremes.`;
+- You MUST trade. Your job is to find the best entry, not to avoid trading. HOLD should be rare.
+- Recommend OPEN_LONG or OPEN_SHORT when you see any setup with reasonable edge. You don't need perfect confluence.
+- Use HOLD ONLY when signals are completely contradictory with no edge in either direction.
+- Confidence 40+ = valid trade. Don't overthink. A slight edge is enough.
+- In trending markets, trade WITH the trend. In ranging markets, trade at range extremes.
+- If EMA crossover aligns with RSI direction on ANY timeframe, that's enough to trade.
+- You are being paid to make decisions, not to sit on the sidelines. Be decisive.`;
 }
 
 function buildExitPrompt(
@@ -512,7 +513,7 @@ Respond with ONLY JSON:
 }
 
 const aiCache = new Map<string, { decision: ClaudeDecision; ts: number }>();
-const AI_CACHE_TTL = 180_000;
+const AI_CACHE_TTL = 90_000;
 
 function parseClaudeDecision(content: string): ClaudeDecision {
   try {
@@ -632,10 +633,7 @@ export async function getClaudeTradeDecision(
     decision.suggestedStopLoss = 1.5;
   }
 
-  if (decision.confidence < 70 && decision.action !== "HOLD") {
-    decision.action = "HOLD";
-    decision.reasoning = `Confidence ${decision.confidence}% below 70% threshold — ${decision.reasoning}`;
-  }
+  
 
   aiCache.set(cacheKey, { decision, ts: Date.now() });
 
