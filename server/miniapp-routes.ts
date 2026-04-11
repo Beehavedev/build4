@@ -886,10 +886,9 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
             const num = parseFloat(String(v));
             if (!isNaN(num) && num > 0) {
               const kl = k.toLowerCase();
-              if (kl.includes("availablebalance") || kl.includes("available") || kl.includes("maxwithdraw")) {
+              if (kl.includes("availablebalance") || kl === "available" || kl.includes("maxwithdraw")) {
                 availBal = Math.max(availBal, num);
-              }
-              if (kl.includes("walletbalance") || kl.includes("crosswalletbalance") || kl.includes("balance") || kl.includes("totalwalletbalance")) {
+              } else if (kl === "balance" || kl === "walletbalance" || kl === "crosswalletbalance" || kl === "totalwalletbalance") {
                 walletBal = Math.max(walletBal, num);
               }
             }
@@ -910,13 +909,19 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         extractFromObj(balances);
       }
 
-      if (availBal === 0 && walletBal === 0 && accountData) {
-        if (Array.isArray(accountData.assets)) {
-          const usdtAsset = accountData.assets.find((a: any) => (a.asset || "").toUpperCase() === "USDT");
-          if (usdtAsset) extractFromObj(usdtAsset);
-        }
+      if (accountData) {
+        const acctAvail = parseFloat(accountData.availableBalance || "0");
+        const acctWallet = parseFloat(accountData.totalWalletBalance || accountData.totalCrossWalletBalance || "0");
+        if (acctAvail > 0 && availBal === 0) availBal = acctAvail;
+        if (acctWallet > 0 && walletBal === 0) walletBal = acctWallet;
         if (availBal === 0 && walletBal === 0) {
-          extractFromObj(accountData);
+          if (Array.isArray(accountData.assets)) {
+            const usdtAsset = accountData.assets.find((a: any) => (a.asset || "").toUpperCase() === "USDT");
+            if (usdtAsset) extractFromObj(usdtAsset);
+          }
+          if (availBal === 0 && walletBal === 0) {
+            extractFromObj(accountData);
+          }
         }
       }
 

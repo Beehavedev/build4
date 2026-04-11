@@ -179,7 +179,7 @@ function startAutoRefresh(){
   refreshTimer=setInterval(async()=>{
     try{
       const a=await api('/api/miniapp/account');
-      if(a.connected){D=a;lastUpdate=Date.now();try{$('hdr-updated').textContent=timeAgo()}catch(e){}
+      if(a&&a.connected!==undefined){D={...D,...a};lastUpdate=Date.now();try{$('hdr-updated').textContent=timeAgo()}catch(e){}
         const activePage=document.querySelector('.page.active');
         if(activePage?.id==='p-dash')renderDash();
         if(activePage?.id==='p-deposit')renderDeposit();
@@ -342,6 +342,9 @@ async function loadDash(){
   const el=$('p-dash');
   el.innerHTML=skeletonCard(4)+skeletonCard(2);
   try{await fetchAll()}catch(e){console.error('loadDash fetch error',e)}
+  if(!D.connected&&!D.bscWalletAddress){
+    try{await new Promise(r=>setTimeout(r,2000));await fetchAll()}catch(e){}
+  }
   renderDash();
   startAutoRefresh();
 }
