@@ -9731,7 +9731,6 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         await bot.sendMessage(chatId, `⏳ Fetching live volume from Aster for ${Number(asterTraders?.cnt || 0)} traders...`);
 
         const allCreds = (await db.execute(sql`SELECT chat_id FROM aster_credentials`)).rows;
-        const symbols = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","SUIUSDT","ADAUSDT","AVAXUSDT","LINKUSDT"];
 
         for (const row of allCreds) {
           const cid = String((row as any).chat_id);
@@ -9755,21 +9754,21 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
               client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
             }
 
-            for (const sym of symbols) {
-              try {
-                const trades = await client.userTrades(sym, 500);
-                if (!Array.isArray(trades)) continue;
-                for (const t of trades) {
-                  const quoteQty = parseFloat(t.quoteQty || t.qty || "0") * parseFloat(t.price || "1");
-                  const tradeVol = Math.abs(parseFloat(t.quoteQty || "0") || quoteQty);
-                  const tradeTime = parseInt(t.time || "0");
-                  totalVol += tradeVol;
-                  if (tradeTime >= cutoff1d) vol1d += tradeVol;
-                  if (tradeTime >= cutoff7d) vol7d += tradeVol;
-                  if (tradeTime >= cutoff30d) vol30d += tradeVol;
+            try {
+              const income = await client.income(undefined, 1000);
+              if (Array.isArray(income)) {
+                for (const inc of income) {
+                  if ((inc.incomeType || "") === "REALIZED_PNL" || (inc.incomeType || "") === "COMMISSION") {
+                    const amt = Math.abs(parseFloat(inc.income || "0"));
+                    const incTime = parseInt(inc.time || "0");
+                    totalVol += amt;
+                    if (incTime >= cutoff1d) vol1d += amt;
+                    if (incTime >= cutoff7d) vol7d += amt;
+                    if (incTime >= cutoff30d) vol30d += amt;
+                  }
                 }
-              } catch {}
-            }
+              }
+            } catch {}
             await new Promise(r => setTimeout(r, 200));
           } catch {}
         }
