@@ -9773,14 +9773,45 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             const debugLines: string[] = [];
             debugLines.push(`user=${parentAddr.substring(0,10)} signer=${signerAddr.substring(0,10)}`);
 
-            const TOP_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SUIUSDT"];
+            // Step 1: Get all traded symbols from exchange info
+            let allSymbols: string[] = [];
+            try {
+              const resp = await fetch(`${FAPI}/fapi/v3/exchangeInfo`);
+              const exInfo = await resp.json();
+              if (exInfo?.symbols && Array.isArray(exInfo.symbols)) {
+                allSymbols = exInfo.symbols
+                  .filter((s: any) => s.quoteAsset === "USDT" && s.status === "TRADING")
+                  .map((s: any) => s.symbol);
+              }
+            } catch (e: any) {
+              debugLines.push(`exchangeInfo ERR: ${e.message?.substring(0, 60)}`);
+            }
+            if (allSymbols.length === 0) {
+              allSymbols = ["BTCUSDT","ETHUSDT","SUIUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","AVAXUSDT","LINKUSDT","DOTUSDT","MATICUSDT","ARBUSDT","OPUSDT","APTUSDT","PEPEUSDT","WIFUSDT","NEARUSDT","FILUSDT","LTCUSDT"];
+            }
+            debugLines.push(`symbols=${allSymbols.length}`);
 
-            for (const sym of TOP_SYMBOLS) {
+            const symCounts: Record<string, number> = {};
+
+            // Step 2: Fetch trades for each symbol with pagination
+            for (const sym of allSymbols) {
               try {
-                const raw = await makeTradingRequest(FAPI, "/fapi/v3/userTrades", parentAddr, signerAddr, signerPk, { symbol: sym, limit: 500 }, "GET");
-                if (Array.isArray(raw) && raw.length > 0) {
-                  debugLines.push(`${sym}: ${raw.length} trades`);
-                  for (const trade of raw) {
+                let allTrades: any[] = [];
+                let fromId: number | undefined;
+                let page = 0;
+                while (page < 10) {
+                  const params: any = { symbol: sym, limit: 1000 };
+                  if (fromId !== undefined) params.fromId = fromId;
+                  const raw = await makeTradingRequest(FAPI, "/fapi/v3/userTrades", parentAddr, signerAddr, signerPk, params, "GET");
+                  if (!Array.isArray(raw) || raw.length === 0) break;
+                  allTrades = allTrades.concat(raw);
+                  if (raw.length < 1000) break;
+                  fromId = parseInt(raw[raw.length - 1].id || "0") + 1;
+                  page++;
+                }
+                if (allTrades.length > 0) {
+                  symCounts[sym] = allTrades.length;
+                  for (const trade of allTrades) {
                     const qty = Math.abs(parseFloat(trade.qty || "0"));
                     const price = parseFloat(trade.price || "0");
                     const quoteQty = parseFloat(trade.quoteQty || "0");
@@ -9795,44 +9826,40 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
                     if (t >= cutoff7d) vol7d += tradeVol;
                     if (t >= cutoff30d) vol30d += tradeVol;
                   }
-                } else {
-                  debugLines.push(`${sym}: ${JSON.stringify(raw).substring(0, 80)}`);
                 }
               } catch (e: any) {
-                debugLines.push(`${sym}: ERR ${e.message?.substring(0, 80)}`);
+                // skip symbols with no trades silently
               }
             }
 
-            if (tradeCount === 0) {
-              debugLines.push("trades=0, trying income...");
-              try {
-                const incRaw = await makeTradingRequest(FAPI, "/fapi/v3/income", parentAddr, signerAddr, signerPk, { limit: 500 }, "GET");
-                if (Array.isArray(incRaw) && incRaw.length > 0) {
-                  const typeCounts: Record<string, number> = {};
-                  for (const r of incRaw) {
-                    typeCounts[r.incomeType || "?"] = (typeCounts[r.incomeType || "?"] || 0) + 1;
-                    const amt = Math.abs(parseFloat(r.income || "0"));
-                    const t = parseInt(r.time || "0");
-                    if (r.incomeType === "REALIZED_PNL" && amt > 0) {
-                      tradeCount++;
-                      const estVol = amt * 100;
-                      totalVol += estVol;
-                      if (t >= cutoff1d) vol1d += estVol;
-                      if (t >= cutoff7d) vol7d += estVol;
-                      if (t >= cutoff30d) vol30d += estVol;
-                    }
-                    if (r.incomeType === "COMMISSION" || r.incomeType === "TRADING_FEE") {
-                      totalCommission += amt;
-                    }
-                  }
-                  debugLines.push(`income: ${incRaw.length} recs, types=${JSON.stringify(typeCounts)}`);
-                } else {
-                  debugLines.push(`income: ${JSON.stringify(incRaw).substring(0, 100)}`);
+            // Step 3: Also fetch commission from income endpoint for accuracy
+            try {
+              let incomeCommission = 0;
+              let incPage = 0;
+              let incStartTime: number | undefined;
+              while (incPage < 20) {
+                const incParams: any = { incomeType: "COMMISSION", limit: 1000 };
+                if (incStartTime !== undefined) incParams.startTime = incStartTime;
+                const incRaw = await makeTradingRequest(FAPI, "/fapi/v3/income", parentAddr, signerAddr, signerPk, incParams, "GET");
+                if (!Array.isArray(incRaw) || incRaw.length === 0) break;
+                for (const r of incRaw) {
+                  incomeCommission += Math.abs(parseFloat(r.income || "0"));
                 }
-              } catch (e: any) {
-                debugLines.push(`income ERR: ${e.message?.substring(0, 80)}`);
+                if (incRaw.length < 1000) break;
+                incStartTime = parseInt(incRaw[incRaw.length - 1].time || "0") + 1;
+                incPage++;
               }
+              if (incomeCommission > totalCommission) {
+                debugLines.push(`comm:income=$${incomeCommission.toFixed(2)}>trades=$${totalCommission.toFixed(2)}`);
+                totalCommission = incomeCommission;
+              }
+            } catch (e: any) {
+              debugLines.push(`income ERR: ${e.message?.substring(0, 60)}`);
             }
+
+            // Build symbol summary for debug
+            const topSyms = Object.entries(symCounts).sort((a, b) => b[1] - a[1]).slice(0, 6);
+            for (const [s, c] of topSyms) debugLines.push(`${s}: ${c}`);
 
             console.log(`[Volume] ${debugLines.join("; ")}`);
 
