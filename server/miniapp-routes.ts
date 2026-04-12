@@ -2170,8 +2170,13 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         status: order.status || "FILLED",
       });
     } catch (e: any) {
-      console.error(`[MiniApp] Close error: ${e.message}`);
-      res.status(500).json({ error: "Internal server error" });
+      const msg = e.message || "Unknown error";
+      console.error(`[MiniApp] Close error: ${msg}`);
+      const userMsg = msg.includes("429") ? "Rate limited — try again in 10 seconds"
+        : msg.includes("timeout") || msg.includes("abort") ? "Server timeout — try again"
+        : msg.includes("insufficient") ? "Insufficient margin"
+        : msg.substring(0, 120);
+      res.status(500).json({ error: userMsg });
     }
   });
 
