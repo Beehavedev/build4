@@ -406,7 +406,7 @@ function renderDash(){
     h+='</div>';
   }
 
-  var perpAccount=(D.availableMargin||0)+(D.positionMargin||0)+(D.unrealizedPnl||0);
+  var perpAccount=(D.portfolioValue||D.availableMargin||0)+(D.positionMargin||0)+(D.unrealizedPnl||0);
   var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
 
   var accentColor=totalPnl>=0?'14,203,129':'248,81,73';
@@ -582,7 +582,7 @@ function renderDeposit(){
     h+='</div>';
   }
 
-  var perpAcctP=D.marginBalance||(D.walletBalance||0)+(D.unrealizedPnl||0);
+  var perpAcctP=D.portfolioValue||(D.walletBalance||0)+(D.unrealizedPnl||0);
   h+='<div class="card" style="background:linear-gradient(135deg,rgba(14,203,129,0.05),transparent)">';
   h+='<div class="section-title">Your Balances</div>';
   h+='<div style="text-align:center;padding:14px;background:var(--green-bg);border-radius:10px;margin-bottom:8px"><div class="text-xs" style="color:var(--green);letter-spacing:1px;text-transform:uppercase">Perpetual Account</div><div class="val" style="font-size:26px;color:#fff;margin-top:4px">$'+fmt(perpAcctP)+'</div></div>';

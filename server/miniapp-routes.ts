@@ -1005,6 +1005,34 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         }
       }
 
+      let multiAssetValue = 0;
+      if (Array.isArray(balances) && balances.length > 0) {
+        const ASSET_USD_MAP: Record<string, string> = {
+          FBTC: "BTCUSDT", WBTC: "BTCUSDT",
+        };
+        try {
+          const allTickers = await futuresClient.tickerPrice().catch(() => []);
+          const priceMap: Record<string, number> = {};
+          if (Array.isArray(allTickers)) {
+            for (const t of allTickers) {
+              if (t.symbol && t.price) priceMap[t.symbol] = parseFloat(t.price);
+            }
+          }
+          for (const b of balances) {
+            const asset = (b.asset || "").toUpperCase();
+            const creditBal = parseFloat(b.availableBalance || "0");
+            if (creditBal <= 0) continue;
+            if (asset === "USDT" || asset === "USD" || asset === "USDC" || asset === "BUSD") continue;
+            const pairSymbol = ASSET_USD_MAP[asset];
+            if (pairSymbol && priceMap[pairSymbol]) {
+              multiAssetValue += creditBal * priceMap[pairSymbol];
+            }
+          }
+        } catch {}
+      }
+
+      const totalPortfolioValue = walletBal + multiAssetValue;
+
 
       const openPositions = Array.isArray(positions)
         ? positions.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0)
@@ -1189,6 +1217,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         connected: true,
         walletBalance: walletBal,
         availableMargin: availBal,
+        portfolioValue: totalPortfolioValue > walletBal ? totalPortfolioValue : walletBal,
         marginBalance,
         spotBalance,
         bscBalance,
