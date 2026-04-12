@@ -93,7 +93,7 @@ let tickerPriceCache: { prices: Record<string, number> | null; ts: number } = { 
 
 export function registerMiniAppRoutes(app: Express) {
   app.get("/miniapp", (_req: Request, res: Response) => {
-    console.log(`[MiniApp] Serving miniapp HTML v51`);
+    console.log(`[MiniApp] Serving miniapp HTML v52`);
     const html = getMiniAppHTML();
     res.status(200).set({
       "Content-Type": "text/html",
@@ -597,9 +597,10 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
   app.use("/api/miniapp", miniAppAuth);
 
   app.post("/api/miniapp/quick-activate", async (req: Request, res: Response) => {
+    console.log(`[QuickActivate] POST received chatId=${req.headers["x-telegram-chat-id"]}`);
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;
-      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID — please reload the app" });
 
       const existingCreds = await storage.getAsterCredentials(chatId);
       if (existingCreds && existingCreds.apiKey && existingCreds.apiSecret) {

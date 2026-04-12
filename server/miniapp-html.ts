@@ -127,7 +127,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
-const MINIAPP_VERSION='v51-apr12-ratelimit-fix';
+const MINIAPP_VERSION='v52-apr12-error-msg';
 console.log('[MiniApp] version='+MINIAPP_VERSION+' chatId='+chatId);
 var _debugLog=[];
 function _dlog(msg){_debugLog.push(Date.now()+': '+msg);console.log('[MiniApp] '+msg)}
@@ -153,7 +153,7 @@ function api(path,opts={}){
   var timeout=isTradeAction?45000:30000;
   var ctrl=new AbortController();
   var tm=setTimeout(function(){ctrl.abort()},timeout);
-  return fetch(path,{...opts,signal:ctrl.signal,headers:{'x-telegram-chat-id':String(chatId),...(opts.headers||{})}}).then(function(r){clearTimeout(tm);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}).catch(function(e){clearTimeout(tm);if(e.name==='AbortError')throw new Error('Request timed out — server busy, try again');throw e})
+  return fetch(path,{...opts,signal:ctrl.signal,headers:{'x-telegram-chat-id':String(chatId),...(opts.headers||{})}}).then(function(r){clearTimeout(tm);if(!r.ok)return r.json().catch(function(){return{}}).then(function(body){throw new Error(body.error||'HTTP '+r.status)});return r.json()}).catch(function(e){clearTimeout(tm);if(e.name==='AbortError')throw new Error('Request timed out — server busy, try again');throw e})
 }
 function toast(msg,type='info'){const t=$('toast');t.className='toast show toast-'+type;t.innerHTML=msg;setTimeout(()=>t.classList.remove('show'),3500)}
 function customConfirm(html){return new Promise(function(resolve){var ov=document.createElement('div');ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';var box=document.createElement('div');box.style.cssText='background:#1a1d21;border:1px solid #333;border-radius:12px;padding:20px;max-width:340px;width:100%;color:#e0e0e0;font-size:14px;line-height:1.6';box.innerHTML=html+'<div style="display:flex;gap:10px;margin-top:16px"><button id="cc-cancel" style="flex:1;padding:10px;border-radius:8px;border:1px solid #555;background:transparent;color:#e0e0e0;cursor:pointer;font-size:14px">Cancel</button><button id="cc-ok" style="flex:1;padding:10px;border-radius:8px;border:none;background:#0ecb81;color:#0b0e11;cursor:pointer;font-weight:600;font-size:14px">Confirm</button></div>';ov.appendChild(box);document.body.appendChild(ov);$('cc-ok').onclick=function(){document.body.removeChild(ov);resolve(true)};$('cc-cancel').onclick=function(){document.body.removeChild(ov);resolve(false)};ov.onclick=function(e){if(e.target===ov){document.body.removeChild(ov);resolve(false)}}})}
