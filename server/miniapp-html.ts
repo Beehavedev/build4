@@ -127,7 +127,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
-const MINIAPP_VERSION='v52-apr12-error-msg';
+const MINIAPP_VERSION='v53-apr12-autoconnect';
 console.log('[MiniApp] version='+MINIAPP_VERSION+' chatId='+chatId);
 var _debugLog=[];
 function _dlog(msg){_debugLog.push(Date.now()+': '+msg);console.log('[MiniApp] '+msg)}
@@ -388,6 +388,22 @@ async function loadDash(){
     for(var retry=0;retry<2;retry++){
       try{await new Promise(r=>setTimeout(r,1500));await fetchAll();if(D.connected)break}catch(e){}
     }
+  }
+  if(!D.connected&&D.bscWalletAddress&&!window._autoActivateAttempted){
+    window._autoActivateAttempted=true;
+    _dlog('auto-activating for wallet '+D.bscWalletAddress.substring(0,10));
+    try{
+      var ar=await api('/api/miniapp/quick-activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({walletAddress:D.bscWalletAddress})});
+      if(ar.success){
+        _dlog('auto-activate success');
+        toast('✅ Trading activated!','ok');
+        D.asterApiWallet=ar.signerAddress||'auto';
+        await new Promise(r=>setTimeout(r,2000));
+        await fetchAll();
+      }else{
+        _dlog('auto-activate failed: '+(ar.error||'unknown'));
+      }
+    }catch(ae){_dlog('auto-activate error: '+ae.message)}
   }
   clearTimeout(skeletonTimer);
   if(!D.connected&&fetchErrors>0&&lastFetchErr){

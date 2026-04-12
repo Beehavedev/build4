@@ -639,6 +639,8 @@ export async function asterCodeOnboard(
   }
 }
 
+const spotBalanceCache = new Map<string, { data: any[]; ts: number }>();
+
 export function createAsterCodeFuturesClient(
   userAddress: string,
   signerAddress: string,
@@ -844,14 +846,19 @@ export function createAsterCodeFuturesClient(
     },
 
     async spotBalance(): Promise<{ asset: string; free: string; locked: string }[]> {
+      const cacheKey = `spotBal_${userAddress}`;
+      const cached = spotBalanceCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < 60000) return cached.data;
+
       try {
         const result = await makeTradingRequest(baseUrl, "/sapi/v3/account", userAddress, signerAddress, signerPrivateKey, {}, "GET");
-        if (result?.balances) return result.balances;
+        if (result?.balances) { spotBalanceCache.set(cacheKey, { data: result.balances, ts: Date.now() }); return result.balances; }
       } catch {}
       try {
         const result2 = await makeTradingRequest(baseUrl, "/sapi/v1/account", userAddress, signerAddress, signerPrivateKey, {}, "GET");
-        if (result2?.balances) return result2.balances;
+        if (result2?.balances) { spotBalanceCache.set(cacheKey, { data: result2.balances, ts: Date.now() }); return result2.balances; }
       } catch {}
+      spotBalanceCache.set(cacheKey, { data: [], ts: Date.now() });
       return [];
     },
 
