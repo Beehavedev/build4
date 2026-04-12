@@ -9758,73 +9758,105 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
             const { createAsterCodeFuturesClient, getDefaultAsterCodeConfig } = await import("./aster-code");
             const codeConfig = getDefaultAsterCodeConfig();
-            const TOP_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SUIUSDT"];
 
-            const chatIds = allCreds.map((r: any) => r.chat_id);
+            const adminChatIdVol = process.env.ADMIN_CHAT_ID || volChatId.toString();
+            const adminCred = await storage.getAsterCredentials(adminChatIdVol);
 
-            const BATCH_SIZE = 5;
-            let scannedUsers = 0;
-            let usersWithTrades = 0;
-
-            for (let bi = 0; bi < chatIds.length; bi += BATCH_SIZE) {
-              const batch = chatIds.slice(bi, bi + BATCH_SIZE);
-              await Promise.allSettled(batch.map(async (cid: string) => {
-                try {
-                  const cred = await storage.getAsterCredentials(cid);
-                  if (!cred || !cred.apiKey || !cred.apiSecret || cred.apiKey === "V3_DIRECT") return;
-                  const parentAddr = (cred.parentAddress || "").replace("astercode:", "");
-                  if (!parentAddr) return;
-                  const isAsterCode = (cred.parentAddress || "").startsWith("astercode:");
-                  let client: any;
-                  if (isAsterCode) {
-                    client = createAsterCodeFuturesClient(parentAddr, cred.apiKey, cred.apiSecret, codeConfig);
-                  } else {
-                    const { createAsterV3FuturesClient } = await import("./aster-client");
-                    client = createAsterV3FuturesClient({ user: parentAddr, signer: cred.apiKey, signerPrivateKey: cred.apiSecret, builder: codeConfig.builderAddress, feeRate: 0.001 });
-                  }
-                  scannedUsers++;
-                  let userHasTrades = false;
-                  for (const sym of TOP_SYMBOLS) {
-                    try {
-                      const trades = await Promise.race([
-                        client.userTrades(sym, 500),
-                        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 6000))
-                      ]) as any[];
-                      if (!Array.isArray(trades)) continue;
-                      for (const trade of trades) {
-                        const qty = Math.abs(parseFloat(trade.qty || "0"));
-                        const price = parseFloat(trade.price || "0");
-                        const quoteQty = parseFloat(trade.quoteQty || "0");
-                        const commission = Math.abs(parseFloat(trade.commission || "0"));
-                        const t = parseInt(trade.time || "0");
-                        const tradeVol = quoteQty > 0 ? quoteQty : qty * price;
-                        if (tradeVol <= 0) continue;
-                        tradeCount++;
-                        totalVol += tradeVol;
-                        totalCommission += commission;
-                        userHasTrades = true;
-                        if (t >= cutoff1d) vol1d += tradeVol;
-                        if (t >= cutoff7d) vol7d += tradeVol;
-                        if (t >= cutoff30d) vol30d += tradeVol;
-                      }
-                    } catch {}
-                  }
-                  if (userHasTrades) usersWithTrades++;
-                } catch (e: any) {
-                  console.log(`[Volume] Error scanning user ${cid}: ${e.message?.substring(0, 80)}`);
-                }
-              }));
+            if (!adminCred || !adminCred.apiKey || !adminCred.apiSecret) {
+              throw new Error("Admin Aster credentials not found");
             }
-            console.log(`[Volume] Scanned ${scannedUsers}/${chatIds.length} users, ${usersWithTrades} with trades, ${tradeCount} total trades`);
+
+            const parentAddr = (adminCred.parentAddress || "").replace("astercode:", "");
+            const isAsterCode = (adminCred.parentAddress || "").startsWith("astercode:");
+            let adminClient: any;
+            if (isAsterCode) {
+              adminClient = createAsterCodeFuturesClient(parentAddr, adminCred.apiKey, adminCred.apiSecret, codeConfig);
+            } else {
+              const { createAsterV3FuturesClient } = await import("./aster-client");
+              adminClient = createAsterV3FuturesClient({ user: parentAddr, signer: adminCred.apiKey, signerPrivateKey: adminCred.apiSecret, builder: codeConfig.builderAddress, feeRate: 0.001 });
+            }
+
+            const TOP_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SUIUSDT", "SOLUSDT", "BNBUSDT", "ARBUSDT", "OPUSDT", "LINKUSDT", "DOGEUSDT", "XRPUSDT"];
+            const debugLines: string[] = [];
+
+            for (const sym of TOP_SYMBOLS) {
+              try {
+                const trades = await Promise.race([
+                  adminClient.userTrades(sym, 1000),
+                  new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000))
+                ]) as any[];
+                if (Array.isArray(trades) && trades.length > 0) {
+                  debugLines.push(`${sym}: ${trades.length} trades`);
+                  for (const trade of trades) {
+                    const qty = Math.abs(parseFloat(trade.qty || "0"));
+                    const price = parseFloat(trade.price || "0");
+                    const quoteQty = parseFloat(trade.quoteQty || "0");
+                    const commission = Math.abs(parseFloat(trade.commission || "0"));
+                    const t = parseInt(trade.time || "0");
+                    const tradeVol = quoteQty > 0 ? quoteQty : qty * price;
+                    if (tradeVol <= 0) continue;
+                    tradeCount++;
+                    totalVol += tradeVol;
+                    totalCommission += commission;
+                    if (t >= cutoff1d) vol1d += tradeVol;
+                    if (t >= cutoff7d) vol7d += tradeVol;
+                    if (t >= cutoff30d) vol30d += tradeVol;
+                  }
+                }
+              } catch (e: any) {
+                debugLines.push(`${sym}: ERR ${e.message?.substring(0, 60)}`);
+              }
+            }
+
+            if (tradeCount === 0) {
+              debugLines.push("userTrades returned 0, trying income...");
+              try {
+                const allIncome = await Promise.race([
+                  adminClient.income(undefined, 1000),
+                  new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000))
+                ]) as any[];
+                if (Array.isArray(allIncome) && allIncome.length > 0) {
+                  const typeCounts: Record<string, number> = {};
+                  for (const r of allIncome) {
+                    typeCounts[r.incomeType || "UNKNOWN"] = (typeCounts[r.incomeType || "UNKNOWN"] || 0) + 1;
+                    const amt = Math.abs(parseFloat(r.income || "0"));
+                    const t = parseInt(r.time || "0");
+                    if (r.incomeType === "REALIZED_PNL" && amt > 0) {
+                      const estVol = amt * 100;
+                      tradeCount++;
+                      totalVol += estVol;
+                      if (t >= cutoff1d) vol1d += estVol;
+                      if (t >= cutoff7d) vol7d += estVol;
+                      if (t >= cutoff30d) vol30d += estVol;
+                    }
+                    if (r.incomeType === "COMMISSION" || r.incomeType === "TRADING_FEE") {
+                      totalCommission += amt;
+                      const estVol = amt / 0.001;
+                      totalVol += estVol;
+                      if (t >= cutoff1d) vol1d += estVol;
+                      if (t >= cutoff7d) vol7d += estVol;
+                      if (t >= cutoff30d) vol30d += estVol;
+                    }
+                  }
+                  debugLines.push(`income: ${allIncome.length} records, types: ${JSON.stringify(typeCounts)}`);
+                } else {
+                  debugLines.push(`income: empty or not array`);
+                }
+              } catch (e: any) {
+                debugLines.push(`income ERR: ${e.message?.substring(0, 80)}`);
+              }
+            }
+
+            console.log(`[Volume] user=${parentAddr.substring(0,10)} trades=${tradeCount} vol=${totalVol.toFixed(2)} debug: ${debugLines.join("; ")}`);
 
             await bot.sendMessage(volChatId,
-              `📈 <b>Volume Report</b> (${traderCount} registered, ${usersWithTrades} active, ${tradeCount} trades)\n\n` +
+              `📈 <b>Volume Report</b> (${traderCount} registered, ${tradeCount} trades)\n\n` +
               `• Daily: <b>~${fmtUsd(vol1d)}</b>\n` +
               `• 7 Days: <b>~${fmtUsd(vol7d)}</b>\n` +
               `• 30 Days: <b>~${fmtUsd(vol30d)}</b>\n` +
               `• All Time: <b>~${fmtUsd(totalVol)}</b>\n\n` +
               `💰 Commission: <b>~${fmtUsd(totalCommission)}</b>\n` +
-              `📊 Scanned: ${scannedUsers}/${chatIds.length} users`,
+              `🔍 Debug: ${debugLines.join(" | ")}`,
               { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, volChatId) }
             );
           } catch (e: any) {
