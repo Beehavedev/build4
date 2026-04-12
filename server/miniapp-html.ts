@@ -195,9 +195,9 @@ function startAutoRefresh(){
         D={...D,...a};lastUpdate=Date.now();fetchErrors=0;lastFetchErr='';try{sessionStorage.setItem('miniapp_D',JSON.stringify(D))}catch(e){}
         try{$('hdr-updated').textContent=timeAgo()}catch(e){}
         const activePage=document.querySelector('.page.active');
-        if(activePage?.id==='p-dash')renderDash();
-        if(activePage?.id==='p-deposit')renderDeposit();
-        if(activePage?.id==='p-portfolio'&&portfolioSubTab==='positions')renderPortfolio();
+        try{if(activePage?.id==='p-dash')renderDash()}catch(e){console.error('auto-refresh renderDash error',e)}
+        try{if(activePage?.id==='p-deposit')renderDeposit()}catch(e){}
+        try{if(activePage?.id==='p-portfolio'&&portfolioSubTab==='positions')renderPortfolio()}catch(e){}
         if(wasDisconnected&&D.connected){clearInterval(refreshTimer);startAutoRefresh()}
       }
     }catch(e){fetchErrors++}
@@ -366,7 +366,7 @@ async function loadDash(){
   const el=$('p-dash');
   var hasGoodData=D.connected&&((D.availableMargin||0)>0||(D.portfolioValue||0)>0);
   if(!hasGoodData){el.innerHTML=skeletonCard(4)+skeletonCard(2)}
-  else{renderDash()}
+  else{try{renderDash()}catch(e){console.error('renderDash pre-fetch error',e)}}
   try{await fetchAll()}catch(e){console.error('loadDash fetch error',e)}
   if(!D.connected&&!D.bscWalletAddress){
     for(var retry=0;retry<3;retry++){
@@ -378,7 +378,7 @@ async function loadDash(){
     startAutoRefresh();
     return;
   }
-  renderDash();
+  try{renderDash()}catch(e){console.error('renderDash error',e);el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">⚠️</div><div class="text-w fw-600">Render Error</div><div class="text-dim text-sm mt-2">'+String(e)+'</div><button class="btn btn-green mt-3" style="width:100%" onclick="loadDash()">↻ Retry</button></div>'}
   startAutoRefresh();
 }
 
@@ -386,7 +386,7 @@ function renderDash(){
   const el=$('p-dash');
   if(D.connected){
     var chk=(D.availableMargin||0)+(D.portfolioValue||0)+(D.positionMargin||0);
-    if(chk<=0&&D._loaded){
+    if(chk<=0&&!D._loaded){
       el.innerHTML='<div class="card" style="text-align:center;padding:36px 24px"><div style="font-size:32px;margin-bottom:12px">⏳</div><div class="text-w">Loading account data...</div><div class="text-dim text-sm mt-2">Please wait a moment</div></div>';
       return;
     }
