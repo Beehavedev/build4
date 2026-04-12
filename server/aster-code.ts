@@ -1,4 +1,5 @@
 import { Wallet, getAddress, Signature } from "ethers";
+import { rateLimitWait } from "./aster-rate-limiter";
 
 const DEFAULT_FAPI_URL = "https://fapi.asterdex.com";
 const REQUEST_TIMEOUT_MS = 20000;
@@ -113,6 +114,7 @@ export async function makeTradingRequest(
   maxRetries: number = 3,
 ): Promise<any> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    await rateLimitWait();
     const fullParams: Record<string, any> = {
       ...params,
       asterChain: "Mainnet",

@@ -1,17 +1,7 @@
 import crypto from "crypto";
 import { Wallet, getAddress, Signature, JsonRpcProvider, Contract, formatUnits, formatEther, parseUnits, parseEther, MaxUint256 } from "ethers";
 
-const RATE_LIMIT_MIN_INTERVAL = 250;
-let _lastRequestTime = 0;
-
-async function rateLimitWait(): Promise<void> {
-  const now = Date.now();
-  const elapsed = now - _lastRequestTime;
-  if (elapsed < RATE_LIMIT_MIN_INTERVAL) {
-    await new Promise(r => setTimeout(r, RATE_LIMIT_MIN_INTERVAL - elapsed));
-  }
-  _lastRequestTime = Date.now();
-}
+import { rateLimitWait } from "./aster-rate-limiter";
 
 interface AsterClientConfig {
   apiKey: string;
