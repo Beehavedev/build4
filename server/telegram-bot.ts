@@ -9756,38 +9756,31 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             const allCreds = (await volDb.execute(volSql`SELECT chat_id FROM aster_credentials`)).rows;
             const traderCount = allCreds.length;
 
-            const { createAsterCodeFuturesClient, getDefaultAsterCodeConfig } = await import("./aster-code");
+            const { makeTradingRequest, getDefaultAsterCodeConfig } = await import("./aster-code");
             const codeConfig = getDefaultAsterCodeConfig();
+            const FAPI = "https://fapi.asterdex.com";
 
             const adminChatIdVol = process.env.ADMIN_CHAT_ID || volChatId.toString();
             const adminCred = await storage.getAsterCredentials(adminChatIdVol);
 
             if (!adminCred || !adminCred.apiKey || !adminCred.apiSecret) {
-              throw new Error("Admin Aster credentials not found");
+              throw new Error("Admin Aster credentials not found (chatId=" + adminChatIdVol + ")");
             }
 
             const parentAddr = (adminCred.parentAddress || "").replace("astercode:", "");
-            const isAsterCode = (adminCred.parentAddress || "").startsWith("astercode:");
-            let adminClient: any;
-            if (isAsterCode) {
-              adminClient = createAsterCodeFuturesClient(parentAddr, adminCred.apiKey, adminCred.apiSecret, codeConfig);
-            } else {
-              const { createAsterV3FuturesClient } = await import("./aster-client");
-              adminClient = createAsterV3FuturesClient({ user: parentAddr, signer: adminCred.apiKey, signerPrivateKey: adminCred.apiSecret, builder: codeConfig.builderAddress, feeRate: 0.001 });
-            }
-
-            const TOP_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SUIUSDT", "SOLUSDT", "BNBUSDT", "ARBUSDT", "OPUSDT", "LINKUSDT", "DOGEUSDT", "XRPUSDT"];
+            const signerAddr = adminCred.apiKey;
+            const signerPk = adminCred.apiSecret;
             const debugLines: string[] = [];
+            debugLines.push(`user=${parentAddr.substring(0,10)} signer=${signerAddr.substring(0,10)}`);
+
+            const TOP_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SUIUSDT"];
 
             for (const sym of TOP_SYMBOLS) {
               try {
-                const trades = await Promise.race([
-                  adminClient.userTrades(sym, 1000),
-                  new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000))
-                ]) as any[];
-                if (Array.isArray(trades) && trades.length > 0) {
-                  debugLines.push(`${sym}: ${trades.length} trades`);
-                  for (const trade of trades) {
+                const raw = await makeTradingRequest(FAPI, "/fapi/v3/userTrades", parentAddr, signerAddr, signerPk, { symbol: sym, limit: 500 }, "GET");
+                if (Array.isArray(raw) && raw.length > 0) {
+                  debugLines.push(`${sym}: ${raw.length} trades`);
+                  for (const trade of raw) {
                     const qty = Math.abs(parseFloat(trade.qty || "0"));
                     const price = parseFloat(trade.price || "0");
                     const quoteQty = parseFloat(trade.quoteQty || "0");
@@ -9802,28 +9795,27 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
                     if (t >= cutoff7d) vol7d += tradeVol;
                     if (t >= cutoff30d) vol30d += tradeVol;
                   }
+                } else {
+                  debugLines.push(`${sym}: ${JSON.stringify(raw).substring(0, 80)}`);
                 }
               } catch (e: any) {
-                debugLines.push(`${sym}: ERR ${e.message?.substring(0, 60)}`);
+                debugLines.push(`${sym}: ERR ${e.message?.substring(0, 80)}`);
               }
             }
 
             if (tradeCount === 0) {
-              debugLines.push("userTrades returned 0, trying income...");
+              debugLines.push("trades=0, trying income...");
               try {
-                const allIncome = await Promise.race([
-                  adminClient.income(undefined, 1000),
-                  new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000))
-                ]) as any[];
-                if (Array.isArray(allIncome) && allIncome.length > 0) {
+                const incRaw = await makeTradingRequest(FAPI, "/fapi/v3/income", parentAddr, signerAddr, signerPk, { limit: 500 }, "GET");
+                if (Array.isArray(incRaw) && incRaw.length > 0) {
                   const typeCounts: Record<string, number> = {};
-                  for (const r of allIncome) {
-                    typeCounts[r.incomeType || "UNKNOWN"] = (typeCounts[r.incomeType || "UNKNOWN"] || 0) + 1;
+                  for (const r of incRaw) {
+                    typeCounts[r.incomeType || "?"] = (typeCounts[r.incomeType || "?"] || 0) + 1;
                     const amt = Math.abs(parseFloat(r.income || "0"));
                     const t = parseInt(r.time || "0");
                     if (r.incomeType === "REALIZED_PNL" && amt > 0) {
-                      const estVol = amt * 100;
                       tradeCount++;
+                      const estVol = amt * 100;
                       totalVol += estVol;
                       if (t >= cutoff1d) vol1d += estVol;
                       if (t >= cutoff7d) vol7d += estVol;
@@ -9831,23 +9823,18 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
                     }
                     if (r.incomeType === "COMMISSION" || r.incomeType === "TRADING_FEE") {
                       totalCommission += amt;
-                      const estVol = amt / 0.001;
-                      totalVol += estVol;
-                      if (t >= cutoff1d) vol1d += estVol;
-                      if (t >= cutoff7d) vol7d += estVol;
-                      if (t >= cutoff30d) vol30d += estVol;
                     }
                   }
-                  debugLines.push(`income: ${allIncome.length} records, types: ${JSON.stringify(typeCounts)}`);
+                  debugLines.push(`income: ${incRaw.length} recs, types=${JSON.stringify(typeCounts)}`);
                 } else {
-                  debugLines.push(`income: empty or not array`);
+                  debugLines.push(`income: ${JSON.stringify(incRaw).substring(0, 100)}`);
                 }
               } catch (e: any) {
                 debugLines.push(`income ERR: ${e.message?.substring(0, 80)}`);
               }
             }
 
-            console.log(`[Volume] user=${parentAddr.substring(0,10)} trades=${tradeCount} vol=${totalVol.toFixed(2)} debug: ${debugLines.join("; ")}`);
+            console.log(`[Volume] ${debugLines.join("; ")}`);
 
             await bot.sendMessage(volChatId,
               `📈 <b>Volume Report</b> (${traderCount} registered, ${tradeCount} trades)\n\n` +

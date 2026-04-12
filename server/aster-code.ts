@@ -102,7 +102,7 @@ async function signV3(
   return sig;
 }
 
-async function makeTradingRequest(
+export async function makeTradingRequest(
   baseUrl: string,
   path: string,
   userAddress: string,
