@@ -9760,58 +9760,62 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             const codeConfig = getDefaultAsterCodeConfig();
             const TOP_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SUIUSDT"];
 
-            const allCredsData = (await volDb.execute(volSql`SELECT chat_id, api_key, api_secret, parent_address FROM aster_credentials WHERE api_key IS NOT NULL AND api_secret IS NOT NULL`)).rows;
+            const chatIds = allCreds.map((r: any) => r.chat_id);
 
             const BATCH_SIZE = 5;
             let scannedUsers = 0;
             let usersWithTrades = 0;
 
-            for (let bi = 0; bi < allCredsData.length; bi += BATCH_SIZE) {
-              const batch = allCredsData.slice(bi, bi + BATCH_SIZE);
-              const batchResults = await Promise.allSettled(batch.map(async (cred: any) => {
-                const parentAddr = (cred.parent_address || "").replace("astercode:", "");
-                const signerAddr = cred.api_key;
-                const signerPk = cred.api_secret;
-                if (!parentAddr || !signerAddr || !signerPk || signerAddr === "V3_DIRECT") return;
-                const isAsterCode = (cred.parent_address || "").startsWith("astercode:");
-                let client: any;
-                if (isAsterCode) {
-                  client = createAsterCodeFuturesClient(parentAddr, signerAddr, signerPk, codeConfig);
-                } else {
-                  const { createAsterV3FuturesClient } = await import("./aster-client");
-                  client = createAsterV3FuturesClient({ user: parentAddr, signer: signerAddr, signerPrivateKey: signerPk, builder: codeConfig.builderAddress, feeRate: 0.001 });
+            for (let bi = 0; bi < chatIds.length; bi += BATCH_SIZE) {
+              const batch = chatIds.slice(bi, bi + BATCH_SIZE);
+              await Promise.allSettled(batch.map(async (cid: string) => {
+                try {
+                  const cred = await storage.getAsterCredentials(cid);
+                  if (!cred || !cred.apiKey || !cred.apiSecret || cred.apiKey === "V3_DIRECT") return;
+                  const parentAddr = (cred.parentAddress || "").replace("astercode:", "");
+                  if (!parentAddr) return;
+                  const isAsterCode = (cred.parentAddress || "").startsWith("astercode:");
+                  let client: any;
+                  if (isAsterCode) {
+                    client = createAsterCodeFuturesClient(parentAddr, cred.apiKey, cred.apiSecret, codeConfig);
+                  } else {
+                    const { createAsterV3FuturesClient } = await import("./aster-client");
+                    client = createAsterV3FuturesClient({ user: parentAddr, signer: cred.apiKey, signerPrivateKey: cred.apiSecret, builder: codeConfig.builderAddress, feeRate: 0.001 });
+                  }
+                  scannedUsers++;
+                  let userHasTrades = false;
+                  for (const sym of TOP_SYMBOLS) {
+                    try {
+                      const trades = await Promise.race([
+                        client.userTrades(sym, 500),
+                        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 6000))
+                      ]) as any[];
+                      if (!Array.isArray(trades)) continue;
+                      for (const trade of trades) {
+                        const qty = Math.abs(parseFloat(trade.qty || "0"));
+                        const price = parseFloat(trade.price || "0");
+                        const quoteQty = parseFloat(trade.quoteQty || "0");
+                        const commission = Math.abs(parseFloat(trade.commission || "0"));
+                        const t = parseInt(trade.time || "0");
+                        const tradeVol = quoteQty > 0 ? quoteQty : qty * price;
+                        if (tradeVol <= 0) continue;
+                        tradeCount++;
+                        totalVol += tradeVol;
+                        totalCommission += commission;
+                        userHasTrades = true;
+                        if (t >= cutoff1d) vol1d += tradeVol;
+                        if (t >= cutoff7d) vol7d += tradeVol;
+                        if (t >= cutoff30d) vol30d += tradeVol;
+                      }
+                    } catch {}
+                  }
+                  if (userHasTrades) usersWithTrades++;
+                } catch (e: any) {
+                  console.log(`[Volume] Error scanning user ${cid}: ${e.message?.substring(0, 80)}`);
                 }
-                scannedUsers++;
-                let userHasTrades = false;
-                for (const sym of TOP_SYMBOLS) {
-                  try {
-                    const trades = await Promise.race([
-                      client.userTrades(sym, 500),
-                      new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 6000))
-                    ]) as any[];
-                    if (!Array.isArray(trades)) continue;
-                    for (const trade of trades) {
-                      const qty = Math.abs(parseFloat(trade.qty || "0"));
-                      const price = parseFloat(trade.price || "0");
-                      const quoteQty = parseFloat(trade.quoteQty || "0");
-                      const commission = Math.abs(parseFloat(trade.commission || "0"));
-                      const t = parseInt(trade.time || "0");
-                      const tradeVol = quoteQty > 0 ? quoteQty : qty * price;
-                      if (tradeVol <= 0) continue;
-                      tradeCount++;
-                      totalVol += tradeVol;
-                      totalCommission += commission;
-                      userHasTrades = true;
-                      if (t >= cutoff1d) vol1d += tradeVol;
-                      if (t >= cutoff7d) vol7d += tradeVol;
-                      if (t >= cutoff30d) vol30d += tradeVol;
-                    }
-                  } catch {}
-                }
-                if (userHasTrades) usersWithTrades++;
               }));
             }
-            console.log(`[Volume] Scanned ${scannedUsers}/${allCredsData.length} users, ${usersWithTrades} with trades, ${tradeCount} total trades`);
+            console.log(`[Volume] Scanned ${scannedUsers}/${chatIds.length} users, ${usersWithTrades} with trades, ${tradeCount} total trades`);
 
             await bot.sendMessage(volChatId,
               `📈 <b>Volume Report</b> (${traderCount} registered, ${usersWithTrades} active, ${tradeCount} trades)\n\n` +
