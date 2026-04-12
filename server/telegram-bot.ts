@@ -9773,41 +9773,68 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             const debugLines: string[] = [];
             debugLines.push(`user=${parentAddr.substring(0,10)} signer=${signerAddr.substring(0,10)}`);
 
-            // Step 1: Get all traded symbols from exchange info
-            let allSymbols: string[] = [];
-            try {
-              const resp = await fetch(`${FAPI}/fapi/v3/exchangeInfo`);
-              const exInfo = await resp.json();
-              if (exInfo?.symbols && Array.isArray(exInfo.symbols)) {
-                allSymbols = exInfo.symbols
-                  .filter((s: any) => s.quoteAsset === "USDT" && s.status === "TRADING")
-                  .map((s: any) => s.symbol);
-              }
-            } catch (e: any) {
-              debugLines.push(`exchangeInfo ERR: ${e.message?.substring(0, 60)}`);
-            }
-            if (allSymbols.length === 0) {
-              allSymbols = ["BTCUSDT","ETHUSDT","SUIUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","AVAXUSDT","LINKUSDT","DOTUSDT","MATICUSDT","ARBUSDT","OPUSDT","APTUSDT","PEPEUSDT","WIFUSDT","NEARUSDT","FILUSDT","LTCUSDT"];
-            }
-            debugLines.push(`symbols=${allSymbols.length}`);
-
+            const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
             const symCounts: Record<string, number> = {};
 
-            // Step 2: Fetch trades for each symbol with pagination
-            for (const sym of allSymbols) {
+            // Step 1: Use income endpoint to get ALL activity (no symbol filter needed)
+            // This covers all symbols and gives us commission + realized PnL
+            let allIncomeRecs: any[] = [];
+            try {
+              let incPage = 0;
+              let incStartTime: number | undefined;
+              while (incPage < 30) {
+                const incParams: any = { limit: 1000 };
+                if (incStartTime !== undefined) incParams.startTime = incStartTime;
+                const incRaw = await makeTradingRequest(FAPI, "/fapi/v3/income", parentAddr, signerAddr, signerPk, incParams, "GET");
+                if (!Array.isArray(incRaw) || incRaw.length === 0) break;
+                allIncomeRecs = allIncomeRecs.concat(incRaw);
+                if (incRaw.length < 1000) break;
+                incStartTime = parseInt(incRaw[incRaw.length - 1].time || "0") + 1;
+                incPage++;
+                await delay(200);
+              }
+              debugLines.push(`income: ${allIncomeRecs.length} recs`);
+
+              const typeCounts: Record<string, number> = {};
+              for (const r of allIncomeRecs) {
+                const iType = r.incomeType || "?";
+                typeCounts[iType] = (typeCounts[iType] || 0) + 1;
+                const amt = parseFloat(r.income || "0");
+                if (iType === "COMMISSION" || iType === "TRADING_FEE") {
+                  totalCommission += Math.abs(amt);
+                }
+              }
+              debugLines.push(`types=${JSON.stringify(typeCounts)}`);
+            } catch (e: any) {
+              debugLines.push(`income ERR: ${e.message?.substring(0, 80)}`);
+            }
+
+            // Step 2: Get traded symbols from income records, then fetch actual trades
+            const tradedSymbols = new Set<string>();
+            for (const r of allIncomeRecs) {
+              if (r.symbol && (r.incomeType === "COMMISSION" || r.incomeType === "REALIZED_PNL")) {
+                tradedSymbols.add(r.symbol);
+              }
+            }
+            debugLines.push(`traded=${tradedSymbols.size} syms`);
+
+            // Step 3: Fetch userTrades only for symbols we know have activity
+            for (const sym of tradedSymbols) {
               try {
+                await delay(150);
                 let allTrades: any[] = [];
                 let fromId: number | undefined;
                 let page = 0;
                 while (page < 10) {
-                  const params: any = { symbol: sym, limit: 1000 };
+                  const params: any = { symbol: sym, limit: 500 };
                   if (fromId !== undefined) params.fromId = fromId;
                   const raw = await makeTradingRequest(FAPI, "/fapi/v3/userTrades", parentAddr, signerAddr, signerPk, params, "GET");
                   if (!Array.isArray(raw) || raw.length === 0) break;
                   allTrades = allTrades.concat(raw);
-                  if (raw.length < 1000) break;
+                  if (raw.length < 500) break;
                   fromId = parseInt(raw[raw.length - 1].id || "0") + 1;
                   page++;
+                  await delay(200);
                 }
                 if (allTrades.length > 0) {
                   symCounts[sym] = allTrades.length;
@@ -9815,46 +9842,19 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
                     const qty = Math.abs(parseFloat(trade.qty || "0"));
                     const price = parseFloat(trade.price || "0");
                     const quoteQty = parseFloat(trade.quoteQty || "0");
-                    const commission = Math.abs(parseFloat(trade.commission || "0"));
                     const t = parseInt(trade.time || "0");
                     const tradeVol = quoteQty > 0 ? quoteQty : qty * price;
                     if (tradeVol <= 0) continue;
                     tradeCount++;
                     totalVol += tradeVol;
-                    totalCommission += commission;
                     if (t >= cutoff1d) vol1d += tradeVol;
                     if (t >= cutoff7d) vol7d += tradeVol;
                     if (t >= cutoff30d) vol30d += tradeVol;
                   }
                 }
               } catch (e: any) {
-                // skip symbols with no trades silently
+                debugLines.push(`${sym}: ERR ${e.message?.substring(0, 60)}`);
               }
-            }
-
-            // Step 3: Also fetch commission from income endpoint for accuracy
-            try {
-              let incomeCommission = 0;
-              let incPage = 0;
-              let incStartTime: number | undefined;
-              while (incPage < 20) {
-                const incParams: any = { incomeType: "COMMISSION", limit: 1000 };
-                if (incStartTime !== undefined) incParams.startTime = incStartTime;
-                const incRaw = await makeTradingRequest(FAPI, "/fapi/v3/income", parentAddr, signerAddr, signerPk, incParams, "GET");
-                if (!Array.isArray(incRaw) || incRaw.length === 0) break;
-                for (const r of incRaw) {
-                  incomeCommission += Math.abs(parseFloat(r.income || "0"));
-                }
-                if (incRaw.length < 1000) break;
-                incStartTime = parseInt(incRaw[incRaw.length - 1].time || "0") + 1;
-                incPage++;
-              }
-              if (incomeCommission > totalCommission) {
-                debugLines.push(`comm:income=$${incomeCommission.toFixed(2)}>trades=$${totalCommission.toFixed(2)}`);
-                totalCommission = incomeCommission;
-              }
-            } catch (e: any) {
-              debugLines.push(`income ERR: ${e.message?.substring(0, 60)}`);
             }
 
             // Build symbol summary for debug
