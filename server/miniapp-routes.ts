@@ -2094,6 +2094,25 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         quantity: qtyStr,
       });
 
+      try {
+        await storage.saveAsterLocalTrade({
+          chatId,
+          orderId: String(order.orderId || order.orderid || Date.now()),
+          symbol,
+          side,
+          type: "MARKET",
+          quantity: parseFloat(qtyStr),
+          executedQty: parseFloat(order.executedQty || qtyStr),
+          price,
+          avgPrice: parseFloat(order.avgPrice || order.price || String(price)),
+          status: order.status || "FILLED",
+          reduceOnly: false,
+          leverage: lev,
+        });
+      } catch (logErr: any) {
+        console.log(`[MiniApp] Trade log error (non-fatal): ${logErr.message}`);
+      }
+
       res.json({
         success: true,
         orderId: order.orderId || order.orderid,
@@ -2160,6 +2179,26 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       const realizedPnl = parseFloat(order.realizedPnl || order.cumQuote || "0") || unrealizedPnl;
 
+      try {
+        const closePx = parseFloat(order.avgPrice || order.price || String(markPrice));
+        await storage.saveAsterLocalTrade({
+          chatId,
+          orderId: String(order.orderId || order.orderid || Date.now()),
+          symbol,
+          side: closeSide,
+          type: "MARKET",
+          quantity: absAmt,
+          executedQty: parseFloat(order.executedQty || String(absAmt)),
+          price: closePx,
+          avgPrice: closePx,
+          status: order.status || "FILLED",
+          reduceOnly: true,
+          leverage: parseInt(pos.leverage || "1") || 1,
+        });
+      } catch (logErr: any) {
+        console.log(`[MiniApp] Close log error (non-fatal): ${logErr.message}`);
+      }
+
       res.json({
         success: true,
         orderId: order.orderId || order.orderid,
@@ -2199,6 +2238,91 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
     } catch (e: any) {
       console.error(`[MiniApp] Cancel order error: ${e.message}`);
       res.status(500).json({ error: e.message?.substring(0, 120) || "Cancel failed" });
+    }
+  });
+
+  app.get("/api/miniapp/volume", async (req: Request, res: Response) => {
+    try {
+      const { db } = await import("./db");
+      const { asterLocalTrades, asterCredentials: asterCredsTable, telegramWallets } = await import("@shared/schema");
+      const { sql: sqlTag, desc } = await import("drizzle-orm");
+
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      const allTrades = await db.select({
+        chatId: asterLocalTrades.chatId,
+        symbol: asterLocalTrades.symbol,
+        side: asterLocalTrades.side,
+        quantity: asterLocalTrades.quantity,
+        avgPrice: asterLocalTrades.avgPrice,
+        leverage: asterLocalTrades.leverage,
+        reduceOnly: asterLocalTrades.reduceOnly,
+        createdAt: asterLocalTrades.createdAt,
+      }).from(asterLocalTrades).orderBy(desc(asterLocalTrades.createdAt));
+
+      let totalVolume = 0, todayVolume = 0, weekVolume = 0, monthVolume = 0;
+      let totalTrades = 0, todayTrades = 0, weekTrades = 0, monthTrades = 0;
+      const userVolumes: Record<string, { volume: number; trades: number; lastTrade: string }> = {};
+      const symbolVolumes: Record<string, { volume: number; trades: number }> = {};
+
+      for (const t of allTrades) {
+        const notional = (t.quantity || 0) * (t.avgPrice || 0);
+        const ts = t.createdAt ? new Date(t.createdAt) : new Date(0);
+
+        totalVolume += notional;
+        totalTrades++;
+
+        if (ts >= today) { todayVolume += notional; todayTrades++; }
+        if (ts >= weekAgo) { weekVolume += notional; weekTrades++; }
+        if (ts >= monthAgo) { monthVolume += notional; monthTrades++; }
+
+        if (!userVolumes[t.chatId]) userVolumes[t.chatId] = { volume: 0, trades: 0, lastTrade: '' };
+        userVolumes[t.chatId].volume += notional;
+        userVolumes[t.chatId].trades++;
+        if (!userVolumes[t.chatId].lastTrade || ts > new Date(userVolumes[t.chatId].lastTrade)) {
+          userVolumes[t.chatId].lastTrade = ts.toISOString();
+        }
+
+        const sym = t.symbol || 'UNKNOWN';
+        if (!symbolVolumes[sym]) symbolVolumes[sym] = { volume: 0, trades: 0 };
+        symbolVolumes[sym].volume += notional;
+        symbolVolumes[sym].trades++;
+      }
+
+      const totalUsers = await db.select({ count: sqlTag<number>`count(*)` }).from(asterCredsTable);
+      const totalWallets = await db.select({ count: sqlTag<number>`count(DISTINCT chat_id)` }).from(telegramWallets);
+      const activeTraders = Object.keys(userVolumes).length;
+
+      const topTraders = Object.entries(userVolumes)
+        .sort((a, b) => b[1].volume - a[1].volume)
+        .slice(0, 20)
+        .map(([chatId, data]) => ({ chatId: chatId.substring(0, 6) + '...', ...data }));
+
+      const topSymbols = Object.entries(symbolVolumes)
+        .sort((a, b) => b[1].volume - a[1].volume)
+        .map(([symbol, data]) => ({ symbol, ...data }));
+
+      res.json({
+        platform: {
+          totalUsers: totalUsers[0]?.count || 0,
+          totalWallets: totalWallets[0]?.count || 0,
+          activeTraders,
+        },
+        volume: {
+          allTime: { volume: Math.round(totalVolume * 100) / 100, trades: totalTrades },
+          today: { volume: Math.round(todayVolume * 100) / 100, trades: todayTrades },
+          week: { volume: Math.round(weekVolume * 100) / 100, trades: weekTrades },
+          month: { volume: Math.round(monthVolume * 100) / 100, trades: monthTrades },
+        },
+        topTraders,
+        topSymbols,
+      });
+    } catch (e: any) {
+      console.error(`[Volume] Error: ${e.message}`);
+      res.status(500).json({ error: e.message });
     }
   });
 
