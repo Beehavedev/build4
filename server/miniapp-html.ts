@@ -384,6 +384,10 @@ async function loadDash(){
 
 function renderDash(){
   const el=$('p-dash');
+  if(D.connected){
+    var chk=(D.availableMargin||0)+(D.portfolioValue||0)+(D.positionMargin||0);
+    if(chk<=0){console.log('[MiniApp] renderDash SKIPPED: connected but all zeros');return}
+  }
   if(!D.connected){
     var h2='<div class="card" style="text-align:center;padding:36px 24px">';
     h2+='<div style="font-size:48px;margin-bottom:16px">🔗</div>';
@@ -1557,6 +1561,7 @@ async function closePos(symbol){
 }
 
 loadDash();
+document.addEventListener('visibilitychange',function(){if(!document.hidden&&D.connected){fetchAll().then(function(){var ap=document.querySelector('.page.active');if(ap&&ap.id==='p-dash')renderDash()}).catch(function(){})}});
 <\/script>
 </body>
 </html>`;
