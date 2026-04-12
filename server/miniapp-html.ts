@@ -364,9 +364,11 @@ function renderDash(){
         h2+='<div><span class="text-xs text-dim">BNB</span><div class="val-xs">'+D.bnbBalance.toFixed(4)+'</div></div>';
         h2+='</div>';
       }
-      h2+='<button class="btn btn-green mt-3" style="width:100%" data-tab="deposit" onclick="switchTab(this.dataset.tab)">⚡ Quick Connect</button>';
+      h2+='<div id="dash-link-status"></div>';
+      h2+='<button class="btn btn-green mt-3" style="width:100%" onclick="quickActivateFromDash()">⚡ Quick Connect</button>';
     } else {
-      h2+='<button class="btn btn-green mt-3" style="width:100%" data-tab="deposit" onclick="switchTab(this.dataset.tab)">⚡ Quick Connect</button>';
+      h2+='<div id="dash-link-status"></div>';
+      h2+='<button class="btn btn-green mt-3" style="width:100%" onclick="quickActivateFromDash()">⚡ Quick Connect</button>';
     }
     h2+='<button class="btn btn-outline mt-2" onclick="loadDash()">↻ Retry</button>';
     h2+='</div>';
@@ -964,45 +966,40 @@ async function importWallet(){
   }
 }
 
+async function quickActivateFromDash(){
+  var st=$('dash-link-status');
+  if(!st){switchTab('deposit');return}
+  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Setting up your trading account...</span></div>';
+  try{
+    var walletAddr=D.bscWalletAddress||'';
+    var r=await api('/api/miniapp/quick-activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({walletAddress:walletAddr})});
+    if(r.success){
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span><strong>Connected!</strong> Loading your account...</span></div>';
+      toast('✅ Connected to Aster!','ok');
+      D.asterApiWallet=r.signerAddress||'auto';
+      setTimeout(function(){fetchAll().then(function(){renderDash();renderDeposit()})},3000);
+    }else{
+      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Activation failed.')+'</span></div>';
+    }
+  }catch(e){
+    st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+e.message+'</span></div>';
+  }
+}
+
 async function autoLinkAster(){
   var st=$('link-status');
   if(!st)return;
-  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Step 1/2: Setting up your trading wallet...</span></div>';
+  st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Setting up your trading account...</span></div>';
   try{
     var walletAddr=D.bscWalletAddress||'';
-    if(!walletAddr){toast('No wallet found','err');return}
-    var r1=await api('/api/miniapp/activate-trading',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({walletAddress:walletAddr})});
-    if(!r1.success){st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r1.error||'Failed to start activation')+'</span></div>';return}
-    if(r1.alreadyActive){
-      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span><strong>Already activated!</strong> Your account is ready.</span></div>';
-      D.asterApiWallet=r1.tradingWallet||'auto';
-      setTimeout(function(){fetchAll().then(function(){renderDeposit();renderDash()})},2000);
-      return;
-    }
-    var sessionId=r1.sessionId;
-    var tradingAddr=r1.tradingWalletAddress;
-    try{
-      var nonceRes=await fetch('https://www.asterdex.com/bapi/futures/v1/public/future/web3/get-nonce',{method:'POST',headers:{'Content-Type':'application/json','clientType':'web'},body:JSON.stringify({type:'LOGIN',sourceAddr:tradingAddr})});
-      var nonceData=await nonceRes.json();
-      if(nonceData&&nonceData.data&&nonceData.data.nonce){
-        var nonce=nonceData.data.nonce;
-        var sigRes=await api('/api/miniapp/sign-registration',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:sessionId,nonce:nonce})});
-        if(sigRes.success&&sigRes.signature){
-          try{
-            await fetch('https://www.asterdex.com/bapi/futures/v1/public/future/web3/ae/login',{method:'POST',headers:{'Content-Type':'application/json','clientType':'web'},body:JSON.stringify({signature:sigRes.signature,sourceAddr:tradingAddr,chainId:56,agentCode:'BUILD4'})});
-          }catch(loginErr){console.log('Browser login skipped (CORS ok)')}
-        }
-      }
-    }catch(regErr){console.log('Browser registration skipped, server will handle it')}
-    st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Step 2/2: Activating trading agent...</span></div>';
-    var r3=await api('/api/miniapp/complete-activation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:sessionId})});
-    if(r3.success){
-      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span><strong>Connected to Aster!</strong> Your account is ready to trade.</span></div>';
+    var r=await api('/api/miniapp/quick-activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({walletAddress:walletAddr})});
+    if(r.success){
+      st.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span><strong>'+(r.alreadyActive?'Already activated!':'Connected to Aster!')+'</strong> '+(r.message||'Your account is ready to trade.')+'</span></div>';
       toast('✅ Connected to Aster!','ok');
-      D.asterApiWallet=r3.signerAddress||'auto';
-      setTimeout(function(){fetchAll().then(function(){renderDeposit();renderDash()})},2000);
+      D.asterApiWallet=r.signerAddress||'auto';
+      setTimeout(function(){fetchAll().then(function(){renderDeposit();renderDash()})},3000);
     }else{
-      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r3.error||'Activation failed. Please try again.')+'</span></div>';
+      st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(r.error||'Activation failed. Please try again.')+'</span></div>';
     }
   }catch(e){
     st.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>Connection failed: '+e.message+'. Please try again.</span></div>';

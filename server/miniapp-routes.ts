@@ -593,6 +593,90 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
   app.use("/api/miniapp", miniAppAuth);
 
+  app.post("/api/miniapp/quick-activate", async (req: Request, res: Response) => {
+    try {
+      const chatId = req.headers["x-telegram-chat-id"] as string;
+      if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+
+      const existingCreds = await storage.getAsterCredentials(chatId);
+      if (existingCreds && existingCreds.apiKey && existingCreds.apiSecret) {
+        console.log(`[QuickActivate] Already activated for chatId=${chatId}`);
+        return res.json({ success: true, alreadyActive: true, message: "Already activated!" });
+      }
+
+      const wallets = await storage.getTelegramWallets(chatId);
+      const evmWallets = wallets.filter(w => w.walletAddress && w.walletAddress.startsWith("0x"));
+
+      let botWalletAddr: string | null = null;
+      let botWalletPk: string | null = null;
+
+      for (const w of evmWallets) {
+        const pk = await storage.getTelegramWalletPrivateKey(chatId, w.walletAddress.toLowerCase());
+        if (pk) {
+          botWalletAddr = w.walletAddress.toLowerCase();
+          botWalletPk = pk;
+          break;
+        }
+      }
+
+      if (!botWalletAddr || !botWalletPk) {
+        const { regenerateWalletForDeposit } = await import("./telegram-bot");
+        const newW = await regenerateWalletForDeposit(parseInt(chatId));
+        if (newW) {
+          botWalletAddr = newW.address.toLowerCase();
+          botWalletPk = newW.privateKey;
+          console.log(`[QuickActivate] Created new bot wallet ${botWalletAddr.substring(0, 10)} for chatId=${chatId}`);
+        }
+      }
+
+      if (!botWalletAddr || !botWalletPk) {
+        return res.status(500).json({ error: "Could not create trading wallet. Please try again." });
+      }
+
+      console.log(`[QuickActivate] Onboarding wallet=${botWalletAddr.substring(0, 10)} chatId=${chatId}`);
+
+      const { asterCodeOnboard, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");
+      const codeConfig = getDefaultAsterCodeConfig();
+      const codeResult = await asterCodeOnboard(botWalletPk, codeConfig);
+
+      if (!codeResult.success || !codeResult.signerAddress || !codeResult.signerPrivateKey) {
+        console.log(`[QuickActivate] Onboard failed: ${codeResult.error} debug=${codeResult.debug}`);
+        let userMsg = "Activation failed";
+        const combinedError = `${codeResult.error || ""} ${codeResult.debug || ""}`.toLowerCase();
+        if (combinedError.includes("region")) {
+          userMsg = "Aster DEX is not available in your region. Please try again later or connect manually.";
+        } else if (combinedError.includes("no aster user")) {
+          userMsg = "Could not register on Aster DEX. Please try again in a moment.";
+        } else if (codeResult.error) {
+          userMsg = `Activation failed: ${codeResult.error}`;
+        }
+        return res.status(500).json({ error: userMsg });
+      }
+
+      await storage.saveAsterCredentials(chatId, codeResult.signerAddress, codeResult.signerPrivateKey, `astercode:${botWalletAddr}`);
+      console.log(`[QuickActivate] Saved credentials chatId=${chatId} signer=${codeResult.signerAddress.substring(0, 10)} parent=${botWalletAddr.substring(0, 10)}`);
+
+      let balanceInfo: any = null;
+      try {
+        const client = createAsterCodeFuturesClient(botWalletAddr, codeResult.signerAddress, codeResult.signerPrivateKey, codeConfig);
+        balanceInfo = await client.balance();
+        console.log(`[QuickActivate] Post-activation balance: ${JSON.stringify(balanceInfo).substring(0, 300)}`);
+      } catch (balErr: any) {
+        console.log(`[QuickActivate] Post-activation balance check: ${balErr.message}`);
+      }
+
+      res.json({
+        success: true,
+        tradingWallet: botWalletAddr,
+        signerAddress: codeResult.signerAddress,
+        message: "Trading activated! Deposit USDT to start trading.",
+      });
+    } catch (e: any) {
+      console.error("[QuickActivate] Error:", e.message);
+      res.status(500).json({ error: e.message || "Activation failed. Please try again." });
+    }
+  });
+
   app.post("/api/miniapp/import-wallet", async (req: Request, res: Response) => {
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;

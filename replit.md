@@ -47,7 +47,8 @@ The project uses a monorepo containing `client/` (React frontend), `server/` (Ex
 - **Mobile**: Bottom nav bar opens slide-up panels for all sections (Trade, Book, Positions, Agent, Account).
 - **Public APIs**: `/api/public/klines`, `/api/public/depth`, `/api/public/ticker`, `/api/public/funding`, `/api/public/markets` — all proxy to fapi.asterdex.com without auth.
 - **Auth**: `x-wallet-address` header → reverse lookup to chatId in miniAppAuth middleware. Same wallet = same account across Telegram mini app and web.
-- **Web Registration**: `/api/miniapp/web-register` endpoint (before auth middleware). New users connect MetaMask, click "Create Account" → generates synthetic chatId (`8` + hash digits), saves MetaMask address. Aster activation happens separately via MetaMask signing flow (`prepare-activation` → `submit-activation`).
+- **Web Registration**: `/api/miniapp/web-register` endpoint (before auth middleware). New users connect MetaMask, click "Create Account" → generates synthetic chatId (`8` + hash digits), saves MetaMask address.
+- **Quick Connect Activation**: `/api/miniapp/quick-activate` endpoint handles 1-click Aster activation. Uses the bot-generated wallet (with private key we control) to call `asterCodeOnboard` server-side — registers on Aster, creates agent/builder approvals, saves credentials. Works for both Telegram and web users. Falls back to `regenerateWalletForDeposit` if no bot wallet with private key exists. Old MetaMask signing flow (`activate-trading` → `complete-activation`) preserved for manual/advanced use cases.
 - **Keyboard Shortcuts**: B = Buy/Long, S = Sell/Short, Escape = close modals.
 - **Key files**: `client/src/pages/futures.tsx`, auth extension in `server/miniapp-routes.ts`.
 - **Dependencies**: `lightweight-charts@4.2.1` for TradingView-style charting.
