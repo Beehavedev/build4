@@ -390,19 +390,28 @@ export async function submitSignedEip712(
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${baseUrl}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "BUILD4/1.0" },
-      body: urlEncodedBody,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    const text = await response.text();
-    console.log(`[AsterCode] submitSigned POST ${path} status=${response.status} body=${text.substring(0, 500)}`);
-    let data: any;
-    try { data = JSON.parse(text); } catch { throw new Error(`Non-JSON from ${path}: ${text.substring(0, 300)}`); }
-    if (!response.ok) throw new Error(`AsterCode API error ${data?.code || response.status}: ${data?.msg || data?.message || text.substring(0, 200)}`);
-    return data?.data !== undefined ? data.data : data;
+    for (let attempt = 0; attempt <= 3; attempt++) {
+      await rateLimitWait();
+      const response = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "BUILD4/1.0" },
+        body: urlEncodedBody,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (response.status === 429) {
+        const backoff = Math.min(3000 * Math.pow(2, attempt), 30000);
+        console.log(`[AsterCode] 429 on POST ${path}, retry ${attempt + 1}/3 after ${backoff}ms`);
+        if (attempt < 3) { await new Promise(r => setTimeout(r, backoff)); continue; }
+        throw new Error(`Rate limited (429) on ${path} after 3 retries`);
+      }
+      const text = await response.text();
+      console.log(`[AsterCode] submitSigned POST ${path} status=${response.status} body=${text.substring(0, 500)}`);
+      let data: any;
+      try { data = JSON.parse(text); } catch { throw new Error(`Non-JSON from ${path}: ${text.substring(0, 300)}`); }
+      if (!response.ok) throw new Error(`AsterCode API error ${data?.code || response.status}: ${data?.msg || data?.message || text.substring(0, 200)}`);
+      return data?.data !== undefined ? data.data : data;
+    }
   } catch (e: any) {
     clearTimeout(timeoutId);
     if (e.name === "AbortError") throw new Error(`AsterCode API timeout: POST ${path}`);
