@@ -866,7 +866,6 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
               const codeFutures = createAsterCodeFuturesClient(effectiveUser, creds.apiKey, creds.apiSecret, codeConfig);
               client = { futures: codeFutures, spot: null, walletAddress: effectiveUser };
               asterApiWalletAddr = creds.apiKey;
-              console.log(`[MiniApp] Aster Code client: user=${effectiveUser.substring(0,10)}, signer=${creds.apiKey.substring(0,10)}`);
             } else {
               const { createAsterV3FuturesClient } = await import("./aster-client");
               const v3Futures = createAsterV3FuturesClient({
@@ -947,7 +946,6 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       const futuresClient = client.futures || client;
 
-      console.log(`[MiniApp] Fetching Aster data for chatId=${chatId}...`);
       const [balances, accountData, positions, income] = await Promise.all([
         futuresClient.balance().catch((e: any) => { console.log(`[MiniApp] balance() error: ${e.message?.substring(0, 200)}`); return []; }),
         futuresClient.account().catch((e: any) => { console.log(`[MiniApp] account() error: ${e.message?.substring(0, 200)}`); return null; }),
@@ -955,8 +953,6 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         futuresClient.income("REALIZED_PNL", 20).catch((e: any) => { console.log(`[MiniApp] income() error: ${e.message?.substring(0, 200)}`); return []; }),
       ]);
 
-      console.log(`[MiniApp] balance raw type=${typeof balances} isArr=${Array.isArray(balances)} len=${Array.isArray(balances)?balances.length:'n/a'}: ${JSON.stringify(balances).substring(0, 500)}`);
-      console.log(`[MiniApp] account raw type=${typeof accountData}: ${JSON.stringify(accountData).substring(0, 500)}`);
 
       let availBal = 0;
       let walletBal = 0;
@@ -1009,7 +1005,6 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         }
       }
 
-      console.log(`[MiniApp] parsed: availBal=${availBal}, walletBal=${walletBal} for chatId=${chatId}`);
 
       const openPositions = Array.isArray(positions)
         ? positions.filter((p: any) => parseFloat(p.positionAmt || "0") !== 0)
@@ -1101,8 +1096,6 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
                 botFc.balance().catch((e: any) => { console.log(`[MiniApp] bot wallet balance err: ${e.message?.substring(0, 150)}`); return []; }),
                 botFc.account().catch((e: any) => { console.log(`[MiniApp] bot wallet account err: ${e.message?.substring(0, 150)}`); return null; }),
               ]);
-              console.log(`[MiniApp] Bot wallet balance raw: ${JSON.stringify(botBal).substring(0, 500)}`);
-              console.log(`[MiniApp] Bot wallet account raw: ${JSON.stringify(botAcct).substring(0, 500)}`);
               if (Array.isArray(botBal) && botBal.length > 0) {
                 const usdtBal = botBal.find((b: any) => (b.asset || "").toUpperCase() === "USDT" || (b.asset || "").toUpperCase() === "USD");
                 if (usdtBal) extractFromObj(usdtBal);
@@ -1138,7 +1131,6 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
             const usdtSpot = spotBalances.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
             if (usdtSpot) spotBalance = parseFloat(usdtSpot.free || usdtSpot.balance || "0");
           }
-          console.log(`[MiniApp] Spot balance (via futuresClient.spotBalance): $${spotBalance}`);
         }
         if (spotBalance <= 0) {
           const spotClient = client.spot;
@@ -1148,7 +1140,6 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
               const usdtSpot = spotAcct.balances.find((b: any) => (b.asset || "").toUpperCase() === "USDT");
               if (usdtSpot) spotBalance = parseFloat(usdtSpot.free || "0");
             }
-            console.log(`[MiniApp] Spot balance (via spot client): $${spotBalance}`);
           }
         }
       } catch (spotErr: any) {
@@ -1161,12 +1152,10 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       try {
         walletAddr = getUserWalletAddress(parseInt(chatId));
         if (walletAddr && !walletAddr.startsWith("0x")) walletAddr = null;
-        console.log(`[MiniApp] in-memory wallet for chatId=${chatId}: ${walletAddr}`);
         if (!walletAddr) {
           const walletRows = await storage.getTelegramWallets(chatId);
           const evmRow = walletRows.find(w => w.walletAddress && w.walletAddress.startsWith("0x"));
           walletAddr = evmRow?.walletAddress || null;
-          console.log(`[MiniApp] DB wallet fallback chatId=${chatId}, found=${walletRows.length}, evm=${walletAddr ? 'yes' : 'no'}`);
           if (!walletAddr && walletRows.length > 0) {
             try {
               const { regenerateWalletForDeposit } = await import("./telegram-bot");
@@ -1189,7 +1178,6 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
           ]);
           bscBalance = parseFloat(ethers.formatUnits(bal, 18));
           bnbBalance = parseFloat(ethers.formatEther(bnbBal));
-          console.log(`[MiniApp] BSC balance for ${walletAddr}: $${bscBalance} USDT, ${bnbBalance} BNB`);
         }
       } catch (bscErr: any) {
         console.error(`[MiniApp] BSC balance fetch error:`, bscErr.message);

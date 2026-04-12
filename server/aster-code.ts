@@ -131,14 +131,12 @@ async function makeTradingRequest(
     let response: Response;
     if (method === "GET") {
       const url = `${baseUrl}${path}?${fullParamStr}`;
-      console.log(`[AsterCode] trading GET ${path} qs=${queryString.substring(0, 200)}`);
       response = await fetch(url, {
         method: "GET",
         headers: { "User-Agent": "BUILD4/1.0" },
         signal: controller.signal,
       });
     } else {
-      console.log(`[AsterCode] trading ${method} ${path} qs=${queryString.substring(0, 200)}`);
       response = await fetch(`${baseUrl}${path}?${fullParamStr}`, {
         method,
         headers: {
@@ -152,7 +150,10 @@ async function makeTradingRequest(
 
     clearTimeout(timeoutId);
     const text = await response.text();
-    console.log(`[AsterCode] trading ${method} ${path} status=${response.status} body=${text.substring(0, 500)}`);
+    if (!response.ok) {
+      const isHtml = text.trimStart().startsWith("<!DOCTYPE") || text.trimStart().startsWith("<html");
+      console.log(`[AsterCode] ${method} ${path} status=${response.status} ${isHtml ? "[HTML]" : text.substring(0, 200)}`);
+    }
 
     let data: any;
     try {
@@ -806,12 +807,8 @@ export function createAsterCodeFuturesClient(
       const params: Record<string, any> = { limit };
       if (incomeType) params.incomeType = incomeType;
       try {
-        const result = await makeTradingRequest(baseUrl, "/fapi/v3/income", userAddress, signerAddress, signerPrivateKey, params, "POST");
-        if (Array.isArray(result) && result.length > 0) return result;
-      } catch {}
-      try {
-        const result2 = await makeTradingRequest(baseUrl, "/fapi/v3/income", userAddress, signerAddress, signerPrivateKey, params, "GET");
-        if (Array.isArray(result2)) return result2;
+        const result = await makeTradingRequest(baseUrl, "/fapi/v3/income", userAddress, signerAddress, signerPrivateKey, params, "GET");
+        if (Array.isArray(result)) return result;
       } catch {}
       return [];
     },
