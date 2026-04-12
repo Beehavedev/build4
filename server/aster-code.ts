@@ -110,72 +110,87 @@ export async function makeTradingRequest(
   signerPrivateKey: string,
   params: Record<string, any>,
   method: "GET" | "POST" | "DELETE" = "GET",
+  maxRetries: number = 3,
 ): Promise<any> {
-  const fullParams: Record<string, any> = {
-    ...params,
-    asterChain: "Mainnet",
-    user: userAddress,
-    signer: signerAddress,
-    nonce: getNonce(),
-  };
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const fullParams: Record<string, any> = {
+      ...params,
+      asterChain: "Mainnet",
+      user: userAddress,
+      signer: signerAddress,
+      nonce: getNonce(),
+    };
 
-  const queryString = buildQueryString(fullParams);
-  const signature = await signV3(queryString, signerPrivateKey);
+    const queryString = buildQueryString(fullParams);
+    const signature = await signV3(queryString, signerPrivateKey);
 
-  const fullParamStr = `${queryString}&signature=${signature}`;
+    const fullParamStr = `${queryString}&signature=${signature}`;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  try {
-    let response: Response;
-    if (method === "GET") {
-      const url = `${baseUrl}${path}?${fullParamStr}`;
-      response = await fetch(url, {
-        method: "GET",
-        headers: { "User-Agent": "BUILD4/1.0" },
-        signal: controller.signal,
-      });
-    } else {
-      response = await fetch(`${baseUrl}${path}?${fullParamStr}`, {
-        method,
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "BUILD4/1.0",
-        },
-        body: fullParamStr,
-        signal: controller.signal,
-      });
-    }
-
-    clearTimeout(timeoutId);
-    const text = await response.text();
-    if (!response.ok) {
-      const isHtml = text.trimStart().startsWith("<!DOCTYPE") || text.trimStart().startsWith("<html");
-      console.log(`[AsterCode] ${method} ${path} status=${response.status} ${isHtml ? "[HTML]" : text.substring(0, 200)}`);
-    }
-
-    let data: any;
     try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error(`Non-JSON response from ${path}: ${text.substring(0, 300)}`);
-    }
+      let response: Response;
+      if (method === "GET") {
+        const url = `${baseUrl}${path}?${fullParamStr}`;
+        response = await fetch(url, {
+          method: "GET",
+          headers: { "User-Agent": "BUILD4/1.0" },
+          signal: controller.signal,
+        });
+      } else {
+        response = await fetch(`${baseUrl}${path}?${fullParamStr}`, {
+          method,
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "BUILD4/1.0",
+          },
+          body: fullParamStr,
+          signal: controller.signal,
+        });
+      }
 
-    if (!response.ok) {
-      throw new Error(`AsterCode API error ${data?.code || response.status}: ${data?.msg || data?.message || text.substring(0, 200)}`);
-    }
+      clearTimeout(timeoutId);
 
-    if (data && data.data && !Array.isArray(data)) {
-      return data.data;
+      if (response.status === 429) {
+        const retryAfter = parseInt(response.headers.get("retry-after") || "0") * 1000;
+        const backoff = retryAfter > 0 ? retryAfter : Math.min(2000 * Math.pow(2, attempt), 30000);
+        console.log(`[AsterCode] 429 rate limited on ${path}, retry ${attempt + 1}/${maxRetries} after ${backoff}ms`);
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, backoff));
+          continue;
+        }
+        throw new Error(`Rate limited (429) on ${path} after ${maxRetries} retries`);
+      }
+
+      const text = await response.text();
+      if (!response.ok) {
+        const isHtml = text.trimStart().startsWith("<!DOCTYPE") || text.trimStart().startsWith("<html");
+        console.log(`[AsterCode] ${method} ${path} status=${response.status} ${isHtml ? "[HTML]" : text.substring(0, 200)}`);
+      }
+
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Non-JSON response from ${path}: ${text.substring(0, 300)}`);
+      }
+
+      if (!response.ok) {
+        throw new Error(`AsterCode API error ${data?.code || response.status}: ${data?.msg || data?.message || text.substring(0, 200)}`);
+      }
+
+      if (data && data.data && !Array.isArray(data)) {
+        return data.data;
+      }
+      return data;
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      if (e.name === "AbortError") {
+        throw new Error(`AsterCode API timeout: ${method} ${path}`);
+      }
+      throw e;
     }
-    return data;
-  } catch (e: any) {
-    clearTimeout(timeoutId);
-    if (e.name === "AbortError") {
-      throw new Error(`AsterCode API timeout: ${method} ${path}`);
-    }
-    throw e;
   }
 }
 

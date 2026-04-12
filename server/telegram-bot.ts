@@ -9776,45 +9776,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
             const symCounts: Record<string, number> = {};
 
-            // Step 0: Raw connectivity test — bypass makeTradingRequest to see raw response
-            try {
-              const testResp = await fetch(`${FAPI}/fapi/v3/ticker/price?symbol=BTCUSDT`);
-              const testBody = await testResp.text();
-              debugLines.push(`ping: ${testResp.status} len=${testBody.length}`);
-            } catch (e: any) {
-              debugLines.push(`ping ERR: ${e.message?.substring(0, 40)}`);
-            }
-
-            // Step 1: Try userTrades for BTC first with raw response logging
-            try {
-              const { signV3, buildQueryString, getNonce } = await import("./aster-code");
-              const testParams: Record<string, any> = {
-                symbol: "BTCUSDT",
-                limit: 100,
-                asterChain: "Mainnet",
-                user: parentAddr,
-                signer: signerAddr,
-                nonce: getNonce(),
-              };
-              const qs = buildQueryString(testParams);
-              const sig = await signV3(qs, signerPk);
-              const testUrl = `${FAPI}/fapi/v3/userTrades?${qs}&signature=${sig}`;
-              const rawResp = await fetch(testUrl, { method: "GET", headers: { "User-Agent": "BUILD4/1.0" } });
-              const rawText = await rawResp.text();
-              debugLines.push(`raw: s=${rawResp.status} h=${rawResp.headers.get('content-type')} len=${rawText.length} body=${rawText.substring(0, 120)}`);
-              
-              // If raw test works, parse and use as BTC trades
-              if (rawText && rawText.startsWith("[")) {
-                const btcTrades = JSON.parse(rawText);
-                if (Array.isArray(btcTrades) && btcTrades.length > 0) {
-                  debugLines.push(`BTC raw: ${btcTrades.length} trades`);
-                }
-              }
-            } catch (e: any) {
-              debugLines.push(`raw ERR: ${e.message?.substring(0, 80)}`);
-            }
-
-            // Step 2: Use income endpoint for all activity
+            // Step 1: Use income endpoint for all activity (with 429 retry built into makeTradingRequest)
             let allIncomeRecs: any[] = [];
             try {
               await delay(300);
@@ -9853,7 +9815,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
             for (const sym of tradedSymbols) {
               try {
-                await delay(300);
+                await delay(1000);
                 const raw = await makeTradingRequest(FAPI, "/fapi/v3/userTrades", parentAddr, signerAddr, signerPk, { symbol: sym, limit: 500 }, "GET");
                 if (Array.isArray(raw) && raw.length > 0) {
                   symCounts[sym] = raw.length;
