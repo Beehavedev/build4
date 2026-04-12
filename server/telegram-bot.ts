@@ -9750,69 +9750,78 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             const cutoff7d = now - 7*24*60*60*1000;
             const cutoff30d = now - 30*24*60*60*1000;
             let vol1d = 0, vol7d = 0, vol30d = 0, totalVol = 0;
-            let processed = 0, failed = 0;
+            let totalCommission = 0;
+            let tradeCount = 0;
 
             const allCreds = (await volDb.execute(volSql`SELECT chat_id FROM aster_credentials`)).rows;
+            const traderCount = allCreds.length;
 
-            const BATCH_SIZE = 15;
-            for (let i = 0; i < allCreds.length; i += BATCH_SIZE) {
-              const batch = allCreds.slice(i, i + BATCH_SIZE);
-              const batchResults = await Promise.allSettled(batch.map(async (row: any) => {
-                const cid = String(row.chat_id);
-                const creds = await storage.getAsterCredentials(cid);
-                if (!creds) return;
+            const { createAsterCodeFuturesClient, getDefaultAsterCodeConfig } = await import("./aster-code");
+            const codeConfig = getDefaultAsterCodeConfig();
+            const builderUser = process.env.ASTER_USER_ADDRESS || "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4";
+            const builderSigner = process.env.ASTER_SIGNER_ADDRESS || builderUser;
+            const builderPk = process.env.ASTER_PRIVATE_KEY || "";
+            if (!builderPk) throw new Error("ASTER_PRIVATE_KEY not configured");
+            const builderClient = createAsterCodeFuturesClient(builderUser, builderSigner, builderPk, codeConfig);
 
-                const parentAddr = creds.parentAddress || creds.apiKey;
-                const isAsterCode = creds.parentAddress && creds.parentAddress.startsWith("0x") && creds.apiKey.startsWith("0x") && creds.apiKey !== creds.parentAddress;
-                const isV3 = creds.apiSecret && creds.apiSecret.startsWith("0x") && creds.apiSecret.length === 66;
+            const TOP_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SUIUSDT", "SOLUSDT", "ARBUSDT", "OPUSDT", "LINKUSDT", "DOGEUSDT", "BNBUSDT", "XRPUSDT"];
 
-                let client: any = null;
-                if (isAsterCode) {
-                  const { createAsterCodeFuturesClient, getDefaultAsterCodeConfig } = await import("./aster-code");
-                  client = createAsterCodeFuturesClient(parentAddr, creds.apiKey, creds.apiSecret, getDefaultAsterCodeConfig());
-                } else if (isV3) {
-                  const { createAsterV3FuturesClient } = await import("./aster-client");
-                  client = createAsterV3FuturesClient({ user: parentAddr, signer: creds.apiKey, signerPrivateKey: creds.apiSecret, builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4", feeRate: 0.001 });
-                } else {
-                  const { createAsterFuturesClient } = await import("./aster-client");
-                  client = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
-                }
+            const tradeResults = await Promise.allSettled(
+              TOP_SYMBOLS.map(sym =>
+                Promise.race([
+                  builderClient.userTrades(sym, 1000),
+                  new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000))
+                ])
+              )
+            );
 
-                const incomeRecords = await Promise.race([
-                  client.income(undefined, 1000),
-                  new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 4000))
-                ]) as any[];
+            for (const result of tradeResults) {
+              if (result.status !== "fulfilled" || !Array.isArray(result.value)) continue;
+              for (const trade of result.value) {
+                const qty = Math.abs(parseFloat(trade.qty || "0"));
+                const price = parseFloat(trade.price || "0");
+                const quoteQty = parseFloat(trade.quoteQty || "0");
+                const commission = Math.abs(parseFloat(trade.commission || "0"));
+                const t = parseInt(trade.time || "0");
+                const tradeVol = quoteQty > 0 ? quoteQty : qty * price;
+                if (tradeVol <= 0) continue;
+                tradeCount++;
+                totalVol += tradeVol;
+                totalCommission += commission;
+                if (t >= cutoff1d) vol1d += tradeVol;
+                if (t >= cutoff7d) vol7d += tradeVol;
+                if (t >= cutoff30d) vol30d += tradeVol;
+              }
+            }
 
-                if (!Array.isArray(incomeRecords)) return;
+            if (totalVol === 0) {
+              const incomeRecords = await Promise.race([
+                builderClient.income(undefined, 1000),
+                new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 6000))
+              ]) as any[];
+              if (Array.isArray(incomeRecords)) {
                 for (const r of incomeRecords) {
                   const amt = Math.abs(parseFloat(r.income || "0"));
                   const t = parseInt(r.time || "0");
                   if (r.incomeType === "COMMISSION" || r.incomeType === "TRADING_FEE") {
                     const estVol = amt / 0.0005;
                     totalVol += estVol;
+                    totalCommission += amt;
                     if (t >= cutoff1d) vol1d += estVol;
                     if (t >= cutoff7d) vol7d += estVol;
                     if (t >= cutoff30d) vol30d += estVol;
-                  } else if (r.incomeType === "REALIZED_PNL") {
-                    totalVol += amt * 10;
-                    if (t >= cutoff1d) vol1d += amt * 10;
-                    if (t >= cutoff7d) vol7d += amt * 10;
-                    if (t >= cutoff30d) vol30d += amt * 10;
                   }
                 }
-                processed++;
-              }));
-              for (const r of batchResults) { if (r.status === "rejected") failed++; }
+              }
             }
 
-            const feesCollected = totalVol * 0.001;
             await bot.sendMessage(volChatId,
-              `📈 <b>Volume Report</b> (${processed} traders scanned)\n\n` +
+              `📈 <b>Volume Report</b> (${traderCount} traders, ${tradeCount} trades)\n\n` +
               `• Daily: <b>~${fmtUsd(vol1d)}</b>\n` +
               `• 7 Days: <b>~${fmtUsd(vol7d)}</b>\n` +
               `• 30 Days: <b>~${fmtUsd(vol30d)}</b>\n` +
               `• All Time: <b>~${fmtUsd(totalVol)}</b>\n\n` +
-              `💰 Est. Fees: <b>~${fmtUsd(feesCollected)}</b>`,
+              `💰 Commission: <b>~${fmtUsd(totalCommission)}</b>`,
               { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, volChatId) }
             );
           } catch (e: any) {
