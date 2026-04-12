@@ -2907,11 +2907,15 @@ export class DatabaseStorage implements IStorage {
     if (rows.length === 0 || !rows[0].encryptedPrivateKey) return null;
     try {
       return decryptPrivateKey(rows[0].encryptedPrivateKey);
-    } catch (e) {
-      console.error("[Storage] Failed to decrypt wallet private key:", e);
+    } catch (e: any) {
+      if (!this._decryptWarnShown) {
+        console.error("[Storage] Failed to decrypt wallet private key:", e.message?.substring(0, 80));
+        this._decryptWarnShown = true;
+      }
       return null;
     }
   }
+  private _decryptWarnShown = false;
 
   async removeTelegramWallet(chatId: string, walletAddress: string): Promise<void> {
     await db.delete(telegramWallets)

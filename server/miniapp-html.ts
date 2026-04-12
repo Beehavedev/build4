@@ -143,7 +143,11 @@ function fmtPrice(n){if(!n||n===0)return'$0.00';var a=Math.abs(n);if(a>=100)retu
 function fmtDuration(ms){if(!ms||ms<=0)return'';var s=Math.floor(ms/1000);var d=Math.floor(s/86400);s%=86400;var h=Math.floor(s/3600);s%=3600;var m=Math.floor(s/60);s%=60;var parts=[];if(d>0)parts.push(d+'d');if(h>0)parts.push(h+'h');if(m>0)parts.push(m+'m');parts.push(s+'s');return parts.join(' ')}
 function pnlHtml(v){const p=v>=0;return '<span class="val-xs '+(p?'gv':'r-')+'">'+(p?'+':'-')+'$'+fmt(Math.abs(v))+'</span>'}
 function pnlClass(v){return v>=0?'gv':'r-'}
-function api(path,opts={}){return fetch(path,{...opts,headers:{'x-telegram-chat-id':String(chatId),...(opts.headers||{})}}).then(r=>r.json())}
+function api(path,opts={}){
+  var ctrl=new AbortController();
+  var tm=setTimeout(function(){ctrl.abort()},15000);
+  return fetch(path,{...opts,signal:ctrl.signal,headers:{'x-telegram-chat-id':String(chatId),...(opts.headers||{})}}).then(function(r){clearTimeout(tm);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}).catch(function(e){clearTimeout(tm);throw e})
+}
 function toast(msg,type='info'){const t=$('toast');t.className='toast show toast-'+type;t.innerHTML=msg;setTimeout(()=>t.classList.remove('show'),3500)}
 function customConfirm(html){return new Promise(function(resolve){var ov=document.createElement('div');ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';var box=document.createElement('div');box.style.cssText='background:#1a1d21;border:1px solid #333;border-radius:12px;padding:20px;max-width:340px;width:100%;color:#e0e0e0;font-size:14px;line-height:1.6';box.innerHTML=html+'<div style="display:flex;gap:10px;margin-top:16px"><button id="cc-cancel" style="flex:1;padding:10px;border-radius:8px;border:1px solid #555;background:transparent;color:#e0e0e0;cursor:pointer;font-size:14px">Cancel</button><button id="cc-ok" style="flex:1;padding:10px;border-radius:8px;border:none;background:#0ecb81;color:#0b0e11;cursor:pointer;font-weight:600;font-size:14px">Confirm</button></div>';ov.appendChild(box);document.body.appendChild(ov);$('cc-ok').onclick=function(){document.body.removeChild(ov);resolve(true)};$('cc-cancel').onclick=function(){document.body.removeChild(ov);resolve(false)};ov.onclick=function(e){if(e.target===ov){document.body.removeChild(ov);resolve(false)}}})}
 function copyAddr(el){var a=el.dataset.addr;if(a)navigator.clipboard.writeText(a).then(function(){toast('Copied!','ok')}).catch(function(){toast('Copy failed','err')})}
@@ -176,32 +180,40 @@ document.querySelectorAll('.tab').forEach(tab=>{
 
 function startAutoRefresh(){
   if(refreshTimer)clearInterval(refreshTimer);
+  var interval=D.connected?10000:5000;
   refreshTimer=setInterval(async()=>{
     try{
       const a=await api('/api/miniapp/account');
-      if(a&&a.connected!==undefined){D={...D,...a};lastUpdate=Date.now();try{$('hdr-updated').textContent=timeAgo()}catch(e){}
+      if(a&&a.connected!==undefined){
+        var wasDisconnected=!D.connected;
+        D={...D,...a};lastUpdate=Date.now();fetchErrors=0;lastFetchErr='';
+        try{$('hdr-updated').textContent=timeAgo()}catch(e){}
         const activePage=document.querySelector('.page.active');
         if(activePage?.id==='p-dash')renderDash();
         if(activePage?.id==='p-deposit')renderDeposit();
         if(activePage?.id==='p-portfolio'&&portfolioSubTab==='positions')renderPortfolio();
+        if(wasDisconnected&&D.connected){clearInterval(refreshTimer);startAutoRefresh()}
       }
-    }catch(e){}
-  },10000);
+    }catch(e){fetchErrors++}
+  },interval);
 }
 
+var fetchErrors=0;
+var lastFetchErr='';
 async function fetchAll(){
   try{
     const [a,m,his]=await Promise.all([
-      api('/api/miniapp/account').catch(e=>{console.error('account err',e);return null}),
+      api('/api/miniapp/account').catch(e=>{console.error('account err',e);lastFetchErr='account: '+e.message;return null}),
       api('/api/miniapp/markets').catch(e=>{console.error('markets err',e);return null}),
       api('/api/miniapp/history').catch(e=>{console.error('history err',e);return null}),
     ]);
-    if(a&&a.connected!==undefined){D={...D,...a}}
+    if(a&&a.connected!==undefined){D={...D,...a};fetchErrors=0;lastFetchErr=''}
+    else if(a===null){fetchErrors++}
     if(m&&m.markets)M=m;
     if(his&&his.pnlSummary)HIS=his;
     lastUpdate=Date.now();
     try{$('hdr-updated').textContent='Updated'}catch(e){}
-  }catch(e){console.error('fetchAll error',e)}
+  }catch(e){console.error('fetchAll error',e);fetchErrors++;lastFetchErr=e.message}
 }
 
 function skeletonCard(lines=3){
@@ -343,7 +355,14 @@ async function loadDash(){
   el.innerHTML=skeletonCard(4)+skeletonCard(2);
   try{await fetchAll()}catch(e){console.error('loadDash fetch error',e)}
   if(!D.connected&&!D.bscWalletAddress){
-    try{await new Promise(r=>setTimeout(r,2000));await fetchAll()}catch(e){}
+    for(var retry=0;retry<3;retry++){
+      try{await new Promise(r=>setTimeout(r,2000));await fetchAll();if(D.connected)break}catch(e){}
+    }
+  }
+  if(!D.connected&&fetchErrors>0&&lastFetchErr){
+    el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">⚠️</div><div class="text-w fw-600">Connection Error</div><div class="text-dim text-sm mt-2">'+lastFetchErr+'</div><button class="btn btn-green mt-3" style="width:100%" onclick="loadDash()">↻ Retry</button></div>';
+    startAutoRefresh();
+    return;
   }
   renderDash();
   startAutoRefresh();

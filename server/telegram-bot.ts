@@ -2739,12 +2739,14 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
       console.log("[TelegramBot] Cleared webhook and flushed pending updates");
       await new Promise(resolve => setTimeout(resolve, 3000));
       bot = new TelegramBot(token, {
-        polling: { interval: 1000, autoStart: true, params: { timeout: 10 } }
+        polling: { interval: 1000, autoStart: false, params: { timeout: 10 } }
       });
       webhookMode = false;
     }
 
     isRunning = true;
+
+    registerBotHandlers(bot);
 
     loadWalletsFromDb().catch(e => console.error("[TelegramBot] Wallet load error:", e.message));
     initOwnerAsterClient().catch(e => console.error("[Aster] Owner client init error:", e.message));
@@ -2752,6 +2754,10 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
     const me = await bot.getMe();
     botUsername = me.username || null;
     console.log(`[TelegramBot] Started ${webhookMode ? "with webhook" : "with polling"} as @${botUsername}`);
+
+    if (!webhookMode) {
+      bot.startPolling();
+    }
 
     bot.setMyCommands([
       { command: "start", description: "Start BUILD4 and create a wallet" },
@@ -2787,8 +2793,6 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
       console.log("[TelegramBot] Set menu button:", r.ok ? "success" : r.description);
     }).catch(() => {});
 
-    registerBotHandlers(bot);
-
     registerTaskHandler("ai_inference", async (data: { chatId: number; question: string; context: string }) => {
       const answer = await runInferenceWithFallback(data.question, data.context, "llama3");
       return answer;
@@ -2797,6 +2801,8 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
   } catch (e: any) {
     console.error("[TelegramBot] Failed to start:", e.message);
     isRunning = false;
+    try { if (bot && !webhookMode) bot.stopPolling(); } catch {}
+    bot = null;
   } finally {
     startingBot = false;
   }
@@ -2807,17 +2813,19 @@ async function startTelegramBotPolling(token: string): Promise<void> {
     await clearTelegramPolling(token);
     await new Promise(resolve => setTimeout(resolve, 3000));
     bot = new TelegramBot(token, {
-      polling: { interval: 1000, autoStart: true, params: { timeout: 10 } }
+      polling: { interval: 1000, autoStart: false, params: { timeout: 10 } }
     });
     webhookMode = false;
     isRunning = true;
+
+    registerBotHandlers(bot);
 
     loadWalletsFromDb().catch(e => console.error("[TelegramBot] Wallet load error:", e.message));
     const me = await bot.getMe();
     botUsername = me.username || null;
     console.log(`[TelegramBot] Fallback started with polling as @${botUsername}`);
 
-    registerBotHandlers(bot);
+    bot.startPolling();
 
     loadAllPersisted().then(() => console.log("[TradingData] Persisted data loaded on startup")).catch(e => console.error("[TradingData] Startup load error:", e.message));
 
@@ -2833,6 +2841,8 @@ async function startTelegramBotPolling(token: string): Promise<void> {
   } catch (e: any) {
     console.error("[TelegramBot] Polling fallback failed:", e.message);
     isRunning = false;
+    try { if (bot) bot.stopPolling(); } catch {}
+    bot = null;
   } finally {
     startingBot = false;
   }
