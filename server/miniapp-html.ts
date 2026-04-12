@@ -217,7 +217,7 @@ async function fetchAll(){
       console.log('[MiniApp] fetchAll got: _v='+a._v+' connected='+a.connected+' wallet='+a.walletBalance+' avail='+a.availableMargin+' portfolio='+a.portfolioValue+' bsc='+a.bscBalance);
       var hadBal=(D.availableMargin||0)>0||(D.portfolioValue||0)>0;
       var newBal=(a.availableMargin||0)>0||(a.portfolioValue||0)>0;
-      if(!hadBal||newBal){D={...D,...a};fetchErrors=0;lastFetchErr='';try{sessionStorage.setItem('miniapp_D',JSON.stringify(D))}catch(e){}}
+      if(!hadBal||newBal){D={...D,...a};D._loaded=true;fetchErrors=0;lastFetchErr='';try{sessionStorage.setItem('miniapp_D',JSON.stringify(D))}catch(e){}}
       else{fetchErrors++;console.log('[MiniApp] BLOCKED zero overwrite: hadBal='+hadBal+' newBal='+newBal)}
     }
     else if(a===null){fetchErrors++}
@@ -386,7 +386,10 @@ function renderDash(){
   const el=$('p-dash');
   if(D.connected){
     var chk=(D.availableMargin||0)+(D.portfolioValue||0)+(D.positionMargin||0);
-    if(chk<=0){console.log('[MiniApp] renderDash SKIPPED: connected but all zeros');return}
+    if(chk<=0&&D._loaded){
+      el.innerHTML='<div class="card" style="text-align:center;padding:36px 24px"><div style="font-size:32px;margin-bottom:12px">⏳</div><div class="text-w">Loading account data...</div><div class="text-dim text-sm mt-2">Please wait a moment</div></div>';
+      return;
+    }
   }
   if(!D.connected){
     var h2='<div class="card" style="text-align:center;padding:36px 24px">';
