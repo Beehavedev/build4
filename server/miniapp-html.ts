@@ -186,6 +186,9 @@ function startAutoRefresh(){
       const a=await api('/api/miniapp/account');
       if(a&&a.connected!==undefined){
         var wasDisconnected=!D.connected;
+        var hadBalance=(D.availableMargin||0)>0||(D.portfolioValue||0)>0;
+        var newHasBalance=(a.availableMargin||0)>0||(a.portfolioValue||0)>0;
+        if(hadBalance&&!newHasBalance){fetchErrors++;return}
         D={...D,...a};lastUpdate=Date.now();fetchErrors=0;lastFetchErr='';
         try{$('hdr-updated').textContent=timeAgo()}catch(e){}
         const activePage=document.querySelector('.page.active');
@@ -207,7 +210,12 @@ async function fetchAll(){
       api('/api/miniapp/markets').catch(e=>{console.error('markets err',e);return null}),
       api('/api/miniapp/history').catch(e=>{console.error('history err',e);return null}),
     ]);
-    if(a&&a.connected!==undefined){D={...D,...a};fetchErrors=0;lastFetchErr=''}
+    if(a&&a.connected!==undefined){
+      var hadBal=(D.availableMargin||0)>0||(D.portfolioValue||0)>0;
+      var newBal=(a.availableMargin||0)>0||(a.portfolioValue||0)>0;
+      if(!hadBal||newBal){D={...D,...a};fetchErrors=0;lastFetchErr=''}
+      else{fetchErrors++}
+    }
     else if(a===null){fetchErrors++}
     if(m&&m.markets)M=m;
     if(his&&his.pnlSummary)HIS=his;

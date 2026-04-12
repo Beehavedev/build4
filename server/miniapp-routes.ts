@@ -89,6 +89,8 @@ async function miniAppAuth(req: Request, res: Response, next: NextFunction) {
   return res.status(401).json({ error: "Authentication required" });
 }
 
+let tickerPriceCache: { prices: Record<string, number> | null; ts: number } = { prices: null, ts: 0 };
+
 export function registerMiniAppRoutes(app: Express) {
   app.get("/miniapp", (_req: Request, res: Response) => {
     const html = getMiniAppHTML();
@@ -1010,25 +1012,31 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         const ASSET_USD_MAP: Record<string, string> = {
           FBTC: "BTCUSDT", WBTC: "BTCUSDT",
         };
-        try {
-          const allTickers = await futuresClient.tickerPrice().catch(() => []);
-          const priceMap: Record<string, number> = {};
-          if (Array.isArray(allTickers)) {
-            for (const t of allTickers) {
-              if (t.symbol && t.price) priceMap[t.symbol] = parseFloat(t.price);
+        const now = Date.now();
+        if (!tickerPriceCache.ts || now - tickerPriceCache.ts > 60000) {
+          try {
+            const allTickers = await futuresClient.tickerPrice().catch(() => []);
+            if (Array.isArray(allTickers) && allTickers.length > 0) {
+              const pm: Record<string, number> = {};
+              for (const t of allTickers) {
+                if (t.symbol && t.price) pm[t.symbol] = parseFloat(t.price);
+              }
+              tickerPriceCache = { prices: pm, ts: now };
             }
-          }
+          } catch {}
+        }
+        if (tickerPriceCache.prices) {
           for (const b of balances) {
             const asset = (b.asset || "").toUpperCase();
             const creditBal = parseFloat(b.availableBalance || "0");
             if (creditBal <= 0) continue;
             if (asset === "USDT" || asset === "USD" || asset === "USDC" || asset === "BUSD") continue;
             const pairSymbol = ASSET_USD_MAP[asset];
-            if (pairSymbol && priceMap[pairSymbol]) {
-              multiAssetValue += creditBal * priceMap[pairSymbol];
+            if (pairSymbol && tickerPriceCache.prices[pairSymbol]) {
+              multiAssetValue += creditBal * tickerPriceCache.prices[pairSymbol];
             }
           }
-        } catch {}
+        }
       }
 
       const totalPortfolioValue = walletBal + multiAssetValue;
