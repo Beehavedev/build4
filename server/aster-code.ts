@@ -63,13 +63,13 @@ export interface AsterCodeOnboardResult {
 
 let _lastNonce = 0;
 
-function getNonce(): string {
+export function getNonce(): string {
   const nowMicros = Math.trunc(Date.now() * 1000);
   _lastNonce = Math.max(nowMicros, _lastNonce + 1);
   return String(_lastNonce);
 }
 
-function buildQueryString(params: Record<string, any>): string {
+export function buildQueryString(params: Record<string, any>): string {
   return Object.entries(params)
     .filter(([_, v]) => v !== undefined && v !== null)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -79,7 +79,7 @@ function buildQueryString(params: Record<string, any>): string {
 
 const TRADING_CHAIN_ID = 1666;
 
-async function signV3(
+export async function signV3(
   queryString: string,
   signerPrivateKey: string,
 ): Promise<string> {

@@ -9776,69 +9776,88 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
             const symCounts: Record<string, number> = {};
 
-            // Step 1: Use income endpoint to get ALL activity (no symbol filter needed)
-            // This covers all symbols and gives us commission + realized PnL
-            let allIncomeRecs: any[] = [];
+            // Step 0: Raw connectivity test — bypass makeTradingRequest to see raw response
             try {
-              let incPage = 0;
-              let incStartTime: number | undefined;
-              while (incPage < 30) {
-                const incParams: any = { limit: 1000 };
-                if (incStartTime !== undefined) incParams.startTime = incStartTime;
-                const incRaw = await makeTradingRequest(FAPI, "/fapi/v3/income", parentAddr, signerAddr, signerPk, incParams, "GET");
-                if (!Array.isArray(incRaw) || incRaw.length === 0) break;
-                allIncomeRecs = allIncomeRecs.concat(incRaw);
-                if (incRaw.length < 1000) break;
-                incStartTime = parseInt(incRaw[incRaw.length - 1].time || "0") + 1;
-                incPage++;
-                await delay(200);
-              }
-              debugLines.push(`income: ${allIncomeRecs.length} recs`);
+              const testResp = await fetch(`${FAPI}/fapi/v3/ticker/price?symbol=BTCUSDT`);
+              const testBody = await testResp.text();
+              debugLines.push(`ping: ${testResp.status} len=${testBody.length}`);
+            } catch (e: any) {
+              debugLines.push(`ping ERR: ${e.message?.substring(0, 40)}`);
+            }
 
-              const typeCounts: Record<string, number> = {};
-              for (const r of allIncomeRecs) {
-                const iType = r.incomeType || "?";
-                typeCounts[iType] = (typeCounts[iType] || 0) + 1;
-                const amt = parseFloat(r.income || "0");
-                if (iType === "COMMISSION" || iType === "TRADING_FEE") {
-                  totalCommission += Math.abs(amt);
+            // Step 1: Try userTrades for BTC first with raw response logging
+            try {
+              const { signV3, buildQueryString, getNonce } = await import("./aster-code");
+              const testParams: Record<string, any> = {
+                symbol: "BTCUSDT",
+                limit: 100,
+                asterChain: "Mainnet",
+                user: parentAddr,
+                signer: signerAddr,
+                nonce: getNonce(),
+              };
+              const qs = buildQueryString(testParams);
+              const sig = await signV3(qs, signerPk);
+              const testUrl = `${FAPI}/fapi/v3/userTrades?${qs}&signature=${sig}`;
+              const rawResp = await fetch(testUrl, { method: "GET", headers: { "User-Agent": "BUILD4/1.0" } });
+              const rawText = await rawResp.text();
+              debugLines.push(`raw: s=${rawResp.status} h=${rawResp.headers.get('content-type')} len=${rawText.length} body=${rawText.substring(0, 120)}`);
+              
+              // If raw test works, parse and use as BTC trades
+              if (rawText && rawText.startsWith("[")) {
+                const btcTrades = JSON.parse(rawText);
+                if (Array.isArray(btcTrades) && btcTrades.length > 0) {
+                  debugLines.push(`BTC raw: ${btcTrades.length} trades`);
                 }
               }
-              debugLines.push(`types=${JSON.stringify(typeCounts)}`);
+            } catch (e: any) {
+              debugLines.push(`raw ERR: ${e.message?.substring(0, 80)}`);
+            }
+
+            // Step 2: Use income endpoint for all activity
+            let allIncomeRecs: any[] = [];
+            try {
+              await delay(300);
+              const incRaw = await makeTradingRequest(FAPI, "/fapi/v3/income", parentAddr, signerAddr, signerPk, { limit: 500 }, "GET");
+              if (Array.isArray(incRaw) && incRaw.length > 0) {
+                allIncomeRecs = incRaw;
+                debugLines.push(`income: ${incRaw.length} recs`);
+                const typeCounts: Record<string, number> = {};
+                for (const r of incRaw) {
+                  const iType = r.incomeType || "?";
+                  typeCounts[iType] = (typeCounts[iType] || 0) + 1;
+                  const amt = parseFloat(r.income || "0");
+                  if (iType === "COMMISSION" || iType === "TRADING_FEE") {
+                    totalCommission += Math.abs(amt);
+                  }
+                }
+                debugLines.push(`types=${JSON.stringify(typeCounts)}`);
+              } else {
+                debugLines.push(`income: empty or non-array`);
+              }
             } catch (e: any) {
               debugLines.push(`income ERR: ${e.message?.substring(0, 80)}`);
             }
 
-            // Step 2: Get traded symbols from income records, then fetch actual trades
+            // Step 3: Get traded symbols and fetch trades
             const tradedSymbols = new Set<string>();
             for (const r of allIncomeRecs) {
-              if (r.symbol && (r.incomeType === "COMMISSION" || r.incomeType === "REALIZED_PNL")) {
-                tradedSymbols.add(r.symbol);
-              }
+              if (r.symbol) tradedSymbols.add(r.symbol);
             }
-            debugLines.push(`traded=${tradedSymbols.size} syms`);
+            if (tradedSymbols.size === 0) {
+              tradedSymbols.add("BTCUSDT");
+              tradedSymbols.add("ETHUSDT");
+              tradedSymbols.add("SUIUSDT");
+            }
+            debugLines.push(`syms=${tradedSymbols.size}`);
 
-            // Step 3: Fetch userTrades only for symbols we know have activity
             for (const sym of tradedSymbols) {
               try {
-                await delay(150);
-                let allTrades: any[] = [];
-                let fromId: number | undefined;
-                let page = 0;
-                while (page < 10) {
-                  const params: any = { symbol: sym, limit: 500 };
-                  if (fromId !== undefined) params.fromId = fromId;
-                  const raw = await makeTradingRequest(FAPI, "/fapi/v3/userTrades", parentAddr, signerAddr, signerPk, params, "GET");
-                  if (!Array.isArray(raw) || raw.length === 0) break;
-                  allTrades = allTrades.concat(raw);
-                  if (raw.length < 500) break;
-                  fromId = parseInt(raw[raw.length - 1].id || "0") + 1;
-                  page++;
-                  await delay(200);
-                }
-                if (allTrades.length > 0) {
-                  symCounts[sym] = allTrades.length;
-                  for (const trade of allTrades) {
+                await delay(300);
+                const raw = await makeTradingRequest(FAPI, "/fapi/v3/userTrades", parentAddr, signerAddr, signerPk, { symbol: sym, limit: 500 }, "GET");
+                if (Array.isArray(raw) && raw.length > 0) {
+                  symCounts[sym] = raw.length;
+                  for (const trade of raw) {
                     const qty = Math.abs(parseFloat(trade.qty || "0"));
                     const price = parseFloat(trade.price || "0");
                     const quoteQty = parseFloat(trade.quoteQty || "0");
@@ -9857,7 +9876,6 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
               }
             }
 
-            // Build symbol summary for debug
             const topSyms = Object.entries(symCounts).sort((a, b) => b[1] - a[1]).slice(0, 6);
             for (const [s, c] of topSyms) debugLines.push(`${s}: ${c}`);
 
