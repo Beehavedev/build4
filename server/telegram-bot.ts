@@ -9824,7 +9824,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
               `• 30 Days: <b>~${fmtUsd(vol30d)}</b>\n` +
               `• All Time: <b>~${fmtUsd(totalVol)}</b>\n\n` +
               `💰 Commission: <b>~${fmtUsd(totalCommission)}</b>\n` +
-              `📊 Scanned: ${scannedUsers}/${allCredsData.length} users`,
+              `📊 Scanned: ${scannedUsers}/${chatIds.length} users`,
               { parse_mode: "HTML", reply_markup: mainMenuKeyboard(undefined, volChatId) }
             );
           } catch (e: any) {
