@@ -1225,7 +1225,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       res.json({
         connected: true,
-        _v: "apr12b",
+        _v: "v49",
         walletBalance: walletBal,
         availableMargin: availBal,
         portfolioValue: finalPortfolio,

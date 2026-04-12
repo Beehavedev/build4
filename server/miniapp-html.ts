@@ -127,9 +127,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
-const MINIAPP_VERSION='v48d-apr12';
+const MINIAPP_VERSION='v49-apr12-fix';
 console.log('[MiniApp] version='+MINIAPP_VERSION+' chatId='+chatId);
 let D={connected:false,availableMargin:0,walletBalance:0,marginBalance:0,bscBalance:0,bnbBalance:0,bscWalletAddress:'',unrealizedPnl:0,realizedPnl:0,wins:0,losses:0,positions:[],recentIncome:[],spotBalance:0,openOrders:[]};
+try{var _cached=sessionStorage.getItem('miniapp_D');if(_cached){var _cd=JSON.parse(_cached);if(_cd&&_cd.connected&&((_cd.availableMargin||0)>0||(_cd.portfolioValue||0)>0)){D={...D,..._cd};console.log('[MiniApp] Restored cached D: avail='+D.availableMargin+' portfolio='+D.portfolioValue)}}}catch(e){}
 let M={markets:[]};
 let AG=null;
 let tradeHistory=[];
@@ -191,7 +192,7 @@ function startAutoRefresh(){
         var hadBalance=(D.availableMargin||0)>0||(D.portfolioValue||0)>0;
         var newHasBalance=(a.availableMargin||0)>0||(a.portfolioValue||0)>0;
         if(hadBalance&&!newHasBalance){fetchErrors++;return}
-        D={...D,...a};lastUpdate=Date.now();fetchErrors=0;lastFetchErr='';
+        D={...D,...a};lastUpdate=Date.now();fetchErrors=0;lastFetchErr='';try{sessionStorage.setItem('miniapp_D',JSON.stringify(D))}catch(e){}
         try{$('hdr-updated').textContent=timeAgo()}catch(e){}
         const activePage=document.querySelector('.page.active');
         if(activePage?.id==='p-dash')renderDash();
@@ -216,7 +217,7 @@ async function fetchAll(){
       console.log('[MiniApp] fetchAll got: _v='+a._v+' connected='+a.connected+' wallet='+a.walletBalance+' avail='+a.availableMargin+' portfolio='+a.portfolioValue+' bsc='+a.bscBalance);
       var hadBal=(D.availableMargin||0)>0||(D.portfolioValue||0)>0;
       var newBal=(a.availableMargin||0)>0||(a.portfolioValue||0)>0;
-      if(!hadBal||newBal){D={...D,...a};fetchErrors=0;lastFetchErr=''}
+      if(!hadBal||newBal){D={...D,...a};fetchErrors=0;lastFetchErr='';try{sessionStorage.setItem('miniapp_D',JSON.stringify(D))}catch(e){}}
       else{fetchErrors++;console.log('[MiniApp] BLOCKED zero overwrite: hadBal='+hadBal+' newBal='+newBal)}
     }
     else if(a===null){fetchErrors++}
@@ -363,7 +364,9 @@ function renderMarkets(){}
 
 async function loadDash(){
   const el=$('p-dash');
-  el.innerHTML=skeletonCard(4)+skeletonCard(2);
+  var hasGoodData=D.connected&&((D.availableMargin||0)>0||(D.portfolioValue||0)>0);
+  if(!hasGoodData){el.innerHTML=skeletonCard(4)+skeletonCard(2)}
+  else{renderDash()}
   try{await fetchAll()}catch(e){console.error('loadDash fetch error',e)}
   if(!D.connected&&!D.bscWalletAddress){
     for(var retry=0;retry<3;retry++){
@@ -417,7 +420,8 @@ function renderDash(){
     h+='</div>';
   }
 
-  var perpAccount=(D.portfolioValue||D.availableMargin||0)+(D.positionMargin||0)+(D.unrealizedPnl||0);
+  var perpAccount=(D.availableMargin||0)+(D.positionMargin||0)+(D.unrealizedPnl||0);
+  if(D.portfolioValue&&D.portfolioValue>perpAccount)perpAccount=D.portfolioValue;
   var totalPnl=(D.unrealizedPnl||0)+(D.realizedPnl||0);
 
   var accentColor=totalPnl>=0?'14,203,129':'248,81,73';
@@ -842,7 +846,12 @@ async function forceRefresh(){
   toast('Refreshing...','info');
   try{
     const a=await api('/api/miniapp/account');
-    if(a&&a.connected!==undefined){D={...D,...a};lastUpdate=Date.now()}
+    if(a&&a.connected!==undefined){
+      var hadBal=(D.availableMargin||0)>0||(D.portfolioValue||0)>0;
+      var newBal=(a.availableMargin||0)>0||(a.portfolioValue||0)>0;
+      if(hadBal&&!newBal){toast('Refresh blocked (stale data)','info');return}
+      D={...D,...a};lastUpdate=Date.now();try{sessionStorage.setItem('miniapp_D',JSON.stringify(D))}catch(e){}
+    }
     const activePage=document.querySelector('.page.active');
     if(activePage?.id==='p-dash')renderDash();
     if(activePage?.id==='p-deposit')renderDeposit();
