@@ -127,7 +127,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
-const MINIAPP_VERSION='v50-apr12-skeleton-fix';
+const MINIAPP_VERSION='v51-apr12-ratelimit-fix';
 console.log('[MiniApp] version='+MINIAPP_VERSION+' chatId='+chatId);
 var _debugLog=[];
 function _dlog(msg){_debugLog.push(Date.now()+': '+msg);console.log('[MiniApp] '+msg)}
@@ -150,7 +150,7 @@ function pnlHtml(v){const p=v>=0;return '<span class="val-xs '+(p?'gv':'r-')+'">
 function pnlClass(v){return v>=0?'gv':'r-'}
 function api(path,opts={}){
   var isTradeAction=path.includes('/close')||path.includes('/place')||path.includes('/cancel')||path.includes('/withdraw')||path.includes('/quick-activate')||path.includes('/import-wallet');
-  var timeout=isTradeAction?45000:15000;
+  var timeout=isTradeAction?45000:30000;
   var ctrl=new AbortController();
   var tm=setTimeout(function(){ctrl.abort()},timeout);
   return fetch(path,{...opts,signal:ctrl.signal,headers:{'x-telegram-chat-id':String(chatId),...(opts.headers||{})}}).then(function(r){clearTimeout(tm);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}).catch(function(e){clearTimeout(tm);if(e.name==='AbortError')throw new Error('Request timed out — server busy, try again');throw e})
