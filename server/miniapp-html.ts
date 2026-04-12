@@ -127,8 +127,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
-const MINIAPP_VERSION='v49-apr12-fix';
+const MINIAPP_VERSION='v50-apr12-skeleton-fix';
 console.log('[MiniApp] version='+MINIAPP_VERSION+' chatId='+chatId);
+var _debugLog=[];
+function _dlog(msg){_debugLog.push(Date.now()+': '+msg);console.log('[MiniApp] '+msg)}
 let D={connected:false,availableMargin:0,walletBalance:0,marginBalance:0,bscBalance:0,bnbBalance:0,bscWalletAddress:'',unrealizedPnl:0,realizedPnl:0,wins:0,losses:0,positions:[],recentIncome:[],spotBalance:0,openOrders:[]};
 try{var _cached=sessionStorage.getItem('miniapp_D');if(_cached){var _cd=JSON.parse(_cached);if(_cd&&_cd.connected&&((_cd.availableMargin||0)>0||(_cd.portfolioValue||0)>0)){D={...D,..._cd};console.log('[MiniApp] Restored cached D: avail='+D.availableMargin+' portfolio='+D.portfolioValue)}}}catch(e){}
 let M={markets:[]};
@@ -210,24 +212,27 @@ var fetchErrors=0;
 var lastFetchErr='';
 async function fetchAll(){
   try{
+    _dlog('fetchAll start');
     const [a,m,his]=await Promise.all([
-      api('/api/miniapp/account').catch(e=>{console.error('account err',e);lastFetchErr='account: '+e.message;return null}),
-      api('/api/miniapp/markets').catch(e=>{console.error('markets err',e);return null}),
-      api('/api/miniapp/history').catch(e=>{console.error('history err',e);return null}),
+      api('/api/miniapp/account').catch(e=>{_dlog('account err: '+e.message);lastFetchErr='account: '+e.message;return null}),
+      api('/api/miniapp/markets').catch(e=>{_dlog('markets err: '+e.message);return null}),
+      api('/api/miniapp/history').catch(e=>{_dlog('history err: '+e.message);return null}),
     ]);
+    _dlog('fetchAll responses: account='+(a?'ok':'null')+' markets='+(m?'ok':'null')+' history='+(his?'ok':'null'));
     if(a&&a.connected!==undefined){
-      console.log('[MiniApp] fetchAll got: _v='+a._v+' connected='+a.connected+' wallet='+a.walletBalance+' avail='+a.availableMargin+' portfolio='+a.portfolioValue+' bsc='+a.bscBalance);
+      _dlog('account data: connected='+a.connected+' avail='+a.availableMargin+' portfolio='+a.portfolioValue);
       var hadBal=(D.availableMargin||0)>0||(D.portfolioValue||0)>0;
       var newBal=(a.availableMargin||0)>0||(a.portfolioValue||0)>0;
       if(!hadBal||newBal){D={...D,...a};D._loaded=true;fetchErrors=0;lastFetchErr='';try{sessionStorage.setItem('miniapp_D',JSON.stringify(D))}catch(e){}}
-      else{fetchErrors++;console.log('[MiniApp] BLOCKED zero overwrite: hadBal='+hadBal+' newBal='+newBal)}
+      else{fetchErrors++;_dlog('BLOCKED zero overwrite: hadBal='+hadBal+' newBal='+newBal)}
     }
-    else if(a===null){fetchErrors++}
+    else if(a===null){fetchErrors++;_dlog('account null, fetchErrors='+fetchErrors)}
+    else{_dlog('account response missing connected field: '+JSON.stringify(a).substring(0,200))}
     if(m&&m.markets)M=m;
     if(his&&his.pnlSummary)HIS=his;
     lastUpdate=Date.now();
     try{$('hdr-updated').textContent='Updated'}catch(e){}
-  }catch(e){console.error('fetchAll error',e);fetchErrors++;lastFetchErr=e.message}
+  }catch(e){_dlog('fetchAll error: '+e.message);fetchErrors++;lastFetchErr=e.message}
 }
 
 function skeletonCard(lines=3){
@@ -366,21 +371,32 @@ function renderMarkets(){}
 
 async function loadDash(){
   const el=$('p-dash');
+  _dlog('loadDash start chatId='+chatId+' connected='+D.connected+' avail='+D.availableMargin);
   var hasGoodData=D.connected&&((D.availableMargin||0)>0||(D.portfolioValue||0)>0);
   if(!hasGoodData){el.innerHTML=skeletonCard(4)+skeletonCard(2)}
-  else{try{renderDash()}catch(e){console.error('renderDash pre-fetch error',e)}}
-  try{await fetchAll()}catch(e){console.error('loadDash fetch error',e)}
+  else{try{renderDash()}catch(e){_dlog('renderDash pre-fetch err: '+e)}}
+  var skeletonTimer=setTimeout(function(){
+    _dlog('skeleton safety: 8s passed, forcing render. connected='+D.connected+' avail='+D.availableMargin+' errs='+fetchErrors+' lastErr='+lastFetchErr);
+    try{renderDash()}catch(e2){
+      el.innerHTML='<div class="card" style="text-align:center;padding:20px"><div style="font-size:32px;margin-bottom:8px">⚠️</div><div class="text-w fw-600">Loading Issue</div><div class="text-dim text-sm mt-2">'+(lastFetchErr||'No data received')+'</div><div class="text-xs text-dim mt-1">'+MINIAPP_VERSION+' | chatId='+chatId+'</div><button class="btn btn-green mt-3" style="width:100%" onclick="location.reload()">↻ Reload</button></div>';
+    }
+    if(!refreshTimer)startAutoRefresh();
+  },8000);
+  try{await fetchAll();_dlog('fetchAll done connected='+D.connected+' avail='+D.availableMargin)}catch(e){_dlog('fetchAll error: '+e)}
   if(!D.connected&&!D.bscWalletAddress){
-    for(var retry=0;retry<3;retry++){
-      try{await new Promise(r=>setTimeout(r,2000));await fetchAll();if(D.connected)break}catch(e){}
+    _dlog('not connected, retrying...');
+    for(var retry=0;retry<2;retry++){
+      try{await new Promise(r=>setTimeout(r,1500));await fetchAll();if(D.connected)break}catch(e){}
     }
   }
+  clearTimeout(skeletonTimer);
   if(!D.connected&&fetchErrors>0&&lastFetchErr){
-    el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">⚠️</div><div class="text-w fw-600">Connection Error</div><div class="text-dim text-sm mt-2">'+lastFetchErr+'</div><button class="btn btn-green mt-3" style="width:100%" onclick="loadDash()">↻ Retry</button></div>';
+    _dlog('showing error card: '+lastFetchErr);
+    el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">⚠️</div><div class="text-w fw-600">Connection Error</div><div class="text-dim text-sm mt-2">'+lastFetchErr+'</div><div class="text-xs text-dim mt-1">'+MINIAPP_VERSION+'</div><button class="btn btn-green mt-3" style="width:100%" onclick="loadDash()">↻ Retry</button></div>';
     startAutoRefresh();
     return;
   }
-  try{renderDash()}catch(e){console.error('renderDash error',e);el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">⚠️</div><div class="text-w fw-600">Render Error</div><div class="text-dim text-sm mt-2">'+String(e)+'</div><button class="btn btn-green mt-3" style="width:100%" onclick="loadDash()">↻ Retry</button></div>'}
+  try{renderDash();_dlog('renderDash ok')}catch(e){_dlog('renderDash err: '+e);el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">⚠️</div><div class="text-w fw-600">Render Error</div><div class="text-dim text-sm mt-2">'+String(e)+'</div><div class="text-xs text-dim mt-1">'+MINIAPP_VERSION+'</div><button class="btn btn-green mt-3" style="width:100%" onclick="loadDash()">↻ Retry</button></div>'}
   startAutoRefresh();
 }
 
