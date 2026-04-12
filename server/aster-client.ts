@@ -1,6 +1,18 @@
 import crypto from "crypto";
 import { Wallet, getAddress, Signature, JsonRpcProvider, Contract, formatUnits, formatEther, parseUnits, parseEther, MaxUint256 } from "ethers";
 
+const RATE_LIMIT_MIN_INTERVAL = 250;
+let _lastRequestTime = 0;
+
+async function rateLimitWait(): Promise<void> {
+  const now = Date.now();
+  const elapsed = now - _lastRequestTime;
+  if (elapsed < RATE_LIMIT_MIN_INTERVAL) {
+    await new Promise(r => setTimeout(r, RATE_LIMIT_MIN_INTERVAL - elapsed));
+  }
+  _lastRequestTime = Date.now();
+}
+
 interface AsterClientConfig {
   apiKey: string;
   apiSecret: string;
@@ -229,41 +241,52 @@ async function makeRequest(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  try {
-    console.log(`[AsterHMAC] ${method} ${path} signed=[REDACTED]`);
-    const response = await fetch(url, {
-      method,
-      headers,
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    const text = await response.text();
-    console.log(`[AsterHMAC] ${method} ${path} status=${response.status} body=${text.substring(0, 500)}`);
-    let data: any;
+  for (let attempt = 0; attempt <= 3; attempt++) {
+    await rateLimitWait();
     try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error(`Non-JSON response from ${path} (status ${response.status}): ${text.substring(0, 300)}`);
-    }
+      const response = await fetch(url, {
+        method,
+        headers,
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      const code = data?.code || response.status;
-      const msg = data?.msg || data?.message || text.substring(0, 200);
-      throw new Error(`Aster API error ${code}: ${msg}`);
-    }
+      clearTimeout(timeoutId);
 
-    if (data && data.data && !Array.isArray(data)) {
-      return data.data;
+      if (response.status === 429) {
+        const backoff = Math.min(2000 * Math.pow(2, attempt), 30000);
+        console.log(`[AsterHMAC] 429 on ${path}, retry ${attempt + 1}/3 after ${backoff}ms`);
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, backoff));
+          continue;
+        }
+        throw new Error(`Rate limited (429) on ${path} after 3 retries`);
+      }
+
+      const text = await response.text();
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Non-JSON response from ${path} (status ${response.status}): ${text.substring(0, 300)}`);
+      }
+
+      if (!response.ok) {
+        const code = data?.code || response.status;
+        const msg = data?.msg || data?.message || text.substring(0, 200);
+        throw new Error(`Aster API error ${code}: ${msg}`);
+      }
+
+      if (data && data.data && !Array.isArray(data)) {
+        return data.data;
+      }
+      return data;
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      if (e.name === "AbortError") {
+        throw new Error(`Aster API request timeout after ${REQUEST_TIMEOUT_MS}ms: ${method} ${path}`);
+      }
+      throw e;
     }
-    return data;
-  } catch (e: any) {
-    clearTimeout(timeoutId);
-    if (e.name === "AbortError") {
-      throw new Error(`Aster API request timeout after ${REQUEST_TIMEOUT_MS}ms: ${method} ${path}`);
-    }
-    throw e;
   }
 }
 
@@ -359,28 +382,41 @@ async function makeV3Request(
 
     const url = (method === "GET") ? urlWithSig : `${baseUrl}${path}?${queryString}&signature=${signature}`;
 
-    const response = await fetch(url, fetchOptions);
-    clearTimeout(timeoutId);
+    for (let attempt = 0; attempt <= 3; attempt++) {
+      await rateLimitWait();
+      const response = await fetch(url, fetchOptions);
+      clearTimeout(timeoutId);
 
-    const text = await response.text();
-    console.log(`[AsterV3] ${method} ${path} status=${response.status} body=${text.substring(0, 500)}`);
-    let data: any;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error(`Non-JSON response from ${path} (status ${response.status}): ${text.substring(0, 300)}`);
-    }
+      if (response.status === 429) {
+        const backoff = Math.min(2000 * Math.pow(2, attempt), 30000);
+        console.log(`[AsterV3] 429 on ${path}, retry ${attempt + 1}/3 after ${backoff}ms`);
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, backoff));
+          continue;
+        }
+        throw new Error(`Rate limited (429) on ${path} after 3 retries`);
+      }
 
-    if (!response.ok) {
-      const code = data?.code || response.status;
-      const msg = data?.msg || data?.message || text.substring(0, 200);
-      throw new Error(`Aster V3 API error ${code}: ${msg}`);
-    }
+      const text = await response.text();
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Non-JSON response from ${path} (status ${response.status}): ${text.substring(0, 300)}`);
+      }
 
-    if (data && data.data && !Array.isArray(data)) {
-      return data.data;
+      if (!response.ok) {
+        const code = data?.code || response.status;
+        const msg = data?.msg || data?.message || text.substring(0, 200);
+        throw new Error(`Aster V3 API error ${code}: ${msg}`);
+      }
+
+      if (data && data.data && !Array.isArray(data)) {
+        return data.data;
+      }
+      return data;
     }
-    return data;
+    throw new Error(`Aster V3: exhausted retries on ${path}`);
   } catch (e: any) {
     clearTimeout(timeoutId);
     if (e.name === "AbortError") {
