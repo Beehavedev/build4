@@ -127,6 +127,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
+const MINIAPP_VERSION='v48d-apr12';
+console.log('[MiniApp] version='+MINIAPP_VERSION+' chatId='+chatId);
 let D={connected:false,availableMargin:0,walletBalance:0,marginBalance:0,bscBalance:0,bnbBalance:0,bscWalletAddress:'',unrealizedPnl:0,realizedPnl:0,wins:0,losses:0,positions:[],recentIncome:[],spotBalance:0,openOrders:[]};
 let M={markets:[]};
 let AG=null;
@@ -211,10 +213,11 @@ async function fetchAll(){
       api('/api/miniapp/history').catch(e=>{console.error('history err',e);return null}),
     ]);
     if(a&&a.connected!==undefined){
+      console.log('[MiniApp] fetchAll got: _v='+a._v+' connected='+a.connected+' wallet='+a.walletBalance+' avail='+a.availableMargin+' portfolio='+a.portfolioValue+' bsc='+a.bscBalance);
       var hadBal=(D.availableMargin||0)>0||(D.portfolioValue||0)>0;
       var newBal=(a.availableMargin||0)>0||(a.portfolioValue||0)>0;
       if(!hadBal||newBal){D={...D,...a};fetchErrors=0;lastFetchErr=''}
-      else{fetchErrors++}
+      else{fetchErrors++;console.log('[MiniApp] BLOCKED zero overwrite: hadBal='+hadBal+' newBal='+newBal)}
     }
     else if(a===null){fetchErrors++}
     if(m&&m.markets)M=m;
@@ -420,7 +423,7 @@ function renderDash(){
   var accentColor=totalPnl>=0?'14,203,129':'248,81,73';
   h+='<div class="card" style="position:relative;overflow:hidden;border:1px solid '+(totalPnl>=0?'var(--green2)':'rgba(248,81,73,0.3)')+';background:linear-gradient(135deg,rgba('+accentColor+',0.08),transparent)">';
   h+='<div style="position:absolute;top:-20px;right:-20px;width:120px;height:120px;background:radial-gradient(circle,rgba('+accentColor+',0.15),transparent);border-radius:50%"></div>';
-  h+='<div class="label" style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text2)">Perpetual Account</div>';
+  h+='<div class="label" style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text2)">Perpetual Account <span style="font-size:9px;color:#555">'+(D._v||'?')+'</span></div>';
   h+='<div class="val gv" style="font-size:32px;margin:4px 0">$'+fmt(perpAccount)+'</div>';
   h+='<div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap">';
   h+='<div><span class="text-xs text-dim">Available</span><div class="val-xs gv">$'+fmt(D.availableMargin)+'</div></div>';

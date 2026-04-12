@@ -1220,12 +1220,15 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       }
 
       const marginBalance = walletBal + totalUpnl;
+      const finalPortfolio = totalPortfolioValue > walletBal ? totalPortfolioValue : walletBal;
+      console.log(`[MiniApp] RESPONSE chatId=${chatId}: wallet=$${walletBal.toFixed(2)} avail=$${availBal.toFixed(2)} portfolio=$${finalPortfolio.toFixed(2)} bsc=$${bscBalance.toFixed(4)} upnl=$${totalUpnl.toFixed(2)} posMgn=$${totalPositionMargin.toFixed(2)} multiAsset=$${multiAssetValue.toFixed(2)}`);
 
       res.json({
         connected: true,
+        _v: "apr12b",
         walletBalance: walletBal,
         availableMargin: availBal,
-        portfolioValue: totalPortfolioValue > walletBal ? totalPortfolioValue : walletBal,
+        portfolioValue: finalPortfolio,
         marginBalance,
         spotBalance,
         bscBalance,
