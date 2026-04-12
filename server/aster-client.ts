@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { Wallet, getAddress, Signature, JsonRpcProvider, Contract, formatUnits, formatEther, parseUnits, parseEther, MaxUint256 } from "ethers";
 
-import { rateLimitWait } from "./aster-rate-limiter";
+import { rateLimitWait, markIpBanned, checkWeightHeader, getRetryAfterMs, getCached, setCache } from "./aster-rate-limiter";
 
 interface AsterClientConfig {
   apiKey: string;
@@ -211,27 +211,35 @@ async function makeRequest(
 ): Promise<any> {
   const { method = "GET", signed = false, params = {} } = options;
 
-  const queryParams = { ...params } as Record<string, string | number | boolean | undefined>;
-
-  if (signed) {
-    queryParams.recvWindow = queryParams.recvWindow || 30000;
-    queryParams.timestamp = Date.now();
-    const qs = buildQueryString(queryParams);
-    queryParams.signature = hmacSign(qs, apiSecret);
+  if (method === "GET") {
+    const cacheKey = `hmac:${path}:${JSON.stringify(params)}`;
+    const cached = getCached(cacheKey);
+    if (cached !== null) return cached;
   }
 
-  const queryString = buildQueryString(queryParams);
-  const url = queryString ? `${baseUrl}${path}?${queryString}` : `${baseUrl}${path}`;
+  const MAX_RETRIES = 3;
 
-  const headers: Record<string, string> = {
-    "X-MBX-APIKEY": apiKey,
-    "Content-Type": "application/json",
-  };
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const queryParams = { ...params } as Record<string, string | number | boolean | undefined>;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    if (signed) {
+      queryParams.recvWindow = queryParams.recvWindow || 30000;
+      queryParams.timestamp = Date.now();
+      const qs = buildQueryString(queryParams);
+      queryParams.signature = hmacSign(qs, apiSecret);
+    }
 
-  for (let attempt = 0; attempt <= 3; attempt++) {
+    const queryString = buildQueryString(queryParams);
+    const url = queryString ? `${baseUrl}${path}?${queryString}` : `${baseUrl}${path}`;
+
+    const headers: Record<string, string> = {
+      "X-MBX-APIKEY": apiKey,
+      "Content-Type": "application/json",
+    };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
     await rateLimitWait();
     try {
       const response = await fetch(url, {
@@ -242,14 +250,23 @@ async function makeRequest(
 
       clearTimeout(timeoutId);
 
+      checkWeightHeader(response.headers);
+
+      if (response.status === 418) {
+        markIpBanned();
+        throw new Error(`IP banned (418) by Aster API on ${path}. All requests stopped.`);
+      }
+
       if (response.status === 429) {
-        const backoff = Math.min(2000 * Math.pow(2, attempt), 30000);
-        console.log(`[AsterHMAC] 429 on ${path}, retry ${attempt + 1}/3 after ${backoff}ms`);
-        if (attempt < 3) {
+        const retryAfter = getRetryAfterMs(response.headers);
+        const backoff = retryAfter || Math.min(2000 * Math.pow(2, attempt), 8000);
+        console.log(`[AsterHMAC] 429 on ${path}, retry ${attempt + 1}/${MAX_RETRIES} after ${backoff}ms${retryAfter ? ' (Retry-After)' : ''}`);
+        if (attempt < MAX_RETRIES - 1) {
           await new Promise(r => setTimeout(r, backoff));
           continue;
         }
-        throw new Error(`Rate limited (429) on ${path} after 3 retries`);
+        console.error(`[AsterHMAC] Rate limited (429) on ${path} after ${MAX_RETRIES} retries — returning null`);
+        return null;
       }
 
       const text = await response.text();
@@ -266,18 +283,34 @@ async function makeRequest(
         throw new Error(`Aster API error ${code}: ${msg}`);
       }
 
-      if (data && data.data && !Array.isArray(data)) {
-        return data.data;
+      const result = (data && data.data && !Array.isArray(data)) ? data.data : data;
+
+      if (method === "GET") {
+        const cacheKey = `hmac:${path}:${JSON.stringify(params)}`;
+        setCache(cacheKey, result);
       }
-      return data;
+      return result;
     } catch (e: any) {
       clearTimeout(timeoutId);
       if (e.name === "AbortError") {
-        throw new Error(`Aster API request timeout after ${REQUEST_TIMEOUT_MS}ms: ${method} ${path}`);
+        if (attempt < MAX_RETRIES - 1) {
+          console.log(`[AsterHMAC] Timeout on ${path}, retry ${attempt + 1}/${MAX_RETRIES}`);
+          continue;
+        }
+        console.error(`[AsterHMAC] Timeout on ${path} after ${MAX_RETRIES} retries — returning null`);
+        return null;
+      }
+      if (e.message?.includes("IP banned")) throw e;
+      if (attempt < MAX_RETRIES - 1) {
+        const backoff = Math.min(2000 * Math.pow(2, attempt), 8000);
+        console.log(`[AsterHMAC] Error on ${path}: ${e.message?.substring(0, 80)}, retry ${attempt + 1}/${MAX_RETRIES} after ${backoff}ms`);
+        await new Promise(r => setTimeout(r, backoff));
+        continue;
       }
       throw e;
     }
   }
+  return null;
 }
 
 const V3_TRADING_CHAIN_ID = 1666;
@@ -337,29 +370,36 @@ async function makeV3Request(
 ): Promise<any> {
   const { method = "GET", params = {} } = options;
 
-  const fullParams: Record<string, any> = { ...params };
-  fullParams.asterChain = "Mainnet";
-  fullParams.user = user;
-  fullParams.signer = signer;
-  fullParams.nonce = getV3Nonce();
+  if (method === "GET") {
+    const cacheKey = `v3:${path}:${user}:${JSON.stringify(params)}`;
+    const cached = getCached(cacheKey);
+    if (cached !== null) return cached;
+  }
 
-  const queryString = buildV3QueryString(fullParams);
+  const MAX_RETRIES = 3;
 
-  const signature = await signV3Trading(signerPrivateKey, queryString);
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const fullParams: Record<string, any> = { ...params };
+    fullParams.asterChain = "Mainnet";
+    fullParams.user = user;
+    fullParams.signer = signer;
+    fullParams.nonce = getV3Nonce();
 
-  const urlWithSig = `${baseUrl}${path}?${queryString}&signature=${signature}`;
+    const queryString = buildV3QueryString(fullParams);
+    const signature = await signV3Trading(signerPrivateKey, queryString);
 
-  console.log(`[AsterV3] ${method} ${path} qs=${queryString.substring(0, 200)}`);
+    if (attempt === 0) {
+      console.log(`[AsterV3] ${method} ${path} qs=${queryString.substring(0, 200)}`);
+    }
 
-  const reqHeaders: Record<string, string> = {
-    "Content-Type": "application/x-www-form-urlencoded",
-    "User-Agent": "BUILD4/1.0",
-  };
+    const reqHeaders: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": "BUILD4/1.0",
+    };
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  try {
     const fetchOptions: RequestInit = {
       method,
       headers: reqHeaders,
@@ -370,21 +410,30 @@ async function makeV3Request(
       fetchOptions.body = `${queryString}&signature=${signature}`;
     }
 
-    const url = (method === "GET") ? urlWithSig : `${baseUrl}${path}?${queryString}&signature=${signature}`;
+    const url = `${baseUrl}${path}?${queryString}&signature=${signature}`;
 
-    for (let attempt = 0; attempt <= 3; attempt++) {
-      await rateLimitWait();
+    await rateLimitWait();
+    try {
       const response = await fetch(url, fetchOptions);
       clearTimeout(timeoutId);
 
+      checkWeightHeader(response.headers);
+
+      if (response.status === 418) {
+        markIpBanned();
+        throw new Error(`IP banned (418) by Aster API on ${path}. All requests stopped.`);
+      }
+
       if (response.status === 429) {
-        const backoff = Math.min(2000 * Math.pow(2, attempt), 30000);
-        console.log(`[AsterV3] 429 on ${path}, retry ${attempt + 1}/3 after ${backoff}ms`);
-        if (attempt < 3) {
+        const retryAfter = getRetryAfterMs(response.headers);
+        const backoff = retryAfter || Math.min(2000 * Math.pow(2, attempt), 8000);
+        console.log(`[AsterV3] 429 on ${path}, retry ${attempt + 1}/${MAX_RETRIES} after ${backoff}ms${retryAfter ? ' (Retry-After)' : ''}`);
+        if (attempt < MAX_RETRIES - 1) {
           await new Promise(r => setTimeout(r, backoff));
           continue;
         }
-        throw new Error(`Rate limited (429) on ${path} after 3 retries`);
+        console.error(`[AsterV3] Rate limited (429) on ${path} after ${MAX_RETRIES} retries — returning null`);
+        return null;
       }
 
       const text = await response.text();
@@ -401,19 +450,34 @@ async function makeV3Request(
         throw new Error(`Aster V3 API error ${code}: ${msg}`);
       }
 
-      if (data && data.data && !Array.isArray(data)) {
-        return data.data;
+      const result = (data && data.data && !Array.isArray(data)) ? data.data : data;
+
+      if (method === "GET") {
+        const cacheKey = `v3:${path}:${user}:${JSON.stringify(params)}`;
+        setCache(cacheKey, result);
       }
-      return data;
+      return result;
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      if (e.name === "AbortError") {
+        if (attempt < MAX_RETRIES - 1) {
+          console.log(`[AsterV3] Timeout on ${path}, retry ${attempt + 1}/${MAX_RETRIES}`);
+          continue;
+        }
+        console.error(`[AsterV3] Timeout on ${path} after ${MAX_RETRIES} retries — returning null`);
+        return null;
+      }
+      if (e.message?.includes("IP banned")) throw e;
+      if (attempt < MAX_RETRIES - 1) {
+        const backoff = Math.min(2000 * Math.pow(2, attempt), 8000);
+        console.log(`[AsterV3] Error on ${path}: ${e.message?.substring(0, 80)}, retry ${attempt + 1}/${MAX_RETRIES} after ${backoff}ms`);
+        await new Promise(r => setTimeout(r, backoff));
+        continue;
+      }
+      throw e;
     }
-    throw new Error(`Aster V3: exhausted retries on ${path}`);
-  } catch (e: any) {
-    clearTimeout(timeoutId);
-    if (e.name === "AbortError") {
-      throw new Error(`Aster V3 API timeout after ${REQUEST_TIMEOUT_MS}ms: ${method} ${path}`);
-    }
-    throw e;
   }
+  return null;
 }
 
 export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: string): Promise<BrokerOnboardResult> {
@@ -875,16 +939,33 @@ export function createAsterV3FuturesClient(config: AsterV3Config) {
     if (options.signed !== false && (method !== "GET" || options.signed === true)) {
       return makeV3Request(v3BaseUrl, path, user, signer, signerPrivateKey, options);
     }
+    if (method === "GET") {
+      const cacheKey = `v3u:${path}:${JSON.stringify(params)}`;
+      const cached = getCached(cacheKey);
+      if (cached !== null) return cached;
+    }
     const queryString = buildQueryString(params);
     const url = queryString ? `${marketDataBaseUrl}${path}?${queryString}` : `${marketDataBaseUrl}${path}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    await rateLimitWait();
     try {
       const response = await fetch(url, { method, signal: controller.signal });
       clearTimeout(timeoutId);
+      checkWeightHeader(response.headers);
+      if (response.status === 418) { markIpBanned(); throw new Error(`IP banned (418) on ${path}`); }
+      if (response.status === 429) {
+        console.log(`[AsterV3] 429 on unsigned ${path} — returning null`);
+        return null;
+      }
       const text = await response.text();
-      console.log(`[AsterV3] unsigned ${method} ${path} status=${response.status} body=${text.substring(0, 300)}`);
-      try { return JSON.parse(text); } catch { throw new Error(`Non-JSON response from ${path} (status ${response.status}): ${text.substring(0, 300)}`); }
+      let data: any;
+      try { data = JSON.parse(text); } catch { throw new Error(`Non-JSON response from ${path} (status ${response.status}): ${text.substring(0, 300)}`); }
+      if (method === "GET") {
+        const cacheKey = `v3u:${path}:${JSON.stringify(params)}`;
+        setCache(cacheKey, data);
+      }
+      return data;
     } catch (e: any) {
       clearTimeout(timeoutId);
       throw e;
