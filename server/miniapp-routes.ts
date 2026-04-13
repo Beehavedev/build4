@@ -93,7 +93,7 @@ let tickerPriceCache: { prices: Record<string, number> | null; ts: number } = { 
 
 export function registerMiniAppRoutes(app: Express) {
   app.get("/miniapp", (_req: Request, res: Response) => {
-    console.log(`[MiniApp] Serving miniapp HTML v52`);
+    console.log(`[MiniApp] Serving miniapp HTML v57`);
     const html = getMiniAppHTML();
     res.status(200).set({
       "Content-Type": "text/html",
