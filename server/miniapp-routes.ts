@@ -500,9 +500,28 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
       console.log(`[MiniApp] Completing MetaMask activation for user=${connectedAddr.substring(0, 10)} signer=${signerAddr.substring(0, 10)} chatId=${chatId}`);
 
-      const { submitSignedEip712, getDefaultAsterCodeConfig, createAsterCodeFuturesClient } = await import("./aster-code");
+      const { submitSignedEip712, getDefaultAsterCodeConfig, createAsterCodeFuturesClient, ensureAsterUserRegisteredByAddress } = await import("./aster-code");
       const codeConfig = getDefaultAsterCodeConfig();
       const baseUrl = codeConfig.fApiUrl || "https://fapi.asterdex.com";
+
+      const wallets = await storage.getTelegramWallets(chatId);
+      const evmWallets = wallets.filter(w => w.walletAddress && w.walletAddress.startsWith("0x"));
+      let regPk: string | null = null;
+      for (const w of evmWallets) {
+        const pk = await storage.getTelegramWalletPrivateKey(chatId, w.walletAddress.toLowerCase());
+        if (pk) { regPk = pk; break; }
+      }
+      if (regPk) {
+        const { Wallet } = await import("ethers");
+        const { ensureAsterUserRegistered: regFn } = await import("./aster-code");
+        try {
+          const regWallet = new Wallet(regPk);
+          const regResult = await regFn(regWallet);
+          console.log(`[MiniApp] Pre-approve registration: ${regResult.registered ? 'OK' : regResult.error}`);
+        } catch (regErr: any) {
+          console.log(`[MiniApp] Pre-approve registration error (continuing): ${regErr.message}`);
+        }
+      }
 
       const agentResult = await submitSignedEip712(baseUrl, "/fapi/v3/approveAgent", agentFullParams, agentSignature);
       console.log(`[MiniApp] approveAgent result: ${JSON.stringify(agentResult).substring(0, 200)}`);

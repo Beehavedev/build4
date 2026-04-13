@@ -489,7 +489,7 @@ export async function asterCodeGetBuilders(
 
 const BROKER_BASE_URL = "https://www.asterdex.com/bapi/futures/v1";
 
-async function ensureAsterUserRegistered(wallet: InstanceType<typeof Wallet>): Promise<{ registered: boolean; error?: string }> {
+export async function ensureAsterUserRegistered(wallet: InstanceType<typeof Wallet>): Promise<{ registered: boolean; error?: string }> {
   const address = wallet.address;
   const BROKER_TIMEOUT = 10000;
   try {
@@ -555,17 +555,40 @@ export async function asterCodeOnboard(
     const userAddress = userWallet.address;
     console.log(`[AsterCode] Onboarding user=${userAddress.substring(0, 10)}... builder=${codeConfig.builderAddress.substring(0, 10)}...`);
 
-    console.log(`[AsterCode] Step 1: Attempting broker registration (non-blocking)...`);
-    const regResult = await ensureAsterUserRegistered(userWallet);
-    if (regResult.registered) {
-      debugParts.push("register=OK");
-      console.log(`[AsterCode] Broker registration succeeded`);
-    } else {
-      debugParts.push(`register=SKIP:${regResult.error?.substring(0, 40)}`);
-      console.log(`[AsterCode] Broker registration skipped (${regResult.error}), proceeding with direct V3 onboard...`);
+    console.log(`[AsterCode] Step 1: Registering user on Aster DEX (required)...`);
+    let registered = false;
+    let regError = "";
+    for (let regAttempt = 0; regAttempt < 3; regAttempt++) {
+      const regResult = await ensureAsterUserRegistered(userWallet);
+      if (regResult.registered) {
+        registered = true;
+        debugParts.push("register=OK");
+        console.log(`[AsterCode] Broker registration succeeded (attempt ${regAttempt + 1})`);
+        break;
+      }
+      regError = regResult.error || "unknown";
+      console.log(`[AsterCode] Registration attempt ${regAttempt + 1}/3 failed: ${regError}`);
+      if (regError.includes("Region") || regError.includes("not available")) {
+        debugParts.push(`register=BLOCKED:region`);
+        return {
+          success: false,
+          error: "Aster DEX is not available in your region.",
+          debug: debugParts.join(" | "),
+        };
+      }
+      if (regAttempt < 2) await new Promise(r => setTimeout(r, 2000));
+    }
+    if (!registered) {
+      debugParts.push(`register=FAIL:${regError.substring(0, 40)}`);
+      console.log(`[AsterCode] Registration failed after 3 attempts: ${regError}`);
+      return {
+        success: false,
+        error: `Could not register on Aster DEX: ${regError}. Please try again.`,
+        debug: debugParts.join(" | "),
+      };
     }
 
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 1000));
 
     const signerWallet = Wallet.createRandom();
     const signerAddress = signerWallet.address;
