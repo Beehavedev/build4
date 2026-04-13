@@ -946,16 +946,17 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         if (bscAddr) {
           try {
             const ethers = await import("ethers");
-            const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
+            const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org", undefined, { staticNetwork: true });
             const usdt = new ethers.Contract(
               "0x55d398326f99059fF775485246999027B3197955",
               ["function balanceOf(address) view returns (uint256)"],
               provider
             );
-            const [bal, bnb] = await Promise.all([
-              usdt.balanceOf(bscAddr),
-              provider.getBalance(bscAddr),
-            ]);
+            const rpcTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error("BSC RPC timeout")), 8000));
+            const [bal, bnb] = await Promise.race([
+              Promise.all([usdt.balanceOf(bscAddr), provider.getBalance(bscAddr)]),
+              rpcTimeout,
+            ]) as [bigint, bigint];
             bscBal = parseFloat(ethers.formatUnits(bal, 18));
             bnbBal = parseFloat(ethers.formatEther(bnb));
             console.log(`[MiniApp] BSC balance (no client) ${bscAddr.substring(0,10)}: $${bscBal} USDT, ${bnbBal} BNB`);
