@@ -130,7 +130,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
-const MINIAPP_VERSION='v57-apr13-deploy-fix';
+const MINIAPP_VERSION='v58-apr13-region-fix';
 console.log('[MiniApp] version='+MINIAPP_VERSION+' chatId='+chatId);
 var _debugLog=[];
 function _dlog(msg){_debugLog.push(Date.now()+': '+msg);console.log('[MiniApp] '+msg)}
