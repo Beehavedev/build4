@@ -130,7 +130,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
-const MINIAPP_VERSION='v55-apr13-robust-activate';
+const MINIAPP_VERSION='v56-apr13-fix-loading';
 console.log('[MiniApp] version='+MINIAPP_VERSION+' chatId='+chatId);
 var _debugLog=[];
 function _dlog(msg){_debugLog.push(Date.now()+': '+msg);console.log('[MiniApp] '+msg)}
@@ -380,16 +380,12 @@ async function loadDash(){
   if(!hasGoodData){el.innerHTML=skeletonCard(4)+skeletonCard(2)}
   else{try{renderDash()}catch(e){_dlog('renderDash pre-fetch err: '+e)}}
   var skeletonTimer=setTimeout(function(){
-    _dlog('skeleton safety: 12s passed, showing warm-up. connected='+D.connected+' errs='+fetchErrors);
-    if(!D.connected&&fetchErrors===0){
-      el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div class="spinner" style="width:32px;height:32px;border:3px solid #333;border-top:3px solid #0ecb81;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px"></div><div class="text-w fw-600">Waking up server...</div><div class="text-dim text-sm mt-2">First load may take a moment</div><div class="text-xs text-dim mt-1">'+MINIAPP_VERSION+'</div></div>';
-    } else {
-      try{renderDash()}catch(e2){
-        el.innerHTML='<div class="card" style="text-align:center;padding:20px"><div style="font-size:32px;margin-bottom:8px">⚠️</div><div class="text-w fw-600">Loading Issue</div><div class="text-dim text-sm mt-2">'+(lastFetchErr||'No data received')+'</div><div class="text-xs text-dim mt-1">'+MINIAPP_VERSION+' | chatId='+chatId+'</div><button class="btn btn-green mt-3" style="width:100%" onclick="location.reload()">↻ Reload</button></div>';
-      }
+    _dlog('skeleton safety: 8s passed, forcing render. connected='+D.connected+' avail='+D.availableMargin+' errs='+fetchErrors+' lastErr='+lastFetchErr);
+    try{renderDash()}catch(e2){
+      el.innerHTML='<div class="card" style="text-align:center;padding:20px"><div style="font-size:32px;margin-bottom:8px">⚠️</div><div class="text-w fw-600">Loading Issue</div><div class="text-dim text-sm mt-2">'+(lastFetchErr||'No data received')+'</div><div class="text-xs text-dim mt-1">'+MINIAPP_VERSION+' | chatId='+chatId+'</div><button class="btn btn-green mt-3" style="width:100%" onclick="location.reload()">↻ Reload</button></div>';
     }
     if(!refreshTimer)startAutoRefresh();
-  },12000);
+  },8000);
   try{await fetchAll();_dlog('fetchAll done connected='+D.connected+' avail='+D.availableMargin)}catch(e){_dlog('fetchAll error: '+e)}
   if(!D.connected&&!D.bscWalletAddress){
     _dlog('not connected, retrying...');
