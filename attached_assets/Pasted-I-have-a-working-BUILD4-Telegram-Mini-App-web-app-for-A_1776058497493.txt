@@ -1,0 +1,55 @@
+I have a working BUILD4 Telegram Mini App / web app for Aster DEX using Aster Code (broker mode).
+
+The only problem is the new user onboarding flow for "Aster Agent AI BETA - Autonomous Trading".
+
+The current screens show:
+- "Activate Trading" with chain-link icon, wallet address (e.g. 0x023be5...c5ce), "Setting up your trading account..." status, green "⚡ Quick Connect" button, and "Retry" button.
+- On click, it often fails with "Connection Error: Request timed out — server busy, try again" (sometimes with reference like v53-apr12-autoconnect).
+
+Task: Improve ONLY the onboarding/activation part with robust error handling and retry logic so new users can reliably activate trading.
+
+Requirements:
+
+1. **UI (keep exactly like the screenshots - dark theme):**
+   - Show Aster Agent AI BETA card.
+   - Activate Trading screen with large chain-link icon.
+   - Display wallet address (shortened + copy button).
+   - Loading state: "Setting up your trading account..." 
+   - Green prominent button: "⚡ Quick Connect"
+   - Secondary button: "↻ Retry"
+   - Error state: Yellow warning icon + "Connection Error" + clear message "Request timed out — server busy, try again" + any reference code + green Retry button.
+   - On success: Show "Trading Activated ✅" with option to go to Agent/Trade tab.
+
+2. **Core Logic (Aster Code integration):**
+   - On "Quick Connect" click:
+     - Call the Aster autoconnect / agent approval / account setup endpoint (follow official Aster Code flow: https://asterdex.github.io/aster-api-website/asterCode/integration-flow/).
+     - Pass your BUILD4 builder/Aster Code referral info so you earn fees.
+     - Handle wallet signing if needed for agent approval.
+   - Implement **strong retry logic**:
+     - Exponential backoff: 2s → 4s → 8s → 15s (max 4-5 attempts).
+     - Add small random jitter.
+     - Show countdown or "Retrying in X seconds..." during waits.
+     - Auto-retry on timeout/server busy errors.
+     - Stop after max attempts and show friendly message: "Aster servers are busy right now. Please try again in 1-2 minutes."
+
+3. **Error Handling Improvements:**
+   - Catch and display the exact error message from Aster ("Request timed out — server busy...").
+   - Log full error details (including any version/reference) to console for debugging.
+   - Prevent button spam (disable during request + loading spinner).
+   - Add toast notifications for success / error.
+
+4. **Tech:**
+   - Use existing stack (React/Vite or whatever the app uses).
+   - Use ethers.js or viem for any signing.
+   - Make the activation function reusable and well-commented.
+   - Add environment variable for your Aster builder code if needed.
+
+Please:
+- First, review the current activation code (ask me to paste it if needed).
+- Then update ONLY the relevant components and functions for the Activate Trading flow.
+- Keep everything else unchanged.
+- After changes, give me the updated code files and a short testing guide.
+
+Focus on making new user onboarding reliable despite Aster backend being occasionally busy (common in beta).
+
+Start now.
