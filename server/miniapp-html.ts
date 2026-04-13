@@ -389,22 +389,6 @@ async function loadDash(){
       try{await new Promise(r=>setTimeout(r,1500));await fetchAll();if(D.connected)break}catch(e){}
     }
   }
-  if(!D.connected&&D.bscWalletAddress&&!window._autoActivateAttempted){
-    window._autoActivateAttempted=true;
-    _dlog('auto-activating for wallet '+D.bscWalletAddress.substring(0,10));
-    try{
-      var ar=await api('/api/miniapp/quick-activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({walletAddress:D.bscWalletAddress})});
-      if(ar.success){
-        _dlog('auto-activate success');
-        toast('✅ Trading activated!','ok');
-        D.asterApiWallet=ar.signerAddress||'auto';
-        await new Promise(r=>setTimeout(r,2000));
-        await fetchAll();
-      }else{
-        _dlog('auto-activate failed: '+(ar.error||'unknown'));
-      }
-    }catch(ae){_dlog('auto-activate error: '+ae.message)}
-  }
   clearTimeout(skeletonTimer);
   if(!D.connected&&fetchErrors>0&&lastFetchErr){
     _dlog('showing error card: '+lastFetchErr);
@@ -414,6 +398,30 @@ async function loadDash(){
   }
   try{renderDash();_dlog('renderDash ok')}catch(e){_dlog('renderDash err: '+e);el.innerHTML='<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:12px">⚠️</div><div class="text-w fw-600">Render Error</div><div class="text-dim text-sm mt-2">'+String(e)+'</div><div class="text-xs text-dim mt-1">'+MINIAPP_VERSION+'</div><button class="btn btn-green mt-3" style="width:100%" onclick="loadDash()">↻ Retry</button></div>'}
   startAutoRefresh();
+  if(!D.connected&&D.bscWalletAddress&&!window._autoActivateAttempted){
+    window._autoActivateAttempted=true;
+    _dlog('auto-activating for wallet '+D.bscWalletAddress.substring(0,10));
+    var dashSt=$('dash-link-status');
+    if(dashSt)dashSt.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Setting up your trading account...</span></div>';
+    try{
+      var ar=await api('/api/miniapp/quick-activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({walletAddress:D.bscWalletAddress})});
+      if(ar.success){
+        _dlog('auto-activate success');
+        toast('✅ Trading activated!','ok');
+        D.asterApiWallet=ar.signerAddress||'auto';
+        if(dashSt)dashSt.innerHTML='<div class="alert alert-ok mt-3"><span>✅</span><span>Connected! Loading account...</span></div>';
+        await new Promise(r=>setTimeout(r,2000));
+        await fetchAll();
+        try{renderDash()}catch(e2){}
+      }else{
+        _dlog('auto-activate failed: '+(ar.error||'unknown'));
+        if(dashSt)dashSt.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+(ar.error||'Activation failed. Tap Quick Connect to retry.')+'</span></div>';
+      }
+    }catch(ae){
+      _dlog('auto-activate error: '+ae.message);
+      if(dashSt)dashSt.innerHTML='<div class="alert alert-err mt-3"><span>❌</span><span>'+ae.message+'. Tap Quick Connect to retry.</span></div>';
+    }
+  }
 }
 
 function renderDash(){
