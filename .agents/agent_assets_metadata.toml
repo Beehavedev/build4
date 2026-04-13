@@ -107,3 +107,9 @@ id = "C99CsgSLgm19GvD_ylkw_"
 uri = "file://attached_assets/hyperliquid_build4_banner.png"
 type = "image"
 title = "Hyperliquid x BUILD4 Banner"
+
+[[outputs]]
+id = "5O-WX1l8dTG4A53IhjS7Y"
+uri = "file://BUILD4_Trust_Wallet_Overview.md"
+type = "text"
+title = "BUILD4 × Trust Wallet — Technical Overview"
