@@ -1487,6 +1487,7 @@ async function checkWalletHasKey(chatId: number, wallet: string | undefined): Pr
 }
 
 async function ensureWallet(chatId: number): Promise<string> {
+  await ensureWalletsLoaded(chatId);
   let wallet = getLinkedWallet(chatId);
   if (!wallet) {
     wallet = await autoGenerateWallet(chatId);
