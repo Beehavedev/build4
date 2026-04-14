@@ -9582,7 +9582,15 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         return;
       }
 
-      const allChatIds = Array.from(telegramWalletMap.keys());
+      let allChatIds = Array.from(telegramWalletMap.keys());
+      try {
+        const { db: annDb } = await import("./db");
+        const { sql: annSql } = await import("drizzle-orm");
+        const dbChatRows = (await annDb.execute(annSql`SELECT DISTINCT chat_id FROM telegram_wallets`)).rows;
+        const dbChatIds = dbChatRows.map((r: any) => Number(r.chat_id)).filter((id: number) => !isNaN(id));
+        const merged = new Set([...allChatIds, ...dbChatIds]);
+        allChatIds = Array.from(merged);
+      } catch {}
       await bot.sendMessage(chatId, `📢 Announcing to ${allChatIds.length} users...`);
       let sent = 0, failed = 0;
       for (const targetChatId of allChatIds) {
@@ -9608,13 +9616,15 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         return;
       }
       try {
-        const totalUsers = telegramWalletMap.size;
+        const { db } = await import("./db");
+        const { sql } = await import("drizzle-orm");
+
+        const [dbUserCount] = (await db.execute(sql`SELECT COUNT(DISTINCT chat_id) as cnt FROM telegram_wallets`)).rows;
+        const totalUsers = Math.max(Number(dbUserCount?.cnt || 0), telegramWalletMap.size);
 
         let platformStats = { agents: 0, onchainAgents: 0, skills: 0, skillsTotal: 0, transactions: 0, onchainUsers: 0, totalRevenue: "0", skillPurchases: 0 };
         let tradingStats = { tradeOutcomes: 0, asterUsers: 0, asterAutoEnabled: 0, walletsWithBalance: 0, rewardsIssued: 0 };
         try {
-          const { db } = await import("./db");
-          const { sql } = await import("drizzle-orm");
           const [txCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agent_transactions`)).rows;
           const [agentCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM agents`)).rows;
           const [purchaseCount] = (await db.execute(sql`SELECT COUNT(*) as cnt FROM skill_purchases`)).rows;
