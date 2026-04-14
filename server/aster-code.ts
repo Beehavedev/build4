@@ -59,6 +59,7 @@ export interface AsterCodeOnboardResult {
   agentApproved?: boolean;
   builderApproved?: boolean;
   error?: string;
+  errorCode?: string;
   debug?: string;
 }
 
@@ -492,9 +493,9 @@ const BROKER_URLS = [
   "https://fapi.asterdex.com/bapi/futures/v1",
 ];
 
-async function tryBrokerRegistration(wallet: InstanceType<typeof Wallet>, brokerUrl: string): Promise<{ registered: boolean; error?: string; retryable?: boolean }> {
+async function tryBrokerRegistration(wallet: InstanceType<typeof Wallet>, brokerUrl: string): Promise<{ registered: boolean; error?: string; errorCode?: string; retryable?: boolean }> {
   const address = wallet.address;
-  const BROKER_TIMEOUT = 12000;
+  const BROKER_TIMEOUT = 15000;
   try {
     const nonceCtrl = new AbortController();
     const nonceTimer = setTimeout(() => nonceCtrl.abort(), BROKER_TIMEOUT);
@@ -507,13 +508,14 @@ async function tryBrokerRegistration(wallet: InstanceType<typeof Wallet>, broker
     clearTimeout(nonceTimer);
     const nonceData = await nonceRes.json();
     if (!nonceData?.data?.nonce) {
-      return { registered: false, error: `No login nonce: ${nonceData?.message || nonceData?.code || "unknown"}`, retryable: true };
+      const code = nonceData?.code || "";
+      return { registered: false, error: `No login nonce: ${nonceData?.message || code || "unknown"}`, errorCode: code, retryable: true };
     }
 
     const loginMessage = `You are signing into Astherus ${nonceData.data.nonce}`;
     const loginSignature = await wallet.signMessage(loginMessage);
 
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, 300));
 
     const loginCtrl = new AbortController();
     const loginTimer = setTimeout(() => loginCtrl.abort(), BROKER_TIMEOUT);
@@ -536,39 +538,50 @@ async function tryBrokerRegistration(wallet: InstanceType<typeof Wallet>, broker
     }
 
     const loginData = await loginRes.json();
-    console.log(`[AsterCode] User registration login via ${brokerUrl}: code=${loginData?.code} msg=${loginData?.message || loginData?.msg || "none"}`);
+    const code = String(loginData?.code || "");
+    const msg = loginData?.message || loginData?.msg || "";
+    console.log(`[AsterCode] Login via ${brokerUrl}: code=${code} msg=${msg} wallet=${address.substring(0, 10)}`);
 
-    if (loginData?.code === "000000") {
+    if (code === "000000") {
       return { registered: true };
     }
 
-    const msg = loginData?.message || loginData?.msg || "";
-    if (msg.toLowerCase().includes("region") || msg.toLowerCase().includes("not available")) {
-      return { registered: false, error: "Region restricted", retryable: true };
+    if (code === "099066" || msg.toLowerCase().includes("region") || msg.toLowerCase().includes("not available")) {
+      return { registered: false, error: "Service not available in your region (IP whitelist pending)", errorCode: "099066", retryable: true };
     }
 
-    if (loginData?.code === "099008" || msg.toLowerCase().includes("nonce")) {
-      return { registered: false, error: `Nonce expired`, retryable: true };
+    if (code === "099009") {
+      return { registered: false, error: "Auth failed — will retry with fresh nonce", errorCode: "099009", retryable: true };
     }
 
-    return { registered: false, error: msg || `Login code: ${loginData?.code}`, retryable: true };
+    if (code === "099008" || msg.toLowerCase().includes("nonce")) {
+      return { registered: false, error: "Nonce expired — will retry with fresh nonce", errorCode: "099008", retryable: true };
+    }
+
+    if (code === "-1000" || msg.toLowerCase().includes("no aster user")) {
+      return { registered: false, error: "No aster user found — registration may be delayed", errorCode: "-1000", retryable: true };
+    }
+
+    return { registered: false, error: msg || `Login code: ${code}`, errorCode: code, retryable: true };
   } catch (e: any) {
-    if (e.name === "AbortError") return { registered: false, error: "Broker timeout", retryable: true };
-    return { registered: false, error: e.message, retryable: true };
+    if (e.name === "AbortError") return { registered: false, error: "Broker timeout", errorCode: "TIMEOUT", retryable: true };
+    return { registered: false, error: e.message, errorCode: "EXCEPTION", retryable: true };
   }
 }
 
-export async function ensureAsterUserRegistered(wallet: InstanceType<typeof Wallet>): Promise<{ registered: boolean; error?: string }> {
+export async function ensureAsterUserRegistered(wallet: InstanceType<typeof Wallet>): Promise<{ registered: boolean; error?: string; errorCode?: string }> {
   let lastError = "";
+  let lastErrorCode = "";
   for (const brokerUrl of BROKER_URLS) {
     const result = await tryBrokerRegistration(wallet, brokerUrl);
     if (result.registered) return { registered: true };
     lastError = result.error || "unknown";
-    console.log(`[AsterCode] Broker ${brokerUrl} failed: ${lastError}, trying next...`);
+    lastErrorCode = result.errorCode || "";
+    console.log(`[AsterCode] Broker ${brokerUrl} failed: code=${lastErrorCode} err=${lastError}, trying next...`);
     if (!result.retryable) break;
     await new Promise(r => setTimeout(r, 1000));
   }
-  return { registered: false, error: lastError };
+  return { registered: false, error: lastError, errorCode: lastErrorCode };
 }
 
 export async function asterCodeOnboard(
@@ -586,8 +599,10 @@ export async function asterCodeOnboard(
     console.log(`[AsterCode] Step 1: Registering user on Aster DEX (required)...`);
     let registered = false;
     let regError = "";
-    const retryDelays = [2000, 3000, 5000, 8000];
-    for (let regAttempt = 0; regAttempt < 5; regAttempt++) {
+    let regErrorCode = "";
+    const retryDelays = [1500, 3000, 6000, 12000, 20000, 30000];
+    const maxRegAttempts = 6;
+    for (let regAttempt = 0; regAttempt < maxRegAttempts; regAttempt++) {
       const regResult = await ensureAsterUserRegistered(userWallet);
       if (regResult.registered) {
         registered = true;
@@ -596,19 +611,22 @@ export async function asterCodeOnboard(
         break;
       }
       regError = regResult.error || "unknown";
-      console.log(`[AsterCode] Registration attempt ${regAttempt + 1}/5 failed: ${regError}`);
-      if (regAttempt < 4) {
-        const delay = retryDelays[regAttempt] || 5000;
-        console.log(`[AsterCode] Retrying registration in ${delay}ms...`);
-        await new Promise(r => setTimeout(r, delay));
+      regErrorCode = regResult.errorCode || "";
+      console.log(`[AsterCode] Registration attempt ${regAttempt + 1}/${maxRegAttempts} failed: code=${regErrorCode} err=${regError}`);
+      if (regAttempt < maxRegAttempts - 1) {
+        const delay = retryDelays[regAttempt] || 30000;
+        const jitter = Math.floor(Math.random() * 1000);
+        console.log(`[AsterCode] Retrying registration in ${delay + jitter}ms...`);
+        await new Promise(r => setTimeout(r, delay + jitter));
       }
     }
     if (!registered) {
-      debugParts.push(`register=FAIL:${regError.substring(0, 40)}`);
-      console.log(`[AsterCode] Registration failed after 5 attempts: ${regError}`);
+      debugParts.push(`register=FAIL:${regErrorCode}:${regError.substring(0, 40)}`);
+      console.log(`[AsterCode] Registration failed after ${maxRegAttempts} attempts: code=${regErrorCode} err=${regError}`);
       return {
         success: false,
         error: `Could not register on Aster DEX: ${regError}. Please try again in a moment.`,
+        errorCode: regErrorCode,
         debug: debugParts.join(" | "),
       };
     }

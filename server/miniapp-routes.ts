@@ -92,8 +92,32 @@ async function miniAppAuth(req: Request, res: Response, next: NextFunction) {
 let tickerPriceCache: { prices: Record<string, number> | null; ts: number } = { prices: null, ts: 0 };
 
 export function registerMiniAppRoutes(app: Express) {
+  app.get("/api/miniapp/server-ip", async (_req: Request, res: Response) => {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const r = await fetch("https://api.ipify.org?format=json", { signal: ctrl.signal });
+      clearTimeout(timer);
+      const data = await r.json() as any;
+      console.log(`[ServerIP] Outbound IP: ${data.ip}`);
+      res.json({ ip: data.ip, source: "ipify" });
+    } catch (e: any) {
+      try {
+        const ctrl2 = new AbortController();
+        const timer2 = setTimeout(() => ctrl2.abort(), 8000);
+        const r2 = await fetch("https://ifconfig.me/ip", { signal: ctrl2.signal });
+        clearTimeout(timer2);
+        const ip = (await r2.text()).trim();
+        console.log(`[ServerIP] Outbound IP: ${ip}`);
+        res.json({ ip, source: "ifconfig" });
+      } catch (e2: any) {
+        res.json({ error: e2.message });
+      }
+    }
+  });
+
   app.get("/miniapp", (_req: Request, res: Response) => {
-    console.log(`[MiniApp] Serving miniapp HTML v57`);
+    console.log(`[MiniApp] Serving miniapp HTML v58`);
     const html = getMiniAppHTML();
     res.status(200).set({
       "Content-Type": "text/html",
@@ -663,17 +687,22 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const codeResult = await asterCodeOnboard(botWalletPk, codeConfig);
 
       if (!codeResult.success || !codeResult.signerAddress || !codeResult.signerPrivateKey) {
-        console.log(`[QuickActivate] Onboard failed: ${codeResult.error} debug=${codeResult.debug}`);
+        console.log(`[QuickActivate] Onboard failed: code=${codeResult.errorCode} err=${codeResult.error} debug=${codeResult.debug}`);
         let userMsg = "Activation failed";
+        const errorCode = codeResult.errorCode || "";
         const combinedError = `${codeResult.error || ""} ${codeResult.debug || ""}`.toLowerCase();
-        if (combinedError.includes("region")) {
-          userMsg = "Aster DEX is not available in your region. Please try again later or connect manually.";
-        } else if (combinedError.includes("no aster user")) {
+        if (errorCode === "099066" || combinedError.includes("region")) {
+          userMsg = "Aster DEX is temporarily unavailable in our region. IP whitelist is pending — please try again in 2–3 minutes.";
+        } else if (errorCode === "099009") {
+          userMsg = "Authentication failed with Aster DEX. Please try again.";
+        } else if (errorCode === "099008") {
+          userMsg = "Nonce expired during registration. Please try again.";
+        } else if (errorCode === "-1000" || combinedError.includes("no aster user")) {
           userMsg = "Could not register on Aster DEX. Please try again in a moment.";
         } else if (codeResult.error) {
           userMsg = `Activation failed: ${codeResult.error}`;
         }
-        return res.status(500).json({ error: userMsg });
+        return res.status(500).json({ error: userMsg, errorCode });
       }
 
       await storage.saveAsterCredentials(chatId, codeResult.signerAddress, codeResult.signerPrivateKey, `astercode:${botWalletAddr}`);

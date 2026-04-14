@@ -130,7 +130,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-
 const TG=window.Telegram?.WebApp;
 if(TG){TG.ready();TG.expand();try{TG.setHeaderColor('#0b0e11');TG.setBackgroundColor('#0b0e11')}catch(e){}}
 const chatId=new URLSearchParams(location.search).get('chatId')||TG?.initDataUnsafe?.user?.id||'';
-const MINIAPP_VERSION='v58-apr13-region-fix';
+const MINIAPP_VERSION='v59-apr14-bulletproof-activate';
 console.log('[MiniApp] version='+MINIAPP_VERSION+' chatId='+chatId);
 var _debugLog=[];
 function _dlog(msg){_debugLog.push(Date.now()+': '+msg);console.log('[MiniApp] '+msg)}
@@ -1042,6 +1042,15 @@ async function importWallet(){
 var _activating=false;
 var _activateAbort=null;
 
+function _activateStatusMsg(errorCode, lastErr) {
+  if (errorCode === '099066') return 'Service not available in your region (IP whitelist pending)';
+  if (errorCode === '099009') return 'Authentication issue — retrying...';
+  if (errorCode === '099008') return 'Nonce expired — retrying with fresh signature...';
+  if (errorCode === '-1000') return 'Aster registration pending — retrying...';
+  if (lastErr && lastErr.toLowerCase().includes('timeout')) return 'Connection timed out — retrying...';
+  return lastErr || 'Server busy — retrying...';
+}
+
 async function quickActivateFromDash(){
   if(_activating)return;
   var st=$('dash-link-status');
@@ -1050,9 +1059,10 @@ async function quickActivateFromDash(){
   _activating=true;
   if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner-inline"></span> Connecting...'}
   var walletAddr=D.bscWalletAddress||'';
-  var delays=[2000,4000,8000,15000];
-  var maxAttempts=5;
+  var delays=[1500,3000,6000,12000,20000,30000];
+  var maxAttempts=6;
   var lastErr='';
+  var lastCode='';
 
   for(var attempt=0;attempt<maxAttempts;attempt++){
     _dlog('activate attempt '+(attempt+1)+'/'+maxAttempts);
@@ -1069,15 +1079,11 @@ async function quickActivateFromDash(){
         return;
       }
       lastErr=r.error||'Activation failed';
-      _dlog('activate attempt '+(attempt+1)+' failed: '+lastErr);
-      if(lastErr.includes('region')||lastErr.includes('not available')){
-        st.innerHTML='<div class="alert alert-err mt-3"><span>🚫</span><span>'+lastErr+'</span></div>';
-        _activating=false;
-        if(btn){btn.disabled=false;btn.innerHTML='⚡ Quick Connect'}
-        return;
-      }
+      lastCode=r.errorCode||'';
+      _dlog('activate attempt '+(attempt+1)+' failed: code='+lastCode+' err='+lastErr);
     }catch(e){
       lastErr=e.message||'Connection failed';
+      lastCode='';
       _dlog('activate attempt '+(attempt+1)+' error: '+lastErr);
     }
     if(attempt<maxAttempts-1){
@@ -1085,16 +1091,19 @@ async function quickActivateFromDash(){
       var jitter=Math.floor(Math.random()*1000);
       var waitMs=delay+jitter;
       var waitSec=Math.ceil(waitMs/1000);
+      var statusText=_activateStatusMsg(lastCode,lastErr);
       for(var s=waitSec;s>0;s--){
-        st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Server busy — retrying in '+s+'s...</span></div>';
+        st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>'+statusText+' ('+s+'s)</span></div>';
         await new Promise(function(ok){setTimeout(ok,1000)});
       }
     }
   }
   _activating=false;
   if(btn){btn.disabled=false;btn.innerHTML='⚡ Quick Connect'}
-  st.innerHTML='<div class="alert alert-err mt-3"><span>⚠️</span><div style="text-align:left"><div class="fw-600">Activation Failed</div><div class="text-xs mt-1">'+lastErr+'</div><div class="text-xs text-dim mt-1">Aster servers may be busy. Please try again in 1–2 minutes.</div><div class="text-xs text-dim">'+MINIAPP_VERSION+'</div></div></div>';
-  toast('Activation failed — try again shortly','err');
+  var finalMsg='Aster is temporarily unavailable. We are working with their team on a fix. Please try again in 2–3 minutes.';
+  if(lastCode==='099066')finalMsg='Aster is temporarily unavailable in our region. We are working with them on a whitelist. Please try again in 2–3 minutes.';
+  st.innerHTML='<div class="alert alert-err mt-3"><span>⚠️</span><div style="text-align:left"><div class="fw-600">Activation Failed</div><div class="text-xs mt-1">'+finalMsg+'</div><div class="text-xs text-dim mt-1">Error: '+(lastCode||'unknown')+' — '+lastErr+'</div><button onclick="quickActivateFromDash()" class="btn btn-sm mt-2" style="background:var(--accent);color:#000;border:none;padding:6px 16px;border-radius:8px;cursor:pointer">🔄 Retry</button><div class="text-xs text-dim mt-1">'+MINIAPP_VERSION+'</div></div></div>';
+  toast('Activation failed — try again in a few minutes','err');
 }
 
 async function autoLinkAster(){
@@ -1103,9 +1112,10 @@ async function autoLinkAster(){
   if(_activating)return;
   _activating=true;
   var walletAddr=D.bscWalletAddress||'';
-  var delays=[2000,4000,8000];
-  var maxAttempts=4;
+  var delays=[1500,3000,6000,12000,20000,30000];
+  var maxAttempts=6;
   var lastErr='';
+  var lastCode='';
   for(var attempt=0;attempt<maxAttempts;attempt++){
     st.innerHTML='<div class="alert alert-info mt-3"><span class="spinner-inline"></span><span>'+(attempt===0?'Setting up your trading account...':'Retrying... (attempt '+(attempt+1)+'/'+maxAttempts+')')+'</span></div>';
     try{
@@ -1119,19 +1129,22 @@ async function autoLinkAster(){
         return;
       }
       lastErr=r.error||'Activation failed';
-      if(lastErr.includes('region')){st.innerHTML='<div class="alert alert-err mt-3"><span>🚫</span><span>'+lastErr+'</span></div>';_activating=false;return}
-    }catch(e){lastErr=e.message||'Connection failed'}
+      lastCode=r.errorCode||'';
+    }catch(e){lastErr=e.message||'Connection failed';lastCode=''}
     if(attempt<maxAttempts-1){
       var delay=delays[Math.min(attempt,delays.length-1)]+Math.floor(Math.random()*1000);
       var waitSec=Math.ceil(delay/1000);
+      var statusText=_activateStatusMsg(lastCode,lastErr);
       for(var s=waitSec;s>0;s--){
-        st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>Server busy — retrying in '+s+'s...</span></div>';
+        st.innerHTML='<div class="alert alert-info mt-3"><span>⏳</span><span>'+statusText+' ('+s+'s)</span></div>';
         await new Promise(function(ok){setTimeout(ok,1000)});
       }
     }
   }
   _activating=false;
-  st.innerHTML='<div class="alert alert-err mt-3"><span>⚠️</span><span>'+lastErr+'. Please try again in 1–2 minutes.</span></div>';
+  var finalMsg='Aster is temporarily unavailable. We are working with their team on a fix. Please try again in 2–3 minutes.';
+  if(lastCode==='099066')finalMsg='Aster is temporarily unavailable in our region. We are working with them on a whitelist. Please try again in 2–3 minutes.';
+  st.innerHTML='<div class="alert alert-err mt-3"><span>⚠️</span><div style="text-align:left"><div class="fw-600">'+finalMsg+'</div><div class="text-xs text-dim mt-1">Error: '+(lastCode||'unknown')+' — '+lastErr+'</div><button onclick="autoLinkAster()" class="btn btn-sm mt-2" style="background:var(--accent);color:#000;border:none;padding:6px 16px;border-radius:8px;cursor:pointer">🔄 Retry</button></div></div>';
 }
 
 async function linkAsterApi(){
