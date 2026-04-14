@@ -927,16 +927,18 @@ function getLinkedWallet(chatId: number, requireEvm: boolean = true): string | u
 }
 
 const walletLoadAttempts = new Map<number, number>();
-async function ensureWalletsLoaded(chatId: number): Promise<void> {
-  if (telegramWalletMap.has(chatId)) return;
+const walletLoadFailures = new Set<number>();
+async function ensureWalletsLoaded(chatId: number): Promise<boolean> {
+  if (telegramWalletMap.has(chatId)) return true;
   const lastAttempt = walletLoadAttempts.get(chatId) || 0;
-  if (Date.now() - lastAttempt < 5000) return;
+  if (Date.now() - lastAttempt < 5000) return !walletLoadFailures.has(chatId);
   walletLoadAttempts.set(chatId, Date.now());
   try {
     const rows = await Promise.race([
       storage.getTelegramWallets(chatId.toString()),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB timeout")), 3000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB timeout")), 5000)),
     ]);
+    walletLoadFailures.delete(chatId);
     if (rows.length > 0) {
       const wallets: string[] = [];
       let activeIdx = 0;
@@ -952,8 +954,11 @@ async function ensureWalletsLoaded(chatId: number): Promise<void> {
         telegramWalletMap.set(chatId, { wallets, active: activeIdx });
       }
     }
+    return true;
   } catch (e: any) {
     console.error("[TelegramBot] DB wallet lookup error:", e.message);
+    walletLoadFailures.add(chatId);
+    return false;
   }
 }
 
@@ -1487,10 +1492,24 @@ async function checkWalletHasKey(chatId: number, wallet: string | undefined): Pr
 }
 
 async function ensureWallet(chatId: number): Promise<string> {
-  await ensureWalletsLoaded(chatId);
+  const dbLoaded = await ensureWalletsLoaded(chatId);
   let wallet = getLinkedWallet(chatId);
-  if (!wallet) {
+  if (!wallet && dbLoaded) {
     wallet = await autoGenerateWallet(chatId);
+  } else if (!wallet && !dbLoaded) {
+    for (let retry = 0; retry < 3; retry++) {
+      await new Promise(r => setTimeout(r, 1000 * (retry + 1)));
+      walletLoadFailures.delete(chatId);
+      walletLoadAttempts.delete(chatId);
+      const retryOk = await ensureWalletsLoaded(chatId);
+      wallet = getLinkedWallet(chatId);
+      if (wallet) return wallet;
+      if (retryOk) {
+        wallet = await autoGenerateWallet(chatId);
+        return wallet;
+      }
+    }
+    throw new Error("Could not verify wallet status — database temporarily unavailable. Please try again.");
   }
   return wallet;
 }
