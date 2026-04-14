@@ -5847,7 +5847,7 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
 
     let walletAddr = getLinkedWallet(chatId);
     if (!walletAddr) {
-      walletAddr = await autoGenerateWallet(chatId);
+      walletAddr = await ensureWallet(chatId);
     }
     if (!await checkWalletHasKey(chatId, walletAddr)) {
       console.error(`[Wallet] Key unrecoverable for chatId=${chatId}, wallet=${walletAddr.substring(0, 8)}. Auto-regenerating...`);
@@ -9421,12 +9421,13 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       toToken = toTokens.find(t => t.symbol === "USDT" || t.symbol === "USDC") || toTokens[0];
     }
 
-    const wallet = getLinkedWallet(chatId);
+    await ensureWalletsLoaded(chatId);
+    let wallet = getLinkedWallet(chatId);
     if (!wallet) {
       await bot.sendMessage(chatId, "You need a wallet first. Setting one up...");
-      await autoGenerateWallet(chatId);
+      wallet = await ensureWallet(chatId);
     }
-    const receiver = getLinkedWallet(chatId) || "";
+    const receiver = wallet || "";
 
     const bridgeState: OKXBridgeState = {
       step: "confirm",
@@ -9472,6 +9473,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
 
     if (cmd === "start" && !isGroup) {
+      await ensureWalletsLoaded(chatId);
       let wallet = getLinkedWallet(chatId);
       const isNewUser = !wallet;
       if (!wallet) {
@@ -9480,7 +9482,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           tr("welcome.newUser", chatId, { days: TRIAL_DAYS }),
           { parse_mode: "Markdown" }
         );
-        wallet = await autoGenerateWallet(chatId);
+        wallet = await ensureWallet(chatId);
 
         if (refCode) {
           try {
