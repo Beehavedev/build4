@@ -1,6 +1,14 @@
 import { Wallet, getAddress, Signature } from "ethers";
 import { rateLimitWait } from "./aster-rate-limiter";
 
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+function assertProductionOnly(caller: string): void {
+  if (!IS_PRODUCTION) {
+    throw new Error(`[AsterGuard] ${caller} blocked — Aster API calls only allowed in production (NODE_ENV=${process.env.NODE_ENV || "undefined"}). This prevents US IP leaks.`);
+  }
+}
+
 const DEFAULT_FAPI_URL = "https://fapi.asterdex.com";
 const REQUEST_TIMEOUT_MS = 20000;
 
@@ -114,6 +122,7 @@ export async function makeTradingRequest(
   method: "GET" | "POST" | "DELETE" = "GET",
   maxRetries: number = 3,
 ): Promise<any> {
+  assertProductionOnly("makeTradingRequest");
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     await rateLimitWait();
     const fullParams: Record<string, any> = {
@@ -494,6 +503,7 @@ const BROKER_URLS = [
 ];
 
 async function tryBrokerRegistration(wallet: InstanceType<typeof Wallet>, brokerUrl: string): Promise<{ registered: boolean; error?: string; errorCode?: string; retryable?: boolean }> {
+  assertProductionOnly("tryBrokerRegistration");
   const address = wallet.address;
   const BROKER_TIMEOUT = 15000;
   try {

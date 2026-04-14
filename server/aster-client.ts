@@ -3,6 +3,14 @@ import { Wallet, getAddress, Signature, JsonRpcProvider, Contract, formatUnits, 
 
 import { rateLimitWait, markIpBanned, checkWeightHeader, getRetryAfterMs, getCached, setCache } from "./aster-rate-limiter";
 
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+function assertProductionOnly(caller: string): void {
+  if (!IS_PRODUCTION) {
+    throw new Error(`[AsterGuard] ${caller} blocked — Aster API calls only allowed in production (NODE_ENV=${process.env.NODE_ENV || "undefined"}). This prevents US IP leaks.`);
+  }
+}
+
 interface AsterClientConfig {
   apiKey: string;
   apiSecret: string;
@@ -209,6 +217,7 @@ async function makeRequest(
   apiSecret: string,
   options: AsterRequestOptions = {},
 ): Promise<any> {
+  assertProductionOnly("makeRequest");
   const { method = "GET", signed = false, params = {} } = options;
 
   if (method === "GET") {
@@ -368,6 +377,7 @@ async function makeV3Request(
   signerPrivateKey: string,
   options: AsterRequestOptions = {},
 ): Promise<any> {
+  assertProductionOnly("makeV3Request");
   const { method = "GET", params = {} } = options;
 
   if (method === "GET") {
@@ -481,6 +491,7 @@ async function makeV3Request(
 }
 
 export async function asterBrokerOnboard(walletPrivateKey: string, agentCode?: string): Promise<BrokerOnboardResult> {
+  assertProductionOnly("asterBrokerOnboard");
   const wallet = new Wallet(walletPrivateKey);
   const address = wallet.address;
 
@@ -1243,6 +1254,7 @@ export async function asterV3Deposit(
   brokerId: number = 0,
   recipientAddress?: string,
 ): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  assertProductionOnly("asterV3Deposit");
   try {
     const provider = new JsonRpcProvider("https://bsc-dataseed1.binance.org");
     const wallet = new Wallet(privateKey, provider);
@@ -1406,6 +1418,7 @@ export interface AsterWsStream {
 }
 
 export function createAsterWsStream(onMessage: AsterWsCallback, onError?: (err: Error) => void): AsterWsStream {
+  assertProductionOnly("createAsterWsStream");
   let ws: any = null;
   let pingTimer: ReturnType<typeof setInterval> | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
