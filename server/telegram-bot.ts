@@ -977,12 +977,37 @@ async function ensureWalletsLoaded(chatId: number): Promise<boolean> {
           if (firstKeyedIdx < 0) firstKeyedIdx = wallets.length - 1;
         }
       }
+      try {
+        const asterCreds = await storage.getAsterCredentials(chatId.toString());
+        if (asterCreds?.parentAddress) {
+          let parent = asterCreds.parentAddress.toLowerCase();
+          if (parent.startsWith("astercode:")) parent = parent.substring(10);
+          if (/^0x[a-f0-9]{40}$/.test(parent) && !wallets.includes(parent)) {
+            wallets.unshift(parent);
+            activeIdx = 0;
+            firstKeyedIdx = firstKeyedIdx >= 0 ? firstKeyedIdx + 1 : -1;
+            console.log(`[Wallet] Linked Aster parent wallet ${parent.substring(0, 10)} for chatId=${chatId}`);
+          }
+        }
+      } catch {}
       if (wallets.length > 0) {
         if (firstKeyedIdx >= 0 && !walletsWithKey.has(`${chatId}:${wallets[activeIdx]}`)) {
           activeIdx = firstKeyedIdx;
         }
         telegramWalletMap.set(chatId, { wallets, active: activeIdx });
       }
+    } else {
+      try {
+        const asterCreds = await storage.getAsterCredentials(chatId.toString());
+        if (asterCreds?.parentAddress) {
+          let parent = asterCreds.parentAddress.toLowerCase();
+          if (parent.startsWith("astercode:")) parent = parent.substring(10);
+          if (/^0x[a-f0-9]{40}$/.test(parent)) {
+            telegramWalletMap.set(chatId, { wallets: [parent], active: 0 });
+            console.log(`[Wallet] Restored Aster parent wallet ${parent.substring(0, 10)} for chatId=${chatId} (no telegram_wallets found)`);
+          }
+        }
+      } catch {}
     }
     return true;
   } catch (e: any) {
