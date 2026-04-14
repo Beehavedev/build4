@@ -1293,8 +1293,10 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         positions: positionList,
         positionMargin: totalPositionMargin,
         recentIncome: incomeList,
+        ts: Date.now(),
       });
     } catch (e: any) {
+      console.error(`[MiniApp] Account error chatId=${req.headers["x-telegram-chat-id"]}:`, e.message?.substring(0, 200));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1787,16 +1789,27 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
     try {
       const chatId = req.headers["x-telegram-chat-id"] as string;
       if (!chatId) return res.status(400).json({ error: "Missing chat ID" });
+      console.log(`[Agent] Toggle request for chatId=${chatId}`);
 
       const { getAgentState, startAgent, stopAgent } = await import("./autonomous-agent");
       const state = getAgentState(chatId);
 
       if (state?.running) {
         stopAgent(chatId);
+        console.log(`[Agent] Stopped agent for chatId=${chatId}`);
         res.json({ running: false });
       } else {
-        const client = await getAsterClient(parseInt(chatId));
-        if (!client) return res.status(400).json({ error: "Aster not connected" });
+        let client: any;
+        try {
+          client = await getAsterClient(parseInt(chatId));
+        } catch (clientErr: any) {
+          console.error(`[Agent] getAsterClient failed for chatId=${chatId}:`, clientErr.message);
+          return res.status(400).json({ error: `Aster connection failed: ${clientErr.message?.substring(0, 100)}` });
+        }
+        if (!client) {
+          console.log(`[Agent] No Aster client for chatId=${chatId}`);
+          return res.status(400).json({ error: "Aster not connected. Open the Aster menu first to connect your account." });
+        }
         const getClientFn = () => client;
         const { getBotInstance } = await import("./telegram-bot");
         const sendMsg = async (msg: string) => {
@@ -1806,10 +1819,12 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
           } catch (e: any) { console.log(`[Agent:${chatId}] sendMsg error:`, e.message?.substring(0, 100)); }
         };
         await startAgent(chatId, getClientFn, sendMsg);
+        console.log(`[Agent] Started agent for chatId=${chatId}`);
         res.json({ running: true });
       }
     } catch (e: any) {
-      res.status(500).json({ error: "Internal server error" });
+      console.error(`[Agent] Toggle error for chatId=${req.headers["x-telegram-chat-id"]}:`, e.message);
+      res.status(500).json({ error: `Agent error: ${e.message?.substring(0, 100) || "Internal server error"}` });
     }
   });
 

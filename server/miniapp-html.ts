@@ -135,7 +135,7 @@ console.log('[MiniApp] version='+MINIAPP_VERSION+' chatId='+chatId);
 var _debugLog=[];
 function _dlog(msg){_debugLog.push(Date.now()+': '+msg);console.log('[MiniApp] '+msg)}
 let D={connected:false,availableMargin:0,walletBalance:0,marginBalance:0,bscBalance:0,bnbBalance:0,bscWalletAddress:'',unrealizedPnl:0,realizedPnl:0,wins:0,losses:0,positions:[],recentIncome:[],spotBalance:0,openOrders:[]};
-try{var _cached=sessionStorage.getItem('miniapp_D');if(_cached){var _cd=JSON.parse(_cached);if(_cd&&_cd.connected&&((_cd.availableMargin||0)>0||(_cd.portfolioValue||0)>0)){D={...D,..._cd};console.log('[MiniApp] Restored cached D: avail='+D.availableMargin+' portfolio='+D.portfolioValue)}}}catch(e){}
+try{var _cached=sessionStorage.getItem('miniapp_D');if(_cached){var _cd=JSON.parse(_cached);if(_cd&&_cd.connected&&((_cd.availableMargin||0)>0||(_cd.portfolioValue||0)>0)){_cd.positions=[];_cd.openOrders=[];D={...D,..._cd};console.log('[MiniApp] Restored cached D (no positions): avail='+D.availableMargin+' portfolio='+D.portfolioValue)}}}catch(e){}
 let M={markets:[]};
 let AG=null;
 let tradeHistory=[];
@@ -199,7 +199,9 @@ function startAutoRefresh(){
         var wasDisconnected=!D.connected;
         var hadBalance=(D.availableMargin||0)>0||(D.portfolioValue||0)>0;
         var newHasBalance=(a.availableMargin||0)>0||(a.portfolioValue||0)>0;
-        if(hadBalance&&!newHasBalance){fetchErrors++;return}
+        if(hadBalance&&!newHasBalance&&fetchErrors<3){fetchErrors++;return}
+        if(a.positions!==undefined){D.positions=a.positions}
+        if(a.openOrders!==undefined){D.openOrders=a.openOrders}
         D={...D,...a};lastUpdate=Date.now();fetchErrors=0;lastFetchErr='';try{sessionStorage.setItem('miniapp_D',JSON.stringify(D))}catch(e){}
         try{$('hdr-updated').textContent=timeAgo()}catch(e){}
         const activePage=document.querySelector('.page.active');
