@@ -887,12 +887,19 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
   return null;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms)),
+  ]);
+}
+
 let walletsLoadedFromDb = false;
 async function loadWalletsFromDb(): Promise<void> {
-  const MAX_RETRIES = 5;
+  const MAX_RETRIES = 3;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const allLinks = await storage.getAllTelegramWalletLinks();
+      const allLinks = await withTimeout(storage.getAllTelegramWalletLinks(), 15000, "getAllTelegramWalletLinks");
       const newWalletMap = new Map<number, { wallets: string[]; active: number }>();
       const newWalletsWithKey = new Set<string>();
       const walletsWithKeyPerChat = new Map<number, Set<string>>();
@@ -959,12 +966,12 @@ async function ensureWalletsLoaded(chatId: number): Promise<boolean> {
   if (Date.now() - lastAttempt < 5000) return !walletLoadFailures.has(chatId);
   walletLoadAttempts.set(chatId, Date.now());
   try {
-    console.log(`[Wallet] v61a ensureWalletsLoaded: querying DB for chatId=${chatId}`);
+    console.log(`[Wallet] v61b ensureWalletsLoaded: querying DB for chatId=${chatId}`);
     const rows = await Promise.race([
       storage.getTelegramWallets(chatId.toString()),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB timeout")), 8000)),
     ]);
-    console.log(`[Wallet] v61a ensureWalletsLoaded: got ${rows.length} rows for chatId=${chatId}`);
+    console.log(`[Wallet] v61b ensureWalletsLoaded: got ${rows.length} rows for chatId=${chatId}`);
     walletLoadFailures.delete(chatId);
     if (rows.length > 0) {
       const wallets: string[] = [];
@@ -1401,20 +1408,25 @@ async function getOrCreateSolanaWallet(chatId: number): Promise<{ address: strin
 
 async function autoGenerateWallet(chatId: number): Promise<string> {
   if (!bot) throw new Error("Bot not initialized");
+  console.log(`[Wallet] v61b autoGenerateWallet for chatId=${chatId}, walletsLoadedFromDb=${walletsLoadedFromDb}`);
   if (!walletsLoadedFromDb) {
     console.log(`[Wallet] WARNING: autoGenerateWallet called before DB load complete for chatId=${chatId}, forcing DB check`);
-    const rows = await storage.getTelegramWallets(chatId.toString());
-    const evmRows = rows.filter(r => r.walletAddress && r.walletAddress.startsWith("0x"));
-    if (evmRows.length > 0) {
-      const activeRow = evmRows.find(r => r.isActive) || evmRows[0];
-      const wallets = evmRows.map(r => r.walletAddress);
-      const activeIdx = wallets.indexOf(activeRow.walletAddress);
-      telegramWalletMap.set(chatId, { wallets, active: activeIdx >= 0 ? activeIdx : 0 });
-      for (const r of evmRows) {
-        if (r.encryptedPrivateKey) walletsWithKey.add(`${chatId}:${r.walletAddress}`);
+    try {
+      const rows = await withTimeout(storage.getTelegramWallets(chatId.toString()), 8000, "getTelegramWallets");
+      const evmRows = rows.filter(r => r.walletAddress && r.walletAddress.startsWith("0x"));
+      if (evmRows.length > 0) {
+        const activeRow = evmRows.find(r => r.isActive) || evmRows[0];
+        const wallets = evmRows.map(r => r.walletAddress);
+        const activeIdx = wallets.indexOf(activeRow.walletAddress);
+        telegramWalletMap.set(chatId, { wallets, active: activeIdx >= 0 ? activeIdx : 0 });
+        for (const r of evmRows) {
+          if (r.encryptedPrivateKey) walletsWithKey.add(`${chatId}:${r.walletAddress}`);
+        }
+        console.log(`[Wallet] Found ${evmRows.length} existing wallets in DB for chatId=${chatId}, skipping generation`);
+        return activeRow.walletAddress;
       }
-      console.log(`[Wallet] Found ${evmRows.length} existing wallets in DB for chatId=${chatId}, skipping generation`);
-      return activeRow.walletAddress;
+    } catch (dbErr: any) {
+      console.error(`[Wallet] v61b DB check failed for chatId=${chatId}: ${dbErr.message} — proceeding to generate`);
     }
   }
   const wallet = ethers.Wallet.createRandom();
@@ -1436,19 +1448,19 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
   }
 
   setKeyCache(`${chatId}:${addr}`, pk);
-  await storage.saveTelegramWallet(chatId.toString(), addr, pk);
-  await storage.setActiveTelegramWallet(chatId.toString(), addr);
   walletsWithKey.add(`${chatId}:${addr}`);
-
-  const verifyPk = await storage.getTelegramWalletPrivateKey(chatId.toString(), addr);
-  if (!verifyPk) {
-    console.error(`[Wallet] CRITICAL: Key failed round-trip verify for chatId=${chatId} wallet=${addr.substring(0, 8)}. Re-saving...`);
-    await storage.saveTelegramWallet(chatId.toString(), addr, pk);
-    const verifyPk2 = await storage.getTelegramWalletPrivateKey(chatId.toString(), addr);
-    if (!verifyPk2) {
-      console.error(`[Wallet] CRITICAL: Key still fails after re-save for chatId=${chatId}. Using in-memory cache only.`);
-    }
+  try {
+    await withTimeout(storage.saveTelegramWallet(chatId.toString(), addr, pk), 10000, "saveTelegramWallet");
+    await withTimeout(storage.setActiveTelegramWallet(chatId.toString(), addr), 5000, "setActiveTelegramWallet");
+  } catch (saveErr: any) {
+    console.error(`[Wallet] v61b DB save error for chatId=${chatId}: ${saveErr.message} — wallet in-memory only`);
   }
+
+  withTimeout(storage.getTelegramWalletPrivateKey(chatId.toString(), addr), 5000, "verifyPK").then(verifyPk => {
+    if (!verifyPk) {
+      console.error(`[Wallet] Key round-trip verify failed for chatId=${chatId} wallet=${addr.substring(0, 8)}`);
+    }
+  }).catch(() => {});
 
   await bot.sendMessage(chatId,
     `🔑 Wallet created!\n\n` +
@@ -1565,25 +1577,29 @@ async function checkWalletHasKey(chatId: number, wallet: string | undefined): Pr
 }
 
 async function ensureWallet(chatId: number): Promise<string> {
+  console.log(`[Wallet] v61b ensureWallet START for chatId=${chatId}`);
   const dbLoaded = await ensureWalletsLoaded(chatId);
   let wallet = getLinkedWallet(chatId);
+  console.log(`[Wallet] v61b ensureWallet chatId=${chatId} dbLoaded=${dbLoaded} wallet=${wallet || "NONE"}`);
   if (!wallet && dbLoaded) {
-    wallet = await autoGenerateWallet(chatId);
+    wallet = await withTimeout(autoGenerateWallet(chatId), 20000, "autoGenerateWallet");
   } else if (!wallet && !dbLoaded) {
-    for (let retry = 0; retry < 3; retry++) {
-      await new Promise(r => setTimeout(r, 1000 * (retry + 1)));
+    for (let retry = 0; retry < 2; retry++) {
+      await new Promise(r => setTimeout(r, 1500 * (retry + 1)));
       walletLoadFailures.delete(chatId);
       walletLoadAttempts.delete(chatId);
       const retryOk = await ensureWalletsLoaded(chatId);
       wallet = getLinkedWallet(chatId);
       if (wallet) return wallet;
       if (retryOk) {
-        wallet = await autoGenerateWallet(chatId);
+        wallet = await withTimeout(autoGenerateWallet(chatId), 20000, "autoGenerateWallet-retry");
         return wallet;
       }
     }
-    throw new Error("Could not verify wallet status — database temporarily unavailable. Please try again.");
+    console.error(`[Wallet] v61b DB unavailable for chatId=${chatId}, generating wallet without DB verify`);
+    wallet = await withTimeout(autoGenerateWallet(chatId), 20000, "autoGenerateWallet-fallback");
   }
+  console.log(`[Wallet] v61b ensureWallet DONE for chatId=${chatId}: ${wallet}`);
   return wallet;
 }
 
@@ -2841,15 +2857,16 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
 
     registerBotHandlers(bot);
 
-    console.log("[TelegramBot] v61a starting — Loading all wallets from DB before accepting messages...");
-    await loadWalletsFromDb();
-    console.log(`[TelegramBot] v61a Wallet preload complete: ${telegramWalletMap.size} users, walletsLoadedFromDb=${walletsLoadedFromDb}`);
+    console.log("[TelegramBot] v61b starting — Loading wallets from DB (non-blocking if slow)...");
+    loadWalletsFromDb().catch(e => console.error("[TelegramBot] v61b loadWalletsFromDb error:", e.message));
+    await new Promise(r => setTimeout(r, 3000));
+    console.log(`[TelegramBot] v61b Wallet preload status: ${telegramWalletMap.size} users loaded, walletsLoadedFromDb=${walletsLoadedFromDb}`);
 
     initOwnerAsterClient().catch(e => console.error("[Aster] Owner client init error:", e.message));
 
     const me = await bot.getMe();
     botUsername = me.username || null;
-    console.log(`[TelegramBot] v61a Started ${webhookMode ? "with webhook" : "with polling"} as @${botUsername}`);
+    console.log(`[TelegramBot] v61b Started ${webhookMode ? "with webhook" : "with polling"} as @${botUsername}`);
 
     if (!webhookMode) {
       bot.startPolling();
@@ -9475,10 +9492,10 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
 
     if (cmd === "start" && !isGroup) {
-      console.log(`[Start] v61a /start for chatId=${chatId}`);
+      console.log(`[Start] v61b /start for chatId=${chatId}`);
       await ensureWalletsLoaded(chatId);
       let wallet = getLinkedWallet(chatId);
-      console.log(`[Start] v61a chatId=${chatId} wallet=${wallet || "NONE"} mapHas=${telegramWalletMap.has(chatId)}`);
+      console.log(`[Start] v61b chatId=${chatId} wallet=${wallet || "NONE"} mapHas=${telegramWalletMap.has(chatId)}`);
       const isNewUser = !wallet;
       if (!wallet) {
         const refCode = cmdArg.startsWith("ref_") ? cmdArg : "";
@@ -9488,9 +9505,9 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         );
         try {
           wallet = await ensureWallet(chatId);
-          console.log(`[Start] v61a ensureWallet OK for chatId=${chatId}: ${wallet}`);
+          console.log(`[Start] v61b ensureWallet OK for chatId=${chatId}: ${wallet}`);
         } catch (walletErr: any) {
-          console.error(`[Start] v61a ensureWallet FAILED for chatId=${chatId}:`, walletErr.message);
+          console.error(`[Start] v61b ensureWallet FAILED for chatId=${chatId}:`, walletErr.message);
           await bot.sendMessage(chatId,
             "⚠️ Wallet setup encountered an issue. Please try /start again in a few seconds.",
             { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:menu" }]] } }
@@ -10703,7 +10720,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       try {
         await ensureWallet(chatId);
       } catch (walletErr: any) {
-        console.error(`[Wallet] v61a ensureWallet FAILED for chatId=${chatId}:`, walletErr.message);
+        console.error(`[Wallet] v61b ensureWallet FAILED for chatId=${chatId}:`, walletErr.message);
         await bot.sendMessage(chatId, "⚠️ Could not load wallet — please try again in a moment.");
         return;
       }
