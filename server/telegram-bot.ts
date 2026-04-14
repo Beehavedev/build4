@@ -887,32 +887,42 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
   return null;
 }
 
+let walletsLoadedFromDb = false;
 async function loadWalletsFromDb(): Promise<void> {
-  try {
-    const allLinks = await storage.getAllTelegramWalletLinks();
-    const newWalletMap = new Map<number, { wallets: string[]; active: number }>();
-    const newWalletsWithKey = new Set<string>();
-    for (const link of allLinks) {
-      const chatId = parseInt(link.chatId, 10);
-      const existing = newWalletMap.get(chatId);
-      if (existing) {
-        existing.wallets.push(link.walletAddress);
-        if (link.isActive) existing.active = existing.wallets.length - 1;
-      } else {
-        newWalletMap.set(chatId, { wallets: [link.walletAddress], active: link.isActive ? 0 : 0 });
+  const MAX_RETRIES = 5;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const allLinks = await storage.getAllTelegramWalletLinks();
+      const newWalletMap = new Map<number, { wallets: string[]; active: number }>();
+      const newWalletsWithKey = new Set<string>();
+      for (const link of allLinks) {
+        const chatId = parseInt(link.chatId, 10);
+        const existing = newWalletMap.get(chatId);
+        if (existing) {
+          existing.wallets.push(link.walletAddress);
+          if (link.isActive) existing.active = existing.wallets.length - 1;
+        } else {
+          newWalletMap.set(chatId, { wallets: [link.walletAddress], active: link.isActive ? 0 : 0 });
+        }
+        if (link.encryptedPrivateKey) {
+          newWalletsWithKey.add(`${link.chatId}:${link.walletAddress}`);
+        }
       }
-      if (link.encryptedPrivateKey) {
-        newWalletsWithKey.add(`${link.chatId}:${link.walletAddress}`);
+      telegramWalletMap.clear();
+      for (const [k, v] of newWalletMap) telegramWalletMap.set(k, v);
+      walletsWithKey.clear();
+      for (const v of newWalletsWithKey) walletsWithKey.add(v);
+      walletsLoadedFromDb = true;
+      console.log(`[TelegramBot] Loaded ${allLinks.length} wallet links from DB for ${telegramWalletMap.size} chats (attempt ${attempt})`);
+      return;
+    } catch (e: any) {
+      console.error(`[TelegramBot] Failed to load wallets from DB (attempt ${attempt}/${MAX_RETRIES}):`, e.message || e);
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, 2000 * attempt));
       }
     }
-    telegramWalletMap.clear();
-    for (const [k, v] of newWalletMap) telegramWalletMap.set(k, v);
-    walletsWithKey.clear();
-    for (const v of newWalletsWithKey) walletsWithKey.add(v);
-    console.log(`[TelegramBot] Loaded ${allLinks.length} wallet links from DB for ${telegramWalletMap.size} chats`);
-  } catch (e) {
-    console.error("[TelegramBot] Failed to load wallets from DB:", e);
   }
+  console.error("[TelegramBot] CRITICAL: All wallet load attempts failed — bot will use per-user DB lookups");
 }
 
 function getLinkedWallet(chatId: number, requireEvm: boolean = true): string | undefined {
@@ -1344,6 +1354,22 @@ async function getOrCreateSolanaWallet(chatId: number): Promise<{ address: strin
 
 async function autoGenerateWallet(chatId: number): Promise<string> {
   if (!bot) throw new Error("Bot not initialized");
+  if (!walletsLoadedFromDb) {
+    console.log(`[Wallet] WARNING: autoGenerateWallet called before DB load complete for chatId=${chatId}, forcing DB check`);
+    const rows = await storage.getTelegramWallets(chatId.toString());
+    const evmRows = rows.filter(r => r.walletAddress && r.walletAddress.startsWith("0x"));
+    if (evmRows.length > 0) {
+      const activeRow = evmRows.find(r => r.isActive) || evmRows[0];
+      const wallets = evmRows.map(r => r.walletAddress);
+      const activeIdx = wallets.indexOf(activeRow.walletAddress);
+      telegramWalletMap.set(chatId, { wallets, active: activeIdx >= 0 ? activeIdx : 0 });
+      for (const r of evmRows) {
+        if (r.encryptedPrivateKey) walletsWithKey.add(`${chatId}:${r.walletAddress}`);
+      }
+      console.log(`[Wallet] Found ${evmRows.length} existing wallets in DB for chatId=${chatId}, skipping generation`);
+      return activeRow.walletAddress;
+    }
+  }
   const wallet = ethers.Wallet.createRandom();
   const addr = wallet.address.toLowerCase();
   const pk = wallet.privateKey;
@@ -2768,7 +2794,10 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
 
     registerBotHandlers(bot);
 
-    loadWalletsFromDb().catch(e => console.error("[TelegramBot] Wallet load error:", e.message));
+    console.log("[TelegramBot] Loading all wallets from DB before accepting messages...");
+    await loadWalletsFromDb();
+    console.log(`[TelegramBot] Wallet preload complete: ${telegramWalletMap.size} users, walletsLoadedFromDb=${walletsLoadedFromDb}`);
+
     initOwnerAsterClient().catch(e => console.error("[Aster] Owner client init error:", e.message));
 
     const me = await bot.getMe();
@@ -2840,7 +2869,10 @@ async function startTelegramBotPolling(token: string): Promise<void> {
 
     registerBotHandlers(bot);
 
-    loadWalletsFromDb().catch(e => console.error("[TelegramBot] Wallet load error:", e.message));
+    console.log("[TelegramBot] Loading all wallets from DB before accepting messages...");
+    await loadWalletsFromDb();
+    console.log(`[TelegramBot] Wallet preload complete: ${telegramWalletMap.size} users, walletsLoadedFromDb=${walletsLoadedFromDb}`);
+
     const me = await bot.getMe();
     botUsername = me.username || null;
     console.log(`[TelegramBot] Fallback started with polling as @${botUsername}`);
