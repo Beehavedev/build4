@@ -895,6 +895,7 @@ async function loadWalletsFromDb(): Promise<void> {
       const allLinks = await storage.getAllTelegramWalletLinks();
       const newWalletMap = new Map<number, { wallets: string[]; active: number }>();
       const newWalletsWithKey = new Set<string>();
+      const walletsWithKeyPerChat = new Map<number, Set<string>>();
       for (const link of allLinks) {
         const chatId = parseInt(link.chatId, 10);
         const existing = newWalletMap.get(chatId);
@@ -906,6 +907,20 @@ async function loadWalletsFromDb(): Promise<void> {
         }
         if (link.encryptedPrivateKey) {
           newWalletsWithKey.add(`${link.chatId}:${link.walletAddress}`);
+          if (!walletsWithKeyPerChat.has(chatId)) walletsWithKeyPerChat.set(chatId, new Set());
+          walletsWithKeyPerChat.get(chatId)!.add(link.walletAddress);
+        }
+      }
+      let fixedActiveCount = 0;
+      for (const [chatId, data] of newWalletMap) {
+        const keyed = walletsWithKeyPerChat.get(chatId);
+        if (!keyed || keyed.size === 0) continue;
+        const activeWallet = data.wallets[data.active];
+        if (activeWallet && keyed.has(activeWallet)) continue;
+        const bestIdx = data.wallets.findIndex(w => keyed.has(w));
+        if (bestIdx >= 0 && bestIdx !== data.active) {
+          data.active = bestIdx;
+          fixedActiveCount++;
         }
       }
       telegramWalletMap.clear();
@@ -913,7 +928,7 @@ async function loadWalletsFromDb(): Promise<void> {
       walletsWithKey.clear();
       for (const v of newWalletsWithKey) walletsWithKey.add(v);
       walletsLoadedFromDb = true;
-      console.log(`[TelegramBot] Loaded ${allLinks.length} wallet links from DB for ${telegramWalletMap.size} chats (attempt ${attempt})`);
+      console.log(`[TelegramBot] Loaded ${allLinks.length} wallet links from DB for ${telegramWalletMap.size} chats (attempt ${attempt}), fixed ${fixedActiveCount} active wallets`);
       return;
     } catch (e: any) {
       console.error(`[TelegramBot] Failed to load wallets from DB (attempt ${attempt}/${MAX_RETRIES}):`, e.message || e);
@@ -952,15 +967,20 @@ async function ensureWalletsLoaded(chatId: number): Promise<boolean> {
     if (rows.length > 0) {
       const wallets: string[] = [];
       let activeIdx = 0;
+      let firstKeyedIdx = -1;
       for (let i = 0; i < rows.length; i++) {
         if (rows[i].walletAddress.startsWith("sol:")) continue;
         wallets.push(rows[i].walletAddress);
         if (rows[i].isActive) activeIdx = wallets.length - 1;
         if (rows[i].encryptedPrivateKey) {
           walletsWithKey.add(`${chatId}:${rows[i].walletAddress}`);
+          if (firstKeyedIdx < 0) firstKeyedIdx = wallets.length - 1;
         }
       }
       if (wallets.length > 0) {
+        if (firstKeyedIdx >= 0 && !walletsWithKey.has(`${chatId}:${wallets[activeIdx]}`)) {
+          activeIdx = firstKeyedIdx;
+        }
         telegramWalletMap.set(chatId, { wallets, active: activeIdx });
       }
     }
@@ -3600,8 +3620,18 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     if (wallets.length === 0) {
       await ensureWallet(chatId);
     }
-    const activeIdx = getActiveWalletIndex(chatId);
+    let activeIdx = getActiveWalletIndex(chatId);
     const updatedWallets = getUserWallets(chatId);
+
+    const activeW = updatedWallets[activeIdx];
+    if (activeW && !walletsWithKey.has(`${chatId}:${activeW}`)) {
+      const betterIdx = updatedWallets.findIndex(w => walletsWithKey.has(`${chatId}:${w}`));
+      if (betterIdx >= 0) {
+        setActiveWallet(chatId, betterIdx);
+        activeIdx = betterIdx;
+        storage.setActiveTelegramWallet(chatId.toString(), updatedWallets[betterIdx]).catch(() => {});
+      }
+    }
 
     await bot.sendMessage(chatId, tr("wallet.loading", chatId));
 
