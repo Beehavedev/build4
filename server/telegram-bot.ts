@@ -959,10 +959,12 @@ async function ensureWalletsLoaded(chatId: number): Promise<boolean> {
   if (Date.now() - lastAttempt < 5000) return !walletLoadFailures.has(chatId);
   walletLoadAttempts.set(chatId, Date.now());
   try {
+    console.log(`[Wallet] v61a ensureWalletsLoaded: querying DB for chatId=${chatId}`);
     const rows = await Promise.race([
       storage.getTelegramWallets(chatId.toString()),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB timeout")), 5000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB timeout")), 8000)),
     ]);
+    console.log(`[Wallet] v61a ensureWalletsLoaded: got ${rows.length} rows for chatId=${chatId}`);
     walletLoadFailures.delete(chatId);
     if (rows.length > 0) {
       const wallets: string[] = [];
@@ -2839,15 +2841,15 @@ export async function startTelegramBot(webhookBaseUrl?: string): Promise<void> {
 
     registerBotHandlers(bot);
 
-    console.log("[TelegramBot] Loading all wallets from DB before accepting messages...");
+    console.log("[TelegramBot] v61a starting — Loading all wallets from DB before accepting messages...");
     await loadWalletsFromDb();
-    console.log(`[TelegramBot] Wallet preload complete: ${telegramWalletMap.size} users, walletsLoadedFromDb=${walletsLoadedFromDb}`);
+    console.log(`[TelegramBot] v61a Wallet preload complete: ${telegramWalletMap.size} users, walletsLoadedFromDb=${walletsLoadedFromDb}`);
 
     initOwnerAsterClient().catch(e => console.error("[Aster] Owner client init error:", e.message));
 
     const me = await bot.getMe();
     botUsername = me.username || null;
-    console.log(`[TelegramBot] Started ${webhookMode ? "with webhook" : "with polling"} as @${botUsername}`);
+    console.log(`[TelegramBot] v61a Started ${webhookMode ? "with webhook" : "with polling"} as @${botUsername}`);
 
     if (!webhookMode) {
       bot.startPolling();
@@ -9473,8 +9475,10 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
 
     if (cmd === "start" && !isGroup) {
+      console.log(`[Start] v61a /start for chatId=${chatId}`);
       await ensureWalletsLoaded(chatId);
       let wallet = getLinkedWallet(chatId);
+      console.log(`[Start] v61a chatId=${chatId} wallet=${wallet || "NONE"} mapHas=${telegramWalletMap.has(chatId)}`);
       const isNewUser = !wallet;
       if (!wallet) {
         const refCode = cmdArg.startsWith("ref_") ? cmdArg : "";
@@ -9482,7 +9486,17 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           tr("welcome.newUser", chatId, { days: TRIAL_DAYS }),
           { parse_mode: "Markdown" }
         );
-        wallet = await ensureWallet(chatId);
+        try {
+          wallet = await ensureWallet(chatId);
+          console.log(`[Start] v61a ensureWallet OK for chatId=${chatId}: ${wallet}`);
+        } catch (walletErr: any) {
+          console.error(`[Start] v61a ensureWallet FAILED for chatId=${chatId}:`, walletErr.message);
+          await bot.sendMessage(chatId,
+            "⚠️ Wallet setup encountered an issue. Please try /start again in a few seconds.",
+            { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:menu" }]] } }
+          );
+          return;
+        }
 
         if (refCode) {
           try {
@@ -10686,7 +10700,13 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
 
     if (cmd === "wallet") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for wallet info!"); return; }
-      await ensureWallet(chatId);
+      try {
+        await ensureWallet(chatId);
+      } catch (walletErr: any) {
+        console.error(`[Wallet] v61a ensureWallet FAILED for chatId=${chatId}:`, walletErr.message);
+        await bot.sendMessage(chatId, "⚠️ Could not load wallet — please try again in a moment.");
+        return;
+      }
       const allWallets = getUserWallets(chatId);
       const activeIdx = getActiveWalletIndex(chatId);
       const wallets = allWallets.filter(w => /^0x[a-fA-F0-9]{40}$/.test(w));
