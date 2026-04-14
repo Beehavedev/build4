@@ -9,6 +9,14 @@ const isSSL = process.env.DATABASE_URL?.includes("render.com") ||
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: isSSL ? { rejectUnauthorized: false } : false,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+  allowExitOnIdle: false,
+});
+
+pool.on('error', (err) => {
+  console.error('[DB Pool] Idle client error:', err.message?.substring(0, 150));
 });
 
 export const db = drizzle(pool, { schema });

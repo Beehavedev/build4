@@ -13748,7 +13748,17 @@ function getOwnerAsterClient(): any {
 }
 
 export async function getAsterClient(chatId: number): Promise<any> {
-  const creds = await storage.getAsterCredentials(chatId.toString());
+  let creds: any;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      creds = await withTimeout(storage.getAsterCredentials(chatId.toString()), 8000, `getAsterCreds:${chatId}`);
+      break;
+    } catch (e: any) {
+      console.error(`[AsterClient] getAsterCredentials attempt ${attempt + 1} failed for chatId=${chatId}:`, e.message?.substring(0, 100));
+      if (attempt === 1) throw e;
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
 
   if (creds) {
     const isV3Direct = creds.apiKey === "V3_DIRECT";
@@ -13757,7 +13767,7 @@ export async function getAsterClient(chatId: number): Promise<any> {
     if (isV3ApiWallet && creds.apiSecret) {
       let parentAddress = creds.parentAddress;
       if (!parentAddress) {
-        const wallets = await storage.getTelegramWallets(chatId.toString());
+        const wallets = await withTimeout(storage.getTelegramWallets(chatId.toString()), 5000, `getWallets:${chatId}`);
         const activeWallet = wallets.find((w: any) => w.isActive) || wallets[0];
         parentAddress = activeWallet?.walletAddress?.toLowerCase() || creds.apiKey;
       }
