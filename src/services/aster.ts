@@ -1,40 +1,95 @@
-import crypto from "crypto";
+import { ethers } from "ethers";
 
-const ASTER_BASE = "https://fapi.asterdex.com";
+const ASTER_V3 = "https://fapi3.asterdex.com";
+const ASTER_V1 = "https://fapi.asterdex.com";
 
-function getBrokerKeys(): { apiKey: string; apiSecret: string } {
-  const apiKey = process.env.ASTER_API_KEY;
-  const apiSecret = process.env.ASTER_API_SECRET;
-  if (!apiKey || !apiSecret) throw new Error("ASTER_API_KEY / ASTER_API_SECRET not configured");
-  return { apiKey, apiSecret };
+let ASTER_BASE = ASTER_V1;
+
+function getBrokerWallet(): ethers.Wallet {
+  const pk = process.env.ASTER_BROKER_PK;
+  if (!pk) throw new Error("ASTER_BROKER_PK not configured");
+  let key = pk.trim();
+  if (!key.startsWith("0x")) key = "0x" + key;
+  return new ethers.Wallet(key);
 }
 
-function createSignature(queryString: string, secret: string): string {
-  return crypto.createHmac("sha256", secret).update(queryString).digest("hex");
-}
+async function asterProApiRequest(method: "GET" | "POST" | "DELETE", path: string, body?: Record<string, any>): Promise<any> {
+  const wallet = getBrokerWallet();
+  const nonce = (Date.now() * 1000).toString();
 
-async function asterRequest(method: "GET" | "POST" | "DELETE", path: string, params: Record<string, string> = {}): Promise<any> {
-  const { apiKey, apiSecret } = getBrokerKeys();
-  const timestamp = Date.now().toString();
-  const allParams = { ...params, timestamp, recvWindow: "5000" };
-  const queryString = Object.entries(allParams).map(([k, v]) => `${k}=${v}`).join("&");
-  const signature = createSignature(queryString, apiSecret);
-  const fullQuery = `${queryString}&signature=${signature}`;
+  const domain = { name: "AsterSignTransaction", chainId: 1666 };
+  const types = {
+    AsterSignTransaction: [
+      { name: "method", type: "string" },
+      { name: "nonce", type: "uint256" },
+    ],
+  };
+  const value = { method: `${method} ${path}`, nonce };
+  const signature = await wallet.signTypedData(domain, types, value);
 
-  const url = `${ASTER_BASE}${path}?${fullQuery}`;
-  const res = await fetch(url, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      "X-ASTER-APIKEY": apiKey,
-    },
-  });
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "ASTER-SIGNATURE": signature,
+    "ASTER-NONCE": nonce,
+    "ASTER-ADDRESS": wallet.address,
+  };
+
+  const url = `${ASTER_BASE}${path}`;
+  const fetchOpts: RequestInit = { method, headers };
+  if (body && (method === "POST" || method === "DELETE")) {
+    fetchOpts.body = JSON.stringify(body);
+  }
+
+  const res = await fetch(url, fetchOpts);
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Aster API ${res.status}: ${text}`);
+    throw new Error(`Aster Pro API ${res.status}: ${text.substring(0, 200)}`);
   }
   return res.json();
+}
+
+export async function detectWorkingEndpoint(): Promise<string> {
+  const wallet = getBrokerWallet();
+  console.log(`[ASTER] Broker wallet address: ${wallet.address}`);
+
+  for (const base of [ASTER_V1, ASTER_V3]) {
+    try {
+      const nonce = (Date.now() * 1000).toString();
+      const domain = { name: "AsterSignTransaction", chainId: 1666 };
+      const types = {
+        AsterSignTransaction: [
+          { name: "method", type: "string" },
+          { name: "nonce", type: "uint256" },
+        ],
+      };
+      const sig = await wallet.signTypedData(domain, types, { method: "GET /fapi/v1/account", nonce });
+
+      const res = await fetch(`${base}/fapi/v1/account`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "ASTER-SIGNATURE": sig,
+          "ASTER-NONCE": nonce,
+          "ASTER-ADDRESS": wallet.address,
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+
+      console.log(`[ASTER] ${base} → ${res.status}`);
+      if (res.status !== 403) {
+        ASTER_BASE = base;
+        console.log(`[ASTER] Using endpoint: ${base}`);
+        return base;
+      }
+    } catch (err: any) {
+      console.log(`[ASTER] ${base} → error: ${err.message?.substring(0, 80)}`);
+    }
+  }
+
+  console.log(`[ASTER] Defaulting to ${ASTER_V1}`);
+  ASTER_BASE = ASTER_V1;
+  return ASTER_V1;
 }
 
 export interface AsterBalance {
@@ -80,15 +135,15 @@ function parseAccountData(data: any): AsterBalance {
 
 export async function getBrokerAccountBalance(): Promise<AsterBalance> {
   try {
-    const data = await asterRequest("GET", "/fapi/v1/account");
+    const data = await asterProApiRequest("GET", "/fapi/v1/account");
     console.log("[ASTER] Broker account keys:", Object.keys(data));
     return parseAccountData(data);
   } catch (err: any) {
-    console.log("[ASTER] Account failed:", err.message?.substring(0, 120));
+    console.log("[ASTER] Account failed:", err.message?.substring(0, 150));
   }
 
   try {
-    const data = await asterRequest("GET", "/fapi/v1/balance");
+    const data = await asterProApiRequest("GET", "/fapi/v1/balance");
     console.log("[ASTER] Balance response:", JSON.stringify(data)?.substring(0, 200));
     if (Array.isArray(data)) {
       const usd = data.find((a: any) => a.asset === "USDF" || a.asset === "USDT" || a.asset === "USD");
@@ -103,34 +158,44 @@ export async function getBrokerAccountBalance(): Promise<AsterBalance> {
       }
     }
   } catch (err: any) {
-    console.log("[ASTER] Balance failed:", err.message?.substring(0, 120));
+    console.log("[ASTER] Balance failed:", err.message?.substring(0, 150));
   }
 
-  console.error("[ASTER] Broker auth failed — check ASTER_API_KEY/ASTER_API_SECRET");
+  try {
+    const data = await asterProApiRequest("GET", "/fapi/v3/account");
+    console.log("[ASTER] V3 Account response keys:", Object.keys(data));
+    return parseAccountData(data);
+  } catch (err: any) {
+    console.log("[ASTER] V3 Account failed:", err.message?.substring(0, 150));
+  }
+
+  console.error("[ASTER] All auth methods failed — check ASTER_BROKER_PK");
   return { accountValue: 0, availableBalance: 0, marginUsed: 0, unrealizedPnl: 0, coin: "USDF" };
 }
 
 export async function getAsterPositions(): Promise<AsterPosition[]> {
-  try {
-    const data = await asterRequest("GET", "/fapi/v1/positionRisk");
-    if (!Array.isArray(data)) return [];
+  for (const path of ["/fapi/v1/positionRisk", "/fapi/v3/positionRisk"]) {
+    try {
+      const data = await asterProApiRequest("GET", path);
+      if (!Array.isArray(data)) continue;
 
-    return data
-      .filter((p: any) => parseFloat(p.positionAmt) !== 0)
-      .map((p: any) => ({
-        pair: p.symbol,
-        side: parseFloat(p.positionAmt) > 0 ? "LONG" : "SHORT",
-        size: Math.abs(parseFloat(p.positionAmt)),
-        entryPrice: parseFloat(p.entryPrice),
-        markPrice: parseFloat(p.markPrice),
-        leverage: parseInt(p.leverage || "1"),
-        pnl: parseFloat(p.unRealizedProfit || "0"),
-        liquidationPrice: parseFloat(p.liquidationPrice || "0"),
-      }));
-  } catch (err: any) {
-    console.error("[ASTER] Positions fetch error:", err.message);
-    return [];
+      return data
+        .filter((p: any) => parseFloat(p.positionAmt) !== 0)
+        .map((p: any) => ({
+          pair: p.symbol,
+          side: parseFloat(p.positionAmt) > 0 ? "LONG" : "SHORT",
+          size: Math.abs(parseFloat(p.positionAmt)),
+          entryPrice: parseFloat(p.entryPrice),
+          markPrice: parseFloat(p.markPrice),
+          leverage: parseInt(p.leverage || "1"),
+          pnl: parseFloat(p.unRealizedProfit || "0"),
+          liquidationPrice: parseFloat(p.liquidationPrice || "0"),
+        }));
+    } catch (err: any) {
+      console.log(`[ASTER] Positions ${path} failed:`, err.message?.substring(0, 100));
+    }
   }
+  return [];
 }
 
 export async function openAsterPosition(params: {
@@ -141,12 +206,12 @@ export async function openAsterPosition(params: {
 }): Promise<{ success: boolean; orderId?: string; error?: string }> {
   try {
     const asterSide = params.side === "LONG" ? "BUY" : "SELL";
-    const data = await asterRequest("POST", "/fapi/v1/order", {
+    const data = await asterProApiRequest("POST", "/fapi/v1/order", {
       symbol: params.pair.replace("/", ""),
       side: asterSide,
       type: "MARKET",
-      quantity: params.size.toString(),
-      leverage: params.leverage.toString(),
+      quantity: params.size,
+      leverage: params.leverage,
     });
     console.log("[ASTER] Order placed:", JSON.stringify(data)?.substring(0, 200));
     return { success: true, orderId: data.orderId?.toString() || data.clientOrderId };
@@ -163,12 +228,12 @@ export async function closeAsterPosition(params: {
 }): Promise<{ success: boolean; orderId?: string; error?: string }> {
   try {
     const closeSide = params.side === "LONG" ? "SELL" : "BUY";
-    const data = await asterRequest("POST", "/fapi/v1/order", {
+    const data = await asterProApiRequest("POST", "/fapi/v1/order", {
       symbol: params.pair.replace("/", ""),
       side: closeSide,
       type: "MARKET",
-      quantity: params.size.toString(),
-      reduceOnly: "true",
+      quantity: params.size,
+      reduceOnly: true,
     });
     console.log("[ASTER] Close order:", JSON.stringify(data)?.substring(0, 200));
     return { success: true, orderId: data.orderId?.toString() || data.clientOrderId };

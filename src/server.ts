@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { createBot, getWebhookCallback } from "./bot/index.js";
 import { startAgentRunner } from "./agents/runner.js";
 import { getBalance, decryptPrivateKey, encryptPrivateKey } from "./services/wallet.js";
-import { getBrokerAccountBalance } from "./services/aster.js";
+import { getBrokerAccountBalance, detectWorkingEndpoint } from "./services/aster.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -220,6 +220,14 @@ async function start() {
   }
 
   await seedQuests();
+
+  try {
+    await detectWorkingEndpoint();
+    const brokerBal = await getBrokerAccountBalance();
+    console.log(`[ASTER] Broker balance: $${brokerBal.accountValue.toFixed(2)} (${brokerBal.coin})`);
+  } catch (err: any) {
+    console.error("[ASTER] Broker init error:", err.message);
+  }
 
   const webhookUrl = process.env.RENDER_EXTERNAL_URL
     ? `${process.env.RENDER_EXTERNAL_URL}/api/webhook`
