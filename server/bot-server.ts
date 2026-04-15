@@ -123,7 +123,7 @@ const httpServer = createServer(app);
 
 app.use(express.json());
 
-const BUILD_VERSION = "v61X";
+const BUILD_VERSION = "v62A";
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", version: BUILD_VERSION, uptime: process.uptime(), timestamp: Date.now() });
 });
@@ -405,77 +405,80 @@ try {
   });
 }
 
+const port = parseInt(process.env.PORT || "3000", 10);
+httpServer.listen({ port, host: "0.0.0.0" }, () => {
+  console.log(`[BOT-SERVER] Listening on port ${port} — health check ready`);
+});
+
 (async () => {
-  await ensureSchema();
+  try {
+    await ensureSchema();
+  } catch (e: any) {
+    console.error("[BOT-SERVER] ensureSchema failed (non-fatal):", e.message?.substring(0, 200));
+  }
 
-  const port = parseInt(process.env.PORT || "3000", 10);
-  httpServer.listen({ port, host: "0.0.0.0" }, () => {
-    console.log(`[BOT-SERVER] Listening on port ${port}`);
+  const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL || process.env.RENDER_EXTERNAL_URL;
+  if (!webhookUrl) {
+    console.error("[BOT-SERVER] No TELEGRAM_WEBHOOK_URL or RENDER_EXTERNAL_URL set — bot may not receive updates");
+  }
 
-    const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL || process.env.RENDER_EXTERNAL_URL;
-    if (!webhookUrl) {
-      console.error("[BOT-SERVER] No TELEGRAM_WEBHOOK_URL or RENDER_EXTERNAL_URL set — bot may not receive updates");
-    }
+  try {
+    await startTelegramBot(webhookUrl);
+    console.log("[BOT-SERVER] Telegram bot started");
+  } catch (err: any) {
+    console.error("[BOT-SERVER] Telegram bot failed to start:", err.message);
+  }
 
-    setTimeout(() => {
-      startTelegramBot(webhookUrl).then(() => {
-        console.log("[BOT-SERVER] Telegram bot started");
-      }).catch((err) => {
-        console.error("[BOT-SERVER] Telegram bot failed to start:", err.message);
-      });
-    }, 1000);
+  setTimeout(async () => {
+    try {
+      const { getBotInstance } = await import("./telegram-bot");
+      const notifyFn = (cid: number, msg: string) => {
+        getBotInstance()?.sendMessage(cid, msg, { parse_mode: "Markdown" }).catch(() => {});
+      };
 
-    setTimeout(async () => {
-      try {
-        const { getBotInstance } = await import("./telegram-bot");
-        const notifyFn = (cid: number, msg: string) => {
-          getBotInstance()?.sendMessage(cid, msg, { parse_mode: "Markdown" }).catch(() => {});
-        };
-
-        if (!isTradingAgentRunning()) {
-          startTradingAgent(notifyFn);
-          console.log("[BOT-SERVER] Trading agent started");
-        }
-
-        try {
-          const { startPnlTracker, getActiveChallenges, createChallenge } = await import("./trading-challenge");
-          startPnlTracker(5 * 60 * 1000);
-          console.log("[BOT-SERVER] PnL tracker started (5 min interval)");
-
-          const existing = await getActiveChallenges();
-          const hasTraderChallenge = existing.some(c => c.name === "Trading Bot Challenge #1");
-          if (!hasTraderChallenge) {
-            const now = new Date();
-            const endDate = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000);
-            await createChallenge({
-              name: "Trading Bot Challenge #1",
-              description: "Create a trading bot. If your bot trades and makes profit, you're in! Top 3 win $B4 prizes.",
-              startDate: now,
-              endDate,
-              prizePoolB4: "950000",
-              maxEntries: 100,
-              prizeDistribution: ["500000", "300000", "150000"],
-            });
-            console.log("[BOT-SERVER] Created 'Trading Bot Challenge #1' — 4 days, 950K $B4 pool");
-          }
-        } catch (pnlErr: any) {
-          console.error("[BOT-SERVER] PnL tracker/challenge start failed:", pnlErr.message);
-        }
-
-        let restored = 0;
-        for (let attempt = 1; attempt <= 5; attempt++) {
-          try {
-            restored = await restoreTradingPreferences();
-            console.log(`[BOT-SERVER] Restored ${restored} trading preferences (attempt ${attempt})`);
-            break;
-          } catch (e: any) {
-            console.error(`[BOT-SERVER] Preference restore attempt ${attempt}/5 failed: ${e.message?.substring(0, 80)}`);
-            if (attempt < 5) await new Promise(r => setTimeout(r, attempt * 3000));
-          }
-        }
-      } catch (err: any) {
-        console.error("[BOT-SERVER] Trading agent start failed:", err.message);
+      if (!isTradingAgentRunning()) {
+        startTradingAgent(notifyFn);
+        console.log("[BOT-SERVER] Trading agent started");
       }
-    }, 5000);
-  });
+
+      try {
+        const { startPnlTracker, getActiveChallenges, createChallenge } = await import("./trading-challenge");
+        startPnlTracker(5 * 60 * 1000);
+        console.log("[BOT-SERVER] PnL tracker started (5 min interval)");
+
+        const existing = await getActiveChallenges();
+        const hasTraderChallenge = existing.some(c => c.name === "Trading Bot Challenge #1");
+        if (!hasTraderChallenge) {
+          const now = new Date();
+          const endDate = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000);
+          await createChallenge({
+            name: "Trading Bot Challenge #1",
+            description: "Create a trading bot. If your bot trades and makes profit, you're in! Top 3 win $B4 prizes.",
+            startDate: now,
+            endDate,
+            prizePoolB4: "950000",
+            maxEntries: 100,
+            prizeDistribution: ["500000", "300000", "150000"],
+          });
+          console.log("[BOT-SERVER] Created 'Trading Bot Challenge #1' — 4 days, 950K $B4 pool");
+        }
+      } catch (pnlErr: any) {
+        console.error("[BOT-SERVER] PnL tracker/challenge start failed:", pnlErr.message);
+      }
+
+      let restored = 0;
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+          restored = await restoreTradingPreferences();
+          console.log(`[BOT-SERVER] Restored ${restored} trading preferences (attempt ${attempt})`);
+          break;
+        } catch (e: any) {
+          console.error(`[BOT-SERVER] Preference restore attempt ${attempt}/5 failed: ${e.message?.substring(0, 80)}`);
+          if (attempt < 5) await new Promise(r => setTimeout(r, attempt * 3000));
+        }
+      }
+    } catch (err: any) {
+      console.error("[BOT-SERVER] Trading agent start failed:", err.message);
+    }
+  }, 3000);
 })();
