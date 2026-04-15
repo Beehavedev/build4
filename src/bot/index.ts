@@ -14,6 +14,8 @@ import { copyTradeCommand } from "./commands/copytrade.js";
 import { questsCommand } from "./commands/quests.js";
 import { buyCommand, sellCommand } from "./commands/buy.js";
 import { launchCommand } from "./commands/launch.js";
+import { bridgeCommand } from "./commands/bridge.js";
+import { asterCommand } from "./commands/aster.js";
 
 export function createBot(token: string) {
   const bot = new Bot<BotContext>(token);
@@ -36,6 +38,8 @@ export function createBot(token: string) {
   bot.command("buy", buyCommand);
   bot.command("sell", sellCommand);
   bot.command("launch", launchCommand);
+  bot.command("bridge", bridgeCommand);
+  bot.command("aster", asterCommand);
 
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data;
@@ -48,8 +52,16 @@ export function createBot(token: string) {
       await signalsCommand(ctx);
     } else if (data === "cmd_newagent") {
       await handleNewAgent(ctx);
+    } else if (data === "cmd_agents") {
+      await agentsCommand(ctx);
     } else if (data === "cmd_tradestatus") {
       await tradeStatusCommand(ctx);
+    } else if (data === "cmd_portfolio") {
+      await portfolioCommand(ctx);
+    } else if (data === "cmd_bridge") {
+      await bridgeCommand(ctx);
+    } else if (data === "cmd_aster") {
+      await asterCommand(ctx);
     } else if (data.startsWith("wallet_")) {
       await handleWalletCallback(ctx, data);
     } else if (data.startsWith("agent_start_")) {

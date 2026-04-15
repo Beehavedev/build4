@@ -20,6 +20,9 @@ export async function helpCommand(ctx: BotContext) {
     `/copytrade — Copy top traders\n` +
     `/portfolio — Your portfolio & PnL\n` +
     `/quests — Earn rewards\n\n` +
+    `*🌉 Bridge & DEX*\n` +
+    `/bridge — Bridge assets to BSC\n` +
+    `/aster — Aster DEX info & trading\n\n` +
     `*🚀 Launch*\n` +
     `/launch — Launch your own token`,
     { parse_mode: "Markdown" }
