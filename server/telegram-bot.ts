@@ -1426,9 +1426,17 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
         return activeRow.walletAddress;
       }
     } catch (dbErr: any) {
-      console.error(`[Wallet] v61b DB check failed for chatId=${chatId}: ${dbErr.message} — proceeding to generate`);
+      console.error(`[Wallet] v61b DB check failed for chatId=${chatId}: ${dbErr.message} — REFUSING to generate (might overwrite existing wallet)`);
+      throw new Error(`Cannot create wallet: database unavailable. Please try again.`);
     }
   }
+
+  const existingMap = telegramWalletMap.get(chatId);
+  if (existingMap && existingMap.wallets.length > 0) {
+    console.log(`[Wallet] chatId=${chatId} already has ${existingMap.wallets.length} wallets in memory, returning active`);
+    return existingMap.wallets[existingMap.active] || existingMap.wallets[0];
+  }
+
   const wallet = ethers.Wallet.createRandom();
   const addr = wallet.address.toLowerCase();
   const pk = wallet.privateKey;
@@ -1596,8 +1604,14 @@ async function ensureWallet(chatId: number): Promise<string> {
         return wallet;
       }
     }
-    console.error(`[Wallet] v61b DB unavailable for chatId=${chatId}, generating wallet without DB verify`);
-    wallet = await withTimeout(autoGenerateWallet(chatId), 20000, "autoGenerateWallet-fallback");
+    const memWallets = telegramWalletMap.get(chatId);
+    if (memWallets && memWallets.wallets.length > 0) {
+      console.log(`[Wallet] DB unavailable but found ${memWallets.wallets.length} wallets in memory for chatId=${chatId}`);
+      wallet = memWallets.wallets[memWallets.active] || memWallets.wallets[0];
+    } else {
+      console.error(`[Wallet] v61b DB unavailable for chatId=${chatId}, generating new wallet (no existing found in memory)`);
+      wallet = await withTimeout(autoGenerateWallet(chatId), 20000, "autoGenerateWallet-fallback");
+    }
   }
   console.log(`[Wallet] v61b ensureWallet DONE for chatId=${chatId}: ${wallet}`);
   return wallet;
