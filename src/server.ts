@@ -33,7 +33,16 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.post("/api/webhook", getWebhookCallback(bot));
+const webhookHandler = getWebhookCallback(bot);
+app.post("/api/webhook", async (req, res) => {
+  console.log("[WEBHOOK] Received update:", JSON.stringify(req.body).substring(0, 200));
+  try {
+    await webhookHandler(req, res);
+  } catch (err: any) {
+    console.error("[WEBHOOK] Handler error:", err.message, err.stack?.substring(0, 300));
+    if (!res.headersSent) res.sendStatus(200);
+  }
+});
 
 app.get("/api/user/:telegramId", async (req, res) => {
   try {

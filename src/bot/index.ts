@@ -94,7 +94,7 @@ export function createBot(token: string) {
   });
 
   bot.catch((err) => {
-    console.error("[BOT] Error:", err.message);
+    console.error("[BOT] Error:", err.error?.message || err.message, err.error?.stack?.substring(0, 300));
   });
 
   return bot;

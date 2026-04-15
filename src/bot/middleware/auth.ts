@@ -12,6 +12,7 @@ export interface BotContext extends Context {
 }
 
 export async function authMiddleware(ctx: BotContext, next: NextFunction) {
+  console.log("[AUTH] Processing update from:", ctx.from?.id, "text:", (ctx.message as any)?.text?.substring(0, 20));
   if (!ctx.from) return next();
 
   try {
@@ -38,9 +39,10 @@ export async function authMiddleware(ctx: BotContext, next: NextFunction) {
       telegramId: user.telegramId,
       username: user.username,
     };
-  } catch (err) {
-    console.error("[AUTH] Error:", err);
+  } catch (err: any) {
+    console.error("[AUTH] Error:", err.message, err.stack?.substring(0, 200));
   }
 
+  console.log("[AUTH] Done, user:", ctx.dbUser?.id?.substring(0, 8), "calling next");
   return next();
 }

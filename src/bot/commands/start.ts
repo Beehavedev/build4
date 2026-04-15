@@ -5,7 +5,9 @@ import type { BotContext } from "../middleware/auth.js";
 const prisma = new PrismaClient();
 
 export async function startCommand(ctx: BotContext) {
+  console.log("[START] Command handler called, from:", ctx.from?.id, "dbUser:", ctx.dbUser?.id?.substring(0, 8));
   if (!ctx.from || !ctx.dbUser) {
+    console.log("[START] Missing from or dbUser");
     await ctx.reply("Something went wrong. Please try again.");
     return;
   }
@@ -13,13 +15,13 @@ export async function startCommand(ctx: BotContext) {
   try {
     let wallet = await prisma.wallet.findFirst({
       where: { userId: ctx.dbUser.id, chain: "BSC", isActive: true },
-      orderBy: { createdAt: "desc" },
+      orderBy: { createdAt: "asc" },
     });
 
     if (!wallet) {
       wallet = await prisma.wallet.findFirst({
         where: { userId: ctx.dbUser.id, chain: "BSC" },
-        orderBy: { createdAt: "desc" },
+        orderBy: { createdAt: "asc" },
       });
     }
 
