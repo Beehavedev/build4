@@ -12,9 +12,18 @@ export async function startCommand(ctx: BotContext) {
 
   try {
     let wallet = await prisma.wallet.findFirst({
-      where: { userId: ctx.dbUser.id, chain: "BSC" },
+      where: { userId: ctx.dbUser.id, chain: "BSC", isActive: true },
       orderBy: { createdAt: "desc" },
     });
+
+    if (!wallet) {
+      wallet = await prisma.wallet.findFirst({
+        where: { userId: ctx.dbUser.id, chain: "BSC" },
+        orderBy: { createdAt: "desc" },
+      });
+    }
+
+    const isReturning = !!wallet;
 
     if (!wallet) {
       const { address, privateKey } = generateEVMWallet();
@@ -40,9 +49,10 @@ export async function startCommand(ctx: BotContext) {
     });
 
     const shortAddr = wallet.address.slice(0, 6) + "..." + wallet.address.slice(-4);
+    const greeting = isReturning ? "Welcome back to Build4 Trading Bot!" : "Welcome to Build4 Trading Bot!";
 
     await ctx.reply(
-      `🚀 *Welcome to Build4 Trading Bot!*\n\n` +
+      `🚀 *${greeting}*\n\n` +
       `Your BSC wallet is ready:\n` +
       `\`${shortAddr}\`\n\n` +
       `Deposit USDT (BEP-20) to start trading.\n` +
