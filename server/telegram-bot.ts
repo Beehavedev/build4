@@ -1601,35 +1601,38 @@ async function checkWalletHasKey(chatId: number, wallet: string | undefined): Pr
 }
 
 async function ensureWallet(chatId: number): Promise<string> {
-  console.log(`[Wallet] v61b ensureWallet START for chatId=${chatId}`);
+  console.log(`[Wallet] ensureWallet START for chatId=${chatId}`);
   const dbLoaded = await ensureWalletsLoaded(chatId);
   let wallet = getLinkedWallet(chatId);
-  console.log(`[Wallet] v61b ensureWallet chatId=${chatId} dbLoaded=${dbLoaded} wallet=${wallet || "NONE"}`);
-  if (!wallet && dbLoaded) {
-    wallet = await withTimeout(autoGenerateWallet(chatId), 20000, "autoGenerateWallet");
-  } else if (!wallet && !dbLoaded) {
-    for (let retry = 0; retry < 2; retry++) {
-      await new Promise(r => setTimeout(r, 1500 * (retry + 1)));
+  console.log(`[Wallet] ensureWallet chatId=${chatId} dbLoaded=${dbLoaded} wallet=${wallet || "NONE"}`);
+  if (wallet) return wallet;
+
+  if (!dbLoaded) {
+    for (let retry = 0; retry < 3; retry++) {
+      await new Promise(r => setTimeout(r, 2000 * (retry + 1)));
       walletLoadFailures.delete(chatId);
       walletLoadAttempts.delete(chatId);
       const retryOk = await ensureWalletsLoaded(chatId);
       wallet = getLinkedWallet(chatId);
       if (wallet) return wallet;
-      if (retryOk) {
-        wallet = await withTimeout(autoGenerateWallet(chatId), 20000, "autoGenerateWallet-retry");
-        return wallet;
-      }
+      if (retryOk) break;
     }
-    const memWallets = telegramWalletMap.get(chatId);
-    if (memWallets && memWallets.wallets.length > 0) {
-      console.log(`[Wallet] DB unavailable but found ${memWallets.wallets.length} wallets in memory for chatId=${chatId}`);
-      wallet = memWallets.wallets[memWallets.active] || memWallets.wallets[0];
-    } else {
-      console.error(`[Wallet] v61b DB unavailable for chatId=${chatId}, generating new wallet (no existing found in memory)`);
-      wallet = await withTimeout(autoGenerateWallet(chatId), 20000, "autoGenerateWallet-fallback");
+    wallet = getLinkedWallet(chatId);
+    if (wallet) return wallet;
+
+    const existingSub = await storage.getBotSubscriptionByChatId(chatId.toString()).catch(() => null);
+    if (existingSub) {
+      console.error(`[Wallet] REFUSING to generate wallet for EXISTING user chatId=${chatId} — DB returned no wallets but subscription exists. DB is likely overloaded.`);
+      throw new Error("DB_OVERLOADED_EXISTING_USER");
     }
   }
-  console.log(`[Wallet] v61b ensureWallet DONE for chatId=${chatId}: ${wallet}`);
+
+  wallet = getLinkedWallet(chatId);
+  if (wallet) return wallet;
+
+  console.log(`[Wallet] Generating new wallet for genuinely new user chatId=${chatId}`);
+  wallet = await withTimeout(autoGenerateWallet(chatId), 20000, "autoGenerateWallet");
+  console.log(`[Wallet] ensureWallet DONE for chatId=${chatId}: ${wallet}`);
   return wallet;
 }
 
@@ -9517,24 +9520,37 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       await ensureWalletsLoaded(chatId);
       let wallet = getLinkedWallet(chatId);
       console.log(`[Start] v61b chatId=${chatId} wallet=${wallet || "NONE"} mapHas=${telegramWalletMap.has(chatId)}`);
-      const isNewUser = !wallet;
+      let isNewUser = !wallet;
       if (!wallet) {
-        const refCode = cmdArg.startsWith("ref_") ? cmdArg : "";
-        await bot.sendMessage(chatId,
-          tr("welcome.newUser", chatId, { days: TRIAL_DAYS }),
-          { parse_mode: "Markdown" }
-        );
         try {
           wallet = await ensureWallet(chatId);
-          console.log(`[Start] v61b ensureWallet OK for chatId=${chatId}: ${wallet}`);
+          console.log(`[Start] ensureWallet OK for chatId=${chatId}: ${wallet}`);
+          isNewUser = true;
         } catch (walletErr: any) {
-          console.error(`[Start] v61b ensureWallet FAILED for chatId=${chatId}:`, walletErr.message);
+          if (walletErr.message === "DB_OVERLOADED_EXISTING_USER") {
+            console.warn(`[Start] EXISTING user chatId=${chatId} hit DB overload — showing retry, NOT creating new wallet`);
+            await bot.sendMessage(chatId,
+              "Welcome back! The server is momentarily busy loading your account.\n\nPlease tap the button below to retry — your wallet and data are safe.",
+              { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry /start", callback_data: "action:menu" }]] } }
+            );
+            return;
+          }
+          console.error(`[Start] ensureWallet FAILED for chatId=${chatId}:`, walletErr.message);
           await bot.sendMessage(chatId,
             "⚠️ Wallet setup encountered an issue. Please try /start again in a few seconds.",
             { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:menu" }]] } }
           );
           return;
         }
+      }
+
+      if (isNewUser) {
+        await bot.sendMessage(chatId,
+          tr("welcome.newUser", chatId, { days: TRIAL_DAYS }),
+          { parse_mode: "Markdown" }
+        );
+
+        const refCode = cmdArg.startsWith("ref_") ? cmdArg : "";
 
         if (refCode) {
           try {
