@@ -123,7 +123,7 @@ const httpServer = createServer(app);
 
 app.use(express.json());
 
-const BUILD_VERSION = "v62B";
+const BUILD_VERSION = "v62C";
 app.get("/health", (_req, res) => {
   const { getBotInstance } = require("./telegram-bot");
   const botInstance = getBotInstance();
@@ -158,6 +158,25 @@ app.post("/api/force-webhook-reset", async (_req, res) => {
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
+});
+
+app.get("/api/debug/wallet-test/:chatId", async (req, res) => {
+  const chatId = req.params.chatId;
+  const results: any = { chatId, steps: [] };
+  try {
+    const { storage } = require("./storage");
+    results.steps.push("storage imported");
+    const rows = await Promise.race([
+      storage.getTelegramWallets(chatId),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("DB_TIMEOUT_8s")), 8000)),
+    ]);
+    results.steps.push(`getTelegramWallets returned ${rows.length} rows`);
+    results.wallets = rows.map((r: any) => ({ addr: r.walletAddress?.substring(0, 10) + "...", hasKey: !!r.encryptedPrivateKey, active: r.isActive }));
+  } catch (e: any) {
+    results.error = e.message;
+    results.stack = e.stack?.substring(0, 300);
+  }
+  res.json(results);
 });
 
 registerMiniAppRoutes(app);
