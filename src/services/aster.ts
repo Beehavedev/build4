@@ -53,7 +53,14 @@ export async function detectWorkingEndpoint(): Promise<string> {
   const wallet = getBrokerWallet();
   console.log(`[ASTER] Broker wallet address: ${wallet.address}`);
 
-  for (const base of [ASTER_V1, ASTER_V3]) {
+  const tests = [
+    { base: ASTER_V3, path: "/fapi/v3/account", label: "V3 fapi3" },
+    { base: ASTER_V3, path: "/fapi/v1/account", label: "V1 on fapi3" },
+    { base: ASTER_V1, path: "/fapi/v3/account", label: "V3 on fapi1" },
+    { base: ASTER_V1, path: "/fapi/v1/account", label: "V1 on fapi1" },
+  ];
+
+  for (const { base, path, label } of tests) {
     try {
       const nonce = (Date.now() * 1000).toString();
       const domain = { name: "AsterSignTransaction", chainId: 1666 };
@@ -63,9 +70,9 @@ export async function detectWorkingEndpoint(): Promise<string> {
           { name: "nonce", type: "uint256" },
         ],
       };
-      const sig = await wallet.signTypedData(domain, types, { method: "GET /fapi/v1/account", nonce });
+      const sig = await wallet.signTypedData(domain, types, { method: `GET ${path}`, nonce });
 
-      const res = await fetch(`${base}/fapi/v1/account`, {
+      const res = await fetch(`${base}${path}`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -73,23 +80,25 @@ export async function detectWorkingEndpoint(): Promise<string> {
           "ASTER-NONCE": nonce,
           "ASTER-ADDRESS": wallet.address,
         },
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(10000),
       });
 
-      console.log(`[ASTER] ${base} → ${res.status}`);
-      if (res.status !== 403) {
+      const body = await res.text();
+      console.log(`[ASTER] ${label} (${base}${path}) → ${res.status}: ${body.substring(0, 150)}`);
+
+      if (res.ok) {
         ASTER_BASE = base;
-        console.log(`[ASTER] Using endpoint: ${base}`);
+        console.log(`[ASTER] ✅ Working endpoint: ${base} with ${path}`);
         return base;
       }
     } catch (err: any) {
-      console.log(`[ASTER] ${base} → error: ${err.message?.substring(0, 80)}`);
+      console.log(`[ASTER] ${label} → error: ${err.message?.substring(0, 100)}`);
     }
   }
 
-  console.log(`[ASTER] Defaulting to ${ASTER_V1}`);
-  ASTER_BASE = ASTER_V1;
-  return ASTER_V1;
+  console.log(`[ASTER] No working endpoint found, defaulting to ${ASTER_V3}`);
+  ASTER_BASE = ASTER_V3;
+  return ASTER_V3;
 }
 
 export interface AsterBalance {
