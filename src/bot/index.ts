@@ -16,6 +16,7 @@ import { buyCommand, sellCommand } from "./commands/buy.js";
 import { launchCommand } from "./commands/launch.js";
 import { bridgeCommand } from "./commands/bridge.js";
 import { asterCommand } from "./commands/aster.js";
+import { importWalletCommand, handleImportMessage, isAwaitingImport } from "./commands/importwallet.js";
 
 export function createBot(token: string) {
   const bot = new Bot<BotContext>(token);
@@ -40,6 +41,7 @@ export function createBot(token: string) {
   bot.command("launch", launchCommand);
   bot.command("bridge", bridgeCommand);
   bot.command("aster", asterCommand);
+  bot.command("importwallet", importWalletCommand);
 
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data;
@@ -62,6 +64,8 @@ export function createBot(token: string) {
       await bridgeCommand(ctx);
     } else if (data === "cmd_aster") {
       await asterCommand(ctx);
+    } else if (data === "wallet_import") {
+      await importWalletCommand(ctx);
     } else if (data.startsWith("wallet_")) {
       await handleWalletCallback(ctx, data);
     } else if (data.startsWith("agent_start_")) {
@@ -75,6 +79,12 @@ export function createBot(token: string) {
 
   bot.on("message:text", async (ctx) => {
     const text = ctx.message.text;
+
+    if (ctx.from && isAwaitingImport(ctx.from.id)) {
+      await handleImportMessage(ctx);
+      return;
+    }
+
     if (text === "I CONFIRM") {
       const { PrismaClient } = await import("@prisma/client");
       const prisma = new PrismaClient();

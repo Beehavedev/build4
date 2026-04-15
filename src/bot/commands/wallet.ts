@@ -48,10 +48,13 @@ export async function walletCommand(ctx: BotContext) {
         inline_keyboard: [
           [
             { text: "➕ New Wallet", callback_data: "wallet_new" },
-            { text: "🔄 Switch Active", callback_data: "wallet_switch" },
+            { text: "📥 Import Wallet", callback_data: "wallet_import" },
           ],
           [
+            { text: "🔄 Switch Active", callback_data: "wallet_switch" },
             { text: "🔑 Export Key", callback_data: "wallet_export" },
+          ],
+          [
             { text: "🔄 Refresh", callback_data: "cmd_wallet" },
           ],
         ],
