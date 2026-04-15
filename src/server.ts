@@ -3,7 +3,7 @@ import { createServer } from "http";
 import { PrismaClient } from "@prisma/client";
 import { createBot, getWebhookCallback } from "./bot/index.js";
 import { startAgentRunner } from "./agents/runner.js";
-import { getBalance, decryptPrivateKey } from "./services/wallet.js";
+import { getBalance, decryptPrivateKey, encryptPrivateKey } from "./services/wallet.js";
 import { getAsterAccountBalance } from "./services/aster.js";
 import path from "path";
 import { fileURLToPath } from "url";
