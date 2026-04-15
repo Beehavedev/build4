@@ -68,7 +68,7 @@ export async function asterCommand(ctx: BotContext) {
   }
 
   buttons.push([
-    { text: "⭐ Open Trading App", web_app: { url: getMiniAppUrl() } },
+    { text: "⭐ Trade on AsterDex", web_app: { url: getMiniAppUrl() } },
   ]);
 
   buttons.push([

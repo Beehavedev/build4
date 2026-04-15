@@ -70,7 +70,7 @@ export async function startCommand(ctx: BotContext) {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "⭐ Open Mini App", web_app: { url: getMiniAppUrl() } },
+              { text: "⭐ Trade on AsterDex", web_app: { url: getMiniAppUrl() } },
             ],
             [
               { text: "💰 My Wallet", callback_data: "cmd_wallet" },
