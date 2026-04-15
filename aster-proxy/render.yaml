@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: aster-proxy
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    plan: free
+    envVars:
+      - key: PROXY_SECRET
+        generateValue: true

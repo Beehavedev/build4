@@ -5,6 +5,23 @@ const ASTER_V1 = "https://fapi.asterdex.com";
 
 let ASTER_BASE = ASTER_V1;
 
+function getProxyUrl(): string | null {
+  return process.env.ASTER_PROXY_URL || null;
+}
+
+function getProxySecret(): string | null {
+  return process.env.ASTER_PROXY_SECRET || null;
+}
+
+function buildUrl(path: string): string {
+  const proxy = getProxyUrl();
+  if (proxy) {
+    const base = proxy.endsWith("/") ? proxy.slice(0, -1) : proxy;
+    return `${base}/proxy${path}`;
+  }
+  return `${ASTER_BASE}${path}`;
+}
+
 function getBrokerWallet(): ethers.Wallet {
   const pk = process.env.ASTER_BROKER_PK;
   if (!pk) throw new Error("ASTER_BROKER_PK not configured");
@@ -34,7 +51,12 @@ async function asterProApiRequest(method: "GET" | "POST" | "DELETE", path: strin
     "ASTER-ADDRESS": wallet.address,
   };
 
-  const url = `${ASTER_BASE}${path}`;
+  const proxySecret = getProxySecret();
+  if (proxySecret) {
+    headers["X-PROXY-SECRET"] = proxySecret;
+  }
+
+  const url = buildUrl(path);
   const fetchOpts: RequestInit = { method, headers };
   if (body && (method === "POST" || method === "DELETE")) {
     fetchOpts.body = JSON.stringify(body);
@@ -52,6 +74,19 @@ async function asterProApiRequest(method: "GET" | "POST" | "DELETE", path: strin
 export async function detectWorkingEndpoint(): Promise<string> {
   const wallet = getBrokerWallet();
   console.log(`[ASTER] Broker wallet address: ${wallet.address}`);
+
+  const proxy = getProxyUrl();
+  if (proxy) {
+    console.log(`[ASTER] Proxy configured: ${proxy}`);
+    try {
+      const data = await asterProApiRequest("GET", "/fapi/v3/account");
+      console.log(`[ASTER] ✅ Proxy working! Account keys: ${Object.keys(data)}`);
+      return proxy;
+    } catch (err: any) {
+      console.log(`[ASTER] Proxy test failed: ${err.message?.substring(0, 150)}`);
+      console.log(`[ASTER] Falling back to direct connections...`);
+    }
+  }
 
   const tests = [
     { base: ASTER_V3, path: "/fapi/v3/account", label: "V3 fapi3" },
@@ -72,14 +107,16 @@ export async function detectWorkingEndpoint(): Promise<string> {
       };
       const sig = await wallet.signTypedData(domain, types, { method: `GET ${path}`, nonce });
 
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "ASTER-SIGNATURE": sig,
+        "ASTER-NONCE": nonce,
+        "ASTER-ADDRESS": wallet.address,
+      };
+
       const res = await fetch(`${base}${path}`, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "ASTER-SIGNATURE": sig,
-          "ASTER-NONCE": nonce,
-          "ASTER-ADDRESS": wallet.address,
-        },
+        headers,
         signal: AbortSignal.timeout(10000),
       });
 
