@@ -1848,11 +1848,56 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         res.json({ running: false });
       } else {
         let client: any;
-        try {
-          client = await getCachedAsterClient(parseInt(chatId));
-        } catch (clientErr: any) {
-          console.error(`[Agent] getCachedAsterClient failed for chatId=${chatId}:`, clientErr.message?.substring(0, 120));
-          return res.status(400).json({ error: `Database temporarily unavailable. Please open the mini app first, then try again.` });
+        const cachedEntry = asterClientCache.get(chatId);
+        if (cachedEntry && Date.now() - cachedEntry.ts < CLIENT_CACHE_TTL) {
+          client = cachedEntry.client;
+          console.log(`[Agent] Using cached Aster client for chatId=${chatId}`);
+        } else {
+          const creds = asterCredsMemCache.get(chatId);
+          if (creds && creds.creds?.apiKey && creds.creds?.apiSecret && creds.creds.apiKey !== "V3_DIRECT") {
+            try {
+              const c = creds.creds;
+              const isV3ApiWallet = c.apiKey.startsWith("0x") && c.apiKey.length === 42;
+              if (isV3ApiWallet) {
+                const parentAddress = c.parentAddress || "";
+                const isAsterCode = parentAddress.startsWith("astercode:");
+                if (isAsterCode) {
+                  const realParent = parentAddress.replace("astercode:", "");
+                  const { createAsterCodeFuturesClient, getDefaultAsterCodeConfig } = await import("./aster-code");
+                  const codeConfig = getDefaultAsterCodeConfig();
+                  const codeFutures = createAsterCodeFuturesClient(realParent, c.apiKey, c.apiSecret, codeConfig);
+                  client = { futures: codeFutures, spot: null, walletAddress: realParent };
+                } else {
+                  const { createAsterV3FuturesClient } = await import("./aster-client");
+                  const v3Futures = createAsterV3FuturesClient({
+                    user: parentAddress,
+                    signer: c.apiKey,
+                    signerPrivateKey: c.apiSecret,
+                    builder: "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4",
+                    feeRate: 0.001,
+                  });
+                  client = { futures: v3Futures, spot: null };
+                }
+                asterClientCache.set(chatId, { client, ts: Date.now() });
+                console.log(`[Agent] Built Aster client from cached creds for chatId=${chatId}`);
+              }
+            } catch (buildErr: any) {
+              console.error(`[Agent] Failed to build client from cached creds:`, buildErr.message?.substring(0, 100));
+            }
+          }
+          if (!client) {
+            try {
+              client = await getCachedAsterClient(parseInt(chatId));
+            } catch (clientErr: any) {
+              console.error(`[Agent] getCachedAsterClient failed for chatId=${chatId}:`, clientErr.message?.substring(0, 120));
+              if (cachedEntry) {
+                client = cachedEntry.client;
+                console.log(`[Agent] Using stale cached client for chatId=${chatId}`);
+              } else {
+                return res.status(400).json({ error: `Database temporarily unavailable. Please open the mini app first, then try again.` });
+              }
+            }
+          }
         }
         if (!client) {
           console.log(`[Agent] No Aster client for chatId=${chatId}`);
