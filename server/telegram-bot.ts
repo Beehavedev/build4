@@ -9568,7 +9568,7 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
             const pg = require("pg");
             const rawPool = new pg.Pool({
               connectionString: process.env.DATABASE_URL,
-              ssl: process.env.RENDER === "true" ? { rejectUnauthorized: false } : false,
+              ssl: (!process.env.DATABASE_URL?.includes(".internal") && process.env.RENDER === "true") ? { rejectUnauthorized: false } : false,
               max: 1,
               connectionTimeoutMillis: 10000,
             });

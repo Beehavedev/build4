@@ -2,9 +2,14 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "@shared/schema";
 
-const isSSL = process.env.DATABASE_URL?.includes("render.com") ||
-  process.env.DATABASE_URL?.includes("neon.tech") ||
-  process.env.RENDER === "true";
+const dbUrl = process.env.DATABASE_URL || "";
+const isInternal = dbUrl.includes(".internal");
+const isSSL = !isInternal && (
+  dbUrl.includes("render.com") ||
+  dbUrl.includes("neon.tech") ||
+  process.env.RENDER === "true"
+);
+console.log(`[DB] Pool config: ssl=${isSSL}, internal=${isInternal}, url=${dbUrl.substring(0, 40)}...`);
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,

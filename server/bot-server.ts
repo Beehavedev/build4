@@ -74,6 +74,13 @@ async function ensureSchema() {
   console.log("[BOT-SERVER] Ensuring database schema exists (using shared pool)...");
   const { pool: sharedPool } = require("./db");
   try {
+    await sharedPool.query("SELECT 1");
+    console.log("[BOT-SERVER] DB connection verified");
+  } catch (connErr: any) {
+    console.error("[BOT-SERVER] DB connection FAILED:", connErr.message);
+    return;
+  }
+  try {
     for (const stmt of CRITICAL_TABLES_SQL) {
       try {
         await sharedPool.query(stmt);
@@ -115,7 +122,7 @@ const httpServer = createServer(app);
 
 app.use(express.json());
 
-const BUILD_VERSION = "v62G";
+const BUILD_VERSION = "v62H";
 app.get("/health", (_req, res) => {
   const { getBotInstance } = require("./telegram-bot");
   const botInstance = getBotInstance();
@@ -158,11 +165,14 @@ app.get("/api/debug/wallet-test/:chatId", async (req, res) => {
   try {
     const pgMod = require("pg");
     results.steps.push("pg imported");
+    const isInt = (process.env.DATABASE_URL || "").includes(".internal");
+    const useSSL = !isInt && process.env.RENDER === "true";
     const client = new pgMod.Client({
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.RENDER === "true" ? { rejectUnauthorized: false } : false,
+      ssl: useSSL ? { rejectUnauthorized: false } : false,
       connectionTimeoutMillis: 10000,
     });
+    results.steps.push(`ssl=${useSSL} internal=${isInt}`);
     await client.connect();
     results.steps.push("raw client connected");
     const r = await client.query(
