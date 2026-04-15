@@ -897,7 +897,7 @@ async function loadWalletsFromDb(): Promise<void> {
   const MAX_RETRIES = 3;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const allLinks = await withTimeout(storage.getAllTelegramWalletLinks(), 15000, "getAllTelegramWalletLinks");
+      const allLinks = await withTimeout(storage.getAllTelegramWalletLinks(), 60000, "getAllTelegramWalletLinks");
       const newWalletMap = new Map<number, { wallets: string[]; active: number }>();
       const newWalletsWithKey = new Set<string>();
       const walletsWithKeyPerChat = new Map<number, Set<string>>();
@@ -961,15 +961,15 @@ const walletLoadFailures = new Set<number>();
 async function ensureWalletsLoaded(chatId: number): Promise<boolean> {
   if (telegramWalletMap.has(chatId)) return true;
   const lastAttempt = walletLoadAttempts.get(chatId) || 0;
-  if (Date.now() - lastAttempt < 5000) return !walletLoadFailures.has(chatId);
+  if (Date.now() - lastAttempt < 3000) return !walletLoadFailures.has(chatId);
   walletLoadAttempts.set(chatId, Date.now());
   try {
-    console.log(`[Wallet] v61b ensureWalletsLoaded: querying DB for chatId=${chatId}`);
+    console.log(`[Wallet] ensureWalletsLoaded: querying DB for chatId=${chatId}`);
     const rows = await Promise.race([
       storage.getTelegramWallets(chatId.toString()),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB timeout")), 20000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB timeout")), 30000)),
     ]);
-    console.log(`[Wallet] v61b ensureWalletsLoaded: got ${rows.length} rows for chatId=${chatId}`);
+    console.log(`[Wallet] ensureWalletsLoaded: got ${rows.length} rows for chatId=${chatId}`);
     walletLoadFailures.delete(chatId);
     if (rows.length > 0) {
       const wallets: string[] = [];

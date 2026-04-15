@@ -10,6 +10,10 @@ const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: isSSL ? { rejectUnauthorized: false } : false,
   keepAlive: true,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+  allowExitOnIdle: false,
 });
 
 pool.on('error', (err) => {
