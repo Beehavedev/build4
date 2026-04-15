@@ -1,0 +1,669 @@
+In src/agents/tradingAgent.ts, replace the Claude system prompt and the entire AI decision logic with the following. This is the complete, production-grade prompt and decision architecture.
+
+═══════════════════════════════════════════════════════════════
+STEP 1 — MULTI-TIMEFRAME MARKET CONTEXT BUILDER
+═══════════════════════════════════════════════════════════════
+
+Before calling Claude, build this context object from your price/OHLCV service.
+Add this function to tradingAgent.ts:
+
+function buildMarketContext(ohlcv: OHLCVData, pair: string): string {
+  
+  // Calculate these indicators from raw OHLCV before sending to Claude:
+  
+  // TREND
+  const ema9   = calculateEMA(ohlcv['15m'].close, 9)
+  const ema21  = calculateEMA(ohlcv['15m'].close, 21)
+  const ema50  = calculateEMA(ohlcv['1h'].close, 50)
+  const ema200 = calculateEMA(ohlcv['4h'].close, 200)
+  
+  // MOMENTUM
+  const rsi14_15m = calculateRSI(ohlcv['15m'].close, 14)
+  const rsi14_1h  = calculateRSI(ohlcv['1h'].close, 14)
+  const macd_15m  = calculateMACD(ohlcv['15m'].close, 12, 26, 9)
+  
+  // VOLATILITY
+  const bb_15m    = calculateBollingerBands(ohlcv['15m'].close, 20, 2)
+  const atr_1h    = calculateATR(ohlcv['1h'], 14)
+  
+  // VOLUME
+  const volSMA20  = calculateSMA(ohlcv['1h'].volume, 20)
+  const volCurrent = ohlcv['1h'].volume[ohlcv['1h'].volume.length - 1]
+  const volRatio   = volCurrent / volSMA20
+  
+  // STRUCTURE
+  const support    = findRecentSwingLow(ohlcv['4h'], 20)
+  const resistance = findRecentSwingHigh(ohlcv['4h'], 20)
+  const currentPrice = ohlcv['15m'].close[ohlcv['15m'].close.length - 1]
+  
+  // MARKET REGIME
+  const adx = calculateADX(ohlcv['1h'], 14)
+  const regime = adx > 25 ? 'TRENDING' : 'RANGING'
+  
+  return `
+PAIR: ${pair} | PRICE: ${currentPrice} | REGIME: ${regime} (ADX: ${adx.toFixed(1)})
+
+TREND ALIGNMENT:
+- 15m: EMA9 ${ema9 > ema21 ? 'ABOVE' : 'BELOW'} EMA21 → ${ema9 > ema21 ? 'BULLISH' : 'BEARISH'} short-term
+- 1h: Price ${currentPrice > ema50 ? 'ABOVE' : 'BELOW'} EMA50 → ${currentPrice > ema50 ? 'BULLISH' : 'BEARISH'} medium-term  
+- 4h: Price ${currentPrice > ema200 ? 'ABOVE' : 'BELOW'} EMA200 → ${currentPrice > ema200 ? 'BULLISH' : 'BEARISH'} macro trend
+- ALIGNMENT SCORE: ${calculateTrendAlignment(ema9, ema21, ema50, ema200, currentPrice)}/5
+
+MOMENTUM:
+- RSI(14) 15m: ${rsi14_15m.toFixed(1)} ${rsi14_15m > 70 ? '⚠️ OVERBOUGHT' : rsi14_15m < 30 ? '⚠️ OVERSOLD' : '✓ NEUTRAL'}
+- RSI(14) 1h:  ${rsi14_1h.toFixed(1)} ${rsi14_1h > 70 ? '⚠️ OVERBOUGHT' : rsi14_1h < 30 ? '⚠️ OVERSOLD' : '✓ NEUTRAL'}
+- MACD 15m: Signal ${macd_15m.histogram > 0 ? 'POSITIVE (bullish momentum)' : 'NEGATIVE (bearish momentum)'} | Histogram: ${macd_15m.histogram.toFixed(4)}
+- MACD cross in last 3 bars: ${macd_15m.recentCross || 'NONE'}
+
+VOLATILITY:
+- Bollinger: Price ${currentPrice > bb_15m.upper ? 'ABOVE UPPER (extended)' : currentPrice < bb_15m.lower ? 'BELOW LOWER (extended)' : 'INSIDE BANDS (contained)'}
+- BB Width: ${((bb_15m.upper - bb_15m.lower) / bb_15m.mid * 100).toFixed(2)}% ${bb_15m.upper - bb_15m.lower < bb_15m.mid * 0.03 ? '⚡ SQUEEZE — breakout likely' : ''}
+- ATR(14) 1h: ${atr_1h.toFixed(4)} (${(atr_1h / currentPrice * 100).toFixed(2)}% of price)
+
+VOLUME:
+- Current vs 20-SMA: ${volRatio.toFixed(2)}x ${volRatio > 1.5 ? '⬆️ HIGH — confirms moves' : volRatio < 0.7 ? '⬇️ LOW — suspect validity' : '✓ NORMAL'}
+
+KEY LEVELS:
+- Resistance: ${resistance.toFixed(4)} (${((resistance - currentPrice) / currentPrice * 100).toFixed(2)}% away)
+- Support:    ${support.toFixed(4)} (${((currentPrice - support) / currentPrice * 100).toFixed(2)}% away)
+- R/S ratio:  ${((currentPrice - support) / (resistance - currentPrice)).toFixed(2)} ${(currentPrice - support) / (resistance - currentPrice) > 2 ? '✓ Good risk/reward for LONG' : (resistance - currentPrice) / (currentPrice - support) > 2 ? '✓ Good risk/reward for SHORT' : '⚠️ Neutral positioning'}
+
+RECENT CANDLES (last 5, 15m):
+${formatRecentCandles(ohlcv['15m'], 5)}
+`
+}
+
+═══════════════════════════════════════════════════════════════
+STEP 2 — THE MASTER SYSTEM PROMPT
+Replace everything in your existing Claude system prompt with this exactly:
+═══════════════════════════════════════════════════════════════
+
+const TRADING_SYSTEM_PROMPT = `
+You are APEX — an elite quantitative crypto trading agent with deep expertise in perpetual futures markets. You combine technical analysis, market microstructure, risk management, and behavioral finance to make high-probability trading decisions.
+
+YOUR TRADING PHILOSOPHY:
+- Capital preservation is the primary objective. A loss avoided is worth more than a gain captured.
+- Only enter trades with asymmetric risk/reward (minimum 2:1, prefer 3:1 or better).
+- High confidence + high conviction = full size. Low confidence = pass entirely. Never "half-heartedly" enter.
+- The best trade is often no trade. HOLD is a valid and often correct action.
+- You never chase price. You wait for price to come to you at defined levels.
+- Trending markets: trade with momentum. Ranging markets: fade extremes.
+- Volume confirms everything. A breakout without volume is a trap.
+
+YOUR DECISION FRAMEWORK (apply in this exact order every tick):
+
+1. REGIME IDENTIFICATION
+   First, determine market regime from ADX and price structure:
+   - ADX > 25 + higher highs/lows = UPTREND → only look for LONG setups
+   - ADX > 25 + lower highs/lows = DOWNTREND → only look for SHORT setups  
+   - ADX < 20 = RANGING → trade mean reversion only, reduce size by 50%
+   - ADX 20-25 = TRANSITIONING → wait for confirmation, prefer HOLD
+
+2. TIMEFRAME ALIGNMENT CHECK
+   Only trade when at least 3 of 4 signals agree:
+   - 4h trend direction (EMA200)
+   - 1h trend direction (EMA50)  
+   - 15m momentum (MACD + RSI)
+   - Volume confirmation
+   Fewer than 3 agreeing = HOLD
+
+3. ENTRY QUALITY SCORING
+   Before deciding to open, score the setup 0-10:
+   - Trend alignment (all timeframes agree): +3
+   - At key support/resistance level: +2
+   - RSI not overbought/oversold against your direction: +1
+   - Volume above average: +1
+   - Bollinger band context favorable: +1
+   - MACD cross in your direction within last 3 bars: +1
+   - Clean recent candle structure (no long wicks against you): +1
+   
+   Score 7-10: Full size entry
+   Score 5-6: Half size entry
+   Score 0-4: No trade, HOLD
+
+4. RISK MANAGEMENT (non-negotiable rules):
+   - Stop loss placement: below/above the nearest swing low/high, NEVER a round number or arbitrary percentage
+   - If ATR-based stop would exceed agent's stopLossPct setting: PASS on the trade
+   - Never move a stop loss further away once set
+   - Take profit: previous major resistance (for longs) or support (for shorts)
+   - If R/R is less than 2:1 after proper SL/TP placement: PASS
+   - Size = (maxPositionSize × risk%) / (entry - stopLoss). Always size to the stop, not to a fixed amount.
+
+5. BEHAVIORAL GUARDRAILS:
+   - If the last 2 trades were losses: reduce size by 50% for next 3 trades (drawdown mode)
+   - If you are up >5% today: reduce size by 30% (protect gains mode)  
+   - Never re-enter the same pair within 15 minutes of closing a position
+   - If price has moved >1.5% in the last 15 minutes: wait for consolidation, do not chase
+   - Avoid opening new positions in the 5 minutes before and after a major price level ($1k round numbers for BTC, etc.)
+
+6. MEMORY INTEGRATION:
+   You will receive memories from past ticks. Use them actively:
+   - If memory contains a "correction" about this pair: weight it heavily, apply the lesson
+   - If memory shows repeated losses on this setup type: mark setup as "flagged" and require score of 8+ to enter
+   - If memory shows consistent wins on a specific condition: lower threshold to 6+ for that condition
+   - Adapt. You are not static. Your edge comes from learning.
+
+YOUR RESPONSE FORMAT:
+You must respond with ONLY a valid JSON object. No preamble, no explanation outside the JSON, no markdown. The JSON must match this schema exactly:
+
+{
+  "regime": "UPTREND" | "DOWNTREND" | "RANGING" | "TRANSITIONING",
+  "setupScore": 7,
+  "timeframeAlignment": {
+    "4h": "BULLISH" | "BEARISH" | "NEUTRAL",
+    "1h": "BULLISH" | "BEARISH" | "NEUTRAL", 
+    "15m": "BULLISH" | "BEARISH" | "NEUTRAL",
+    "volume": "CONFIRMING" | "DIVERGING" | "NEUTRAL"
+  },
+  "action": "OPEN_LONG" | "OPEN_SHORT" | "CLOSE" | "HOLD",
+  "pair": "BTC/USDT",
+  "entryZone": { "low": 43200, "high": 43400 },
+  "stopLoss": 42800,
+  "takeProfit": 44600,
+  "size": 150,
+  "leverage": 3,
+  "riskRewardRatio": 3.2,
+  "confidence": 0.78,
+  "reasoning": "Detailed 3-5 sentence explanation. State: (1) what the market regime is doing, (2) what specific signals triggered this decision, (3) why the risk/reward is favorable, (4) what would invalidate this trade. Be precise — mention specific indicator values.",
+  "keyRisks": ["Fed announcement in 2 hours", "Price near major resistance", "Low volume"],
+  "memoryUpdate": "One sentence insight for future reference, or null if nothing notable",
+  "drawdownMode": false,
+  "holdReason": null
+}
+
+For HOLD actions, set action to "HOLD", keep entryZone/stopLoss/takeProfit/size/leverage as null, and use holdReason to explain what condition would change your mind: e.g. "Waiting for RSI to cool below 55 on 1h before entering long. Will re-evaluate on next tick."
+
+CRITICAL CONSTRAINTS:
+- Never suggest leverage above the agent's configured maxLeverage
+- Never suggest position size above the agent's configured maxPositionSize  
+- If today's PnL is within 20% of maxDailyLoss, reduce all suggested sizes by 75%
+- If today's PnL has HIT maxDailyLoss, action MUST be HOLD regardless of setup quality
+- Never open a position if there is already an open position in the same pair on the same side
+`
+
+═══════════════════════════════════════════════════════════════
+STEP 3 — THE USER MESSAGE BUILDER
+This gets sent as the user turn on every tick. Replace your existing message builder:
+═══════════════════════════════════════════════════════════════
+
+function buildTickMessage(
+  agent: Agent,
+  marketContext: string,
+  openPositions: Position[],
+  memories: AgentMemory[],
+  todayPnl: number,
+  recentTrades: Trade[]
+): string {
+  
+  const lastTwoLosses = recentTrades.slice(0, 2).every(t => t.pnl < 0)
+  const inDrawdownMode = lastTwoLosses
+  const todayPnlPct = (todayPnl / agent.maxPositionSize) * 100
+  
+  return `
+=== MARKET DATA ===
+${marketContext}
+
+=== AGENT STATE ===
+Agent: ${agent.name}
+Exchange: ${agent.exchange}
+Max Position: ${agent.maxPositionSize} USDT | Max Leverage: ${agent.maxLeverage}x
+Stop Loss Setting: ${agent.stopLossPct}% | Take Profit Setting: ${agent.takeProfitPct}%
+Max Daily Loss: ${agent.maxDailyLoss} USDT
+
+Today's PnL: ${todayPnl >= 0 ? '+' : ''}${todayPnl.toFixed(2)} USDT (${todayPnlPct.toFixed(1)}% of max position)
+Daily Loss Remaining: ${(agent.maxDailyLoss + todayPnl).toFixed(2)} USDT
+Drawdown Mode: ${inDrawdownMode ? 'YES — last 2 trades were losses, apply 50% size reduction' : 'NO'}
+
+=== OPEN POSITIONS ===
+${openPositions.length === 0 
+  ? 'No open positions.'
+  : openPositions.map(p => `
+  ${p.pair} ${p.side} | Entry: ${p.entryPrice} | Current: ${p.currentPrice}
+  Unrealized PnL: ${p.unrealizedPnl >= 0 ? '+' : ''}${p.unrealizedPnl.toFixed(2)} USDT (${p.unrealizedPnlPct.toFixed(2)}%)
+  Size: ${p.size} USDT | Leverage: ${p.leverage}x | Liquidation: ${p.liquidationPrice}
+  Time open: ${p.timeOpenMinutes} minutes
+  `).join('\n')}
+
+=== RECENT TRADE HISTORY ===
+${recentTrades.slice(0, 5).map(t => 
+  `${t.pair} ${t.side} → ${t.pnl >= 0 ? 'WIN' : 'LOSS'} ${t.pnl >= 0 ? '+' : ''}${t.pnl?.toFixed(2)} USDT | ${t.closedAt ? new Date(t.closedAt).toISOString() : 'open'}`
+).join('\n') || 'No recent trades.'}
+
+Win rate (all time): ${agent.winRate.toFixed(1)}% over ${agent.totalTrades} trades
+
+=== AGENT MEMORY ===
+${memories.length === 0 
+  ? 'No memories yet. This agent is learning.'
+  : memories.map(m => `[${m.type.toUpperCase()}] ${m.content}`).join('\n')}
+
+=== YOUR TASK ===
+Analyze the market data above for ${agent.pairs.join(', ')}.
+Apply your decision framework in order: regime → alignment → setup score → risk management.
+Return your decision as the JSON schema specified. Be precise and honest about confidence.
+If you would not put your own money in this trade, action = HOLD.
+`
+}
+
+═══════════════════════════════════════════════════════════════
+STEP 4 — ENHANCED RESPONSE HANDLER
+Replace your existing response parsing with this:
+═══════════════════════════════════════════════════════════════
+
+async function handleAgentDecision(
+  decision: AgentDecision,
+  agent: Agent,
+  userId: string,
+  bot: Bot
+) {
+
+  // HARD SAFETY CHECKS — override any AI decision
+  const todayPnl = await getTodayPnl(agent.id)
+  if (todayPnl <= -agent.maxDailyLoss) {
+    await bot.api.sendMessage(userId, 
+      `🛑 *Agent Paused* — Daily loss limit reached\n\nAgent ${agent.name} has hit its daily loss limit of ${agent.maxDailyLoss} USDT. Trading paused until tomorrow.\n\nToday's PnL: ${todayPnl.toFixed(2)} USDT`)
+    await db.agent.update({ where: { id: agent.id }, data: { isPaused: true } })
+    return
+  }
+
+  if (decision.action === 'HOLD') {
+    // Save memory if there's an insight, but don't notify user for holds
+    if (decision.memoryUpdate) {
+      await saveMemory(agent.id, 'observation', decision.memoryUpdate, {
+        regime: decision.regime,
+        setupScore: decision.setupScore,
+        confidence: decision.confidence
+      })
+    }
+    return // Silent hold
+  }
+
+  if (decision.action === 'OPEN_LONG' || decision.action === 'OPEN_SHORT') {
+    
+    // Validate R/R ratio
+    if (decision.riskRewardRatio < 2.0) {
+      await saveMemory(agent.id, 'observation', 
+        `Skipped ${decision.pair} ${decision.action} — R/R ratio was only ${decision.riskRewardRatio.toFixed(1)}, below 2.0 minimum`, null)
+      return
+    }
+
+    // Validate confidence
+    if (decision.confidence < 0.55) {
+      await saveMemory(agent.id, 'observation',
+        `Skipped ${decision.pair} ${decision.action} — confidence too low at ${(decision.confidence * 100).toFixed(0)}%`, null)
+      return
+    }
+    
+    // Validate setup score
+    if (decision.setupScore < 5) {
+      return // Don't even save a memory for very low quality setups
+    }
+
+    // Execute trade on exchange
+    const trade = await executeExchangeOrder(agent, decision)
+    
+    // Save to DB
+    await db.trade.create({
+      data: {
+        userId,
+        agentId: agent.id,
+        exchange: agent.exchange,
+        pair: decision.pair,
+        side: decision.action === 'OPEN_LONG' ? 'LONG' : 'SHORT',
+        entryPrice: trade.fillPrice,
+        size: decision.size,
+        leverage: decision.leverage,
+        status: 'open',
+        aiReasoning: decision.reasoning,
+        signalsUsed: {
+          regime: decision.regime,
+          setupScore: decision.setupScore,
+          timeframeAlignment: decision.timeframeAlignment,
+          confidence: decision.confidence
+        }
+      }
+    })
+
+    // Save memory
+    if (decision.memoryUpdate) {
+      await saveMemory(agent.id, 'decision', decision.memoryUpdate, {
+        action: decision.action,
+        pair: decision.pair,
+        setupScore: decision.setupScore,
+        regime: decision.regime
+      })
+    }
+
+    // Build Telegram notification — rich and informative
+    const side = decision.action === 'OPEN_LONG' ? '🟢 LONG' : '🔴 SHORT'
+    const alignmentBar = buildAlignmentBar(decision.timeframeAlignment)
+    const confidenceBar = '█'.repeat(Math.round(decision.confidence * 10)) + '░'.repeat(10 - Math.round(decision.confidence * 10))
+    
+    const message = `
+🤖 *${agent.name}* opened a position
+
+${side} *${decision.pair}* | ${decision.leverage}x leverage
+
+*Entry:* $${trade.fillPrice.toFixed(2)}
+*Stop Loss:* $${decision.stopLoss.toFixed(2)} (−${(Math.abs(trade.fillPrice - decision.stopLoss) / trade.fillPrice * 100).toFixed(2)}%)
+*Take Profit:* $${decision.takeProfit.toFixed(2)} (+${(Math.abs(decision.takeProfit - trade.fillPrice) / trade.fillPrice * 100).toFixed(2)}%)
+*Size:* $${decision.size} USDT
+*R/R Ratio:* ${decision.riskRewardRatio.toFixed(1)}:1
+
+*Market Regime:* ${decision.regime}
+*Setup Score:* ${decision.setupScore}/10
+
+*Timeframe Alignment:*
+${alignmentBar}
+
+*Confidence:* ${confidenceBar} ${(decision.confidence * 100).toFixed(0)}%
+
+💭 *Why:*
+${decision.reasoning}
+
+${decision.keyRisks.length > 0 ? `⚠️ *Key Risks:*\n${decision.keyRisks.map(r => `• ${r}`).join('\n')}` : ''}
+`
+    
+    await bot.api.sendMessage(userId, message, { 
+      parse_mode: 'Markdown',
+      reply_markup: new InlineKeyboard()
+        .text('📊 View Status', 'tradestatus')
+        .text('🛑 Close Now', `close_${trade.id}`)
+        .row()
+        .text('⏸ Pause Agent', `pause_${agent.id}`)
+    })
+  }
+
+  if (decision.action === 'CLOSE') {
+    const openPosition = await getOpenPosition(agent.id, decision.pair)
+    if (!openPosition) return
+    
+    const result = await closeExchangeOrder(agent, openPosition)
+    const pnl = result.pnl
+    const pnlEmoji = pnl >= 0 ? '✅' : '❌'
+    
+    // Save correction memory if loss
+    if (pnl < 0) {
+      // Call Claude for a lesson
+      const lessonPrompt = `The following trade was a loss. In one sentence, state the most likely reason it failed and what to watch for next time. Trade: ${decision.pair} ${openPosition.side}, entry ${openPosition.entryPrice}, exit ${result.exitPrice}, reasoning was: "${openPosition.aiReasoning}"`
+      const lessonResponse = await callClaude(lessonPrompt, 'You are a trading coach. Respond in one sentence only.')
+      
+      await saveMemory(agent.id, 'correction',
+        `LOSS on ${decision.pair} ${openPosition.side}: ${lessonResponse}`,
+        { pnl, entryReasoning: openPosition.aiReasoning })
+    } else {
+      await saveMemory(agent.id, 'observation',
+        `WIN on ${decision.pair} ${openPosition.side} +${pnl.toFixed(2)} USDT. ${decision.memoryUpdate || ''}`,
+        { pnl })
+    }
+
+    await bot.api.sendMessage(userId, `
+${pnlEmoji} *${agent.name}* closed position
+
+*${openPosition.side} ${decision.pair}*
+
+Entry: $${openPosition.entryPrice.toFixed(2)}
+Exit:  $${result.exitPrice.toFixed(2)}
+PnL:   ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} USDT (${result.pnlPct.toFixed(2)}%)
+
+💭 ${decision.reasoning}
+`, { parse_mode: 'Markdown' })
+  }
+}
+
+═══════════════════════════════════════════════════════════════
+STEP 5 — INDICATOR IMPLEMENTATIONS
+Add these pure functions to a new file: src/agents/indicators.ts
+═══════════════════════════════════════════════════════════════
+
+Create src/agents/indicators.ts with these implementations:
+
+export function calculateEMA(prices: number[], period: number): number {
+  const k = 2 / (period + 1)
+  let ema = prices[0]
+  for (let i = 1; i < prices.length; i++) {
+    ema = prices[i] * k + ema * (1 - k)
+  }
+  return ema
+}
+
+export function calculateRSI(prices: number[], period: number): number {
+  let gains = 0, losses = 0
+  for (let i = 1; i <= period; i++) {
+    const change = prices[prices.length - i] - prices[prices.length - i - 1]
+    if (change > 0) gains += change
+    else losses += Math.abs(change)
+  }
+  const avgGain = gains / period
+  const avgLoss = losses / period
+  if (avgLoss === 0) return 100
+  const rs = avgGain / avgLoss
+  return 100 - (100 / (1 + rs))
+}
+
+export function calculateMACD(prices: number[], fast: number, slow: number, signal: number) {
+  const emaFast = calculateEMA(prices, fast)
+  const emaSlow = calculateEMA(prices, slow)
+  const macdLine = emaFast - emaSlow
+  
+  // Get recent MACD values to detect cross
+  const recentMacd = prices.slice(-6).map((_, i, arr) => {
+    const slice = prices.slice(0, prices.length - arr.length + i + 1)
+    return calculateEMA(slice, fast) - calculateEMA(slice, slow)
+  })
+  
+  const signalLine = calculateEMA(recentMacd, signal)
+  const histogram = macdLine - signalLine
+  
+  const prevHistogram = recentMacd[recentMacd.length - 2] - signalLine
+  let recentCross = null
+  if (prevHistogram <= 0 && histogram > 0) recentCross = 'BULLISH CROSS'
+  if (prevHistogram >= 0 && histogram < 0) recentCross = 'BEARISH CROSS'
+  
+  return { macdLine, signalLine, histogram, recentCross }
+}
+
+export function calculateBollingerBands(prices: number[], period: number, stdDev: number) {
+  const slice = prices.slice(-period)
+  const mid = slice.reduce((a, b) => a + b, 0) / period
+  const variance = slice.reduce((a, b) => a + Math.pow(b - mid, 2), 0) / period
+  const std = Math.sqrt(variance)
+  return { upper: mid + stdDev * std, mid, lower: mid - stdDev * std }
+}
+
+export function calculateATR(ohlcv: { high: number[], low: number[], close: number[] }, period: number): number {
+  const trs = []
+  for (let i = 1; i < ohlcv.high.length; i++) {
+    const tr = Math.max(
+      ohlcv.high[i] - ohlcv.low[i],
+      Math.abs(ohlcv.high[i] - ohlcv.close[i - 1]),
+      Math.abs(ohlcv.low[i] - ohlcv.close[i - 1])
+    )
+    trs.push(tr)
+  }
+  return trs.slice(-period).reduce((a, b) => a + b, 0) / period
+}
+
+export function calculateADX(ohlcv: { high: number[], low: number[], close: number[] }, period: number): number {
+  const atrs = [], plusDMs = [], minusDMs = []
+  for (let i = 1; i < ohlcv.high.length; i++) {
+    const upMove = ohlcv.high[i] - ohlcv.high[i - 1]
+    const downMove = ohlcv.low[i - 1] - ohlcv.low[i]
+    plusDMs.push(upMove > downMove && upMove > 0 ? upMove : 0)
+    minusDMs.push(downMove > upMove && downMove > 0 ? downMove : 0)
+    atrs.push(Math.max(
+      ohlcv.high[i] - ohlcv.low[i],
+      Math.abs(ohlcv.high[i] - ohlcv.close[i - 1]),
+      Math.abs(ohlcv.low[i] - ohlcv.close[i - 1])
+    ))
+  }
+  const slice = (arr: number[]) => arr.slice(-period).reduce((a, b) => a + b, 0) / period
+  const atr = slice(atrs), plusDM = slice(plusDMs), minusDM = slice(minusDMs)
+  const plusDI = (plusDM / atr) * 100
+  const minusDI = (minusDM / atr) * 100
+  const dx = Math.abs(plusDI - minusDI) / (plusDI + minusDI) * 100
+  return dx
+}
+
+export function findRecentSwingHigh(ohlcv: { high: number[] }, lookback: number): number {
+  return Math.max(...ohlcv.high.slice(-lookback))
+}
+
+export function findRecentSwingLow(ohlcv: { low: number[] }, lookback: number): number {
+  return Math.min(...ohlcv.low.slice(-lookback))
+}
+
+export function calculateTrendAlignment(
+  ema9: number, ema21: number, ema50: number, ema200: number, price: number
+): number {
+  let score = 0
+  if (ema9 > ema21) score++
+  if (price > ema50) score++
+  if (price > ema200) score++
+  if (ema21 > ema50) score++
+  if (ema50 > ema200) score++
+  return score
+}
+
+export function formatRecentCandles(
+  ohlcv: { open: number[], high: number[], low: number[], close: number[], volume: number[] },
+  count: number
+): string {
+  const len = ohlcv.close.length
+  const lines = []
+  for (let i = len - count; i < len; i++) {
+    const bullish = ohlcv.close[i] > ohlcv.open[i]
+    const change = ((ohlcv.close[i] - ohlcv.open[i]) / ohlcv.open[i] * 100).toFixed(2)
+    lines.push(`  ${bullish ? '🟢' : '🔴'} O:${ohlcv.open[i].toFixed(2)} H:${ohlcv.high[i].toFixed(2)} L:${ohlcv.low[i].toFixed(2)} C:${ohlcv.close[i].toFixed(2)} (${change}%) Vol:${(ohlcv.volume[i] / 1000).toFixed(0)}k`)
+  }
+  return lines.join('\n')
+}
+
+export function buildAlignmentBar(alignment: {
+  '4h': string, '1h': string, '15m': string, volume: string
+}): string {
+  const icon = (v: string) => v === 'BULLISH' ? '🟢' : v === 'BEARISH' ? '🔴' : '⚪'
+  return `4h ${icon(alignment['4h'])} │ 1h ${icon(alignment['1h'])} │ 15m ${icon(alignment['15m'])} │ Vol ${alignment.volume === 'CONFIRMING' ? '✅' : alignment.volume === 'DIVERGING' ? '⚠️' : '⚪'}`
+}
+
+═══════════════════════════════════════════════════════════════
+STEP 6 — LESSON LOOP (automatic loss learning)
+Add this to memory.ts
+═══════════════════════════════════════════════════════════════
+
+Add to src/agents/memory.ts:
+
+export async function buildMemoryContext(agentId: string): Promise<string> {
+  const memories = await db.agentMemory.findMany({
+    where: { agentId },
+    orderBy: { createdAt: 'desc' },
+    take: 30
+  })
+
+  const corrections = memories.filter(m => m.type === 'correction')
+  const observations = memories.filter(m => m.type === 'observation').slice(0, 10)
+  const marketNotes = memories.filter(m => m.type === 'market_note').slice(0, 5)
+
+  let context = ''
+
+  if (corrections.length > 0) {
+    context += `MISTAKES TO LEARN FROM (apply these lessons):\n`
+    corrections.slice(0, 5).forEach(c => {
+      context += `• ${c.content}\n`
+    })
+    context += '\n'
+  }
+
+  if (marketNotes.length > 0) {
+    context += `MARKET PATTERNS NOTICED:\n`
+    marketNotes.forEach(n => {
+      context += `• ${n.content}\n`
+    })
+    context += '\n'
+  }
+
+  if (observations.length > 0) {
+    context += `RECENT OBSERVATIONS:\n`
+    observations.slice(0, 5).forEach(o => {
+      context += `• ${o.content}\n`
+    })
+  }
+
+  return context || 'No memories yet. Building knowledge from first trades.'
+}
+
+═══════════════════════════════════════════════════════════════
+STEP 7 — PROACTIVE ALERT SYSTEM
+Add to runner.ts — agents message users without being asked
+═══════════════════════════════════════════════════════════════
+
+Add this alongside the regular tick in runner.ts:
+
+async function proactiveAlerts(agent: Agent, bot: Bot) {
+
+  // Alert 1: Position at risk
+  const positions = await getOpenPositions(agent.id)
+  for (const pos of positions) {
+    const distanceToLiq = Math.abs(pos.currentPrice - pos.liquidationPrice) / pos.currentPrice
+    if (distanceToLiq < 0.05) {
+      await bot.api.sendMessage(agent.userId,
+        `⚠️ *Liquidation Warning* — ${agent.name}\n\n${pos.pair} ${pos.side} is within 5% of liquidation price.\n\nLiquidation: $${pos.liquidationPrice}\nCurrent: $${pos.currentPrice}\n\n[Close Position](close_${pos.id}) or add margin to protect.`,
+        { parse_mode: 'Markdown' })
+    }
+  }
+
+  // Alert 2: Strong signal detected even if no trade taken
+  // (Sent when setupScore >= 8 but agent chose HOLD due to existing position)
+  // This is set as a flag on the decision object and checked here
+
+  // Alert 3: Daily summary (runs once per day at 00:00 UTC)
+  const now = new Date()
+  if (now.getUTCHours() === 0 && now.getUTCMinutes() < 2) {
+    const todayTrades = await getTodayTrades(agent.id)
+    const todayPnl = todayTrades.reduce((sum, t) => sum + (t.pnl || 0), 0)
+    const wins = todayTrades.filter(t => t.pnl > 0).length
+    
+    if (todayTrades.length > 0) {
+      await bot.api.sendMessage(agent.userId,
+        `📊 *Daily Summary — ${agent.name}*\n\nTrades: ${todayTrades.length} (${wins}W/${todayTrades.length - wins}L)\nPnL: ${todayPnl >= 0 ? '+' : ''}$${todayPnl.toFixed(2)} USDT\nWin Rate Today: ${(wins / todayTrades.length * 100).toFixed(0)}%\n\nAll-time: ${agent.totalTrades} trades | ${agent.winRate.toFixed(0)}% win rate | +$${agent.totalPnl.toFixed(2)}`,
+        { parse_mode: 'Markdown' })
+    }
+  }
+}
+
+═══════════════════════════════════════════════════════════════
+IMPORTANT IMPLEMENTATION NOTES FOR REPLIT AGENT
+═══════════════════════════════════════════════════════════════
+
+1. The Claude API call in tradingAgent.ts should look exactly like this:
+
+const response = await anthropic.messages.create({
+  model: 'claude-sonnet-4-5',
+  max_tokens: 1000,
+  system: TRADING_SYSTEM_PROMPT,
+  messages: [{ role: 'user', content: buildTickMessage(...) }]
+})
+
+const rawText = response.content[0].type === 'text' ? response.content[0].text : ''
+const decision: AgentDecision = JSON.parse(rawText.replace(/```json|```/g, '').trim())
+
+2. OHLCV data: if your exchange APIs are mocked, generate 200 candles of realistic OHLCV
+   data using a random walk with drift for each pair. The indicators need at least 200 
+   data points to be meaningful. Do this in your mock service.
+
+3. The entire tick for one agent should complete in under 10 seconds. 
+   If exchange API calls are slow, set a 5-second timeout on each.
+
+4. Use a Redis distributed lock (SET NX with 90s expiry) per agent ID before each tick
+   to prevent double-execution if the cron fires while a previous tick is still running.
+
+5. Log every Claude response to a separate AgentLog table (agentId, timestamp, 
+   rawPrompt length, rawResponse, parsedAction, executionResult) for debugging.
+   This is how you improve the bot over time.
+
+6. Parse errors from Claude: if JSON.parse fails, log the raw response, 
+   default to action=HOLD, and save a memory: "Parse error on tick — raw response
+   was not valid JSON. This should never happen."
+
+Now implement all of the above, updating the existing tradingAgent.ts, 
+creating indicators.ts, updating memory.ts, and updating runner.ts.
+Do not break any existing functionality. Test that the bot compiles cleanly after changes.
