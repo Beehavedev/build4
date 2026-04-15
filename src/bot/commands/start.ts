@@ -4,6 +4,12 @@ import type { BotContext } from "../middleware/auth.js";
 
 const prisma = new PrismaClient();
 
+function getMiniAppUrl(): string {
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}/app`;
+  if (process.env.RENDER_EXTERNAL_URL) return `${process.env.RENDER_EXTERNAL_URL}/app`;
+  return "https://build4.replit.app/app";
+}
+
 export async function startCommand(ctx: BotContext) {
   console.log("[START] Command handler called, from:", ctx.from?.id, "dbUser:", ctx.dbUser?.id?.substring(0, 8));
   if (!ctx.from || !ctx.dbUser) {
@@ -63,6 +69,9 @@ export async function startCommand(ctx: BotContext) {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
+            [
+              { text: "⭐ Open Mini App", web_app: { url: getMiniAppUrl() } },
+            ],
             [
               { text: "💰 My Wallet", callback_data: "cmd_wallet" },
               { text: "🤖 Create Agent", callback_data: "cmd_newagent" },

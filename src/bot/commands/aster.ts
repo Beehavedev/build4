@@ -3,6 +3,12 @@ import type { BotContext } from "../middleware/auth.js";
 
 const prisma = new PrismaClient();
 
+function getMiniAppUrl(): string {
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}/app`;
+  if (process.env.RENDER_EXTERNAL_URL) return `${process.env.RENDER_EXTERNAL_URL}/app`;
+  return "https://build4.replit.app/app";
+}
+
 export async function asterCommand(ctx: BotContext) {
   if (!ctx.dbUser) {
     await ctx.reply("Please use /start first.");
@@ -60,6 +66,10 @@ export async function asterCommand(ctx: BotContext) {
     }));
     buttons.push(agentButtons);
   }
+
+  buttons.push([
+    { text: "⭐ Open Trading App", web_app: { url: getMiniAppUrl() } },
+  ]);
 
   buttons.push([
     { text: "🤖 Create Agent", callback_data: "cmd_newagent" },

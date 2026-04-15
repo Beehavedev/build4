@@ -52,10 +52,20 @@ Preferred communication style: Simple, everyday language.
 │   │   ├── price.ts              # CoinGecko price oracle
 │   │   ├── aster.ts              # Aster DEX API (mock)
 │   │   └── pnl.ts                # Portfolio PnL calculation
-│   └── miniapp/                  # Vite React mini app
+│   └── miniapp/                  # Vite React mini app (served at /app)
 │       ├── index.html
 │       ├── vite.config.ts
-│       └── src/App.tsx
+│       └── src/
+│           ├── main.tsx          # Entry point
+│           ├── App.tsx           # Tab navigation (5 tabs)
+│           ├── api.ts            # API client + Telegram WebApp bridge
+│           ├── styles.css        # Full dark theme styles
+│           └── pages/
+│               ├── Dashboard.tsx  # Portfolio overview + agent summary
+│               ├── Trade.tsx      # Quick trade form (pair/side/leverage)
+│               ├── Agents.tsx     # Agent list with registry info
+│               ├── Positions.tsx  # Open/closed positions
+│               └── Leaderboard.tsx # Top agents leaderboard
 ```
 
 ## Key Secrets

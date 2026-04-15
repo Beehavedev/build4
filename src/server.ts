@@ -52,9 +52,11 @@ app.get("/api/user/:telegramId", async (req, res) => {
     });
     if (!user) return res.status(404).json({ error: "User not found" });
 
+    const activeWallet = user.wallets?.find((w: any) => w.isActive);
     res.json({
       ...user,
       telegramId: user.telegramId.toString(),
+      wallet: activeWallet?.address || null,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -108,15 +110,28 @@ app.get("/api/portfolio/:userId", async (req, res) => {
 
 app.get("/api/leaderboard", async (_req, res) => {
   try {
-    const leaders = await prisma.portfolio.findMany({
-      where: { totalPnl: { gt: 0 } },
+    const agents = await prisma.agent.findMany({
+      where: { isListed: true, totalTrades: { gt: 0 } },
       orderBy: { totalPnl: "desc" },
-      take: 10,
-      include: { user: { select: { username: true, telegramId: true } } },
+      take: 20,
     });
-    res.json(leaders.map((l) => ({
-      ...l,
-      user: { ...l.user, telegramId: l.user.telegramId.toString() },
+    res.json(agents);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/trades/:userId", async (req, res) => {
+  try {
+    const trades = await prisma.trade.findMany({
+      where: { userId: req.params.userId },
+      orderBy: { openedAt: "desc" },
+      take: 50,
+      include: { agent: { select: { name: true } } },
+    });
+    res.json(trades.map(t => ({
+      ...t,
+      agentName: t.agent?.name || null,
     })));
   } catch (err: any) {
     res.status(500).json({ error: err.message });

@@ -1,27 +1,53 @@
-import { createRoot } from "react-dom/client";
+import { useState } from "react";
+import { Dashboard } from "./pages/Dashboard";
+import { Trade } from "./pages/Trade";
+import { Agents } from "./pages/Agents";
+import { Positions } from "./pages/Positions";
+import { Leaderboard } from "./pages/Leaderboard";
 
-function App() {
+type Tab = "dashboard" | "trade" | "agents" | "positions" | "leaderboard";
+
+const tabs: { id: Tab; icon: string; label: string }[] = [
+  { id: "dashboard", icon: "🏠", label: "Home" },
+  { id: "trade", icon: "⚡", label: "Trade" },
+  { id: "positions", icon: "📊", label: "Positions" },
+  { id: "agents", icon: "🤖", label: "Agents" },
+  { id: "leaderboard", icon: "🏆", label: "Top" },
+];
+
+export function App() {
+  const [activeTab, setActiveTab] = useState<Tab>("dashboard");
+
   return (
-    <div style={{ padding: "20px", fontFamily: "system-ui", background: "#0a0a0a", color: "#fff", minHeight: "100vh" }}>
-      <h1 style={{ fontSize: "24px", marginBottom: "16px" }}>🚀 Build4 Trading Bot</h1>
-      <p style={{ color: "#888" }}>Mini App coming soon. Use the Telegram bot for all features.</p>
-      <div style={{ marginTop: "24px", display: "flex", flexDirection: "column", gap: "12px" }}>
-        <div style={{ background: "#1a1a2e", padding: "16px", borderRadius: "12px" }}>
-          <h3 style={{ margin: "0 0 8px 0" }}>📊 Dashboard</h3>
-          <p style={{ margin: 0, color: "#888", fontSize: "14px" }}>Portfolio overview and PnL charts</p>
+    <div className="app">
+      <div className="header">
+        <div>
+          <div className="header-title">
+            ⭐ Build4 × Aster DEX
+          </div>
+          <div className="header-subtitle">AI-Powered Perpetual Trading</div>
         </div>
-        <div style={{ background: "#1a1a2e", padding: "16px", borderRadius: "12px" }}>
-          <h3 style={{ margin: "0 0 8px 0" }}>🤖 Agent Studio</h3>
-          <p style={{ margin: 0, color: "#888", fontSize: "14px" }}>Manage your AI trading agents</p>
-        </div>
-        <div style={{ background: "#1a1a2e", padding: "16px", borderRadius: "12px" }}>
-          <h3 style={{ margin: "0 0 8px 0" }}>🏆 Copy Trading</h3>
-          <p style={{ margin: 0, color: "#888", fontSize: "14px" }}>Follow top traders</p>
-        </div>
+      </div>
+
+      {activeTab === "dashboard" && <Dashboard />}
+      {activeTab === "trade" && <Trade />}
+      {activeTab === "agents" && <Agents />}
+      {activeTab === "positions" && <Positions />}
+      {activeTab === "leaderboard" && <Leaderboard />}
+
+      <div className="tab-bar" data-testid="tab-bar">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            className={`tab-item ${activeTab === t.id ? "active" : ""}`}
+            onClick={() => setActiveTab(t.id)}
+            data-testid={`tab-${t.id}`}
+          >
+            <span className="tab-icon">{t.icon}</span>
+            {t.label}
+          </button>
+        ))}
       </div>
     </div>
   );
 }
-
-const root = document.getElementById("root");
-if (root) createRoot(root).render(<App />);
