@@ -24,7 +24,8 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [walletAddress, setWalletAddress] = useState("");
   const [showImport, setShowImport] = useState(false);
-  const [importKey, setImportKey] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [apiSecret, setApiSecret] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
 
@@ -55,23 +56,23 @@ export function Dashboard() {
     load();
   }, []);
 
-  async function handleImport() {
+  async function handleConnect() {
     const tgUser = getTelegramUser();
-    if (!tgUser || !importKey.trim()) return;
+    if (!tgUser || !apiKey.trim() || !apiSecret.trim()) return;
 
     setImporting(true);
     setImportError("");
 
     try {
-      const res = await fetch("/api/import-wallet", {
+      const res = await fetch("/api/connect-aster", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telegramId: tgUser.id, privateKey: importKey.trim() }),
+        body: JSON.stringify({ telegramId: tgUser.id, apiKey: apiKey.trim(), apiSecret: apiSecret.trim() }),
       });
       const data = await res.json();
 
       if (!res.ok) {
-        setImportError(data.error || "Import failed");
+        setImportError(data.error || "Connection failed");
         setImporting(false);
         return;
       }
@@ -83,9 +84,10 @@ export function Dashboard() {
         chain: data.chain,
         aster: data.aster,
       });
-      setWalletAddress(data.address);
+      if (data.address) setWalletAddress(data.address);
       setShowImport(false);
-      setImportKey("");
+      setApiKey("");
+      setApiSecret("");
 
       try { window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success"); } catch {}
     } catch (err: any) {
@@ -189,37 +191,52 @@ export function Dashboard() {
             ) : (
               <div className="trade-form">
                 <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "4px" }}>
-                  Paste the private key of your Aster-connected wallet:
+                  Enter your Aster DEX API credentials:
                 </div>
-                <input
-                  className="input-field"
-                  type="password"
-                  placeholder="Private key (hex)"
-                  value={importKey}
-                  onChange={e => { setImportKey(e.target.value); setImportError(""); }}
-                  data-testid="input-import-key"
-                  autoComplete="off"
-                />
+                <div className="input-group">
+                  <label className="input-label">API Key</label>
+                  <input
+                    className="input-field"
+                    type="text"
+                    placeholder="Your Aster API key"
+                    value={apiKey}
+                    onChange={e => { setApiKey(e.target.value); setImportError(""); }}
+                    data-testid="input-api-key"
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">API Secret</label>
+                  <input
+                    className="input-field"
+                    type="password"
+                    placeholder="Your Aster API secret"
+                    value={apiSecret}
+                    onChange={e => { setApiSecret(e.target.value); setImportError(""); }}
+                    data-testid="input-api-secret"
+                    autoComplete="off"
+                  />
+                </div>
                 {importError && (
                   <div style={{ color: "var(--red)", fontSize: "12px" }}>{importError}</div>
                 )}
                 <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                  🔒 Your key is encrypted and never shared
+                  🔒 Get your API key from asterdex.com → Account → API Management
                 </div>
                 <div className="btn-row">
                   <button
                     className="btn btn-primary"
-                    onClick={handleImport}
-                    disabled={importing || !importKey.trim()}
-                    data-testid="btn-import-submit"
-                    style={{ opacity: importing || !importKey.trim() ? 0.5 : 1 }}
+                    onClick={handleConnect}
+                    disabled={importing || !apiKey.trim() || !apiSecret.trim()}
+                    data-testid="btn-connect-submit"
+                    style={{ opacity: importing || !apiKey.trim() || !apiSecret.trim() ? 0.5 : 1 }}
                   >
                     {importing ? "Connecting..." : "⭐ Connect to Aster"}
                   </button>
                   <button
                     className="btn btn-outline"
-                    onClick={() => { setShowImport(false); setImportKey(""); setImportError(""); }}
-                    data-testid="btn-import-cancel"
+                    onClick={() => { setShowImport(false); setApiKey(""); setApiSecret(""); setImportError(""); }}
+                    data-testid="btn-connect-cancel"
                   >
                     Cancel
                   </button>

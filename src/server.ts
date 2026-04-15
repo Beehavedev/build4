@@ -79,10 +79,9 @@ app.get("/api/balance/:telegramId", async (req, res) => {
     const bal = await getBalance(activeWallet.address, activeWallet.chain);
 
     let aster = null;
-    if (activeWallet.encryptedPK) {
+    if (activeWallet.asterApiKey && activeWallet.asterApiSecret) {
       try {
-        const pk = decryptPrivateKey(activeWallet.encryptedPK, user.id);
-        aster = await getAsterAccountBalance(pk);
+        aster = await getAsterAccountBalance(activeWallet.asterApiKey, activeWallet.asterApiSecret);
       } catch (err: any) {
         console.log("[BALANCE] Aster fetch skipped:", err.message?.substring(0, 80));
       }
@@ -94,12 +93,12 @@ app.get("/api/balance/:telegramId", async (req, res) => {
   }
 });
 
-app.post("/api/import-wallet", async (req, res) => {
+app.post("/api/connect-aster", async (req, res) => {
   try {
-    const { telegramId, privateKey } = req.body;
-    if (!telegramId || !privateKey) return res.status(400).json({ error: "Missing telegramId or privateKey" });
-
-    const { ethers } = await import("ethers");
+    const { telegramId, apiKey, apiSecret } = req.body;
+    if (!telegramId || !apiKey || !apiSecret) {
+      return res.status(400).json({ error: "Missing telegramId, apiKey, or apiSecret" });
+    }
 
     const user = await prisma.user.findUnique({
       where: { telegramId: BigInt(telegramId) },
@@ -107,47 +106,23 @@ app.post("/api/import-wallet", async (req, res) => {
     });
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    let pk = privateKey.trim();
-    if (!pk.startsWith("0x")) pk = "0x" + pk;
+    const asterBal = await getAsterAccountBalance(apiKey.trim(), apiSecret.trim());
 
-    let wallet;
-    try {
-      wallet = new ethers.Wallet(pk);
-    } catch {
-      return res.status(400).json({ error: "Invalid private key" });
-    }
-
-    const address = wallet.address;
-    const encrypted = encryptPrivateKey(pk, user.id);
-
-    const existing = user.wallets.find((w: any) => w.address.toLowerCase() === address.toLowerCase());
-
-    if (existing) {
+    const activeWallet = user.wallets.find((w: any) => w.isActive);
+    if (activeWallet) {
       await prisma.wallet.update({
-        where: { id: existing.id },
-        data: { encryptedPK: encrypted },
+        where: { id: activeWallet.id },
+        data: { asterApiKey: apiKey.trim(), asterApiSecret: apiSecret.trim() },
       });
-      await prisma.wallet.updateMany({ where: { userId: user.id }, data: { isActive: false } });
-      await prisma.wallet.update({ where: { id: existing.id }, data: { isActive: true } });
-    } else {
-      await prisma.wallet.updateMany({ where: { userId: user.id }, data: { isActive: false } });
-      const count = await prisma.wallet.count({ where: { userId: user.id } });
-      await prisma.wallet.create({
-        data: {
-          userId: user.id,
-          chain: "BSC",
-          address,
-          encryptedPK: encrypted,
-          label: `Imported ${count + 1}`,
-          isActive: true,
-        },
+    } else if (user.wallets.length > 0) {
+      await prisma.wallet.update({
+        where: { id: user.wallets[0].id },
+        data: { asterApiKey: apiKey.trim(), asterApiSecret: apiSecret.trim(), isActive: true },
       });
     }
 
-    const [bal, asterBal] = await Promise.all([
-      getBalance(address, "BSC"),
-      getAsterAccountBalance(pk),
-    ]);
+    const address = activeWallet?.address || user.wallets[0]?.address;
+    const bal = address ? await getBalance(address, "BSC") : { native: "0", usdt: "0" };
 
     res.json({
       success: true,
@@ -155,10 +130,10 @@ app.post("/api/import-wallet", async (req, res) => {
       native: bal.native,
       usdt: bal.usdt,
       chain: "BSC",
-      aster: asterBal.accountValue > 0 ? asterBal : null,
+      aster: asterBal,
     });
   } catch (err: any) {
-    console.error("[IMPORT] Error:", err.message);
+    console.error("[CONNECT-ASTER] Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
