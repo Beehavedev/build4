@@ -35,8 +35,6 @@ model Wallet {
   encryptedPK     String
   label           String   @default("Wallet 1")
   isActive        Boolean  @default(false)
-  asterApiKey     String?
-  asterApiSecret  String?
   createdAt       DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])

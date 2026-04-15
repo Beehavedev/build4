@@ -1,7 +1,15 @@
 # BUILD4 - AI Trading Bot (Telegram)
 
 ## Overview
-Build4 is a Telegram bot for crypto trading with AI-powered agents. Users get BSC wallets, deposit USDT, and trade perpetual futures via Aster DEX. The bot uses Claude AI for trading decisions, features copy trading, quests, and a mini app.
+Build4 is a Telegram bot for crypto trading with AI-powered agents. Users get BSC wallets, deposit USDT, and Build4 trades perpetual futures on Aster DEX as a broker on their behalf. The bot uses Claude AI for trading decisions, features copy trading, quests, and a mini app.
+
+## Architecture: Broker Model
+Build4 operates as a **broker** — one master Aster DEX account handles all trades. Users never interact with Aster DEX directly.
+- Users deposit USDT to their BSC wallet
+- Build4 bridges funds to the broker's Aster DEX account
+- AI agents trade using the broker's API credentials (ASTER_API_KEY / ASTER_API_SECRET)
+- User balances tracked internally in the database
+- Build4 earns fees on every trade
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -72,6 +80,8 @@ Preferred communication style: Simple, everyday language.
 - `TELEGRAM_BOT_TOKEN` - Bot token from @BotFather
 - `ANTHROPIC_API_KEY` - Claude AI API key
 - `WALLET_ENCRYPTION_KEY` - AES-256 master key for wallet encryption
+- `ASTER_API_KEY` - Broker's Aster DEX API key
+- `ASTER_API_SECRET` - Broker's Aster DEX API secret
 - `DATABASE_URL` - PostgreSQL connection (auto-managed by Replit)
 
 ## Running

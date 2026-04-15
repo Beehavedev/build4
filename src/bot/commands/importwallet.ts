@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { ethers } from "ethers";
 import { encryptPrivateKey, getBalance } from "../../services/wallet.js";
-import { getAsterAccountBalance } from "../../services/aster.js";
+import { getBrokerAccountBalance } from "../../services/aster.js";
 import type { BotContext } from "../middleware/auth.js";
 
 const prisma = new PrismaClient();
@@ -18,11 +18,11 @@ export async function importWalletCommand(ctx: BotContext) {
 
   await ctx.reply(
     "🔑 *Import Existing Wallet*\n\n" +
-    "Send your wallet's private key to link it to Build4.\n\n" +
+    "Send your BSC wallet's private key to link it to Build4.\n\n" +
     "This lets you:\n" +
-    "• See your Aster DEX balance\n" +
-    "• Trade on Aster through Build4\n" +
-    "• Use AI agents with your funds\n\n" +
+    "• Deposit USDT to fund your Build4 account\n" +
+    "• Use AI agents to trade on Aster DEX\n" +
+    "• Track your portfolio\n\n" +
     "⚠️ Your key will be encrypted and stored securely.\n" +
     "Paste your private key now (with or without 0x prefix):",
     { parse_mode: "Markdown" }
@@ -98,25 +98,13 @@ export async function handleImportMessage(ctx: BotContext): Promise<boolean> {
     const loadingMsg = await ctx.reply(statusText + "Checking balances...", { parse_mode: "Markdown" });
 
     try {
-      const [bal, asterBal] = await Promise.all([
-        getBalance(address, "BSC"),
-        getAsterAccountBalance(pk),
-      ]);
+      const bal = await getBalance(address, "BSC");
 
       statusText += `💰 *BSC Wallet:*\n`;
       statusText += `BNB: ${parseFloat(bal.native).toFixed(6)}\n`;
       statusText += `USDT: ${parseFloat(bal.usdt).toFixed(2)}\n\n`;
-
-      if (asterBal.accountValue > 0) {
-        statusText += `⭐ *Aster DEX Account:*\n`;
-        statusText += `Account Value: $${asterBal.accountValue.toFixed(2)}\n`;
-        statusText += `Available: $${asterBal.availableBalance.toFixed(2)}\n`;
-        statusText += `Margin Used: $${asterBal.marginUsed.toFixed(2)}\n`;
-        statusText += `Unrealized PnL: $${asterBal.unrealizedPnl.toFixed(2)}\n`;
-      } else {
-        statusText += `⭐ *Aster DEX:* No balance found yet\n`;
-        statusText += `Use /bridge to deposit funds to Aster\n`;
-      }
+      statusText += `Deposit USDT (BEP-20) to this address to fund your Build4 trading account.\n`;
+      statusText += `Build4 trades on Aster DEX on your behalf.`;
 
       await ctx.api.editMessageText(ctx.chat!.id, loadingMsg.message_id, statusText, { parse_mode: "Markdown" });
     } catch {

@@ -1,18 +1,21 @@
-import { ethers } from "ethers";
 import crypto from "crypto";
 
 const ASTER_BASE = "https://fapi.asterdex.com";
 
-function makeTimestamp(): string {
-  return Date.now().toString();
+function getBrokerKeys(): { apiKey: string; apiSecret: string } {
+  const apiKey = process.env.ASTER_API_KEY;
+  const apiSecret = process.env.ASTER_API_SECRET;
+  if (!apiKey || !apiSecret) throw new Error("ASTER_API_KEY / ASTER_API_SECRET not configured");
+  return { apiKey, apiSecret };
 }
 
 function createSignature(queryString: string, secret: string): string {
   return crypto.createHmac("sha256", secret).update(queryString).digest("hex");
 }
 
-async function asterAuthGet(apiKey: string, apiSecret: string, path: string, params: Record<string, string> = {}): Promise<any> {
-  const timestamp = makeTimestamp();
+async function asterRequest(method: "GET" | "POST" | "DELETE", path: string, params: Record<string, string> = {}): Promise<any> {
+  const { apiKey, apiSecret } = getBrokerKeys();
+  const timestamp = Date.now().toString();
   const allParams = { ...params, timestamp, recvWindow: "5000" };
   const queryString = Object.entries(allParams).map(([k, v]) => `${k}=${v}`).join("&");
   const signature = createSignature(queryString, apiSecret);
@@ -20,7 +23,7 @@ async function asterAuthGet(apiKey: string, apiSecret: string, path: string, par
 
   const url = `${ASTER_BASE}${path}?${fullQuery}`;
   const res = await fetch(url, {
-    method: "GET",
+    method,
     headers: {
       "Content-Type": "application/json",
       "X-ASTER-APIKEY": apiKey,
@@ -30,31 +33,6 @@ async function asterAuthGet(apiKey: string, apiSecret: string, path: string, par
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Aster API ${res.status}: ${text}`);
-  }
-  return res.json();
-}
-
-async function asterWalletAuthGet(wallet: ethers.Wallet, path: string): Promise<any> {
-  const domain = { name: "AsterSignTransaction", chainId: 1666 };
-  const types = { AsterSignTransaction: [{ name: "method", type: "string" }, { name: "nonce", type: "uint256" }] };
-  const nonce = (Date.now() * 1000).toString();
-  const value = { method: `GET ${path}`, nonce };
-  const signature = await wallet.signTypedData(domain, types, value);
-
-  const url = `${ASTER_BASE}${path}`;
-  const res = await fetch(url, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "ASTER-SIGNATURE": signature,
-      "ASTER-NONCE": nonce,
-      "ASTER-ADDRESS": wallet.address,
-    },
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Aster EIP712 ${res.status}: ${text}`);
   }
   return res.json();
 }
@@ -100,17 +78,17 @@ function parseAccountData(data: any): AsterBalance {
   };
 }
 
-export async function getAsterAccountBalance(apiKey: string, apiSecret: string): Promise<AsterBalance> {
+export async function getBrokerAccountBalance(): Promise<AsterBalance> {
   try {
-    const data = await asterAuthGet(apiKey, apiSecret, "/fapi/v1/account");
-    console.log("[ASTER] Account response keys:", Object.keys(data));
+    const data = await asterRequest("GET", "/fapi/v1/account");
+    console.log("[ASTER] Broker account keys:", Object.keys(data));
     return parseAccountData(data);
   } catch (err: any) {
     console.log("[ASTER] Account failed:", err.message?.substring(0, 120));
   }
 
   try {
-    const data = await asterAuthGet(apiKey, apiSecret, "/fapi/v1/balance");
+    const data = await asterRequest("GET", "/fapi/v1/balance");
     console.log("[ASTER] Balance response:", JSON.stringify(data)?.substring(0, 200));
     if (Array.isArray(data)) {
       const usd = data.find((a: any) => a.asset === "USDF" || a.asset === "USDT" || a.asset === "USD");
@@ -128,15 +106,13 @@ export async function getAsterAccountBalance(apiKey: string, apiSecret: string):
     console.log("[ASTER] Balance failed:", err.message?.substring(0, 120));
   }
 
-  console.error("[ASTER] Auth failed — check API key/secret");
+  console.error("[ASTER] Broker auth failed — check ASTER_API_KEY/ASTER_API_SECRET");
   return { accountValue: 0, availableBalance: 0, marginUsed: 0, unrealizedPnl: 0, coin: "USDF" };
 }
 
-export async function getAsterPositions(privateKey: string): Promise<AsterPosition[]> {
+export async function getAsterPositions(): Promise<AsterPosition[]> {
   try {
-    const wallet = new ethers.Wallet(privateKey);
-    const data = await asterGet(wallet, "/fapi/v3/positionRisk");
-
+    const data = await asterRequest("GET", "/fapi/v1/positionRisk");
     if (!Array.isArray(data)) return [];
 
     return data
@@ -162,20 +138,42 @@ export async function openAsterPosition(params: {
   side: "LONG" | "SHORT";
   size: number;
   leverage: number;
-}): Promise<{ success: boolean; txHash?: string; error?: string }> {
-  console.log(`[ASTER] Mock open: ${params.side} ${params.pair} $${params.size} ${params.leverage}x`);
-  return {
-    success: true,
-    txHash: "0x" + Math.random().toString(16).slice(2, 18),
-  };
+}): Promise<{ success: boolean; orderId?: string; error?: string }> {
+  try {
+    const asterSide = params.side === "LONG" ? "BUY" : "SELL";
+    const data = await asterRequest("POST", "/fapi/v1/order", {
+      symbol: params.pair.replace("/", ""),
+      side: asterSide,
+      type: "MARKET",
+      quantity: params.size.toString(),
+      leverage: params.leverage.toString(),
+    });
+    console.log("[ASTER] Order placed:", JSON.stringify(data)?.substring(0, 200));
+    return { success: true, orderId: data.orderId?.toString() || data.clientOrderId };
+  } catch (err: any) {
+    console.error("[ASTER] Order failed:", err.message);
+    return { success: false, error: err.message };
+  }
 }
 
 export async function closeAsterPosition(params: {
   pair: string;
-}): Promise<{ success: boolean; txHash?: string }> {
-  console.log(`[ASTER] Mock close: ${params.pair}`);
-  return {
-    success: true,
-    txHash: "0x" + Math.random().toString(16).slice(2, 18),
-  };
+  side: "LONG" | "SHORT";
+  size: number;
+}): Promise<{ success: boolean; orderId?: string; error?: string }> {
+  try {
+    const closeSide = params.side === "LONG" ? "SELL" : "BUY";
+    const data = await asterRequest("POST", "/fapi/v1/order", {
+      symbol: params.pair.replace("/", ""),
+      side: closeSide,
+      type: "MARKET",
+      quantity: params.size.toString(),
+      reduceOnly: "true",
+    });
+    console.log("[ASTER] Close order:", JSON.stringify(data)?.substring(0, 200));
+    return { success: true, orderId: data.orderId?.toString() || data.clientOrderId };
+  } catch (err: any) {
+    console.error("[ASTER] Close failed:", err.message);
+    return { success: false, error: err.message };
+  }
 }

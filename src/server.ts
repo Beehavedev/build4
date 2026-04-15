@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { createBot, getWebhookCallback } from "./bot/index.js";
 import { startAgentRunner } from "./agents/runner.js";
 import { getBalance, decryptPrivateKey, encryptPrivateKey } from "./services/wallet.js";
-import { getAsterAccountBalance } from "./services/aster.js";
+import { getBrokerAccountBalance } from "./services/aster.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -79,12 +79,10 @@ app.get("/api/balance/:telegramId", async (req, res) => {
     const bal = await getBalance(activeWallet.address, activeWallet.chain);
 
     let aster = null;
-    if (activeWallet.asterApiKey && activeWallet.asterApiSecret) {
-      try {
-        aster = await getAsterAccountBalance(activeWallet.asterApiKey, activeWallet.asterApiSecret);
-      } catch (err: any) {
-        console.log("[BALANCE] Aster fetch skipped:", err.message?.substring(0, 80));
-      }
+    try {
+      aster = await getBrokerAccountBalance();
+    } catch (err: any) {
+      console.log("[BALANCE] Aster broker fetch skipped:", err.message?.substring(0, 80));
     }
 
     res.json({ ...bal, address: activeWallet.address, chain: activeWallet.chain, aster });
@@ -93,48 +91,12 @@ app.get("/api/balance/:telegramId", async (req, res) => {
   }
 });
 
-app.post("/api/connect-aster", async (req, res) => {
+app.get("/api/broker/status", async (_req, res) => {
   try {
-    const { telegramId, apiKey, apiSecret } = req.body;
-    if (!telegramId || !apiKey || !apiSecret) {
-      return res.status(400).json({ error: "Missing telegramId, apiKey, or apiSecret" });
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { telegramId: BigInt(telegramId) },
-      include: { wallets: true },
-    });
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    const asterBal = await getAsterAccountBalance(apiKey.trim(), apiSecret.trim());
-
-    const activeWallet = user.wallets.find((w: any) => w.isActive);
-    if (activeWallet) {
-      await prisma.wallet.update({
-        where: { id: activeWallet.id },
-        data: { asterApiKey: apiKey.trim(), asterApiSecret: apiSecret.trim() },
-      });
-    } else if (user.wallets.length > 0) {
-      await prisma.wallet.update({
-        where: { id: user.wallets[0].id },
-        data: { asterApiKey: apiKey.trim(), asterApiSecret: apiSecret.trim(), isActive: true },
-      });
-    }
-
-    const address = activeWallet?.address || user.wallets[0]?.address;
-    const bal = address ? await getBalance(address, "BSC") : { native: "0", usdt: "0" };
-
-    res.json({
-      success: true,
-      address,
-      native: bal.native,
-      usdt: bal.usdt,
-      chain: "BSC",
-      aster: asterBal,
-    });
+    const aster = await getBrokerAccountBalance();
+    res.json({ connected: true, aster });
   } catch (err: any) {
-    console.error("[CONNECT-ASTER] Error:", err.message);
-    res.status(500).json({ error: err.message });
+    res.json({ connected: false, error: err.message });
   }
 });
 

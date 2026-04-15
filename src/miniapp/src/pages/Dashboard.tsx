@@ -23,11 +23,7 @@ export function Dashboard() {
   const [balance, setBalance] = useState<BalanceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [walletAddress, setWalletAddress] = useState("");
-  const [showImport, setShowImport] = useState(false);
-  const [apiKey, setApiKey] = useState("");
-  const [apiSecret, setApiSecret] = useState("");
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState("");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -56,44 +52,13 @@ export function Dashboard() {
     load();
   }, []);
 
-  async function handleConnect() {
-    const tgUser = getTelegramUser();
-    if (!tgUser || !apiKey.trim() || !apiSecret.trim()) return;
-
-    setImporting(true);
-    setImportError("");
-
-    try {
-      const res = await fetch("/api/connect-aster", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telegramId: tgUser.id, apiKey: apiKey.trim(), apiSecret: apiSecret.trim() }),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setImportError(data.error || "Connection failed");
-        setImporting(false);
-        return;
-      }
-
-      setBalance({
-        native: data.native,
-        usdt: data.usdt,
-        address: data.address,
-        chain: data.chain,
-        aster: data.aster,
-      });
-      if (data.address) setWalletAddress(data.address);
-      setShowImport(false);
-      setApiKey("");
-      setApiSecret("");
-
+  function copyAddress() {
+    if (!walletAddress) return;
+    navigator.clipboard.writeText(walletAddress).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
       try { window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success"); } catch {}
-    } catch (err: any) {
-      setImportError("Connection error. Try again.");
-    }
-    setImporting(false);
+    });
   }
 
   if (loading) return <div className="loading">Loading...</div>;
@@ -135,18 +100,18 @@ export function Dashboard() {
 
       <div className="card" data-testid="aster-balance-card">
         <div className="card-header">
-          <div className="card-title">Aster DEX Account</div>
-          {balance?.aster ? (
-            <span className="badge badge-active">⭐ Connected</span>
+          <div className="card-title">Aster DEX (Broker)</div>
+          {balance?.aster && balance.aster.accountValue > 0 ? (
+            <span className="badge badge-active" data-testid="badge-broker-connected">⭐ Active</span>
           ) : (
-            <span className="badge badge-stopped">○ Not connected</span>
+            <span className="badge badge-stopped" data-testid="badge-broker-status">○ Standby</span>
           )}
         </div>
         {balance?.aster ? (
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "8px" }}>
               <div>
-                <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>Account Value</div>
+                <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>Broker Account</div>
                 <div style={{ fontSize: "24px", fontWeight: 700 }}>
                   ${balance.aster.accountValue.toFixed(2)}
                 </div>
@@ -174,85 +139,36 @@ export function Dashboard() {
             </div>
           </>
         ) : (
-          <div style={{ padding: "8px 0" }}>
-            {!showImport ? (
-              <div style={{ textAlign: "center" }}>
-                <div style={{ color: "var(--text-muted)", fontSize: "13px", marginBottom: "12px" }}>
-                  Link your Aster DEX wallet to see balances and trade
-                </div>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => setShowImport(true)}
-                  data-testid="btn-connect-aster"
-                >
-                  🔗 Connect Wallet
-                </button>
-              </div>
-            ) : (
-              <div className="trade-form">
-                <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "4px" }}>
-                  Enter your Aster DEX API credentials:
-                </div>
-                <div className="input-group">
-                  <label className="input-label">API Key</label>
-                  <input
-                    className="input-field"
-                    type="text"
-                    placeholder="Your Aster API key"
-                    value={apiKey}
-                    onChange={e => { setApiKey(e.target.value); setImportError(""); }}
-                    data-testid="input-api-key"
-                    autoComplete="off"
-                  />
-                </div>
-                <div className="input-group">
-                  <label className="input-label">API Secret</label>
-                  <input
-                    className="input-field"
-                    type="password"
-                    placeholder="Your Aster API secret"
-                    value={apiSecret}
-                    onChange={e => { setApiSecret(e.target.value); setImportError(""); }}
-                    data-testid="input-api-secret"
-                    autoComplete="off"
-                  />
-                </div>
-                {importError && (
-                  <div style={{ color: "var(--red)", fontSize: "12px" }}>{importError}</div>
-                )}
-                <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                  🔒 Get your API key from asterdex.com → Account → API Management
-                </div>
-                <div className="btn-row">
-                  <button
-                    className="btn btn-primary"
-                    onClick={handleConnect}
-                    disabled={importing || !apiKey.trim() || !apiSecret.trim()}
-                    data-testid="btn-connect-submit"
-                    style={{ opacity: importing || !apiKey.trim() || !apiSecret.trim() ? 0.5 : 1 }}
-                  >
-                    {importing ? "Connecting..." : "⭐ Connect to Aster"}
-                  </button>
-                  <button
-                    className="btn btn-outline"
-                    onClick={() => { setShowImport(false); setApiKey(""); setApiSecret(""); setImportError(""); }}
-                    data-testid="btn-connect-cancel"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
+          <div style={{ padding: "8px 0", textAlign: "center" }}>
+            <div style={{ color: "var(--text-muted)", fontSize: "13px" }}>
+              Build4 trades on Aster DEX for you. Deposit USDT to get started.
+            </div>
           </div>
         )}
       </div>
 
       {walletAddress && (
         <div className="card">
-          <div className="card-title">BSC Wallet</div>
-          <div className="wallet-address" data-testid="wallet-address">{walletAddress}</div>
-          <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-            Deposit USDT (BEP-20) to start trading
+          <div className="card-title">Deposit Wallet</div>
+          <div
+            className="wallet-address"
+            data-testid="wallet-address"
+            onClick={copyAddress}
+            style={{ cursor: "pointer" }}
+          >
+            {walletAddress}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px" }}>
+            <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+              Send USDT (BEP-20) to this address
+            </div>
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={copyAddress}
+              data-testid="btn-copy-address"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
           </div>
         </div>
       )}
