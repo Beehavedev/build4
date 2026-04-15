@@ -7,9 +7,19 @@ Build4 is a Telegram bot for crypto trading with AI-powered agents. Users get BS
 Build4 operates as a **broker** — one master Aster DEX account handles all trades. Users never interact with Aster DEX directly.
 - Users deposit USDT to their BSC wallet
 - Build4 bridges funds to the broker's Aster DEX account
-- AI agents trade using the broker's API credentials (ASTER_API_KEY / ASTER_API_SECRET)
+- AI agents trade using the broker's API credentials (ASTER_BROKER_PK)
 - User balances tracked internally in the database
 - Build4 earns fees on every trade
+- Broker wallet: `0x06d6227E499F10Fe0A9f8c8b80b3c98f964474A4`
+
+## Production Deployment (Old Build4 on Render)
+The **primary production app** runs on Render at `build4-1.onrender.com` from `Beehavedev/build4` repo.
+- Uses `node-telegram-bot-api`, Drizzle ORM, inline HTML mini app
+- Has working Aster DEX connection (Pro API V3 with wallet signing)
+- 18k+ Telegram users
+- Changes pushed to `Beehavedev/build4` GitHub → auto-deployed on Render
+- Mini app served at `/miniapp` endpoint
+- Broker model: v60 — new users auto-connect via broker, no per-user Aster onboarding needed
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
