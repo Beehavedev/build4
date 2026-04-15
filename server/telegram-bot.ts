@@ -969,7 +969,7 @@ async function ensureWalletsLoaded(chatId: number): Promise<boolean> {
     console.log(`[Wallet] v61b ensureWalletsLoaded: querying DB for chatId=${chatId}`);
     const rows = await Promise.race([
       storage.getTelegramWallets(chatId.toString()),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB timeout")), 8000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB timeout")), 20000)),
     ]);
     console.log(`[Wallet] v61b ensureWalletsLoaded: got ${rows.length} rows for chatId=${chatId}`);
     walletLoadFailures.delete(chatId);
@@ -1426,8 +1426,26 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
         return activeRow.walletAddress;
       }
     } catch (dbErr: any) {
-      console.error(`[Wallet] v61b DB check failed for chatId=${chatId}: ${dbErr.message} — REFUSING to generate (might overwrite existing wallet)`);
-      throw new Error(`Cannot create wallet: database unavailable. Please try again.`);
+      console.error(`[Wallet] v61b DB check failed for chatId=${chatId}: ${dbErr.message} — will retry once more`);
+      try {
+        await new Promise(r => setTimeout(r, 2000));
+        const retryRows = await withTimeout(storage.getTelegramWallets(chatId.toString()), 15000, "getTelegramWallets-retry");
+        const retryEvm = retryRows.filter(r => r.walletAddress && r.walletAddress.startsWith("0x"));
+        if (retryEvm.length > 0) {
+          const activeRow = retryEvm.find(r => r.isActive) || retryEvm[0];
+          const wallets = retryEvm.map(r => r.walletAddress);
+          const activeIdx = wallets.indexOf(activeRow.walletAddress);
+          telegramWalletMap.set(chatId, { wallets, active: activeIdx >= 0 ? activeIdx : 0 });
+          for (const r of retryEvm) {
+            if (r.encryptedPrivateKey) walletsWithKey.add(`${chatId}:${r.walletAddress}`);
+          }
+          console.log(`[Wallet] Retry found ${retryEvm.length} existing wallets for chatId=${chatId}`);
+          return activeRow.walletAddress;
+        }
+      } catch (retryErr: any) {
+        console.error(`[Wallet] Retry also failed for chatId=${chatId}: ${retryErr.message}`);
+        throw new Error(`Cannot create wallet: database unavailable. Please try again.`);
+      }
     }
   }
 
