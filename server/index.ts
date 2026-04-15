@@ -345,7 +345,8 @@ async function ensureSchema() {
       log(`serving on port ${port}`);
 
       if (process.env.NODE_ENV === "production" && process.env.AGENT_RUNNER_ENABLED === "true") {
-        setTimeout(() => startAgentRunner(), 3000);
+        log("Agent runner will start in 45s to reduce DB pressure at boot...");
+        setTimeout(() => startAgentRunner(), 45_000);
       } else if (process.env.NODE_ENV !== "production") {
         log("Agent runner skipped in development to save memory. Runs in production.");
       } else {
@@ -360,18 +361,20 @@ async function ensureSchema() {
           } catch (e: any) {
             log(`Aster agent auto-resume error: ${e.message?.substring(0, 100)}`);
           }
-        }, 8000);
+        }, 30_000);
       }
 
-      const CHAOS_CHECK_INTERVAL = 60_000;
-      setInterval(async () => {
-        try {
-          await checkAndExecuteMilestones();
-        } catch (e: any) {
-          log(`[ChaosLaunch] Milestone check error: ${e.message}`, "chaos");
-        }
-      }, CHAOS_CHECK_INTERVAL);
-      log("Chaos milestone auto-executor started (checks every 60s)");
+      const CHAOS_CHECK_INTERVAL = 120_000;
+      setTimeout(() => {
+        setInterval(async () => {
+          try {
+            await checkAndExecuteMilestones();
+          } catch (e: any) {
+            log(`[ChaosLaunch] Milestone check error: ${e.message}`, "chaos");
+          }
+        }, CHAOS_CHECK_INTERVAL);
+        log("Chaos milestone auto-executor started (checks every 120s)");
+      }, 60_000);
     },
   );
 })();

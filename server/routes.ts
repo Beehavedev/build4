@@ -687,7 +687,7 @@ export async function registerRoutes(
       startBountyEngine().catch(err => {
         console.error("[BountyEngine] Failed to start:", err.message);
       });
-    }, 5000);
+    }, 60_000);
 
     setTimeout(() => {
       if (isTwitterConfigured()) {
@@ -695,7 +695,7 @@ export async function registerRoutes(
           console.error("[TwitterAgent] Failed to start:", err.message);
         });
       }
-    }, 8000);
+    }, 75_000);
 
     setTimeout(() => {
       if (isTwitterConfigured()) {
@@ -703,13 +703,13 @@ export async function registerRoutes(
           console.error("[SupportAgent] Failed to start:", err.message);
         });
       }
-    }, 10000);
+    }, 90_000);
 
     setTimeout(() => {
       autoStartAllAgents().catch(err => {
         console.error("[MultiTwitter] Auto-start failed:", err.message);
       });
-    }, 12000);
+    }, 90_000);
 
     if (process.env.TELEGRAM_BOT_EXTERNAL !== "true") {
       setTimeout(async () => {
@@ -744,7 +744,7 @@ export async function registerRoutes(
         } catch (err: any) {
           console.error("[TradingAgent] Auto-start failed:", err.message);
         }
-      }, 15000);
+      }, 45_000);
     } else {
       console.log("[TradingAgent] Trading agent running externally with bot — skipping local startup");
     }
