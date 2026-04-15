@@ -661,7 +661,7 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
         const skillDesc = isAiGenerated ? (descMatch ? descMatch[1].trim() : templateDesc) : templateDesc;
         const price = "100000000000000";
 
-        const existingSkills = await storage.getAgentSkills(agent.id);
+        const existingSkills = await storage.getSkills(agent.id);
         const isDuplicate = existingSkills.some(s =>
           s.name.replace(/\s*v\d+$/, '') === skillName.replace(/\s*v\d+$/, '') ||
           s.code === skillCode
