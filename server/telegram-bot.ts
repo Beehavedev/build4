@@ -967,7 +967,7 @@ async function ensureWalletsLoaded(chatId: number): Promise<boolean> {
     console.log(`[Wallet] ensureWalletsLoaded: querying DB for chatId=${chatId}`);
     const rows = await Promise.race([
       storage.getTelegramWallets(chatId.toString()),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB timeout")), 30000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB timeout")), 10000)),
     ]);
     console.log(`[Wallet] ensureWalletsLoaded: got ${rows.length} rows for chatId=${chatId}`);
     walletLoadFailures.delete(chatId);
@@ -2840,7 +2840,10 @@ async function setTelegramWebhook(token: string, webhookUrl: string): Promise<bo
 }
 
 export function processWebhookUpdate(update: any): void {
-  if (!bot || !isRunning) return;
+  if (!bot || !isRunning) {
+    console.warn(`[TelegramBot] Webhook update DROPPED: bot=${!!bot} isRunning=${isRunning}`);
+    return;
+  }
   if (!update || typeof update !== "object" || (!update.message && !update.callback_query)) return;
   try {
     bot.processUpdate(update);
@@ -8152,7 +8155,10 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
   if (!msg.text) return;
   const text = msg.text.trim();
 
-  await ensureWalletsLoaded(chatId);
+  const isStartCmd = text === "/start" || text.startsWith("/start ");
+  if (!isStartCmd) {
+    await ensureWalletsLoaded(chatId);
+  }
 
   console.log(`[TelegramBot] ${isGroup ? "Group" : "DM"} message from @${username} (chatId: ${chatId}): ${text.slice(0, 80)}`);
 
