@@ -1503,7 +1503,7 @@ async function autoGenerateWallet(chatId: number): Promise<string> {
   return addr;
 }
 
-async function autoOnboardAster(chatId: number, walletAddress: string, privateKey: string): Promise<void> {
+export async function autoOnboardAster(chatId: number, walletAddress: string, privateKey: string): Promise<void> {
   try {
     const BUILD4_BUILDER = "0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4";
     if (walletAddress.toLowerCase() === BUILD4_BUILDER.toLowerCase()) {

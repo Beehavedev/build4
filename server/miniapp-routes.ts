@@ -1018,6 +1018,21 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         }
         console.log(`[MiniApp] No Aster client for chatId=${chatId}, wallet=${bscAddr ? bscAddr.substring(0,10) : 'none'}, total=${wallets.length}, evm=${evmWallets.length}`);
 
+        if (bscAddr && process.env.NODE_ENV === "production") {
+          try {
+            const pk = await storage.getTelegramWalletPrivateKey(chatId, bscAddr);
+            if (pk) {
+              console.log(`[MiniApp] Auto-onboarding Aster for chatId=${chatId} wallet=${bscAddr.substring(0,10)}`);
+              const { autoOnboardAster } = await import("./telegram-bot");
+              autoOnboardAster(parseInt(chatId), bscAddr, pk).catch((e: any) =>
+                console.log(`[MiniApp] Auto-onboard failed: ${e.message?.substring(0, 100)}`)
+              );
+            }
+          } catch (e: any) {
+            console.log(`[MiniApp] Auto-onboard check failed: ${e.message?.substring(0, 80)}`);
+          }
+        }
+
         let bscBal = 0;
         let bnbBal = 0;
         if (bscAddr) {
