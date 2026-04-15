@@ -17,7 +17,7 @@ function buildUrl(path: string): string {
   const proxy = getProxyUrl();
   if (proxy) {
     const base = proxy.endsWith("/") ? proxy.slice(0, -1) : proxy;
-    return `${base}/proxy${path}`;
+    return `${base}/aster-proxy${path}`;
   }
   return `${ASTER_BASE}${path}`;
 }
