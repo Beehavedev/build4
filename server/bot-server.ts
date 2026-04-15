@@ -78,6 +78,8 @@ async function ensureSchema() {
   const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: isSSL ? { rejectUnauthorized: false } : false,
+    max: 2,
+    connectionTimeoutMillis: 15000,
   });
   try {
     for (const stmt of CRITICAL_TABLES_SQL) {
@@ -123,7 +125,7 @@ const httpServer = createServer(app);
 
 app.use(express.json());
 
-const BUILD_VERSION = "v62C";
+const BUILD_VERSION = "v62D";
 app.get("/health", (_req, res) => {
   const { getBotInstance } = require("./telegram-bot");
   const botInstance = getBotInstance();
