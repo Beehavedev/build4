@@ -71,14 +71,7 @@ async function buildForRender() {
   } catch {}
 
 
-  console.log("Running database schema migration...");
-  const { execSync } = await import("child_process");
-  try {
-    execSync("npx drizzle-kit push --force", { stdio: "inherit" });
-    console.log("Database schema migrated successfully");
-  } catch (e: any) {
-    console.warn("Schema migration warning (may already be up to date):", e.message?.substring(0, 100));
-  }
+  console.log("Skipping drizzle-kit push in build (schema handled at runtime by ensureSchema)");
 }
 
 async function buildAll() {
