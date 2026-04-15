@@ -125,7 +125,7 @@ const httpServer = createServer(app);
 
 app.use(express.json());
 
-const BUILD_VERSION = "v62E";
+const BUILD_VERSION = "v62F";
 app.get("/health", (_req, res) => {
   const { getBotInstance } = require("./telegram-bot");
   const botInstance = getBotInstance();
@@ -164,19 +164,39 @@ app.post("/api/force-webhook-reset", async (_req, res) => {
 
 app.get("/api/debug/wallet-test/:chatId", async (req, res) => {
   const chatId = req.params.chatId;
-  const results: any = { chatId, steps: [] };
+  const results: any = { chatId, steps: [], dbUrl: process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 30) + "..." : "(not set)" };
   try {
-    const { storage } = require("./storage");
-    results.steps.push("storage imported");
-    const rows = await Promise.race([
-      storage.getTelegramWallets(chatId),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("DB_TIMEOUT_8s")), 8000)),
-    ]);
-    results.steps.push(`getTelegramWallets returned ${rows.length} rows`);
-    results.wallets = rows.map((r: any) => ({ addr: r.walletAddress?.substring(0, 10) + "...", hasKey: !!r.encryptedPrivateKey, active: r.isActive }));
+    const pgMod = require("pg");
+    results.steps.push("pg imported");
+    const client = new pgMod.Client({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.RENDER === "true" ? { rejectUnauthorized: false } : false,
+      connectionTimeoutMillis: 10000,
+    });
+    await client.connect();
+    results.steps.push("raw client connected");
+    const r = await client.query(
+      `SELECT wallet_address, encrypted_private_key, is_active FROM telegram_wallets WHERE chat_id = $1 ORDER BY created_at DESC LIMIT 5`,
+      [chatId]
+    );
+    results.steps.push(`query returned ${r.rows.length} rows`);
+    results.wallets = r.rows.map((row: any) => ({ addr: row.wallet_address?.substring(0, 10) + "...", hasKey: !!row.encrypted_private_key, active: row.is_active }));
+    await client.end();
+    results.steps.push("client closed");
   } catch (e: any) {
     results.error = e.message;
-    results.stack = e.stack?.substring(0, 300);
+    results.stack = e.stack?.substring(0, 500);
+  }
+  try {
+    const { storage } = require("./storage");
+    results.steps.push("testing drizzle...");
+    const rows = await Promise.race([
+      storage.getTelegramWallets(chatId),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("DRIZZLE_TIMEOUT_5s")), 5000)),
+    ]);
+    results.steps.push(`drizzle returned ${rows.length} rows`);
+  } catch (e: any) {
+    results.drizzleError = e.message;
   }
   res.json(results);
 });
