@@ -7,8 +7,8 @@ import { ZERC20_CONTRACTS, SUPPORTED_PRIVACY_CHAINS } from "@shared/schema";
 import { registerWeb4Routes } from "./web4-routes";
 import { registerServicesRoutes } from "./services-routes";
 import { preparePrivacyTransfer, generateProof, getProof, verifyCommitment } from "./zerc20-sdk";
-import { startBountyEngine } from "./bounty-engine";
-import { startTwitterAgent, stopTwitterAgent, getTwitterAgentStatus, runTwitterAgentCycle, postBountyTweet, generateBountyTweetText } from "./twitter-agent";
+
+import { startTwitterAgent, stopTwitterAgent, getTwitterAgentStatus, runTwitterAgentCycle } from "./twitter-agent";
 import { startSupportAgent, stopSupportAgent, getSupportAgentStatus, runSupportAgentCycle } from "./twitter-support-agent";
 import { isTwitterConfigured } from "./twitter-client";
 import { startTelegramBot, stopTelegramBot, getTelegramBotStatus, processWebhookUpdate } from "./telegram-bot";
@@ -452,86 +452,6 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/twitter/preview-bounty", analyticsAuth, async (req: Request, res: Response) => {
-    try {
-      const { taskDescription, rewardBnb, maxWinners, customTweetText } = req.body;
-      if (!taskDescription && !customTweetText) {
-        res.status(400).json({ error: "Task description or custom tweet text required" });
-        return;
-      }
-      const config = await storage.getTwitterAgentConfig();
-      const reward = rewardBnb || config?.defaultBountyBudget || "0.02";
-      const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 10, 100);
-      const tweetText = generateBountyTweetText(taskDescription || "", reward, winners, customTweetText);
-      res.json({ tweetText, charCount: tweetText.length });
-    } catch (e: any) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.post("/api/twitter/post-bounty", analyticsAuth, async (req: Request, res: Response) => {
-    try {
-      const { jobId, taskDescription, rewardBnb, maxWinners, customTweetText } = req.body;
-      if (!taskDescription && !customTweetText) {
-        res.status(400).json({ error: "Task description or custom tweet text required" });
-        return;
-      }
-      const config = await storage.getTwitterAgentConfig();
-      const reward = rewardBnb || config?.defaultBountyBudget || "0.02";
-      const winners = Math.min(maxWinners || config?.maxWinnersPerBounty || 10, 100);
-      const result = await postBountyTweet(
-        jobId || `manual-${Date.now()}`,
-        taskDescription || "",
-        reward,
-        winners,
-        customTweetText
-      );
-      res.json(result);
-    } catch (e: any) {
-      console.error("[TwitterAgent] Post bounty failed:", e.message, e.data ? JSON.stringify(e.data) : "");
-      const msg = e.data?.detail || e.data?.errors?.[0]?.message || e.message;
-      res.status(500).json({ error: msg });
-    }
-  });
-
-  app.post("/api/twitter/register-bounty", analyticsAuth, async (req: Request, res: Response) => {
-    try {
-      const { tweetId, tweetUrl, tweetText, rewardBnb, maxWinners } = req.body;
-      if (!tweetId) { res.status(400).json({ error: "tweetId required" }); return; }
-      const bounty = await storage.createTwitterBounty({
-        jobId: `manual-${Date.now()}`,
-        tweetId,
-        tweetUrl: tweetUrl || `https://x.com/Build4ai/status/${tweetId}`,
-        tweetText: tweetText || "",
-        rewardBnb: rewardBnb || "0.015",
-        maxWinners: maxWinners || 10,
-        winnersCount: 0,
-        status: "posted",
-      });
-      res.json(bounty);
-    } catch (e: any) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/twitter/bounties", analyticsAuth, async (_req: Request, res: Response) => {
-    try {
-      const bounties = await storage.getTwitterBounties();
-      res.json(bounties);
-    } catch (e: any) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/twitter/bounties/:id/submissions", analyticsAuth, async (req: Request, res: Response) => {
-    try {
-      const submissions = await storage.getTwitterSubmissions(req.params.id);
-      res.json(submissions);
-    } catch (e: any) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
   app.post("/api/twitter/start", analyticsAuth, async (_req: Request, res: Response) => {
     try {
       await storage.upsertTwitterAgentConfig({ enabled: 1 });
@@ -682,16 +602,6 @@ export async function registerRoutes(
         startTelegramBot(webhookBase);
       }
     }, 2000);
-
-    if (process.env.BOUNTY_ENGINE_ENABLED === "true") {
-      setTimeout(() => {
-        startBountyEngine().catch(err => {
-          console.error("[BountyEngine] Failed to start:", err.message);
-        });
-      }, 60_000);
-    } else {
-      console.log("[BountyEngine] Disabled — set BOUNTY_ENGINE_ENABLED=true to enable");
-    }
 
     if (process.env.TWITTER_AGENT_ENABLED === "true") {
       setTimeout(() => {
@@ -879,45 +789,6 @@ export async function registerRoutes(
     } catch (e: any) {
       res.status(400).json({ error: e.message?.substring(0, 200) || "Failed to get balance" });
     }
-  });
-
-  app.get("/api/chaos/status", async (_req: Request, res: Response) => {
-    const { getChaosStatus } = await import("./chaos-launch");
-    const status = await getChaosStatus();
-    res.json(status);
-  });
-
-  app.get("/api/chaos/plan", async (_req: Request, res: Response) => {
-    const { getMilestonePlan } = await import("./chaos-launch");
-    res.json(getMilestonePlan());
-  });
-
-  app.post("/api/chaos/launch", analyticsAuth, async (req: Request, res: Response) => {
-    const { initiateChaosLaunch } = await import("./chaos-launch");
-    const { agentId } = req.body || {};
-    const result = await initiateChaosLaunch(agentId);
-    res.json(result);
-  });
-
-  app.post("/api/chaos/execute-next", analyticsAuth, async (req: Request, res: Response) => {
-    const force = req.query.force === "true" || req.body?.force === true;
-    if (force) {
-      const { forceExecuteNextMilestone } = await import("./chaos-launch");
-      const result = await forceExecuteNextMilestone();
-      res.json(result);
-    } else {
-      const { checkAndExecuteMilestones } = await import("./chaos-launch");
-      await checkAndExecuteMilestones();
-      const { getChaosStatus } = await import("./chaos-launch");
-      const status = await getChaosStatus();
-      res.json(status);
-    }
-  });
-
-  app.post("/api/chaos/confession", analyticsAuth, async (_req: Request, res: Response) => {
-    const { executeConfessionTweet } = await import("./chaos-launch");
-    const result = await executeConfessionTweet();
-    res.json(result);
   });
 
   app.get("/api/workspace/plan/:wallet", async (req: Request, res: Response) => {

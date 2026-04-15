@@ -3,7 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startAgentRunner } from "./agent-runner";
-import { checkAndExecuteMilestones } from "./chaos-launch";
+
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { readFileSync } from "fs";
@@ -376,21 +376,6 @@ async function ensureSchema() {
         }, 30_000);
       }
 
-      if (process.env.CHAOS_ENABLED === "true") {
-        const CHAOS_CHECK_INTERVAL = 120_000;
-        setTimeout(() => {
-          setInterval(async () => {
-            try {
-              await checkAndExecuteMilestones();
-            } catch (e: any) {
-              log(`[ChaosLaunch] Milestone check error: ${e.message}`, "chaos");
-            }
-          }, CHAOS_CHECK_INTERVAL);
-          log("Chaos milestone auto-executor started (checks every 120s)");
-        }, 60_000);
-      } else {
-        log("[Chaos] Disabled — set CHAOS_ENABLED=true to enable");
-      }
     },
   );
 })();

@@ -1,16 +1,12 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 import { runInferenceWithFallback, getProviderStatus, getAvailableProviders } from "./inference";
-import { checkSubmissionLimits, recordSubmission, isSeedAgent } from "./bounty-engine";
 import {
   createApiKeyRequestSchema,
   publicInferenceRequestSchema,
   createDataListingRequestSchema,
   purchaseDataRequestSchema,
-  createBountyRequestSchema,
-  submitBountyRequestSchema,
   subscribePlanRequestSchema,
-  PLATFORM_FEES,
   SUBSCRIPTION_TIERS,
 } from "@shared/schema";
 import crypto from "crypto";
@@ -232,212 +228,6 @@ export function registerServicesRoutes(app: Express) {
         }
       }
       res.json({ checked: new Date().toISOString(), results });
-    } catch (err: any) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  // ============================================================
-  // BOUNTY BOARD - Post tasks, agents compete to complete them
-  // ============================================================
-
-  app.post("/api/services/bounties", async (req: Request, res: Response) => {
-    try {
-      const parsed = createBountyRequestSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
-
-      const { title, description, category, budget, walletAddress, agentId } = parsed.data;
-
-      let clientAgentId = agentId;
-      if (!clientAgentId) {
-        const agent = await storage.getAgentByWallet(walletAddress.toLowerCase());
-        if (agent) {
-          clientAgentId = agent.id;
-        } else {
-          const shortAddr = walletAddress.slice(0, 6) + "..." + walletAddress.slice(-4);
-          const newAgent = await storage.createAgent({
-            name: `Bounty-${shortAddr}`,
-            bio: "Permissionless bounty poster",
-            modelType: "external",
-            status: "active",
-            creatorWallet: walletAddress.toLowerCase(),
-          });
-          clientAgentId = newAgent.id;
-        }
-      }
-
-      const job = await storage.createJob({
-        clientAgentId,
-        title,
-        description,
-        category,
-        budget,
-        status: "open",
-      });
-
-      await storage.recordPlatformRevenue({
-        feeType: "bounty_listing",
-        amount: "0",
-        agentId: clientAgentId,
-        description: `Bounty posted: ${title}`,
-      });
-
-      const posterName = walletAddress
-        ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-        : agentId || "Unknown";
-
-      await storage.createBountyActivity({
-        eventType: "bounty_posted",
-        agentName: posterName,
-        agentId: clientAgentId,
-        bountyId: job.id,
-        bountyTitle: title,
-        amount: budget,
-        message: `${posterName} posted bounty: ${title}`,
-      });
-
-      res.json(job);
-    } catch (err: any) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/services/bounties", async (req: Request, res: Response) => {
-    try {
-      const category = req.query.category as string | undefined;
-      const jobs = await storage.getOpenJobs(category);
-      res.json(jobs);
-    } catch (err: any) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/services/bounties/:jobId", async (req: Request, res: Response) => {
-    try {
-      const jobs = await storage.getOpenJobs();
-      const job = jobs.find(j => j.id === req.params.jobId);
-      if (!job) return res.status(404).json({ error: "Bounty not found" });
-      const submissions = await storage.getBountySubmissions(req.params.jobId);
-      res.json({ ...job, submissions });
-    } catch (err: any) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.post("/api/services/bounties/:jobId/submit", async (req: Request, res: Response) => {
-    try {
-      const parsed = submitBountyRequestSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
-
-      const { workerAgentId, workerWallet, resultJson } = parsed.data;
-      const normalizedWallet = workerWallet.toLowerCase();
-
-      const limitCheck = checkSubmissionLimits(normalizedWallet, req.params.jobId);
-      if (!limitCheck.allowed) {
-        return res.status(429).json({ error: limitCheck.reason });
-      }
-
-      const existingSubmissions = await storage.getBountySubmissions(req.params.jobId);
-      if (existingSubmissions.length >= 10) {
-        return res.status(400).json({ error: "Maximum 10 submissions per bounty reached" });
-      }
-
-      const walletDuplicates = existingSubmissions.filter(s => s.workerWallet === normalizedWallet);
-      if (walletDuplicates.length >= 3) {
-        return res.status(400).json({ error: "Maximum 3 submissions per wallet per bounty" });
-      }
-
-      const submission = await storage.createBountySubmission({
-        jobId: req.params.jobId,
-        workerAgentId: workerAgentId || normalizedWallet,
-        workerWallet: normalizedWallet,
-        resultJson,
-        status: "submitted",
-      });
-
-      recordSubmission(normalizedWallet, req.params.jobId);
-
-      const workerName = `${normalizedWallet.slice(0, 6)}...${normalizedWallet.slice(-4)}`;
-
-      await storage.createBountyActivity({
-        eventType: "submission_received",
-        agentName: workerName,
-        bountyId: req.params.jobId,
-        bountyTitle: "",
-        workerWallet: normalizedWallet,
-        workerAgentId: workerAgentId || normalizedWallet,
-        message: `${workerName} submitted a solution`,
-      });
-
-      res.json(submission);
-    } catch (err: any) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/services/bounty-feed", async (req: Request, res: Response) => {
-    try {
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-      const feed = await storage.getBountyActivityFeed(limit);
-      res.json(feed);
-    } catch (err: any) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.post("/api/services/bounties/:jobId/accept/:submissionId", async (req: Request, res: Response) => {
-    try {
-      const { jobId, submissionId } = req.params;
-
-      const jobs = await storage.getOpenJobs();
-      const allJobs = await storage.getAgentJobs(req.body.clientAgentId || "");
-      const job = [...jobs, ...allJobs].find(j => j.id === jobId);
-      if (!job) return res.status(404).json({ error: "Bounty not found" });
-
-      if (job.status !== "open" && job.status !== "in_progress") {
-        return res.status(400).json({ error: "Bounty is not open" });
-      }
-
-      await storage.updateBountySubmissionStatus(submissionId, "accepted");
-
-      const platformFee = BigInt(job.budget) * BigInt(PLATFORM_FEES.BOUNTY_FEE_BPS) / BigInt(10000);
-      const workerPayout = BigInt(job.budget) - platformFee;
-
-      const submissions = await storage.getBountySubmissions(jobId);
-      const accepted = submissions.find(s => s.id === submissionId);
-
-      if (accepted) {
-        const completed = await storage.completeJob(jobId, accepted.resultJson || "");
-
-        if (accepted.workerAgentId) {
-          const workerWallet = await storage.getWallet(accepted.workerAgentId);
-          if (workerWallet) {
-            const newBalance = (BigInt(workerWallet.balance) + workerPayout).toString();
-            await storage.updateWalletBalance(accepted.workerAgentId, newBalance, workerPayout.toString(), "0");
-            await storage.createTransaction({
-              agentId: accepted.workerAgentId,
-              type: "bounty_reward",
-              amount: workerPayout.toString(),
-              counterpartyAgentId: job.clientAgentId,
-              referenceType: "bounty",
-              referenceId: jobId,
-              description: `Bounty reward: ${job.title}`,
-            });
-          }
-        }
-
-        await storage.recordPlatformRevenue({
-          feeType: "bounty_completion",
-          amount: platformFee.toString(),
-          agentId: job.clientAgentId,
-          referenceId: jobId,
-          description: `Bounty completion fee: ${job.title}`,
-        });
-
-        res.json({ success: true, job: completed, payout: workerPayout.toString(), fee: platformFee.toString() });
-      } else {
-        res.status(404).json({ error: "Submission not found" });
-      }
     } catch (err: any) {
       res.status(500).json({ error: "Internal server error" });
     }
@@ -682,8 +472,7 @@ export function registerServicesRoutes(app: Express) {
 
   app.get("/api/services/stats", async (_req: Request, res: Response) => {
     try {
-      const [bounties, dataListings, plans] = await Promise.all([
-        storage.getOpenJobs(),
+      const [dataListings, plans] = await Promise.all([
         storage.getDataListings(undefined, 1000),
         storage.getSubscriptionPlans(),
       ]);
@@ -696,11 +485,6 @@ export function registerServicesRoutes(app: Express) {
           liveProviders,
           providers: Object.keys(providers),
           models: Object.values(providers).flatMap(p => p.models),
-        },
-        bountyBoard: {
-          openBounties: bounties.filter(b => b.status === "open").length,
-          totalBounties: bounties.length,
-          totalBudget: bounties.reduce((sum, b) => sum + BigInt(b.budget), 0n).toString(),
         },
         dataMarketplace: {
           totalListings: dataListings.length,

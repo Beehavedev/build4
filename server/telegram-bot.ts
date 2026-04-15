@@ -219,7 +219,6 @@ interface TokenLaunchState { step: "platform" | "name" | "symbol" | "description
 interface FourMemeBuyState { step: "token" | "amount" | "confirm"; tokenAddress?: string; bnbAmount?: string; estimate?: any }
 interface FourMemeSellState { step: "token" | "amount" | "confirm"; tokenAddress?: string; tokenAmount?: string; tokenSymbol?: string; estimate?: any }
 
-interface ChaosPlanState { step: "token_address" | "confirming"; tokenAddress?: string; tokenSymbol?: string; tokenName?: string; plan?: any; walletAddress?: string }
 
 interface AsterConnectState { step: "api_key" | "api_secret"; apiKey?: string }
 interface AsterTradeState { step: "symbol" | "side" | "type" | "quantity" | "leverage" | "price" | "stop_price" | "callback_rate" | "confirm" | "cancel_symbol"; symbol?: string; side?: "BUY" | "SELL"; orderType?: "MARKET" | "LIMIT" | "STOP" | "STOP_MARKET" | "TAKE_PROFIT" | "TAKE_PROFIT_MARKET" | "TRAILING_STOP_MARKET"; quantity?: string; leverage?: number; price?: string; stopPrice?: string; callbackRate?: string; market: "futures" | "spot" }
@@ -234,7 +233,6 @@ const pendingFourMemeBuy = new Map<number, FourMemeBuyState>();
 const pendingFourMemeSell = new Map<number, FourMemeSellState>();
 const pendingWallet = new Set<number>();
 const pendingImportWallet = new Set<number>();
-const pendingChaosPlan = new Map<number, ChaosPlanState>();
 const pendingCompetitionReferrals = new Map<string, { compId: string; referrerChatId: string }>();
 const pendingAsterConnect = new Map<number, AsterConnectState>();
 const pendingAsterTrade = new Map<number, AsterTradeState>();
@@ -880,7 +878,7 @@ function generateFallbackAnswer(question: string, chatId?: number): string | nul
     return "Hey! Welcome to BUILD4 — decentralized infrastructure for autonomous AI agents. What can I help you with? Try /help to see all commands.";
   }
   if (lower.includes("help") || lower.includes("command"))
-    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n🎯 /quests — Earn $B4 quests\n🏆 /rewards — $B4 rewards dashboard\n💰 /fees — Fee tiers & discounts\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — Swap (multi-chain)\n🌉 /bridge — Cross-chain bridge\n📋 /limit — Limit orders\n👁️ /watchlist — Price watchlist & alerts\n⚙️ /settings — Trading settings\n🔥 /chaos — Chaos plan\n📈 /aster — Aster DEX trading\n⚡ /hyperliquid — Hyperliquid perps\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
+    return "Commands:\n🚀 /launch — Launch a token\n🤖 /newagent — Create an AI agent\n📋 /myagents — Your agents\n📝 /task — Assign a task\n👛 /wallet — Wallet info\n🎯 /quests — Earn $B4 quests\n🏆 /rewards — $B4 rewards dashboard\n💰 /fees — Fee tiers & discounts\n💱 /buy — Buy tokens\n📉 /sell — Sell tokens\n🔄 /swap — Swap (multi-chain)\n🌉 /bridge — Cross-chain bridge\n📋 /limit — Limit orders\n👁️ /watchlist — Price watchlist & alerts\n⚙️ /settings — Trading settings\n📈 /aster — Aster DEX trading\n⚡ /hyperliquid — Hyperliquid perps\n❓ /ask — Ask anything\n❌ /cancel — Cancel current action";
   if (lower.includes("thank"))
     return "You're welcome! Let me know if you need anything else. 🤝";
 
@@ -7723,11 +7721,6 @@ async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<vo
     return;
   }
 
-  if (data.startsWith("chaos_")) {
-    await handleChaosPlanCallback(chatId, data);
-    return;
-  }
-
   if (data.startsWith("proposal_approve:")) {
     const proposalId = data.split(":")[1];
     await handleProposalApproval(chatId, proposalId, true);
@@ -8463,10 +8456,6 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
   }
   if (pendingTask.has(chatId) && !text.startsWith("/")) {
     await handleTaskFlow(chatId, text);
-    return;
-  }
-  if (pendingChaosPlan.has(chatId) && !text.startsWith("/")) {
-    await handleChaosPlanFlow(chatId, text);
     return;
   }
   if (pendingAsterConnect.has(chatId) && !text.startsWith("/")) {
@@ -9666,7 +9655,6 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
 
     if (cmd === "cancel") {
-      pendingChaosPlan.delete(chatId);
       pendingAsterConnect.delete(chatId);
       pendingAsterTrade.delete(chatId);
       pendingTxHashVerify.delete(chatId);
@@ -10475,8 +10463,6 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
         "💰 /buy — Buy tokens on Four.meme\n" +
         "💸 /sell — Sell tokens on Four.meme\n" +
         "📈 /tokeninfo — Token price & info\n" +
-        "🔥 /chaos — Create a chaos plan\n" +
-        "📊 /chaosstatus — Check chaos plan status\n" +
         "📈 /trade — Autonomous trading agent\n" +
         "📊 /tradestatus — Trading positions & PnL\n" +
         "🔄 /swap — OKX DEX swap (multi-chain)\n" +
@@ -10921,73 +10907,6 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       return;
     }
 
-    if (cmd === "chaosstatus") {
-      if (isGroup) { await bot.sendMessage(chatId, "DM me for chaos plan status!"); return; }
-      await ensureWallet(chatId);
-      const wallets = getUserWallets(chatId);
-      const activeIdx = getActiveWalletIndex(chatId);
-      const walletAddr = wallets[activeIdx];
-      if (!walletAddr) {
-        await bot.sendMessage(chatId, "No wallet found. Use /wallet first.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
-        return;
-      }
-
-      try {
-        const { getUserChaosPlans } = await import("./chaos-launch");
-        const plans = await getUserChaosPlans(walletAddr);
-
-        if (plans.length === 0) {
-          const { getActiveChaosPlan } = await import("./chaos-launch");
-          const globalPlan = await storage.getActiveChaosPlan();
-          if (globalPlan) {
-            const completed = globalPlan.milestones.filter(m => m.status === "completed").length;
-            const pending = globalPlan.milestones.filter(m => m.status === "pending").length;
-            const failed = globalPlan.milestones.filter(m => m.status === "failed").length;
-            const next = globalPlan.milestones.find(m => m.status === "pending");
-            let text = `📊 *$${globalPlan.launch.tokenSymbol} Chaos Plan*\n\n`;
-            text += `✅ Completed: ${completed}/${globalPlan.milestones.length}\n`;
-            text += `⏳ Pending: ${pending}\n`;
-            if (failed > 0) text += `❌ Failed: ${failed}\n`;
-            if (next) {
-              const launchTime = globalPlan.launch.createdAt ? new Date(globalPlan.launch.createdAt).getTime() : 0;
-              const eta = launchTime + next.triggerAfterMinutes * 60000;
-              const etaDate = new Date(eta);
-              text += `\nNext: ${next.name} (${next.action})\nETA: ${etaDate.toUTCString()}`;
-            }
-            await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
-          } else {
-            await bot.sendMessage(chatId, "No active chaos plans found. Use /chaos to create one!", { reply_markup: mainMenuKeyboard(undefined, chatId) });
-          }
-          return;
-        }
-
-        for (const { launch, milestones } of plans) {
-          const completed = milestones.filter(m => m.status === "completed").length;
-          const pending = milestones.filter(m => m.status === "pending").length;
-          const failed = milestones.filter(m => m.status === "failed").length;
-          const next = milestones.find(m => m.status === "pending");
-
-          let text = `📊 *$${launch.tokenSymbol} Chaos Plan*\n\n`;
-          text += `✅ Completed: ${completed}/${milestones.length}\n`;
-          text += `⏳ Pending: ${pending}\n`;
-          if (failed > 0) text += `❌ Failed: ${failed}\n`;
-          if (next) {
-            const launchTime = launch.createdAt ? new Date(launch.createdAt).getTime() : 0;
-            const eta = launchTime + next.triggerAfterMinutes * 60000;
-            const etaDate = new Date(eta);
-            text += `\nNext: ${next.name} (${next.action})\nETA: ${etaDate.toUTCString()}`;
-          } else if (pending === 0) {
-            text += `\n🎉 Plan complete!`;
-          }
-
-          await bot.sendMessage(chatId, text, { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) });
-        }
-      } catch (e: any) {
-        await bot.sendMessage(chatId, `Error checking status: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
-      }
-      return;
-    }
-
     if (cmd === "trade") {
       if (isGroup) { await bot.sendMessage(chatId, "DM me for trading agent!"); return; }
       await ensureWallet(chatId);
@@ -11251,40 +11170,6 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
           ],
         },
       });
-      return;
-    }
-
-    if (cmd === "chaos") {
-      if (isGroup) { await bot.sendMessage(chatId, "DM me for chaos plans!"); return; }
-      await ensureWallet(chatId);
-      const wallets = getUserWallets(chatId);
-      const activeIdx = getActiveWalletIndex(chatId);
-      const walletAddr = wallets[activeIdx];
-      if (!walletAddr) {
-        await bot.sendMessage(chatId, "You need a wallet first. Use /wallet to set one up.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
-        return;
-      }
-      const hasKey = walletsWithKey.has(`${chatId}:${walletAddr}`);
-      if (!hasKey) {
-        await bot.sendMessage(chatId, "You need a wallet with a private key to run a chaos plan. Generate one with /wallet first.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
-        return;
-      }
-
-      pendingAgentCreation.delete(chatId);
-      pendingTask.delete(chatId);
-      pendingTokenLaunch.delete(chatId);
-      pendingFourMemeBuy.delete(chatId);
-      pendingFourMemeSell.delete(chatId);
-      pendingBuild4Buy.delete(chatId);
-      pendingChaosPlan.set(chatId, { step: "token_address", walletAddress: walletAddr });
-
-      await bot.sendMessage(chatId,
-        "🔥 *Project Chaos — Autonomous Token Plan*\n\n" +
-        "Your agent will generate a custom 13-milestone chaos plan for any token you hold.\n\n" +
-        "The plan includes burns, airdrops, and dramatic tweets — all executed autonomously over 7 days.\n\n" +
-        "Send the *token contract address* on BNB Chain that you want to create a plan for:",
-        { parse_mode: "Markdown" }
-      );
       return;
     }
 
@@ -13443,218 +13328,6 @@ export function stopTelegramBot(): void {
 
 export function getTelegramBotStatus(): { running: boolean } {
   return { running: isRunning };
-}
-
-async function handleChaosPlanFlow(chatId: number, text: string): Promise<void> {
-  if (!bot) return;
-  const state = pendingChaosPlan.get(chatId);
-  if (!state) return;
-
-  if (state.step === "token_address") {
-    const addr = text.trim();
-    if (!/^0x[a-fA-F0-9]{40}$/i.test(addr)) {
-      await bot.sendMessage(chatId, "That doesn't look like a valid contract address. Send a BNB Chain token address (0x...).");
-      return;
-    }
-
-    await bot.sendMessage(chatId, "🔍 Checking token and your holdings...");
-
-    try {
-      const { ethers } = await import("ethers");
-      const provider = new ethers.JsonRpcProvider("https://bsc-dataseed1.binance.org");
-      const tokenContract = new ethers.Contract(addr, [
-        "function balanceOf(address) view returns (uint256)",
-        "function totalSupply() view returns (uint256)",
-        "function symbol() view returns (string)",
-        "function name() view returns (string)",
-        "function decimals() view returns (uint8)",
-      ], provider);
-
-      const walletAddr = state.walletAddress!;
-      const [balance, totalSupply, symbol, name, decimals] = await Promise.all([
-        tokenContract.balanceOf(walletAddr),
-        tokenContract.totalSupply(),
-        tokenContract.symbol(),
-        tokenContract.name(),
-        tokenContract.decimals(),
-      ]);
-
-      const holdingPct = totalSupply > 0n ? Number((balance * 10000n) / totalSupply) / 100 : 0;
-
-      if (holdingPct < 1) {
-        await bot.sendMessage(chatId,
-          `Your wallet holds only ${holdingPct.toFixed(2)}% of $${symbol}.\n\n` +
-          `You need at least 1% of the supply to create a chaos plan. Buy more tokens first!`,
-          { reply_markup: mainMenuKeyboard(undefined, chatId) }
-        );
-        pendingChaosPlan.delete(chatId);
-        return;
-      }
-
-      const holdingFormatted = ethers.formatUnits(balance, decimals);
-      const holdingNum = parseFloat(holdingFormatted);
-      const holdingDisplay = holdingNum >= 1000 ? Math.floor(holdingNum).toLocaleString("en-US") : holdingFormatted;
-
-      await bot.sendMessage(chatId,
-        `✅ Found $${symbol} (${name})\n\n` +
-        `Your holdings: ${holdingDisplay} $${symbol} (${holdingPct.toFixed(1)}% of supply)\n\n` +
-        `🤖 Generating your custom chaos plan...`,
-      );
-
-      const { generateChaosPlan, formatPlanPreview } = await import("./chaos-plan-generator");
-      const agentName = `${symbol}_Agent`;
-      const plan = await generateChaosPlan({
-        tokenAddress: addr,
-        tokenSymbol: symbol,
-        tokenName: name,
-        walletAddress: walletAddr,
-        agentName,
-      });
-
-      const preview = formatPlanPreview(plan, symbol);
-
-      state.step = "confirming";
-      state.tokenAddress = addr;
-      state.tokenSymbol = symbol;
-      state.tokenName = name;
-      state.plan = plan;
-      pendingChaosPlan.set(chatId, state);
-
-      await bot.sendMessage(chatId, preview, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "✅ Approve & Start Plan", callback_data: "chaos_approve" }],
-            [{ text: "🔄 Regenerate Plan", callback_data: "chaos_regen" }],
-            [{ text: "❌ Cancel", callback_data: "chaos_cancel" }],
-          ],
-        },
-      });
-
-    } catch (e: any) {
-      console.error("[TelegramBot] Chaos plan error:", e.message);
-      await bot.sendMessage(chatId,
-        `❌ Error: ${e.message?.substring(0, 200) || "Failed to check token"}\n\nTry again with /chaos`,
-        { reply_markup: mainMenuKeyboard(undefined, chatId) }
-      );
-      pendingChaosPlan.delete(chatId);
-    }
-    return;
-  }
-}
-
-async function handleChaosPlanCallback(chatId: number, data: string): Promise<void> {
-  if (!bot) return;
-  const state = pendingChaosPlan.get(chatId);
-
-  if (data === "chaos_approve") {
-    if (!state || state.step !== "confirming" || !state.plan) {
-      await bot.sendMessage(chatId, "No pending chaos plan found. Use /chaos to start.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
-      return;
-    }
-
-    await bot.sendMessage(chatId, "⚡ Activating chaos plan...");
-
-    try {
-      const { createChaosPlanForUser, getUserChaosPlans } = await import("./chaos-launch");
-
-      const existing = await getUserChaosPlans(state.walletAddress!);
-      const hasOverlap = existing.some(p => p.launch.tokenAddress?.toLowerCase() === state.tokenAddress!.toLowerCase());
-      if (hasOverlap) {
-        await bot.sendMessage(chatId, "⚠️ You already have an active chaos plan for this token. Wait for it to complete or let it finish first.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
-        pendingChaosPlan.delete(chatId);
-        return;
-      }
-
-      const result = await createChaosPlanForUser({
-        tokenAddress: state.tokenAddress!,
-        tokenSymbol: state.tokenSymbol!,
-        tokenName: state.tokenName!,
-        walletAddress: state.walletAddress!,
-        plan: state.plan,
-        chatId,
-      });
-
-      if (result.success) {
-        const genesisM = state.plan.milestones?.find((m: any) => m.number === 0);
-        let genesisTweet = "";
-        if (genesisM) {
-          try {
-            const { postTweet } = await import("./twitter-client");
-            const tweetResult = await postTweet(genesisM.tweetTemplate);
-            genesisTweet = `\n\n📢 Genesis tweet posted: https://x.com/i/status/${tweetResult.tweetId}`;
-          } catch (e: any) {
-            genesisTweet = "\n\n⚠️ Genesis tweet failed (plan still active)";
-          }
-        }
-
-        await bot.sendMessage(chatId,
-          `🔥 *CHAOS PLAN ACTIVATED*\n\n` +
-          `Token: $${state.tokenSymbol}\n` +
-          `Milestones: ${state.plan.milestones.length}\n` +
-          `Duration: 7 days\n` +
-          `Wallet: \`${state.walletAddress!.substring(0, 10)}...${state.walletAddress!.slice(-6)}\`\n\n` +
-          `Your agent will autonomously execute each milestone on schedule.` +
-          `${genesisTweet}\n\n` +
-          `Use /chaosstatus to check progress.`,
-          { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(undefined, chatId) }
-        );
-      } else {
-        await bot.sendMessage(chatId, `❌ Failed to activate: ${result.error}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
-      }
-    } catch (e: any) {
-      console.error("[TelegramBot] Chaos plan activation error:", e.message);
-      await bot.sendMessage(chatId, `❌ Error: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
-    }
-
-    pendingChaosPlan.delete(chatId);
-    return;
-  }
-
-  if (data === "chaos_regen") {
-    if (!state || !state.tokenAddress) {
-      await bot.sendMessage(chatId, "No pending chaos plan found. Use /chaos to start.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
-      return;
-    }
-
-    await bot.sendMessage(chatId, "🔄 Regenerating plan...");
-
-    try {
-      const { generateChaosPlan, formatPlanPreview } = await import("./chaos-plan-generator");
-      const plan = await generateChaosPlan({
-        tokenAddress: state.tokenAddress,
-        tokenSymbol: state.tokenSymbol!,
-        tokenName: state.tokenName!,
-        walletAddress: state.walletAddress!,
-        agentName: `${state.tokenSymbol}_Agent`,
-      });
-
-      state.plan = plan;
-      state.step = "confirming";
-      pendingChaosPlan.set(chatId, state);
-
-      const preview = formatPlanPreview(plan, state.tokenSymbol!);
-
-      await bot.sendMessage(chatId, preview, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "✅ Approve & Start Plan", callback_data: "chaos_approve" }],
-            [{ text: "🔄 Regenerate Plan", callback_data: "chaos_regen" }],
-            [{ text: "❌ Cancel", callback_data: "chaos_cancel" }],
-          ],
-        },
-      });
-    } catch (e: any) {
-      await bot.sendMessage(chatId, `❌ Error regenerating: ${e.message?.substring(0, 200)}`, { reply_markup: mainMenuKeyboard(undefined, chatId) });
-      pendingChaosPlan.delete(chatId);
-    }
-    return;
-  }
-
-  if (data === "chaos_cancel") {
-    pendingChaosPlan.delete(chatId);
-    await bot.sendMessage(chatId, "Chaos plan cancelled.", { reply_markup: mainMenuKeyboard(undefined, chatId) });
-    return;
-  }
 }
 
 async function handleHyperliquidMenu(chatId: number): Promise<void> {
