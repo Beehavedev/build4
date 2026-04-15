@@ -5,6 +5,30 @@ import { createHmac } from "crypto";
 import { getMiniAppHTML } from "./miniapp-html";
 import { generatePnlCardImage } from "./pnl-image";
 
+const asterClientCache = new Map<string, { client: any; ts: number }>();
+const CLIENT_CACHE_TTL = 600_000;
+
+async function getCachedAsterClient(chatId: number): Promise<any> {
+  const key = chatId.toString();
+  const cached = asterClientCache.get(key);
+  if (cached && Date.now() - cached.ts < CLIENT_CACHE_TTL) {
+    return cached.client;
+  }
+  try {
+    const client = await getAsterClient(chatId);
+    if (client) {
+      asterClientCache.set(key, { client, ts: Date.now() });
+    }
+    return client;
+  } catch (e: any) {
+    if (cached) {
+      console.log(`[MiniApp] DB failed, using cached Aster client for chatId=${chatId}`);
+      return cached.client;
+    }
+    throw e;
+  }
+}
+
 function validateTelegramInitData(initData: string, botToken: string): { valid: boolean; chatId?: string } {
   try {
     const params = new URLSearchParams(initData);
@@ -918,6 +942,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
               const codeFutures = createAsterCodeFuturesClient(effectiveUser, creds.apiKey, creds.apiSecret, codeConfig);
               client = { futures: codeFutures, spot: null, walletAddress: effectiveUser };
               asterApiWalletAddr = creds.apiKey;
+              asterClientCache.set(chatId, { client, ts: Date.now() });
             } else {
               const { createAsterV3FuturesClient } = await import("./aster-client");
               const v3Futures = createAsterV3FuturesClient({
@@ -929,6 +954,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
               });
               client = { futures: v3Futures, spot: null, walletAddress: parentAddress };
               asterApiWalletAddr = creds.apiKey;
+              asterClientCache.set(chatId, { client, ts: Date.now() });
               console.log(`[MiniApp] Aster V3 client: user=${parentAddress.substring(0,10)}, signer=set`);
             }
           } else {
@@ -936,6 +962,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
             const hmacClient = createAsterFuturesClient({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
             client = { futures: hmacClient, spot: null, walletAddress: parentAddress };
             asterApiWalletAddr = "auto";
+            asterClientCache.set(chatId, { client, ts: Date.now() });
             console.log(`[MiniApp] Aster HMAC client for chatId=${chatId} (auto-onboarded)`);
           }
         }
@@ -1800,20 +1827,11 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         res.json({ running: false });
       } else {
         let client: any;
-        let lastErr: any;
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          try {
-            client = await getAsterClient(parseInt(chatId));
-            lastErr = null;
-            break;
-          } catch (clientErr: any) {
-            lastErr = clientErr;
-            console.error(`[Agent] getAsterClient attempt ${attempt}/3 failed for chatId=${chatId}:`, clientErr.message?.substring(0, 120));
-            if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
-          }
-        }
-        if (lastErr) {
-          return res.status(400).json({ error: `Aster connection failed after 3 attempts. Please try again in a few seconds.` });
+        try {
+          client = await getCachedAsterClient(parseInt(chatId));
+        } catch (clientErr: any) {
+          console.error(`[Agent] getCachedAsterClient failed for chatId=${chatId}:`, clientErr.message?.substring(0, 120));
+          return res.status(400).json({ error: `Database temporarily unavailable. Please open the mini app first, then try again.` });
         }
         if (!client) {
           console.log(`[Agent] No Aster client for chatId=${chatId}`);
