@@ -603,6 +603,14 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async getActiveAgents(): Promise<Agent[]> {
+    try {
+      return await db.select().from(agents).where(eq(agents.status, "active")).orderBy(agents.createdAt);
+    } catch {
+      return [];
+    }
+  }
+
   async getAgentsByWallet(walletAddress: string): Promise<Agent[]> {
     try {
       return await db.select().from(agents).where(eq(agents.creatorWallet, walletAddress.toLowerCase())).orderBy(agents.createdAt);

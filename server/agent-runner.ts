@@ -1411,8 +1411,9 @@ async function executeAction(agent: Agent, wallet: AgentWallet, action: AgentAct
 
 async function tick(): Promise<void> {
   try {
-    const allAgents = await storage.getAllAgents();
-    const activeAgents = allAgents.filter(a => a.status === "active");
+    const activeAgents = (storage as any).getActiveAgents 
+      ? await (storage as any).getActiveAgents() 
+      : (await storage.getAllAgents()).filter(a => a.status === "active");
 
     if (activeAgents.length === 0) {
       return;
@@ -1464,8 +1465,9 @@ async function tick(): Promise<void> {
 
 async function backfillAgentIdentity(): Promise<void> {
   try {
-    const allAgents = await storage.getAllAgents();
-    const activeAgents = allAgents.filter(a => a.status === "active");
+    const activeAgents = (storage as any).getActiveAgents 
+      ? await (storage as any).getActiveAgents() 
+      : (await storage.getAllAgents()).filter(a => a.status === "active");
     let constitutionCount = 0;
     let soulCount = 0;
 
@@ -1512,10 +1514,12 @@ async function registerExistingAgentsOnchain(): Promise<void> {
   const { agents: agentsTable } = await import("@shared/schema");
   const { eq } = await import("drizzle-orm");
 
-  const allAgents = await storage.getAllAgents();
-  const unregistered = allAgents.filter(a => a.status === "active" && !a.erc8004Registered);
+  const activeAgents = (storage as any).getActiveAgents 
+    ? await (storage as any).getActiveAgents() 
+    : (await storage.getAllAgents()).filter(a => a.status === "active");
+  const unregistered = activeAgents.filter((a: any) => !a.erc8004Registered);
   if (unregistered.length === 0) {
-    log(`[agent-runner] All ${allAgents.filter(a => a.status === "active").length} active agents already ERC-8004 registered.`, "agent-runner");
+    log(`[agent-runner] All ${activeAgents.length} active agents already ERC-8004 registered.`, "agent-runner");
     return;
   }
 
@@ -1583,8 +1587,9 @@ async function autoRegisterAgentStandards(): Promise<void> {
     const { agents: agentsTable } = await import("@shared/schema");
     const { eq } = await import("drizzle-orm");
 
-    const allAgents = await storage.getAllAgents();
-    const active = allAgents.filter(a => a.status === "active");
+    const active = (storage as any).getActiveAgents 
+      ? await (storage as any).getActiveAgents() 
+      : (await storage.getAllAgents()).filter(a => a.status === "active");
 
     for (const agent of active) {
       if (agent.erc8004Registered && agent.bap578Registered) continue;
