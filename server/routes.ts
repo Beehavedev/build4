@@ -683,33 +683,41 @@ export async function registerRoutes(
       }
     }, 2000);
 
-    setTimeout(() => {
-      startBountyEngine().catch(err => {
-        console.error("[BountyEngine] Failed to start:", err.message);
-      });
-    }, 60_000);
-
-    setTimeout(() => {
-      if (isTwitterConfigured()) {
-        startTwitterAgent().catch(err => {
-          console.error("[TwitterAgent] Failed to start:", err.message);
+    if (process.env.BOUNTY_ENGINE_ENABLED === "true") {
+      setTimeout(() => {
+        startBountyEngine().catch(err => {
+          console.error("[BountyEngine] Failed to start:", err.message);
         });
-      }
-    }, 75_000);
+      }, 60_000);
+    } else {
+      console.log("[BountyEngine] Disabled — set BOUNTY_ENGINE_ENABLED=true to enable");
+    }
 
-    setTimeout(() => {
-      if (isTwitterConfigured()) {
-        startSupportAgent().catch(err => {
-          console.error("[SupportAgent] Failed to start:", err.message);
+    if (process.env.TWITTER_AGENT_ENABLED === "true") {
+      setTimeout(() => {
+        if (isTwitterConfigured()) {
+          startTwitterAgent().catch(err => {
+            console.error("[TwitterAgent] Failed to start:", err.message);
+          });
+        }
+      }, 75_000);
+
+      setTimeout(() => {
+        if (isTwitterConfigured()) {
+          startSupportAgent().catch(err => {
+            console.error("[SupportAgent] Failed to start:", err.message);
+          });
+        }
+      }, 90_000);
+
+      setTimeout(() => {
+        autoStartAllAgents().catch(err => {
+          console.error("[MultiTwitter] Auto-start failed:", err.message);
         });
-      }
-    }, 90_000);
-
-    setTimeout(() => {
-      autoStartAllAgents().catch(err => {
-        console.error("[MultiTwitter] Auto-start failed:", err.message);
-      });
-    }, 90_000);
+      }, 90_000);
+    } else {
+      console.log("[Twitter/Support/MultiTwitter] Disabled — set TWITTER_AGENT_ENABLED=true to enable");
+    }
 
     if (process.env.TELEGRAM_BOT_EXTERNAL !== "true") {
       setTimeout(async () => {
