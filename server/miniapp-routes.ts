@@ -4,9 +4,31 @@ import { getAsterClient, getBotWalletAsterClient, getUserWalletAddress, resolveP
 import { createHmac } from "crypto";
 import { getMiniAppHTML } from "./miniapp-html";
 import { generatePnlCardImage } from "./pnl-image";
+import { directQuery } from "./db";
 
 const asterClientCache = new Map<string, { client: any; ts: number }>();
 const CLIENT_CACHE_TTL = 600_000;
+const asterCredsMemCache = new Map<string, { creds: any; ts: number }>();
+const CREDS_CACHE_TTL = 300_000;
+
+async function getCredsWithFallback(chatId: string): Promise<any> {
+  const cached = asterCredsMemCache.get(chatId);
+  if (cached && Date.now() - cached.ts < CREDS_CACHE_TTL) {
+    return cached.creds;
+  }
+  try {
+    const creds = await storage.getAsterCredentials(chatId);
+    if (creds) asterCredsMemCache.set(chatId, { creds, ts: Date.now() });
+    return creds;
+  } catch (e: any) {
+    console.log(`[MiniApp] Pool creds failed: ${e.message?.substring(0, 80)}`);
+    if (cached) {
+      console.log(`[MiniApp] Using stale cached creds for chatId=${chatId}`);
+      return cached.creds;
+    }
+    throw e;
+  }
+}
 
 async function getCachedAsterClient(chatId: number): Promise<any> {
   const key = chatId.toString();
@@ -885,17 +907,17 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
       const connectedWalletAddr = (req.headers["x-wallet-address"] as string || "").toLowerCase().trim();
 
       try {
-        let creds = await storage.getAsterCredentials(chatId);
+        let creds = await getCredsWithFallback(chatId);
 
         if (!creds && connectedWalletAddr) {
           try {
-            const { db: dbConn } = await import("./db");
-            const { asterCredentials: asterCredsTable } = await import("@shared/schema");
-            const { eq } = await import("drizzle-orm");
-            const rows = await dbConn.select({ chatId: asterCredsTable.chatId }).from(asterCredsTable).where(eq(asterCredsTable.parentAddress, connectedWalletAddr)).limit(1);
-            if (rows.length > 0) {
-              creds = await storage.getAsterCredentials(rows[0].chatId);
-              if (creds) console.log(`[MiniApp] Found Aster creds via parentAddress fallback: wallet=${connectedWalletAddr.substring(0,10)} origChatId=${rows[0].chatId}`);
+            const result = await directQuery(
+              'SELECT chat_id as "chatId" FROM aster_credentials WHERE parent_address = $1 LIMIT 1',
+              [connectedWalletAddr]
+            );
+            if (result.rows?.length > 0) {
+              creds = await getCredsWithFallback(result.rows[0].chatId);
+              if (creds) console.log(`[MiniApp] Found Aster creds via parentAddress fallback: wallet=${connectedWalletAddr.substring(0,10)}`);
             }
           } catch (e: any) {
             console.log(`[MiniApp] parentAddress fallback lookup failed: ${e.message?.substring(0, 100)}`);
@@ -904,12 +926,12 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
         if (!creds && connectedWalletAddr) {
           try {
-            const { db: dbConn } = await import("./db");
-            const { asterCredentials: asterCredsTable } = await import("@shared/schema");
-            const { sql: sqlTag } = await import("drizzle-orm");
-            const rows = await dbConn.select({ chatId: asterCredsTable.chatId }).from(asterCredsTable).where(sqlTag`parent_address LIKE ${"astercode:" + connectedWalletAddr}`).limit(1);
-            if (rows.length > 0) {
-              creds = await storage.getAsterCredentials(rows[0].chatId);
+            const result = await directQuery(
+              'SELECT chat_id as "chatId" FROM aster_credentials WHERE parent_address LIKE $1 LIMIT 1',
+              ["astercode:" + connectedWalletAddr]
+            );
+            if (result.rows?.length > 0) {
+              creds = await getCredsWithFallback(result.rows[0].chatId);
               if (creds) console.log(`[MiniApp] Found Aster creds via astercode: prefix fallback: wallet=${connectedWalletAddr.substring(0,10)}`);
             }
           } catch (e: any) {

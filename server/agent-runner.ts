@@ -45,9 +45,9 @@ import { agents as agentsTable } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { SKILL_CODE_TEMPLATES, validateSkillCode, executeSkillCode, generateSkillCodePrompt, parseSkillGenerationResponse } from "./skill-executor";
 
-const TICK_INTERVAL_MS = 30_000;
-const AGENT_COOLDOWN_MS = 60_000;
-const MAX_CONCURRENT_AGENTS = 3;
+const TICK_INTERVAL_MS = 60_000;
+const AGENT_COOLDOWN_MS = 90_000;
+const MAX_CONCURRENT_AGENTS = 2;
 const MIN_ONCHAIN_TRANSFER_WEI = BigInt("50000000000000"); // 0.00005 BNB - below this, gas cost exceeds transfer value
 
 const lastActionTime = new Map<string, number>();
