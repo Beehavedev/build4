@@ -123,8 +123,9 @@ const httpServer = createServer(app);
 
 app.use(express.json());
 
+const BUILD_VERSION = "v61X";
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", uptime: process.uptime(), timestamp: Date.now() });
+  res.json({ status: "ok", version: BUILD_VERSION, uptime: process.uptime(), timestamp: Date.now() });
 });
 
 registerMiniAppRoutes(app);
