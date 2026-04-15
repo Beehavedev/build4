@@ -94,6 +94,75 @@ app.get("/api/balance/:telegramId", async (req, res) => {
   }
 });
 
+app.post("/api/import-wallet", async (req, res) => {
+  try {
+    const { telegramId, privateKey } = req.body;
+    if (!telegramId || !privateKey) return res.status(400).json({ error: "Missing telegramId or privateKey" });
+
+    const { ethers } = await import("ethers");
+
+    const user = await prisma.user.findUnique({
+      where: { telegramId: BigInt(telegramId) },
+      include: { wallets: true },
+    });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    let pk = privateKey.trim();
+    if (!pk.startsWith("0x")) pk = "0x" + pk;
+
+    let wallet;
+    try {
+      wallet = new ethers.Wallet(pk);
+    } catch {
+      return res.status(400).json({ error: "Invalid private key" });
+    }
+
+    const address = wallet.address;
+    const encrypted = encryptPrivateKey(pk, user.id);
+
+    const existing = user.wallets.find((w: any) => w.address.toLowerCase() === address.toLowerCase());
+
+    if (existing) {
+      await prisma.wallet.update({
+        where: { id: existing.id },
+        data: { encryptedPK: encrypted },
+      });
+      await prisma.wallet.updateMany({ where: { userId: user.id }, data: { isActive: false } });
+      await prisma.wallet.update({ where: { id: existing.id }, data: { isActive: true } });
+    } else {
+      await prisma.wallet.updateMany({ where: { userId: user.id }, data: { isActive: false } });
+      const count = await prisma.wallet.count({ where: { userId: user.id } });
+      await prisma.wallet.create({
+        data: {
+          userId: user.id,
+          chain: "BSC",
+          address,
+          encryptedPK: encrypted,
+          label: `Imported ${count + 1}`,
+          isActive: true,
+        },
+      });
+    }
+
+    const [bal, asterBal] = await Promise.all([
+      getBalance(address, "BSC"),
+      getAsterAccountBalance(pk),
+    ]);
+
+    res.json({
+      success: true,
+      address,
+      native: bal.native,
+      usdt: bal.usdt,
+      chain: "BSC",
+      aster: asterBal.accountValue > 0 ? asterBal : null,
+    });
+  } catch (err: any) {
+    console.error("[IMPORT] Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/agents/:userId", async (req, res) => {
   try {
     const agents = await prisma.agent.findMany({

@@ -23,6 +23,10 @@ export function Dashboard() {
   const [balance, setBalance] = useState<BalanceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [walletAddress, setWalletAddress] = useState("");
+  const [showImport, setShowImport] = useState(false);
+  const [importKey, setImportKey] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -50,6 +54,45 @@ export function Dashboard() {
     }
     load();
   }, []);
+
+  async function handleImport() {
+    const tgUser = getTelegramUser();
+    if (!tgUser || !importKey.trim()) return;
+
+    setImporting(true);
+    setImportError("");
+
+    try {
+      const res = await fetch("/api/import-wallet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telegramId: tgUser.id, privateKey: importKey.trim() }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setImportError(data.error || "Import failed");
+        setImporting(false);
+        return;
+      }
+
+      setBalance({
+        native: data.native,
+        usdt: data.usdt,
+        address: data.address,
+        chain: data.chain,
+        aster: data.aster,
+      });
+      setWalletAddress(data.address);
+      setShowImport(false);
+      setImportKey("");
+
+      try { window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success"); } catch {}
+    } catch (err: any) {
+      setImportError("Connection error. Try again.");
+    }
+    setImporting(false);
+  }
 
   if (loading) return <div className="loading">Loading...</div>;
 
@@ -129,8 +172,60 @@ export function Dashboard() {
             </div>
           </>
         ) : (
-          <div style={{ textAlign: "center", padding: "12px 0", color: "var(--text-muted)", fontSize: "13px" }}>
-            Deposit USDT to your wallet and bridge to Aster DEX to start trading
+          <div style={{ padding: "8px 0" }}>
+            {!showImport ? (
+              <div style={{ textAlign: "center" }}>
+                <div style={{ color: "var(--text-muted)", fontSize: "13px", marginBottom: "12px" }}>
+                  Link your Aster DEX wallet to see balances and trade
+                </div>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setShowImport(true)}
+                  data-testid="btn-connect-aster"
+                >
+                  🔗 Connect Wallet
+                </button>
+              </div>
+            ) : (
+              <div className="trade-form">
+                <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "4px" }}>
+                  Paste the private key of your Aster-connected wallet:
+                </div>
+                <input
+                  className="input-field"
+                  type="password"
+                  placeholder="Private key (hex)"
+                  value={importKey}
+                  onChange={e => { setImportKey(e.target.value); setImportError(""); }}
+                  data-testid="input-import-key"
+                  autoComplete="off"
+                />
+                {importError && (
+                  <div style={{ color: "var(--red)", fontSize: "12px" }}>{importError}</div>
+                )}
+                <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                  🔒 Your key is encrypted and never shared
+                </div>
+                <div className="btn-row">
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleImport}
+                    disabled={importing || !importKey.trim()}
+                    data-testid="btn-import-submit"
+                    style={{ opacity: importing || !importKey.trim() ? 0.5 : 1 }}
+                  >
+                    {importing ? "Connecting..." : "⭐ Connect to Aster"}
+                  </button>
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => { setShowImport(false); setImportKey(""); setImportError(""); }}
+                    data-testid="btn-import-cancel"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
