@@ -13747,16 +13747,33 @@ function getOwnerAsterClient(): any {
   return cachedOwnerClient;
 }
 
+const asterCredsCache = new Map<string, { creds: any; ts: number }>();
+const ASTER_CREDS_TTL = 300_000;
+
 export async function getAsterClient(chatId: number): Promise<any> {
   let creds: any;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      creds = await withTimeout(storage.getAsterCredentials(chatId.toString()), 8000, `getAsterCreds:${chatId}`);
-      break;
-    } catch (e: any) {
-      console.error(`[AsterClient] getAsterCredentials attempt ${attempt + 1} failed for chatId=${chatId}:`, e.message?.substring(0, 100));
-      if (attempt === 1) throw e;
-      await new Promise(r => setTimeout(r, 500));
+  const cacheKey = chatId.toString();
+  const cached = asterCredsCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < ASTER_CREDS_TTL) {
+    creds = cached.creds;
+  } else {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        creds = await withTimeout(storage.getAsterCredentials(cacheKey), 8000, `getAsterCreds:${chatId}`);
+        if (creds) asterCredsCache.set(cacheKey, { creds, ts: Date.now() });
+        break;
+      } catch (e: any) {
+        console.error(`[AsterClient] getAsterCredentials attempt ${attempt + 1} failed for chatId=${chatId}:`, e.message?.substring(0, 100));
+        if (attempt === 1) {
+          if (cached) {
+            console.log(`[AsterClient] Using stale cached creds for chatId=${chatId}`);
+            creds = cached.creds;
+          } else {
+            throw e;
+          }
+        }
+        await new Promise(r => setTimeout(r, 500));
+      }
     }
   }
 

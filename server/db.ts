@@ -9,8 +9,8 @@ const isSSL = process.env.DATABASE_URL?.includes("render.com") ||
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: isSSL ? { rejectUnauthorized: false } : false,
-  max: 20,
-  min: 2,
+  max: 30,
+  min: 3,
   idleTimeoutMillis: 20000,
   connectionTimeoutMillis: 10000,
   allowExitOnIdle: false,
