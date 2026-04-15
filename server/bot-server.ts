@@ -123,9 +123,41 @@ const httpServer = createServer(app);
 
 app.use(express.json());
 
-const BUILD_VERSION = "v62A";
+const BUILD_VERSION = "v62B";
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", version: BUILD_VERSION, uptime: process.uptime(), timestamp: Date.now() });
+  const { getBotInstance } = require("./telegram-bot");
+  const botInstance = getBotInstance();
+  res.json({
+    status: "ok",
+    version: BUILD_VERSION,
+    uptime: process.uptime(),
+    timestamp: Date.now(),
+    telegram: {
+      running: !!botInstance,
+      webhookUrl: process.env.TELEGRAM_WEBHOOK_URL || "(using RENDER_EXTERNAL_URL)",
+      renderUrl: process.env.RENDER_EXTERNAL_URL || "(not set)",
+    },
+  });
+});
+
+app.post("/api/force-webhook-reset", async (_req, res) => {
+  try {
+    const renderUrl = process.env.RENDER_EXTERNAL_URL;
+    if (!renderUrl) return res.status(500).json({ error: "RENDER_EXTERNAL_URL not set" });
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) return res.status(500).json({ error: "TELEGRAM_BOT_TOKEN not set" });
+    const webhookUrl = `${renderUrl}/api/telegram/webhook/${token}`;
+    const resp = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: webhookUrl, allowed_updates: ["message", "callback_query"], drop_pending_updates: false }),
+    });
+    const data = await resp.json();
+    console.log(`[BOT-SERVER] Force webhook reset to ${renderUrl}: ${JSON.stringify(data)}`);
+    res.json({ ok: true, webhookUrl: renderUrl + "/api/telegram/webhook/***", result: data });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 registerMiniAppRoutes(app);
