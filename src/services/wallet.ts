@@ -18,13 +18,27 @@ export function encryptPrivateKey(pk: string, userId: string): string {
 }
 
 export function decryptPrivateKey(encrypted: string, userId: string): string {
-  const key = deriveKey(userId);
-  const [ivHex, data] = encrypted.split(":");
-  const iv = Buffer.from(ivHex, "hex");
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-  let decrypted = decipher.update(data, "hex", "utf8");
-  decrypted += decipher.final("utf8");
-  return decrypted;
+  const parts = encrypted.split(":");
+  if (parts.length === 2) {
+    const key = deriveKey(userId);
+    const [ivHex, data] = parts;
+    const iv = Buffer.from(ivHex, "hex");
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    let decrypted = decipher.update(data, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
+  } else if (parts.length === 3) {
+    const master = process.env.WALLET_ENCRYPTION_KEY || process.env.MASTER_ENCRYPTION_KEY || "";
+    const [saltHex, ivHex, data] = parts;
+    const salt = Buffer.from(saltHex, "hex");
+    const iv = Buffer.from(ivHex, "hex");
+    const key = crypto.pbkdf2Sync(master, salt, 100000, 32, "sha256");
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    let decrypted = decipher.update(data, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
+  }
+  throw new Error("Unknown encryption format");
 }
 
 export function generateEVMWallet(): { address: string; privateKey: string } {

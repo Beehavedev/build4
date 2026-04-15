@@ -3,7 +3,8 @@ import { createServer } from "http";
 import { PrismaClient } from "@prisma/client";
 import { createBot, getWebhookCallback } from "./bot/index.js";
 import { startAgentRunner } from "./agents/runner.js";
-import { getBalance } from "./services/wallet.js";
+import { getBalance, decryptPrivateKey } from "./services/wallet.js";
+import { getAsterAccountBalance } from "./services/aster.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -73,10 +74,21 @@ app.get("/api/balance/:telegramId", async (req, res) => {
     if (!user) return res.status(404).json({ error: "User not found" });
 
     const activeWallet = user.wallets?.find((w: any) => w.isActive);
-    if (!activeWallet) return res.json({ native: "0", usdt: "0", address: null });
+    if (!activeWallet) return res.json({ native: "0", usdt: "0", address: null, aster: null });
 
     const bal = await getBalance(activeWallet.address, activeWallet.chain);
-    res.json({ ...bal, address: activeWallet.address, chain: activeWallet.chain });
+
+    let aster = null;
+    if (activeWallet.encryptedPK) {
+      try {
+        const pk = decryptPrivateKey(activeWallet.encryptedPK, user.id);
+        aster = await getAsterAccountBalance(pk);
+      } catch (err: any) {
+        console.log("[BALANCE] Aster fetch skipped:", err.message?.substring(0, 80));
+      }
+    }
+
+    res.json({ ...bal, address: activeWallet.address, chain: activeWallet.chain, aster });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

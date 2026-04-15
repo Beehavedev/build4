@@ -1,11 +1,20 @@
 import { useState, useEffect } from "react";
 import { getTelegramUser, getUser, getUserAgents, type UserData, type AgentData } from "../api";
 
+interface AsterBalance {
+  accountValue: number;
+  availableBalance: number;
+  marginUsed: number;
+  unrealizedPnl: number;
+  coin: string;
+}
+
 interface BalanceData {
   native: string;
   usdt: string;
   address: string | null;
   chain?: string;
+  aster: AsterBalance | null;
 }
 
 export function Dashboard() {
@@ -77,6 +86,53 @@ export function Dashboard() {
             <div className="stat-label">Trades</div>
           </div>
         </div>
+      </div>
+
+      <div className="card" data-testid="aster-balance-card">
+        <div className="card-header">
+          <div className="card-title">Aster DEX Account</div>
+          {balance?.aster ? (
+            <span className="badge badge-active">⭐ Connected</span>
+          ) : (
+            <span className="badge badge-stopped">○ Not connected</span>
+          )}
+        </div>
+        {balance?.aster ? (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "8px" }}>
+              <div>
+                <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>Account Value</div>
+                <div style={{ fontSize: "24px", fontWeight: 700 }}>
+                  ${balance.aster.accountValue.toFixed(2)}
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>Unrealized PnL</div>
+                <div className={balance.aster.unrealizedPnl >= 0 ? "pnl-positive" : "pnl-negative"} style={{ fontSize: "16px", fontWeight: 600 }}>
+                  {balance.aster.unrealizedPnl >= 0 ? "+" : ""}{balance.aster.unrealizedPnl.toFixed(2)}
+                </div>
+              </div>
+            </div>
+            <div className="stats-row" style={{ marginTop: "4px" }}>
+              <div className="stat-item">
+                <div className="stat-value" style={{ fontSize: "14px" }}>${balance.aster.availableBalance.toFixed(2)}</div>
+                <div className="stat-label">Available</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-value" style={{ fontSize: "14px" }}>${balance.aster.marginUsed.toFixed(2)}</div>
+                <div className="stat-label">Margin Used</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-value" style={{ fontSize: "14px" }}>{balance.aster.coin}</div>
+                <div className="stat-label">Currency</div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div style={{ textAlign: "center", padding: "12px 0", color: "var(--text-muted)", fontSize: "13px" }}>
+            Deposit USDT to your wallet and bridge to Aster DEX to start trading
+          </div>
+        )}
       </div>
 
       {walletAddress && (
