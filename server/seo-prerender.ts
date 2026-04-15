@@ -347,7 +347,7 @@ function getStructuredData(path: string, baseUrl: string, meta: PageMeta): objec
 
 async function getMarketplaceDynamicContent(): Promise<string> {
   try {
-    const skills = await storage.getAgentSkills();
+    const skills = await storage.getSkills();
     const agents = await storage.getAgents();
     const activeCount = agents.filter(a => a.status === "active").length;
 
