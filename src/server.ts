@@ -3,6 +3,7 @@ import { createServer } from "http";
 import { PrismaClient } from "@prisma/client";
 import { createBot, getWebhookCallback } from "./bot/index.js";
 import { startAgentRunner } from "./agents/runner.js";
+import { getBalance } from "./services/wallet.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -58,6 +59,24 @@ app.get("/api/user/:telegramId", async (req, res) => {
       telegramId: user.telegramId.toString(),
       wallet: activeWallet?.address || null,
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/balance/:telegramId", async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { telegramId: BigInt(req.params.telegramId) },
+      include: { wallets: true },
+    });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const activeWallet = user.wallets?.find((w: any) => w.isActive);
+    if (!activeWallet) return res.json({ native: "0", usdt: "0", address: null });
+
+    const bal = await getBalance(activeWallet.address, activeWallet.chain);
+    res.json({ ...bal, address: activeWallet.address, chain: activeWallet.chain });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

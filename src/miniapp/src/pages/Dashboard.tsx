@@ -1,9 +1,17 @@
 import { useState, useEffect } from "react";
 import { getTelegramUser, getUser, getUserAgents, type UserData, type AgentData } from "../api";
 
+interface BalanceData {
+  native: string;
+  usdt: string;
+  address: string | null;
+  chain?: string;
+}
+
 export function Dashboard() {
   const [user, setUser] = useState<UserData | null>(null);
   const [agents, setAgents] = useState<AgentData[]>([]);
+  const [balance, setBalance] = useState<BalanceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [walletAddress, setWalletAddress] = useState("");
 
@@ -17,11 +25,15 @@ export function Dashboard() {
       try {
         const u = await getUser(tgUser.id);
         setUser(u);
-        const a = await getUserAgents(u.id);
+        const [a, balRes] = await Promise.all([
+          getUserAgents(u.id),
+          fetch(`/api/balance/${tgUser.id}`).then(r => r.ok ? r.json() : null),
+        ]);
         setAgents(a);
-        const walletRes = await fetch(`/api/user/${tgUser.id}`);
-        const walletData = await walletRes.json();
-        if (walletData.wallet) setWalletAddress(walletData.wallet);
+        if (balRes) {
+          setBalance(balRes);
+          if (balRes.address) setWalletAddress(balRes.address);
+        }
       } catch (err) {
         console.error("Failed to load:", err);
       }
@@ -40,7 +52,14 @@ export function Dashboard() {
     <div className="page">
       <div className="card">
         <div className="card-title">Portfolio Value</div>
-        <div className="balance-large">$0.00</div>
+        <div className="balance-large">
+          ${balance ? parseFloat(balance.usdt).toFixed(2) : "0.00"}
+        </div>
+        {balance && parseFloat(balance.native) > 0 && (
+          <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "4px" }}>
+            {parseFloat(balance.native).toFixed(6)} {balance.chain === "BSC" ? "BNB" : "ETH"}
+          </div>
+        )}
         <div className={totalPnl >= 0 ? "pnl-positive" : "pnl-negative"}>
           {totalPnl >= 0 ? "+" : ""}{totalPnl.toFixed(2)} USD all time
         </div>
