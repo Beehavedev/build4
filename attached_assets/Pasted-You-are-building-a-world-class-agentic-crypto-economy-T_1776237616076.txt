@@ -1,0 +1,683 @@
+You are building a world-class agentic crypto economy Telegram bot called [YOUR BOT NAME]. This is a full-stack production application. Build everything described below from scratch in a single Replit project.
+
+═══════════════════════════════════════════
+TECH STACK
+═══════════════════════════════════════════
+
+Backend:
+- Node.js 20+ with TypeScript
+- Express.js for HTTP server + webhook handler
+- Grammy (grammY) for Telegram Bot framework
+- Prisma ORM with PostgreSQL (use Replit's built-in PostgreSQL)
+- Redis (Upstash free tier) for session state, rate limiting, agent memory cache
+- Anthropic SDK (@anthropic-ai/sdk) — claude-sonnet-4-5 for all AI calls
+- ethers.js v6 for BSC/EVM wallet management
+- @solana/web3.js for Solana wallet management
+- node-cron for background agent ticker
+- axios for external API calls
+- zod for runtime schema validation
+
+Frontend (Telegram Mini App):
+- Vite + React 18 + TypeScript
+- Tailwind CSS
+- Recharts for PnL charts
+- Telegram WebApp SDK (window.Telegram.WebApp)
+
+Infrastructure:
+- Single Replit repo, monorepo structure
+- Environment variables via Replit Secrets
+
+═══════════════════════════════════════════
+PROJECT STRUCTURE
+═══════════════════════════════════════════
+
+Create this exact folder structure:
+
+/
+├── prisma/
+│   └── schema.prisma
+├── src/
+│   ├── bot/
+│   │   ├── index.ts              # Grammy bot init
+│   │   ├── middleware/
+│   │   │   ├── auth.ts           # User lookup/create
+│   │   │   ├── rateLimit.ts      # Redis rate limiter
+│   │   │   └── session.ts        # Grammy session
+│   │   ├── commands/
+│   │   │   ├── start.ts
+│   │   │   ├── wallet.ts
+│   │   │   ├── trade.ts
+│   │   │   ├── tradestatus.ts
+│   │   │   ├── signals.ts
+│   │   │   ├── smartmoney.ts
+│   │   │   ├── scan.ts
+│   │   │   ├── buy.ts
+│   │   │   ├── sell.ts
+│   │   │   ├── swap.ts
+│   │   │   ├── launch.ts
+│   │   │   ├── copytrade.ts
+│   │   │   ├── portfolio.ts
+│   │   │   ├── agents.ts
+│   │   │   ├── quests.ts
+│   │   │   └── help.ts
+│   │   └── conversations/
+│   │       ├── onboarding.ts
+│   │       ├── launchWizard.ts
+│   │       └── agentStudio.ts
+│   ├── agents/
+│   │   ├── runner.ts             # Cron ticker — runs all active agents
+│   │   ├── tradingAgent.ts       # Core AI trading agent logic
+│   │   ├── memory.ts             # Agent memory CRUD
+│   │   ├── explainer.ts          # Plain-English trade explanation
+│   │   └── riskGuard.ts          # Pre-trade risk guardrail checker
+│   ├── services/
+│   │   ├── wallet.ts             # EVM + Solana wallet generation/import
+│   │   ├── aster.ts              # Aster DEX API integration
+│   │   ├── hyperliquid.ts        # Hyperliquid API integration
+│   │   ├── dex.ts                # Four.meme / OKX DEX swap
+│   │   ├── price.ts              # Price oracle (CoinGecko + fallback)
+│   │   ├── scanner.ts            # Contract safety scanner
+│   │   ├── signals.ts            # Smart money signal aggregator
+│   │   └── pnl.ts                # PnL calculation + on-chain verification
+│   ├── miniapp/                  # Vite React frontend
+│   │   ├── index.html
+│   │   ├── src/
+│   │   │   ├── App.tsx
+│   │   │   ├── pages/
+│   │   │   │   ├── Dashboard.tsx
+│   │   │   │   ├── AgentStudio.tsx
+│   │   │   │   ├── CopyTrade.tsx
+│   │   │   │   └── Portfolio.tsx
+│   │   │   └── components/
+│   │   │       ├── PnLChart.tsx
+│   │   │       ├── AgentCard.tsx
+│   │   │       ├── TradeCard.tsx
+│   │   │       └── RiskPanel.tsx
+│   └── server.ts                 # Express entry point
+├── .env.example
+└── package.json
+
+═══════════════════════════════════════════
+DATABASE SCHEMA (prisma/schema.prisma)
+═══════════════════════════════════════════
+
+Create all of these models:
+
+model User {
+  id              String   @id @default(cuid())
+  telegramId      BigInt   @unique
+  username        String?
+  referredBy      String?
+  referralCode    String   @unique @default(cuid())
+  subscriptionTier String  @default("free")       // free | pro | elite
+  subscriptionExpiry DateTime?
+  totalFeesSpent  Float    @default(0)
+  createdAt       DateTime @default(now())
+  
+  wallets         Wallet[]
+  agents          Agent[]
+  trades          Trade[]
+  quests          UserQuest[]
+  copyFollowing   CopyFollow[] @relation("follower")
+  copyCopied      CopyFollow[] @relation("copied")
+  portfolio       Portfolio?
+}
+
+model Wallet {
+  id          String   @id @default(cuid())
+  userId      String
+  chain       String   // BSC | SOL | ETH | BASE
+  address     String
+  encryptedPK String   // AES-256 encrypted private key
+  label       String   @default("Wallet 1")
+  isActive    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model Agent {
+  id              String   @id @default(cuid())
+  userId          String
+  name            String
+  description     String?
+  isActive        Boolean  @default(false)
+  isPaused        Boolean  @default(false)
+  
+  // Strategy config
+  exchange        String   @default("aster")    // aster | hyperliquid
+  pairs           String[] @default(["BTC/USDT"])
+  timeframe       String   @default("15m")
+  maxPositionSize Float    @default(100)        // USDT
+  maxDailyLoss    Float    @default(50)         // USDT circuit breaker
+  maxLeverage     Float    @default(5)
+  stopLossPct     Float    @default(2)
+  takeProfitPct   Float    @default(4)
+  
+  // Memory (stored as JSON)
+  memorySnapshot  Json?    // {riskProfile, pastPatterns, avoidTokens[], notes}
+  totalPnl        Float    @default(0)
+  totalTrades     Int      @default(0)
+  winRate         Float    @default(0)
+  
+  // Marketplace
+  isListed        Boolean  @default(false)
+  listingPrice    Float?   // USDT/month
+  subscriberCount Int      @default(0)
+  
+  createdAt       DateTime @default(now())
+  lastTickAt      DateTime?
+  
+  user            User     @relation(fields: [userId], references: [id])
+  trades          Trade[]
+  memories        AgentMemory[]
+}
+
+model AgentMemory {
+  id        String   @id @default(cuid())
+  agentId   String
+  type      String   // observation | decision | correction | market_note
+  content   String   // plain text
+  embedding Float[]  // for future vector search
+  metadata  Json?
+  createdAt DateTime @default(now())
+  
+  agent     Agent    @relation(fields: [agentId], references: [id])
+}
+
+model Trade {
+  id            String   @id @default(cuid())
+  userId        String
+  agentId       String?
+  
+  exchange      String
+  pair          String
+  side          String   // LONG | SHORT
+  entryPrice    Float
+  exitPrice     Float?
+  size          Float
+  leverage      Float    @default(1)
+  pnl           Float?
+  pnlPct        Float?
+  
+  status        String   @default("open")   // open | closed | liquidated
+  txHash        String?  // on-chain verification
+  
+  // Explainability
+  aiReasoning   String?  // Claude's plain-English explanation
+  signalsUsed   Json?    // which signals triggered this
+  
+  openedAt      DateTime @default(now())
+  closedAt      DateTime?
+  
+  user          User     @relation(fields: [userId], references: [id])
+  agent         Agent?   @relation(fields: [agentId], references: [id])
+}
+
+model CopyFollow {
+  id          String   @id @default(cuid())
+  followerId  String
+  copiedId    String
+  allocation  Float    @default(100)  // USDT to mirror
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  
+  follower    User     @relation("follower", fields: [followerId], references: [id])
+  copied      User     @relation("copied", fields: [copiedId], references: [id])
+}
+
+model Portfolio {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  totalValue    Float    @default(0)
+  totalPnl      Float    @default(0)
+  totalPnlPct   Float    @default(0)
+  dayPnl        Float    @default(0)
+  verifiedOnChain Boolean @default(false)
+  lastUpdated   DateTime @default(now())
+  
+  user          User     @relation(fields: [userId], references: [id])
+}
+
+model Quest {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  reward      Float    // $B4 tokens
+  type        String   // daily | weekly | milestone
+  requirement Json     // {action, count, params}
+  isActive    Boolean  @default(true)
+  
+  userQuests  UserQuest[]
+}
+
+model UserQuest {
+  id          String   @id @default(cuid())
+  userId      String
+  questId     String
+  progress    Int      @default(0)
+  completed   Boolean  @default(false)
+  claimedAt   DateTime?
+  
+  user        User     @relation(fields: [userId], references: [id])
+  quest       Quest    @relation(fields: [questId], references: [id])
+}
+
+═══════════════════════════════════════════
+CORE FEATURE IMPLEMENTATION SPECS
+═══════════════════════════════════════════
+
+─────────────────────────────────────────
+1. WALLET SERVICE (src/services/wallet.ts)
+─────────────────────────────────────────
+
+- generateEVMWallet(): uses ethers.Wallet.createRandom(), returns {address, privateKey}
+- generateSolanaWallet(): uses Keypair.generate(), returns {address, privateKey as base58}
+- encryptPrivateKey(pk, userId): AES-256-CBC with key = MASTER_KEY + userId hash
+- decryptPrivateKey(encrypted, userId): reverse of above
+- getBalance(address, chain): returns USDT + native token balance
+- NEVER store raw private keys. Always encrypt immediately on generation.
+- The /wallet command shows: address (truncated + copy button inline keyboard), chain balances, option to generate new or switch active.
+- Private key export: require user to type "I CONFIRM" in chat, log to audit table, show once then delete message after 30 seconds.
+
+─────────────────────────────────────────
+2. TRADING AGENT (src/agents/tradingAgent.ts)
+─────────────────────────────────────────
+
+The agent tick function runs every 60 seconds via cron for all active agents.
+
+Each tick does this in order:
+
+STEP 1 — GATHER CONTEXT
+Fetch: current price + 1h/4h/1d OHLCV for agent's pairs, open positions on exchange, current margin/balance, last 10 agent memories, user's risk settings, today's PnL vs maxDailyLoss.
+
+STEP 2 — RISK GUARD CHECK (riskGuard.ts)
+Before calling AI, check:
+- Has daily loss limit been hit? → pause agent, notify user
+- Is there already an open position in this pair? → skip unless adding/reducing
+- Is position size within limits? → clamp if needed
+- Is leverage within user's max? → reject if exceeded
+If any hard block, do NOT call Claude. Log the block reason.
+
+STEP 3 — AI DECISION (Claude call)
+Call Claude claude-sonnet-4-5 with this system prompt:
+
+"""
+You are an expert crypto perpetual futures trading agent. You analyze market data and make precise trading decisions. You must respond ONLY with valid JSON matching the schema exactly.
+
+Your personality: disciplined, risk-aware, patient. You prefer high-probability setups over frequent trades. You never revenge trade. You always respect stop losses.
+
+You have access to this agent's memory which contains observations about past trades, market patterns you've noticed, and corrections from previous mistakes. Use this memory to improve decisions.
+
+Current agent config:
+- Max position size: {maxPositionSize} USDT
+- Max leverage: {maxLeverage}x
+- Stop loss: {stopLossPct}%
+- Take profit: {takeProfitPct}%
+- Max daily loss: {maxDailyLoss} USDT
+- Today's PnL so far: {todayPnl} USDT
+
+Respond with exactly this JSON schema:
+{
+  "action": "OPEN_LONG" | "OPEN_SHORT" | "CLOSE" | "HOLD",
+  "pair": "BTC/USDT",
+  "size": 100,
+  "leverage": 3,
+  "stopLoss": 42000,
+  "takeProfit": 44000,
+  "confidence": 0.72,
+  "reasoning": "Plain English 2-3 sentence explanation of WHY you're taking this action. Mention specific signals. Be honest about risks.",
+  "memoryUpdate": "One sentence observation to remember for future ticks, or null"
+}
+
+If action is HOLD, still provide reasoning explaining what you're waiting for.
+"""
+
+User message contains: formatted price data, OHLCV summary, current positions, recent memories.
+
+STEP 4 — EXECUTE
+If action is OPEN_LONG/OPEN_SHORT:
+- Call exchange API (Aster or Hyperliquid)
+- Save Trade record with aiReasoning from Claude
+- Save memoryUpdate to AgentMemory table
+- Push Telegram notification to user:
+  "🤖 Agent {name} opened {side} {pair}
+   Entry: ${price} | Size: ${size} | {leverage}x
+   SL: ${sl} | TP: ${tp}
+   
+   💭 Why: {reasoning}
+   
+   Confidence: {confidence*100}%"
+
+If action is CLOSE: close position, calculate PnL, update Trade record, notify user with PnL result.
+
+If action is HOLD: log reasoning to memory (skip if confidence < 0.3), no notification.
+
+STEP 5 — PORTFOLIO UPDATE
+Recalculate portfolio totalValue, dayPnl, totalPnl after every executed action.
+
+─────────────────────────────────────────
+3. AGENT MEMORY (src/agents/memory.ts)
+─────────────────────────────────────────
+
+Memory types:
+- observation: market condition noted during a tick
+- decision: record of an action taken and the context
+- correction: logged when a trade closed at a loss — what went wrong
+- market_note: recurring pattern noticed
+
+Functions:
+- saveMemory(agentId, type, content, metadata)
+- getRecentMemories(agentId, limit=10): returns formatted string for AI context
+- buildMemoryContext(agentId): returns structured summary:
+  "Past patterns: ...\nMistakes to avoid: ...\nMarket notes: ...\nRisk profile learned: ..."
+- pruneOldMemories(agentId): keep last 200, archive rest
+
+When a trade closes at a loss, automatically create a correction memory:
+"Closed {pair} {side} at a loss of {pnl} USDT. Entry reason was: {reasoning}. Lesson: [Claude generates this via a separate short API call asking what went wrong]"
+
+─────────────────────────────────────────
+4. SIGNALS SERVICE (src/services/signals.ts)
+─────────────────────────────────────────
+
+/signals command aggregates:
+- Large on-chain transfers (>$500k) via public BSCScan/Etherscan APIs
+- Token accumulation patterns (wallet clustering — track wallets that bought tokens that pumped in last 30d)
+- Unusual options/futures OI spikes (from Hyperliquid public API)
+- Social velocity (mock implementation with TODO for real integration)
+
+Format signal output as Telegram messages:
+"🐋 WHALE SIGNAL — {token}
+ A wallet moved {amount} {token} to {exchange} 
+ This wallet has 3 correct calls in the past 30d (71% accuracy)
+ 
+ 📊 Context: Price up 4% in last hour, volume 3x average
+ ⚡ Signal strength: HIGH
+ 
+ [Scan Contract] [Buy Now] [Track Wallet]"
+
+Each signal card has inline keyboard buttons.
+
+─────────────────────────────────────────
+5. CONTRACT SCANNER (src/services/scanner.ts)
+─────────────────────────────────────────
+
+/scan {contract_address} performs:
+- Fetch contract source from BSCScan API
+- Check: is verified? honeypot simulation (call buy+sell in simulation), owner renounced?, mint function present?, blacklist function?, max tx limit?, liquidity locked?
+- Pass findings to Claude for plain-English risk summary
+
+Output format:
+"🔍 CONTRACT SCAN — {token name}
+ 
+ ✅ Verified source code
+ ✅ Liquidity locked (180 days)
+ ⚠️ Mint function present — owner can create new tokens
+ ❌ Honeypot detected — sell transactions fail in simulation
+ 
+ 🤖 AI Assessment: This contract has a honeypot mechanism that prevents selling. DO NOT BUY. The mint function also allows unlimited supply inflation. Risk score: 9/10 (CRITICAL)
+ 
+ [View on BSCScan] [Check Liquidity]"
+
+─────────────────────────────────────────
+6. COPY TRADING (src/services/pnl.ts + copytrade command)
+─────────────────────────────────────────
+
+Leaderboard (/copytrade):
+- Show top 10 traders ranked by 30d verified PnL
+- Each entry shows: username, 30d PnL%, total trades, win rate, verified badge if txHash exists for >80% of trades
+- [Follow] button on each entry
+
+When User A follows User B with allocation X USDT:
+- Every time User B's agent opens a trade, mirror it for User A scaled to their allocation
+- User A gets notified: "📋 Copying trade from @{username}: {same trade details}"
+
+Verified PnL badge: if Trade record has txHash, fetch from chain to confirm the trade actually happened. Mark portfolio as verifiedOnChain=true only when >80% of trades are chain-verified.
+
+─────────────────────────────────────────
+7. AGENT STUDIO (mini-app page + Telegram conversation)
+─────────────────────────────────────────
+
+/newagent starts a Grammy conversation (multi-step):
+Step 1: "Name your agent"
+Step 2: "Choose exchange" (inline buttons: Aster | Hyperliquid)
+Step 3: "Choose trading pairs" (multi-select inline keyboard)
+Step 4: "Set risk limits" — asks for max position size, max daily loss, leverage cap
+Step 5: "Describe your strategy in plain English (optional — AI will interpret it)"
+  - If user provides description, call Claude to convert it to strategy params
+Step 6: Show summary, ask confirm
+Step 7: Create Agent record, show "Agent created! Use /trade to activate"
+
+Mini-app AgentStudio page:
+- Shows all user's agents as cards
+- Each card: name, status toggle (active/paused), today's PnL, win rate, [Configure] [View Trades] [List on Marketplace]
+- Start/stop sends POST to /api/agents/:id/toggle
+
+─────────────────────────────────────────
+8. QUESTS & REWARDS
+─────────────────────────────────────────
+
+Seed these quests in DB:
+- "First Trade" — execute your first trade — 50 $B4
+- "Signal Hunter" — act on 3 whale signals — 100 $B4
+- "Consistent Trader" — trade 7 days in a row — 200 $B4
+- "Token Creator" — launch a token — 500 $B4
+- "Copy Leader" — get 5 people copying you — 300 $B4
+- "Safe Scanner" — scan 10 contracts — 75 $B4
+- "Agent Builder" — create and run an agent for 7 days — 250 $B4
+
+Quest progress auto-updates when relevant actions happen (hook into trade creation, signal clicks, etc.)
+
+/quests shows progress bars for each quest as inline message with emoji progress bars:
+"🎯 First Trade
+ ████████░░ 80% (1/1 trades)
+ Reward: 50 $B4 [Claim]"
+
+═══════════════════════════════════════════
+TELEGRAM BOT COMMANDS — FULL SPECS
+═══════════════════════════════════════════
+
+/start
+- Check if user exists in DB, create if not
+- Generate BSC wallet automatically on first start
+- Show welcome message with wallet address
+- Show inline keyboard: [💰 My Wallet] [🤖 Create Agent] [📊 Signals] [❓ Help]
+- Mark onboarding complete
+
+/wallet
+- Show all user's wallets grouped by chain
+- Each wallet: truncated address + [📋 Copy] button (uses callback_query to send address)
+- Show USDT balance + native balance for active wallet
+- Buttons: [+ New Wallet] [🔗 Import Wallet] [Switch Active]
+
+/trade
+- If no agent exists: prompt to create one first with button
+- If agent exists but inactive: show [▶️ Start Agent] button
+- If agent active: show current status, [⏸ Pause] [📊 Status] buttons
+- Show risk settings summary
+
+/tradestatus
+- Show all open positions across all exchanges
+- For each position: pair, side, entry, current price, unrealized PnL (colored green/red), liquidation price
+- Show today's realized PnL
+- Button: [🔄 Refresh] [Close All]
+
+/signals
+- Fetch latest 5 signals from signals service
+- Send as separate messages, each with inline buttons
+- [🔄 Refresh Signals] at end
+
+/scan {address}
+- If no address given, ask for it
+- Run scanner, format results as described above
+
+/buy {token} {amount}
+- Look up token on Four.meme or BSC
+- Show token info: price, market cap, 24h change, liquidity
+- Confirm prompt with [✅ Buy {amount} USDT worth] [❌ Cancel]
+- Execute swap if confirmed, show tx hash
+
+/sell
+- Show user's token holdings (from wallet scan)
+- Each token as inline button, click to sell
+- Ask percentage to sell: [25%] [50%] [75%] [100%]
+
+/launch
+- Start multi-step conversation wizard:
+  1. Token name
+  2. Token symbol  
+  3. Total supply
+  4. Description
+  5. Choose platform: [Four.meme] [Raydium] [Stealth]
+  6. Sniper config (optional): buy amount on launch, delay ms
+  7. Confirm + deploy
+
+/copytrade
+- Show leaderboard (top 10 by 30d PnL)
+- Each entry has [Follow] callback button
+
+/portfolio
+- Show portfolio summary: total value, day PnL, total PnL
+- Link to mini-app for full chart view
+- Verified badge if on-chain verified
+
+/agents
+- List all agents with status
+- Quick actions: toggle active/pause
+- Link to mini-app Agent Studio for full config
+
+/quests
+- Show all quests with progress as described above
+
+/help
+- Clean formatted list of commands grouped by category
+- Link to mini-app
+
+═══════════════════════════════════════════
+MINI APP (src/miniapp/)
+═══════════════════════════════════════════
+
+Single-page app with bottom nav: Dashboard | Agents | Copy | Portfolio
+
+Dashboard page:
+- Header: wallet address (truncated) + USDT balance
+- Today's PnL card (large number, green/red)
+- Active agents summary (count active, total PnL today)
+- Recent trades feed (last 5, each with reasoning snippet)
+- Quick action buttons: [Trade] [Signals] [Scan]
+
+AgentStudio page:
+- List of agents as cards
+- Each card has toggle switch for active/paused
+- Expandable config panel per agent (sliders for risk params)
+- [+ Create New Agent] FAB button
+- [List on Marketplace] button per agent
+
+CopyTrade page:
+- Leaderboard table: rank, username, 30d PnL%, win rate, verified badge, [Follow] button
+- "Following" section below showing who you copy and allocation
+- Each followed trader shows their last 3 trades mirrored to you
+
+Portfolio page:
+- PnL line chart (Recharts) — switcher: 1D / 7D / 30D / All
+- Stats row: total value, total PnL, best trade, worst trade
+- Trade history table with reasoning column
+- On-chain verification status badge
+
+API routes (Express):
+POST /api/webhook — Telegram webhook
+GET  /api/user/:telegramId — user data
+GET  /api/agents/:userId — user's agents
+POST /api/agents/:id/toggle — start/pause agent
+GET  /api/portfolio/:userId — portfolio data + trades
+GET  /api/leaderboard — top traders
+GET  /api/signals — latest signals
+POST /api/scan — contract scan
+
+═══════════════════════════════════════════
+ENVIRONMENT VARIABLES (.env.example)
+═══════════════════════════════════════════
+
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_WEBHOOK_URL=https://your-replit-url.repl.co/api/webhook
+ANTHROPIC_API_KEY=
+DATABASE_URL=
+REDIS_URL=
+MASTER_ENCRYPTION_KEY=   # 32-char random string for wallet encryption
+BSCSCAN_API_KEY=
+ETHERSCAN_API_KEY=
+ASTER_API_KEY=
+ASTER_API_SECRET=
+HYPERLIQUID_PRIVATE_KEY=
+MINIAPP_URL=https://your-replit-url.repl.co
+
+═══════════════════════════════════════════
+STARTUP SEQUENCE
+═══════════════════════════════════════════
+
+server.ts must:
+1. Connect to Postgres via Prisma
+2. Connect to Redis
+3. Register Telegram webhook
+4. Start Express server on port 3000
+5. Serve miniapp/dist as static files at /app
+6. Start agent runner cron (every 60 seconds)
+7. Seed default quests if Quest table is empty
+
+package.json scripts:
+- "dev": "concurrently \"npx tsx watch src/server.ts\" \"cd src/miniapp && vite\""
+- "build": "tsc && cd src/miniapp && vite build"
+- "start": "node dist/server.js"
+- "db:push": "prisma db push"
+- "db:seed": "tsx prisma/seed.ts"
+
+═══════════════════════════════════════════
+SECURITY REQUIREMENTS — NON-NEGOTIABLE
+═══════════════════════════════════════════
+
+1. Private keys MUST be AES-256 encrypted before any DB write. The decrypted key must never appear in logs.
+2. All Telegram user IDs must be validated against DB before any action.
+3. Rate limiting: max 30 commands per minute per user via Redis.
+4. Agent runner must check circuit breaker (maxDailyLoss) before EVERY trade execution — no exceptions.
+5. Contract scanner results must never be cached beyond 5 minutes (contract state changes).
+6. All Claude API calls must have a 30-second timeout and graceful fallback if they fail.
+7. Wrap every exchange API call in try/catch — a failed trade must NEVER crash the agent runner.
+
+═══════════════════════════════════════════
+BUILD ORDER
+═══════════════════════════════════════════
+
+Build in this exact order to avoid dependency issues:
+
+1. Set up package.json with all dependencies, install
+2. Write prisma/schema.prisma, run db:push
+3. Build src/services/wallet.ts (no external deps)
+4. Build src/bot/middleware/ (auth, session, rateLimit)
+5. Build src/bot/commands/start.ts + wallet.ts (test bot is alive)
+6. Build src/agents/memory.ts
+7. Build src/agents/riskGuard.ts
+8. Build src/agents/explainer.ts
+9. Build src/agents/tradingAgent.ts (uses memory + riskGuard)
+10. Build src/agents/runner.ts (cron)
+11. Build remaining src/services/ (price, scanner, signals, pnl, aster, hyperliquid, dex)
+12. Build remaining src/bot/commands/
+13. Build src/bot/conversations/
+14. Build src/miniapp/ React app
+15. Wire everything in src/server.ts
+16. Seed quests
+
+═══════════════════════════════════════════
+IMPORTANT NOTES FOR REPLIT AGENT
+═══════════════════════════════════════════
+
+- Use grammY (grammy npm package), NOT telegraf. They have different APIs.
+- For Grammy conversations use @grammyjs/conversations plugin.
+- For Grammy sessions use @grammyjs/storage-redis with Upstash.
+- Prisma with PostgreSQL on Replit: use the built-in PostgreSQL add-on and set DATABASE_URL from the Replit secrets panel.
+- All Claude API calls: use model "claude-sonnet-4-5", max_tokens 1000, always wrap in try/catch with fallback.
+- For the mini-app Vite config, set base: '/app/' so assets resolve correctly when served by Express.
+- The agent runner cron must use a distributed lock via Redis so if Replit restarts mid-tick, it doesn't double-execute.
+- Mock the exchange APIs (Aster, Hyperliquid) if API keys are not set — return realistic fake data so the bot is fully demonstrable without live exchange credentials.
+- When mocking exchange data: generate realistic OHLCV candles, fake positions with real-looking PnL math, so every feature of the bot can be shown working end-to-end.
+
+Start building now. Begin with step 1 of the build order.
