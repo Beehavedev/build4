@@ -125,7 +125,7 @@ const httpServer = createServer(app);
 
 app.use(express.json());
 
-const BUILD_VERSION = "v62D";
+const BUILD_VERSION = "v62E";
 app.get("/health", (_req, res) => {
   const { getBotInstance } = require("./telegram-bot");
   const botInstance = getBotInstance();

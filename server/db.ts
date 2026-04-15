@@ -11,14 +11,14 @@ const pool = new pg.Pool({
   ssl: isSSL ? { rejectUnauthorized: false } : false,
   keepAlive: true,
   max: 5,
-  min: 1,
-  idleTimeoutMillis: 60000,
+  min: 0,
+  idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 15000,
-  allowExitOnIdle: false,
+  allowExitOnIdle: true,
 });
 
 pool.on('error', (err) => {
-  console.error('[DB Pool] Idle client error:', err.message?.substring(0, 150));
+  console.error('[DB Pool] Idle client error (will reconnect):', err.message?.substring(0, 150));
 });
 
 export { pool };

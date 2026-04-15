@@ -9527,35 +9527,80 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
       let wallet = getLinkedWallet(chatId);
 
       if (!wallet) {
-        try {
-          const rows = await Promise.race([
-            storage.getTelegramWallets(chatId.toString()),
-            new Promise<never>((_, rej) => setTimeout(() => rej(new Error("start_db_timeout")), 15000)),
-          ]);
-          console.log(`[Start] Direct DB lookup for chatId=${chatId}: ${rows.length} wallets found`);
-          if (rows.length > 0) {
-            const wallets: string[] = [];
-            let activeIdx = 0;
-            let firstKeyedIdx = -1;
-            for (let i = 0; i < rows.length; i++) {
-              if (rows[i].walletAddress.startsWith("sol:")) continue;
-              wallets.push(rows[i].walletAddress);
-              if (rows[i].isActive) activeIdx = wallets.length - 1;
-              if (rows[i].encryptedPrivateKey) {
-                walletsWithKey.add(`${chatId}:${rows[i].walletAddress}`);
-                if (firstKeyedIdx < 0) firstKeyedIdx = wallets.length - 1;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const rows = await Promise.race([
+              storage.getTelegramWallets(chatId.toString()),
+              new Promise<never>((_, rej) => setTimeout(() => rej(new Error("start_db_timeout")), 10000)),
+            ]);
+            console.log(`[Start] DB lookup attempt ${attempt} for chatId=${chatId}: ${rows.length} wallets found`);
+            if (rows.length > 0) {
+              const wallets: string[] = [];
+              let activeIdx = 0;
+              let firstKeyedIdx = -1;
+              for (let i = 0; i < rows.length; i++) {
+                if (rows[i].walletAddress.startsWith("sol:")) continue;
+                wallets.push(rows[i].walletAddress);
+                if (rows[i].isActive) activeIdx = wallets.length - 1;
+                if (rows[i].encryptedPrivateKey) {
+                  walletsWithKey.add(`${chatId}:${rows[i].walletAddress}`);
+                  if (firstKeyedIdx < 0) firstKeyedIdx = wallets.length - 1;
+                }
+              }
+              if (wallets.length > 0) {
+                if (firstKeyedIdx >= 0 && !walletsWithKey.has(`${chatId}:${wallets[activeIdx]}`)) {
+                  activeIdx = firstKeyedIdx;
+                }
+                telegramWalletMap.set(chatId, { wallets, active: activeIdx });
+                wallet = wallets[activeIdx] || wallets[0];
               }
             }
-            if (wallets.length > 0) {
-              if (firstKeyedIdx >= 0 && !walletsWithKey.has(`${chatId}:${wallets[activeIdx]}`)) {
-                activeIdx = firstKeyedIdx;
-              }
-              telegramWalletMap.set(chatId, { wallets, active: activeIdx });
-              wallet = wallets[activeIdx] || wallets[0];
+            break;
+          } catch (dbErr: any) {
+            console.error(`[Start] DB lookup attempt ${attempt}/3 failed for chatId=${chatId}: ${dbErr.message}`);
+            if (attempt < 3) {
+              await new Promise(r => setTimeout(r, 1500 * attempt));
             }
           }
-        } catch (dbErr: any) {
-          console.error(`[Start] DB lookup failed for chatId=${chatId}: ${dbErr.message}`);
+        }
+        if (!wallet) {
+          try {
+            const pg = require("pg");
+            const rawPool = new pg.Pool({
+              connectionString: process.env.DATABASE_URL,
+              ssl: process.env.RENDER === "true" ? { rejectUnauthorized: false } : false,
+              max: 1,
+              connectionTimeoutMillis: 10000,
+            });
+            const result = await rawPool.query(
+              `SELECT wallet_address, encrypted_private_key, is_active FROM telegram_wallets WHERE chat_id = $1 ORDER BY created_at DESC`,
+              [chatId.toString()]
+            );
+            await rawPool.end();
+            if (result.rows.length > 0) {
+              console.log(`[Start] RAW SQL fallback found ${result.rows.length} wallets for chatId=${chatId}`);
+              const wallets: string[] = [];
+              let activeIdx = 0;
+              let firstKeyedIdx = -1;
+              for (let i = 0; i < result.rows.length; i++) {
+                const r = result.rows[i];
+                if (r.wallet_address.startsWith("sol:")) continue;
+                wallets.push(r.wallet_address);
+                if (r.is_active) activeIdx = wallets.length - 1;
+                if (r.encrypted_private_key) {
+                  walletsWithKey.add(`${chatId}:${r.wallet_address}`);
+                  if (firstKeyedIdx < 0) firstKeyedIdx = wallets.length - 1;
+                }
+              }
+              if (wallets.length > 0) {
+                if (firstKeyedIdx >= 0 && !walletsWithKey.has(`${chatId}:${wallets[activeIdx]}`)) activeIdx = firstKeyedIdx;
+                telegramWalletMap.set(chatId, { wallets, active: activeIdx });
+                wallet = wallets[activeIdx] || wallets[0];
+              }
+            }
+          } catch (rawErr: any) {
+            console.error(`[Start] RAW SQL fallback also failed for chatId=${chatId}: ${rawErr.message}`);
+          }
         }
       }
 
