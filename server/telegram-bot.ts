@@ -9516,32 +9516,73 @@ async function handleMessage(msg: TelegramBot.Message): Promise<void> {
     }
 
     if (cmd === "start" && !isGroup) {
-      console.log(`[Start] v61b /start for chatId=${chatId}`);
-      await ensureWalletsLoaded(chatId);
+      console.log(`[Start] /start for chatId=${chatId}`);
+
       let wallet = getLinkedWallet(chatId);
-      console.log(`[Start] v61b chatId=${chatId} wallet=${wallet || "NONE"} mapHas=${telegramWalletMap.has(chatId)}`);
+
+      if (!wallet) {
+        try {
+          const rows = await Promise.race([
+            storage.getTelegramWallets(chatId.toString()),
+            new Promise<never>((_, rej) => setTimeout(() => rej(new Error("start_db_timeout")), 15000)),
+          ]);
+          console.log(`[Start] Direct DB lookup for chatId=${chatId}: ${rows.length} wallets found`);
+          if (rows.length > 0) {
+            const wallets: string[] = [];
+            let activeIdx = 0;
+            let firstKeyedIdx = -1;
+            for (let i = 0; i < rows.length; i++) {
+              if (rows[i].walletAddress.startsWith("sol:")) continue;
+              wallets.push(rows[i].walletAddress);
+              if (rows[i].isActive) activeIdx = wallets.length - 1;
+              if (rows[i].encryptedPrivateKey) {
+                walletsWithKey.add(`${chatId}:${rows[i].walletAddress}`);
+                if (firstKeyedIdx < 0) firstKeyedIdx = wallets.length - 1;
+              }
+            }
+            if (wallets.length > 0) {
+              if (firstKeyedIdx >= 0 && !walletsWithKey.has(`${chatId}:${wallets[activeIdx]}`)) {
+                activeIdx = firstKeyedIdx;
+              }
+              telegramWalletMap.set(chatId, { wallets, active: activeIdx });
+              wallet = wallets[activeIdx] || wallets[0];
+            }
+          }
+        } catch (dbErr: any) {
+          console.error(`[Start] DB lookup failed for chatId=${chatId}: ${dbErr.message}`);
+        }
+      }
+
       let isNewUser = !wallet;
       if (!wallet) {
         try {
-          wallet = await ensureWallet(chatId);
-          console.log(`[Start] ensureWallet OK for chatId=${chatId}: ${wallet}`);
-          isNewUser = true;
-        } catch (walletErr: any) {
-          if (walletErr.message === "DB_OVERLOADED_EXISTING_USER") {
-            console.warn(`[Start] EXISTING user chatId=${chatId} hit DB overload — showing retry, NOT creating new wallet`);
+          const existingSub = await Promise.race([
+            storage.getBotSubscriptionByChatId(chatId.toString()),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+          ]);
+          if (existingSub) {
+            console.warn(`[Start] EXISTING user chatId=${chatId} — subscription found but wallet load failed. Showing retry.`);
             await bot.sendMessage(chatId,
               "Welcome back! The server is momentarily busy loading your account.\n\nPlease tap the button below to retry — your wallet and data are safe.",
               { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry /start", callback_data: "action:menu" }]] } }
             );
             return;
           }
-          console.error(`[Start] ensureWallet FAILED for chatId=${chatId}:`, walletErr.message);
+        } catch {}
+
+        try {
+          wallet = await withTimeout(autoGenerateWallet(chatId), 15000, "autoGenerateWallet");
+          console.log(`[Start] New wallet generated for chatId=${chatId}: ${wallet}`);
+        } catch (walletErr: any) {
+          console.error(`[Start] Wallet generation FAILED for chatId=${chatId}:`, walletErr.message);
           await bot.sendMessage(chatId,
             "⚠️ Wallet setup encountered an issue. Please try /start again in a few seconds.",
             { reply_markup: { inline_keyboard: [[{ text: "🔄 Retry", callback_data: "action:menu" }]] } }
           );
           return;
         }
+      } else {
+        console.log(`[Start] Existing wallet found for chatId=${chatId}: ${wallet}`);
       }
 
       if (isNewUser) {
