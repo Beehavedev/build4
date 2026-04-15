@@ -71,20 +71,12 @@ const CRITICAL_TABLES_SQL = [
 
 async function ensureSchema() {
   if (!process.env.DATABASE_URL) return;
-  console.log("[BOT-SERVER] Ensuring database schema exists...");
-  const isSSL = process.env.DATABASE_URL.includes("render.com") ||
-    process.env.DATABASE_URL.includes("neon.tech") ||
-    process.env.RENDER === "true";
-  const pool = new pg.Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: isSSL ? { rejectUnauthorized: false } : false,
-    max: 2,
-    connectionTimeoutMillis: 15000,
-  });
+  console.log("[BOT-SERVER] Ensuring database schema exists (using shared pool)...");
+  const { pool: sharedPool } = require("./db");
   try {
     for (const stmt of CRITICAL_TABLES_SQL) {
       try {
-        await pool.query(stmt);
+        await sharedPool.query(stmt);
       } catch (e: any) {
         console.warn("[BOT-SERVER] Table create warning:", e.message?.substring(0, 100));
       }
@@ -92,7 +84,7 @@ async function ensureSchema() {
     console.log("[BOT-SERVER] Critical tables ensured");
 
     try {
-      await pool.query(`ALTER TABLE "trading_challenges" ADD COLUMN IF NOT EXISTS "prize_distribution" TEXT`);
+      await sharedPool.query(`ALTER TABLE "trading_challenges" ADD COLUMN IF NOT EXISTS "prize_distribution" TEXT`);
     } catch (e: any) {
       console.warn("[BOT-SERVER] prize_distribution column:", e.message?.substring(0, 80));
     }
@@ -103,7 +95,7 @@ async function ensureSchema() {
       let ok = 0, skip = 0;
       for (const stmt of statements) {
         try {
-          await pool.query(stmt);
+          await sharedPool.query(stmt);
           ok++;
         } catch {
           skip++;
@@ -115,8 +107,6 @@ async function ensureSchema() {
     }
   } catch (e: any) {
     console.error("[BOT-SERVER] Schema setup error:", e.message?.substring(0, 200));
-  } finally {
-    await pool.end();
   }
 }
 
@@ -125,7 +115,7 @@ const httpServer = createServer(app);
 
 app.use(express.json());
 
-const BUILD_VERSION = "v62F";
+const BUILD_VERSION = "v62G";
 app.get("/health", (_req, res) => {
   const { getBotInstance } = require("./telegram-bot");
   const botInstance = getBotInstance();
