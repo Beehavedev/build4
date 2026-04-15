@@ -341,8 +341,20 @@ async function ensureSchema() {
       host: "0.0.0.0",
       reusePort: true,
     },
-    () => {
+    async () => {
       log(`serving on port ${port}`);
+
+      if (process.env.NODE_ENV === "production") {
+        try {
+          const { db: dbConn } = await import("./db");
+          const { sql: sqlTag } = await import("drizzle-orm");
+          const result = await dbConn.execute(sqlTag`SELECT count(*) as cnt FROM aster_credentials`);
+          const cnt = result.rows?.[0]?.cnt || 0;
+          log(`[Boot] DB health check OK — ${cnt} Aster credentials in DB`);
+        } catch (e: any) {
+          log(`[Boot] DB health check failed: ${e.message?.substring(0, 80)}`);
+        }
+      }
 
       if (process.env.NODE_ENV === "production" && process.env.AGENT_RUNNER_ENABLED === "true") {
         log("Agent runner will start in 45s to reduce DB pressure at boot...");
