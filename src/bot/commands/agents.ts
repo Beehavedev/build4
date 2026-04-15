@@ -28,9 +28,28 @@ export async function agentsCommand(ctx: BotContext) {
   for (const a of agents) {
     const status = a.isActive ? (a.isPaused ? "⏸" : "▶️") : "⏹";
     text += `${status} *${a.name}*\n`;
+    if (a.description) text += `_${a.description}_\n`;
     text += `Exchange: ${a.exchange} | ${a.pairs.join(", ")}\n`;
     text += `Trades: ${a.totalTrades} | Win: ${(a.winRate * 100).toFixed(0)}% | PnL: $${a.totalPnl.toFixed(2)}\n`;
-    text += `Risk: ${a.maxLeverage}x lev, $${a.maxPositionSize} max, $${a.maxDailyLoss} daily loss\n\n`;
+    text += `Risk: ${a.maxLeverage}x lev, $${a.maxPositionSize} max, $${a.maxDailyLoss} daily loss\n`;
+
+    const registry: string[] = [];
+    if (a.erc8004Registered) registry.push(`ERC-8004 ✅ (${a.erc8004Chain || "bnb"} #${a.erc8004TokenId || "?"})`);
+    if (a.bap578Registered) registry.push("BAP-578 ✅");
+    if (a.onchainRegistered) registry.push("On-chain ✅");
+
+    if (registry.length > 0) {
+      text += `🔗 Registry: ${registry.join(" | ")}\n`;
+    }
+    if (a.erc8004TxHash) {
+      const shortTx = a.erc8004TxHash.slice(0, 10) + "..." + a.erc8004TxHash.slice(-6);
+      text += `📜 Tx: \`${shortTx}\`\n`;
+    }
+    if (a.creatorWallet) {
+      const shortWallet = a.creatorWallet.slice(0, 6) + "..." + a.creatorWallet.slice(-4);
+      text += `👤 Creator: \`${shortWallet}\`\n`;
+    }
+    text += "\n";
   }
 
   const buttons = agents.map((a) => [
