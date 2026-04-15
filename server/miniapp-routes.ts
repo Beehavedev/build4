@@ -1800,11 +1800,20 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
         res.json({ running: false });
       } else {
         let client: any;
-        try {
-          client = await getAsterClient(parseInt(chatId));
-        } catch (clientErr: any) {
-          console.error(`[Agent] getAsterClient failed for chatId=${chatId}:`, clientErr.message);
-          return res.status(400).json({ error: `Aster connection failed: ${clientErr.message?.substring(0, 100)}` });
+        let lastErr: any;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            client = await getAsterClient(parseInt(chatId));
+            lastErr = null;
+            break;
+          } catch (clientErr: any) {
+            lastErr = clientErr;
+            console.error(`[Agent] getAsterClient attempt ${attempt}/3 failed for chatId=${chatId}:`, clientErr.message?.substring(0, 120));
+            if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
+          }
+        }
+        if (lastErr) {
+          return res.status(400).json({ error: `Aster connection failed after 3 attempts. Please try again in a few seconds.` });
         }
         if (!client) {
           console.log(`[Agent] No Aster client for chatId=${chatId}`);
