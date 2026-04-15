@@ -4,7 +4,6 @@ import { getAsterClient, getBotWalletAsterClient, getUserWalletAddress, resolveP
 import { createHmac } from "crypto";
 import { getMiniAppHTML } from "./miniapp-html";
 import { generatePnlCardImage } from "./pnl-image";
-import { directQuery } from "./db";
 
 const asterClientCache = new Map<string, { client: any; ts: number }>();
 const CLIENT_CACHE_TTL = 600_000;
@@ -911,12 +910,12 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
         if (!creds && connectedWalletAddr) {
           try {
-            const result = await directQuery(
-              'SELECT chat_id as "chatId" FROM aster_credentials WHERE parent_address = $1 LIMIT 1',
-              [connectedWalletAddr]
-            );
-            if (result.rows?.length > 0) {
-              creds = await getCredsWithFallback(result.rows[0].chatId);
+            const { db: dbConn } = await import("./db");
+            const { asterCredentials: asterCredsTable } = await import("@shared/schema");
+            const { eq } = await import("drizzle-orm");
+            const rows = await dbConn.select({ chatId: asterCredsTable.chatId }).from(asterCredsTable).where(eq(asterCredsTable.parentAddress, connectedWalletAddr)).limit(1);
+            if (rows.length > 0) {
+              creds = await getCredsWithFallback(rows[0].chatId);
               if (creds) console.log(`[MiniApp] Found Aster creds via parentAddress fallback: wallet=${connectedWalletAddr.substring(0,10)}`);
             }
           } catch (e: any) {
@@ -926,12 +925,12 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;bac
 
         if (!creds && connectedWalletAddr) {
           try {
-            const result = await directQuery(
-              'SELECT chat_id as "chatId" FROM aster_credentials WHERE parent_address LIKE $1 LIMIT 1',
-              ["astercode:" + connectedWalletAddr]
-            );
-            if (result.rows?.length > 0) {
-              creds = await getCredsWithFallback(result.rows[0].chatId);
+            const { db: dbConn } = await import("./db");
+            const { asterCredentials: asterCredsTable } = await import("@shared/schema");
+            const { sql: sqlTag } = await import("drizzle-orm");
+            const rows = await dbConn.select({ chatId: asterCredsTable.chatId }).from(asterCredsTable).where(sqlTag`parent_address LIKE ${"astercode:" + connectedWalletAddr}`).limit(1);
+            if (rows.length > 0) {
+              creds = await getCredsWithFallback(rows[0].chatId);
               if (creds) console.log(`[MiniApp] Found Aster creds via astercode: prefix fallback: wallet=${connectedWalletAddr.substring(0,10)}`);
             }
           } catch (e: any) {
