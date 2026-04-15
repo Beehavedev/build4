@@ -1,0 +1,45 @@
+../dist/public/assets/es-DuChi79w.js                       56.18 kB │ gzip:  18.42 kB
+../dist/public/assets/index-CfjUK10J.js                    97.24 kB │ gzip:  26.75 kB
+../dist/public/assets/basic-BuT5n6L2.js                   107.51 kB │ gzip:  28.52 kB
+../dist/public/assets/index-CI3s947V.js                   120.12 kB │ gzip:  47.52 kB
+../dist/public/assets/w3m-modal-mv7lTBaL.js               165.90 kB │ gzip:  34.65 kB
+../dist/public/assets/index-Dt1d_lAT.js                   227.91 kB │ gzip:  72.48 kB
+../dist/public/assets/index-C1qQxUTp.js                   509.37 kB │ gzip: 155.36 kB
+../dist/public/assets/core-BluiIkeS.js                    652.45 kB │ gzip: 191.77 kB
+../dist/public/assets/index-DWRCtI67.js                 1,880.88 kB │ gzip: 502.96 kB
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 13.32s
+Frontend built → dist/public/
+Building bot server...
+✘ [ERROR] Expected "}" but found "if"
+    server/telegram-bot.ts:5:4:
+      5 │     if (data.startsWith("ai:")) {
+        │     ~~
+        ╵     }
+▲ [WARNING] "import.meta" is not available with the "cjs" output format and will be empty [empty-import-meta]
+    server/index.ts:261:78:
+      261 │ ...'undefined' ? __dirname : new URL(".", import.meta.url).pathname;
+          ╵                                           ~~~~~~~~~~~
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+1 warning and 1 error
+Error: Build failed with 1 error:
+server/telegram-bot.ts:5:4: ERROR: Expected "}" but found "if"
+    at failureErrorWithLog (/opt/render/project/src/node_modules/esbuild/lib/main.js:1467:15)
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:926:25
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:878:52
+    at buildResponseToResult (/opt/render/project/src/node_modules/esbuild/lib/main.js:924:7)
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:951:16
+    at responseCallbacks.<computed> (/opt/render/project/src/node_modules/esbuild/lib/main.js:603:9)
+    at handleIncomingPacket (/opt/render/project/src/node_modules/esbuild/lib/main.js:658:12)
+    at Socket.readFromStdout (/opt/render/project/src/node_modules/esbuild/lib/main.js:581:7)
+    at Socket.emit (node:events:519:28)
+    at addChunk (node:internal/streams/readable:561:12) {
+  errors: [Getter/Setter],
+  warnings: [Getter/Setter]
+}
+Menu
+==> Build failed 😞
+==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
