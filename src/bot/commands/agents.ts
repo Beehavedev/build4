@@ -161,15 +161,22 @@ You can fine-tune position sizes, risk limits, and pairs anytime in the *mini-ap
       return
     }
 
-    let text = `🤖 *Your On-Chain Agents*\n\n`
+    let text = `🤖 *Your On-Chain Agents*\n\n_Every agent below has a unique identity permanently registered on BNB Smart Chain._\n\n`
     agents.forEach((a) => {
       const status = a.isActive ? '🟢 Active' : a.isPaused ? '🔴 Paused' : '⚪ Inactive'
-      const onchain = a.onchainTxHash ? '⛓ on-chain' : '🟡 pending'
-      text += `*${a.name}* — ${status} | ${onchain}\n`
+      text += `━━━━━━━━━━━━━━\n*${a.name}* — ${status}\n`
+
       if (a.walletAddress) {
-        text += `Wallet: \`${truncateAddress(a.walletAddress)}\`\n`
+        text += `🔐 *On-chain ID:* \`${a.walletAddress}\`\n`
+        text += `🔎 [View agent on BSCScan](${bscscanAddressUrl(a.walletAddress)})\n`
       }
-      text += `PnL: ${a.totalPnl >= 0 ? '+' : ''}$${a.totalPnl.toFixed(2)} | WR: ${a.winRate.toFixed(0)}% (${a.totalTrades} trades)\n\n`
+      if (a.onchainTxHash) {
+        text += `⛓ *Registration:* \`${truncateAddress(a.onchainTxHash)}\`\n`
+        text += `📜 [View registration tx](${bscscanTxUrl(a.onchainTxHash)})\n`
+      } else {
+        text += `🟡 *Registration:* pending broadcast\n`
+      }
+      text += `📊 PnL: ${a.totalPnl >= 0 ? '+' : ''}$${a.totalPnl.toFixed(2)} | WR: ${a.winRate.toFixed(0)}% (${a.totalTrades} trades)\n\n`
     })
 
     const keyboard = new InlineKeyboard()
