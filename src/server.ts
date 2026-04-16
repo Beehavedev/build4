@@ -42,12 +42,21 @@ app.get('/api/user/:telegramId', async (req, res) => {
 
 app.get('/api/agents/:userId', async (req, res) => {
   try {
+    const raw = req.params.userId
+    // Mini app passes Telegram numeric ID; bot passes internal UUID. Support both.
+    let internalUserId = raw
+    if (/^\d+$/.test(raw)) {
+      const u = await db.user.findUnique({ where: { telegramId: BigInt(raw) } })
+      if (!u) return res.json([])
+      internalUserId = u.id
+    }
     const agents = await db.agent.findMany({
-      where: { userId: req.params.userId },
+      where: { userId: internalUserId },
       orderBy: { createdAt: 'desc' }
     })
     res.json(agents)
-  } catch {
+  } catch (err) {
+    console.error('[API] /agents failed:', err)
     res.status(500).json({ error: 'Internal error' })
   }
 })
@@ -69,16 +78,24 @@ app.post('/api/agents/:id/toggle', async (req, res) => {
 
 app.get('/api/portfolio/:userId', async (req, res) => {
   try {
+    const raw = req.params.userId
+    let internalUserId = raw
+    if (/^\d+$/.test(raw)) {
+      const u = await db.user.findUnique({ where: { telegramId: BigInt(raw) } })
+      if (!u) return res.json({ portfolio: null, trades: [] })
+      internalUserId = u.id
+    }
     const [portfolio, trades] = await Promise.all([
-      db.portfolio.findUnique({ where: { userId: req.params.userId } }),
+      db.portfolio.findUnique({ where: { userId: internalUserId } }),
       db.trade.findMany({
-        where: { userId: req.params.userId },
+        where: { userId: internalUserId },
         orderBy: { openedAt: 'desc' },
         take: 50
       })
     ])
     res.json({ portfolio, trades })
-  } catch {
+  } catch (err) {
+    console.error('[API] /portfolio failed:', err)
     res.status(500).json({ error: 'Internal error' })
   }
 })
