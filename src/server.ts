@@ -229,13 +229,8 @@ async function start() {
     console.error("[ASTER] Broker init error:", err.message);
   }
 
-  const webhookUrl = process.env.RENDER_EXTERNAL_URL
-    ? `${process.env.RENDER_EXTERNAL_URL}/api/webhook`
-    : process.env.REPLIT_DEV_DOMAIN
-      ? `https://${process.env.REPLIT_DEV_DOMAIN}/api/webhook`
-      : null;
-
-  if (webhookUrl) {
+  if (process.env.RENDER_EXTERNAL_URL) {
+    const webhookUrl = `${process.env.RENDER_EXTERNAL_URL}/api/webhook`;
     try {
       await bot.api.setWebhook(webhookUrl);
       console.log(`[SERVER] Webhook set to: ${webhookUrl}`);
@@ -243,8 +238,8 @@ async function start() {
       console.error("[SERVER] Failed to set webhook:", err.message);
     }
   } else {
-    console.log("[SERVER] No webhook URL, starting long polling...");
-    bot.start();
+    console.log("[SERVER] Dev mode — NOT setting webhook (production bot runs on Render)");
+    console.log("[SERVER] Webhook handler available at /api/webhook for testing");
   }
 
   const sendMessage = async (chatId: string, text: string, opts?: any) => {
