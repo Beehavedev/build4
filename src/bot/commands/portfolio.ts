@@ -61,13 +61,11 @@ export async function handlePortfolio(ctx: Context) {
     })
   }
 
-  const miniAppUrl = process.env.MINIAPP_URL
+  const miniAppUrl = process.env.MINIAPP_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
   const keyboard = new InlineKeyboard()
     .text('🔄 Refresh', 'portfolio_refresh')
-
-  if (miniAppUrl) {
-    keyboard.row().url('📊 Full Chart View', miniAppUrl)
-  }
+    .row()
+    .webApp('📊 Full Chart View', miniAppUrl)
 
   await ctx.reply(text, { parse_mode: 'Markdown', reply_markup: keyboard })
 }

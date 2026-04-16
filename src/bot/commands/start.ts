@@ -11,7 +11,11 @@ export function registerStart(bot: Bot) {
       where: { userId: user.id, isActive: true }
     })
 
+    const miniAppUrl = process.env.MINIAPP_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
+
     const keyboard = new InlineKeyboard()
+      .webApp('📱 Open BUILD4', miniAppUrl)
+      .row()
       .text('💰 My Wallet', 'wallet')
       .text('🤖 Create Agent', 'create_agent')
       .row()
@@ -26,11 +30,11 @@ export function registerStart(bot: Bot) {
       : ''
 
     await ctx.reply(
-      `⚡ *Welcome to APEX Trading Bot*
+      `⚡ *Welcome to BUILD4 Trading Bot*
 
 The world's most advanced AI crypto trading agent.${walletLine}
 
-*What APEX does:*
+*What BUILD4 does:*
 • 🤖 AI agents trade perpetual futures 24/7
 • 🐋 Real-time whale & smart money signals
 • 🔍 Contract safety scanner
@@ -49,7 +53,6 @@ Use /help to see all commands.`,
     )
   })
 
-  // Handle inline keyboard callbacks
   bot.callbackQuery('wallet', async (ctx) => {
     await ctx.answerCallbackQuery()
     const { handleWalletCommand } = await import('./wallet')
@@ -85,7 +88,7 @@ Use /help to see all commands.`,
   bot.callbackQuery('help', async (ctx) => {
     await ctx.answerCallbackQuery()
     await ctx.reply(
-      `📖 *APEX Command Reference*
+      `📖 *BUILD4 Command Reference*
 
 *💰 Wallet*
 /wallet — View wallets & balances

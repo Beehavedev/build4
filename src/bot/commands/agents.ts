@@ -196,7 +196,7 @@ export function registerAgents(bot: Bot) {
       const agent = await db.agent.create({
         data: {
           userId: user.id,
-          name: session.name ?? 'APEX Agent',
+          name: session.name ?? 'BUILD4 Agent',
           exchange: session.exchange ?? 'mock',
           pairs: session.pairs ?? ['BTC/USDT'],
           maxPositionSize: session.maxPosition ?? 100,

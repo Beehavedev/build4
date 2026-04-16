@@ -502,7 +502,7 @@ export async function approveAgent(params: {
       CanWithdraw:  false,
       Builder:      params.builderAddress,
       MaxFeeRate:   params.maxFeeRate,
-      BuilderName:  'APEX'
+      BuilderName:  'BUILD4'
     }
   }
 
@@ -526,7 +526,7 @@ export async function approveAgent(params: {
       canWithdraw:  'false',
       builder:      params.builderAddress,
       maxFeeRate:   params.maxFeeRate,
-      builderName:  'APEX'
+      builderName:  'BUILD4'
     }).toString()
 
     await client(BASE_SIGNED).post('/fapi/v3/approveAgent?' + body)

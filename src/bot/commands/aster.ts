@@ -54,7 +54,7 @@ export async function handleAsterStatus(ctx: Context) {
     .text('🔄 Refresh', 'aster_status')
 
   if (!user.asterOnboarded && isLive) {
-    keyboard.row().text('🚀 Connect to APEX (sign once)', 'aster_onboard')
+    keyboard.row().text('🚀 Connect to BUILD4 (sign once)', 'aster_onboard')
   }
 
   await ctx.reply(text, { parse_mode: 'Markdown', reply_markup: keyboard })
@@ -157,7 +157,7 @@ export function registerAster(bot: Bot) {
         userAddress:    wallet.address,
         userPrivateKey: userPrivKey,
         agentAddress,
-        agentName:      'APEX Trading Bot',
+        agentName:      'BUILD4 Trading Bot',
         builderAddress,
         maxFeeRate:     feeRate,
         expiredDays:    365

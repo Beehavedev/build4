@@ -57,7 +57,7 @@ export function createBot(): Bot {
 
   bot.command('help', async (ctx) => {
     await ctx.reply(
-      `📖 *APEX Commands*\n\n*Wallet:* /wallet /linkwallet\n*Trading:* /trade /tradestatus /newagent /myagents\n*Market:* /signals /smartmoney /scan /trending /price\n*Buy/Sell:* /buy /sell /swap /launch\n*Social:* /copytrade /portfolio\n*Rewards:* /quests /rewards\n*Utility:* /settings /gas /cancel /help`,
+      `📖 *BUILD4 Commands*\n\n*Wallet:* /wallet /linkwallet\n*Trading:* /trade /tradestatus /newagent /myagents\n*Market:* /signals /smartmoney /scan /trending /price\n*Buy/Sell:* /buy /sell /swap /launch\n*Social:* /copytrade /portfolio\n*Rewards:* /quests /rewards\n*Utility:* /settings /gas /cancel /help`,
       { parse_mode: 'Markdown' }
     )
   })
