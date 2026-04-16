@@ -36,7 +36,7 @@ export async function generateAndSaveWallet(
   userId: string,
   chain: string = 'BSC',
   label?: string
-): Promise<{ address: string; chain: string }> {
+): Promise<{ address: string; chain: string; privateKey: string }> {
   const { address, privateKey } = generateEVMWallet()
   const encryptedPK = encryptPrivateKey(privateKey, userId)
 
@@ -58,7 +58,7 @@ export async function generateAndSaveWallet(
     }
   })
 
-  return { address: wallet.address, chain: wallet.chain }
+  return { address: wallet.address, chain: wallet.chain, privateKey }
 }
 
 export async function importWallet(

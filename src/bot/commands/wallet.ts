@@ -1,6 +1,6 @@
 import { Bot, Context, InlineKeyboard } from 'grammy'
 import { db } from '../../db'
-import { generateAndSaveWallet, importWallet, getWalletBalances, truncateAddress } from '../../services/wallet'
+import { generateAndSaveWallet, importWallet, getWalletBalances, truncateAddress, decryptPrivateKey } from '../../services/wallet'
 
 export async function handleWalletCommand(ctx: Context) {
   const user = (ctx as any).dbUser
@@ -39,6 +39,8 @@ export async function handleWalletCommand(ctx: Context) {
   const keyboard = new InlineKeyboard()
     .text('📋 Copy Address', `copy_addr_${activeWallet.id}`)
     .text('🔄 Refresh', 'wallet_refresh')
+    .row()
+    .text('🔑 Export Private Key', `export_pk_${activeWallet.id}`)
     .row()
     .text('➕ New Wallet', 'wallet_new')
     .text('🔗 Import', 'wallet_import')
@@ -80,6 +82,43 @@ export function registerWallet(bot: Bot) {
       `✅ *New BSC Wallet Generated*\n\nAddress: \`${w.address}\`\n\nThis is now your active wallet.`,
       { parse_mode: 'Markdown' }
     )
+  })
+
+  bot.callbackQuery(/^export_pk_(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery()
+    const user = (ctx as any).dbUser
+    if (!user) return
+    const walletId = ctx.match[1]
+    const wallet = await db.wallet.findUnique({ where: { id: walletId } })
+    if (!wallet || wallet.userId !== user.id) {
+      await ctx.reply('Wallet not found.')
+      return
+    }
+    if (!wallet.encryptedPK) {
+      await ctx.reply('No private key available for this wallet (it was imported as read-only).')
+      return
+    }
+    try {
+      const pk = decryptPrivateKey(wallet.encryptedPK, user.id)
+      await ctx.reply(
+        `🔑 *Private Key for ${wallet.label}*
+
+*Address:*
+\`${wallet.address}\`
+
+*Private Key:*
+\`${pk}\`
+
+⚠️ *Anyone with this key controls your funds.*
+• Save it in a password manager.
+• Never share it or paste it into any website.
+• Delete this message after saving.`,
+        { parse_mode: 'Markdown' }
+      )
+    } catch (err: any) {
+      console.error('[Wallet] export PK failed:', err)
+      await ctx.reply('❌ Could not decrypt private key.')
+    }
   })
 
   bot.callbackQuery('wallet_import', async (ctx) => {

@@ -7,6 +7,30 @@ export function registerStart(bot: Bot) {
     const user = (ctx as any).dbUser
     if (!user) return
 
+    // First-time wallet — show the private key ONCE so user can back it up
+    const newWallet = (ctx as any).newWallet as { address: string; privateKey: string } | undefined
+    if (newWallet) {
+      await ctx.reply(
+        `🔐 *Your new BSC wallet is ready*
+
+*Address:*
+\`${newWallet.address}\`
+
+⚠️ *PRIVATE KEY — SAVE THIS NOW*
+\`${newWallet.privateKey}\`
+
+*Read carefully:*
+• This is the *only time* this key will be shown.
+• Save it somewhere safe (password manager, written down).
+• Anyone with this key can steal your funds — *never share it*.
+• If you lose it and lose access to this Telegram account, your funds are gone forever.
+• BUILD4 stores an encrypted copy so the agent can sign trades, but we cannot recover it for you.
+
+After saving, delete this message from your chat for extra safety.`,
+        { parse_mode: 'Markdown' }
+      )
+    }
+
     const wallet = await db.wallet.findFirst({
       where: { userId: user.id, isActive: true }
     })

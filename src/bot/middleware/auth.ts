@@ -20,8 +20,9 @@ export async function authMiddleware(ctx: Context, next: NextFunction) {
         }
       })
 
-      // Auto-generate BSC wallet
-      await generateAndSaveWallet(user.id, 'BSC', 'Main Wallet')
+      // Auto-generate BSC wallet — capture PK so /start can show it once
+      const newWallet = await generateAndSaveWallet(user.id, 'BSC', 'Main Wallet')
+      ;(ctx as any).newWallet = newWallet
 
       // Ensure portfolio exists
       await db.portfolio.create({
