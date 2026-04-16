@@ -12,7 +12,17 @@ import { ethers } from 'ethers'
 
 const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
 export const BAP578_CONTRACT = '0xd7deb29ddbb13607375ce50405a574ac2f7d978d'
-export const MINT_FEE_BNB = '0.01'
+
+// Protocol mint fee (paid to the BAP-578 team treasury 0xF029…F08d)
+export const PROTOCOL_FEE_BNB = '0.01'
+// BUILD4 service fee (paid to our revenue wallet)
+export const BUILD4_FEE_BNB = '0.005'
+// Total amount the user pays for one verified agent
+export const TOTAL_USER_FEE_BNB = '0.015'
+
+export const BUILD4_FEE_WALLET = (
+  process.env.BUILD4_FEE_WALLET ?? '0x5Ff57464152c9285A8526a0665d996dA66e2def1'
+).toLowerCase()
 
 const BAP578_ABI = [
   'function createAgent(address to, address logicAddress, string metadataURI, (string persona, string experience, string voiceHash, string animationURI, string vaultURI, bytes32 vaultHash) extendedMetadata) payable returns (uint256)',
@@ -117,11 +127,32 @@ export async function mintBap578Agent(opts: {
       } catch {}
     }
 
+    // BUILD4 service fee — separate transfer to our revenue wallet.
+    // We do this AFTER the protocol mint succeeds, so a failed transfer can never
+    // leave the user paying for verification they didn't get.
+    try {
+      const feeAmount = ethers.parseEther(BUILD4_FEE_BNB)
+      const feeTx = await wallet.sendTransaction({ to: BUILD4_FEE_WALLET, value: feeAmount })
+      await feeTx.wait()
+      console.log('[BAP578] BUILD4 service fee collected:', feeTx.hash)
+    } catch (e: any) {
+      // Don't fail the whole mint — agent is already verified on-chain. Just log.
+      console.error('[BAP578] BUILD4 fee transfer failed (agent still verified):', e.message)
+    }
+
     return { success: true, tokenId, txHash: tx.hash }
   } catch (err: any) {
     console.error('[BAP578] mint failed:', err.message)
     return { success: false, reason: err.shortMessage ?? err.message }
   }
+}
+
+export function bscscanTxUrl(txHash: string): string {
+  return `https://bscscan.com/tx/${txHash}`
+}
+
+export function bscscanAddressUrl(address: string): string {
+  return `https://bscscan.com/address/${address}`
 }
 
 export function nfaScanUrl(address: string): string {

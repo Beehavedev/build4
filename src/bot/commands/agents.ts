@@ -2,9 +2,15 @@ import { Bot, Context, InlineKeyboard } from 'grammy'
 import { ethers } from 'ethers'
 import { db } from '../../db'
 import { generateEVMWallet, encryptPrivateKey, decryptPrivateKey, truncateAddress } from '../../services/wallet'
-import { registerAgentOnChain, bscscanTxUrl, bscscanAddressUrl } from '../../services/registry'
 import { buildAgentIdentity, buildMetadataJson, DEFAULT_LEARNING_MODEL } from '../../services/agentIdentity'
-import { mintBap578Agent, getBnbBalance, getBap578MintFee, bap578TokenUrl, nfaScanUrl, MINT_FEE_BNB } from '../../services/bap578'
+import {
+  mintBap578Agent, getBnbBalance, getBap578MintFee,
+  bap578TokenUrl, nfaScanUrl, bscscanTxUrl, bscscanAddressUrl,
+  TOTAL_USER_FEE_BNB, BUILD4_FEE_BNB, PROTOCOL_FEE_BNB
+} from '../../services/bap578'
+
+// User pays protocol fee + BUILD4 fee + a tiny gas buffer (two txs).
+const TOTAL_NEEDED_WEI = ethers.parseEther(TOTAL_USER_FEE_BNB) + ethers.parseEther('0.001')
 
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL ?? 'https://build4-1.onrender.com'
 
@@ -85,9 +91,7 @@ export function registerAgents(bot: Bot) {
       return
     }
 
-    await ctx.reply(`⏳ Reserving *${name}*...\n\nGenerating wallet & broadcasting registration to BNB Chain...`, {
-      parse_mode: 'Markdown'
-    })
+    await ctx.reply(`⏳ Reserving *${name}*...`, { parse_mode: 'Markdown' })
 
     const { address, privateKey } = generateEVMWallet()
     const encryptedPK = encryptPrivateKey(privateKey, user.id)
@@ -103,8 +107,6 @@ export function registerAgents(bot: Bot) {
       publicBaseUrl: PUBLIC_BASE_URL
     })
 
-    const result = await registerAgentOnChain(identity)
-
     try {
       const agent = await db.agent.create({
         data: {
@@ -112,7 +114,6 @@ export function registerAgents(bot: Bot) {
           name,
           walletAddress: address,
           encryptedPK,
-          onchainTxHash: result.txHash ?? null,
           onchainChain: 'BSC',
           learningModel: identity.model,
           learningRoot: identity.learningRoot,
@@ -131,21 +132,16 @@ export function registerAgents(bot: Bot) {
 
       sessions.delete(user.id)
 
-      const onchainStatus = result.success
-        ? `✅ *Registered on-chain*\n[View transaction](${bscscanTxUrl(result.txHash!)})`
-        : `🟡 *On-chain registration pending*\n_${result.reason}_`
-
-      // Try BAP-578 NFA mint automatically when the user has BNB and no PIN.
+      // Try BAP-578 NFA mint automatically when the user has enough BNB and no PIN.
       // PIN-protected users must call /verifyagent so we can prompt for the PIN.
       let bap578Status = ''
-      if (!user.pinHash && wallets[0] && result.success) {
+      let bap578TxHashForReply: string | null = null
+      if (!user.pinHash && wallets[0]?.encryptedPK) {
         try {
           const userBalance = await getBnbBalance(wallets[0].address)
-          const fee = await getBap578MintFee()
-          const needed = fee + ethers.parseEther('0.001')
-          if (userBalance >= needed) {
-            const userPK = decryptPrivateKey(wallets[0].encryptedPK!, user.id)
-            const metadataJson = JSON.stringify(buildMetadataJson(identity, result.txHash))
+          if (userBalance >= TOTAL_NEEDED_WEI) {
+            const userPK = decryptPrivateKey(wallets[0].encryptedPK, user.id)
+            const metadataJson = JSON.stringify(buildMetadataJson(identity, null))
             const metadataHash = ethers.keccak256(ethers.toUtf8Bytes(metadataJson))
             const mint = await mintBap578Agent({
               userWalletPK: userPK,
@@ -154,27 +150,34 @@ export function registerAgents(bot: Bot) {
               metadataURI: identity.metadataUri,
               metadataHash,
               onTxSent: async (h) => {
-                // Persist before confirmation so a wait()-failure can't double-charge.
-                await db.agent.update({ where: { id: agent.id }, data: { bap578TxHash: h } })
+                // Persist tx hash before confirmation so a wait()-failure can't double-charge on retry.
+                await db.agent.update({ where: { id: agent.id }, data: { bap578TxHash: h, onchainTxHash: h } })
               }
             })
             if (mint.success && mint.tokenId) {
               await db.agent.update({
                 where: { id: agent.id },
-                data: { bap578TokenId: mint.tokenId, bap578TxHash: mint.txHash, bap578Verified: true }
+                data: {
+                  bap578TokenId: mint.tokenId,
+                  bap578TxHash: mint.txHash,
+                  onchainTxHash: mint.txHash,
+                  bap578Verified: true
+                }
               })
-              bap578Status = `\n\n💎 *BAP-578 NFA #${mint.tokenId} minted!*\n[View on NFAScan](${nfaScanUrl(address)}) · [BSCScan](${bap578TokenUrl(mint.tokenId)})`
+              bap578TxHashForReply = mint.txHash ?? null
+              bap578Status = `✅ *BAP-578 NFA #${mint.tokenId} minted!*\n[View on NFAScan](${nfaScanUrl(address)}) · [BSCScan](${bap578TokenUrl(mint.tokenId)})${mint.txHash ? `\n[Mint tx](${bscscanTxUrl(mint.txHash)})` : ''}`
             } else {
-              bap578Status = `\n\n🟡 BAP-578 mint skipped: _${mint.reason}_\nRun /verifyagent ${name} to retry.`
+              bap578Status = `🟡 *Verification pending* — mint failed: _${mint.reason}_\nRun \`/verifyagent ${name}\` to retry.`
             }
           } else {
-            bap578Status = `\n\n💎 *Verify on BAP-578* (NFAScan-listed): fund your wallet with ${MINT_FEE_BNB} BNB then run /verifyagent ${name}`
+            bap578Status = `🟡 *Verification pending* — fund your main wallet with at least *${TOTAL_USER_FEE_BNB} BNB* then run \`/verifyagent ${name}\`.\n\n_Cost: ${PROTOCOL_FEE_BNB} BNB (BAP-578 protocol) + ${BUILD4_FEE_BNB} BNB (BUILD4 service fee)._`
           }
         } catch (e: any) {
           console.error('[BAP578] auto-mint error:', e.message)
+          bap578Status = `🟡 *Verification pending* — run \`/verifyagent ${name}\` to retry.`
         }
       } else if (user.pinHash) {
-        bap578Status = `\n\n💎 *Verify on BAP-578*: run /verifyagent ${name} (PIN required, costs ${MINT_FEE_BNB} BNB)`
+        bap578Status = `🟡 *Verification pending* — run \`/verifyagent ${name}\` (PIN required, costs ${TOTAL_USER_FEE_BNB} BNB).`
       }
 
       await ctx.reply(
@@ -184,7 +187,7 @@ export function registerAgents(bot: Bot) {
 \`${address}\`
 [View on BSCScan](${bscscanAddressUrl(address)})
 
-${onchainStatus}${bap578Status}
+${bap578Status}
 
 ━━━━━━━━━━━━━━
 
@@ -229,11 +232,17 @@ You can fine-tune position sizes, risk limits, and pairs anytime in the *mini-ap
         text += `🔐 *On-chain ID:* \`${a.walletAddress}\`\n`
         text += `🔎 [View agent on BSCScan](${bscscanAddressUrl(a.walletAddress)})\n`
       }
-      if (a.onchainTxHash) {
-        text += `⛓ *Registration:* \`${truncateAddress(a.onchainTxHash)}\`\n`
-        text += `📜 [View registration tx](${bscscanTxUrl(a.onchainTxHash)})\n`
+      if (a.bap578Verified && a.bap578TokenId) {
+        text += `💎 *BAP-578 NFA:* #${a.bap578TokenId} ✓\n`
+        text += `🌐 [View on NFAScan](${nfaScanUrl(a.walletAddress!)})\n`
+        if (a.bap578TxHash) {
+          text += `📜 [Mint tx](${bscscanTxUrl(a.bap578TxHash)})\n`
+        }
+      } else if (a.bap578TxHash) {
+        text += `🟡 *BAP-578 mint:* awaiting confirmation\n`
+        text += `📜 [Check tx](${bscscanTxUrl(a.bap578TxHash)})\n`
       } else {
-        text += `🟡 *Registration:* pending broadcast\n`
+        text += `🟡 *Verification pending* — run \`/verifyagent ${a.name}\` (${TOTAL_USER_FEE_BNB} BNB)\n`
       }
       // ERC-8004 trust signals (visible to scanners like NFAScan)
       if (a.identityStandard) {
@@ -272,7 +281,10 @@ You can fine-tune position sizes, risk limits, and pairs anytime in the *mini-ap
 
     const arg = (ctx.match as string | undefined)?.trim()
     if (!arg) {
-      await ctx.reply('Usage: `/verifyagent <agent_name>`\n\nMints the official BAP-578 NFA NFT for the agent (costs 0.01 BNB).', { parse_mode: 'Markdown' })
+      await ctx.reply(
+        `Usage: \`/verifyagent <agent_name>\`\n\nMints the official BAP-578 NFA NFT for the agent. Total cost: *${TOTAL_USER_FEE_BNB} BNB* (${PROTOCOL_FEE_BNB} BNB protocol fee + ${BUILD4_FEE_BNB} BNB BUILD4 service fee).`,
+        { parse_mode: 'Markdown' }
+      )
       return
     }
 
@@ -310,16 +322,15 @@ You can fine-tune position sizes, risk limits, and pairs anytime in the *mini-ap
     }
 
     const balance = await getBnbBalance(wallets[0].address)
-    const fee = await getBap578MintFee()
-    if (balance < fee + ethers.parseEther('0.001')) {
+    if (balance < TOTAL_NEEDED_WEI) {
       await ctx.reply(
-        `❌ *Insufficient BNB*\n\nYou need at least *${MINT_FEE_BNB} BNB* (+ a tiny gas buffer) in your main wallet:\n\`${wallets[0].address}\`\n\nCurrent balance: ${ethers.formatEther(balance)} BNB`,
+        `❌ *Insufficient BNB*\n\nYou need at least *${TOTAL_USER_FEE_BNB} BNB* in your main wallet:\n\`${wallets[0].address}\`\n\nCurrent balance: ${ethers.formatEther(balance)} BNB\n\n_Cost: ${PROTOCOL_FEE_BNB} BNB (BAP-578 protocol) + ${BUILD4_FEE_BNB} BNB (BUILD4 service fee)._`,
         { parse_mode: 'Markdown' }
       )
       return
     }
 
-    await ctx.reply(`⏳ Minting BAP-578 NFA for *${agent.name}*…\n\nPaying ${MINT_FEE_BNB} BNB to the registry contract.`, { parse_mode: 'Markdown' })
+    await ctx.reply(`⏳ Minting BAP-578 NFA for *${agent.name}*…\n\nPaying ${PROTOCOL_FEE_BNB} BNB to the BAP-578 contract + ${BUILD4_FEE_BNB} BNB BUILD4 service fee.`, { parse_mode: 'Markdown' })
 
     try {
       const userPK = decryptPrivateKey(wallets[0].encryptedPK, user.id)
