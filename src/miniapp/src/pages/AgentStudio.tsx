@@ -8,11 +8,24 @@ interface AgentStudioProps {
 export default function AgentStudio(_props: AgentStudioProps) {
   const [agents, setAgents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [debug, setDebug] = useState<string>('')
 
   const fetchAgents = () => {
+    const tg = (window as any).Telegram?.WebApp
+    const initData = tg?.initData ?? ''
+    const tgUser = tg?.initDataUnsafe?.user
+    const dbg = `tg=${tg ? 'yes' : 'no'} initData.len=${initData.length} user.id=${tgUser?.id ?? 'none'}`
+
     apiFetch<any[]>('/api/me/agents')
-      .then(data => { setAgents(Array.isArray(data) ? data : []); setLoading(false) })
-      .catch(() => setLoading(false))
+      .then(data => {
+        setAgents(Array.isArray(data) ? data : [])
+        setLoading(false)
+        setDebug(`${dbg} | got ${Array.isArray(data) ? data.length : 0} agents`)
+      })
+      .catch(err => {
+        setLoading(false)
+        setDebug(`${dbg} | API error: ${err.message}`)
+      })
   }
 
   useEffect(() => { fetchAgents() }, [])
@@ -34,6 +47,12 @@ export default function AgentStudio(_props: AgentStudioProps) {
           Manage your AI trading agents
         </div>
       </div>
+
+      {debug && (
+        <div style={{ fontSize: 10, color: '#64748b', padding: 8, marginBottom: 12, background: '#0a0a14', borderRadius: 6, wordBreak: 'break-all' }}>
+          {debug}
+        </div>
+      )}
 
       {agents.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: 32 }}>
