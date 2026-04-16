@@ -28,7 +28,7 @@ export async function handleWalletCommand(ctx: Context) {
   text += `${balances.nativeSymbol}: ${balances.native.toFixed(4)}\n\n`
 
   if (wallets.length > 1) {
-    text += `*Other wallets:*\n`
+    text += `*Other wallets:* (tap *Switch* below to make active)\n`
     wallets
       .filter((w) => w.id !== activeWallet.id)
       .forEach((w) => {
@@ -42,6 +42,16 @@ export async function handleWalletCommand(ctx: Context) {
     .row()
     .text('🔑 Export Private Key', `export_pk_${activeWallet.id}`)
     .row()
+
+  // One row per inactive wallet to switch
+  wallets
+    .filter((w) => w.id !== activeWallet.id)
+    .slice(0, 5)
+    .forEach((w) => {
+      keyboard.text(`✅ Switch to ${w.label}`, `wallet_switch_${w.id}`).row()
+    })
+
+  keyboard
     .text('➕ New Wallet', 'wallet_new')
     .text('🔗 Import', 'wallet_import')
 
@@ -82,6 +92,25 @@ export function registerWallet(bot: Bot) {
       `✅ *New BSC Wallet Generated*\n\nAddress: \`${w.address}\`\n\nThis is now your active wallet.`,
       { parse_mode: 'Markdown' }
     )
+  })
+
+  bot.callbackQuery(/^wallet_switch_(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery()
+    const user = (ctx as any).dbUser
+    if (!user) return
+    const walletId = ctx.match[1]
+    const wallet = await db.wallet.findUnique({ where: { id: walletId } })
+    if (!wallet || wallet.userId !== user.id) {
+      await ctx.reply('Wallet not found.')
+      return
+    }
+    await db.wallet.updateMany({
+      where: { userId: user.id, chain: wallet.chain, isActive: true },
+      data: { isActive: false }
+    })
+    await db.wallet.update({ where: { id: wallet.id }, data: { isActive: true } })
+    await ctx.reply(`✅ *${wallet.label}* is now your active ${wallet.chain} wallet.`, { parse_mode: 'Markdown' })
+    await handleWalletCommand(ctx)
   })
 
   bot.callbackQuery(/^export_pk_(.+)$/, async (ctx) => {
