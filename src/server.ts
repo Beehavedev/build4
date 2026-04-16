@@ -14,7 +14,7 @@ const PORT = parseInt(process.env.PORT ?? '3000')
 app.use(express.json())
 
 // Serve mini-app static files
-const miniAppDist = path.join(__dirname, '..', 'miniapp', 'dist')
+const miniAppDist = path.join(__dirname, 'miniapp', 'dist')
 app.use('/app', express.static(miniAppDist))
 app.use('/app', (_req, res) => {
   res.sendFile(path.join(miniAppDist, 'index.html'))
