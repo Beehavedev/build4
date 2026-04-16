@@ -14,13 +14,13 @@ export function registerStart(bot: Bot) {
     const miniAppUrl = process.env.MINIAPP_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
 
     const keyboard = new InlineKeyboard()
+      .text('💰 Deposit', 'deposit')
+      .text('ℹ️ How it works', 'how_it_works')
+      .row()
       .webApp('📱 Open BUILD4', miniAppUrl)
       .row()
-      .text('💰 My Wallet', 'wallet')
       .text('🤖 Create Agent', 'create_agent')
-      .row()
       .text('📊 Signals', 'signals')
-      .text('🏆 Quests', 'quests')
       .row()
       .text('📈 Portfolio', 'portfolio')
       .text('❓ Help', 'help')
@@ -30,25 +30,88 @@ export function registerStart(bot: Bot) {
       : ''
 
     await ctx.reply(
-      `⚡ *Welcome to BUILD4 Trading Bot*
+      `⚡ *Welcome to BUILD4*
 
-The world's most advanced AI crypto trading agent.${walletLine}
+Your AI agent for trading perps on Aster DEX — directly from Telegram.${walletLine}
 
-*What BUILD4 does:*
-• 🤖 AI agents trade perpetual futures 24/7
-• 🐋 Real-time whale & smart money signals
-• 🔍 Contract safety scanner
-• 📋 Copy top traders automatically
-• 🚀 Launch tokens on Four.meme & Raydium
-• 🎯 Earn $B4 rewards for every action
+*Get started in 3 steps:*
 
-Your agent learns from every trade, remembers your risk profile, and improves over time.
+*1️⃣ Deposit USDT*
+Tap *💰 Deposit* below to see your wallet address. Send USDT (BSC) to fund your account.
 
-Use /help to see all commands.`,
+*2️⃣ Create your AI agent*
+Tap *🤖 Create Agent* and tell it your strategy in plain English ("trade BTC scalps with 3x leverage", etc).
+
+*3️⃣ Let it trade*
+Your agent runs 24/7 on Aster DEX, signs every order with EIP-712, and reports PnL straight to this chat. You stay in full control — pause anytime.
+
+Tap *ℹ️ How it works* for the full breakdown.`,
       {
         parse_mode: 'Markdown',
         reply_markup: keyboard
       }
+    )
+  })
+
+  bot.callbackQuery('deposit', async (ctx) => {
+    await ctx.answerCallbackQuery()
+    const user = (ctx as any).dbUser
+    if (!user) return
+
+    const wallet = await db.wallet.findFirst({
+      where: { userId: user.id, isActive: true }
+    })
+
+    if (!wallet) {
+      await ctx.reply('No wallet found. Please run /start to create one.')
+      return
+    }
+
+    await ctx.reply(
+      `💰 *Deposit USDT to your BUILD4 wallet*
+
+Send *USDT (BEP-20 / BSC)* to this address:
+
+\`${wallet.address}\`
+
+⚠️ *Important:*
+• Only send *USDT on BNB Smart Chain (BEP-20)*
+• Do NOT send tokens on Ethereum, Solana, or other chains — funds will be lost
+• Minimum deposit: *10 USDT* recommended
+
+Once your deposit confirms (~30 sec), it will appear in your portfolio. Your AI agent can then start trading on Aster DEX.
+
+Tap the address above to copy it.`,
+      { parse_mode: 'Markdown' }
+    )
+  })
+
+  bot.callbackQuery('how_it_works', async (ctx) => {
+    await ctx.answerCallbackQuery()
+    await ctx.reply(
+      `ℹ️ *How BUILD4 works*
+
+*🔐 Your wallet*
+When you ran /start, BUILD4 generated a fresh BNB Smart Chain wallet for you. The private key is encrypted and stored securely — only you control your funds.
+
+*💵 Funding*
+Deposit USDT (BEP-20) to your wallet address. Funds stay in *your* wallet at all times — BUILD4 never custodies them.
+
+*🤖 The AI agent*
+You describe your strategy in plain English. The agent monitors markets 24/7 using whale flow, smart money tracking, and price action — then decides when to enter and exit.
+
+*✍️ Trade execution on Aster DEX*
+BUILD4 is a registered builder on Aster DEX. Your agent signs perp orders using EIP-712 signatures and submits them via the Aster Builder API. Every fill credits *your* wallet.
+
+*💰 Fees*
+You only pay the standard Aster trading fee plus a small builder fee that funds BUILD4. No subscriptions, no upfront cost.
+
+*🛑 You're in control*
+Pause your agent anytime with /trade. Withdraw your USDT to any external wallet whenever you want. BUILD4 has *zero* ability to move your funds — only sign trades on your behalf.
+
+*🎯 Bonus*
+Earn $B4 reward points for every trade, signal followed, or quest completed.`,
+      { parse_mode: 'Markdown' }
     )
   })
 
