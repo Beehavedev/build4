@@ -68,7 +68,7 @@ Preferred communication style: Simple, everyday language.
 │   ├── services/
 │   │   ├── wallet.ts             # EVM wallet gen + AES-256 encryption
 │   │   ├── price.ts              # CoinGecko price oracle
-│   │   ├── aster.ts              # Aster DEX API (mock)
+│   │   ├── aster.ts              # Aster DEX API — EIP-712 signed (matches Aster GitHub ref)
 │   │   └── pnl.ts                # Portfolio PnL calculation
 │   └── miniapp/                  # Vite React mini app (served at /app)
 │       ├── index.html
