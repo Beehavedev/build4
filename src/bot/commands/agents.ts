@@ -112,16 +112,13 @@ export function registerAgents(bot: Bot) {
       session.walletAddress = address
       session.encryptedPK = encryptedPK
       session.onchainTxHash = result.txHash ?? null
-      session.step = 'exchange'
+      session.exchange = 'aster'
+      session.pairs = ['ALL']
+      session.step = 'maxPosition'
 
       const onchainStatus = result.success
         ? `✅ *Registered on-chain*\n[View transaction](${bscscanTxUrl(result.txHash!)})`
         : `🟡 *On-chain registration pending*\n_Reason: ${result.reason}_\n_Will be claimed automatically when registry wallet is funded._`
-
-      const keyboard = new InlineKeyboard()
-        .text('Aster DEX (perps)', 'agent_exchange_aster')
-        .row()
-        .text('Mock (Testing)', 'agent_exchange_mock')
 
       await ctx.reply(
         `✅ *Agent ${name} created!*
@@ -134,12 +131,15 @@ ${onchainStatus}
 
 ━━━━━━━━━━━━━━
 
-*Step 2 — Choose exchange*
+*Step 2 — Max position size*
 
-Where should your agent trade?`,
+Your agent trades *all available perp pairs on Aster DEX* — finding the best opportunities across the market.
+
+What's the maximum size per trade? (USDT)
+
+Reply with a number, e.g. \`100\``,
         {
           parse_mode: 'Markdown',
-          reply_markup: keyboard,
           link_preview_options: { is_disabled: true }
         }
       )
@@ -192,73 +192,6 @@ Where should your agent trade?`,
     }
 
     return next()
-  })
-
-  // STEP 2: Exchange selection
-  bot.callbackQuery(/^agent_exchange_(.+)$/, async (ctx) => {
-    const exchange = ctx.match[1]
-    const user = (ctx as any).dbUser
-    if (!user) return ctx.answerCallbackQuery('Session expired')
-
-    const session = sessions.get(user.id)
-    if (!session) return ctx.answerCallbackQuery('Session expired. Use /newagent')
-
-    session.exchange = exchange
-    session.pairs = []
-    session.step = 'pairs'
-    await ctx.answerCallbackQuery()
-
-    const keyboard = new InlineKeyboard()
-      .text('BTC/USDT', 'agent_pair_BTC/USDT')
-      .text('ETH/USDT', 'agent_pair_ETH/USDT')
-      .row()
-      .text('BNB/USDT', 'agent_pair_BNB/USDT')
-      .text('SOL/USDT', 'agent_pair_SOL/USDT')
-      .row()
-      .text('✅ Done', 'agent_pairs_done')
-
-    await ctx.reply(
-      `*Step 3 — Choose trading pairs*\n\nExchange: *${exchange}* ✓\n\nTap pairs to add them. Tap *✅ Done* when finished.`,
-      { parse_mode: 'Markdown', reply_markup: keyboard }
-    )
-  })
-
-  // STEP 3: Pair toggle
-  bot.callbackQuery(/^agent_pair_(.+)$/, async (ctx) => {
-    const pair = ctx.match[1]
-    const user = (ctx as any).dbUser
-    if (!user) return
-
-    const session = sessions.get(user.id)
-    if (!session) return ctx.answerCallbackQuery('Session expired')
-
-    if (!session.pairs) session.pairs = []
-    if (session.pairs.includes(pair)) {
-      session.pairs = session.pairs.filter((p) => p !== pair)
-      await ctx.answerCallbackQuery(`Removed ${pair}`)
-    } else {
-      session.pairs.push(pair)
-      await ctx.answerCallbackQuery(`Added ${pair} ✓ (${session.pairs.length} selected)`)
-    }
-  })
-
-  bot.callbackQuery('agent_pairs_done', async (ctx) => {
-    const user = (ctx as any).dbUser
-    if (!user) return
-
-    const session = sessions.get(user.id)
-    if (!session) return ctx.answerCallbackQuery('Session expired')
-
-    if (!session.pairs || session.pairs.length === 0) {
-      session.pairs = ['BTC/USDT']
-    }
-
-    session.step = 'maxPosition'
-    await ctx.answerCallbackQuery()
-    await ctx.reply(
-      `*Step 4 — Max position size*\n\nPairs: *${session.pairs.join(', ')}* ✓\n\nWhat's the maximum size per trade? (USDT)\n\nReply with a number, e.g. \`100\``,
-      { parse_mode: 'Markdown' }
-    )
   })
 
   // FINAL: Save agent to DB
