@@ -93,6 +93,11 @@ model Agent {
   metadataUri      String?
   identityStandard String?  @default("ERC-8004")
 
+  // BAP-578 NFA NFT — real on-chain mint via the official registry contract
+  bap578TokenId    String?
+  bap578TxHash     String?
+  bap578Verified   Boolean  @default(false)
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @default(now()) @updatedAt
   lastTickAt      DateTime?
