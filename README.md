@@ -1,114 +1,191 @@
-# BUILD4 ($B4) — Decentralized AI Agent Economy on BNB Chain
+# ⚡ APEX — AI Crypto Trading Bot
 
-> **Primary Chain: BNB Smart Chain (BSC) — Chain ID 56**
-> All core smart contracts, the $B4 token, staking, and token launching are deployed on BNB Chain.
+World-class Telegram trading bot powered by Claude Sonnet AI. Your agent trades perpetual futures 24/7, learns from every trade, and improves over time.
 
-BUILD4 is a decentralized infrastructure platform for autonomous AI agents, built and deployed on **BNB Chain** (BSC). It enables permissionless AI agent creation, wallet-based identity, skills trading, token launching via Four.meme, and on-chain economic activity — all on BNB Smart Chain.
-
-**Native Token**: $B4 — BEP-20 on BNB Smart Chain (BSC)
-**Contract Address**: [`0x1d547f9d0890ee5abfb49d7d53ca19df85da4444`](https://bscscan.com/token/0x1d547f9d0890ee5abfb49d7d53ca19df85da4444)
-**Staking Contract**: [`0x5005dd0F5B3338526dd12f0Abc34C0Cb1Aa362ea`](https://bscscan.com/address/0x5005dd0F5B3338526dd12f0Abc34C0Cb1Aa362ea)
-
-## BNB Chain Deployment
-
-BUILD4 is deployed and operating on **BNB Chain (BSC)** as its primary network. All contracts are live on BSC mainnet (Chain ID 56):
-
-| Contract | BNB Chain Address | BscScan |
-|---|---|---|
-| $B4 Token (BEP-20) | `0x1d547f9d0890ee5abfb49d7d53ca19df85da4444` | [View](https://bscscan.com/token/0x1d547f9d0890ee5abfb49d7d53ca19df85da4444) |
-| BUILD4Staking | `0x5005dd0F5B3338526dd12f0Abc34C0Cb1Aa362ea` | [View](https://bscscan.com/address/0x5005dd0F5B3338526dd12f0Abc34C0Cb1Aa362ea) |
-| AgentEconomyHub | `0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606` | [View](https://bscscan.com/address/0x9Ba5F28a8Bcc4893E05C7bd29Fd8CAA2C45CF606) |
-| SkillMarketplace | `0xa6996A83B3909Ff12643A4a125eA2704097B0dD3` | [View](https://bscscan.com/address/0xa6996A83B3909Ff12643A4a125eA2704097B0dD3) |
-| AgentReplication | `0xE49B8Be8416d53D4E0042ea6DEe7727241396b73` | [View](https://bscscan.com/address/0xE49B8Be8416d53D4E0042ea6DEe7727241396b73) |
-| ConstitutionRegistry | `0x784dB7d65259069353eBf05eF17aA51CEfCCaA31` | [View](https://bscscan.com/address/0x784dB7d65259069353eBf05eF17aA51CEfCCaA31) |
-
-### BNB Chain Configuration
-
-- **Network**: BNB Smart Chain Mainnet (BSC)
-- **Chain ID**: 56 (0x38)
-- **RPC**: `https://bsc-dataseed1.binance.org`
-- **Block Explorer**: [BscScan](https://bscscan.com)
-- **Token Standard**: BEP-20
-- **Hardhat Default Network**: `bnbMainnet`
-- **Config Files**: `hardhat.config.web4.cjs`, `bnbconfig.json`, `contracts/deployments/bnbMainnet.json`
-
-### BNB Chain Integration Points
-
-- **$B4 Token** — BEP-20 token deployed on BNB Smart Chain (BSC)
-- **Staking** — Lock $B4 on BNB Chain to earn rewards with tiered multipliers (1x–4x)
-- **Token Launching** — Agents launch meme tokens on BNB Chain via Four.meme
-- **DEX Trading** — Swaps executed on BNB Chain via OKX DEX aggregator
-- **On-Chain Memory** — Agent memory Merkle roots anchored as calldata on BNB Chain
-- **Payments** — Agent hiring fees and subscriptions paid in BNB on BSC
-- **Wallet Vesting** — All allocations locked on Team.Finance (BNB Chain, chain ID 0x38)
+---
 
 ## Features
 
-### AI Agent Economy
-- Autonomous AI agents with on-chain wallets and identity on BNB Chain
-- Skill marketplace for agent-to-agent trading
-- Agent replication and forking
-- Decentralized LLM inference (Llama 3.3 70B, DeepSeek V3)
-- Persistent agent memory with IPFS pinning and on-chain anchoring on BSC
+- 🤖 **AI Trading Agent** — Claude Sonnet analyzes markets every 60 seconds using multi-timeframe technical analysis
+- 🧠 **Agent Memory** — Learns from wins and losses, adapts strategy over time
+- 🛡️ **Risk Guards** — Circuit breakers, daily loss limits, drawdown mode
+- 📊 **Trade Explainability** — Every decision explained in plain English
+- 🐋 **Whale Signals** — Smart money tracking and alerts
+- 🔍 **Contract Scanner** — AI-powered honeypot and risk detection
+- 📋 **Copy Trading** — Follow top traders with on-chain verified PnL
+- 🚀 **Token Launch** — Launch tokens on Four.meme and Raydium
+- 🎯 **Quests & Rewards** — Earn $B4 tokens for every action
+- 📱 **Mini App** — Full dashboard with PnL charts
 
-### Token & DeFi on BNB Chain
-- $B4 staking with tiered lock multipliers (1x–4x) on BSC
-- Token launching on Four.meme (BNB Chain)
-- Snipe launch system for new BNB Chain token listings
-- Multi-chain DEX swaps via OKX aggregator
-- Cross-chain bridge support
+---
 
-### Telegram Bot
-- Primary user interface via Telegram
-- Agent creation, management, and task assignment
-- One-tap $B4 token purchases on BNB Chain
-- Smart Money / Whale / KOL signal tracking with instant buy on BSC
-- Subscription system with BNB/USDT payments on BNB Smart Chain
+## Quick Start on Replit
 
-### $B4 Rewards System
-- Agent Creation: +1,000 $B4 per agent
-- Referrals: +5,000 $B4 per referred subscriber
-- Token Launches: +2,500 $B4 per successful launch
-- 250M $B4 reserved from ecosystem pool, vesting over 24 months on BNB Chain
+### 1. Create a new Replit project
+- Go to replit.com → New Repl → Import from ZIP
+- Upload the `apex-bot.zip` file
 
-## Smart Contracts on BNB Chain
+### 2. Add PostgreSQL
+- In your Repl, go to the Tools panel
+- Click **PostgreSQL** → Add
+- The `DATABASE_URL` secret is auto-added
 
-All contracts are Solidity 0.8.24, built with Hardhat and OpenZeppelin, deployed on BNB Smart Chain (BSC):
+### 3. Set Secrets
+Go to **Tools → Secrets** and add:
 
-| Contract | Description | Status |
-|---|---|---|
-| AgentEconomyHub | Core agent economics and fee management on BSC | Deployed |
-| SkillMarketplace | Agent skill listing and trading on BNB Chain | Deployed |
-| AgentReplication | Agent forking and replication on BSC | Deployed |
-| ConstitutionRegistry | On-chain governance rules on BNB Chain | Deployed |
-| BUILD4Staking | $B4 staking with lock tiers and rewards on BSC | Deployed |
+| Secret | Value |
+|--------|-------|
+| `TELEGRAM_BOT_TOKEN` | From @BotFather on Telegram |
+| `ANTHROPIC_API_KEY` | From console.anthropic.com |
+| `MASTER_ENCRYPTION_KEY` | Any random 32+ character string |
+| `TELEGRAM_WEBHOOK_URL` | `https://YOUR-REPL-NAME.repl.co/api/webhook` |
 
-## Tech Stack
+> Leave `REDIS_URL` empty — the bot works without it using in-memory storage.
 
-- **Frontend**: React, TypeScript, Vite, Tailwind CSS, shadcn/ui
-- **Backend**: Express 5, Node.js, TypeScript
-- **Database**: PostgreSQL with Drizzle ORM
-- **Blockchain**: ethers.js v6, **BNB Chain (BSC)** primary, Base, XLayer secondary
-- **AI**: Decentralized inference via Hyperbolic, AkashML, Ritual
-- **Bot**: node-telegram-bot-api
+### 4. Run Setup
+Open the Replit Shell and run:
+```bash
+chmod +x setup.sh && ./setup.sh
+```
+
+### 5. Start the Bot
+```bash
+npm run dev
+```
+
+Your bot is now live. Open Telegram and message your bot.
+
+---
+
+## Project Structure
+
+```
+apex-bot/
+├── prisma/
+│   ├── schema.prisma       # Database models
+│   └── seed.ts             # Quest seeding
+├── src/
+│   ├── bot/
+│   │   ├── index.ts        # Bot initialization
+│   │   ├── middleware/
+│   │   │   └── auth.ts     # User auto-creation
+│   │   └── commands/       # All /commands
+│   ├── agents/
+│   │   ├── tradingAgent.ts # Core AI trading logic
+│   │   ├── indicators.ts   # Technical analysis
+│   │   ├── memory.ts       # Agent learning system
+│   │   ├── riskGuard.ts    # Pre-trade safety checks
+│   │   └── runner.ts       # 60s cron ticker
+│   ├── services/
+│   │   ├── wallet.ts       # EVM wallet management
+│   │   ├── price.ts        # Price oracle
+│   │   ├── scanner.ts      # Contract safety scanner
+│   │   └── signals.ts      # Whale signal aggregator
+│   ├── miniapp/            # React Telegram Mini App
+│   │   └── src/pages/      # Dashboard, Agents, Copy, Portfolio
+│   ├── db.ts               # Prisma client
+│   └── server.ts           # Express entry point
+├── .env.example
+├── setup.sh
+└── README.md
+```
+
+---
+
+## Bot Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Onboard, auto-generate BSC wallet |
+| `/wallet` | View wallets and balances |
+| `/newagent` | Create AI trading agent |
+| `/myagents` | Manage your agents |
+| `/trade` | Start/pause active agent |
+| `/tradestatus` | Open positions and PnL |
+| `/signals` | Whale and smart money signals |
+| `/scan` | Contract safety scanner |
+| `/buy` | Buy tokens |
+| `/sell` | Sell tokens |
+| `/copytrade` | Copy top traders |
+| `/portfolio` | Portfolio overview |
+| `/quests` | Earn $B4 rewards |
+| `/help` | Full command list |
+
+---
+
+## AI Trading Agent
+
+The agent runs every 60 seconds and follows this decision framework:
+
+1. **Regime Identification** — ADX-based trend detection
+2. **Multi-Timeframe Alignment** — 4h/1h/15m must agree
+3. **Entry Quality Scoring** — 0-10 score, minimum 5 to trade
+4. **Risk Management** — Proper SL/TP placement, 2:1 minimum R/R
+5. **Memory Integration** — Learns from past wins and losses
+
+Every trade includes:
+- Plain-English reasoning
+- Confidence score (0-100%)
+- Key risks identified
+- Setup quality score
+- Memory update for learning
+
+---
+
+## Adding Real Exchange APIs
+
+The bot works in **mock mode** by default — all trades are simulated with realistic data.
+
+To enable live trading, add these secrets:
+
+**Aster DEX:**
+```
+ASTER_API_KEY=your_key
+ASTER_API_SECRET=your_secret
+ASTER_BASE_URL=https://api.aster.com
+```
+
+**Hyperliquid:**
+```
+HYPERLIQUID_PRIVATE_KEY=your_private_key
+```
+
+Then update `src/agents/tradingAgent.ts` in the `getMultiTimeframeOHLCV` and execution functions to use real API calls.
+
+---
 
 ## Security
 
-- All wallet allocations locked with vesting on [Team.Finance (BNB Chain)](https://www.team.finance/view-coin/0x1d547f9d0890ee5abfb49d7d53ca19df85da4444?name=BUILD4&symbol=B4&chainid=0x38)
-- Staking contract on BSC secured by OpenZeppelin (ReentrancyGuard, Ownable)
-- No proxy/upgradeable patterns — contract code is final on BNB Chain
-- No oracle dependencies — pure on-chain math
-- HMAC-signed wallet linking, encrypted key storage
+- Private keys are AES-256 encrypted before storage
+- Raw keys never appear in logs
+- Rate limiting: 30 commands/minute per user
+- Daily loss circuit breakers on every agent
+- Risk guard checks before every trade
 
-## Links
+---
 
-- **Website**: [build4.io](https://build4.io)
-- **BscScan ($B4 Token)**: [View on BNB Chain](https://bscscan.com/token/0x1d547f9d0890ee5abfb49d7d53ca19df85da4444)
-- **BscScan (Staking)**: [View on BNB Chain](https://bscscan.com/address/0x5005dd0F5B3338526dd12f0Abc34C0Cb1Aa362ea)
-- **Staking Page**: [build4.io/staking](https://build4.io/staking)
-- **Team.Finance Locks (BSC)**: [View Vesting on BNB Chain](https://www.team.finance/view-coin/0x1d547f9d0890ee5abfb49d7d53ca19df85da4444?name=BUILD4&symbol=B4&chainid=0x38)
-- **DexScreener (BSC)**: [View Chart](https://dexscreener.com/bsc/0x1d547f9d0890ee5abfb49d7d53ca19df85da4444)
+## Architecture
+
+```
+Telegram ──→ Grammy Bot ──→ Commands
+                              │
+                         Auth Middleware
+                              │
+                         PostgreSQL (Prisma)
+                              │
+                    Agent Runner (60s cron)
+                              │
+                     Claude Sonnet API
+                              │
+                    Indicators + Risk Guard
+                              │
+                    Trade Execution + Memory
+                              │
+                    Telegram Notification
+```
+
+---
 
 ## License
 
-MIT
+MIT — Build freely.

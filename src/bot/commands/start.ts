@@ -1,91 +1,129 @@
-import { PrismaClient } from "@prisma/client";
-import { generateEVMWallet, encryptPrivateKey } from "../../services/wallet.js";
-import type { BotContext } from "../middleware/auth.js";
+import { Bot, InlineKeyboard } from 'grammy'
+import { db } from '../../db'
+import { truncateAddress } from '../../services/wallet'
 
-const prisma = new PrismaClient();
+export function registerStart(bot: Bot) {
+  bot.command('start', async (ctx) => {
+    const user = (ctx as any).dbUser
+    if (!user) return
 
-function getMiniAppUrl(): string {
-  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}/app`;
-  if (process.env.RENDER_EXTERNAL_URL) return `${process.env.RENDER_EXTERNAL_URL}/app`;
-  return "https://build4.replit.app/app";
-}
+    const wallet = await db.wallet.findFirst({
+      where: { userId: user.id, isActive: true }
+    })
 
-export async function startCommand(ctx: BotContext) {
-  console.log("[START] Command handler called, from:", ctx.from?.id, "dbUser:", ctx.dbUser?.id?.substring(0, 8));
-  if (!ctx.from || !ctx.dbUser) {
-    console.log("[START] Missing from or dbUser");
-    await ctx.reply("Something went wrong. Please try again.");
-    return;
-  }
+    const keyboard = new InlineKeyboard()
+      .text('💰 My Wallet', 'wallet')
+      .text('🤖 Create Agent', 'create_agent')
+      .row()
+      .text('📊 Signals', 'signals')
+      .text('🏆 Quests', 'quests')
+      .row()
+      .text('📈 Portfolio', 'portfolio')
+      .text('❓ Help', 'help')
 
-  try {
-    let wallet = await prisma.wallet.findFirst({
-      where: { userId: ctx.dbUser.id, chain: "BSC", isActive: true },
-      orderBy: { createdAt: "asc" },
-    });
-
-    if (!wallet) {
-      wallet = await prisma.wallet.findFirst({
-        where: { userId: ctx.dbUser.id, chain: "BSC" },
-        orderBy: { createdAt: "asc" },
-      });
-    }
-
-    const isReturning = !!wallet;
-
-    if (!wallet) {
-      const { address, privateKey } = generateEVMWallet();
-      const encrypted = encryptPrivateKey(privateKey, ctx.dbUser.id);
-
-      wallet = await prisma.wallet.create({
-        data: {
-          userId: ctx.dbUser.id,
-          chain: "BSC",
-          address,
-          encryptedPK: encrypted,
-          label: "Wallet 1",
-          isActive: true,
-        },
-      });
-      console.log(`[START] Created BSC wallet for user ${ctx.from.id}: ${address}`);
-    }
-
-    await prisma.portfolio.upsert({
-      where: { userId: ctx.dbUser.id },
-      create: { userId: ctx.dbUser.id },
-      update: {},
-    });
-
-    const shortAddr = wallet.address.slice(0, 6) + "..." + wallet.address.slice(-4);
-    const greeting = isReturning ? "Welcome back to Build4 Trading Bot!" : "Welcome to Build4 Trading Bot!";
+    const walletLine = wallet
+      ? `\n\n💳 *Your BSC Wallet:* \`${truncateAddress(wallet.address)}\``
+      : ''
 
     await ctx.reply(
-      `🚀 *${greeting}*\n\n` +
-      `Your BSC wallet is ready:\n` +
-      `\`${shortAddr}\`\n\n` +
-      `Deposit USDT (BEP-20) to start trading.\n` +
-      `Use the buttons below to get started:`,
+      `⚡ *Welcome to APEX Trading Bot*
+
+The world's most advanced AI crypto trading agent.${walletLine}
+
+*What APEX does:*
+• 🤖 AI agents trade perpetual futures 24/7
+• 🐋 Real-time whale & smart money signals
+• 🔍 Contract safety scanner
+• 📋 Copy top traders automatically
+• 🚀 Launch tokens on Four.meme & Raydium
+• 🎯 Earn $B4 rewards for every action
+
+*Powered by Claude Sonnet AI*
+Your agent learns from every trade, remembers your risk profile, and improves over time.
+
+Use /help to see all commands.`,
       {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "⭐ Trade on AsterDex", web_app: { url: getMiniAppUrl() } },
-            ],
-            [
-              { text: "💰 My Wallet", callback_data: "cmd_wallet" },
-              { text: "🤖 Create Agent", callback_data: "cmd_newagent" },
-            ],
-            [
-              { text: "📊 Signals", callback_data: "cmd_signals" },
-              { text: "❓ Help", callback_data: "cmd_help" },
-            ],
-          ],
-        },
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
       }
-    );
-  } catch (err: any) {
-    console.error("[START] Error:", err.message);
-    await ctx.reply("⚠️ Wallet setup encountered an issue. Please try /start again in a moment.");
-  }
+    )
+  })
+
+  // Handle inline keyboard callbacks
+  bot.callbackQuery('wallet', async (ctx) => {
+    await ctx.answerCallbackQuery()
+    const { handleWalletCommand } = await import('./wallet')
+    await handleWalletCommand(ctx)
+  })
+
+  bot.callbackQuery('create_agent', async (ctx) => {
+    await ctx.answerCallbackQuery()
+    await ctx.reply(
+      '🤖 *Create Your AI Agent*\n\nUse /newagent to start the agent creation wizard.',
+      { parse_mode: 'Markdown' }
+    )
+  })
+
+  bot.callbackQuery('signals', async (ctx) => {
+    await ctx.answerCallbackQuery()
+    const { handleSignals } = await import('./signals')
+    await handleSignals(ctx)
+  })
+
+  bot.callbackQuery('quests', async (ctx) => {
+    await ctx.answerCallbackQuery()
+    const { handleQuests } = await import('./quests')
+    await handleQuests(ctx)
+  })
+
+  bot.callbackQuery('portfolio', async (ctx) => {
+    await ctx.answerCallbackQuery()
+    const { handlePortfolio } = await import('./portfolio')
+    await handlePortfolio(ctx)
+  })
+
+  bot.callbackQuery('help', async (ctx) => {
+    await ctx.answerCallbackQuery()
+    await ctx.reply(
+      `📖 *APEX Command Reference*
+
+*💰 Wallet*
+/wallet — View wallets & balances
+/linkwallet — Import existing wallet
+
+*🤖 AI Trading*
+/newagent — Create AI trading agent
+/myagents — View your agents
+/trade — Toggle active agent
+/tradestatus — Open positions & PnL
+
+*📊 Market Intel*
+/signals — Whale & smart money signals
+/smartmoney — Smart money tracker
+/scan — Contract safety scanner
+/trending — Trending tokens
+/price — Quick price check
+
+*💸 Trading*
+/buy — Buy tokens
+/sell — Sell tokens
+/swap — Multi-chain swap
+
+*📋 Copy Trading*
+/copytrade — Copy top traders
+
+*🚀 Launch*
+/launch — Launch a token
+
+*🎮 Rewards*
+/quests — Earn $B4 quests
+/rewards — $B4 dashboard
+/portfolio — Portfolio overview
+
+*🔧 Utility*
+/settings — Trading settings
+/help — This menu`,
+      { parse_mode: 'Markdown' }
+    )
+  })
 }

@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --apex-bg: #0a0a0f;
+  --apex-surface: #12121a;
+  --apex-border: #1e1e2e;
+  --apex-accent: #7c3aed;
+  --apex-green: #10b981;
+  --apex-red: #ef4444;
+  --apex-text: #e2e8f0;
+  --apex-muted: #64748b;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--apex-bg);
+  color: var(--apex-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.card {
+  background: var(--apex-surface);
+  border: 1px solid var(--apex-border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.btn-primary {
+  background: var(--apex-accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  width: 100%;
+  transition: opacity 0.15s;
+}
+
+.btn-primary:active {
+  opacity: 0.8;
+}
+
+.green { color: var(--apex-green); }
+.red { color: var(--apex-red); }
+.muted { color: var(--apex-muted); }

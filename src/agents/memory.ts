@@ -1,71 +1,91 @@
-import { PrismaClient } from "@prisma/client";
+import { db } from '../db'
 
-const prisma = new PrismaClient();
+export type MemoryType = 'observation' | 'decision' | 'correction' | 'market_note'
 
 export async function saveMemory(
   agentId: string,
-  type: string,
+  type: MemoryType,
   content: string,
-  metadata?: any
-) {
-  return prisma.agentMemory.create({
-    data: {
-      agentId,
-      type,
-      content,
-      embedding: [],
-      metadata: metadata ?? null,
-    },
-  });
+  metadata: Record<string, unknown> | null = null
+): Promise<void> {
+  try {
+    await db.agentMemory.create({
+      data: { agentId, type, content, metadata: metadata ?? undefined }
+    })
+    // Prune if over limit
+    const count = await db.agentMemory.count({ where: { agentId } })
+    if (count > 200) {
+      const oldest = await db.agentMemory.findMany({
+        where: { agentId },
+        orderBy: { createdAt: 'asc' },
+        take: count - 150,
+        select: { id: true }
+      })
+      await db.agentMemory.deleteMany({
+        where: { id: { in: oldest.map((m) => m.id) } }
+      })
+    }
+  } catch (err) {
+    console.error('[Memory] save error:', err)
+  }
 }
 
-export async function getRecentMemories(agentId: string, limit = 10): Promise<string> {
-  const memories = await prisma.agentMemory.findMany({
+export async function getRecentMemories(agentId: string, limit: number = 15) {
+  return db.agentMemory.findMany({
     where: { agentId },
-    orderBy: { createdAt: "desc" },
-    take: limit,
-  });
-
-  if (memories.length === 0) return "No previous memories.";
-
-  return memories
-    .map((m) => `[${m.type}] ${m.content}`)
-    .join("\n");
+    orderBy: { createdAt: 'desc' },
+    take: limit
+  })
 }
 
 export async function buildMemoryContext(agentId: string): Promise<string> {
-  const memories = await prisma.agentMemory.findMany({
+  const memories = await db.agentMemory.findMany({
     where: { agentId },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+    orderBy: { createdAt: 'desc' },
+    take: 40
+  })
 
-  const observations = memories.filter((m) => m.type === "observation").slice(0, 5);
-  const corrections = memories.filter((m) => m.type === "correction").slice(0, 5);
-  const decisions = memories.filter((m) => m.type === "decision").slice(0, 5);
-  const notes = memories.filter((m) => m.type === "market_note").slice(0, 3);
+  if (memories.length === 0) {
+    return 'No memories yet. This agent is learning from scratch. Be cautious and start with conservative trades.'
+  }
 
-  let ctx = "";
-  if (observations.length) ctx += `Past patterns:\n${observations.map((m) => `- ${m.content}`).join("\n")}\n\n`;
-  if (corrections.length) ctx += `Mistakes to avoid:\n${corrections.map((m) => `- ${m.content}`).join("\n")}\n\n`;
-  if (decisions.length) ctx += `Recent decisions:\n${decisions.map((m) => `- ${m.content}`).join("\n")}\n\n`;
-  if (notes.length) ctx += `Market notes:\n${notes.map((m) => `- ${m.content}`).join("\n")}\n\n`;
+  const corrections = memories.filter((m) => m.type === 'correction')
+  const observations = memories.filter((m) => m.type === 'observation')
+  const marketNotes = memories.filter((m) => m.type === 'market_note')
+  const decisions = memories.filter((m) => m.type === 'decision')
 
-  return ctx || "No memory context available.";
-}
+  let context = ''
 
-export async function pruneOldMemories(agentId: string) {
-  const count = await prisma.agentMemory.count({ where: { agentId } });
-  if (count <= 200) return;
+  if (corrections.length > 0) {
+    context += `MISTAKES TO LEARN FROM (weight these heavily):\n`
+    corrections.slice(0, 6).forEach((c) => {
+      context += `• ${c.content}\n`
+    })
+    context += '\n'
+  }
 
-  const oldest = await prisma.agentMemory.findMany({
-    where: { agentId },
-    orderBy: { createdAt: "asc" },
-    take: count - 200,
-    select: { id: true },
-  });
+  if (marketNotes.length > 0) {
+    context += `MARKET PATTERNS NOTICED:\n`
+    marketNotes.slice(0, 5).forEach((n) => {
+      context += `• ${n.content}\n`
+    })
+    context += '\n'
+  }
 
-  await prisma.agentMemory.deleteMany({
-    where: { id: { in: oldest.map((m) => m.id) } },
-  });
+  if (observations.length > 0) {
+    context += `RECENT OBSERVATIONS:\n`
+    observations.slice(0, 5).forEach((o) => {
+      context += `• ${o.content}\n`
+    })
+    context += '\n'
+  }
+
+  if (decisions.length > 0) {
+    context += `RECENT DECISIONS:\n`
+    decisions.slice(0, 3).forEach((d) => {
+      context += `• ${d.content}\n`
+    })
+  }
+
+  return context
 }

@@ -8,36 +8,47 @@ datasource db {
 }
 
 model User {
-  id                 String     @id @default(cuid())
-  telegramId         BigInt     @unique
-  username           String?
-  referredBy         String?
-  referralCode       String     @unique @default(cuid())
-  subscriptionTier   String     @default("free")
+  id                String    @id @default(cuid())
+  telegramId        BigInt    @unique
+  username          String?
+  firstName         String?
+  referredBy        String?
+  referralCode      String    @unique @default(cuid())
+  subscriptionTier  String    @default("free")
   subscriptionExpiry DateTime?
-  totalFeesSpent     Float      @default(0)
-  createdAt          DateTime   @default(now())
+  totalFeesSpent    Float     @default(0)
+  b4Balance         Float     @default(0)
+  // Aster exchange credentials (per-user, encrypted)
+  asterApiKey       String?
+  asterApiSecret    String?
+  asterAgentAddress String?   // agent/signer address approved for this user
+  asterOnboarded    Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @default(now()) @updatedAt
 
-  wallets       Wallet[]
-  agents        Agent[]
-  trades        Trade[]
-  quests        UserQuest[]
-  copyFollowing CopyFollow[] @relation("follower")
-  copyCopied    CopyFollow[] @relation("copied")
-  portfolio     Portfolio?
+  wallets           Wallet[]
+  agents            Agent[]
+  trades            Trade[]
+  userQuests        UserQuest[]
+  copyFollowing     CopyFollow[] @relation("follower")
+  copyCopied        CopyFollow[] @relation("copied")
+  portfolio         Portfolio?
+  agentLogs         AgentLog[]
 }
 
 model Wallet {
-  id              String   @id @default(cuid())
-  userId          String
-  chain           String
-  address         String
-  encryptedPK     String
-  label           String   @default("Wallet 1")
-  isActive        Boolean  @default(false)
-  createdAt       DateTime @default(now())
+  id           String   @id @default(cuid())
+  userId       String
+  chain        String
+  address      String
+  encryptedPK  String
+  label        String   @default("Wallet 1")
+  isActive     Boolean  @default(false)
+  createdAt    DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user         User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }
 
 model Agent {
@@ -47,7 +58,8 @@ model Agent {
   description     String?
   isActive        Boolean   @default(false)
   isPaused        Boolean   @default(false)
-  exchange        String    @default("aster")
+
+  exchange        String    @default("mock")
   pairs           String[]  @default(["BTC/USDT"])
   timeframe       String    @default("15m")
   maxPositionSize Float     @default(100)
@@ -55,27 +67,27 @@ model Agent {
   maxLeverage     Float     @default(5)
   stopLossPct     Float     @default(2)
   takeProfitPct   Float     @default(4)
+
   memorySnapshot  Json?
   totalPnl        Float     @default(0)
   totalTrades     Int       @default(0)
   winRate         Float     @default(0)
+
   isListed        Boolean   @default(false)
   listingPrice    Float?
   subscriberCount Int       @default(0)
-  onchainId       String?
-  onchainRegistered Boolean @default(false)
-  erc8004Registered Boolean @default(false)
-  bap578Registered  Boolean @default(false)
-  erc8004TxHash   String?
-  erc8004TokenId  String?
-  erc8004Chain    String?
-  creatorWallet   String?
+
   createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
   lastTickAt      DateTime?
 
-  user     User          @relation(fields: [userId], references: [id])
-  trades   Trade[]
-  memories AgentMemory[]
+  user            User      @relation(fields: [userId], references: [id])
+  trades          Trade[]
+  memories        AgentMemory[]
+  logs            AgentLog[]
+
+  @@index([userId])
+  @@index([isActive])
 }
 
 model AgentMemory {
@@ -83,47 +95,59 @@ model AgentMemory {
   agentId   String
   type      String
   content   String
-  embedding Float[]
   metadata  Json?
   createdAt DateTime @default(now())
 
-  agent Agent @relation(fields: [agentId], references: [id])
+  agent     Agent    @relation(fields: [agentId], references: [id])
+
+  @@index([agentId])
+  @@index([type])
 }
 
 model Trade {
-  id         String    @id @default(cuid())
-  userId     String
-  agentId    String?
-  exchange   String
-  pair       String
-  side       String
-  entryPrice Float
-  exitPrice  Float?
-  size       Float
-  leverage   Float     @default(1)
-  pnl        Float?
-  pnlPct     Float?
-  status     String    @default("open")
-  txHash     String?
+  id          String    @id @default(cuid())
+  userId      String
+  agentId     String?
+
+  exchange    String
+  pair        String
+  side        String
+  entryPrice  Float
+  exitPrice   Float?
+  size        Float
+  leverage    Float     @default(1)
+  pnl         Float?
+  pnlPct      Float?
+
+  status      String    @default("open")
+  txHash      String?
+
   aiReasoning String?
   signalsUsed Json?
-  openedAt   DateTime  @default(now())
-  closedAt   DateTime?
 
-  user  User   @relation(fields: [userId], references: [id])
-  agent Agent? @relation(fields: [agentId], references: [id])
+  openedAt    DateTime  @default(now())
+  closedAt    DateTime?
+
+  user        User      @relation(fields: [userId], references: [id])
+  agent       Agent?    @relation(fields: [agentId], references: [id])
+
+  @@index([userId])
+  @@index([agentId])
+  @@index([status])
 }
 
 model CopyFollow {
-  id         String   @id @default(cuid())
-  followerId String
-  copiedId   String
-  allocation Float    @default(100)
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
+  id          String   @id @default(cuid())
+  followerId  String
+  copiedId    String
+  allocation  Float    @default(100)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
 
-  follower User @relation("follower", fields: [followerId], references: [id])
-  copied   User @relation("copied", fields: [copiedId], references: [id])
+  follower    User     @relation("follower", fields: [followerId], references: [id])
+  copied      User     @relation("copied", fields: [copiedId], references: [id])
+
+  @@unique([followerId, copiedId])
 }
 
 model Portfolio {
@@ -136,7 +160,7 @@ model Portfolio {
   verifiedOnChain Boolean  @default(false)
   lastUpdated     DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user            User     @relation(fields: [userId], references: [id])
 }
 
 model Quest {
@@ -148,7 +172,7 @@ model Quest {
   requirement Json
   isActive    Boolean     @default(true)
 
-  userQuests UserQuest[]
+  userQuests  UserQuest[]
 }
 
 model UserQuest {
@@ -159,6 +183,25 @@ model UserQuest {
   completed Boolean   @default(false)
   claimedAt DateTime?
 
-  user  User  @relation(fields: [userId], references: [id])
-  quest Quest @relation(fields: [questId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+  quest     Quest     @relation(fields: [questId], references: [id])
+
+  @@unique([userId, questId])
+}
+
+model AgentLog {
+  id              String   @id @default(cuid())
+  agentId         String
+  userId          String
+  action          String
+  rawResponse     String?
+  parsedAction    String?
+  executionResult String?
+  error           String?
+  createdAt       DateTime @default(now())
+
+  agent           Agent    @relation(fields: [agentId], references: [id])
+  user            User     @relation(fields: [userId], references: [id])
+
+  @@index([agentId])
 }

@@ -1,130 +1,91 @@
-import { PrismaClient } from "@prisma/client";
-import { generateEVMWallet, encryptPrivateKey, getBalance } from "../../services/wallet.js";
-import type { BotContext } from "../middleware/auth.js";
+import { Bot, Context, InlineKeyboard } from 'grammy'
+import { db } from '../../db'
+import { generateAndSaveWallet, importWallet, getWalletBalances, truncateAddress } from '../../services/wallet'
 
-const prisma = new PrismaClient();
+export async function handleWalletCommand(ctx: Context) {
+  const user = (ctx as any).dbUser
+  if (!user) return
 
-export async function walletCommand(ctx: BotContext) {
-  if (!ctx.dbUser) {
-    await ctx.reply("Please use /start first.");
-    return;
+  const wallets = await db.wallet.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: 'asc' }
+  })
+
+  if (wallets.length === 0) {
+    await ctx.reply('No wallets found. Generating one now...')
+    const w = await generateAndSaveWallet(user.id, 'BSC')
+    await ctx.reply(`✅ BSC wallet created: \`${w.address}\``, { parse_mode: 'Markdown' })
+    return
   }
 
-  try {
-    const wallets = await prisma.wallet.findMany({
-      where: { userId: ctx.dbUser.id },
-      orderBy: { createdAt: "asc" },
-    });
+  const activeWallet = wallets.find((w) => w.isActive) ?? wallets[0]
+  const balances = await getWalletBalances(activeWallet.address, activeWallet.chain)
 
-    if (wallets.length === 0) {
-      await ctx.reply("You don't have a wallet yet. Use /start to create one.");
-      return;
-    }
+  let text = `💳 *Your Wallets*\n\n`
+  text += `*Active: ${activeWallet.label}* (${activeWallet.chain})\n`
+  text += `Address: \`${truncateAddress(activeWallet.address)}\`\n`
+  text += `USDT: $${balances.usdt.toFixed(2)}\n`
+  text += `${balances.nativeSymbol}: ${balances.native.toFixed(4)}\n\n`
 
-    let text = "💰 *Your Wallets*\n\n";
-
-    for (const w of wallets) {
-      const active = w.isActive ? " ✅" : "";
-      const shortAddr = w.address.slice(0, 6) + "..." + w.address.slice(-4);
-      text += `*${w.label}* (${w.chain})${active}\n`;
-      text += `\`${w.address}\`\n`;
-
-      if (w.isActive) {
-        try {
-          const bal = await getBalance(w.address, w.chain);
-          const nativeName = w.chain === "BSC" ? "BNB" : w.chain === "ETH" ? "ETH" : "Native";
-          text += `${nativeName}: ${parseFloat(bal.native).toFixed(6)}\n`;
-          text += `USDT: ${parseFloat(bal.usdt).toFixed(2)}\n`;
-        } catch {
-          text += `Balance: loading...\n`;
-        }
-      }
-      text += "\n";
-    }
-
-    await ctx.reply(text, {
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "➕ New Wallet", callback_data: "wallet_new" },
-            { text: "📥 Import Wallet", callback_data: "wallet_import" },
-          ],
-          [
-            { text: "🔄 Switch Active", callback_data: "wallet_switch" },
-            { text: "🔑 Export Key", callback_data: "wallet_export" },
-          ],
-          [
-            { text: "🔄 Refresh", callback_data: "cmd_wallet" },
-          ],
-        ],
-      },
-    });
-  } catch (err: any) {
-    console.error("[WALLET] Error:", err.message);
-    await ctx.reply("⚠️ Error loading wallets. Please try again.");
+  if (wallets.length > 1) {
+    text += `*Other wallets:*\n`
+    wallets
+      .filter((w) => w.id !== activeWallet.id)
+      .forEach((w) => {
+        text += `• ${w.label} (${w.chain}) — \`${truncateAddress(w.address)}\`\n`
+      })
   }
+
+  const keyboard = new InlineKeyboard()
+    .text('📋 Copy Address', `copy_addr_${activeWallet.id}`)
+    .text('🔄 Refresh', 'wallet_refresh')
+    .row()
+    .text('➕ New Wallet', 'wallet_new')
+    .text('🔗 Import', 'wallet_import')
+
+  await ctx.reply(text, { parse_mode: 'Markdown', reply_markup: keyboard })
 }
 
-export async function handleWalletCallback(ctx: BotContext, action: string) {
-  if (!ctx.dbUser) return;
+export function registerWallet(bot: Bot) {
+  bot.command('wallet', async (ctx) => {
+    await handleWalletCommand(ctx)
+  })
 
-  if (action === "wallet_new") {
-    const { address, privateKey } = generateEVMWallet();
-    const encrypted = encryptPrivateKey(privateKey, ctx.dbUser.id);
-    const count = await prisma.wallet.count({ where: { userId: ctx.dbUser.id } });
-
-    await prisma.wallet.create({
-      data: {
-        userId: ctx.dbUser.id,
-        chain: "BSC",
-        address,
-        encryptedPK: encrypted,
-        label: `Wallet ${count + 1}`,
-        isActive: false,
-      },
-    });
-
-    await ctx.answerCallbackQuery({ text: "New wallet created!" });
-    await walletCommand(ctx);
-  } else if (action === "wallet_switch") {
-    const wallets = await prisma.wallet.findMany({
-      where: { userId: ctx.dbUser.id },
-    });
-
-    if (wallets.length <= 1) {
-      await ctx.answerCallbackQuery({ text: "You only have one wallet." });
-      return;
-    }
-
-    const buttons = wallets.map((w) => ({
-      text: `${w.isActive ? "✅ " : ""}${w.label}`,
-      callback_data: `wallet_activate_${w.id}`,
-    }));
-
-    await ctx.reply("Select wallet to activate:", {
-      reply_markup: {
-        inline_keyboard: buttons.map((b) => [b]),
-      },
-    });
-  } else if (action === "wallet_export") {
+  bot.command('linkwallet', async (ctx) => {
     await ctx.reply(
-      "⚠️ *Security Warning*\n\nExporting your private key is dangerous. " +
-      "Anyone with your key can steal your funds.\n\n" +
-      "Type `I CONFIRM` to proceed.",
-      { parse_mode: "Markdown" }
-    );
-  } else if (action.startsWith("wallet_activate_")) {
-    const walletId = action.replace("wallet_activate_", "");
-    await prisma.wallet.updateMany({
-      where: { userId: ctx.dbUser.id },
-      data: { isActive: false },
-    });
-    await prisma.wallet.update({
-      where: { id: walletId },
-      data: { isActive: true },
-    });
-    await ctx.answerCallbackQuery({ text: "Wallet switched!" });
-    await walletCommand(ctx);
-  }
+      '🔗 *Import Wallet*\n\nPlease send your private key.\n\n⚠️ Your key is encrypted with AES-256 and never stored in plain text. Delete your message after sending.\n\nType /cancel to abort.',
+      { parse_mode: 'Markdown' }
+    )
+    // In production use Grammy conversations for this flow
+  })
+
+  bot.callbackQuery(/^copy_addr_(.+)$/, async (ctx) => {
+    const walletId = ctx.match[1]
+    const wallet = await db.wallet.findUnique({ where: { id: walletId } })
+    if (!wallet) return ctx.answerCallbackQuery('Wallet not found')
+    await ctx.answerCallbackQuery({ text: wallet.address, show_alert: true })
+  })
+
+  bot.callbackQuery('wallet_refresh', async (ctx) => {
+    await ctx.answerCallbackQuery('Refreshing...')
+    await handleWalletCommand(ctx)
+  })
+
+  bot.callbackQuery('wallet_new', async (ctx) => {
+    await ctx.answerCallbackQuery()
+    const user = (ctx as any).dbUser
+    if (!user) return
+    const w = await generateAndSaveWallet(user.id, 'BSC')
+    await ctx.reply(
+      `✅ *New BSC Wallet Generated*\n\nAddress: \`${w.address}\`\n\nThis is now your active wallet.`,
+      { parse_mode: 'Markdown' }
+    )
+  })
+
+  bot.callbackQuery('wallet_import', async (ctx) => {
+    await ctx.answerCallbackQuery()
+    await ctx.reply(
+      '🔗 Send your private key as the next message.\n\n⚠️ It will be AES-256 encrypted immediately. Delete the message after.\n\n/cancel to abort.'
+    )
+  })
 }

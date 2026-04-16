@@ -1,253 +1,185 @@
-import express from "express";
-import { createServer } from "http";
-import { PrismaClient } from "@prisma/client";
-import { createBot, getWebhookCallback } from "./bot/index.js";
-import { startAgentRunner } from "./agents/runner.js";
-import { getBalance, decryptPrivateKey, encryptPrivateKey } from "./services/wallet.js";
-import { getBrokerAccountBalance, detectWorkingEndpoint } from "./services/aster.js";
-import path from "path";
-import { fileURLToPath } from "url";
+import express from 'express'
+import path from 'path'
+import { fileURLToPath } from 'url'
+import { db } from './db'
+import { createBot } from './bot'
+import { initRunner } from './agents/runner'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
-const prisma = new PrismaClient();
-const app = express();
-const httpServer = createServer(app);
+const app = express()
+const PORT = parseInt(process.env.PORT ?? '3000')
 
-app.use(express.json());
+app.use(express.json())
 
-const PORT = parseInt(process.env.PORT || "5000", 10);
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+// Serve mini-app static files
+const miniAppDist = path.join(__dirname, '..', 'miniapp', 'dist')
+app.use('/app', express.static(miniAppDist))
+app.use('/app', (_req, res) => {
+  res.sendFile(path.join(miniAppDist, 'index.html'))
+})
 
-if (!BOT_TOKEN) {
-  console.error("TELEGRAM_BOT_TOKEN is not set!");
-  process.exit(1);
-}
+// REST API routes
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
 
-const bot = createBot(BOT_TOKEN);
-
-app.get("/health", (_req, res) => {
-  res.json({
-    status: "ok",
-    version: "v2.0.0",
-    uptime: process.uptime(),
-    timestamp: Date.now(),
-  });
-});
-
-const webhookHandler = getWebhookCallback(bot);
-app.post("/api/webhook", async (req, res) => {
-  console.log("[WEBHOOK] Received update:", JSON.stringify(req.body).substring(0, 200));
+app.get('/api/user/:telegramId', async (req, res) => {
   try {
-    await webhookHandler(req, res);
-  } catch (err: any) {
-    console.error("[WEBHOOK] Handler error:", err.message, err.stack?.substring(0, 300));
-    if (!res.headersSent) res.sendStatus(200);
-  }
-});
-
-app.get("/api/user/:telegramId", async (req, res) => {
-  try {
-    const user = await prisma.user.findUnique({
+    const user = await db.user.findUnique({
       where: { telegramId: BigInt(req.params.telegramId) },
-      include: { wallets: true, portfolio: true },
-    });
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    const activeWallet = user.wallets?.find((w: any) => w.isActive);
-    res.json({
-      ...user,
-      telegramId: user.telegramId.toString(),
-      wallet: activeWallet?.address || null,
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+      include: { wallets: true, portfolio: true }
+    })
+    if (!user) return res.status(404).json({ error: 'User not found' })
+    res.json({ ...user, telegramId: user.telegramId.toString() })
+  } catch (err) {
+    res.status(500).json({ error: 'Internal error' })
   }
-});
+})
 
-app.get("/api/balance/:telegramId", async (req, res) => {
+app.get('/api/agents/:userId', async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { telegramId: BigInt(req.params.telegramId) },
-      include: { wallets: true },
-    });
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    const activeWallet = user.wallets?.find((w: any) => w.isActive);
-    if (!activeWallet) return res.json({ native: "0", usdt: "0", address: null, aster: null });
-
-    const bal = await getBalance(activeWallet.address, activeWallet.chain);
-
-    let aster = null;
-    try {
-      aster = await getBrokerAccountBalance();
-    } catch (err: any) {
-      console.log("[BALANCE] Aster broker fetch skipped:", err.message?.substring(0, 80));
-    }
-
-    res.json({ ...bal, address: activeWallet.address, chain: activeWallet.chain, aster });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get("/api/broker/status", async (_req, res) => {
-  try {
-    const aster = await getBrokerAccountBalance();
-    res.json({ connected: true, aster });
-  } catch (err: any) {
-    res.json({ connected: false, error: err.message });
-  }
-});
-
-app.get("/api/agents/:userId", async (req, res) => {
-  try {
-    const agents = await prisma.agent.findMany({
+    const agents = await db.agent.findMany({
       where: { userId: req.params.userId },
-    });
-    res.json(agents);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+      orderBy: { createdAt: 'desc' }
+    })
+    res.json(agents)
+  } catch {
+    res.status(500).json({ error: 'Internal error' })
   }
-});
+})
 
-app.post("/api/agents/:id/toggle", async (req, res) => {
+app.post('/api/agents/:id/toggle', async (req, res) => {
   try {
-    const agent = await prisma.agent.findUnique({ where: { id: req.params.id } });
-    if (!agent) return res.status(404).json({ error: "Agent not found" });
+    const agent = await db.agent.findUnique({ where: { id: req.params.id } })
+    if (!agent) return res.status(404).json({ error: 'Agent not found' })
 
-    const updated = await prisma.agent.update({
+    const updated = await db.agent.update({
       where: { id: req.params.id },
-      data: {
-        isActive: !agent.isActive || agent.isPaused ? true : agent.isActive,
-        isPaused: agent.isActive && !agent.isPaused,
+      data: { isActive: !agent.isActive, isPaused: false }
+    })
+    res.json(updated)
+  } catch {
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+app.get('/api/portfolio/:userId', async (req, res) => {
+  try {
+    const [portfolio, trades] = await Promise.all([
+      db.portfolio.findUnique({ where: { userId: req.params.userId } }),
+      db.trade.findMany({
+        where: { userId: req.params.userId },
+        orderBy: { openedAt: 'desc' },
+        take: 50
+      })
+    ])
+    res.json({ portfolio, trades })
+  } catch {
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+app.get('/api/leaderboard', async (_req, res) => {
+  try {
+    const users = await db.user.findMany({
+      include: {
+        trades: {
+          where: { status: 'closed' },
+          select: { pnl: true, closedAt: true }
+        }
       },
-    });
-    res.json(updated);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+      take: 50
+    })
+
+    const ranked = users
+      .map((u) => {
+        const totalPnl = u.trades.reduce((s, t) => s + (t.pnl ?? 0), 0)
+        const wins = u.trades.filter((t) => (t.pnl ?? 0) > 0).length
+        const winRate = u.trades.length > 0 ? (wins / u.trades.length) * 100 : 0
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000)
+        const pnl30d = u.trades
+          .filter((t) => t.closedAt && t.closedAt >= thirtyDaysAgo)
+          .reduce((s, t) => s + (t.pnl ?? 0), 0)
+
+        return {
+          id: u.id,
+          username: u.username ?? `User_${u.id.slice(0, 6)}`,
+          totalTrades: u.trades.length,
+          totalPnl,
+          pnl30d,
+          winRate
+        }
+      })
+      .filter((u) => u.totalTrades > 0)
+      .sort((a, b) => b.pnl30d - a.pnl30d)
+      .slice(0, 10)
+
+    res.json(ranked)
+  } catch {
+    res.status(500).json({ error: 'Internal error' })
   }
-});
+})
 
-app.get("/api/portfolio/:userId", async (req, res) => {
-  try {
-    const portfolio = await prisma.portfolio.findUnique({
-      where: { userId: req.params.userId },
-    });
-    const trades = await prisma.trade.findMany({
-      where: { userId: req.params.userId },
-      orderBy: { openedAt: "desc" },
-      take: 20,
-    });
-    res.json({ portfolio, trades });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+app.get('/api/signals', async (_req, res) => {
+  const { getLatestSignals } = await import('./services/signals')
+  const signals = await getLatestSignals(10)
+  res.json(signals)
+})
 
-app.get("/api/leaderboard", async (_req, res) => {
-  try {
-    const agents = await prisma.agent.findMany({
-      where: { isListed: true, totalTrades: { gt: 0 } },
-      orderBy: { totalPnl: "desc" },
-      take: 20,
-    });
-    res.json(agents);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+async function main() {
+  // Connect DB
+  await db.$connect()
+  console.log('[DB] Connected')
 
-app.get("/api/trades/:userId", async (req, res) => {
-  try {
-    const trades = await prisma.trade.findMany({
-      where: { userId: req.params.userId },
-      orderBy: { openedAt: "desc" },
-      take: 50,
-      include: { agent: { select: { name: true } } },
-    });
-    res.json(trades.map(t => ({
-      ...t,
-      agentName: t.agent?.name || null,
-    })));
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  // Create bot
+  const bot = createBot()
 
-app.get("/api/signals", (_req, res) => {
-  res.json([
-    { token: "BTC", type: "WHALE", strength: "HIGH", detail: "150 BTC moved to exchange" },
-    { token: "ETH", type: "ACCUMULATION", strength: "MEDIUM", detail: "Smart money buying" },
-  ]);
-});
+  // Webhook or polling
+  const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL
 
-const miniAppPath = path.join(__dirname, "miniapp", "dist");
-app.use("/app", express.static(miniAppPath));
+  if (webhookUrl) {
+    app.post('/api/webhook', async (req, res) => {
+      try {
+        await bot.handleUpdate(req.body)
+        res.sendStatus(200)
+      } catch (err) {
+        console.error('[Webhook] Error:', err)
+        res.sendStatus(500)
+      }
+    })
 
-async function seedQuests() {
-  const count = await prisma.quest.count();
-  if (count > 0) return;
-
-  const quests = [
-    { title: "First Trade", description: "Execute your first trade", reward: 50, type: "milestone", requirement: { action: "trade", count: 1 } },
-    { title: "Signal Hunter", description: "Act on 3 whale signals", reward: 100, type: "weekly", requirement: { action: "signal_act", count: 3 } },
-    { title: "Consistent Trader", description: "Trade 7 days in a row", reward: 200, type: "weekly", requirement: { action: "daily_trade", count: 7 } },
-    { title: "Token Creator", description: "Launch a token", reward: 500, type: "milestone", requirement: { action: "launch", count: 1 } },
-    { title: "Copy Leader", description: "Get 5 people copying you", reward: 300, type: "milestone", requirement: { action: "followers", count: 5 } },
-    { title: "Safe Scanner", description: "Scan 10 contracts", reward: 75, type: "weekly", requirement: { action: "scan", count: 10 } },
-    { title: "Agent Builder", description: "Create and run an agent for 7 days", reward: 250, type: "milestone", requirement: { action: "agent_days", count: 7 } },
-  ];
-
-  for (const q of quests) {
-    await prisma.quest.create({ data: q });
-  }
-  console.log("[SEED] Created default quests");
-}
-
-async function start() {
-  console.log("[SERVER] Starting Build4 Bot v2.0...");
-
-  httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`[SERVER] HTTP server listening on port ${PORT}`);
-  });
-
-  try {
-    await prisma.$connect();
-    console.log("[SERVER] Database connected");
-  } catch (err: any) {
-    console.error("[SERVER] Database connection failed:", err.message);
-  }
-
-  await seedQuests();
-
-  try {
-    await detectWorkingEndpoint();
-    const brokerBal = await getBrokerAccountBalance();
-    console.log(`[ASTER] Broker balance: $${brokerBal.accountValue.toFixed(2)} (${brokerBal.coin})`);
-  } catch (err: any) {
-    console.error("[ASTER] Broker init error:", err.message);
-  }
-
-  if (process.env.RENDER_EXTERNAL_URL) {
-    const webhookUrl = `${process.env.RENDER_EXTERNAL_URL}/api/webhook`;
-    try {
-      await bot.api.setWebhook(webhookUrl);
-      console.log(`[SERVER] Webhook set to: ${webhookUrl}`);
-    } catch (err: any) {
-      console.error("[SERVER] Failed to set webhook:", err.message);
-    }
+    app.listen(PORT, async () => {
+      console.log(`[Server] Running on port ${PORT}`)
+      await bot.api.setWebhook(webhookUrl)
+      console.log(`[Bot] Webhook set to ${webhookUrl}`)
+    })
   } else {
-    console.log("[SERVER] Dev mode — NOT setting webhook (production bot runs on Render)");
-    console.log("[SERVER] Webhook handler available at /api/webhook for testing");
+    app.listen(PORT, () => {
+      console.log(`[Server] Running on port ${PORT}`)
+    })
+    bot.start().catch((err: any) => {
+      console.warn(`[Bot] Polling failed (production bot may be running): ${err.message}`)
+      console.log('[Bot] HTTP server still running — use webhook mode in production')
+    })
+    console.log('[Bot] Starting in polling mode...')
   }
 
-  const sendMessage = async (chatId: string, text: string, opts?: any) => {
-    await bot.api.sendMessage(chatId, text, opts);
-  };
-  startAgentRunner(sendMessage);
+  // Start agent runner
+  initRunner(bot)
+  console.log('[Runner] Agent runner started')
 
-  console.log("[SERVER] Build4 Bot v2.0 ready!");
+  // Graceful shutdown
+  process.on('SIGTERM', async () => {
+    console.log('[Server] Shutting down...')
+    await bot.stop()
+    await db.$disconnect()
+    process.exit(0)
+  })
 }
 
-start().catch(console.error);
+main().catch((err) => {
+  console.error('[Fatal]', err)
+  process.exit(1)
+})
