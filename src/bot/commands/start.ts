@@ -44,6 +44,8 @@ After saving, delete this message from your chat for extra safety.`,
       .webApp('📱 Open BUILD4', miniAppUrl)
       .row()
       .text('🤖 Create Agent', 'create_agent')
+      .text('🗂 My Agents', 'my_agents')
+      .row()
       .text('📊 Signals', 'signals')
       .row()
       .text('📈 Portfolio', 'portfolio')

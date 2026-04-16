@@ -281,8 +281,8 @@ export function registerAgents(bot: Bot) {
     return next()
   })
 
-  bot.command('myagents', async (ctx) => {
-    const user = (ctx as any).dbUser
+  const showMyAgents = async (ctx: any) => {
+    const user = ctx.dbUser
     if (!user) return
 
     const agents = await db.agent.findMany({
@@ -346,6 +346,12 @@ export function registerAgents(bot: Bot) {
     keyboard.text('➕ New Agent', 'create_agent')
 
     await ctx.reply(text, { parse_mode: 'Markdown', reply_markup: keyboard })
+  }
+
+  bot.command('myagents', showMyAgents)
+  bot.callbackQuery('my_agents', async (ctx) => {
+    await ctx.answerCallbackQuery()
+    await showMyAgents(ctx)
   })
 
   /* legacy /verifyagent removed — verification is mandatory at /newagent
