@@ -1,0 +1,57 @@
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="6c483036-c6e4-4102" responseTimeMS=4 responseBytes=290 userAgent=""
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="fa2a1c88-06cc-4118" responseTimeMS=4 responseBytes=290 userAgent=""
+[Webhook] Error: Error: Bot not initialized! Either call `await bot.init()`, or directly set the `botInfo` option in the `Bot` constructor to specify a known bot info object.
+    at Bot.handleUpdate (/opt/render/project/src/node_modules/grammy/out/bot.js:221:19)
+    at <anonymous> (/opt/render/project/src/src/server.ts:159:19)
+    at Layer.handleRequest (/opt/render/project/src/node_modules/router/lib/layer.js:152:17)
+    at next (/opt/render/project/src/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/opt/render/project/src/node_modules/router/lib/route.js:117:3)
+    at handle (/opt/render/project/src/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/opt/render/project/src/node_modules/router/lib/layer.js:152:17)
+    at /opt/render/project/src/node_modules/router/index.js:295:15
+    at processParams (/opt/render/project/src/node_modules/router/index.js:582:12)
+    at next (/opt/render/project/src/node_modules/router/index.js:291:5)
+[GET]
+build4-1.onrender.com/api/health clientIP="35.227.12.250" requestID="a3355057-ceae-468f" responseTimeMS=25 responseBytes=321 userAgent="undici"
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="fb2c9865-98f8-41c3" responseTimeMS=5 responseBytes=290 userAgent=""
+[Webhook] Error: Error: Bot not initialized! Either call `await bot.init()`, or directly set the `botInfo` option in the `Bot` constructor to specify a known bot info object.
+    at Bot.handleUpdate (/opt/render/project/src/node_modules/grammy/out/bot.js:221:19)
+    at <anonymous> (/opt/render/project/src/src/server.ts:159:19)
+    at Layer.handleRequest (/opt/render/project/src/node_modules/router/lib/layer.js:152:17)
+    at next (/opt/render/project/src/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/opt/render/project/src/node_modules/router/lib/route.js:117:3)
+    at handle (/opt/render/project/src/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/opt/render/project/src/node_modules/router/lib/layer.js:152:17)
+    at /opt/render/project/src/node_modules/router/index.js:295:15
+    at processParams (/opt/render/project/src/node_modules/router/index.js:582:12)
+    at next (/opt/render/project/src/node_modules/router/index.js:291:5)
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="26d8a743-bf6e-4461" responseTimeMS=4 responseBytes=290 userAgent=""
+[Webhook] Error: Error: Bot not initialized! Either call `await bot.init()`, or directly set the `botInfo` option in the `Bot` constructor to specify a known bot info object.
+    at Bot.handleUpdate (/opt/render/project/src/node_modules/grammy/out/bot.js:221:19)
+    at <anonymous> (/opt/render/project/src/src/server.ts:159:19)
+    at Layer.handleRequest (/opt/render/project/src/node_modules/router/lib/layer.js:152:17)
+    at next (/opt/render/project/src/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/opt/render/project/src/node_modules/router/lib/route.js:117:3)
+    at handle (/opt/render/project/src/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/opt/render/project/src/node_modules/router/lib/layer.js:152:17)
+    at /opt/render/project/src/node_modules/router/index.js:295:15
+Menu
+    at processParams (/opt/render/project/src/node_modules/router/index.js:582:12)
+    at next (/opt/render/project/src/node_modules/router/index.js:291:5)
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="5f51a3f8-72e7-4dbc" responseTimeMS=4 responseBytes=290 userAgent=""
+[Webhook] Error: Error: Bot not initialized! Either call `await bot.init()`, or directly set the `botInfo` option in the `Bot` constructor to specify a known bot info object.
+    at Bot.handleUpdate (/opt/render/project/src/node_modules/grammy/out/bot.js:221:19)
+    at <anonymous> (/opt/render/project/src/src/server.ts:159:19)
+    at Layer.handleRequest (/opt/render/project/src/node_modules/router/lib/layer.js:152:17)
+    at next (/opt/render/project/src/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/opt/render/project/src/node_modules/router/lib/route.js:117:3)
+    at handle (/opt/render/project/src/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/opt/render/project/src/node_modules/router/lib/layer.js:152:17)
+    at /opt/render/project/src/node_modules/router/index.js:295:15
+    at processParams (/opt/render/project/src/node_modules/router/index.js:582:12)
+    at next (/opt/render/project/src/node_modules/router/index.js:291:5)

@@ -166,6 +166,8 @@ async function main() {
 
     app.listen(PORT, async () => {
       console.log(`[Server] Running on port ${PORT}`)
+      await bot.init()
+      console.log(`[Bot] Initialized as @${bot.botInfo.username}`)
       await bot.api.setWebhook(webhookUrl)
       console.log(`[Bot] Webhook set to ${webhookUrl}`)
     })
