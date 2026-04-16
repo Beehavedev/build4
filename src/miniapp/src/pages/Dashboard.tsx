@@ -30,7 +30,7 @@ export default function Dashboard({ userId }: DashboardProps) {
     return (
       <div style={{ paddingTop: 60, textAlign: 'center', color: '#64748b' }}>
         <div style={{ fontSize: 32, marginBottom: 12 }}>⚡</div>
-        Loading APEX...
+        Loading BUILD4...
       </div>
     )
   }
@@ -40,10 +40,10 @@ export default function Dashboard({ userId }: DashboardProps) {
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
         <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.5px' }}>
-          ⚡ APEX
+          ⚡ BUILD4
         </div>
         <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>
-          AI Trading Bot
+          AI Crypto Trading
         </div>
       </div>
 

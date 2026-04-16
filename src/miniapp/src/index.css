@@ -3,14 +3,14 @@
 @tailwind utilities;
 
 :root {
-  --apex-bg: #0a0a0f;
-  --apex-surface: #12121a;
-  --apex-border: #1e1e2e;
-  --apex-accent: #7c3aed;
-  --apex-green: #10b981;
-  --apex-red: #ef4444;
-  --apex-text: #e2e8f0;
-  --apex-muted: #64748b;
+  --b4-bg: #0a0a0f;
+  --b4-surface: #12121a;
+  --b4-border: #1e1e2e;
+  --b4-accent: #7c3aed;
+  --b4-green: #10b981;
+  --b4-red: #ef4444;
+  --b4-text: #e2e8f0;
+  --b4-muted: #64748b;
 }
 
 * {
@@ -18,8 +18,8 @@
 }
 
 body {
-  background: var(--apex-bg);
-  color: var(--apex-text);
+  background: var(--b4-bg);
+  color: var(--b4-text);
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
   margin: 0;
   padding: 0;
@@ -28,14 +28,14 @@ body {
 }
 
 .card {
-  background: var(--apex-surface);
-  border: 1px solid var(--apex-border);
+  background: var(--b4-surface);
+  border: 1px solid var(--b4-border);
   border-radius: 12px;
   padding: 16px;
 }
 
 .btn-primary {
-  background: var(--apex-accent);
+  background: var(--b4-accent);
   color: white;
   border: none;
   border-radius: 8px;
@@ -51,6 +51,6 @@ body {
   opacity: 0.8;
 }
 
-.green { color: var(--apex-green); }
-.red { color: var(--apex-red); }
-.muted { color: var(--apex-muted); }
+.green { color: var(--b4-green); }
+.red { color: var(--b4-red); }
+.muted { color: var(--b4-muted); }
