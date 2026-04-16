@@ -1,7 +1,7 @@
 import { Bot, session } from 'grammy'
 import { authMiddleware } from './middleware/auth'
 import { registerStart } from './commands/start'
-import { registerWallet } from './commands/wallet'
+import { registerWallet, handlePinReply } from './commands/wallet'
 import { registerTrade } from './commands/trade'
 import { registerSignals } from './commands/signals'
 import { registerScan } from './commands/scan'
@@ -23,6 +23,13 @@ export function createBot(): Bot {
 
   // Auth middleware — creates user on first message
   bot.use(authMiddleware)
+
+  // PIN reply interceptor — must run BEFORE command handlers so digits-only
+  // messages from a pending PIN prompt don't fall through to other handlers.
+  bot.on('message:text', async (ctx, next) => {
+    const handled = await handlePinReply(ctx)
+    if (!handled) await next()
+  })
 
   // Register all command handlers
   registerStart(bot)

@@ -12,15 +12,38 @@ const ERC20_ABI = [
   'function decimals() view returns (uint8)'
 ]
 
-export function encryptPrivateKey(privateKey: string, userId: string): string {
-  const key = CryptoJS.SHA256(MASTER_KEY + userId).toString()
+export function encryptPrivateKey(privateKey: string, userId: string, pin?: string): string {
+  const keyMaterial = pin ? MASTER_KEY + userId + ':' + pin : MASTER_KEY + userId
+  const key = CryptoJS.SHA256(keyMaterial).toString()
   return CryptoJS.AES.encrypt(privateKey, key).toString()
 }
 
-export function decryptPrivateKey(encrypted: string, userId: string): string {
-  const key = CryptoJS.SHA256(MASTER_KEY + userId).toString()
+export function decryptPrivateKey(encrypted: string, userId: string, pin?: string): string {
+  const keyMaterial = pin ? MASTER_KEY + userId + ':' + pin : MASTER_KEY + userId
+  const key = CryptoJS.SHA256(keyMaterial).toString()
   const bytes = CryptoJS.AES.decrypt(encrypted, key)
   return bytes.toString(CryptoJS.enc.Utf8)
+}
+
+/**
+ * Re-encrypt every user wallet's PK from one PIN scheme to another.
+ * - oldPin = undefined means "currently encrypted with master-only"
+ * - newPin = undefined means "remove PIN, go back to master-only"
+ */
+export async function reencryptUserWallets(userId: string, oldPin: string | undefined, newPin: string | undefined) {
+  const wallets = await db.wallet.findMany({ where: { userId } })
+  for (const w of wallets) {
+    if (!w.encryptedPK) continue
+    let pk: string
+    try {
+      pk = decryptPrivateKey(w.encryptedPK, userId, oldPin)
+      if (!pk || !pk.startsWith('0x')) throw new Error('Bad decrypt')
+    } catch {
+      continue // skip wallets we can't decrypt (e.g. legacy mismatch)
+    }
+    const newEncrypted = encryptPrivateKey(pk, userId, newPin)
+    await db.wallet.update({ where: { id: w.id }, data: { encryptedPK: newEncrypted } })
+  }
 }
 
 export function generateEVMWallet() {

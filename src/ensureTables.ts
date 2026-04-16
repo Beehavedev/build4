@@ -1,7 +1,18 @@
 import { db } from './db'
 
 async function run(sql: string) {
-  await db.$executeRawUnsafe(sql)
+  try {
+    await db.$executeRawUnsafe(sql)
+  } catch (err: any) {
+    // Tolerate duplicate-key index creation failures (pre-existing dup data)
+    // and other "already-exists" style errors; log and continue.
+    const msg = err?.meta?.message ?? err?.message ?? String(err)
+    if (/duplicate|already exists|23505|42P07|42701/i.test(msg)) {
+      console.warn('[DB] Tolerated:', msg)
+      return
+    }
+    throw err
+  }
 }
 
 export async function ensureNewTables() {
@@ -189,6 +200,24 @@ export async function ensureNewTables() {
     CONSTRAINT "AgentLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE
   )`)
   await run(`CREATE INDEX IF NOT EXISTS "AgentLog_agentId_idx" ON "AgentLog"("agentId")`)
+
+  // ─── Security: PIN columns on User + audit log table ───
+  await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pinHash" TEXT`)
+  await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pinSalt" TEXT`)
+
+  await run(`CREATE TABLE IF NOT EXISTS "SecurityLog" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "userId" TEXT NOT NULL,
+    "telegramId" TEXT NOT NULL,
+    "action" TEXT NOT NULL,
+    "walletId" TEXT,
+    "meta" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "SecurityLog_pkey" PRIMARY KEY ("id")
+  )`)
+  await run(`CREATE INDEX IF NOT EXISTS "SecurityLog_userId_idx" ON "SecurityLog"("userId")`)
+  await run(`CREATE INDEX IF NOT EXISTS "SecurityLog_action_idx" ON "SecurityLog"("action")`)
+  await run(`CREATE INDEX IF NOT EXISTS "SecurityLog_createdAt_idx" ON "SecurityLog"("createdAt")`)
 
   console.log('[DB] All new tables ready')
 }
