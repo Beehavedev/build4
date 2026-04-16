@@ -1,0 +1,41 @@
+
+    server/index.ts:261:78:
+      261 │ ...'undefined' ? __dirname : new URL(".", import.meta.url).pathname;
+          ╵                                           ~~~~~~~~~~~
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+✘ [ERROR] Cannot assign to "wallet" because it is a constant
+    server/telegram-bot.ts:4324:12:
+      4324 │       try { wallet = await autoGenerateWallet(chatId); } catch (...
+           ╵             ~~~~~~
+  The symbol "wallet" was declared a constant here:
+    server/telegram-bot.ts:4092:8:
+      4092 │   const wallet = await ensureWallet(chatId);
+           ╵         ~~~~~~
+✘ [ERROR] Cannot assign to "wallet" because it is a constant
+    server/telegram-bot.ts:4401:12:
+      4401 │       try { wallet = await autoGenerateWallet(chatId); } catch (...
+           ╵             ~~~~~~
+  The symbol "wallet" was declared a constant here:
+    server/telegram-bot.ts:4092:8:
+      4092 │   const wallet = await ensureWallet(chatId);
+           ╵         ~~~~~~
+1 warning and 2 errors
+Error: Build failed with 2 errors:
+server/telegram-bot.ts:4324:12: ERROR: Cannot assign to "wallet" because it is a constant
+server/telegram-bot.ts:4401:12: ERROR: Cannot assign to "wallet" because it is a constant
+Menu
+    at failureErrorWithLog (/opt/render/project/src/node_modules/esbuild/lib/main.js:1467:15)
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:926:25
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:878:52
+    at buildResponseToResult (/opt/render/project/src/node_modules/esbuild/lib/main.js:924:7)
+    at /opt/render/project/src/node_modules/esbuild/lib/main.js:951:16
+    at responseCallbacks.<computed> (/opt/render/project/src/node_modules/esbuild/lib/main.js:603:9)
+    at handleIncomingPacket (/opt/render/project/src/node_modules/esbuild/lib/main.js:658:12)
+    at Socket.readFromStdout (/opt/render/project/src/node_modules/esbuild/lib/main.js:581:7)
+    at Socket.emit (node:events:519:28)
+    at addChunk (node:internal/streams/readable:561:12) {
+  errors: [Getter/Setter],
+  warnings: [Getter/Setter]
+}
+==> Build failed 😞
+==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
