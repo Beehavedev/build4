@@ -35,12 +35,6 @@ export default function AgentStudio(_props: AgentStudioProps) {
         </div>
       </div>
 
-      {debug && (
-        <div style={{ fontSize: 10, color: '#64748b', padding: 8, marginBottom: 12, background: '#0a0a14', borderRadius: 6, wordBreak: 'break-all' }}>
-          {debug}
-        </div>
-      )}
-
       {agents.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: 32 }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🤖</div>
