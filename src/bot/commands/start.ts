@@ -42,7 +42,6 @@ The world's most advanced AI crypto trading agent.${walletLine}
 • 🚀 Launch tokens on Four.meme & Raydium
 • 🎯 Earn $B4 rewards for every action
 
-*Powered by Claude Sonnet AI*
 Your agent learns from every trade, remembers your risk profile, and improves over time.
 
 Use /help to see all commands.`,
