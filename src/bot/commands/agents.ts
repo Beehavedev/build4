@@ -4,15 +4,7 @@ import { generateEVMWallet, encryptPrivateKey, truncateAddress } from '../../ser
 import { registerAgentOnChain, bscscanTxUrl, bscscanAddressUrl } from '../../services/registry'
 
 interface AgentSession {
-  step: 'name' | 'exchange' | 'pairs' | 'maxPosition' | 'maxDailyLoss' | 'confirm' | 'done'
-  name?: string
-  walletAddress?: string
-  encryptedPK?: string
-  onchainTxHash?: string | null
-  exchange?: string
-  pairs?: string[]
-  maxPosition?: number
-  maxDailyLoss?: number
+  step: 'name' | 'done'
 }
 
 const sessions = new Map<string, AgentSession>()
@@ -30,11 +22,9 @@ async function startAgentCreation(ctx: Context) {
 
 Every BUILD4 agent has its own *on-chain identity* — a unique name and a fresh BNB Smart Chain wallet that lives forever on the blockchain.
 
-*Step 1 — Choose a name*
+*Pick a name*
 
-Pick a unique name for your agent (3-24 characters, letters/numbers/underscore only).
-
-This name will be *permanently registered on-chain* and cannot be changed or reused by anyone else.
+3-24 characters, letters/numbers/underscore only. *Permanently registered on-chain* and cannot be reused by anyone else.
 
 Examples: \`AlphaHunter\`, \`night_trader\`, \`BTCBull42\`
 
@@ -50,20 +40,17 @@ export function registerAgents(bot: Bot) {
     await startAgentCreation(ctx)
   })
 
-  // Triggered from the main "Create Agent" button on the welcome screen
   bot.callbackQuery('create_agent', async (ctx) => {
     await ctx.answerCallbackQuery()
     await startAgentCreation(ctx)
   })
 
-  // Cancel anytime
   bot.command('cancelagent', async (ctx) => {
     const user = (ctx as any).dbUser
     if (user) sessions.delete(user.id)
     await ctx.reply('Agent creation cancelled.')
   })
 
-  // Text handler for the conversation
   bot.on('message:text', async (ctx, next) => {
     const user = (ctx as any).dbUser
     if (!user) return next()
@@ -74,54 +61,65 @@ export function registerAgents(bot: Bot) {
     const text = ctx.message.text.trim()
     if (text.startsWith('/')) return next()
 
-    // STEP 1: Name → validate, generate wallet, register on-chain
-    if (session.step === 'name') {
-      const name = text
+    if (session.step !== 'name') return next()
 
-      if (!NAME_REGEX.test(name)) {
-        await ctx.reply('❌ Invalid name. Use 3-24 letters/numbers/underscore only.\n\nTry again:')
-        return
-      }
+    const name = text
 
-      // Check global uniqueness (case-insensitive)
-      const existing = await db.agent.findFirst({
-        where: { name: { equals: name, mode: 'insensitive' } }
-      })
-      if (existing) {
-        await ctx.reply(`❌ The name *${name}* is already taken on-chain.\n\nPick another name:`, {
-          parse_mode: 'Markdown'
-        })
-        return
-      }
+    if (!NAME_REGEX.test(name)) {
+      await ctx.reply('❌ Invalid name. Use 3-24 letters/numbers/underscore only.\n\nTry again:')
+      return
+    }
 
-      await ctx.reply(`⏳ Reserving *${name}*...\n\nGenerating wallet & broadcasting registration to BNB Chain...`, {
+    const existing = await db.agent.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' } }
+    })
+    if (existing) {
+      await ctx.reply(`❌ The name *${name}* is already taken on-chain.\n\nPick another name:`, {
         parse_mode: 'Markdown'
       })
+      return
+    }
 
-      // Generate the agent's own wallet — its on-chain identity
-      const { address, privateKey } = generateEVMWallet()
-      const encryptedPK = encryptPrivateKey(privateKey, user.id)
+    await ctx.reply(`⏳ Reserving *${name}*...\n\nGenerating wallet & broadcasting registration to BNB Chain...`, {
+      parse_mode: 'Markdown'
+    })
 
-      // Try to register on-chain
-      const wallets = await db.wallet.findMany({ where: { userId: user.id }, take: 1 })
-      const ownerAddress = wallets[0]?.address ?? '0x0000000000000000000000000000000000000000'
+    const { address, privateKey } = generateEVMWallet()
+    const encryptedPK = encryptPrivateKey(privateKey, user.id)
 
-      const result = await registerAgentOnChain(name, address, ownerAddress)
+    const wallets = await db.wallet.findMany({ where: { userId: user.id }, take: 1 })
+    const ownerAddress = wallets[0]?.address ?? '0x0000000000000000000000000000000000000000'
 
-      session.name = name
-      session.walletAddress = address
-      session.encryptedPK = encryptedPK
-      session.onchainTxHash = result.txHash ?? null
-      session.exchange = 'aster'
-      session.pairs = ['ALL']
-      session.step = 'maxPosition'
+    const result = await registerAgentOnChain(name, address, ownerAddress)
+
+    try {
+      const agent = await db.agent.create({
+        data: {
+          userId: user.id,
+          name,
+          walletAddress: address,
+          encryptedPK,
+          onchainTxHash: result.txHash ?? null,
+          onchainChain: 'BSC',
+          exchange: 'aster',
+          pairs: ['ALL'],
+          maxPositionSize: 100,
+          maxDailyLoss: 50,
+          maxLeverage: 5,
+          stopLossPct: 2,
+          takeProfitPct: 4,
+          isActive: true
+        }
+      })
+
+      sessions.delete(user.id)
 
       const onchainStatus = result.success
         ? `✅ *Registered on-chain*\n[View transaction](${bscscanTxUrl(result.txHash!)})`
-        : `🟡 *On-chain registration pending*\n_Reason: ${result.reason}_\n_Will be claimed automatically when registry wallet is funded._`
+        : `🟡 *On-chain registration pending*\n_${result.reason}_`
 
       await ctx.reply(
-        `✅ *Agent ${name} created!*
+        `🚀 *${agent.name} is LIVE!*
 
 🔐 *On-chain identity*
 \`${address}\`
@@ -131,130 +129,21 @@ ${onchainStatus}
 
 ━━━━━━━━━━━━━━
 
-*Step 2 — Max position size*
+Your agent now trades *all available perp pairs on Aster DEX* — finding the best opportunities across the market.
 
-Your agent trades *all available perp pairs on Aster DEX* — finding the best opportunities across the market.
+You can fine-tune position sizes, risk limits, and pairs anytime in the *mini-app*.
 
-What's the maximum size per trade? (USDT)
-
-Reply with a number, e.g. \`100\``,
-        {
-          parse_mode: 'Markdown',
-          link_preview_options: { is_disabled: true }
-        }
-      )
-      return
-    }
-
-    // STEP 4: Max position
-    if (session.step === 'maxPosition') {
-      const amount = parseFloat(text)
-      if (isNaN(amount) || amount < 10) {
-        await ctx.reply('❌ Please enter a valid amount (minimum 10 USDT).')
-        return
-      }
-      session.maxPosition = amount
-      session.step = 'maxDailyLoss'
-      await ctx.reply(
-        `*Step 5 — Daily loss limit*\n\nMax position: *${amount} USDT* ✓\n\nWhat's the max your agent can lose in a single day before pausing? (USDT)\n\nReply with a number, e.g. \`50\``,
-        { parse_mode: 'Markdown' }
-      )
-      return
-    }
-
-    // STEP 5: Max daily loss → confirm
-    if (session.step === 'maxDailyLoss') {
-      const amount = parseFloat(text)
-      if (isNaN(amount) || amount < 5) {
-        await ctx.reply('❌ Please enter a valid amount (minimum 5 USDT).')
-        return
-      }
-      session.maxDailyLoss = amount
-      session.step = 'confirm'
-
-      const summary =
-        `🤖 *Review your agent*\n\n` +
-        `*Name:* ${session.name}\n` +
-        `*Wallet:* \`${truncateAddress(session.walletAddress!)}\`\n` +
-        `*Exchange:* ${session.exchange}\n` +
-        `*Pairs:* ${session.pairs?.join(', ')}\n` +
-        `*Max position:* ${session.maxPosition} USDT\n` +
-        `*Max daily loss:* ${session.maxDailyLoss} USDT\n` +
-        `*Leverage:* 5x | *SL:* 2% | *TP:* 4%\n\n` +
-        `Ready to deploy?`
-
-      const keyboard = new InlineKeyboard()
-        .text('🚀 Deploy Agent', 'agent_create_confirm')
-        .text('❌ Cancel', 'agent_create_cancel')
-
-      await ctx.reply(summary, { parse_mode: 'Markdown', reply_markup: keyboard })
-      return
-    }
-
-    return next()
-  })
-
-  // FINAL: Save agent to DB
-  bot.callbackQuery('agent_create_confirm', async (ctx) => {
-    const user = (ctx as any).dbUser
-    if (!user) return
-
-    const session = sessions.get(user.id)
-    if (!session || !session.name || !session.walletAddress) {
-      return ctx.answerCallbackQuery('Session expired')
-    }
-
-    try {
-      const agent = await db.agent.create({
-        data: {
-          userId: user.id,
-          name: session.name,
-          walletAddress: session.walletAddress,
-          encryptedPK: session.encryptedPK,
-          onchainTxHash: session.onchainTxHash ?? null,
-          onchainChain: 'BSC',
-          exchange: session.exchange ?? 'mock',
-          pairs: session.pairs ?? ['BTC/USDT'],
-          maxPositionSize: session.maxPosition ?? 100,
-          maxDailyLoss: session.maxDailyLoss ?? 50,
-          maxLeverage: 5,
-          stopLossPct: 2,
-          takeProfitPct: 4,
-          isActive: true
-        }
-      })
-
-      sessions.delete(user.id)
-      await ctx.answerCallbackQuery('🚀 Deployed!')
-
-      const onchainLine = agent.onchainTxHash
-        ? `[View on-chain registration](${bscscanTxUrl(agent.onchainTxHash)})`
-        : `_On-chain registration pending — will be confirmed shortly._`
-
-      await ctx.reply(
-        `🚀 *${agent.name} is LIVE!*\n\n` +
-          `🔐 Agent wallet: \`${agent.walletAddress}\`\n` +
-          `${onchainLine}\n\n` +
-          `Your agent is now analyzing the market. First trade decision in ~60 seconds.\n\n` +
-          `/myagents — manage agents\n` +
-          `/tradestatus — monitor positions`,
+/myagents — manage agents
+/tradestatus — monitor positions`,
         { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } }
       )
     } catch (err: any) {
       console.error('[Agent] Create failed:', err)
-      await ctx.answerCallbackQuery('Error')
+      sessions.delete(user.id)
       await ctx.reply(`❌ Failed to create agent: ${err.message}\n\nTry /newagent again.`)
     }
   })
 
-  bot.callbackQuery('agent_create_cancel', async (ctx) => {
-    const user = (ctx as any).dbUser
-    if (user) sessions.delete(user.id)
-    await ctx.answerCallbackQuery('Cancelled')
-    await ctx.reply('Agent creation cancelled.')
-  })
-
-  // /myagents
   bot.command('myagents', async (ctx) => {
     const user = (ctx as any).dbUser
     if (!user) return
@@ -280,7 +169,6 @@ Reply with a number, e.g. \`100\``,
       if (a.walletAddress) {
         text += `Wallet: \`${truncateAddress(a.walletAddress)}\`\n`
       }
-      text += `Exchange: ${a.exchange} | ${a.pairs.join(', ')}\n`
       text += `PnL: ${a.totalPnl >= 0 ? '+' : ''}$${a.totalPnl.toFixed(2)} | WR: ${a.winRate.toFixed(0)}% (${a.totalTrades} trades)\n\n`
     })
 
