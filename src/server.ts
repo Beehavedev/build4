@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import { db } from './db'
 import { createBot } from './bot'
 import { initRunner } from './agents/runner'
+import { migrateOldUsers } from './migrate'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -132,6 +133,9 @@ async function main() {
   // Connect DB
   await db.$connect()
   console.log('[DB] Connected')
+
+  // Migrate old users from Drizzle tables to Prisma tables
+  await migrateOldUsers()
 
   // Create bot
   const bot = createBot()
