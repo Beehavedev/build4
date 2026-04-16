@@ -55,6 +55,7 @@
     "@types/node-cron": "^3.0.11",
     "@types/node-telegram-bot-api": "^0.64.13",
     "@walletconnect/ethereum-provider": "^2.23.6",
+    "adm-zip": "^0.5.17",
     "axios": "^1.15.0",
     "bn.js": "^5.2.3",
     "bs58": "^6.0.0",
