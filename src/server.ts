@@ -18,8 +18,21 @@ app.use(express.json())
 
 // Serve mini-app static files
 const miniAppDist = path.join(__dirname, 'miniapp', 'dist')
-app.use('/app', express.static(miniAppDist))
+app.use('/app', express.static(miniAppDist, {
+  setHeaders: (res, filePath) => {
+    // Hashed assets (Vite outputs /assets/*-[hash].js) can be cached forever.
+    // index.html must NEVER be cached — Telegram WebView caches HTML aggressively.
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+      res.setHeader('Pragma', 'no-cache')
+      res.setHeader('Expires', '0')
+    } else if (filePath.includes('/assets/')) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+    }
+  }
+}))
 app.use('/app', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   res.sendFile(path.join(miniAppDist, 'index.html'))
 })
 
