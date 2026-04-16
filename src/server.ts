@@ -5,6 +5,7 @@ import { db } from './db'
 import { createBot } from './bot'
 import { initRunner } from './agents/runner'
 import { migrateOldUsers } from './migrate'
+import { ensureNewTables } from './ensureTables'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -133,6 +134,9 @@ async function main() {
   // Connect DB
   await db.$connect()
   console.log('[DB] Connected')
+
+  // Create new tables safely (no drops, no renames)
+  await ensureNewTables()
 
   // Migrate old users from Drizzle tables to Prisma tables
   await migrateOldUsers()
