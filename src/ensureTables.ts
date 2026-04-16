@@ -90,6 +90,11 @@ export async function ensureNewTables() {
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "encryptedPK" TEXT`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "onchainTxHash" TEXT`)
   await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "onchainChain" TEXT DEFAULT 'BSC'`)
+  // ERC-8004 identity columns (added in v3 — Trustless AI Agents Standard)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "learningModel" TEXT`)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "learningRoot" TEXT`)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "metadataUri" TEXT`)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "identityStandard" TEXT DEFAULT 'ERC-8004'`)
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS "Agent_walletAddress_key" ON "Agent"("walletAddress") WHERE "walletAddress" IS NOT NULL`)
   // Globally unique agent name (case-insensitive) — name is hardcoded on-chain, must be unique
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS "Agent_name_lower_key" ON "Agent"(LOWER("name"))`)

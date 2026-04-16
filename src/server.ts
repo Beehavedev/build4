@@ -41,6 +41,46 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+// ERC-8004 metadata endpoint — public, returns the agent's identity JSON.
+// AI-agent scanners (NFAScan, etc.) fetch this to verify the agent's
+// declared model, learning Merkle root, and trust signals.
+app.get('/api/agents/:address/metadata.json', async (req, res) => {
+  try {
+    const { buildMetadataJson, buildAgentIdentity } = await import('./services/agentIdentity')
+    const address = req.params.address
+    const agent = await db.agent.findFirst({
+      where: { walletAddress: { equals: address, mode: 'insensitive' } },
+      include: { user: { include: { wallets: { where: { isActive: true }, take: 1 } } } }
+    })
+    if (!agent || !agent.walletAddress) return res.status(404).json({ error: 'Agent not found' })
+
+    const ownerAddress = agent.user.wallets[0]?.address ?? '0x0000000000000000000000000000000000000000'
+    const baseUrl = `${req.protocol}://${req.get('host')}`
+    const identity = buildAgentIdentity({
+      name: agent.name,
+      agentAddress: agent.walletAddress,
+      ownerAddress,
+      publicBaseUrl: baseUrl,
+      model: agent.learningModel ?? undefined
+    })
+    const json = buildMetadataJson(identity, agent.onchainTxHash)
+    res.setHeader('Cache-Control', 'public, max-age=300')
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.json({
+      ...json,
+      stats: {
+        totalPnl: agent.totalPnl,
+        totalTrades: agent.totalTrades,
+        winRate: agent.winRate,
+        isActive: agent.isActive
+      }
+    })
+  } catch (err) {
+    console.error('[API] /agents/:address/metadata.json failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
 app.get('/api/user/:telegramId', async (req, res) => {
   try {
     const user = await db.user.findUnique({

@@ -1,4 +1,5 @@
 import { ethers } from 'ethers'
+import { AgentIdentity, encodeIdentityPayload } from './agentIdentity'
 
 const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
 const REGISTRY_PK = process.env.REGISTRY_WALLET_PK ?? process.env.ASTER_AGENT_PRIVATE_KEY
@@ -11,15 +12,8 @@ export interface RegistrationResult {
   reason?: string
 }
 
-function encodeRegistrationData(name: string, ownerAddress: string, agentAddress: string): string {
-  const payload = `BUILD4_AGENT|${name}|owner:${ownerAddress}|agent:${agentAddress}`
-  return ethers.hexlify(ethers.toUtf8Bytes(payload))
-}
-
 export async function registerAgentOnChain(
-  agentName: string,
-  agentAddress: string,
-  ownerAddress: string
+  identity: AgentIdentity
 ): Promise<RegistrationResult> {
   if (!REGISTRY_PK) {
     return {
@@ -44,10 +38,10 @@ export async function registerAgentOnChain(
       }
     }
 
-    const data = encodeRegistrationData(agentName, ownerAddress, agentAddress)
+    const data = encodeIdentityPayload(identity)
 
     const tx = await registryWallet.sendTransaction({
-      to: agentAddress,
+      to: identity.agent,
       value: 0,
       data
     })

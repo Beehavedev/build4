@@ -54,6 +54,7 @@ model Wallet {
   @@index([userId])
 }
 
+// (ERC-8004 fields appended below in Agent model)
 model Agent {
   id              String    @id @default(cuid())
   userId          String
@@ -85,6 +86,12 @@ model Agent {
   encryptedPK     String?
   onchainTxHash   String?
   onchainChain    String?   @default("BSC")
+
+  // ERC-8004 Trustless AI Agents Standard fields
+  learningModel    String?
+  learningRoot     String?
+  metadataUri      String?
+  identityStandard String?  @default("ERC-8004")
 
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @default(now()) @updatedAt

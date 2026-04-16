@@ -2,6 +2,9 @@ import { Bot, Context, InlineKeyboard } from 'grammy'
 import { db } from '../../db'
 import { generateEVMWallet, encryptPrivateKey, truncateAddress } from '../../services/wallet'
 import { registerAgentOnChain, bscscanTxUrl, bscscanAddressUrl } from '../../services/registry'
+import { buildAgentIdentity, DEFAULT_LEARNING_MODEL } from '../../services/agentIdentity'
+
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL ?? 'https://build4-1.onrender.com'
 
 interface AgentSession {
   step: 'name' | 'done'
@@ -90,7 +93,15 @@ export function registerAgents(bot: Bot) {
     const wallets = await db.wallet.findMany({ where: { userId: user.id }, take: 1 })
     const ownerAddress = wallets[0]?.address ?? '0x0000000000000000000000000000000000000000'
 
-    const result = await registerAgentOnChain(name, address, ownerAddress)
+    // Build full ERC-8004 identity (model, learning Merkle root, metadata URI…)
+    const identity = buildAgentIdentity({
+      name,
+      agentAddress: address,
+      ownerAddress,
+      publicBaseUrl: PUBLIC_BASE_URL
+    })
+
+    const result = await registerAgentOnChain(identity)
 
     try {
       const agent = await db.agent.create({
@@ -101,6 +112,10 @@ export function registerAgents(bot: Bot) {
           encryptedPK,
           onchainTxHash: result.txHash ?? null,
           onchainChain: 'BSC',
+          learningModel: identity.model,
+          learningRoot: identity.learningRoot,
+          metadataUri: identity.metadataUri,
+          identityStandard: identity.standard,
           exchange: 'aster',
           pairs: ['ALL'],
           maxPositionSize: 100,
@@ -175,6 +190,19 @@ You can fine-tune position sizes, risk limits, and pairs anytime in the *mini-ap
         text += `📜 [View registration tx](${bscscanTxUrl(a.onchainTxHash)})\n`
       } else {
         text += `🟡 *Registration:* pending broadcast\n`
+      }
+      // ERC-8004 trust signals (visible to scanners like NFAScan)
+      if (a.identityStandard) {
+        text += `🏛 *Standard:* ${a.identityStandard} ✓\n`
+      }
+      if (a.learningModel) {
+        text += `🧠 *Model:* ${a.learningModel}\n`
+      }
+      if (a.learningRoot) {
+        text += `🌲 *Learning root:* \`${a.learningRoot.slice(0, 10)}...${a.learningRoot.slice(-6)}\` (Merkle ✓)\n`
+      }
+      if (a.metadataUri) {
+        text += `📄 [Public metadata JSON](${a.metadataUri})\n`
       }
       text += `📊 PnL: ${a.totalPnl >= 0 ? '+' : ''}$${a.totalPnl.toFixed(2)} | WR: ${a.winRate.toFixed(0)}% (${a.totalTrades} trades)\n\n`
     })
