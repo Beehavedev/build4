@@ -6,6 +6,7 @@ import { createBot } from './bot'
 import { initRunner } from './agents/runner'
 import { migrateOldUsers } from './migrate'
 import { ensureNewTables } from './ensureTables'
+import { requireTgUser } from './services/telegramAuth'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -36,6 +37,36 @@ app.get('/api/user/:telegramId', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' })
     res.json({ ...user, telegramId: user.telegramId.toString() })
   } catch (err) {
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// Authenticated endpoints — use signed Telegram initData
+app.get('/api/me/agents', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    const agents = await db.agent.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' }
+    })
+    res.json(agents)
+  } catch (err) {
+    console.error('[API] /me/agents failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+app.get('/api/me/portfolio', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    const [portfolio, trades, wallets] = await Promise.all([
+      db.portfolio.findUnique({ where: { userId: user.id } }),
+      db.trade.findMany({ where: { userId: user.id }, orderBy: { openedAt: 'desc' }, take: 50 }),
+      db.wallet.findMany({ where: { userId: user.id, isActive: true } })
+    ])
+    res.json({ portfolio, trades, wallets, user: { ...user, telegramId: user.telegramId.toString() } })
+  } catch (err) {
+    console.error('[API] /me/portfolio failed:', err)
     res.status(500).json({ error: 'Internal error' })
   }
 })

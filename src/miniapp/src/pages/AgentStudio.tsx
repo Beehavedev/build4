@@ -1,25 +1,24 @@
 import { useState, useEffect } from 'react'
+import { apiFetch } from '../api'
 
 interface AgentStudioProps {
   userId: string | null
 }
 
-export default function AgentStudio({ userId }: AgentStudioProps) {
+export default function AgentStudio(_props: AgentStudioProps) {
   const [agents, setAgents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchAgents = () => {
-    if (!userId) { setLoading(false); return }
-    fetch(`/api/agents/${userId}`)
-      .then(r => r.json())
+    apiFetch<any[]>('/api/me/agents')
       .then(data => { setAgents(Array.isArray(data) ? data : []); setLoading(false) })
       .catch(() => setLoading(false))
   }
 
-  useEffect(() => { fetchAgents() }, [userId])
+  useEffect(() => { fetchAgents() }, [])
 
   const toggleAgent = async (agentId: string) => {
-    await fetch(`/api/agents/${agentId}/toggle`, { method: 'POST' })
+    await apiFetch(`/api/agents/${agentId}/toggle`, { method: 'POST' })
     fetchAgents()
   }
 

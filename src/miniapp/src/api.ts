@@ -62,10 +62,21 @@ export interface PortfolioData {
   weeklyPnl: number;
 }
 
-async function fetchApi<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`);
+function getInitData(): string {
+  return (window as any).Telegram?.WebApp?.initData ?? '';
+}
+
+export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  const initData = getInitData();
+  if (initData) headers.set('X-Telegram-Init-Data', initData);
+  const res = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
+}
+
+async function fetchApi<T>(path: string): Promise<T> {
+  return apiFetch<T>(path);
 }
 
 export function getUser(telegramId: number) {
