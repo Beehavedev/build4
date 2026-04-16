@@ -141,7 +141,13 @@ async function main() {
   const bot = createBot()
 
   // Webhook or polling
-  const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL
+  let webhookUrl = process.env.TELEGRAM_WEBHOOK_URL
+  if (!webhookUrl && process.env.REPLIT_DOMAINS) {
+    const domain = process.env.REPLIT_DOMAINS.split(',')[0].trim()
+    if (domain && !domain.includes('.replit.dev')) {
+      webhookUrl = `https://${domain}/api/webhook`
+    }
+  }
 
   if (webhookUrl) {
     app.post('/api/webhook', async (req, res) => {
