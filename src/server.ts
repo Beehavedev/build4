@@ -173,11 +173,15 @@ async function main() {
     app.listen(PORT, () => {
       console.log(`[Server] Running on port ${PORT}`)
     })
-    bot.start().catch((err: any) => {
-      console.warn(`[Bot] Polling failed (production bot may be running): ${err.message}`)
-      console.log('[Bot] HTTP server still running — use webhook mode in production')
-    })
-    console.log('[Bot] Starting in polling mode...')
+    if (process.env.TELEGRAM_BOT_EXTERNAL === 'true') {
+      console.log('[Bot] TELEGRAM_BOT_EXTERNAL=true — skipping polling (production bot handles messages)')
+    } else {
+      bot.start().catch((err: any) => {
+        console.warn(`[Bot] Polling failed (production bot may be running): ${err.message}`)
+        console.log('[Bot] HTTP server still running — use webhook mode in production')
+      })
+      console.log('[Bot] Starting in polling mode...')
+    }
   }
 
   // Start agent runner
