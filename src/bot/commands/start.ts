@@ -121,13 +121,7 @@ Earn $B4 reward points for every trade, signal followed, or quest completed.`,
     await handleWalletCommand(ctx)
   })
 
-  bot.callbackQuery('create_agent', async (ctx) => {
-    await ctx.answerCallbackQuery()
-    await ctx.reply(
-      '🤖 *Create Your AI Agent*\n\nUse /newagent to start the agent creation wizard.',
-      { parse_mode: 'Markdown' }
-    )
-  })
+  // create_agent callback is registered in commands/agents.ts (starts on-chain creation)
 
   bot.callbackQuery('signals', async (ctx) => {
     await ctx.answerCallbackQuery()

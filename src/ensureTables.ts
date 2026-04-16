@@ -74,6 +74,15 @@ export async function ensureNewTables() {
   await run(`CREATE INDEX IF NOT EXISTS "Agent_userId_idx" ON "Agent"("userId")`)
   await run(`CREATE INDEX IF NOT EXISTS "Agent_isActive_idx" ON "Agent"("isActive")`)
 
+  // On-chain identity columns (added in v2 — every agent has its own wallet)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "walletAddress" TEXT`)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "encryptedPK" TEXT`)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "onchainTxHash" TEXT`)
+  await run(`ALTER TABLE "Agent" ADD COLUMN IF NOT EXISTS "onchainChain" TEXT DEFAULT 'BSC'`)
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS "Agent_walletAddress_key" ON "Agent"("walletAddress") WHERE "walletAddress" IS NOT NULL`)
+  // Globally unique agent name (case-insensitive) — name is hardcoded on-chain, must be unique
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS "Agent_name_lower_key" ON "Agent"(LOWER("name"))`)
+
   await run(`CREATE TABLE IF NOT EXISTS "AgentMemory" (
     "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "agentId" TEXT NOT NULL,
