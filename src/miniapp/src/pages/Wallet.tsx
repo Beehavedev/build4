@@ -11,18 +11,28 @@ interface WalletInfo {
   qrDataUrl: string
 }
 
-type Tab = 'fund' | 'withdraw'
+// Wallet state machine — derived from server response, not stored.
+//   A: not onboarded, BSC empty       → fund-only
+//   B: not onboarded, BSC has USDT    → "Activate Trading Account" CTA
+//   C: onboarded, Aster empty         → "Transfer to Aster" CTA
+//   D: onboarded, Aster has balance   → full trading-ready UI
+type WalletState = 'A' | 'B' | 'C' | 'D'
+
+function deriveState(w: WalletInfo): WalletState {
+  if (!w.aster.onboarded) {
+    return w.balances.usdt > 0 ? 'B' : 'A'
+  }
+  return w.aster.usdt > 0 ? 'D' : 'C'
+}
 
 export default function Wallet() {
-  const [tab, setTab] = useState<Tab>('fund')
   const [w, setW] = useState<WalletInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   const load = async () => {
-    setLoading(true)
-    setErr(null)
+    setLoading(true); setErr(null)
     try {
       const data = await apiFetch<WalletInfo>('/api/me/wallet')
       setW(data)
@@ -63,135 +73,134 @@ export default function Wallet() {
     )
   }
 
+  const state = deriveState(w)
+
   return (
-    <div style={{ paddingTop: 20 }}>
+    <div style={{ paddingTop: 20 }} data-testid={`wallet-state-${state}`}>
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.5px' }}>💳 Wallet</div>
         <div style={{ fontSize: 13, color: 'var(--b4-muted)', marginTop: 2 }}>{w.label}</div>
       </div>
 
-      {/* On-chain wallet balances */}
-      <div className="card" style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>ON-CHAIN (BSC)</div>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>USDT</div>
-            <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-usdt">
-              {w.balances.usdt.toFixed(2)}
-            </div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>BNB (gas)</div>
-            <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-bnb">
-              {w.balances.bnb.toFixed(5)}
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Balance cards — Aster on top in onboarded states (D especially) so
+          users see their tradeable equity first. */}
+      {state === 'D' ? (
+        <>
+          <AsterPrimaryCard w={w} />
+          <BscSecondaryCard w={w} />
+        </>
+      ) : (
+        <>
+          <BscPrimaryCard w={w} />
+          {w.aster.onboarded && <AsterSecondaryCard w={w} />}
+        </>
+      )}
 
-      {/* Aster trading account balance */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>
-          ASTER TRADING
-        </div>
-        {!w.aster.onboarded ? (
-          <div
-            data-testid="text-aster-not-onboarded"
-            style={{
-              background: 'linear-gradient(135deg, #7c3aed22, #7c3aed11)',
-              border: '1px solid #7c3aed44',
-              borderRadius: 12,
-              padding: 16,
-              marginTop: 4
-            }}
-          >
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
-              ⚡ Reconnect Aster Account
-            </div>
-            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12, lineHeight: 1.4 }}>
-              A quick reconnect is needed to restore trading access.
-              Takes about 5 seconds.
-            </div>
-            <button
-              data-testid="button-connect-aster"
-              onClick={() => {
-                const tg = (window as any).Telegram?.WebApp
-                const link = 'https://t.me/BUILD4_BOT?start=connect_aster'
-                if (tg?.openTelegramLink) {
-                  tg.openTelegramLink(link)
-                  tg.close?.()
-                } else {
-                  window.open(link, '_blank')
-                }
-              }}
-              style={{
-                background: '#7c3aed',
-                color: 'white',
-                border: 'none',
-                borderRadius: 8,
-                padding: '10px 20px',
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: 'pointer',
-                width: '100%'
-              }}
-            >
-              Reconnect Now →
-            </button>
-          </div>
-        ) : w.aster.error ? (
-          <div style={{ fontSize: 12, color: 'var(--b4-red)', lineHeight: 1.4 }} data-testid="text-aster-error">
-            ⚠️ {w.aster.error}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Equity</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: '#10b981' }} data-testid="text-aster-usdt">
-                ${w.aster.usdt.toFixed(2)}
-              </div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Available margin</div>
-              <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-aster-margin">
-                ${w.aster.availableMargin.toFixed(2)}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        {(['fund', 'withdraw'] as Tab[]).map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            data-testid={`tab-${t}`}
-            style={{
-              flex: 1, padding: '10px 0',
-              borderRadius: 8, border: '1px solid var(--b4-border)',
-              background: tab === t ? 'var(--b4-accent)' : 'var(--b4-surface)',
-              color: tab === t ? 'white' : 'var(--b4-text)',
-              fontWeight: 600, fontSize: 14, cursor: 'pointer'
-            }}
-          >
-            {t === 'fund' ? '⬇ Fund' : '⬆ Withdraw'}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'fund'
-        ? <FundView w={w} copy={copy} copied={copied} onRefresh={load} />
-        : <WithdrawView w={w} onSent={load} />}
+      {/* State-specific CTA */}
+      {state === 'A' && <FundFlow w={w} copy={copy} copied={copied} onRefresh={load} />}
+      {state === 'B' && <ActivateFlow onActivated={load} />}
+      {state === 'C' && <TransferFlow w={w} onDone={load} initialDirection="to_aster" />}
+      {state === 'D' && <TradingReadyFlow w={w} onDone={load} copy={copy} copied={copied} />}
     </div>
   )
 }
 
-function FundView({ w, copy, copied, onRefresh }:
+// ─── Balance cards ───────────────────────────────────────────────────────────
+
+function BscPrimaryCard({ w }: { w: WalletInfo }) {
+  return (
+    <div className="card" style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>ON-CHAIN (BSC)</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>USDT</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-usdt">
+            {w.balances.usdt.toFixed(2)}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>BNB (gas)</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-bnb">
+            {w.balances.bnb.toFixed(5)}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BscSecondaryCard({ w }: { w: WalletInfo }) {
+  return (
+    <div className="card" style={{ marginBottom: 14, opacity: 0.85 }}>
+      <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 6 }}>ON-CHAIN (BSC)</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+        <span data-testid="text-balance-usdt">USDT {w.balances.usdt.toFixed(2)}</span>
+        <span data-testid="text-balance-bnb">BNB {w.balances.bnb.toFixed(5)}</span>
+      </div>
+    </div>
+  )
+}
+
+function AsterPrimaryCard({ w }: { w: WalletInfo }) {
+  return (
+    <div className="card" style={{
+      marginBottom: 10,
+      background: 'linear-gradient(135deg, #10b98122, #10b98108)',
+      border: '1px solid #10b98144'
+    }}>
+      <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>ASTER TRADING (LIVE)</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Equity</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: '#10b981' }} data-testid="text-aster-usdt">
+            ${w.aster.usdt.toFixed(2)}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Available margin</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-aster-margin">
+            ${w.aster.availableMargin.toFixed(2)}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AsterSecondaryCard({ w }: { w: WalletInfo }) {
+  return (
+    <div className="card" style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>ASTER TRADING</div>
+      {w.aster.error ? (
+        <div style={{ fontSize: 12, color: 'var(--b4-red)' }} data-testid="text-aster-error">
+          ⚠️ {w.aster.error}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Equity</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }} data-testid="text-aster-usdt">
+              ${w.aster.usdt.toFixed(2)}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Available</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }} data-testid="text-aster-margin">
+              ${w.aster.availableMargin.toFixed(2)}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── State A: not onboarded, BSC empty — show fund only ──────────────────────
+
+function FundFlow({ w, copy, copied, onRefresh }:
   { w: WalletInfo; copy: (s: string) => void; copied: boolean; onRefresh: () => void }) {
   return (
-    <div>
+    <div data-testid="flow-fund">
       <div style={{
         background: '#3f1d1d', border: '1px solid #7f1d1d',
         borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 12, lineHeight: 1.5
@@ -200,10 +209,14 @@ function FundView({ w, copy, copied, onRefresh }:
         Wrong network = lost funds. No exceptions.
       </div>
 
+      <div style={{ fontSize: 13, color: 'var(--b4-muted)', marginBottom: 12, lineHeight: 1.5 }}>
+        Send USDT to your wallet to get started. Once it lands, you'll be able to activate
+        your Aster trading account in one tap — no leaving the app.
+      </div>
+
       <div className="card" style={{ textAlign: 'center', marginBottom: 14 }}>
         <img
-          src={w.qrDataUrl}
-          alt="Deposit QR"
+          src={w.qrDataUrl} alt="Deposit QR"
           style={{ width: 220, height: 220, borderRadius: 8, background: 'white', padding: 6 }}
           data-testid="img-qr"
         />
@@ -239,6 +252,255 @@ function FundView({ w, copy, copied, onRefresh }:
   )
 }
 
+// ─── State B: BSC has USDT, not onboarded — Activate Trading Account ─────────
+
+function ActivateFlow({ onActivated }: { onActivated: () => void }) {
+  const [submitting, setSubmitting] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [needsAsterAccount, setNeedsAsterAccount] = useState(false)
+
+  const activate = async () => {
+    if (submitting) return
+    setSubmitting(true); setErr(null); setNeedsAsterAccount(false)
+    try {
+      const r = await apiFetch<{ success: boolean; error?: string; needsAsterAccount?: boolean }>(
+        '/api/aster/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+      )
+      if (r.success) {
+        // Tiny delay so users see the spinner stop before the new state appears
+        setTimeout(onActivated, 250)
+      } else {
+        setErr(r.error ?? 'Activation failed')
+        setNeedsAsterAccount(!!r.needsAsterAccount)
+      }
+    } catch (e: any) {
+      // apiFetch throws with the server's error message on non-2xx
+      const msg = e?.message ?? 'Activation failed'
+      setErr(msg)
+      const lower = msg.toLowerCase()
+      setNeedsAsterAccount(lower.includes('no aster user') || lower.includes('user not found'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div data-testid="flow-activate">
+      <div style={{
+        background: 'linear-gradient(135deg, #7c3aed22, #7c3aed11)',
+        border: '1px solid #7c3aed44', borderRadius: 12, padding: 16, marginBottom: 14
+      }}>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>
+          🚀 You're funded — activate trading
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--b4-muted)', marginBottom: 14, lineHeight: 1.5 }}>
+          One tap to authorise BUILD4 to trade on your behalf via Aster's broker
+          program. No signature pop-ups, no leaving the app. Takes ~3 seconds.
+        </div>
+        <button
+          onClick={activate}
+          disabled={submitting}
+          data-testid="button-activate-aster"
+          style={{
+            width: '100%', padding: 14, borderRadius: 8, border: 'none',
+            background: submitting ? '#5b21b6' : '#7c3aed',
+            color: 'white', fontSize: 15, fontWeight: 600,
+            cursor: submitting ? 'wait' : 'pointer'
+          }}
+        >
+          {submitting ? 'Activating…' : '⚡ Activate Trading Account'}
+        </button>
+      </div>
+
+      {err && (
+        <div data-testid="text-activate-error" style={{
+          padding: 12, borderRadius: 10, fontSize: 12, lineHeight: 1.5,
+          background: '#ef444415', border: '1px solid #ef444444', color: '#fca5a5'
+        }}>
+          {needsAsterAccount ? (
+            <>
+              <b>Almost there.</b> Aster only knows wallets that have made at least
+              one deposit. Use the Transfer step below — sending even $1 USDT to your
+              Aster futures account creates the record. Then tap Activate again.
+            </>
+          ) : (
+            <>❌ {err}</>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── State C: onboarded, Aster empty — Transfer to Aster ─────────────────────
+// ─── State D shares this same TransferFlow for the Fund button ──────────────
+
+function TransferFlow(
+  { w, onDone, initialDirection }:
+  { w: WalletInfo; onDone: () => void; initialDirection: 'to_aster' | 'to_bsc' }
+) {
+  const [direction, setDirection] = useState<'to_aster' | 'to_bsc'>(initialDirection)
+  const [amount, setAmount] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  const sourceBal = direction === 'to_aster' ? w.balances.usdt : w.aster.availableMargin
+  const valid = Number(amount) > 0 && Number(amount) <= sourceBal
+
+  const send = async () => {
+    if (!valid || submitting) return
+    setSubmitting(true); setResult(null)
+    try {
+      const r = await apiFetch<{ success: boolean; tranId?: string; error?: string }>(
+        '/api/aster/transfer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount, direction })
+        }
+      )
+      if (r.success) {
+        setResult({ ok: true, msg: `Transferred ${amount} USDT. Refreshing balance…` })
+        setAmount('')
+        setTimeout(onDone, 1500)
+      } else {
+        setResult({ ok: false, msg: r.error ?? 'Transfer failed' })
+      }
+    } catch (e: any) {
+      setResult({ ok: false, msg: e?.message ?? 'Transfer failed' })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div data-testid="flow-transfer">
+      <div style={{
+        background: '#1e293b', border: '1px solid #334155',
+        borderRadius: 12, padding: 14, marginBottom: 14
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>
+          🔁 Move USDT
+        </div>
+
+        {/* Direction toggle */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+          {([
+            { v: 'to_aster' as const, label: 'BSC → Aster' },
+            { v: 'to_bsc'   as const, label: 'Aster → BSC' }
+          ]).map(d => (
+            <button
+              key={d.v}
+              onClick={() => { setDirection(d.v); setAmount(''); setResult(null) }}
+              data-testid={`button-direction-${d.v}`}
+              style={{
+                flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600,
+                borderRadius: 6, cursor: 'pointer',
+                border: direction === d.v ? '1px solid #7c3aed' : '1px solid var(--b4-border)',
+                background: direction === d.v ? '#7c3aed22' : 'transparent',
+                color: 'var(--b4-text)'
+              }}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+
+        <label style={{ fontSize: 11, color: 'var(--b4-muted)', display: 'block', marginBottom: 6 }}>
+          Amount (USDT) · Available: {sourceBal.toFixed(2)}
+        </label>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <input
+            value={amount}
+            onChange={e => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+            placeholder="0.00"
+            inputMode="decimal"
+            data-testid="input-transfer-amount"
+            style={{ ...inputStyle, flex: 1 }}
+          />
+          <button
+            onClick={() => setAmount(Math.max(0, sourceBal).toFixed(2))}
+            data-testid="button-transfer-max"
+            style={{
+              padding: '0 14px', borderRadius: 8, border: '1px solid var(--b4-border)',
+              background: 'var(--b4-surface)', color: 'var(--b4-text)',
+              fontSize: 12, fontWeight: 600, cursor: 'pointer'
+            }}
+          >MAX</button>
+        </div>
+
+        <button
+          onClick={send}
+          disabled={!valid || submitting}
+          data-testid="button-transfer-send"
+          style={{
+            width: '100%', padding: 13, borderRadius: 8, border: 'none',
+            background: valid && !submitting ? 'var(--b4-accent)' : '#1e1e2e',
+            color: 'white', fontSize: 14, fontWeight: 600,
+            cursor: valid && !submitting ? 'pointer' : 'not-allowed'
+          }}
+        >
+          {submitting ? 'Transferring…' : (direction === 'to_aster' ? '⚡ Transfer to Aster' : '↩ Transfer to BSC')}
+        </button>
+
+        {result && (
+          <div
+            data-testid={result.ok ? 'text-transfer-success' : 'text-transfer-error'}
+            style={{
+              marginTop: 12, padding: 10, borderRadius: 8, fontSize: 12,
+              background: result.ok ? '#10b98120' : '#ef444420',
+              border: `1px solid ${result.ok ? '#10b981' : '#ef4444'}`,
+              color: result.ok ? '#10b981' : '#ef4444'
+            }}>
+            {result.msg}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── State D: trading-ready — Transfer + Withdraw tabs ───────────────────────
+
+function TradingReadyFlow(
+  { w, onDone, copy, copied }:
+  { w: WalletInfo; onDone: () => void; copy: (s: string) => void; copied: boolean }
+) {
+  const [tab, setTab] = useState<'transfer' | 'fund' | 'withdraw'>('transfer')
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+        {([
+          { v: 'transfer' as const, label: '🔁 Transfer' },
+          { v: 'fund'     as const, label: '⬇ Fund (BSC)' },
+          { v: 'withdraw' as const, label: '⬆ Withdraw' }
+        ]).map(t => (
+          <button
+            key={t.v}
+            onClick={() => setTab(t.v)}
+            data-testid={`tab-${t.v}`}
+            style={{
+              flex: 1, padding: '10px 0',
+              borderRadius: 8, border: '1px solid var(--b4-border)',
+              background: tab === t.v ? 'var(--b4-accent)' : 'var(--b4-surface)',
+              color: tab === t.v ? 'white' : 'var(--b4-text)',
+              fontWeight: 600, fontSize: 12, cursor: 'pointer'
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'transfer' && <TransferFlow w={w} onDone={onDone} initialDirection="to_aster" />}
+      {tab === 'fund'     && <FundFlow w={w} copy={copy} copied={copied} onRefresh={onDone} />}
+      {tab === 'withdraw' && <WithdrawView w={w} onSent={onDone} />}
+    </div>
+  )
+}
+
+// ─── On-chain BSC withdraw (unchanged from previous version) ─────────────────
+
 function WithdrawView({ w, onSent }: { w: WalletInfo; onSent: () => void }) {
   const [to, setTo] = useState('')
   const [amount, setAmount] = useState('')
@@ -260,8 +522,7 @@ function WithdrawView({ w, onSent }: { w: WalletInfo; onSent: () => void }) {
     })
     if (!confirmed) return
 
-    setSubmitting(true)
-    setResult(null)
+    setSubmitting(true); setResult(null)
     try {
       const r = await apiFetch<{ success: boolean; txHash: string; explorerUrl: string }>(
         '/api/me/withdraw',

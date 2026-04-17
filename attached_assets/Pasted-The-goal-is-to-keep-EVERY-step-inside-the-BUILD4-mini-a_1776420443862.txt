@@ -1,0 +1,151 @@
+The goal is to keep EVERY step inside the BUILD4 mini app so we 
+capture all fees through the broker program. No redirects to 
+asterdex.com. Here is the complete in-app flow to build:
+
+═══════════════════════════════════════════════════════
+THE FULL IN-APP ONBOARDING FLOW (Wallet tab)
+═══════════════════════════════════════════════════════
+
+The wallet page should guide users through these steps 
+WITHOUT leaving the mini app:
+
+STEP 1 — Fund BSC Wallet (already works)
+  User sees their BSC address + QR code
+  They send USDT (BEP-20) from any external wallet
+  The on-chain balance updates automatically on refresh
+
+STEP 2 — Transfer USDT to Aster Futures (NEW — build this)
+  A "Transfer to Aster" button appears when BSC USDT > 0
+  User taps it, enters amount
+  The bot backend calls Aster's deposit/transfer endpoint 
+  on behalf of the user using the agent key
+  
+  The Aster deposit endpoint is:
+  POST /fapi/v3/asset/wallet/transfer
+  params: { amount, asset: "USDT", kindType: "SPOT_FUTURE" }
+  signed with: user = user wallet address, 
+               signer = ASTER_AGENT_ADDRESS,
+               key = ASTER_AGENT_PRIVATE_KEY
+  
+  NOTE: This requires the user to have already completed 
+  approveAgent (asterOnboarded=true). If not, show 
+  Step 3 first.
+
+STEP 3 — Activate Aster Account (the approveAgent call)
+  This is the ONE signature needed from the user's wallet.
+  
+  The problem: approveAgent requires the user's private key 
+  to sign the EIP-712 ApproveAgent message. We have it 
+  encrypted in the DB.
+  
+  The solution that keeps everything in-app:
+  
+  In the mini app, when user taps "Activate Trading Account":
+  1. Mini app calls POST /api/aster/approve (our backend)
+  2. Backend decrypts the user's wallet private key from DB
+  3. Backend calls approveAgent with:
+       userAddress: user's wallet address
+       userPrivateKey: decrypted key (in memory only)
+       agentAddress: ASTER_AGENT_ADDRESS
+       agentName: "BUILD4 Trading Agent"
+       builderAddress: ASTER_BUILDER_ADDRESS
+       maxFeeRate: ASTER_BUILDER_FEE_RATE
+       expiredDays: 365
+  4. On success: set asterOnboarded=true, asterAgentAddress in DB
+  5. Return { success: true } to mini app
+  6. Mini app shows "✅ Trading account activated!"
+  7. Mini app now shows Aster balance (calls /api/me/wallet again)
+
+  The decrypted private key exists in memory for ~100ms 
+  during the approveAgent signing and is never stored or 
+  returned to the client. This is safe because:
+  - The wallet was created BY our bot, the user doesn't 
+    have an external copy they've imported elsewhere
+  - The signing happens server-side, key never leaves server
+  - It's the same key we already use for on-chain transactions
+
+STEP 4 — Show Aster Balance + Trading (already mostly works)
+  Once asterOnboarded=true, show:
+  - Aster USDT balance
+  - Active positions (from /fapi/v3/positionRisk)
+  - Fund button (triggers Transfer flow from Step 2)
+  - Withdraw button (reverse transfer FUTURE_SPOT)
+
+═══════════════════════════════════════════════════════
+BUILD THIS: POST /api/aster/approve endpoint
+═══════════════════════════════════════════════════════
+
+Create a new backend route: POST /api/aster/approve
+
+It should:
+1. Authenticate the request (verify it's from the 
+   logged-in Telegram user via their telegramId)
+2. Find the user's active wallet in DB
+3. Decrypt the private key using decryptPrivateKey(
+     wallet.encryptedPK, user.id)
+4. Call approveAgent(...) with the decrypted key
+5. On success: update user record asterOnboarded=true,
+   asterAgentAddress=ASTER_AGENT_ADDRESS
+6. Return { success: true, message: "Account activated" }
+7. On failure: return { success: false, error: message }
+   - do NOT return the private key or any key material
+   - do NOT log the private key
+
+═══════════════════════════════════════════════════════
+BUILD THIS: POST /api/aster/transfer endpoint  
+═══════════════════════════════════════════════════════
+
+Create: POST /api/aster/transfer
+Body: { amount: string, direction: "to_aster" | "to_bsc" }
+
+1. Get user's active wallet address
+2. Build creds: buildCreds(wallet.address)
+3. Call POST /fapi/v3/asset/wallet/transfer with:
+   - amount: body.amount
+   - asset: "USDT"
+   - kindType: direction === "to_aster" 
+               ? "SPOT_FUTURE" 
+               : "FUTURE_SPOT"
+   - clientTranId: unique ID (Date.now().toString())
+4. Return { success: true, txId: result.tranId }
+
+═══════════════════════════════════════════════════════
+UPDATE THE MINI APP WALLET PAGE
+═══════════════════════════════════════════════════════
+
+The wallet page state machine should be:
+
+State A — Not onboarded, BSC wallet empty:
+  Show: BSC address + QR + Fund button
+  Message: "Send USDT (BEP-20) to your wallet to get started"
+
+State B — Not onboarded, BSC wallet has USDT:
+  Show: BSC balance
+  Show: "Activate Trading Account" button (calls /api/aster/approve)
+  Message: "You have USDT ready. Activate to start trading."
+
+State C — Onboarded, Aster balance = 0:
+  Show: BSC balance + Aster balance ($0)
+  Show: "Transfer to Aster" button (calls /api/aster/transfer)
+  Message: "Transfer USDT to your Aster trading account"
+  
+State D — Onboarded, Aster has balance:
+  Show: Aster USDT balance (large, prominent)
+  Show: BSC balance (smaller, secondary)
+  Show: Fund + Withdraw buttons
+  Show: Active positions if any
+  This is the full trading-ready state
+
+═══════════════════════════════════════════════════════
+RESULT
+═══════════════════════════════════════════════════════
+
+User never leaves the mini app.
+Every action goes through our backend.
+Every trade goes through our agent key with our builder address.
+We earn the builder fee on every single trade.
+Zero friction, zero redirects, zero lost users.
+
+Build the two new API endpoints and update the 
+Wallet page state machine. Do not change anything 
+else.

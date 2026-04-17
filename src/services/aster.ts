@@ -235,6 +235,38 @@ export async function getAccountBalance(creds: AsterCredentials): Promise<{
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Asset transfer between BSC wallet (SPOT side of Aster) and Futures account.
+//
+// kindType:
+//   'SPOT_FUTURE' = move USDT from your BSC wallet INTO your Aster futures account
+//   'FUTURE_SPOT' = move USDT from your Aster futures account BACK to your BSC wallet
+//
+// Signed by the platform agent on behalf of the user (same broker model as
+// every other v3 endpoint). Returns Aster's tranId so the caller can show
+// it to the user / poll for confirmation.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function transferAsset(
+  creds:    AsterCredentials,
+  amount:   string,
+  kindType: 'SPOT_FUTURE' | 'FUTURE_SPOT'
+): Promise<{ success: boolean; tranId?: string; error?: string }> {
+  try {
+    const res = await signedPOST('/fapi/v3/asset/wallet/transfer', {
+      amount,
+      asset:        'USDT',
+      kindType,
+      clientTranId: Date.now().toString()
+    }, creds)
+    return { success: true, tranId: String(res.data?.tranId ?? '') }
+  } catch (err: any) {
+    const msg = err?.response?.data?.msg ?? err?.response?.data?.message ?? err?.message ?? 'transfer_failed'
+    console.error('[Aster] transferAsset failed:', creds.userAddress, kindType, amount, '→',
+      err?.response?.status, err?.response?.data ?? msg)
+    return { success: false, error: String(msg) }
+  }
+}
+
 // Strict variant — throws on error so callers can surface the real reason
 // to the user (e.g. "signer not approved", "user not registered on Aster").
 export async function getAccountBalanceStrict(creds: AsterCredentials): Promise<{

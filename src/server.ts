@@ -204,6 +204,143 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
   }
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Aster onboarding — POST /api/aster/approve
+//
+// Performs the one-time approveAgent EIP-712 signature ENTIRELY server-side.
+// We decrypt the user's wallet private key, sign the ApproveAgent message,
+// submit it to Aster, and on success flip asterOnboarded=true. The plaintext
+// key never leaves this function (lives in memory for ~100ms during signing).
+//
+// Why server-side: the wallet was created by us, the user has no external
+// copy. Signing here means the user never has to leave the mini app, never
+// has to install MetaMask, never has to visit asterdex.com — and we keep the
+// broker fee on every subsequent trade.
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/aster/approve', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  try {
+    const builderAddress = process.env.ASTER_BUILDER_ADDRESS
+    const agentPrivKey   = process.env.ASTER_AGENT_PRIVATE_KEY
+    const agentAddress   = process.env.ASTER_AGENT_ADDRESS
+    const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001'
+    if (!builderAddress || !agentPrivKey || !agentAddress) {
+      return res.status(500).json({ success: false, error: 'Platform not configured' })
+    }
+
+    if (user.asterOnboarded) {
+      return res.json({ success: true, message: 'Already activated', alreadyOnboarded: true })
+    }
+
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet || !wallet.encryptedPK) {
+      return res.status(404).json({ success: false, error: 'No active wallet' })
+    }
+
+    const { decryptPrivateKey } = await import('./services/wallet')
+    const { approveAgent }      = await import('./services/aster')
+
+    let userPk: string
+    try {
+      userPk = decryptPrivateKey(wallet.encryptedPK, user.id)
+    } catch {
+      return res.status(500).json({ success: false, error: 'Could not decrypt wallet' })
+    }
+    if (!userPk?.startsWith('0x')) {
+      return res.status(500).json({ success: false, error: 'Invalid wallet key' })
+    }
+
+    const result = await approveAgent({
+      userAddress:    wallet.address,
+      userPrivateKey: userPk,
+      agentAddress,
+      agentName:      'BUILD4 Trading Agent',
+      builderAddress,
+      maxFeeRate:     feeRate,
+      expiredDays:    365
+    })
+
+    // Wipe local key reference ASAP. JS GC will collect, but null helps.
+    userPk = ''
+
+    if (!result.success) {
+      const errStr = String(result.error ?? '').toLowerCase()
+      const isNewWallet = errStr.includes('no aster user') || errStr.includes('user not found')
+      return res.status(400).json({
+        success: false,
+        error: result.error ?? 'approve_failed',
+        needsAsterAccount: isNewWallet  // mini app uses this to show the right next-step UI
+      })
+    }
+
+    await db.user.update({
+      where: { id: user.id },
+      data:  { asterOnboarded: true, asterAgentAddress: agentAddress }
+    })
+
+    return res.json({ success: true, message: 'Trading account activated' })
+  } catch (err: any) {
+    console.error('[API] /aster/approve failed:', err)
+    if (res.headersSent) return
+    res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Aster transfer — POST /api/aster/transfer
+// Body: { amount: string, direction: 'to_aster' | 'to_bsc' }
+// Moves USDT between the user's BSC wallet and their Aster futures account
+// using the platform agent signature (no user key needed).
+// ─────────────────────────────────────────────────────────────────────────────
+const transferLocks = new Map<string, Promise<unknown>>()
+function withTransferLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = transferLocks.get(userId) ?? Promise.resolve()
+  const next = prev.catch(() => {}).then(fn)
+  transferLocks.set(userId, next)
+  next.finally(() => {
+    if (transferLocks.get(userId) === next) transferLocks.delete(userId)
+  })
+  return next
+}
+
+app.post('/api/aster/transfer', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  try {
+    await withTransferLock(user.id, async () => {
+      const { amount, direction } = req.body ?? {}
+      const amt = Number(amount)
+      if (!Number.isFinite(amt) || amt <= 0) {
+        return res.status(400).json({ success: false, error: 'Invalid amount' })
+      }
+      if (direction !== 'to_aster' && direction !== 'to_bsc') {
+        return res.status(400).json({ success: false, error: 'Invalid direction' })
+      }
+      if (!user.asterOnboarded) {
+        return res.status(400).json({ success: false, error: 'Activate trading account first', needsApprove: true })
+      }
+
+      const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+      if (!wallet) return res.status(404).json({ success: false, error: 'No active wallet' })
+
+      const { buildCreds, transferAsset } = await import('./services/aster')
+      const creds = buildCreds(wallet.address)
+      if (!creds) return res.status(500).json({ success: false, error: 'Platform not configured' })
+
+      const kindType = direction === 'to_aster' ? 'SPOT_FUTURE' : 'FUTURE_SPOT'
+      const result   = await transferAsset(creds, amt.toString(), kindType)
+
+      if (!result.success) {
+        return res.status(400).json({ success: false, error: result.error ?? 'transfer_failed' })
+      }
+      return res.json({ success: true, tranId: result.tranId })
+    })
+  } catch (err: any) {
+    if (res.headersSent) return
+    console.error('[API] /aster/transfer failed:', err)
+    res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
+  }
+})
+
 // Per-user mutex for withdrawals — prevents double-spend if a client
 // fires concurrent requests before the first tx is broadcast.
 const withdrawLocks = new Map<string, Promise<unknown>>()
