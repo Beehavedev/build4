@@ -3,6 +3,7 @@ import Dashboard from './pages/Dashboard'
 import AgentStudio from './pages/AgentStudio'
 import CopyTrade from './pages/CopyTrade'
 import Portfolio from './pages/Portfolio'
+import Wallet from './pages/Wallet'
 
 declare global {
   interface Window {
@@ -10,7 +11,7 @@ declare global {
   }
 }
 
-type Page = 'dashboard' | 'agents' | 'copy' | 'portfolio'
+type Page = 'dashboard' | 'agents' | 'wallet' | 'copy' | 'portfolio'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -30,6 +31,7 @@ export default function App() {
   const navItems: { id: Page; label: string; icon: string }[] = [
     { id: 'dashboard', label: 'Home', icon: '⚡' },
     { id: 'agents', label: 'Agents', icon: '🤖' },
+    { id: 'wallet', label: 'Wallet', icon: '💳' },
     { id: 'copy', label: 'Copy', icon: '📋' },
     { id: 'portfolio', label: 'Portfolio', icon: '📊' }
   ]
@@ -40,6 +42,7 @@ export default function App() {
       <div style={{ padding: '0 16px' }}>
         {page === 'dashboard' && <Dashboard userId={userId} />}
         {page === 'agents' && <AgentStudio userId={userId} />}
+        {page === 'wallet' && <Wallet />}
         {page === 'copy' && <CopyTrade />}
         {page === 'portfolio' && <Portfolio userId={userId} />}
       </div>

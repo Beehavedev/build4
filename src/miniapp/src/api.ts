@@ -71,7 +71,14 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   const initData = getInitData();
   if (initData) headers.set('X-Telegram-Init-Data', initData);
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  if (!res.ok) {
+    let msg = `API error: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.error) msg = body.error;
+    } catch {}
+    throw new Error(msg);
+  }
   return res.json();
 }
 

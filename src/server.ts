@@ -124,6 +124,170 @@ app.get('/api/me/portfolio', requireTgUser, async (req, res) => {
   }
 })
 
+// Active wallet for the signed-in user, with on-chain balances + QR data URL.
+app.get('/api/me/wallet', requireTgUser, async (req, res) => {
+  try {
+    const { ethers } = await import('ethers')
+    const QRCode = (await import('qrcode')).default
+    const user = (req as any).user
+    const wallet = await db.wallet.findFirst({
+      where: { userId: user.id, isActive: true }
+    })
+    if (!wallet) return res.status(404).json({ error: 'No active wallet' })
+
+    const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
+    const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955'
+    const provider = new ethers.JsonRpcProvider(BSC_RPC)
+
+    let usdt = 0, bnb = 0, balanceError: string | null = null
+    try {
+      const [bnbWei, usdtWei] = await Promise.all([
+        provider.getBalance(wallet.address),
+        new ethers.Contract(USDT_BSC, ['function balanceOf(address) view returns (uint256)'], provider).balanceOf(wallet.address)
+      ])
+      bnb = parseFloat(ethers.formatEther(bnbWei))
+      usdt = parseFloat(ethers.formatUnits(usdtWei, 18))
+    } catch (e: any) {
+      balanceError = e?.message ?? 'rpc_failed'
+    }
+
+    const qrDataUrl = await QRCode.toDataURL(wallet.address, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 360,
+      color: { dark: '#000000', light: '#FFFFFF' }
+    })
+
+    res.json({
+      address: wallet.address,
+      chain: wallet.chain,
+      label: wallet.label,
+      pinProtected: !!user.pinHash,
+      balances: { usdt, bnb, error: balanceError },
+      qrDataUrl
+    })
+  } catch (err: any) {
+    console.error('[API] /me/wallet failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// Per-user mutex for withdrawals — prevents double-spend if a client
+// fires concurrent requests before the first tx is broadcast.
+const withdrawLocks = new Map<string, Promise<unknown>>()
+function withWithdrawLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = withdrawLocks.get(userId) ?? Promise.resolve()
+  const next = prev.catch(() => {}).then(fn)
+  withdrawLocks.set(userId, next)
+  next.finally(() => {
+    if (withdrawLocks.get(userId) === next) withdrawLocks.delete(userId)
+  })
+  return next
+}
+
+// Withdraw USDT (BEP-20) from the user's active wallet to an external address.
+// Body: { to: string, amount: number, pin?: string }
+app.post('/api/me/withdraw', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  try {
+    await withWithdrawLock(user.id, async () => {
+    const { ethers } = await import('ethers')
+    const { decryptPrivateKey } = await import('./services/wallet')
+    const { verifyPin, logSecurityEvent, checkPinFailLimit } = await import('./services/security')
+
+    const { to, amount, pin } = req.body ?? {}
+
+    // ── Input validation ─────────────────────────────────────────────
+    if (typeof to !== 'string' || !ethers.isAddress(to)) {
+      return res.status(400).json({ error: 'Invalid destination address' })
+    }
+    const amt = Number(amount)
+    if (!Number.isFinite(amt) || amt <= 0) {
+      return res.status(400).json({ error: 'Invalid amount' })
+    }
+    if (amt < 1) {
+      return res.status(400).json({ error: 'Minimum withdrawal is 1 USDT' })
+    }
+
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet || !wallet.encryptedPK) {
+      return res.status(404).json({ error: 'No active wallet' })
+    }
+
+    // ── PIN gate (with brute-force lockout) ──────────────────────────
+    if (user.pinHash) {
+      const limit = await checkPinFailLimit(user.id)
+      if (!limit.allowed) {
+        return res.status(429).json({ error: 'Too many wrong PIN attempts. Try again in an hour.' })
+      }
+      if (typeof pin !== 'string' || !/^\d{4,8}$/.test(pin)) {
+        return res.status(401).json({ error: 'PIN required', pinRequired: true })
+      }
+      if (!user.pinSalt || !verifyPin(pin, user.pinHash, user.pinSalt)) {
+        // Log under 'pin_failed' so it counts against checkPinFailLimit (which
+        // tracks pin_failed + pk_export_denied_bad_pin across the user's hour).
+        await logSecurityEvent({ userId: user.id, telegramId: user.telegramId, action: 'pin_failed', walletId: wallet.id, meta: { source: 'withdraw' } })
+        return res.status(401).json({ error: 'Wrong PIN' })
+      }
+    }
+
+    // ── Decrypt PK and build tx ──────────────────────────────────────
+    const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
+    const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955'
+    const provider = new ethers.JsonRpcProvider(BSC_RPC)
+    const pk = decryptPrivateKey(wallet.encryptedPK, user.id, user.pinHash ? pin : undefined)
+    if (!pk || !pk.startsWith('0x')) {
+      return res.status(500).json({ error: 'Could not decrypt wallet' })
+    }
+    const signer = new ethers.Wallet(pk, provider)
+
+    // ── Pre-flight: USDT and BNB-for-gas ────────────────────────────
+    const usdt = new ethers.Contract(USDT_BSC, [
+      'function balanceOf(address) view returns (uint256)',
+      'function transfer(address to, uint256 amount) returns (bool)'
+    ], signer)
+    const [usdtWei, bnbWei, feeData] = await Promise.all([
+      usdt.balanceOf(wallet.address),
+      provider.getBalance(wallet.address),
+      provider.getFeeData()
+    ])
+    const amountWei = ethers.parseUnits(amt.toString(), 18)
+    if (usdtWei < amountWei) {
+      return res.status(400).json({
+        error: `Insufficient USDT. Wallet holds ${ethers.formatUnits(usdtWei, 18)}.`
+      })
+    }
+    // ERC-20 transfer typically uses ~55k gas. We require ~3x that as headroom.
+    const gasPrice = feeData.gasPrice ?? ethers.parseUnits('1', 'gwei')
+    const minBnbForGas = gasPrice * 200_000n
+    if (bnbWei < minBnbForGas) {
+      return res.status(400).json({
+        error: `Need ~${ethers.formatEther(minBnbForGas)} BNB for gas. Wallet has ${ethers.formatEther(bnbWei)} BNB. Send a tiny amount of BNB to your wallet first.`,
+        needsBnb: true
+      })
+    }
+
+    // ── Send tx ──────────────────────────────────────────────────────
+    const tx = await usdt.transfer(to, amountWei)
+    await logSecurityEvent({
+      userId: user.id, telegramId: user.telegramId, action: 'withdraw_sent',
+      walletId: wallet.id, meta: { to, amount: amt, txHash: tx.hash }
+    })
+    // Don't await receipt — return optimistically with hash so the user gets
+    // immediate feedback. Frontend can poll the explorer link.
+    res.json({
+      success: true,
+      txHash: tx.hash,
+      explorerUrl: `https://bscscan.com/tx/${tx.hash}`
+    })
+    })
+  } catch (err: any) {
+    if (res.headersSent) return
+    console.error('[API] /me/withdraw failed:', err)
+    res.status(500).json({ error: err?.shortMessage ?? err?.message ?? 'Internal error' })
+  }
+})
+
 app.get('/api/agents/:userId', async (req, res) => {
   try {
     const raw = req.params.userId
