@@ -7,6 +7,7 @@ interface WalletInfo {
   label: string
   pinProtected: boolean
   balances: { usdt: number; bnb: number; error: string | null }
+  aster: { usdt: number; availableMargin: number; error: string | null } | null
   qrDataUrl: string
 }
 
@@ -69,21 +70,48 @@ export default function Wallet() {
         <div style={{ fontSize: 13, color: 'var(--b4-muted)', marginTop: 2 }}>{w.label}</div>
       </div>
 
-      {/* Balances */}
-      <div className="card" style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>USDT</div>
-          <div style={{ fontSize: 22, fontWeight: 700 }} data-testid="text-balance-usdt">
-            {w.balances.usdt.toFixed(2)}
+      {/* On-chain wallet balances */}
+      <div className="card" style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>ON-CHAIN (BSC)</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>USDT</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-usdt">
+              {w.balances.usdt.toFixed(2)}
+            </div>
           </div>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>BNB (gas)</div>
-          <div style={{ fontSize: 22, fontWeight: 700 }} data-testid="text-balance-bnb">
-            {w.balances.bnb.toFixed(5)}
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>BNB (gas)</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-bnb">
+              {w.balances.bnb.toFixed(5)}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Aster trading account balance */}
+      {w.aster && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
+            <span>ASTER TRADING</span>
+            {w.aster.error && <span style={{ color: 'var(--b4-red)' }}>unavailable</span>}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Equity</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#10b981' }} data-testid="text-aster-usdt">
+                ${w.aster.usdt.toFixed(2)}
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Available margin</div>
+              <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-aster-margin">
+                ${w.aster.availableMargin.toFixed(2)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>

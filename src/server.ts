@@ -158,12 +158,33 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
       color: { dark: '#000000', light: '#FFFFFF' }
     })
 
+    // ── Best-effort: Aster account balance for this trading wallet ──
+    // Wallet must already be set up on Aster (signer registered). If anything
+    // fails — wallet not on Aster, no agent creds, network glitch — we just
+    // omit the section instead of failing the whole endpoint.
+    let aster: { usdt: number; availableMargin: number; error: string | null } | null = null
+    try {
+      const { buildCreds, getAccountBalance } = await import('./services/aster')
+      const creds = buildCreds(
+        wallet.address,
+        user.asterAgentAddress,
+        process.env.ASTER_AGENT_PRIVATE_KEY
+      )
+      if (creds) {
+        const bal = await getAccountBalance(creds)
+        aster = { usdt: bal.usdt, availableMargin: bal.availableMargin, error: null }
+      }
+    } catch (e: any) {
+      aster = { usdt: 0, availableMargin: 0, error: e?.message ?? 'aster_unavailable' }
+    }
+
     res.json({
       address: wallet.address,
       chain: wallet.chain,
       label: wallet.label,
       pinProtected: !!user.pinHash,
       balances: { usdt, bnb, error: balanceError },
+      aster,
       qrDataUrl
     })
   } catch (err: any) {
