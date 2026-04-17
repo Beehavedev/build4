@@ -454,7 +454,12 @@ export function registerAgents(bot: Bot) {
           }
         }
       } catch (e: any) {
-        console.error(`[Sync] agent="${a.name}" FAILED:`, e.message, e.stack?.split('\n').slice(0, 3).join(' | '))
+        console.error(`[Sync] agent="${a.name}" FAILED:`,
+          'msg=', e?.message || '(empty)',
+          'code=', e?.code,
+          'meta=', JSON.stringify(e?.meta),
+          'name=', e?.name,
+          'stack=', e?.stack?.split('\n').slice(0, 4).join(' | '))
       }
     }))
 
