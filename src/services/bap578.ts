@@ -13,6 +13,14 @@ import { ethers } from 'ethers'
 const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
 export const BAP578_CONTRACT = '0xd7deb29ddbb13607375ce50405a574ac2f7d978d'
 
+// BAP-578 requires `logicAddress` to be a DEPLOYED contract (has bytecode),
+// not an EOA. Set BAP578_LOGIC_TEMPLATE to the canonical logic-template
+// contract address published by the BAP-578 protocol team.
+// You can find it on NFAScan by inspecting any successful mint's logicAddress.
+export const BAP578_LOGIC_TEMPLATE = (
+  process.env.BAP578_LOGIC_TEMPLATE ?? ''
+).trim()
+
 // Protocol mint fee (paid to the BAP-578 team treasury 0xF029…F08d)
 export const PROTOCOL_FEE_BNB = '0.01'
 // BUILD4 service fee (paid to our revenue wallet)
@@ -88,6 +96,21 @@ export async function mintBap578Agent(opts: {
 
     const c = new ethers.Contract(BAP578_CONTRACT, BAP578_ABI, wallet)
 
+    if (!BAP578_LOGIC_TEMPLATE) {
+      return {
+        success: false,
+        reason: 'Server config error: BAP578_LOGIC_TEMPLATE env var is not set. Ask the operator to configure the BAP-578 logic-template contract address.'
+      }
+    }
+    // Sanity check: must be a deployed contract, not an EOA.
+    const code = await provider.getCode(BAP578_LOGIC_TEMPLATE)
+    if (!code || code === '0x') {
+      return {
+        success: false,
+        reason: `Server config error: BAP578_LOGIC_TEMPLATE (${BAP578_LOGIC_TEMPLATE}) has no contract code on BSC.`
+      }
+    }
+
     const extendedMetadata = {
       persona: `BUILD4 agent "${opts.agentName}"`,
       experience: 'Autonomous Aster DEX perp trader with risk-managed strategy execution',
@@ -99,7 +122,7 @@ export async function mintBap578Agent(opts: {
 
     const tx = await c.createAgent(
       wallet.address,           // mint NFT TO the user (owner)
-      opts.agentAddress,        // logicAddress = the agent's own wallet
+      BAP578_LOGIC_TEMPLATE,    // logicAddress = canonical BAP-578 logic contract
       opts.metadataURI,
       extendedMetadata,
       { value: fee }
