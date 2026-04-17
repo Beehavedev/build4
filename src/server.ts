@@ -158,34 +158,34 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
       color: { dark: '#000000', light: '#FFFFFF' }
     })
 
-    // ── Aster account balance ────────────────────────────────────────
-    // Per Aster v3 broker model: platform agent signs all queries on behalf
-    // of the user, but only AFTER the user has called approveAgent once
-    // (the /aster onboarding flow). Skip the API call until they do — it
-    // would 403 anyway, and we'd rather show actionable guidance.
+    // ── Aster account balance via public RPC (no signing required) ──
+    // Aster's tapi.asterdex.com/info JSON-RPC accepts any wallet address
+    // unauthenticated, so we always query — even for users who haven't run
+    // approveAgent yet. If they have no Aster futures account, the RPC
+    // returns an "account does not exist" error which we surface as
+    // not_onboarded so the mini app shows the activation flow.
     let aster: {
       usdt: number; availableMargin: number;
       onboarded: boolean; error: string | null
     } = { usdt: 0, availableMargin: 0, onboarded: !!user.asterOnboarded, error: null }
 
-    if (!user.asterOnboarded) {
-      aster.error = 'not_onboarded'
-    } else {
-      try {
-        const asterMod = await import('./services/aster')
-        const creds = asterMod.buildCreds(wallet.address) // platform signer from env
-        if (!creds) {
-          aster.error = 'no_agent_credentials'
-        } else {
-          const bal = await asterMod.getAccountBalanceStrict(creds)
-          aster.usdt = bal.usdt
-          aster.availableMargin = bal.availableMargin
-        }
-      } catch (e: any) {
-        const apiMsg = e?.response?.data?.msg ?? e?.response?.data?.message
-        const msg = apiMsg ?? e?.message ?? 'aster_unavailable'
-        console.error('[API] /me/wallet aster failed:', wallet.address, '→', e?.response?.status, e?.response?.data ?? msg)
-        aster.error = String(msg)
+    try {
+      const asterMod = await import('./services/aster')
+      const creds = asterMod.buildCreds(wallet.address)
+      if (!creds) {
+        aster.error = 'no_agent_credentials'
+      } else {
+        const bal = await asterMod.getAccountBalanceStrict(creds)
+        aster.usdt = bal.usdt
+        aster.availableMargin = bal.availableMargin
+      }
+    } catch (e: any) {
+      const msg = String(e?.message ?? 'aster_unavailable').toLowerCase()
+      if (msg.includes('account does not exist') || msg.includes('no aster user')) {
+        aster.error = 'not_onboarded'
+      } else {
+        console.error('[API] /me/wallet aster failed:', wallet.address, '→', e?.message)
+        aster.error = String(e?.message ?? 'aster_unavailable')
       }
     }
 

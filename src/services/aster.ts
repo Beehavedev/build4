@@ -214,23 +214,63 @@ async function signedDELETE(path: string, params: Record<string, any>, creds: As
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Account balance
+// Account balance — via Aster's public RPC (no signing required)
+//
+// Endpoint: POST https://tapi.asterdex.com/info
+// Method:   aster_getBalance(address, "latest")
+//
+// Returns { perpAssets: [{asset, walletBalance, availableBalance, ...}],
+//           positions: [...] } for any address that has an Aster futures
+// account. For addresses that have never opened a futures account, the JSON
+// payload contains a JSON-RPC error with msg "The account does not exist,
+// please open a futures account." — the strict variant surfaces that so the
+// caller can show the right UI.
 // ─────────────────────────────────────────────────────────────────────────────
+const ASTER_RPC = 'https://tapi.asterdex.com/info'
+
+async function rpcGetBalance(walletAddress: string): Promise<{
+  perpAssets: any[]; positions: any[]; error?: string
+}> {
+  const res = await axios.post(ASTER_RPC, {
+    id: 1, jsonrpc: '2.0', method: 'aster_getBalance',
+    params: [walletAddress, 'latest']
+  }, {
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    timeout: 8_000, validateStatus: () => true
+  })
+  const body: any = res.data ?? {}
+  if (body.error) {
+    // RPC returns 200 OK with an `error` field even for "account does not exist"
+    return { perpAssets: [], positions: [], error: String(body.error.message ?? 'rpc_error') }
+  }
+  if (res.status !== 200) {
+    return { perpAssets: [], positions: [], error: `http_${res.status}` }
+  }
+  const result = body.result ?? {}
+  return {
+    perpAssets: Array.isArray(result.perpAssets) ? result.perpAssets : [],
+    positions:  Array.isArray(result.positions)  ? result.positions  : []
+  }
+}
 
 export async function getAccountBalance(creds: AsterCredentials): Promise<{
   usdt: number; availableMargin: number
 }> {
   try {
-    const res = await signedGET('/fapi/v3/balance', {}, creds)
-    const usdt = (res.data as any[]).find(
+    const { perpAssets, error } = await rpcGetBalance(creds.userAddress)
+    if (error) {
+      console.error('[Aster RPC] getAccountBalance:', creds.userAddress, '→', error)
+      return { usdt: 0, availableMargin: 0 }
+    }
+    const usdt = perpAssets.find(
       (a: any) => a.asset === 'USDT' || a.asset === 'USD'
     )
     return {
-      usdt:            parseFloat(usdt?.balance ?? '0'),
-      availableMargin: parseFloat(usdt?.availableBalance ?? '0')
+      usdt:            parseFloat(usdt?.walletBalance ?? '0'),
+      availableMargin: parseFloat(usdt?.availableBalance ?? usdt?.walletBalance ?? '0')
     }
   } catch (err: any) {
-    console.error('[Aster] getAccountBalance failed:', err?.response?.data ?? err.message)
+    console.error('[Aster RPC] getAccountBalance failed:', err?.message)
     return { usdt: 0, availableMargin: 0 }
   }
 }
@@ -268,17 +308,18 @@ export async function transferAsset(
 }
 
 // Strict variant — throws on error so callers can surface the real reason
-// to the user (e.g. "signer not approved", "user not registered on Aster").
+// to the user (e.g. "account does not exist, please open a futures account").
+// Uses the same RPC under the hood; no signing required.
 export async function getAccountBalanceStrict(creds: AsterCredentials): Promise<{
   usdt: number; availableMargin: number; raw: any[]
 }> {
-  const res = await signedGET('/fapi/v3/balance', {}, creds)
-  const all = res.data as any[]
-  const usdt = all.find((a: any) => a.asset === 'USDT' || a.asset === 'USD')
+  const { perpAssets, error } = await rpcGetBalance(creds.userAddress)
+  if (error) throw new Error(error)
+  const usdt = perpAssets.find((a: any) => a.asset === 'USDT' || a.asset === 'USD')
   return {
-    usdt:            parseFloat(usdt?.balance ?? '0'),
-    availableMargin: parseFloat(usdt?.availableBalance ?? '0'),
-    raw:             all
+    usdt:            parseFloat(usdt?.walletBalance ?? '0'),
+    availableMargin: parseFloat(usdt?.availableBalance ?? usdt?.walletBalance ?? '0'),
+    raw:             perpAssets
   }
 }
 
