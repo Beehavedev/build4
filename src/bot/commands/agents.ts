@@ -410,11 +410,19 @@ export function registerAgents(bot: Bot) {
     // parallel and only touches agents that look unsynced. Failures are
     // swallowed so a flaky RPC never breaks the menu.
     const ownerWallet = (await db.wallet.findFirst({ where: { userId: user.id } }))?.address
+    const hasApiKey = !!(process.env.BSCSCAN_API_KEY ?? process.env.ETHERSCAN_API_KEY)
+    console.log(`[Sync] /myagents user=${user.id} agents=${agents.length} ownerWallet=${ownerWallet ?? 'NONE'} bscscanKey=${hasApiKey}`)
     await Promise.all(agents.map(async (a) => {
-      if (!a.walletAddress) return
+      console.log(`[Sync] agent="${a.name}" wallet=${a.walletAddress ?? 'NONE'} ercId=${a.erc8004AgentId ?? 'NONE'} ercTx=${a.erc8004TxHash ?? 'NONE'} bapId=${a.bap578TokenId ?? 'NONE'} bapTx=${a.bap578TxHash ?? 'NONE'}`)
+      if (!a.walletAddress) {
+        console.log(`[Sync] agent="${a.name}" SKIP: no walletAddress`)
+        return
+      }
       try {
         if (!a.erc8004AgentId) {
+          console.log(`[Sync] agent="${a.name}" recovering ERC-8004 agentId…`)
           const recovered = await recoverErc8004AgentId({ agentAddress: a.walletAddress, txHash: a.erc8004TxHash })
+          console.log(`[Sync] agent="${a.name}" ERC-8004 recovered=${recovered ?? 'null'}`)
           if (recovered) {
             await db.agent.update({
               where: { id: a.id },
@@ -424,23 +432,29 @@ export function registerAgents(bot: Bot) {
             ;(a as any).erc8004Verified = true
           }
         }
-        if (!a.bap578TokenId && ownerWallet) {
-          const tokenId = await recoverBap578TokenId({
-            ownerAddress: ownerWallet,
-            agentAddress: a.walletAddress,
-            txHash: a.bap578TxHash
-          })
-          if (tokenId) {
-            await db.agent.update({
-              where: { id: a.id },
-              data: { bap578TokenId: tokenId, bap578Verified: true }
+        if (!a.bap578TokenId) {
+          if (!ownerWallet) {
+            console.log(`[Sync] agent="${a.name}" SKIP BAP-578: no ownerWallet`)
+          } else {
+            console.log(`[Sync] agent="${a.name}" recovering BAP-578 tokenId (owner=${ownerWallet})…`)
+            const tokenId = await recoverBap578TokenId({
+              ownerAddress: ownerWallet,
+              agentAddress: a.walletAddress,
+              txHash: a.bap578TxHash
             })
-            ;(a as any).bap578TokenId = tokenId
-            ;(a as any).bap578Verified = true
+            console.log(`[Sync] agent="${a.name}" BAP-578 recovered=${tokenId ?? 'null'}`)
+            if (tokenId) {
+              await db.agent.update({
+                where: { id: a.id },
+                data: { bap578TokenId: tokenId, bap578Verified: true }
+              })
+              ;(a as any).bap578TokenId = tokenId
+              ;(a as any).bap578Verified = true
+            }
           }
         }
       } catch (e: any) {
-        console.error('[Agent] sync failed for', a.name, e.message)
+        console.error(`[Sync] agent="${a.name}" FAILED:`, e.message, e.stack?.split('\n').slice(0, 3).join(' | '))
       }
     }))
 
