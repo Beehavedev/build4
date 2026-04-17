@@ -1,0 +1,110 @@
+Good news — the chicken-and-egg is solved. I read the Aster docs.
+There is NO vault contract to interact with. Aster deposits work 
+like a CEX: each user gets a personal deposit address. You send 
+USDT to it, Aster detects it, account is created automatically.
+
+THE CORRECT FULL IN-APP FLOW:
+
+═══════════════════════════════════════════════════
+STEP 1: Get the user's Aster deposit address
+═══════════════════════════════════════════════════
+
+Call this PUBLIC endpoint (no auth needed):
+GET https://www.asterdex.com/bapi/futures/v1/public/future/aster/deposit/assets?chainIds=56&networks=EVM&accountType=perp
+
+Then to get the SPECIFIC user deposit address, call:
+GET /fapi/v3/capital/deposit/address 
+params: { coin: "USDT", network: "EVM" }
+signed with: user + signer + ASTER_AGENT_PRIVATE_KEY
+
+PROBLEM: This signed call returns 403 for new users because 
+they don't have an Aster account yet.
+
+REAL SOLUTION: The deposit address for a new user IS their 
+own wallet address. Aster on BSC works by the user sending 
+USDT to their own registered address. When a brand new user 
+sends USDT to their BUILD4 wallet address on BSC, and that 
+address has never interacted with Aster before, we need to 
+bootstrap the account.
+
+The bootstrap is done by calling approveAgent first — but 
+approveAgent also fails for brand new wallets.
+
+ACTUAL CORRECT SOLUTION based on docs:
+
+The deposit address Aster gives you IS a separate address 
+they assign. But for NEW users who have never used Aster, 
+the account creation happens automatically when they first 
+SEND a transfer to Aster via the on-chain transfer method.
+
+Looking at the deposit docs:
+curl 'https://www.asterdex.com/bapi/futures/v1/public/future/aster/deposit/assets?chainIds=56&networks=EVM&accountType=perp'
+
+This returns the USDT contract address for deposits.
+The actual DEPOSIT is: user sends USDT to Aster's 
+designated deposit address for their account.
+
+═══════════════════════════════════════════════════
+THE REAL FIX — 3 steps in sequence:
+═══════════════════════════════════════════════════
+
+STEP 1: Call approveAgent with the user's wallet
+  - This may fail with "account not found" for brand new wallets
+  - If it SUCCEEDS → user is onboarded, done
+  - If it FAILS with account-not-found error → go to Step 2
+
+STEP 2: If approveAgent fails, try it anyway after a small 
+  deposit. The actual solution is:
+  
+  Call this Aster public API to get deposit info:
+  GET https://www.asterdex.com/bapi/futures/v1/public/future/aster/deposit/address?chainId=56&network=EVM&currency=USDT&accountType=perp&address=USER_WALLET_ADDRESS
+  
+  Try fetching the user's deposit address using the 
+  Aster bapi endpoint (not the signed fapi endpoint):
+  GET https://www.asterdex.com/bapi/futures/v1/private/future/aster/deposit/address
+  
+  If there's a way to get the deposit address without 
+  auth, use it. Otherwise:
+
+STEP 3: The REAL bootstrap for new accounts
+
+  The actual on-chain deposit to Aster is a simple 
+  USDT transfer on BSC. Looking at how asterdex.com 
+  works under the hood:
+  
+  1. USDT on BSC contract: 0x55d398326f99059fF775485246999027B3197955
+  2. User approves USDT spend + sends to Aster's 
+     BSC receiving address
+  
+  To find Aster's BSC receiving address for a user,
+  make this API call (no auth, just HTTP GET):
+  
+  GET https://www.asterdex.com/bapi/futures/v1/public/future/aster/deposit/address?chainId=56&currency=USDT&network=EVM&accountType=perp&address={USER_WALLET_ADDRESS}
+  
+  Try this endpoint now and log the response.
+  If it returns a deposit address, we can do the 
+  on-chain USDT transfer to that address using the 
+  user's private key (same as how we do withdrawals).
+
+IMMEDIATE ACTION:
+1. Make an HTTP GET to this URL (substitute a real 
+   wallet address you control):
+   https://www.asterdex.com/bapi/futures/v1/public/future/aster/deposit/address?chainId=56&currency=USDT&network=EVM&accountType=perp&address=0xCCE34FA1EcD10Df639Cc475F703cC7C4e2997bE0
+   
+2. Log the full response
+3. Also try: 
+   https://www.asterdex.com/bapi/futures/v1/public/future/aster/deposit/assets?chainIds=56&networks=EVM&accountType=perp
+   
+4. Report what both return
+
+Once we have the deposit address endpoint working,
+the flow becomes:
+  - Get user's Aster deposit address (public API, no auth)
+  - User sends USDT from their BUILD4 wallet to that address
+    (on-chain tx, signed with user's PK, done server-side)
+  - Wait for BSC confirmation (~3 seconds)
+  - Call approveAgent (now works because account exists)
+  - Set asterOnboarded=true
+  - All in one tap, never leaves the app
+
+Report the API responses and I'll complete the implementation.
