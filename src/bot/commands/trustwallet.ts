@@ -43,9 +43,13 @@ export function registerTrustWallet(bot: Bot) {
       : null
     const userAddress = wallet?.address
 
-    // All calls in parallel — read-only, safe.
-    const [btcPrice, bnbPrice, riskWbnb, balance, nativeBal] = await Promise.all([
-      getPrice('BTC', 'bsc'),
+    // All calls in parallel — read-only, safe. NOTE: passing `--chain bsc`
+    // to TWAK's price endpoint with a symbol like "BTC" returns the native
+    // BSC asset (BNB), NOT bitcoin. For real BTC use chain=bitcoin; for the
+    // BSC-wrapped equivalent use BTCB on BSC.
+    const [btcPrice, btcbPrice, bnbPrice, riskWbnb, balance, nativeBal] = await Promise.all([
+      getPrice('BTC', 'bitcoin'),
+      getPrice('BTCB', 'bsc'),
       getPrice('BNB', 'bsc'),
       getRisk(bscCaipAssetId(WBNB_BSC)),
       userAddress
@@ -60,6 +64,8 @@ export function registerTrustWallet(bot: Bot) {
 
     if (btcPrice.ok) lines.push(`₿  BTC: ${fmtUsd(btcPrice.data.priceUsd)} (via TWAK)`)
     else lines.push(`₿  BTC: _unavailable — ${btcPrice.reason.slice(0, 60)}_`)
+
+    if (btcbPrice.ok) lines.push(`🟠 BTCB (BSC): ${fmtUsd(btcbPrice.data.priceUsd)}`)
 
     if (bnbPrice.ok) lines.push(`🟡 BNB: ${fmtUsd(bnbPrice.data.priceUsd)} (via TWAK)`)
     else lines.push(`🟡 BNB: _unavailable_`)
