@@ -1,0 +1,100 @@
+Fix the 403 on the Aster balance call in the mini app Wallet page. 
+The problem and solution are both simple.
+
+THE PROBLEM:
+The Wallet page is calling the Aster balance API on every load, even 
+for users who have not completed Aster onboarding (approveAgent). 
+Aster returns 403 because our agent is not authorized to query that 
+user's account yet.
+
+THE FIX — 3 specific changes:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. MINI APP — Wallet page component
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Do NOT fetch Aster balance if the user is not onboarded.
+Replace the Aster balance fetch logic with this pattern:
+
+  if (!user.asterOnboarded) {
+    // Show connect prompt instead of calling the API
+    asterBalance = null
+  } else {
+    // Only then fetch from Aster
+    asterBalance = await fetchAsterBalance(user.walletAddress)
+  }
+
+In the UI, where it currently shows "Request failed with status code 403",
+instead show this when asterOnboarded is false:
+
+  <div style="connect prompt styling">
+    ⚡ Not connected to Aster
+    <button onClick={() => sendConnectCommand()}>Connect Now</button>
+  </div>
+
+And only show the USDT balance and Fund/Withdraw buttons 
+when asterOnboarded === true.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. BACKEND — Aster balance API route
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+In whatever API route the mini app calls to get the Aster balance,
+add this guard at the top before calling fapi3.asterdex.com:
+
+  const user = await db.user.findUnique({ where: { id: userId } })
+  
+  if (!user?.asterOnboarded) {
+    return res.status(200).json({ 
+      asterOnboarded: false, 
+      balance: null 
+    })
+  }
+  
+  // Only reach here if onboarded — then call Aster
+  const creds = buildCreds(user.walletAddress)
+  const balance = await getBalance(creds)
+  return res.status(200).json({ 
+    asterOnboarded: true, 
+    balance 
+  })
+
+This returns 200 with null balance instead of letting the 
+Aster 403 bubble up to the UI.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. SIGNING — This is critical, do not change
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After onboarding, the correct signing model is:
+
+  user    = user's BSC wallet address (from DB)
+  signer  = process.env.ASTER_AGENT_ADDRESS  (platform agent)
+  signing = done with process.env.ASTER_AGENT_PRIVATE_KEY
+
+The user's private key is NEVER needed for balance/position 
+queries. Only for the one-time approveAgent call during onboarding.
+
+Do NOT prompt for PIN. Do NOT decrypt user keys for balance reads.
+The platform agent signs everything after onboarding is complete.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. ONBOARDING BUTTON
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The "Connect Now" button in the wallet page should either:
+- Open the Telegram bot chat and send /connect command, OR
+- Trigger the approveAgent flow directly in the mini app
+
+The approveAgent call requires:
+  - userAddress: user's wallet address
+  - userPrivateKey: decrypted from DB (one time only, in memory)
+  - agentAddress: ASTER_AGENT_ADDRESS from env
+  - builderAddress: ASTER_BUILDER_ADDRESS from env
+  - maxFeeRate: ASTER_BUILDER_FEE_RATE from env (e.g. "0.0001")
+
+After successful approveAgent, set asterOnboarded=true in DB.
+The 403 will never appear again for that user.
+
+Make these changes now. The fix is purely defensive — 
+check onboarded before calling Aster, show connect prompt if not.
