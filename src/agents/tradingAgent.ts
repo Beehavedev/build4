@@ -394,6 +394,25 @@ If you would not put real money in this trade right now, action = HOLD.`
           return
         }
 
+        // Optional Trust Wallet (TWAK) pre-trade risk gate. Off by default;
+        // enable with TWAK_TRADING_INTEGRATION=true. The check returns
+        // allowed=true if TWAK is unconfigured or unreachable, so this can
+        // never block trades because of an integration outage.
+        try {
+          const { checkTradeRisk } = await import('../services/trustwallet')
+          const baseSymbol = pair.split('/')[0]
+          const twakRisk = await checkTradeRisk(baseSymbol)
+          if (!twakRisk.allowed) {
+            console.log(`[Agent ${agent.name}] TWAK risk gate blocked ${pair}: ${twakRisk.reason}`)
+            return
+          }
+          if (twakRisk.riskScore !== undefined) {
+            console.log(`[Agent ${agent.name}] TWAK risk ${twakRisk.riskScore}/10 OK for ${pair}`)
+          }
+        } catch (e: any) {
+          console.error(`[Agent ${agent.name}] TWAK risk check errored (ignored):`, e.message)
+        }
+
         let finalSize = decision.size ?? agent.maxPositionSize
         if (riskCheck.reduceSizeBy) {
           finalSize = finalSize * (1 - riskCheck.reduceSizeBy / 100)

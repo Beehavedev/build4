@@ -37,6 +37,14 @@ services:
         sync: false
       - key: ASTER_BUILDER_FEE_RATE
         sync: false
+      - key: TWAK_ACCESS_ID
+        sync: false
+      - key: TWAK_HMAC_SECRET
+        sync: false
+      - key: TWAK_TRADING_INTEGRATION
+        value: "false"
+      - key: TWAK_RISK_THRESHOLD
+        value: "7"
       - key: MINIAPP_URL
         sync: false
       - key: TELEGRAM_WEBHOOK_URL

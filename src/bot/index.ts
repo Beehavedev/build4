@@ -10,6 +10,7 @@ import { registerQuests } from './commands/quests'
 import { registerCopytrade } from './commands/copytrade'
 import { registerAgents } from './commands/agents'
 import { registerPriceCommands } from './commands/price'
+import { registerTrustWallet } from './commands/trustwallet'
 import { registerAster } from './commands/aster'
 import { registerFund, handleFund } from './commands/fund'
 
@@ -43,6 +44,7 @@ export function createBot(): Bot {
   registerCopytrade(bot)
   registerAgents(bot)
   registerPriceCommands(bot)
+  registerTrustWallet(bot)
   registerAster(bot)
   registerFund(bot)
 

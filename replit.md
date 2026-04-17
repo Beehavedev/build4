@@ -96,6 +96,27 @@ The **primary production app** runs on Render from `Beehavedev/build4` repo.
 - `ASTER_BUILDER_FEE_RATE` - Fee rate per trade
 - `DATABASE_URL` - PostgreSQL connection
 
+## Trust Wallet Agent Kit (TWAK) Integration
+
+Optional integration with Trust Wallet's official agent SDK (`@trustwallet/cli`),
+exposed as `src/services/trustwallet.ts`. Used by:
+
+- `/trustwallet` bot command — read-only demo (BTC/BNB price, USDT balance,
+  WBNB risk score, connection status). Always safe to run.
+- AI trading agent — optional pre-trade risk gate that skips trades on
+  tokens scoring above `TWAK_RISK_THRESHOLD` (default 7/10). Off by default;
+  enable with `TWAK_TRADING_INTEGRATION=true`. Fails open: never blocks
+  trades on TWAK outage.
+
+Env vars (set in Render dashboard):
+- `TWAK_ACCESS_ID`, `TWAK_HMAC_SECRET` — from portal.trustwallet.com
+- `TWAK_TRADING_INTEGRATION` — `"true"` to enable trading-loop risk gate
+- `TWAK_RISK_THRESHOLD` — risk score above which trades are skipped (default 7)
+
+Service helpers: `getPrice`, `getBalance`, `getRisk`, `quoteSwap`, `createDca`,
+`listAutomations`. Swap auto-execution is intentionally **not** wired into
+the trading agent — BUILD4 trades go through Aster DEX EIP-712 signing.
+
 ## Running
 - Workflow: `npx tsx src/server.ts` on port 5000
 - Agent runner cron runs every 60 seconds
