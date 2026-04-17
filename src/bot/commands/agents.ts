@@ -7,9 +7,34 @@ import { buildAgentIdentity, buildMetadataJson } from '../../services/agentIdent
 import {
   mintBap578Agent, getBnbBalance,
   bap578TokenUrl, nfaScanUrl, bscscanTxUrl, bscscanAddressUrl,
-  TOTAL_USER_FEE_BNB
+  TOTAL_USER_FEE_BNB, BAP578_CONTRACT
 } from '../../services/bap578'
-import { registerAgentOnchain, erc8004ScanUrl } from '../../services/erc8004'
+import { registerAgentOnchain, erc8004ScanUrl, erc8004RegistryScanUrl } from '../../services/erc8004'
+
+const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
+const BAP578_EVENT_ABI = [
+  'event AgentCreated(uint256 indexed tokenId, address indexed owner, address logicAddress, string metadataURI)'
+]
+
+async function recoverBap578TokenIdFromTx(txHash: string): Promise<string | null> {
+  try {
+    const provider = new ethers.JsonRpcProvider(BSC_RPC)
+    const receipt = await provider.getTransactionReceipt(txHash)
+    if (!receipt || receipt.status !== 1) return null
+    const iface = new ethers.Interface(BAP578_EVENT_ABI)
+    for (const log of receipt.logs) {
+      if (log.address.toLowerCase() !== BAP578_CONTRACT.toLowerCase()) continue
+      try {
+        const parsed = iface.parseLog({ topics: log.topics as string[], data: log.data })
+        if (parsed?.name === 'AgentCreated') return parsed.args.tokenId.toString()
+      } catch {}
+    }
+    return null
+  } catch (e: any) {
+    console.error('[BAP578] recoverTokenIdFromTx failed:', e.message)
+    return null
+  }
+}
 
 // Optional BAP-578 NFA mint upgrade needs full fee + gas buffer.
 const BAP578_NEEDED_WEI = ethers.parseEther(TOTAL_USER_FEE_BNB) + ethers.parseEther('0.001')
@@ -173,18 +198,36 @@ async function performBap578Upgrade(opts: {
     return
   }
   if (agent.bap578Verified && agent.bap578TokenId) {
-    await ctx.reply(`✅ *${agent.name}* is already a BAP-578 NFA (#${agent.bap578TokenId}).`, { parse_mode: 'Markdown' })
-    return
-  }
-  if (agent.bap578TxHash) {
     await ctx.reply(
-      `🟡 A BAP-578 mint tx was already broadcast for *${agent.name}* but isn't confirmed in our DB.\n\n[Check tx](${bscscanTxUrl(agent.bap578TxHash)})`,
+      `✅ *${agent.name}* is already a BAP-578 NFA (#${agent.bap578TokenId}).\n\n[View on NFAScan](${nfaScanUrl(agent.walletAddress!)})`,
       { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } }
     )
     return
   }
   if (!agent.walletAddress) {
     await ctx.reply('❌ Agent has no on-chain wallet — cannot mint NFA.')
+    return
+  }
+  // Self-heal: if a mint tx was already broadcast (e.g. previous DB write
+  // failed after the on-chain tx confirmed), recover the tokenId from chain
+  // instead of charging the user a second time.
+  if (agent.bap578TxHash) {
+    const recovered = await recoverBap578TokenIdFromTx(agent.bap578TxHash)
+    if (recovered) {
+      await db.agent.update({
+        where: { id: agent.id },
+        data: { bap578TokenId: recovered, bap578Verified: true }
+      })
+      await ctx.reply(
+        `🎉 *${agent.name} is already a BAP-578 NFA!*\n\nWe recovered your previous mint from chain — no extra fee charged.\n\n💎 NFA #${recovered}\n[View on NFAScan](${nfaScanUrl(agent.walletAddress)})\n[Mint tx](${bscscanTxUrl(agent.bap578TxHash)})`,
+        { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } }
+      )
+      return
+    }
+    await ctx.reply(
+      `🟡 A BAP-578 mint tx was already broadcast for *${agent.name}* but isn't confirmed yet.\n\n[Check tx](${bscscanTxUrl(agent.bap578TxHash)})\n\nTry again in a minute.`,
+      { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } }
+    )
     return
   }
 
@@ -397,22 +440,25 @@ export function registerAgents(bot: Bot) {
       if (a.learningModel) {
         text += `🧠 *Model:* ${a.learningModel}\n`
       }
-      if (a.metadataUri) {
-        text += `📄 [Public metadata](${a.metadataUri})\n`
+      if (a.erc8004AgentId) {
+        text += `📊 [More on 8004scan](${erc8004RegistryScanUrl(a.erc8004AgentId)})\n`
       }
       text += `📊 PnL: ${a.totalPnl >= 0 ? '+' : ''}$${a.totalPnl.toFixed(2)} | WR: ${a.winRate.toFixed(0)}% (${a.totalTrades} trades)\n\n`
     })
 
     const keyboard = new InlineKeyboard()
-    agents.slice(0, 2).forEach((a) => {
+    agents.forEach((a) => {
       if (a.isActive) {
         keyboard.text(`⏸ Pause ${a.name}`, `pause_agent_${a.id}`).row()
       } else {
         keyboard.text(`▶️ Start ${a.name}`, `start_agent_${a.id}`).row()
       }
-      if (!a.bap578Verified && !a.bap578TxHash) {
+      if (!a.bap578Verified) {
+        // Allow re-attempt even if a tx was broadcast — the upgrade handler is
+        // self-healing and will recover the tokenId from the existing receipt.
         keyboard.text(`💎 Upgrade ${a.name} → NFA`, `upgrade_bap578_${a.id}`).row()
       }
+      keyboard.text(`🗑 Remove ${a.name}`, `remove_agent_confirm_${a.id}`).row()
     })
     keyboard.text('➕ New Agent', 'create_agent')
 
@@ -470,6 +516,52 @@ export function registerAgents(bot: Bot) {
     } catch (err: any) {
       console.error('[Agent] Upgrade failed:', err)
       await ctx.reply(`❌ Upgrade failed: ${err.message}`)
+    }
+  })
+
+  // Remove agent — confirmation step
+  bot.callbackQuery(/^remove_agent_confirm_(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery()
+    const user = (ctx as any).dbUser
+    if (!user) return
+    const agentId = ctx.match![1]
+    const agent = await db.agent.findUnique({ where: { id: agentId } })
+    if (!agent || agent.userId !== user.id) {
+      await ctx.reply('❌ Agent not found.')
+      return
+    }
+    const kb = new InlineKeyboard()
+      .text(`✅ Yes, remove ${agent.name}`, `remove_agent_do_${agent.id}`)
+      .row()
+      .text('↩️ Cancel', 'my_agents')
+    await ctx.reply(
+      `⚠️ *Remove ${agent.name}?*\n\nThis stops the agent and deletes its memory and logs from BUILD4. Its on-chain ERC-8004 identity${agent.bap578Verified ? ' and BAP-578 NFA' : ''} stay on BSC forever — only the BUILD4 record is removed.\n\nTrade history is kept (anonymised) so your portfolio stats stay accurate.`,
+      { parse_mode: 'Markdown', reply_markup: kb }
+    )
+  })
+
+  // Remove agent — execute
+  bot.callbackQuery(/^remove_agent_do_(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery()
+    const user = (ctx as any).dbUser
+    if (!user) return
+    const agentId = ctx.match![1]
+    const agent = await db.agent.findUnique({ where: { id: agentId } })
+    if (!agent || agent.userId !== user.id) {
+      await ctx.reply('❌ Agent not found.')
+      return
+    }
+    try {
+      await db.$transaction([
+        db.agentMemory.deleteMany({ where: { agentId } }),
+        db.agentLog.deleteMany({ where: { agentId } }),
+        db.trade.updateMany({ where: { agentId }, data: { agentId: null } }),
+        db.agent.delete({ where: { id: agentId } })
+      ])
+      await ctx.reply(`🗑 *${agent.name}* removed.`, { parse_mode: 'Markdown' })
+    } catch (err: any) {
+      console.error('[Agent] Remove failed:', err)
+      await ctx.reply(`❌ Could not remove agent: ${err.message}`)
     }
   })
 

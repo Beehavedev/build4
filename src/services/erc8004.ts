@@ -171,6 +171,10 @@ export function erc8004ScanUrl(agentId: string): string {
   return `https://bscscan.com/token/${ERC8004_REGISTRY}?a=${agentId}`
 }
 
+export function erc8004RegistryScanUrl(agentId: string): string {
+  return `https://8004scan.io/agents/bsc/${agentId}`
+}
+
 export function erc8004TxUrl(txHash: string): string {
   return `https://bscscan.com/tx/${txHash}`
 }

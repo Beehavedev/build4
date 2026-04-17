@@ -1,0 +1,51 @@
+❌ Upgrade failed: 
+Invalid `prisma.agent.update()` invocation:
+
+{
+  where: {
+    id: "cmo2l4gos00g9z56aoat47k8n"
+  },
+  data: {
+    bap578TokenId: "55867",
+    ~~~~~~~~~~~~~
+    bap578TxHash: "0x9b6c02d85e4d4fb4db4b8fb49562eb365604a45a455ef020e7f0e0fb2e605e2a",
+    bap578Verified: true,
+?   id?: String | StringFieldUpdateOperationsInput,
+?   name?: String | StringFieldUpdateOperationsInput,
+?   description?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   isActive?: Boolean | BoolFieldUpdateOperationsInput,
+?   isPaused?: Boolean | BoolFieldUpdateOperationsInput,
+?   exchange?: String | StringFieldUpdateOperationsInput,
+?   pairs?: AgentUpdatepairsInput | String[],
+?   timeframe?: String | StringFieldUpdateOperationsInput,
+?   maxPositionSize?: Float | FloatFieldUpdateOperationsInput,
+?   maxDailyLoss?: Float | FloatFieldUpdateOperationsInput,
+?   maxLeverage?: Float | FloatFieldUpdateOperationsInput,
+?   stopLossPct?: Float | FloatFieldUpdateOperationsInput,
+?   takeProfitPct?: Float | FloatFieldUpdateOperationsInput,
+?   memorySnapshot?: NullableJsonNullValueInput | Json,
+?   totalPnl?: Float | FloatFieldUpdateOperationsInput,
+?   totalTrades?: Int | IntFieldUpdateOperationsInput,
+?   winRate?: Float | FloatFieldUpdateOperationsInput,
+?   isListed?: Boolean | BoolFieldUpdateOperationsInput,
+?   listingPrice?: Float | NullableFloatFieldUpdateOperationsInput | Null,
+?   subscriberCount?: Int | IntFieldUpdateOperationsInput,
+?   walletAddress?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   encryptedPK?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   onchainTxHash?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   onchainChain?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   learningModel?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   learningRoot?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   metadataUri?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   identityStandard?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   createdAt?: DateTime | DateTimeFieldUpdateOperationsInput,
+?   updatedAt?: DateTime | DateTimeFieldUpdateOperationsInput,
+?   lastTickAt?: DateTime | NullableDateTimeFieldUpdateOperationsInput | Null,
+?   user?: UserUpdateOneRequiredWithoutAgentsNestedInput,
+?   trades?: TradeUpdateManyWithoutAgentNestedInput,
+?   memories?: AgentMemoryUpdateManyWithoutAgentNestedInput,
+?   logs?: AgentLogUpdateManyWithoutAgentNestedInput
+  }
+}
+
+Unknown argument `bap578TokenId`. Available options are marked with ?.
