@@ -9,15 +9,19 @@ import {
   bap578TokenUrl, nfaScanUrl, bscscanTxUrl, bscscanAddressUrl,
   TOTAL_USER_FEE_BNB
 } from '../../services/bap578'
+import { registerAgentOnchain, erc8004ScanUrl, AGENT_GAS_FUND_BNB } from '../../services/erc8004'
 
-// User pays protocol fee + BUILD4 fee + a tiny gas buffer (two txs).
-const TOTAL_NEEDED_WEI = ethers.parseEther(TOTAL_USER_FEE_BNB) + ethers.parseEther('0.001')
+// Mandatory ERC-8004 register only needs gas + agent funding.
+const ERC8004_NEEDED_WEI = ethers.parseEther(AGENT_GAS_FUND_BNB) + ethers.parseEther('0.0005')
+// Optional BAP-578 NFA mint upgrade needs full fee + gas buffer.
+const BAP578_NEEDED_WEI = ethers.parseEther(TOTAL_USER_FEE_BNB) + ethers.parseEther('0.001')
 
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL ?? 'https://build4-1.onrender.com'
 
 interface AgentSession {
-  step: 'name' | 'pin'
+  step: 'name' | 'pin' | 'upgrade_pin'
   name?: string
+  upgradeAgentId?: string
 }
 
 const sessions = new Map<string, AgentSession>()
@@ -33,14 +37,17 @@ async function startAgentCreation(ctx: Context) {
   await ctx.reply(
     `🤖 *Create Your On-Chain Agent*
 
-You're about to mint a *fully registered BAP-578 Non-Fungible Agent* on BNB Smart Chain. Each agent comes with:
+Every BUILD4 agent is *permanently registered on the official ERC-8004 Identity Registry* on BNB Smart Chain. You get:
 
-• A unique on-chain identity & dedicated BSC wallet — permanent, verifiable on NFAScan
-• An ERC-8004 trust profile with declared learning model + Merkle-rooted strategy
+• A unique on-chain agent ID — verifiable on BSCScan & agent registries
+• A dedicated BSC wallet (the agent's own signer)
+• ERC-8004 trust profile with declared learning model + Merkle-rooted strategy
 • Autonomous trading on *all Aster DEX perp pairs* via EIP-712 signed orders
-• Risk controls (position size, leverage, SL/TP, daily loss caps) you can tune anytime
+• Risk controls (position size, leverage, SL/TP, daily loss caps) tunable anytime
 
-💰 *One-time cost: ${TOTAL_USER_FEE_BNB} BNB* (charged from your main wallet at mint).
+💰 *One-time cost: ~${AGENT_GAS_FUND_BNB} BNB in gas* (no protocol fee).
+
+After registration you can *optionally* upgrade to a *BAP-578 Non-Fungible Agent NFT* (verifiable on NFAScan) for an extra ${TOTAL_USER_FEE_BNB} BNB.
 
 *Pick a name*
 3-24 characters, letters/numbers/underscore only. Permanently reserved on-chain.
@@ -63,7 +70,7 @@ async function performMintAndCreate(opts: {
 }) {
   const { ctx, user, name, userPK, userAddress } = opts
 
-  await ctx.reply(`⏳ Minting *${name}* on BAP-578…`, { parse_mode: 'Markdown' })
+  await ctx.reply(`⏳ Registering *${name}* on ERC-8004 IdentityRegistry…`, { parse_mode: 'Markdown' })
 
   const { address, privateKey } = generateEVMWallet()
   const encryptedPK = encryptPrivateKey(privateKey, user.id, undefined)
@@ -74,11 +81,8 @@ async function performMintAndCreate(opts: {
     ownerAddress: userAddress,
     publicBaseUrl: PUBLIC_BASE_URL
   })
-  const metadataJson = JSON.stringify(buildMetadataJson(identity, null))
-  const metadataHash = ethers.keccak256(ethers.toUtf8Bytes(metadataJson))
 
-  // Create the agent row first so we have an id to attach the tx hash to before
-  // wait() returns — prevents double-charge on retry if the network hangs.
+  // Create the agent row first so we have an id to attach tx hashes to.
   const agent = await db.agent.create({
     data: {
       userId: user.id,
@@ -101,56 +105,133 @@ async function performMintAndCreate(opts: {
     }
   })
 
-  const mint = await mintBap578Agent({
+  const reg = await registerAgentOnchain({
     userWalletPK: userPK,
-    agentName: name,
+    agentWalletPK: privateKey,
     agentAddress: address,
     metadataURI: identity.metadataUri,
-    metadataHash,
-    onTxSent: async (h) => {
-      await db.agent.update({ where: { id: agent.id }, data: { bap578TxHash: h, onchainTxHash: h } })
+    onAgentFunded: async (h) => {
+      await db.agent.update({ where: { id: agent.id }, data: { erc8004FundTxHash: h } })
+    },
+    onRegisterTxSent: async (h) => {
+      await db.agent.update({ where: { id: agent.id }, data: { erc8004TxHash: h, onchainTxHash: h } })
     }
   })
 
-  if (!mint.success || !mint.tokenId) {
-    // Mint failed before any user funds were spent (or we have the tx hash already saved).
-    // If no tx hash got saved, no money moved → safe to delete the row.
+  if (!reg.success || !reg.agentId) {
+    // If no funding tx went out, nothing was spent → safe to delete the row.
     const fresh = await db.agent.findUnique({ where: { id: agent.id } })
-    if (!fresh?.bap578TxHash) {
+    if (!fresh?.erc8004FundTxHash) {
       await db.agent.delete({ where: { id: agent.id } })
+      await ctx.reply(`❌ Registration failed: ${reg.reason ?? 'unknown error'}\n\nNo agent was created. Try /newagent again.`)
+    } else {
+      await ctx.reply(`⚠️ Registration partially failed: ${reg.reason ?? 'unknown error'}\n\nThe agent's wallet was funded but the on-chain register call failed. Run /myagents to retry.`)
     }
-    await ctx.reply(`❌ Mint failed: ${mint.reason ?? 'unknown error'}\n\nNo agent was created. Try /newagent again.`)
     return
   }
 
   await db.agent.update({
     where: { id: agent.id },
     data: {
-      bap578TokenId: mint.tokenId,
-      bap578TxHash: mint.txHash,
-      onchainTxHash: mint.txHash,
-      bap578Verified: true
+      erc8004AgentId: reg.agentId,
+      erc8004TxHash: reg.txHash,
+      onchainTxHash: reg.txHash,
+      erc8004Verified: true
     }
   })
 
-  await ctx.reply(
-    `🚀 *${name} is LIVE & verified!*
+  const upgradeKb = new InlineKeyboard()
+    .text(`💎 Upgrade to BAP-578 NFA (${TOTAL_USER_FEE_BNB} BNB)`, `upgrade_bap578_${agent.id}`)
 
-💎 *BAP-578 NFA #${mint.tokenId}*
+  await ctx.reply(
+    `🚀 *${name} is LIVE & on-chain!*
+
+🆔 *ERC-8004 Agent ID:* #${reg.agentId}
 🔐 On-chain identity: \`${address}\`
 
-[View on NFAScan](${nfaScanUrl(address)})
-[BSCScan token page](${bap578TokenUrl(mint.tokenId)})
-[Mint transaction](${bscscanTxUrl(mint.txHash!)})
+[View agent NFT on BSCScan](${erc8004ScanUrl(reg.agentId)})
+[Registration tx](${bscscanTxUrl(reg.txHash!)})
 
 ━━━━━━━━━━━━━━
 
-Your agent now trades *all available perp pairs on Aster DEX* — finding the best opportunities across the market.
+Your agent trades *all perp pairs on Aster DEX* — finding the best opportunities across the market. Tune position sizes, risk limits, and pairs anytime in the *mini-app*.
 
-You can fine-tune position sizes, risk limits, and pairs anytime in the *mini-app*.
+*Optional upgrade:* mint a BAP-578 Non-Fungible Agent NFT (verifiable on NFAScan) for ${TOTAL_USER_FEE_BNB} BNB.
 
 /myagents — manage agents
 /tradestatus — monitor positions`,
+    { parse_mode: 'Markdown', link_preview_options: { is_disabled: true }, reply_markup: upgradeKb }
+  )
+}
+
+async function performBap578Upgrade(opts: {
+  ctx: Context
+  user: any
+  agentId: string
+  userPK: string
+}) {
+  const { ctx, user, agentId, userPK } = opts
+  const agent = await db.agent.findUnique({ where: { id: agentId } })
+  if (!agent || agent.userId !== user.id) {
+    await ctx.reply('❌ Agent not found.')
+    return
+  }
+  if (agent.bap578Verified && agent.bap578TokenId) {
+    await ctx.reply(`✅ *${agent.name}* is already a BAP-578 NFA (#${agent.bap578TokenId}).`, { parse_mode: 'Markdown' })
+    return
+  }
+  if (agent.bap578TxHash) {
+    await ctx.reply(
+      `🟡 A BAP-578 mint tx was already broadcast for *${agent.name}* but isn't confirmed in our DB.\n\n[Check tx](${bscscanTxUrl(agent.bap578TxHash)})`,
+      { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } }
+    )
+    return
+  }
+  if (!agent.walletAddress) {
+    await ctx.reply('❌ Agent has no on-chain wallet — cannot mint NFA.')
+    return
+  }
+
+  await ctx.reply(`⏳ Minting BAP-578 NFA for *${agent.name}*…`, { parse_mode: 'Markdown' })
+
+  const identity = buildAgentIdentity({
+    name: agent.name,
+    agentAddress: agent.walletAddress,
+    ownerAddress: '',
+    publicBaseUrl: PUBLIC_BASE_URL,
+    model: agent.learningModel ?? undefined
+  })
+  const metadataJson = JSON.stringify(buildMetadataJson(identity, agent.onchainTxHash))
+  const metadataHash = ethers.keccak256(ethers.toUtf8Bytes(metadataJson))
+
+  const mint = await mintBap578Agent({
+    userWalletPK: userPK,
+    agentName: agent.name,
+    agentAddress: agent.walletAddress,
+    metadataURI: agent.metadataUri ?? identity.metadataUri,
+    metadataHash,
+    onTxSent: async (h) => {
+      await db.agent.update({ where: { id: agent.id }, data: { bap578TxHash: h } })
+    }
+  })
+
+  if (!mint.success || !mint.tokenId) {
+    await ctx.reply(`❌ NFA mint failed: ${mint.reason ?? 'unknown error'}\n\nYour agent is still live — just not minted as an NFA yet.`)
+    return
+  }
+
+  await db.agent.update({
+    where: { id: agent.id },
+    data: { bap578TokenId: mint.tokenId, bap578TxHash: mint.txHash, bap578Verified: true }
+  })
+
+  await ctx.reply(
+    `🎉 *${agent.name} is now a BAP-578 NFA!*
+
+💎 NFA #${mint.tokenId}
+[View on NFAScan](${nfaScanUrl(agent.walletAddress)})
+[BSCScan token](${bap578TokenUrl(mint.tokenId)})
+[Mint tx](${bscscanTxUrl(mint.txHash!)})`,
     { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } }
   )
 }
@@ -209,10 +290,10 @@ export function registerAgents(bot: Bot) {
       }
 
       const balance = await getBnbBalance(wallets[0].address)
-      if (balance < TOTAL_NEEDED_WEI) {
+      if (balance < ERC8004_NEEDED_WEI) {
         sessions.delete(user.id)
         await ctx.reply(
-          `❌ *Insufficient funds*\n\nMinting a verified BAP-578 agent costs *${TOTAL_USER_FEE_BNB} BNB*. Your main wallet currently holds ${ethers.formatEther(balance)} BNB.\n\n*Fund this wallet with BNB on BSC:*\n\`${wallets[0].address}\`\n\nThen run /newagent again.`,
+          `❌ *Insufficient funds*\n\nRegistering an ERC-8004 agent needs ~*${AGENT_GAS_FUND_BNB} BNB* in BSC gas. Your main wallet currently holds ${ethers.formatEther(balance)} BNB.\n\n*Fund this wallet with BNB on BSC:*\n\`${wallets[0].address}\`\n\nThen run /newagent again.`,
           { parse_mode: 'Markdown' }
         )
         return
@@ -222,7 +303,7 @@ export function registerAgents(bot: Bot) {
       if (user.pinHash) {
         sessions.set(user.id, { step: 'pin', name })
         await ctx.reply(
-          `🔒 *Enter your PIN* to authorize the *${TOTAL_USER_FEE_BNB} BNB* mint payment.\n\n_Your reply will be deleted from chat for security._\n\n(or /cancelagent to stop)`,
+          `🔒 *Enter your PIN* to authorize the on-chain registration.\n\n_Your reply will be deleted from chat for security._\n\n(or /cancelagent to stop)`,
           { parse_mode: 'Markdown' }
         )
         return
@@ -278,6 +359,42 @@ export function registerAgents(bot: Bot) {
       return
     }
 
+    // ── Step: upgrade_pin (BAP-578 NFA upgrade) ───────────────────
+    if (session.step === 'upgrade_pin' && session.upgradeAgentId) {
+      try { await ctx.deleteMessage() } catch {}
+
+      const lock = await checkPinFailLimit(user.id)
+      if (!lock.allowed) {
+        sessions.delete(user.id)
+        await ctx.reply('🚫 Too many PIN attempts. Try again in an hour.')
+        return
+      }
+      if (!user.pinHash || !user.pinSalt || !verifyPin(text, user.pinHash, user.pinSalt)) {
+        await logSecurityEvent({ userId: user.id, telegramId: ctx.from!.id, action: 'pin_failed', meta: { context: 'bap578_upgrade' } })
+        await ctx.reply('❌ Wrong PIN. Try again, or /cancelagent to stop.')
+        return
+      }
+
+      const wallets = await db.wallet.findMany({ where: { userId: user.id }, take: 1 })
+      if (!wallets[0]?.encryptedPK) {
+        sessions.delete(user.id)
+        await ctx.reply('❌ Wallet missing. Run /start.')
+        return
+      }
+
+      const upgradeId = session.upgradeAgentId
+      sessions.delete(user.id)
+
+      try {
+        const userPK = decryptPrivateKey(wallets[0].encryptedPK, user.id, text)
+        await performBap578Upgrade({ ctx, user, agentId: upgradeId, userPK })
+      } catch (err: any) {
+        console.error('[Agent] PIN upgrade failed:', err)
+        await ctx.reply(`❌ Upgrade failed: ${err.message}`)
+      }
+      return
+    }
+
     return next()
   })
 
@@ -298,39 +415,34 @@ export function registerAgents(bot: Bot) {
       return
     }
 
-    let text = `🤖 *Your On-Chain Agents*\n\n_Every agent below has a unique identity permanently registered on BNB Smart Chain._\n\n`
+    let text = `🤖 *Your On-Chain Agents*\n\n_Every agent below is registered on the ERC-8004 IdentityRegistry on BNB Smart Chain._\n\n`
     agents.forEach((a) => {
       const status = a.isActive ? '🟢 Active' : a.isPaused ? '🔴 Paused' : '⚪ Inactive'
       text += `━━━━━━━━━━━━━━\n*${a.name}* — ${status}\n`
 
+      if (a.erc8004Verified && a.erc8004AgentId) {
+        text += `🆔 *ERC-8004 Agent ID:* #${a.erc8004AgentId} ✓\n`
+        text += `🔎 [View on BSCScan](${erc8004ScanUrl(a.erc8004AgentId)})\n`
+      } else if (a.erc8004TxHash) {
+        text += `🟡 *ERC-8004 register:* awaiting confirmation\n`
+        text += `📜 [Check tx](${bscscanTxUrl(a.erc8004TxHash)})\n`
+      }
       if (a.walletAddress) {
-        text += `🔐 *On-chain ID:* \`${a.walletAddress}\`\n`
-        text += `🔎 [View agent on BSCScan](${bscscanAddressUrl(a.walletAddress)})\n`
+        text += `🔐 *Agent wallet:* \`${a.walletAddress}\`\n`
+        text += `🔎 [Wallet on BSCScan](${bscscanAddressUrl(a.walletAddress)})\n`
       }
       if (a.bap578Verified && a.bap578TokenId) {
         text += `💎 *BAP-578 NFA:* #${a.bap578TokenId} ✓\n`
         text += `🌐 [View on NFAScan](${nfaScanUrl(a.walletAddress!)})\n`
-        if (a.bap578TxHash) {
-          text += `📜 [Mint tx](${bscscanTxUrl(a.bap578TxHash)})\n`
-        }
       } else if (a.bap578TxHash) {
         text += `🟡 *BAP-578 mint:* awaiting confirmation\n`
         text += `📜 [Check tx](${bscscanTxUrl(a.bap578TxHash)})\n`
-      } else {
-        text += `⚠️ *Legacy agent* (pre-verification rollout)\n`
-      }
-      // ERC-8004 trust signals (visible to scanners like NFAScan)
-      if (a.identityStandard) {
-        text += `🏛 *Standard:* ${a.identityStandard} ✓\n`
       }
       if (a.learningModel) {
         text += `🧠 *Model:* ${a.learningModel}\n`
       }
-      if (a.learningRoot) {
-        text += `🌲 *Learning root:* \`${a.learningRoot.slice(0, 10)}...${a.learningRoot.slice(-6)}\` (Merkle ✓)\n`
-      }
       if (a.metadataUri) {
-        text += `📄 [Public metadata JSON](${a.metadataUri})\n`
+        text += `📄 [Public metadata](${a.metadataUri})\n`
       }
       text += `📊 PnL: ${a.totalPnl >= 0 ? '+' : ''}$${a.totalPnl.toFixed(2)} | WR: ${a.winRate.toFixed(0)}% (${a.totalTrades} trades)\n\n`
     })
@@ -342,6 +454,9 @@ export function registerAgents(bot: Bot) {
       } else {
         keyboard.text(`▶️ Start ${a.name}`, `start_agent_${a.id}`).row()
       }
+      if (!a.bap578Verified && !a.bap578TxHash) {
+        keyboard.text(`💎 Upgrade ${a.name} → NFA`, `upgrade_bap578_${a.id}`).row()
+      }
     })
     keyboard.text('➕ New Agent', 'create_agent')
 
@@ -352,6 +467,54 @@ export function registerAgents(bot: Bot) {
   bot.callbackQuery('my_agents', async (ctx) => {
     await ctx.answerCallbackQuery()
     await showMyAgents(ctx)
+  })
+
+  bot.callbackQuery(/^upgrade_bap578_(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery()
+    const user = (ctx as any).dbUser
+    if (!user) return
+    const agentId = ctx.match![1]
+
+    const agent = await db.agent.findUnique({ where: { id: agentId } })
+    if (!agent || agent.userId !== user.id) {
+      await ctx.reply('❌ Agent not found.')
+      return
+    }
+    if (agent.bap578Verified || agent.bap578TxHash) {
+      await ctx.reply('ℹ️ This agent already has a BAP-578 mint in progress or completed. Run /myagents to check.')
+      return
+    }
+
+    const wallets = await db.wallet.findMany({ where: { userId: user.id }, take: 1 })
+    if (!wallets[0]?.encryptedPK) {
+      await ctx.reply('❌ No main wallet found. Run /start to initialize, then try again.')
+      return
+    }
+    const balance = await getBnbBalance(wallets[0].address)
+    if (balance < BAP578_NEEDED_WEI) {
+      await ctx.reply(
+        `❌ *Insufficient BNB*\n\nA BAP-578 NFA upgrade costs *${TOTAL_USER_FEE_BNB} BNB*. Your main wallet currently holds ${ethers.formatEther(balance)} BNB.\n\nFund: \`${wallets[0].address}\``,
+        { parse_mode: 'Markdown' }
+      )
+      return
+    }
+
+    if (user.pinHash) {
+      sessions.set(user.id, { step: 'upgrade_pin', upgradeAgentId: agent.id } as any)
+      await ctx.reply(
+        `🔒 *Enter your PIN* to authorize the *${TOTAL_USER_FEE_BNB} BNB* NFA mint for *${agent.name}*.\n\n_Your reply will be deleted from chat for security._\n\n(or /cancelagent to stop)`,
+        { parse_mode: 'Markdown' }
+      )
+      return
+    }
+
+    try {
+      const userPK = decryptPrivateKey(wallets[0].encryptedPK, user.id)
+      await performBap578Upgrade({ ctx, user, agentId: agent.id, userPK })
+    } catch (err: any) {
+      console.error('[Agent] Upgrade failed:', err)
+      await ctx.reply(`❌ Upgrade failed: ${err.message}`)
+    }
   })
 
   /* legacy /verifyagent removed — verification is mandatory at /newagent
