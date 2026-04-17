@@ -577,104 +577,154 @@ export async function cancelOrder(
 // The user's wallet signs this — pass their decrypted private key temporarily
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Aster's "management endpoint" EIP-712 domain. Note chainId is 56 (BSC),
+// NOT 1666 — confirmed against asterdex/api-docs/demo/aster-code.py.
+const ASTER_MGMT_DOMAIN = {
+  name:              'AsterSignTransaction',
+  version:           '1',
+  chainId:           56,
+  verifyingContract: '0x0000000000000000000000000000000000000000'
+} as const
+
 export async function approveAgent(params: {
-  userAddress:       string
+  userAddress?:      string  // for logging only — Aster ecrecovers from sig
   userPrivateKey:    string  // user's wallet key — only used to sign this one tx
   agentAddress:      string  // your platform's agent wallet address
   agentName:         string
-  builderAddress:    string
-  maxFeeRate:        string
   expiredDays?:      number
+  ipWhitelist?:      string  // empty string is fine
+  canSpotTrade?:     boolean
+  canPerpTrade?:     boolean
+  canWithdraw?:      boolean
+  // Accepted but ignored (kept for call-site backwards compat — builder/fee
+  // are configured via approveBuilder, a separate Aster API call).
+  builderAddress?:   string
+  maxFeeRate?:       string
 }): Promise<{ success: boolean; error?: string }> {
-  const expired  = Date.now() + (params.expiredDays ?? 365) * 86_400_000
-  const nonce    = getNonce()
+  const expired      = Date.now() + (params.expiredDays ?? 365) * 86_400_000
+  const ipWhitelist  = params.ipWhitelist ?? ''
+  const canSpotTrade = params.canSpotTrade ?? false
+  const canPerpTrade = params.canPerpTrade ?? true
+  const canWithdraw  = params.canWithdraw  ?? false
 
-  // Management endpoints use a different EIP-712 primaryType
-  // The field names are PascalCase (see auth docs: "field names are uppercased for first letter")
-  const typedData = {
-    types: {
-      EIP712Domain: [
-        { name: 'name',             type: 'string'  },
-        { name: 'version',          type: 'string'  },
-        { name: 'chainId',          type: 'uint256' },
-        { name: 'verifyingContract', type: 'address' }
-      ],
-      ApproveAgent: [
-        { name: 'User',           type: 'string'  },
-        { name: 'Nonce',          type: 'uint256' },
-        { name: 'AgentName',      type: 'string'  },
-        { name: 'AgentAddress',   type: 'string'  },
-        { name: 'Expired',        type: 'uint256' },
-        { name: 'CanSpotTrade',   type: 'bool'    },
-        { name: 'CanPerpTrade',   type: 'bool'    },
-        { name: 'CanWithdraw',    type: 'bool'    },
-        { name: 'Builder',        type: 'string'  },
-        { name: 'MaxFeeRate',     type: 'string'  },
-        { name: 'BuilderName',    type: 'string'  }
-      ]
-    },
-    primaryType: 'ApproveAgent' as const,
-    domain:      EIP712_DOMAIN,
-    message: {
-      User:         params.userAddress,
-      Nonce:        nonce,
-      AgentName:    params.agentName,
-      AgentAddress: params.agentAddress,
-      Expired:      expired,
-      CanSpotTrade: false,
-      CanPerpTrade: true,
-      CanWithdraw:  false,
-      Builder:      params.builderAddress,
-      MaxFeeRate:   params.maxFeeRate,
-      BuilderName:  'BUILD4'
-    }
+  // EIP-712 message — field names are PascalCase (Aster auto-uppercases the
+  // first letter of every body param). Field ORDER must match the body order.
+  const types = {
+    ApproveAgent: [
+      { name: 'AgentName',    type: 'string'  },
+      { name: 'AgentAddress', type: 'string'  },
+      { name: 'IpWhitelist',  type: 'string'  },
+      { name: 'Expired',      type: 'uint256' },
+      { name: 'CanSpotTrade', type: 'bool'    },
+      { name: 'CanPerpTrade', type: 'bool'    },
+      { name: 'CanWithdraw',  type: 'bool'    }
+    ]
+  }
+  const message = {
+    AgentName:    params.agentName,
+    AgentAddress: params.agentAddress,
+    IpWhitelist:  ipWhitelist,
+    Expired:      expired,
+    CanSpotTrade: canSpotTrade,
+    CanPerpTrade: canPerpTrade,
+    CanWithdraw:  canWithdraw
   }
 
   try {
     const wallet = new ethers.Wallet(params.userPrivateKey)
-    const sig = await wallet.signTypedData(
-      typedData.domain,
-      { ApproveAgent: typedData.types.ApproveAgent },
-      typedData.message
-    )
+    const sig = await wallet.signTypedData(ASTER_MGMT_DOMAIN, types, message)
 
+    // Body fields use camelCase. signatureChainId MUST equal domain.chainId.
     const body = new URLSearchParams({
-      user:         params.userAddress,
-      nonce:        String(nonce),
-      signature:    sig,
-      agentName:    params.agentName,
-      agentAddress: params.agentAddress,
-      expired:      String(expired),
-      canSpotTrade: 'false',
-      canPerpTrade: 'true',
-      canWithdraw:  'false',
-      builder:      params.builderAddress,
-      maxFeeRate:   params.maxFeeRate,
-      builderName:  'BUILD4'
+      agentName:        params.agentName,
+      agentAddress:     params.agentAddress,
+      ipWhitelist:      ipWhitelist,
+      expired:          String(expired),
+      canSpotTrade:     String(canSpotTrade),
+      canPerpTrade:     String(canPerpTrade),
+      canWithdraw:      String(canWithdraw),
+      signature:        sig,
+      signatureChainId: '56'
     }).toString()
 
-    // POST with form-encoded body (NOT querystring — Aster's edge 403s
-    // when the body is empty on a form-urlencoded POST).
     const resp = await client(BASE_SIGNED).post(
       '/fapi/v3/approveAgent',
       body,
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     )
-    console.log('[Aster] approveAgent ok:', params.userAddress, '→', resp.status, resp.data)
+    console.log('[Aster] approveAgent ok:', params.userAddress ?? wallet.address, '→', resp.status, resp.data)
     return { success: true }
   } catch (err: any) {
-    // Always log the full failure so we can diagnose 403s without needing
-    // a debug flag — this only fires on the rare onboarding path.
     console.error('[Aster] approveAgent FAILED', {
       user:           params.userAddress,
       agent:          params.agentAddress,
-      builder:        params.builderAddress,
-      maxFeeRate:     params.maxFeeRate,
-      nonce,
       expired,
       httpStatus:     err?.response?.status,
       httpStatusText: err?.response?.statusText,
-      respHeaders:    err?.response?.headers,
+      respData:       err?.response?.data,
+      message:        err?.message
+    })
+    const msg = err?.response?.data?.msg
+              ?? err?.response?.data?.message
+              ?? err?.response?.data
+              ?? err.message
+    return { success: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Aster Code — Approve Builder (user signs to enroll a builder/broker for fees)
+// Called once per user during onboarding, after approveAgent. Without this,
+// trades won't carry our broker fee. Safe to call repeatedly (Aster upserts).
+// ─────────────────────────────────────────────────────────────────────────────
+export async function approveBuilder(params: {
+  userAddress?:    string  // for logging only
+  userPrivateKey:  string
+  builderAddress:  string
+  maxFeeRate:      string  // e.g. '0.0001' = 0.01%
+  builderName?:    string
+}): Promise<{ success: boolean; error?: string }> {
+  const builderName = params.builderName ?? 'BUILD4'
+
+  const types = {
+    ApproveBuilder: [
+      { name: 'Builder',     type: 'string' },
+      { name: 'MaxFeeRate',  type: 'string' },
+      { name: 'BuilderName', type: 'string' }
+    ]
+  }
+  const message = {
+    Builder:     params.builderAddress,
+    MaxFeeRate:  params.maxFeeRate,
+    BuilderName: builderName
+  }
+
+  try {
+    const wallet = new ethers.Wallet(params.userPrivateKey)
+    const sig = await wallet.signTypedData(ASTER_MGMT_DOMAIN, types, message)
+
+    const body = new URLSearchParams({
+      builder:          params.builderAddress,
+      maxFeeRate:       params.maxFeeRate,
+      builderName:      builderName,
+      signature:        sig,
+      signatureChainId: '56'
+    }).toString()
+
+    const resp = await client(BASE_SIGNED).post(
+      '/fapi/v3/approveBuilder',
+      body,
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    )
+    console.log('[Aster] approveBuilder ok:', params.userAddress ?? wallet.address, '→', resp.status, resp.data)
+    return { success: true }
+  } catch (err: any) {
+    console.error('[Aster] approveBuilder FAILED', {
+      user:           params.userAddress,
+      builder:        params.builderAddress,
+      maxFeeRate:     params.maxFeeRate,
+      httpStatus:     err?.response?.status,
+      httpStatusText: err?.response?.statusText,
       respData:       err?.response?.data,
       message:        err?.message
     })

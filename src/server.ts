@@ -237,8 +237,8 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       return res.status(404).json({ success: false, error: 'No active wallet' })
     }
 
-    const { decryptPrivateKey }    = await import('./services/wallet')
-    const { approveAgent }         = await import('./services/aster')
+    const { decryptPrivateKey }                 = await import('./services/wallet')
+    const { approveAgent, approveBuilder }      = await import('./services/aster')
     const { ensureAndDepositUSDT, USDT_BSC, MIN_BNB_FOR_GAS_WEI, getProvider } = await import('./services/asterDeposit')
 
     let userPk: string
@@ -367,6 +367,28 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       })
     }
 
+    // Best-effort: enroll our broker so trades carry the BUILD4 fee. If this
+    // fails we still mark the user as onboarded — they can trade without a
+    // builder fee, and we can retry later. We don't block activation on it.
+    let builderEnrolled = false
+    try {
+      const br = await approveBuilder({
+        userAddress:    wallet.address,
+        userPrivateKey: userPk || decryptPrivateKey(wallet.encryptedPK, user.id),
+        builderAddress,
+        maxFeeRate:     feeRate,
+        builderName:    'BUILD4'
+      })
+      builderEnrolled = br.success
+      if (!br.success) {
+        console.warn('[/aster/approve] approveBuilder failed (non-fatal):', br.error)
+      }
+    } catch (e: any) {
+      console.warn('[/aster/approve] approveBuilder threw (non-fatal):', e?.message)
+    }
+
+    userPk = ''
+
     await db.user.update({
       where: { id: user.id },
       data:  { asterOnboarded: true, asterAgentAddress: agentAddress }
@@ -377,6 +399,7 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       message: bootstrap
         ? `Deposited ${bootstrap.depositedUsdt} USDT to Aster and activated trading`
         : 'Trading account activated',
+      builderEnrolled,
       ...(bootstrap ?? {})
     })
   } catch (err: any) {
