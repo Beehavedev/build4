@@ -167,6 +167,63 @@ export async function registerAgentOnchain(opts: {
   }
 }
 
+/**
+ * Recover the ERC-8004 agentId for an agent from chain — either from a known
+ * register-tx receipt or by scanning historical Registered logs filtered by
+ * the agent's own wallet address (which is the indexed `owner` field, since
+ * agents self-register). Returns null if nothing can be found on chain.
+ */
+export async function recoverErc8004AgentId(opts: {
+  agentAddress: string
+  txHash?: string | null
+}): Promise<string | null> {
+  try {
+    const provider = new ethers.JsonRpcProvider(BSC_RPC)
+    const iface = new ethers.Interface(ERC8004_ABI)
+
+    if (opts.txHash) {
+      const receipt = await provider.getTransactionReceipt(opts.txHash)
+      if (receipt && receipt.status === 1) {
+        for (const log of receipt.logs) {
+          if (log.address.toLowerCase() !== ERC8004_REGISTRY.toLowerCase()) continue
+          try {
+            const parsed = iface.parseLog({ topics: log.topics as string[], data: log.data })
+            if (parsed?.name === 'Registered') return parsed.args.agentId.toString()
+          } catch {}
+        }
+      }
+    }
+
+    // Fallback: query Etherscan v2 API for historical Registered logs
+    // filtered by the indexed `owner` (= agent self-register tx sender).
+    // Etherscan handles unbounded block ranges in a single call, unlike
+    // public BSC RPCs which cap at ~10k blocks.
+    const apiKey = process.env.BSCSCAN_API_KEY ?? process.env.ETHERSCAN_API_KEY
+    if (apiKey) {
+      const registeredTopic = iface.getEvent('Registered')!.topicHash
+      const ownerTopic = ethers.zeroPadValue(opts.agentAddress.toLowerCase(), 32)
+      const url = `https://api.etherscan.io/v2/api?chainid=56&module=logs&action=getLogs` +
+        `&address=${ERC8004_REGISTRY}&topic0=${registeredTopic}&topic2=${ownerTopic}` +
+        `&topic0_2_opr=and&fromBlock=0&toBlock=latest&apikey=${apiKey}`
+      try {
+        const res = await fetch(url)
+        const data: any = await res.json()
+        if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
+          // topics[1] is the indexed agentId
+          const agentIdHex = data.result[0].topics[1]
+          if (agentIdHex) return BigInt(agentIdHex).toString()
+        }
+      } catch (e: any) {
+        console.error('[ERC8004] Etherscan v2 lookup failed:', e.message)
+      }
+    }
+    return null
+  } catch (err: any) {
+    console.error('[ERC8004] recoverAgentId failed:', err.message)
+    return null
+  }
+}
+
 export function erc8004ScanUrl(agentId: string): string {
   return `https://bscscan.com/token/${ERC8004_REGISTRY}?a=${agentId}`
 }

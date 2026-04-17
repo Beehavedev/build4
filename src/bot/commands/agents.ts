@@ -7,9 +7,9 @@ import { buildAgentIdentity, buildMetadataJson } from '../../services/agentIdent
 import {
   mintBap578Agent, getBnbBalance,
   bap578TokenUrl, nfaScanUrl, bscscanTxUrl, bscscanAddressUrl,
-  TOTAL_USER_FEE_BNB, BAP578_CONTRACT
+  TOTAL_USER_FEE_BNB, BAP578_CONTRACT, recoverBap578TokenId
 } from '../../services/bap578'
-import { registerAgentOnchain, erc8004ScanUrl, erc8004RegistryScanUrl } from '../../services/erc8004'
+import { registerAgentOnchain, erc8004ScanUrl, erc8004RegistryScanUrl, recoverErc8004AgentId } from '../../services/erc8004'
 
 const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
 const BAP578_EVENT_ABI = [
@@ -401,10 +401,48 @@ export function registerAgents(bot: Bot) {
     const user = ctx.dbUser
     if (!user) return
 
-    const agents = await db.agent.findMany({
+    let agents = await db.agent.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' }
     })
+
+    // Self-heal: backfill missing on-chain identifiers from BSC. Runs in
+    // parallel and only touches agents that look unsynced. Failures are
+    // swallowed so a flaky RPC never breaks the menu.
+    const ownerWallet = (await db.wallet.findFirst({ where: { userId: user.id } }))?.address
+    await Promise.all(agents.map(async (a) => {
+      if (!a.walletAddress) return
+      try {
+        if (!a.erc8004AgentId) {
+          const recovered = await recoverErc8004AgentId({ agentAddress: a.walletAddress, txHash: a.erc8004TxHash })
+          if (recovered) {
+            await db.agent.update({
+              where: { id: a.id },
+              data: { erc8004AgentId: recovered, erc8004Verified: true }
+            })
+            ;(a as any).erc8004AgentId = recovered
+            ;(a as any).erc8004Verified = true
+          }
+        }
+        if (!a.bap578TokenId && ownerWallet) {
+          const tokenId = await recoverBap578TokenId({
+            ownerAddress: ownerWallet,
+            agentAddress: a.walletAddress,
+            txHash: a.bap578TxHash
+          })
+          if (tokenId) {
+            await db.agent.update({
+              where: { id: a.id },
+              data: { bap578TokenId: tokenId, bap578Verified: true }
+            })
+            ;(a as any).bap578TokenId = tokenId
+            ;(a as any).bap578Verified = true
+          }
+        }
+      } catch (e: any) {
+        console.error('[Agent] sync failed for', a.name, e.message)
+      }
+    }))
 
     if (agents.length === 0) {
       const keyboard = new InlineKeyboard().text('🤖 Create your first agent', 'create_agent')

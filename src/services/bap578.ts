@@ -176,6 +176,64 @@ export function bscscanAddressUrl(address: string): string {
   return `https://bscscan.com/address/${address}`
 }
 
+/**
+ * Recover a BAP-578 tokenId from chain — first via a known mint-tx receipt,
+ * then by scanning AgentCreated logs filtered by the owner address (the
+ * user's main wallet) and matching the agent's wallet as logicAddress.
+ */
+export async function recoverBap578TokenId(opts: {
+  ownerAddress: string       // user's main wallet (mint NFT recipient)
+  agentAddress: string       // agent's wallet (logicAddress in mint call)
+  txHash?: string | null
+}): Promise<string | null> {
+  try {
+    const provider = new ethers.JsonRpcProvider(BSC_RPC)
+    // The BAP-578 contract is ERC-721 — the universal Transfer event
+    // (from = ZeroAddress on mint) gives us tokenId reliably even though
+    // the contract's custom AgentCreated event is shaped differently from
+    // the ABI we have. topic[3] of Transfer is the indexed tokenId.
+    const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+    const ZERO_TOPIC = ethers.zeroPadValue('0x0000000000000000000000000000000000000000', 32)
+
+    if (opts.txHash) {
+      const receipt = await provider.getTransactionReceipt(opts.txHash)
+      if (receipt && receipt.status === 1) {
+        for (const log of receipt.logs) {
+          if (log.address.toLowerCase() !== BAP578_CONTRACT.toLowerCase()) continue
+          if (log.topics[0] === TRANSFER_TOPIC && log.topics[1] === ZERO_TOPIC && log.topics[3]) {
+            return BigInt(log.topics[3]).toString()
+          }
+        }
+      }
+    }
+
+    // Etherscan v2 historical lookup: find Transfer(0x0, ownerAddress, tokenId)
+    // logs from the BAP-578 contract — that's a mint to this user.
+    const apiKey = process.env.BSCSCAN_API_KEY ?? process.env.ETHERSCAN_API_KEY
+    if (apiKey) {
+      const ownerTopic = ethers.zeroPadValue(opts.ownerAddress.toLowerCase(), 32)
+      const url = `https://api.etherscan.io/v2/api?chainid=56&module=logs&action=getLogs` +
+        `&address=${BAP578_CONTRACT}&topic0=${TRANSFER_TOPIC}&topic1=${ZERO_TOPIC}&topic2=${ownerTopic}` +
+        `&topic0_1_opr=and&topic1_2_opr=and&fromBlock=0&toBlock=latest&apikey=${apiKey}`
+      try {
+        const res = await fetch(url)
+        const data: any = await res.json()
+        if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
+          // Take the most recent mint to this owner.
+          const last = data.result[data.result.length - 1]
+          if (last.topics?.[3]) return BigInt(last.topics[3]).toString()
+        }
+      } catch (e: any) {
+        console.error('[BAP578] Etherscan v2 lookup failed:', e.message)
+      }
+    }
+    return null
+  } catch (err: any) {
+    console.error('[BAP578] recoverTokenId failed:', err.message)
+    return null
+  }
+}
+
 export function nfaScanUrl(address: string): string {
   return `https://nfascan.net/agent/${address}`
 }
