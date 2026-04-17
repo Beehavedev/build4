@@ -85,9 +85,12 @@ export async function getPrice(token: string, chain = DEFAULT_CHAIN): Promise<Tw
 export interface TwakBalance {
   address: string
   chain: string
-  balance: string
-  symbol?: string
-  decimals?: number
+  symbol: string
+  available: string
+  total: string
+  staked?: string
+  pending?: string
+  token?: string
 }
 export async function getBalance(opts: {
   address: string
@@ -105,8 +108,16 @@ export interface TwakRisk {
   flags?: string[]
   details?: Record<string, unknown>
 }
+/**
+ * Risk endpoint expects a CAIP asset ID. For BSC ERC-20s the format is
+ * `eip155:56/erc20:{contract}`. Helper assembles that for you.
+ */
 export async function getRisk(assetId: string): Promise<TwakResult<TwakRisk>> {
   return runTwak<TwakRisk>(['risk', assetId])
+}
+
+export function bscCaipAssetId(contract: string): string {
+  return `eip155:56/erc20:${contract.toLowerCase()}`
 }
 
 export interface TwakSwapQuote {

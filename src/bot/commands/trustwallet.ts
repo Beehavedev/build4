@@ -6,10 +6,12 @@ import {
   getPrice,
   getBalance,
   getRisk,
+  bscCaipAssetId,
   TWAK_RISK_THRESHOLD
 } from '../../services/trustwallet'
 
 const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955'
+const WBNB_BSC = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'
 
 function fmtUsd(n: number | string | undefined): string {
   if (n === undefined || n === null) return 'n/a'
@@ -41,13 +43,16 @@ export function registerTrustWallet(bot: Bot) {
       : null
     const userAddress = wallet?.address
 
-    // Three calls in parallel — read-only, safe.
-    const [btcPrice, bnbPrice, riskWbnb, balance] = await Promise.all([
+    // All calls in parallel — read-only, safe.
+    const [btcPrice, bnbPrice, riskWbnb, balance, nativeBal] = await Promise.all([
       getPrice('BTC', 'bsc'),
       getPrice('BNB', 'bsc'),
-      getRisk('WBNB'),
+      getRisk(bscCaipAssetId(WBNB_BSC)),
       userAddress
         ? getBalance({ address: userAddress, chain: 'bsc', tokenAddress: USDT_BSC })
+        : Promise.resolve(null),
+      userAddress
+        ? getBalance({ address: userAddress, chain: 'bsc' })
         : Promise.resolve(null)
     ])
 
@@ -61,12 +66,17 @@ export function registerTrustWallet(bot: Bot) {
 
     lines.push('')
     if (!userAddress) {
-      lines.push(`💼 Your USDT balance: _create a wallet to see live balance_`)
-    } else if (balance && balance.ok) {
-      lines.push(`💼 Your USDT balance: ${balance.data.balance ?? '0'} USDT`)
-      lines.push(`   addr: \`${userAddress.slice(0, 6)}…${userAddress.slice(-4)}\``)
+      lines.push(`💼 Your wallet: _create a wallet to see live balance_`)
     } else {
-      lines.push(`💼 Your USDT balance: _lookup failed${balance && !balance.ok ? `: ${balance.reason.slice(0, 50)}` : ''}_`)
+      lines.push(`💼 Wallet \`${userAddress.slice(0, 6)}…${userAddress.slice(-4)}\``)
+      if (nativeBal && nativeBal.ok) {
+        lines.push(`   BNB: ${nativeBal.data.available} ${nativeBal.data.symbol}`)
+      }
+      if (balance && balance.ok) {
+        lines.push(`   USDT: ${balance.data.available} ${balance.data.symbol}`)
+      } else if (balance && !balance.ok) {
+        lines.push(`   USDT: _lookup failed_`)
+      }
     }
 
     lines.push('')
