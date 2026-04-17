@@ -1,6 +1,6 @@
 import { Bot, Context, InlineKeyboard } from 'grammy'
 import { ethers } from 'ethers'
-import { db } from '../../db'
+import { db, setAgentOnchainFields } from '../../db'
 import { generateEVMWallet, encryptPrivateKey, decryptPrivateKey, truncateAddress } from '../../services/wallet'
 import { verifyPin, checkPinFailLimit, logSecurityEvent } from '../../services/security'
 import { buildAgentIdentity, buildMetadataJson } from '../../services/agentIdentity'
@@ -132,10 +132,10 @@ async function performMintAndCreate(opts: {
     agentAddress: address,
     metadataURI: identity.metadataUri,
     onAgentFunded: async (h) => {
-      await db.agent.update({ where: { id: agent.id }, data: { erc8004FundTxHash: h } })
+      await setAgentOnchainFields(agent.id, { erc8004FundTxHash: h })
     },
     onRegisterTxSent: async (h) => {
-      await db.agent.update({ where: { id: agent.id }, data: { erc8004TxHash: h, onchainTxHash: h } })
+      await setAgentOnchainFields(agent.id, { erc8004TxHash: h, onchainTxHash: h })
     }
   })
 
@@ -151,14 +151,11 @@ async function performMintAndCreate(opts: {
     return
   }
 
-  await db.agent.update({
-    where: { id: agent.id },
-    data: {
-      erc8004AgentId: reg.agentId,
-      erc8004TxHash: reg.txHash,
-      onchainTxHash: reg.txHash,
-      erc8004Verified: true
-    }
+  await setAgentOnchainFields(agent.id, {
+    erc8004AgentId: reg.agentId,
+    erc8004TxHash: reg.txHash ?? null,
+    onchainTxHash: reg.txHash ?? null,
+    erc8004Verified: true
   })
 
   const upgradeKb = new InlineKeyboard()
@@ -214,10 +211,7 @@ async function performBap578Upgrade(opts: {
   if (agent.bap578TxHash) {
     const recovered = await recoverBap578TokenIdFromTx(agent.bap578TxHash)
     if (recovered) {
-      await db.agent.update({
-        where: { id: agent.id },
-        data: { bap578TokenId: recovered, bap578Verified: true }
-      })
+      await setAgentOnchainFields(agent.id, { bap578TokenId: recovered, bap578Verified: true })
       await ctx.reply(
         `🎉 *${agent.name} is already a BAP-578 NFA!*\n\nWe recovered your previous mint from chain — no extra fee charged.\n\n💎 NFA #${recovered}\n[View on NFAScan](${nfaScanUrl(agent.name, recovered)})\n[Mint tx](${bscscanTxUrl(agent.bap578TxHash)})`,
         { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } }
@@ -250,7 +244,7 @@ async function performBap578Upgrade(opts: {
     metadataURI: agent.metadataUri ?? identity.metadataUri,
     metadataHash,
     onTxSent: async (h) => {
-      await db.agent.update({ where: { id: agent.id }, data: { bap578TxHash: h } })
+      await setAgentOnchainFields(agent.id, { bap578TxHash: h })
     }
   })
 
@@ -259,9 +253,10 @@ async function performBap578Upgrade(opts: {
     return
   }
 
-  await db.agent.update({
-    where: { id: agent.id },
-    data: { bap578TokenId: mint.tokenId, bap578TxHash: mint.txHash, bap578Verified: true }
+  await setAgentOnchainFields(agent.id, {
+    bap578TokenId: mint.tokenId,
+    bap578TxHash: mint.txHash ?? null,
+    bap578Verified: true
   })
 
   await ctx.reply(
@@ -334,8 +329,28 @@ export function registerAgents(bot: Bot) {
       try {
         await performMintAndCreate({ ctx, user, name, userAddress: wallets[0].address })
       } catch (err: any) {
-        console.error('[Agent] Create failed:', err)
-        await ctx.reply(`❌ Failed to create agent: ${err.message}\n\nTry /newagent again.`)
+        console.error('[Agent] Create flow threw:', err)
+        // The agent row may already exist with on-chain identity registered —
+        // check before yelling at the user. If a row matching this name was
+        // created in the last 60s, the on-chain register almost certainly
+        // succeeded and only a downstream DB write failed. Don't tell the
+        // user it failed when their agent is actually live.
+        const recent = await db.agent.findFirst({
+          where: {
+            userId: user.id,
+            name,
+            createdAt: { gt: new Date(Date.now() - 60_000) }
+          }
+        })
+        if (recent) {
+          console.error(`[Agent] Suppressed false-failure UI: agent "${name}" exists (id=${recent.id}). Original error was logged above.`)
+          await ctx.reply(
+            `✅ *${name}* was created. Run /myagents to see it.`,
+            { parse_mode: 'Markdown' }
+          )
+        } else {
+          await ctx.reply(`❌ Failed to create agent: ${err.message}\n\nTry /newagent again.`)
+        }
       }
       return
     }
@@ -424,10 +439,7 @@ export function registerAgents(bot: Bot) {
           const recovered = await recoverErc8004AgentId({ agentAddress: a.walletAddress, txHash: a.erc8004TxHash })
           console.log(`[Sync] agent="${a.name}" ERC-8004 recovered=${recovered ?? 'null'}`)
           if (recovered) {
-            await db.agent.update({
-              where: { id: a.id },
-              data: { erc8004AgentId: recovered, erc8004Verified: true }
-            })
+            await setAgentOnchainFields(a.id, { erc8004AgentId: recovered, erc8004Verified: true })
             ;(a as any).erc8004AgentId = recovered
             ;(a as any).erc8004Verified = true
           }
@@ -444,10 +456,7 @@ export function registerAgents(bot: Bot) {
             })
             console.log(`[Sync] agent="${a.name}" BAP-578 recovered=${tokenId ?? 'null'}`)
             if (tokenId) {
-              await db.agent.update({
-                where: { id: a.id },
-                data: { bap578TokenId: tokenId, bap578Verified: true }
-              })
+              await setAgentOnchainFields(a.id, { bap578TokenId: tokenId, bap578Verified: true })
               ;(a as any).bap578TokenId = tokenId
               ;(a as any).bap578Verified = true
             }

@@ -1,0 +1,53 @@
+❌ Failed to create agent: 
+Invalid `prisma.agent.update()` invocation:
+
+{
+  where: {
+    id: "cmo3501ww001peays2nrymobz"
+  },
+  data: {
+    erc8004AgentId: "67730",
+    ~~~~~~~~~~~~~~
+    erc8004TxHash: "0x3bb64e33a6e717bea9b41980bc806d9bd855acee4e25a9af122477eaca8c21b8",
+    onchainTxHash: "0x3bb64e33a6e717bea9b41980bc806d9bd855acee4e25a9af122477eaca8c21b8",
+    erc8004Verified: true,
+?   id?: String | StringFieldUpdateOperationsInput,
+?   name?: String | StringFieldUpdateOperationsInput,
+?   description?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   isActive?: Boolean | BoolFieldUpdateOperationsInput,
+?   isPaused?: Boolean | BoolFieldUpdateOperationsInput,
+?   exchange?: String | StringFieldUpdateOperationsInput,
+?   pairs?: AgentUpdatepairsInput | String[],
+?   timeframe?: String | StringFieldUpdateOperationsInput,
+?   maxPositionSize?: Float | FloatFieldUpdateOperationsInput,
+?   maxDailyLoss?: Float | FloatFieldUpdateOperationsInput,
+?   maxLeverage?: Float | FloatFieldUpdateOperationsInput,
+?   stopLossPct?: Float | FloatFieldUpdateOperationsInput,
+?   takeProfitPct?: Float | FloatFieldUpdateOperationsInput,
+?   memorySnapshot?: NullableJsonNullValueInput | Json,
+?   totalPnl?: Float | FloatFieldUpdateOperationsInput,
+?   totalTrades?: Int | IntFieldUpdateOperationsInput,
+?   winRate?: Float | FloatFieldUpdateOperationsInput,
+?   isListed?: Boolean | BoolFieldUpdateOperationsInput,
+?   listingPrice?: Float | NullableFloatFieldUpdateOperationsInput | Null,
+?   subscriberCount?: Int | IntFieldUpdateOperationsInput,
+?   walletAddress?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   encryptedPK?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   onchainChain?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   learningModel?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   learningRoot?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   metadataUri?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   identityStandard?: String | NullableStringFieldUpdateOperationsInput | Null,
+?   createdAt?: DateTime | DateTimeFieldUpdateOperationsInput,
+?   updatedAt?: DateTime | DateTimeFieldUpdateOperationsInput,
+?   lastTickAt?: DateTime | NullableDateTimeFieldUpdateOperationsInput | Null,
+?   user?: UserUpdateOneRequiredWithoutAgentsNestedInput,
+?   trades?: TradeUpdateManyWithoutAgentNestedInput,
+?   memories?: AgentMemoryUpdateManyWithoutAgentNestedInput,
+?   logs?: AgentLogUpdateManyWithoutAgentNestedInput
+  }
+}
+
+Unknown argument `erc8004AgentId`. Available options are marked with ?.
+
+Try /newagent again.
