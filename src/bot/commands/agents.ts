@@ -9,10 +9,8 @@ import {
   bap578TokenUrl, nfaScanUrl, bscscanTxUrl, bscscanAddressUrl,
   TOTAL_USER_FEE_BNB
 } from '../../services/bap578'
-import { registerAgentOnchain, erc8004ScanUrl, AGENT_GAS_FUND_BNB } from '../../services/erc8004'
+import { registerAgentOnchain, erc8004ScanUrl } from '../../services/erc8004'
 
-// Mandatory ERC-8004 register only needs gas + agent funding.
-const ERC8004_NEEDED_WEI = ethers.parseEther(AGENT_GAS_FUND_BNB) + ethers.parseEther('0.0005')
 // Optional BAP-578 NFA mint upgrade needs full fee + gas buffer.
 const BAP578_NEEDED_WEI = ethers.parseEther(TOTAL_USER_FEE_BNB) + ethers.parseEther('0.001')
 
@@ -45,9 +43,9 @@ Every BUILD4 agent is *permanently registered on the official ERC-8004 Identity 
 • Autonomous trading on *all Aster DEX perp pairs* via EIP-712 signed orders
 • Risk controls (position size, leverage, SL/TP, daily loss caps) tunable anytime
 
-💰 *One-time cost: ~${AGENT_GAS_FUND_BNB} BNB in gas* (no protocol fee).
+🆓 *Registration is free* — BUILD4 covers the on-chain gas for you.
 
-After registration you can *optionally* upgrade to a *BAP-578 Non-Fungible Agent NFT* (verifiable on NFAScan) for an extra ${TOTAL_USER_FEE_BNB} BNB.
+You can *optionally* upgrade to a *BAP-578 Non-Fungible Agent NFT* (verifiable on NFAScan) afterwards for ${TOTAL_USER_FEE_BNB} BNB.
 
 *Pick a name*
 3-24 characters, letters/numbers/underscore only. Permanently reserved on-chain.
@@ -65,10 +63,9 @@ async function performMintAndCreate(opts: {
   ctx: Context
   user: any
   name: string
-  userPK: string
   userAddress: string
 }) {
-  const { ctx, user, name, userPK, userAddress } = opts
+  const { ctx, user, name, userAddress } = opts
 
   await ctx.reply(`⏳ Registering *${name}* on ERC-8004 IdentityRegistry…`, { parse_mode: 'Markdown' })
 
@@ -106,7 +103,6 @@ async function performMintAndCreate(opts: {
   })
 
   const reg = await registerAgentOnchain({
-    userWalletPK: userPK,
     agentWalletPK: privateKey,
     agentAddress: address,
     metadataURI: identity.metadataUri,
@@ -281,39 +277,19 @@ export function registerAgents(bot: Bot) {
         return
       }
 
-      // Mandatory funding pre-check
+      // Lightweight pre-check: user just needs an owner wallet on file.
       const wallets = await db.wallet.findMany({ where: { userId: user.id }, take: 1 })
-      if (!wallets[0]?.encryptedPK) {
+      if (!wallets[0]) {
         sessions.delete(user.id)
         await ctx.reply('❌ No main wallet found. Run /start to initialize, then try again.')
         return
       }
 
-      const balance = await getBnbBalance(wallets[0].address)
-      if (balance < ERC8004_NEEDED_WEI) {
-        sessions.delete(user.id)
-        await ctx.reply(
-          `❌ *Insufficient funds*\n\nRegistering an ERC-8004 agent needs ~*${AGENT_GAS_FUND_BNB} BNB* in BSC gas. Your main wallet currently holds ${ethers.formatEther(balance)} BNB.\n\n*Fund this wallet with BNB on BSC:*\n\`${wallets[0].address}\`\n\nThen run /newagent again.`,
-          { parse_mode: 'Markdown' }
-        )
-        return
-      }
-
-      // PIN-protected → ask for PIN before we can sign
-      if (user.pinHash) {
-        sessions.set(user.id, { step: 'pin', name })
-        await ctx.reply(
-          `🔒 *Enter your PIN* to authorize the on-chain registration.\n\n_Your reply will be deleted from chat for security._\n\n(or /cancelagent to stop)`,
-          { parse_mode: 'Markdown' }
-        )
-        return
-      }
-
-      // No PIN → mint immediately
+      // ERC-8004 register is sponsored by BUILD4's registry wallet — user
+      // pays nothing, signs nothing, no PIN needed.
       sessions.delete(user.id)
       try {
-        const userPK = decryptPrivateKey(wallets[0].encryptedPK, user.id)
-        await performMintAndCreate({ ctx, user, name, userPK, userAddress: wallets[0].address })
+        await performMintAndCreate({ ctx, user, name, userAddress: wallets[0].address })
       } catch (err: any) {
         console.error('[Agent] Create failed:', err)
         await ctx.reply(`❌ Failed to create agent: ${err.message}\n\nTry /newagent again.`)
@@ -322,38 +298,18 @@ export function registerAgents(bot: Bot) {
     }
 
     // ── Step: pin ─────────────────────────────────────────────────
+    // (legacy — ERC-8004 register no longer requires user payment, so this
+    // step is unreachable. Kept as a safety fallback in case an old session
+    // is still hanging around.)
     if (session.step === 'pin' && session.name) {
-      // Delete the user's PIN message immediately
       try { await ctx.deleteMessage() } catch {}
-
-      const lock = await checkPinFailLimit(user.id)
-      if (!lock.allowed) {
-        sessions.delete(user.id)
-        await ctx.reply('🚫 Too many PIN attempts. Try again in an hour.')
-        return
-      }
-
-      if (!user.pinHash || !user.pinSalt || !verifyPin(text, user.pinHash, user.pinSalt)) {
-        await logSecurityEvent({ userId: user.id, telegramId: ctx.from!.id, action: 'pin_failed', meta: { context: 'agent_mint' } })
-        await ctx.reply('❌ Wrong PIN. Try again, or /cancelagent to stop.')
-        return
-      }
-
       const wallets = await db.wallet.findMany({ where: { userId: user.id }, take: 1 })
-      if (!wallets[0]?.encryptedPK) {
-        sessions.delete(user.id)
-        await ctx.reply('❌ Wallet missing. Run /start.')
-        return
-      }
-
       const name = session.name
       sessions.delete(user.id)
-
       try {
-        const userPK = decryptPrivateKey(wallets[0].encryptedPK, user.id, text)
-        await performMintAndCreate({ ctx, user, name, userPK, userAddress: wallets[0].address })
+        await performMintAndCreate({ ctx, user, name, userAddress: wallets[0]?.address ?? '' })
       } catch (err: any) {
-        console.error('[Agent] PIN mint failed:', err)
+        console.error('[Agent] mint failed:', err)
         await ctx.reply(`❌ Failed to create agent: ${err.message}\n\nTry /newagent again.`)
       }
       return

@@ -5,8 +5,14 @@ import { ethers } from 'ethers'
  *
  * Every BUILD4 agent is registered on-chain in the official ERC-8004
  * IdentityRegistry on BNB Smart Chain. No protocol fee — only BSC gas
- * (~0.0003 BNB ≈ $0.10). This is mandatory for every agent so they show
- * up as ERC-8004-verified on agent scanners and registries.
+ * (~0.0003 BNB ≈ $0.10), which is sponsored by BUILD4 from a single
+ * dedicated registry wallet. End users pay nothing for ERC-8004.
+ *
+ * The registry wallet's private key lives in the REGISTRY_WALLET_PK
+ * secret. It funds each new agent wallet with just enough BNB to call
+ * `register()` once on the IdentityRegistry; the agent self-registers
+ * so the contract correctly records the agent's own address as the
+ * canonical signer.
  *
  * Source: https://github.com/erc-8004/erc-8004-contracts
  * BSC Mainnet: 0x8004A169FB4a3325136EB29fA0ceB6D2e539a432
@@ -21,6 +27,23 @@ export const ERC8004_REGISTRY = (
 // Tiny BNB amount funded into the agent's wallet so it can self-register
 // on-chain. Anything left over stays in the agent wallet for first trades.
 export const AGENT_GAS_FUND_BNB = '0.001'
+
+function getRegistryWalletPK(): string {
+  const pk = process.env.REGISTRY_WALLET_PK
+  if (!pk) {
+    throw new Error('REGISTRY_WALLET_PK secret is not set — cannot sponsor ERC-8004 registrations.')
+  }
+  return pk.startsWith('0x') ? pk : '0x' + pk
+}
+
+export function getRegistryWalletAddress(): string {
+  return new ethers.Wallet(getRegistryWalletPK()).address
+}
+
+export async function getRegistryWalletBalance(): Promise<bigint> {
+  const provider = new ethers.JsonRpcProvider(BSC_RPC)
+  return provider.getBalance(getRegistryWalletAddress())
+}
 
 const ERC8004_ABI = [
   'function register() external returns (uint256 agentId)',
@@ -41,9 +64,12 @@ export interface RegisterResult {
 /**
  * Mandatory ERC-8004 registration for a new agent.
  *
+ * Funded entirely by BUILD4's dedicated registry wallet (REGISTRY_WALLET_PK).
+ * End users pay zero — they only need a wallet to own the agent.
+ *
  * Flow:
- *   1. User's main wallet sends a tiny BNB amount to the agent's fresh wallet
- *      (so it can pay gas).
+ *   1. The registry wallet sends a tiny BNB amount to the agent's fresh
+ *      wallet (so it can pay gas for the register call).
  *   2. Agent's wallet self-calls register(agentURI) on the IdentityRegistry.
  *      Because msg.sender = agent's wallet, the contract auto-records the
  *      agent's wallet as the canonical agentWallet metadata key. The
@@ -51,7 +77,6 @@ export interface RegisterResult {
  *   3. We persist the resulting agentId and tx hashes.
  */
 export async function registerAgentOnchain(opts: {
-  userWalletPK: string         // user's main wallet (pays gas funding)
   agentWalletPK: string        // agent's freshly generated wallet
   agentAddress: string         // matches agentWalletPK
   metadataURI: string
@@ -60,20 +85,21 @@ export async function registerAgentOnchain(opts: {
 }): Promise<RegisterResult> {
   try {
     const provider = new ethers.JsonRpcProvider(BSC_RPC)
-    const userWallet = new ethers.Wallet(opts.userWalletPK, provider)
+    const registryPK = getRegistryWalletPK()
+    const registryWallet = new ethers.Wallet(registryPK, provider)
     const agentWallet = new ethers.Wallet(opts.agentWalletPK, provider)
 
-    // 1. Fund the agent wallet for gas.
+    // 1. Fund the agent wallet for gas, sponsored by the registry wallet.
     const fundAmount = ethers.parseEther(AGENT_GAS_FUND_BNB)
-    const userBal = await provider.getBalance(userWallet.address)
-    if (userBal < fundAmount + ethers.parseEther('0.0005')) {
+    const registryBal = await provider.getBalance(registryWallet.address)
+    if (registryBal < fundAmount + ethers.parseEther('0.0005')) {
       return {
         success: false,
-        reason: `Insufficient BNB for gas funding. Need ~${AGENT_GAS_FUND_BNB} BNB, have ${ethers.formatEther(userBal)} BNB.`
+        reason: `BUILD4 registry wallet is low on BNB (have ${ethers.formatEther(registryBal)} BNB, need ~${AGENT_GAS_FUND_BNB}). Please contact support.`
       }
     }
 
-    const fundTx = await userWallet.sendTransaction({
+    const fundTx = await registryWallet.sendTransaction({
       to: opts.agentAddress,
       value: fundAmount
     })
