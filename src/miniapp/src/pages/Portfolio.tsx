@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { apiFetch } from '../api'
 
 interface PortfolioProps {
   userId: string | null
@@ -7,10 +8,17 @@ interface PortfolioProps {
 
 type Range = '7d' | '30d' | 'all'
 
+interface WalletInfo {
+  address: string
+  balances: { usdt: number; bnb: number; error: string | null }
+  aster:    { usdt: number; availableMargin: number; onboarded: boolean; error: string | null }
+}
+
 export default function Portfolio({ userId }: PortfolioProps) {
   const [data, setData] = useState<any>(null)
   const [range, setRange] = useState<Range>('30d')
   const [loading, setLoading] = useState(true)
+  const [wallet, setWallet] = useState<WalletInfo | null>(null)
 
   useEffect(() => {
     if (!userId) { setLoading(false); return }
@@ -19,6 +27,12 @@ export default function Portfolio({ userId }: PortfolioProps) {
       .then(d => { setData(d); setLoading(false) })
       .catch(() => setLoading(false))
   }, [userId])
+
+  useEffect(() => {
+    apiFetch<WalletInfo>('/api/me/wallet')
+      .then(setWallet)
+      .catch(() => { /* silent — balance strip just hides */ })
+  }, [])
 
   const trades: any[] = data?.trades ?? []
   const totalPnl = trades.reduce((s: number, t: any) => s + (t.pnl ?? 0), 0)
@@ -51,12 +65,69 @@ export default function Portfolio({ userId }: PortfolioProps) {
 
   return (
     <div style={{ paddingTop: 20 }}>
-      <div style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 20, fontWeight: 700 }}>📊 Portfolio</div>
         <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>
           Your trading performance
         </div>
       </div>
+
+      {/* Balances — same data as the Wallet tab, condensed for a glance */}
+      {wallet && (
+        <div className="card" style={{ marginBottom: 16 }} data-testid="card-portfolio-balances">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 0.4 }}>BALANCES</div>
+            <div style={{ fontSize: 10, color: wallet.aster.onboarded ? '#10b981' : '#64748b' }}>
+              {wallet.aster.onboarded ? '● Trading active' : '○ Not activated'}
+            </div>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 10
+          }}>
+            {/* Aster card — primary if onboarded */}
+            <div style={{
+              padding: 10,
+              borderRadius: 8,
+              background: wallet.aster.onboarded
+                ? 'linear-gradient(135deg, #10b98122, #10b98108)'
+                : '#0f0f17',
+              border: `1px solid ${wallet.aster.onboarded ? '#10b98144' : '#1e1e2e'}`
+            }}>
+              <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>ASTER · USDT</div>
+              <div style={{
+                fontSize: 18,
+                fontWeight: 700,
+                color: wallet.aster.onboarded ? '#10b981' : '#e2e8f0'
+              }} data-testid="text-portfolio-aster-usdt">
+                ${wallet.aster.usdt.toFixed(2)}
+              </div>
+              <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
+                Avail ${wallet.aster.availableMargin.toFixed(2)}
+              </div>
+            </div>
+
+            {/* BSC card */}
+            <div style={{
+              padding: 10,
+              borderRadius: 8,
+              background: '#0f0f17',
+              border: '1px solid #1e1e2e'
+            }}>
+              <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>BSC · USDT</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}
+                   data-testid="text-portfolio-bsc-usdt">
+                ${wallet.balances.usdt.toFixed(2)}
+              </div>
+              <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
+                BNB {wallet.balances.bnb.toFixed(5)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
