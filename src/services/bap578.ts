@@ -13,12 +13,13 @@ import { ethers } from 'ethers'
 const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
 export const BAP578_CONTRACT = '0xd7deb29ddbb13607375ce50405a574ac2f7d978d'
 
-// BAP-578 requires `logicAddress` to be a DEPLOYED contract (has bytecode),
-// not an EOA. Set BAP578_LOGIC_TEMPLATE to the canonical logic-template
-// contract address published by the BAP-578 protocol team.
-// You can find it on NFAScan by inspecting any successful mint's logicAddress.
+// BAP-578 source (BAP578.sol L146-148):
+//   require(logicAddress == address(0) || logicAddress.code.length > 0,
+//           "Invalid logic address");
+// We don't need a custom logic template — pass address(0). Operators who
+// later want to wire a custom logic contract can override via env var.
 export const BAP578_LOGIC_TEMPLATE = (
-  process.env.BAP578_LOGIC_TEMPLATE ?? ''
+  process.env.BAP578_LOGIC_TEMPLATE ?? ethers.ZeroAddress
 ).trim()
 
 // Protocol mint fee (paid to the BAP-578 team treasury 0xF029…F08d)
@@ -96,18 +97,15 @@ export async function mintBap578Agent(opts: {
 
     const c = new ethers.Contract(BAP578_CONTRACT, BAP578_ABI, wallet)
 
-    if (!BAP578_LOGIC_TEMPLATE) {
-      return {
-        success: false,
-        reason: 'Server config error: BAP578_LOGIC_TEMPLATE env var is not set. Ask the operator to configure the BAP-578 logic-template contract address.'
-      }
-    }
-    // Sanity check: must be a deployed contract, not an EOA.
-    const code = await provider.getCode(BAP578_LOGIC_TEMPLATE)
-    if (!code || code === '0x') {
-      return {
-        success: false,
-        reason: `Server config error: BAP578_LOGIC_TEMPLATE (${BAP578_LOGIC_TEMPLATE}) has no contract code on BSC.`
+    // Validate logicAddress matches BAP-578's on-chain check:
+    // accept address(0) OR a contract with code (no EOAs).
+    if (BAP578_LOGIC_TEMPLATE !== ethers.ZeroAddress) {
+      const code = await provider.getCode(BAP578_LOGIC_TEMPLATE)
+      if (!code || code === '0x') {
+        return {
+          success: false,
+          reason: `BAP578_LOGIC_TEMPLATE (${BAP578_LOGIC_TEMPLATE}) is not a deployed contract on BSC. Use 0x0 (default) or a real logic contract address.`
+        }
       }
     }
 
