@@ -1,0 +1,116 @@
+I've read the Aster Pro API v3 docs carefully. Here is the definitive answer to your architecture question — implement this exactly.
+
+═══════════════════════════════════════
+THE CORRECT ASTER v3 AUTH MODEL
+═══════════════════════════════════════
+
+The Aster Code (broker) model works like this:
+
+- `user`   = the USER's main wallet address (the address that owns the Aster account)
+- `signer` = the PLATFORM AGENT wallet address (our single ASTER_AGENT_ADDRESS from env)
+- The signer signs ALL requests — including balance queries, position queries, AND orders
+- The user's private key is NEVER needed after the one-time approveAgent onboarding
+
+This means:
+- For balance/position queries: user = user's wallet address, signer = platform agent, signed with ASTER_AGENT_PRIVATE_KEY
+- For order placement: same — user = user's wallet address, signer = platform agent, signed with ASTER_AGENT_PRIVATE_KEY
+- The user's private key is ONLY used once during onboarding (approveAgent call)
+
+The 403 on /fapi/v3/balance is NOT because the signer is wrong. It is because the user has not yet completed onboarding (approveAgent has not been called yet for that user), so the platform agent is not authorized to query on their behalf yet.
+
+DO NOT decrypt user private keys for balance/position queries. That would be a security disaster and is architecturally wrong.
+
+═══════════════════════════════════════
+THE FIX
+═══════════════════════════════════════
+
+The issue is the ONBOARDING FLOW, not the signing model.
+
+Here is the correct flow:
+
+STEP 1 — User creates wallet in the bot (already done, auto-created on /start)
+
+STEP 2 — User deposits USDT to their Aster account directly (via asterdex.com or /deposit command showing their address)
+
+STEP 3 — User runs /connect or taps "Connect to Aster" in the bot
+  → This is the ONE TIME we need their private key
+  → We decrypt their stored wallet private key
+  → We call POST /fapi/v3/approveAgent signed by the USER's wallet
+  → This approves our ASTER_AGENT_ADDRESS as their signer with our ASTER_BUILDER_ADDRESS
+  → We save asterOnboarded=true and asterAgentAddress=ASTER_AGENT_ADDRESS to the user DB record
+  → We immediately discard the decrypted key (never store it decrypted)
+
+STEP 4 — From this point on, ALL API calls (balance, positions, orders) use:
+  → user = user's wallet address (from DB)
+  → signer = ASTER_AGENT_ADDRESS (from env)
+  → signed with ASTER_AGENT_PRIVATE_KEY (from env)
+  → NO user private key needed ever again
+
+═══════════════════════════════════════
+SPECIFIC IMPLEMENTATION
+═══════════════════════════════════════
+
+In the aster service, the buildCreds function should be:
+
+function buildCreds(userWalletAddress: string): AsterCreds | null {
+  const agentAddress = process.env.ASTER_AGENT_ADDRESS
+  const agentPrivKey = process.env.ASTER_AGENT_PRIVATE_KEY
+  if (!agentAddress || !agentPrivKey || !userWalletAddress) return null
+  return {
+    userAddress:   userWalletAddress,   // user's BSC wallet address
+    signerAddress: agentAddress,         // our platform agent address
+    signerPrivKey: agentPrivKey          // our platform agent private key
+  }
+}
+
+This is the ONLY credentials object needed for ALL operations after onboarding.
+
+For balance queries, call it like:
+  const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+  const creds = buildCreds(wallet.address)
+  const balance = await getBalance(creds)
+
+For the onboarding approveAgent call, the ONLY place we touch the user's private key:
+  const userPrivKey = decryptPrivateKey(wallet.encryptedPK, user.id)
+  await approveAgent({
+    userAddress:    wallet.address,
+    userPrivateKey: userPrivKey,   // used here and ONLY here
+    agentAddress:   process.env.ASTER_AGENT_ADDRESS,
+    builderAddress: process.env.ASTER_BUILDER_ADDRESS,
+    maxFeeRate:     process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001',
+    expiredDays:    365
+  })
+  // userPrivKey goes out of scope and is garbage collected — never stored
+
+═══════════════════════════════════════
+ANSWER TO YOUR 3 OPTIONS
+═══════════════════════════════════════
+
+The answer is NONE OF (a), (b), or (c).
+
+The user's private key is NOT needed for balance queries AT ALL.
+After onboarding, the platform agent signs everything.
+There is no PIN problem, no UX problem, no security trade-off.
+
+The ONLY fix needed is:
+1. Make sure the onboarding flow (approveAgent) completes successfully before any balance/position calls
+2. Check asterOnboarded === true before attempting any Aster API calls for a user
+3. If asterOnboarded is false, show "Connect to Aster first" message instead of calling the API
+
+═══════════════════════════════════════
+GUARD CLAUSE TO ADD EVERYWHERE
+═══════════════════════════════════════
+
+Before any Aster API call involving a user, add this check:
+
+  if (!user.asterOnboarded) {
+    await ctx.reply(
+      '⚡ Connect to Aster first to use this feature.\n\nTap /connect to set up in 30 seconds.',
+      { parse_mode: 'Markdown' }
+    )
+    return
+  }
+
+This prevents the 403 entirely — we never even attempt the call until the user is onboarded.
+
+Implement these fixes now. Do not change the signing model, do not decrypt user keys for queries, do not prompt for PINs.

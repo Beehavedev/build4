@@ -7,7 +7,7 @@ interface WalletInfo {
   label: string
   pinProtected: boolean
   balances: { usdt: number; bnb: number; error: string | null }
-  aster: { usdt: number; availableMargin: number; error: string | null } | null
+  aster: { usdt: number; availableMargin: number; onboarded: boolean; error: string | null }
   qrDataUrl: string
 }
 
@@ -90,37 +90,58 @@ export default function Wallet() {
       </div>
 
       {/* Aster trading account balance */}
-      {w.aster && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>
-            ASTER TRADING
-          </div>
-          {w.aster.error ? (
-            <div style={{ fontSize: 12, color: 'var(--b4-red)', lineHeight: 1.4 }} data-testid="text-aster-error">
-              ⚠️ {w.aster.error}
-              <div style={{ color: 'var(--b4-muted)', marginTop: 6 }}>
-                If you trade on Aster from this wallet, your bot signer may not be
-                approved yet. Run <code>/aster</code> in the bot to fix.
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Equity</div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: '#10b981' }} data-testid="text-aster-usdt">
-                  ${w.aster.usdt.toFixed(2)}
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Available margin</div>
-                <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-aster-margin">
-                  ${w.aster.availableMargin.toFixed(2)}
-                </div>
-              </div>
-            </div>
-          )}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>
+          ASTER TRADING
         </div>
-      )}
+        {!w.aster.onboarded ? (
+          <div data-testid="text-aster-not-onboarded">
+            <div style={{ fontSize: 13, marginBottom: 10 }}>
+              ⚡ Connect to Aster to start AI trading.
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--b4-muted)', marginBottom: 12, lineHeight: 1.4 }}>
+              One-time signature authorizes the BUILD4 agent to trade on your
+              behalf using the Aster Code (broker) program. Your funds stay in
+              your wallet — no key sharing.
+            </div>
+            <button
+              className="btn-primary"
+              data-testid="button-connect-aster"
+              onClick={() => {
+                const tg = (window as any).Telegram?.WebApp
+                if (tg?.openTelegramLink) {
+                  // Bot's deep link — opens the chat with /aster pre-filled
+                  tg.openTelegramLink('https://t.me/BUILD4_BOT?start=aster')
+                  tg.close?.()
+                } else if (tg?.showAlert) {
+                  tg.showAlert('Open the bot and run /aster to connect.')
+                }
+              }}
+            >
+              Connect to Aster
+            </button>
+          </div>
+        ) : w.aster.error ? (
+          <div style={{ fontSize: 12, color: 'var(--b4-red)', lineHeight: 1.4 }} data-testid="text-aster-error">
+            ⚠️ {w.aster.error}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Equity</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#10b981' }} data-testid="text-aster-usdt">
+                ${w.aster.usdt.toFixed(2)}
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Available margin</div>
+              <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-aster-margin">
+                ${w.aster.availableMargin.toFixed(2)}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>

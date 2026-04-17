@@ -158,36 +158,35 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
       color: { dark: '#000000', light: '#FFFFFF' }
     })
 
-    // ── Best-effort: Aster account balance for this trading wallet ──
-    // We call getAccountBalance, but that helper swallows errors and returns
-    // 0/0. To distinguish "real zero" from "API failed", we fetch positions
-    // too — if positions errors we know the signer isn't approved for this
-    // user on Aster, and we surface a helpful message.
-    let aster: { usdt: number; availableMargin: number; error: string | null } | null = null
-    try {
-      const asterMod = await import('./services/aster')
-      const creds = asterMod.buildCreds(
-        wallet.address,
-        user.asterAgentAddress,
-        process.env.ASTER_AGENT_PRIVATE_KEY
-      )
-      if (!creds) {
-        aster = { usdt: 0, availableMargin: 0, error: 'no_agent_credentials' }
-      } else {
-        try {
+    // ── Aster account balance ────────────────────────────────────────
+    // Per Aster v3 broker model: platform agent signs all queries on behalf
+    // of the user, but only AFTER the user has called approveAgent once
+    // (the /aster onboarding flow). Skip the API call until they do — it
+    // would 403 anyway, and we'd rather show actionable guidance.
+    let aster: {
+      usdt: number; availableMargin: number;
+      onboarded: boolean; error: string | null
+    } = { usdt: 0, availableMargin: 0, onboarded: !!user.asterOnboarded, error: null }
+
+    if (!user.asterOnboarded) {
+      aster.error = 'not_onboarded'
+    } else {
+      try {
+        const asterMod = await import('./services/aster')
+        const creds = asterMod.buildCreds(wallet.address) // platform signer from env
+        if (!creds) {
+          aster.error = 'no_agent_credentials'
+        } else {
           const bal = await asterMod.getAccountBalanceStrict(creds)
-          aster = { usdt: bal.usdt, availableMargin: bal.availableMargin, error: null }
-          console.log('[API] /me/wallet aster ok:', wallet.address, bal.usdt, 'usdt')
-        } catch (e: any) {
-          const apiMsg = e?.response?.data?.msg ?? e?.response?.data?.message
-          const msg = apiMsg ?? e?.message ?? 'aster_unauthorized'
-          console.error('[API] /me/wallet aster failed:', wallet.address, '→', e?.response?.status, e?.response?.data ?? msg)
-          aster = { usdt: 0, availableMargin: 0, error: String(msg) }
+          aster.usdt = bal.usdt
+          aster.availableMargin = bal.availableMargin
         }
+      } catch (e: any) {
+        const apiMsg = e?.response?.data?.msg ?? e?.response?.data?.message
+        const msg = apiMsg ?? e?.message ?? 'aster_unavailable'
+        console.error('[API] /me/wallet aster failed:', wallet.address, '→', e?.response?.status, e?.response?.data ?? msg)
+        aster.error = String(msg)
       }
-    } catch (e: any) {
-      console.error('[API] /me/wallet aster outer failed:', e?.message ?? e)
-      aster = { usdt: 0, availableMargin: 0, error: e?.message ?? 'aster_unavailable' }
     }
 
     res.json({
