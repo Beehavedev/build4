@@ -199,7 +199,7 @@ async function performBap578Upgrade(opts: {
   }
   if (agent.bap578Verified && agent.bap578TokenId) {
     await ctx.reply(
-      `✅ *${agent.name}* is already a BAP-578 NFA (#${agent.bap578TokenId}).\n\n[View on NFAScan](${nfaScanUrl(agent.walletAddress!)})`,
+      `✅ *${agent.name}* is already a BAP-578 NFA (#${agent.bap578TokenId}).\n\n[View on NFAScan](${nfaScanUrl(agent.name, agent.bap578TokenId!)})`,
       { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } }
     )
     return
@@ -219,7 +219,7 @@ async function performBap578Upgrade(opts: {
         data: { bap578TokenId: recovered, bap578Verified: true }
       })
       await ctx.reply(
-        `🎉 *${agent.name} is already a BAP-578 NFA!*\n\nWe recovered your previous mint from chain — no extra fee charged.\n\n💎 NFA #${recovered}\n[View on NFAScan](${nfaScanUrl(agent.walletAddress)})\n[Mint tx](${bscscanTxUrl(agent.bap578TxHash)})`,
+        `🎉 *${agent.name} is already a BAP-578 NFA!*\n\nWe recovered your previous mint from chain — no extra fee charged.\n\n💎 NFA #${recovered}\n[View on NFAScan](${nfaScanUrl(agent.name, recovered)})\n[Mint tx](${bscscanTxUrl(agent.bap578TxHash)})`,
         { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } }
       )
       return
@@ -268,7 +268,7 @@ async function performBap578Upgrade(opts: {
     `🎉 *${agent.name} is now a BAP-578 NFA!*
 
 💎 NFA #${mint.tokenId}
-[View on NFAScan](${nfaScanUrl(agent.walletAddress)})
+[View on NFAScan](${nfaScanUrl(agent.name, mint.tokenId)})
 [BSCScan token](${bap578TokenUrl(mint.tokenId)})
 [Mint tx](${bscscanTxUrl(mint.txHash!)})`,
     { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } }
@@ -470,7 +470,7 @@ export function registerAgents(bot: Bot) {
       }
       if (a.bap578Verified && a.bap578TokenId) {
         text += `💎 *BAP-578 NFA:* #${a.bap578TokenId} ✓\n`
-        text += `🌐 [View on NFAScan](${nfaScanUrl(a.walletAddress!)})\n`
+        text += `🌐 [View on NFAScan](${nfaScanUrl(a.name, a.bap578TokenId!)})\n`
       } else if (a.bap578TxHash) {
         text += `🟡 *BAP-578 mint:* awaiting confirmation\n`
         text += `📜 [Check tx](${bscscanTxUrl(a.bap578TxHash)})\n`
@@ -630,7 +630,7 @@ export function registerAgents(bot: Bot) {
       return
     }
     if (agent.bap578Verified && agent.bap578TokenId) {
-      await ctx.reply(`✅ *${agent.name}* is already BAP-578 verified.\n\nNFA #${agent.bap578TokenId}\n[View on NFAScan](${nfaScanUrl(agent.walletAddress)})`, {
+      await ctx.reply(`✅ *${agent.name}* is already BAP-578 verified.\n\nNFA #${agent.bap578TokenId}\n[View on NFAScan](${nfaScanUrl(agent.name, agent.bap578TokenId ?? mint.tokenId)})`, {
         parse_mode: 'Markdown', link_preview_options: { is_disabled: true }
       })
       return
@@ -692,7 +692,7 @@ export function registerAgents(bot: Bot) {
       })
 
       await ctx.reply(
-        `🎉 *${agent.name} is now BAP-578 verified!*\n\n💎 NFA #${mint.tokenId}\n[View on NFAScan](${nfaScanUrl(agent.walletAddress)})\n[BSCScan token page](${bap578TokenUrl(mint.tokenId)})\n[Mint transaction](${bscscanTxUrl(mint.txHash!)})`,
+        `🎉 *${agent.name} is now BAP-578 verified!*\n\n💎 NFA #${mint.tokenId}\n[View on NFAScan](${nfaScanUrl(agent.name, agent.bap578TokenId ?? mint.tokenId)})\n[BSCScan token page](${bap578TokenUrl(mint.tokenId)})\n[Mint transaction](${bscscanTxUrl(mint.txHash!)})`,
         { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } }
       )
     } catch (e: any) {

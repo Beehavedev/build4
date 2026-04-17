@@ -234,8 +234,21 @@ export async function recoverBap578TokenId(opts: {
   }
 }
 
-export function nfaScanUrl(address: string): string {
-  return `https://nfascan.net/agent/${address}`
+function slugifyAgentName(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'agent'
+}
+
+/**
+ * NFAScan public agent page. Format is `{slug}:{tokenId}` where slug is the
+ * kebab-case agent name (e.g. "Smith" → "smith:55867").
+ */
+export function nfaScanUrl(name: string, tokenId: string | number | bigint): string {
+  return `https://nfascan.net/agent/${slugifyAgentName(name)}:${tokenId}`
 }
 
 export function bap578TokenUrl(tokenId: string): string {
