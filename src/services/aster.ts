@@ -17,7 +17,11 @@ import { OHLCV } from '../agents/indicators'
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BASE_PUBLIC  = 'https://fapi.asterdex.com'   // public market data
-const BASE_SIGNED  = 'https://fapi3.asterdex.com'  // all signed endpoints
+// Signed v3 endpoints live on the SAME host as public market data.
+// The legacy `fapi3.asterdex.com` host is Cloudflare-blocking our egress
+// (every request → HTML 403 even for /ping), while fapi.asterdex.com
+// returns proper JSON for /fapi/v3/* signed endpoints.
+const BASE_SIGNED  = 'https://fapi.asterdex.com'
 
 // EIP-712 domain — same for all calls
 const EIP712_DOMAIN = {
