@@ -32,7 +32,8 @@ export default function App() {
     { id: 'dashboard', label: 'Home', icon: '⚡' },
     { id: 'agents', label: 'Agents', icon: '🤖' },
     { id: 'wallet', label: 'Wallet', icon: '💳' },
-    { id: 'copy', label: 'Copy', icon: '📋' },
+    // Copy trading hidden for now — coming back to it later.
+    // { id: 'copy', label: 'Copy', icon: '📋' },
     { id: 'portfolio', label: 'Portfolio', icon: '📊' }
   ]
 
