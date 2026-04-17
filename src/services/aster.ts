@@ -570,12 +570,36 @@ export async function approveAgent(params: {
       builderName:  'BUILD4'
     }).toString()
 
-    await client(BASE_SIGNED).post('/fapi/v3/approveAgent?' + body)
+    // POST with form-encoded body (NOT querystring — Aster's edge 403s
+    // when the body is empty on a form-urlencoded POST).
+    const resp = await client(BASE_SIGNED).post(
+      '/fapi/v3/approveAgent',
+      body,
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    )
+    console.log('[Aster] approveAgent ok:', params.userAddress, '→', resp.status, resp.data)
     return { success: true }
   } catch (err: any) {
-    const msg = err?.response?.data?.msg ?? err.message
-    console.error('[Aster] approveAgent failed:', msg)
-    return { success: false, error: msg }
+    // Always log the full failure so we can diagnose 403s without needing
+    // a debug flag — this only fires on the rare onboarding path.
+    console.error('[Aster] approveAgent FAILED', {
+      user:           params.userAddress,
+      agent:          params.agentAddress,
+      builder:        params.builderAddress,
+      maxFeeRate:     params.maxFeeRate,
+      nonce,
+      expired,
+      httpStatus:     err?.response?.status,
+      httpStatusText: err?.response?.statusText,
+      respHeaders:    err?.response?.headers,
+      respData:       err?.response?.data,
+      message:        err?.message
+    })
+    const msg = err?.response?.data?.msg
+              ?? err?.response?.data?.message
+              ?? err?.response?.data
+              ?? err.message
+    return { success: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) }
   }
 }
 
