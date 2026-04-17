@@ -1,0 +1,68 @@
+Found everything needed from Aster's public APIs and docs.
+Build the complete in-app deposit + onboarding flow now.
+
+KEY CONTRACTS (BSC / chainId 56):
+
+USDT contract:    0x55d398326f99059ff775485246999027b3197955
+  decimals: 18
+  depositState: true
+
+Aster vault (Treasury):  0x128463A60784c4D3f46c23Af3f65Ed859Ba87974
+  Source: https://docs.asterdex.com/overview/smart-contracts.md
+  "Aster Treasury Contract — BNB Chain"
+
+═══════════════════════════════════════════════════
+THE FULL ON-CHAIN DEPOSIT FLOW
+═══════════════════════════════════════════════════
+
+When user taps "Activate Trading Account" in State B:
+
+STEP 1 — Approve USDT spend
+  Call USDT.approve(asterVault, amountWei) 
+  Signed with user's decrypted private key
+
+STEP 2 — Call vault deposit
+  We need to find the deposit function signature.
+  Check BscScan for the vault contract:
+  https://bscscan.com/address/0x128463A60784c4D3f46c23Af3f65Ed859Ba87974#writeContract
+  
+  The deposit function likely takes:
+  - token address (USDT: 0x55d398326f99059ff775485246999027b3197955)
+  - amount in wei
+
+STEP 3 — Wait for confirmation (~3s on BSC)
+
+STEP 4 — Call approveAgent (now succeeds)
+
+STEP 5 — Set asterOnboarded=true
+
+═══════════════════════════════════════════════════
+IMMEDIATE ACTION — fetch the vault ABI
+═══════════════════════════════════════════════════
+
+Before writing any code, fetch the vault contract ABI
+from BSCScan to confirm the deposit function signature:
+
+  const res = await axios.get(
+    'https://api.bscscan.com/api',
+    { params: {
+      module: 'contract',
+      action: 'getabi',
+      address: '0x128463A60784c4D3f46c23Af3f65Ed859Ba87974',
+      apikey: process.env.BSCSCAN_API_KEY || 'YourApiKeyToken'
+    }}
+  )
+  const abi = JSON.parse(res.data.result)
+  // Find deposit function
+  const depositFn = abi.filter(x => x.name === 'deposit' || x.name === 'depositToken')
+  console.log(JSON.stringify(depositFn, null, 2))
+
+Run this NOW and report what the deposit function signature is.
+Then build the full /api/aster/initialize endpoint that does:
+1. USDT.approve(vault, amount)
+2. vault.deposit(token, amount) — or whatever signature BscScan shows
+3. Wait confirmation
+4. approveAgent
+5. asterOnboarded = true
+
+Amount to deposit: full BSC USDT balance (option A from earlier).

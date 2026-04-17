@@ -237,8 +237,9 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       return res.status(404).json({ success: false, error: 'No active wallet' })
     }
 
-    const { decryptPrivateKey } = await import('./services/wallet')
-    const { approveAgent }      = await import('./services/aster')
+    const { decryptPrivateKey }    = await import('./services/wallet')
+    const { approveAgent }         = await import('./services/aster')
+    const { ensureAndDepositUSDT, USDT_BSC, MIN_BNB_FOR_GAS_WEI, getProvider } = await import('./services/asterDeposit')
 
     let userPk: string
     try {
@@ -250,7 +251,7 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       return res.status(500).json({ success: false, error: 'Invalid wallet key' })
     }
 
-    const result = await approveAgent({
+    const callApproveAgent = () => approveAgent({
       userAddress:    wallet.address,
       userPrivateKey: userPk,
       agentAddress,
@@ -260,16 +261,109 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       expiredDays:    365
     })
 
+    const looksLikeNoAccount = (msg: string) => {
+      const m = msg.toLowerCase()
+      return m.includes('no aster user') || m.includes('user not found') ||
+             m.includes('account does not exist')
+    }
+
+    // ── 1) Try approveAgent first. If wallet already has an Aster account
+    //      (existing prod users, or anyone who deposited via asterdex.com
+    //      previously), this succeeds immediately and we skip the on-chain hop.
+    let result = await callApproveAgent()
+    let bootstrap: { approveTx?: string; depositTx?: string; depositedUsdt?: string } | undefined
+
+    // ── 2) If it failed because the Aster account doesn't exist yet, do the
+    //      on-chain bootstrap: deposit the wallet's full BSC USDT balance to
+    //      AstherusVault, then retry approveAgent.
+    if (!result.success && looksLikeNoAccount(String(result.error ?? ''))) {
+      console.log('[/aster/approve] account does not exist — initiating on-chain bootstrap for', wallet.address)
+      try {
+        const provider = getProvider()
+        const erc20 = new (await import('ethers')).ethers.Contract(
+          USDT_BSC,
+          ['function balanceOf(address) view returns (uint256)'],
+          provider
+        )
+        const [usdtBalWei, bnbBalWei] = await Promise.all([
+          erc20.balanceOf(wallet.address) as Promise<bigint>,
+          provider.getBalance(wallet.address)
+        ])
+
+        if (usdtBalWei === 0n) {
+          userPk = ''
+          return res.status(400).json({
+            success: false,
+            error: 'Your BSC USDT balance is 0 — please send USDT to your wallet before activating.',
+            needsAsterAccount: true
+          })
+        }
+        if (bnbBalWei < MIN_BNB_FOR_GAS_WEI) {
+          userPk = ''
+          return res.status(400).json({
+            success: false,
+            error: `Activation requires ~0.001 BNB for gas (you have ${(await import('ethers')).ethers.formatEther(bnbBalWei)} BNB). Please send a small amount of BNB to your wallet and tap Activate again.`,
+            needsBnb: true
+          })
+        }
+
+        const dep = await ensureAndDepositUSDT({
+          userPrivateKey: userPk,
+          amountWei:      usdtBalWei,
+          broker:         0n  // BUILD4 broker id (deposit-side); 0 = none for now
+        })
+
+        if (!dep.success) {
+          userPk = ''
+          return res.status(400).json({
+            success: false,
+            error: `Deposit to Aster failed: ${dep.error ?? 'unknown'}`,
+            approveTx: dep.approveTx,
+            depositTx: dep.depositTx
+          })
+        }
+
+        bootstrap = {
+          approveTx: dep.approveTx,
+          depositTx: dep.depositTx,
+          depositedUsdt: (await import('ethers')).ethers.formatUnits(usdtBalWei, 18)
+        }
+
+        // Wait briefly for Aster to index the on-chain Deposit event before
+        // retrying approveAgent. BSC blocks are ~3s; 5s gives a buffer.
+        await new Promise(r => setTimeout(r, 5_000))
+
+        // Retry up to 3 times with 4s spacing — total ~17s wall time worst case.
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          result = await callApproveAgent()
+          if (result.success) break
+          if (!looksLikeNoAccount(String(result.error ?? ''))) break  // different error, give up
+          console.log(`[/aster/approve] retry ${attempt}/3 — account still indexing`)
+          if (attempt < 3) await new Promise(r => setTimeout(r, 4_000))
+        }
+      } catch (bootstrapErr: any) {
+        console.error('[/aster/approve] bootstrap failed:', bootstrapErr)
+        userPk = ''
+        return res.status(500).json({
+          success: false,
+          error: `Bootstrap failed: ${bootstrapErr?.message ?? 'unknown'}`
+        })
+      }
+    }
+
     // Wipe local key reference ASAP. JS GC will collect, but null helps.
     userPk = ''
 
     if (!result.success) {
       const errStr = String(result.error ?? '').toLowerCase()
-      const isNewWallet = errStr.includes('no aster user') || errStr.includes('user not found')
+      const isNewWallet = looksLikeNoAccount(errStr)
       return res.status(400).json({
         success: false,
-        error: result.error ?? 'approve_failed',
-        needsAsterAccount: isNewWallet  // mini app uses this to show the right next-step UI
+        error:           result.error ?? 'approve_failed',
+        needsAsterAccount: isNewWallet,
+        // If the deposit landed but approveAgent is still indexing, surface tx
+        // hashes so support / the user can verify and retry shortly.
+        ...(bootstrap ?? {})
       })
     }
 
@@ -278,7 +372,13 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       data:  { asterOnboarded: true, asterAgentAddress: agentAddress }
     })
 
-    return res.json({ success: true, message: 'Trading account activated' })
+    return res.json({
+      success: true,
+      message: bootstrap
+        ? `Deposited ${bootstrap.depositedUsdt} USDT to Aster and activated trading`
+        : 'Trading account activated',
+      ...(bootstrap ?? {})
+    })
   } catch (err: any) {
     console.error('[API] /aster/approve failed:', err)
     if (res.headersSent) return

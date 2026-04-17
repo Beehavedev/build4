@@ -257,28 +257,29 @@ function FundFlow({ w, copy, copied, onRefresh }:
 function ActivateFlow({ onActivated }: { onActivated: () => void }) {
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [needsAsterAccount, setNeedsAsterAccount] = useState(false)
+  const [needsBnb, setNeedsBnb] = useState(false)
+  const [depositTx, setDepositTx] = useState<string | null>(null)
 
   const activate = async () => {
     if (submitting) return
-    setSubmitting(true); setErr(null); setNeedsAsterAccount(false)
+    setSubmitting(true); setErr(null); setNeedsBnb(false); setDepositTx(null)
     try {
-      const r = await apiFetch<{ success: boolean; error?: string; needsAsterAccount?: boolean }>(
-        '/api/aster/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
-      )
+      const r = await apiFetch<{
+        success: boolean; error?: string; message?: string;
+        needsBnb?: boolean; needsAsterAccount?: boolean;
+        depositTx?: string; approveTx?: string
+      }>('/api/aster/approve', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+      })
       if (r.success) {
-        // Tiny delay so users see the spinner stop before the new state appears
         setTimeout(onActivated, 250)
       } else {
         setErr(r.error ?? 'Activation failed')
-        setNeedsAsterAccount(!!r.needsAsterAccount)
+        setNeedsBnb(!!r.needsBnb)
+        if (r.depositTx) setDepositTx(r.depositTx)
       }
     } catch (e: any) {
-      // apiFetch throws with the server's error message on non-2xx
-      const msg = e?.message ?? 'Activation failed'
-      setErr(msg)
-      const lower = msg.toLowerCase()
-      setNeedsAsterAccount(lower.includes('no aster user') || lower.includes('user not found'))
+      setErr(e?.message ?? 'Activation failed')
     } finally {
       setSubmitting(false)
     }
@@ -291,11 +292,13 @@ function ActivateFlow({ onActivated }: { onActivated: () => void }) {
         border: '1px solid #7c3aed44', borderRadius: 12, padding: 16, marginBottom: 14
       }}>
         <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>
-          🚀 You're funded — activate trading
+          🚀 One-tap activation
         </div>
         <div style={{ fontSize: 12, color: 'var(--b4-muted)', marginBottom: 14, lineHeight: 1.5 }}>
-          One tap to authorise BUILD4 to trade on your behalf via Aster's broker
-          program. No signature pop-ups, no leaving the app. Takes ~3 seconds.
+          This will deposit your full USDT balance into your Aster trading
+          account and authorise BUILD4 to trade on your behalf. Takes ~15
+          seconds. Requires a small amount of BNB for gas (~0.001 BNB).
+          You can withdraw any time.
         </div>
         <button
           onClick={activate}
@@ -308,7 +311,7 @@ function ActivateFlow({ onActivated }: { onActivated: () => void }) {
             cursor: submitting ? 'wait' : 'pointer'
           }}
         >
-          {submitting ? 'Activating…' : '⚡ Activate Trading Account'}
+          {submitting ? 'Depositing & activating…' : '⚡ Deposit & Activate'}
         </button>
       </div>
 
@@ -317,23 +320,24 @@ function ActivateFlow({ onActivated }: { onActivated: () => void }) {
           padding: 12, borderRadius: 10, fontSize: 12, lineHeight: 1.5,
           background: '#ef444415', border: '1px solid #ef444444', color: '#fca5a5'
         }}>
-          {needsAsterAccount ? (
+          {needsBnb ? (
             <>
-              <b>Your Aster account hasn't been created yet.</b> Aster only recognises
-              wallets that have made at least one on-chain deposit to its perp vault.
+              <b>Need a tiny bit of BNB for gas.</b> Send ~0.001 BNB (≈ $0.50) to
+              your wallet address above, then tap Activate again. Any BSC wallet
+              or exchange withdrawal works.
+            </>
+          ) : depositTx ? (
+            <>
+              ⚠️ Your deposit landed but activation is still indexing on Aster.
               <br /><br />
-              <b>One-time setup:</b><br />
-              1. Open <a
-                href="https://www.asterdex.com"
+              Deposit tx: <a
+                href={`https://bscscan.com/tx/${depositTx}`}
                 target="_blank" rel="noreferrer"
                 style={{ color: '#a78bfa', textDecoration: 'underline' }}
-              >asterdex.com</a> in your browser<br />
-              2. Connect your wallet via WalletConnect using the address above<br />
-              3. Make any deposit (even $1 USDT works)<br />
-              4. Come back here and tap Activate again
+              >{depositTx.slice(0, 10)}…{depositTx.slice(-8)}</a>
               <br /><br />
-              <i>One-tap in-app activation is coming next — we're wiring up the
-              direct vault deposit so you'll never need to leave the app again.</i>
+              Wait ~30 seconds and tap Activate again. Your USDT is safely on
+              Aster — only the agent authorisation needs to retry.
             </>
           ) : (
             <>❌ {err}</>
