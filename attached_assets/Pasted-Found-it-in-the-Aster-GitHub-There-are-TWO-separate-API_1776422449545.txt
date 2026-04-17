@@ -1,0 +1,108 @@
+Found it in the Aster GitHub. There are TWO separate API systems 
+and we've been using the wrong one for balance queries.
+
+THE RPC API — no auth, no signing, works for any address:
+
+POST https://tapi.asterdex.com/info
+Content-Type: application/json
+
+Body:
+{
+  "id": {},
+  "jsonrpc": "2.0",
+  "method": "aster_getBalance",
+  "params": [
+    "0xUSER_WALLET_ADDRESS",
+    "latest"
+  ]
+}
+
+This returns:
+- perpAssets: array with USDT walletBalance
+- positions: all open positions with unrealized PnL
+- NO authentication required
+- NO signer needed
+- Works for brand new wallets that have never used Aster
+  (returns empty arrays, not 403)
+
+THIS ALSO SOLVES THE ACCOUNT CREATION PROBLEM.
+A wallet address with zero Aster history returns 
+empty arrays, not an error. So:
+- New user → RPC balance returns { perpAssets: [], positions: [] }
+- We show balance as $0.00 
+- User deposits USDT → RPC balance returns perpAssets with USDT
+- approveAgent now works because account exists on-chain
+
+═══════════════════════════════════════════════════
+CHANGES TO MAKE:
+═══════════════════════════════════════════════════
+
+1. REPLACE the balance fetch function in aster.ts/service 
+   with the RPC endpoint:
+
+async function getAsterBalance(walletAddress: string): Promise<{
+  usdt: number;
+  positions: any[];
+}> {
+  try {
+    const res = await axios.post('https://tapi.asterdex.com/info', {
+      id: {},
+      jsonrpc: '2.0',
+      method: 'aster_getBalance',
+      params: [walletAddress, 'latest']
+    }, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 8000
+    })
+    
+    const result = res.data.result
+    const usdtAsset = result.perpAssets?.find(
+      (a: any) => a.asset === 'USDT'
+    )
+    return {
+      usdt: parseFloat(usdtAsset?.walletBalance ?? '0'),
+      positions: result.positions ?? []
+    }
+  } catch (err) {
+    console.error('[Aster RPC] getBalance failed:', err)
+    return { usdt: 0, positions: [] }
+  }
+}
+
+2. REMOVE the auth guard on balance queries.
+   The RPC endpoint works for any address, onboarded or not.
+   No asterOnboarded check needed for READ operations.
+
+3. UPDATE the mini app wallet page state machine:
+   - Always call RPC balance (no auth required)
+   - State A: RPC balance = 0, asterOnboarded = false
+              → show "Send USDT to get started"
+   - State B: RPC balance > 0, asterOnboarded = false  
+              → show "Activate Trading Account" button
+              → approveAgent will NOW SUCCEED because the 
+                wallet has USDT on Aster (account exists)
+   - State C: RPC balance = 0, asterOnboarded = true
+              → show Transfer from BSC flow
+   - State D: RPC balance > 0, asterOnboarded = true
+              → show full trading dashboard
+
+4. THE FLOW NOW WORKS END TO END:
+   - User has BSC USDT
+   - User taps "Activate Trading Account"
+   - Server sends USDT from BSC wallet to Aster deposit 
+     address (the on-chain transfer creates the account)
+   - Wait for BSC confirmation (~3s)
+   - Call approveAgent → succeeds now
+   - Set asterOnboarded=true
+   - RPC balance now shows USDT
+   - User is in State D
+
+ALSO: The RPC API has aster_openOrders and aster_userFills
+methods. Use these for position monitoring too — no auth 
+needed, just the wallet address.
+
+TESTNET RPC: https://tapi.asterdex.com/info (same endpoint)
+
+Make these changes now. The 403 problem is completely 
+bypassed — we never call the authenticated balance endpoint 
+anymore, we use RPC instead.
