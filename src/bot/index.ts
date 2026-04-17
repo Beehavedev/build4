@@ -11,6 +11,7 @@ import { registerCopytrade } from './commands/copytrade'
 import { registerAgents } from './commands/agents'
 import { registerPriceCommands } from './commands/price'
 import { registerAster } from './commands/aster'
+import { registerFund, handleFund } from './commands/fund'
 
 export function createBot(): Bot {
   const token = process.env.TELEGRAM_BOT_TOKEN
@@ -43,6 +44,7 @@ export function createBot(): Bot {
   registerAgents(bot)
   registerPriceCommands(bot)
   registerAster(bot)
+  registerFund(bot)
 
   // Fallback commands
   bot.command('settings', async (ctx) => {

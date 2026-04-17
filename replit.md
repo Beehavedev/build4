@@ -43,6 +43,7 @@ The **primary production app** runs on Render from `Beehavedev/build4` repo.
 │   │   └── commands/
 │   │       ├── start.ts          # /start - create user + BSC wallet
 │   │       ├── wallet.ts         # /wallet - view/manage wallets
+│   │       ├── fund.ts           # /fund + /deposit - QR + address for USDT (BEP-20) deposits
 │   │       ├── trade.ts          # /trade + /tradestatus
 │   │       ├── aster.ts          # /aster - Aster DEX balance/positions
 │   │       ├── agents.ts         # /agents + /newagent

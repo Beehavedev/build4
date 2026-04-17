@@ -81,35 +81,8 @@ Tap *ℹ️ How it works* for the full breakdown.`,
 
   bot.callbackQuery('deposit', async (ctx) => {
     await ctx.answerCallbackQuery()
-    const user = (ctx as any).dbUser
-    if (!user) return
-
-    const wallet = await db.wallet.findFirst({
-      where: { userId: user.id, isActive: true }
-    })
-
-    if (!wallet) {
-      await ctx.reply('No wallet found. Please run /start to create one.')
-      return
-    }
-
-    await ctx.reply(
-      `💰 *Deposit USDT to your BUILD4 wallet*
-
-Send *USDT (BEP-20 / BSC)* to this address:
-
-\`${wallet.address}\`
-
-⚠️ *Important:*
-• Only send *USDT on BNB Smart Chain (BEP-20)*
-• Do NOT send tokens on Ethereum, Solana, or other chains — funds will be lost
-• Minimum deposit: *10 USDT* recommended
-
-Once your deposit confirms (~30 sec), it will appear in your portfolio. Your AI agent can then start trading on Aster DEX.
-
-Tap the address above to copy it.`,
-      { parse_mode: 'Markdown' }
-    )
+    const { handleFund } = await import('./fund')
+    await handleFund(ctx)
   })
 
   bot.callbackQuery('how_it_works', async (ctx) => {
