@@ -74,7 +74,13 @@ function client(base: string): AxiosInstance {
   return axios.create({
     baseURL: base,
     timeout: 10_000,
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      // Aster sits behind Cloudflare. The default axios UA ("axios/1.x.x")
+      // gets edge-blocked with an HTML 403, so we send a normal browser UA.
+      'User-Agent':   'Mozilla/5.0 (compatible; BUILD4-Bot/1.0)',
+      'Accept':       'application/json'
+    }
   })
 }
 
