@@ -1,0 +1,83 @@
+The 403 is still happening on the Aster balance call even after the 
+onboarding guard. This means asterOnboarded IS true in the DB but 
+the signing is still wrong.
+
+The 403 from Aster v3 means one of three things:
+1. The signer address in the request doesn't match the private key 
+   being used to sign
+2. The nonce has already been used (replay attack protection)
+3. The user+signer combination is not in Aster's approved agents list
+
+Add this debug logging to the Aster balance function IMMEDIATELY 
+and redeploy so we can see what's being sent:
+
+  async function getBalance(creds: AsterCreds) {
+    const nonce = getNonce()
+    const params = { 
+      user: creds.userAddress, 
+      signer: creds.signerAddress, 
+      nonce 
+    }
+    
+    // TEMPORARY DEBUG — log what we're signing and sending
+    console.log('[Aster DEBUG] Balance request:', {
+      user: creds.userAddress,
+      signer: creds.signerAddress,
+      signerMatchesEnv: creds.signerAddress === process.env.ASTER_AGENT_ADDRESS,
+      nonceValue: nonce,
+      baseUrl: BASE_SIGNED
+    })
+    
+    try {
+      const signed = await signQS(params, creds.signerPrivKey)
+      const res = await http(BASE_SIGNED).get(`/fapi/v3/balance?${signed}`)
+      return res.data
+    } catch (err: any) {
+      console.log('[Aster DEBUG] Balance error:', {
+        status: err?.response?.status,
+        data: err?.response?.data,
+        message: err?.message
+      })
+      throw err
+    }
+  }
+
+Then check the Render/server logs after the next balance call attempt.
+
+The most likely root cause is one of these — check each:
+
+CAUSE 1: ASTER_AGENT_ADDRESS doesn't match ASTER_AGENT_PRIVATE_KEY
+The address and private key must be from the SAME wallet.
+To verify, run this in the Render shell:
+  node -e "
+    const {ethers} = require('ethers');
+    const w = new ethers.Wallet(process.env.ASTER_AGENT_PRIVATE_KEY);
+    console.log('Derived address:', w.address);
+    console.log('Env address:    ', process.env.ASTER_AGENT_ADDRESS);
+    console.log('Match:', w.address.toLowerCase() === process.env.ASTER_AGENT_ADDRESS?.toLowerCase());
+  "
+If they don't match — the private key and address are from different 
+wallets. This is the most common cause of 403.
+
+CAUSE 2: The approveAgent call used a DIFFERENT agent address 
+than what's now in ASTER_AGENT_ADDRESS env var.
+Check the DB:
+  SELECT "asterAgentAddress" FROM "User" 
+  WHERE "asterOnboarded" = true LIMIT 5;
+If asterAgentAddress in DB != ASTER_AGENT_ADDRESS env var,
+the user approved a different agent than the one we're signing with.
+Fix: either update the env var to match, or re-run approveAgent.
+
+CAUSE 3: The nonce is wrong format
+Aster requires microsecond precision: Math.floor(Date.now() / 1000) * 1_000_000
+NOT Date.now() which is milliseconds.
+Check the getNonce() function — it must produce a number like 1745123456789012
+not 1745123456789 (that's milliseconds, too small).
+
+CAUSE 4: BASE_SIGNED is wrong
+Must be https://fapi3.asterdex.com (with the 3)
+NOT https://fapi.asterdex.com (without the 3)
+Check the constant in aster.ts/aster.service.ts.
+
+Run the shell command for Cause 1 first — that's the most likely 
+culprit. Report what the logs show.

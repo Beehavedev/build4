@@ -160,7 +160,33 @@ async function signedGET(path: string, params: Record<string, any>, creds: Aster
   const nonce = getNonce()
   const full  = { user: creds.userAddress, signer: creds.signerAddress, nonce, ...params }
   const qs    = await signRequest(full, creds.signerPrivKey)
-  return client(BASE_SIGNED).get(path + '?' + qs)
+
+  // TEMP DEBUG — remove after 403 root cause is confirmed
+  if (process.env.ASTER_DEBUG === '1') {
+    const derived = new ethers.Wallet(creds.signerPrivKey).address
+    console.log('[Aster DEBUG]', path, {
+      user:               creds.userAddress,
+      signer:             creds.signerAddress,
+      derivedFromPK:      derived,
+      signerMatchesPK:    derived.toLowerCase() === creds.signerAddress.toLowerCase(),
+      signerMatchesEnv:   creds.signerAddress.toLowerCase() === (process.env.ASTER_AGENT_ADDRESS ?? '').toLowerCase(),
+      nonce,
+      baseUrl:            BASE_SIGNED
+    })
+  }
+
+  try {
+    return await client(BASE_SIGNED).get(path + '?' + qs)
+  } catch (err: any) {
+    if (process.env.ASTER_DEBUG === '1') {
+      console.log('[Aster DEBUG] error', path, {
+        status:  err?.response?.status,
+        data:    err?.response?.data,
+        message: err?.message
+      })
+    }
+    throw err
+  }
 }
 
 async function signedPOST(path: string, params: Record<string, any>, creds: AsterCredentials) {
