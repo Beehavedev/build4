@@ -32,6 +32,18 @@ export const ERC8004_REGISTRY = (
 const REGISTER_GAS_LIMIT = 500_000n  // 2x measured (~225k) for headroom
 const FUND_SAFETY_MULTIPLIER = 2n    // extra slack vs current gas price
 
+// Single-flight mutex on the shared registry wallet so concurrent
+// registrations never race on the same nonce. The funding tx is the
+// only operation we need to serialize (the agent self-register tx uses
+// a per-agent fresh wallet with its own nonce space).
+let registryFundQueue: Promise<unknown> = Promise.resolve()
+function withRegistryLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = registryFundQueue.then(fn, fn)
+  // Keep chain alive even if a step throws so subsequent calls still run.
+  registryFundQueue = next.catch(() => {})
+  return next
+}
+
 function getRegistryWalletPK(): string {
   const pk = process.env.REGISTRY_WALLET_PK
   if (!pk) {
@@ -93,28 +105,36 @@ export async function registerAgentOnchain(opts: {
     const registryWallet = new ethers.Wallet(registryPK, provider)
     const agentWallet = new ethers.Wallet(opts.agentWalletPK, provider)
 
-    // 1. Compute funding amount from current BSC gas price.
-    const feeData = await provider.getFeeData()
-    const gasPrice = feeData.gasPrice ?? ethers.parseUnits('1', 'gwei')
-    const fundAmount = gasPrice * REGISTER_GAS_LIMIT * FUND_SAFETY_MULTIPLIER
-    // Registry wallet also pays for the funding tx itself (21000 gas).
-    const registryReserve = gasPrice * 21_000n * FUND_SAFETY_MULTIPLIER
-    const registryBal = await provider.getBalance(registryWallet.address)
-    if (registryBal < fundAmount + registryReserve) {
-      return {
-        success: false,
-        reason: `BUILD4 registry wallet is low on BNB (have ${ethers.formatEther(registryBal)} BNB, need ~${ethers.formatEther(fundAmount + registryReserve)}). Please contact support.`
+    // 1. Fund the agent wallet from the shared registry wallet.
+    //    Serialized through withRegistryLock to avoid nonce races when many
+    //    users register concurrently. We also wait for ≥1 confirmation
+    //    inside the lock so the next call sees a settled nonce.
+    type FundOk = { fundTxHash: string }
+    type FundErr = { error: string }
+    const fundResult: FundOk | FundErr = await withRegistryLock(async () => {
+      const feeData = await provider.getFeeData()
+      const gasPrice = feeData.gasPrice ?? ethers.parseUnits('1', 'gwei')
+      const fundAmount = gasPrice * REGISTER_GAS_LIMIT * FUND_SAFETY_MULTIPLIER
+      // Registry wallet also pays for the funding tx itself (21000 gas).
+      const registryReserve = gasPrice * 21_000n * FUND_SAFETY_MULTIPLIER
+      const registryBal = await provider.getBalance(registryWallet.address)
+      if (registryBal < fundAmount + registryReserve) {
+        return { error: `BUILD4 registry wallet is low on BNB (have ${ethers.formatEther(registryBal)} BNB, need ~${ethers.formatEther(fundAmount + registryReserve)}). Please contact support.` }
       }
-    }
-
-    const fundTx = await registryWallet.sendTransaction({
-      to: opts.agentAddress,
-      value: fundAmount
+      const tx = await registryWallet.sendTransaction({
+        to: opts.agentAddress,
+        value: fundAmount
+      })
+      await tx.wait()
+      return { fundTxHash: tx.hash }
     })
-    if (opts.onAgentFunded) {
-      try { await opts.onAgentFunded(fundTx.hash) } catch (e) { console.error('[ERC8004] onAgentFunded hook:', e) }
+    if ('error' in fundResult) {
+      return { success: false, reason: fundResult.error }
     }
-    await fundTx.wait()
+    if (opts.onAgentFunded) {
+      try { await opts.onAgentFunded(fundResult.fundTxHash) } catch (e) { console.error('[ERC8004] onAgentFunded hook:', e) }
+    }
+    const fundTx = { hash: fundResult.fundTxHash }
 
     // 2. Agent self-registers.
     const registry = new ethers.Contract(ERC8004_REGISTRY, ERC8004_ABI, agentWallet)
