@@ -1,5 +1,6 @@
 import { Bot, Context, InlineKeyboard } from 'grammy'
 import { db } from '../../db'
+import { handleFund } from './fund'
 import { decryptPrivateKey, truncateAddress } from '../../services/wallet'
 import {
   approveAgent,
@@ -61,46 +62,12 @@ export async function handleAsterStatus(ctx: Context) {
 }
 
 export function registerAster(bot: Bot) {
-  bot.command('deposit', async (ctx) => {
-    const user = (ctx as any).dbUser
-    if (!user) return
-
-    const wallet = await db.wallet.findFirst({
-      where: { userId: user.id, isActive: true }
-    })
-
-    const agentPrivKey = process.env.ASTER_AGENT_PRIVATE_KEY
-    const agentAddress = process.env.ASTER_AGENT_ADDRESS ?? user.asterAgentAddress
-
-    if (!agentPrivKey || !agentAddress || !wallet || !user.asterOnboarded) {
-      await ctx.reply(
-        `💰 *Deposit USDT for Trading*\n\n` +
-        `First connect your account via /status, then deposit USDT to your Aster futures wallet.\n\n` +
-        `_Currently running in demo mode._`,
-        { parse_mode: 'Markdown' }
-      )
-      return
-    }
-
-    const creds = buildCreds(wallet.address, agentAddress, agentPrivKey)
-    if (!creds) return ctx.reply('Could not build credentials.')
-
-    const addr = await getDepositAddress(creds)
-    if (!addr) return ctx.reply('Could not fetch deposit address. Try again.')
-
-    await ctx.reply(
-      `💰 *Deposit USDT to Aster Futures*\n\n` +
-      `Network: *${addr.network}*\n` +
-      `Address:\n\`${addr.address}\`\n\n` +
-      `⚠️ Only send USDT on ${addr.network}.\n` +
-      `Funds appear in ~1-3 minutes.`,
-      {
-        parse_mode: 'Markdown',
-        reply_markup: new InlineKeyboard()
-          .text('📋 Copy Address', `copy_dep_${addr.address.slice(0, 20)}`)
-      }
-    )
-  })
+  // NOTE: /deposit is intentionally NOT registered here. fund.ts owns it
+  // and shows the user's real BUILD4 BSC wallet address with QR code.
+  // The previous in-bot Aster-side /deposit relied on getDepositAddress(),
+  // which is a signed endpoint that only works for ALREADY-onboarded wallets
+  // — useless for the new-user activation flow. (See activation note in the
+  // "No aster user found" branch of handleAsterConnect.)
 
   bot.command('status', async (ctx) => handleAsterStatus(ctx))
 
@@ -111,9 +78,7 @@ export function registerAster(bot: Bot) {
 
   bot.callbackQuery('aster_deposit', async (ctx) => {
     await ctx.answerCallbackQuery()
-    // Re-use deposit command handler
-    const fakeCtx = { ...ctx, message: { text: '/deposit' } }
-    await ctx.reply('Use /deposit to get your deposit address.')
+    await handleFund(ctx)
   })
 
   bot.callbackQuery(/^copy_dep_(.+)$/, async (ctx) => {
@@ -193,16 +158,24 @@ export async function handleAsterConnect(ctx: Context) {
       const isNewWallet = errStr.includes('no aster user') || errStr.includes('user not found')
 
       if (isNewWallet) {
+        const wallet = await db.wallet.findFirst({
+          where: { userId: user.id, isActive: true }
+        })
+        const addr = wallet?.address ?? '(run /fund)'
         await ctx.reply(
-          `⚡ *Almost there — your wallet isn't on Aster yet*\n\n` +
-          `Aster only knows about wallets that have deposited at least once. ` +
-          `Send any amount of USDT (BEP-20) to your wallet, then deposit it to Aster:\n\n` +
-          `1. Tap /deposit to get your Aster deposit address\n` +
-          `2. Send any USDT (even $1 works) to that address on BNB Smart Chain\n` +
-          `3. Wait ~1 minute for the deposit to land\n` +
-          `4. Come back and tap *Reconnect Now* in the wallet again\n\n` +
-          `_Your wallet, your funds — BUILD4 only signs trades on your behalf._`,
-          { parse_mode: 'Markdown' }
+          `⚡ *Almost there — activate your Aster account first*\n\n` +
+          `Aster only recognises wallets that have made at least one deposit on ` +
+          `[asterdex.com](https://www.asterdex.com). Quick one-time setup:\n\n` +
+          `*1. Get USDT into your BUILD4 wallet*\n` +
+          `Tap /fund and send any USDT (BEP-20) to:\n\`${addr}\`\n\n` +
+          `*2. Activate on Aster*\n` +
+          `• Open [asterdex.com](https://www.asterdex.com) in your browser\n` +
+          `• Connect this wallet via WalletConnect\n` +
+          `• Make any deposit (even $1 works) — this creates your Aster account\n\n` +
+          `*3. Reconnect here*\n` +
+          `Come back to the mini app and tap *Reconnect Now* — should work instantly.\n\n` +
+          `_We're working on a one-tap activation directly in the bot — coming soon._`,
+          { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } } as any
         )
       } else {
         await ctx.reply(
