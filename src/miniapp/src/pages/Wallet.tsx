@@ -319,9 +319,21 @@ function ActivateFlow({ onActivated }: { onActivated: () => void }) {
         }}>
           {needsAsterAccount ? (
             <>
-              <b>Almost there.</b> Aster only knows wallets that have made at least
-              one deposit. Use the Transfer step below — sending even $1 USDT to your
-              Aster futures account creates the record. Then tap Activate again.
+              <b>Your Aster account hasn't been created yet.</b> Aster only recognises
+              wallets that have made at least one on-chain deposit to its perp vault.
+              <br /><br />
+              <b>One-time setup:</b><br />
+              1. Open <a
+                href="https://www.asterdex.com"
+                target="_blank" rel="noreferrer"
+                style={{ color: '#a78bfa', textDecoration: 'underline' }}
+              >asterdex.com</a> in your browser<br />
+              2. Connect your wallet via WalletConnect using the address above<br />
+              3. Make any deposit (even $1 USDT works)<br />
+              4. Come back here and tap Activate again
+              <br /><br />
+              <i>One-tap in-app activation is coming next — we're wiring up the
+              direct vault deposit so you'll never need to leave the app again.</i>
             </>
           ) : (
             <>❌ {err}</>
