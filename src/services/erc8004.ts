@@ -24,9 +24,13 @@ export const ERC8004_REGISTRY = (
   process.env.ERC8004_REGISTRY ?? '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432'
 ).trim()
 
-// Tiny BNB amount funded into the agent's wallet so it can self-register
-// on-chain. Anything left over stays in the agent wallet for first trades.
-export const AGENT_GAS_FUND_BNB = '0.001'
+// Measured gas budget for one register(string) call. Worst observed on
+// BSC is ~225k gas; we round up and add a 2x safety multiplier so that a
+// sudden gas-price spike between funding tx and register tx can't strand
+// the agent wallet mid-flow. At typical BSC gas prices (0.05 gwei) this
+// resolves to ~$0.01 of real spend per registration.
+const REGISTER_GAS_LIMIT = 500_000n  // 2x measured (~225k) for headroom
+const FUND_SAFETY_MULTIPLIER = 2n    // extra slack vs current gas price
 
 function getRegistryWalletPK(): string {
   const pk = process.env.REGISTRY_WALLET_PK
@@ -89,13 +93,17 @@ export async function registerAgentOnchain(opts: {
     const registryWallet = new ethers.Wallet(registryPK, provider)
     const agentWallet = new ethers.Wallet(opts.agentWalletPK, provider)
 
-    // 1. Fund the agent wallet for gas, sponsored by the registry wallet.
-    const fundAmount = ethers.parseEther(AGENT_GAS_FUND_BNB)
+    // 1. Compute funding amount from current BSC gas price.
+    const feeData = await provider.getFeeData()
+    const gasPrice = feeData.gasPrice ?? ethers.parseUnits('1', 'gwei')
+    const fundAmount = gasPrice * REGISTER_GAS_LIMIT * FUND_SAFETY_MULTIPLIER
+    // Registry wallet also pays for the funding tx itself (21000 gas).
+    const registryReserve = gasPrice * 21_000n * FUND_SAFETY_MULTIPLIER
     const registryBal = await provider.getBalance(registryWallet.address)
-    if (registryBal < fundAmount + ethers.parseEther('0.0005')) {
+    if (registryBal < fundAmount + registryReserve) {
       return {
         success: false,
-        reason: `BUILD4 registry wallet is low on BNB (have ${ethers.formatEther(registryBal)} BNB, need ~${AGENT_GAS_FUND_BNB}). Please contact support.`
+        reason: `BUILD4 registry wallet is low on BNB (have ${ethers.formatEther(registryBal)} BNB, need ~${ethers.formatEther(fundAmount + registryReserve)}). Please contact support.`
       }
     }
 
