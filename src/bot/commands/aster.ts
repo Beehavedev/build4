@@ -189,10 +189,27 @@ export async function handleAsterConnect(ctx: Context) {
         { parse_mode: 'Markdown' }
       )
     } else {
-      await ctx.reply(
-        `❌ *Connection failed*\n\n\`${result.error}\`\n\nTry again or check your wallet has USDT on Aster.`,
-        { parse_mode: 'Markdown' }
-      )
+      const errStr = String(result.error ?? '').toLowerCase()
+      const isNewWallet = errStr.includes('no aster user') || errStr.includes('user not found')
+
+      if (isNewWallet) {
+        await ctx.reply(
+          `⚡ *Almost there — your wallet isn't on Aster yet*\n\n` +
+          `Aster only knows about wallets that have deposited at least once. ` +
+          `Send any amount of USDT (BEP-20) to your wallet, then deposit it to Aster:\n\n` +
+          `1. Tap /deposit to get your Aster deposit address\n` +
+          `2. Send any USDT (even $1 works) to that address on BNB Smart Chain\n` +
+          `3. Wait ~1 minute for the deposit to land\n` +
+          `4. Come back and tap *Reconnect Now* in the wallet again\n\n` +
+          `_Your wallet, your funds — BUILD4 only signs trades on your behalf._`,
+          { parse_mode: 'Markdown' }
+        )
+      } else {
+        await ctx.reply(
+          `❌ *Connection failed*\n\n\`${result.error}\`\n\nTry again in a moment.`,
+          { parse_mode: 'Markdown' }
+        )
+      }
     }
   } catch (err: any) {
     await ctx.reply(`❌ Error: ${err.message}`)
