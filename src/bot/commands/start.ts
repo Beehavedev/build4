@@ -7,6 +7,15 @@ export function registerStart(bot: Bot) {
     const user = (ctx as any).dbUser
     if (!user) return
 
+    // Deep-link payload (e.g. /start connect_aster) — route directly to the
+    // Aster onboarding flow so the mini-app "Reconnect Now" button drops the
+    // user straight into the approveAgent signing step.
+    const payload = (ctx.match as string | undefined)?.trim()
+    if (payload === 'connect_aster') {
+      const { handleAsterConnect } = await import('./aster')
+      return handleAsterConnect(ctx)
+    }
+
     // First-time wallet — show the private key ONCE so user can back it up
     const newWallet = (ctx as any).newWallet as { address: string; privateKey: string } | undefined
     if (newWallet) {

@@ -123,73 +123,78 @@ export function registerAster(bot: Bot) {
   // ─── Onboarding: user signs once to approve your agent ───────────────────
   bot.callbackQuery('aster_onboard', async (ctx) => {
     await ctx.answerCallbackQuery()
-    const user = (ctx as any).dbUser
-    if (!user) return
+    await handleAsterConnect(ctx)
+  })
+}
 
-    const builderAddress = process.env.ASTER_BUILDER_ADDRESS
-    const agentPrivKey   = process.env.ASTER_AGENT_PRIVATE_KEY
-    const agentAddress   = process.env.ASTER_AGENT_ADDRESS
-    const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001'
+// Exported so other commands (e.g. /start connect_aster deep link) can
+// trigger the approveAgent flow directly without going through /status.
+export async function handleAsterConnect(ctx: Context) {
+  const user = (ctx as any).dbUser
+  if (!user) return
 
-    if (!builderAddress || !agentPrivKey || !agentAddress) {
-      return ctx.reply(
-        '⚠️ Platform not fully configured.\n\n' +
-        'The following Replit Secrets are required:\n' +
-        '• `ASTER_BUILDER_ADDRESS`\n' +
-        '• `ASTER_AGENT_PRIVATE_KEY`\n' +
-        '• `ASTER_AGENT_ADDRESS`',
+  const builderAddress = process.env.ASTER_BUILDER_ADDRESS
+  const agentPrivKey   = process.env.ASTER_AGENT_PRIVATE_KEY
+  const agentAddress   = process.env.ASTER_AGENT_ADDRESS
+  const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001'
+
+  if (!builderAddress || !agentPrivKey || !agentAddress) {
+    return ctx.reply(
+      '⚠️ Platform not fully configured.\n\n' +
+      'The following Replit Secrets are required:\n' +
+      '• `ASTER_BUILDER_ADDRESS`\n' +
+      '• `ASTER_AGENT_PRIVATE_KEY`\n' +
+      '• `ASTER_AGENT_ADDRESS`',
+      { parse_mode: 'Markdown' }
+    )
+  }
+
+  const wallet = await db.wallet.findFirst({
+    where: { userId: user.id, isActive: true }
+  })
+  if (!wallet) return ctx.reply('No active wallet. Use /wallet first.')
+
+  await ctx.reply('⏳ Signing approval transaction...')
+
+  try {
+    const userPrivKey = decryptPrivateKey(wallet.encryptedPK, user.id)
+
+    const result = await approveAgent({
+      userAddress:    wallet.address,
+      userPrivateKey: userPrivKey,
+      agentAddress,
+      agentName:      'BUILD4 Trading Bot',
+      builderAddress,
+      maxFeeRate:     feeRate,
+      expiredDays:    365
+    })
+
+    if (result.success) {
+      await db.user.update({
+        where: { id: user.id },
+        data: {
+          asterAgentAddress: agentAddress,
+          asterOnboarded:    true
+        }
+      })
+
+      await ctx.reply(
+        `✅ *Connected to Aster!*\n\n` +
+        `Your wallet is now authorized for AI agent trading.\n\n` +
+        `*What happens next:*\n` +
+        `1. Use /deposit to fund your Aster futures account\n` +
+        `2. Use /newagent to create a trading agent\n` +
+        `3. The agent trades automatically every 60 seconds\n\n` +
+        `Fee rate: ${parseFloat(feeRate) * 100}% per trade`,
+        { parse_mode: 'Markdown' }
+      )
+    } else {
+      await ctx.reply(
+        `❌ *Connection failed*\n\n\`${result.error}\`\n\nTry again or check your wallet has USDT on Aster.`,
         { parse_mode: 'Markdown' }
       )
     }
-
-    const wallet = await db.wallet.findFirst({
-      where: { userId: user.id, isActive: true }
-    })
-    if (!wallet) return ctx.reply('No active wallet. Use /wallet first.')
-
-    await ctx.reply('⏳ Signing approval transaction...')
-
-    try {
-      // Decrypt user's private key to sign the approveAgent EIP-712 tx
-      const userPrivKey = decryptPrivateKey(wallet.encryptedPK, user.id)
-
-      const result = await approveAgent({
-        userAddress:    wallet.address,
-        userPrivateKey: userPrivKey,
-        agentAddress,
-        agentName:      'BUILD4 Trading Bot',
-        builderAddress,
-        maxFeeRate:     feeRate,
-        expiredDays:    365
-      })
-
-      if (result.success) {
-        await db.user.update({
-          where: { id: user.id },
-          data: {
-            asterAgentAddress: agentAddress,
-            asterOnboarded:    true
-          }
-        })
-
-        await ctx.reply(
-          `✅ *Connected to Aster!*\n\n` +
-          `Your wallet is now authorized for AI agent trading.\n\n` +
-          `*What happens next:*\n` +
-          `1. Use /deposit to fund your Aster futures account\n` +
-          `2. Use /newagent to create a trading agent\n` +
-          `3. The agent trades automatically every 60 seconds\n\n` +
-          `Fee rate: ${parseFloat(feeRate) * 100}% per trade`,
-          { parse_mode: 'Markdown' }
-        )
-      } else {
-        await ctx.reply(
-          `❌ *Connection failed*\n\n\`${result.error}\`\n\nTry again or check your wallet has USDT on Aster.`,
-          { parse_mode: 'Markdown' }
-        )
-      }
-    } catch (err: any) {
-      await ctx.reply(`❌ Error: ${err.message}`)
-    }
-  })
+  } catch (err: any) {
+    await ctx.reply(`❌ Error: ${err.message}`)
+  }
 }

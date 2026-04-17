@@ -1,0 +1,84 @@
+The old agent private key is lost. We are going with Option B.
+Execute these steps in order:
+
+STEP 1 — Reset all users in the Render production database:
+
+  UPDATE "User" 
+  SET "asterOnboarded" = false, "asterAgentAddress" = null
+  WHERE "asterOnboarded" = true;
+
+Run this on the RENDER production DB, not the Replit DB.
+
+STEP 2 — Add a reconnect banner to the mini app Wallet page.
+In the section that shows when asterOnboarded is false, replace 
+the current "Connect to Aster" card with this improved version:
+
+  <div style={{
+    background: 'linear-gradient(135deg, #7c3aed22, #7c3aed11)',
+    border: '1px solid #7c3aed44',
+    borderRadius: 12,
+    padding: '16px',
+    marginTop: 12
+  }}>
+    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+      ⚡ Reconnect Aster Account
+    </div>
+    <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>
+      A quick reconnect is needed to restore trading access.
+      Takes about 5 seconds.
+    </div>
+    <button
+      onClick={() => window.Telegram?.WebApp?.openTelegramLink(
+        'https://t.me/BUILD4_BOT?start=connect_aster'
+      )}
+      style={{
+        background: '#7c3aed',
+        color: 'white',
+        border: 'none',
+        borderRadius: 8,
+        padding: '10px 20px',
+        fontSize: 13,
+        fontWeight: 500,
+        cursor: 'pointer',
+        width: '100%'
+      }}
+    >
+      Reconnect Now →
+    </button>
+  </div>
+
+STEP 3 — Make the /aster command (approveAgent flow) work 
+correctly with the new agent address. When a user taps 
+"Reconnect Now" and runs the flow:
+
+  - user = their BSC wallet address from DB
+  - agentAddress = process.env.ASTER_AGENT_ADDRESS (0xCCE3...7bE0)
+  - builderAddress = process.env.ASTER_BUILDER_ADDRESS
+  - maxFeeRate = process.env.ASTER_BUILDER_FEE_RATE
+
+After successful approveAgent call:
+  - Set asterOnboarded = true
+  - Set asterAgentAddress = process.env.ASTER_AGENT_ADDRESS
+  - Return success message
+
+STEP 4 — Add a start parameter handler for 'connect_aster'.
+When the bot receives /start connect_aster, immediately 
+trigger the approveAgent flow instead of showing the 
+normal welcome message. This makes the deep link from 
+the mini app button go straight to connecting.
+
+In the /start command handler:
+  if (ctx.match === 'connect_aster' || 
+      ctx.message?.text === '/start connect_aster') {
+    // trigger approveAgent flow directly
+    return handleAsterConnect(ctx)
+  }
+
+STEP 5 — Deploy to Render and verify:
+After deployment, open the mini app. You should see the 
+"Reconnect Now" button. Tap it, approve in the bot, 
+come back to mini app — balance should show.
+
+Do not notify existing users manually. The banner in the 
+mini app is sufficient — they will see it next time they 
+open the wallet tab and reconnect in one tap.

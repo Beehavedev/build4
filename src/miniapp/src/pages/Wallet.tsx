@@ -95,30 +95,48 @@ export default function Wallet() {
           ASTER TRADING
         </div>
         {!w.aster.onboarded ? (
-          <div data-testid="text-aster-not-onboarded">
-            <div style={{ fontSize: 13, marginBottom: 10 }}>
-              ⚡ Connect to Aster to start AI trading.
+          <div
+            data-testid="text-aster-not-onboarded"
+            style={{
+              background: 'linear-gradient(135deg, #7c3aed22, #7c3aed11)',
+              border: '1px solid #7c3aed44',
+              borderRadius: 12,
+              padding: 16,
+              marginTop: 4
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+              ⚡ Reconnect Aster Account
             </div>
-            <div style={{ fontSize: 12, color: 'var(--b4-muted)', marginBottom: 12, lineHeight: 1.4 }}>
-              One-time signature authorizes the BUILD4 agent to trade on your
-              behalf using the Aster Code (broker) program. Your funds stay in
-              your wallet — no key sharing.
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12, lineHeight: 1.4 }}>
+              A quick reconnect is needed to restore trading access.
+              Takes about 5 seconds.
             </div>
             <button
-              className="btn-primary"
               data-testid="button-connect-aster"
               onClick={() => {
                 const tg = (window as any).Telegram?.WebApp
+                const link = 'https://t.me/BUILD4_BOT?start=connect_aster'
                 if (tg?.openTelegramLink) {
-                  // Bot's deep link — opens the chat with /aster pre-filled
-                  tg.openTelegramLink('https://t.me/BUILD4_BOT?start=aster')
+                  tg.openTelegramLink(link)
                   tg.close?.()
-                } else if (tg?.showAlert) {
-                  tg.showAlert('Open the bot and run /aster to connect.')
+                } else {
+                  window.open(link, '_blank')
                 }
               }}
+              style={{
+                background: '#7c3aed',
+                color: 'white',
+                border: 'none',
+                borderRadius: 8,
+                padding: '10px 20px',
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: 'pointer',
+                width: '100%'
+              }}
             >
-              Connect to Aster
+              Reconnect Now →
             </button>
           </div>
         ) : w.aster.error ? (
