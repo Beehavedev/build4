@@ -1,7 +1,27 @@
 import { Bot, Context, InlineKeyboard, InputFile } from 'grammy'
 import QRCode from 'qrcode'
+import { ethers } from 'ethers'
 import { db } from '../../db'
-import { getWalletBalances } from '../../services/wallet'
+
+// Read on-chain BSC balances directly. We deliberately do NOT use the
+// shared getWalletBalances() helper here because it falls back to mock
+// values on RPC failure, which would falsely greet the user with
+// "✅ USDT received!" on a deposit confirmation screen.
+const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
+const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955'
+const ERC20_BAL_ABI = ['function balanceOf(address) view returns (uint256)']
+
+async function readBscBalanceStrict(address: string): Promise<{ usdt: number; bnb: number }> {
+  const provider = new ethers.JsonRpcProvider(BSC_RPC)
+  const [bnbWei, usdtWei] = await Promise.all([
+    provider.getBalance(address),
+    new ethers.Contract(USDT_BSC, ERC20_BAL_ABI, provider).balanceOf(address)
+  ])
+  return {
+    bnb: parseFloat(ethers.formatEther(bnbWei)),
+    usdt: parseFloat(ethers.formatUnits(usdtWei, 18))
+  }
+}
 
 const FUND_INSTRUCTIONS = (address: string) => `💰 *Fund your BUILD4 account*
 
@@ -29,9 +49,11 @@ async function buildQrPng(text: string): Promise<Buffer> {
 }
 
 function fundKeyboard(address: string): InlineKeyboard {
+  // Bind Check Balance to the exact address shown so a wallet switch
+  // mid-flow can't make the user check the wrong wallet.
   return new InlineKeyboard()
     .text('📋 Copy Address', `fund_copy:${address}`)
-    .text('🔄 Check Balance', 'fund_check')
+    .text('🔄 Check Balance', `fund_check:${address}`)
     .row()
     .text('⬅️ Back', 'fund_back')
 }
@@ -80,26 +102,38 @@ export function registerFund(bot: Bot) {
     })
   })
 
-  bot.callbackQuery('fund_check', async (ctx) => {
+  bot.callbackQuery(/^fund_check:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery('Checking balance...')
     const user = (ctx as any).dbUser
     if (!user) return
+    const address = ctx.match[1]
+
+    // Validate the address actually belongs to this user — prevents
+    // someone replaying a callback button to peek at another wallet.
     const wallet = await db.wallet.findFirst({
-      where: { userId: user.id, isActive: true }
+      where: { userId: user.id, address }
     })
-    if (!wallet) return ctx.reply('No wallet found.')
+    if (!wallet) {
+      await ctx.reply('That wallet is no longer linked to your account. Run /fund again for a fresh address.')
+      return
+    }
+
     try {
-      const bal = await getWalletBalances(wallet.address, wallet.chain)
+      const bal = await readBscBalanceStrict(address)
+      const short = `${address.slice(0, 6)}…${address.slice(-4)}`
       const status = bal.usdt > 0
-        ? `✅ *${bal.usdt.toFixed(2)} USDT* received! You're ready to trade.\n\nNext: /newagent to spin up your AI trader, or /trade to manage existing ones.`
-        : `⏳ No USDT received yet.\n\nIf you just sent a deposit, wait ~30 seconds for it to confirm on chain, then tap *🔄 Check Balance* again.`
+        ? `✅ *${bal.usdt.toFixed(2)} USDT* in your wallet — you're ready to trade.\n\nNext: /newagent to spin up your AI trader, or /trade to manage existing ones.`
+        : `⏳ No USDT in this wallet yet.\n\nIf you just sent a deposit, wait ~30 seconds for it to confirm on chain, then tap *🔄 Check Balance* again.`
       await ctx.reply(
-        `💳 *Wallet Balance*\n\n${status}\n\nUSDT: $${bal.usdt.toFixed(2)}\n${bal.nativeSymbol}: ${bal.native.toFixed(4)}`,
+        `💳 *Wallet Balance* (\`${short}\`)\n\n${status}\n\nUSDT: $${bal.usdt.toFixed(2)}\nBNB: ${bal.bnb.toFixed(4)}`,
         { parse_mode: 'Markdown' }
       )
     } catch (err: any) {
-      console.error('[fund] balance check failed:', err)
-      await ctx.reply('⚠️ Could not check balance right now. Try again in a moment.')
+      console.error('[fund] balance check RPC failed:', err)
+      await ctx.reply(
+        '⚠️ Couldn\'t reach the BNB Smart Chain right now. This does *not* mean your deposit failed — try the *🔄 Check Balance* button again in a moment.',
+        { parse_mode: 'Markdown' }
+      )
     }
   })
 
