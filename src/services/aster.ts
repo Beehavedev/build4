@@ -199,6 +199,21 @@ export async function getAccountBalance(creds: AsterCredentials): Promise<{
   }
 }
 
+// Strict variant — throws on error so callers can surface the real reason
+// to the user (e.g. "signer not approved", "user not registered on Aster").
+export async function getAccountBalanceStrict(creds: AsterCredentials): Promise<{
+  usdt: number; availableMargin: number; raw: any[]
+}> {
+  const res = await signedGET('/fapi/v3/balance', {}, creds)
+  const all = res.data as any[]
+  const usdt = all.find((a: any) => a.asset === 'USDT' || a.asset === 'USD')
+  return {
+    usdt:            parseFloat(usdt?.balance ?? '0'),
+    availableMargin: parseFloat(usdt?.availableBalance ?? '0'),
+    raw:             all
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Open positions
 // ─────────────────────────────────────────────────────────────────────────────

@@ -92,24 +92,33 @@ export default function Wallet() {
       {/* Aster trading account balance */}
       {w.aster && (
         <div className="card" style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
-            <span>ASTER TRADING</span>
-            {w.aster.error && <span style={{ color: 'var(--b4-red)' }}>unavailable</span>}
+          <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>
+            ASTER TRADING
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Equity</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: '#10b981' }} data-testid="text-aster-usdt">
-                ${w.aster.usdt.toFixed(2)}
+          {w.aster.error ? (
+            <div style={{ fontSize: 12, color: 'var(--b4-red)', lineHeight: 1.4 }} data-testid="text-aster-error">
+              ⚠️ {w.aster.error}
+              <div style={{ color: 'var(--b4-muted)', marginTop: 6 }}>
+                If you trade on Aster from this wallet, your bot signer may not be
+                approved yet. Run <code>/aster</code> in the bot to fix.
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Available margin</div>
-              <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-aster-margin">
-                ${w.aster.availableMargin.toFixed(2)}
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Equity</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#10b981' }} data-testid="text-aster-usdt">
+                  ${w.aster.usdt.toFixed(2)}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Available margin</div>
+                <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-aster-margin">
+                  ${w.aster.availableMargin.toFixed(2)}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 

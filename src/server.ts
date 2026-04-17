@@ -159,22 +159,34 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
     })
 
     // ── Best-effort: Aster account balance for this trading wallet ──
-    // Wallet must already be set up on Aster (signer registered). If anything
-    // fails — wallet not on Aster, no agent creds, network glitch — we just
-    // omit the section instead of failing the whole endpoint.
+    // We call getAccountBalance, but that helper swallows errors and returns
+    // 0/0. To distinguish "real zero" from "API failed", we fetch positions
+    // too — if positions errors we know the signer isn't approved for this
+    // user on Aster, and we surface a helpful message.
     let aster: { usdt: number; availableMargin: number; error: string | null } | null = null
     try {
-      const { buildCreds, getAccountBalance } = await import('./services/aster')
-      const creds = buildCreds(
+      const asterMod = await import('./services/aster')
+      const creds = asterMod.buildCreds(
         wallet.address,
         user.asterAgentAddress,
         process.env.ASTER_AGENT_PRIVATE_KEY
       )
-      if (creds) {
-        const bal = await getAccountBalance(creds)
-        aster = { usdt: bal.usdt, availableMargin: bal.availableMargin, error: null }
+      if (!creds) {
+        aster = { usdt: 0, availableMargin: 0, error: 'no_agent_credentials' }
+      } else {
+        try {
+          const bal = await asterMod.getAccountBalanceStrict(creds)
+          aster = { usdt: bal.usdt, availableMargin: bal.availableMargin, error: null }
+          console.log('[API] /me/wallet aster ok:', wallet.address, bal.usdt, 'usdt')
+        } catch (e: any) {
+          const apiMsg = e?.response?.data?.msg ?? e?.response?.data?.message
+          const msg = apiMsg ?? e?.message ?? 'aster_unauthorized'
+          console.error('[API] /me/wallet aster failed:', wallet.address, '→', e?.response?.status, e?.response?.data ?? msg)
+          aster = { usdt: 0, availableMargin: 0, error: String(msg) }
+        }
       }
     } catch (e: any) {
+      console.error('[API] /me/wallet aster outer failed:', e?.message ?? e)
       aster = { usdt: 0, availableMargin: 0, error: e?.message ?? 'aster_unavailable' }
     }
 
