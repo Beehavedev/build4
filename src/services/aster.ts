@@ -753,8 +753,40 @@ async function postMgmtEndpoint(
   primaryType: string
 ): Promise<any> {
   const sig = await signMgmtTypedData(signerPrivateKey, params, primaryType)
+
+  // Self-check: the address recovered from the typed-data signature must match
+  // params.user. If it doesn't, our wallet decryption is producing a different
+  // key than the one the user's main wallet was created with — surface this
+  // explicitly instead of letting Aster bounce us with the generic "Signature
+  // check failed" string. Recovery uses the same domain/types we just signed.
+  try {
+    const message = pascalCaseKeys(params)
+    const types   = { [primaryType]: inferEip712Types(message) }
+    const recovered = ethers.verifyTypedData(ASTER_MGMT_DOMAIN as any, types, message, sig)
+    if (params.user && recovered.toLowerCase() !== String(params.user).toLowerCase()) {
+      console.error('[Aster MGMT] SIGNER MISMATCH', {
+        path, primaryType,
+        expectedUser: params.user,
+        recovered,
+      })
+      throw new Error(`Signer mismatch: signed as ${recovered} but params.user=${params.user}. Wallet decryption may be wrong.`)
+    }
+  } catch (verifyErr: any) {
+    if (String(verifyErr?.message ?? '').startsWith('Signer mismatch')) throw verifyErr
+    // If verifyTypedData itself blows up, log but proceed — the API will tell us.
+    console.warn('[Aster MGMT] verify self-check threw:', verifyErr?.message)
+  }
+
   const finalParams = { ...params, signature: sig, signatureChainId: ASTER_MGMT_DOMAIN.chainId }
   const url = `${path}?${buildRawQueryString(finalParams)}`
+
+  console.log('[Aster MGMT] POST', primaryType, {
+    url:    BASE_SIGNED + url,
+    paramsOrder: Object.keys(params),
+    user:   params.user,
+    nonce:  params.nonce,
+  })
+
   // Aster expects POST with empty body and all params in the URL.
   return client(BASE_SIGNED).post(url, '', {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
