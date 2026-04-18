@@ -225,10 +225,18 @@ model AgentLog {
   parsedAction    String?
   executionResult String?
   error           String?
+  pair            String?
+  price           Float?
+  reason          String?
+  adx             Float?
+  rsi             Float?
+  score           Int?
+  regime          String?
   createdAt       DateTime @default(now())
 
   agent           Agent    @relation(fields: [agentId], references: [id])
   user            User     @relation(fields: [userId], references: [id])
 
   @@index([agentId])
+  @@index([userId, createdAt])
 }
