@@ -1,0 +1,50 @@
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="5.195.235.125" requestID="8ea261cc-8ff1-4fee" responseTimeMS=195 responseBytes=301 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="5.195.235.125" requestID="94e7c547-72fc-432a" responseTimeMS=380 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+Unknown argument `pair`. Did you mean `id`? Available options are marked with ?.
+[API] /me/feed failed: PrismaClientValidationError: 
+Invalid `prisma.agentLog.findMany()` invocation:
+{
+  where: {
+    userId: "cmo1lsvsm0000mlupiui761l0",
+    pair: {
+    ~~~~
+      not: null
+    },
+?   AND?: AgentLogWhereInput | AgentLogWhereInput[],
+?   OR?: AgentLogWhereInput[],
+?   NOT?: AgentLogWhereInput | AgentLogWhereInput[],
+?   id?: StringFilter | String,
+?   agentId?: StringFilter | String,
+?   action?: StringFilter | String,
+?   rawResponse?: StringNullableFilter | String | Null,
+?   parsedAction?: StringNullableFilter | String | Null,
+?   executionResult?: StringNullableFilter | String | Null,
+?   error?: StringNullableFilter | String | Null,
+?   createdAt?: DateTimeFilter | DateTime,
+?   agent?: AgentRelationFilter | AgentWhereInput,
+?   user?: UserRelationFilter | UserWhereInput
+  },
+Menu
+  orderBy: {
+    createdAt: "desc"
+  },
+  take: 20,
+  include: {
+    agent: {
+      select: {
+        name: true
+      }
+    }
+  }
+}
+Unknown argument `pair`. Did you mean `id`? Available options are marked with ?.
+    at wn (/opt/render/project/src/node_modules/@prisma/client/runtime/library.js:29:1363)
+    at $n.handleRequestError (/opt/render/project/src/node_modules/@prisma/client/runtime/library.js:121:6958)
+    at $n.handleAndLogRequestError (/opt/render/project/src/node_modules/@prisma/client/runtime/library.js:121:6623)
+    at $n.request (/opt/render/project/src/node_modules/@prisma/client/runtime/library.js:121:6307)
+    at async l (/opt/render/project/src/node_modules/@prisma/client/runtime/library.js:130:9633)
+    at async <anonymous> (/opt/render/project/src/src/server.ts:118:21) {
+  clientVersion: '5.22.0'
+}
