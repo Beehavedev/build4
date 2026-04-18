@@ -92,15 +92,34 @@ function client(base: string): AxiosInstance {
 // PUBLIC MARKET DATA — no auth needed, uses fapi.asterdex.com
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Aster /fapi/v1/klines accepts only this exact set of intervals — anything
+// else (e.g. "1H", "60m", "5min") returns 400.
+const VALID_KLINE_INTERVALS = new Set([
+  '1m', '3m', '5m', '15m', '30m',
+  '1h', '2h', '4h', '6h', '8h', '12h',
+  '1d', '3d', '1w', '1M'
+])
+
 export async function getKlines(
   pair: string,
   interval: string = '15m',
   limit: number = 200
 ): Promise<OHLCV> {
-  const symbol = pair.replace('/', '')
+  // Aster requires UPPERCASE symbol with no separator (e.g. "BTCUSDT").
+  // Lowercase, slashed, or whitespace-padded inputs all 400.
+  const symbol = pair.replace(/[\/\s]/g, '').toUpperCase()
+  // Coerce interval to its canonical form (preserve case for the only
+  // case-sensitive value, "1M" = 1 month vs "1m" = 1 minute).
+  const intervalNormalized = VALID_KLINE_INTERVALS.has(interval)
+    ? interval
+    : (VALID_KLINE_INTERVALS.has(interval.toLowerCase()) ? interval.toLowerCase() : '15m')
+  const safeLimit = Math.max(1, Math.min(1500, Math.floor(limit)))
+
+  console.log('[Aster] klines request:', { symbol, interval: intervalNormalized, limit: safeLimit })
+
   try {
     const res = await client(BASE_PUBLIC).get('/fapi/v1/klines', {
-      params: { symbol, interval, limit }
+      params: { symbol, interval: intervalNormalized, limit: safeLimit }
     })
     const candles = res.data as any[][]
     return {
@@ -111,13 +130,21 @@ export async function getKlines(
       volume:     candles.map((c) => parseFloat(c[5])),
       timestamps: candles.map((c) => c[0] as number)
     }
-  } catch (err) {
-    console.error('[Aster] getKlines failed, using mock:', (err as any).message)
+  } catch (err: any) {
+    console.error(
+      '[Aster] getKlines failed:',
+      'msg=', err?.message,
+      'status=', err?.response?.status,
+      'detail=', JSON.stringify(err?.response?.data ?? null),
+      'url=', err?.config?.url,
+      'params=', JSON.stringify(err?.config?.params ?? null)
+    )
+    console.error('[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!')
     const { generateMockOHLCV } = await import('../agents/indicators')
     const bases: Record<string, number> = {
       BTCUSDT: 65000, ETHUSDT: 3500, BNBUSDT: 580, SOLUSDT: 170, ARBUSDT: 1.2
     }
-    return generateMockOHLCV(bases[symbol] ?? 100, limit, 0.002)
+    return generateMockOHLCV(bases[symbol] ?? 100, safeLimit, 0.002)
   }
 }
 
