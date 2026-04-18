@@ -740,6 +740,12 @@ export async function approveAgent(params: {
     const sig = await wallet.signTypedData(ASTER_MGMT_DOMAIN, types, message)
 
     // Body fields use camelCase. signatureChainId MUST equal domain.chainId.
+    // `nonce` was made mandatory by Aster on the v3 management endpoints
+    // (approveAgent / approveBuilder). Sending it bare without re-signing
+    // works because the EIP-712 message is over the named fields above —
+    // nonce is a request-level dedupe param, not part of the signed payload.
+    // Without it Aster returns: "Mandatory parameter 'nonce' was not sent".
+    const nonce = getNonce()
     const body = new URLSearchParams({
       agentName:        params.agentName,
       agentAddress:     params.agentAddress,
@@ -748,6 +754,7 @@ export async function approveAgent(params: {
       canSpotTrade:     String(canSpotTrade),
       canPerpTrade:     String(canPerpTrade),
       canWithdraw:      String(canWithdraw),
+      nonce:            String(nonce),
       signature:        sig,
       signatureChainId: '56'
     }).toString()
@@ -808,10 +815,13 @@ export async function approveBuilder(params: {
     const wallet = new ethers.Wallet(params.userPrivateKey)
     const sig = await wallet.signTypedData(ASTER_MGMT_DOMAIN, types, message)
 
+    // See approveAgent — same nonce requirement on this v3 endpoint.
+    const nonce = getNonce()
     const body = new URLSearchParams({
       builder:          params.builderAddress,
       maxFeeRate:       params.maxFeeRate,
       builderName:      builderName,
+      nonce:            String(nonce),
       signature:        sig,
       signatureChainId: '56'
     }).toString()
