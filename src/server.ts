@@ -140,7 +140,17 @@ app.get('/api/me/feed', requireTgUser, async (req, res) => {
         createdAt: e.createdAt
       }))
     )
-  } catch (err) {
+  } catch (err: any) {
+    // P2021 = table missing, P2022 = column missing. These mean the prod DB
+    // is behind the schema (e.g. db push didn't run after AgentLog was
+    // extended with action/pair/reason/etc). Don't 500 the UI in that case;
+    // return [] so the brain feed just shows "no decisions yet" and log a
+    // clear message so the operator knows to re-run prisma db push.
+    const code = err?.code
+    if (code === 'P2021' || code === 'P2022') {
+      console.error(`[API] /me/feed schema mismatch (${code}):`, err?.meta ?? err?.message)
+      return res.json([])
+    }
     console.error('[API] /me/feed failed:', err)
     res.status(500).json({ error: 'Internal error' })
   }
@@ -177,7 +187,12 @@ app.get('/api/agents/:id/feed', requireTgUser, async (req, res) => {
         createdAt: e.createdAt
       }))
     )
-  } catch (err) {
+  } catch (err: any) {
+    const code = err?.code
+    if (code === 'P2021' || code === 'P2022') {
+      console.error(`[API] /agents/:id/feed schema mismatch (${code}):`, err?.meta ?? err?.message)
+      return res.json([])
+    }
     console.error('[API] /agents/:id/feed failed:', err)
     res.status(500).json({ error: 'Internal error' })
   }
