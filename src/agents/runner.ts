@@ -28,25 +28,63 @@ export function initRunner(bot: Bot) {
   console.log('[Runner] Agent runner initialized')
 }
 
+// Stagger config — at 50 agents/sec we can drain ~3,000 agents/min.
+// Anything more than that overflows the 60s cron window and the in-flight
+// set will skip the next tick (which is fine — it just means slower tickers
+// for very large active populations).
+const TICK_BATCH_SIZE   = 50
+const TICK_BATCH_GAP_MS = 1_000
+
 async function runAllAgents() {
   try {
+    // Filter at the DB level: only tick agents whose owner has actually
+    // onboarded to Aster. Agents created during onboarding but never
+    // activated by depositing USDT would otherwise burn 1 LLM call/min
+    // forever. With 9k+ agents and Claude pricing, that's the difference
+    // between $200/day and $200k/day.
     const activeAgents = await db.agent.findMany({
-      where: { isActive: true, isPaused: false }
+      where: {
+        isActive: true,
+        isPaused: false,
+        user: { asterOnboarded: true }
+      }
     })
 
-    for (const agent of activeAgents) {
-      // Skip if already running (distributed lock via in-memory set)
-      if (runningAgents.has(agent.id)) {
-        console.log(`[Runner] Agent ${agent.name} still running, skipping tick`)
-        continue
+    if (activeAgents.length === 0) {
+      console.log('[Runner] No active onboarded agents, skipping tick')
+      return
+    }
+
+    console.log(`[Runner] Ticking ${activeAgents.length} agents in batches of ${TICK_BATCH_SIZE}`)
+    const tickStart = Date.now()
+    let dispatched = 0
+    let skippedInflight = 0
+
+    for (let i = 0; i < activeAgents.length; i += TICK_BATCH_SIZE) {
+      const batch = activeAgents.slice(i, i + TICK_BATCH_SIZE)
+
+      for (const agent of batch) {
+        if (runningAgents.has(agent.id)) {
+          skippedInflight++
+          continue
+        }
+        runningAgents.add(agent.id)
+        // Fire-and-forget — we don't await individual ticks, only the
+        // inter-batch gap. This bounds peak concurrency to TICK_BATCH_SIZE.
+        runAgentTick(agent)
+          .catch((err) => console.error(`[Runner] Agent ${agent.name} error:`, err?.message ?? err))
+          .finally(() => runningAgents.delete(agent.id))
+        dispatched++
       }
 
-      runningAgents.add(agent.id)
-
-      runAgentTick(agent)
-        .catch((err) => console.error(`[Runner] Agent ${agent.name} error:`, err))
-        .finally(() => runningAgents.delete(agent.id))
+      // Pace the next batch only if there is one.
+      if (i + TICK_BATCH_SIZE < activeAgents.length) {
+        await new Promise((r) => setTimeout(r, TICK_BATCH_GAP_MS))
+      }
     }
+
+    const elapsed = ((Date.now() - tickStart) / 1000).toFixed(1)
+    console.log(`[Runner] Dispatched ${dispatched} ticks in ${elapsed}s (${skippedInflight} skipped — still in flight from previous tick)`)
   } catch (err) {
     console.error('[Runner] Error fetching agents:', err)
   }

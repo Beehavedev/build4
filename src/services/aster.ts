@@ -107,6 +107,16 @@ const VALID_KLINE_INTERVALS = new Set([
 // suspenders for everything else.
 const REJECTED_SYMBOLS = new Set(['ALL', 'UNDEFINED', 'NULL', 'NONE', ''])
 
+// Process-wide klines cache. With 9k+ agents trading the same 7 pairs, the
+// per-tick fan-out was 9,449 × 21 = ~200k requests/min to fapi.asterdex.com,
+// guaranteed to get rate-limited. With 60s TTL and 7 pairs × 3 timeframes,
+// we serve ≤21 unique upstream calls per minute regardless of agent count.
+// In-flight de-duplication via inflightKlines prevents thundering-herd on
+// cache miss when 9k agents tick simultaneously.
+const KLINES_CACHE_TTL_MS = 60_000
+const klinesCache = new Map<string, { data: OHLCV; ts: number }>()
+const inflightKlines = new Map<string, Promise<OHLCV>>()
+
 export async function getKlines(
   pair: string,
   interval: string = '15m',
@@ -126,22 +136,40 @@ export async function getKlines(
     : (VALID_KLINE_INTERVALS.has(interval.toLowerCase()) ? interval.toLowerCase() : '15m')
   const safeLimit = Math.max(1, Math.min(1500, Math.floor(limit)))
 
-  console.log('[Aster] klines URL:', `${BASE_PUBLIC}/fapi/v1/klines`)
-  console.log('[Aster] klines params:', { symbol, interval: intervalNormalized, limit: safeLimit })
+  // ── Cache check (60s TTL, dedupes in-flight requests) ──
+  const cacheKey = `${symbol}:${intervalNormalized}:${safeLimit}`
+  const cached = klinesCache.get(cacheKey)
+  if (cached && Date.now() - cached.ts < KLINES_CACHE_TTL_MS) {
+    return cached.data
+  }
+  const inflight = inflightKlines.get(cacheKey)
+  if (inflight) return inflight
+
+  const fetchPromise = (async (): Promise<OHLCV> => {
+    console.log('[Aster] klines fetch (cache miss):', { symbol, interval: intervalNormalized, limit: safeLimit })
+    try {
+      const res = await client(BASE_PUBLIC).get('/fapi/v1/klines', {
+        params: { symbol, interval: intervalNormalized, limit: safeLimit }
+      })
+      const candles = res.data as any[][]
+      const result: OHLCV = {
+        open:       candles.map((c) => parseFloat(c[1])),
+        high:       candles.map((c) => parseFloat(c[2])),
+        low:        candles.map((c) => parseFloat(c[3])),
+        close:      candles.map((c) => parseFloat(c[4])),
+        volume:     candles.map((c) => parseFloat(c[5])),
+        timestamps: candles.map((c) => c[0] as number)
+      }
+      klinesCache.set(cacheKey, { data: result, ts: Date.now() })
+      return result
+    } finally {
+      inflightKlines.delete(cacheKey)
+    }
+  })()
+  inflightKlines.set(cacheKey, fetchPromise)
 
   try {
-    const res = await client(BASE_PUBLIC).get('/fapi/v1/klines', {
-      params: { symbol, interval: intervalNormalized, limit: safeLimit }
-    })
-    const candles = res.data as any[][]
-    return {
-      open:       candles.map((c) => parseFloat(c[1])),
-      high:       candles.map((c) => parseFloat(c[2])),
-      low:        candles.map((c) => parseFloat(c[3])),
-      close:      candles.map((c) => parseFloat(c[4])),
-      volume:     candles.map((c) => parseFloat(c[5])),
-      timestamps: candles.map((c) => c[0] as number)
-    }
+    return await fetchPromise
   } catch (err: any) {
     console.error(
       '[Aster] getKlines failed:',
