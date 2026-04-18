@@ -784,12 +784,24 @@ If you would not put real money in this trade right now, action = HOLD.`
         if ((decision.setupScore ?? 0) < 5) return
 
         const side = decision.action === 'OPEN_LONG' ? 'LONG' : ('SHORT' as const)
+
+        // Hard-clamp leverage to the agent's configured maxLeverage. The LLM
+        // is told this cap in the prompt but doesn't always honour it (we've
+        // seen 15x trades opened on a 5x agent), so enforce it here at the
+        // last gate before the order hits the exchange.
+        const requestedLev = decision.leverage ?? 1
+        const clampedLev = Math.max(1, Math.min(requestedLev, agent.maxLeverage))
+        if (clampedLev !== requestedLev) {
+          console.warn(`[Agent ${agent.name}] Clamping leverage ${requestedLev}x → ${clampedLev}x (agent max ${agent.maxLeverage}x)`)
+        }
+        decision.leverage = clampedLev
+
         const riskCheck = await checkRiskGuard(
           agent,
           pair,
           side,
           decision.size ?? agent.maxPositionSize,
-          decision.leverage ?? 1
+          clampedLev
         )
 
         if (!riskCheck.allowed) {
