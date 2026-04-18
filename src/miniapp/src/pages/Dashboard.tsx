@@ -9,18 +9,50 @@ export default function Dashboard({ userId }: DashboardProps) {
   const [agents, setAgents] = useState<any[]>([])
   const [trades, setTrades] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [signalsOpen, setSignalsOpen] = useState(false)
+  const [signals, setSignals] = useState<any[]>([])
+  const [signalsLoading, setSignalsLoading] = useState(false)
 
   useEffect(() => {
     if (!userId) { setLoading(false); return }
     Promise.all([
       fetch(`/api/user/${userId}`).then(r => r.json()).catch(() => null),
-      fetch(`/api/agents/placeholder`).then(r => r.json()).catch(() => []),
+      fetch(`/api/agents/${userId}`).then(r => r.json()).catch(() => []),
     ]).then(([user, agentData]) => {
       if (user?.portfolio) setPortfolio(user.portfolio)
       if (Array.isArray(agentData)) setAgents(agentData)
+      if (Array.isArray(user?.recentTrades)) setTrades(user.recentTrades)
       setLoading(false)
     })
   }, [userId])
+
+  const tg = (typeof window !== 'undefined' ? window.Telegram?.WebApp : null) as any
+
+  const openSignals = async () => {
+    setSignalsOpen(true)
+    if (signals.length > 0) return
+    setSignalsLoading(true)
+    try {
+      const data = await fetch('/api/signals').then(r => r.json())
+      setSignals(Array.isArray(data) ? data : (data?.signals ?? []))
+    } catch {
+      setSignals([])
+    } finally {
+      setSignalsLoading(false)
+    }
+  }
+
+  const showComingSoon = (label: string) => {
+    const msg = `${label} is coming soon. Stay tuned!`
+    if (tg?.showAlert) tg.showAlert(msg)
+    else alert(msg)
+  }
+
+  const quickActions = [
+    { icon: '📊', label: 'Signals', onClick: openSignals },
+    { icon: '🔍', label: 'Scan', onClick: () => showComingSoon('Market Scan') },
+    { icon: '🏆', label: 'Quests', onClick: () => showComingSoon('Quests') },
+  ]
 
   const todayPnl = portfolio?.dayPnl ?? 0
   const totalPnl = portfolio?.totalPnl ?? 0
@@ -119,28 +151,104 @@ export default function Dashboard({ userId }: DashboardProps) {
 
       {/* Quick actions */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 16 }}>
-        {[
-          { icon: '📊', label: 'Signals' },
-          { icon: '🔍', label: 'Scan' },
-          { icon: '🏆', label: 'Quests' }
-        ].map(item => (
-          <button key={item.label} style={{
-            background: '#12121a',
-            border: '1px solid #1e1e2e',
-            borderRadius: 10,
-            padding: '12px 8px',
-            color: '#e2e8f0',
-            cursor: 'pointer',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 4
-          }}>
+        {quickActions.map(item => (
+          <button
+            key={item.label}
+            onClick={item.onClick}
+            data-testid={`button-${item.label.toLowerCase()}`}
+            style={{
+              background: '#12121a',
+              border: '1px solid #1e1e2e',
+              borderRadius: 10,
+              padding: '12px 8px',
+              color: '#e2e8f0',
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 4
+            }}
+          >
             <span style={{ fontSize: 22 }}>{item.icon}</span>
             <span style={{ fontSize: 11 }}>{item.label}</span>
           </button>
         ))}
       </div>
+
+      {/* Signals modal */}
+      {signalsOpen && (
+        <div
+          onClick={() => setSignalsOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+            zIndex: 200, display: 'flex', alignItems: 'flex-end',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#12121a', borderTop: '1px solid #1e1e2e',
+              borderRadius: '16px 16px 0 0', padding: 16, width: '100%',
+              maxHeight: '70vh', overflowY: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>📊 Live Signals</div>
+              <button
+                onClick={() => setSignalsOpen(false)}
+                data-testid="button-close-signals"
+                style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 22, cursor: 'pointer' }}
+              >
+                ×
+              </button>
+            </div>
+            {signalsLoading && (
+              <div style={{ color: '#64748b', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>
+                Loading signals...
+              </div>
+            )}
+            {!signalsLoading && signals.length === 0 && (
+              <div style={{ color: '#64748b', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>
+                No signals available right now.
+              </div>
+            )}
+            {!signalsLoading && signals.map((s: any, i: number) => (
+              <div
+                key={s.id ?? s.symbol ?? i}
+                data-testid={`row-signal-${i}`}
+                style={{
+                  padding: '10px 0', borderBottom: '1px solid #1e1e2e',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>
+                    {s.symbol ?? s.pair ?? s.coin ?? '—'}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>
+                    {s.reason ?? s.note ?? s.summary ?? ''}
+                  </div>
+                </div>
+                <div style={{
+                  fontSize: 11, padding: '3px 8px', borderRadius: 20,
+                  background: (s.action ?? s.side) === 'LONG' || (s.action ?? s.side) === 'BUY'
+                    ? '#10b98120'
+                    : (s.action ?? s.side) === 'SHORT' || (s.action ?? s.side) === 'SELL'
+                    ? '#ef444420'
+                    : '#1e1e2e',
+                  color: (s.action ?? s.side) === 'LONG' || (s.action ?? s.side) === 'BUY'
+                    ? '#10b981'
+                    : (s.action ?? s.side) === 'SHORT' || (s.action ?? s.side) === 'SELL'
+                    ? '#ef4444'
+                    : '#64748b',
+                }}>
+                  {s.action ?? s.side ?? 'INFO'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Recent activity */}
       <div className="card">
