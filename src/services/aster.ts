@@ -746,7 +746,9 @@ export async function approveAgent(params: {
     // nonce is a request-level dedupe param, not part of the signed payload.
     // Without it Aster returns: "Mandatory parameter 'nonce' was not sent".
     const nonce = getNonce()
+    const userAddr = params.userAddress ?? wallet.address
     const body = new URLSearchParams({
+      user:             userAddr,
       agentName:        params.agentName,
       agentAddress:     params.agentAddress,
       ipWhitelist:      ipWhitelist,
@@ -815,9 +817,11 @@ export async function approveBuilder(params: {
     const wallet = new ethers.Wallet(params.userPrivateKey)
     const sig = await wallet.signTypedData(ASTER_MGMT_DOMAIN, types, message)
 
-    // See approveAgent — same nonce requirement on this v3 endpoint.
+    // See approveAgent — same nonce + user requirement on this v3 endpoint.
     const nonce = getNonce()
+    const userAddr = params.userAddress ?? wallet.address
     const body = new URLSearchParams({
+      user:             userAddr,
       builder:          params.builderAddress,
       maxFeeRate:       params.maxFeeRate,
       builderName:      builderName,
