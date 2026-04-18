@@ -333,7 +333,10 @@ export async function runAgentTick(agent: Agent): Promise<void> {
               const sym = pos.pair.replace('/', '')
               const contractSize = parseFloat((pos.size / pos.entryPrice).toFixed(6))
               try {
-                await asterClose(creds, sym, pos.side === 'LONG' ? 'SELL' : 'BUY', contractSize)
+                // closePosition signature: (symbol, side, size, creds).
+                // It internally inverts side ('LONG' -> SELL, 'SHORT' -> BUY)
+                // and sets reduceOnly=true, so pass the position side as-is.
+                await asterClose(sym, pos.side as 'LONG' | 'SHORT', contractSize, creds)
               } catch (e: any) {
                 console.error(`[Agent ${agent.name}] Aster close failed in emergency:`, e?.message)
               }
