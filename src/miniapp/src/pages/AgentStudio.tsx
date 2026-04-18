@@ -1,13 +1,33 @@
 import { useState, useEffect } from 'react'
-import { apiFetch } from '../api'
+import { apiFetch, getMyFeed, type FeedEntry } from '../api'
 
 interface AgentStudioProps {
   userId: string | null
 }
 
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime()
+  const s = Math.floor(ms / 1000)
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
+function actionMeta(a: string): { emoji: string; label: string; color: string } {
+  if (a === 'OPEN_LONG') return { emoji: '🚀', label: 'LONG', color: '#10b981' }
+  if (a === 'OPEN_SHORT') return { emoji: '🔻', label: 'SHORT', color: '#ef4444' }
+  if (a === 'CLOSE') return { emoji: '✋', label: 'CLOSE', color: '#f59e0b' }
+  return { emoji: '🤔', label: 'HOLD', color: '#64748b' }
+}
+
 export default function AgentStudio(_props: AgentStudioProps) {
   const [agents, setAgents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [feed, setFeed] = useState<FeedEntry[]>([])
+  const [feedError, setFeedError] = useState(false)
 
   const fetchAgents = () => {
     apiFetch<any[]>('/api/me/agents')
@@ -15,12 +35,27 @@ export default function AgentStudio(_props: AgentStudioProps) {
       .catch(() => setLoading(false))
   }
 
-  useEffect(() => { fetchAgents() }, [])
+  const fetchFeed = () => {
+    getMyFeed(20)
+      .then(f => { setFeed(Array.isArray(f) ? f : []); setFeedError(false) })
+      .catch(() => setFeedError(true))
+  }
+
+  useEffect(() => {
+    fetchAgents()
+    fetchFeed()
+    // Poll the brain feed every 30s so users see new decisions stream in
+    // without leaving and re-entering the mini app.
+    const t = setInterval(fetchFeed, 30_000)
+    return () => clearInterval(t)
+  }, [])
 
   const toggleAgent = async (agentId: string) => {
     await apiFetch(`/api/agents/${agentId}/toggle`, { method: 'POST' })
     fetchAgents()
   }
+
+  const hasActive = agents.some(a => a.isActive)
 
   if (loading) {
     return <div style={{ paddingTop: 60, textAlign: 'center', color: '#64748b' }}>Loading agents...</div>
@@ -113,6 +148,85 @@ export default function AgentStudio(_props: AgentStudioProps) {
       <div style={{ marginTop: 8, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
         Use /newagent in the bot to create more agents
       </div>
+
+      {/* Live Brain Feed — shows what the agents are actually doing */}
+      <div style={{ marginTop: 24, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }} data-testid="text-brain-feed-title">
+          🧠 Live Agent Brain
+        </div>
+        {hasActive && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            fontSize: 11, color: '#10b981',
+          }}>
+            <span style={{
+              width: 7, height: 7, borderRadius: '50%', background: '#10b981',
+              animation: 'pulse 1.6s ease-in-out infinite',
+            }} />
+            Scanning markets every ~60s
+          </div>
+        )}
+      </div>
+
+      {feedError && (
+        <div className="card" style={{ padding: 14, fontSize: 12, color: '#ef4444' }}>
+          Couldn't load the brain feed. The agent is still running in the background.
+        </div>
+      )}
+
+      {!feedError && feed.length === 0 && (
+        <div className="card" style={{ padding: 14, fontSize: 12, color: '#64748b' }}>
+          {hasActive
+            ? 'No decisions logged yet. The next analysis cycle will appear here within ~60s.'
+            : 'Activate an agent above and its trade decisions will stream in here.'}
+        </div>
+      )}
+
+      {!feedError && feed.map((e) => {
+        const meta = actionMeta(e.action)
+        return (
+          <div
+            key={e.id}
+            className="card"
+            data-testid={`feed-${e.id}`}
+            style={{ marginBottom: 8, borderLeft: `3px solid ${meta.color}`, padding: 12 }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>🤖 {e.agentName}</div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>{timeAgo(e.createdAt)}</div>
+            </div>
+            <div style={{ marginTop: 6, fontSize: 13 }}>
+              {meta.emoji}{' '}
+              <span style={{ color: meta.color, fontWeight: 600 }}>{meta.label}</span>
+              {e.pair ? ` — ${e.pair}` : ''}
+              {e.price != null ? ` @ $${e.price.toFixed(e.price > 100 ? 2 : 4)}` : ''}
+            </div>
+            {(e.regime || e.adx != null || e.rsi != null || e.score != null) && (
+              <div style={{ marginTop: 4, fontSize: 11, color: '#94a3b8' }}>
+                {e.regime ? `${e.regime}` : ''}
+                {e.adx != null ? ` · ADX ${e.adx.toFixed(1)}` : ''}
+                {e.rsi != null ? ` · RSI ${e.rsi.toFixed(0)}` : ''}
+                {e.score != null ? ` · Score ${e.score}/10` : ''}
+              </div>
+            )}
+            {e.reason && (
+              <div
+                style={{ marginTop: 6, fontSize: 12, color: '#cbd5e1', fontStyle: 'italic' }}
+                data-testid={`feed-reason-${e.id}`}
+              >
+                "{e.reason}"
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(0.85); }
+        }
+      `}</style>
     </div>
   )
 }
