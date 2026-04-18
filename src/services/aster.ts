@@ -115,7 +115,8 @@ export async function getKlines(
     : (VALID_KLINE_INTERVALS.has(interval.toLowerCase()) ? interval.toLowerCase() : '15m')
   const safeLimit = Math.max(1, Math.min(1500, Math.floor(limit)))
 
-  console.log('[Aster] klines request:', { symbol, interval: intervalNormalized, limit: safeLimit })
+  console.log('[Aster] klines URL:', `${BASE_PUBLIC}/fapi/v1/klines`)
+  console.log('[Aster] klines params:', { symbol, interval: intervalNormalized, limit: safeLimit })
 
   try {
     const res = await client(BASE_PUBLIC).get('/fapi/v1/klines', {
@@ -274,10 +275,15 @@ async function rpcGetBalance(walletAddress: string): Promise<{
     return { perpAssets: [], positions: [], error: `http_${res.status}` }
   }
   const result = body.result ?? {}
-  return {
-    perpAssets: Array.isArray(result.perpAssets) ? result.perpAssets : [],
-    positions:  Array.isArray(result.positions)  ? result.positions  : []
+  const perpAssets = Array.isArray(result.perpAssets) ? result.perpAssets : []
+  const positions  = Array.isArray(result.positions)  ? result.positions  : []
+  // TEMP diagnostic — dump full raw shape so we can see USD-valuation fields
+  // for non-stable assets (ASTER, ASBNB, BNB). Remove once balance fix lands.
+  if (perpAssets.length > 1 || perpAssets.some((a: any) => a.asset && a.asset !== 'USDT' && a.asset !== 'USD')) {
+    console.log('[Aster RPC] aster_getBalance multi-asset response for', walletAddress, ':',
+      JSON.stringify({ perpAssets, topLevelKeys: Object.keys(result) }, null, 2))
   }
+  return { perpAssets, positions }
 }
 
 export async function getAccountBalance(creds: AsterCredentials): Promise<{
@@ -336,10 +342,43 @@ export async function transferAsset(
 
 // Strict variant — throws on error so callers can surface the real reason
 // to the user (e.g. "account does not exist, please open a futures account").
-// Uses the same RPC under the hood; no signing required.
+//
+// Strategy:
+//   1. Try the SIGNED /fapi/v3/balance endpoint first when we have agent
+//      credentials — this returns the exact same number Aster's web UI shows
+//      (canonical per-asset balance + crossUnPnl), eliminating the public-RPC
+//      vs web-UI mismatch users have been reporting.
+//   2. Fall back to the public JSON-RPC if signed call fails for any reason
+//      (no agent creds, network error, etc.) — degraded but better than 0.
 export async function getAccountBalanceStrict(creds: AsterCredentials): Promise<{
   usdt: number; availableMargin: number; raw: any[]
 }> {
+  // ── Path 1: signed /fapi/v3/balance (matches asterdex.com exactly) ──
+  if (creds.signerAddress && creds.signerPrivKey) {
+    try {
+      const res = await signedGET('/fapi/v3/balance', {}, creds)
+      const assets = Array.isArray(res.data) ? res.data : []
+      const usdtAsset = assets.find((a: any) => a.asset === 'USDT' || a.asset === 'USD')
+      if (usdtAsset) {
+        // crossWalletBalance + crossUnPnl == marginBalance (what web shows).
+        const crossWallet = parseFloat(usdtAsset.crossWalletBalance ?? usdtAsset.balance ?? '0')
+        const crossUnPnl  = parseFloat(usdtAsset.crossUnPnl ?? '0')
+        const marginBalance = crossWallet + crossUnPnl
+        const available     = parseFloat(usdtAsset.availableBalance ?? usdtAsset.maxWithdrawAmount ?? String(marginBalance))
+        console.log('[Aster] /fapi/v3/balance USDT for', creds.userAddress,
+          '→ marginBalance=', marginBalance.toFixed(4),
+          'crossWallet=', crossWallet.toFixed(4), 'crossUnPnl=', crossUnPnl.toFixed(4),
+          'available=', available.toFixed(4))
+        return { usdt: marginBalance, availableMargin: available, raw: assets }
+      }
+    } catch (e: any) {
+      console.error('[Aster] signed /fapi/v3/balance failed for', creds.userAddress,
+        '→', e?.response?.status, e?.response?.data ?? e?.message,
+        '— falling back to JSON-RPC')
+    }
+  }
+
+  // ── Path 2: public JSON-RPC fallback ──
   const { perpAssets, error } = await rpcGetBalance(creds.userAddress)
   if (error) throw new Error(error)
   const usdt = perpAssets.find((a: any) => a.asset === 'USDT' || a.asset === 'USD')

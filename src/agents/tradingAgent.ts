@@ -439,8 +439,28 @@ If you would not put real money in this trade right now, action = HOLD.`
 
         if (creds && agent.exchange !== 'mock') {
           try {
+            // ── Pre-flight balance check — never open a new position with
+            // a negative or zero Aster balance. Realized losses, funding,
+            // or commission can drag walletBalance below 0 and any further
+            // OPEN order will be rejected by Aster anyway. Closing existing
+            // positions is unaffected (this branch only runs for OPEN_*).
+            const { getAccountBalanceStrict } = await import('../services/aster')
+            try {
+              const bal = await getAccountBalanceStrict(creds)
+              const asterBalance = bal.usdt
+              if (asterBalance <= 0) {
+                console.log(`[Agent ${agent.name}] Skipping ${pair} ${side} — negative Aster balance: ${asterBalance.toFixed(4)} USDT`)
+                continue
+              }
+            } catch (balErr: any) {
+              // If the balance check itself fails (RPC down, not onboarded
+              // yet, etc.) we let the order attempt proceed — Aster will
+              // reject it with a clearer error than we can synthesize here.
+              console.warn(`[Agent ${agent.name}] Balance pre-check failed (${balErr?.message}), proceeding anyway`)
+            }
+
             const { placeOrder, placeOrderWithBuilderCode, placeBracketOrders } = await import('../services/aster')
-            const sym = pair.replace('/', '')
+            const sym = pair.replace(/[\/\s]/g, '').toUpperCase()
             const qty = parseFloat((finalSize / currentPrice).toFixed(6))
 
             const builderAddress = process.env.ASTER_BUILDER_ADDRESS

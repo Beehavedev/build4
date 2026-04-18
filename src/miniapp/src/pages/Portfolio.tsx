@@ -72,6 +72,30 @@ export default function Portfolio({ userId }: PortfolioProps) {
         </div>
       </div>
 
+      {/* Negative balance banner — agents are paused when balance ≤ 0 */}
+      {wallet?.aster.onboarded && wallet.aster.usdt <= 0 && (
+        <div
+          data-testid="banner-negative-balance"
+          style={{
+            marginBottom: 12,
+            padding: '10px 12px',
+            borderRadius: 8,
+            background: 'linear-gradient(135deg, #ef444422, #ef444408)',
+            border: '1px solid #ef444466',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 8
+          }}>
+          <div style={{ fontSize: 16, lineHeight: 1 }}>⚠️</div>
+          <div style={{ fontSize: 12, color: '#fca5a5', lineHeight: 1.4 }}>
+            <div style={{ fontWeight: 600, color: '#ef4444' }}>Negative balance — agents paused</div>
+            <div style={{ marginTop: 2 }}>
+              Deposit USDT to your Aster account to resume trading. Realized losses, funding fees, or commissions exceed your deposit.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Balances — same data as the Wallet tab, condensed for a glance */}
       {wallet && (
         <div className="card" style={{ marginBottom: 16 }} data-testid="card-portfolio-balances">
@@ -87,27 +111,44 @@ export default function Portfolio({ userId }: PortfolioProps) {
             gridTemplateColumns: '1fr 1fr',
             gap: 10
           }}>
-            {/* Aster card — primary if onboarded */}
-            <div style={{
-              padding: 10,
-              borderRadius: 8,
-              background: wallet.aster.onboarded
-                ? 'linear-gradient(135deg, #10b98122, #10b98108)'
-                : '#0f0f17',
-              border: `1px solid ${wallet.aster.onboarded ? '#10b98144' : '#1e1e2e'}`
-            }}>
-              <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>ASTER · USDT</div>
-              <div style={{
-                fontSize: 18,
-                fontWeight: 700,
-                color: wallet.aster.onboarded ? '#10b981' : '#e2e8f0'
-              }} data-testid="text-portfolio-aster-usdt">
-                ${wallet.aster.usdt.toFixed(2)}
-              </div>
-              <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
-                Avail ${wallet.aster.availableMargin.toFixed(2)}
-              </div>
-            </div>
+            {/* Aster card — primary if onboarded; red if negative */}
+            {(() => {
+              const isNegative = wallet.aster.onboarded && wallet.aster.usdt <= 0
+              const accentColor = isNegative
+                ? '#ef4444'
+                : (wallet.aster.onboarded ? '#10b981' : '#e2e8f0')
+              const cardBg = isNegative
+                ? 'linear-gradient(135deg, #ef444422, #ef444408)'
+                : (wallet.aster.onboarded
+                    ? 'linear-gradient(135deg, #10b98122, #10b98108)'
+                    : '#0f0f17')
+              const cardBorder = isNegative
+                ? '#ef444466'
+                : (wallet.aster.onboarded ? '#10b98144' : '#1e1e2e')
+              return (
+                <div style={{
+                  padding: 10,
+                  borderRadius: 8,
+                  background: cardBg,
+                  border: `1px solid ${cardBorder}`
+                }}>
+                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {isNegative && <span>⚠️</span>}
+                    <span>ASTER · USDT</span>
+                  </div>
+                  <div style={{
+                    fontSize: 18,
+                    fontWeight: 700,
+                    color: accentColor
+                  }} data-testid="text-portfolio-aster-usdt">
+                    {wallet.aster.usdt < 0 ? '-' : ''}${Math.abs(wallet.aster.usdt).toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
+                    Avail {wallet.aster.availableMargin < 0 ? '-' : ''}${Math.abs(wallet.aster.availableMargin).toFixed(2)}
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* BSC card */}
             <div style={{
