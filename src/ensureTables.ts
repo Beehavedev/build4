@@ -214,6 +214,16 @@ export async function ensureNewTables() {
   )`)
   await run(`CREATE INDEX IF NOT EXISTS "AgentLog_agentId_idx" ON "AgentLog"("agentId")`)
 
+  // Live "Agent Brain" feed columns — every decision is logged with full context.
+  await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "pair"   TEXT`)
+  await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "price"  DOUBLE PRECISION`)
+  await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "reason" TEXT`)
+  await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "adx"    DOUBLE PRECISION`)
+  await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "rsi"    DOUBLE PRECISION`)
+  await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "score"  INTEGER`)
+  await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "regime" TEXT`)
+  await run(`CREATE INDEX IF NOT EXISTS "AgentLog_userId_createdAt_idx" ON "AgentLog"("userId", "createdAt" DESC)`)
+
   // ─── Security: PIN columns on User + audit log table ───
   await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pinHash" TEXT`)
   await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pinSalt" TEXT`)

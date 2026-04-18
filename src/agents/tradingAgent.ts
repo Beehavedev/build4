@@ -217,7 +217,7 @@ const ALL_PAIRS_UNIVERSE = [
   'XRPUSDT', 'ARBUSDT', 'ASTERUSDT'
 ]
 
-function expandPairs(pairs: string[]): string[] {
+export function expandPairs(pairs: string[]): string[] {
   const expanded = new Set<string>()
   for (const p of pairs) {
     if (!p) continue
@@ -239,11 +239,59 @@ export async function runAgentTick(agent: Agent): Promise<void> {
     return
   }
 
+  // Lazy-import runner to avoid a circular import (runner imports tradingAgent).
+  const { getBot, noteAgentTicked, shouldSendSummary, markSummarySent, notifyTradeOpened, escapeMd } =
+    await import('./runner')
+  noteAgentTicked(agent.id)
+
+  // Resolve telegramId once per tick for live "Agent Brain" notifications.
+  const tickUser = await db.user.findUnique({
+    where: { id: agent.userId },
+    select: { telegramId: true }
+  })
+  const telegramId = tickUser?.telegramId?.toString() ?? null
+
+  // Per-tick decision snapshot, used to send ONE consolidated summary message
+  // at the end of the tick (throttled). Per-trade OPEN messages still fire
+  // immediately and separately — those are always important.
+  type TickEntry = {
+    pair: string
+    action: string
+    score: number | null
+    regime: string | null
+    rsi: number | null
+    adx: number | null
+    price: number | null
+    holdReason: string | null
+    reasoning: string | null
+  }
+  const tickDecisions: TickEntry[] = []
+  let openedThisTick = 0
+  let closedThisTick = 0
+
   for (const pair of pairList) {
+    let snapshot: { price: number; rsi: number; adx: number; regime: string } = {
+      price: 0, rsi: 0, adx: 0, regime: 'UNKNOWN'
+    }
     try {
       // 1. Gather market data
       const ohlcv = await getMultiTimeframeOHLCV(pair)
       const marketContext = buildMarketContext(ohlcv['15m'], ohlcv['1h'], ohlcv['4h'], pair)
+
+      // Indicator snapshot — used both for the live "Agent Brain" feed
+      // (logged to AgentLog so the mini app can render it) and for the
+      // per-tick Telegram summary message.
+      {
+        const _price = ohlcv['15m'].close[ohlcv['15m'].close.length - 1]
+        const _rsi   = calculateRSI(ohlcv['15m'].close, 14)
+        const _adx   = calculateADX(ohlcv['1h'], 14)
+        const _regime = _adx > 25
+          ? (calculateEMA(ohlcv['15m'].close, 9) > calculateEMA(ohlcv['4h'].close, 200)
+              ? 'TRENDING UP'
+              : 'TRENDING DOWN')
+          : 'RANGING'
+        snapshot = { price: _price, rsi: _rsi, adx: _adx, regime: _regime }
+      }
 
       // 2. Get open positions
       const openPositions = await db.trade.findMany({
@@ -355,7 +403,11 @@ If you would not put real money in this trade right now, action = HOLD.`
         return
       }
 
-      // 8. Log the decision
+      // 8. Log the decision — full snapshot for the live "Agent Brain" feed.
+      const logReason = (decision.action === 'HOLD'
+        ? (decision.holdReason ?? decision.reasoning ?? '')
+        : (decision.reasoning ?? '')
+      ).slice(0, 240)
       await db.agentLog.create({
         data: {
           agentId: agent.id,
@@ -363,9 +415,60 @@ If you would not put real money in this trade right now, action = HOLD.`
           action: decision.action,
           rawResponse: rawResponse.slice(0, 2000),
           parsedAction: decision.action,
-          executionResult: `confidence=${decision.confidence}, score=${decision.setupScore}`
+          executionResult: `confidence=${decision.confidence}, score=${decision.setupScore}`,
+          pair,
+          price: snapshot.price || null,
+          reason: logReason,
+          adx: Number.isFinite(snapshot.adx) ? snapshot.adx : null,
+          rsi: Number.isFinite(snapshot.rsi) ? snapshot.rsi : null,
+          score: typeof decision.setupScore === 'number' ? decision.setupScore : null,
+          regime: decision.regime ?? snapshot.regime ?? null
         }
       })
+
+      // Snapshot for the per-tick Telegram "Agent Brain" summary.
+      tickDecisions.push({
+        pair,
+        action: decision.action,
+        score: typeof decision.setupScore === 'number' ? decision.setupScore : null,
+        regime: decision.regime ?? snapshot.regime,
+        rsi: snapshot.rsi,
+        adx: snapshot.adx,
+        price: snapshot.price,
+        holdReason: decision.holdReason ?? null,
+        reasoning: decision.reasoning ?? null
+      })
+
+      // Send a "thinking" message to the user — throttled (verbose for the
+      // first 3 ticks after activation, then only on actions or near-miss
+      // setups, max once per 5 minutes when nothing is happening).
+      const _bot = getBot()
+      const hasAction = decision.action !== 'HOLD'
+      const bestScore = decision.setupScore ?? 0
+      if (_bot && telegramId && shouldSendSummary(agent.id, hasAction, bestScore)) {
+        markSummarySent(agent.id)
+        const actionEmoji =
+          decision.action === 'HOLD' ? '⏸ HOLD'
+            : decision.action === 'OPEN_LONG' ? '🚀 LONG'
+            : decision.action === 'OPEN_SHORT' ? '🔻 SHORT'
+            : decision.action === 'CLOSE' ? '✋ CLOSE'
+            : decision.action
+        const why = (decision.action === 'HOLD'
+          ? (decision.holdReason ?? 'Conditions not yet aligned.')
+          : (decision.reasoning ?? '')
+        ).slice(0, 200)
+        const adxStr = Number.isFinite(snapshot.adx) ? snapshot.adx.toFixed(1) : '—'
+        const rsiStr = Number.isFinite(snapshot.rsi) ? snapshot.rsi.toFixed(1) : '—'
+        const scoreStr = typeof decision.setupScore === 'number' ? `${decision.setupScore}/10` : '—'
+        const summary =
+          `🧠 *${escapeMd(agent.name)}* analyzed ${pair}\n\n` +
+          `*Market Regime:* ${decision.regime ?? snapshot.regime} (ADX ${adxStr})\n` +
+          `*Setup Score:* ${scoreStr} | RSI ${rsiStr}\n\n` +
+          `*Decision:* ${actionEmoji}\n` +
+          `*Reason:* ${why}\n\n` +
+          `_Next scan in 60 seconds ⏰_`
+        _bot.api.sendMessage(telegramId, summary, { parse_mode: 'Markdown' }).catch(() => {})
+      }
 
       // 9. Update last tick time
       await db.agent.update({
@@ -385,6 +488,10 @@ If you would not put real money in this trade right now, action = HOLD.`
         console.log(
           `[Agent ${agent.name}] HOLD on ${pair} — ${decision.holdReason?.slice(0, 80) ?? 'no specific reason'}`
         )
+        // NOTE: keep `return` (not `continue`) — exiting on first HOLD bounds
+        // LLM spend at 1 Claude call/tick/agent. Changing to `continue` would
+        // 7× cost when pairs:['ALL']. The mini app live feed accumulates
+        // across many ticks anyway, so visibility is preserved at low cost.
         return
       }
 
@@ -572,13 +679,26 @@ If you would not put real money in this trade right now, action = HOLD.`
           })
         }
 
-        ;(trade as any)._decision   = decision
-        ;(trade as any)._finalSize  = finalSize
-        ;(trade as any)._fillPrice  = fillPrice
+        openedThisTick++
 
         console.log(
           `[Agent ${agent.name}] Opened ${side} ${pair} @ $${fillPrice.toFixed(2)} | Size: $${finalSize.toFixed(0)} | Score: ${decision.setupScore}/10 | OrderId: ${orderIdStr}`
         )
+
+        // Send the rich "🤖 X opened a position" Telegram message. The
+        // notifier needs `pair` on the decision object — inject it here so
+        // the existing helper formats the header correctly.
+        const _bot2 = getBot()
+        if (_bot2 && telegramId) {
+          notifyTradeOpened(
+            _bot2,
+            telegramId,
+            agent.name,
+            { ...decision, pair },
+            fillPrice,
+            finalSize
+          )
+        }
       }
 
       if (decision.action === 'CLOSE') {
@@ -672,9 +792,24 @@ If you would not put real money in this trade right now, action = HOLD.`
           )
         }
 
+        closedThisTick++
+
         console.log(
           `[Agent ${agent.name}] Closed ${openPos.side} ${pair} | PnL: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`
         )
+
+        // Notify the user the position closed (always — never throttled).
+        const _bot3 = getBot()
+        if (_bot3 && telegramId) {
+          const emoji = pnl >= 0 ? '✅' : '🔻'
+          const msg =
+            `${emoji} *${escapeMd(agent.name)}* closed a position\n\n` +
+            `*${pair}* ${openPos.side}\n` +
+            `*Entry:* $${openPos.entryPrice.toFixed(4)}\n` +
+            `*Exit:* $${exitPrice.toFixed(4)}\n` +
+            `*PnL:* ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} USDT (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`
+          _bot3.api.sendMessage(telegramId, msg, { parse_mode: 'Markdown' }).catch(() => {})
+        }
       }
 
       console.log(

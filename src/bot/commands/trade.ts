@@ -122,12 +122,33 @@ export function registerTrade(bot: Bot) {
     const agentId = ctx.match[1]
     const user = (ctx as any).dbUser
     if (!user) return
-    await db.agent.update({
+    const updated = await db.agent.update({
       where: { id: agentId, userId: user.id },
       data: { isActive: true, isPaused: false }
     })
+    // Reset the verbosity counter so the user sees the first 3 ticks live.
+    const { noteAgentActivated } = await import('../../agents/runner')
+    noteAgentActivated(agentId)
+
     await ctx.answerCallbackQuery('✅ Agent started!')
-    await ctx.reply('✅ Agent is now active. First tick in ~60 seconds.')
+
+    const { expandPairs } = await import('../../agents/tradingAgent')
+    const scanned = expandPairs(updated.pairs)
+    const pairLines = scanned
+      .slice(0, 8)
+      .map((p) => `• ${p} — fetching 15m, 1h, 4h candles`)
+      .join('\n')
+
+    const { escapeMd } = await import('../../agents/runner')
+    await ctx.reply(
+      `🤖 *Agent ${escapeMd(updated.name)} is now active*\n\n` +
+      `🔍 *Scanning markets...*\n${pairLines}\n` +
+      `• Analyzing volume, RSI, MACD, Bollinger Bands\n` +
+      `• Checking market regime (trending vs ranging)\n\n` +
+      `⏱ First decision in ~30–60 seconds.\n` +
+      `_You'll get a full analysis breakdown when the first tick completes._`,
+      { parse_mode: 'Markdown' }
+    )
   })
 
   bot.callbackQuery(/^pause_agent_(.+)$/, async (ctx) => {

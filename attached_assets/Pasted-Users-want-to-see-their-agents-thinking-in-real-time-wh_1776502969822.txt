@@ -1,0 +1,141 @@
+Users want to see their agents thinking in real time when 
+they enable trading. Build a live "Agent Brain" feed that 
+shows what each agent is analyzing and deciding.
+
+═══════════════════════════════════════════════════
+FEATURE: REAL-TIME AGENT THINKING FEED
+═══════════════════════════════════════════════════
+
+TWO PARTS: Telegram messages + Mini app live feed
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PART 1 — TELEGRAM: Send message when agent activates
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+When a user enables their agent, immediately send them 
+a Telegram message showing the agent waking up:
+
+  🤖 Agent [NAME] is now active
+  
+  🔍 Scanning markets...
+  • BTC/USDT — fetching 15m, 1h, 4h candles
+  • ETH/USDT — fetching 15m, 1h, 4h candles  
+  • Analyzing volume, RSI, MACD, Bollinger Bands
+  • Checking market regime (trending vs ranging)
+  
+  ⏱ First decision in ~30 seconds
+
+Then after the first real decision, send another message:
+
+  🧠 [NAME] analyzed 7 pairs across 3 timeframes
+  
+  Market Regime: RANGING (ADX 18.4)
+  Best Setup: BTC/USDT
+  
+  Decision: HOLD ⏸
+  Reason: Waiting for BB squeeze breakout.
+  RSI: 52.3 | MACD: bearish cross | ADX: 18.4
+  
+  Next scan in 60 seconds ⏰
+
+For OPEN decisions, send:
+
+  🚀 [NAME] is OPENING a position!
+  
+  Pair: BTC/USDT
+  Direction: LONG 📈
+  Size: $X.XX
+  Entry: $76,634
+  Stop Loss: $74,890 (-2.3%)
+  Take Profit: $79,540 (+3.8%)
+  
+  Confidence: 8/10
+  Reason: [Claude's actual reasoning here]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PART 2 — MINI APP: Live thinking feed on Agents tab
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Add a "Live Feed" section to the Agents page in the 
+mini app that shows the last 10 agent actions as a 
+scrollable timeline:
+
+Each entry looks like:
+  ┌─────────────────────────────────┐
+  │ 🤖 AlphaHunter  2 mins ago     │
+  │ 📊 HOLD — BTC/USDT             │
+  │ ADX 18.4 | RSI 52 | BB squeeze │
+  │ "Waiting for breakout confirm"  │
+  └─────────────────────────────────┘
+
+  ┌─────────────────────────────────┐
+  │ 🤖 Keysa  5 mins ago           │
+  │ 🚀 LONG — ETH/USDT $2,376      │
+  │ Size $12.50 | SL $2,290        │
+  │ "Strong uptrend, MACD cross"   │
+  └─────────────────────────────────┘
+
+To build this:
+
+1. Add an AgentLog table to the DB schema:
+   model AgentLog {
+     id        String   @id @default(cuid())
+     agentId   String
+     agent     Agent    @relation(fields: [agentId], references: [id])
+     action    String   // HOLD, OPEN_LONG, OPEN_SHORT, CLOSE
+     pair      String
+     price     Float?
+     reason    String   // Claude's reasoning (first 100 chars)
+     adx       Float?
+     rsi       Float?
+     score     Int?
+     createdAt DateTime @default(now())
+   }
+
+2. In the trading agent runner, after every decision,
+   save to AgentLog:
+   await db.agentLog.create({
+     data: {
+       agentId: agent.id,
+       action: decision.action,
+       pair: selectedPair,
+       price: currentPrice,
+       reason: decision.reasoning?.slice(0, 120) ?? '',
+       adx: indicators.adx,
+       rsi: indicators.rsi14,
+       score: decision.score
+     }
+   })
+
+3. Add API endpoint GET /api/agents/:id/feed
+   Returns last 20 AgentLog entries for that agent
+
+4. Add API endpoint GET /api/me/feed  
+   Returns last 20 entries across ALL user's agents
+
+5. In the mini app Agents tab, add a "Live Feed" 
+   section below the agent list that polls 
+   /api/me/feed every 30 seconds and shows the 
+   timeline entries styled as cards above.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PART 3 — TELEGRAM: Daily summary message
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Every day at 9am UTC, send each active user a summary:
+
+  📊 Daily Agent Report — [Date]
+  
+  Agent: [NAME]
+  Trades today: X
+  Positions opened: X  
+  Current PnL: +$X.XX
+  
+  Best trade: BTC LONG +$X.XX
+  Pairs scanned: 168 analyses
+  
+  Status: 🟢 Active and scanning
+
+Build all three parts. The Telegram messages are 
+most important — do those first. Users need to feel 
+their agent is alive and working.

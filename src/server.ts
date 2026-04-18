@@ -109,6 +109,80 @@ app.get('/api/me/agents', requireTgUser, async (req, res) => {
   }
 })
 
+// Live "Agent Brain" feed — last 20 decisions across all of the signed-in
+// user's agents. Powers the timeline on the mini-app Agents tab.
+app.get('/api/me/feed', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    const limit = Math.min(parseInt(String(req.query.limit ?? '20')) || 20, 100)
+    const entries = await db.agentLog.findMany({
+      where: {
+        userId: user.id,
+        pair: { not: null }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: { agent: { select: { name: true } } }
+    })
+    res.json(
+      entries.map((e) => ({
+        id: e.id,
+        agentId: e.agentId,
+        agentName: e.agent?.name ?? 'Agent',
+        action: e.action,
+        pair: e.pair,
+        price: e.price,
+        reason: e.reason,
+        adx: e.adx,
+        rsi: e.rsi,
+        score: e.score,
+        regime: e.regime,
+        createdAt: e.createdAt
+      }))
+    )
+  } catch (err) {
+    console.error('[API] /me/feed failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// Per-agent feed — same shape, scoped to one agent the user owns.
+app.get('/api/agents/:id/feed', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    const agent = await db.agent.findFirst({
+      where: { id: String(req.params.id), userId: user.id },
+      select: { id: true, name: true }
+    })
+    if (!agent) return res.status(404).json({ error: 'Agent not found' })
+    const limit = Math.min(parseInt(String(req.query.limit ?? '20')) || 20, 100)
+    const entries = await db.agentLog.findMany({
+      where: { agentId: agent.id, pair: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      take: limit
+    })
+    res.json(
+      entries.map((e) => ({
+        id: e.id,
+        agentId: e.agentId,
+        agentName: agent.name,
+        action: e.action,
+        pair: e.pair,
+        price: e.price,
+        reason: e.reason,
+        adx: e.adx,
+        rsi: e.rsi,
+        score: e.score,
+        regime: e.regime,
+        createdAt: e.createdAt
+      }))
+    )
+  } catch (err) {
+    console.error('[API] /agents/:id/feed failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
 app.get('/api/me/portfolio', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user

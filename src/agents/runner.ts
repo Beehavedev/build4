@@ -7,6 +7,45 @@ import { buildAlignmentBar } from './indicators'
 let botRef: Bot | null = null
 const runningAgents = new Set<string>()
 
+export function getBot(): Bot | null {
+  return botRef
+}
+
+// Escape characters Telegram's "Markdown" parse mode treats as control chars.
+// Without this, an agent named e.g. "Algo_v2" or "Best*Trader" causes the
+// entire message to be rejected with a 400 from Telegram.
+export function escapeMd(s: string): string {
+  return (s ?? '').replace(/([_*`\[\]])/g, '\\$1')
+}
+
+// Tracks how many ticks each agent has run since (re-)activation, so we can
+// send "verbose" tick summaries for the first few ticks and then go quiet.
+const ticksSinceActivation = new Map<string, number>()
+const lastTickSummaryAt    = new Map<string, number>()
+
+export function noteAgentActivated(agentId: string) {
+  ticksSinceActivation.set(agentId, 0)
+  lastTickSummaryAt.delete(agentId)
+}
+export function noteAgentTicked(agentId: string) {
+  ticksSinceActivation.set(agentId, (ticksSinceActivation.get(agentId) ?? 0) + 1)
+}
+export function getTickCount(agentId: string): number {
+  return ticksSinceActivation.get(agentId) ?? 0
+}
+export function shouldSendSummary(agentId: string, hasAction: boolean, bestScore: number): boolean {
+  const tickN = getTickCount(agentId)
+  if (tickN <= 3) return true              // first 3 ticks always verbose
+  if (hasAction) return true               // any OPEN/CLOSE always
+  const last = lastTickSummaryAt.get(agentId) ?? 0
+  const FIVE_MIN = 5 * 60 * 1000
+  if (Date.now() - last < FIVE_MIN) return false
+  return bestScore >= 6                    // only "near-miss" HOLDs after warmup
+}
+export function markSummarySent(agentId: string) {
+  lastTickSummaryAt.set(agentId, Date.now())
+}
+
 export function initRunner(bot: Bot) {
   botRef = bot
 
@@ -15,8 +54,8 @@ export function initRunner(bot: Bot) {
     await runAllAgents()
   })
 
-  // Daily summary — midnight UTC
-  cron.schedule('0 0 * * *', async () => {
+  // Daily summary — 09:00 UTC
+  cron.schedule('0 9 * * *', async () => {
     await sendDailySummaries()
   })
 
@@ -115,7 +154,7 @@ async function checkProactiveAlerts() {
         try {
           await botRef.api.sendMessage(
             trade.user.telegramId.toString(),
-            `⏰ *Position Alert — ${trade.agent.name}*\n\n${trade.pair} ${trade.side} has been open for 4 hours.\nEntry: $${trade.entryPrice.toFixed(2)}\n\nConsider reviewing this position.`,
+            `⏰ *Position Alert — ${escapeMd(trade.agent.name)}*\n\n${trade.pair} ${trade.side} has been open for 4 hours.\nEntry: $${trade.entryPrice.toFixed(2)}\n\nConsider reviewing this position.`,
             { parse_mode: 'Markdown' }
           )
         } catch (e) {
@@ -151,17 +190,50 @@ async function sendDailySummaries() {
           }
         })
 
-        if (todayTrades.length === 0) continue
+        const opensToday = await db.trade.count({
+          where: { agentId: agent.id, openedAt: { gte: todayStart } }
+        })
+        const scansToday = await db.agentLog.count({
+          where: { agentId: agent.id, createdAt: { gte: todayStart }, pair: { not: null } }
+        })
+
+        if (todayTrades.length === 0 && opensToday === 0 && scansToday === 0) continue
 
         const todayPnl = todayTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0)
         const wins = todayTrades.filter((t) => (t.pnl ?? 0) > 0).length
-        const winRate = (wins / todayTrades.length) * 100
+        const winRate = todayTrades.length > 0 ? (wins / todayTrades.length) * 100 : 0
 
-        const emoji = todayPnl >= 0 ? '📈' : '📉'
+        // Best closed trade today
+        const bestTrade = todayTrades.reduce<{ pair: string; side: string; pnl: number } | null>(
+          (best, t) => {
+            const p = t.pnl ?? 0
+            return !best || p > best.pnl ? { pair: t.pair, side: t.side, pnl: p } : best
+          },
+          null
+        )
+
+        const emoji = todayPnl >= 0 ? '📈' : todayPnl < 0 ? '📉' : '📊'
+        const today = new Date().toISOString().slice(0, 10)
+        const status = agent.isActive && !agent.isPaused
+          ? '🟢 Active and scanning'
+          : agent.isPaused ? '⏸ Paused' : '⏹ Stopped'
+
+        const bestLine = bestTrade && bestTrade.pnl > 0
+          ? `\n*Best trade:* ${bestTrade.pair} ${bestTrade.side} ${bestTrade.pnl >= 0 ? '+' : ''}$${bestTrade.pnl.toFixed(2)}`
+          : ''
 
         await botRef.api.sendMessage(
           agent.user.telegramId.toString(),
-          `${emoji} *Daily Summary — ${agent.name}*\n\nTrades: ${todayTrades.length} (${wins}W / ${todayTrades.length - wins}L)\nPnL: ${todayPnl >= 0 ? '+' : ''}$${todayPnl.toFixed(2)} USDT\nWin Rate: ${winRate.toFixed(0)}%\n\n📊 All-time: ${agent.totalTrades} trades | ${agent.winRate.toFixed(0)}% win rate | ${agent.totalPnl >= 0 ? '+' : ''}$${agent.totalPnl.toFixed(2)} total`,
+          `${emoji} *Daily Agent Report — ${today}*\n\n` +
+          `*Agent:* ${escapeMd(agent.name)}\n` +
+          `*Trades closed:* ${todayTrades.length} (${wins}W / ${todayTrades.length - wins}L)\n` +
+          `*Positions opened:* ${opensToday}\n` +
+          `*PnL today:* ${todayPnl >= 0 ? '+' : ''}$${todayPnl.toFixed(2)} USDT\n` +
+          `*Win rate today:* ${winRate.toFixed(0)}%` +
+          bestLine + `\n` +
+          `*Pairs scanned:* ${scansToday} analyses\n\n` +
+          `*Status:* ${status}\n\n` +
+          `_All-time: ${agent.totalTrades} trades · ${agent.winRate.toFixed(0)}% win · ${agent.totalPnl >= 0 ? '+' : ''}$${agent.totalPnl.toFixed(2)}_`,
           { parse_mode: 'Markdown' }
         )
       } catch (e) {
@@ -194,7 +266,7 @@ export function notifyTradeOpened(
     ? Math.abs(((decision.takeProfit - fillPrice) / fillPrice) * 100).toFixed(2)
     : '—'
 
-  const msg = `🤖 *${agentName}* opened a position
+  const msg = `🤖 *${escapeMd(agentName)}* opened a position
 
 ${side} *${decision.pair}* | ${decision.leverage}x leverage
 

@@ -102,6 +102,25 @@ export function getSignals() {
   return fetchApi<any[]>("/api/signals");
 }
 
+export interface FeedEntry {
+  id: string;
+  agentId: string;
+  agentName: string;
+  action: string;        // HOLD, OPEN_LONG, OPEN_SHORT, CLOSE
+  pair: string | null;
+  price: number | null;
+  reason: string | null;
+  adx: number | null;
+  rsi: number | null;
+  score: number | null;
+  regime: string | null;
+  createdAt: string;
+}
+
+export function getMyFeed(limit = 20) {
+  return apiFetch<FeedEntry[]>(`/api/me/feed?limit=${limit}`);
+}
+
 export function getTelegramUser() {
   const tg = window.Telegram?.WebApp;
   return tg?.initDataUnsafe?.user || null;
