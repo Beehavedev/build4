@@ -162,20 +162,22 @@ export async function handleAsterConnect(ctx: Context) {
           where: { userId: user.id, isActive: true }
         })
         const addr = wallet?.address ?? '(run /fund)'
+        const miniAppUrl =
+          process.env.MINIAPP_URL ||
+          `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'build4-1.onrender.com'}/app`
+        const kb = new InlineKeyboard().webApp('🚀 Open BUILD4 mini app', miniAppUrl)
         await ctx.reply(
-          `⚡ *Almost there — activate your Aster account first*\n\n` +
-          `Aster only recognises wallets that have made at least one deposit on ` +
-          `[asterdex.com](https://www.asterdex.com). Quick one-time setup:\n\n` +
-          `*1. Get USDT into your BUILD4 wallet*\n` +
-          `Tap /fund and send any USDT (BEP-20) to:\n\`${addr}\`\n\n` +
-          `*2. Activate on Aster*\n` +
-          `• Open [asterdex.com](https://www.asterdex.com) in your browser\n` +
-          `• Connect this wallet via WalletConnect\n` +
-          `• Make any deposit (even $1 works) — this creates your Aster account\n\n` +
-          `*3. Reconnect here*\n` +
-          `Come back to the mini app and tap *Reconnect Now* — should work instantly.\n\n` +
-          `_We're working on a one-tap activation directly in the bot — coming soon._`,
-          { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } } as any
+          `⚡ *Almost there — one-tap activation*\n\n` +
+          `Your Aster account just needs a one-time on-chain setup. BUILD4 does ` +
+          `all of it for you — *no WalletConnect, no asterdex.com visit, no signing in your wallet app*.\n\n` +
+          `*1. Fund your BUILD4 wallet*\n` +
+          `Send any amount of USDT (BEP-20, BNB Smart Chain) to:\n\`${addr}\`\n` +
+          `Add ~0.001 BNB for gas (any small amount works).\n\n` +
+          `*2. Open the mini app and tap "Activate Trading Account"*\n` +
+          `BUILD4 will deposit your USDT to Aster on-chain and approve trading ` +
+          `automatically. Takes about 15 seconds.\n\n` +
+          `_If you saw a "nonce was not sent" error trying to connect on asterdex.com — ignore it. You don't need that flow anymore._`,
+          { parse_mode: 'Markdown', link_preview_options: { is_disabled: true }, reply_markup: kb } as any
         )
       } else {
         await ctx.reply(
