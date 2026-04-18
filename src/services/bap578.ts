@@ -207,26 +207,14 @@ export async function recoverBap578TokenId(opts: {
       }
     }
 
-    // Etherscan v2 historical lookup: find Transfer(0x0, ownerAddress, tokenId)
-    // logs from the BAP-578 contract — that's a mint to this user.
-    const apiKey = process.env.BSCSCAN_API_KEY ?? process.env.ETHERSCAN_API_KEY
-    if (apiKey) {
-      const ownerTopic = ethers.zeroPadValue(opts.ownerAddress.toLowerCase(), 32)
-      const url = `https://api.etherscan.io/v2/api?chainid=56&module=logs&action=getLogs` +
-        `&address=${BAP578_CONTRACT}&topic0=${TRANSFER_TOPIC}&topic1=${ZERO_TOPIC}&topic2=${ownerTopic}` +
-        `&topic0_1_opr=and&topic1_2_opr=and&fromBlock=0&toBlock=latest&apikey=${apiKey}`
-      try {
-        const res = await fetch(url)
-        const data: any = await res.json()
-        if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
-          // Take the most recent mint to this owner.
-          const last = data.result[data.result.length - 1]
-          if (last.topics?.[3]) return BigInt(last.topics[3]).toString()
-        }
-      } catch (e: any) {
-        console.error('[BAP578] Etherscan v2 lookup failed:', e.message)
-      }
-    }
+    // No per-agent recovery without a known mint tx hash.
+    //
+    // We deliberately do NOT fall back to "find any Transfer to this owner",
+    // because a single owner often mints NFAs for multiple agents. Picking
+    // "the most recent" mint cross-attributes one agent's tokenId to another
+    // (e.g. agent Neo wrongly inheriting agent Smith's tokenId because both
+    // are owned by the same wallet). If you upgraded but the mint tx hash
+    // wasn't persisted, the user has to re-mint or contact support.
     return null
   } catch (err: any) {
     console.error('[BAP578] recoverTokenId failed:', err.message)
@@ -234,21 +222,16 @@ export async function recoverBap578TokenId(opts: {
   }
 }
 
-function slugifyAgentName(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'agent'
-}
-
 /**
- * NFAScan public agent page. Format is `{slug}:{tokenId}` where slug is the
- * kebab-case agent name (e.g. "Smith" → "smith:55867").
+ * NFAScan search page. Looking up by tokenId is the most reliable surface —
+ * `https://nfascan.net/search?q=55867` resolves to the canonical agent page
+ * regardless of the agent's slug or rename history.
+ *
+ * Signature still takes `name` so existing callers don't need to change, but
+ * the slug is intentionally unused.
  */
-export function nfaScanUrl(name: string, tokenId: string | number | bigint): string {
-  return `https://nfascan.net/agent/${slugifyAgentName(name)}:${tokenId}`
+export function nfaScanUrl(_name: string, tokenId: string | number | bigint): string {
+  return `https://nfascan.net/search?q=${tokenId}`
 }
 
 export function bap578TokenUrl(tokenId: string): string {

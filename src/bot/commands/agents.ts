@@ -434,6 +434,17 @@ export function registerAgents(bot: Bot) {
         return
       }
       try {
+        // Self-heal: a previous version of recoverBap578TokenId did an
+        // owner-wide Etherscan lookup and could attribute another agent's
+        // tokenId to this one (same owner = same matches). Tell-tale sign
+        // is bap578Verified=true with NO tx hash on this row. Clear it so
+        // the user gets the upgrade button back and accurate state.
+        if (a.bap578Verified && !a.bap578TxHash) {
+          console.log(`[Sync] agent="${a.name}" CLEARING bogus bap578Verified (no txHash on row)`)
+          await setAgentOnchainFields(a.id, { bap578TokenId: null, bap578Verified: false })
+          ;(a as any).bap578TokenId = null
+          ;(a as any).bap578Verified = false
+        }
         if (!a.erc8004AgentId) {
           console.log(`[Sync] agent="${a.name}" recovering ERC-8004 agentId…`)
           const recovered = await recoverErc8004AgentId({ agentAddress: a.walletAddress, txHash: a.erc8004TxHash })
@@ -492,10 +503,6 @@ export function registerAgents(bot: Bot) {
         text += `🟡 *ERC-8004 register:* awaiting confirmation\n`
         text += `📜 [Check tx](${bscscanTxUrl(a.erc8004TxHash)})\n`
       }
-      if (a.walletAddress) {
-        text += `🔐 *Agent wallet:* \`${a.walletAddress}\`\n`
-        text += `🔎 [Wallet on BSCScan](${bscscanAddressUrl(a.walletAddress)})\n`
-      }
       if (a.bap578Verified && a.bap578TokenId) {
         text += `💎 *BAP-578 NFA:* #${a.bap578TokenId} ✓\n`
         text += `🌐 [View on NFAScan](${nfaScanUrl(a.name, a.bap578TokenId!)})\n`
@@ -507,7 +514,7 @@ export function registerAgents(bot: Bot) {
         text += `🧠 *Model:* ${a.learningModel}\n`
       }
       if (a.erc8004AgentId) {
-        text += `📊 [More on 8004scan](${erc8004RegistryScanUrl(a.erc8004AgentId)})\n`
+        text += `📊 [View on 8004scan](${erc8004RegistryScanUrl(a.erc8004AgentId)})\n`
       }
       text += `📊 PnL: ${a.totalPnl >= 0 ? '+' : ''}$${a.totalPnl.toFixed(2)} | WR: ${a.winRate.toFixed(0)}% (${a.totalTrades} trades)\n\n`
     })
