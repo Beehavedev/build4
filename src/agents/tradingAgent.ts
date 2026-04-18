@@ -780,7 +780,7 @@ If you would not put real money in this trade right now, action = HOLD.`
           await saveMemory(
             agent.id,
             'correction',
-            `LOSS on ${pair} ${openPos.side}: closed at $${currentPrice.toFixed(2)}, entry was $${openPos.entryPrice.toFixed(2)}, lost $${Math.abs(pnl).toFixed(2)} USDT. Original reasoning: "${openPos.aiReasoning?.slice(0, 100)}"`,
+            `LOSS on ${pair} ${openPos.side}: closed at $${exitPrice.toFixed(2)}, entry was $${openPos.entryPrice.toFixed(2)}, lost $${Math.abs(pnl).toFixed(2)} USDT. Original reasoning: "${openPos.aiReasoning?.slice(0, 100)}"`,
             { pnl, pnlPct }
           )
         } else {
