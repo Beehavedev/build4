@@ -7,7 +7,7 @@ import { buildAgentIdentity, buildMetadataJson } from '../../services/agentIdent
 import {
   mintBap578Agent, getBnbBalance,
   bap578TokenUrl, nfaScanUrl, bscscanTxUrl, bscscanAddressUrl,
-  TOTAL_USER_FEE_BNB, BAP578_CONTRACT, recoverBap578TokenId
+  TOTAL_USER_FEE_BNB, BAP578_CONTRACT, recoverBap578TokenId, getBap578LogicAddress
 } from '../../services/bap578'
 import { registerAgentOnchain, erc8004ScanUrl, erc8004RegistryScanUrl, recoverErc8004AgentId } from '../../services/erc8004'
 
@@ -434,16 +434,23 @@ export function registerAgents(bot: Bot) {
         return
       }
       try {
-        // Self-heal: a previous version of recoverBap578TokenId did an
-        // owner-wide Etherscan lookup and could attribute another agent's
-        // tokenId to this one (same owner = same matches). Tell-tale sign
-        // is bap578Verified=true with NO tx hash on this row. Clear it so
-        // the user gets the upgrade button back and accurate state.
-        if (a.bap578Verified && !a.bap578TxHash) {
-          console.log(`[Sync] agent="${a.name}" CLEARING bogus bap578Verified (no txHash on row)`)
-          await setAgentOnchainFields(a.id, { bap578TokenId: null, bap578Verified: false })
-          ;(a as any).bap578TokenId = null
-          ;(a as any).bap578Verified = false
+        // Self-heal: previous recoverBap578TokenId did an owner-wide
+        // Etherscan lookup and could attribute another agent's tokenId
+        // to this one (same owner wallet = matches every NFA they minted).
+        // For any verified row, ask the chain who that tokenId actually
+        // belongs to. If logicAddress != this agent's wallet → it's a
+        // wrong attribution; clear it. Otherwise leave it alone — Smith
+        // and other legitimately-upgraded agents are unaffected.
+        if (a.bap578Verified && a.bap578TokenId && a.walletAddress) {
+          const onchainLogic = await getBap578LogicAddress(a.bap578TokenId)
+          if (onchainLogic && onchainLogic !== a.walletAddress.toLowerCase()) {
+            console.log(`[Sync] agent="${a.name}" CLEARING wrong bap578TokenId=${a.bap578TokenId} (chain logicAddr=${onchainLogic} != agent=${a.walletAddress.toLowerCase()})`)
+            await setAgentOnchainFields(a.id, { bap578TokenId: null, bap578Verified: false })
+            ;(a as any).bap578TokenId = null
+            ;(a as any).bap578Verified = false
+          } else if (onchainLogic) {
+            console.log(`[Sync] agent="${a.name}" bap578 verified ✓ (chain logicAddr matches)`)
+          }
         }
         if (!a.erc8004AgentId) {
           console.log(`[Sync] agent="${a.name}" recovering ERC-8004 agentId…`)

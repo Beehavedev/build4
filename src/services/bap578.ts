@@ -207,17 +207,82 @@ export async function recoverBap578TokenId(opts: {
       }
     }
 
-    // No per-agent recovery without a known mint tx hash.
-    //
-    // We deliberately do NOT fall back to "find any Transfer to this owner",
-    // because a single owner often mints NFAs for multiple agents. Picking
-    // "the most recent" mint cross-attributes one agent's tokenId to another
-    // (e.g. agent Neo wrongly inheriting agent Smith's tokenId because both
-    // are owned by the same wallet). If you upgraded but the mint tx hash
-    // wasn't persisted, the user has to re-mint or contact support.
+    // No per-agent tx hash → fall back to scanning AgentCreated events
+    // for this owner and matching logicAddress per-event. This is safe
+    // (each event contains both owner AND logicAddress, so we don't
+    // cross-attribute tokens between agents owned by the same wallet).
+    const apiKey = process.env.BSCSCAN_API_KEY ?? process.env.ETHERSCAN_API_KEY
+    if (apiKey) {
+      try {
+        const iface = new ethers.Interface(BAP578_ABI)
+        const topic0 = iface.getEvent('AgentCreated')!.topicHash
+        const ownerTopic = ethers.zeroPadValue(opts.ownerAddress.toLowerCase(), 32)
+        const url = `https://api.etherscan.io/v2/api?chainid=56&module=logs&action=getLogs` +
+          `&address=${BAP578_CONTRACT}&topic0=${topic0}&topic2=${ownerTopic}` +
+          `&topic0_2_opr=and&fromBlock=0&toBlock=latest&apikey=${apiKey}`
+        const res = await fetch(url)
+        const data: any = await res.json()
+        if (data.status === '1' && Array.isArray(data.result)) {
+          const wantLogic = opts.agentAddress.toLowerCase()
+          for (const log of data.result) {
+            try {
+              const decoded = iface.decodeEventLog('AgentCreated', log.data, log.topics)
+              const logicAddr = (decoded.logicAddress as string)?.toLowerCase()
+              if (logicAddr === wantLogic) {
+                const tokenId = BigInt(log.topics[1]).toString()
+                console.log(`[BAP578] recovered tokenId=${tokenId} for agent=${wantLogic} via owner-scan`)
+                return tokenId
+              }
+            } catch { /* malformed log, skip */ }
+          }
+        }
+      } catch (e: any) {
+        console.error('[BAP578] owner-scan fallback failed:', e.message)
+      }
+    }
     return null
   } catch (err: any) {
     console.error('[BAP578] recoverTokenId failed:', err.message)
+    return null
+  }
+}
+
+/**
+ * Look up the on-chain logicAddress for a given BAP-578 tokenId by reading
+ * the AgentCreated event log. Used to verify whether a tokenId stored
+ * against a BUILD4 agent really corresponds to that agent's wallet.
+ *
+ * Returns the lower-cased logicAddress, or null if the token doesn't exist
+ * or the lookup fails.
+ */
+export async function getBap578LogicAddress(tokenId: string | number | bigint): Promise<string | null> {
+  try {
+    const apiKey = process.env.BSCSCAN_API_KEY ?? process.env.ETHERSCAN_API_KEY
+    if (!apiKey) return null
+
+    const iface = new ethers.Interface(BAP578_ABI)
+    const topic0 = iface.getEvent('AgentCreated')!.topicHash
+    const tokenTopic = ethers.zeroPadValue(ethers.toBeHex(BigInt(tokenId)), 32)
+
+    const url = `https://api.etherscan.io/v2/api?chainid=56&module=logs&action=getLogs` +
+      `&address=${BAP578_CONTRACT}&topic0=${topic0}&topic1=${tokenTopic}` +
+      `&topic0_1_opr=and&fromBlock=0&toBlock=latest&apikey=${apiKey}`
+    const res = await fetch(url)
+    const data: any = await res.json()
+    if (data.status !== '1' || !Array.isArray(data.result) || data.result.length === 0) {
+      return null
+    }
+    const log = data.result[0]
+    // Decode non-indexed args: logicAddress (address), metadataURI (string).
+    const decoded = iface.decodeEventLog(
+      'AgentCreated',
+      log.data,
+      log.topics
+    )
+    const logicAddr = (decoded.logicAddress as string)?.toLowerCase() ?? null
+    return logicAddr
+  } catch (err: any) {
+    console.error('[BAP578] getLogicAddress failed:', err.message)
     return null
   }
 }
