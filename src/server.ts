@@ -111,49 +111,144 @@ app.get('/api/me/agents', requireTgUser, async (req, res) => {
 
 // Live "Agent Brain" feed — last 20 decisions across all of the signed-in
 // user's agents. Powers the timeline on the mini-app Agents tab.
+// ── Brain feed helpers ──────────────────────────────────────────────────
+// The feed has TWO sources:
+//   1. AgentLog rows — rich reasoning entries written by the runner. These
+//      include adx/rsi/score/regime/reason. Best-effort: if the running
+//      Prisma client is stale (Render edge case) the read or the underlying
+//      writes can fail with PrismaClientValidationError, in which case we
+//      silently return an empty list and fall back to source #2.
+//   2. Trade rows — every executed order. These ALWAYS succeed because the
+//      Trade model has no recently-added fields. This guarantees that any
+//      real trade the user sees on Aster also shows up in their brain feed,
+//      even if the rich logging path is broken.
+// We fetch both, merge them, sort by time, and cap at `limit`.
+
+const isStaleClientError = (err: any): boolean => {
+  const code = err?.code
+  return (
+    code === 'P2021' ||
+    code === 'P2022' ||
+    err?.name === 'PrismaClientValidationError' ||
+    /Unknown argument|Unknown field/i.test(String(err?.message ?? ''))
+  )
+}
+
+type FeedEntry = {
+  id: string
+  agentId: string
+  agentName: string
+  action: string
+  pair: string | null
+  price: number | null
+  reason: string | null
+  adx: number | null
+  rsi: number | null
+  score: number | null
+  regime: string | null
+  createdAt: Date
+}
+
+async function fetchAgentLogFeed(where: any, limit: number, agentNameById: Map<string, string>): Promise<FeedEntry[]> {
+  try {
+    const entries = await db.agentLog.findMany({
+      where: { ...where, pair: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: { agent: { select: { name: true } } }
+    } as any)
+    return (entries as any[]).map((e) => ({
+      id: e.id,
+      agentId: e.agentId,
+      agentName: e.agent?.name ?? agentNameById.get(e.agentId) ?? 'Agent',
+      action: e.action,
+      pair: e.pair ?? null,
+      price: e.price ?? null,
+      reason: e.reason ?? null,
+      adx: e.adx ?? null,
+      rsi: e.rsi ?? null,
+      score: e.score ?? null,
+      regime: e.regime ?? null,
+      createdAt: e.createdAt
+    }))
+  } catch (err: any) {
+    if (isStaleClientError(err)) {
+      console.error(`[API] feed agentLog read degraded (${err?.code ?? 'validation'}):`, err?.message?.split('\n')[0])
+      return []
+    }
+    throw err
+  }
+}
+
+async function fetchTradeFeed(where: any, limit: number, agentNameById: Map<string, string>): Promise<FeedEntry[]> {
+  // Trades are split into two virtual feed entries: one OPEN at openedAt, and
+  // one CLOSE at closedAt if the trade has closed. That way the user sees
+  // both sides of the lifecycle in chronological order.
+  const trades = await db.trade.findMany({
+    where,
+    orderBy: { openedAt: 'desc' },
+    take: limit,
+    include: { agent: { select: { name: true } } }
+  })
+  const out: FeedEntry[] = []
+  for (const t of trades as any[]) {
+    const sig = (t.signalsUsed ?? {}) as any
+    const agentName = t.agent?.name ?? agentNameById.get(t.agentId ?? '') ?? 'Agent'
+    out.push({
+      id: `trade-open-${t.id}`,
+      agentId: t.agentId ?? '',
+      agentName,
+      action: t.side === 'LONG' ? 'OPEN_LONG' : 'OPEN_SHORT',
+      pair: t.pair,
+      price: t.entryPrice,
+      reason: t.aiReasoning ?? `Executed on ${t.exchange} · size $${Number(t.size).toFixed(2)} · ${t.leverage}x`,
+      adx: sig.adx ?? null,
+      rsi: sig.rsi ?? null,
+      score: sig.setupScore ?? sig.score ?? null,
+      regime: sig.regime ?? null,
+      createdAt: t.openedAt
+    })
+    if (t.closedAt) {
+      const pnlStr = t.pnl != null ? `${t.pnl >= 0 ? '+' : ''}${Number(t.pnl).toFixed(2)} USDT` : ''
+      out.push({
+        id: `trade-close-${t.id}`,
+        agentId: t.agentId ?? '',
+        agentName,
+        action: 'CLOSE',
+        pair: t.pair,
+        price: t.exitPrice ?? t.entryPrice,
+        reason: `Closed ${t.side} ${pnlStr}`.trim(),
+        adx: null,
+        rsi: null,
+        score: null,
+        regime: null,
+        createdAt: t.closedAt
+      })
+    }
+  }
+  return out
+}
+
+function mergeFeeds(a: FeedEntry[], b: FeedEntry[], limit: number): FeedEntry[] {
+  return [...a, ...b]
+    .sort((x, y) => y.createdAt.getTime() - x.createdAt.getTime())
+    .slice(0, limit)
+}
+
 app.get('/api/me/feed', requireTgUser, async (req, res) => {
   try {
     const user = (req as any).user
     const limit = Math.min(parseInt(String(req.query.limit ?? '20')) || 20, 100)
-    const entries = await db.agentLog.findMany({
-      where: {
-        userId: user.id,
-        pair: { not: null }
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      include: { agent: { select: { name: true } } }
-    })
-    res.json(
-      entries.map((e) => ({
-        id: e.id,
-        agentId: e.agentId,
-        agentName: e.agent?.name ?? 'Agent',
-        action: e.action,
-        pair: e.pair,
-        price: e.price,
-        reason: e.reason,
-        adx: e.adx,
-        rsi: e.rsi,
-        score: e.score,
-        regime: e.regime,
-        createdAt: e.createdAt
-      }))
-    )
+    const agents = await db.agent.findMany({ where: { userId: user.id }, select: { id: true, name: true } })
+    const nameById = new Map(agents.map((a) => [a.id, a.name]))
+    const [logFeed, tradeFeed] = await Promise.all([
+      fetchAgentLogFeed({ userId: user.id }, limit, nameById),
+      fetchTradeFeed({ userId: user.id }, limit, nameById)
+    ])
+    res.json(mergeFeeds(logFeed, tradeFeed, limit))
   } catch (err: any) {
-    // Treat any "schema is behind the running code" error as empty feed
-    // instead of 500'ing the UI:
-    //   P2021 = table missing
-    //   P2022 = column missing in DB
-    //   PrismaClientValidationError = generated client doesn't know a field
-    //     (e.g. Render is serving a cached client without pair/adx/rsi/etc).
-    //     This one has no `code`; detect by name or message.
-    const code = err?.code
-    const isValidation =
-      err?.name === 'PrismaClientValidationError' ||
-      /Unknown argument|Unknown field/i.test(String(err?.message ?? ''))
-    if (code === 'P2021' || code === 'P2022' || isValidation) {
-      console.error(`[API] /me/feed schema mismatch (${code ?? 'validation'}):`, err?.message?.split('\n')[0])
+    if (isStaleClientError(err)) {
+      console.error(`[API] /me/feed schema mismatch (${err?.code ?? 'validation'}):`, err?.message?.split('\n')[0])
       return res.json([])
     }
     console.error('[API] /me/feed failed:', err)
@@ -171,34 +266,15 @@ app.get('/api/agents/:id/feed', requireTgUser, async (req, res) => {
     })
     if (!agent) return res.status(404).json({ error: 'Agent not found' })
     const limit = Math.min(parseInt(String(req.query.limit ?? '20')) || 20, 100)
-    const entries = await db.agentLog.findMany({
-      where: { agentId: agent.id, pair: { not: null } },
-      orderBy: { createdAt: 'desc' },
-      take: limit
-    })
-    res.json(
-      entries.map((e) => ({
-        id: e.id,
-        agentId: e.agentId,
-        agentName: agent.name,
-        action: e.action,
-        pair: e.pair,
-        price: e.price,
-        reason: e.reason,
-        adx: e.adx,
-        rsi: e.rsi,
-        score: e.score,
-        regime: e.regime,
-        createdAt: e.createdAt
-      }))
-    )
+    const nameById = new Map([[agent.id, agent.name]])
+    const [logFeed, tradeFeed] = await Promise.all([
+      fetchAgentLogFeed({ agentId: agent.id }, limit, nameById),
+      fetchTradeFeed({ agentId: agent.id }, limit, nameById)
+    ])
+    res.json(mergeFeeds(logFeed, tradeFeed, limit))
   } catch (err: any) {
-    const code = err?.code
-    const isValidation =
-      err?.name === 'PrismaClientValidationError' ||
-      /Unknown argument|Unknown field/i.test(String(err?.message ?? ''))
-    if (code === 'P2021' || code === 'P2022' || isValidation) {
-      console.error(`[API] /agents/:id/feed schema mismatch (${code ?? 'validation'}):`, err?.message?.split('\n')[0])
+    if (isStaleClientError(err)) {
+      console.error(`[API] /agents/:id/feed schema mismatch (${err?.code ?? 'validation'}):`, err?.message?.split('\n')[0])
       return res.json([])
     }
     console.error('[API] /agents/:id/feed failed:', err)
