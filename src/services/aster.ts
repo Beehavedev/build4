@@ -714,39 +714,42 @@ export async function approveAgent(params: {
 
   // EIP-712 message — field names are PascalCase (Aster auto-uppercases the
   // first letter of every body param). Field ORDER must match the body order.
+  // User + Nonce are now part of the signed payload — Aster's v3 verifier
+  // rejects these requests with "Signature check failed" otherwise.
+  const nonce = getNonce()
+  const tmpWallet = new ethers.Wallet(params.userPrivateKey)
+  const userAddr  = params.userAddress ?? tmpWallet.address
   const types = {
     ApproveAgent: [
+      { name: 'User',         type: 'string'  },
       { name: 'AgentName',    type: 'string'  },
       { name: 'AgentAddress', type: 'string'  },
       { name: 'IpWhitelist',  type: 'string'  },
       { name: 'Expired',      type: 'uint256' },
       { name: 'CanSpotTrade', type: 'bool'    },
       { name: 'CanPerpTrade', type: 'bool'    },
-      { name: 'CanWithdraw',  type: 'bool'    }
+      { name: 'CanWithdraw',  type: 'bool'    },
+      { name: 'Nonce',        type: 'uint256' }
     ]
   }
   const message = {
+    User:         userAddr,
     AgentName:    params.agentName,
     AgentAddress: params.agentAddress,
     IpWhitelist:  ipWhitelist,
     Expired:      expired,
     CanSpotTrade: canSpotTrade,
     CanPerpTrade: canPerpTrade,
-    CanWithdraw:  canWithdraw
+    CanWithdraw:  canWithdraw,
+    Nonce:        nonce
   }
 
   try {
-    const wallet = new ethers.Wallet(params.userPrivateKey)
+    const wallet = tmpWallet
     const sig = await wallet.signTypedData(ASTER_MGMT_DOMAIN, types, message)
 
-    // Body fields use camelCase. signatureChainId MUST equal domain.chainId.
-    // `nonce` was made mandatory by Aster on the v3 management endpoints
-    // (approveAgent / approveBuilder). Sending it bare without re-signing
-    // works because the EIP-712 message is over the named fields above —
-    // nonce is a request-level dedupe param, not part of the signed payload.
-    // Without it Aster returns: "Mandatory parameter 'nonce' was not sent".
-    const nonce = getNonce()
-    const userAddr = params.userAddress ?? wallet.address
+    // Body fields use camelCase, in the same order as the typed payload.
+    // signatureChainId MUST equal domain.chainId.
     const body = new URLSearchParams({
       user:             userAddr,
       agentName:        params.agentName,
@@ -800,26 +803,32 @@ export async function approveBuilder(params: {
 }): Promise<{ success: boolean; error?: string }> {
   const builderName = params.builderName ?? 'BUILD4'
 
+  // See approveAgent — User and Nonce are part of the signed payload.
+  const nonce = getNonce()
+  const tmpWallet = new ethers.Wallet(params.userPrivateKey)
+  const userAddr  = params.userAddress ?? tmpWallet.address
+
   const types = {
     ApproveBuilder: [
-      { name: 'Builder',     type: 'string' },
-      { name: 'MaxFeeRate',  type: 'string' },
-      { name: 'BuilderName', type: 'string' }
+      { name: 'User',        type: 'string'  },
+      { name: 'Builder',     type: 'string'  },
+      { name: 'MaxFeeRate',  type: 'string'  },
+      { name: 'BuilderName', type: 'string'  },
+      { name: 'Nonce',       type: 'uint256' }
     ]
   }
   const message = {
+    User:        userAddr,
     Builder:     params.builderAddress,
     MaxFeeRate:  params.maxFeeRate,
-    BuilderName: builderName
+    BuilderName: builderName,
+    Nonce:       nonce
   }
 
   try {
-    const wallet = new ethers.Wallet(params.userPrivateKey)
+    const wallet = tmpWallet
     const sig = await wallet.signTypedData(ASTER_MGMT_DOMAIN, types, message)
 
-    // See approveAgent — same nonce + user requirement on this v3 endpoint.
-    const nonce = getNonce()
-    const userAddr = params.userAddress ?? wallet.address
     const body = new URLSearchParams({
       user:             userAddr,
       builder:          params.builderAddress,
