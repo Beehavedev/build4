@@ -1,0 +1,51 @@
+[Aster] klines URL: https://fapi.asterdex.com/fapi/v1/klines
+[Aster] klines params: { symbol: 'ALL', interval: '4h', limit: 200 }
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"1h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"15m","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"15m","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"4h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"4h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"15m","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"1h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"15m","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"1h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"15m","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"4h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"1h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"4h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"15m","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"1h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"1h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"4h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"4h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"15m","limit":200}
+Menu
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"1h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"4h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"4h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"15m","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!
+[Aster] getKlines failed: msg= Request failed with status code 400 status= 400 detail= {"code":-1121,"msg":"Invalid symbol."} url= /fapi/v1/klines params= {"symbol":"ALL","interval":"1h","limit":200}
+[Aster] FALLING BACK TO MOCK DATA — agents trading on simulated candles!

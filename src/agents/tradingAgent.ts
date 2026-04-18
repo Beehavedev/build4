@@ -210,10 +210,36 @@ async function getMultiTimeframeOHLCV(pair: string): Promise<{
   return { '15m': tf15m, '1h': tf1h, '4h': tf4h }
 }
 
+// Default universe used when an agent is configured with pairs:['ALL'].
+// All confirmed-tradeable on Aster fapi.asterdex.com as of 2026-04.
+const ALL_PAIRS_UNIVERSE = [
+  'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT',
+  'XRPUSDT', 'ARBUSDT', 'ASTERUSDT'
+]
+
+function expandPairs(pairs: string[]): string[] {
+  const expanded = new Set<string>()
+  for (const p of pairs) {
+    if (!p) continue
+    if (p.toUpperCase() === 'ALL') {
+      ALL_PAIRS_UNIVERSE.forEach((x) => expanded.add(x))
+    } else {
+      expanded.add(p.replace(/[\/\s]/g, '').toUpperCase())
+    }
+  }
+  return Array.from(expanded)
+}
+
 export async function runAgentTick(agent: Agent): Promise<void> {
   const startTime = Date.now()
 
-  for (const pair of agent.pairs) {
+  const pairList = expandPairs(agent.pairs)
+  if (pairList.length === 0) {
+    console.warn(`[Agent ${agent.name}] No tradeable pairs after expansion (raw=${JSON.stringify(agent.pairs)}), skipping tick`)
+    return
+  }
+
+  for (const pair of pairList) {
     try {
       // 1. Gather market data
       const ohlcv = await getMultiTimeframeOHLCV(pair)
