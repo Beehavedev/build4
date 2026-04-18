@@ -682,14 +682,84 @@ export async function cancelOrder(
 // The user's wallet signs this — pass their decrypted private key temporarily
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Aster's "management endpoint" EIP-712 domain. Note chainId is 56 (BSC),
-// NOT 1666 — confirmed against asterdex/api-docs/demo/aster-code.py.
+// Aster's "management endpoint" EIP-712 domain. Confirmed against the official
+// asterdex/API-demo/aster-code-demo (utils.js EIP712_DOMAIN, main=True ops).
 const ASTER_MGMT_DOMAIN = {
   name:              'AsterSignTransaction',
   version:           '1',
   chainId:           56,
   verifyingContract: '0x0000000000000000000000000000000000000000'
 } as const
+
+// ASTER_CHAIN — required field on every v3 management endpoint. 'Mainnet' for
+// production. Demo defaults to 'Testnet' but real mainnet calls need 'Mainnet'.
+const ASTER_CHAIN = process.env.ASTER_CHAIN ?? 'Mainnet'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared signer for v3 management endpoints (approveAgent / approveBuilder /
+// updateAgent / etc). Mirrors aster-code-demo/utils.js#signEIP712Main exactly:
+//   1. PascalCase every param key (agentName -> AgentName)
+//   2. Infer EIP-712 type per field (boolean → bool; integer Number → uint256;
+//      everything else → string)
+//   3. Sign with chainId 56 domain + dynamic primaryType
+//   4. POST to URL?<rawQuerystring>&signature=…&signatureChainId=56 with empty
+//      body. Querystring values are NOT URL-encoded (Aster signs raw bytes).
+// ─────────────────────────────────────────────────────────────────────────────
+function pascalCaseKeys(o: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {}
+  for (const [k, v] of Object.entries(o)) {
+    out[k.charAt(0).toUpperCase() + k.slice(1)] = v
+  }
+  return out
+}
+
+function inferEip712Types(o: Record<string, any>) {
+  const types: { name: string; type: string }[] = []
+  for (const [k, v] of Object.entries(o)) {
+    let type = 'string'
+    if (typeof v === 'boolean')                                 type = 'bool'
+    else if (typeof v === 'number' && Number.isInteger(v))      type = 'uint256'
+    types.push({ name: k, type })
+  }
+  return types
+}
+
+// Build querystring with raw (un-encoded) values, in object insertion order.
+// Aster's signature verification reconstructs the typed data from these exact
+// strings — URL-encoding would change the digest and trip "Signature check
+// failed".
+function buildRawQueryString(o: Record<string, any>): string {
+  return Object.entries(o)
+    .filter(([, v]) => v !== undefined && v !== null)
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join('&')
+}
+
+async function signMgmtTypedData(
+  signerPrivateKey: string,
+  params: Record<string, any>,
+  primaryType: string
+): Promise<string> {
+  const message = pascalCaseKeys(params)
+  const types   = { [primaryType]: inferEip712Types(message) }
+  const wallet  = new ethers.Wallet(signerPrivateKey)
+  return wallet.signTypedData(ASTER_MGMT_DOMAIN, types, message)
+}
+
+async function postMgmtEndpoint(
+  path: string,
+  signerPrivateKey: string,
+  params: Record<string, any>,
+  primaryType: string
+): Promise<any> {
+  const sig = await signMgmtTypedData(signerPrivateKey, params, primaryType)
+  const finalParams = { ...params, signature: sig, signatureChainId: ASTER_MGMT_DOMAIN.chainId }
+  const url = `${path}?${buildRawQueryString(finalParams)}`
+  // Aster expects POST with empty body and all params in the URL.
+  return client(BASE_SIGNED).post(url, '', {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+  })
+}
 
 export async function approveAgent(params: {
   userAddress?:      string  // for logging only — Aster ecrecovers from sig
@@ -701,63 +771,53 @@ export async function approveAgent(params: {
   canSpotTrade?:     boolean
   canPerpTrade?:     boolean
   canWithdraw?:      boolean
-  // Accepted but ignored (kept for call-site backwards compat — builder/fee
-  // are configured via approveBuilder, a separate Aster API call).
   builderAddress?:   string
-  maxFeeRate?:       string
+  maxFeeRate?:       string  // e.g. '0.0001' = 0.01%
+  builderName?:      string
 }): Promise<{ success: boolean; error?: string }> {
   const expired      = Date.now() + (params.expiredDays ?? 365) * 86_400_000
   const ipWhitelist  = params.ipWhitelist ?? ''
   const canSpotTrade = params.canSpotTrade ?? false
   const canPerpTrade = params.canPerpTrade ?? true
   const canWithdraw  = params.canWithdraw  ?? false
+  const builder      = params.builderAddress ?? ''
+  const maxFeeRate   = params.maxFeeRate     ?? '0'
+  const builderName  = params.builderName    ?? 'BUILD4'
 
-  // Aster v3 management endpoints use the same canonical-querystring signing
-  // scheme as the trading endpoints (signRequest above):
-  //   sign EIP-712 { msg: <full querystring of all body params> }
-  //   domain = AsterSignTransaction, version=1, chainId=1666
-  //   signatureChainId in the body matches domain.chainId (1666).
-  // The custom typed-payload approach (chainId 56, named fields) was an
-  // older pattern that Aster's verifier no longer accepts — both User+Nonce
-  // and the typed-payload variant return "Signature check failed".
-  const nonce = getNonce()
   const wallet   = new ethers.Wallet(params.userPrivateKey)
   const userAddr = params.userAddress ?? wallet.address
 
-  const bodyParams: Record<string, string> = {
-    user:         userAddr,
+  // Param order MUST match the demo (01_approveAgent.js) — Aster's verifier
+  // is order-sensitive because EIP-712 type derivation is order-sensitive.
+  // Booleans stay booleans, integers stay numbers — type inference handles it.
+  const callParams: Record<string, any> = {
     agentName:    params.agentName,
     agentAddress: params.agentAddress,
-    ipWhitelist:  ipWhitelist,
-    expired:      String(expired),
-    canSpotTrade: String(canSpotTrade),
-    canPerpTrade: String(canPerpTrade),
-    canWithdraw:  String(canWithdraw),
-    nonce:        String(nonce)
+    ipWhitelist,
+    expired,
+    canSpotTrade,
+    canPerpTrade,
+    canWithdraw,
+    builder,
+    maxFeeRate,
+    builderName,
+    asterChain:   ASTER_CHAIN,
+    user:         userAddr,
+    nonce:        getNonce()
   }
 
   try {
-    const queryString = new URLSearchParams(bodyParams).toString()
-    const sig = await wallet.signTypedData(
-      EIP712_DOMAIN,
-      EIP712_TYPES,
-      { msg: queryString }
-    )
-
-    const body = queryString
-      + '&signature='        + encodeURIComponent(sig)
-      + '&signatureChainId=' + EIP712_DOMAIN.chainId
-
-    const resp = await client(BASE_SIGNED).post(
+    const resp = await postMgmtEndpoint(
       '/fapi/v3/approveAgent',
-      body,
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      params.userPrivateKey,
+      callParams,
+      'ApproveAgent'
     )
-    console.log('[Aster] approveAgent ok:', params.userAddress ?? wallet.address, '→', resp.status, resp.data)
+    console.log('[Aster] approveAgent ok:', userAddr, '→', resp.status, resp.data)
     return { success: true }
   } catch (err: any) {
     console.error('[Aster] approveAgent FAILED', {
-      user:           params.userAddress,
+      user:           userAddr,
       agent:          params.agentAddress,
       expired,
       httpStatus:     err?.response?.status,
@@ -777,6 +837,7 @@ export async function approveAgent(params: {
 // Aster Code — Approve Builder (user signs to enroll a builder/broker for fees)
 // Called once per user during onboarding, after approveAgent. Without this,
 // trades won't carry our broker fee. Safe to call repeatedly (Aster upserts).
+// Mirrors aster-code-demo/05_approveBuilder.js exactly.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function approveBuilder(params: {
   userAddress?:    string  // for logging only
@@ -786,42 +847,30 @@ export async function approveBuilder(params: {
   builderName?:    string
 }): Promise<{ success: boolean; error?: string }> {
   const builderName = params.builderName ?? 'BUILD4'
+  const wallet      = new ethers.Wallet(params.userPrivateKey)
+  const userAddr    = params.userAddress ?? wallet.address
 
-  // See approveAgent — canonical-querystring signing scheme (chainId 1666).
-  const nonce    = getNonce()
-  const wallet   = new ethers.Wallet(params.userPrivateKey)
-  const userAddr = params.userAddress ?? wallet.address
-
-  const bodyParams: Record<string, string> = {
-    user:        userAddr,
+  const callParams: Record<string, any> = {
     builder:     params.builderAddress,
     maxFeeRate:  params.maxFeeRate,
-    builderName: builderName,
-    nonce:       String(nonce)
+    builderName,
+    asterChain:  ASTER_CHAIN,
+    user:        userAddr,
+    nonce:       getNonce()
   }
 
   try {
-    const queryString = new URLSearchParams(bodyParams).toString()
-    const sig = await wallet.signTypedData(
-      EIP712_DOMAIN,
-      EIP712_TYPES,
-      { msg: queryString }
-    )
-
-    const body = queryString
-      + '&signature='        + encodeURIComponent(sig)
-      + '&signatureChainId=' + EIP712_DOMAIN.chainId
-
-    const resp = await client(BASE_SIGNED).post(
+    const resp = await postMgmtEndpoint(
       '/fapi/v3/approveBuilder',
-      body,
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      params.userPrivateKey,
+      callParams,
+      'ApproveBuilder'
     )
-    console.log('[Aster] approveBuilder ok:', params.userAddress ?? wallet.address, '→', resp.status, resp.data)
+    console.log('[Aster] approveBuilder ok:', userAddr, '→', resp.status, resp.data)
     return { success: true }
   } catch (err: any) {
     console.error('[Aster] approveBuilder FAILED', {
-      user:           params.userAddress,
+      user:           userAddr,
       builder:        params.builderAddress,
       maxFeeRate:     params.maxFeeRate,
       httpStatus:     err?.response?.status,
