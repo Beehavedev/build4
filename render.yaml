@@ -10,7 +10,13 @@ services:
     runtime: node
     plan: starter
     buildCommand: npm install && npx prisma generate --schema=src/prisma/schema.prisma && npx prisma db push --schema=src/prisma/schema.prisma --skip-generate --accept-data-loss && npx vite build --config src/miniapp/vite.config.ts src/miniapp
-    startCommand: npx tsx src/server.ts
+    # Re-run `prisma generate` on every start as a safety net: Render
+    # sometimes serves a cached node_modules where the generated client is
+    # stale (which is what happened when the new AgentLog columns
+    # pair/adx/rsi/score/regime were added — the build's generate step
+    # didn't actually replace node_modules/.prisma/client). Generate is
+    # fast (~3-5s) and idempotent, so paying it on boot is worth it.
+    startCommand: npx prisma generate --schema=src/prisma/schema.prisma && npx tsx src/server.ts
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
