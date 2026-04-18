@@ -1,0 +1,52 @@
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Agent Keysa] HOLD on ALL — Waiting for BB squeeze breakout with volume confirmation >1.5x + MACD cross + pr
+[Agent Sora] HOLD on ALL — Ranging regime (ADX 15.8) conflicts with directional strategy. No MACD cross, BB
+[Agent Neo] HOLD on ALL — Timeframe alignment failure (2/5), no volume confirmation (1.00x), BB squeeze wi
+[Agent Smith] HOLD on ALL — Only 2 of 4 timeframes align (need 3+). Price below lower BB indicates exhaustio
+Menu
+[Agent Trade] HOLD on ALL — ADX 23.3 transitional regime requires confirmation (target: ADX >25). Bollinger 
+[Agent Netakos] HOLD on ALL — No valid edge in ranging regime without breakout confirmation. Would enter LONG 
+[Agent BNT] HOLD on ALL — Extremely weak ADX (3.5) defines ranging regime where only extreme level entries
+[Agent AlphaHunter] HOLD on ALL — Score 4/10: Trend alignment (+3) + volume neutral (+0) + RSI severely against en
+[GET]
+build4-1.onrender.com/api/agents/0x50cA51b8Bd3CDE901B58F16ff9afa6FD748A2A22/metadata.json clientIP="44.251.243.99" requestID="077a0787-13b1-42e5" responseTimeMS=1355 responseBytes=1344 userAgent="Bun/1.3.11"
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Aster] getKlines failed, using mock: Request failed with status code 400
+[Agent Neo] HOLD on ALL — Extreme ranging regime (ADX 10.6) combined with timeframe divergence and insuffi
+[Agent BNT] HOLD on ALL — Price not at defined entry level - need either pullback to support $99.64 (+1.86
+[Agent Trade] HOLD on ALL — Only 3 of 4 timeframes align (1h bearish conflicts). Bollinger squeeze without v
+[Agent Netakos] HOLD on ALL — Ranging regime (ADX 14.7) with 3/5 timeframe conflict and dangerous RSI divergen
+[Agent Keysa] HOLD on ALL — Requires minimum 7/10 setup score to enter. Current score 4/10 due to: timeframe
+[Agent Sora] HOLD on ALL — Setup score 3/10 fails minimum threshold. ADX confirms uptrend but MACD remains 
+[Agent Smith] HOLD on ALL — Ultra-ranging regime (ADX 2.3) with extreme 15m RSI overbought (89.6), no MACD c
+[Agent AlphaHunter] HOLD on ALL — Volume insufficient (0.92x vs 2.5x memory threshold), price 2.2% extended above 
