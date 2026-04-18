@@ -16,6 +16,46 @@ import {
   OHLCV
 } from './indicators'
 import { buildMemoryContext, saveMemory } from './memory'
+
+// Wrap agentLog.create so that a stale Prisma client (one missing the new
+// pair/adx/rsi/score/regime/reason/price columns, e.g. on a Render box that
+// hasn't regenerated since the schema was extended) doesn't crash the whole
+// tick. We retry the write with only the fields the client recognises so the
+// trade decision is still recorded — newer fields just get dropped until the
+// client is regenerated.
+let _staleClientWarned = false
+async function safeAgentLogCreate(args: { data: any; [k: string]: any }): Promise<void> {
+  try {
+    await db.agentLog.create(args as any)
+  } catch (err: any) {
+    const isValidation =
+      err?.name === 'PrismaClientValidationError' ||
+      /Unknown argument|Unknown field/i.test(String(err?.message ?? ''))
+    if (!isValidation) throw err
+    if (!_staleClientWarned) {
+      console.warn('[agentLog] stale Prisma client detected — falling back to legacy fields. Run prisma generate on the server.')
+      _staleClientWarned = true
+    }
+    const d = args.data || {}
+    const summary = JSON.stringify({
+      pair: d.pair, price: d.price, reason: d.reason,
+      adx: d.adx, rsi: d.rsi, score: d.score, regime: d.regime,
+    })
+    try {
+      await safeAgentLogCreate({
+        data: {
+          agentId: d.agentId,
+          userId: d.userId,
+          action: d.action,
+          parsedAction: d.parsedAction ?? d.action,
+          executionResult: (d.executionResult ?? '') + ' | ' + summary,
+        } as any,
+      })
+    } catch (fallbackErr) {
+      console.error('[agentLog] fallback write also failed:', fallbackErr)
+    }
+  }
+}
 import { checkRiskGuard, getTodayPnl } from './riskGuard'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -363,7 +403,7 @@ export async function runAgentTick(agent: Agent): Promise<void> {
             )
             .catch(() => {})
         }
-        await db.agentLog.create({
+        await safeAgentLogCreate({
           data: {
             agentId: agent.id,
             userId: agent.userId,
@@ -420,7 +460,7 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         snapshot.adx < 18 &&
         Math.abs(fundingRate) < 0.0002
       ) {
-        await db.agentLog.create({
+        await safeAgentLogCreate({
           data: {
             agentId: agent.id,
             userId: agent.userId,
@@ -448,7 +488,7 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       // new entries to conserve Claude budget. Existing positions still
       // need management, so don't skip if we hold one on this pair.
       if (openPositions.length === 0 && Math.abs(fundingRate) < 0.0001) {
-        await db.agentLog.create({
+        await safeAgentLogCreate({
           data: {
             agentId: agent.id,
             userId: agent.userId,
@@ -620,7 +660,7 @@ If you would not put real money in this trade right now, action = HOLD.`
         decision = JSON.parse(rawResponse.replace(/```json|```/g, '').trim())
       } catch (aiErr) {
         console.error(`[Agent ${agent.name}] Claude error:`, aiErr)
-        await db.agentLog.create({
+        await safeAgentLogCreate({
           data: {
             agentId: agent.id,
             userId: agent.userId,
@@ -638,7 +678,7 @@ If you would not put real money in this trade right now, action = HOLD.`
         ? (decision.holdReason ?? decision.reasoning ?? '')
         : (decision.reasoning ?? '')
       ).slice(0, 240)
-      await db.agentLog.create({
+      await safeAgentLogCreate({
         data: {
           agentId: agent.id,
           userId: agent.userId,
@@ -1050,7 +1090,7 @@ If you would not put real money in this trade right now, action = HOLD.`
       )
     } catch (err) {
       console.error(`[Agent ${agent.name}] Tick error for ${pair}:`, err)
-      await db.agentLog.create({
+      await safeAgentLogCreate({
         data: {
           agentId: agent.id,
           userId: agent.userId,

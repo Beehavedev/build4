@@ -141,14 +141,19 @@ app.get('/api/me/feed', requireTgUser, async (req, res) => {
       }))
     )
   } catch (err: any) {
-    // P2021 = table missing, P2022 = column missing. These mean the prod DB
-    // is behind the schema (e.g. db push didn't run after AgentLog was
-    // extended with action/pair/reason/etc). Don't 500 the UI in that case;
-    // return [] so the brain feed just shows "no decisions yet" and log a
-    // clear message so the operator knows to re-run prisma db push.
+    // Treat any "schema is behind the running code" error as empty feed
+    // instead of 500'ing the UI:
+    //   P2021 = table missing
+    //   P2022 = column missing in DB
+    //   PrismaClientValidationError = generated client doesn't know a field
+    //     (e.g. Render is serving a cached client without pair/adx/rsi/etc).
+    //     This one has no `code`; detect by name or message.
     const code = err?.code
-    if (code === 'P2021' || code === 'P2022') {
-      console.error(`[API] /me/feed schema mismatch (${code}):`, err?.meta ?? err?.message)
+    const isValidation =
+      err?.name === 'PrismaClientValidationError' ||
+      /Unknown argument|Unknown field/i.test(String(err?.message ?? ''))
+    if (code === 'P2021' || code === 'P2022' || isValidation) {
+      console.error(`[API] /me/feed schema mismatch (${code ?? 'validation'}):`, err?.message?.split('\n')[0])
       return res.json([])
     }
     console.error('[API] /me/feed failed:', err)
@@ -189,8 +194,11 @@ app.get('/api/agents/:id/feed', requireTgUser, async (req, res) => {
     )
   } catch (err: any) {
     const code = err?.code
-    if (code === 'P2021' || code === 'P2022') {
-      console.error(`[API] /agents/:id/feed schema mismatch (${code}):`, err?.meta ?? err?.message)
+    const isValidation =
+      err?.name === 'PrismaClientValidationError' ||
+      /Unknown argument|Unknown field/i.test(String(err?.message ?? ''))
+    if (code === 'P2021' || code === 'P2022' || isValidation) {
+      console.error(`[API] /agents/:id/feed schema mismatch (${code ?? 'validation'}):`, err?.message?.split('\n')[0])
       return res.json([])
     }
     console.error('[API] /agents/:id/feed failed:', err)
