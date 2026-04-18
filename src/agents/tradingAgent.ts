@@ -343,7 +343,11 @@ export async function runAgentTick(agent: Agent): Promise<void> {
             regime: 'RANGING'
           }
         })
-        return
+        // continue (not return): skipping the LLM call is free, so we
+        // still want to evaluate every other pair this tick. Different
+        // from the post-Claude HOLD branch below, which returns to cap
+        // Claude spend at one call per tick per agent.
+        continue
       }
 
       // Funding-only skip: when funding rate edge is essentially zero
@@ -367,7 +371,9 @@ export async function runAgentTick(agent: Agent): Promise<void> {
             regime: snapshot.regime
           }
         })
-        return
+        // continue (not return) — same reasoning as the regime-skip above:
+        // pre-LLM skips are cheap, so let the loop check remaining pairs.
+        continue
       }
 
       // 3. Get today's PnL
