@@ -100,6 +100,13 @@ const VALID_KLINE_INTERVALS = new Set([
   '1d', '3d', '1w', '1M'
 ])
 
+// Defensive guard — any caller (agent runner, /price command, mini-app
+// charts, future code) that hands us an obviously-bad symbol gets caught
+// here instead of producing a 400 + mock-data fallback. The agent runner
+// already expands 'ALL' upstream via expandPairs(); this is belt-and-
+// suspenders for everything else.
+const REJECTED_SYMBOLS = new Set(['ALL', 'UNDEFINED', 'NULL', 'NONE', ''])
+
 export async function getKlines(
   pair: string,
   interval: string = '15m',
@@ -107,7 +114,11 @@ export async function getKlines(
 ): Promise<OHLCV> {
   // Aster requires UPPERCASE symbol with no separator (e.g. "BTCUSDT").
   // Lowercase, slashed, or whitespace-padded inputs all 400.
-  const symbol = pair.replace(/[\/\s]/g, '').toUpperCase()
+  let symbol = (pair ?? '').replace(/[\/\s]/g, '').toUpperCase()
+  if (!symbol || REJECTED_SYMBOLS.has(symbol) || symbol.length < 5) {
+    console.error(`[Aster] getKlines: invalid symbol "${pair}" (normalized="${symbol}") — defaulting to BTCUSDT`)
+    symbol = 'BTCUSDT'
+  }
   // Coerce interval to its canonical form (preserve case for the only
   // case-sensitive value, "1M" = 1 month vs "1m" = 1 minute).
   const intervalNormalized = VALID_KLINE_INTERVALS.has(interval)
