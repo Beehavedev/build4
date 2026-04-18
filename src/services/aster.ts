@@ -712,57 +712,41 @@ export async function approveAgent(params: {
   const canPerpTrade = params.canPerpTrade ?? true
   const canWithdraw  = params.canWithdraw  ?? false
 
-  // EIP-712 message — field names are PascalCase (Aster auto-uppercases the
-  // first letter of every body param). Field ORDER must match the body order.
-  // User + Nonce are now part of the signed payload — Aster's v3 verifier
-  // rejects these requests with "Signature check failed" otherwise.
+  // Aster v3 management endpoints use the same canonical-querystring signing
+  // scheme as the trading endpoints (signRequest above):
+  //   sign EIP-712 { msg: <full querystring of all body params> }
+  //   domain = AsterSignTransaction, version=1, chainId=1666
+  //   signatureChainId in the body matches domain.chainId (1666).
+  // The custom typed-payload approach (chainId 56, named fields) was an
+  // older pattern that Aster's verifier no longer accepts — both User+Nonce
+  // and the typed-payload variant return "Signature check failed".
   const nonce = getNonce()
-  const tmpWallet = new ethers.Wallet(params.userPrivateKey)
-  const userAddr  = params.userAddress ?? tmpWallet.address
-  const types = {
-    ApproveAgent: [
-      { name: 'User',         type: 'string'  },
-      { name: 'AgentName',    type: 'string'  },
-      { name: 'AgentAddress', type: 'string'  },
-      { name: 'IpWhitelist',  type: 'string'  },
-      { name: 'Expired',      type: 'uint256' },
-      { name: 'CanSpotTrade', type: 'bool'    },
-      { name: 'CanPerpTrade', type: 'bool'    },
-      { name: 'CanWithdraw',  type: 'bool'    },
-      { name: 'Nonce',        type: 'uint256' }
-    ]
-  }
-  const message = {
-    User:         userAddr,
-    AgentName:    params.agentName,
-    AgentAddress: params.agentAddress,
-    IpWhitelist:  ipWhitelist,
-    Expired:      expired,
-    CanSpotTrade: canSpotTrade,
-    CanPerpTrade: canPerpTrade,
-    CanWithdraw:  canWithdraw,
-    Nonce:        nonce
+  const wallet   = new ethers.Wallet(params.userPrivateKey)
+  const userAddr = params.userAddress ?? wallet.address
+
+  const bodyParams: Record<string, string> = {
+    user:         userAddr,
+    agentName:    params.agentName,
+    agentAddress: params.agentAddress,
+    ipWhitelist:  ipWhitelist,
+    expired:      String(expired),
+    canSpotTrade: String(canSpotTrade),
+    canPerpTrade: String(canPerpTrade),
+    canWithdraw:  String(canWithdraw),
+    nonce:        String(nonce)
   }
 
   try {
-    const wallet = tmpWallet
-    const sig = await wallet.signTypedData(ASTER_MGMT_DOMAIN, types, message)
+    const queryString = new URLSearchParams(bodyParams).toString()
+    const sig = await wallet.signTypedData(
+      EIP712_DOMAIN,
+      EIP712_TYPES,
+      { msg: queryString }
+    )
 
-    // Body fields use camelCase, in the same order as the typed payload.
-    // signatureChainId MUST equal domain.chainId.
-    const body = new URLSearchParams({
-      user:             userAddr,
-      agentName:        params.agentName,
-      agentAddress:     params.agentAddress,
-      ipWhitelist:      ipWhitelist,
-      expired:          String(expired),
-      canSpotTrade:     String(canSpotTrade),
-      canPerpTrade:     String(canPerpTrade),
-      canWithdraw:      String(canWithdraw),
-      nonce:            String(nonce),
-      signature:        sig,
-      signatureChainId: '56'
-    }).toString()
+    const body = queryString
+      + '&signature='        + encodeURIComponent(sig)
+      + '&signatureChainId=' + EIP712_DOMAIN.chainId
 
     const resp = await client(BASE_SIGNED).post(
       '/fapi/v3/approveAgent',
@@ -803,41 +787,30 @@ export async function approveBuilder(params: {
 }): Promise<{ success: boolean; error?: string }> {
   const builderName = params.builderName ?? 'BUILD4'
 
-  // See approveAgent — User and Nonce are part of the signed payload.
-  const nonce = getNonce()
-  const tmpWallet = new ethers.Wallet(params.userPrivateKey)
-  const userAddr  = params.userAddress ?? tmpWallet.address
+  // See approveAgent — canonical-querystring signing scheme (chainId 1666).
+  const nonce    = getNonce()
+  const wallet   = new ethers.Wallet(params.userPrivateKey)
+  const userAddr = params.userAddress ?? wallet.address
 
-  const types = {
-    ApproveBuilder: [
-      { name: 'User',        type: 'string'  },
-      { name: 'Builder',     type: 'string'  },
-      { name: 'MaxFeeRate',  type: 'string'  },
-      { name: 'BuilderName', type: 'string'  },
-      { name: 'Nonce',       type: 'uint256' }
-    ]
-  }
-  const message = {
-    User:        userAddr,
-    Builder:     params.builderAddress,
-    MaxFeeRate:  params.maxFeeRate,
-    BuilderName: builderName,
-    Nonce:       nonce
+  const bodyParams: Record<string, string> = {
+    user:        userAddr,
+    builder:     params.builderAddress,
+    maxFeeRate:  params.maxFeeRate,
+    builderName: builderName,
+    nonce:       String(nonce)
   }
 
   try {
-    const wallet = tmpWallet
-    const sig = await wallet.signTypedData(ASTER_MGMT_DOMAIN, types, message)
+    const queryString = new URLSearchParams(bodyParams).toString()
+    const sig = await wallet.signTypedData(
+      EIP712_DOMAIN,
+      EIP712_TYPES,
+      { msg: queryString }
+    )
 
-    const body = new URLSearchParams({
-      user:             userAddr,
-      builder:          params.builderAddress,
-      maxFeeRate:       params.maxFeeRate,
-      builderName:      builderName,
-      nonce:            String(nonce),
-      signature:        sig,
-      signatureChainId: '56'
-    }).toString()
+    const body = queryString
+      + '&signature='        + encodeURIComponent(sig)
+      + '&signatureChainId=' + EIP712_DOMAIN.chainId
 
     const resp = await client(BASE_SIGNED).post(
       '/fapi/v3/approveBuilder',
