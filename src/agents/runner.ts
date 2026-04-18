@@ -64,7 +64,63 @@ export function initRunner(bot: Bot) {
     await checkProactiveAlerts()
   })
 
+  // Breaking-news monitor — every 60 seconds. The fetchNewsSignal()
+  // call inside is itself 60s-cached and shared across all agents,
+  // so this is a single Claude call/min globally.
+  startNewsMonitor()
+
   console.log('[Runner] Agent runner initialized')
+}
+
+// ── News monitor ───────────────────────────────────────────────────
+// Polls the shared news signal and pushes a Telegram alert to every
+// active-agent owner when a HIGH-impact breaking event lands. The
+// throttle below prevents the same headline from being broadcast more
+// than once.
+let lastBroadcastedHeadline = ''
+
+async function newsMonitorTick() {
+  if (!botRef) return
+  try {
+    const { fetchNewsSignal } = await import('../services/newsIntelligence')
+    const signal = await fetchNewsSignal()
+    if (Math.abs(signal.score) < 7) return
+    if (!signal.isBreaking) return
+    if (!signal.topHeadline || signal.topHeadline === lastBroadcastedHeadline) return
+    lastBroadcastedHeadline = signal.topHeadline
+
+    const activeUsers = await db.user.findMany({
+      where: { agents: { some: { isActive: true } } },
+      select: { telegramId: true }
+    })
+
+    const emoji = signal.score > 0 ? '🚀' : '🚨'
+    const direction = signal.score > 0 ? 'BULLISH' : 'BEARISH'
+    const affected = signal.affectedCoins.length > 0 ? signal.affectedCoins.join(', ') : 'broad market'
+    const text =
+      `${emoji} *BREAKING NEWS ALERT*\n\n` +
+      `${escapeMd(signal.topHeadline)}\n\n` +
+      `Market Impact: *${direction}* (${signal.score}/10)\n` +
+      `Your agents are adjusting strategy automatically.\n\n` +
+      `Affected: ${escapeMd(affected)}`
+
+    for (const u of activeUsers) {
+      try {
+        await botRef.api.sendMessage(u.telegramId.toString(), text, { parse_mode: 'Markdown' })
+      } catch {
+        // user blocked bot, etc.
+      }
+    }
+    console.log(`[News] Broadcast "${signal.topHeadline.slice(0, 60)}" to ${activeUsers.length} users`)
+  } catch (err: any) {
+    console.error('[News] Monitor error:', err?.message ?? err)
+  }
+}
+
+function startNewsMonitor() {
+  setInterval(newsMonitorTick, 60_000)
+  // First check after 10s so we don't block startup.
+  setTimeout(newsMonitorTick, 10_000)
 }
 
 // Stagger config — at 50 agents/sec we can drain ~3,000 agents/min.

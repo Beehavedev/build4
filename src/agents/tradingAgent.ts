@@ -298,6 +298,96 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         where: { agentId: agent.id, pair, status: 'open' }
       })
 
+      // 2a. News intelligence — shared across all agents (1 Claude call/min).
+      // Fetches RSS + CryptoPanic, returns cached signal if <60s old.
+      const { fetchNewsSignal, getNewsLastUpdated } = await import('../services/newsIntelligence')
+      const newsSignal = await fetchNewsSignal()
+
+      // EMERGENCY_CLOSE: major bearish breaking news. Close every open
+      // position for this agent on Aster, mark them closed in DB, alert
+      // the user. We close ALL pairs (not just `pair`) because one news
+      // event typically dumps the whole market.
+      if (newsSignal.action === 'EMERGENCY_CLOSE') {
+        console.log(
+          `[Agent ${agent.name}] EMERGENCY CLOSE — ${newsSignal.topHeadline}`
+        )
+        const allOpen = await db.trade.findMany({
+          where: { agentId: agent.id, status: 'open' }
+        })
+        for (const pos of allOpen) {
+          try {
+            const { closePosition: asterClose, getMarkPrice } = await import('../services/aster')
+            const dbUser = await db.user.findUnique({
+              where: { id: agent.userId },
+              include: { wallets: { where: { isActive: true }, take: 1 } }
+            })
+            const userAddr = dbUser?.wallets?.[0]?.address ?? ''
+            const { buildCreds } = await import('../services/aster')
+            const creds = buildCreds(userAddr, dbUser?.asterAgentAddress, process.env.ASTER_AGENT_PRIVATE_KEY)
+            let exitPx = pos.entryPrice
+            try {
+              const mp = await getMarkPrice(pos.pair)
+              exitPx = mp.markPrice
+            } catch {}
+            if (creds && agent.exchange !== 'mock') {
+              const sym = pos.pair.replace('/', '')
+              const contractSize = parseFloat((pos.size / pos.entryPrice).toFixed(6))
+              try {
+                await asterClose(creds, sym, pos.side === 'LONG' ? 'SELL' : 'BUY', contractSize)
+              } catch (e: any) {
+                console.error(`[Agent ${agent.name}] Aster close failed in emergency:`, e?.message)
+              }
+            }
+            const dirMult = pos.side === 'LONG' ? 1 : -1
+            const pnl = ((exitPx - pos.entryPrice) / pos.entryPrice) * pos.size * pos.leverage * dirMult
+            await db.trade.update({
+              where: { id: pos.id },
+              data: { status: 'closed', exitPrice: exitPx, pnl, closedAt: new Date() }
+            })
+          } catch (e: any) {
+            console.error(`[Agent ${agent.name}] Emergency close error on trade ${pos.id}:`, e?.message)
+          }
+        }
+        const _bot2 = getBot()
+        if (_bot2 && telegramId) {
+          _bot2.api
+            .sendMessage(
+              telegramId,
+              `🚨 *EMERGENCY: ${escapeMd(agent.name)} closed ${allOpen.length} position(s)*\n\n` +
+                `Breaking: ${newsSignal.topHeadline}\n\n` +
+                `Protecting your funds from news impact.`,
+              { parse_mode: 'Markdown' }
+            )
+            .catch(() => {})
+        }
+        await db.agentLog.create({
+          data: {
+            agentId: agent.id,
+            userId: agent.userId,
+            action: 'EMERGENCY_CLOSE',
+            parsedAction: 'CLOSE',
+            executionResult: `Closed ${allOpen.length} positions on news`,
+            pair,
+            reason: newsSignal.topHeadline.slice(0, 240),
+            score: newsSignal.score
+          }
+        })
+        return
+      }
+
+      // News context appended to Claude's prompt below.
+      const newsAgeMin = Math.max(0, Math.round((Date.now() - getNewsLastUpdated()) / 60000))
+      const newsContext =
+        newsSignal.score !== 0
+          ? `\n=== NEWS INTELLIGENCE (${newsAgeMin}min ago) ===\n` +
+            `Sentiment: ${newsSignal.sentiment} (${newsSignal.score > 0 ? '+' : ''}${newsSignal.score}/10)\n` +
+            `Top headline: "${newsSignal.topHeadline}"\n` +
+            `Affected coins: ${newsSignal.affectedCoins.join(', ') || 'broad market'}\n` +
+            `News recommendation: ${newsSignal.action}\n` +
+            `Reason: ${newsSignal.reason}` +
+            (newsSignal.shouldOverride ? `\n⚠️ NEWS OVERRIDE ACTIVE — prioritize news signal over technicals` : '')
+          : ''
+
       // 2b. Funding rate signal. Aster returns `lastFundingRate` as a decimal
       // (e.g. 0.0001 == 0.01% per funding interval). Used three ways below:
       //   • added to the Claude prompt as market-context
@@ -473,6 +563,7 @@ Current funding rate: ${fundingPct >= 0 ? '+' : ''}${fundingPct.toFixed(4)}% (${
 
 === POSITION SIZE BUDGET ===
 Use exactly $${kellySize} USDT for this trade's "size" field (sample n=${sampleSize}, win rate ${(winRate20 * 100).toFixed(0)}%).
+${newsContext}
 
 === OPEN POSITIONS ===
 ${

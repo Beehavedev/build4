@@ -1,0 +1,245 @@
+Build a News Intelligence system for BUILD4 trading agents.
+This is a major feature — news moves crypto markets in seconds
+and our agents need to react before humans do.
+
+═══════════════════════════════════════════════
+PART 1: src/services/newsIntelligence.ts
+═══════════════════════════════════════════════
+
+import axios from 'axios'
+import * as rss from 'rss-parser'
+
+const parser = new rss.default()
+
+// Cache to avoid processing same news twice
+const processedItems = new Set<string>()
+let latestNewsContext = ''
+let newsImpactScore = 0  // -10 to +10
+let newsLastUpdated = 0
+
+const RSS_FEEDS = [
+  'https://cointelegraph.com/rss',
+  'https://coindesk.com/arc/outboundfeeds/rss/',
+  'https://decrypt.co/feed'
+]
+
+// Keywords that mean DUMP immediately
+const CRASH_KEYWORDS = [
+  'hack', 'exploit', 'stolen', 'breach', 'ban', 'illegal',
+  'bankrupt', 'collapse', 'emergency', 'crash', 'war',
+  'sanctions', 'shutdown', 'arrest', 'fraud', 'ponzi'
+]
+
+// Keywords that mean PUMP is coming  
+const PUMP_KEYWORDS = [
+  'etf approved', 'etf approval', 'adoption', 'partnership',
+  'legal tender', 'reserve', 'institutional', 'blackrock',
+  'fidelity', 'all-time high', 'record', 'bullish'
+]
+
+// High-impact sources (trusted faster)
+const HIGH_IMPACT_SOURCES = [
+  'reuters', 'bloomberg', 'wsj', 'ft.com', 
+  'sec.gov', 'federalreserve.gov'
+]
+
+export interface NewsSignal {
+  sentiment: 'STRONGLY_BULLISH' | 'BULLISH' | 'NEUTRAL' | 
+             'BEARISH' | 'STRONGLY_BEARISH'
+  score: number      // -10 to +10
+  topHeadline: string
+  affectedCoins: string[]
+  isBreaking: boolean
+  shouldOverride: boolean  // true = ignore technical analysis
+  action: 'BUY' | 'SELL' | 'HOLD' | 'EMERGENCY_CLOSE'
+  reason: string
+}
+
+export async function fetchNewsSignal(): Promise<NewsSignal> {
+  // Only refresh every 60 seconds
+  if (Date.now() - newsLastUpdated < 60_000 && latestNewsContext) {
+    return parseCurrentSignal()
+  }
+
+  const headlines: string[] = []
+  
+  // Fetch RSS feeds in parallel
+  await Promise.allSettled(
+    RSS_FEEDS.map(async (url) => {
+      try {
+        const feed = await parser.parseURL(url)
+        feed.items.slice(0, 5).forEach(item => {
+          if (item.title && !processedItems.has(item.title)) {
+            processedItems.add(item.title)
+            headlines.push(item.title)
+          }
+        })
+      } catch {}
+    })
+  )
+
+  // Also fetch CryptoPanic (free tier)
+  try {
+    const cp = await axios.get(
+      'https://cryptopanic.com/api/v1/posts/',
+      { params: { 
+        auth_token: process.env.CRYPTOPANIC_TOKEN || 'free',
+        filter: 'hot', 
+        kind: 'news',
+        limit: 10
+      }, timeout: 5000 }
+    )
+    cp.data.results?.forEach((item: any) => {
+      if (item.title) headlines.push(item.title)
+    })
+  } catch {}
+
+  if (headlines.length === 0) {
+    return { sentiment: 'NEUTRAL', score: 0, topHeadline: '',
+             affectedCoins: [], isBreaking: false, 
+             shouldOverride: false, action: 'HOLD', reason: 'No news' }
+  }
+
+  // Use Claude to analyze headlines (single call for ALL agents)
+  const prompt = `You are a crypto market news analyst. 
+Analyze these headlines and determine market impact.
+
+Headlines:
+${headlines.slice(0, 15).map((h, i) => `${i+1}. ${h}`).join('\n')}
+
+Respond ONLY with JSON:
+{
+  "sentiment": "STRONGLY_BULLISH|BULLISH|NEUTRAL|BEARISH|STRONGLY_BEARISH",
+  "score": <number -10 to 10>,
+  "topHeadline": "<most impactful headline>",
+  "affectedCoins": ["BTC", "ETH", ...],
+  "isBreaking": <true if major breaking news>,
+  "shouldOverride": <true if news so significant it overrides technical analysis>,
+  "action": "BUY|SELL|HOLD|EMERGENCY_CLOSE",
+  "reason": "<one sentence explanation>"
+}`
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    })
+    const data = await response.json()
+    const text = data.content[0].text
+    const json = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? '{}')
+    
+    latestNewsContext = JSON.stringify(json)
+    newsImpactScore = json.score ?? 0
+    newsLastUpdated = Date.now()
+    
+    return json as NewsSignal
+  } catch {
+    return { sentiment: 'NEUTRAL', score: 0, topHeadline: '',
+             affectedCoins: [], isBreaking: false,
+             shouldOverride: false, action: 'HOLD', 
+             reason: 'News analysis failed' }
+  }
+}
+
+function parseCurrentSignal(): NewsSignal {
+  try {
+    return JSON.parse(latestNewsContext)
+  } catch {
+    return { sentiment: 'NEUTRAL', score: 0, topHeadline: '',
+             affectedCoins: [], isBreaking: false,
+             shouldOverride: false, action: 'HOLD', reason: '' }
+  }
+}
+
+═══════════════════════════════════════════════
+PART 2: Wire into the trading agent
+═══════════════════════════════════════════════
+
+In src/agents/tradingAgent.ts, add news signal 
+BEFORE the technical analysis:
+
+  const { fetchNewsSignal } = await import('../services/newsIntelligence')
+  const newsSignal = await fetchNewsSignal()
+  
+  // EMERGENCY: If major negative news, close all positions
+  if (newsSignal.action === 'EMERGENCY_CLOSE') {
+    console.log('[Agent] EMERGENCY CLOSE triggered by news:', 
+      newsSignal.topHeadline)
+    // close all open positions for this user
+    // notify user via Telegram
+    await ctx.bot.api.sendMessage(userId,
+      `🚨 EMERGENCY: Agent ${agent.name} closing positions\n\n` +
+      `Breaking: ${newsSignal.topHeadline}\n\n` +
+      `Protecting your funds from news impact.`
+    )
+    return
+  }
+  
+  // Add news context to Claude's trading prompt:
+  const newsContext = newsSignal.score !== 0 ? `
+NEWS INTELLIGENCE (updated ${Math.round((Date.now() - newsLastUpdated)/60000)}min ago):
+Sentiment: ${newsSignal.sentiment} (${newsSignal.score > 0 ? '+' : ''}${newsSignal.score}/10)
+Top headline: "${newsSignal.topHeadline}"
+Affected coins: ${newsSignal.affectedCoins.join(', ')}
+News recommendation: ${newsSignal.action}
+Reason: ${newsSignal.reason}
+${newsSignal.shouldOverride ? '⚠️ NEWS OVERRIDE ACTIVE — prioritize news signal over technicals' : ''}
+` : 'No significant news detected.'
+
+  // Add newsContext to the Claude prompt alongside technical indicators
+
+═══════════════════════════════════════════════
+PART 3: News alert Telegram messages
+═══════════════════════════════════════════════
+
+Start a background news monitor that runs every 
+60 seconds and alerts users when breaking news hits:
+
+async function newsMonitor() {
+  setInterval(async () => {
+    const signal = await fetchNewsSignal()
+    
+    // Only alert on strong signals
+    if (Math.abs(signal.score) < 7) return
+    if (!signal.isBreaking) return
+    
+    // Get all active users with agents
+    const activeUsers = await db.user.findMany({
+      where: { agents: { some: { isActive: true } } }
+    })
+    
+    const emoji = signal.score > 0 ? '🚀' : '🚨'
+    const direction = signal.score > 0 ? 'BULLISH' : 'BEARISH'
+    
+    for (const user of activeUsers) {
+      await bot.api.sendMessage(user.telegramId,
+        `${emoji} BREAKING NEWS ALERT\n\n` +
+        `${signal.topHeadline}\n\n` +
+        `Market Impact: ${direction} (${signal.score}/10)\n` +
+        `Your agents are adjusting strategy automatically.\n\n` +
+        `Affected: ${signal.affectedCoins.join(', ')}`
+      )
+    }
+  }, 60_000)
+}
+
+// Start it in src/index.ts:
+newsMonitor()
+
+═══════════════════════════════════════════════
+PART 4: Add to .env.example
+═══════════════════════════════════════════════
+
+CRYPTOPANIC_TOKEN=  (optional, get free at cryptopanic.com)
+
+Install required package:
+npm install rss-parser
+
+Build all of this now. The news system uses ONE 
+Claude API call per minute shared across ALL agents
+— very efficient. The RSS feeds are free and fast.
