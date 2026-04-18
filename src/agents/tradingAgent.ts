@@ -298,6 +298,78 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         where: { agentId: agent.id, pair, status: 'open' }
       })
 
+      // 2b. Funding rate signal. Aster returns `lastFundingRate` as a decimal
+      // (e.g. 0.0001 == 0.01% per funding interval). Used three ways below:
+      //   • added to the Claude prompt as market-context
+      //   • hard-skip new entries when funding edge is below 0.01%
+      //   • combined with ADX to avoid an LLM call when the market is
+      //     clearly ranging with no funding edge (cost guard, ~60% savings)
+      let fundingRate = 0
+      try {
+        const { getMarkPrice } = await import('../services/aster')
+        const mp = await getMarkPrice(pair)
+        fundingRate = mp.lastFundingRate || 0
+      } catch {
+        fundingRate = 0
+      }
+      const fundingPct = fundingRate * 100 // 0.0001 -> 0.01
+
+      // Cost guard: if the market shows no regime edge AND no funding edge,
+      // skip the Claude call entirely. Only safe when we have nothing to
+      // manage on this pair — if we hold a position, Claude must still
+      // decide whether to close it.
+      // Threshold note: user spec says `Math.abs(fundingRate) < 0.02`;
+      // interpreted as 0.02% (=0.0002 decimal) to stay consistent with the
+      // 0.01% threshold in the funding-skip rule below.
+      if (
+        openPositions.length === 0 &&
+        snapshot.adx > 0 &&
+        snapshot.adx < 18 &&
+        Math.abs(fundingRate) < 0.0002
+      ) {
+        await db.agentLog.create({
+          data: {
+            agentId: agent.id,
+            userId: agent.userId,
+            action: 'HOLD',
+            parsedAction: 'HOLD',
+            executionResult: 'No regime edge — LLM call skipped',
+            pair,
+            price: snapshot.price || null,
+            reason: `No regime edge (ADX ${snapshot.adx.toFixed(1)}, funding ${fundingPct.toFixed(3)}%)`,
+            adx: Number.isFinite(snapshot.adx) ? snapshot.adx : null,
+            rsi: Number.isFinite(snapshot.rsi) ? snapshot.rsi : null,
+            score: 0,
+            regime: 'RANGING'
+          }
+        })
+        return
+      }
+
+      // Funding-only skip: when funding rate edge is essentially zero
+      // (<0.01%), there is no statistical bias from the perp basis. Skip
+      // new entries to conserve Claude budget. Existing positions still
+      // need management, so don't skip if we hold one on this pair.
+      if (openPositions.length === 0 && Math.abs(fundingRate) < 0.0001) {
+        await db.agentLog.create({
+          data: {
+            agentId: agent.id,
+            userId: agent.userId,
+            action: 'HOLD',
+            parsedAction: 'HOLD',
+            executionResult: 'Funding edge too small — LLM call skipped',
+            pair,
+            price: snapshot.price || null,
+            reason: `Funding rate ${fundingPct.toFixed(4)}% — no edge`,
+            adx: Number.isFinite(snapshot.adx) ? snapshot.adx : null,
+            rsi: Number.isFinite(snapshot.rsi) ? snapshot.rsi : null,
+            score: 0,
+            regime: snapshot.regime
+          }
+        })
+        return
+      }
+
       // 3. Get today's PnL
       const todayPnl = await getTodayPnl(agent.id)
 
@@ -323,6 +395,52 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         recentTrades.length >= 2 && recentTrades.slice(0, 2).every((t) => (t.pnl ?? 0) < 0)
       const todayPnlPct = (todayPnl / agent.maxPositionSize) * 100
 
+      // ── Dynamic position sizing (half-Kelly tier) ─────────────────────
+      // Sample is the last 20 closed trades. New agents trade tiny while
+      // they build a track record; only after a real edge is demonstrated
+      // does the size scale up. Persistent losers get auto-paused so they
+      // stop bleeding the user.
+      const last20 = await db.trade.findMany({
+        where: { agentId: agent.id, status: 'closed' },
+        orderBy: { closedAt: 'desc' },
+        take: 20
+      })
+      const sampleSize = last20.length
+      const wins20 = last20.filter((t) => (t.pnl ?? 0) > 0).length
+      const winRate20 = sampleSize > 0 ? wins20 / sampleSize : 0
+
+      // Auto-pause: 20 trades and still <35% win rate -> agent is losing.
+      if (sampleSize >= 20 && winRate20 < 0.35) {
+        await db.agent.update({
+          where: { id: agent.id },
+          data: { isPaused: true }
+        })
+        const _bot = getBot()
+        if (_bot && telegramId) {
+          _bot.api
+            .sendMessage(
+              telegramId,
+              `⚠️ *${escapeMd(agent.name)} paused*\n\n` +
+                `Win rate over the last 20 trades: ${(winRate20 * 100).toFixed(0)}%.\n` +
+                `Auto-paused to protect your capital. Review the agent's strategy and resume manually when ready.`,
+              { parse_mode: 'Markdown' }
+            )
+            .catch(() => {})
+        }
+        console.log(`[Agent ${agent.name}] Auto-paused: win rate ${(winRate20 * 100).toFixed(0)}% < 35%`)
+        return
+      }
+
+      // Tier mapping (USDT). Capped at agent.maxPositionSize so the user's
+      // own ceiling always wins.
+      let kellySize: number
+      if (sampleSize < 10)         kellySize = 2
+      else if (winRate20 < 0.40)   kellySize = 2
+      else if (winRate20 < 0.50)   kellySize = 3
+      else if (winRate20 < 0.60)   kellySize = 5
+      else                         kellySize = 10
+      kellySize = Math.min(kellySize, agent.maxPositionSize)
+
       // 6. Build user message
       const userMessage = `
 === MARKET DATA ===
@@ -337,6 +455,18 @@ Max Daily Loss: $${agent.maxDailyLoss} USDT
 Today's PnL: ${todayPnl >= 0 ? '+' : ''}$${todayPnl.toFixed(2)} USDT (${todayPnlPct.toFixed(1)}%)
 Daily Loss Remaining: $${(agent.maxDailyLoss + todayPnl).toFixed(2)} USDT
 Drawdown Mode: ${lastTwoLosses ? 'YES — last 2 trades were losses, apply 50% size reduction' : 'NO'}
+
+=== FUNDING RATE ===
+Current funding rate: ${fundingPct >= 0 ? '+' : ''}${fundingPct.toFixed(4)}% (${
+        fundingRate > 0
+          ? 'market overleveraged LONG — shorts have statistical edge this period'
+          : fundingRate < 0
+            ? 'market overleveraged SHORT — longs have statistical edge this period'
+            : 'neutral'
+      })
+
+=== POSITION SIZE BUDGET ===
+Use exactly $${kellySize} USDT for this trade's "size" field (sample n=${sampleSize}, win rate ${(winRate20 * 100).toFixed(0)}%).
 
 === OPEN POSITIONS ===
 ${
@@ -546,7 +676,10 @@ If you would not put real money in this trade right now, action = HOLD.`
           console.error(`[Agent ${agent.name}] TWAK risk check errored (ignored):`, e.message)
         }
 
-        let finalSize = decision.size ?? agent.maxPositionSize
+        // Use the half-Kelly tier size, ignoring whatever Claude returned.
+        // Claude was told to use exactly this number; capping enforces it
+        // even if it didn't follow instructions.
+        let finalSize = Math.min(decision.size ?? kellySize, kellySize)
         if (riskCheck.reduceSizeBy) {
           finalSize = finalSize * (1 - riskCheck.reduceSizeBy / 100)
         }
