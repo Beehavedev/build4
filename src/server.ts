@@ -229,6 +229,42 @@ async function fetchTradeFeed(where: any, limit: number, agentNameById: Map<stri
   return out
 }
 
+async function fetchAsterTradeFeed(userId: string, limit: number): Promise<FeedEntry[]> {
+  try {
+    const dbUser = await db.user.findUnique({
+      where: { id: userId },
+      include: { wallets: { where: { isActive: true }, take: 1 } }
+    })
+    const wallet = dbUser?.wallets[0]
+    if (!dbUser || !wallet) return []
+    const { resolveAgentCreds, getUserTrades } = await import('./services/aster')
+    const creds = await resolveAgentCreds(dbUser, wallet.address)
+    if (!creds) return []
+    const fills = await getUserTrades(creds, { limit: 100 })
+    return fills
+      .filter(f => f.realizedPnl !== 0)
+      .sort((a, b) => b.time - a.time)
+      .slice(0, limit)
+      .map(f => ({
+        id: `aster-fill-${f.orderId}-${f.time}`,
+        agentId: '',
+        agentName: 'Aster',
+        action: 'CLOSE',
+        pair: f.symbol,
+        price: f.price,
+        reason: `Closed ${f.positionSide !== 'BOTH' ? f.positionSide : (f.side === 'SELL' ? 'LONG' : 'SHORT')} ${f.realizedPnl >= 0 ? '+' : ''}${f.realizedPnl.toFixed(2)} USDT`,
+        adx: null,
+        rsi: null,
+        score: null,
+        regime: null,
+        createdAt: new Date(f.time)
+      }))
+  } catch (e) {
+    console.warn('[API] fetchAsterTradeFeed failed:', (e as Error).message)
+    return []
+  }
+}
+
 function mergeFeeds(a: FeedEntry[], b: FeedEntry[], limit: number): FeedEntry[] {
   return [...a, ...b]
     .sort((x, y) => y.createdAt.getTime() - x.createdAt.getTime())
@@ -241,11 +277,12 @@ app.get('/api/me/feed', requireTgUser, async (req, res) => {
     const limit = Math.min(parseInt(String(req.query.limit ?? '20')) || 20, 100)
     const agents = await db.agent.findMany({ where: { userId: user.id }, select: { id: true, name: true } })
     const nameById = new Map(agents.map((a) => [a.id, a.name]))
-    const [logFeed, tradeFeed] = await Promise.all([
+    const [logFeed, tradeFeed, asterFeed] = await Promise.all([
       fetchAgentLogFeed({ userId: user.id }, limit, nameById),
-      fetchTradeFeed({ userId: user.id }, limit, nameById)
+      fetchTradeFeed({ userId: user.id }, limit, nameById),
+      fetchAsterTradeFeed(user.id, limit)
     ])
-    res.json(mergeFeeds(logFeed, tradeFeed, limit))
+    res.json(mergeFeeds(mergeFeeds(logFeed, tradeFeed, limit * 2), asterFeed, limit))
   } catch (err: any) {
     if (isStaleClientError(err)) {
       console.error(`[API] /me/feed schema mismatch (${err?.code ?? 'validation'}):`, err?.message?.split('\n')[0])
