@@ -121,7 +121,7 @@ export async function migrateOldUsers(): Promise<void> {
           b4Balance,
           asterApiKey: creds?.encrypted_api_key || null,
           asterApiSecret: creds?.encrypted_api_secret || null,
-          asterOnboarded: !!creds,
+          asterOnboarded: !!creds, // legacy creds — see post-migration backfill in README
         }
       })
 

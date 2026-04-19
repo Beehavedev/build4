@@ -963,7 +963,12 @@ export function buildCreds(
   agentPrivKey?: string | null
 ): AsterCredentials | null {
   const addr = agentAddress ?? process.env.ASTER_AGENT_ADDRESS
-  const key  = agentPrivKey ?? process.env.ASTER_AGENT_PRIVATE_KEY
+  // Accept either env-var name. Render production uses ASTER_BROKER_PK;
+  // Replit uses ASTER_AGENT_PRIVATE_KEY. Both are the platform-wide
+  // signing keypair for legacy users without a per-user agent.
+  const key  = agentPrivKey
+    ?? process.env.ASTER_AGENT_PRIVATE_KEY
+    ?? process.env.ASTER_BROKER_PK
 
   if (!addr || !key || !userAddress) return null
 
@@ -1004,7 +1009,9 @@ export async function resolveAgentCreds(user: {
   // often asterAgentAddress=NULL too. They share the env-var agent. Derive
   // its address from the PK so they don't fail at the address check.
   if (!agentPk) {
-    agentPk = process.env.ASTER_AGENT_PRIVATE_KEY ?? null
+    agentPk = process.env.ASTER_AGENT_PRIVATE_KEY
+      ?? process.env.ASTER_BROKER_PK
+      ?? null
     if (agentPk && !agentAddress) {
       try {
         agentAddress = new ethers.Wallet(agentPk).address
