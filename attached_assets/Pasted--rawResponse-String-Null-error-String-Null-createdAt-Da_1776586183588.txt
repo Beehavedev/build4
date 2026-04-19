@@ -1,0 +1,193 @@
+?   rawResponse?: String | Null,
+?   error?: String | Null,
+?   createdAt?: DateTime
+  }
+}
+Unknown argument `pair`. Did you mean `id`? Available options are marked with ?.
+[DB] All new tables ready
+[Migration] Checking for old user data to migrate...
+[Migration] Already have 1457 users in new tables, skipping migration
+[Runner] Agent runner initialized
+[Runner] Agent runner started
+[Server] Running on port 500
+[Bot] Initialized as @BUILD4_BOT
+[Bot] Webhook set to https://build4-1.onrender.com/api/webhook
+prisma:error 
+Invalid `prisma.agentLog.create()` invocation:
+{
+  data: {
+    agentId: "cmo1t9mmh0001mxdkr9kdi8e2",
+    userId: "cmo1lsvsm0000mlupiui761l0",
+    action: "HOLD",
+    rawResponse: "```json\n{\n  \"regime\": \"DOWNTREND\",\n  \"setupScore\": 2,\n  \"timeframeAlignment\": {\n    \"4h\": \"BULLISH\",\n    \"1h\": \"BEARISH\",\n    \"15m\": \"BEARISH\",\n    \"volume\": \"INVALIDATING\"\n  },\n  \"action\": \"HOLD\",\n  \"pair\": \"ETHUSDT\",\n  \"entryZone\": null,\n  \"stopLoss\": null,\n  \"takeProfit\": null,\n  \"size\": null,\n  \"leverage\": null,\n  \"riskRewardRatio\": null,\n  \"confidence\": 0.0,\n  \"reasoning\": \"ADX 85.1 indicates extreme trend strength, but 15m and 1h EMAs both bearish contradicts 4h macro bullish—only 2/5 alignment FAILS minimum 3/4 requirement. MACD negative with NO cross in last 3 bars removes entry trigger. Volume at 0.12x average (88% deficit) invalidates any breakout attempt from BB squeeze. Negative funding rate (-0.0126%) and 1h RSI 20.4 oversold suggest potential mean reversion, but framework demands price RECLAIM $2357.83 1h EMA50 + 15m EMA9 bullish cross + MACD cross + volume >1.5x before entry consideration.\",\n  \"keyRisks\": [\n    \"Bollinger squeeze (1.89% width) threatens volatile breakout in either direction without volume confirmation\",\n    \"Extreme oversold 1h RSI 20.4 could trigger sharp bounce, but catching falling knife without structural confirmation violates capital preservation\",\n    \"Negative funding creates statistical long edge but insufficient alone—requires price structure alignment first\"\n  ],\n  \"memoryUpdate\": \"204th disciplined hold: ADX 85.1 + 2/5 alignment + 0.12x volume deficit + NO MACD cross = structural invalidity persists unchanged. Entry trigger remains: RECLAIM $2357.83 + 15m EMA9 cross + MACD cross + volume >1.5x.\",\n  \"drawdownMode\": false,\n  \"holdReason\": \"Fundamental framework violation: only 2 of 4 timeframes align (need minimum 3), volume 88% below average invalidates any setup, no MACD cross trigger present. Price must reclaim $2357.83 1h EMA50 with 15m bullish EMA cross and volume confirmation >1.5x average before any long consideration. Oversold + negative funding insufficient without structural confirmation—capital preservation demands",
+    parsedAction: "HOLD",
+    executionResult: "confidence=0, score=2",
+    pair: "ETHUSDT",
+    ~~~~
+    price: 2312.14,
+    reason: "Fundamental framework violation: only 2 of 4 timeframes align (need minimum 3), volume 88% below average invalidates any setup, no MACD cross trigger present. Price must reclaim $2357.83 1h EMA50 with 15m bullish EMA cross and volume confir",
+    adx: 85.08811568007154,
+    rsi: 39.67337744614942,
+    score: 2,
+    regime: "DOWNTREND",
+?   id?: String,
+?   error?: String | Null,
+?   createdAt?: DateTime
+  }
+}
+Unknown argument `pair`. Did you mean `id`? Available options are marked with ?.
+==> Your service is live 🎉
+[GET]
+build4-1.onrender.com/ clientIP="35.197.118.178" requestID="79d3bcb8-3b33-4a3a" responseTimeMS=3 responseBytes=397 userAgent="Go-http-client/2.0"
+[Agent BNT] HOLD on ETHUSDT — Fundamental framework violation: only 2 of 4 timeframes align (need minimum 3), 
+==> 
+==> ///////////////////////////////////////////////////////////
+==> 
+==> Available at your primary URL https://build4-1.onrender.com
+==> 
+==> ///////////////////////////////////////////////////////////
+[Runner] Ticking 1 agents in batches of 50
+[Runner] Dispatched 1 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+prisma:error 
+Invalid `prisma.agentLog.create()` invocation:
+{
+  data: {
+    agentId: "cmo1t9mmh0001mxdkr9kdi8e2",
+    userId: "cmo1lsvsm0000mlupiui761l0",
+    action: "HOLD",
+    parsedAction: "HOLD",
+    executionResult: "Funding edge too small — LLM call skipped",
+    pair: "BTCUSDT",
+    ~~~~
+    price: 75151.6,
+    reason: "Funding rate -0.0055% — no edge",
+    adx: 60.40898424404999,
+    rsi: 36.7797768162153,
+    score: 0,
+    regime: "TRENDING UP",
+?   id?: String,
+?   rawResponse?: String | Null,
+?   error?: String | Null,
+?   createdAt?: DateTime
+  }
+}
+Unknown argument `pair`. Did you mean `id`? Available options are marked with ?.
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Runner] Ticking 1 agents in batches of 50
+[Runner] Dispatched 1 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+prisma:error 
+Invalid `prisma.agentLog.create()` invocation:
+{
+  data: {
+    agentId: "cmo1t9mmh0001mxdkr9kdi8e2",
+    userId: "cmo1lsvsm0000mlupiui761l0",
+    action: "HOLD",
+    parsedAction: "HOLD",
+    executionResult: "Funding edge too small — LLM call skipped",
+    pair: "BTCUSDT",
+    ~~~~
+    price: 75151.6,
+    reason: "Funding rate -0.0055% — no edge",
+    adx: 60.40898424404999,
+    rsi: 36.7797768162153,
+    score: 0,
+    regime: "TRENDING UP",
+?   id?: String,
+?   rawResponse?: String | Null,
+?   error?: String | Null,
+?   createdAt?: DateTime
+  }
+}
+Unknown argument `pair`. Did you mean `id`? Available options are marked with ?.
+[agentLog] stale Prisma client detected — falling back to legacy fields. Run prisma generate on the server.
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+prisma:error 
+Invalid `prisma.agentLog.create()` invocation:
+{
+  data: {
+    agentId: "cmo1t9mmh0001mxdkr9kdi8e2",
+    userId: "cmo1lsvsm0000mlupiui761l0",
+    action: "HOLD",
+    rawResponse: "```json\n{\n  \"regime\": \"CONFLICTED_DOWNTREND\",\n  \"setupScore\": 3,\n  \"timeframeAlignment\": {\n    \"4h\": \"BULLISH\",\n    \"1h\": \"BEARISH\",\n    \"15m\": \"BEARISH\",\n    \"volume\": \"CRITICALLY_LOW\"\n  },\n  \"action\": \"HOLD\",\n  \"pair\": \"ETHUSDT\",\n  \"entryZone\": null,\n  \"stopLoss\": null,\n  \"takeProfit\": null,\n  \"size\": null,\n  \"leverage\": null,\n  \"riskRewardRatio\": null,\n  \"confidence\": 0.15,\n  \"reasoning\": \"ADX 85.1 signals strong trend but alignment is catastrophic: only 2/5 timeframes agree, failing minimum 3/5 requirement. 15m and 1h both bearish (EMA9<EMA21, price below $2357.82 EMA50) contradicts 4h macro bullish. Volume at 0.14x average is 86% deficit—no institutional confirmation. No MACD cross in last 3 bars. Setup scores 3/10: +3 macro trend only, zero other criteria met. Bollinger squeeze and -0.0126% funding (shorts overleveraged) + RSI 20.3 oversold create tempting contrarian setup, but framework is non-negotiable: speculation without confirmation destroys capital.\",\n  \"keyRisks\": [\n    \"Volume deficit (0.14x) makes any move unreliable—likely headfake territory\",\n    \"1h EMA50 resistance at $2357.82 is 2% overhead—probability of rejection high\",\n    \"Bollinger squeeze can break either direction; 15m/1h bearish bias favors downside\",\n    \"MACD still negative with no reversal signal—momentum hasn't shifted\"\n  ],\n  \"memoryUpdate\": \"205th disciplined hold: ADX 85.1 + 2/5 alignment + 0.14x volume (86% deficit) + NO MACD cross + BB squeeze = structural invalidity unchanged. Entry trigger remains: RECLAIM $2357.82 1h EMA50 + 15m EMA9 bullish cross + MACD cross within 3 bars + volume >1.5x. Negative funding tempting but irrelevant without confirmation.\",\n  \"drawdownMode\": false,\n  \"holdReason\": \"Only 2/5 timeframes aligned (need 3+), catastrophic 86% volume deficit, no MACD cross, 15m/1h both bearish. Entry requires: price reclaim $2357.82, 15m EMA9 cross above EMA21, MACD bullish cross, volume surge >1.5x average. Oversold + negative funding insufficient to override structura",
+    parsedAction: "HOLD",
+    executionResult: "confidence=0.15, score=3",
+    pair: "ETHUSDT",
+    ~~~~
+    price: 2312.06,
+    reason: "Only 2/5 timeframes aligned (need 3+), catastrophic 86% volume deficit, no MACD cross, 15m/1h both bearish. Entry requires: price reclaim $2357.82, 15m EMA9 cross above EMA21, MACD bullish cross, volume surge >1.5x average. Oversold + negat",
+    adx: 85.08811568007154,
+    rsi: 39.62874419912807,
+    score: 3,
+    regime: "CONFLICTED_DOWNTREND",
+?   id?: String,
+?   error?: String | Null,
+?   createdAt?: DateTime
+  }
+}
+Unknown argument `pair`. Did you mean `id`? Available options are marked with ?.
+[Agent BNT] HOLD on ETHUSDT — Only 2/5 timeframes aligned (need 3+), catastrophic 86% volume deficit, no MACD 
+[Runner] Ticking 1 agents in batches of 50
+[Runner] Dispatched 1 ticks in 0.0s (0 skipped — still in flight from previous tick)
+prisma:error 
+Invalid `prisma.agentLog.create()` invocation:
+{
+  data: {
+    agentId: "cmo1t9mmh0001mxdkr9kdi8e2",
+    userId: "cmo1lsvsm0000mlupiui761l0",
+    action: "HOLD",
+    parsedAction: "HOLD",
+    executionResult: "Funding edge too small — LLM call skipped",
+    pair: "BTCUSDT",
+    ~~~~
+    price: 75151.6,
+    reason: "Funding rate -0.0055% — no edge",
+    adx: 60.40898424404999,
+    rsi: 36.7797768162153,
+    score: 0,
+    regime: "TRENDING UP",
+?   id?: String,
+?   rawResponse?: String | Null,
+?   error?: String | Null,
+?   createdAt?: DateTime
+  }
+}
+Unknown argument `pair`. Did you mean `id`? Available options are marked with ?.
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+prisma:error 
+Invalid `prisma.agentLog.create()` invocation:
+{
+  data: {
+    agentId: "cmo1t9mmh0001mxdkr9kdi8e2",
+    userId: "cmo1lsvsm0000mlupiui761l0",
+    action: "HOLD",
+    rawResponse: "```json\n{\n  \"regime\": \"DOWNTREND\",\n  \"setupScore\": 3,\n  \"timeframeAlignment\": {\n    \"4h\": \"BULLISH\",\n    \"1h\": \"BEARISH\",\n    \"15m\": \"BEARISH\",\n    \"volume\": \"CRITICALLY_LOW\"\n  },\n  \"action\": \"HOLD\",\n  \"pair\": \"ETHUSDT\",\n  \"entryZone\": null,\n  \"stopLoss\": null,\n  \"takeProfit\": null,\n  \"size\": null,\n  \"leverage\": null,\n  \"riskRewardRatio\": null,\n  \"confidence\": 0.00,\n  \"reasoning\": \"Despite extreme ADX 85.1 trending condition, only 2 of 5 timeframe signals align—catastrophic structural failure. Volume at 0.14x (86% deficit) invalidates ANY setup per framework. 1h RSI 20.9 oversold + negative funding (-0.0125%) create tempting contrarian appeal, but without MACD cross confirmation and 15m EMA9 still below EMA21, this is a trap setup. BB squeeze (1.87%) signals imminent volatility, but direction is unknown—entering now is speculation, not probability.\",\n  \"keyRisks\": [\n    \"Volume deficit (0.14x) means any bounce lacks conviction—likely false rally\",\n    \"BB squeeze breakout could violently extend downside before reversal\",\n    \"15m bearish structure intact—no bullish EMA cross or MACD confirmation\",\n    \"Entering oversold conditions without volume = catching falling knife\"\n  ],\n  \"memoryUpdate\": \"206th disciplined hold: ADX 85.1 + 2/5 alignment + 0.14x volume (86% deficit) + NO MACD cross + BB 1.87% squeeze = structural invalidity persists. Entry trigger unchanged: RECLAIM $2357.88 1h EMA50 + 15m EMA9 bullish cross + MACD cross within 3 bars + volume >1.5x. Negative funding + extreme 1h RSI 20.9 insufficient without confirmation—patience over premature positioning.\",\n  \"drawdownMode\": false,\n  \"holdReason\": \"Framework requires 3+ timeframe alignment (currently 2/5). Volume at 0.14x is 86% below threshold—ANY entry without volume confirmation violates core principle. No MACD cross in last 3 bars. 15m EMAs bearish. Setup score 3/10 far below 7+ minimum. Would reconsider on: (1) price reclaim of $2357.88 1h EMA50, (2) 15m EMA9 bullish cross above EMA21, (3) MACD bullish ",
+    parsedAction: "HOLD",
+    executionResult: "confidence=0, score=3",
+    pair: "ETHUSDT",
+    ~~~~
+    price: 2313.49,
+Menu
+    reason: "Framework requires 3+ timeframe alignment (currently 2/5). Volume at 0.14x is 86% below threshold—ANY entry without volume confirmation violates core principle. No MACD cross in last 3 bars. 15m EMAs bearish. Setup score 3/10 far below 7+ m",
+    adx: 85.08811568007154,
+    rsi: 40.442020665901126,
+    score: 3,
+    regime: "DOWNTREND",
+?   id?: String,
+?   error?: String | Null,
+?   createdAt?: DateTime
+  }
+}
+Unknown argument `pair`. Did you mean `id`? Available options are marked with ?.
+[Agent BNT] HOLD on ETHUSDT — Framework requires 3+ timeframe alignment (currently 2/5). Volume at 0.14x is 86
