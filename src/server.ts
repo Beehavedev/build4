@@ -424,11 +424,16 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       return res.status(500).json({ success: false, error: 'Invalid wallet key' })
     }
 
+    // agentName: NO spaces, NO special chars. Aster's server appears to
+    // re-derive the EIP-712 message from the parsed querystring, and any
+    // whitespace normalization on their side would diverge from the raw
+    // string we signed, producing a misleading "Signature check failed".
+    // The official demo uses alphanumeric-only names (e.g. "2dkkd0001").
     const callApproveAgent = () => approveAgent({
       userAddress:    wallet.address,
       userPrivateKey: userPk,
       agentAddress,
-      agentName:      'BUILD4 Trading Agent',
+      agentName:      'BUILD4Agent',
       builderAddress,
       maxFeeRate:     feeRate,
       expiredDays:    365

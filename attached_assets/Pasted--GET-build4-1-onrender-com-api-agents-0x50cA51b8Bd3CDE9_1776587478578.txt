@@ -1,0 +1,80 @@
+[GET]
+build4-1.onrender.com/api/agents/0x50cA51b8Bd3CDE901B58F16ff9afa6FD748A2A22/metadata.json clientIP="138.0.245.137" requestID="e60b37a1-47c1-4132" responseTimeMS=1279 responseBytes=1344 userAgent="ERC-8004-Fetcher/1.0 (+https://github.com/IvanAmador/erc-8004)"
+[Runner] Ticking 1 agents in batches of 50
+[Runner] Dispatched 1 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on ETHUSDT — Structural entry requirements unmet: need price reclaim $2357.99 (1h EMA50) + 15
+[Runner] Ticking 1 agents in batches of 50
+[Runner] Dispatched 1 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on ETHUSDT — Framework requires minimum 3/4 timeframe agreement—currently only 1/4 (4h bullis
+[Runner] Ticking 1 agents in batches of 50
+[Runner] Dispatched 1 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on ETHUSDT — Framework non-negotiable entry requirements unmet: Need 3/5 timeframe alignment 
+[Runner] Ticking 1 agents in batches of 50
+[Runner] Dispatched 1 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on ETHUSDT — Setup score 3/10 fails minimum threshold. Entry triggers required: (1) Price rec
+==> Detected service running on port 500
+==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+[Runner] Ticking 1 agents in batches of 50
+[Runner] Dispatched 1 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[GET]
+build4-1.onrender.com/app clientIP="58.26.110.81" requestID="f119cfe2-04a1-46e5" responseTimeMS=6 responseBytes=414 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/app/ clientIP="58.26.110.81" requestID="6b50c5d8-4b6c-4b30" responseTimeMS=3 responseBytes=656 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/1934642365 clientIP="58.26.110.81" requestID="900f338d-a779-4da0" responseTimeMS=1731 responseBytes=1115 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="58.26.110.81" requestID="1b93527a-6e78-4c19" responseTimeMS=1424 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/user/1934642365 clientIP="58.26.110.81" requestID="384cf549-66c4-4814" responseTimeMS=1122 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="58.26.110.81" requestID="9a4ac6df-8ae5-44e7" responseTimeMS=566 responseBytes=1115 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Agent BNT] HOLD on ETHUSDT — Timeframe alignment failure (2/5). Entry requires: 1) Price reclaim $2357.92 1h 
+[Aster] signed /fapi/v3/balance failed for 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="58.26.110.81" requestID="2e207281-5acc-4cb3" responseTimeMS=2189 responseBytes=178 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster MGMT] POST ApproveAgent {
+  url: 'https://fapi.asterdex.com/fapi/v3/approveAgent?agentName=BUILD4 Trading Agent&agentAddress=0xCCE34FA1EcD10Df639Cc475F703cC7C4e2997bE0&ipWhitelist=&expired=1808123428310&canSpotTrade=false&canPerpTrade=true&canWithdraw=false&builder=0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4&maxFeeRate=0.1&builderName=BUILD4&asterChain=Mainnet&user=0xB5d0605F35F5ee264B72D78E72A81ab5f889931a&nonce=1776587428000000&signature=0xca714255ffa0159e5eba4bf6c0eb84791105406a5a3b3391d79b8804029309c40f161bfb25e45a03ac86927529004729bc98362a7360afeb365220a21bd48fb91c&signatureChainId=56',
+  paramsOrder: [
+    'agentName',    'agentAddress',
+    'ipWhitelist',  'expired',
+    'canSpotTrade', 'canPerpTrade',
+    'canWithdraw',  'builder',
+    'maxFeeRate',   'builderName',
+    'asterChain',   'user',
+    'nonce'
+  ],
+  user: '0xB5d0605F35F5ee264B72D78E72A81ab5f889931a',
+  nonce: 1776587428000000
+}
+[Aster] approveAgent FAILED {
+  user: '0xB5d0605F35F5ee264B72D78E72A81ab5f889931a',
+  agent: '0xCCE34FA1EcD10Df639Cc475F703cC7C4e2997bE0',
+  expired: 1808123428310,
+  httpStatus: 400,
+  httpStatusText: 'Bad Request',
+  respData: { code: -1000, msg: 'Signature check failed' },
+  message: 'Request failed with status code 400'
+}
+[POST]
+build4-1.onrender.com/api/aster/approve clientIP="58.26.110.81" requestID="0a963913-e2ec-4783" responseTimeMS=680 responseBytes=344 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
