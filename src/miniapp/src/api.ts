@@ -33,6 +33,8 @@ export interface AgentData {
   totalPnl: number;
   totalTrades: number;
   winRate: number;
+  currentPair: string | null;
+  lastScanScore: number | null;
   onchainRegistered: boolean;
   erc8004Registered: boolean;
   bap578Registered: boolean;

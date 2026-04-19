@@ -257,12 +257,89 @@ const ALL_PAIRS_UNIVERSE = [
   'XRPUSDT', 'ARBUSDT', 'ASTERUSDT'
 ]
 
+// AUTO-mode watchlist — scanned each tick by pickBestWatchlistPair() to
+// pick the SINGLE highest-scoring pair. Cost stays at one Claude call/tick
+// regardless of watchlist size, because the pre-filter is deterministic TA.
+// Klines are cached process-wide for 60s, so 30 fetches/min total across
+// thousands of agents (not per agent).
+const WATCHLIST = [
+  'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT',
+  'XRPUSDT', 'DOGEUSDT', 'ASTERUSDT', 'AVAXUSDT',
+  'LINKUSDT', 'ARBUSDT'
+]
+
+const WATCHLIST_MIN_SCORE = 5  // out of 8 — below this, agent HOLDs everything
+
+// Deterministic setup score in [0..8]. Higher = better trading opportunity.
+//   ADX trending  : 0–3  (gates everything else; ranging markets score 0)
+//   RSI sweet-spot: 0–2  (avoid extremes)
+//   MACD momentum : 0–2  (histogram expanding either direction)
+//   BB not squeezed: 0–1 (need volatility to capture)
+function scoreSetup(ohlcv15m: OHLCV, ohlcv1h: OHLCV): number {
+  const adx = calculateADX(ohlcv1h, 14)
+  if (adx < 20) return 0  // ranging — skip entirely
+
+  let score = adx > 25 ? 3 : 1
+
+  const closes15m = ohlcv15m.close
+  const rsi = calculateRSI(closes15m, 14)
+  if (rsi > 40 && rsi < 60) score += 2
+  else if (rsi > 30 && rsi < 70) score += 1
+
+  const macd = calculateMACD(closes15m)
+  // Momentum: histogram expanding (matches direction of macd line)
+  if ((macd.histogram > 0 && macd.macdLine > macd.signalLine) ||
+      (macd.histogram < 0 && macd.macdLine < macd.signalLine)) {
+    score += 2
+  }
+
+  const bb = calculateBollingerBands(closes15m, 20, 2)
+  const bbWidth = bb.mid > 0 ? (bb.upper - bb.lower) / bb.mid : 0
+  if (bbWidth > 0.02) score += 1
+
+  return score
+}
+
+// Scan the WATCHLIST, score each pair deterministically (no LLM), return
+// the single best pair if its score clears WATCHLIST_MIN_SCORE — otherwise
+// null (agent should HOLD for this tick). Klines are fetched in parallel
+// and shared via the process-wide cache, so total Aster API cost is
+// 30 calls/minute regardless of how many agents are scanning.
+export async function pickBestWatchlistPair(): Promise<{ symbol: string; score: number } | null> {
+  const { getKlines } = await import('../services/aster')
+  const results = await Promise.all(
+    WATCHLIST.map(async (symbol) => {
+      try {
+        const [m15, h1] = await Promise.all([
+          getKlines(symbol, '15m', 100),
+          getKlines(symbol, '1h', 100)
+        ])
+        return { symbol, score: scoreSetup(m15, h1) }
+      } catch {
+        return null
+      }
+    })
+  )
+  const ranked = results
+    .filter((r): r is { symbol: string; score: number } => !!r)
+    .sort((a, b) => b.score - a.score)
+  const best = ranked[0]
+  if (!best || best.score < WATCHLIST_MIN_SCORE) return null
+  return best
+}
+
 export function expandPairs(pairs: string[]): string[] {
   const expanded = new Set<string>()
   for (const p of pairs) {
     if (!p) continue
-    if (p.toUpperCase() === 'ALL') {
+    const upper = p.toUpperCase()
+    if (upper === 'ALL') {
       ALL_PAIRS_UNIVERSE.forEach((x) => expanded.add(x))
+    } else if (upper === 'AUTO') {
+      // AUTO is resolved at tick-time by pickBestWatchlistPair(), not here.
+      // expandPairs is also called by the mini app for display purposes;
+      // we surface 'AUTO' as itself so the caller can format appropriately.
+      expanded.add('AUTO')
     } else {
       expanded.add(p.replace(/[\/\s]/g, '').toUpperCase())
     }
@@ -273,7 +350,52 @@ export function expandPairs(pairs: string[]): string[] {
 export async function runAgentTick(agent: Agent): Promise<void> {
   const startTime = Date.now()
 
-  const pairList = expandPairs(agent.pairs)
+  let pairList = expandPairs(agent.pairs)
+
+  // ─── AUTO-mode resolution ──────────────────────────────────────────────
+  // If the agent has pairs:['AUTO'], resolve it before the per-pair loop:
+  //   1. Always include any pair the agent currently has an open position
+  //      on (positions must be managed regardless of scan result).
+  //   2. Run pickBestWatchlistPair() to score the watchlist deterministically
+  //      and add the single best candidate (if any clears MIN_SCORE).
+  //   3. Persist {currentPair, lastScanScore} so the mini app can render
+  //      the agent's current focus.
+  // Cost stays at one Claude call/tick because only the winner is added.
+  if (pairList.includes('AUTO')) {
+    pairList = pairList.filter((p) => p !== 'AUTO')
+    const openHeld = await db.trade.findMany({
+      where: { agentId: agent.id, status: 'open' },
+      select: { pair: true },
+      distinct: ['pair']
+    })
+    for (const t of openHeld) {
+      const sym = t.pair.replace(/[\/\s]/g, '').toUpperCase()
+      if (!pairList.includes(sym)) pairList.push(sym)
+    }
+    let scanResult: { symbol: string; score: number } | null = null
+    try {
+      scanResult = await pickBestWatchlistPair()
+    } catch (e: any) {
+      console.warn(`[Agent ${agent.name}] AUTO scan failed:`, e?.message)
+    }
+    if (scanResult && !pairList.includes(scanResult.symbol)) {
+      pairList.push(scanResult.symbol)
+    }
+    try {
+      await db.agent.update({
+        where: { id: agent.id },
+        data: {
+          currentPair: scanResult?.symbol ?? null,
+          lastScanScore: scanResult?.score ?? 0
+        }
+      })
+    } catch {}
+    if (pairList.length === 0) {
+      console.log(`[Agent ${agent.name}] AUTO scan: no setup ≥${WATCHLIST_MIN_SCORE}/8 and no open positions — HOLD`)
+      return
+    }
+  }
+
   if (pairList.length === 0) {
     console.warn(`[Agent ${agent.name}] No tradeable pairs after expansion (raw=${JSON.stringify(agent.pairs)}), skipping tick`)
     return

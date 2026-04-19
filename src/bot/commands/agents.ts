@@ -117,7 +117,7 @@ async function performMintAndCreate(opts: {
       metadataUri: identity.metadataUri,
       identityStandard: identity.standard,
       exchange: 'aster',
-      pairs: ['ALL'],
+      pairs: ['AUTO'],
       maxPositionSize: 100,
       maxDailyLoss: 50,
       maxLeverage: 5,

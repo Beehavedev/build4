@@ -105,6 +105,10 @@ model Agent {
   bap578TxHash     String?
   bap578Verified   Boolean  @default(false)
 
+  // AUTO-mode scanner state — set after each tick when pairs:['AUTO']
+  currentPair      String?
+  lastScanScore    Int?
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @default(now()) @updatedAt
   lastTickAt      DateTime?

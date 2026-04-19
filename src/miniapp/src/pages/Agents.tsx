@@ -86,7 +86,11 @@ export function Agents() {
             </div>
 
             <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "12px" }}>
-              {a.exchange.toUpperCase()} • {a.pairs.join(", ")} • {a.timeframe}
+              {a.exchange.toUpperCase()} • {a.pairs.includes("AUTO")
+                ? (a.currentPair
+                    ? `🎯 ${a.currentPair} (${a.lastScanScore ?? 0}/8)`
+                    : `AUTO • scanning…`)
+                : a.pairs.join(", ")} • {a.timeframe}
             </div>
 
             <div className="stats-row" style={{ marginTop: 0 }}>
