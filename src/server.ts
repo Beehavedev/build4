@@ -889,6 +889,93 @@ app.post('/api/agents/:id/toggle', requireTgUser, async (req, res) => {
   }
 })
 
+app.get('/api/trades/:userId', async (req, res) => {
+  try {
+    const raw = req.params.userId
+    let internalUserId = raw
+    if (/^\d+$/.test(raw)) {
+      const u = await db.user.findUnique({ where: { telegramId: BigInt(raw) } })
+      if (!u) return res.json([])
+      internalUserId = u.id
+    }
+    const trades = await db.trade.findMany({
+      where: { userId: internalUserId },
+      orderBy: [{ status: 'asc' }, { openedAt: 'desc' }],
+      take: 100,
+      include: { agent: { select: { name: true } } }
+    })
+
+    let livePositions: any[] = []
+    try {
+      const dbUser = await db.user.findUnique({
+        where: { id: internalUserId },
+        include: { wallets: { where: { isActive: true }, take: 1 } }
+      })
+      const wallet = dbUser?.wallets[0]
+      if (dbUser && wallet) {
+        const { resolveAgentCreds, getPositions } = await import('./services/aster')
+        const creds = await resolveAgentCreds(dbUser, wallet.address)
+        if (creds) {
+          const positions = await getPositions(creds)
+          livePositions = positions.map((p: any) => ({
+            symbol: p.symbol,
+            positionAmt: p.side === 'LONG' ? p.size : -p.size,
+            entryPrice: p.entryPrice,
+            markPrice: p.markPrice ?? p.entryPrice,
+            unRealizedProfit: p.unrealizedPnl ?? 0,
+            leverage: p.leverage ?? 1
+          }))
+        }
+      }
+    } catch (e) {
+      console.warn('[API] /trades live positions skipped:', (e as Error).message)
+    }
+
+    const liveBySymbol = new Map(livePositions.map(p => [p.symbol, p]))
+
+    const result = trades.map(t => {
+      const symbol = t.pair.replace('/', '')
+      const live = liveBySymbol.get(symbol)
+      const isOpen = t.status === 'open'
+      return {
+        id: t.id,
+        pair: t.pair,
+        side: t.side,
+        size: t.size,
+        entryPrice: t.entryPrice,
+        leverage: t.leverage,
+        pnl: isOpen && live ? live.unRealizedProfit : t.pnl,
+        status: t.status,
+        agentName: t.agent?.name
+      }
+    })
+
+    const knownSymbols = new Set(
+      trades.filter(t => t.status === 'open').map(t => t.pair.replace('/', ''))
+    )
+    for (const live of livePositions) {
+      if (knownSymbols.has(live.symbol)) continue
+      const side = live.positionAmt > 0 ? 'LONG' : 'SHORT'
+      result.unshift({
+        id: `live_${live.symbol}`,
+        pair: live.symbol,
+        side,
+        size: Math.abs(live.positionAmt) * live.entryPrice,
+        entryPrice: live.entryPrice,
+        leverage: live.leverage,
+        pnl: live.unRealizedProfit,
+        status: 'open',
+        agentName: undefined
+      })
+    }
+
+    res.json(result)
+  } catch (err) {
+    console.error('[API] /trades failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
 app.get('/api/portfolio/:userId', async (req, res) => {
   try {
     const raw = req.params.userId
