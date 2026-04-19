@@ -434,7 +434,7 @@ function TransferFlow(
             style={{ ...inputStyle, flex: 1 }}
           />
           <button
-            onClick={() => setAmount(Math.max(0, sourceBal).toFixed(2))}
+            onClick={() => setAmount((Math.floor(Math.max(0, sourceBal) * 100) / 100).toFixed(2))}
             data-testid="button-transfer-max"
             style={{
               padding: '0 14px', borderRadius: 8, border: '1px solid var(--b4-border)',
@@ -601,7 +601,7 @@ function WithdrawView({ w, onSent }: { w: WalletInfo; onSent: () => void }) {
             style={{ ...inputStyle, flex: 1 }}
           />
           <button
-            onClick={() => setAmount(Math.max(0, w.balances.usdt).toFixed(2))}
+            onClick={() => setAmount((Math.floor(Math.max(0, w.balances.usdt) * 100) / 100).toFixed(2))}
             data-testid="button-max"
             style={{
               padding: '0 14px', borderRadius: 8, border: '1px solid var(--b4-border)',
