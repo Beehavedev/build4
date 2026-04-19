@@ -1,0 +1,74 @@
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="58.26.110.81" requestID="43fd332d-c7cf-4179" responseTimeMS=1691 responseBytes=2367 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="58.26.110.81" requestID="760319e6-e248-47a9" responseTimeMS=792 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/user/1934642365 clientIP="58.26.110.81" requestID="b64348fc-fe46-4286" responseTimeMS=1009 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/1934642365 clientIP="58.26.110.81" requestID="90ec571e-cad2-44ec" responseTimeMS=446 responseBytes=1118 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="58.26.110.81" requestID="867810ae-d065-4846" responseTimeMS=373 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="58.26.110.81" requestID="56533136-a2e6-409c" responseTimeMS=933 responseBytes=181 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="58.26.110.81" requestID="06be9c89-b6ce-4769" responseTimeMS=568 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="58.26.110.81" requestID="b32b41d5-cf93-4712" responseTimeMS=978 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="58.26.110.81" requestID="70503f3e-b4d9-41d5" responseTimeMS=1486 responseBytes=181 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="58.26.110.81" requestID="914aa52e-b5c1-40e7" responseTimeMS=790 responseBytes=1843 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="58.26.110.81" requestID="975e4266-7477-4ca2" responseTimeMS=557 responseBytes=1117 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="58.26.110.81" requestID="3f4adb6b-bdd5-4677" responseTimeMS=1117 responseBytes=2350 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Runner] Dispatched 2 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="58.26.110.81" requestID="bdf02f07-4856-41da" responseTimeMS=1647 responseBytes=2343 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="58.26.110.81" requestID="56dc9f07-0d1e-44ca" responseTimeMS=787 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a → marginBalance= 20.0000 crossWallet= 20.0000 crossUnPnl= 0.0000 available= 19.9960
+[Agent SeanBuild4] HOLD on ETHUSDT — Extreme ADX conflict regime requires SIMULTANEOUS 1h RSI >30 AND volume >1.2x AN
+[Agent BNT] HOLD on ETHUSDT — Trinity gate system requires ALL THREE: (1) 15m EMA9 above EMA21 [FAIL: currentl
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="58.26.110.81" requestID="9381d275-75df-4e4e" responseTimeMS=564 responseBytes=1119 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="58.26.110.81" requestID="9f85ce8b-4e11-40c4" responseTimeMS=1087 responseBytes=2326 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/1934642365 clientIP="58.26.110.81" requestID="3565922d-72b3-4992" responseTimeMS=388 responseBytes=1119 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/user/1934642365 clientIP="58.26.110.81" requestID="362f5977-6710-41c8" responseTimeMS=566 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="58.26.110.81" requestID="2987411e-e371-4a9f" responseTimeMS=712 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a → marginBalance= 20.0000 crossWallet= 20.0000 crossUnPnl= 0.0000 available= 19.9960
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="58.26.110.81" requestID="9ac1b206-a4d0-4c1a" responseTimeMS=751 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/portfolio/1934642365 clientIP="58.26.110.81" requestID="2b4d854f-9668-4cd5" responseTimeMS=738 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a → marginBalance= 20.0000 crossWallet= 20.0000 crossUnPnl= 0.0000 available= 19.9960
+[Runner] Ticking 2 agents in batches of 50
+[Runner] Dispatched 2 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Agent SeanBuild4] HOLD on ETHUSDT — Extreme ADX conflict regime fails triple gate requirement: 1h RSI needs >30 (cur
+[Agent BNT] HOLD on ETHUSDT — Volume at 0.20x fails Trinity gate #3 (requires >1.2x). 15m EMA9 below EMA21 fai
+[Auth] New user: fatur0908
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="3bef30e4-2988-4cf1" responseTimeMS=3417 responseBytes=270 userAgent=""
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="3943004c-57e7-4509" responseTimeMS=804 responseBytes=270 userAgent=""
+==> Detected service running on port 500
+==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+[Runner] Ticking 2 agents in batches of 50
+[Runner] Dispatched 2 ticks in 0.0s (0 skipped — still in flight from previous tick)
+Menu
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
