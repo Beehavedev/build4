@@ -444,6 +444,49 @@ export interface AsterPosition {
   marginType:       string
 }
 
+export interface AsterUserTrade {
+  symbol: string
+  side: 'BUY' | 'SELL'
+  positionSide: 'LONG' | 'SHORT' | 'BOTH'
+  price: number
+  qty: number
+  quoteQty: number
+  realizedPnl: number
+  commission: number
+  commissionAsset: string
+  time: number
+  orderId: number
+}
+
+export async function getUserTrades(
+  creds: AsterCredentials,
+  opts: { symbol?: string; limit?: number; startTime?: number } = {}
+): Promise<AsterUserTrade[]> {
+  try {
+    const params: any = { limit: opts.limit ?? 100 }
+    if (opts.symbol) params.symbol = opts.symbol.replace('/', '')
+    if (opts.startTime) params.startTime = opts.startTime
+    const res = await signedGET('/fapi/v3/userTrades', params, creds)
+    if (!Array.isArray(res.data)) return []
+    return (res.data as any[]).map((t: any) => ({
+      symbol: t.symbol,
+      side: t.side,
+      positionSide: t.positionSide ?? 'BOTH',
+      price: parseFloat(t.price),
+      qty: parseFloat(t.qty),
+      quoteQty: parseFloat(t.quoteQty),
+      realizedPnl: parseFloat(t.realizedPnl ?? '0'),
+      commission: parseFloat(t.commission ?? '0'),
+      commissionAsset: t.commissionAsset ?? 'USDT',
+      time: Number(t.time),
+      orderId: Number(t.orderId)
+    }))
+  } catch (e) {
+    console.warn('[Aster] getUserTrades failed:', (e as Error).message)
+    return []
+  }
+}
+
 export async function getPositions(
   creds: AsterCredentials,
   symbol?: string

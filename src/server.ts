@@ -906,6 +906,7 @@ app.get('/api/trades/:userId', async (req, res) => {
     })
 
     let livePositions: any[] = []
+    let asterHistory: any[] = []
     try {
       const dbUser = await db.user.findUnique({
         where: { id: internalUserId },
@@ -913,10 +914,13 @@ app.get('/api/trades/:userId', async (req, res) => {
       })
       const wallet = dbUser?.wallets[0]
       if (dbUser && wallet) {
-        const { resolveAgentCreds, getPositions } = await import('./services/aster')
+        const { resolveAgentCreds, getPositions, getUserTrades } = await import('./services/aster')
         const creds = await resolveAgentCreds(dbUser, wallet.address)
         if (creds) {
-          const positions = await getPositions(creds)
+          const [positions, userTrades] = await Promise.all([
+            getPositions(creds),
+            getUserTrades(creds, { limit: 100 })
+          ])
           livePositions = positions.map((p: any) => ({
             symbol: p.symbol,
             positionAmt: p.side === 'LONG' ? p.size : -p.size,
@@ -925,6 +929,7 @@ app.get('/api/trades/:userId', async (req, res) => {
             unRealizedProfit: p.unrealizedPnl ?? 0,
             leverage: p.leverage ?? 1
           }))
+          asterHistory = userTrades
         }
       }
     } catch (e) {
@@ -965,6 +970,37 @@ app.get('/api/trades/:userId', async (req, res) => {
         leverage: live.leverage,
         pnl: live.unRealizedProfit,
         status: 'open',
+        agentName: undefined
+      })
+    }
+
+    // Closing fills from Aster — anything with realized PnL is a real close.
+    // Surface as "closed" rows so users see actual trade history even when
+    // SL/TP/manual closes never made it back to our DB.
+    const dbClosedKeys = new Set(
+      trades
+        .filter(t => t.status === 'closed' && t.closedAt)
+        .map(t => `${t.pair.replace('/', '')}_${Math.floor(new Date(t.closedAt!).getTime() / 60000)}`)
+    )
+    const closingFills = asterHistory
+      .filter(f => f.realizedPnl !== 0)
+      .sort((a, b) => b.time - a.time)
+      .slice(0, 50)
+
+    for (const fill of closingFills) {
+      const dedupeKey = `${fill.symbol}_${Math.floor(fill.time / 60000)}`
+      if (dbClosedKeys.has(dedupeKey)) continue
+      const side = fill.positionSide === 'LONG' || (fill.positionSide === 'BOTH' && fill.side === 'SELL')
+        ? 'LONG' : 'SHORT'
+      result.push({
+        id: `aster_${fill.orderId}`,
+        pair: fill.symbol,
+        side,
+        size: fill.quoteQty,
+        entryPrice: fill.price,
+        leverage: 1,
+        pnl: fill.realizedPnl,
+        status: 'closed',
         agentName: undefined
       })
     }
