@@ -1,0 +1,61 @@
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[DB] All new tables ready
+[Migration] Checking for old user data to migrate...
+[Migration] Already have 1457 users in new tables, skipping migration
+[Runner] Agent runner initialized
+[Runner] Agent runner started
+[Server] Running on port 500
+[Bot] Initialized as @BUILD4_BOT
+[Bot] Webhook set to https://build4-1.onrender.com/api/webhook
+[GET]
+build4-1.onrender.com/ clientIP="35.197.118.178" requestID="0e252c1c-c913-4cdf" responseTimeMS=6 responseBytes=397 userAgent="Go-http-client/2.0"
+==> Your service is live 🎉
+==> 
+==> ///////////////////////////////////////////////////////////
+==> 
+==> Available at your primary URL https://build4-1.onrender.com
+==> 
+==> ///////////////////////////////////////////////////////////
+[Agent BNT] HOLD on ETHUSDT — 15m EMA9 still below EMA21 (0/3 trinity gates met). Volume absent at 0.01x makes
+[Agent SeanBuild4] HOLD on ETHUSDT — Volume at 0.01x average completely invalidates MACD cross. Only 2/5 timeframes a
+[Runner] Ticking 2 agents in batches of 50
+[Runner] Dispatched 2 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Runner] Ticking 2 agents in batches of 50
+[Runner] Dispatched 2 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on ETHUSDT — Trinity gate framework incomplete: 15m EMA9 still below EMA21 (no trend reversal
+[Agent SeanBuild4] HOLD on ETHUSDT — Setup score 4/10 — requires minimum 7/10. Only 2/5 timeframe alignment vs requir
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="0639d07e-ab1e-44ca" responseTimeMS=1163 responseBytes=270 userAgent=""
+[GET]
+build4-1.onrender.com/app/ clientIP="58.26.110.81" requestID="c5a42e22-1b7a-4bdf" responseTimeMS=4 responseBytes=656 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/app clientIP="58.26.110.81" requestID="9c8c83e1-d4d0-4776" responseTimeMS=4 responseBytes=414 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/user/1934642365 clientIP="58.26.110.81" requestID="0b5f14e9-7d61-43eb" responseTimeMS=930 responseBytes=1000 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/1934642365 clientIP="58.26.110.81" requestID="2454db72-3dc3-4688" responseTimeMS=948 responseBytes=1120 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="58.26.110.81" requestID="a6c0b6d6-87bc-4ac4" responseTimeMS=567 responseBytes=1120 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="58.26.110.81" requestID="a463b0fb-9181-4d90" responseTimeMS=1503 responseBytes=2355 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="58.26.110.81" requestID="bee3cbcc-9099-43fd" responseTimeMS=901 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a → marginBalance= 0.0000 crossWallet= 0.0000 crossUnPnl= 0.0000 available= 0.0000
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="58.26.110.81" requestID="4e6cfdf3-feb2-4255" responseTimeMS=631 responseBytes=349 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] transferAsset failed: 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a SPOT_FUTURE 20 → 400 {
+  code: -5010,
+  msg: 'Asset transfer failed: internal error, please try again later.'
+}
+[Runner] Ticking 2 agents in batches of 50
+Menu
+[Runner] Dispatched 2 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Agent SeanBuild4] HOLD on ETHUSDT — Volume catastrophically low (0.03x) invalidates all technical signals. Timeframe
+[Agent BNT] HOLD on ETHUSDT — Trinity gate framework violated: (1) 15m EMA9 still below EMA21, (2) price $42 b

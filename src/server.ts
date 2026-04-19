@@ -658,15 +658,64 @@ app.post('/api/aster/transfer', requireTgUser, async (req, res) => {
       }
 
       const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
-      if (!wallet) return res.status(404).json({ success: false, error: 'No active wallet' })
+      if (!wallet || !wallet.encryptedPK) {
+        return res.status(404).json({ success: false, error: 'No active wallet' })
+      }
 
+      // ── BSC → Aster: this is an ON-CHAIN deposit (USDT.approve + Vault.deposit
+      //    on BSC). Aster's /fapi/v3/asset/wallet/transfer with SPOT_FUTURE only
+      //    moves between Aster's INTERNAL spot↔futures wallets — it does not
+      //    touch BSC. Using it for new users with funds on-chain returns -5010
+      //    "internal error" because there's no Aster-spot balance to move.
+      if (direction === 'to_aster') {
+        const { decryptPrivateKey } = await import('./services/wallet')
+        const { ensureAndDepositUSDT, MIN_BNB_FOR_GAS_WEI, getProvider } = await import('./services/asterDeposit')
+        const { ethers } = await import('ethers')
+
+        let userPk: string
+        try { userPk = decryptPrivateKey(wallet.encryptedPK, user.id) }
+        catch { return res.status(500).json({ success: false, error: 'Could not decrypt wallet' }) }
+
+        const provider = getProvider()
+        const bnbBal = await provider.getBalance(wallet.address)
+        if (bnbBal < MIN_BNB_FOR_GAS_WEI) {
+          return res.status(400).json({
+            success: false,
+            error: `Need ~0.001 BNB for gas (you have ${ethers.formatEther(bnbBal)} BNB).`
+          })
+        }
+
+        const amountWei = ethers.parseUnits(amt.toString(), 18)
+        const dep = await ensureAndDepositUSDT({
+          userPrivateKey: userPk,
+          amountWei,
+          broker:         0n
+        })
+        userPk = ''
+
+        if (!dep.success) {
+          return res.status(400).json({
+            success: false,
+            error: dep.error ?? 'deposit_failed',
+            approveTx: dep.approveTx,
+            depositTx: dep.depositTx
+          })
+        }
+        return res.json({
+          success:   true,
+          tranId:    dep.depositTx,
+          approveTx: dep.approveTx,
+          depositTx: dep.depositTx
+        })
+      }
+
+      // ── Aster → BSC: use Aster's signed FUTURE_SPOT transfer (internal),
+      //    which Aster surfaces back to the user's BSC wallet automatically.
       const { resolveAgentCreds, transferAsset } = await import('./services/aster')
       const creds = await resolveAgentCreds(user, wallet.address)
       if (!creds) return res.status(500).json({ success: false, error: 'Agent not configured for this user' })
 
-      const kindType = direction === 'to_aster' ? 'SPOT_FUTURE' : 'FUTURE_SPOT'
-      const result   = await transferAsset(creds, amt.toString(), kindType)
-
+      const result = await transferAsset(creds, amt.toString(), 'FUTURE_SPOT')
       if (!result.success) {
         return res.status(400).json({ success: false, error: result.error ?? 'transfer_failed' })
       }
