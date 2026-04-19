@@ -85,6 +85,50 @@ export interface AgentDecision {
   holdReason: string | null
 }
 
+// ─── NEW LISTING MOMENTUM MODE ─────────────────────────────────────────────
+// Used ONLY when the pair was onboarded on Aster within the last 48h. Fresh
+// listings have no usable EMA200/MACD/ADX (need weeks of candles), so the
+// standard TA framework will always say HOLD. Instead we hand the LLM a
+// volume + price-action context and a momentum playbook with hard quarter
+// sizing and tight stops. Win rate is lower but R/R asymmetry is huge —
+// new Aster listings routinely 2-5x in the first 24h.
+const NEW_LISTING_SYSTEM_PROMPT = `You are BUILD4 NEW-LISTING MOMENTUM — a specialist agent for trading freshly-listed perpetuals on Aster DEX (pair onboarded within the last 48 hours).
+
+YOUR EDGE:
+- New Aster perps frequently move 50-300% in their first 24-48h as price discovery happens
+- Most retail traders are paralyzed by the lack of TA history — you are not
+- You ignore EMA200/MACD/ADX (insufficient data). You read raw volume + candle structure + book pressure.
+
+DECISION RULES (apply in order, override the standard framework):
+
+1. DIRECTION
+   - Strong upward expansion candles + rising volume = LONG
+   - Vertical pump >100% from listing → SHORT the first sign of exhaustion (long upper wick, declining volume on green candle)
+   - Sideways consolidation after a big move = WAIT for breakout direction
+   - If unclear after 30s of analysis: HOLD
+
+2. SIZING (NON-NEGOTIABLE)
+   - Always use the EXACT size given in POSITION SIZE BUDGET — already quartered for new listings.
+   - Leverage MAX 3x. Volatility is brutal; over-leverage = liquidation.
+
+3. STOPS
+   - Stop loss: 2-4% from entry (NOT swing low — recent candles are too short to be meaningful)
+   - Take profit: 5-15% (asymmetric R/R: small loss, large potential win)
+   - Acceptable R/R: ≥1.5 (NOT 2:1 — this is a momentum scalp, not a swing)
+
+4. ENTRY CONFIDENCE
+   - You only need 2 confirming signals to enter (vs 3-4 in normal mode)
+   - confidence ≥ 0.55 still required
+   - setupScore — express your conviction 4-10. Anything you'd take with real money = ≥4.
+
+5. NO RE-ENTRIES
+   - If you closed a position on this pair in the last hour: HOLD
+   - If price moved >5% in last 5 minutes: wait, don't chase the candle
+
+RESPOND WITH ONLY VALID JSON — same schema as the standard prompt, but you may set timeframeAlignment fields to "INSUFFICIENT_DATA" since multi-timeframe analysis isn't possible on a fresh listing. Use the regime field to describe the listing phase: "DISCOVERY" | "PUMP" | "EXHAUSTION" | "CONSOLIDATION" | "DUMP".
+
+For HOLD: set entryZone/stopLoss/takeProfit/size/leverage/riskRewardRatio to null. Use holdReason to explain what you're waiting for.`
+
 const TRADING_SYSTEM_PROMPT = `You are BUILD4 — an elite quantitative crypto trading agent with deep expertise in perpetual futures markets. You combine technical analysis, market microstructure, risk management, and behavioral finance to make high-probability trading decisions.
 
 YOUR TRADING PHILOSOPHY:
@@ -234,6 +278,69 @@ KEY LEVELS:
 
 RECENT CANDLES (15m):
 ${formatRecentCandles(ohlcv15m, 5)}`
+}
+
+// Compact momentum context for new listings — uses 1m + 5m candles since
+// fresh pairs lack enough history for hourly/daily indicators.
+function buildMomentumContext(
+  ohlcv1m: OHLCV,
+  ohlcv5m: OHLCV,
+  pair: string,
+  hoursOld: number
+): string {
+  const closes1m = ohlcv1m.close
+  const vols1m = ohlcv1m.volume
+  const price = closes1m[closes1m.length - 1]
+  const listingPrice = closes1m[0] ?? price
+  const pctFromListing = ((price - listingPrice) / listingPrice) * 100
+
+  const last5mPrice = closes1m[Math.max(0, closes1m.length - 5)] ?? price
+  const last15mPrice = closes1m[Math.max(0, closes1m.length - 15)] ?? price
+  const pct5m = ((price - last5mPrice) / last5mPrice) * 100
+  const pct15m = ((price - last15mPrice) / last15mPrice) * 100
+
+  const recentVol = vols1m.slice(-10).reduce((a, b) => a + b, 0) / 10
+  const baselineVol = vols1m.slice(0, Math.max(1, vols1m.length - 10)).reduce((a, b) => a + b, 0) /
+    Math.max(1, vols1m.length - 10)
+  const volRatio = baselineVol > 0 ? recentVol / baselineVol : 1
+
+  const high24h = Math.max(...closes1m)
+  const low24h = Math.min(...closes1m)
+  const drawdownFromHigh = ((price - high24h) / high24h) * 100
+
+  return `
+NEW LISTING: ${pair} | AGE: ${hoursOld.toFixed(1)}h since onboard
+PRICE: $${price} | FROM LISTING: ${pctFromListing >= 0 ? '+' : ''}${pctFromListing.toFixed(1)}%
+
+MOMENTUM:
+- Last 5m:  ${pct5m >= 0 ? '+' : ''}${pct5m.toFixed(2)}%
+- Last 15m: ${pct15m >= 0 ? '+' : ''}${pct15m.toFixed(2)}%
+- Drawdown from listing high: ${drawdownFromHigh.toFixed(2)}%
+
+VOLUME:
+- Recent 10m vs full-history avg: ${volRatio.toFixed(2)}x ${
+    volRatio > 2 ? '⬆️ EXPANDING' : volRatio < 0.5 ? '⬇️ FADING' : '✓ STABLE'
+  }
+
+RANGE:
+- Listing high: $${high24h}
+- Listing low:  $${low24h}
+- Position in range: ${(((price - low24h) / Math.max(1e-9, high24h - low24h)) * 100).toFixed(0)}%
+
+RECENT 5m CANDLES (last ${Math.min(8, ohlcv5m.close.length)}):
+${formatRecentCandles(ohlcv5m, 8)}`
+}
+
+async function getMomentumOHLCV(pair: string): Promise<{
+  '1m': OHLCV
+  '5m': OHLCV
+}> {
+  const { getKlines } = await import('../services/aster')
+  const [m1, m5] = await Promise.all([
+    getKlines(pair, '1m', 120),  // ~2h of 1m candles
+    getKlines(pair, '5m', 100)   // ~8h of 5m candles
+  ])
+  return { '1m': m1, '5m': m5 }
 }
 
 async function getMultiTimeframeOHLCV(pair: string): Promise<{
@@ -445,14 +552,37 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       price: 0, rsi: 0, adx: 0, regime: 'UNKNOWN'
     }
     try {
-      // 1. Gather market data
-      const ohlcv = await getMultiTimeframeOHLCV(pair)
-      const marketContext = buildMarketContext(ohlcv['15m'], ohlcv['1h'], ohlcv['4h'], pair)
+      // 1. Gather market data — branch on whether this is a fresh listing.
+      // New listings (<48h on Aster) get a momentum-focused context built from
+      // 1m+5m candles instead of the standard 15m/1h/4h, since they lack the
+      // history needed for EMA200/MACD/ADX. The system prompt also changes
+      // (NEW_LISTING_SYSTEM_PROMPT below) so the LLM applies a momentum
+      // playbook rather than the conservative TA framework.
+      const { getRecentNewListings } = await import('../services/listingDetector')
+      const recentListings = await getRecentNewListings().catch(() => [] as string[])
+      const isNewListingPair = recentListings.includes(pair)
+
+      let marketContext: string
+      let ohlcv: { '15m': OHLCV; '1h': OHLCV; '4h': OHLCV } | null = null
+      let momentumOhlcv: { '1m': OHLCV; '5m': OHLCV } | null = null
+
+      if (isNewListingPair) {
+        momentumOhlcv = await getMomentumOHLCV(pair)
+        // Estimate hours-old from the first 1m candle we got back (Aster only
+        // serves candles from listing onwards, so the earliest candle ≈ listing).
+        const earliestMs = (momentumOhlcv['1m'] as any).openTime?.[0]
+          ?? Date.now() - momentumOhlcv['1m'].close.length * 60_000
+        const hoursOld = (Date.now() - earliestMs) / (60 * 60 * 1000)
+        marketContext = buildMomentumContext(momentumOhlcv['1m'], momentumOhlcv['5m'], pair, hoursOld)
+      } else {
+        ohlcv = await getMultiTimeframeOHLCV(pair)
+        marketContext = buildMarketContext(ohlcv['15m'], ohlcv['1h'], ohlcv['4h'], pair)
+      }
 
       // Indicator snapshot — used both for the live "Agent Brain" feed
       // (logged to AgentLog so the mini app can render it) and for the
       // per-tick Telegram summary message.
-      {
+      if (ohlcv) {
         const _price = ohlcv['15m'].close[ohlcv['15m'].close.length - 1]
         const _rsi   = calculateRSI(ohlcv['15m'].close, 14)
         const _adx   = calculateADX(ohlcv['1h'], 14)
@@ -462,6 +592,15 @@ export async function runAgentTick(agent: Agent): Promise<void> {
               : 'TRENDING DOWN')
           : 'RANGING'
         snapshot = { price: _price, rsi: _rsi, adx: _adx, regime: _regime }
+      } else if (momentumOhlcv) {
+        // New-listing snapshot — no usable RSI/ADX, just price + regime tag.
+        const closes = momentumOhlcv['1m'].close
+        snapshot = {
+          price: closes[closes.length - 1],
+          rsi: 0,
+          adx: 0,
+          regime: 'NEW_LISTING'
+        }
       }
 
       // 2. Get open positions
@@ -711,6 +850,13 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       else                         kellySize = 10
       kellySize = Math.min(kellySize, agent.maxPositionSize)
 
+      // New-listing override: regardless of Kelly tier, force quarter-size on
+      // momentum trades. Volatility kills full positions on fresh listings
+      // even when the direction is right.
+      if (isNewListingPair) {
+        kellySize = Math.max(1, Math.min(kellySize, agent.maxPositionSize * 0.25))
+      }
+
       // 6. Build user message
       const userMessage = `
 === MARKET DATA ===
@@ -782,7 +928,7 @@ If you would not put real money in this trade right now, action = HOLD.`
         const response = await anthropic.messages.create({
           model: 'claude-sonnet-4-5',
           max_tokens: 1000,
-          system: TRADING_SYSTEM_PROMPT,
+          system: isNewListingPair ? NEW_LISTING_SYSTEM_PROMPT : TRADING_SYSTEM_PROMPT,
           messages: [{ role: 'user', content: userMessage }]
         })
 
@@ -897,12 +1043,15 @@ If you would not put real money in this trade right now, action = HOLD.`
       }
 
       if (decision.action === 'OPEN_LONG' || decision.action === 'OPEN_SHORT') {
-        // Validate
-        if ((decision.riskRewardRatio ?? 0) < 2.0) {
+        // Validate. New-listing momentum trades use a relaxed R/R floor of
+        // 1.5 (matching the new-listing prompt); standard mode now uses 1.5
+        // too (matches loosened standard prompt — was 2.0 historically).
+        const rrFloor = isNewListingPair ? 1.5 : 1.5
+        if ((decision.riskRewardRatio ?? 0) < rrFloor) {
           await saveMemory(
             agent.id,
             'observation',
-            `Skipped ${pair} ${decision.action} — R/R was only ${decision.riskRewardRatio?.toFixed(1)}, below 2.0 minimum`,
+            `Skipped ${pair} ${decision.action} — R/R was only ${decision.riskRewardRatio?.toFixed(1)}, below ${rrFloor} minimum`,
             null
           )
           return
@@ -967,7 +1116,9 @@ If you would not put real money in this trade right now, action = HOLD.`
           finalSize = finalSize * (1 - riskCheck.reduceSizeBy / 100)
         }
 
-        const currentPrice = ohlcv['15m'].close[ohlcv['15m'].close.length - 1]
+        const currentPrice = ohlcv
+          ? ohlcv['15m'].close[ohlcv['15m'].close.length - 1]
+          : snapshot.price
 
         // ── Real Aster execution ──────────────────────────────────────────
         let fillPrice = currentPrice
@@ -1120,7 +1271,9 @@ If you would not put real money in this trade right now, action = HOLD.`
 
         if (!openPos) return
 
-        let exitPrice = ohlcv['15m'].close[ohlcv['15m'].close.length - 1]
+        let exitPrice = ohlcv
+          ? ohlcv['15m'].close[ohlcv['15m'].close.length - 1]
+          : snapshot.price
 
         // ── Real Aster close (v3 EIP-712) ────────────────────────────────
         const dbUserClose = await db.user.findUnique({
