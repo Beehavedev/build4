@@ -1,0 +1,97 @@
+URGENT: "Signature check failed" is blocking ALL wallet activations.
+
+This is our own Telegram initData validation rejecting the request
+before it ever reaches the Aster code. Fix it now.
+
+STEP 1 — Find the validation code
+Search the codebase for where "Signature check failed" is returned:
+  grep -r "Signature check failed" src/
+  grep -r "signature" src/middleware/
+  grep -r "validateTelegram" src/
+
+STEP 2 — Replace the validation function with this 
+correct implementation:
+
+import crypto from 'crypto'
+
+export function validateTelegramWebAppData(
+  initData: string, 
+  botToken: string
+): boolean {
+  try {
+    if (!initData || !botToken) return false
+    
+    const urlParams = new URLSearchParams(initData)
+    const hash = urlParams.get('hash')
+    if (!hash) return false
+    
+    urlParams.delete('hash')
+    
+    // Must be sorted alphabetically
+    const dataCheckString = Array.from(urlParams.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => `${key}=${value}`)
+      .join('\n')
+    
+    // Step 1: HMAC-SHA256('WebAppData', botToken) → secret key
+    const secretKey = crypto
+      .createHmac('sha256', 'WebAppData')
+      .update(botToken)
+      .digest()
+    
+    // Step 2: HMAC-SHA256(secretKey, dataCheckString) → expected hash
+    const expectedHash = crypto
+      .createHmac('sha256', secretKey)
+      .update(dataCheckString)
+      .digest('hex')
+    
+    return expectedHash === hash
+  } catch {
+    return false
+  }
+}
+
+STEP 3 — Add detailed logging to the approve endpoint
+so we can see exactly what's failing:
+
+  console.log('[approve] initData present:', !!initData)
+  console.log('[approve] initData length:', initData?.length)
+  console.log('[approve] hash present:', initData?.includes('hash='))
+  console.log('[approve] BOT_TOKEN set:', !!process.env.TELEGRAM_BOT_TOKEN)
+  console.log('[approve] BOT_TOKEN first 10:', 
+    process.env.TELEGRAM_BOT_TOKEN?.slice(0, 10))
+  
+  const isValid = validateTelegramWebAppData(initData, process.env.TELEGRAM_BOT_TOKEN!)
+  console.log('[approve] validation result:', isValid)
+
+STEP 4 — Add SKIP_TG_VALIDATION env var as emergency bypass:
+
+  if (process.env.SKIP_TG_VALIDATION === 'true') {
+    console.warn('[approve] VALIDATION BYPASSED — dev mode')
+    // continue without validation
+  } else {
+    if (!isValid) {
+      return res.status(401).json({ error: 'Signature check failed' })
+    }
+  }
+
+STEP 5 — Make sure the mini app sends initData correctly:
+
+In Wallet.tsx or wherever the activate button calls the API:
+
+  const initData = window.Telegram?.WebApp?.initData ?? ''
+  
+  console.log('[miniapp] initData length:', initData.length)
+  
+  const response = await fetch('/api/aster/approve', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `tma ${initData}`
+    },
+    body: JSON.stringify({})
+  })
+
+Deploy with SKIP_TG_VALIDATION=true on Render first
+to confirm the rest of the flow works. Then fix the 
+validation and remove the bypass.
