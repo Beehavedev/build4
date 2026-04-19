@@ -105,12 +105,12 @@ YOUR DECISION FRAMEWORK (apply in this exact order every tick):
    - ADX 20-25 = TRANSITIONING → wait for confirmation, prefer HOLD
 
 2. TIMEFRAME ALIGNMENT CHECK
-   Only trade when at least 3 of 4 signals agree:
+   Only trade when at least 2 of 4 signals agree:
    - 4h trend direction (EMA200)
    - 1h trend direction (EMA50)
    - 15m momentum (MACD + RSI)
    - Volume confirmation
-   Fewer than 3 agreeing = HOLD
+   Fewer than 2 agreeing = HOLD
 
 3. ENTRY QUALITY SCORING (0-10):
    - Trend alignment (all timeframes agree): +3
@@ -120,11 +120,11 @@ YOUR DECISION FRAMEWORK (apply in this exact order every tick):
    - Bollinger band context favorable: +1
    - MACD cross in your direction within last 3 bars: +1
    - Clean recent candle structure: +1
-   Score 7-10: Full size | Score 5-6: Half size | Score 0-4: HOLD
+   Score 7-10: Full size | Score 5-6: Half size | Score 4: Quarter size | Score 0-3: HOLD
 
 4. RISK MANAGEMENT (non-negotiable):
    - Stop loss: below/above nearest swing low/high, NOT an arbitrary percentage
-   - If R/R after proper SL/TP placement is less than 2:1: PASS
+   - If R/R after proper SL/TP placement is less than 1.5:1: PASS
    - Size to the stop, not to a fixed amount
    - Never move stop loss further away once set
 
@@ -912,7 +912,7 @@ If you would not put real money in this trade right now, action = HOLD.`
           return
         }
 
-        if ((decision.setupScore ?? 0) < 5) return
+        if ((decision.setupScore ?? 0) < 4) return
 
         const side = decision.action === 'OPEN_LONG' ? 'LONG' : ('SHORT' as const)
 
