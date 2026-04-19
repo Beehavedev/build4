@@ -9,7 +9,12 @@ services:
     name: build4-telegram-bot
     runtime: node
     plan: starter
-    buildCommand: npm install && npx prisma generate --schema=src/prisma/schema.prisma && npx prisma db push --schema=src/prisma/schema.prisma --skip-generate --accept-data-loss && npx vite build --config src/miniapp/vite.config.ts src/miniapp
+    # Pre-step: drop the legacy `Agent_walletAddress_key` unique index if it
+    # exists. An older deploy created this index manually before the @unique
+    # was added to the Prisma schema, so `db push` now collides with itself
+    # ("relation already exists"). Dropping is safe — `db push` recreates it
+    # immediately from the schema's @unique constraint.
+    buildCommand: npm install && npx prisma generate --schema=src/prisma/schema.prisma && echo 'DROP INDEX IF EXISTS "Agent_walletAddress_key";' | npx prisma db execute --schema=src/prisma/schema.prisma --stdin && npx prisma db push --schema=src/prisma/schema.prisma --skip-generate --accept-data-loss && npx vite build --config src/miniapp/vite.config.ts src/miniapp
     # Re-run `prisma generate` on every start as a safety net: Render
     # sometimes serves a cached node_modules where the generated client is
     # stale (which is what happened when the new AgentLog columns

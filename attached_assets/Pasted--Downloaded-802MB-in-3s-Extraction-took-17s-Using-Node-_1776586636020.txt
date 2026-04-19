@@ -1,0 +1,40 @@
+==> Downloaded 802MB in 3s. Extraction took 17s.
+==> Using Node.js version 22.22.0 (default)
+==> Docs on specifying a Node.js version: https://render.com/docs/node-version
+==> Running build command 'npm install && npx prisma generate --schema=src/prisma/schema.prisma && npx prisma db push --schema=src/prisma/schema.prisma --skip-generate --accept-data-loss && npx vite build --config src/miniapp/vite.config.ts src/miniapp'...
+up to date, audited 1612 packages in 8s
+272 packages are looking for funding
+  run `npm fund` for details
+50 vulnerabilities (29 low, 18 moderate, 3 high)
+To address issues that do not require attention, run:
+  npm audit fix
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+Run `npm audit` for details.
+Prisma schema loaded from src/prisma/schema.prisma
+✔ Generated Prisma Client (v5.22.0) to ./node_modules/.prisma/client in 292ms
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+Help us improve the Prisma ORM for everyone. Share your feedback in a short 2-min survey: https://pris.ly/orm/survey/release-5-22
+┌─────────────────────────────────────────────────────────┐
+│  Update available 5.22.0 -> 7.7.0                       │
+│                                                         │
+│  This is a major update - please follow the guide at    │
+│  https://pris.ly/d/major-version-upgrade                │
+│                                                         │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
+Prisma schema loaded from src/prisma/schema.prisma
+Datasource "db": PostgreSQL database "build4db", schema "public" at "dpg-d6qpubpj16oc73es6u9g-a.oregon-postgres.render.com"
+Error: ERROR: relation "Agent_walletAddress_key" already exists
+   0: sql_schema_connector::apply_migration::migration_step
+           with step=CreateIndex { table_id: (Some(TableId(0)), TableId(2)), index_id: IndexId(6), from_drop_and_recreate: false }
+Menu
+             at schema-engine/connectors/sql-schema-connector/src/apply_migration.rs:21
+   1: sql_schema_connector::apply_migration::apply_migration
+             at schema-engine/connectors/sql-schema-connector/src/apply_migration.rs:10
+   2: schema_core::state::SchemaPush
+             at schema-engine/core/src/state.rs:504
+==> Build failed 😞
+==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
