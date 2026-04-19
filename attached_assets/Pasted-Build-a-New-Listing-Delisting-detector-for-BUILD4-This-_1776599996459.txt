@@ -1,0 +1,267 @@
+Build a New Listing / Delisting detector for BUILD4.
+This is a major alpha source — new listings pump 20-200% 
+in the first hour, delistings dump immediately.
+
+We need to know BEFORE humans do.
+
+═══════════════════════════════════════════════
+HOW ASTER ANNOUNCES (confirmed from research):
+═══════════════════════════════════════════════
+
+1. @Aster_DEX on X tweets "[New Listing]" or "[Delisting Notice]"
+2. The pair appears in /fapi/v1/exchangeInfo before trading opens
+3. There's a gap between announcement and actual trading start
+   — that gap is the edge window
+
+═══════════════════════════════════════════════
+BUILD: src/services/listingDetector.ts
+═══════════════════════════════════════════════
+
+import axios from 'axios'
+
+// Track known pairs — detect when new ones appear
+let knownPairs = new Set<string>()
+let knownPairsLoadedAt = 0
+
+interface ListingEvent {
+  type: 'NEW_LISTING' | 'DELISTING' | 'REDUCE_ONLY'
+  symbol: string
+  detectedAt: number
+  onboardDate?: number
+  deliveryDate?: number
+}
+
+// Check Aster exchangeInfo every 60s for new/removed pairs
+export async function checkForListingChanges(): Promise<ListingEvent[]> {
+  try {
+    const res = await axios.get(
+      'https://fapi.asterdex.com/fapi/v1/exchangeInfo',
+      { timeout: 8000 }
+    )
+    
+    const symbols = res.data.symbols as any[]
+    const events: ListingEvent[] = []
+    const currentPairs = new Set<string>()
+    
+    for (const s of symbols) {
+      if (s.quoteAsset !== 'USDT') continue
+      currentPairs.add(s.symbol)
+      
+      // NEW LISTING detected
+      if (knownPairs.size > 0 && !knownPairs.has(s.symbol)) {
+        events.push({
+          type: 'NEW_LISTING',
+          symbol: s.symbol,
+          detectedAt: Date.now(),
+          onboardDate: s.onboardDate
+        })
+        console.log(`[Listing] 🚀 NEW LISTING DETECTED: ${s.symbol}`)
+      }
+      
+      // REDUCE ONLY = delisting soon
+      if (s.status === 'SETTLING' || s.status === 'BREAK') {
+        if (knownPairs.has(s.symbol)) {
+          events.push({
+            type: 'REDUCE_ONLY',
+            symbol: s.symbol,
+            detectedAt: Date.now(),
+            deliveryDate: s.deliveryDate
+          })
+          console.log(`[Listing] ⚠️ REDUCE ONLY (delisting): ${s.symbol}`)
+        }
+      }
+    }
+    
+    // DELISTED — pair removed entirely
+    for (const known of knownPairs) {
+      if (!currentPairs.has(known)) {
+        events.push({
+          type: 'DELISTING',
+          symbol: known,
+          detectedAt: Date.now()
+        })
+        console.log(`[Listing] 🔴 DELISTED: ${known}`)
+      }
+    }
+    
+    knownPairs = currentPairs
+    knownPairsLoadedAt = Date.now()
+    return events
+    
+  } catch (err) {
+    console.error('[Listing] exchangeInfo fetch failed:', err)
+    return []
+  }
+}
+
+// Get newly listed pairs from last 48 hours
+// These have explosive volume — prime for agents to trade
+export async function getRecentNewListings(): Promise<string[]> {
+  try {
+    const res = await axios.get(
+      'https://fapi.asterdex.com/fapi/v1/exchangeInfo',
+      { timeout: 8000 }
+    )
+    const symbols = res.data.symbols as any[]
+    const cutoff = Date.now() - 48 * 60 * 60 * 1000  // 48h ago
+    
+    return symbols
+      .filter(s => 
+        s.quoteAsset === 'USDT' &&
+        s.status === 'TRADING' &&
+        s.onboardDate > cutoff
+      )
+      .map(s => s.symbol)
+  } catch {
+    return []
+  }
+}
+
+═══════════════════════════════════════════════
+WIRE INTO: src/index.ts — listing monitor loop
+═══════════════════════════════════════════════
+
+Add this to the server startup:
+
+import { checkForListingChanges, getRecentNewListings } 
+  from './services/listingDetector'
+
+// Run every 60 seconds — faster than any human
+async function listingMonitor() {
+  // Initialize known pairs on first run
+  await checkForListingChanges()
+  
+  setInterval(async () => {
+    const events = await checkForListingChanges()
+    
+    for (const event of events) {
+      if (event.type === 'NEW_LISTING') {
+        await handleNewListing(event)
+      } else if (event.type === 'REDUCE_ONLY' || 
+                 event.type === 'DELISTING') {
+        await handleDelisting(event)
+      }
+    }
+  }, 60_000)
+}
+
+async function handleNewListing(event: ListingEvent) {
+  console.log(`[Listing] Processing new listing: ${event.symbol}`)
+  
+  // 1. Add to watchlist immediately
+  // 2. Alert all active users via Telegram
+  const activeUsers = await db.user.findMany({
+    where: { agents: { some: { isActive: true } } },
+    select: { telegramId: true }
+  })
+  
+  for (const user of activeUsers) {
+    try {
+      await bot.api.sendMessage(
+        user.telegramId,
+        `🚀 NEW LISTING DETECTED\n\n` +
+        `${event.symbol} just listed on Aster!\n\n` +
+        `⚡ Your AI agents are now scanning this pair.\n` +
+        `New listings often move 50-200% in the first hour.\n\n` +
+        `📊 BUILD4 detected this before most humans.`
+      )
+    } catch {}
+  }
+  
+  // 3. Add to dynamic watchlist so agents pick it up
+  dynamicWatchlist.add(event.symbol)
+  
+  // 4. Log the listing event  
+  console.log(`[Listing] Alerted ${activeUsers.length} users about ${event.symbol}`)
+}
+
+async function handleDelisting(event: ListingEvent) {
+  console.log(`[Listing] Processing delisting: ${event.symbol}`)
+  
+  // 1. Find any open positions in this pair
+  const openPositions = await db.trade.findMany({
+    where: { 
+      pair: event.symbol,
+      status: 'OPEN'
+    },
+    include: { agent: { include: { user: true } } }
+  })
+  
+  // 2. Alert users with open positions immediately
+  for (const pos of openPositions) {
+    try {
+      await bot.api.sendMessage(
+        pos.agent.user.telegramId,
+        `⚠️ DELISTING ALERT — ${event.symbol}\n\n` +
+        `Aster is delisting this pair.\n` +
+        `Your agent has an open position.\n\n` +
+        `Action: Your agent will close this position\n` +
+        `automatically before delisting.\n\n` +
+        `Stay calm — funds are safe.`
+      )
+    } catch {}
+  }
+  
+  // 3. Remove from watchlist
+  dynamicWatchlist.delete(event.symbol)
+}
+
+// Dynamic watchlist — starts with base pairs, 
+// adds new listings, removes delistings
+export const dynamicWatchlist = new Set<string>([
+  'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT',
+  'XRPUSDT', 'DOGEUSDT', 'ASTERUSDT', 'AVAXUSDT',
+  'LINKUSDT', 'ARBUSDT'
+])
+
+listingMonitor()  // Start on server launch
+
+═══════════════════════════════════════════════
+WIRE INTO: Agent runner — use dynamic watchlist
+═══════════════════════════════════════════════
+
+In the agent runner, replace hardcoded WATCHLIST with:
+
+  import { dynamicWatchlist } from '../services/listingDetector'
+  import { getRecentNewListings } from '../services/listingDetector'
+  
+  // Get base watchlist + any recent new listings
+  const recentListings = await getRecentNewListings()
+  const pairsToScan = [
+    ...dynamicWatchlist,
+    ...recentListings  // always include new listings
+  ]
+  // Remove duplicates
+  const uniquePairs = [...new Set(pairsToScan)]
+
+═══════════════════════════════════════════════
+ALSO: Add to the news prompt context for Claude
+═══════════════════════════════════════════════
+
+When a new listing is detected, add to the AI prompt:
+
+  "⚡ MARKET EVENT: ${symbol} just listed on Aster DEX.
+   New listings typically see 50-300% volume surge in 
+   first 2 hours. Consider early entry if technicals confirm."
+
+When delisting detected:
+  "⚠️ MARKET EVENT: ${symbol} is being delisted from Aster.
+   Reduce-only mode active. Close any long positions 
+   immediately. Short opportunities may exist on the dump."
+
+═══════════════════════════════════════════════
+THE EDGE THIS CREATES:
+═══════════════════════════════════════════════
+
+- Aster announces new listing on Twitter
+- Same time, pair appears in exchangeInfo
+- Our monitor detects it within 60 seconds
+- All active users get Telegram alert
+- Agents immediately start scanning the new pair
+- Human traders are still reading the tweet
+
+This is the BUILD4 edge — AI that reacts 
+faster than humans to market structure events.
+
+Build all of this now. 
+No schema changes needed — uses existing tables.
