@@ -1,0 +1,129 @@
+Currently agents only scan BTCUSDT and ETHUSDT.
+Aster has 337 pairs. We need to scan the best ones
+for maximum trading opportunities.
+
+STEP 1 — Fetch all available pairs from Aster dynamically:
+
+In src/services/aster.ts add:
+
+let cachedPairs: string[] = []
+let pairsCachedAt = 0
+
+export async function getActivePairs(): Promise<string[]> {
+  // Cache for 1 hour — pairs don't change often
+  if (cachedPairs.length && Date.now() - pairsCachedAt < 3_600_000) {
+    return cachedPairs
+  }
+  
+  try {
+    const res = await http(BASE_PUBLIC).get('/fapi/v1/exchangeInfo')
+    const symbols = res.data.symbols as any[]
+    
+    // Only TRADING status perpetual pairs with USDT
+    cachedPairs = symbols
+      .filter(s => 
+        s.status === 'TRADING' && 
+        s.quoteAsset === 'USDT' &&
+        s.contractType === 'PERPETUAL'
+      )
+      .map(s => s.symbol)
+    
+    pairsCachedAt = Date.now()
+    console.log(`[Aster] Loaded ${cachedPairs.length} active pairs`)
+    return cachedPairs
+  } catch (err) {
+    console.error('[Aster] Failed to fetch pairs, using defaults')
+    return [
+      'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'ARBUSDT',
+      'DOGEUSDT', 'XRPUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT',
+      'DOTUSDT', 'MATICUSDT', 'LTCUSDT', 'UNIUSDT', 'ATOMUSDT',
+      'NEARUSDT', 'APTUSDT', 'OPUSDT', 'INJUSDT', 'SUIUSDT'
+    ]
+  }
+}
+
+STEP 2 — Smart pair selection for agents
+
+Don't scan all 337 pairs every tick — that's too expensive.
+Instead, score pairs by opportunity and scan the best 10:
+
+export async function getHighOpportunityPairs(
+  limit = 10
+): Promise<string[]> {
+  try {
+    // Get 24h ticker data for all pairs
+    const res = await http(BASE_PUBLIC).get('/fapi/v1/ticker/24hr')
+    const tickers = res.data as any[]
+    
+    // Score each pair by opportunity
+    const scored = tickers
+      .filter(t => t.symbol.endsWith('USDT'))
+      .map(t => ({
+        symbol: t.symbol,
+        volume: parseFloat(t.quoteVolume),      // high volume = liquid
+        change: Math.abs(parseFloat(t.priceChangePercent)), // moving = opportunity
+        score: parseFloat(t.quoteVolume) * 
+               Math.abs(parseFloat(t.priceChangePercent))
+      }))
+      .filter(t => t.volume > 1_000_000)        // min $1M daily volume
+      .sort((a, b) => b.score - a.score)         // highest opportunity first
+      .slice(0, limit)
+      .map(t => t.symbol)
+    
+    console.log('[Aster] Top opportunity pairs:', scored)
+    return scored
+  } catch {
+    return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ARBUSDT',
+            'DOGEUSDT', 'XRPUSDT', 'AVAXUSDT', 'LINKUSDT', 'MATICUSDT']
+  }
+}
+
+STEP 3 — Update the agent runner to use dynamic pairs
+
+In the trading agent runner, replace the hardcoded 
+pairs with dynamic selection:
+
+// Before the tick loop, get today's best pairs
+const pairsToScan = agent.tradingPair === 'ALL' 
+  ? await getHighOpportunityPairs(10)  // scan top 10 movers
+  : [agent.tradingPair]                // scan specific pair
+
+// Scan each pair and pick the best setup
+let bestSetup = null
+let bestScore = 0
+
+for (const pair of pairsToScan) {
+  const setup = await analyzeSetup(pair, agent)
+  if (setup.score > bestScore) {
+    bestScore = setup.score
+    bestSetup = { ...setup, pair }
+  }
+}
+
+// Only trade the best opportunity found
+if (bestSetup && bestSetup.score >= 7) {
+  await executeTrade(bestSetup, agent)
+}
+
+STEP 4 — Add ASTERUSDT to the scan list
+Aster's own token has deep liquidity and high volatility.
+It's a prime candidate for the agents.
+Always include: ASTERUSDT, BTCUSDT, ETHUSDT as base pairs.
+
+STEP 5 — Also check stock perpetuals opportunity
+Aster has US stock perps (AAPL, NVDA, TSLA etc) with 
+ZERO FEES right now (limited promotion).
+Add these as a separate "stocks" scan for agents:
+
+const STOCK_PERPS = [
+  'AAPLUSDT', 'NVDAUSDT', 'TSLAAUSDT', 
+  'MSFTUSDT', 'AMZNUSDT', 'METAUSDT'
+]
+
+Add a stocksEnabled flag to the Agent model.
+If enabled, scan these alongside crypto pairs.
+Zero fees = edge for AI agents.
+
+Deploy this now. The agents will immediately start 
+finding opportunities across the whole market instead 
+of just BTC and ETH.
