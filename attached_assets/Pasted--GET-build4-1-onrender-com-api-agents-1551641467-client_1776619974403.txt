@@ -1,0 +1,74 @@
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="34a4e5ab-9322-4112" responseTimeMS=558 responseBytes=975 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="1d2d9558-89e5-4c05" responseTimeMS=1088 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="011f70a8-4a56-4bd3" responseTimeMS=887 responseBytes=1833 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/portfolio/1551641467 clientIP="2.51.180.232" requestID="83d0c487-5d59-417d" responseTimeMS=563 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="c836262a-d323-4141" responseTimeMS=543 responseBytes=975 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="2.51.180.232" requestID="fe8d1d71-26b9-459a" responseTimeMS=1496 responseBytes=2069 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="1dded2c7-19c5-4437" responseTimeMS=570 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="816abb3e-ce9d-47d4" responseTimeMS=544 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Agent Smith] HOLD on ETHUSDT — Timeframe alignment failure (1/4) below minimum threshold (2/4). Entry requires:
+[GET]
+build4-1.onrender.com/api/agents/0x515f9309B3f68B5BE0c333bFB5c4B1774Ae096BF/metadata.json clientIP="54.201.136.1" requestID="52e74a58-6128-44dd" responseTimeMS=1265 responseBytes=1354 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0xd481659fEDd3Aa6362E0D36A540E5282BF1fa2D5/metadata.json clientIP="138.0.245.137" requestID="7978d15a-a329-45cb" responseTimeMS=748 responseBytes=1350 userAgent="ERC-8004-Fetcher/1.0 (+https://github.com/IvanAmador/erc-8004)"
+[GET]
+build4-1.onrender.com/api/agents/0x50cA51b8Bd3CDE901B58F16ff9afa6FD748A2A22/metadata.json clientIP="138.0.245.137" requestID="249b33fd-4db2-4923" responseTimeMS=761 responseBytes=1344 userAgent="ERC-8004-Fetcher/1.0 (+https://github.com/IvanAmador/erc-8004)"
+[GET]
+build4-1.onrender.com/api/agents/0x42743D70c4a3cE91e3Fe6d6C3aE94F031057835F/metadata.json clientIP="138.0.245.137" requestID="2cebce5d-f7ac-4b24" responseTimeMS=182 responseBytes=302 userAgent="ERC-8004-Fetcher/1.0 (+https://github.com/IvanAmador/erc-8004)"
+[GET]
+build4-1.onrender.com/api/agents/0x98c32b41C8bAb5E88bEB961D7C7dE28e7886D8B3/metadata.json clientIP="138.0.245.137" requestID="d6c0c502-af63-4c7b" responseTimeMS=571 responseBytes=1303 userAgent="ERC-8004-Fetcher/1.0 (+https://github.com/IvanAmador/erc-8004)"
+[GET]
+build4-1.onrender.com/api/agents/0x30b751156794f9b8275b80Aa0Eba93b47064C0AD/metadata.json clientIP="138.0.245.137" requestID="ba685da0-b67d-47f7" responseTimeMS=543 responseBytes=1309 userAgent="ERC-8004-Fetcher/1.0 (+https://github.com/IvanAmador/erc-8004)"
+[GET]
+build4-1.onrender.com/api/agents/0x7eBB2e59a8c644ac0b984B3e07A44b4c80c8a185/metadata.json clientIP="138.0.245.137" requestID="9ef81d9a-d03c-4561" responseTimeMS=183 responseBytes=302 userAgent="ERC-8004-Fetcher/1.0 (+https://github.com/IvanAmador/erc-8004)"
+[GET]
+build4-1.onrender.com/api/agents/0xa8cc362e13514D578562955EcE1c55c55D08AEA5/metadata.json clientIP="138.0.245.137" requestID="20b97a66-fe9c-4346" responseTimeMS=185 responseBytes=302 userAgent="ERC-8004-Fetcher/1.0 (+https://github.com/IvanAmador/erc-8004)"
+[GET]
+build4-1.onrender.com/api/agents/0x08E49A7eC82295e90552C1Bfd7e7e3A3f40E52Ac/metadata.json clientIP="138.0.245.137" requestID="11d214fc-c99c-4aa4" responseTimeMS=560 responseBytes=1305 userAgent="ERC-8004-Fetcher/1.0 (+https://github.com/IvanAmador/erc-8004)"
+[GET]
+build4-1.onrender.com/api/agents/0xB99d35497f8eD0400A639762A4D71eF1b1232929/metadata.json clientIP="138.0.245.137" requestID="a0dbd640-bf33-4d99" responseTimeMS=569 responseBytes=1306 userAgent="ERC-8004-Fetcher/1.0 (+https://github.com/IvanAmador/erc-8004)"
+[GET]
+build4-1.onrender.com/api/agents/0x515f9309B3f68B5BE0c333bFB5c4B1774Ae096BF/metadata.json clientIP="54.202.22.194" requestID="14943f14-6b44-421c" responseTimeMS=773 responseBytes=1352 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Agent Smith] HOLD on ETHUSDT — Timeframe alignment 1/4 vs required minimum 2/4. Setup scores 3/10 vs required 5
+[Agent SeanBuild4] HOLD on ETHUSDT — Gates for entry: (1) Price sustained above $2360 with momentum, (2) Bullish MACD
+[Agent BNT] HOLD on ETHUSDT — Insufficient timeframe alignment (2/5), no MACD cross trigger in last 3 bars, an
+[Auth] New user: family_first011
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="fb9c0646-99ba-458c" responseTimeMS=3800 responseBytes=270 userAgent=""
+==> Deploying...
+==> Setting WEB_CONCURRENCY=1 by default, based on available CPUs in the instance
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+Menu
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Agent SeanBuild4] HOLD on ETHUSDT — Timeframe conflict (only 2/5 alignment), no MACD cross, volume 1.24x far below 2
+[Agent Smith] HOLD on ETHUSDT — Timeframe alignment catastrophic 2/5 (need minimum 2/4 agreeing). Setup score 3/
+[Agent BNT] HOLD on ETHUSDT — No MACD cross in 3 bars + volume 1.24x (need 3x+) + timeframes disagree on direc
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="8eb34c57-57ec-4028" responseTimeMS=1106 responseBytes=270 userAgent=""
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="204d9809-707f-4efe" responseTimeMS=1521 responseBytes=270 userAgent=""
+[Sync] /myagents user=cmo61m0s801c89zwjuwooz8p8 agents=0 ownerWallet=0x40F5A2883F8fD37FD18009c76FBE4498B8B2c211 bscscanKey=true
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="814bf68c-b8d5-4e87" responseTimeMS=562 responseBytes=270 userAgent=""
