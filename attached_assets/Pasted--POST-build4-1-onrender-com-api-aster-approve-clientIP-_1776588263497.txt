@@ -1,0 +1,124 @@
+[POST]
+build4-1.onrender.com/api/aster/approve clientIP="58.26.110.81" requestID="074ffeec-432e-4426" responseTimeMS=512 responseBytes=357 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+    'asterChain',   'user',
+    'nonce'
+  ],
+  user: '0xB5d0605F35F5ee264B72D78E72A81ab5f889931a',
+  nonce: 1776588095000000
+}
+[Aster] approveAgent FAILED {
+  user: '0xB5d0605F35F5ee264B72D78E72A81ab5f889931a',
+  agent: '0xCCE34FA1EcD10Df639Cc475F703cC7C4e2997bE0',
+  expired: 1808124095613,
+  httpStatus: 400,
+  httpStatusText: 'Bad Request',
+  respData: { error: 'Agent address already exists' },
+  message: 'Request failed with status code 400'
+}
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="58.26.110.81" requestID="cbe06400-eda2-440b" responseTimeMS=376 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="58.26.110.81" requestID="943ee2a8-ca3a-42c6" responseTimeMS=1094 responseBytes=178 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="a74a6696-5e5a-4173" responseTimeMS=2084 responseBytes=1843 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/portfolio/1551641467 clientIP="2.51.180.232" requestID="c5381929-a4de-4937" responseTimeMS=1722 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= -1.6116 crossWallet= -17.9374 crossUnPnl= 16.3258 available= 180.7738
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="58.26.110.81" requestID="e0d79c95-3375-47ae" responseTimeMS=1060 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] signed /fapi/v3/balance failed for 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[POST]
+build4-1.onrender.com/api/aster/approve clientIP="58.26.110.81" requestID="9e02fa5c-6cdd-4afa" responseTimeMS=507 responseBytes=357 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster MGMT] POST ApproveAgent {
+  url: 'https://fapi.asterdex.com/fapi/v3/approveAgent?agentName=BUILD4Agent&agentAddress=0xCCE34FA1EcD10Df639Cc475F703cC7C4e2997bE0&ipWhitelist=&expired=1808124104545&canSpotTrade=false&canPerpTrade=true&canWithdraw=false&builder=0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4&maxFeeRate=0.0001&builderName=BUILD4&asterChain=Mainnet&user=0xB5d0605F35F5ee264B72D78E72A81ab5f889931a&nonce=1776588104000000&signature=0x68cd5b4e65bdb8b0e00f1a65b5d94b03a348bb07e67dd5893e70c9649ab95a16284b6ef637a82b98503d41ee48ddaf9c0fafcc04fa65d8a495db1e56e132c4df1c&signatureChainId=56',
+  paramsOrder: [
+    'agentName',    'agentAddress',
+    'ipWhitelist',  'expired',
+    'canSpotTrade', 'canPerpTrade',
+    'canWithdraw',  'builder',
+    'maxFeeRate',   'builderName',
+    'asterChain',   'user',
+    'nonce'
+  ],
+  user: '0xB5d0605F35F5ee264B72D78E72A81ab5f889931a',
+Menu
+  nonce: 1776588104000000
+}
+[Aster] approveAgent FAILED {
+  user: '0xB5d0605F35F5ee264B72D78E72A81ab5f889931a',
+  agent: '0xCCE34FA1EcD10Df639Cc475F703cC7C4e2997bE0',
+  expired: 1808124104545,
+  httpStatus: 400,
+  httpStatusText: 'Bad Request',
+  respData: { error: 'Agent address already exists' },
+  message: 'Request failed with status code 400'
+}
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="5e5d0dc8-15fc-42cb" responseTimeMS=572 responseBytes=1844 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= -1.6130 crossWallet= -17.9374 crossUnPnl= 16.3244 available= 180.7724
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="58.26.110.81" requestID="3b2310a4-555b-408e" responseTimeMS=569 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="58.26.110.81" requestID="d0f488b1-ed14-4a6f" responseTimeMS=941 responseBytes=178 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="58.26.110.81" requestID="8660189b-9878-4098" responseTimeMS=672 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] signed /fapi/v3/balance failed for 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[POST]
+build4-1.onrender.com/api/aster/approve clientIP="58.26.110.81" requestID="0406f738-dab9-44b2" responseTimeMS=494 responseBytes=357 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster MGMT] POST ApproveAgent {
+  url: 'https://fapi.asterdex.com/fapi/v3/approveAgent?agentName=BUILD4Agent&agentAddress=0xCCE34FA1EcD10Df639Cc475F703cC7C4e2997bE0&ipWhitelist=&expired=1808124113619&canSpotTrade=false&canPerpTrade=true&canWithdraw=false&builder=0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4&maxFeeRate=0.0001&builderName=BUILD4&asterChain=Mainnet&user=0xB5d0605F35F5ee264B72D78E72A81ab5f889931a&nonce=1776588113000000&signature=0xed63d777f3a5473b5267b313f6716f37038ed1874e444491bc634abe9edf5dae526425717fbe70e7acedf0a4b02e058c995d6fc401224cf9c2a6b09f7faf62df1c&signatureChainId=56',
+  paramsOrder: [
+    'agentName',    'agentAddress',
+    'ipWhitelist',  'expired',
+    'canSpotTrade', 'canPerpTrade',
+    'canWithdraw',  'builder',
+    'maxFeeRate',   'builderName',
+    'asterChain',   'user',
+    'nonce'
+  ],
+  user: '0xB5d0605F35F5ee264B72D78E72A81ab5f889931a',
+  nonce: 1776588113000000
+}
+[Aster] approveAgent FAILED {
+  user: '0xB5d0605F35F5ee264B72D78E72A81ab5f889931a',
+  agent: '0xCCE34FA1EcD10Df639Cc475F703cC7C4e2997bE0',
+  expired: 1808124113619,
+  httpStatus: 400,
+  httpStatusText: 'Bad Request',
+  respData: { error: 'Agent address already exists' },
+  message: 'Request failed with status code 400'
+}
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="2.51.180.232" requestID="c4fe993c-4077-4127" responseTimeMS=1114 responseBytes=2253 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="fc86fba8-8b50-4f5b" responseTimeMS=744 responseBytes=953 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="fe1f161c-a855-44f5" responseTimeMS=379 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Runner] Ticking 1 agents in batches of 50
+[Runner] Dispatched 1 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="218b4861-60de-4f1c" responseTimeMS=927 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="616422e3-ce0e-4bdb" responseTimeMS=373 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="2.51.180.232" requestID="0042fde4-94be-4bb7" responseTimeMS=1104 responseBytes=2252 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="f62ae2e6-c3ad-4a0c" responseTimeMS=372 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="408ae05c-1209-4712" responseTimeMS=928 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Agent BNT] HOLD on ETHUSDT — Timeframe alignment 2/5 (need 3/5), no MACD cross, volume below 1.0x threshold, 
+[GET]
+build4-1.onrender.com/api/agents/0xC4DE3c3D519745eC88D0BDaeC4F7Abad7044c96b/metadata.json clientIP="1.54.7.70" requestID="d4d8fdac-bb69-48c4" responseTimeMS=1127 responseBytes=1355 userAgent="erc8004-uri-bootstrap/1.0"
+[GET]
+build4-1.onrender.com/api/agents/0xCD9EB1c0164d326421429CBF02b779E2eCd880Ce/metadata.json clientIP="1.54.7.70" requestID="fb6f9f5a-0bc5-4b6c" responseTimeMS=568 responseBytes=1349 userAgent="erc8004-uri-bootstrap/1.0"
+[GET]
+build4-1.onrender.com/api/agents/0x9210117ecB526f9cBE2CB9872a896CDC614Edf8F/metadata.json clientIP="1.54.7.70" requestID="2e176a95-af6b-42c9" responseTimeMS=746 responseBytes=1355 userAgent="erc8004-uri-bootstrap/1.0"
+[Runner] Ticking 1 agents in batches of 50
+[Runner] Dispatched 1 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on ETHUSDT — Timeframe alignment failure (2/5), no MACD cross trigger, weak volume. Will ente

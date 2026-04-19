@@ -973,3 +973,35 @@ export function buildCreds(
     signerPrivKey: key
   }
 }
+
+// Resolves the agent private key for a given user, preferring the per-user
+// agent keypair stored in `asterAgentEncryptedPK` (generated at activation
+// time). Falls back to the platform-wide ASTER_AGENT_PRIVATE_KEY for legacy
+// users onboarded before the per-user-agent migration. Returns null if no
+// agent address is on file at all.
+export async function resolveAgentCreds(user: {
+  id: string
+  asterAgentAddress?: string | null
+  asterAgentEncryptedPK?: string | null
+}, userAddress: string): Promise<AsterCredentials | null> {
+  if (!user.asterAgentAddress || !userAddress) return null
+
+  let agentPk: string | null = null
+  if (user.asterAgentEncryptedPK) {
+    try {
+      const { decryptPrivateKey } = await import('./wallet')
+      const decrypted = decryptPrivateKey(user.asterAgentEncryptedPK, user.id)
+      if (decrypted?.startsWith('0x')) agentPk = decrypted
+    } catch {
+      // fall through to env var
+    }
+  }
+  if (!agentPk) agentPk = process.env.ASTER_AGENT_PRIVATE_KEY ?? null
+  if (!agentPk) return null
+
+  return {
+    userAddress,
+    signerAddress: user.asterAgentAddress,
+    signerPrivKey: agentPk
+  }
+}

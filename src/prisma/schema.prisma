@@ -22,7 +22,8 @@ model User {
   // Aster exchange credentials (per-user, encrypted)
   asterApiKey       String?
   asterApiSecret    String?
-  asterAgentAddress String?   // agent/signer address approved for this user
+  asterAgentAddress    String?   // agent/signer address approved for this user (UNIQUE per user)
+  asterAgentEncryptedPK String?  // AES-encrypted private key for above agent (server-side trade signing)
   asterOnboarded    Boolean   @default(false)
   pinHash           String?   // PBKDF2 hash of user's wallet PIN (optional security layer)
   pinSalt           String?

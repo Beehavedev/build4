@@ -394,11 +394,9 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
   const user = (req as any).user
   try {
     const builderAddress = process.env.ASTER_BUILDER_ADDRESS
-    const agentPrivKey   = process.env.ASTER_AGENT_PRIVATE_KEY
-    const agentAddress   = process.env.ASTER_AGENT_ADDRESS
     const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001'
-    if (!builderAddress || !agentPrivKey || !agentAddress) {
-      return res.status(500).json({ success: false, error: 'Platform not configured' })
+    if (!builderAddress) {
+      return res.status(500).json({ success: false, error: 'Platform not configured (no builder)' })
     }
 
     if (user.asterOnboarded) {
@@ -410,9 +408,10 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       return res.status(404).json({ success: false, error: 'No active wallet' })
     }
 
-    const { decryptPrivateKey }                 = await import('./services/wallet')
+    const { decryptPrivateKey, encryptPrivateKey } = await import('./services/wallet')
     const { approveAgent, approveBuilder }      = await import('./services/aster')
     const { ensureAndDepositUSDT, USDT_BSC, MIN_BNB_FOR_GAS_WEI, getProvider } = await import('./services/asterDeposit')
+    const { ethers: ethersLib } = await import('ethers')
 
     let userPk: string
     try {
@@ -424,15 +423,39 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       return res.status(500).json({ success: false, error: 'Invalid wallet key' })
     }
 
+    // ── Per-user agent keypair. Aster requires each agent address to be
+    //    UNIQUE per user — sharing a single platform-wide ASTER_AGENT_ADDRESS
+    //    fails with "Agent address already exists" for everyone after the
+    //    first user. So we generate a fresh agent wallet per user, encrypt
+    //    its PK with the same scheme as user wallets (master key + userId),
+    //    and persist on success. If a previous failed attempt already left
+    //    an unsaved agent, we still generate a new one — Aster has no record
+    //    of the failed attempt and we want a clean address each retry.
+    let agentWallet: { address: string; privateKey: string }
+    if (user.asterAgentEncryptedPK) {
+      // Reuse previously-generated agent (idempotent retry after partial success)
+      try {
+        const decryptedAgentPk = decryptPrivateKey(user.asterAgentEncryptedPK, user.id)
+        const w = new ethersLib.Wallet(decryptedAgentPk)
+        agentWallet = { address: w.address, privateKey: decryptedAgentPk }
+      } catch {
+        // Stored key corrupt — fall through to generating a new one
+        const w = ethersLib.Wallet.createRandom()
+        agentWallet = { address: w.address, privateKey: w.privateKey }
+      }
+    } else {
+      const w = ethersLib.Wallet.createRandom()
+      agentWallet = { address: w.address, privateKey: w.privateKey }
+    }
+
     // agentName: NO spaces, NO special chars. Aster's server appears to
     // re-derive the EIP-712 message from the parsed querystring, and any
     // whitespace normalization on their side would diverge from the raw
     // string we signed, producing a misleading "Signature check failed".
-    // The official demo uses alphanumeric-only names (e.g. "2dkkd0001").
     const callApproveAgent = () => approveAgent({
       userAddress:    wallet.address,
       userPrivateKey: userPk,
-      agentAddress,
+      agentAddress:   agentWallet.address,
       agentName:      'BUILD4Agent',
       builderAddress,
       maxFeeRate:     feeRate,
@@ -545,6 +568,20 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       })
     }
 
+    // Persist the per-user agent keypair NOW (before approveBuilder), so even
+    // if approveBuilder fails or the process crashes, we still have a record
+    // of which agent address Aster has registered for this user. Without this,
+    // a retry would generate a NEW agent address and Aster would say "Agent
+    // address already exists" for the previous one we forgot.
+    const encryptedAgentPk = encryptPrivateKey(agentWallet.privateKey, user.id)
+    await db.user.update({
+      where: { id: user.id },
+      data: {
+        asterAgentAddress:     agentWallet.address,
+        asterAgentEncryptedPK: encryptedAgentPk,
+      }
+    })
+
     // Best-effort: enroll our broker so trades carry the BUILD4 fee. If this
     // fails we still mark the user as onboarded — they can trade without a
     // builder fee, and we can retry later. We don't block activation on it.
@@ -569,7 +606,7 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
 
     await db.user.update({
       where: { id: user.id },
-      data:  { asterOnboarded: true, asterAgentAddress: agentAddress }
+      data:  { asterOnboarded: true }
     })
 
     return res.json({

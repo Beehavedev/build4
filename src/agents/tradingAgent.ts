@@ -362,8 +362,8 @@ export async function runAgentTick(agent: Agent): Promise<void> {
               include: { wallets: { where: { isActive: true }, take: 1 } }
             })
             const userAddr = dbUser?.wallets?.[0]?.address ?? ''
-            const { buildCreds } = await import('../services/aster')
-            const creds = buildCreds(userAddr, dbUser?.asterAgentAddress, process.env.ASTER_AGENT_PRIVATE_KEY)
+            const { resolveAgentCreds } = await import('../services/aster')
+            const creds = dbUser ? await resolveAgentCreds(dbUser, userAddr) : null
             let exitPx = pos.entryPrice
             try {
               const mp = await getMarkPrice(pos.pair)
@@ -848,12 +848,8 @@ If you would not put real money in this trade right now, action = HOLD.`
           include: { wallets: { where: { isActive: true }, take: 1 } }
         })
         const userAddress = dbUser?.wallets?.[0]?.address ?? ''
-        const { buildCreds } = await import('../services/aster')
-        const creds = buildCreds(
-          userAddress,
-          dbUser?.asterAgentAddress,
-          process.env.ASTER_AGENT_PRIVATE_KEY
-        )
+        const { resolveAgentCreds } = await import('../services/aster')
+        const creds = dbUser ? await resolveAgentCreds(dbUser, userAddress) : null
 
         if (creds && agent.exchange !== 'mock') {
           try {
@@ -1000,12 +996,10 @@ If you would not put real money in this trade right now, action = HOLD.`
           where: { id: agent.userId },
           include: { wallets: { where: { isActive: true }, take: 1 } }
         })
-        const { buildCreds: buildCredsClose } = await import('../services/aster')
-        const credsClose = buildCredsClose(
-          dbUserClose?.wallets?.[0]?.address ?? '',
-          dbUserClose?.asterAgentAddress,
-          process.env.ASTER_AGENT_PRIVATE_KEY
-        )
+        const { resolveAgentCreds: resolveAgentCredsClose } = await import('../services/aster')
+        const credsClose = dbUserClose
+          ? await resolveAgentCredsClose(dbUserClose, dbUserClose.wallets?.[0]?.address ?? '')
+          : null
 
         if (credsClose && agent.exchange !== 'mock') {
           try {
