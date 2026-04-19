@@ -69,7 +69,115 @@ export function initRunner(bot: Bot) {
   // so this is a single Claude call/min globally.
   startNewsMonitor()
 
+  // Listing/delisting monitor — polls Aster exchangeInfo every 60s and
+  // alerts every active-agent owner when a new pair lists or an existing
+  // pair enters reduce-only / delists. Detects within 60s of Aster's own
+  // tweet — gives BUILD4 agents a real edge over manual traders.
+  startListingMonitor()
+
   console.log('[Runner] Agent runner initialized')
+}
+
+// Telegram throttle — Bot API allows ~30 msg/sec globally. We pace at
+// 25 msg/sec (40ms gap) for headroom; below the FloodWait threshold.
+async function broadcastThrottled(
+  userIds: Array<bigint | string | number>,
+  text: string
+): Promise<{ sent: number; blocked: number }> {
+  if (!botRef || userIds.length === 0) return { sent: 0, blocked: 0 }
+  let sent = 0
+  let blocked = 0
+  for (const id of userIds) {
+    try {
+      await botRef.api.sendMessage(id.toString(), text, { parse_mode: 'Markdown' })
+      sent++
+    } catch {
+      blocked++
+    }
+    await new Promise((r) => setTimeout(r, 40))
+  }
+  return { sent, blocked }
+}
+
+// ── Listing monitor ────────────────────────────────────────────────
+async function listingMonitorTick() {
+  if (!botRef) return
+  try {
+    const { checkForListingChanges } = await import('../services/listingDetector')
+    const events = await checkForListingChanges()
+    if (events.length === 0) return
+
+    // Resolve once: distinct telegram IDs of users with at least one
+    // active agent. Cheaper than the nested {agents:{some:...}} filter
+    // because Agent.isActive is indexed.
+    let activeUserIds: bigint[] = []
+    if (events.some((e) => e.type === 'NEW_LISTING')) {
+      const rows = await db.agent.findMany({
+        where: { isActive: true },
+        select: { user: { select: { telegramId: true } } },
+        distinct: ['userId']
+      })
+      activeUserIds = Array.from(new Set(rows.map((r) => r.user.telegramId)))
+    }
+
+    for (const ev of events) {
+      if (ev.type === 'NEW_LISTING') {
+        const text =
+          `🚀 *NEW LISTING DETECTED*\n\n` +
+          `*${escapeMd(ev.symbol)}* just listed on Aster.\n\n` +
+          `Your AI agents are scanning it now. New listings often move ` +
+          `50-200% in the first hour.\n\n` +
+          `📊 BUILD4 detected this within 60 seconds.`
+        const { sent } = await broadcastThrottled(activeUserIds, text)
+        console.log(`[Listing] Alerted ${sent}/${activeUserIds.length} users about ${ev.symbol}`)
+      } else if (ev.type === 'REDUCE_ONLY' || ev.type === 'DELISTING') {
+        // Only alert users with open positions in this specific pair —
+        // case-insensitive match because some agents store the pair as
+        // 'ETHUSDT' and others as 'ETH/USDT'.
+        const sym = ev.symbol
+        const positions = await db.trade.findMany({
+          where: {
+            status: 'open',
+            OR: [{ pair: sym }, { pair: sym.replace('USDT', '/USDT') }]
+          },
+          include: { agent: { include: { user: { select: { telegramId: true } } } } }
+        })
+        const uniq = new Map<string, bigint>()
+        for (const p of positions) {
+          if (!p.agent) continue
+          uniq.set(p.agent.user.telegramId.toString(), p.agent.user.telegramId)
+        }
+        if (uniq.size === 0) {
+          console.log(`[Listing] ${ev.type} ${sym} — no open positions, no alert`)
+          continue
+        }
+        const text =
+          `⚠️ *${ev.type === 'DELISTING' ? 'DELISTED' : 'REDUCE-ONLY'} — ${escapeMd(sym)}*\n\n` +
+          `Aster ${ev.type === 'DELISTING' ? 'has removed' : 'is winding down'} this pair.\n` +
+          `You have an open position.\n\n` +
+          `Your agent will close it on the next tick. Funds are safe.`
+        const { sent } = await broadcastThrottled(Array.from(uniq.values()), text)
+        console.log(`[Listing] ${ev.type} ${sym}: alerted ${sent} position holder(s)`)
+      }
+    }
+  } catch (err: any) {
+    console.error('[Listing] Monitor error:', err?.message ?? err)
+  }
+}
+
+function startListingMonitor() {
+  // Cold-start scan immediately so the baseline is loaded; subsequent
+  // ticks emit real events. The first call always returns [] by design.
+  setTimeout(async () => {
+    try {
+      const { checkForListingChanges } = await import('../services/listingDetector')
+      await checkForListingChanges()
+      console.log('[Listing] Baseline pair set captured')
+    } catch (e: any) {
+      console.error('[Listing] Baseline scan failed:', e?.message ?? e)
+    }
+  }, 5_000)
+  setInterval(listingMonitorTick, 60_000)
 }
 
 // ── News monitor ───────────────────────────────────────────────────

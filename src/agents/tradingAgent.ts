@@ -262,13 +262,13 @@ const ALL_PAIRS_UNIVERSE = [
 // regardless of watchlist size, because the pre-filter is deterministic TA.
 // Klines are cached process-wide for 60s, so 30 fetches/min total across
 // thousands of agents (not per agent).
-const WATCHLIST = [
-  'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT',
-  'XRPUSDT', 'DOGEUSDT', 'ASTERUSDT', 'AVAXUSDT',
-  'LINKUSDT', 'ARBUSDT'
-]
-
+//
+// The list itself comes from listingDetector.getActiveWatchlist() — base
+// 10 pairs PLUS any new listing onboarded within the last 48h. Pairs <2h
+// old skip TA scoring entirely (not enough kline history) and instead get
+// a synthetic high score so they're always considered as momentum candidates.
 const WATCHLIST_MIN_SCORE = 5  // out of 8 — below this, agent HOLDs everything
+const NEW_LISTING_SYNTHETIC_SCORE = 6  // newly-listed pairs always make the cut
 
 // Deterministic setup score in [0..8]. Higher = better trading opportunity.
 //   ADX trending  : 0–3  (gates everything else; ranging markets score 0)
@@ -307,8 +307,17 @@ function scoreSetup(ohlcv15m: OHLCV, ohlcv1h: OHLCV): number {
 // 30 calls/minute regardless of how many agents are scanning.
 export async function pickBestWatchlistPair(): Promise<{ symbol: string; score: number } | null> {
   const { getKlines } = await import('../services/aster')
+  const { getActiveWatchlist, isNewlyListed } = await import('../services/listingDetector')
+  const watchlist = await getActiveWatchlist()
   const results = await Promise.all(
-    WATCHLIST.map(async (symbol) => {
+    watchlist.map(async (symbol) => {
+      // Pairs onboarded <2h ago don't have enough kline history for the
+      // TA scorer to produce meaningful results. Auto-include them with a
+      // synthetic high score so they're always candidates — the LLM gets
+      // the actual decision.
+      if (isNewlyListed(symbol)) {
+        return { symbol, score: NEW_LISTING_SYNTHETIC_SCORE }
+      }
       try {
         const [m15, h1] = await Promise.all([
           getKlines(symbol, '15m', 100),
