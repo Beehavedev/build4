@@ -984,9 +984,12 @@ export async function resolveAgentCreds(user: {
   asterAgentAddress?: string | null
   asterAgentEncryptedPK?: string | null
 }, userAddress: string): Promise<AsterCredentials | null> {
-  if (!user.asterAgentAddress || !userAddress) return null
+  if (!userAddress) return null
 
   let agentPk: string | null = null
+  let agentAddress: string | null = user.asterAgentAddress ?? null
+
+  // Preferred path: per-user encrypted agent (set during /activate flow).
   if (user.asterAgentEncryptedPK) {
     try {
       const { decryptPrivateKey } = await import('./wallet')
@@ -996,12 +999,26 @@ export async function resolveAgentCreds(user: {
       // fall through to env var
     }
   }
-  if (!agentPk) agentPk = process.env.ASTER_AGENT_PRIVATE_KEY ?? null
-  if (!agentPk) return null
+
+  // Legacy fallback: 17K migrated users have asterAgentEncryptedPK=NULL and
+  // often asterAgentAddress=NULL too. They share the env-var agent. Derive
+  // its address from the PK so they don't fail at the address check.
+  if (!agentPk) {
+    agentPk = process.env.ASTER_AGENT_PRIVATE_KEY ?? null
+    if (agentPk && !agentAddress) {
+      try {
+        agentAddress = new ethers.Wallet(agentPk).address
+      } catch {
+        return null
+      }
+    }
+  }
+
+  if (!agentPk || !agentAddress) return null
 
   return {
     userAddress,
-    signerAddress: user.asterAgentAddress,
+    signerAddress: agentAddress,
     signerPrivKey: agentPk
   }
 }

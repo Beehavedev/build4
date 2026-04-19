@@ -101,8 +101,16 @@ export default function Portfolio({ userId }: PortfolioProps) {
         <div className="card" style={{ marginBottom: 16 }} data-testid="card-portfolio-balances">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 0.4 }}>BALANCES</div>
-            <div style={{ fontSize: 10, color: wallet.aster.onboarded ? '#10b981' : '#64748b' }}>
-              {wallet.aster.onboarded ? '● Trading active' : '○ Not activated'}
+            <div style={{ fontSize: 10, color:
+              !wallet.aster.onboarded ? '#64748b'
+              : wallet.aster.usdt <= 0 ? '#ef4444'
+              : '#10b981'
+            }}>
+              {!wallet.aster.onboarded
+                ? '○ Not activated'
+                : wallet.aster.usdt <= 0
+                  ? '● Paused — fund to resume'
+                  : '● Trading active'}
             </div>
           </div>
 

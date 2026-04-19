@@ -172,8 +172,16 @@ function AsterSecondaryCard({ w }: { w: WalletInfo }) {
     <div className="card" style={{ marginBottom: 14 }}>
       <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>ASTER TRADING</div>
       {w.aster.error ? (
-        <div style={{ fontSize: 12, color: 'var(--b4-red)' }} data-testid="text-aster-error">
-          ⚠️ {w.aster.error}
+        <div style={{ fontSize: 12, color: 'var(--b4-red)', lineHeight: 1.45 }} data-testid="text-aster-error">
+          ⚠️ {
+            w.aster.error === 'no_agent_credentials'
+              ? 'Aster trading not yet activated. Open the Home tab and tap "Activate Aster" to enable.'
+              : w.aster.error === 'not_onboarded'
+                ? 'No Aster account found. Deposit USDT to get started.'
+                : w.aster.error === 'aster_unavailable' || w.aster.error.includes('rpc')
+                  ? 'Aster temporarily unavailable. Refreshing in a moment.'
+                  : `Aster error: ${w.aster.error}`
+          }
         </div>
       ) : (
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
