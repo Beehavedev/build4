@@ -55,7 +55,7 @@ export async function getBap578MintFee(): Promise<bigint> {
     const c = new ethers.Contract(BAP578_CONTRACT, BAP578_ABI, provider)
     return await c.MINT_FEE()
   } catch {
-    return ethers.parseEther(MINT_FEE_BNB)
+    return ethers.parseEther(PROTOCOL_FEE_BNB)
   }
 }
 

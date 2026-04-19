@@ -865,13 +865,22 @@ app.get('/api/agents/:userId', async (req, res) => {
   }
 })
 
-app.post('/api/agents/:id/toggle', async (req, res) => {
+app.post('/api/agents/:id/toggle', requireTgUser, async (req, res) => {
   try {
-    const agent = await db.agent.findUnique({ where: { id: req.params.id } })
+    const user = (req as any).user
+    if (!user) return res.status(401).json({ error: 'Unauthenticated' })
+
+    const agentId = String(req.params.id)
+    const agent = await db.agent.findUnique({ where: { id: agentId } })
     if (!agent) return res.status(404).json({ error: 'Agent not found' })
 
+    // Ownership check — caller must own the agent they're toggling.
+    if (agent.userId !== user.id) {
+      return res.status(403).json({ error: 'Forbidden' })
+    }
+
     const updated = await db.agent.update({
-      where: { id: req.params.id },
+      where: { id: agentId },
       data: { isActive: !agent.isActive, isPaused: false }
     })
     res.json(updated)
