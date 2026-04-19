@@ -344,7 +344,7 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
 
     try {
       const asterMod = await import('./services/aster')
-      const creds = asterMod.buildCreds(wallet.address)
+      const creds = await asterMod.resolveAgentCreds(user, wallet.address)
       if (!creds) {
         aster.error = 'no_agent_credentials'
       } else {
@@ -660,9 +660,9 @@ app.post('/api/aster/transfer', requireTgUser, async (req, res) => {
       const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
       if (!wallet) return res.status(404).json({ success: false, error: 'No active wallet' })
 
-      const { buildCreds, transferAsset } = await import('./services/aster')
-      const creds = buildCreds(wallet.address)
-      if (!creds) return res.status(500).json({ success: false, error: 'Platform not configured' })
+      const { resolveAgentCreds, transferAsset } = await import('./services/aster')
+      const creds = await resolveAgentCreds(user, wallet.address)
+      if (!creds) return res.status(500).json({ success: false, error: 'Agent not configured for this user' })
 
       const kindType = direction === 'to_aster' ? 'SPOT_FUTURE' : 'FUTURE_SPOT'
       const result   = await transferAsset(creds, amt.toString(), kindType)

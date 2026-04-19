@@ -1,0 +1,75 @@
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/agents/0x7eBB2e59a8c644ac0b984B3e07A44b4c80c8a185/metadata.json clientIP="20.109.38.161" requestID="da3c8a50-c359-4c34" responseTimeMS=380 responseBytes=302 userAgent="node"
+[GET]
+build4-1.onrender.com/api/agents/0x30b751156794f9b8275b80Aa0Eba93b47064C0AD/metadata.json clientIP="20.109.38.161" requestID="43e74348-1a5d-4f9f" responseTimeMS=949 responseBytes=1307 userAgent="node"
+[GET]
+build4-1.onrender.com/api/agents/0x08E49A7eC82295e90552C1Bfd7e7e3A3f40E52Ac/metadata.json clientIP="20.109.38.161" requestID="b5f68d11-9ca9-48ac" responseTimeMS=562 responseBytes=1305 userAgent="node"
+[GET]
+build4-1.onrender.com/api/agents/0x42743D70c4a3cE91e3Fe6d6C3aE94F031057835F/metadata.json clientIP="20.109.38.161" requestID="fb23566b-bf92-4d60" responseTimeMS=191 responseBytes=302 userAgent="node"
+[GET]
+build4-1.onrender.com/api/agents/0x98c32b41C8bAb5E88bEB961D7C7dE28e7886D8B3/metadata.json clientIP="20.109.38.161" requestID="b5fbf64f-b6ab-45c0" responseTimeMS=564 responseBytes=1303 userAgent="node"
+[GET]
+build4-1.onrender.com/api/agents/0xB99d35497f8eD0400A639762A4D71eF1b1232929/metadata.json clientIP="20.109.38.161" requestID="c56b9e40-98b9-44e7" responseTimeMS=563 responseBytes=1306 userAgent="node"
+[GET]
+build4-1.onrender.com/api/agents/0xa8cc362e13514D578562955EcE1c55c55D08AEA5/metadata.json clientIP="20.109.38.161" requestID="f2f9dda7-8fae-437d" responseTimeMS=191 responseBytes=302 userAgent="node"
+[GET]
+build4-1.onrender.com/api/agents/0x62A986dB813a41c7C8C7BeCC120605214205F37F/metadata.json clientIP="20.109.38.161" requestID="87239dcb-3a9f-44ea" responseTimeMS=588 responseBytes=1303 userAgent="node"
+[GET]
+build4-1.onrender.com/api/agents/0x50cA51b8Bd3CDE901B58F16ff9afa6FD748A2A22/metadata.json clientIP="20.109.38.161" requestID="11c5c92f-cdc0-49dc" responseTimeMS=564 responseBytes=1344 userAgent="node"
+[GET]
+build4-1.onrender.com/api/agents/0xd481659fEDd3Aa6362E0D36A540E5282BF1fa2D5/metadata.json clientIP="20.109.38.161" requestID="4e157406-2a27-4611" responseTimeMS=569 responseBytes=1350 userAgent="node"
+[GET]
+build4-1.onrender.com/api/agents/0xC4DE3c3D519745eC88D0BDaeC4F7Abad7044c96b/metadata.json clientIP="20.109.38.161" requestID="8a0864b8-ac76-4faf" responseTimeMS=564 responseBytes=1354 userAgent="node"
+[GET]
+build4-1.onrender.com/api/agents/0xCD9EB1c0164d326421429CBF02b779E2eCd880Ce/metadata.json clientIP="20.109.38.161" requestID="e44c4b0a-e726-4fa8" responseTimeMS=751 responseBytes=1348 userAgent="node"
+[GET]
+build4-1.onrender.com/api/agents/0x9210117ecB526f9cBE2CB9872a896CDC614Edf8F/metadata.json clientIP="20.109.38.161" requestID="fa355683-dca7-40c9" responseTimeMS=565 responseBytes=1355 userAgent="node"
+[Agent SeanBuild4] HOLD on ETHUSDT — Timeframe alignment score 2/5 fails minimum threshold of 3/4. Setup score 3/10 i
+[Agent BNT] HOLD on ETHUSDT — 15m EMA9 still below EMA21 (bearish short-term structure) + price below 1h EMA50
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="58.26.110.81" requestID="43c351b6-4967-4acf" responseTimeMS=476 responseBytes=317 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] transferAsset failed: 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a SPOT_FUTURE 20 → 400 { code: -1000, msg: 'No agent found' }
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="58.26.110.81" requestID="4e586767-e143-4c78" responseTimeMS=670 responseBytes=317 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] transferAsset failed: 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a SPOT_FUTURE 20 → 400 { code: -1000, msg: 'No agent found' }
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="58.26.110.81" requestID="4e28ee65-dc9c-4fb8" responseTimeMS=380 responseBytes=1120 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="58.26.110.81" requestID="9a0a0f7f-d32a-4958" responseTimeMS=1119 responseBytes=769 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] signed /fapi/v3/balance failed for 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="58.26.110.81" requestID="522114b6-2350-443c" responseTimeMS=1043 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="58.26.110.81" requestID="8430950a-2c53-42c0" responseTimeMS=403 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="58.26.110.81" requestID="ff1b87a2-0033-4315" responseTimeMS=751 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="58.26.110.81" requestID="db11ec7d-cafe-4b6d" responseTimeMS=891 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] signed /fapi/v3/balance failed for 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="58.26.110.81" requestID="ba4ccaa6-891f-4b4e" responseTimeMS=461 responseBytes=317 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] transferAsset failed: 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a SPOT_FUTURE 20 → 400 { code: -1000, msg: 'No agent found' }
+[Runner] Ticking 2 agents in batches of 50
+[Runner] Dispatched 2 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="58.26.110.81" requestID="0129be06-32a4-4eb2" responseTimeMS=665 responseBytes=317 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] transferAsset failed: 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a SPOT_FUTURE 20 → 400 { code: -1000, msg: 'No agent found' }
+[Agent SeanBuild4] HOLD on ETHUSDT — Only 2/5 timeframes aligned (need 3/4 minimum). Setup score 3/10 (threshold is 7
+[Agent BNT] HOLD on ETHUSDT — Timeframe alignment 2/5 (need 3/5 minimum). 15m EMA9 still below EMA21 despite 9
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="58.26.110.81" requestID="1bd225d6-f564-462f" responseTimeMS=648 responseBytes=317 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+Menu
+[Aster] transferAsset failed: 0xB5d0605F35F5ee264B72D78E72A81ab5f889931a SPOT_FUTURE 19 → 400 { code: -1000, msg: 'No agent found' }
+[Runner] Ticking 2 agents in batches of 50
+[Runner] Dispatched 2 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on ETHUSDT — 15m EMA9 still BELOW EMA21 (bearish short-term structure unconfirmed). Entry exe
+[Agent SeanBuild4] HOLD on ETHUSDT — Timeframe alignment fails (1/4 agree). Setup scores only 3/10 - well below minim
