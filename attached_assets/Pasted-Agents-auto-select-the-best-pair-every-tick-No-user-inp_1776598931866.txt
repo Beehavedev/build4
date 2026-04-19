@@ -1,0 +1,129 @@
+Agents auto-select the best pair every tick. No user input needed.
+No extra LLM calls. One LLM call per tick maximum.
+
+THE WATCHLIST (hardcoded, no user selection):
+const WATCHLIST = [
+  'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 
+  'XRPUSDT', 'DOGEUSDT', 'ASTERUSDT', 'AVAXUSDT',
+  'LINKUSDT', 'ARBUSDT'
+]
+
+THE FLOW (one tick = one LLM call max):
+
+STEP 1 — Fetch klines for all 10 pairs in parallel
+  const klineResults = await Promise.all(
+    WATCHLIST.map(async symbol => {
+      try {
+        const [m15, h1, h4] = await Promise.all([
+          getKlines(symbol, '15m', 100),
+          getKlines(symbol, '1h', 100),
+          getKlines(symbol, '4h', 100)
+        ])
+        return { symbol, m15, h1, h4 }
+      } catch {
+        return null
+      }
+    })
+  )
+
+STEP 2 — Score each pair DETERMINISTICALLY (no LLM)
+  Run cheap TA calculations on each pair:
+  
+  function scoreSetup(klines15m, klines1h, klines4h): number {
+    let score = 0
+    
+    const adx = calculateADX(klines1h)
+    const rsi = calculateRSI(klines15m)
+    const macd = calculateMACD(klines1h)
+    const bb = calculateBB(klines15m)
+    
+    // Trending market
+    if (adx > 25) score += 3
+    else if (adx > 20) score += 1
+    else return 0  // Ranging — skip entirely, score 0
+    
+    // RSI not overbought/oversold
+    if (rsi > 40 && rsi < 60) score += 2
+    else if (rsi > 30 && rsi < 70) score += 1
+    
+    // MACD momentum
+    if (macd.histogram > 0 && macd.histogram > macd.prevHistogram) score += 2
+    else if (macd.histogram < 0 && macd.histogram < macd.prevHistogram) score += 2
+    
+    // BB not squeezed
+    const bbWidth = (bb.upper - bb.lower) / bb.middle
+    if (bbWidth > 0.02) score += 1
+    
+    return score
+  }
+
+STEP 3 — Pick the single best pair
+  const scored = klineResults
+    .filter(Boolean)
+    .map(r => ({
+      ...r,
+      score: scoreSetup(r.m15, r.h1, r.h4)
+    }))
+    .sort((a, b) => b.score - a.score)
+  
+  const best = scored[0]
+  
+  // Only proceed if score > 5 — otherwise HOLD everything
+  if (!best || best.score < 5) {
+    console.log('[Agent] No quality setup found across all pairs — HOLD')
+    return
+  }
+  
+  console.log(`[Agent] Best setup: ${best.symbol} score=${best.score}`)
+
+STEP 4 — ONE LLM call on the best pair only
+  Pass only best.symbol data to Claude for the final decision.
+  Claude decides direction, size, SL, TP.
+  Same prompt as now, just with the winning pair's data.
+
+STEP 5 — Klines caching is critical here
+  With 10 pairs × 3 timeframes = 30 fetches per tick.
+  The existing cache handles this — klines cached for 60s.
+  So in reality only the FIRST agent fetches from Aster,
+  all subsequent agents read from cache.
+  Cost: 30 Aster API calls per minute total, not per agent.
+
+STEP 6 — Update the agent's stored pair after each tick
+  After selecting the best pair, save it to the DB:
+  
+  await db.agent.update({
+    where: { id: agent.id },
+    data: { 
+      currentPair: best.symbol,
+      lastScanScore: best.score
+    }
+  })
+  
+  Add currentPair and lastScanScore columns to Agent model:
+  currentPair   String?   // which pair agent is watching now
+  lastScanScore Int?      // score of current best setup
+
+STEP 7 — Show in mini app what pair agent picked
+  In the Agent Studio card, show:
+  
+  "🔍 Scanning: SOLUSDT (score 7/10)"
+  or
+  "⏸ No setup found — scanning 10 pairs"
+  
+  This makes the agent feel intelligent and active
+  even when HOLDing.
+
+IMPORTANT CONSTRAINTS:
+- ONLY ONE LLM call per agent per tick — non-negotiable
+- All pair selection is deterministic TA — no LLM cost
+- Klines cache MUST be used — no per-agent fetches
+- If agent already has an open position, skip scanning 
+  and just monitor that position
+- Max 1 open position per agent at a time
+
+Schema changes needed (add to Agent model):
+  currentPair   String?
+  lastScanScore Int?
+
+Run prisma db push after schema change.
+Build this now.
