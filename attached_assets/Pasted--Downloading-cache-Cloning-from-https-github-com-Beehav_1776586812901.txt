@@ -1,0 +1,33 @@
+==> Downloading cache...
+==> Cloning from https://github.com/Beehavedev/build4
+==> Checking out commit 23cfef85672822b086f507ada91b0aef44e4c958 in branch main
+==> Downloaded 802MB in 3s. Extraction took 15s.
+==> Using Node.js version 22.22.0 (default)
+==> Docs on specifying a Node.js version: https://render.com/docs/node-version
+==> Running build command 'npm install && npx prisma generate --schema=src/prisma/schema.prisma && npx prisma db push --schema=src/prisma/schema.prisma --skip-generate --accept-data-loss && npx vite build --config src/miniapp/vite.config.ts src/miniapp'...
+up to date, audited 1612 packages in 6s
+272 packages are looking for funding
+  run `npm fund` for details
+50 vulnerabilities (29 low, 18 moderate, 3 high)
+To address issues that do not require attention, run:
+  npm audit fix
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+Run `npm audit` for details.
+Prisma schema loaded from src/prisma/schema.prisma
+✔ Generated Prisma Client (v5.22.0) to ./node_modules/.prisma/client in 186ms
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+Prisma schema loaded from src/prisma/schema.prisma
+Datasource "db": PostgreSQL database "build4db", schema "public" at "dpg-d6qpubpj16oc73es6u9g-a.oregon-postgres.render.com"
+Error: ERROR: relation "Agent_walletAddress_key" already exists
+   0: sql_schema_connector::apply_migration::migration_step
+           with step=CreateIndex { table_id: (Some(TableId(0)), TableId(2)), index_id: IndexId(6), from_drop_and_recreate: false }
+             at schema-engine/connectors/sql-schema-connector/src/apply_migration.rs:21
+Menu
+   1: sql_schema_connector::apply_migration::apply_migration
+             at schema-engine/connectors/sql-schema-connector/src/apply_migration.rs:10
+   2: schema_core::state::SchemaPush
+             at schema-engine/core/src/state.rs:504
+==> Build failed 😞
+==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
