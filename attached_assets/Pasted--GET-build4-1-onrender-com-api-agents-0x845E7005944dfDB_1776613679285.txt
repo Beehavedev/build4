@@ -1,0 +1,69 @@
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="54.202.22.194" requestID="ed96b140-d7bd-4b07" responseTimeMS=1190 responseBytes=1353 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="54.201.136.1" requestID="02480f27-95be-450e" responseTimeMS=793 responseBytes=1353 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="54.201.136.1" requestID="9a51af87-7fab-4a98" responseTimeMS=615 responseBytes=1353 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="54.202.22.194" requestID="d60fdef9-2f99-4ee4" responseTimeMS=558 responseBytes=1353 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="52.197.118.86" requestID="30eb8949-adc6-4225" responseTimeMS=800 responseBytes=1352 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="52.197.118.86" requestID="962d0c36-da46-4b4f" responseTimeMS=599 responseBytes=1353 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="34.220.234.30" requestID="16de5b5e-4955-4fb8" responseTimeMS=741 responseBytes=1352 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="54.202.22.194" requestID="13c0cb1c-35b7-4ee9" responseTimeMS=739 responseBytes=1352 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+[Agent SeanBuild4] HOLD on ETHUSDT — Timeframe alignment catastrophic (1/4), setup score 2/10 well below 7+ requireme
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="34.220.234.30" requestID="81503187-7952-438d" responseTimeMS=1113 responseBytes=1353 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+[Agent SeanBuild4] HOLD on ETHUSDT — IMMUTABLE GATE REQUIREMENTS: Need sustained breach >$2360 + three consecutive 15
+[Agent BNT] HOLD on ETHUSDT — BEARISH MACD cross within last 3 bars is automatic veto per framework Rule 3. Wo
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="54.202.22.194" requestID="d3ec0125-148d-44a7" responseTimeMS=2087 responseBytes=1353 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+[Agent Smith] HOLD on ETHUSDT — Only 1 of 4 timeframes aligned (need minimum 3). Fresh MACD bearish cross disqua
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="54.201.136.1" requestID="ea543e2a-7365-4520" responseTimeMS=1304 responseBytes=1353 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Agent Smith] HOLD on ETHUSDT — Timeframe alignment failure (1/4 signals agree). MACD bearish cross disqualifies
+[Agent SeanBuild4] HOLD on ETHUSDT — Will only consider LONG after: (1) sustained 15m closes above $2360 with 3+ cons
+[Agent BNT] HOLD on ETHUSDT — Timeframe alignment fails (1/4), BEARISH MACD cross vetoes long entry, volume in
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="54.202.22.194" requestID="af56d4fc-bcf5-4cf2" responseTimeMS=561 responseBytes=1353 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Agent Smith] HOLD on ETHUSDT — Only 2/4 timeframes aligned (need 3/4 minimum). MACD negative with no bullish cr
+[Agent BNT] HOLD on ETHUSDT — Catastrophic timeframe misalignment (1/4) + bearish MACD without cross + insuffi
+[Agent SeanBuild4] HOLD on ETHUSDT — Entry gates remain immutable: require breach above $2360 sustained, 3+ consecuti
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="54.201.136.1" requestID="996e073e-6b04-47b8" responseTimeMS=739 responseBytes=1352 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="54.202.22.194" requestID="01b74ccb-d7f3-4971" responseTimeMS=558 responseBytes=1353 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+Menu
+[Agent BNT] HOLD on ETHUSDT — Timeframe alignment failure (1/4), bearish MACD momentum veto, insufficient volu
+[Agent SeanBuild4] HOLD on ETHUSDT — Timeframe alignment 1/4 (need 3/4 minimum). Setup score 2/10 (need 7+ for full s
+[Agent Smith] HOLD on ETHUSDT — Framework disqualification on multiple fronts: 1/4 timeframe alignment insuffici
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="34.220.234.30" requestID="59fef4e6-f869-48a3" responseTimeMS=745 responseBytes=1353 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
+[GET]
+build4-1.onrender.com/api/agents/0x845E7005944dfDB532A22cea97A3DA194546565B/metadata.json clientIP="54.202.22.194" requestID="71c2d18f-80de-4ea8" responseTimeMS=566 responseBytes=1352 userAgent="8004scan/0.4.156 (+https://www.8004scan.io; bot)"
