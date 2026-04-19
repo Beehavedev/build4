@@ -42,6 +42,12 @@ uri = "file://attached_assets/hyperliquid_build4_banner.png"
 type = "image"
 title = "Hyperliquid BUILD4 partnership banner"
 
+[[generated]]
+id = "KZIgDHk_cxZ-k4731WGcW"
+uri = "file://attached_assets/generated_images/build4_aster_bullish.png"
+type = "image"
+title = "generated_image"
+
 [[outputs]]
 id = "JBjCUwiEHNM3bqg5OGXfp"
 uri = "file://attached_assets/generated_images/build4_xlayer_banner.png"
@@ -113,3 +119,9 @@ id = "5O-WX1l8dTG4A53IhjS7Y"
 uri = "file://BUILD4_Trust_Wallet_Overview.md"
 type = "text"
 title = "BUILD4 × Trust Wallet — Technical Overview"
+
+[[outputs]]
+id = "zo3SxnGLFCXgnwNpUHa7D"
+uri = "file://attached_assets/generated_images/build4_aster_bullish.png"
+type = "image"
+title = "BUILD4 × Aster — Bullish Tweet Image"
