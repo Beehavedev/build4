@@ -1,0 +1,65 @@
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Agent SeanBuild4] HOLD on BNBUSDT — Volume 0.29x fails minimum 1.0x threshold by 71% + RSI 75.9 overbought + funding
+[Agent Smith] HOLD on BNBUSDT — Volume catastrophically low (0.29x), RSI overbought (75.9), funding penalizes lo
+[Agent BNT] HOLD on BNBUSDT — Entry quality score 3/10 fails minimum threshold (5/10 required). Volume at 0.29
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Agent Smith] HOLD on BNBUSDT — Will only enter on pullback to $615-620 support zone WITH: volume >1.5x average,
+[Agent BNT] HOLD on BNBUSDT — Require volume >1.0x average, 1h RSI <70, or MACD cross confirmation within 3 ba
+[Agent SeanBuild4] HOLD on BNBUSDT — Three non-negotiable conditions unmet: (1) Volume 0.30x is 70% below minimum 1.0
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="396ff4bb-2d34-4bd0" responseTimeMS=1345 responseBytes=270 userAgent=""
+[GET]
+build4-1.onrender.com/app/ clientIP="2.51.180.232" requestID="1de98449-9300-4913" responseTimeMS=6 responseBytes=656 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/app clientIP="2.51.180.232" requestID="d2a80dd6-6aaa-41ff" responseTimeMS=4 responseBytes=414 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="d742f538-62f8-4584" responseTimeMS=551 responseBytes=974 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="41b7648e-a7aa-4221" responseTimeMS=1315 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="12f25cd5-927f-4bf9" responseTimeMS=558 responseBytes=974 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="2.51.180.232" requestID="729aa693-760a-435b" responseTimeMS=1595 responseBytes=2074 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="913740ed-ab27-4da4" responseTimeMS=1103 responseBytes=1830 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= -3.2781 crossWallet= -3.2781 crossUnPnl= 0.0000 available= 256.5267
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="d722517a-3a9a-4cc4" responseTimeMS=712 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/portfolio/1551641467 clientIP="2.51.180.232" requestID="48fe8702-b7dc-4c89" responseTimeMS=757 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= -3.2781 crossWallet= -3.2781 crossUnPnl= 0.0000 available= 256.5267
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="8f88613c-1c03-464e" responseTimeMS=370 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="016f70f1-c76b-4106" responseTimeMS=2147 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="b603b2df-cdf3-404e" responseTimeMS=373 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="2.51.180.232" requestID="9afe0769-dcac-4d5f" responseTimeMS=2454 responseBytes=1988 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+Menu
+[Agent SeanBuild4] HOLD on BNBUSDT — Volume 0.30x is 3.3x below required 1.0x threshold + RSI 1h 75.4 severely overbo
+[Agent BNT] HOLD on BNBUSDT — Framework requires score ≥5 for entry. Current score 3/10 due to volume rejectio
+[Agent Smith] HOLD on BNBUSDT — Volume absent (0.30x), RSI overbought (75.9), funding penalizes longs (+0.0225%)
