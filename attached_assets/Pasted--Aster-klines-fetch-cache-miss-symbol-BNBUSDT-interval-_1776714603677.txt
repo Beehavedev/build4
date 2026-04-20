@@ -1,0 +1,57 @@
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Agent Smith] HOLD on BNBUSDT — Will enter LONG only when: price pulls back to $615-620 support zone AND volume 
+[Agent SeanBuild4] HOLD on BNBUSDT — Triple veto in effect: volume absent (0.44x), 1h RSI overbought (74.5), funding 
+[Agent BNT] HOLD on BNBUSDT — Setup scores 3/10 (far below 7+ threshold for entry). Volume at 0.44x is automat
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Agent Smith] HOLD on BNBUSDT — Score 3/10 fails minimum threshold. Will only enter on: (1) pullback to $615-620
+[Agent SeanBuild4] HOLD on BNBUSDT — Three simultaneous disqualifiers prevent entry: volume 0.44x (need >1.0x), RSI 1
+[Agent BNT] HOLD on BNBUSDT — Volume 0.44x fails minimum threshold—require >1.0x + fresh MACD cross + RSI <70 
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on BNBUSDT — Volume below 1.0x threshold is non-negotiable rejection criteria. Will only cons
+[Agent SeanBuild4] HOLD on BNBUSDT — Setup score 3/10 fails minimum threshold. Requires simultaneous: (1) volume surg
+[Agent Smith] HOLD on BNBUSDT — Volume void (0.44x) + overbought RSI (74.5) + negative funding economics + no mo
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+==> Detected service running on port 500
+==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on BNBUSDT — Volume failure (0.45x) is disqualifying regardless of trend perfection. RSI over
+[Agent SeanBuild4] HOLD on BNBUSDT — Entry score 3/10 fails minimum threshold. Will consider entry only when volume e
+[Agent Smith] HOLD on BNBUSDT — Will only enter on pullback to $615-620 support zone WITH all five conditions me
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="29333a87-4b47-40ff" responseTimeMS=1395 responseBytes=270 userAgent=""
+[GET]
+build4-1.onrender.com/app/ clientIP="2.51.180.232" requestID="683a3f37-62fa-4bb9" responseTimeMS=8 responseBytes=656 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="0f347c94-3745-4115" responseTimeMS=556 responseBytes=975 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="26d404c6-98af-4ead" responseTimeMS=1288 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="a25f45a8-ddcb-4727" responseTimeMS=1070 responseBytes=1914 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+Menu
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= -3.2781 crossWallet= -3.2781 crossUnPnl= 0.0000 available= 256.5599
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="2.51.180.232" requestID="55ab90e3-8846-4341" responseTimeMS=403 responseBytes=325 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
