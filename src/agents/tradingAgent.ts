@@ -497,6 +497,19 @@ export async function runAgentTick(agent: Agent): Promise<void> {
     if (scanResult && !pairList.includes(scanResult.symbol)) {
       pairList.push(scanResult.symbol)
     }
+
+    // Fresh listings are time-critical — always evaluate every pair listed
+    // in the last 48h on every AUTO tick, regardless of TA score. The
+    // momentum mode in the per-pair loop has its own cheap context (1m+5m
+    // candles only), so adding 3-4 extra pairs per tick is bounded cost.
+    try {
+      const { getRecentNewListings } = await import('../services/listingDetector')
+      const fresh = await getRecentNewListings()
+      for (const sym of fresh.slice(0, 5)) {
+        if (!pairList.includes(sym)) pairList.push(sym)
+      }
+    } catch {}
+
     try {
       await db.agent.update({
         where: { id: agent.id },
@@ -507,7 +520,7 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       })
     } catch {}
     if (pairList.length === 0) {
-      console.log(`[Agent ${agent.name}] AUTO scan: no setup ≥${WATCHLIST_MIN_SCORE}/8 and no open positions — HOLD`)
+      console.log(`[Agent ${agent.name}] AUTO scan: no setup ≥${WATCHLIST_MIN_SCORE}/8, no fresh listings, no open positions — HOLD`)
       return
     }
   }
