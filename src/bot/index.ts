@@ -13,6 +13,7 @@ import { registerPriceCommands } from './commands/price'
 import { registerTrustWallet } from './commands/trustwallet'
 import { registerAster } from './commands/aster'
 import { registerFund, handleFund } from './commands/fund'
+import { registerLlm } from './llm'
 
 export function createBot(): Bot {
   const token = process.env.TELEGRAM_BOT_TOKEN
@@ -72,6 +73,11 @@ export function createBot(): Bot {
       { parse_mode: 'Markdown' }
     )
   })
+
+  // LLM fallback — must be registered LAST so all slash commands and other
+  // message:text handlers (PIN reply, agents wizard, etc.) take priority.
+  // Only fires for plain text that nothing else handled.
+  registerLlm(bot)
 
   // Error handler
   bot.catch((err) => {
