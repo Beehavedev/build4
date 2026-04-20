@@ -711,7 +711,16 @@ app.post('/api/aster/transfer', requireTgUser, async (req, res) => {
 
         let userPk: string
         try { userPk = decryptPrivateKey(wallet.encryptedPK, user.id) }
-        catch { return res.status(500).json({ success: false, error: 'Could not decrypt wallet' }) }
+        catch (decryptErr: any) {
+          const pkPreview = (wallet.encryptedPK ?? '').slice(0, 12)
+          const fmt = (wallet.encryptedPK ?? '').includes(':') ? 'legacy(node-crypto)' : 'cryptojs'
+          console.error(`[transfer] decrypt failed for user=${user.id} wallet=${wallet.address} fmt=${fmt} pk_head=${pkPreview} err=${decryptErr?.message}`)
+          return res.status(500).json({
+            success: false,
+            error: 'Could not decrypt wallet',
+            debug: { fmt, reason: decryptErr?.message ?? 'unknown' }
+          })
+        }
 
         const provider = getProvider()
         const bnbBal = await provider.getBalance(wallet.address)
