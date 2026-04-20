@@ -1,9 +1,47 @@
 import { ethers } from 'ethers'
 import CryptoJS from 'crypto-js'
+import nodeCrypto from 'crypto'
 import { db } from '../db'
 
-const MASTER_KEY = process.env.MASTER_ENCRYPTION_KEY ?? 'default_dev_key_change_in_prod_32c'
+const MASTER_KEY = process.env.MASTER_ENCRYPTION_KEY ?? process.env.WALLET_ENCRYPTION_KEY ?? 'default_dev_key_change_in_prod_32c'
+const LEGACY_MASTER = process.env.WALLET_ENCRYPTION_KEY ?? process.env.MASTER_ENCRYPTION_KEY ?? 'default-dev-key-change-me-32chars!'
 const BSC_RPC    = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
+
+const LEGACY_ALGORITHM = 'aes-256-cbc'
+
+function legacyDeriveKey(userId: string): Buffer {
+  return nodeCrypto.createHash('sha256').update(LEGACY_MASTER + userId).digest()
+}
+
+function tryLegacyDecrypt(encrypted: string, userId: string): string | null {
+  const parts = encrypted.split(':')
+  try {
+    if (parts.length === 2) {
+      const [ivHex, data] = parts
+      if (!/^[0-9a-f]+$/i.test(ivHex) || !/^[0-9a-f]+$/i.test(data)) return null
+      const key = legacyDeriveKey(userId)
+      const iv = Buffer.from(ivHex, 'hex')
+      const decipher = nodeCrypto.createDecipheriv(LEGACY_ALGORITHM, key, iv)
+      let out = decipher.update(data, 'hex', 'utf8')
+      out += decipher.final('utf8')
+      return out
+    }
+    if (parts.length === 3) {
+      const [saltHex, ivHex, data] = parts
+      if (!/^[0-9a-f]+$/i.test(saltHex) || !/^[0-9a-f]+$/i.test(ivHex) || !/^[0-9a-f]+$/i.test(data)) return null
+      const salt = Buffer.from(saltHex, 'hex')
+      const iv = Buffer.from(ivHex, 'hex')
+      const key = nodeCrypto.pbkdf2Sync(LEGACY_MASTER, salt, 100000, 32, 'sha256')
+      const decipher = nodeCrypto.createDecipheriv(LEGACY_ALGORITHM, key, iv)
+      let out = decipher.update(data, 'hex', 'utf8')
+      out += decipher.final('utf8')
+      return out
+    }
+  } catch {
+    return null
+  }
+  return null
+}
 
 // USDT contract on BSC
 const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955'
@@ -19,10 +57,20 @@ export function encryptPrivateKey(privateKey: string, userId: string, pin?: stri
 }
 
 export function decryptPrivateKey(encrypted: string, userId: string, pin?: string): string {
+  // Legacy formats (Node-crypto AES-CBC) use ':' as a separator.
+  // CryptoJS output is base64 ("U2FsdGVkX1...") and never contains ':'.
+  // Try legacy first when the payload looks legacy so PIN-encrypted CryptoJS
+  // payloads (which never have ':') aren't accidentally routed here.
+  if (encrypted.includes(':')) {
+    const legacy = tryLegacyDecrypt(encrypted, userId)
+    if (legacy && legacy.startsWith('0x')) return legacy
+  }
   const keyMaterial = pin ? MASTER_KEY + userId + ':' + pin : MASTER_KEY + userId
   const key = CryptoJS.SHA256(keyMaterial).toString()
   const bytes = CryptoJS.AES.decrypt(encrypted, key)
-  return bytes.toString(CryptoJS.enc.Utf8)
+  const out = bytes.toString(CryptoJS.enc.Utf8)
+  if (!out) throw new Error('decrypt produced empty result')
+  return out
 }
 
 /**
