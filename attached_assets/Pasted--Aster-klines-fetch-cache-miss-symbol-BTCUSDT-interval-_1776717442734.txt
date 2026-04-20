@@ -1,0 +1,56 @@
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on BNBUSDT — Volume threshold veto (0.45x < 0.8x minimum) combined with bearish MACD cross an
+[Agent SeanBuild4] HOLD on BNBUSDT — Triple veto enforced: volume 0.44x fails institutional confirmation threshold, M
+[Agent Smith] HOLD on BNBUSDT — Fatal quintet violation: volume void (0.45x), bearish MACD cross, positive fundi
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on BNBUSDT — Volume at 0.45x violates iron law threshold (require >1.0x). MACD bearish cross 
+[Agent Smith] HOLD on BNBUSDT — Will only enter on ALL five simultaneous conditions: (1) pullback to $615-620 su
+[Agent SeanBuild4] HOLD on BNBUSDT — Edge unlock criteria not met: volume 0.45x (need >1.0x), RSI 1h 66.0 (need <60),
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Agent BNT] HOLD on BNBUSDT — Volume at 0.45x average creates absolute veto per 271-observation iron law. BEAR
+[Agent Smith] HOLD on BNBUSDT — Entry requires ALL five conditions: (1) pullback to $615-620 support, (2) volume
+[Agent SeanBuild4] HOLD on BNBUSDT — Entry criteria not met: volume 0.45x << 1.0x threshold, RSI 1h 66.0 > 60.0 ceili
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="2.51.180.232" requestID="2fe04940-2f9a-4a21" responseTimeMS=975 responseBytes=440 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[transfer] decrypt failed user=cmo1lsvsm0000mlupiui761l0 tg=1551641467 wallet=0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 fmt=node-crypto(salt:iv:data PBKDF2) totalLen=190 partLens=24,32,132 head=63c8fb8238525d75 err=Malformed UTF-8 data
+[GET]
+build4-1.onrender.com/app/ clientIP="2.51.180.232" requestID="7f82d8d2-2c5a-4cbd" responseTimeMS=6 responseBytes=656 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="82bd5fbe-45fd-44c6" responseTimeMS=553 responseBytes=976 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="8b127736-4c37-4717" responseTimeMS=1307 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="1ab96609-7533-4843" responseTimeMS=1046 responseBytes=1913 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= -3.2781 crossWallet= -3.2781 crossUnPnl= 0.0000 available= 256.8404
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="2.51.180.232" requestID="3994e14c-28bb-4484" responseTimeMS=407 responseBytes=440 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[transfer] decrypt failed user=cmo1lsvsm0000mlupiui761l0 tg=1551641467 wallet=0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 fmt=node-crypto(salt:iv:data PBKDF2) totalLen=190 partLens=24,32,132 head=63c8fb8238525d75 err=Malformed UTF-8 data
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
