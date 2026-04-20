@@ -1,0 +1,54 @@
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on SOLUSDT — Volume at 0.51x fails mandatory 1.5x threshold. Perfect regime/alignment/setup c
+[Agent Smith] HOLD on SOLUSDT — Volume at 0.51x violates the non-negotiable institutional participation requirem
+[Agent SeanBuild4] HOLD on SOLUSDT — Volume 0.52x average violates fundamental market microstructure requirement. 334
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '4h', limit: 200 }
+[Agent Smith] HOLD on SOLUSDT — Volume 0.53x below 1.0x threshold. Institutional absence invalidates textbook me
+[Agent BNT] HOLD on SOLUSDT — Volume at 0.53x is 65% below minimum 1.5x threshold required for trade validity.
+[Agent SeanBuild4] HOLD on SOLUSDT — Volume at 0.53x violates minimum liquidity threshold. Will only consider entry w
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '4h', limit: 200 }
+[Agent Smith] HOLD on SOLUSDT — Volume 0.53x fails institutional threshold (1.0x minimum required). Technical se
+[Agent BNT] HOLD on SOLUSDT — Volume at 0.53x (65% below 1.5x threshold) invalidates all technical signals. Ag
+[Agent SeanBuild4] HOLD on SOLUSDT — Volume 0.55x average is below minimum 0.8x institutional threshold - 336 observa
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on SOLUSDT — Volume at 0.55x is 63% below required 1.5x threshold. Agent memory shows 73 cons
+Menu
+[Agent SeanBuild4] HOLD on SOLUSDT — Volume 45% below average (0.55x) is absolute disqualifier. 336+ observations pro
+[Agent Smith] HOLD on SOLUSDT — Volume at 0.55x fails minimum 1.0x threshold. 235 observations prove this law is
