@@ -1,0 +1,63 @@
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Agent Smith] HOLD on BNBUSDT — Score 3/10 fails minimum threshold of 5. Would reconsider only if: (1) Price pul
+[Agent BNT] HOLD on BNBUSDT — Volume must exceed 1.0x average (currently 0.19x) AND MACD must confirm bullish 
+[Agent SeanBuild4] HOLD on BNBUSDT — Volume participation catastrophically low (0.19x) for 7th consecutive observatio
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on BNBUSDT — Volume at 0.21x fails iron law threshold (>1.0x required). MACD bearish cross cr
+[Agent Smith] HOLD on BNBUSDT — Fatal combination: volume 0.21x (need >1.5x), MACD bearish cross (need bullish),
+[Agent SeanBuild4] HOLD on BNBUSDT — No execution edge exists despite trend strength. Require simultaneous: volume >1
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="2.51.180.232" requestID="c94fa33f-0da8-47d3" responseTimeMS=825 responseBytes=377 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[transfer] decrypt failed for user=cmo1lsvsm0000mlupiui761l0 tg=1551641467 wallet=0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 fmt=legacy(node-crypto) pk_head=63c8fb823852 err=Malformed UTF-8 data
+[GET]
+build4-1.onrender.com/app/ clientIP="2.51.180.232" requestID="7d8c05b4-0a1d-4478" responseTimeMS=9 responseBytes=656 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="11382fa3-bf85-4a97" responseTimeMS=744 responseBytes=975 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="072248be-6518-488d" responseTimeMS=941 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="8dc996f7-1cba-4774" responseTimeMS=940 responseBytes=1844 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= -3.2781 crossWallet= -3.2781 crossUnPnl= 0.0000 available= 256.8404
+[Agent SeanBuild4] HOLD on BNBUSDT — Mandatory edge criteria not met: require SIMULTANEOUS (1) volume >1.0x SMA-20 AN
+[Agent BNT] HOLD on BNBUSDT — Volume at 0.22x violates non-negotiable >1.0x threshold. MACD bearish cross remo
+[Agent Smith] HOLD on BNBUSDT — Entry requires ALL five conditions simultaneously: (1) pullback to $615-620 supp
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="2.51.180.232" requestID="e61b17ef-1452-4fd0" responseTimeMS=967 responseBytes=380 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[transfer] decrypt failed for user=cmo1lsvsm0000mlupiui761l0 tg=1551641467 wallet=0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 fmt=legacy(node-crypto) pk_head=63c8fb823852 err=decrypt produced empty result
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="a6012b2c-aab7-4566" responseTimeMS=579 responseBytes=270 userAgent=""
+[GET]
+build4-1.onrender.com/app/ clientIP="2.51.180.232" requestID="001741a1-2134-445e" responseTimeMS=18 responseBytes=656 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="5c16f891-92e3-4667" responseTimeMS=565 responseBytes=971 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="cee33ae1-20a7-4085" responseTimeMS=568 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="30f3e8ef-c5b2-4e08" responseTimeMS=999 responseBytes=1913 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= -3.2781 crossWallet= -3.2781 crossUnPnl= 0.0000 available= 256.8404
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="2.51.180.232" requestID="9f4d0a05-8c2a-45f6" responseTimeMS=421 responseBytes=377 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+Menu
+[transfer] decrypt failed for user=cmo1lsvsm0000mlupiui761l0 tg=1551641467 wallet=0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 fmt=legacy(node-crypto) pk_head=63c8fb823852 err=Malformed UTF-8 data

@@ -720,13 +720,19 @@ app.post('/api/aster/transfer', requireTgUser, async (req, res) => {
           } catch (e) { lastErr = e }
         }
         if (!userPk) {
-          const pkPreview = (wallet.encryptedPK ?? '').slice(0, 12)
-          const fmt = (wallet.encryptedPK ?? '').includes(':') ? 'legacy(node-crypto)' : 'cryptojs'
-          console.error(`[transfer] decrypt failed for user=${user.id} tg=${user.telegramId} wallet=${wallet.address} fmt=${fmt} pk_head=${pkPreview} err=${lastErr?.message}`)
+          const blob = wallet.encryptedPK ?? ''
+          const parts = blob.split(':')
+          const partLens = parts.map(p => p.length).join(',')
+          const isCryptoJs = blob.startsWith('U2FsdGVk')
+          const fmt = parts.length === 1 ? (isCryptoJs ? 'cryptojs(salted)' : 'cryptojs(raw)')
+                    : parts.length === 2 ? 'node-crypto(iv:data)'
+                    : parts.length === 3 ? 'node-crypto(salt:iv:data PBKDF2)'
+                    : `unknown(${parts.length}-part)`
+          console.error(`[transfer] decrypt failed user=${user.id} tg=${user.telegramId} wallet=${wallet.address} fmt=${fmt} totalLen=${blob.length} partLens=${partLens} head=${blob.slice(0,16)} err=${lastErr?.message}`)
           return res.status(500).json({
             success: false,
             error: 'Could not decrypt wallet',
-            debug: { fmt, tried: idCandidates.length, reason: lastErr?.message ?? 'unknown' }
+            debug: { fmt, totalLen: blob.length, partLens, head: blob.slice(0,16), tried: idCandidates.length, reason: lastErr?.message ?? 'unknown' }
           })
         }
 
