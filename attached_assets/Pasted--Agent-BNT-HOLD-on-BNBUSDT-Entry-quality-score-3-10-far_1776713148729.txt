@@ -1,0 +1,55 @@
+[Agent BNT] HOLD on BNBUSDT — Entry quality score 3/10 far below minimum threshold. Will reconsider when: (1) 
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Agent Smith] HOLD on BNBUSDT — Will only enter on pullback to $615-620 support zone WITH volume >1.5x average A
+[Agent BNT] HOLD on BNBUSDT — Volume failure is non-negotiable disqualifier. Setup score 3/10 requires minimum
+[Agent SeanBuild4] HOLD on BNBUSDT — Volume confirmation missing (0.35x vs required 1.0x), RSI 1h overbought at 73.7 
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Agent SeanBuild4] HOLD on BNBUSDT — Volume 0.35x (need >1.0x), RSI 1h 73.7 (need <70), funding +0.0225% (need neutra
+[Agent Smith] HOLD on BNBUSDT — Fatal combination of ultra-low volume (0.35x), overbought RSI (73.7), and no fre
+[Agent BNT] HOLD on BNBUSDT — Entry quality score 3/10 fails minimum 5/10 threshold. Would reconsider if: (1) 
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="2.51.180.232" requestID="97efa9cb-7aae-40f3" responseTimeMS=2807 responseBytes=2009 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Agent SeanBuild4] HOLD on BNBUSDT — Three non-negotiable rejection criteria active: volume 0.36x (need >1.0x), RSI 1
+[Agent BNT] HOLD on BNBUSDT — Setup score 3/10 fails minimum 7+ threshold. Volume failure (0.36x) invalidates 
+[Agent Smith] HOLD on BNBUSDT — Setup fails quality threshold (2/10). Would enter only on: (1) pullback to $615-
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="2.51.180.232" requestID="85d6ea42-8e39-42fe" responseTimeMS=1959 responseBytes=2023 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="04d67b41-3c4c-42b5" responseTimeMS=1094 responseBytes=1914 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= -3.2781 crossWallet= -3.2781 crossUnPnl= 0.0000 available= 256.8175
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="2.51.180.232" requestID="2fb116b6-99e0-4165" responseTimeMS=443 responseBytes=325 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+Menu
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
