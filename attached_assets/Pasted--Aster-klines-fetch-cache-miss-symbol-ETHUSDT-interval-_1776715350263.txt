@@ -1,0 +1,64 @@
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Agent Smith] HOLD on BNBUSDT — Would enter LONG only when: (1) price pulls back to $615-620 support zone, (2) v
+[Agent SeanBuild4] HOLD on BNBUSDT — No edge present. Setup requires simultaneous satisfaction of: volume >1.0x (curr
+[Agent BNT] HOLD on BNBUSDT — Volume at 0.50x is disqualifying per protocol—requires >1.0x minimum for any ent
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="2.51.180.232" requestID="92a58da3-2e06-4a68" responseTimeMS=975 responseBytes=371 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[transfer] decrypt failed for user=cmo1lsvsm0000mlupiui761l0 wallet=0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 fmt=legacy(node-crypto) pk_head=63c8fb823852 err=Malformed UTF-8 data
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[GET]
+build4-1.onrender.com/app/ clientIP="2.51.180.232" requestID="d649bb61-cd16-457b" responseTimeMS=7 responseBytes=656 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="c24dbb6b-4c46-4c8c" responseTimeMS=925 responseBytes=975 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="ffff6290-6953-4242" responseTimeMS=2110 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Agent BNT] HOLD on BNBUSDT — Volume confirmation is non-negotiable. Current 0.50x average volume fails instit
+[Agent Smith] HOLD on BNBUSDT — Would enter LONG only when: (1) price pulls back to $615-620 support zone, (2) v
+[Agent SeanBuild4] HOLD on BNBUSDT — Triple veto in force: volume 0.50x (need >1.0x), RSI 1h 74.8 overbought (need <7
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="90c335bc-e16c-4eb3" responseTimeMS=1081 responseBytes=1913 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/portfolio/1551641467 clientIP="2.51.180.232" requestID="f97b5fde-aa72-4484" responseTimeMS=978 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= -3.2781 crossWallet= -3.2781 crossUnPnl= 0.0000 available= 256.8410
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="a2036128-9e80-42da" responseTimeMS=896 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= -3.2781 crossWallet= -3.2781 crossUnPnl= 0.0000 available= 256.8410
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="2.51.180.232" requestID="bc9f1fae-1144-4c03" responseTimeMS=391 responseBytes=371 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[transfer] decrypt failed for user=cmo1lsvsm0000mlupiui761l0 wallet=0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 fmt=legacy(node-crypto) pk_head=63c8fb823852 err=Malformed UTF-8 data
+[GET]
+build4-1.onrender.com/app/ clientIP="2.51.180.232" requestID="4b6af474-91a7-45c9" responseTimeMS=4 responseBytes=656 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="755edbbf-c3e2-48ee" responseTimeMS=748 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="ac4d160f-a44d-443c" responseTimeMS=765 responseBytes=974 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="973eccd7-6a77-4463" responseTimeMS=778 responseBytes=1913 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= -3.2781 crossWallet= -3.2781 crossUnPnl= 0.0000 available= 256.5343
+[POST]
+build4-1.onrender.com/api/aster/transfer clientIP="2.51.180.232" requestID="c9eb57e9-3e1a-47f1" responseTimeMS=390 responseBytes=371 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[transfer] decrypt failed for user=cmo1lsvsm0000mlupiui761l0 wallet=0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 fmt=legacy(node-crypto) pk_head=63c8fb823852 err=Malformed UTF-8 data
+[Agent Smith] HOLD on BNBUSDT — Would require ALL five conditions simultaneously: (1) Price pullback to $615-620
+Menu
+[Agent SeanBuild4] HOLD on BNBUSDT — Edge unlock criteria not met: volume 0.08x (need >1.0x), funding +0.0220% (need 

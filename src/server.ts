@@ -709,16 +709,24 @@ app.post('/api/aster/transfer', requireTgUser, async (req, res) => {
         const { ensureAndDepositUSDT, MIN_BNB_FOR_GAS_WEI, getProvider } = await import('./services/asterDeposit')
         const { ethers } = await import('ethers')
 
-        let userPk: string
-        try { userPk = decryptPrivateKey(wallet.encryptedPK, user.id) }
-        catch (decryptErr: any) {
+        let userPk: string | null = null
+        let lastErr: any = null
+        // Try both Prisma user.id (new wallets) and telegramId as string (migrated legacy wallets)
+        const idCandidates = [user.id, user.telegramId?.toString()].filter(Boolean) as string[]
+        for (const candidate of idCandidates) {
+          try {
+            const out = decryptPrivateKey(wallet.encryptedPK, candidate)
+            if (out && out.startsWith('0x')) { userPk = out; break }
+          } catch (e) { lastErr = e }
+        }
+        if (!userPk) {
           const pkPreview = (wallet.encryptedPK ?? '').slice(0, 12)
           const fmt = (wallet.encryptedPK ?? '').includes(':') ? 'legacy(node-crypto)' : 'cryptojs'
-          console.error(`[transfer] decrypt failed for user=${user.id} wallet=${wallet.address} fmt=${fmt} pk_head=${pkPreview} err=${decryptErr?.message}`)
+          console.error(`[transfer] decrypt failed for user=${user.id} tg=${user.telegramId} wallet=${wallet.address} fmt=${fmt} pk_head=${pkPreview} err=${lastErr?.message}`)
           return res.status(500).json({
             success: false,
             error: 'Could not decrypt wallet',
-            debug: { fmt, reason: decryptErr?.message ?? 'unknown' }
+            debug: { fmt, tried: idCandidates.length, reason: lastErr?.message ?? 'unknown' }
           })
         }
 
