@@ -426,7 +426,6 @@ export function registerAgents(bot: Bot) {
     // swallowed so a flaky RPC never breaks the menu.
     const ownerWallet = (await db.wallet.findFirst({ where: { userId: user.id } }))?.address
     const hasApiKey = !!(process.env.BSCSCAN_API_KEY ?? process.env.ETHERSCAN_API_KEY)
-    console.log(`[Sync] /myagents user=${user.id} agents=${agents.length} ownerWallet=${ownerWallet ?? 'NONE'} bscscanKey=${hasApiKey}`)
     await Promise.all(agents.map(async (a) => {
       console.log(`[Sync] agent="${a.name}" wallet=${a.walletAddress ?? 'NONE'} ercId=${a.erc8004AgentId ?? 'NONE'} ercTx=${a.erc8004TxHash ?? 'NONE'} bapId=${a.bap578TokenId ?? 'NONE'} bapTx=${a.bap578TxHash ?? 'NONE'}`)
       if (!a.walletAddress) {
