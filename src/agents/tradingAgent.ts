@@ -1,4 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
+import type {
+  Message as AnthropicMessage,
+  MessageCreateParamsNonStreaming as AnthropicCreateParams,
+} from '@anthropic-ai/sdk/resources/messages'
 import { Agent } from '@prisma/client'
 import { db } from '../db'
 import {
@@ -489,6 +493,124 @@ export function expandPairs(pairs: string[]): string[] {
     }
   }
   return Array.from(expanded)
+}
+
+// ─── Swarm-or-Anthropic decision helper ───────────────────────────────────
+// Extracted from runAgentTick so the three swarm branches can be
+// independently unit-tested without spinning up an entire agent tick:
+//   (a) swarmOn && >=2 live providers && quorum reached → use quorum decision
+//   (b) swarmOn && >=2 live providers && no quorum     → Anthropic fallback
+//                                                         (per-provider swarm
+//                                                         reasoning is preserved
+//                                                         in providersTelemetry)
+//   (c) swarmOn && only 1 live provider                → Anthropic fallback
+//   (d) !swarmOn                                       → Anthropic-only path
+// Dependencies are injectable so tests can stub them; defaults wire to the
+// real swarm/inference modules and the module-scoped `anthropic` client.
+export type AnthropicCreateFn = (args: AnthropicCreateParams) => Promise<AnthropicMessage>
+
+export interface RunDecisionLLMDeps {
+  runSwarmDecision?: typeof import('../swarm/swarm').runSwarmDecision
+  getProviderStatus?: typeof import('../services/inference').getProviderStatus
+  anthropicCreate?: AnthropicCreateFn
+}
+
+export interface RunDecisionLLMResult {
+  decision: AgentDecision
+  rawResponse: string
+  providersTelemetry: import('../services/fortyTwoExecutor').ProviderTelemetry[] | null
+}
+
+async function callAnthropicForDecision(
+  sysPrompt: string,
+  userMessage: string,
+  anthropicCreate: AnthropicCreateFn,
+): Promise<{ decision: AgentDecision; rawResponse: string }> {
+  const response = await anthropicCreate({
+    model: 'claude-sonnet-4-5',
+    max_tokens: 1000,
+    system: sysPrompt,
+    messages: [{ role: 'user', content: userMessage }],
+  })
+  const first = response.content[0]
+  const rawResponse = first && first.type === 'text' ? first.text : '{}'
+  const decision = JSON.parse(rawResponse.replace(/```json|```/g, '').trim()) as AgentDecision
+  return { decision, rawResponse }
+}
+
+export async function runDecisionLLM(
+  swarmOn: boolean,
+  sysPrompt: string,
+  userMessage: string,
+  deps: RunDecisionLLMDeps = {},
+): Promise<RunDecisionLLMResult> {
+  const anthropicCreate: AnthropicCreateFn =
+    deps.anthropicCreate ?? ((args) => anthropic.messages.create(args))
+
+  if (swarmOn) {
+    const runSwarmDecision =
+      deps.runSwarmDecision ?? (await import('../swarm/swarm')).runSwarmDecision
+    const getProviderStatus =
+      deps.getProviderStatus ?? (await import('../services/inference')).getProviderStatus
+    const status = getProviderStatus()
+    const liveProviders = (Object.keys(status) as Array<keyof typeof status>)
+      .filter((p) => status[p].live)
+
+    if (liveProviders.length >= 2) {
+      const swarm = await runSwarmDecision<AgentDecision>({
+        providers: liveProviders,
+        system: sysPrompt,
+        user: userMessage,
+        jsonMode: true,
+        maxTokens: 1000,
+        schema: (t) => JSON.parse(t.replace(/```json|```/g, '').trim()) as AgentDecision,
+        getAction: (d) => d.action,
+        getPredictionKey: (d) =>
+          d.predictionTrade
+            ? `${d.predictionTrade.marketAddress}:${d.predictionTrade.tokenId}:${d.predictionTrade.action}`
+            : null,
+        getReasoning: (d) => d.reasoning ?? d.holdReason ?? null,
+      })
+      const providersTelemetry: import('../services/fortyTwoExecutor').ProviderTelemetry[] =
+        swarm.decisions.map((c) => ({
+          provider: c.provider,
+          model: c.model,
+          action: c.decision?.action ?? null,
+          predictionTrade: c.decision?.predictionTrade ?? null,
+          reasoning: c.reasoning,
+          latencyMs: c.latencyMs,
+          tokensUsed: c.tokensUsed,
+        }))
+      if (swarm.quorumDecision) {
+        const decision = swarm.quorumDecision
+        const rawResponse = JSON.stringify({ swarm: providersTelemetry, consensus: decision }).slice(0, 4000)
+        return { decision, rawResponse, providersTelemetry }
+      }
+      // No quorum — fall back to a fresh Anthropic call for the final
+      // decision. We keep providersTelemetry so every provider's reasoning
+      // (including the disagreement that triggered the fallback) is still
+      // recorded on the AgentLog row.
+      const { decision, rawResponse } = await callAnthropicForDecision(
+        sysPrompt,
+        userMessage,
+        anthropicCreate,
+      )
+      const tagged =
+        '[swarm-no-quorum, anthropic-fallback] ' +
+        JSON.stringify({ swarm: providersTelemetry, chosen: decision, anthropicRaw: rawResponse }).slice(0, 3500)
+      return { decision, rawResponse: tagged, providersTelemetry }
+    }
+    // swarmOn but only 1 live provider — fall through to the single-provider
+    // Anthropic path. providersTelemetry stays null so the agent log doesn't
+    // claim a swarm ran when only Anthropic answered.
+  }
+
+  const { decision, rawResponse } = await callAnthropicForDecision(
+    sysPrompt,
+    userMessage,
+    anthropicCreate,
+  )
+  return { decision, rawResponse, providersTelemetry: null }
 }
 
 export async function runAgentTick(agent: Agent): Promise<void> {
@@ -1019,80 +1141,10 @@ If you would not put real money in this trade right now, action = HOLD.`
 
       try {
         const sysPrompt = isNewListingPair ? NEW_LISTING_SYSTEM_PROMPT : TRADING_SYSTEM_PROMPT
-
-        if (swarmOn) {
-          const { runSwarmDecision } = await import('../swarm/swarm')
-          const { getProviderStatus } = await import('../services/inference')
-          const status = getProviderStatus()
-          const liveProviders = (Object.keys(status) as Array<keyof typeof status>)
-            .filter((p) => status[p].live)
-          if (liveProviders.length >= 2) {
-            const swarm = await runSwarmDecision<AgentDecision>({
-              providers: liveProviders,
-              system: sysPrompt,
-              user: userMessage,
-              jsonMode: true,
-              maxTokens: 1000,
-              schema: (t) => JSON.parse(t.replace(/```json|```/g, '').trim()) as AgentDecision,
-              getAction: (d) => d.action,
-              getPredictionKey: (d) =>
-                d.predictionTrade
-                  ? `${d.predictionTrade.marketAddress}:${d.predictionTrade.tokenId}:${d.predictionTrade.action}`
-                  : null,
-              getReasoning: (d) => d.reasoning ?? d.holdReason ?? null,
-            })
-            providersTelemetry = swarm.decisions.map((c) => ({
-              provider: c.provider,
-              model: c.model,
-              action: c.decision?.action ?? null,
-              predictionTrade: c.decision?.predictionTrade ?? null,
-              reasoning: c.reasoning,
-              latencyMs: c.latencyMs,
-              tokensUsed: c.tokensUsed,
-            }))
-            if (swarm.quorumDecision) {
-              decision = swarm.quorumDecision
-              rawResponse = JSON.stringify({ swarm: providersTelemetry, consensus: decision }).slice(0, 4000)
-            } else {
-              // No quorum — use the highest-confidence successful provider's
-              // decision as the consensus reasoning. We avoid issuing a fresh
-              // Anthropic call here because (a) the swarm already includes
-              // Anthropic when configured, (b) every provider's reasoning is
-              // already captured in providersTelemetry, and (c) it keeps
-              // per-tick LLM spend bounded.
-              const fallback = swarm.decisions
-                .filter((c) => c.ok && c.decision)
-                .sort((a, b) => (b.decision!.confidence ?? 0) - (a.decision!.confidence ?? 0))[0]
-              if (fallback?.decision) {
-                decision = fallback.decision
-                rawResponse = `[swarm-no-quorum, used ${fallback.provider} (highest-confidence)] ` +
-                  JSON.stringify({ swarm: providersTelemetry, chosen: decision }).slice(0, 3500)
-              } else {
-                throw new Error(swarm.error ?? 'swarm produced no usable decision')
-              }
-            }
-          } else {
-            // swarmEnabled but only one provider configured — fall through
-            // to the single-provider path.
-            const response = await anthropic.messages.create({
-              model: 'claude-sonnet-4-5',
-              max_tokens: 1000,
-              system: sysPrompt,
-              messages: [{ role: 'user', content: userMessage }]
-            })
-            rawResponse = response.content[0].type === 'text' ? response.content[0].text : '{}'
-            decision = JSON.parse(rawResponse.replace(/```json|```/g, '').trim())
-          }
-        } else {
-          const response = await anthropic.messages.create({
-            model: 'claude-sonnet-4-5',
-            max_tokens: 1000,
-            system: sysPrompt,
-            messages: [{ role: 'user', content: userMessage }]
-          })
-          rawResponse = response.content[0].type === 'text' ? response.content[0].text : '{}'
-          decision = JSON.parse(rawResponse.replace(/```json|```/g, '').trim())
-        }
+        const llmResult = await runDecisionLLM(swarmOn, sysPrompt, userMessage)
+        decision = llmResult.decision
+        rawResponse = llmResult.rawResponse
+        providersTelemetry = llmResult.providersTelemetry
       } catch (aiErr) {
         console.error(`[Agent ${agent.name}] LLM error:`, aiErr)
         await safeAgentLogCreate({
