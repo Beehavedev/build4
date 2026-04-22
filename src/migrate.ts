@@ -163,3 +163,27 @@ export async function migrateOldUsers(): Promise<void> {
     console.log('[Migration] Continuing with startup — old users will auto-register on next /start')
   }
 }
+
+// One-time migration: any agent whose pairs config does NOT include 'AUTO'
+// gets flipped to ['AUTO']. New agents already default to AUTO; this fixes
+// older agents that were created with hardcoded pairs (e.g. ['BTCUSDT'])
+// and are therefore blind to every other tradeable pair on Aster.
+//
+// Idempotent: runs every startup, only updates rows that need it. Safe to
+// re-run because the WHERE clause filters out rows already containing AUTO.
+export async function migrateAgentsToAuto(): Promise<void> {
+  try {
+    const result = await db.$executeRawUnsafe<number>(
+      `UPDATE "Agent"
+         SET "pairs" = ARRAY['AUTO']::TEXT[]
+       WHERE NOT ('AUTO' = ANY("pairs"))`
+    )
+    if (result && result > 0) {
+      console.log(`[Migration] Flipped ${result} agent(s) to AUTO mode`)
+    } else {
+      console.log('[Migration] All agents already on AUTO mode')
+    }
+  } catch (err: any) {
+    console.error('[Migration] migrateAgentsToAuto failed:', err?.message ?? err)
+  }
+}

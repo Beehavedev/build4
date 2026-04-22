@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url'
 import { db } from './db'
 import { createBot } from './bot'
 import { initRunner } from './agents/runner'
-import { migrateOldUsers } from './migrate'
+import { migrateOldUsers, migrateAgentsToAuto } from './migrate'
 import { ensureNewTables } from './ensureTables'
 import { requireTgUser, requireAdmin, isAdminTelegramId } from './services/telegramAuth'
 
@@ -1798,6 +1798,11 @@ async function main() {
 
   // Migrate old users from Drizzle tables to Prisma tables
   await migrateOldUsers()
+
+  // Force every existing agent onto AUTO mode so the multi-pair scanner
+  // can actually pick the day's hot pairs instead of being stuck on
+  // whatever single pair was set at agent creation time. Idempotent.
+  await migrateAgentsToAuto()
 
   // Create bot
   const bot = createBot()
