@@ -30,9 +30,18 @@ export interface AbDecisionRecord {
   // Populated by the resolver after `holdingWindowMs` has elapsed.
   resolved?: {
     resolvedAt: number;
+    entryPrice?: number; // simulated fill price (zone edge); omitted on NO_TRADE
     exitPrice: number;
     exitReason: 'STOP_LOSS' | 'TAKE_PROFIT' | 'TIMEOUT' | 'NO_TRADE';
-    pnlPct: number; // signed % return on notional (size * leverage), pre-fees
+    // pnlPct is the NET return on margin in % (price-move * leverage - fees - funding).
+    // Components below are also signed contributions to that same %, so:
+    //   pnlPct ≈ grossPnlPct + feePct + fundingPct
+    // (small rounding allowed). Old records may lack the breakdown — readers
+    // should treat missing components as zero.
+    pnlPct: number;
+    grossPnlPct?: number; // price-move pnl, leverage applied, before costs
+    feePct?: number; // always ≤ 0; taker fees in + out, leverage applied
+    fundingPct?: number; // signed; ≤ 0 when funding works against the side
     holdingMinutes: number;
   };
 }

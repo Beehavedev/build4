@@ -14,10 +14,15 @@ interface VariantStats {
   losses: number;
   flat: number;
   winRatePct: number;
-  avgPnlPct: number;
+  avgPnlPct: number; // net of fees + funding
   totalPnlPct: number;
   bestPct: number;
   worstPct: number;
+  // Cost breakdown — totals (sum across filled trades) so a reader can see
+  // how much of the variant's PnL was eaten by frictions.
+  totalGrossPnlPct: number;
+  totalFeePct: number;
+  totalFundingPct: number;
   noTradeFills: number; // entries that were never filled
 }
 
@@ -35,6 +40,9 @@ function emptyStats(variant: Variant): VariantStats {
     totalPnlPct: 0,
     bestPct: 0,
     worstPct: 0,
+    totalGrossPnlPct: 0,
+    totalFeePct: 0,
+    totalFundingPct: 0,
     noTradeFills: 0,
   };
 }
@@ -53,6 +61,12 @@ function statsFor(records: AbDecisionRecord[], variant: Variant): VariantStats {
       } else {
         s.resolvedTrades++;
         pnls.push(r.resolved.pnlPct);
+        // Old records (pre-cost-breakdown) won't have these fields; treat
+        // missing values as zero so the totals still add up to something
+        // meaningful (gross will simply equal net for legacy rows).
+        s.totalGrossPnlPct += r.resolved.grossPnlPct ?? r.resolved.pnlPct;
+        s.totalFeePct += r.resolved.feePct ?? 0;
+        s.totalFundingPct += r.resolved.fundingPct ?? 0;
         if (r.resolved.pnlPct > 0.001) s.wins++;
         else if (r.resolved.pnlPct < -0.001) s.losses++;
         else s.flat++;
@@ -118,8 +132,9 @@ function formatStats(s: VariantStats): string {
     `- Filled trades: ${s.resolvedTrades} (no-fill entries: ${s.noTradeFills})`,
     `- Win / Loss / Flat: ${s.wins} / ${s.losses} / ${s.flat}`,
     `- Win rate: ${s.winRatePct.toFixed(1)}%`,
-    `- Avg PnL per filled trade: ${s.avgPnlPct >= 0 ? '+' : ''}${s.avgPnlPct.toFixed(2)}%`,
-    `- Total PnL (sum of %): ${s.totalPnlPct >= 0 ? '+' : ''}${s.totalPnlPct.toFixed(2)}%`,
+    `- Avg PnL per filled trade (net): ${s.avgPnlPct >= 0 ? '+' : ''}${s.avgPnlPct.toFixed(2)}%`,
+    `- Total PnL net (sum of %): ${s.totalPnlPct >= 0 ? '+' : ''}${s.totalPnlPct.toFixed(2)}%`,
+    `- ↳ Gross (pre-costs): ${s.totalGrossPnlPct >= 0 ? '+' : ''}${s.totalGrossPnlPct.toFixed(2)}% | Fees: ${s.totalFeePct.toFixed(2)}% | Funding: ${s.totalFundingPct >= 0 ? '+' : ''}${s.totalFundingPct.toFixed(2)}%`,
     `- Best / Worst trade: ${s.bestPct >= 0 ? '+' : ''}${s.bestPct.toFixed(2)}% / ${s.worstPct.toFixed(2)}%`,
   ].join('\n');
 }

@@ -208,6 +208,35 @@ export async function getMarkPrice(pair: string): Promise<{
   }
 }
 
+// Aster perps fund every 8h. Returns the funding payments (rate + time) that
+// settled inside [startTime, endTime]. Empty array on failure (callers treat
+// missing funding as zero — same conservative default as midpoint fills).
+export async function getFundingRateHistory(
+  pair: string,
+  startTime: number,
+  endTime: number
+): Promise<{ fundingTime: number; fundingRate: number }[]> {
+  const symbol = pair.replace('/', '')
+  try {
+    const res = await client(BASE_PUBLIC).get('/fapi/v1/fundingRate', {
+      params: { symbol, startTime, endTime, limit: 1000 }
+    })
+    const rows = res.data as any[]
+    return rows.map((r) => ({
+      fundingTime: Number(r.fundingTime),
+      fundingRate: parseFloat(r.fundingRate ?? '0')
+    }))
+  } catch (err: any) {
+    console.warn(
+      '[Aster] getFundingRateHistory failed:',
+      'symbol=', symbol,
+      'msg=', err?.message,
+      'status=', err?.response?.status
+    )
+    return []
+  }
+}
+
 export async function ping(): Promise<boolean> {
   try {
     await client(BASE_PUBLIC).get('/fapi/v1/ping')
