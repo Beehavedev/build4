@@ -122,6 +122,19 @@ the trading agent — BUILD4 trades go through Aster DEX EIP-712 signing.
 - Agent runner cron runs every 60 seconds
 - Prisma schema push: `npx prisma db push`
 
+## Tests
+Run the project's unit tests (Node test runner via tsx) with:
+
+```
+npm run test
+```
+
+This executes every `src/**/*.test.ts` file (resolved with `find`) under the
+Node test runner. Currently it covers the A/B PnL simulator
+(`src/abHarness/resolve.test.ts`, 8 cases). The `test` command is also
+registered as a validation step so it runs as a CI-style check before merging
+changes — keep it green when touching simulator math or harness internals.
+
 ## Database
 Prisma ORM with models: User, Wallet, Agent, AgentMemory, Trade, CopyFollow, Portfolio, Quest, UserQuest, AgentLog, OutcomePosition.
 
