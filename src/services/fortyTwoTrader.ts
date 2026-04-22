@@ -100,16 +100,64 @@ function dryHash(seed: string): string {
  *   - Fallback:        err.message
  * Wide net by design — we'd rather surface anything than throw away signal.
  */
+// Known 42.space / FTRouter custom-error selectors. When the ABI doesn't
+// contain the error definition, ethers can't decode it and reports
+// "execution reverted (unknown custom error)" — useless for users. We
+// resolve the 4-byte selector to a friendly name here. Add new entries as
+// we encounter them in production.
+const KNOWN_CUSTOM_ERRORS: Record<string, string> = {
+  // Computed via ethers.id('Name(...)').slice(0,10):
+  [ethers.id('Safe6909Transfer()').slice(0, 10)]: 'Safe6909Transfer (router lacks ERC-6909 operator approval on this market)',
+  [ethers.id('SlippageExceeded()').slice(0, 10)]: 'SlippageExceeded (price moved beyond minOutOrMaxIn — try larger tolerance)',
+  [ethers.id('MarketClosed()').slice(0, 10)]: 'MarketClosed (market is no longer accepting trades — only claims after resolution)',
+  [ethers.id('MarketEnded()').slice(0, 10)]: 'MarketEnded (trading window closed)',
+  [ethers.id('MarketFinalised()').slice(0, 10)]: 'MarketFinalised (awaiting resolution; no swaps possible)',
+  [ethers.id('MarketResolved()').slice(0, 10)]: 'MarketResolved (use claim, not sell)',
+  [ethers.id('NotOperator()').slice(0, 10)]: 'NotOperator (router missing ERC-6909 operator approval)',
+  [ethers.id('InsufficientBalance()').slice(0, 10)]: 'InsufficientBalance (wallet does not hold enough of this outcome token)',
+  [ethers.id('InsufficientLiquidity()').slice(0, 10)]: 'InsufficientLiquidity (AMM cannot fill at any price — pool drained on this outcome)',
+  [ethers.id('Paused()').slice(0, 10)]: 'Paused (router or market is paused)',
+};
+
+/**
+ * Best-effort revert reason extraction across the various error shapes
+ * ethers v6 produces from a failed staticCall. Order matters — we try the
+ * richest sources first and fall back to coarser ones.
+ *
+ * For "unknown custom error" reverts we additionally scan every layer of
+ * the error envelope for a 4-byte selector and resolve it via
+ * KNOWN_CUSTOM_ERRORS so users see a meaningful message instead of an
+ * opaque hex string. Any unresolved selector is appended verbatim so
+ * future selectors can be added to the lookup.
+ */
 function extractRevertReason(err: unknown): string {
   const e = err as any;
-  return (
+  const base: string =
     e?.revert?.args?.[0] ??
     e?.shortMessage ??
     e?.reason ??
     e?.info?.error?.message ??
     e?.message ??
-    'unknown revert'
-  );
+    'unknown revert';
+
+  // Pull raw revert data from any layer the JSON-RPC client might expose it.
+  const rawData: string | undefined =
+    e?.data ??
+    e?.error?.data ??
+    e?.info?.error?.data ??
+    e?.info?.error?.data?.data ??
+    (typeof e?.info?.error?.message === 'string' &&
+      e.info.error.message.match(/0x[0-9a-fA-F]{8,}/)?.[0]) ??
+    undefined;
+
+  if (typeof rawData === 'string' && rawData.startsWith('0x') && rawData.length >= 10) {
+    const selector = rawData.slice(0, 10).toLowerCase();
+    const friendly = KNOWN_CUSTOM_ERRORS[selector];
+    if (friendly) return `${base} → ${friendly}`;
+    // Selector unknown — surface it so we can add it to the lookup.
+    return `${base} [selector ${selector}, data ${rawData.slice(0, 138)}]`;
+  }
+  return base;
 }
 
 export interface FortyTwoTraderOptions {
