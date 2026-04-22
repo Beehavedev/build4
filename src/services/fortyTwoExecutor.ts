@@ -170,16 +170,21 @@ async function checkAndSize(
  * Stored row shape — typed alias used by every helper in this file. Keeps the
  * raw-SQL query path strongly typed without leaking `any` into trade logic.
  */
-/** Per-provider telemetry persisted alongside a swarm-driven trade. */
+/**
+ * Per-provider swarm telemetry persisted alongside a swarm-driven trade.
+ *
+ * The shape matches the Task #18 spec exactly: `provider`, `model`, `action`,
+ * optional `predictionTrade`, `reasoning`, `latencyMs`, `tokensUsed`.
+ */
 export interface ProviderTelemetry {
   provider: string;
-  ok: boolean;
+  model: string;
   action: string | null;
-  predictionTrade: unknown;
+  /** Mirrors the LLM-emitted predictionTrade sidecar (or null when none). */
+  predictionTrade?: unknown;
   reasoning: string | null;
   latencyMs: number;
   tokensUsed: number;
-  error: string | null;
 }
 
 export interface OutcomePositionRow {

@@ -59,7 +59,10 @@ export async function handleShowcase(ctx: Context) {
     text += `🔗 [Verify on BscScan](https://bscscan.com/tx/${pos.txHashOpen})`
   }
 
-  await ctx.reply(text, { parse_mode: 'Markdown', disable_web_page_preview: true } as any)
+  await ctx.reply(text, {
+    parse_mode: 'Markdown',
+    link_preview_options: { is_disabled: true },
+  })
 }
 
 export function registerShowcase(bot: Bot) {

@@ -2,6 +2,8 @@ import { callLLM, type CallLLMArgs, type CallLLMResult, type Provider } from '..
 
 export interface SwarmCall<T> {
   provider: Provider
+  /** Resolved model name returned by the inference router (e.g. "claude-sonnet-4-5"). Empty string when the call failed before a model was bound. */
+  model: string
   ok: boolean
   decision: T | null
   rawText: string
@@ -160,6 +162,7 @@ export async function runSwarmDecision<T extends Record<string, unknown>>(
       const reasoning = reasoningRaw ? truncate(reasoningRaw, reasoningMaxChars) : null
       return {
         provider,
+        model: v.res.model,
         ok: true,
         decision,
         rawText,
@@ -172,6 +175,7 @@ export async function runSwarmDecision<T extends Record<string, unknown>>(
       const msg = err instanceof Error ? err.message : String(err)
       return {
         provider,
+        model: v.res.model,
         ok: false,
         decision: null,
         rawText,
@@ -267,8 +271,10 @@ export async function runSwarmDecision<T extends Record<string, unknown>>(
 }
 
 function blankCall<T>(provider: Provider, latencyMs: number, error: string): SwarmCall<T> {
+  // Model intentionally empty — the call never bound a resolved model.
   return {
     provider,
+    model: '',
     ok: false,
     decision: null,
     rawText: '',

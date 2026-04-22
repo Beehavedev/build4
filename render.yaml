@@ -36,6 +36,14 @@ services:
           property: connectionString
       - key: TELEGRAM_BOT_TOKEN
         sync: false
+      # ── Multi-provider swarm (Task #18) ──────────────────────────────────
+      # When at least 2 of (ANTHROPIC, XAI, HYPERBOLIC, AKASH) are set AND a
+      # user has User.swarmEnabled=true, the trading agent runs every tick
+      # across all live providers and uses the quorum verdict (falling back
+      # to the Anthropic-only path on no-quorum). Per-provider telemetry is
+      # persisted on AgentLog.providers and OutcomePosition.providers (JSONB)
+      # and surfaced via the /predictions and /showcase commands. Default
+      # behaviour for the existing 17k+ users is unchanged (flag off).
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: XAI_API_KEY

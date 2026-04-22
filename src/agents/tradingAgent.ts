@@ -1008,7 +1008,8 @@ If you would not put real money in this trade right now, action = HOLD.`
       // The single-provider path is preserved deliberately as a fallback.
       let decision: AgentDecision
       let rawResponse = ''
-      let providersTelemetry: unknown = null
+      // The telemetry array is built only on the swarm path; null otherwise.
+      let providersTelemetry: import('../services/fortyTwoExecutor').ProviderTelemetry[] | null = null
 
       const swarmRows = await db.$queryRawUnsafe<Array<{ swarmEnabled: boolean }>>(
         `SELECT "swarmEnabled" FROM "User" WHERE id = $1 LIMIT 1`,
@@ -1042,13 +1043,12 @@ If you would not put real money in this trade right now, action = HOLD.`
             })
             providersTelemetry = swarm.decisions.map((c) => ({
               provider: c.provider,
-              ok: c.ok,
+              model: c.model,
               action: c.decision?.action ?? null,
               predictionTrade: c.decision?.predictionTrade ?? null,
               reasoning: c.reasoning,
               latencyMs: c.latencyMs,
               tokensUsed: c.tokensUsed,
-              error: c.error,
             }))
             if (swarm.quorumDecision) {
               decision = swarm.quorumDecision
@@ -1126,7 +1126,7 @@ If you would not put real money in this trade right now, action = HOLD.`
           rsi: Number.isFinite(snapshot.rsi) ? snapshot.rsi : null,
           score: typeof decision.setupScore === 'number' ? decision.setupScore : null,
           regime: decision.regime ?? snapshot.regime ?? null,
-          providers: providersTelemetry as any
+          providers: providersTelemetry
         }
       })
 
@@ -1158,7 +1158,7 @@ If you would not put real money in this trade right now, action = HOLD.`
             agentMaxPositionSize: agent.maxPositionSize
           }
           if (pt.action === 'OPEN_PREDICTION') {
-            const res = await exec.openPredictionPosition(ctxExec, pt, providersTelemetry as any)
+            const res = await exec.openPredictionPosition(ctxExec, pt, providersTelemetry)
             if (res.ok) {
               const mode = res.paperTrade ? 'PAPER' : 'LIVE'
               console.log(
