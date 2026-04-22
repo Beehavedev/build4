@@ -51,6 +51,25 @@ interface ScannerRow {
   elapsedPct: number
 }
 
+interface MarketDetailOutcome {
+  tokenId: number
+  label: string
+  priceFloat: number
+  impliedProbability: number
+  isWinner: boolean
+}
+
+interface MarketDetailResponse {
+  market: { address: string; question: string; status: string; endDate: string; category: string }
+  outcomes: MarketDetailOutcome[]
+  cached?: boolean
+}
+
+type MarketDetailState =
+  | { state: 'loading' }
+  | { state: 'ready'; data: MarketDetailResponse }
+  | { state: 'error'; message: string }
+
 interface PredictionsResponse {
   swarm: SwarmCard | null
   positions: PositionRow[]
@@ -158,6 +177,32 @@ export default function Predictions() {
   const [scannerOpen, setScannerOpen] = useState(false)
   const [, setNowTick] = useState(0)
   const inFlight = useRef(false)
+  // On-demand market detail (only fetched when a scanner row is tapped).
+  const [expandedMarket, setExpandedMarket] = useState<string | null>(null)
+  const [detailCache, setDetailCache] = useState<Record<string, MarketDetailState>>({})
+
+  async function onToggleMarket(address: string) {
+    if (expandedMarket === address) {
+      setExpandedMarket(null)
+      return
+    }
+    setExpandedMarket(address)
+    // Re-fetch only if we don't already have a successful result.
+    const existing = detailCache[address]
+    if (existing && existing.state === 'ready') return
+    setDetailCache((c) => ({ ...c, [address]: { state: 'loading' } }))
+    try {
+      const res = await fetch(`/api/predictions/market/${address}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json: MarketDetailResponse = await res.json()
+      setDetailCache((c) => ({ ...c, [address]: { state: 'ready', data: json } }))
+    } catch (e) {
+      setDetailCache((c) => ({
+        ...c,
+        [address]: { state: 'error', message: (e as Error).message },
+      }))
+    }
+  }
 
   async function load(silent = false) {
     if (inFlight.current) return
@@ -307,31 +352,15 @@ export default function Predictions() {
                 No live markets returned by the 42.space API.
               </div>
             ) : (
-              data?.scanner.map((m) => {
-                const cd = expiryCountdown(m.endDate)
-                return (
-                  <div key={m.marketAddress}
-                       data-testid={`row-scanner-${m.marketAddress}`}
-                       style={{
-                         padding: '10px 12px',
-                         borderBottom: '1px solid #1e1e2e',
-                         display: 'flex', justifyContent: 'space-between', gap: 10,
-                       }}>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 500,
-                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {m.marketTitle}
-                      </div>
-                      <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
-                        <CategoryPill cat={m.category} /> · {(m.elapsedPct * 100).toFixed(0)}% elapsed
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 11, color: cd.color, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
-                      {cd.label}
-                    </div>
-                  </div>
-                )
-              })
+              data?.scanner.map((m) => (
+                <ScannerRowItem
+                  key={m.marketAddress}
+                  row={m}
+                  expanded={expandedMarket === m.marketAddress}
+                  detail={detailCache[m.marketAddress]}
+                  onToggle={() => onToggleMarket(m.marketAddress)}
+                />
+              ))
             )}
           </div>
         )}
@@ -375,6 +404,114 @@ function CategoryPill({ cat }: { cat: string }) {
       background: bg, color: fg, fontSize: 9, fontWeight: 600,
       textTransform: 'uppercase', letterSpacing: 0.3,
     }}>{cat}</span>
+  )
+}
+
+function ScannerRowItem({
+  row, expanded, detail, onToggle,
+}: {
+  row: ScannerRow
+  expanded: boolean
+  detail: MarketDetailState | undefined
+  onToggle: () => void
+}) {
+  const cd = expiryCountdown(row.endDate)
+  return (
+    <div data-testid={`row-scanner-${row.marketAddress}`}
+         style={{ borderBottom: '1px solid #1e1e2e' }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        data-testid={`button-scanner-${row.marketAddress}`}
+        style={{
+          width: '100%', padding: '10px 12px',
+          background: 'transparent', border: 'none', textAlign: 'left',
+          display: 'flex', justifyContent: 'space-between', gap: 10,
+          alignItems: 'center', cursor: 'pointer', color: 'inherit',
+        }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {row.marketTitle}
+          </div>
+          <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+            <CategoryPill cat={row.category} /> · {(row.elapsedPct * 100).toFixed(0)}% elapsed
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 11, color: cd.color,
+                         fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
+            {cd.label}
+          </span>
+          <span style={{ color: '#64748b', fontSize: 14 }}>{expanded ? '▾' : '▸'}</span>
+        </div>
+      </button>
+      {expanded && (
+        <div data-testid={`detail-scanner-${row.marketAddress}`}
+             style={{ padding: '0 12px 12px 12px' }}>
+          {!detail || detail.state === 'loading' ? (
+            <div style={{ fontSize: 11, color: '#64748b', padding: '6px 0' }}>
+              Reading bonding curve…
+            </div>
+          ) : detail.state === 'error' ? (
+            <div style={{ fontSize: 11, color: '#ef4444', padding: '6px 0' }}>
+              On-chain read failed: {detail.message}
+            </div>
+          ) : (
+            <OutcomeBars outcomes={detail.data.outcomes} />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function OutcomeBars({ outcomes }: { outcomes: MarketDetailOutcome[] }) {
+  if (outcomes.length === 0) {
+    return <div style={{ fontSize: 11, color: '#64748b' }}>No outcomes returned.</div>
+  }
+  // Sort by probability descending so the leading outcome is on top.
+  const sorted = [...outcomes].sort((a, b) => b.impliedProbability - a.impliedProbability)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+      {sorted.map((o) => {
+        const pct = o.impliedProbability * 100
+        const barColor = o.isWinner ? '#10b981'
+          : pct >= 60 ? '#10b981'
+          : pct >= 40 ? '#3b82f6'
+          : pct >= 20 ? '#f59e0b' : '#ef4444'
+        return (
+          <div key={o.tokenId} data-testid={`outcome-${o.tokenId}`}>
+            <div style={{ display: 'flex', justifyContent: 'space-between',
+                          fontSize: 11, marginBottom: 3 }}>
+              <span style={{ color: '#e2e8f0', fontWeight: 500 }}>
+                {o.label}{o.isWinner && (
+                  <span style={{ marginLeft: 6, fontSize: 9, color: '#10b981',
+                                 background: '#10b98122', padding: '1px 5px', borderRadius: 3,
+                                 textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                    Won
+                  </span>
+                )}
+              </span>
+              <span style={{ color: '#94a3b8',
+                             fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
+                {pct.toFixed(1)}% · ${o.priceFloat.toFixed(3)}
+              </span>
+            </div>
+            <div style={{ height: 4, background: '#1e1e2e', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{
+                width: `${Math.max(2, Math.min(100, pct))}%`,
+                height: '100%', background: barColor, transition: 'width 200ms',
+              }} />
+            </div>
+          </div>
+        )
+      })}
+      <div style={{ fontSize: 9, color: '#475569', marginTop: 2,
+                    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
+        Live from on-chain bonding curve
+      </div>
+    </div>
   )
 }
 

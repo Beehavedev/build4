@@ -1360,6 +1360,62 @@ app.get('/api/predictions/latest', async (_req, res) => {
   }
 })
 
+// ──────────────────────────────────────────────────────────────────────────
+// GET /api/predictions/market/:address
+// On-demand outcome detail for a single 42.space market. Reads marginal
+// prices straight off the bonding curve (cached 30s by getOutcomePrices),
+// so the scanner row in the mini-app can show real per-outcome probabilities
+// when a user taps a market — without us having to fan out 25 reads on
+// every /api/predictions/latest poll.
+// Public (read-only, all data is on-chain).
+// ──────────────────────────────────────────────────────────────────────────
+const predictionMarketCache = new Map<string, {
+  payload: { market: { address: string; question: string; status: string; endDate: string; category: string }
+                outcomes: Array<{ tokenId: number; label: string; priceFloat: number; impliedProbability: number; isWinner: boolean }> }
+  fetchedAt: number
+}>()
+const MARKET_DETAIL_TTL_MS = 30_000
+
+app.get('/api/predictions/market/:address', async (req, res) => {
+  const address = req.params.address
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
+    return res.status(400).json({ error: 'invalid_market_address' })
+  }
+  const cached = predictionMarketCache.get(address.toLowerCase())
+  if (cached && Date.now() - cached.fetchedAt < MARKET_DETAIL_TTL_MS) {
+    return res.json({ ...cached.payload, cached: true })
+  }
+  try {
+    const [{ getMarketByAddress }, { getOutcomePrices }] = await Promise.all([
+      import('./services/fortyTwo'),
+      import('./services/fortyTwoOnchain'),
+    ])
+    const market = await getMarketByAddress(address)
+    const outcomes = await getOutcomePrices(market.address, market.curve, market.collateralDecimals)
+    const payload = {
+      market: {
+        address: market.address,
+        question: market.question,
+        status: market.status,
+        endDate: market.endDate,
+        category: (market.categories ?? [])[0] ?? 'uncategorized',
+      },
+      outcomes: outcomes.map((o) => ({
+        tokenId: o.tokenId,
+        label: o.label,
+        priceFloat: o.priceFloat,
+        impliedProbability: o.impliedProbability,
+        isWinner: o.isWinner,
+      })),
+    }
+    predictionMarketCache.set(address.toLowerCase(), { payload, fetchedAt: Date.now() })
+    res.json({ ...payload, cached: false })
+  } catch (err) {
+    console.warn('[predictions/market] failed for', address, ':', (err as Error).message)
+    res.status(502).json({ error: 'market_detail_unavailable' })
+  }
+})
+
 // Read-only swarm divergence stats. Same aggregation as
 // scripts/swarmDivergence.ts. Mirrors the CLI's `--days` and `--pair` flags
 // as query params. If ADMIN_TOKEN is set in the environment, the request must
