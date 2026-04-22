@@ -888,6 +888,12 @@ export async function settleResolvedPositions(opts: { agentId?: string; userId?:
       continue;
     }
     if (!state.isFinalised) continue;
+    // Guard against the contract briefly reporting isFinalised=true while
+    // the resolvedAnswer is still 0n (unanswered). Without this, every
+    // open position on the market silently flips to resolved_loss because
+    // (0n & anyTokenId) === 0n. The next runner tick will re-check and
+    // settle correctly once the answer is populated.
+    if (state.resolvedAnswer === 0n) continue;
 
     for (const pos of positions) {
       const win = __testDeps.isWinningTokenId(state.resolvedAnswer, pos.tokenId);

@@ -1836,6 +1836,72 @@ app.post('/api/predictions/buy', requireTgUser, async (req, res) => {
   }
 })
 
+// POST /api/admin/predictions/recover-mis-settled
+//
+// Recovery endpoint for the bug where settleResolvedPositions could flip
+// open positions to resolved_loss when the on-chain `resolvedAnswer`
+// briefly returned 0n while `isFinalised` was true. For every position
+// whose status is resolved_win/_loss but whose market re-reads as
+// non-finalised OR with answer=0n, this resets the row back to status='open'
+// (clearing exitPrice, payoutUsdt, pnl, closedAt). Bounded to the last
+// `windowHours` (default 24) to limit blast radius.
+//
+// Idempotent: re-running it after the markets actually finalise will be a
+// no-op because the on-chain re-check will pass and the rows will be left
+// alone (the ordinary settlement loop will then settle them correctly).
+app.post('/api/admin/predictions/recover-mis-settled', requireAdmin, async (req, res) => {
+  try {
+    const windowHours = Math.min(168, Math.max(1, Number(req.body?.windowHours ?? 24)))
+    const cutoff = new Date(Date.now() - windowHours * 3600_000)
+    const { db } = await import('./db')
+    const { readMarketOnchain } = await import('./services/fortyTwoOnchain')
+    const { getMarketByAddress } = await import('./services/fortyTwo')
+
+    const candidates = await db.$queryRawUnsafe<Array<{
+      id: string; marketAddress: string; status: string; closedAt: Date | null
+    }>>(
+      `SELECT id, "marketAddress", status, "closedAt"
+       FROM "OutcomePosition"
+       WHERE status IN ('resolved_win','resolved_loss','closed')
+         AND "closedAt" IS NOT NULL AND "closedAt" >= $1`,
+      cutoff,
+    )
+
+    // Group by market so we only do one on-chain read per market.
+    const byMarket = new Map<string, typeof candidates>()
+    for (const c of candidates) {
+      if (!byMarket.has(c.marketAddress)) byMarket.set(c.marketAddress, [])
+      byMarket.get(c.marketAddress)!.push(c)
+    }
+
+    let recovered = 0
+    const errors: Array<{ market: string; reason: string }> = []
+    for (const [addr, rows] of byMarket) {
+      try {
+        const market = await getMarketByAddress(addr)
+        const state = await readMarketOnchain(market)
+        const looksMisSettled = !state.isFinalised || state.resolvedAnswer === 0n
+        if (!looksMisSettled) continue
+        for (const r of rows) {
+          await db.$executeRawUnsafe(
+            `UPDATE "OutcomePosition"
+             SET status='open', "exitPrice"=NULL, "payoutUsdt"=NULL, pnl=NULL, "closedAt"=NULL
+             WHERE id=$1`,
+            r.id,
+          )
+          recovered++
+        }
+      } catch (e) {
+        errors.push({ market: addr, reason: (e as Error).message })
+      }
+    }
+    res.json({ ok: true, scanned: candidates.length, recovered, errors })
+  } catch (err) {
+    console.error('[API] /admin/predictions/recover-mis-settled failed:', err)
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
 // Read-only swarm divergence stats. Same aggregation as
 // scripts/swarmDivergence.ts. Mirrors the CLI's `--days` and `--pair` flags
 // as query params. Gated by the shared `requireAdmin` middleware: callers
