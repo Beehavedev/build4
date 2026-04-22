@@ -1,0 +1,108 @@
+File: src/services/fortyTwoTrader.ts — the execution layer (wire up after price feed is confirmed working)
+typescriptimport { ethers } from 'ethers';
+
+// Contract addresses — BNB Chain mainnet
+const FTROUTER_ADDRESS = '0x88888888888338e60bfB4657187169cFFa5c8640E42'; // confirm exact
+const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955';
+
+const ROUTER_ABI = [
+  'function swapSimple(address market, address receiver, uint256 tokenId, tuple(uint256 amountIn, uint256 amountOutMin, bool isBuy, bool isExactIn) params, bytes dataSwap, bytes dataGuess) external returns (uint256)',
+  'function claimSimple(address market, address receiver, uint256 tokenId) external returns (uint256)'
+];
+
+const ERC20_ABI = [
+  'function approve(address spender, uint256 amount) external returns (bool)',
+  'function allowance(address owner, address spender) external view returns (uint256)'
+];
+
+export class FortyTwoTrader {
+  private router: ethers.Contract;
+  private usdt: ethers.Contract;
+  private wallet: ethers.Wallet;
+
+  constructor(privateKey: string, rpcUrl: string) {
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    this.wallet = new ethers.Wallet(privateKey, provider);
+    this.router = new ethers.Contract(FTROUTER_ADDRESS, ROUTER_ABI, this.wallet);
+    this.usdt = new ethers.Contract(USDT_BSC, ERC20_ABI, this.wallet);
+  }
+
+  async ensureApproval(amountUsdt: bigint) {
+    const allowance = await this.usdt.allowance(this.wallet.address, FTROUTER_ADDRESS);
+    if (allowance < amountUsdt) {
+      const tx = await this.usdt.approve(FTROUTER_ADDRESS, ethers.MaxUint256);
+      await tx.wait();
+    }
+  }
+
+  async buyOutcome(
+    marketAddress: string,
+    tokenId: number,
+    usdtAmountIn: string,  // human-readable, e.g. "10" = 10 USDT
+    slippagePct = 2
+  ) {
+    const amountIn = ethers.parseUnits(usdtAmountIn, 18);
+    await this.ensureApproval(amountIn);
+
+    // amountOutMin = 0 for now; tighten once you know curve math
+    const params = {
+      amountIn,
+      amountOutMin: 0n,
+      isBuy: true,
+      isExactIn: true
+    };
+
+    const tx = await this.router.swapSimple(
+      marketAddress,
+      this.wallet.address,
+      tokenId,
+      params,
+      '0x',
+      '0x'
+    );
+    return tx.wait();
+  }
+
+  async sellOutcome(
+    marketAddress: string,
+    tokenId: number,
+    tokenAmountIn: bigint,
+    minUsdtOut = 0n
+  ) {
+    const params = {
+      amountIn: tokenAmountIn,
+      amountOutMin: minUsdtOut,
+      isBuy: false,
+      isExactIn: true
+    };
+
+    const tx = await this.router.swapSimple(
+      marketAddress,
+      this.wallet.address,
+      tokenId,
+      params,
+      '0x',
+      '0x'
+    );
+    return tx.wait();
+  }
+
+  async claimResolved(marketAddress: string, tokenId: number) {
+    const tx = await this.router.claimSimple(
+      marketAddress,
+      this.wallet.address,
+      tokenId
+    );
+    return tx.wait();
+  }
+}
+
+Build order for your Replit agent:
+
+fortyTwo.ts — get scanAllSignals() returning real data from the REST API (1–2 hours)
+Log the output, verify price/OHLC fields match what you expect (30 min)
+Wire build42MarketContext() into your existing Claude agent prompt — just append it to the system message before the agent decides (1 hour)
+Test the agent's reasoning output — does it reference 42 markets when relevant?
+Only then wire up FortyTwoTrader — paper trade first with console.log instead of real tx calls
+
+The one thing to verify with 42.space before running trader: confirm the exact swapSimple parameter struct from FTRouter.sol since the tuple field names matter for ABI encoding. That's the only gap between the spec above and production-ready.
