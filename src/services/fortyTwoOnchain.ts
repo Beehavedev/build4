@@ -3,26 +3,21 @@ import {
   FTMARKET_CONTROLLER_ADDRESS,
   POWER_CURVE_ADDRESS,
 } from './fortyTwoTrader';
+import { buildBscProvider } from './bscProvider';
 import type { Market42 } from './fortyTwo';
 
-const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org';
-
 if (!process.env.BSC_RPC_URL) {
-  // The public binance dataseed endpoint is heavily rate-limited and frequently
-  // returns "missing response for request" under modest load. That breaks
-  // 42.space prediction prices, which makes agents see 0% everywhere and never
-  // trade prediction markets. Set BSC_RPC_URL to a paid endpoint (QuickNode,
-  // Alchemy, Ankr, etc.) to fix.
   console.warn(
-    '[fortyTwo] BSC_RPC_URL not set — using public bsc-dataseed.binance.org. ' +
-    'This will rate-limit and break prediction-market price reads. ' +
-    'Set BSC_RPC_URL to a paid RPC endpoint.'
+    '[fortyTwo] BSC_RPC_URL not set — falling back across public BSC dataseeds. ' +
+    'Prediction reads will work most of the time but public endpoints ' +
+    'rate-limit and drop responses under load. ' +
+    'Set BSC_RPC_URL to a paid endpoint (Ankr/QuickNode/Alchemy) for production reliability.'
   );
 }
 
-let _provider: ethers.JsonRpcProvider | null = null;
-function provider(): ethers.JsonRpcProvider {
-  if (!_provider) _provider = new ethers.JsonRpcProvider(BSC_RPC);
+let _provider: ethers.AbstractProvider | null = null;
+function provider(): ethers.AbstractProvider {
+  if (!_provider) _provider = buildBscProvider(process.env.BSC_RPC_URL);
   return _provider;
 }
 

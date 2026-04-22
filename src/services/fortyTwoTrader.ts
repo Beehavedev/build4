@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { buildBscProvider } from './bscProvider';
 
 // ── 42.space contract addresses (BNB Chain mainnet, chainId 56) ────────────
 // Source: https://docs.42.space/for-developers/deployments
@@ -83,7 +84,14 @@ export class FortyTwoTrader {
   private dryRun: boolean;
 
   constructor(privateKey: string, rpcUrl: string, opts: FortyTwoTraderOptions = {}) {
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    // Use the shared multi-endpoint provider with staticNetwork so the signer
+    // path gets the same resilience as read-only paths: no eth_chainId
+    // round-trip (which was failing with BUFFER_OVERRUN on flaky public
+    // dataseeds), and automatic failover across multiple BSC endpoints if
+    // the primary returns nothing. Per-wallet trades are serialized via
+    // the advisory lock in fortyTwoExecutor, so concurrent nonce queries
+    // returning the same value across providers is not a risk in practice.
+    const provider = buildBscProvider(rpcUrl);
     this.wallet = new ethers.Wallet(privateKey, provider);
     this.router = new ethers.Contract(FTROUTER_ADDRESS, ROUTER_ABI, this.wallet);
     this.usdt = new ethers.Contract(USDT_BSC, ERC20_ABI, this.wallet);
