@@ -436,10 +436,6 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
       return res.status(500).json({ success: false, error: 'Platform not configured (no builder)' })
     }
 
-    if (user.asterOnboarded) {
-      return res.json({ success: true, message: 'Already activated', alreadyOnboarded: true })
-    }
-
     const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
     if (!wallet || !wallet.encryptedPK) {
       return res.status(404).json({ success: false, error: 'No active wallet' })
@@ -450,14 +446,55 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
     const { ensureAndDepositUSDT, USDT_BSC, MIN_BNB_FOR_GAS_WEI, getProvider } = await import('./services/asterDeposit')
     const { ethers: ethersLib } = await import('ethers')
 
-    let userPk: string
-    try {
-      userPk = decryptPrivateKey(wallet.encryptedPK, user.id)
-    } catch {
-      return res.status(500).json({ success: false, error: 'Could not decrypt wallet' })
+    // Idempotent short-circuit: skip approve when the user is already
+    // onboarded AND we can still produce working agent credentials. If
+    // asterAgentEncryptedPK is unrecoverable (legacy encryption with a
+    // different password, env-key rotation, etc.) we MUST let the flow
+    // through so a fresh agent can be approved — otherwise the user is
+    // permanently stuck (every signed call returns -1000 and there's no
+    // way to recover).
+    if (user.asterOnboarded) {
+      let agentPkOk = false
+      if (user.asterAgentEncryptedPK) {
+        for (const cand of [user.id, user.telegramId?.toString()].filter(Boolean) as string[]) {
+          try {
+            const dec = decryptPrivateKey(user.asterAgentEncryptedPK, cand)
+            if (dec?.startsWith('0x')) { agentPkOk = true; break }
+          } catch { /* try next candidate */ }
+        }
+      }
+      if (agentPkOk) {
+        return res.json({ success: true, message: 'Already activated', alreadyOnboarded: true })
+      }
+      console.warn(
+        `[/aster/approve] user=${user.id} tg=${user.telegramId} asterOnboarded=true but agent PK ` +
+        `unrecoverable — proceeding to mint a fresh agent and re-approve`
+      )
     }
-    if (!userPk?.startsWith('0x')) {
-      return res.status(500).json({ success: false, error: 'Invalid wallet key' })
+
+    // Mirror the deposit flow: wallet PKs in production were encrypted
+    // by different historical code paths (some with user.id, some with
+    // telegramId). Try every plausible candidate before giving up so we
+    // don't lock activation for users whose wallet decrypts fine in the
+    // deposit endpoint but not here.
+    let userPk: string | null = null
+    {
+      const idCandidates = [user.id, user.telegramId?.toString()]
+        .filter((v): v is string => Boolean(v))
+      let lastErr: any = null
+      for (const candidate of idCandidates) {
+        try {
+          const out = decryptPrivateKey(wallet.encryptedPK, candidate)
+          if (out?.startsWith('0x')) { userPk = out; break }
+        } catch (e) { lastErr = e }
+      }
+      if (!userPk) {
+        console.error(
+          `[/aster/approve] decrypt wallet PK failed user=${user.id} tg=${user.telegramId} ` +
+          `tried=${idCandidates.length} err=${lastErr?.message ?? 'unknown'}`
+        )
+        return res.status(500).json({ success: false, error: 'Could not decrypt wallet' })
+      }
     }
 
     // ── Per-user agent keypair. Aster requires each agent address to be
