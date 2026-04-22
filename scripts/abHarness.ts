@@ -9,6 +9,8 @@
 //   AB_HARNESS_PAIRS         CSV, default "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT"
 //   AB_HARNESS_LOG           override store path
 //   AB_HARNESS_TICK_MIN      tick interval for `loop` (default 30)
+//   AB_HARNESS_MAX_MIN       optional: stop `loop` after this many minutes
+//                            (default: run forever). Useful for short sniffs.
 //   ANTHROPIC_API_KEY        required
 
 import { runAbTick } from '../src/abHarness/harness';
@@ -39,12 +41,16 @@ async function tickOnce(): Promise<void> {
   }
 }
 
-async function loop(): Promise<never> {
+async function loop(): Promise<void> {
   const min = Number(process.env.AB_HARNESS_TICK_MIN ?? 30);
   const intervalMs = Math.max(60_000, min * 60_000);
-  console.log(`[ab-harness] loop mode: tick every ${min} minutes`);
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  const maxMin = Number(process.env.AB_HARNESS_MAX_MIN ?? 0);
+  const deadline = maxMin > 0 ? Date.now() + maxMin * 60_000 : Infinity;
+  console.log(
+    `[ab-harness] loop mode: tick every ${min} minutes` +
+      (maxMin > 0 ? `, stopping after ${maxMin} minutes` : ', forever'),
+  );
+  while (Date.now() < deadline) {
     const start = Date.now();
     try {
       await tickOnce();
@@ -54,10 +60,12 @@ async function loop(): Promise<never> {
     } catch (err) {
       console.error('[ab-harness] tick failed:', (err as Error).message);
     }
+    if (Date.now() >= deadline) break;
     const elapsed = Date.now() - start;
-    const wait = Math.max(1000, intervalMs - elapsed);
+    const wait = Math.max(1000, Math.min(intervalMs - elapsed, deadline - Date.now()));
     await new Promise((res) => setTimeout(res, wait));
   }
+  console.log('[ab-harness] loop deadline reached, exiting.');
 }
 
 async function main() {

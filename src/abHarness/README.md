@@ -55,13 +55,25 @@ tsx scripts/abHarness.ts report
 | `ANTHROPIC_API_KEY` | — | Required for tick/loop |
 | `AB_HARNESS_PAIRS` | `BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT` | CSV |
 | `AB_HARNESS_TICK_MIN` | `30` | `loop` interval (minutes) |
+| `AB_HARNESS_MAX_MIN` | unset | If set, `loop` self-terminates after this many minutes |
 | `AB_HARNESS_LOG` | `.local/ab/decisions.jsonl` | Override store path |
 
 ## Cost note
 
 Each tick = 2 Claude calls × N pairs. With the default 4 pairs and a
-30-minute interval, that's ~384 calls/day. Stay aware of spend over a
-7-day run.
+30-minute interval, that's ~384 calls/day — stay aware of spend on
+multi-day runs. For a quick sniff:
+
+```bash
+# 1-hour run, tick every 5 minutes (~96 paired calls total)
+AB_HARNESS_TICK_MIN=5 AB_HARNESS_MAX_MIN=60 \
+  npx tsx scripts/abHarness.ts loop
+```
+
+Note: PnL resolution requires a 4h holding window per decision. A
+1-hour collection run will have ~zero resolved trades — use the
+divergence-rate line in the report for a directional read, then come
+back ≥4h after the last tick and run `resolve` + `report` for PnL.
 
 ## Decision rule (in the report)
 

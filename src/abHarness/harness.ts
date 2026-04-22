@@ -33,7 +33,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // Trimmed copy of the production prompt. It's reproduced here (rather than
 // imported) so the harness keeps a stable baseline — if a future PR rewrites
-// the live prompt, our 7-day A/B comparison stays apples-to-apples.
+// the live prompt, the A/B comparison stays apples-to-apples.
 const HARNESS_SYSTEM_PROMPT = `You are BUILD4 — an elite quantitative crypto trading agent specialising in perpetual futures.
 
 DECISION FRAMEWORK:

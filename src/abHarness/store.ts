@@ -3,7 +3,7 @@
 // production trading and adds zero migration risk. Each record is a single
 // JSON line; rewrites (used by the resolver to attach PnL) load + rewrite
 // the whole file atomically. Volumes are tiny (≤ a few thousand records
-// over a 7-day run), so this is plenty fast.
+// over a multi-day run), so this is plenty fast.
 
 import { promises as fs } from 'fs';
 import * as path from 'path';
