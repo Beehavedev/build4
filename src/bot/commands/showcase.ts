@@ -57,6 +57,10 @@ export async function handleShowcase(ctx: Context) {
   }
 
   if (pos.txHashOpen) {
+    const shortHash = pos.txHashOpen.length > 14
+      ? `${pos.txHashOpen.slice(0, 8)}…${pos.txHashOpen.slice(-6)}`
+      : pos.txHashOpen
+    text += `*Tx:* \`${escapeMd(shortHash)}\`\n`
     text += `🔗 [Verify on BscScan](https://bscscan.com/tx/${pos.txHashOpen})`
   }
 

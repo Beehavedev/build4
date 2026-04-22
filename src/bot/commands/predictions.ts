@@ -78,6 +78,14 @@ export async function handlePredictions(ctx: Context) {
     }
   }
 
+  // Telegram hard-caps text messages at 4096 chars. With many positions and
+  // multi-provider quotes we can blow past this; truncate defensively so the
+  // send always succeeds.
+  const TG_MAX = 3900
+  if (text.length > TG_MAX) {
+    text = text.slice(0, TG_MAX) + '\n\n_…output truncated to fit Telegram limit._\n'
+  }
+
   const kb = new InlineKeyboard()
   if (liveOptIn) {
     kb.text('📝 Switch to paper-trade', 'predictions_paper')

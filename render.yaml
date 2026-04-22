@@ -39,11 +39,12 @@ services:
       # ── Multi-provider swarm (Task #18) ──────────────────────────────────
       # When at least 2 of (ANTHROPIC, XAI, HYPERBOLIC, AKASH) are set AND a
       # user has User.swarmEnabled=true, the trading agent runs every tick
-      # across all live providers and uses the quorum verdict (falling back
-      # to the Anthropic-only path on no-quorum). Per-provider telemetry is
-      # persisted on AgentLog.providers and OutcomePosition.providers (JSONB)
-      # and surfaced via the /predictions and /showcase commands. Default
-      # behaviour for the existing 17k+ users is unchanged (flag off).
+      # across all live providers and uses the quorum verdict. On no-quorum,
+      # the highest-confidence successful provider's decision wins (no extra
+      # Anthropic call). Per-provider telemetry is persisted on
+      # AgentLog.providers and OutcomePosition.providers (JSONB) and surfaced
+      # via /predictions and /showcase. The legacy single-provider Anthropic
+      # path remains the default — existing 17k+ users see no change.
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: XAI_API_KEY
