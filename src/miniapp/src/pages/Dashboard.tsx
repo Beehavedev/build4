@@ -22,6 +22,7 @@ export default function Dashboard({ userId }: DashboardProps) {
   const [drillDays, setDrillDays] = useState(7)
   const [drillLimit, setDrillLimit] = useState(25)
   const [drillOnlyFallback, setDrillOnlyFallback] = useState(false)
+  const [drillCopyState, setDrillCopyState] = useState<'idle' | 'copied' | 'error'>('idle')
 
   useEffect(() => {
     if (!userId) { setLoading(false); return }
@@ -46,6 +47,31 @@ export default function Dashboard({ userId }: DashboardProps) {
       })
       .then((data) => { if (data) setSwarm(data) })
       .catch(() => setSwarmError('error'))
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const pair = params.get('swarmPair')
+    const provider = params.get('swarmProvider')
+    if (!pair && !provider) return
+    const parseInt10 = (v: string | null, fallback: number, min: number, max: number) => {
+      const n = parseInt(v ?? '', 10)
+      if (!Number.isFinite(n)) return fallback
+      return Math.min(max, Math.max(min, n))
+    }
+    const days = parseInt10(params.get('swarmDays'), 7, 1, 365)
+    const limit = parseInt10(params.get('swarmLimit'), 25, 1, 200)
+    const onlyFallback = params.get('swarmFallback') === '1'
+    const target = pair
+      ? { kind: 'pair' as const, value: pair }
+      : { kind: 'provider' as const, value: provider as string }
+    setDrillOpen(target)
+    setDrillDays(days)
+    setDrillLimit(limit)
+    setDrillOnlyFallback(onlyFallback)
+    fetchDrill(target, days, limit, onlyFallback)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const tg = (typeof window !== 'undefined' ? window.Telegram?.WebApp : null) as any
@@ -159,6 +185,45 @@ export default function Dashboard({ userId }: DashboardProps) {
     setDrillOpen(null)
     setDrillData(null)
     setDrillError(null)
+    setDrillCopyState('idle')
+  }
+
+  const buildDrillShareUrl = (): string => {
+    if (!drillOpen || typeof window === 'undefined') return ''
+    const params = new URLSearchParams()
+    if (drillOpen.kind === 'pair') params.set('swarmPair', drillOpen.value)
+    else params.set('swarmProvider', drillOpen.value)
+    params.set('swarmDays', String(drillDays))
+    params.set('swarmLimit', String(drillLimit))
+    if (drillOnlyFallback) params.set('swarmFallback', '1')
+    const { origin, pathname } = window.location
+    return `${origin}${pathname}?${params.toString()}`
+  }
+
+  const copyDrillLink = async () => {
+    const url = buildDrillShareUrl()
+    if (!url) return
+    let ok = false
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(url)
+        ok = true
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = url
+        ta.setAttribute('readonly', '')
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        try { ok = document.execCommand('copy') } catch { ok = false }
+        document.body.removeChild(ta)
+      }
+    } catch {
+      ok = false
+    }
+    setDrillCopyState(ok ? 'copied' : 'error')
+    setTimeout(() => setDrillCopyState('idle'), 1500)
   }
 
   const showComingSoon = (label: string) => {
@@ -479,12 +544,31 @@ export default function Dashboard({ userId }: DashboardProps) {
                 Only no-quorum
               </label>
               <button
+                onClick={copyDrillLink}
+                data-testid="button-drill-copy-link"
+                disabled={drillLoading}
+                title="Copy a shareable link to this exact view"
+                style={{
+                  marginLeft: 'auto',
+                  background: drillCopyState === 'copied' ? '#10b98120' : '#1e1e2e',
+                  border: '1px solid ' + (drillCopyState === 'copied' ? '#10b981' : '#2a2a3a'),
+                  color: drillCopyState === 'copied' ? '#10b981'
+                    : drillCopyState === 'error' ? '#ef4444'
+                    : drillLoading ? '#475569' : '#94a3b8',
+                  borderRadius: 6, fontSize: 11, padding: '3px 9px',
+                  cursor: drillLoading ? 'default' : 'pointer',
+                }}
+              >
+                {drillCopyState === 'copied' ? '✓ Copied'
+                  : drillCopyState === 'error' ? '⚠ Copy failed'
+                  : '🔗 Copy link'}
+              </button>
+              <button
                 onClick={downloadDrillCsv}
                 data-testid="button-drill-download-csv"
                 disabled={drillLoading || !drillData || !drillData.samples || drillData.samples.length === 0}
                 title="Download the current filter's samples as CSV"
                 style={{
-                  marginLeft: 'auto',
                   background: '#1e1e2e',
                   border: '1px solid #2a2a3a',
                   color: (drillLoading || !drillData || !drillData.samples || drillData.samples.length === 0) ? '#475569' : '#94a3b8',
