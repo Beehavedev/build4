@@ -1,6 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { formatSwarmStats, getSwarmStats, type SwarmStatsReport } from './swarmStats'
+import {
+  formatSwarmStats,
+  getSwarmStats,
+  getSwarmQuorumStats,
+  type SwarmStatsReport,
+} from './swarmStats'
 
 test('formatSwarmStats renders empty state', () => {
   const out = formatSwarmStats({ window: '24h', since: new Date(), rows: [] })
@@ -62,6 +67,7 @@ test('getSwarmStats reads only AgentLog (not OutcomePosition) and computes USD w
       ]
     },
     loadCostRates: async () => [],
+    quorumQuery: async () => [{ swarm_ticks: 5n, no_quorum_ticks: 1n }],
   })
   assert.match(capturedSql, /FROM "AgentLog"/)
   assert.doesNotMatch(capturedSql, /OutcomePosition/)
@@ -87,6 +93,13 @@ test('getSwarmStats reads only AgentLog (not OutcomePosition) and computes USD w
   // 1M * $3 + 0.5M * $15 = $10.50
   assert.equal(anthropic.estimatedUsd, 10.5)
   assert.deepEqual(anthropic.costRate, { input: 3, output: 15 })
+
+  // Quorum stats are attached to the report and computed from the same window
+  assert.ok(report.quorum)
+  assert.equal(report.quorum!.swarmTicks, 5)
+  assert.equal(report.quorum!.noQuorumTicks, 1)
+  assert.equal(report.quorum!.quorumTicks, 4)
+  assert.equal(report.quorum!.noQuorumRate, 0.2)
 })
 
 test('SWARM_COST_USD_PER_MTOKENS env override accepts both number (legacy) and {input,output}', async () => {
@@ -112,6 +125,80 @@ test('SWARM_COST_USD_PER_MTOKENS env override accepts both number (legacy) and {
   } finally {
     delete process.env.SWARM_COST_USD_PER_MTOKENS
   }
+})
+
+test('getSwarmQuorumStats counts swarm ticks and no-quorum fallbacks', async () => {
+  let capturedSql = ''
+  const stats = await getSwarmQuorumStats('7d', {
+    query: async (sql) => {
+      capturedSql = sql
+      return [{ swarm_ticks: 10n, no_quorum_ticks: 3n }]
+    },
+  })
+  assert.match(capturedSql, /FROM "AgentLog"/)
+  assert.match(capturedSql, /providers" IS NOT NULL/)
+  assert.match(capturedSql, /\[swarm-no-quorum,/)
+  assert.match(capturedSql, /interval '7 days'/)
+  assert.equal(stats.swarmTicks, 10)
+  assert.equal(stats.noQuorumTicks, 3)
+  assert.equal(stats.quorumTicks, 7)
+  assert.equal(stats.noQuorumRate, 0.3)
+})
+
+test('getSwarmQuorumStats handles zero swarm ticks safely', async () => {
+  const stats = await getSwarmQuorumStats('24h', {
+    query: async () => [{ swarm_ticks: 0n, no_quorum_ticks: 0n }],
+  })
+  assert.equal(stats.swarmTicks, 0)
+  assert.equal(stats.noQuorumRate, 0)
+  assert.equal(stats.quorumTicks, 0)
+})
+
+test('formatSwarmStats appends quorum line with warning when rate >= 25%', () => {
+  const report: SwarmStatsReport = {
+    window: '24h',
+    since: new Date(),
+    rows: [
+      {
+        provider: 'anthropic',
+        callCount: 10,
+        inputTokens: 500,
+        outputTokens: 500,
+        totalTokens: 1000,
+        medianLatencyMs: 100,
+        estimatedUsd: 0.01,
+        costRate: { input: 3, output: 15 },
+      },
+    ],
+    quorum: { swarmTicks: 8, noQuorumTicks: 3, quorumTicks: 5, noQuorumRate: 0.375 },
+  }
+  const out = formatSwarmStats(report)
+  assert.match(out, /Quorum: 5\/8 reached/)
+  assert.match(out, /3 no-quorum fallbacks \(37\.5%\)/)
+  assert.match(out, /⚠️/)
+})
+
+test('formatSwarmStats omits warning flag when no-quorum rate is healthy', () => {
+  const report: SwarmStatsReport = {
+    window: '24h',
+    since: new Date(),
+    rows: [
+      {
+        provider: 'anthropic',
+        callCount: 10,
+        inputTokens: 500,
+        outputTokens: 500,
+        totalTokens: 1000,
+        medianLatencyMs: 100,
+        estimatedUsd: 0.01,
+        costRate: { input: 3, output: 15 },
+      },
+    ],
+    quorum: { swarmTicks: 100, noQuorumTicks: 5, quorumTicks: 95, noQuorumRate: 0.05 },
+  }
+  const out = formatSwarmStats(report)
+  assert.match(out, /Quorum: 95\/100 reached/)
+  assert.doesNotMatch(out, /⚠️/)
 })
 
 test('getSwarmStats prefers DB cost rates over hardcoded defaults', async () => {

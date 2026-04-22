@@ -521,6 +521,27 @@ export interface RunDecisionLLMResult {
   providersTelemetry: import('../services/fortyTwoExecutor').ProviderTelemetry[] | null
 }
 
+// ─── Swarm quorum counters ────────────────────────────────────────────────
+// In-memory counters for runDecisionLLM's swarm branch outcomes. Used to
+// detect a regression where providers chronically disagree (model drift,
+// prompt changes) and the no-quorum fallback silently routes every user
+// back to a single model. Read by `getSwarmQuorumCounters()` and surfaced
+// via the swarm stats admin endpoint (`/swarmstats`) alongside the per-
+// provider roll-up. Persistent counts come from AgentLog (rawResponse
+// tagged `[swarm-no-quorum, ...]`); these in-memory values reset on
+// process restart but are useful for live debugging.
+let _swarmQuorumReached = 0
+let _swarmNoQuorum = 0
+
+export function getSwarmQuorumCounters(): { quorumReached: number; noQuorum: number } {
+  return { quorumReached: _swarmQuorumReached, noQuorum: _swarmNoQuorum }
+}
+
+export function _resetSwarmQuorumCountersForTest(): void {
+  _swarmQuorumReached = 0
+  _swarmNoQuorum = 0
+}
+
 async function callAnthropicForDecision(
   sysPrompt: string,
   userMessage: string,
@@ -584,6 +605,7 @@ export async function runDecisionLLM(
           tokensUsed: c.tokensUsed,
         }))
       if (swarm.quorumDecision) {
+        _swarmQuorumReached += 1
         const decision = swarm.quorumDecision
         const rawResponse = JSON.stringify({ swarm: providersTelemetry, consensus: decision }).slice(0, 4000)
         return { decision, rawResponse, providersTelemetry }
@@ -592,6 +614,16 @@ export async function runDecisionLLM(
       // decision. We keep providersTelemetry so every provider's reasoning
       // (including the disagreement that triggered the fallback) is still
       // recorded on the AgentLog row.
+      _swarmNoQuorum += 1
+      const totalSwarm = _swarmQuorumReached + _swarmNoQuorum
+      const noQuorumRate = totalSwarm > 0 ? (_swarmNoQuorum / totalSwarm) : 0
+      // Structured warn log so operators (and log-grep alerting) see every
+      // disagreement, not just an opaque rawResponse tag in the DB.
+      console.warn(
+        `[swarm] no-quorum fallback — providers=${liveProviders.join(',')} ` +
+        `actions=${providersTelemetry.map((p) => `${p.provider}:${p.action ?? 'err'}`).join(',')} ` +
+        `noQuorumRate=${(_swarmNoQuorum)}/${totalSwarm} (${(noQuorumRate * 100).toFixed(1)}%)`
+      )
       const { decision, rawResponse } = await callAnthropicForDecision(
         sysPrompt,
         userMessage,

@@ -51,6 +51,21 @@ export interface SwarmStatsReport {
   window: Window
   since: Date
   rows: ProviderRollup[]
+  quorum?: SwarmQuorumStats
+}
+
+/** Quorum-vs-no-quorum breakdown across the same window as the per-provider
+ *  roll-up. Operators look at `noQuorumRate` to spot regressions where the
+ *  swarm chronically disagrees and silently falls back to Anthropic.
+ *  - `swarmTicks` = AgentLog rows with `providers IS NOT NULL`
+ *  - `noQuorumTicks` = subset whose rawResponse starts with the
+ *    `[swarm-no-quorum,` tag emitted by tradingAgent.runDecisionLLM.
+ */
+export interface SwarmQuorumStats {
+  swarmTicks: number
+  noQuorumTicks: number
+  quorumTicks: number
+  noQuorumRate: number
 }
 
 export const DEFAULT_COST_USD_PER_MTOKENS: Record<string, CostRate> = {
@@ -151,11 +166,46 @@ interface RawRollupRow {
  * totals 70/30 between input and output, so they're billed at a sensible
  * blended rate instead of the full output rate (Task #36).
  */
+interface RawQuorumRow {
+  swarm_ticks: bigint | number
+  no_quorum_ticks: bigint | number
+}
+
+export async function getSwarmQuorumStats(
+  window: Window,
+  deps: { query?: (sql: string) => Promise<RawQuorumRow[]> } = {},
+): Promise<SwarmQuorumStats> {
+  const { sql: intervalSql } = windowToInterval(window)
+  const sql = `
+    SELECT
+      COUNT(*) FILTER (WHERE "providers" IS NOT NULL)::bigint AS swarm_ticks,
+      COUNT(*) FILTER (
+        WHERE "providers" IS NOT NULL
+          AND "rawResponse" LIKE '[swarm-no-quorum,%'
+      )::bigint AS no_quorum_ticks
+    FROM "AgentLog"
+    WHERE "createdAt" >= NOW() - ${intervalSql}
+  `
+  const runQuery = deps.query ?? ((q: string) => db.$queryRawUnsafe<RawQuorumRow[]>(q))
+  const raw = await runQuery(sql)
+  const row = raw[0] ?? { swarm_ticks: 0, no_quorum_ticks: 0 }
+  const swarmTicks = Number(row.swarm_ticks ?? 0)
+  const noQuorumTicks = Number(row.no_quorum_ticks ?? 0)
+  const quorumTicks = Math.max(0, swarmTicks - noQuorumTicks)
+  return {
+    swarmTicks,
+    noQuorumTicks,
+    quorumTicks,
+    noQuorumRate: swarmTicks > 0 ? noQuorumTicks / swarmTicks : 0,
+  }
+}
+
 export async function getSwarmStats(
   window: Window,
   deps: {
     query?: (sql: string) => Promise<RawRollupRow[]>
     loadCostRates?: () => Promise<CostRateRow[]>
+    quorumQuery?: (sql: string) => Promise<RawQuorumRow[]>
   } = {},
 ): Promise<SwarmStatsReport> {
   const { sql: intervalSql, ms } = windowToInterval(window)
@@ -222,12 +272,31 @@ export async function getSwarmStats(
     }
   })
 
-  return { window, since, rows }
+  // Quorum stats use the same window. We compute them here (rather than
+  // forcing every caller to make a second call) so the format helper and the
+  // existing /swarmstats command both pick them up automatically.
+  const quorum = await getSwarmQuorumStats(window, { query: deps.quorumQuery })
+
+  return { window, since, rows, quorum }
+}
+
+function formatQuorumLine(q: SwarmQuorumStats): string {
+  if (q.swarmTicks === 0) {
+    return '_Quorum: no swarm ticks in window._'
+  }
+  const pct = (q.noQuorumRate * 100).toFixed(1)
+  const flag = q.noQuorumRate >= 0.25 ? ' ⚠️' : ''
+  return (
+    `_Quorum: ${q.quorumTicks}/${q.swarmTicks} reached · ` +
+    `${q.noQuorumTicks} no-quorum fallbacks (${pct}%)${flag}_`
+  )
 }
 
 export function formatSwarmStats(report: SwarmStatsReport): string {
   if (report.rows.length === 0) {
-    return `*Swarm stats — last ${report.window}*\n\n_No swarm telemetry recorded yet in this window._`
+    const base = `*Swarm stats — last ${report.window}*\n\n_No swarm telemetry recorded yet in this window._`
+    if (report.quorum) return base + '\n' + formatQuorumLine(report.quorum)
+    return base
   }
   const lines: string[] = [`*Swarm stats — last ${report.window}*`, '']
   let totalCalls = 0
@@ -247,5 +316,8 @@ export function formatSwarmStats(report: SwarmStatsReport): string {
   lines.push(
     `_Total: ${totalCalls} calls · ${totalTokens.toLocaleString()} tokens · ~$${totalUsd.toFixed(2)}_`,
   )
+  if (report.quorum) {
+    lines.push(formatQuorumLine(report.quorum))
+  }
   return lines.join('\n')
 }

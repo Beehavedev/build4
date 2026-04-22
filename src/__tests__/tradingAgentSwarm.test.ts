@@ -1,6 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { runDecisionLLM, type AgentDecision } from '../agents/tradingAgent'
+import {
+  runDecisionLLM,
+  getSwarmQuorumCounters,
+  _resetSwarmQuorumCountersForTest,
+  type AgentDecision,
+} from '../agents/tradingAgent'
 import type { SwarmResult } from '../swarm/swarm'
 
 // Build a fully-populated AgentDecision so the helper has valid input.
@@ -203,6 +208,48 @@ test('runDecisionLLM: swarm enabled but only 1 live provider falls through to An
   assert.equal(anthropicCalls, 1, 'Anthropic must be the single fallback when swarm cannot run')
   assert.equal(result.decision.action, 'HOLD')
   assert.equal(result.providersTelemetry, null, 'telemetry must be null when swarm did not run')
+})
+
+// ─── Quorum counters: ensure the no-quorum branch is observable ──────────
+test('runDecisionLLM increments quorum counters so operators can see the no-quorum rate', async () => {
+  _resetSwarmQuorumCountersForTest()
+  const quorum = decision({ action: 'OPEN_LONG' })
+  // 1 quorum-reached call
+  await runDecisionLLM(true, 'sys', 'usr', {
+    getProviderStatus: fakeStatus(['anthropic', 'xai', 'hyperbolic']),
+    runSwarmDecision: (async () =>
+      swarmResult({
+        quorum,
+        decisions: [
+          { provider: 'anthropic', ok: true, decision: quorum },
+          { provider: 'xai', ok: true, decision: quorum },
+          { provider: 'hyperbolic', ok: true, decision: quorum },
+        ],
+      })) as any,
+    anthropicCreate: async () => { throw new Error('should not call') },
+  })
+  // 2 no-quorum fallbacks
+  for (let i = 0; i < 2; i++) {
+    await runDecisionLLM(true, 'sys', 'usr', {
+      getProviderStatus: fakeStatus(['anthropic', 'xai']),
+      runSwarmDecision: (async () =>
+        swarmResult({
+          quorum: null,
+          decisions: [
+            { provider: 'anthropic', ok: true, decision: decision({ action: 'OPEN_LONG' }) },
+            { provider: 'xai', ok: true, decision: decision({ action: 'OPEN_SHORT' }) },
+          ],
+        })) as any,
+      anthropicCreate: async () => ({
+        id: 'm', type: 'message', role: 'assistant', model: 'c', stop_reason: 'end_turn',
+        stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 },
+        content: [{ type: 'text', text: JSON.stringify(decision({ action: 'HOLD' })), citations: null }],
+      }) as any,
+    })
+  }
+  const counters = getSwarmQuorumCounters()
+  assert.equal(counters.quorumReached, 1)
+  assert.equal(counters.noQuorum, 2)
 })
 
 // ─── Branch (d): swarmOn=false (sanity baseline) ──────────────────────────
