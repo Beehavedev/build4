@@ -185,6 +185,33 @@ export default function Predictions() {
   const [expandedMarket, setExpandedMarket] = useState<string | null>(null)
   const [detailCache, setDetailCache] = useState<Record<string, MarketDetailState>>({})
 
+  // Live-vs-paper opt-in. `null` while we don't yet know (initial fetch
+  // pending OR the user opened the mini-app outside of Telegram and the
+  // /api/me endpoint 401'd) — in that case we hide the toggle entirely
+  // rather than showing a misleading default.
+  const [liveOptIn, setLiveOptIn] = useState<boolean | null>(null)
+  const [modeBusy, setModeBusy] = useState(false)
+  async function loadMode() {
+    try {
+      const r = await fetch('/api/me/predictions-mode')
+      if (!r.ok) { setLiveOptIn(null); return }
+      const j = await r.json()
+      setLiveOptIn(typeof j.liveOptIn === 'boolean' ? j.liveOptIn : null)
+    } catch { setLiveOptIn(null) }
+  }
+  async function toggleMode(next: boolean) {
+    setModeBusy(true)
+    try {
+      const r = await fetch('/api/me/predictions-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: next }),
+      })
+      const j = await r.json()
+      if (j?.ok) setLiveOptIn(j.liveOptIn === true)
+    } finally { setModeBusy(false) }
+  }
+
   async function onToggleMarket(address: string) {
     if (expandedMarket === address) {
       setExpandedMarket(null)
@@ -229,6 +256,7 @@ export default function Predictions() {
 
   useEffect(() => {
     load()
+    loadMode()
     const poll = setInterval(() => load(true), 30_000)
     const tick = setInterval(() => setNowTick((n) => n + 1), 1000)
     return () => { clearInterval(poll); clearInterval(tick) }
@@ -277,6 +305,50 @@ export default function Predictions() {
           </button>
         </div>
       </div>
+
+      {/* ── Trading-mode toggle ──
+          Mirrors the Telegram /predictions command's live/paper buttons so
+          users can flip the User.fortyTwoLiveTrade flag without leaving
+          the mini-app. Hidden when liveOptIn === null (the /api/me endpoint
+          401'd — almost certainly the user opened the mini-app outside of
+          Telegram, in which case we can't authenticate them anyway). */}
+      {liveOptIn !== null && (
+        <div data-testid="card-trading-mode" style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: 14, padding: '10px 12px', borderRadius: 8,
+          background: liveOptIn ? '#10b98110' : '#0f0f17',
+          border: `1px solid ${liveOptIn ? '#10b98144' : '#1e1e2e'}`,
+          gap: 10,
+        }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600,
+                          color: liveOptIn ? '#10b981' : '#e2e8f0' }}
+                 data-testid="text-mode-status">
+              {liveOptIn ? '🔴 LIVE mode — real USDT' : '📝 Paper mode — simulated'}
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+              {liveOptIn
+                ? 'Trades execute on-chain on BSC. Caps: ≤$2/agent, ≤$25/manual.'
+                : 'No on-chain transactions. Positions tracked for paper PnL only.'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => toggleMode(!liveOptIn)}
+            disabled={modeBusy}
+            data-testid="button-toggle-mode"
+            style={{
+              padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+              background: modeBusy ? '#1e1e2e' : (liveOptIn ? '#1e1e2e' : '#10b981'),
+              border: `1px solid ${liveOptIn ? '#1e1e2e' : '#10b981'}`,
+              color: liveOptIn ? '#94a3b8' : 'white',
+              cursor: modeBusy ? 'wait' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}>
+            {modeBusy ? '…' : (liveOptIn ? 'Switch to paper' : 'Enable LIVE')}
+          </button>
+        </div>
+      )}
 
       {/* ── Section 1: Swarm Consensus ── */}
       <div style={{ marginBottom: 16 }}>

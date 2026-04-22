@@ -1440,6 +1440,47 @@ app.get('/api/predictions/market/:address', async (req, res) => {
 // Paper-vs-live is governed by the same User.fortyTwoLiveTrade toggle
 // that gates agent-driven trades, so a user in paper mode keeps simulating
 // regardless of which path opened the position.
+// ─── /api/me/predictions-mode ─────────────────────────────────────────────
+// Read & toggle the user's paper-vs-live opt-in for 42.space prediction
+// trades from the mini-app. Mirrors the /predictions Telegram command's
+// "Enable LIVE trading" / "Switch to paper-trade" buttons so users no
+// longer have to leave the mini-app to flip the switch. The same
+// User.fortyTwoLiveTrade column governs both autonomous-agent trades and
+// the manual /api/predictions/buy path, so flipping it here propagates
+// to every code path immediately.
+app.get('/api/me/predictions-mode', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  try {
+    const { isUserLiveOptedIn } = await import('./services/fortyTwoExecutor')
+    const liveOptIn = await isUserLiveOptedIn(user.id)
+    res.json({ ok: true, liveOptIn })
+  } catch (err) {
+    console.error('[API] /me/predictions-mode GET failed:', err)
+    res.status(500).json({ ok: false, error: 'lookup failed' })
+  }
+})
+
+app.post('/api/me/predictions-mode', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+  // Body is intentionally strict: must be an explicit boolean. We don't
+  // want a stray `"true"` string or missing field to silently flip a
+  // user into live mode against their intent.
+  const enabled = req.body?.enabled
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ ok: false, error: 'enabled must be boolean' })
+  }
+  try {
+    const { setUserLiveOptIn } = await import('./services/fortyTwoExecutor')
+    await setUserLiveOptIn(user.id, enabled)
+    res.json({ ok: true, liveOptIn: enabled })
+  } catch (err) {
+    console.error('[API] /me/predictions-mode POST failed:', err)
+    res.status(500).json({ ok: false, error: 'update failed' })
+  }
+})
+
 app.post('/api/predictions/buy', requireTgUser, async (req, res) => {
   const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
