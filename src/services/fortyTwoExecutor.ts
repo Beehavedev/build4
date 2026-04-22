@@ -12,6 +12,35 @@ import { getMarketByAddress } from './fortyTwo';
  * implementation that satisfies these three methods — no class inheritance
  * or type-escape casts required.
  */
+/**
+ * Translate raw ethers/RPC errors from a buyOutcome / sellOutcome call into
+ * a message that's safe to surface in the mini-app trade panel.
+ *
+ * The most common opaque failure we see in production is
+ *   "cannot slice beyond data bounds (buffer=0x, length=0, offset=4,
+ *    code=BUFFER_OVERRUN, version=6.16.0)"
+ * which is ethers v6 trying to decode revert data from an empty `0x`
+ * eth_call response. In practice that means either (a) the public BSC RPC
+ * dropped the call under load, or (b) the contract reverted silently with
+ * no revert string. Either way the raw text is gibberish to a non-dev user.
+ *
+ * Keep the original message available for server logs (we still console.log
+ * the full err in callers); the return value is just for the API response.
+ */
+function friendlyTraderError(err: unknown, op: 'buyOutcome' | 'sellOutcome'): string {
+  const raw = (err as Error)?.message || String(err);
+  if (raw.includes('BUFFER_OVERRUN') || raw.includes('cannot slice beyond data bounds')) {
+    return `${op} failed: BSC RPC returned no data (likely public-RPC throttling or a silent contract revert). Try again in a moment; if it persists, set BSC_RPC_URL to a paid endpoint.`;
+  }
+  if (raw.includes('insufficient funds')) {
+    return `${op} failed: not enough BNB for gas in your trading wallet.`;
+  }
+  if (raw.includes('CALL_EXCEPTION') || raw.includes('execution reverted')) {
+    return `${op} failed: on-chain call reverted (slippage, market closed, or insufficient USDT allowance).`;
+  }
+  return `${op} failed: ${raw}`;
+}
+
 export interface ExecutorTrader {
   buyOutcome(
     marketAddress: string,
@@ -366,7 +395,8 @@ export async function openPredictionPosition(
       minOtOut,
     );
   } catch (err) {
-    return { ok: false, reason: `buyOutcome failed: ${(err as Error).message}` };
+    console.error('[fortyTwoExecutor] buyOutcome (agent path) failed:', err);
+    return { ok: false, reason: friendlyTraderError(err, 'buyOutcome') };
   }
   const txHash = receiptHash(receipt);
 
@@ -589,7 +619,8 @@ export async function openManualPredictionPosition(
     try {
       receipt = await trader.buyOutcome(marketAddress, tokenId, usdtAmount.toString(), minOtOut);
     } catch (err) {
-      return { ok: false, reason: `buyOutcome failed: ${(err as Error).message}` };
+      console.error('[fortyTwoExecutor] buyOutcome (manual path) failed:', err);
+      return { ok: false, reason: friendlyTraderError(err, 'buyOutcome') };
     }
     const txHash = receiptHash(receipt);
 

@@ -1,0 +1,75 @@
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="39a7df2b-2670-48ff" responseTimeMS=832 responseBytes=270 userAgent=""
+[LLM] error: 404 {"type":"error","error":{"type":"not_found_error","message":"model: claude-3-5-haiku-latest"},"request_id":"req_011CaJovKo23fnSohWAkAceg"}
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="531c94b3-936d-40d4" responseTimeMS=783 responseBytes=270 userAgent=""
+[GET]
+build4-1.onrender.com/app clientIP="2.51.180.232" requestID="41e61596-bda8-4f0b" responseTimeMS=4 responseBytes=414 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/app/ clientIP="2.51.180.232" requestID="a1bfb3ed-4d02-43dc" responseTimeMS=5 responseBytes=656 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/app/assets/index-DdC8fVjx.js clientIP="2.51.180.232" requestID="bbc69872-7d8d-4347" responseTimeMS=317 responseBytes=172656 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="2.51.180.232" requestID="d5624f7b-bdb6-44e9" responseTimeMS=366 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="6f108b51-c337-48d3" responseTimeMS=746 responseBytes=1413 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="faca43f1-0343-4b04" responseTimeMS=1176 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] signed /fapi/v3/balance failed for 0x7f2D91Cc0258C4963425D79013656E45cc64Fc76 → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="b6e4ddbb-3721-4323" responseTimeMS=1118 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/predictions-mode clientIP="2.51.180.232" requestID="062f5540-603c-47a1" responseTimeMS=374 responseBytes=303 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="ebae9245-1372-476a" responseTimeMS=377 responseBytes=2324 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/predictions/market/0x3f4FE9337E985c5C1aE0276D622f747B35fCF267 clientIP="218.212.138.31" requestID="9d533785-37c0-48cf" responseTimeMS=333 responseBytes=733 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="218.212.138.31" requestID="5a32421a-c283-4d7f" responseTimeMS=741 responseBytes=2325 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="218.212.138.31" requestID="3d07891e-f5b4-416a" responseTimeMS=373 responseBytes=2325 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/predictions/market/0x3f4FE9337E985c5C1aE0276D622f747B35fCF267 clientIP="2.51.180.232" requestID="2cd7b495-1de5-44d0" responseTimeMS=3 responseBytes=732 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="b383a252-0a77-4f91" responseTimeMS=3523 responseBytes=397 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="2.51.180.232" requestID="fa2e3086-93e0-4c59" responseTimeMS=2867 responseBytes=397 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="f0389766-982d-42c3" responseTimeMS=1074 responseBytes=270 userAgent=""
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="44816019-4413-4f72" responseTimeMS=1067 responseBytes=2332 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+The model 'claude-3-5-haiku-latest' is deprecated and will reach end-of-life on February 19th, 2026
+Please migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resources/model-deprecations for more information.
+[LLM] error: 404 {"type":"error","error":{"type":"not_found_error","message":"model: claude-3-5-haiku-latest"},"request_id":"req_011CaJoysS7ipeAbp3bcoRQt"}
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="218.212.138.31" requestID="9493b4b7-f87d-4ef8" responseTimeMS=374 responseBytes=2333 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="c0143420-4721-41a7" responseTimeMS=934 responseBytes=353 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="218.212.138.31" requestID="5be45f48-6257-461a" responseTimeMS=368 responseBytes=2333 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Agent SeanBuild4] HOLD on BTCUSDT — Score 2/10. Volume failure (0.44x) invalidates all price action. RSI 91.8 overbo
+[Agent BTPredict] HOLD on BTCUSDT — Setup score 3/10 fails minimum threshold. Volume at 0.44x critically invalidates
+[Agent BNT] HOLD on BTCUSDT — Setup score 2/10 fails minimum threshold. RSI 91.8 overbought + volume 0.44x wea
+[Agent Smith] HOLD on BTCUSDT — Volume failure (0.44x, 56% below minimum) + extreme RSI divergence (34pts) + neg
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="bbc1de94-dc64-4f8c" responseTimeMS=1108 responseBytes=353 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="41764205-a28f-4f22" responseTimeMS=382 responseBytes=270 userAgent=""
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="bce365a0-ed43-4120" responseTimeMS=552 responseBytes=353 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

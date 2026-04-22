@@ -3,7 +3,7 @@ import { Bot, Context } from 'grammy'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-const MODEL = 'claude-3-5-haiku-latest'
+const MODEL = process.env.ANTHROPIC_BOT_MODEL || 'claude-haiku-4-5'
 const MAX_TOKENS = 500
 const PER_USER_PER_HOUR = 10
 const GLOBAL_PER_DAY = 5000
