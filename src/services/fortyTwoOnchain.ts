@@ -184,17 +184,18 @@ export async function getOutcomePrices(
 
   const validSum = raw.reduce((s, r) => s + (r.price !== null ? Number(r.price) / scale : 0), 0);
 
-  // Diagnostic: agents need real bonding-curve prices to make prediction
-  // trade decisions. If every outcome returns 0/null, the LLM sees a market
-  // with "0% probability everywhere" and never trades. Surface the first
-  // failure per market once per process so we can see WHY in production.
-  if (validSum === 0 && !_priceFailureLogged.has(marketAddress)) {
+  // Diagnostic: agents need real bonding-curve prices to trade prediction
+  // markets. Distinguish RPC failure (every call threw -> price=null) from
+  // a legitimate market state where the curve genuinely returns 0. Only the
+  // failure case is actionable, so trigger on null-ratio rather than sum=0.
+  // Logged once per market per process to avoid spam at the 30s cache TTL.
+  const nullCount = raw.reduce((n, r) => n + (r.price === null ? 1 : 0), 0);
+  if (nullCount > 0 && nullCount === raw.length && !_priceFailureLogged.has(marketAddress)) {
     _priceFailureLogged.add(marketAddress);
     const sample = raw.find((r) => r.error) ?? raw[0];
     console.warn(
-      `[fortyTwo] zero prices for market ${marketAddress} curve=${curveAddress} ` +
-      `numOutcomes=${meta.numOutcomes} sampleErr="${sample?.error ?? 'no-error,returned-0'}" ` +
-      `rawSample=${raw.slice(0, 4).map((r) => `t${r.tokenId}:${r.price === null ? 'null' : r.price.toString()}`).join(',')}`
+      `[fortyTwo] all ${raw.length} on-chain price calls failed for market ${marketAddress} ` +
+      `curve=${curveAddress} sampleErr="${sample?.error ?? 'unknown'}"`
     );
   }
 
