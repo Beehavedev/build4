@@ -247,7 +247,17 @@ export async function ensureNewTables() {
   await run(`CREATE INDEX IF NOT EXISTS "SecurityLog_createdAt_idx" ON "SecurityLog"("createdAt")`)
 
   // ─── 42.space prediction-market positions (Task #4) ───
-  await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "fortyTwoLiveTrade" BOOLEAN NOT NULL DEFAULT false`)
+  // Column was originally created with DEFAULT false (paper-trade by default).
+  // We've since moved to live-by-default for everyone. Two-step migration
+  // here makes the boot idempotent:
+  //   1. ADD COLUMN IF NOT EXISTS guarantees the column exists on fresh DBs
+  //      with the new default.
+  //   2. ALTER COLUMN SET DEFAULT true updates existing DBs whose default
+  //      is still false.
+  // The actual one-time backfill of existing user rows lives below in a
+  // tracked migration so it only runs once per DB, even across reboots.
+  await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "fortyTwoLiveTrade" BOOLEAN NOT NULL DEFAULT true`)
+  await run(`ALTER TABLE "User" ALTER COLUMN "fortyTwoLiveTrade" SET DEFAULT true`)
   // ─── Multi-provider swarm opt-in (Task #18) ───
   await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "swarmEnabled" BOOLEAN NOT NULL DEFAULT false`)
   await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "providers" JSONB`)
@@ -292,6 +302,31 @@ export async function ensureNewTables() {
     "updatedBy" TEXT,
     CONSTRAINT "ProviderCostRate_pkey" PRIMARY KEY ("provider")
   )`)
+
+  // ─── One-shot data migrations ──────────────────────────────────────────
+  // Tracks one-off data backfills so each only runs once per DB, even when
+  // ensureNewTables() executes on every boot.
+  await run(`CREATE TABLE IF NOT EXISTS "_DataMigration" (
+    "name" TEXT PRIMARY KEY,
+    "appliedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`)
+
+  // Migration: flip every existing user from paper-trade to live for
+  // 42.space prediction markets. New behaviour is "everyone trades live".
+  // Runs exactly once: the INSERT INTO _DataMigration uses ON CONFLICT
+  // DO NOTHING and we only fire the UPDATE when the marker row was
+  // actually inserted (xmax = 0 means a fresh insert, not a conflict skip).
+  const marker = await db.$queryRawUnsafe<Array<{ inserted: boolean }>>(
+    `INSERT INTO "_DataMigration" ("name") VALUES ('2026-04-22-force-live-trade')
+     ON CONFLICT ("name") DO NOTHING
+     RETURNING (xmax = 0) AS inserted`,
+  )
+  if (marker.length > 0 && marker[0]?.inserted) {
+    const updated = await db.$executeRawUnsafe(
+      `UPDATE "User" SET "fortyTwoLiveTrade" = true WHERE "fortyTwoLiveTrade" = false`,
+    )
+    console.log(`[DB] Backfilled ${updated} users to live 42.space trading`)
+  }
 
   console.log('[DB] All new tables ready')
 }

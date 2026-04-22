@@ -26,9 +26,12 @@ model User {
   asterOnboarded    Boolean   @default(false)
   pinHash           String?   // PBKDF2 hash of user's wallet PIN (optional security layer)
   pinSalt           String?
-  // 42.space prediction-market live trading opt-in. Default false → paper-trade.
-  // Toggled via /predictions in the bot.
-  fortyTwoLiveTrade Boolean   @default(false)
+  // 42.space prediction-market live trading opt-in. Default true — all
+  // 42.space trades execute on-chain on BSC. Legacy paper positions still
+  // settle as paper (the executor reads each row's stored paperTrade
+  // flag), but no new paper trades are created. Field retained as an
+  // admin-only emergency kill-switch; user-facing toggles removed.
+  fortyTwoLiveTrade Boolean   @default(true)
   // Multi-provider swarm decision-making opt-in. Default false → single-provider
   // (Anthropic). When true, the trading agent runs the prompt across every
   // configured provider and uses the quorum verdict. See src/swarm/swarm.ts.
