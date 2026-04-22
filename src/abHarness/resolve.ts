@@ -223,19 +223,51 @@ async function resolveOne(rec: AbDecisionRecord): Promise<AbDecisionRecord> {
   };
 }
 
-export async function resolveAll(): Promise<{ scanned: number; resolved: number; skipped: number }> {
+// A `resolved` record is considered "legacy" (pre fee/funding model) when
+// any of the cost-breakdown components are missing. New resolutions always
+// populate all three (grossPnlPct/feePct/fundingPct), even on NO_TRADE.
+function isLegacyResolved(rec: AbDecisionRecord): boolean {
+  const r = rec.resolved;
+  if (!r) return false;
+  return r.grossPnlPct == null || r.feePct == null || r.fundingPct == null;
+}
+
+export interface ResolveAllOptions {
+  // When true, drop the existing `resolved` block on any record that was
+  // resolved under the old midpoint/no-cost model so it gets re-simulated
+  // with the current fee + funding logic. Records resolved under the new
+  // model are left untouched.
+  reresolveLegacy?: boolean;
+}
+
+export async function resolveAll(
+  opts: ResolveAllOptions = {},
+): Promise<{ scanned: number; resolved: number; skipped: number; cleared: number }> {
   const all = await readAll();
   let resolved = 0;
+  let cleared = 0;
   const next: AbDecisionRecord[] = [];
   for (const rec of all) {
-    if (rec.resolved) {
-      next.push(rec);
+    let working = rec;
+    if (opts.reresolveLegacy && isLegacyResolved(rec)) {
+      const { resolved: _drop, ...rest } = rec;
+      working = rest as AbDecisionRecord;
+      cleared++;
+    }
+    if (working.resolved) {
+      next.push(working);
       continue;
     }
-    const updated = await resolveOne(rec);
+    const updated = await resolveOne(working);
     if (updated.resolved) resolved++;
     next.push(updated);
   }
   await rewriteAll(next);
-  return { scanned: all.length, resolved, skipped: all.length - resolved - all.filter((r) => r.resolved).length };
+  const stillResolved = next.filter((r) => r.resolved).length;
+  return {
+    scanned: all.length,
+    resolved,
+    skipped: all.length - stillResolved,
+    cleared,
+  };
 }

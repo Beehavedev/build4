@@ -3,6 +3,9 @@
 //   tsx scripts/abHarness.ts tick      # one paired tick across the pair list
 //   tsx scripts/abHarness.ts loop      # run a tick every TICK_INTERVAL_MIN minutes
 //   tsx scripts/abHarness.ts resolve   # attach simulated PnL to ripe decisions
+//     --reresolve                      # also clear & re-run any legacy resolved
+//                                      # records (those missing the fee/funding
+//                                      # breakdown) under the current model
 //   tsx scripts/abHarness.ts report    # print markdown report to stdout
 //
 // Env:
@@ -82,8 +85,10 @@ async function main() {
       await loop();
       break;
     case 'resolve': {
-      const r = await resolveAll();
-      console.log(`Scanned: ${r.scanned} | Newly resolved: ${r.resolved}`);
+      const reresolveLegacy = process.argv.slice(3).includes('--reresolve');
+      const r = await resolveAll({ reresolveLegacy });
+      const extra = reresolveLegacy ? ` | Legacy cleared: ${r.cleared}` : '';
+      console.log(`Scanned: ${r.scanned} | Newly resolved: ${r.resolved}${extra}`);
       break;
     }
     case 'report':
