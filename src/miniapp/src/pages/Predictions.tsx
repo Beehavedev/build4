@@ -729,7 +729,7 @@ function TradeForm({
               )}
               {result.paperTrade && (
                 <div style={{ color: '#94a3b8', fontSize: 10 }}>
-                  Toggle live mode in the Telegram /predictions command to use real USDT.
+                  Enable LOVE Mode in the Telegram /predictions command to use real USDT.
                 </div>
               )}
             </>

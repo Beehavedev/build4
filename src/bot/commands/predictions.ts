@@ -45,7 +45,7 @@ export async function handlePredictions(ctx: Context) {
   const realized = closed.reduce((s, p) => s + (p.pnl ?? 0), 0)
 
   let text = `🎯 *Prediction Market Positions*\n\n`
-  text += `*Status:* ${enabled ? '✅ ENABLED — trading LIVE on BSC' : '⏸ DISABLED — no new trades'}\n`
+  text += `*Status:* ${enabled ? '💚 ENABLED — trading in LOVE Mode on BSC' : '⏸ DISABLED — no new trades'}\n`
   text += `*Open positions:* ${open.length}\n`
   text += `*Realised PnL:* ${fmtPnl(realized)} USDT (${closed.length} settled)\n\n`
 
