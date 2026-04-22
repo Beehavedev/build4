@@ -1952,7 +1952,6 @@ app.post('/api/admin/predictions/backfill-recent', requireAdmin, async (req, res
       userId: string; marketAddress: string; tokenId: number;
       outcomeTokenAmount: number; txHash: string; recipient: string;
     }> = []
-    const errors: Array<{ market: string; reason: string }> = []
 
     // Chunk eth_getLogs into 500-block windows — most public BSC RPCs
     // (Ankr free, dataseeds) reject larger ranges with code -32062
