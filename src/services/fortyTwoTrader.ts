@@ -3,7 +3,18 @@ import { buildBscProvider } from './bscProvider';
 
 // ── 42.space contract addresses (BNB Chain mainnet, chainId 56) ────────────
 // Source: https://docs.42.space/for-developers/deployments
-export const FTROUTER_ADDRESS = '0x88888888888338e60bfB4657187169cFFa5c8640E42';
+//
+// FTROUTER_ADDRESS had three extra 8s in the vanity prefix for ages — the
+// previous value '0x88888888888338e60bfB4657187169cFFa5c8640E42' is 43 hex
+// chars (invalid). ethers.isAddress() returned false on it, which made the
+// signer fall through to ENS resolution on contract.swapSimple(...) calls,
+// throwing "network does not support ENS" on BSC. Verified the corrected
+// value below has 23,888 bytes of bytecode at this address on BSC mainnet
+// (i.e. it's the actual deployed router contract). Why this hadn't blown
+// up earlier: previous symptom was BUFFER_OVERRUN on eth_chainId, which
+// crashed the request BEFORE ethers got far enough to validate the address
+// and try ENS resolution. Fixing the chainId issue exposed this latent typo.
+export const FTROUTER_ADDRESS = '0x88888888338e60bfB4657187169cFFa5c8640E42';
 export const FTMARKET_CONTROLLER_ADDRESS = '0xF21b2D4F8989b27f732e369907F25f0E8D95Fe62';
 export const POWER_CURVE_ADDRESS = '0x0443E04e70E4285a6cA73eacaC5267f3B4cBb7Da';
 export const USDT_BSC = '0x55d398326f99059fF775485246999027b3197955';
