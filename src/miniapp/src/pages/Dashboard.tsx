@@ -12,6 +12,8 @@ export default function Dashboard({ userId }: DashboardProps) {
   const [signalsOpen, setSignalsOpen] = useState(false)
   const [signals, setSignals] = useState<any[]>([])
   const [signalsLoading, setSignalsLoading] = useState(false)
+  const [swarm, setSwarm] = useState<any>(null)
+  const [swarmError, setSwarmError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!userId) { setLoading(false); return }
@@ -25,6 +27,18 @@ export default function Dashboard({ userId }: DashboardProps) {
       setLoading(false)
     })
   }, [userId])
+
+  useEffect(() => {
+    fetch('/api/admin/swarm-divergence?days=7')
+      .then(async (r) => {
+        if (r.status === 401) { setSwarmError('locked'); return null }
+        if (r.status === 503) { setSwarmError('unavailable'); return null }
+        if (!r.ok) { setSwarmError('error'); return null }
+        return r.json()
+      })
+      .then((data) => { if (data) setSwarm(data) })
+      .catch(() => setSwarmError('error'))
+  }, [])
 
   const tg = (typeof window !== 'undefined' ? window.Telegram?.WebApp : null) as any
 
@@ -148,6 +162,94 @@ export default function Dashboard({ userId }: DashboardProps) {
           </div>
         )}
       </div>
+
+      {/* Swarm agreement panel */}
+      {(swarm || swarmError) && (
+        <div className="card" style={{ marginBottom: 16 }} data-testid="card-swarm-divergence">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>🐝 Swarm Agreement (7d)</div>
+            {swarm && (
+              <div style={{ fontSize: 11, color: '#64748b' }} data-testid="text-swarm-total">
+                {swarm.overall.total} ticks
+              </div>
+            )}
+          </div>
+          {swarmError === 'unavailable' && (
+            <div style={{ fontSize: 12, color: '#64748b' }}>Swarm telemetry not enabled on this database.</div>
+          )}
+          {swarmError === 'locked' && (
+            <div style={{ fontSize: 12, color: '#64748b' }}>Restricted — admin token required.</div>
+          )}
+          {swarmError === 'error' && (
+            <div style={{ fontSize: 12, color: '#64748b' }}>Couldn't load swarm stats.</div>
+          )}
+          {swarm && swarm.overall.total === 0 && (
+            <div style={{ fontSize: 12, color: '#64748b' }}>No swarm activity in the last 7 days.</div>
+          )}
+          {swarm && swarm.overall.total > 0 && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
+                <div
+                  data-testid="text-swarm-fallback-pct"
+                  style={{
+                    fontSize: 22, fontWeight: 700,
+                    color: swarm.overall.fallbackPct >= 50 ? '#ef4444'
+                      : swarm.overall.fallbackPct >= 25 ? '#f59e0b' : '#10b981',
+                  }}
+                >
+                  {swarm.overall.fallbackPct}%
+                </div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>
+                  fell back to single-provider ({swarm.overall.fallback}/{swarm.overall.total})
+                </div>
+              </div>
+
+              {swarm.byPair.length > 0 && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>TOP DIVERGENT PAIRS</div>
+                  {[...swarm.byPair]
+                    .filter((p: any) => p.total >= 3)
+                    .sort((a: any, b: any) => b.fallbackPct - a.fallbackPct)
+                    .slice(0, 3)
+                    .map((p: any) => (
+                      <div
+                        key={p.pair}
+                        data-testid={`row-swarm-pair-${p.pair}`}
+                        style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}
+                      >
+                        <span>{p.pair}</span>
+                        <span style={{ color: '#64748b' }}>
+                          {p.fallbackPct}% · {p.fallback}/{p.total}
+                        </span>
+                      </div>
+                    ))}
+                  {swarm.byPair.filter((p: any) => p.total >= 3).length === 0 && (
+                    <div style={{ fontSize: 12, color: '#64748b' }}>Not enough samples per pair yet.</div>
+                  )}
+                </div>
+              )}
+
+              {swarm.byProvider.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>PER-PROVIDER PARTICIPATION</div>
+                  {swarm.byProvider.slice(0, 5).map((p: any) => (
+                    <div
+                      key={p.provider}
+                      data-testid={`row-swarm-provider-${p.provider}`}
+                      style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}
+                    >
+                      <span>{p.provider}</span>
+                      <span style={{ color: '#64748b' }}>
+                        {p.total} ticks · {p.fallbackPct}% no-quorum
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {/* Quick actions */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 16 }}>

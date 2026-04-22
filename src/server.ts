@@ -1187,6 +1187,7 @@ app.get('/api/signals', async (_req, res) => {
   res.json(signals)
 })
 
+<<<<<<< HEAD
 // ──────────────────────────────────────────────────────────────────────────
 // /api/predictions/latest — feeds the mini-app Predictions tab
 //
@@ -1356,6 +1357,39 @@ app.get('/api/predictions/latest', async (_req, res) => {
     })
   } catch (err) {
     console.error('[predictions/latest] failed:', (err as Error).message)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// Read-only swarm divergence stats. Same aggregation as
+// scripts/swarmDivergence.ts. Mirrors the CLI's `--days` and `--pair` flags
+// as query params. If ADMIN_TOKEN is set in the environment, the request must
+// supply it via `?token=` or the `x-admin-token` header.
+app.get('/api/admin/swarm-divergence', async (req, res) => {
+  const adminToken = process.env.ADMIN_TOKEN
+  if (adminToken) {
+    const supplied = (req.headers['x-admin-token'] as string | undefined)
+      ?? (typeof req.query.token === 'string' ? req.query.token : undefined)
+    if (supplied !== adminToken) return res.status(401).json({ error: 'Unauthorized' })
+  }
+  try {
+    const days = req.query.days
+      ? Math.min(365, Math.max(1, parseInt(String(req.query.days), 10) || 7))
+      : 7
+    const pair = typeof req.query.pair === 'string' ? req.query.pair : null
+    const { analyzeDivergence, MissingProvidersColumnError } = await import('./swarm/divergenceAnalysis')
+    try {
+      const report = await analyzeDivergence({ days, pair })
+      res.setHeader('Cache-Control', 'no-store')
+      res.json(report)
+    } catch (err) {
+      if (err instanceof MissingProvidersColumnError) {
+        return res.status(503).json({ error: 'swarm_telemetry_unavailable', detail: err.message })
+      }
+      throw err
+    }
+  } catch (err) {
+    console.error('[API] /admin/swarm-divergence failed:', err)
     res.status(500).json({ error: 'Internal error' })
   }
 })
