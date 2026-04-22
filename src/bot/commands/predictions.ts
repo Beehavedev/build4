@@ -61,6 +61,20 @@ export async function handlePredictions(ctx: Context) {
       const claimSuffix = !p.paperTrade && p.status === 'resolved_win' ? ' _(unclaimed on-chain)_' : ''
       text += `${statusEmoji(p.status)}${mode} *${escapeMd(p.outcomeLabel)}* @ ${(p.entryPrice * 100).toFixed(0)}% — $${p.usdtIn.toFixed(2)} → ${fmtPnl(p.pnl)}${claimSuffix}\n`
       text += `   _${escapeMd(titleRaw)}_\n`
+      // Per-provider swarm reasoning quotes (one truncated line per provider).
+      // Only positions opened on the swarm path have this populated.
+      if (Array.isArray(p.providers)) {
+        for (const pr of p.providers as Array<{ provider: string; ok: boolean; reasoning: string | null }>) {
+          if (!pr.ok || !pr.reasoning) continue
+          const oneLine = pr.reasoning.replace(/\s+/g, ' ').trim()
+          const trimmed = oneLine.length > 110 ? oneLine.slice(0, 107) + '…' : oneLine
+          text += `   • _${escapeMd(pr.provider)}:_ ${escapeMd(trimmed)}\n`
+        }
+      }
+      // BscScan link to the open transaction for live (non-paper) positions.
+      if (!p.paperTrade && p.txHashOpen) {
+        text += `   🔗 [BscScan tx](https://bscscan.com/tx/${p.txHashOpen})\n`
+      }
     }
   }
 

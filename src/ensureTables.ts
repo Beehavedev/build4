@@ -248,6 +248,9 @@ export async function ensureNewTables() {
 
   // ─── 42.space prediction-market positions (Task #4) ───
   await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "fortyTwoLiveTrade" BOOLEAN NOT NULL DEFAULT false`)
+  // ─── Multi-provider swarm opt-in (Task #18) ───
+  await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "swarmEnabled" BOOLEAN NOT NULL DEFAULT false`)
+  await run(`ALTER TABLE "AgentLog" ADD COLUMN IF NOT EXISTS "providers" JSONB`)
   await run(`CREATE TABLE IF NOT EXISTS "OutcomePosition" (
     "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "userId" TEXT NOT NULL,
@@ -273,6 +276,8 @@ export async function ensureNewTables() {
   )`)
   // Add column on existing deployments (no-op if already present).
   await run(`ALTER TABLE "OutcomePosition" ADD COLUMN IF NOT EXISTS "outcomeTokenAmount" DOUBLE PRECISION`)
+  // Per-provider swarm telemetry — populated when the agent ran a swarm tick.
+  await run(`ALTER TABLE "OutcomePosition" ADD COLUMN IF NOT EXISTS "providers" JSONB`)
   await run(`CREATE INDEX IF NOT EXISTS "OutcomePosition_userId_idx" ON "OutcomePosition"("userId")`)
   await run(`CREATE INDEX IF NOT EXISTS "OutcomePosition_agentId_idx" ON "OutcomePosition"("agentId")`)
   await run(`CREATE INDEX IF NOT EXISTS "OutcomePosition_status_idx" ON "OutcomePosition"("status")`)

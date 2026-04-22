@@ -232,7 +232,8 @@ PREDICTION-MARKET SIDECAR (optional, set predictionTrade only when justified):
 - conviction is YOUR own 0..1 probability estimate, NOT the listed implied probability. Be honest — being wrong here loses real USDT.
 - Use the exact marketAddress and tokenId shown in the prompt. Set outcomeLabel for human readability.
 - Sizing is handled in code (small, capped per market). Don't include amount.
-- Example: { "action":"OPEN_PREDICTION","marketAddress":"0xabc...","tokenId":1,"outcomeLabel":"YES","conviction":0.75,"reasoning":"strong on-chain volume divergence" }
+- The "reasoning" string on a predictionTrade is MANDATORY and MUST quote, in this order: (1) the market name, (2) the implied probability shown in the prompt as a percentage, (3) YOUR own probability estimate as a percentage, (4) the edge in percentage points, and (5) the USDT allocation you expect (sizing is in code; just say "≤$2 USDT"). If you cannot quote all five, do not emit predictionTrade.
+- Example: { "action":"OPEN_PREDICTION","marketAddress":"0xabc...","tokenId":1,"outcomeLabel":"YES","conviction":0.75,"reasoning":"42.space prices 'Will BTC close above $80k on Friday' YES at 60%; my read is 75% based on funding rates + on-chain accumulation; +15pp edge; allocating ≤$2 USDT." }
 - This sidecar is independent of the main action. You can OPEN_LONG perps AND OPEN_PREDICTION on the same tick.
 - To CLOSE an existing position: a "Your Open 42.space Positions" block lists each open position with its positionId. Emit { "action":"CLOSE_PREDICTION","marketAddress":"<addr>","tokenId":<id>,"positionId":"<the id from the list>" } when conviction has flipped or the price has moved enough that the edge is gone. NEVER invent a positionId — only use ones shown in that block.
 
@@ -998,23 +999,100 @@ Apply your decision framework: regime → alignment → setup score → risk man
 Return your decision as JSON. Be precise and honest about confidence.
 If you would not put real money in this trade right now, action = HOLD.`
 
-      // 7. Call Claude
+      // 7. Call the LLM. Two paths:
+      //    (a) swarmEnabled=true → run the prompt across every configured
+      //        provider via the swarm decision layer and use the quorum
+      //        verdict (falling back to the single-provider path if the
+      //        swarm produced no consensus).
+      //    (b) swarmEnabled=false (default) → original Anthropic-only path.
+      // The single-provider path is preserved deliberately as a fallback.
       let decision: AgentDecision
       let rawResponse = ''
+      let providersTelemetry: unknown = null
+
+      const swarmRows = await db.$queryRawUnsafe<Array<{ swarmEnabled: boolean }>>(
+        `SELECT "swarmEnabled" FROM "User" WHERE id = $1 LIMIT 1`,
+        agent.userId,
+      ).catch(() => [])
+      const swarmOn = swarmRows[0]?.swarmEnabled === true
 
       try {
-        const response = await anthropic.messages.create({
-          model: 'claude-sonnet-4-5',
-          max_tokens: 1000,
-          system: isNewListingPair ? NEW_LISTING_SYSTEM_PROMPT : TRADING_SYSTEM_PROMPT,
-          messages: [{ role: 'user', content: userMessage }]
-        })
+        const sysPrompt = isNewListingPair ? NEW_LISTING_SYSTEM_PROMPT : TRADING_SYSTEM_PROMPT
 
-        rawResponse =
-          response.content[0].type === 'text' ? response.content[0].text : '{}'
-        decision = JSON.parse(rawResponse.replace(/```json|```/g, '').trim())
+        if (swarmOn) {
+          const { runSwarmDecision } = await import('../swarm/swarm')
+          const { getProviderStatus } = await import('../services/inference')
+          const status = getProviderStatus()
+          const liveProviders = (Object.keys(status) as Array<keyof typeof status>)
+            .filter((p) => status[p].live)
+          if (liveProviders.length >= 2) {
+            const swarm = await runSwarmDecision<AgentDecision>({
+              providers: liveProviders,
+              system: sysPrompt,
+              user: userMessage,
+              jsonMode: true,
+              maxTokens: 1000,
+              schema: (t) => JSON.parse(t.replace(/```json|```/g, '').trim()) as AgentDecision,
+              getAction: (d) => d.action,
+              getPredictionKey: (d) =>
+                d.predictionTrade
+                  ? `${d.predictionTrade.marketAddress}:${d.predictionTrade.tokenId}:${d.predictionTrade.action}`
+                  : null,
+              getReasoning: (d) => d.reasoning ?? d.holdReason ?? null,
+            })
+            providersTelemetry = swarm.decisions.map((c) => ({
+              provider: c.provider,
+              ok: c.ok,
+              action: c.decision?.action ?? null,
+              predictionTrade: c.decision?.predictionTrade ?? null,
+              reasoning: c.reasoning,
+              latencyMs: c.latencyMs,
+              tokensUsed: c.tokensUsed,
+              error: c.error,
+            }))
+            if (swarm.quorumDecision) {
+              decision = swarm.quorumDecision
+              rawResponse = JSON.stringify({ swarm: providersTelemetry, consensus: decision }).slice(0, 4000)
+            } else {
+              // No quorum — fall back to the legacy single-provider Anthropic
+              // path so swarm users get exactly the same baseline behaviour
+              // as the 17k existing users when models disagree. Telemetry is
+              // still recorded so we can measure divergence rate.
+              const response = await anthropic.messages.create({
+                model: 'claude-sonnet-4-5',
+                max_tokens: 1000,
+                system: sysPrompt,
+                messages: [{ role: 'user', content: userMessage }]
+              })
+              const fallbackText = response.content[0].type === 'text' ? response.content[0].text : '{}'
+              decision = JSON.parse(fallbackText.replace(/```json|```/g, '').trim())
+              rawResponse = `[swarm-no-quorum, fell back to anthropic] ` +
+                JSON.stringify({ swarm: providersTelemetry, consensus: decision }).slice(0, 3500)
+            }
+          } else {
+            // swarmEnabled but only one provider configured — fall through
+            // to the single-provider path.
+            const response = await anthropic.messages.create({
+              model: 'claude-sonnet-4-5',
+              max_tokens: 1000,
+              system: sysPrompt,
+              messages: [{ role: 'user', content: userMessage }]
+            })
+            rawResponse = response.content[0].type === 'text' ? response.content[0].text : '{}'
+            decision = JSON.parse(rawResponse.replace(/```json|```/g, '').trim())
+          }
+        } else {
+          const response = await anthropic.messages.create({
+            model: 'claude-sonnet-4-5',
+            max_tokens: 1000,
+            system: sysPrompt,
+            messages: [{ role: 'user', content: userMessage }]
+          })
+          rawResponse = response.content[0].type === 'text' ? response.content[0].text : '{}'
+          decision = JSON.parse(rawResponse.replace(/```json|```/g, '').trim())
+        }
       } catch (aiErr) {
-        console.error(`[Agent ${agent.name}] Claude error:`, aiErr)
+        console.error(`[Agent ${agent.name}] LLM error:`, aiErr)
         await safeAgentLogCreate({
           data: {
             agentId: agent.id,
@@ -1047,7 +1125,8 @@ If you would not put real money in this trade right now, action = HOLD.`
           adx: Number.isFinite(snapshot.adx) ? snapshot.adx : null,
           rsi: Number.isFinite(snapshot.rsi) ? snapshot.rsi : null,
           score: typeof decision.setupScore === 'number' ? decision.setupScore : null,
-          regime: decision.regime ?? snapshot.regime ?? null
+          regime: decision.regime ?? snapshot.regime ?? null,
+          providers: providersTelemetry as any
         }
       })
 
@@ -1079,7 +1158,7 @@ If you would not put real money in this trade right now, action = HOLD.`
             agentMaxPositionSize: agent.maxPositionSize
           }
           if (pt.action === 'OPEN_PREDICTION') {
-            const res = await exec.openPredictionPosition(ctxExec, pt)
+            const res = await exec.openPredictionPosition(ctxExec, pt, providersTelemetry as any)
             if (res.ok) {
               const mode = res.paperTrade ? 'PAPER' : 'LIVE'
               console.log(

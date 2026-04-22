@@ -29,6 +29,10 @@ model User {
   // 42.space prediction-market live trading opt-in. Default false → paper-trade.
   // Toggled via /predictions in the bot.
   fortyTwoLiveTrade Boolean   @default(false)
+  // Multi-provider swarm decision-making opt-in. Default false → single-provider
+  // (Anthropic). When true, the trading agent runs the prompt across every
+  // configured provider and uses the quorum verdict. See src/swarm/swarm.ts.
+  swarmEnabled      Boolean   @default(false)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @default(now()) @updatedAt
 
@@ -254,6 +258,10 @@ model OutcomePosition {
   txHashOpen      String?
   txHashClose     String?
   reasoning       String?
+  // Per-provider swarm telemetry captured at open. Shape:
+  // [{ provider, model, action, predictionTrade?, reasoning, latencyMs, tokensUsed }]
+  // Null on positions opened by the legacy single-provider path.
+  providers       Json?
 
   openedAt        DateTime  @default(now())
   closedAt        DateTime?
@@ -280,6 +288,10 @@ model AgentLog {
   rsi             Float?
   score           Int?
   regime          String?
+  // Per-provider swarm telemetry captured at decision time. Shape:
+  // [{ provider, model, action, predictionTrade?, reasoning, latencyMs, tokensUsed }]
+  // Null when the user is on the single-provider path.
+  providers       Json?
   createdAt       DateTime @default(now())
 
   agent           Agent    @relation(fields: [agentId], references: [id])

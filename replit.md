@@ -160,6 +160,34 @@ Users toggle via `/predictions` in the bot. Resolved positions are settled by
 `settleResolvedPositions()` which runs on every agent tick (cheap — only fetches
 markets with at least one open position).
 
+## Multi-Provider Swarm Trading
+
+Per-user opt-in via `User.swarmEnabled` (default `false`). When enabled, the
+trading agent runs every tick across all configured providers via
+`runSwarmDecision()` (`src/swarm/swarm.ts`) and uses the quorum verdict instead
+of a single Anthropic call. The legacy single-provider path is preserved as a
+fallback (used when only one provider is configured, or when no quorum is
+reached).
+
+Per-tick + per-position telemetry (provider, model, action, predictionTrade,
+reasoning, latency, tokens) is persisted on `AgentLog.providers` and
+`OutcomePosition.providers` (both JSONB).
+
+Surfaces:
+- `/predictions` — adds per-provider reasoning lines and a BscScan link to the
+  open tx for each live position.
+- `/showcase` — partnership demo card. Pulls the most recent live (real
+  on-chain) OPEN_PREDICTION position with swarm telemetry, renders the
+  consensus quote, each provider's individual quote, and the BscScan tx link.
+
+To opt a wallet into the demo:
+```sql
+UPDATE "User" SET "swarmEnabled" = true WHERE "telegramId" = <id>;
+UPDATE "User" SET "fortyTwoLiveTrade" = true WHERE "telegramId" = <id>;
+```
+Then run `/predictions` to confirm LIVE mode and `/showcase` to render the demo
+card after the next swarm-driven OPEN_PREDICTION tick.
+
 ## Multi-Provider LLM Router
 `src/services/inference.ts` exposes a single `callLLM({ provider, model?, system?,
 user, jsonMode?, maxTokens?, temperature?, timeoutMs? })` interface that returns

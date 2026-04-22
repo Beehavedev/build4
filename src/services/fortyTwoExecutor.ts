@@ -170,6 +170,18 @@ async function checkAndSize(
  * Stored row shape — typed alias used by every helper in this file. Keeps the
  * raw-SQL query path strongly typed without leaking `any` into trade logic.
  */
+/** Per-provider telemetry persisted alongside a swarm-driven trade. */
+export interface ProviderTelemetry {
+  provider: string;
+  ok: boolean;
+  action: string | null;
+  predictionTrade: unknown;
+  reasoning: string | null;
+  latencyMs: number;
+  tokensUsed: number;
+  error: string | null;
+}
+
 export interface OutcomePositionRow {
   id: string;
   userId: string;
@@ -191,6 +203,7 @@ export interface OutcomePositionRow {
   openedAt: Date;
   closedAt: Date | null;
   outcomeTokenAmount: number | null;
+  providers: ProviderTelemetry[] | null;
 }
 
 /** Narrow type for what this module reads off a transaction receipt. */
@@ -201,10 +214,14 @@ function receiptHash(r: TxReceiptLike): string | null {
   return null;
 }
 
-/** Open an outcome-token position. Records the position regardless of paper/live mode. */
+/** Open an outcome-token position. Records the position regardless of paper/live mode.
+ *  When `providers` is supplied (swarm path), the per-provider telemetry is
+ *  persisted on the OutcomePosition row so /predictions and /showcase can
+ *  surface each model's individual reasoning quote. */
 export async function openPredictionPosition(
   ctx: ExecutorContext,
   intent: PredictionTradeIntent,
+  providers: ProviderTelemetry[] | null = null,
 ): Promise<{ ok: true; positionId: string; paperTrade: boolean; usdtIn: number } | { ok: false; reason: string }> {
   if (intent.action !== 'OPEN_PREDICTION') return { ok: false, reason: 'wrong action' };
 
@@ -293,8 +310,8 @@ export async function openPredictionPosition(
     `INSERT INTO "OutcomePosition"
        ("userId","agentId","marketAddress","marketTitle","tokenId","outcomeLabel",
         "usdtIn","entryPrice","status","paperTrade","txHashOpen","reasoning",
-        "outcomeTokenAmount")
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'open',$9,$10,$11,$12)
+        "outcomeTokenAmount","providers")
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'open',$9,$10,$11,$12,$13::jsonb)
      RETURNING id`,
     ctx.userId,
     ctx.agentId,
@@ -308,8 +325,28 @@ export async function openPredictionPosition(
     txHash,
     (intent.reasoning ?? '').slice(0, 500),
     outcomeTokenAmountFloat,
+    providers ? JSON.stringify(providers) : null,
   );
   return { ok: true, positionId: id[0].id, paperTrade, usdtIn: sizing.usdtIn };
+}
+
+/**
+ * Pull the most recent live (real on-chain) OPEN_PREDICTION position that has
+ * per-provider swarm telemetry attached. This is the row /showcase renders
+ * for the partnership demo. Falls back across users — the demo cares about
+ * the swarm verdict + tx, not which user's wallet.
+ */
+export async function getMostRecentLiveSwarmPrediction(): Promise<OutcomePositionRow | null> {
+  const rows = await db.$queryRawUnsafe<OutcomePositionRow[]>(
+    `SELECT * FROM "OutcomePosition"
+     WHERE "providers" IS NOT NULL
+       AND "paperTrade" = false
+       AND "txHashOpen" IS NOT NULL
+       AND status = 'open'
+     ORDER BY "openedAt" DESC
+     LIMIT 1`,
+  );
+  return rows[0] ?? null;
 }
 
 /** Manually close (sell back to USDT). Settlement-by-resolution uses settleResolvedPositions instead. */

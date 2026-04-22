@@ -14,6 +14,7 @@ import { registerTrustWallet } from './commands/trustwallet'
 import { registerAster } from './commands/aster'
 import { registerFund, handleFund } from './commands/fund'
 import { registerPredictions } from './commands/predictions'
+import { registerShowcase } from './commands/showcase'
 import { registerLlm } from './llm'
 
 export function createBot(): Bot {
@@ -50,6 +51,7 @@ export function createBot(): Bot {
   registerAster(bot)
   registerFund(bot)
   registerPredictions(bot)
+  registerShowcase(bot)
 
   // Fallback commands
   bot.command('settings', async (ctx) => {
@@ -71,7 +73,7 @@ export function createBot(): Bot {
 
   bot.command('help', async (ctx) => {
     await ctx.reply(
-      `📖 *BUILD4 Commands*\n\n*Wallet:* /wallet /linkwallet\n*Trading:* /trade /tradestatus /newagent /myagents\n*Market:* /signals /smartmoney /scan /trending /price\n*Buy/Sell:* /buy /sell /swap /launch\n*Social:* /copytrade /portfolio /predictions\n*Rewards:* /quests /rewards\n*Utility:* /settings /gas /cancel /help`,
+      `📖 *BUILD4 Commands*\n\n*Wallet:* /wallet /linkwallet\n*Trading:* /trade /tradestatus /newagent /myagents\n*Market:* /signals /smartmoney /scan /trending /price\n*Buy/Sell:* /buy /sell /swap /launch\n*Social:* /copytrade /portfolio /predictions /showcase\n*Rewards:* /quests /rewards\n*Utility:* /settings /gas /cancel /help`,
       { parse_mode: 'Markdown' }
     )
   })
