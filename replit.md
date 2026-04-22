@@ -224,7 +224,7 @@ To opt a wallet into the demo:
 UPDATE "User" SET "swarmEnabled" = true WHERE "telegramId" = <id>;
 UPDATE "User" SET "fortyTwoLiveTrade" = true WHERE "telegramId" = <id>;
 ```
-Then run `/predictions` to confirm LOVE Mode and `/showcase` to render the demo
+Then run `/predictions` to confirm LIVE mode and `/showcase` to render the demo
 card after the next swarm-driven OPEN_PREDICTION tick.
 
 ## Multi-Provider LLM Router
