@@ -549,14 +549,45 @@ async function callAnthropicForDecision(
 ): Promise<{ decision: AgentDecision; rawResponse: string }> {
   const response = await anthropicCreate({
     model: 'claude-sonnet-4-5',
-    max_tokens: 1000,
+    // Bumped from 1000 → 1500: production logs showed Anthropic occasionally
+    // truncating JSON mid-string at ~3.2 KB, which triggered an Unterminated
+    // string SyntaxError below and lost the agent's whole tick. 1500 tokens
+    // covers our verbose-reasoning agents with a comfortable margin while
+    // still being a tiny cost bump (~50% of an already-cheap call).
+    max_tokens: 1500,
     system: sysPrompt,
     messages: [{ role: 'user', content: userMessage }],
   })
   const first = response.content[0]
   const rawResponse = first && first.type === 'text' ? first.text : '{}'
-  const decision = JSON.parse(rawResponse.replace(/```json|```/g, '').trim()) as AgentDecision
-  return { decision, rawResponse }
+  const cleaned = rawResponse.replace(/```json|```/g, '').trim()
+  try {
+    const decision = JSON.parse(cleaned) as AgentDecision
+    return { decision, rawResponse }
+  } catch (parseErr) {
+    // The model returned malformed JSON (most often a truncated response
+    // where max_tokens cut a string mid-character). Don't propagate the raw
+    // SyntaxError — the upstream handler logs it as `[Agent X] LLM error:
+    // SyntaxError: Unterminated string in JSON…`, which looks alarming to
+    // anyone reading prod logs (e.g. partners during live testing). Convert
+    // to a deterministic, safe HOLD decision so the agent simply skips this
+    // tick and tries again next cycle. The structured log line below makes
+    // the underlying cause greppable without scaring anyone.
+    console.warn(
+      '[anthropic-decision] JSON parse failed — returning safe HOLD.',
+      JSON.stringify({
+        error: (parseErr as Error).message,
+        rawLength: cleaned.length,
+        rawTail: cleaned.slice(-120),
+      }),
+    )
+    const fallback: AgentDecision = {
+      action: 'HOLD',
+      confidence: 0,
+      reasoning: 'LLM response unparseable (likely truncated) — holding this tick',
+    } as AgentDecision
+    return { decision: fallback, rawResponse: cleaned }
+  }
 }
 
 export async function runDecisionLLM(
