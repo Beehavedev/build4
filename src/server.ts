@@ -2034,6 +2034,134 @@ app.post('/api/admin/predictions/backfill-recent', requireAdmin, async (req, res
   }
 })
 
+// POST /api/admin/predictions/recover-by-tx
+//
+// Single-tx recovery: takes one BSC tx hash, looks up the receipt, finds the
+// ERC-1155/6909 TransferSingle MINT log on a 42.space market within that tx,
+// matches the recipient to a wallet in our DB, parses USDT in from the
+// USDT Transfer log in the same tx, and inserts a single OutcomePosition row.
+// Idempotent: skips if txHashOpen already exists. Useful when the agent
+// knows the buy went through on-chain (e.g. user has the BSCscan link) but
+// the row never made it into the DB.
+//
+// Body: { txHash: string, dryRun?: boolean }
+app.post('/api/admin/predictions/recover-by-tx', requireAdmin, async (req, res) => {
+  try {
+    const txHash = String(req.body?.txHash ?? '').trim()
+    if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+      return res.status(400).json({ ok: false, error: 'invalid_tx_hash' })
+    }
+    const dryRun = req.body?.dryRun === true
+    const { db } = await import('./db')
+    const { ethers } = await import('ethers')
+    const { buildBscProvider } = await import('./services/bscProvider')
+    const { getMarketByAddress } = await import('./services/fortyTwo')
+    const { USDT_BSC } = await import('./services/fortyTwoTrader')
+
+    const provider = buildBscProvider(process.env.BSC_RPC_URL)
+    const receipt = await provider.getTransactionReceipt(txHash)
+    if (!receipt) return res.status(404).json({ ok: false, error: 'tx_not_found' })
+    if (receipt.status !== 1) {
+      return res.status(400).json({ ok: false, error: 'tx_reverted_on_chain' })
+    }
+
+    // Skip if already recorded.
+    const existing = await db.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT id FROM "OutcomePosition" WHERE LOWER("txHashOpen") = LOWER($1) LIMIT 1`,
+      txHash,
+    )
+    if (existing.length > 0) {
+      return res.json({ ok: true, alreadyRecorded: true, positionId: existing[0].id })
+    }
+
+    const TRANSFER_SINGLE_TOPIC = ethers.id('TransferSingle(address,address,address,uint256,uint256)')
+    const ZERO_TOPIC = '0x' + '0'.repeat(64)
+    const USDT_TRANSFER_TOPIC = ethers.id('Transfer(address,address,uint256)')
+
+    const ercIface = new ethers.Interface([
+      'event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)',
+    ])
+    const usdtIface = new ethers.Interface([
+      'event Transfer(address indexed from, address indexed to, uint256 value)',
+    ])
+
+    // Find the mint log (from = 0x0, on a market — i.e. NOT the USDT contract).
+    const mintLog = receipt.logs.find(
+      (l) =>
+        l.topics[0] === TRANSFER_SINGLE_TOPIC &&
+        l.topics[2] === ZERO_TOPIC &&
+        l.address.toLowerCase() !== USDT_BSC.toLowerCase(),
+    )
+    if (!mintLog) return res.status(400).json({ ok: false, error: 'no_mint_log_in_tx' })
+    const parsedMint = ercIface.parseLog({ topics: [...mintLog.topics], data: mintLog.data })
+    if (!parsedMint) return res.status(500).json({ ok: false, error: 'mint_log_parse_failed' })
+
+    const recipient = String(parsedMint.args.to).toLowerCase()
+    const tokenId = Number(parsedMint.args.id)
+    const outcomeTokenAmount = Number(ethers.formatUnits(parsedMint.args.value, 18))
+    const marketAddress = ethers.getAddress(mintLog.address)
+
+    // Find the matching wallet → user.
+    const walletRows = await db.$queryRawUnsafe<Array<{ userId: string }>>(
+      `SELECT "userId" FROM "Wallet" WHERE chain = 'BSC' AND LOWER(address) = $1 LIMIT 1`,
+      recipient,
+    )
+    if (walletRows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'recipient_not_a_known_wallet', recipient })
+    }
+    const userId = walletRows[0].userId
+
+    // Parse USDT in: Transfer(from = recipient OR initiator, to = market).
+    let usdtIn = 0
+    for (const l of receipt.logs) {
+      if (l.address.toLowerCase() !== USDT_BSC.toLowerCase()) continue
+      if (l.topics[0] !== USDT_TRANSFER_TOPIC) continue
+      const p = usdtIface.parseLog({ topics: [...l.topics], data: l.data })
+      if (!p) continue
+      const to = String(p.args.to).toLowerCase()
+      if (to === marketAddress.toLowerCase()) {
+        usdtIn = Number(ethers.formatUnits(p.args.value, 18))
+        break
+      }
+    }
+
+    // Pull market title + outcome label for human-readable rows.
+    let marketTitle = marketAddress
+    let outcomeLabel = `Outcome ${tokenId}`
+    let entryPrice = usdtIn > 0 && outcomeTokenAmount > 0 ? usdtIn / outcomeTokenAmount : 0
+    try {
+      const m = await getMarketByAddress(marketAddress)
+      marketTitle = m.question ?? marketTitle
+      const o = m.outcomes?.find((x) => Number(x.tokenId) === tokenId)
+      if (o?.label) outcomeLabel = o.label
+    } catch {}
+
+    if (dryRun) {
+      return res.json({
+        ok: true, dryRun: true,
+        wouldInsert: { userId, marketAddress, marketTitle, tokenId, outcomeLabel,
+          usdtIn, entryPrice, outcomeTokenAmount, txHash },
+      })
+    }
+
+    const inserted = await db.$queryRawUnsafe<Array<{ id: string }>>(
+      `INSERT INTO "OutcomePosition"
+         ("userId","agentId","marketAddress","marketTitle","tokenId","outcomeLabel",
+          "usdtIn","entryPrice","status","paperTrade","txHashOpen","reasoning",
+          "outcomeTokenAmount","providers")
+       VALUES ($1,NULL,$2,$3,$4,$5,$6,$7,'open',false,$8,$9,$10,NULL)
+       RETURNING id`,
+      userId, marketAddress, marketTitle, tokenId, outcomeLabel,
+      usdtIn, entryPrice, txHash, 'Recovered from on-chain tx', outcomeTokenAmount,
+    )
+    res.json({ ok: true, positionId: inserted[0].id, userId, marketAddress, tokenId,
+      outcomeLabel, usdtIn, outcomeTokenAmount })
+  } catch (err) {
+    console.error('[API] /admin/predictions/recover-by-tx failed:', err)
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
 // POST /api/admin/predictions/recover-mis-settled
 //
 // Recovery endpoint for the bug where settleResolvedPositions could flip
