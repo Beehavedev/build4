@@ -254,3 +254,47 @@ model AgentLog {
   @@index([agentId])
   @@index([userId, createdAt])
 }
+
+// 42.space prediction-market positions held by users (live + paper).
+// CRITICAL: must stay defined here so `prisma db push --accept-data-loss`
+// (in render.yaml buildCommand) does NOT drop the table on every deploy.
+// We had a months-long bug where this model only existed in the legacy
+// /prisma/schema.prisma and the buildCommand uses /src/prisma/schema.prisma,
+// so each Render deploy treated the live OutcomePosition table as
+// "extra" and silently dropped it — wiping every live & paper position.
+model OutcomePosition {
+  id              String    @id @default(cuid())
+  userId          String
+  agentId         String?
+
+  marketAddress   String
+  marketTitle     String
+  tokenId         Int
+  outcomeLabel    String
+
+  usdtIn          Float
+  entryPrice      Float
+  exitPrice       Float?
+  payoutUsdt      Float?
+  pnl             Float?
+
+  // Real outcome-token amount received at open (read from chain in live mode).
+  // Null in paper-trade mode → callers fall back to usdtIn / entryPrice.
+  outcomeTokenAmount Float?
+
+  status          String    @default("open") // open | closed | resolved_win | resolved_loss
+  paperTrade      Boolean   @default(true)
+  txHashOpen      String?
+  txHashClose     String?
+  reasoning       String?
+  // Per-provider swarm telemetry captured at open (see ProviderCostRate).
+  providers       Json?
+
+  openedAt        DateTime  @default(now())
+  closedAt        DateTime?
+
+  @@index([userId])
+  @@index([agentId])
+  @@index([status])
+  @@index([marketAddress])
+}
