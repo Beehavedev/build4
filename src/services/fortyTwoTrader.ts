@@ -17,7 +17,13 @@ import { buildBscProvider } from './bscProvider';
 export const FTROUTER_ADDRESS = '0x88888888338e60bfB4657187169cFFa5c8640E42';
 export const FTMARKET_CONTROLLER_ADDRESS = '0xF21b2D4F8989b27f732e369907F25f0E8D95Fe62';
 export const POWER_CURVE_ADDRESS = '0x0443E04e70E4285a6cA73eacaC5267f3B4cBb7Da';
-export const USDT_BSC = '0x55d398326f99059fF775485246999027b3197955';
+// USDT_BSC previously had lowercase 'b' in '...027b3197955' — incorrect EIP-55
+// checksum casing. ethers v6 strict-rejects mis-cased mixed-case addresses
+// with INVALID_ARGUMENT bad-checksum, even though the bytes are correct,
+// since a wrong checksum often means a transcription error. Canonicalised
+// via ethers.getAddress(). Same masking dynamic as the FTROUTER typo: this
+// only surfaced after the upstream BUFFER_OVERRUN was resolved.
+export const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955';
 
 // SwapParams struct from src/libraries/Market.sol in fortytwo-protocol/ft-contracts-public
 //   struct SwapParams {
