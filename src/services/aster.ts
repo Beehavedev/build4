@@ -109,11 +109,37 @@ const REJECTED_SYMBOLS = new Set(['ALL', 'UNDEFINED', 'NULL', 'NONE', ''])
 
 // Process-wide klines cache. With 9k+ agents trading the same 7 pairs, the
 // per-tick fan-out was 9,449 × 21 = ~200k requests/min to fapi.asterdex.com,
-// guaranteed to get rate-limited. With 60s TTL and 7 pairs × 3 timeframes,
-// we serve ≤21 unique upstream calls per minute regardless of agent count.
-// In-flight de-duplication via inflightKlines prevents thundering-herd on
-// cache miss when 9k agents tick simultaneously.
-const KLINES_CACHE_TTL_MS = 60_000
+// guaranteed to get rate-limited. With interval-aware TTL and 7 pairs × 3
+// timeframes we serve ≤21 unique upstream calls per cache window regardless
+// of agent count. In-flight de-duplication via inflightKlines prevents the
+// thundering-herd on cache miss when many agents tick simultaneously.
+//
+// Interval-aware TTL: a 4h candle doesn't move for hours, so caching it for
+// only 60s caused the same kline to be re-fetched ~240× per candle lifetime
+// (visible in production logs as repeat "cache miss" lines for 4h pairs).
+// Rule of thumb: cache for ~25% of the candle period, capped at 5 minutes
+// so even 1d candles get refreshed often enough to catch corrections.
+const KLINES_TTL_BY_INTERVAL_MS: Record<string, number> = {
+  '1m': 10_000,
+  '3m': 20_000,
+  '5m': 30_000,
+  '15m': 60_000,
+  '30m': 120_000,
+  '1h':  180_000,
+  '2h':  300_000,
+  '4h':  300_000,
+  '6h':  300_000,
+  '8h':  300_000,
+  '12h': 300_000,
+  '1d':  300_000,
+  '3d':  300_000,
+  '1w':  300_000,
+  '1M':  300_000,
+}
+const KLINES_CACHE_TTL_DEFAULT_MS = 60_000
+function ttlForInterval(interval: string): number {
+  return KLINES_TTL_BY_INTERVAL_MS[interval] ?? KLINES_CACHE_TTL_DEFAULT_MS
+}
 const klinesCache = new Map<string, { data: OHLCV; ts: number }>()
 const inflightKlines = new Map<string, Promise<OHLCV>>()
 
@@ -136,10 +162,10 @@ export async function getKlines(
     : (VALID_KLINE_INTERVALS.has(interval.toLowerCase()) ? interval.toLowerCase() : '15m')
   const safeLimit = Math.max(1, Math.min(1500, Math.floor(limit)))
 
-  // ── Cache check (60s TTL, dedupes in-flight requests) ──
+  // ── Cache check (interval-aware TTL, dedupes in-flight requests) ──
   const cacheKey = `${symbol}:${intervalNormalized}:${safeLimit}`
   const cached = klinesCache.get(cacheKey)
-  if (cached && Date.now() - cached.ts < KLINES_CACHE_TTL_MS) {
+  if (cached && Date.now() - cached.ts < ttlForInterval(intervalNormalized)) {
     return cached.data
   }
   const inflight = inflightKlines.get(cacheKey)
