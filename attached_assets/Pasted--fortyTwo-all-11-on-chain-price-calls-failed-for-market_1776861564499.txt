@@ -1,0 +1,67 @@
+[fortyTwo] all 11 on-chain price calls failed for market 0xa74b54C5C468Ec3584dD4064277625A1a7DD170c curve=0x0443E04e70E4285a6cA73eacaC5267f3B4cBb7Da sampleErr="missing response for request"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="218.212.138.31" requestID="73e597ad-b7d5-4f3c" responseTimeMS=909 responseBytes=2328 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[fortyTwoExecutor] buyOutcome (manual path) failed: RangeError: cannot slice beyond data bounds (buffer=0x, length=0, offset=4, code=BUFFER_OVERRUN, version=6.16.0)
+    at makeError (/opt/render/project/src/node_modules/ethers/src.ts/utils/errors.ts:695:21)
+    at assert (/opt/render/project/src/node_modules/ethers/src.ts/utils/errors.ts:719:25)
+    at dataSlice (/opt/render/project/src/node_modules/ethers/src.ts/utils/data.ts:138:9)
+    at JsonRpcProvider.#call (/opt/render/project/src/node_modules/ethers/src.ts/providers/abstract-provider.ts:989:150)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async resolveProperties (/opt/render/project/src/node_modules/ethers/src.ts/utils/properties.ts:35:21)
+    at async JsonRpcProvider.#checkNetwork (/opt/render/project/src/node_modules/ethers/src.ts/providers/abstract-provider.ts:1043:27)
+    at async JsonRpcProvider.call (/opt/render/project/src/node_modules/ethers/src.ts/providers/abstract-provider.ts:1056:16)
+    at async staticCallResult (/opt/render/project/src/node_modules/ethers/src.ts/contract/contract.ts:337:22) {
+  code: 'BUFFER_OVERRUN',
+  buffer: Uint8Array(0) [],
+  length: 0,
+  offset: 4,
+  shortMessage: 'cannot slice beyond data bounds'
+}
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="2.51.180.232" requestID="bcf7234e-7a48-400b" responseTimeMS=4063 responseBytes=432 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="11cd9a61-1efe-42c6" responseTimeMS=755 responseBytes=2328 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Agent Smith] HOLD on BTCUSDT — Volume failure (0.55x vs 2.0x required) + extreme RSI divergence (34.9pts vs <10
+[Agent BNT] HOLD on BTCUSDT — Five exhaustion indicators converge (extreme RSI 92.1, negative MACD, low volume
+[Agent BTPredict] HOLD on BTCUSDT — Volume failure (0.55x vs required 1.0x) is absolute disqualifier per established
+[Agent BTPredict] HOLD on BTCUSDT — Volume 0.57x catastrophically below 1.0x minimum threshold - this single factor 
+[Agent BNT] HOLD on BTCUSDT — Five simultaneous exhaustion signals (overbought RSI 92.0, volume divergence 0.5
+[Agent SeanBuild4] HOLD on BTCUSDT — Catastrophic volume (0.55x), extreme RSI (92.0), MACD divergence (-24.99), and n
+[Agent Smith] HOLD on BTCUSDT — Volume confirmation absolutely required. Current 0.57x is 72% below minimum thre
+[Agent SeanBuild4] HOLD on BTCUSDT — Would change to LONG only if: (1) Volume exceeds 1.2x average for 2+ consecutive
+[GET]
+build4-1.onrender.com/app/ clientIP="2.51.180.232" requestID="75ca16fa-5034-4744" responseTimeMS=7 responseBytes=656 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="2.51.180.232" requestID="e407cf02-3d78-4113" responseTimeMS=378 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="1d251842-6f02-4efa" responseTimeMS=914 responseBytes=1412 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Aster] signed /fapi/v3/balance failed for 0x7f2D91Cc0258C4963425D79013656E45cc64Fc76 → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="294f4fad-252a-4110" responseTimeMS=1640 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="2471d4a9-8721-42c5" responseTimeMS=1130 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="189f5ab6-ba7a-4bf8" responseTimeMS=858 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Aster] signed /fapi/v3/balance failed for 0x7f2D91Cc0258C4963425D79013656E45cc64Fc76 → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="218.212.138.31" requestID="e7c70ffb-d28e-4e89" responseTimeMS=377 responseBytes=2328 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/predictions-mode clientIP="2.51.180.232" requestID="bb218a18-494a-45e2" responseTimeMS=377 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="63a2baf9-1eda-4c5e" responseTimeMS=732 responseBytes=2328 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/market/0x7Bf0063c397a902961BF8715cbE7f42B23b31d8d clientIP="2.51.180.232" requestID="60e1cc17-b9b5-4aff" responseTimeMS=592 responseBytes=859 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="2.51.180.232" requestID="d68baf43-cef0-40af" responseTimeMS=924 responseBytes=353 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+Menu
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="218.212.138.31" requestID="6674403c-e1ac-4191" responseTimeMS=542 responseBytes=2323 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="6ff84df2-f12a-4264" responseTimeMS=377 responseBytes=2323 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"

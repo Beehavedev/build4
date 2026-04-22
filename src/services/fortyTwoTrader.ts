@@ -50,6 +50,27 @@ function dryHash(seed: string): string {
   return '0xDR' + Buffer.from(`${seed}|${Date.now()}|${Math.random()}`).toString('hex').padEnd(62, '0').slice(0, 62);
 }
 
+/**
+ * Best-effort revert reason extraction across the various error shapes
+ * ethers v6 produces from a failed staticCall:
+ *   - Custom errors:   err.revert.args[0] (or .signature)
+ *   - Standard errors: err.shortMessage / err.reason
+ *   - JSON-RPC layer:  err.info.error.message
+ *   - Fallback:        err.message
+ * Wide net by design — we'd rather surface anything than throw away signal.
+ */
+function extractRevertReason(err: unknown): string {
+  const e = err as any;
+  return (
+    e?.revert?.args?.[0] ??
+    e?.shortMessage ??
+    e?.reason ??
+    e?.info?.error?.message ??
+    e?.message ??
+    'unknown revert'
+  );
+}
+
 export interface FortyTwoTraderOptions {
   /** When true, no on-chain calls are sent — every method returns a DryRunReceipt and logs intent. */
   dryRun?: boolean;
@@ -119,6 +140,28 @@ export class FortyTwoTrader {
       return { dryRun: true, hash: dryHash('buy'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'buyOutcome', args, status: 1 } as unknown as ethers.TransactionReceipt;
     }
 
+    // Preflight via staticCall — turns silent reverts into actionable error
+    // messages BEFORE we spend gas. The cryptic
+    //   "cannot slice beyond data bounds (buffer=0x ...BUFFER_OVERRUN)"
+    // we were seeing in the mini-app was ethers trying to decode revert data
+    // from an empty 0x response on an estimateGas precheck. By doing our own
+    // staticCall first we get either (a) the contract's actual revert reason
+    // — slippage, market closed, allowance, etc. — or (b) confirmation that
+    // the failure is purely RPC-side (still empty 0x), which is a different
+    // class of bug and worth distinguishing from a contract-logic failure.
+    try {
+      await this.router.swapSimple.staticCall(
+        marketAddress,
+        this.wallet.address,
+        BigInt(tokenId),
+        params,
+        '0x',
+        '0x',
+      );
+    } catch (simErr) {
+      throw new Error(`[42] buyOutcome would revert: ${extractRevertReason(simErr)}`);
+    }
+
     const tx = await this.router.swapSimple(
       marketAddress,
       this.wallet.address,
@@ -152,6 +195,20 @@ export class FortyTwoTrader {
       const args = { marketAddress, tokenId, tokenAmountIn: tokenAmountIn.toString(), minUsdtOut: minUsdtOut.toString() };
       console.log(`[FortyTwoTrader:DRY] sellOutcome ${JSON.stringify(args)}`);
       return { dryRun: true, hash: dryHash('sell'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'sellOutcome', args, status: 1 } as unknown as ethers.TransactionReceipt;
+    }
+
+    // Same staticCall preflight as buyOutcome — see buyOutcome for rationale.
+    try {
+      await this.router.swapSimple.staticCall(
+        marketAddress,
+        this.wallet.address,
+        BigInt(tokenId),
+        params,
+        '0x',
+        '0x',
+      );
+    } catch (simErr) {
+      throw new Error(`[42] sellOutcome would revert: ${extractRevertReason(simErr)}`);
     }
 
     const tx = await this.router.swapSimple(
