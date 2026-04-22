@@ -1936,17 +1936,27 @@ app.post('/api/admin/predictions/backfill-recent', requireAdmin, async (req, res
     }
     const markets = [...marketMap.values()]
 
-    // ERC-1155 TransferSingle(operator, from, to, id, value)
-    //   topic0 = keccak("TransferSingle(address,address,address,uint256,uint256)")
-    //   topic2 = from (we want 0x0 → mint)
-    const TRANSFER_SINGLE_TOPIC = ethers.id(
+    // 42.space outcome tokens are ERC-6909, NOT ERC-1155. Their Transfer
+    // event has the signature
+    //   Transfer(address caller, address indexed sender,
+    //            address indexed receiver, uint256 indexed id, uint256 amount)
+    //   topic0 = 0x1b3d7edb...
+    //   topic1 = sender (we want 0x0 → mint)
+    //   topic2 = receiver (the buyer wallet)
+    //   topic3 = id      (outcome tokenId)
+    //   data   = (caller, amount)
+    //
+    // We also keep the legacy ERC-1155 TransferSingle topic so this scanner
+    // continues to work for any market that ever ships the standard event.
+    //   ERC-1155 TransferSingle(operator, from, to, id, value)
+    //     topic0 = 0xc3d58168..., topic2 = from(0x0), topic3 = to
+    const ERC6909_TOPIC = ethers.id(
+      'Transfer(address,address,address,uint256,uint256)',
+    )
+    const ERC1155_TOPIC = ethers.id(
       'TransferSingle(address,address,address,uint256,uint256)',
     )
     const ZERO_TOPIC = '0x' + '0'.repeat(64)
-    const ercIface = new ethers.Interface([
-      'event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)',
-      'event Transfer(address indexed from, address indexed to, uint256 value)',
-    ])
 
     const matches: Array<{
       userId: string; marketAddress: string; tokenId: number;
@@ -1969,26 +1979,55 @@ app.post('/api/admin/predictions/backfill-recent', requireAdmin, async (req, res
       while (chunkStart <= latest) {
         const chunkEnd = Math.min(chunkStart + CHUNK - 1, latest)
         try {
+          // Match BOTH ERC-6909 and ERC-1155 mint events in one RPC call
+          // by passing topic0 as an OR-list and sender/from as 0x0. The
+          // zero-address filter applies at the same topic position to both
+          // events: topic1 for ERC-6909 (sender) and topic1 for ERC-1155
+          // would be the operator (not zero) — so a topic1=0x0 filter
+          // would EXCLUDE legitimate ERC-1155 mints. Instead we drop the
+          // sender filter and check it client-side per event type. The
+          // node returns only events with the matching topic0, so the
+          // payload stays small.
           const logs = await provider.getLogs({
             address: m.address,
-            topics: [TRANSFER_SINGLE_TOPIC, null, ZERO_TOPIC],
+            topics: [[ERC6909_TOPIC, ERC1155_TOPIC]],
             fromBlock: chunkStart,
             toBlock: chunkEnd,
           })
           for (const log of logs) {
-            const parsed = ercIface.parseLog({ topics: [...log.topics], data: log.data })
-            if (!parsed) continue
-            const to = String(parsed.args.to).toLowerCase()
-            const userId = walletByAddr.get(to)
+            if (log.topics.length !== 4) continue
+            let recipient = ''
+            let id = 0
+            let amount = 0n
+            if (log.topics[0] === ERC6909_TOPIC) {
+              if (log.topics[1] !== ZERO_TOPIC) continue // not a mint
+              recipient = ('0x' + log.topics[2].slice(26)).toLowerCase()
+              id = Number(BigInt(log.topics[3]))
+              const dec = ethers.AbiCoder.defaultAbiCoder().decode(
+                ['address', 'uint256'], log.data,
+              )
+              amount = dec[1] as bigint
+            } else if (log.topics[0] === ERC1155_TOPIC) {
+              if (log.topics[2] !== ZERO_TOPIC) continue // not a mint
+              recipient = ('0x' + log.topics[3].slice(26)).toLowerCase()
+              const dec = ethers.AbiCoder.defaultAbiCoder().decode(
+                ['uint256', 'uint256'], log.data,
+              )
+              id = Number(dec[0] as bigint)
+              amount = dec[1] as bigint
+            } else {
+              continue
+            }
+            const userId = walletByAddr.get(recipient)
             if (!userId) continue
             if (seenTx.has(log.transactionHash.toLowerCase())) continue
             matches.push({
               userId,
               marketAddress: m.address,
-              tokenId: Number(parsed.args.id),
-              outcomeTokenAmount: Number(ethers.formatUnits(parsed.args.value, 18)),
+              tokenId: id,
+              outcomeTokenAmount: Number(ethers.formatUnits(amount, 18)),
               txHash: log.transactionHash,
-              recipient: to,
+              recipient,
             })
           }
         } catch (e) {
@@ -2029,14 +2068,18 @@ app.post('/api/admin/predictions/backfill-recent', requireAdmin, async (req, res
         const receipt = await provider.getTransactionReceipt(match.txHash)
         let usdtIn = 0
         if (receipt) {
+          // ERC-20 Transfer(from, to, value): topic0 = sig,
+          // topic1 = from, topic2 = to, data = value.
+          const ERC20_TRANSFER = ethers.id('Transfer(address,address,uint256)')
           for (const lg of receipt.logs) {
             if (lg.address.toLowerCase() !== USDT_BSC.toLowerCase()) continue
+            if (lg.topics[0] !== ERC20_TRANSFER || lg.topics.length < 3) continue
+            const fromAddr = ('0x' + lg.topics[1].slice(26)).toLowerCase()
+            if (fromAddr !== match.recipient) continue
             try {
-              const p = ercIface.parseLog({ topics: [...lg.topics], data: lg.data })
-              if (p && String(p.args.from).toLowerCase() === match.recipient) {
-                usdtIn = Number(ethers.formatUnits(p.args.value, 18))
-                break
-              }
+              const [value] = ethers.AbiCoder.defaultAbiCoder().decode(['uint256'], lg.data)
+              usdtIn = Number(ethers.formatUnits(value as bigint, 18))
+              break
             } catch {}
           }
         }
@@ -2135,32 +2178,58 @@ app.post('/api/admin/predictions/recover-by-tx', requireAdmin, async (req, res) 
       return res.json({ ok: true, alreadyRecorded: true, positionId: existing[0].id })
     }
 
-    const TRANSFER_SINGLE_TOPIC = ethers.id('TransferSingle(address,address,address,uint256,uint256)')
+    // 42.space outcome tokens are ERC-6909, NOT ERC-1155. The Transfer
+    // event signature differs:
+    //   ERC-6909: Transfer(address caller, address indexed sender,
+    //                      address indexed receiver, uint256 indexed id,
+    //                      uint256 amount)  → 0x1b3d7edb...
+    //   ERC-1155: TransferSingle(address indexed op, address indexed from,
+    //                            address indexed to, uint256 id, uint256 v)
+    //                          → 0xc3d58168...
+    // We accept BOTH topics so this code keeps working if 42 ever ships a
+    // contract that emits the standard ERC-1155 event.
+    //
+    // Mint detection: topic1 (`from` for ERC-1155, `sender` for ERC-6909) is
+    // the zero address. For ERC-1155 the from is at topic2 (because operator
+    // is topic1), so we check both layouts below.
+    const ERC1155_TOPIC = ethers.id('TransferSingle(address,address,address,uint256,uint256)')
+    const ERC6909_TOPIC = ethers.id('Transfer(address,address,address,uint256,uint256)')
     const ZERO_TOPIC = '0x' + '0'.repeat(64)
     const USDT_TRANSFER_TOPIC = ethers.id('Transfer(address,address,uint256)')
 
-    const ercIface = new ethers.Interface([
-      'event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)',
-    ])
     const usdtIface = new ethers.Interface([
       'event Transfer(address indexed from, address indexed to, uint256 value)',
     ])
 
-    // Find the mint log (from = 0x0, on a market — i.e. NOT the USDT contract).
-    const mintLog = receipt.logs.find(
-      (l) =>
-        l.topics[0] === TRANSFER_SINGLE_TOPIC &&
-        l.topics[2] === ZERO_TOPIC &&
-        l.address.toLowerCase() !== USDT_BSC.toLowerCase(),
-    )
-    if (!mintLog) return res.status(400).json({ ok: false, error: 'no_mint_log_in_tx' })
-    const parsedMint = ercIface.parseLog({ topics: [...mintLog.topics], data: mintLog.data })
-    if (!parsedMint) return res.status(500).json({ ok: false, error: 'mint_log_parse_failed' })
-
-    const recipient = String(parsedMint.args.to).toLowerCase()
-    const tokenId = Number(parsedMint.args.id)
-    const outcomeTokenAmount = Number(ethers.formatUnits(parsedMint.args.value, 18))
-    const marketAddress = ethers.getAddress(mintLog.address)
+    let recipient = ''
+    let tokenId = 0
+    let outcomeTokenAmount = 0
+    let marketAddress = ''
+    for (const l of receipt.logs) {
+      if (l.address.toLowerCase() === USDT_BSC.toLowerCase()) continue
+      const t0 = l.topics[0]
+      if (t0 === ERC6909_TOPIC && l.topics.length === 4 && l.topics[1] === ZERO_TOPIC) {
+        // ERC-6909 Transfer mint: topics = [sig, sender(0x0), receiver, id], data = (caller, amount)
+        recipient = ('0x' + l.topics[2].slice(26)).toLowerCase()
+        tokenId = Number(BigInt(l.topics[3]))
+        const decoded = ethers.AbiCoder.defaultAbiCoder().decode(['address', 'uint256'], l.data)
+        outcomeTokenAmount = Number(ethers.formatUnits(decoded[1] as bigint, 18))
+        marketAddress = ethers.getAddress(l.address)
+        break
+      }
+      if (t0 === ERC1155_TOPIC && l.topics.length === 4 && l.topics[2] === ZERO_TOPIC) {
+        // ERC-1155 TransferSingle mint: topics = [sig, operator, from(0x0), to], data = (id, value)
+        recipient = ('0x' + l.topics[3].slice(26)).toLowerCase()
+        const decoded = ethers.AbiCoder.defaultAbiCoder().decode(['uint256', 'uint256'], l.data)
+        tokenId = Number(decoded[0] as bigint)
+        outcomeTokenAmount = Number(ethers.formatUnits(decoded[1] as bigint, 18))
+        marketAddress = ethers.getAddress(l.address)
+        break
+      }
+    }
+    if (!marketAddress) {
+      return res.status(400).json({ ok: false, error: 'no_mint_log_in_tx' })
+    }
 
     // Find the matching wallet → user.
     const walletRows = await db.$queryRawUnsafe<Array<{ userId: string }>>(
