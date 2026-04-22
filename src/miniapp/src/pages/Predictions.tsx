@@ -87,8 +87,25 @@ interface ScannerRow {
   marketTitle: string
   marketAddress: string
   category: string
+  startDate: string
   endDate: string
   elapsedPct: number
+  volume: number
+  traders: number
+}
+
+// Scanner sort options. Backed by the corresponding fields on ScannerRow:
+//   newest      → startDate desc
+//   volume      → volume desc
+//   entries     → traders desc (unique participant count)
+//   ending_soon → endDate asc
+type ScannerSort = 'newest' | 'volume' | 'entries' | 'ending_soon'
+
+const SCANNER_SORT_LABEL: Record<ScannerSort, string> = {
+  newest: 'Newest',
+  volume: 'Volume',
+  entries: 'Entries',
+  ending_soon: 'Ending soon',
 }
 
 interface MarketDetailOutcome {
@@ -217,6 +234,7 @@ export default function Predictions() {
   // Scanner expanded by default — users were missing it entirely when collapsed.
   const [scannerOpen, setScannerOpen] = useState(true)
   const [scannerFilter, setScannerFilter] = useState<'ALL' | 'AI' | 'CRYPTO' | 'OTHER'>('ALL')
+  const [scannerSort, setScannerSort] = useState<ScannerSort>('volume')
   const [, setNowTick] = useState(0)
   const inFlight = useRef(false)
   // On-demand market detail (only fetched when a scanner row is tapped).
@@ -623,7 +641,7 @@ export default function Predictions() {
         {scannerOpen && (
           <>
             {/* Filter pills — quickly narrow by category */}
-            <div style={{ display: 'flex', gap: 6, marginTop: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, marginBottom: 6, flexWrap: 'wrap' }}>
               {(['ALL', 'AI', 'CRYPTO', 'OTHER'] as const).map((f) => {
                 const active = scannerFilter === f
                 return (
@@ -650,10 +668,49 @@ export default function Predictions() {
                 )
               })}
             </div>
+            {/* Sort pills — independent of the category filter above so users
+                can stack "AI markets, ending soon" etc. Default sort is
+                Volume which matches the server-side `order=volume` we
+                already pass to /api/v1/markets. */}
+            <div style={{
+              display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap',
+              alignItems: 'center',
+            }}>
+              <span style={{ fontSize: 9, color: '#64748b', fontWeight: 600,
+                             letterSpacing: 0.6, textTransform: 'uppercase',
+                             marginRight: 2 }}>
+                Sort
+              </span>
+              {(['volume', 'entries', 'ending_soon', 'newest'] as const).map((s) => {
+                const active = scannerSort === s
+                return (
+                  <button
+                    key={s}
+                    onClick={() => setScannerSort(s)}
+                    data-testid={`button-scanner-sort-${s}`}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 999,
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: 0.3,
+                      background: active ? '#0f0f17' : 'transparent',
+                      border: active
+                        ? '1px solid #7c3aed'
+                        : '1px solid var(--border)',
+                      color: active ? '#a855f7' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {SCANNER_SORT_LABEL[s]}
+                  </button>
+                )
+              })}
+            </div>
             <div className="card" style={{ marginTop: 0, padding: 0, overflow: 'hidden' }}>
               {(() => {
                 const allRows = data?.scanner ?? []
-                const filtered = scannerFilter === 'ALL'
+                const filteredByCategory = scannerFilter === 'ALL'
                   ? allRows
                   : allRows.filter((m) => {
                       const cat = (m.category || '').toLowerCase()
@@ -662,6 +719,27 @@ export default function Predictions() {
                       // OTHER = anything not AI or crypto
                       return !cat.includes('ai') && !cat.includes('crypto')
                     })
+                // Apply sort. Slice first so we never mutate the cached
+                // server payload. Date parses default to 0 on invalid input,
+                // which keeps the comparator total-ordered.
+                const ts = (s: string) => {
+                  const t = Date.parse(s || '')
+                  return Number.isFinite(t) ? t : 0
+                }
+                const filtered = filteredByCategory.slice().sort((a, b) => {
+                  switch (scannerSort) {
+                    case 'volume':
+                      return (b.volume || 0) - (a.volume || 0)
+                    case 'entries':
+                      return (b.traders || 0) - (a.traders || 0)
+                    case 'ending_soon':
+                      return ts(a.endDate) - ts(b.endDate)
+                    case 'newest':
+                      return ts(b.startDate) - ts(a.startDate)
+                    default:
+                      return 0
+                  }
+                })
                 if (allRows.length === 0) {
                   return (
                     <div style={{ padding: 16, fontSize: 12, color: '#64748b' }}>
@@ -1330,7 +1408,7 @@ function MyPositionsList({
       case 'resolved_loss':  return { label: 'LOST',        color: '#ef4444' }
       case 'closed':         return { label: 'CLOSED',      color: '#94a3b8' }
       case 'claimed':        return { label: 'CLAIMED',     color: '#64748b' }
-      default:               return { label: p.status.toUpperCase(), color: '#94a3b8' }
+      default:               return { label: String(p.status).toUpperCase(), color: '#94a3b8' }
     }
   }
   return (

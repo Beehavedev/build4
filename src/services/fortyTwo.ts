@@ -30,6 +30,13 @@ export interface Market42 {
   ancillaryData: unknown[];
   description: string;
   categories?: string[];
+  // Sortable activity metrics returned by GET /api/v1/markets. Optional
+  // because they were not declared in earlier callers and may be absent on
+  // some legacy rows; consumers should treat null/undefined as 0 when
+  // sorting. `traders` is the unique participant count (== "entries" in
+  // user-facing copy); `volume` is cumulative trading volume.
+  volume?: number;
+  traders?: number;
 }
 
 export interface MarketTimelineEvent {

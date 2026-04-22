@@ -1390,7 +1390,16 @@ app.get('/api/signals', async (_req, res) => {
 // auto-refreshes every 30s; without this we'd hit 42.space twice a minute
 // per active viewer and risk rate-limiting.
 const predictionScannerCache: {
-  value: Array<{ marketTitle: string; marketAddress: string; category: string; endDate: string; elapsedPct: number }>
+  value: Array<{
+    marketTitle: string
+    marketAddress: string
+    category: string
+    startDate: string
+    endDate: string
+    elapsedPct: number
+    volume: number
+    traders: number
+  }>
   fetchedAt: number
 } = { value: [], fetchedAt: 0 }
 
@@ -1530,8 +1539,15 @@ app.get('/api/predictions/latest', async (_req, res) => {
           marketTitle: m.question,
           marketAddress: m.address,
           category: (m.categories ?? [])[0] ?? 'uncategorized',
+          startDate: m.startDate,
           endDate: m.endDate,
           elapsedPct: m.elapsedPct,
+          // Activity metrics — null/undefined coerced to 0 so the mini-app
+          // sort comparators are deterministic. `traders` is the unique
+          // participant count surfaced by the 42.space markets endpoint
+          // (rendered as "entries" in the UI).
+          volume: typeof m.volume === 'number' ? m.volume : 0,
+          traders: typeof m.traders === 'number' ? m.traders : 0,
         }))
         predictionScannerCache.value = scanner
         predictionScannerCache.fetchedAt = Date.now()
