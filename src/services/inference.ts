@@ -1,4 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk'
+import type {
+  ContentBlock,
+  Message,
+  MessageCreateParamsNonStreaming,
+  TextBlock,
+} from '@anthropic-ai/sdk/resources/messages'
 
 export type Provider = 'anthropic' | 'xai' | 'hyperbolic' | 'akash'
 
@@ -79,13 +85,34 @@ export function getProviderStatus(): Record<Provider, { live: boolean; envVar: s
   return out
 }
 
+export interface AnthropicMessagesClient {
+  create(
+    params: MessageCreateParamsNonStreaming,
+    options?: { signal?: AbortSignal },
+  ): Promise<Message>
+}
+
+export interface AnthropicLike {
+  messages: AnthropicMessagesClient
+}
+
+export interface OpenAICompatChoice {
+  message?: { content?: string | null }
+}
+
+export interface OpenAICompatResponse {
+  model?: string
+  choices?: OpenAICompatChoice[]
+  usage?: { total_tokens?: number }
+}
+
 export interface InferenceDeps {
   fetch: typeof fetch
-  anthropicFactory: (apiKey: string) => Pick<Anthropic, 'messages'>
+  anthropicFactory: (apiKey: string) => AnthropicLike
 }
 
 const defaultDeps: InferenceDeps = {
-  fetch: (...args) => fetch(...(args as Parameters<typeof fetch>)),
+  fetch: (input, init) => fetch(input, init),
   anthropicFactory: (apiKey: string) => new Anthropic({ apiKey }),
 }
 
@@ -102,34 +129,44 @@ export function __resetTestDeps(): void {
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_TOKENS = 1024
 
-export async function callLLM(args: CallLLMArgs): Promise<CallLLMResult> {
-  const cfg = PROVIDERS[args.provider]
-  if (!cfg) throw new Error(`[inference] unknown provider: ${args.provider}`)
+interface ResolvedCall {
+  apiKey: string
+  model: string
+  maxTokens: number
+  temperature: number
+  timeoutMs: number
+}
+
+function resolveCall(args: CallLLMArgs, cfg: ProviderConfig): ResolvedCall {
   const apiKey = process.env[cfg.apiKeyEnv]
   if (!apiKey) {
     throw new InferenceError(args.provider, 0, '', `[inference:${args.provider}] missing ${cfg.apiKeyEnv}`)
   }
-  const model = args.model ?? cfg.defaultModel
-  const maxTokens = args.maxTokens ?? DEFAULT_MAX_TOKENS
-  const temperature = args.temperature ?? 0.7
-  const timeoutMs = args.timeoutMs ?? DEFAULT_TIMEOUT_MS
-
-  if (args.provider === 'anthropic') {
-    return callAnthropic({ apiKey, model, args, maxTokens, temperature, timeoutMs })
+  return {
+    apiKey,
+    model: args.model ?? cfg.defaultModel,
+    maxTokens: args.maxTokens ?? DEFAULT_MAX_TOKENS,
+    temperature: args.temperature ?? 0.7,
+    timeoutMs: args.timeoutMs ?? DEFAULT_TIMEOUT_MS,
   }
-  return callOpenAICompat({ apiKey, model, baseUrl: cfg.baseUrl, args, maxTokens, temperature, timeoutMs })
 }
 
-async function callAnthropic(opts: {
-  apiKey: string
-  model: string
-  args: CallLLMArgs
-  maxTokens: number
-  temperature: number
-  timeoutMs: number
-}): Promise<CallLLMResult> {
-  const { apiKey, model, args, maxTokens, temperature, timeoutMs } = opts
-  const client = activeDeps.anthropicFactory(apiKey)
+export async function callLLM(args: CallLLMArgs): Promise<CallLLMResult> {
+  const cfg = PROVIDERS[args.provider]
+  if (!cfg) throw new Error(`[inference] unknown provider: ${args.provider}`)
+  const resolved = resolveCall(args, cfg)
+  if (args.provider === 'anthropic') {
+    return callAnthropic(args, resolved)
+  }
+  return callOpenAICompat(args, resolved, cfg.baseUrl)
+}
+
+function isTextBlock(block: ContentBlock): block is TextBlock {
+  return block.type === 'text'
+}
+
+async function callAnthropic(args: CallLLMArgs, r: ResolvedCall): Promise<CallLLMResult> {
+  const client = activeDeps.anthropicFactory(r.apiKey)
   const start = Date.now()
 
   const system = args.jsonMode
@@ -137,72 +174,77 @@ async function callAnthropic(opts: {
     : args.system
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const timer = setTimeout(() => controller.abort(), r.timeoutMs)
   try {
-    const resp: any = await (client.messages.create as any)(
-      {
-        model,
-        max_tokens: maxTokens,
-        temperature,
-        ...(system ? { system } : {}),
-        messages: [{ role: 'user', content: args.user }],
-      },
-      { signal: controller.signal },
-    )
-    const text = (resp?.content ?? [])
-      .filter((b: any) => b?.type === 'text')
-      .map((b: any) => b.text)
+    const params: MessageCreateParamsNonStreaming = {
+      model: r.model,
+      max_tokens: r.maxTokens,
+      temperature: r.temperature,
+      messages: [{ role: 'user', content: args.user }],
+      ...(system ? { system } : {}),
+    }
+    const resp: Message = await client.messages.create(params, { signal: controller.signal })
+    const text = resp.content
+      .filter(isTextBlock)
+      .map((b) => b.text)
       .join('\n')
       .trim()
-    const tokensUsed = (resp?.usage?.input_tokens ?? 0) + (resp?.usage?.output_tokens ?? 0)
+    const tokensUsed = (resp.usage?.input_tokens ?? 0) + (resp.usage?.output_tokens ?? 0)
     return {
       text,
-      model: resp?.model ?? model,
+      model: resp.model ?? r.model,
       provider: 'anthropic',
       latencyMs: Date.now() - start,
       tokensUsed,
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof InferenceError) throw err
-    const status = typeof err?.status === 'number' ? err.status : 0
-    const body = typeof err?.error === 'object' ? JSON.stringify(err.error) : String(err?.message ?? err)
+    const e = err as { status?: number; error?: unknown; message?: string; name?: string }
+    const status = typeof e?.status === 'number' ? e.status : 0
+    const body =
+      typeof e?.error === 'object' && e.error !== null
+        ? JSON.stringify(e.error)
+        : String(e?.message ?? err)
     throw new InferenceError('anthropic', status, body)
   } finally {
     clearTimeout(timer)
   }
 }
 
-async function callOpenAICompat(opts: {
-  apiKey: string
+interface OpenAICompatRequestBody {
   model: string
-  baseUrl: string
-  args: CallLLMArgs
-  maxTokens: number
+  messages: Array<{ role: 'system' | 'user'; content: string }>
+  max_tokens: number
   temperature: number
-  timeoutMs: number
-}): Promise<CallLLMResult> {
-  const { apiKey, model, baseUrl, args, maxTokens, temperature, timeoutMs } = opts
-  const messages: Array<{ role: string; content: string }> = []
+  response_format?: { type: 'json_object' }
+}
+
+async function callOpenAICompat(
+  args: CallLLMArgs,
+  r: ResolvedCall,
+  baseUrl: string,
+): Promise<CallLLMResult> {
+  const messages: OpenAICompatRequestBody['messages'] = []
   if (args.system) messages.push({ role: 'system', content: args.system })
   messages.push({ role: 'user', content: args.user })
 
-  const body: Record<string, unknown> = {
-    model,
+  const body: OpenAICompatRequestBody = {
+    model: r.model,
     messages,
-    max_tokens: maxTokens,
-    temperature,
+    max_tokens: r.maxTokens,
+    temperature: r.temperature,
   }
   if (args.jsonMode) body.response_format = { type: 'json_object' }
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const timer = setTimeout(() => controller.abort(), r.timeoutMs)
   const start = Date.now()
   try {
     const resp = await activeDeps.fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${r.apiKey}`,
       },
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -211,24 +253,25 @@ async function callOpenAICompat(opts: {
     if (!resp.ok) {
       throw new InferenceError(args.provider, resp.status, rawBody)
     }
-    let data: any
+    let data: OpenAICompatResponse
     try {
-      data = JSON.parse(rawBody)
+      data = JSON.parse(rawBody) as OpenAICompatResponse
     } catch {
       throw new InferenceError(args.provider, resp.status, rawBody, `[inference:${args.provider}] malformed JSON response`)
     }
-    const text = (data?.choices?.[0]?.message?.content ?? '').trim()
-    const tokensUsed = data?.usage?.total_tokens ?? 0
+    const text = (data.choices?.[0]?.message?.content ?? '').trim()
+    const tokensUsed = data.usage?.total_tokens ?? 0
     return {
       text,
-      model: data?.model ?? model,
+      model: data.model ?? r.model,
       provider: args.provider,
       latencyMs: Date.now() - start,
       tokensUsed,
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof InferenceError) throw err
-    const msg = err?.name === 'AbortError' ? `request timed out after ${timeoutMs}ms` : String(err?.message ?? err)
+    const e = err as { name?: string; message?: string }
+    const msg = e?.name === 'AbortError' ? `request timed out after ${r.timeoutMs}ms` : String(e?.message ?? err)
     throw new InferenceError(args.provider, 0, msg)
   } finally {
     clearTimeout(timer)
