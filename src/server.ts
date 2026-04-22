@@ -1184,6 +1184,81 @@ app.delete('/api/admin/cost-rates/:provider', requireAdmin, async (req, res) => 
   }
 })
 
+// ──────────────────────────────────────────────────────────────────────────
+// Market-creator admin endpoints. The autonomous agent populates a queue
+// of researched/Claude-evaluated proposals; admin reviews and submits them
+// to 42.space (manual handoff until 42.space exposes a creation API).
+// All routes are gated by requireAdmin (Telegram-id allowlist).
+// ──────────────────────────────────────────────────────────────────────────
+app.get('/api/admin/market-proposals', requireAdmin, async (req, res) => {
+  try {
+    const { listProposals } = await import('./services/marketProposalStore')
+    const status = req.query.status
+      ? String(req.query.status).split(',') as any
+      : undefined
+    const limit = req.query.limit ? Math.min(200, Number(req.query.limit) || 50) : 50
+    const proposals = await listProposals({ status, limit })
+    res.json({ proposals })
+  } catch (err) {
+    console.error('[API] /admin/market-proposals GET failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+app.post('/api/admin/market-proposals/:id/status', requireAdmin, async (req, res) => {
+  try {
+    const { updateProposalStatus, getProposalById } = await import('./services/marketProposalStore')
+    const id = String(req.params.id)
+    const status = String(req.body?.status ?? '')
+    if (!['approved', 'rejected', 'submitted', 'live'].includes(status)) {
+      return res.status(400).json({ error: 'invalid status' })
+    }
+    const existing = await getProposalById(id)
+    if (!existing) return res.status(404).json({ error: 'not found' })
+    let marketAddress: string | undefined
+    if (req.body?.marketAddress) {
+      const ma = String(req.body.marketAddress).trim()
+      // Lightweight EVM-address sanity check — 0x followed by 40 hex chars.
+      // We don't checksum-validate here; the on-chain side will reject
+      // anything malformed when actually used.
+      if (!/^0x[a-fA-F0-9]{40}$/.test(ma)) {
+        return res.status(400).json({ error: 'marketAddress must be a 0x-prefixed 40-char hex string' })
+      }
+      marketAddress = ma
+    }
+    if (status === 'live' && !marketAddress) {
+      return res.status(400).json({ error: 'marketAddress is required when status=live' })
+    }
+    await updateProposalStatus(id, status as any, { marketAddress })
+    const updated = await getProposalById(id)
+    res.json({ proposal: updated })
+  } catch (err) {
+    console.error('[API] /admin/market-proposals status update failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// On-demand pipeline run. Useful for the partnership demo: an admin can
+// kick the agent live and watch new proposals show up. Long-running
+// (~10-30s with Claude); we don't await it on the response so the HTTP
+// call returns immediately.
+app.post('/api/admin/market-creator/run', requireAdmin, async (_req, res) => {
+  try {
+    const { runMarketCreator } = await import('./agents/marketCreator')
+    // Fire and forget — pipeline takes 10-30s with the Claude eval. The
+    // admin who triggered this can poll GET /api/admin/market-proposals to
+    // see the new rows, so we skip the Telegram alert on this on-demand
+    // path (alerts are reserved for the future cron-driven runs).
+    runMarketCreator().catch((err) => {
+      console.error('[marketCreator] background run failed:', err)
+    })
+    res.json({ ok: true, message: 'market-creator run started' })
+  } catch (err) {
+    console.error('[API] /admin/market-creator/run failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
 app.get('/api/signals', async (_req, res) => {
   const { getLatestSignals } = await import('./services/signals')
   const signals = await getLatestSignals(10)

@@ -155,10 +155,47 @@ beats the on-chain implied probability by ≥10pp. Implementation lives in:
 Position-sizing rules (per market): `min($2 USDT, 10% of agent.maxPositionSize)`,
 max 5 simultaneous open per agent, max 3 new per agent per day.
 
-Live trading is gated behind `User.fortyTwoLiveTrade` (default false → paper).
-Users toggle via `/predictions` in the bot. Resolved positions are settled by
-`settleResolvedPositions()` which runs on every agent tick (cheap — only fetches
-markets with at least one open position).
+Live trading is on by default (`User.fortyTwoLiveTrade=true`); the flag now
+acts as a per-user kill switch — when set to `false` it blocks new positions
+(`buildTrader` returns null, both `openPredictionPosition` and
+`openManualPredictionPosition` return a "trading disabled" error) but still
+lets existing positions exit (`forcePaperTrade` bypass). Users toggle via
+`/predictions` in the bot or the Predictions tab in the mini-app. Resolved
+positions are settled by `settleResolvedPositions()` which runs on every
+agent tick (cheap — only fetches markets with at least one open position).
+
+### Market-Creator Agent
+Autonomous agent that researches trending events and proposes new prediction
+markets for admin review. Pipeline:
+1. Research — DexScreener (BSC tokens) + GNews (news) in parallel
+2. Score — 0-100 marketability score across newsAuthority, socialVolume,
+   financialStake, resolvability
+3. De-dup — drops candidates whose question matches a recent proposal
+4. Evaluate — Claude refines or rejects each top candidate
+5. Persist — writes to `MarketProposal` table (status: researched | approved
+   | submitted | live | rejected)
+6. Notify — pings admins via Telegram with the new pending queue
+
+Files:
+- `src/services/dexScreener.ts` — trending BNB tokens (free public API)
+- `src/services/newsService.ts` — GNews fetcher (skips silently if
+  `GNEWS_API_KEY` missing)
+- `src/services/marketProposalStore.ts` — proposal CRUD + de-dup
+- `src/agents/marketCreator.ts` — orchestrator
+- `src/agents/marketCreatorPrompt.ts` — Claude system + user prompt
+- `scripts/runMarketCreator.ts` — manual trigger CLI
+
+Admin endpoints (all `requireAdmin`):
+- `GET  /api/admin/market-proposals?status=researched` — list queue
+- `POST /api/admin/market-proposals/:id/status` — body `{status, marketAddress?}`
+  to approve / reject / mark submitted / mark live
+- `POST /api/admin/market-creator/run` — trigger an on-demand pipeline run
+
+42.space has no `createMarket()` endpoint yet, so the `submitted → live`
+transition is a manual handoff (admin alerts the 42.space team, fills in
+`marketAddress` once they confirm). Cron schedule is intentionally not wired
+yet — flip on by importing `runMarketCreator` into `src/agents/runner.ts`
+and adding e.g. `cron.schedule('0 */6 * * *', () => runMarketCreator({ bot }))`.
 
 ## Multi-Provider Swarm Trading
 

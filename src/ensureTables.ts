@@ -303,6 +303,35 @@ export async function ensureNewTables() {
     CONSTRAINT "ProviderCostRate_pkey" PRIMARY KEY ("provider")
   )`)
 
+  // ─── MarketProposal — autonomous market-creator agent's queue ─────────
+  // Each row is a candidate prediction market the agent has researched and
+  // (usually) Claude-approved. Admin reviews these manually before they
+  // get submitted to 42.space; once 42.space exposes a creation endpoint
+  // we'll wire the submitted→live transition automatically.
+  await run(`CREATE TABLE IF NOT EXISTS "MarketProposal" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "status" TEXT NOT NULL DEFAULT 'researched',
+    "category" TEXT,
+    "sourceType" TEXT NOT NULL,
+    "question" TEXT NOT NULL,
+    "outcomes" JSONB NOT NULL,
+    "resolutionDate" TIMESTAMP(3),
+    "resolutionCriteria" TEXT,
+    "resolutionSource" TEXT,
+    "totalScore" DOUBLE PRECISION NOT NULL,
+    "scores" JSONB NOT NULL,
+    "estimatedInterest" TEXT,
+    "claudeReasoning" TEXT,
+    "rawSignal" JSONB,
+    "marketAddress" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "submittedAt" TIMESTAMP(3),
+    "liveAt" TIMESTAMP(3),
+    CONSTRAINT "MarketProposal_pkey" PRIMARY KEY ("id")
+  )`)
+  await run(`CREATE INDEX IF NOT EXISTS "MarketProposal_status_idx" ON "MarketProposal"("status")`)
+  await run(`CREATE INDEX IF NOT EXISTS "MarketProposal_createdAt_idx" ON "MarketProposal"("createdAt" DESC)`)
+
   // ─── One-shot data migrations ──────────────────────────────────────────
   // Tracks one-off data backfills so each only runs once per DB, even when
   // ensureNewTables() executes on every boot.
