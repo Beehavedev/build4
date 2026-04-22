@@ -1007,6 +1007,47 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         continue
       }
 
+      // Cost guard #3: Claude consistently HOLDs on extreme RSI and volume
+      // collapse with reasons like "refusing to chase parabolic", "volume
+      // 0.22x fails threshold", "extreme overbought". Replicate those rules
+      // deterministically to avoid paying for the same answer every 60s.
+      // Only fires when no open positions on this pair AND we have full
+      // (non-new-listing) klines so RSI/volume are meaningful.
+      if (openPositions.length === 0 && ohlcv) {
+        const vols1h    = ohlcv['1h'].volume
+        const volSMA20  = vols1h.length >= 20 ? calculateSMA(vols1h, 20) : 0
+        const volCur    = vols1h[vols1h.length - 1] ?? 0
+        const volRatio  = volSMA20 > 0 ? volCur / volSMA20 : NaN
+        const rsi       = snapshot.rsi
+        const extremeRsi    = rsi >= 80 || (rsi > 0 && rsi <= 20)
+        const volumeCollapse = Number.isFinite(volRatio) && volRatio < 0.4
+
+        if (extremeRsi || volumeCollapse) {
+          const reason = extremeRsi && volumeCollapse
+            ? `RSI ${rsi.toFixed(1)} extreme + volume ${volRatio.toFixed(2)}x collapse`
+            : extremeRsi
+              ? `RSI ${rsi.toFixed(1)} in extreme zone — refusing to chase`
+              : `Volume ${volRatio.toFixed(2)}x of 20-period avg — no participation`
+          await safeAgentLogCreate({
+            data: {
+              agentId: agent.id,
+              userId: agent.userId,
+              action: 'HOLD',
+              parsedAction: 'HOLD',
+              executionResult: 'Deterministic HOLD — LLM call skipped',
+              pair,
+              price: snapshot.price || null,
+              reason,
+              adx: Number.isFinite(snapshot.adx) ? snapshot.adx : null,
+              rsi: Number.isFinite(snapshot.rsi) ? snapshot.rsi : null,
+              score: 0,
+              regime: snapshot.regime
+            }
+          })
+          continue
+        }
+      }
+
       // 3. Get today's PnL
       const todayPnl = await getTodayPnl(agent.id)
 
