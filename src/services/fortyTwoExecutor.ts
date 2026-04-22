@@ -36,7 +36,11 @@ function friendlyTraderError(err: unknown, op: 'buyOutcome' | 'sellOutcome' | 'c
     return `${op} failed: not enough BNB for gas in your trading wallet.`;
   }
   if (raw.includes('CALL_EXCEPTION') || raw.includes('execution reverted')) {
-    return `${op} failed: on-chain call reverted (slippage, market closed, or insufficient USDT allowance).`;
+    // Surface the actual revert reason — the generic "slippage / market closed
+    // / allowance" hint was masking real diagnostics in production. Trim to
+    // ~240 chars so the message stays UI-readable.
+    const trimmed = raw.length > 240 ? raw.slice(0, 240) + '…' : raw;
+    return `${op} failed: on-chain call reverted — ${trimmed}`;
   }
   return `${op} failed: ${raw}`;
 }
@@ -804,8 +808,13 @@ export async function closePredictionPosition(
     }
   }
 
-  // Slippage: 5% below the marginal-price-implied USDT payout for live sells.
-  const SLIPPAGE_BPS_SELL = 500;
+  // 30% slippage tolerance on sell. Prediction-market AMMs (LMSR-style) move
+  // a LOT when closing positions in thin markets — selling 200+ tokens on a
+  // micro-cap outcome can routinely exceed 5–10% impact even though the
+  // marginal price barely changes. The old 5% bound was reverting every
+  // legitimate close. Buy-side stays tighter (cap at entry) because there
+  // the user can simply size down; on sell they have a fixed bag to exit.
+  const SLIPPAGE_BPS_SELL = 3000;
   const tokensSoldFloat = Number(ethers.formatUnits(tokenAmt, 18));
   const expectedUsdtOut = tokensSoldFloat * outcome.impliedProbability;
   const minUsdtOut = paperTrade
@@ -1029,7 +1038,13 @@ export async function closeUserPredictionPosition(
     }
   }
 
-  const SLIPPAGE_BPS_SELL = 500;
+  // 30% slippage tolerance on sell. Prediction-market AMMs (LMSR-style) move
+  // a LOT when closing positions in thin markets — selling 200+ tokens on a
+  // micro-cap outcome can routinely exceed 5–10% impact even though the
+  // marginal price barely changes. The old 5% bound was reverting every
+  // legitimate close. Buy-side stays tighter (cap at entry) because there
+  // the user can simply size down; on sell they have a fixed bag to exit.
+  const SLIPPAGE_BPS_SELL = 3000;
   const tokensSoldFloat = Number(ethers.formatUnits(tokenAmt, 18));
   const expectedUsdtOut = tokensSoldFloat * outcome.impliedProbability;
   const minUsdtOut = paperTrade
