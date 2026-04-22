@@ -1433,6 +1433,53 @@ app.get('/api/predictions/market/:address', async (req, res) => {
   }
 })
 
+// Manual user-initiated prediction trade. Triggered when a user taps
+// "Place trade" on a market scanner row in the mini-app. Bypasses the
+// swarm/conviction gating used by autonomous agents (the user's tap IS
+// the conviction) but still applies per-user fat-finger and rate caps.
+// Paper-vs-live is governed by the same User.fortyTwoLiveTrade toggle
+// that gates agent-driven trades, so a user in paper mode keeps simulating
+// regardless of which path opened the position.
+app.post('/api/predictions/buy', requireTgUser, async (req, res) => {
+  const user = (req as any).dbUser
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+
+  const body = req.body ?? {}
+  const marketAddress = typeof body.marketAddress === 'string' ? body.marketAddress : ''
+  const tokenId = Number(body.tokenId)
+  const usdtAmount = Number(body.usdtAmount)
+
+  if (!/^0x[0-9a-fA-F]{40}$/.test(marketAddress)) {
+    return res.status(400).json({ ok: false, error: 'invalid_market_address' })
+  }
+  if (!Number.isFinite(tokenId) || tokenId < 0) {
+    return res.status(400).json({ ok: false, error: 'invalid_token_id' })
+  }
+  if (!Number.isFinite(usdtAmount) || usdtAmount <= 0) {
+    return res.status(400).json({ ok: false, error: 'invalid_amount' })
+  }
+
+  try {
+    const { openManualPredictionPosition } = await import('./services/fortyTwoExecutor')
+    const result = await openManualPredictionPosition({
+      userId: user.id,
+      marketAddress,
+      tokenId,
+      usdtAmount,
+    })
+    if (!result.ok) {
+      // Caller-fixable validation errors (amount, sizing, wallet) → 400 so
+      // the mini-app can surface the reason verbatim. Genuine server errors
+      // (RPC, DB) flow through the catch block below as 500s.
+      return res.status(400).json(result)
+    }
+    return res.json(result)
+  } catch (err) {
+    console.error('[API] /predictions/buy failed:', err)
+    return res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
 // Read-only swarm divergence stats. Same aggregation as
 // scripts/swarmDivergence.ts. Mirrors the CLI's `--days` and `--pair` flags
 // as query params. Gated by the shared `requireAdmin` middleware: callers

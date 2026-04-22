@@ -363,6 +363,7 @@ export default function Predictions() {
                   expanded={expandedMarket === m.marketAddress}
                   detail={detailCache[m.marketAddress]}
                   onToggle={() => onToggleMarket(m.marketAddress)}
+                  onTraded={() => load(true)}
                 />
               ))
             )}
@@ -412,12 +413,13 @@ function CategoryPill({ cat }: { cat: string }) {
 }
 
 function ScannerRowItem({
-  row, expanded, detail, onToggle,
+  row, expanded, detail, onToggle, onTraded,
 }: {
   row: ScannerRow
   expanded: boolean
   detail: MarketDetailState | undefined
   onToggle: () => void
+  onTraded: () => void
 }) {
   const cd = expiryCountdown(row.endDate)
   return (
@@ -462,7 +464,205 @@ function ScannerRowItem({
               On-chain read failed: {detail.message}
             </div>
           ) : (
-            <OutcomeBars outcomes={detail.data.outcomes} />
+            <>
+              <OutcomeBars outcomes={detail.data.outcomes} />
+              <TradeForm
+                marketAddress={row.marketAddress}
+                outcomes={detail.data.outcomes}
+                onTraded={onTraded}
+              />
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface TradeResult {
+  ok: boolean
+  paperTrade?: boolean
+  txHash?: string | null
+  outcomeLabel?: string
+  usdtIn?: number
+  entryPrice?: number
+  positionId?: string
+  reason?: string
+  error?: string
+}
+
+function TradeForm({
+  marketAddress, outcomes, onTraded,
+}: {
+  marketAddress: string
+  outcomes: MarketDetailOutcome[]
+  onTraded: () => void
+}) {
+  // Pre-select the leading outcome (highest implied probability) so a user
+  // who just taps "Place trade" without changing anything gets the most-
+  // liquid side rather than a random tokenId.
+  const sorted = [...outcomes].sort((a, b) => b.impliedProbability - a.impliedProbability)
+  const tradable = sorted.filter((o) => !o.isWinner)
+  const [tokenId, setTokenId] = useState<number | null>(tradable[0]?.tokenId ?? null)
+  const [amount, setAmount] = useState<string>('1.00')
+  const [submitting, setSubmitting] = useState(false)
+  const [result, setResult] = useState<TradeResult | null>(null)
+
+  // Resolved markets show only the winner — no trade possible. The scanner
+  // is meant for live markets but defend in case a stale row leaks through.
+  if (tradable.length === 0) {
+    return (
+      <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 6,
+                    background: '#0a0a12', border: '1px solid #1e1e2e',
+                    fontSize: 11, color: '#64748b' }}>
+        Market resolved — no trades available.
+      </div>
+    )
+  }
+
+  const selected = tradable.find((o) => o.tokenId === tokenId) ?? tradable[0]
+  const amountNum = Number(amount)
+  const amountValid = Number.isFinite(amountNum) && amountNum >= 0.5 && amountNum <= 25
+  const expectedTokens = amountValid ? amountNum / Math.max(0.001, selected.impliedProbability) : 0
+
+  async function handleSubmit() {
+    if (!amountValid || !selected) return
+    setSubmitting(true)
+    setResult(null)
+    try {
+      const res = await fetch('/api/predictions/buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          marketAddress,
+          tokenId: selected.tokenId,
+          usdtAmount: amountNum,
+        }),
+      })
+      const json: TradeResult = await res.json()
+      setResult(json)
+      if (json.ok) onTraded()
+    } catch (e) {
+      setResult({ ok: false, error: (e as Error).message })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div data-testid={`trade-form-${marketAddress}`}
+         style={{ marginTop: 12, padding: 10, borderRadius: 6,
+                  background: '#0a0a12', border: '1px solid #1e1e2e' }}>
+      <div style={{ fontSize: 10, color: '#64748b', letterSpacing: 0.4,
+                    marginBottom: 8, textTransform: 'uppercase' }}>
+        Trade this market
+      </div>
+
+      {/* Outcome selector — render as compact chips, one per outcome. */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+        {tradable.map((o) => {
+          const active = o.tokenId === selected.tokenId
+          const pct = (o.impliedProbability * 100).toFixed(0)
+          return (
+            <button
+              key={o.tokenId}
+              type="button"
+              onClick={() => { setTokenId(o.tokenId); setResult(null) }}
+              data-testid={`button-outcome-${marketAddress}-${o.tokenId}`}
+              style={{
+                padding: '5px 9px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+                background: active ? '#7c3aed' : '#12121a',
+                border: `1px solid ${active ? '#7c3aed' : '#1e1e2e'}`,
+                color: active ? 'white' : '#94a3b8',
+                cursor: 'pointer',
+              }}>
+              {o.label} <span style={{ opacity: 0.7, marginLeft: 3 }}>{pct}%</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Amount input + Place trade button on one row. */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+        <div style={{ flex: 1, position: 'relative' }}>
+          <span style={{ position: 'absolute', left: 9, top: '50%',
+                         transform: 'translateY(-50%)',
+                         fontSize: 12, color: '#64748b' }}>$</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0.5"
+            max="25"
+            step="0.5"
+            value={amount}
+            onChange={(e) => { setAmount(e.target.value); setResult(null) }}
+            data-testid={`input-amount-${marketAddress}`}
+            style={{
+              width: '100%', padding: '7px 9px 7px 18px', borderRadius: 4,
+              background: '#12121a', border: '1px solid #1e1e2e',
+              color: '#e2e8f0', fontSize: 13,
+              fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+            }}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={!amountValid || submitting}
+          data-testid={`button-place-trade-${marketAddress}`}
+          style={{
+            padding: '7px 14px', borderRadius: 4, fontSize: 12, fontWeight: 600,
+            background: amountValid && !submitting ? '#10b981' : '#1e1e2e',
+            border: `1px solid ${amountValid && !submitting ? '#10b981' : '#1e1e2e'}`,
+            color: 'white',
+            cursor: amountValid && !submitting ? 'pointer' : 'not-allowed',
+            whiteSpace: 'nowrap',
+          }}>
+          {submitting ? 'Placing…' : `Place trade`}
+        </button>
+      </div>
+
+      {/* Helper hint: shows what the user is about to commit to before tap. */}
+      <div style={{ marginTop: 6, fontSize: 10, color: '#64748b',
+                    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
+        {amountValid
+          ? `~${expectedTokens.toFixed(2)} tokens of "${selected.label}" @ ${(selected.impliedProbability * 100).toFixed(1)}%`
+          : 'Amount must be $0.50–$25'}
+      </div>
+
+      {/* Result panel: BscScan link on success, plain reason on failure.
+          Lives inside the row so users see outcome without leaving context. */}
+      {result && (
+        <div data-testid={`trade-result-${marketAddress}`}
+             style={{ marginTop: 10, padding: '8px 10px', borderRadius: 4,
+                      background: result.ok ? '#10b98115' : '#ef444415',
+                      border: `1px solid ${result.ok ? '#10b98144' : '#ef444444'}`,
+                      fontSize: 11, color: result.ok ? '#10b981' : '#ef4444' }}>
+          {result.ok ? (
+            <>
+              <div style={{ fontWeight: 600, marginBottom: 3 }}>
+                {result.paperTrade ? 'Paper trade recorded' : 'Trade placed on-chain'}
+                {' · '}${result.usdtIn?.toFixed(2)} on {result.outcomeLabel}
+              </div>
+              {!result.paperTrade && result.txHash && (
+                <a
+                  href={`https://bscscan.com/tx/${result.txHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid={`link-bscscan-${marketAddress}`}
+                  style={{ color: '#10b981', textDecoration: 'underline',
+                           fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
+                  View on BscScan
+                </a>
+              )}
+              {result.paperTrade && (
+                <div style={{ color: '#94a3b8', fontSize: 10 }}>
+                  Toggle live mode in the Telegram /predictions command to use real USDT.
+                </div>
+              )}
+            </>
+          ) : (
+            <div>{result.reason ?? result.error ?? 'Trade failed'}</div>
           )}
         </div>
       )}

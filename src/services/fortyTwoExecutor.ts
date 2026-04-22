@@ -395,6 +395,198 @@ export async function openPredictionPosition(
   return { ok: true, positionId: id[0].id, paperTrade, usdtIn: sizing.usdtIn };
 }
 
+// ── Manual user-initiated trade bounds ─────────────────────────────────────
+// Manual trades come from a user explicitly tapping "Place trade" in the
+// mini-app on a market scanner row. They bypass the swarm/conviction gating
+// (the user IS the conviction) but still need protective caps:
+//   - MANUAL_MIN_USDT: same dust floor as PRED_MIN_USDT_IN — bonding-curve
+//     contracts reject smaller orders.
+//   - MANUAL_MAX_USDT: fat-finger guard. A user's whole BSC balance might
+//     be $5–$50; we cap one click at $25 so a stray keystroke can't drain
+//     the wallet on a single bad market.
+//   - MANUAL_MAX_OPEN_PER_USER: total simultaneous open manual positions.
+//     Keeps the dashboard readable and bounds resolution-claim work.
+//   - MANUAL_MAX_NEW_PER_USER_PER_DAY: rate limit against
+//     compromised-account or bot-key drain scenarios; 20 manual opens/day
+//     is generous for a real user but bounds the blast radius.
+export const MANUAL_MIN_USDT = PRED_MIN_USDT_IN;
+export const MANUAL_MAX_USDT = 25;
+export const MANUAL_MAX_OPEN_PER_USER = 10;
+export const MANUAL_MAX_NEW_PER_USER_PER_DAY = 20;
+
+export interface ManualTradeInput {
+  userId: string;
+  marketAddress: string;
+  tokenId: number;
+  usdtAmount: number;
+}
+
+export type ManualTradeResult =
+  | {
+      ok: true;
+      positionId: string;
+      paperTrade: boolean;
+      txHash: string | null;
+      usdtIn: number;
+      outcomeLabel: string;
+      entryPrice: number;
+    }
+  | { ok: false; reason: string };
+
+/**
+ * Open an outcome-token position from an explicit user-initiated trade
+ * (e.g. tapping a "Place trade" button in the mini-app market scanner).
+ *
+ * This is intentionally NOT routed through `openPredictionPosition`:
+ *   - That function gates on `conviction - impliedProbability ≥ 10%` —
+ *     correct for autonomous agents but wrong for a user who has already
+ *     decided to trade. The user's tap IS the conviction.
+ *   - That function's quotas key on `agentId`. Manual trades have no agent
+ *     so we apply parallel quotas keyed on `userId`.
+ *
+ * The on-chain mechanics (slippage, balance-delta accounting,
+ * paper-vs-live opt-in toggle, OutcomePosition row insert) are the same so
+ * downstream readers — /api/predictions/latest, listUserPositions,
+ * settleResolvedPositions — work unchanged. The row's `agentId` is left
+ * NULL and `providers` is NULL (no swarm vote drove this trade).
+ */
+export async function openManualPredictionPosition(
+  input: ManualTradeInput,
+): Promise<ManualTradeResult> {
+  const { userId, marketAddress, tokenId, usdtAmount } = input;
+
+  if (!Number.isFinite(usdtAmount)) return { ok: false, reason: 'invalid amount' };
+  if (usdtAmount < MANUAL_MIN_USDT) {
+    return { ok: false, reason: `amount $${usdtAmount} below minimum $${MANUAL_MIN_USDT}` };
+  }
+  if (usdtAmount > MANUAL_MAX_USDT) {
+    return { ok: false, reason: `amount $${usdtAmount} above per-trade cap $${MANUAL_MAX_USDT}` };
+  }
+  if (!/^0x[0-9a-fA-F]{40}$/.test(marketAddress)) {
+    return { ok: false, reason: 'invalid market address' };
+  }
+
+  // Per-user simultaneous-open cap.
+  const openCount = await db.$queryRawUnsafe<Array<{ c: bigint }>>(
+    `SELECT count(*)::bigint AS c FROM "OutcomePosition"
+     WHERE "userId" = $1 AND "agentId" IS NULL AND status = 'open'`,
+    userId,
+  );
+  if (Number(openCount[0]?.c ?? 0) >= MANUAL_MAX_OPEN_PER_USER) {
+    return {
+      ok: false,
+      reason: `max ${MANUAL_MAX_OPEN_PER_USER} open manual positions reached`,
+    };
+  }
+
+  // Per-user daily open-rate cap.
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const opensToday = await db.$queryRawUnsafe<Array<{ c: bigint }>>(
+    `SELECT count(*)::bigint AS c FROM "OutcomePosition"
+     WHERE "userId" = $1 AND "agentId" IS NULL AND "openedAt" > $2`,
+    userId,
+    dayAgo,
+  );
+  if (Number(opensToday[0]?.c ?? 0) >= MANUAL_MAX_NEW_PER_USER_PER_DAY) {
+    return { ok: false, reason: 'daily manual-trade quota reached' };
+  }
+
+  // Resolve market + on-chain outcome state.
+  let market: Market42;
+  try {
+    market = await __testDeps.getMarketByAddress(marketAddress);
+  } catch (err) {
+    return { ok: false, reason: `market lookup failed: ${(err as Error).message}` };
+  }
+  if (market.status !== 'live') return { ok: false, reason: `market not live (${market.status})` };
+
+  let state;
+  try {
+    state = await __testDeps.readMarketOnchain(market);
+  } catch (err) {
+    return { ok: false, reason: `on-chain read failed: ${(err as Error).message}` };
+  }
+  const outcome = state.outcomes.find((o) => o.tokenId === tokenId);
+  if (!outcome) return { ok: false, reason: `tokenId ${tokenId} not in market` };
+
+  // Build the trader (paper vs live driven by user's existing opt-in toggle —
+  // same mechanism agent-driven trades use, so a user in paper mode keeps
+  // simulating regardless of which path opened the trade).
+  const built = await buildTrader(userId);
+  if (!built) return { ok: false, reason: 'no usable BSC wallet for user' };
+  const { trader, paperTrade } = built;
+
+  // Snapshot pre-trade balance so we can compute actual tokens received from
+  // on-chain delta (same approach as openPredictionPosition).
+  let balanceBefore = 0n;
+  if (!paperTrade) {
+    try {
+      balanceBefore = await trader.balanceOfOutcome(marketAddress, tokenId);
+    } catch (err) {
+      console.warn('[manualPrediction] balanceOfOutcome(before) failed:', (err as Error).message);
+    }
+  }
+
+  // Same 5% slippage bound as agent path.
+  const SLIPPAGE_BPS = 500;
+  const expectedTokensFloat = usdtAmount / outcome.impliedProbability;
+  const minOtOut = paperTrade
+    ? 0n
+    : ethers.parseUnits(
+        (expectedTokensFloat * (1 - SLIPPAGE_BPS / 10_000)).toFixed(6),
+        18,
+      );
+
+  let receipt: TxReceiptLike = null;
+  try {
+    receipt = await trader.buyOutcome(marketAddress, tokenId, usdtAmount.toString(), minOtOut);
+  } catch (err) {
+    return { ok: false, reason: `buyOutcome failed: ${(err as Error).message}` };
+  }
+  const txHash = receiptHash(receipt);
+
+  let outcomeTokenAmountFloat: number | null = null;
+  if (!paperTrade) {
+    try {
+      const balanceAfter = await trader.balanceOfOutcome(marketAddress, tokenId);
+      const delta = balanceAfter - balanceBefore;
+      if (delta > 0n) outcomeTokenAmountFloat = Number(ethers.formatUnits(delta, 18));
+    } catch (err) {
+      console.warn('[manualPrediction] balanceOfOutcome(after) failed:', (err as Error).message);
+    }
+  }
+
+  const idRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
+    `INSERT INTO "OutcomePosition"
+       ("userId","agentId","marketAddress","marketTitle","tokenId","outcomeLabel",
+        "usdtIn","entryPrice","status","paperTrade","txHashOpen","reasoning",
+        "outcomeTokenAmount","providers")
+     VALUES ($1,NULL,$2,$3,$4,$5,$6,$7,'open',$8,$9,$10,$11,NULL)
+     RETURNING id`,
+    userId,
+    marketAddress,
+    market.question,
+    tokenId,
+    outcome.label,
+    usdtAmount,
+    outcome.impliedProbability,
+    paperTrade,
+    txHash,
+    'Manual trade from mini-app',
+    outcomeTokenAmountFloat,
+  );
+
+  return {
+    ok: true,
+    positionId: idRows[0].id,
+    paperTrade,
+    txHash,
+    usdtIn: usdtAmount,
+    outcomeLabel: outcome.label,
+    entryPrice: outcome.impliedProbability,
+  };
+}
+
 /**
  * Pull the most recent live (real on-chain) OPEN_PREDICTION position that has
  * per-provider swarm telemetry attached. This is the row /showcase renders
