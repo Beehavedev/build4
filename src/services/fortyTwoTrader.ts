@@ -174,6 +174,16 @@ export class FortyTwoTrader {
     // — slippage, market closed, allowance, etc. — or (b) confirmation that
     // the failure is purely RPC-side (still empty 0x), which is a different
     // class of bug and worth distinguishing from a contract-logic failure.
+    //
+    // The explicit `{ from: this.wallet.address }` override is REQUIRED.
+    // Without it, eth_call defaults `from` to 0x0, which inside the router
+    // becomes `msg.sender = 0x0`. The router then calls
+    //   usdt.transferFrom(msg.sender, market, amount)
+    // which BEP20 rejects with "transfer from the zero address" — a false
+    // revert that would never happen for the real signed tx. ethers v6 is
+    // SUPPOSED to auto-populate `from` from a signer-bound contract on
+    // staticCall, but with FallbackProvider in the mix that auto-population
+    // doesn't reliably flow through, so we set it explicitly.
     try {
       await this.router.swapSimple.staticCall(
         marketAddress,
@@ -182,6 +192,7 @@ export class FortyTwoTrader {
         params,
         '0x',
         '0x',
+        { from: this.wallet.address },
       );
     } catch (simErr) {
       throw new Error(`[42] buyOutcome would revert: ${extractRevertReason(simErr)}`);
@@ -222,7 +233,10 @@ export class FortyTwoTrader {
       return { dryRun: true, hash: dryHash('sell'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'sellOutcome', args, status: 1 } as unknown as ethers.TransactionReceipt;
     }
 
-    // Same staticCall preflight as buyOutcome — see buyOutcome for rationale.
+    // Same staticCall preflight as buyOutcome — see buyOutcome for rationale,
+    // including why the explicit `from` override is required (without it,
+    // eth_call defaults sender to 0x0 and the router's internal token
+    // transfer reverts with "transfer from the zero address").
     try {
       await this.router.swapSimple.staticCall(
         marketAddress,
@@ -231,6 +245,7 @@ export class FortyTwoTrader {
         params,
         '0x',
         '0x',
+        { from: this.wallet.address },
       );
     } catch (simErr) {
       throw new Error(`[42] sellOutcome would revert: ${extractRevertReason(simErr)}`);
