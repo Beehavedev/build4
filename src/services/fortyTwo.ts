@@ -1,23 +1,45 @@
 import axios from 'axios';
 
-// TODO: Confirm with 42.space team — base URL not yet documented in their REST API alpha page.
-// Trying api.42.space first; fallback candidates: api-alpha.42.space, app.42.space/api
-const BASE_URL = process.env.FORTYTWO_API_BASE_URL || 'https://api.42.space';
+// 42.space REST API — base URL confirmed live (Apr 22 2026)
+// Source: https://docs.42.space/for-developers/rest-api-alpha/markets/get-all-markets
+const BASE_URL = process.env.FORTYTWO_API_BASE_URL || 'https://rest.ft.42.space';
 export const FORTYTWO_CHAIN_ID = 56;
 
-// ── Types ──────────────────────────────────────────────────────────────────
+// ── Types (mirror real API response shape) ─────────────────────────────────
+
+export type MarketStatus = 'live' | 'ended' | 'resolved' | 'finalised' | 'all';
 
 export interface Market42 {
   address: string;
-  title: string;
-  category: string;
-  categorySlug: string;
-  outcomes: Outcome[];
-  expiresAt: string;
-  resolved: boolean;
-  resolvedOutcomeId?: number;
+  questionId: string;
+  question: string; // human-readable title
+  slug: string;
+  collateralAddress: string;
+  collateralSymbol: string;
+  collateralDecimals: number;
+  curve: string;
+  startDate: string;
+  endDate: string;
+  status: MarketStatus;
+  finalisedAt: string | null;
+  elapsedPct: number;
+  image: string | null;
+  oracleAddress: string | null;
+  creatorAddress: string | null;
+  contractVersion: number;
+  ancillaryData: unknown[];
+  description: string;
+  categories?: string[];
 }
 
+export interface MarketTimelineEvent {
+  type: string;
+  timestamp: number;
+}
+
+// Outcome / OHLC / price-history types kept for downstream code, but the matching
+// REST endpoints are NOT live yet (see verifyEndpoints() below). Until 42 ships
+// them we plan to fall back to on-chain reads via IFTCurve + IRegistry.
 export interface Outcome {
   tokenId: number;
   label: string;
@@ -49,7 +71,7 @@ export interface AgentSignal {
   reasoning: string;
 }
 
-// ── API Client ─────────────────────────────────────────────────────────────
+// ── HTTP client ────────────────────────────────────────────────────────────
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -57,144 +79,100 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// ── Market Fetching ────────────────────────────────────────────────────────
-// NOTE: endpoint paths below are inferred from the REST API alpha sidebar
-// (Get all markets, Get market by address, Get OHLC candlestick data, etc.).
-// Confirm exact paths with 42.space before relying in production.
+// ── Confirmed-working endpoints ────────────────────────────────────────────
 
-export async function getAllMarkets(category?: string): Promise<Market42[]> {
-  const params: Record<string, unknown> = { resolved: false, limit: 100 };
-  if (category) params.categorySlug = category;
-  const { data } = await api.get('/markets', { params });
-  return data.markets ?? data;
+export interface ListMarketsParams {
+  limit?: number;
+  offset?: number;
+  order?: 'created_at' | 'volume' | 'collateral' | 'start_timestamp';
+  ascending?: boolean;
+  status?: MarketStatus;
+  question_id?: string;
+  market_address?: string;
+  collateral?: string;
+  categories?: string;
 }
 
-export const AGENT_CATEGORIES = ['ai', 'crypto', 'tech', 'geopolitics'];
-
-export async function getAIRelevantMarkets(): Promise<Market42[]> {
-  const results = await Promise.all(
-    AGENT_CATEGORIES.map((slug) => getAllMarkets(slug).catch(() => [] as Market42[])),
-  );
-  return results.flat();
+/** GET /api/v1/markets — paginated list with rich filters. */
+export async function getAllMarkets(params: ListMarketsParams = {}): Promise<Market42[]> {
+  const { data } = await api.get('/api/v1/markets', {
+    params: { status: 'live', limit: 100, ...params },
+  });
+  return (data?.data ?? []) as Market42[];
 }
 
+/** GET /api/v1/markets/{address} — single market detail. */
 export async function getMarketByAddress(address: string): Promise<Market42> {
-  const { data } = await api.get(`/markets/${address}`);
-  return data;
+  const { data } = await api.get(`/api/v1/markets/${address}`);
+  return data as Market42;
 }
 
-export async function getOutcomeTokens(marketAddress: string): Promise<Outcome[]> {
-  const { data } = await api.get(`/markets/${marketAddress}/outcomes`);
-  return data.outcomes ?? data;
+/** GET /api/v1/markets/{address}/timeline — lifecycle events. */
+export async function getMarketTimeline(address: string): Promise<MarketTimelineEvent[]> {
+  const { data } = await api.get(`/api/v1/markets/${address}/timeline`);
+  return (data?.events ?? []) as MarketTimelineEvent[];
 }
 
-export async function getOHLC(
-  marketAddress: string,
-  tokenId: number,
-  interval: '1m' | '5m' | '1h' | '1d' = '1h',
-  limit = 48,
-): Promise<OHLCCandle[]> {
-  const { data } = await api.get(
-    `/markets/${marketAddress}/outcomes/${tokenId}/ohlc`,
-    { params: { interval, limit } },
+// ── Endpoints documented but NOT yet live (return 404 as of Apr 22 2026) ───
+// Categories, outcome tokens, current outcome token prices, price history,
+// OHLC candlestick, batch market stats, outcome token stats/holders, users,
+// leaderboard. Re-enable + wire into scanAllSignals once 42 ships them.
+
+/** Probe which sidebar-documented endpoints actually exist. Useful for cron-based monitoring of API readiness. */
+export async function verifyEndpoints(): Promise<Record<string, number>> {
+  const sample = await getAllMarkets({ limit: 1 });
+  const addr = sample[0]?.address;
+  const targets = [
+    '/api/v1/markets',
+    `/api/v1/markets/${addr}`,
+    `/api/v1/markets/${addr}/timeline`,
+    `/api/v1/markets/${addr}/outcome-tokens`,
+    `/api/v1/markets/${addr}/ohlc`,
+    '/api/v1/categories',
+    '/api/v1/leaderboard',
+  ];
+  const results: Record<string, number> = {};
+  await Promise.all(
+    targets.map(async (path) => {
+      try {
+        const r = await api.get(path, { validateStatus: () => true });
+        results[path] = r.status;
+      } catch {
+        results[path] = -1;
+      }
+    }),
   );
-  return data.candles ?? data;
+  return results;
 }
 
-export async function getPriceHistory(
-  marketAddress: string,
-  tokenId: number,
-  limit = 24,
-): Promise<{ timestamp: number; price: number }[]> {
-  const { data } = await api.get(
-    `/markets/${marketAddress}/outcomes/${tokenId}/prices`,
-    { params: { limit } },
-  );
-  return data.prices ?? data;
+// ── Signal generation (degraded mode) ──────────────────────────────────────
+// Without the outcome/price endpoints, we can only surface market-level
+// metadata to the agent (title, category, end date, time elapsed). Full
+// per-outcome signals require either the missing REST endpoints or an
+// on-chain reader against IFTCurve.calMintCostByOtDelta.
+
+export interface MarketLevelSignal {
+  marketAddress: string;
+  title: string;
+  category: string;
+  endDate: string;
+  elapsedPct: number;
+  reasoning: string;
 }
 
-export async function getBatchStats(addresses: string[]): Promise<Record<string, unknown>> {
-  const { data } = await api.post('/markets/batch', { addresses });
-  return data;
+export async function scanMarketLevelSignals(limit = 25): Promise<MarketLevelSignal[]> {
+  const markets = await getAllMarkets({ status: 'live', limit, order: 'volume', ascending: false });
+  return markets.map((m) => ({
+    marketAddress: m.address,
+    title: m.question,
+    category: (m.categories ?? [])[0] ?? 'uncategorized',
+    endDate: m.endDate,
+    elapsedPct: m.elapsedPct,
+    reasoning: `live market, ${(m.elapsedPct * 100).toFixed(0)}% elapsed, ends ${m.endDate}`,
+  }));
 }
 
-// ── Signal Generation ──────────────────────────────────────────────────────
-
-function computeMomentum(candles: OHLCCandle[]): AgentSignal['momentum'] {
-  if (candles.length < 6) return 'flat';
-  const recent = candles.slice(-6);
-  const first = recent[0].close;
-  const last = recent[recent.length - 1].close;
-  if (!first) return 'flat';
-  const change = (last - first) / first;
-  if (change > 0.08) return 'strong_up';
-  if (change > 0.03) return 'up';
-  if (change < -0.08) return 'strong_down';
-  if (change < -0.03) return 'down';
-  return 'flat';
-}
-
-function computeSignalStrength(outcome: Outcome, momentum: AgentSignal['momentum']): number {
-  let score = 0;
-  if (outcome.currentPrice < 0.15 || outcome.currentPrice > 0.85) score += 30;
-  if (momentum === 'strong_up' || momentum === 'strong_down') score += 35;
-  else if (momentum === 'up' || momentum === 'down') score += 20;
-  if (outcome.volume24h > 1000) score += 20;
-  if (outcome.holders > 50) score += 15;
-  return Math.min(score, 100);
-}
-
-function buildReasoning(outcome: Outcome, momentum: string): string {
-  const parts: string[] = [];
-  if (outcome.currentPrice < 0.2)
-    parts.push(`low implied probability (${(outcome.currentPrice * 100).toFixed(1)}%) — possibly underpriced`);
-  if (outcome.currentPrice > 0.8)
-    parts.push(`high implied probability (${(outcome.currentPrice * 100).toFixed(1)}%) — near certainty`);
-  if (momentum === 'strong_up') parts.push('strong upward momentum last 6h');
-  if (momentum === 'strong_down') parts.push('strong downward pressure — possible exit signal');
-  if (outcome.volume24h > 1000) parts.push(`solid 24h volume ($${outcome.volume24h.toFixed(0)})`);
-  return parts.join('; ') || 'moderate signal';
-}
-
-export async function generateSignalsForMarket(market: Market42): Promise<AgentSignal[]> {
-  const signals: AgentSignal[] = [];
-  for (const outcome of market.outcomes ?? []) {
-    try {
-      const candles = await getOHLC(market.address, outcome.tokenId, '1h', 24);
-      const momentum = computeMomentum(candles);
-      const strength = computeSignalStrength(outcome, momentum);
-      if (strength < 40) continue;
-      signals.push({
-        marketAddress: market.address,
-        marketTitle: market.title,
-        outcomeLabel: outcome.label,
-        tokenId: outcome.tokenId,
-        currentPrice: outcome.currentPrice,
-        impliedProbability: outcome.currentPrice,
-        momentum,
-        priceChange24h: outcome.priceChange24h,
-        signalStrength: strength,
-        reasoning: buildReasoning(outcome, momentum),
-      });
-    } catch {
-      // skip outcomes with missing OHLC data
-    }
-  }
-  return signals;
-}
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
+/** Backward-compatible stub: returns an empty array until per-outcome endpoints ship. */
 export async function scanAllSignals(): Promise<AgentSignal[]> {
-  const markets = await getAIRelevantMarkets();
-  const allSignals: AgentSignal[] = [];
-  for (let i = 0; i < markets.length; i += 5) {
-    const batch = markets.slice(i, i + 5);
-    const batchSignals = await Promise.all(
-      batch.map((m) => generateSignalsForMarket(m).catch(() => [] as AgentSignal[])),
-    );
-    allSignals.push(...batchSignals.flat());
-    if (i + 5 < markets.length) await sleep(500);
-  }
-  return allSignals.sort((a, b) => b.signalStrength - a.signalStrength);
+  return [];
 }

@@ -1,30 +1,29 @@
-import { scanAllSignals } from './fortyTwo';
+import { scanMarketLevelSignals } from './fortyTwo';
 
 export async function build42MarketContext(): Promise<string> {
   let signals;
   try {
-    signals = await scanAllSignals();
+    signals = await scanMarketLevelSignals(8);
   } catch (err) {
-    console.warn('[fortyTwo] scanAllSignals failed:', (err as Error).message);
+    console.warn('[fortyTwo] scanMarketLevelSignals failed:', (err as Error).message);
     return '';
   }
   if (!signals || signals.length === 0) return '';
 
-  const top = signals.slice(0, 5);
-  const lines = top.map(
-    (s) =>
-      `• [${s.marketTitle}] — "${s.outcomeLabel}" @ ${(s.impliedProbability * 100).toFixed(1)}% implied prob | momentum: ${s.momentum} | strength: ${s.signalStrength}/100 | ${s.reasoning}`,
+  const lines = signals.map(
+    (s) => `• [${s.category}] ${s.title} — ${s.reasoning} (market: ${s.marketAddress})`,
   );
 
   return `
-## Live 42.space Prediction Market Signals
-The following AI/crypto/geopolitics outcome markets have active signals right now.
-These are bonding-curve markets on BSC — prices reflect real-money implied probabilities.
-Consider these when forming your market thesis:
+## Live 42.space Prediction Markets
+The following live outcome markets exist on BSC right now (collateral: USDT).
+Prices reflect real-money implied probabilities. Consider these as soft signals
+when forming a thesis on AI / crypto / geopolitics:
 
 ${lines.join('\n')}
 
-If any of these align with your current trading thesis, flag them in your reasoning.
-Market address and tokenId are available if you decide to take a position.
+Per-outcome prices and OHLC candles are not yet exposed by 42's public API; if
+that data would change your decision, surface it in your reasoning so we know
+to wire up the on-chain price reader.
 `;
 }
