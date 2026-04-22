@@ -1259,6 +1259,113 @@ app.post('/api/admin/market-creator/run', requireAdmin, async (_req, res) => {
   }
 })
 
+// Force a real, on-chain prediction-market trade RIGHT NOW for partnership
+// demos. Picks the highest-volume live 42.space market, reads its outcomes
+// on-chain, picks the highest-implied-probability outcome (most liquid side),
+// and opens a small position from the calling admin's wallet via the same
+// `openManualPredictionPosition` path the mini-app uses. This is the
+// safety-net trigger so a demo never has to wait for Claude's autonomous
+// edge-detection to fire.
+//
+// Body (all optional):
+//   { usdtAmount?: number = 2, marketAddress?: string, tokenId?: number }
+// If marketAddress/tokenId are supplied, we skip auto-selection and trade
+// exactly that outcome.
+//
+// The admin MUST be authenticated via Telegram initData (the ADMIN_TOKEN
+// shared-secret path attaches no user, so it can't open a position). The
+// caller's own BSC wallet funds the trade.
+app.post('/api/admin/predictions/force-demo-trade', requireAdmin, async (req, res) => {
+  try {
+    const user = (req as any).user as { id: string } | undefined
+    if (!user?.id) {
+      return res.status(400).json({
+        error: 'force-demo-trade requires Telegram-authenticated admin (not ADMIN_TOKEN), so the trade can be funded from the admin wallet',
+      })
+    }
+
+    const body = (req.body ?? {}) as {
+      usdtAmount?: number
+      marketAddress?: string
+      tokenId?: number
+    }
+    const usdtAmount = Number.isFinite(body.usdtAmount) ? Number(body.usdtAmount) : 2
+
+    let marketAddress = body.marketAddress
+    let tokenId = body.tokenId
+
+    if (!marketAddress || !Number.isFinite(tokenId)) {
+      const { getAllMarkets } = await import('./services/fortyTwo')
+      const { readMarketOnchain } = await import('./services/fortyTwoOnchain')
+
+      const markets = await getAllMarkets({
+        status: 'live',
+        limit: 10,
+        order: 'volume',
+        ascending: false,
+      })
+      if (markets.length === 0) {
+        return res.status(503).json({ error: 'no live 42.space markets available' })
+      }
+
+      // Walk down the volume-ranked list until we find a market we can read
+      // on-chain with at least one tradable outcome.
+      let chosen: { market: typeof markets[number]; tokenId: number; label: string } | null = null
+      for (const m of markets) {
+        try {
+          const state = await readMarketOnchain(m)
+          if (state.isFinalised) continue
+          const tradable = state.outcomes.filter((o) => o.impliedProbability > 0)
+          if (tradable.length === 0) continue
+          // Highest implied prob = most liquid side = lowest slippage for a
+          // small demo trade.
+          const best = tradable.reduce((a, b) =>
+            b.impliedProbability > a.impliedProbability ? b : a,
+          )
+          chosen = { market: m, tokenId: best.tokenId, label: best.label }
+          break
+        } catch (err) {
+          console.warn(`[force-demo-trade] skip market ${m.address}:`, err)
+        }
+      }
+
+      if (!chosen) {
+        return res.status(503).json({ error: 'no tradable live markets found (all unreadable or finalised)' })
+      }
+      marketAddress = chosen.market.address
+      tokenId = chosen.tokenId
+      console.log(
+        `[force-demo-trade] auto-selected market ${marketAddress} outcome "${chosen.label}" (tokenId=${tokenId})`,
+      )
+    }
+
+    const { openManualPredictionPosition } = await import('./services/fortyTwoExecutor')
+    const result = await openManualPredictionPosition({
+      userId: user.id,
+      marketAddress: marketAddress!,
+      tokenId: Number(tokenId),
+      usdtAmount,
+    })
+
+    if (!result.ok) {
+      console.warn('[force-demo-trade] openManualPredictionPosition refused:', result.reason)
+      return res.status(400).json({ ok: false, reason: result.reason })
+    }
+    console.log(`[force-demo-trade] opened position ${result.positionId} tx=${result.txHash}`)
+    res.json({
+      ok: true,
+      positionId: result.positionId,
+      txHash: result.txHash,
+      marketAddress,
+      tokenId,
+      usdtAmount,
+    })
+  } catch (err) {
+    console.error('[API] /admin/predictions/force-demo-trade failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
 app.get('/api/signals', async (_req, res) => {
   const { getLatestSignals } = await import('./services/signals')
   const signals = await getLatestSignals(10)

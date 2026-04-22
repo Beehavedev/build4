@@ -98,7 +98,7 @@ export interface AgentDecision {
     marketAddress: string
     tokenId: number
     outcomeLabel?: string
-    /** 0..1 — agent's own probability estimate. Must beat implied by ≥0.10. */
+    /** 0..1 — agent's own probability estimate. Must beat implied by ≥0.05. */
     conviction?: number
     positionId?: string
     reasoning?: string
@@ -232,12 +232,12 @@ RESPOND WITH ONLY VALID JSON — no preamble, no markdown, no text outside the J
 
 PREDICTION-MARKET SIDECAR (optional, set predictionTrade only when justified):
 - A separate "Live 42.space Prediction Markets" block may appear below. Each market lists outcomes with implied probability, marginal price, and tokenId.
-- ONLY emit predictionTrade when your independent conviction on an outcome beats the implied probability by ≥10 percentage points. Otherwise leave predictionTrade=null.
+- ONLY emit predictionTrade when your independent conviction on an outcome beats the implied probability by ≥5 percentage points. Otherwise leave predictionTrade=null.
 - conviction is YOUR own 0..1 probability estimate, NOT the listed implied probability. Be honest — being wrong here loses real USDT.
 - Use the exact marketAddress and tokenId shown in the prompt. Set outcomeLabel for human readability.
 - Sizing is handled in code (small, capped per market). Don't include amount.
 - The "reasoning" string on a predictionTrade is MANDATORY and MUST quote, in this order: (1) the market name, (2) the implied probability shown in the prompt as a percentage, (3) YOUR own probability estimate as a percentage, (4) the edge in percentage points, and (5) the USDT allocation you expect (sizing is in code; just say "≤$2 USDT"). If you cannot quote all five, do not emit predictionTrade.
-- Example: { "action":"OPEN_PREDICTION","marketAddress":"0xabc...","tokenId":1,"outcomeLabel":"YES","conviction":0.75,"reasoning":"42.space prices 'Will BTC close above $80k on Friday' YES at 60%; my read is 75% based on funding rates + on-chain accumulation; +15pp edge; allocating ≤$2 USDT." }
+- Example: { "action":"OPEN_PREDICTION","marketAddress":"0xabc...","tokenId":1,"outcomeLabel":"YES","conviction":0.68,"reasoning":"42.space prices 'Will BTC close above $80k on Friday' YES at 60%; my read is 68% based on funding rates + on-chain accumulation; +8pp edge; allocating ≤$2 USDT." }
 - This sidecar is independent of the main action. You can OPEN_LONG perps AND OPEN_PREDICTION on the same tick.
 - To CLOSE an existing position: a "Your Open 42.space Positions" block lists each open position with its positionId. Emit { "action":"CLOSE_PREDICTION","marketAddress":"<addr>","tokenId":<id>,"positionId":"<the id from the list>" } when conviction has flipped or the price has moved enough that the edge is gone. NEVER invent a positionId — only use ones shown in that block.
 

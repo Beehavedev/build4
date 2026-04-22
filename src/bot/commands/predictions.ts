@@ -50,7 +50,7 @@ export async function handlePredictions(ctx: Context) {
   text += `*Realised PnL:* ${fmtPnl(realized)} USDT (${closed.length} settled)\n\n`
 
   if (positions.length === 0) {
-    text += `_No prediction positions yet. Active agents will open these when their conviction beats the on-chain implied probability by ≥10%._\n`
+    text += `_No prediction positions yet. Active agents will open these when their conviction beats the on-chain implied probability by ≥5%._\n`
   } else {
     text += `*Recent positions:*\n`
     for (const p of positions.slice(0, 12)) {
@@ -114,7 +114,7 @@ export function registerPredictions(bot: Bot) {
     await ctx.answerCallbackQuery('42.space trading ENABLED')
     await ctx.reply(
       `✅ *42.space trading enabled.*\n\n` +
-      `Live on-chain trades will execute when agents find edge ≥10% and when you tap markets in the mini-app.\n` +
+      `Live on-chain trades will execute when agents find edge ≥5% and when you tap markets in the mini-app.\n` +
       `Caps: ≤$2/agent trade, ≤$25/manual trade, max 5 open per agent, max 10 manual open.`,
       { parse_mode: 'Markdown' }
     )

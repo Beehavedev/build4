@@ -75,7 +75,7 @@ export interface PredictionTradeIntent {
   marketAddress: string;
   tokenId: number;
   outcomeLabel?: string;
-  /** Agent's own probability estimate, 0..1 — must beat implied price by ≥0.10. */
+  /** Agent's own probability estimate, 0..1 — must beat implied price by ≥0.05. */
   conviction?: number;
   /** Optional position id when closing a known position. */
   positionId?: string;
@@ -168,8 +168,8 @@ async function checkAndSize(
     return { allowed: false, reason: 'invalid conviction' };
   }
   const edge = conviction - impliedProb;
-  if (edge < 0.10) {
-    return { allowed: false, reason: `edge ${(edge * 100).toFixed(1)}% < 10% threshold` };
+  if (edge < 0.05) {
+    return { allowed: false, reason: `edge ${(edge * 100).toFixed(1)}% < 5% threshold` };
   }
 
   // ── Per-market exposure guard ───────────────────────────────────────────
@@ -452,7 +452,7 @@ export type ManualTradeResult =
  * (e.g. tapping a "Place trade" button in the mini-app market scanner).
  *
  * This is intentionally NOT routed through `openPredictionPosition`:
- *   - That function gates on `conviction - impliedProbability ≥ 10%` —
+ *   - That function gates on `conviction - impliedProbability ≥ 5%` —
  *     correct for autonomous agents but wrong for a user who has already
  *     decided to trade. The user's tap IS the conviction.
  *   - That function's quotas key on `agentId`. Manual trades have no agent
