@@ -178,7 +178,9 @@ export default function Predictions() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [scannerOpen, setScannerOpen] = useState(false)
+  // Scanner expanded by default — users were missing it entirely when collapsed.
+  const [scannerOpen, setScannerOpen] = useState(true)
+  const [scannerFilter, setScannerFilter] = useState<'ALL' | 'AI' | 'CRYPTO' | 'OTHER'>('ALL')
   const [, setNowTick] = useState(0)
   const inFlight = useRef(false)
   // On-demand market detail (only fetched when a scanner row is tapped).
@@ -422,24 +424,74 @@ export default function Predictions() {
           <span style={{ color: '#64748b', fontSize: 16 }}>{scannerOpen ? '▾' : '▸'}</span>
         </button>
         {scannerOpen && (
-          <div className="card" style={{ marginTop: 8, padding: 0, overflow: 'hidden' }}>
-            {(data?.scanner ?? []).length === 0 ? (
-              <div style={{ padding: 16, fontSize: 12, color: '#64748b' }}>
-                No live markets returned by the 42.space API.
-              </div>
-            ) : (
-              data?.scanner.map((m) => (
-                <ScannerRowItem
-                  key={m.marketAddress}
-                  row={m}
-                  expanded={expandedMarket === m.marketAddress}
-                  detail={detailCache[m.marketAddress]}
-                  onToggle={() => onToggleMarket(m.marketAddress)}
-                  onTraded={() => load(true)}
-                />
-              ))
-            )}
-          </div>
+          <>
+            {/* Filter pills — quickly narrow by category */}
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+              {(['ALL', 'AI', 'CRYPTO', 'OTHER'] as const).map((f) => {
+                const active = scannerFilter === f
+                return (
+                  <button
+                    key={f}
+                    onClick={() => setScannerFilter(f)}
+                    data-testid={`button-scanner-filter-${f}`}
+                    style={{
+                      padding: '4px 12px',
+                      borderRadius: 999,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      letterSpacing: 0.4,
+                      background: active ? 'var(--purple)' : 'var(--bg-elevated)',
+                      border: active
+                        ? '1px solid var(--purple)'
+                        : '1px solid var(--border)',
+                      color: active ? 'white' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {f}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="card" style={{ marginTop: 0, padding: 0, overflow: 'hidden' }}>
+              {(() => {
+                const allRows = data?.scanner ?? []
+                const filtered = scannerFilter === 'ALL'
+                  ? allRows
+                  : allRows.filter((m) => {
+                      const cat = (m.category || '').toLowerCase()
+                      if (scannerFilter === 'AI') return cat.includes('ai')
+                      if (scannerFilter === 'CRYPTO') return cat.includes('crypto')
+                      // OTHER = anything not AI or crypto
+                      return !cat.includes('ai') && !cat.includes('crypto')
+                    })
+                if (allRows.length === 0) {
+                  return (
+                    <div style={{ padding: 16, fontSize: 12, color: '#64748b' }}>
+                      No live markets returned by the 42.space API.
+                    </div>
+                  )
+                }
+                if (filtered.length === 0) {
+                  return (
+                    <div style={{ padding: 16, fontSize: 12, color: '#64748b' }}>
+                      No {scannerFilter.toLowerCase()} markets right now. Try ALL.
+                    </div>
+                  )
+                }
+                return filtered.map((m) => (
+                  <ScannerRowItem
+                    key={m.marketAddress}
+                    row={m}
+                    expanded={expandedMarket === m.marketAddress}
+                    detail={detailCache[m.marketAddress]}
+                    onToggle={() => onToggleMarket(m.marketAddress)}
+                    onTraded={() => load(true)}
+                  />
+                ))
+              })()}
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -521,7 +573,19 @@ function ScannerRowItem({
                          fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
             {cd.label}
           </span>
-          <span style={{ color: '#64748b', fontSize: 14 }}>{expanded ? '▾' : '▸'}</span>
+          {expanded ? (
+            <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>▾</span>
+          ) : (
+            <span style={{
+              fontSize: 11, fontWeight: 600,
+              color: 'var(--purple)',
+              padding: '3px 9px',
+              borderRadius: 999,
+              background: 'rgba(139, 92, 246, 0.12)',
+              border: '1px solid rgba(139, 92, 246, 0.35)',
+              whiteSpace: 'nowrap',
+            }}>Trade ▸</span>
+          )}
         </div>
       </button>
       {expanded && (

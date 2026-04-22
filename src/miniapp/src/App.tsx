@@ -43,7 +43,7 @@ export default function App() {
     // Copy trading hidden for now — coming back to it later.
     // { id: 'copy', label: 'Copy', icon: '📋' },
     { id: 'portfolio', label: 'Portfolio', icon: '📊' },
-    { id: 'predictions', label: 'Predictions', icon: 'crosshair' },
+    { id: 'predictions', label: 'Predict', icon: 'crosshair' },
     ...(isAdmin ? [{ id: 'admin' as Page, label: 'Admin', icon: '🛠' }] : [])
   ]
 
@@ -51,7 +51,7 @@ export default function App() {
     <div style={{ minHeight: '100vh', paddingBottom: '72px' }}>
       {/* Page content */}
       <div style={{ padding: '0 16px' }}>
-        {page === 'dashboard' && <Dashboard userId={userId} />}
+        {page === 'dashboard' && <Dashboard userId={userId} onNavigate={setPage} />}
         {page === 'agents' && <AgentStudio userId={userId} />}
         {page === 'wallet' && <Wallet />}
         {page === 'copy' && <CopyTrade />}
@@ -66,41 +66,49 @@ export default function App() {
         bottom: 0,
         left: 0,
         right: 0,
-        background: '#12121a',
-        borderTop: '1px solid #1e1e2e',
+        background: 'var(--bg-card)',
+        borderTop: '1px solid var(--border)',
         display: 'flex',
-        zIndex: 100
+        zIndex: 100,
+        paddingBottom: 'env(safe-area-inset-bottom)'
       }}>
-        {navItems.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => setPage(item.id)}
-            style={{
-              flex: 1,
-              padding: '10px 0',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '2px',
-              color: page === item.id ? '#7c3aed' : '#64748b',
-              transition: 'color 0.15s'
-            }}
-          >
-            {item.icon === 'crosshair' ? (
-              <span style={{ height: 20, display: 'flex', alignItems: 'center' }}>
-                <CrosshairIcon active={page === item.id} />
+        {navItems.map((item) => {
+          const active = page === item.id
+          return (
+            <button
+              key={item.id}
+              onClick={() => setPage(item.id)}
+              data-testid={`nav-${item.id}`}
+              style={{
+                flex: 1,
+                padding: '10px 0 8px',
+                background: 'none',
+                border: 'none',
+                borderTop: active ? '2px solid var(--purple)' : '2px solid transparent',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '2px',
+                color: active ? 'var(--purple)' : 'var(--text-secondary)',
+                transition: 'color 0.15s, border-color 0.15s'
+              }}
+            >
+              {item.icon === 'crosshair' ? (
+                <span style={{ height: 20, display: 'flex', alignItems: 'center' }}>
+                  <CrosshairIcon active={active} />
+                </span>
+              ) : (
+                <span style={{ fontSize: '20px', filter: active ? 'none' : 'grayscale(0.6)' }}>
+                  {item.icon}
+                </span>
+              )}
+              <span style={{ fontSize: '11px', fontWeight: active ? 600 : 400 }}>
+                {item.label}
               </span>
-            ) : (
-              <span style={{ fontSize: '20px' }}>{item.icon}</span>
-            )}
-            <span style={{ fontSize: '11px', fontWeight: page === item.id ? 600 : 400 }}>
-              {item.label}
-            </span>
-          </button>
-        ))}
+            </button>
+          )
+        })}
       </nav>
     </div>
   )

@@ -75,11 +75,62 @@ export default function Wallet() {
 
   const state = deriveState(w)
 
+  const short = `${w.address.slice(0, 6)}…${w.address.slice(-4)}`
+
   return (
     <div style={{ paddingTop: 20 }} data-testid={`wallet-state-${state}`}>
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.5px' }}>💳 Wallet</div>
-        <div style={{ fontSize: 13, color: 'var(--b4-muted)', marginTop: 2 }}>{w.label}</div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>{w.label}</div>
+      </div>
+
+      {/* Address strip — always visible at the top so users can fund from
+          any state without hunting for the QR card. One-tap copy. */}
+      <div
+        className="card"
+        data-testid="card-address-strip"
+        style={{
+          marginBottom: 14,
+          padding: '10px 12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+        }}
+      >
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: 0.4, fontWeight: 600 }}>
+            DEPOSIT ADDRESS · BSC
+          </div>
+          <div
+            data-testid="text-address-short"
+            style={{
+              fontSize: 13,
+              fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+              color: 'var(--text-primary)',
+              marginTop: 2,
+            }}
+          >
+            {short}
+          </div>
+        </div>
+        <button
+          onClick={() => copy(w.address)}
+          data-testid="button-copy-address-strip"
+          style={{
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: '1px solid var(--border)',
+            background: copied ? 'rgba(0,192,118,0.16)' : 'var(--bg-elevated)',
+            color: copied ? 'var(--green)' : 'var(--text-primary)',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {copied ? '✓ Copied' : '📋 Copy'}
+        </button>
       </div>
 
       {/* Balance cards — Aster on top in onboarded states (D especially) so
@@ -326,13 +377,15 @@ function ActivateFlow({ onActivated }: { onActivated: () => void }) {
       {err && (
         <div data-testid="text-activate-error" style={{
           padding: 12, borderRadius: 10, fontSize: 12, lineHeight: 1.5,
-          background: '#ef444415', border: '1px solid #ef444444', color: '#fca5a5'
+          background: needsBnb ? 'rgba(245, 158, 11, 0.10)' : '#ef444415',
+          border: needsBnb ? '1px solid rgba(245, 158, 11, 0.40)' : '1px solid #ef444444',
+          color: needsBnb ? 'var(--amber)' : '#fca5a5'
         }}>
           {needsBnb ? (
             <>
-              <b>Need a tiny bit of BNB for gas.</b> Send ~0.001 BNB (≈ $0.50) to
-              your wallet address above, then tap Activate again. Any BSC wallet
-              or exchange withdrawal works.
+              ⛽ <b>Needs a tiny bit of BNB for gas.</b> Send ~0.001 BNB
+              (≈ $0.50) to your wallet address above, then tap Activate again.
+              Any BSC wallet or exchange withdrawal works.
             </>
           ) : depositTx ? (
             <>
@@ -573,12 +626,14 @@ function WithdrawView({ w, onSent }: { w: WalletInfo; onSent: () => void }) {
   return (
     <div>
       {w.balances.bnb < 0.0003 && (
-        <div style={{
-          background: '#3f2d10', border: '1px solid #92400e',
-          borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 12, lineHeight: 1.5
+        <div data-testid="banner-needs-gas" style={{
+          background: 'rgba(245, 158, 11, 0.10)',
+          border: '1px solid rgba(245, 158, 11, 0.40)',
+          borderRadius: 10, padding: 12, marginBottom: 14,
+          fontSize: 12, lineHeight: 1.5, color: 'var(--amber)'
         }}>
-          ⚠️ You need a small amount of <b>BNB</b> in this wallet to pay gas.
-          Send ~0.001 BNB to your deposit address before withdrawing.
+          ⛽ Needs a tiny bit of <b>BNB for gas</b>. Send ~0.001 BNB
+          (≈ $0.50) to your deposit address before withdrawing.
         </div>
       )}
 

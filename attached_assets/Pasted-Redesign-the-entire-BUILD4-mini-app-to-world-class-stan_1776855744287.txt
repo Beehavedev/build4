@@ -1,0 +1,249 @@
+Redesign the entire BUILD4 mini-app to world-class standard. This app lives inside Telegram WebApp at 390px wide. Every screen needs one dominant element that speaks first, clear separation between trading systems (Aster = perpetual futures, 42.space = prediction markets), and actions that are impossible to miss.
+Design system — establish these first, use everywhere:
+css/* Spacing */
+--space-xs: 4px
+--space-sm: 8px  
+--space-md: 16px
+--space-lg: 24px
+--space-xl: 32px
+
+/* Typography scale */
+--text-xs: 11px    /* metadata, timestamps */
+--text-sm: 13px    /* labels, secondary */
+--text-md: 15px    /* body */
+--text-lg: 20px    /* section titles */
+--text-xl: 28px    /* hero numbers */
+--text-2xl: 40px   /* dominant metric */
+
+/* Colors */
+--bg-primary: #0D0D0F      /* page background */
+--bg-card: #161618         /* card background */
+--bg-elevated: #1E1E22     /* inputs, pills */
+--border: #2A2A2E          /* subtle borders */
+--text-primary: #F0F0F0
+--text-secondary: #8A8A8E
+--text-muted: #4A4A4E
+--green: #00C076
+--red: #FF4D4D
+--purple: #8B5CF6
+--amber: #F59E0B
+--blue: #3B82F6
+
+/* Card style — use everywhere */
+background: var(--bg-card);
+border: 1px solid var(--border);
+border-radius: 16px;
+padding: 16px;
+
+HOME TAB — redesign completely
+One dominant number at the top. Then system status. Then quick actions.
+┌─────────────────────────────────┐
+│  ⚡ BUILD4                    ···│
+│  AI Trading & Predictions        │
+│                                  │
+│  ┌───────────────────────────┐  │
+│  │  TOTAL PORTFOLIO VALUE    │  │
+│  │  $9.99                    │  │  ← 40px, white, dominant
+│  │  +$0.00 today  (0.0%)     │  │  ← 13px green/red
+│  └───────────────────────────┘  │
+│                                  │
+│  ┌──────────┐  ┌──────────────┐ │
+│  │ ASTER    │  │ 42.SPACE     │ │
+│  │ Futures  │  │ Predictions  │ │
+│  │ $0.00    │  │ $9.99        │ │  ← clearly separated
+│  │ 2 agents │  │ 0 positions  │ │
+│  │ ● LIVE   │  │ ● watching   │ │
+│  └──────────┘  └──────────────┘ │
+│                                  │
+│  QUICK ACTIONS                   │
+│  ┌────────┐ ┌────────┐ ┌──────┐ │
+│  │Fund    │ │Trade   │ │Agents│ │
+│  │Aster   │ │42.space│ │      │ │
+│  └────────┘ └────────┘ └──────┘ │
+│                                  │
+│  RECENT ACTIVITY                 │
+│  [scrollable feed, last 5 items] │
+└─────────────────────────────────┘
+
+Remove "Swarm Agreement — admin token required" entirely from home. Users don't need to see admin-restricted blocks.
+Remove "Quests" from home quick actions — it's noise.
+Recent Activity feed: each item is one line — icon + action + amount + time. No multi-line reasoning excerpts on home.
+
+
+AGENTS TAB — redesign
+Clear hierarchy: agent card → stats → current reasoning (collapsed by default).
+┌─────────────────────────────────┐
+│  🤖 Agent Studio                │
+│  2 agents active                │
+│                                  │
+│  ┌───────────────────────────┐  │
+│  │ BTPredict          ● LIVE │  │
+│  │ Aster · AUTO              │  │
+│  │ ─────────────────────     │  │
+│  │ PnL        Win    Trades  │  │
+│  │ +$0.00     0%     0       │  │
+│  │ ─────────────────────     │  │
+│  │ Max $100 · Loss $50 · 5x  │  │  ← one line, muted
+│  │                           │  │
+│  │ [▸ Last decision]         │  │  ← collapsed, tap to expand
+│  │                           │  │
+│  │ [Configure]  [Pause]      │  │
+│  └───────────────────────────┘  │
+│                                  │
+│  [+ Create New Agent]           │  ← prominent CTA
+│                                  │
+│  ┌───────────────────────────┐  │
+│  │  LIVE BRAIN FEED          │  │
+│  │  Scanning every ~60s   ●  │  │
+│  │ ─────────────────────     │  │
+│  │ BNT · 8s ago              │  │
+│  │ HOLD BTCUSDT $78,018      │  │  ← verdict prominent
+│  │ Score 2/10 · ADX 83       │  │  ← metrics secondary
+│  │ [See reasoning ▸]         │  │  ← tap to expand full text
+│  └───────────────────────────┘  │
+└─────────────────────────────────┘
+Key change: reasoning is collapsed by default. Show verdict + score + tap to read more. The current design dumps 4 lines of reasoning inline — that's fine for power users but terrible for first impressions.
+
+WALLET TAB — redesign
+Three clear sections: what you have, where it is, what to do with it.
+┌─────────────────────────────────┐
+│  💳 Wallet 6                    │
+│  0x06d6...474a  [Copy]          │  ← address always visible, copyable
+│                                  │
+│  YOUR BALANCES                   │
+│  ┌───────────────────────────┐  │
+│  │  ON-CHAIN (BSC)           │  │
+│  │  USDT          9.99       │  │  ← big number
+│  │  BNB (gas)     0.00763    │  │
+│  └───────────────────────────┘  │
+│  ┌───────────────────────────┐  │
+│  │  ASTER TRADING            │  │
+│  │  Equity        $0.00      │  │
+│  │  Available     $0.00      │  │
+│  │  ⚠ Not funded             │  │  ← clear status
+│  └───────────────────────────┘  │
+│                                  │
+│  MOVE FUNDS                      │
+│  ┌───────────────────────────┐  │
+│  │  [BSC → Aster] [Aster → BSC]│ │
+│  │  Amount: [_________] [MAX]│  │
+│  │  [⚡ Transfer]            │  │
+│  └───────────────────────────┘  │
+│                                  │
+│  DEPOSIT                         │
+│  ┌───────────────────────────┐  │
+│  │  Send USDT (BEP-20) to:   │  │
+│  │  0x06d6...474a  [Copy]    │  │
+│  │  [Show QR Code]           │  │
+│  └───────────────────────────┘  │
+└─────────────────────────────────┘
+Key changes:
+
+Wallet address visible at top with one-tap copy — currently buried
+QR code for deposits — essential for mobile
+"Not funded" status on Aster is informational, not an error — style it neutral not red
+Label every section so USDT on BSC vs USDT on Aster is never confusing
+
+
+PORTFOLIO TAB — redesign
+Kill the red banner as hero element. Lead with the number, put the warning inline.
+┌─────────────────────────────────┐
+│  📊 Portfolio                   │
+│                                  │
+│  ┌───────────────────────────┐  │
+│  │  TOTAL VALUE              │  │
+│  │  $9.99                    │  │  ← 40px dominant
+│  │  Aster $0.00 · BSC $9.99  │  │  ← breakdown below
+│  └───────────────────────────┘  │
+│                                  │
+│  ┌───────────────────────────┐  │
+│  │  ⚠ Fund Aster to trade    │  │  ← amber, not red
+│  │  Transfer USDT from BSC   │  │
+│  │  [Fund Aster →]           │  │  ← direct action button
+│  └───────────────────────────┘  │
+│                                  │
+│  ┌────────┐ ┌────────┐          │
+│  │PnL     │ │Win Rate│          │
+│  │+$0.00  │ │0.0%    │          │
+│  └────────┘ └────────┘          │
+│  ┌────────┐ ┌────────┐          │
+│  │Trades  │ │Best    │          │
+│  │0       │ │+$0.00  │          │
+│  └────────┘ └────────┘          │
+│                                  │
+│  CUMULATIVE PnL    [7d][30d][all]│
+│  [chart]                         │
+│                                  │
+│  ASTER POSITIONS                 │
+│  [empty state with fund CTA]     │
+│                                  │
+│  42.SPACE POSITIONS              │
+│  [links to Predictions tab]      │
+└─────────────────────────────────┘
+Key change: the "negative balance" red banner becomes an amber nudge card — same information, completely different emotional impact. Red means emergency. Amber means "hey, one thing to do."
+
+PREDICTIONS TAB — redesign
+Add the missing manual trade flow and make the scanner scannable.
+┌─────────────────────────────────┐
+│  42.space  ● LIVE  2s ago [↻]   │
+│                                  │
+│  ┌───────────────────────────┐  │
+│  │  SWARM CONSENSUS          │  │
+│  │  No active swarm trade    │  │
+│  │  Enable prediction trading│  │
+│  │  on an agent to start     │  │
+│  │  [Enable on Agent ▸]      │  │  ← clear CTA
+│  └───────────────────────────┘  │
+│                                  │
+│  OPEN POSITIONS  +$0.00         │
+│  ┌───────────────────────────┐  │
+│  │  No positions yet         │  │
+│  │  Browse markets below ↓   │  │
+│  └───────────────────────────┘  │
+│                                  │
+│  MARKETS  25 tracked            │
+│  ┌───────────────────────────┐  │
+│  │ [AI] [CRYPTO] [ALL]       │  │  ← filter pills
+│  └───────────────────────────┘  │
+│                                  │
+│  ┌───────────────────────────┐  │
+│  │ [AI] How many Anthropic   │  │
+│  │      products will...     │  │
+│  │      YES 71% ────────●    │  │  ← mini price bar
+│  │      7d 13h left          │  │
+│  │                  [Trade▸] │  │  ← every row has this
+│  └───────────────────────────┘  │
+│  ┌───────────────────────────┐  │
+│  │ [CRYPTO] Polymarket FDV   │  │
+│  │      one day after TGE?   │  │
+│  │      253d 13h left        │  │
+│  │                  [Trade▸] │  │
+│  └───────────────────────────┘  │
+└─────────────────────────────────┘
+
+GLOBAL RULES — apply to every tab:
+Never show these to regular users:
+
+"Swarm Agreement — admin token required"
+"Swarm Cost & Speed — No swarm telemetry recorded"
+Any raw error messages or stack traces
+Admin-only data behind auth walls
+
+Always show:
+
+Wallet address with one-tap copy on Wallet tab
+Which system each balance belongs to (Aster vs BSC vs 42.space — never just "$0.00" with no context)
+One clear next action per screen when the user has nothing yet ("Fund Aster", "Browse Markets", "Create Agent")
+
+Navigation bar labels:
+
+Home → Home
+Agents → Agents
+Wallet → Wallet
+Portfolio → Portfolio
+Predictions → Predict
+
+Tab bar active state: purple underline, icon fills purple. Inactive: gray icon only, no label color.
+
+The test: show this app to someone who has never heard of BUILD4. Within 10 seconds they should know: (1) how much money they have, (2) what the two trading systems are, (3) what to do next. If they can't answer those three things in 10 seconds, the design has failed.
+Deliver all 5 tab components updated, type-check clean, mobile-first, no console errors.

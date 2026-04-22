@@ -63,34 +63,62 @@ export default function Portfolio({ userId }: PortfolioProps) {
 
   const chartColor = totalPnl >= 0 ? '#10b981' : '#ef4444'
 
+  const totalEquity = (wallet?.aster.usdt ?? 0) + (wallet?.balances.usdt ?? 0)
+
   return (
     <div style={{ paddingTop: 20 }}>
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 20, fontWeight: 700 }}>📊 Portfolio</div>
-        <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.5px' }}>📊 Portfolio</div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
           Your trading performance
         </div>
       </div>
 
-      {/* Negative balance banner — agents are paused when balance ≤ 0 */}
+      {/* Hero — Lead with dominant value (total equity) + lifetime PnL */}
+      <div className="card" style={{ marginBottom: 14 }} data-testid="card-portfolio-hero">
+        <div style={{
+          fontSize: 11, color: 'var(--text-secondary)', letterSpacing: 0.6,
+          textTransform: 'uppercase', fontWeight: 600, marginBottom: 6
+        }}>
+          Total Equity
+        </div>
+        <div style={{
+          fontSize: 'var(--text-2xl)', fontWeight: 800,
+          letterSpacing: '-1px', lineHeight: 1.05, color: 'var(--text-primary)'
+        }} data-testid="text-portfolio-total">
+          ${totalEquity.toFixed(2)}
+        </div>
+        <div style={{
+          marginTop: 6, fontSize: 13,
+          color: totalPnl > 0 ? 'var(--green)' : totalPnl < 0 ? 'var(--red)' : 'var(--text-secondary)'
+        }}>
+          {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)} lifetime
+          <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
+            · {trades.length} trades
+          </span>
+        </div>
+      </div>
+
+      {/* Soft amber nudge when Aster is negative — agents pause but the
+          page still leads with the headline number, not the warning. */}
       {wallet?.aster.onboarded && wallet.aster.usdt <= 0 && (
         <div
           data-testid="banner-negative-balance"
           style={{
             marginBottom: 12,
             padding: '10px 12px',
-            borderRadius: 8,
-            background: 'linear-gradient(135deg, #ef444422, #ef444408)',
-            border: '1px solid #ef444466',
+            borderRadius: 10,
+            background: 'rgba(245, 158, 11, 0.10)',
+            border: '1px solid rgba(245, 158, 11, 0.40)',
             display: 'flex',
             alignItems: 'flex-start',
             gap: 8
           }}>
-          <div style={{ fontSize: 16, lineHeight: 1 }}>⚠️</div>
-          <div style={{ fontSize: 12, color: '#fca5a5', lineHeight: 1.4 }}>
-            <div style={{ fontWeight: 600, color: '#ef4444' }}>Negative balance — agents paused</div>
-            <div style={{ marginTop: 2 }}>
-              Deposit USDT to your Aster account to resume trading. Realized losses, funding fees, or commissions exceed your deposit.
+          <div style={{ fontSize: 16, lineHeight: 1 }}>⛽</div>
+          <div style={{ fontSize: 12, color: 'var(--amber)', lineHeight: 1.4 }}>
+            <div style={{ fontWeight: 600 }}>Aster needs a top-up — agents paused</div>
+            <div style={{ marginTop: 2, color: 'var(--text-secondary)' }}>
+              Add USDT to your Aster account to resume trading. Open the Wallet tab and tap Transfer.
             </div>
           </div>
         </div>
