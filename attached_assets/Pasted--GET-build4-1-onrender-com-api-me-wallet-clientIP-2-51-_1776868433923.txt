@@ -1,0 +1,59 @@
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="1a8700af-8edf-4e2c" responseTimeMS=1414 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="2.51.180.232" requestID="945cbbf9-2692-430d" responseTimeMS=1516 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="b4b40b94-e400-4133" responseTimeMS=2135 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+}
+[Agent Smith] LLM error: BadRequestError: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CaJyRXkiByjViVxLTnfDE"}
+    at Function.generate (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/core/error.ts:75:14)
+    at Anthropic.makeStatusError (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:516:28)
+    at Anthropic.makeRequest (/opt/render/project/src/node_modules/@anthropic-ai/sdk/src/client.ts:752:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async callAnthropicForDecision (/opt/render/project/src/src/agents/tradingAgent.ts:569:20)
+    at async runDecisionLLM (/opt/render/project/src/src/agents/tradingAgent.ts:692:37)
+    at async runAgentTick (/opt/render/project/src/src/agents/tradingAgent.ts:1270:27) {
+  status: 400,
+  headers: Headers {
+    date: 'Wed, 22 Apr 2026 14:33:08 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CaJyRXkiByjViVxLTnfDE',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'faf0b835-a80e-46df-9424-f4f45142fac9',
+    server: 'cloudflare',
+    'x-envoy-upstream-service-time': '25',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'server-timing': 'x-originResponse;dur=27',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=sAA_C1ih68GIrVoe..gzTUSSrpmEHB934KxQmSoBOfo-1776868387.8830314-1.0.1.1-dsXs1fssQLaNaIBbrn0l85IiL1tElyM7yprdN0Vp1Z0; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': '9f0557804f2fce5e-SIN'
+  },
+  requestID: 'req_011CaJyRXkiByjViVxLTnfDE',
+  error: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    },
+    request_id: 'req_011CaJyRXkiByjViVxLTnfDE'
+  },
+  type: 'invalid_request_error'
+}
+[GET]
+build4-1.onrender.com/api/me/predictions-mode clientIP="2.51.180.232" requestID="e2206e0a-a42a-4f3d" responseTimeMS=611 responseBytes=303 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="eef61f35-5344-4146" responseTimeMS=958 responseBytes=2850 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+Menu
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="5ab57e02-57c5-4cc9" responseTimeMS=969 responseBytes=326 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[News] Analysis failed: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CaJySvDr1Fhk6R6Bx4mwZ"}
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="d4dd9276-6900-474a" responseTimeMS=925 responseBytes=2849 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="ba229fbb-f800-43a2" responseTimeMS=374 responseBytes=2851 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
