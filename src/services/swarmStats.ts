@@ -222,6 +222,13 @@ export async function getSwarmStats(
       FROM "AgentLog",
            LATERAL jsonb_array_elements("providers") AS elem
       WHERE "providers" IS NOT NULL
+        -- Defensive: jsonb_array_elements raises 22023 ("cannot extract
+        -- elements from a scalar") if a row stored a JSONB scalar (null,
+        -- object, string, …) instead of an array. SQL NULL filters those
+        -- out via IS NOT NULL, but JSONB-null/object are NOT NULL in SQL
+        -- terms, so we must additionally check the JSON type. A single
+        -- malformed legacy row was crashing /api/swarm/stats in prod.
+        AND jsonb_typeof("providers") = 'array'
         AND "createdAt" >= NOW() - ${intervalSql}
     )
     SELECT

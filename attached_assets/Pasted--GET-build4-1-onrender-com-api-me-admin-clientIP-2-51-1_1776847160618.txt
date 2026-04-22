@@ -1,0 +1,62 @@
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="2.51.180.232" requestID="05f508d0-1689-4127" responseTimeMS=187 responseBytes=292 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/swarm/stats?window=24h clientIP="2.51.180.232" requestID="8f24b155-e35f-44f0" responseTimeMS=543 responseBytes=301 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="e29277fc-7a31-4c3e" responseTimeMS=427 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/admin/swarm-divergence?days=7 clientIP="2.51.180.232" requestID="13a7aade-2016-4a7c" responseTimeMS=1347 responseBytes=534 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="457b3274-bae1-4e0e" responseTimeMS=1124 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+    at $n.handleRequestError (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:121:7315)
+    at $n.handleAndLogRequestError (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:121:6623)
+    at $n.request (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:121:6307)
+    at async l (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:130:9633)
+    at async getSwarmStats (/opt/render/project/src/src/services/swarmStats.ts:192:15)
+    at async <anonymous> (/opt/render/project/src/src/server.ts:1460:20) {
+  code: 'P2010',
+  clientVersion: '5.22.0',
+  meta: {
+    code: '22023',
+    message: 'ERROR: cannot extract elements from a scalar'
+  }
+}
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="0f2c7a9f-ee6a-4acd" responseTimeMS=568 responseBytes=976 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="2.51.180.232" requestID="156c159b-79d7-43e8" responseTimeMS=1623 responseBytes=2277 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="db9a6578-9775-411a" responseTimeMS=911 responseBytes=1828 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= 0.0000 crossWallet= 0.0000 crossUnPnl= 0.0000 available= 150.1462
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="5b6fd224-b5db-4ddc" responseTimeMS=951 responseBytes=1828 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/portfolio/1551641467 clientIP="2.51.180.232" requestID="ae75bc71-c1b8-498d" responseTimeMS=754 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= 0.0000 crossWallet= 0.0000 crossUnPnl= 0.0000 available= 150.1512
+[Agent Smith] HOLD on ETHUSDT — Volume at 0.37x average violates non-negotiable Volume Law—price cannot sustain 
+[Agent BNT] HOLD on ETHUSDT — Volume 0.37x below threshold + negative MACD momentum + overbought 1h RSI 73.6 +
+[Agent SeanBuild4] HOLD on ETHUSDT — Volume failure (0.37x vs required >1.0x), MACD negative without bullish cross, 1
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="e0c9b18a-f2a0-4b7d" responseTimeMS=377 responseBytes=2321 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+Menu
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Agent SeanBuild4] HOLD on ETHUSDT — Volume 0.37x fails minimum threshold + negative MACD without cross + overbought 
+[Agent BNT] HOLD on ETHUSDT — Volume confirmation failure (0.37x vs required 1.0x+) + MACD negative (-2.46) + 
+[Agent Smith] HOLD on ETHUSDT — Volume Law violation is non-negotiable: 0.37x volume invalidates all other signa
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }

@@ -82,6 +82,13 @@ test('getSwarmStats reads only AgentLog (not OutcomePosition) and computes USD w
   assert.match(capturedSql, /tokens_used/)
   assert.match(capturedSql, /tokens_used, 0\) \* 0\.7/)
   assert.match(capturedSql, /tokens_used, 0\) \* 0\.3/)
+  // Regression guard: `jsonb_array_elements` raises Postgres 22023
+  // ("cannot extract elements from a scalar") if any AgentLog row stored
+  // a JSONB scalar (e.g. JSON null, object, string) under `providers`
+  // instead of an array. SQL `IS NOT NULL` does NOT filter those out, so
+  // we must additionally gate on `jsonb_typeof = 'array'`. A single
+  // malformed legacy row was crashing /api/swarm/stats in production.
+  assert.match(capturedSql, /jsonb_typeof\("providers"\) = 'array'/)
 
   const anthropic = report.rows.find((r) => r.provider === 'anthropic')
   assert.ok(anthropic)
