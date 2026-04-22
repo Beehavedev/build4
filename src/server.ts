@@ -1467,6 +1467,43 @@ app.get('/api/swarm/stats', async (req, res) => {
   }
 })
 
+// Drill-down companion to /api/admin/swarm-divergence: returns recent
+// AgentLog rows (with each provider's vote) so operators can see *which*
+// ticks disagreed for a given pair/provider, not just the aggregate %.
+app.get('/api/admin/swarm-divergence/samples', async (req, res) => {
+  const adminToken = process.env.ADMIN_TOKEN
+  if (adminToken) {
+    const supplied = (req.headers['x-admin-token'] as string | undefined)
+      ?? (typeof req.query.token === 'string' ? req.query.token : undefined)
+    if (supplied !== adminToken) return res.status(401).json({ error: 'Unauthorized' })
+  }
+  try {
+    const days = req.query.days
+      ? Math.min(365, Math.max(1, parseInt(String(req.query.days), 10) || 7))
+      : 7
+    const limit = req.query.limit
+      ? Math.min(200, Math.max(1, parseInt(String(req.query.limit), 10) || 25))
+      : 25
+    const pair = typeof req.query.pair === 'string' ? req.query.pair : null
+    const provider = typeof req.query.provider === 'string' ? req.query.provider : null
+    const onlyFallback = req.query.onlyFallback === '1' || req.query.onlyFallback === 'true'
+    const { getDivergenceSamples, MissingProvidersColumnError } = await import('./swarm/divergenceAnalysis')
+    try {
+      const result = await getDivergenceSamples({ days, pair, provider, limit, onlyFallback })
+      res.setHeader('Cache-Control', 'no-store')
+      res.json(result)
+    } catch (err) {
+      if (err instanceof MissingProvidersColumnError) {
+        return res.status(503).json({ error: 'swarm_telemetry_unavailable', detail: err.message })
+      }
+      throw err
+    }
+  } catch (err) {
+    console.error('[API] /admin/swarm-divergence/samples failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
 async function main() {
   // Connect DB
   await db.$connect()

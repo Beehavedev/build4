@@ -15,6 +15,10 @@ export default function Dashboard({ userId }: DashboardProps) {
   const [signalsLoading, setSignalsLoading] = useState(false)
   const [swarm, setSwarm] = useState<any>(null)
   const [swarmError, setSwarmError] = useState<string | null>(null)
+  const [drillOpen, setDrillOpen] = useState<null | { kind: 'pair' | 'provider', value: string }>(null)
+  const [drillLoading, setDrillLoading] = useState(false)
+  const [drillError, setDrillError] = useState<string | null>(null)
+  const [drillData, setDrillData] = useState<any>(null)
 
   useEffect(() => {
     if (!userId) { setLoading(false); return }
@@ -55,6 +59,32 @@ export default function Dashboard({ userId }: DashboardProps) {
     } finally {
       setSignalsLoading(false)
     }
+  }
+
+  const openDrill = (kind: 'pair' | 'provider', value: string) => {
+    setDrillOpen({ kind, value })
+    setDrillData(null)
+    setDrillError(null)
+    setDrillLoading(true)
+    const params = new URLSearchParams({ days: '7', limit: '25' })
+    if (kind === 'pair') params.set('pair', value)
+    if (kind === 'provider') params.set('provider', value)
+    fetch(`/api/admin/swarm-divergence/samples?${params.toString()}`)
+      .then(async (r) => {
+        if (r.status === 401) { setDrillError('locked'); return null }
+        if (r.status === 503) { setDrillError('unavailable'); return null }
+        if (!r.ok) { setDrillError('error'); return null }
+        return r.json()
+      })
+      .then((data) => { if (data) setDrillData(data) })
+      .catch(() => setDrillError('error'))
+      .finally(() => setDrillLoading(false))
+  }
+
+  const closeDrill = () => {
+    setDrillOpen(null)
+    setDrillData(null)
+    setDrillError(null)
   }
 
   const showComingSoon = (label: string) => {
@@ -219,11 +249,23 @@ export default function Dashboard({ userId }: DashboardProps) {
                       <div
                         key={p.pair}
                         data-testid={`row-swarm-pair-${p.pair}`}
-                        style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '3px 0' }}
                       >
                         <span>{p.pair}</span>
-                        <span style={{ color: '#64748b' }}>
-                          {p.fallbackPct}% · {p.fallback}/{p.total}
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ color: '#64748b' }}>
+                            {p.fallbackPct}% · {p.fallback}/{p.total}
+                          </span>
+                          <button
+                            onClick={() => openDrill('pair', p.pair)}
+                            data-testid={`button-drill-pair-${p.pair}`}
+                            style={{
+                              background: '#1e1e2e', border: '1px solid #2a2a3a', color: '#94a3b8',
+                              borderRadius: 6, fontSize: 10, padding: '2px 6px', cursor: 'pointer',
+                            }}
+                          >
+                            Details
+                          </button>
                         </span>
                       </div>
                     ))}
@@ -240,11 +282,23 @@ export default function Dashboard({ userId }: DashboardProps) {
                     <div
                       key={p.provider}
                       data-testid={`row-swarm-provider-${p.provider}`}
-                      style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '3px 0' }}
                     >
                       <span>{p.provider}</span>
-                      <span style={{ color: '#64748b' }}>
-                        {p.total} ticks · {p.fallbackPct}% no-quorum
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ color: '#64748b' }}>
+                          {p.total} ticks · {p.fallbackPct}% no-quorum
+                        </span>
+                        <button
+                          onClick={() => openDrill('provider', p.provider)}
+                          data-testid={`button-drill-provider-${p.provider}`}
+                          style={{
+                            background: '#1e1e2e', border: '1px solid #2a2a3a', color: '#94a3b8',
+                            borderRadius: 6, fontSize: 10, padding: '2px 6px', cursor: 'pointer',
+                          }}
+                        >
+                          Details
+                        </button>
                       </span>
                     </div>
                   ))}
@@ -280,6 +334,127 @@ export default function Dashboard({ userId }: DashboardProps) {
           </button>
         ))}
       </div>
+
+      {/* Swarm drill-down modal */}
+      {drillOpen && (
+        <div
+          onClick={closeDrill}
+          data-testid="modal-swarm-drill"
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+            zIndex: 200, display: 'flex', alignItems: 'flex-end',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#12121a', borderTop: '1px solid #1e1e2e',
+              borderRadius: '16px 16px 0 0', padding: 16, width: '100%',
+              maxHeight: '80vh', overflowY: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 15, fontWeight: 600 }} data-testid="text-drill-title">
+                🐝 {drillOpen.kind === 'pair' ? 'Pair' : 'Provider'}: {drillOpen.value}
+              </div>
+              <button
+                onClick={closeDrill}
+                data-testid="button-close-drill"
+                style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 22, cursor: 'pointer' }}
+              >
+                ×
+              </button>
+            </div>
+            {drillLoading && (
+              <div style={{ color: '#64748b', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>
+                Loading recent ticks...
+              </div>
+            )}
+            {!drillLoading && drillError === 'unavailable' && (
+              <div style={{ fontSize: 12, color: '#64748b' }}>Swarm telemetry not enabled on this database.</div>
+            )}
+            {!drillLoading && drillError === 'locked' && (
+              <div style={{ fontSize: 12, color: '#64748b' }}>Restricted — admin token required.</div>
+            )}
+            {!drillLoading && drillError === 'error' && (
+              <div style={{ fontSize: 12, color: '#64748b' }}>Couldn't load samples.</div>
+            )}
+            {!drillLoading && !drillError && drillData && drillData.samples.length === 0 && (
+              <div style={{ fontSize: 12, color: '#64748b' }}>No matching ticks in the last {drillData.days} days.</div>
+            )}
+            {!drillLoading && !drillError && drillData && drillData.samples.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
+                  Showing {drillData.samples.length} most-recent tick{drillData.samples.length === 1 ? '' : 's'} (last {drillData.days}d)
+                </div>
+                {drillData.samples.map((s: any) => (
+                  <div
+                    key={s.id}
+                    data-testid={`row-drill-sample-${s.id}`}
+                    style={{
+                      padding: '10px 0', borderBottom: '1px solid #1e1e2e',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600 }}>
+                        {s.pair ?? '—'} · {s.agent}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        {s.fallback && (
+                          <span style={{
+                            fontSize: 10, padding: '2px 6px', borderRadius: 10,
+                            background: '#f59e0b20', color: '#f59e0b',
+                          }}>
+                            no quorum
+                          </span>
+                        )}
+                        <span style={{ fontSize: 10, color: '#64748b' }}>
+                          {new Date(s.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                    {s.finalAction && (
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>
+                        Final: <strong>{s.finalAction}</strong>
+                      </div>
+                    )}
+                    {s.providers.length === 0 && (
+                      <div style={{ fontSize: 11, color: '#64748b' }}>No provider breakdown recorded.</div>
+                    )}
+                    {s.providers.map((p: any, i: number) => (
+                      <div
+                        key={`${s.id}-${p.provider}-${i}`}
+                        data-testid={`row-drill-provider-${s.id}-${p.provider}`}
+                        style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+                          fontSize: 11, padding: '2px 0', color: '#cbd5e1',
+                        }}
+                      >
+                        <span>
+                          <span style={{ color: '#94a3b8' }}>{p.provider}</span>
+                          {p.model && <span style={{ color: '#475569', marginLeft: 4 }}>({p.model})</span>}
+                        </span>
+                        <span style={{ display: 'flex', gap: 8 }}>
+                          <span style={{
+                            color: p.action === 'LONG' || p.action === 'BUY' ? '#10b981'
+                              : p.action === 'SHORT' || p.action === 'SELL' ? '#ef4444'
+                              : '#64748b',
+                          }}>
+                            {p.action ?? '—'}
+                          </span>
+                          {typeof p.confidence === 'number' && (
+                            <span style={{ color: '#64748b' }}>conf {Math.round(p.confidence * 100)}%</span>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Signals modal */}
       {signalsOpen && (

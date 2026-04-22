@@ -177,3 +177,143 @@ export async function analyzeDivergence(opts: DivergenceOptions): Promise<Diverg
     minSample,
   }
 }
+
+export interface SampleOptions {
+  days: number
+  pair?: string | null
+  provider?: string | null
+  limit?: number
+  onlyFallback?: boolean
+}
+
+export interface SampleProvider {
+  provider: string
+  model: string | null
+  action: string | null
+  confidence: number | null
+  reasoning: string | null
+  latencyMs: number | null
+}
+
+export interface DivergenceSample {
+  id: string
+  createdAt: string
+  pair: string | null
+  agent: string
+  finalAction: string | null
+  fallback: boolean
+  reason: string | null
+  providers: SampleProvider[]
+}
+
+export interface SamplesResult {
+  sinceIso: string
+  days: number
+  pair: string | null
+  provider: string | null
+  onlyFallback: boolean
+  limit: number
+  samples: DivergenceSample[]
+}
+
+interface RawSampleRow extends RawRow {
+  id: string
+  createdAt: Date
+  parsedAction: string | null
+  action: string | null
+}
+
+export function normalizeSampleProvider(p: any): SampleProvider | null {
+  if (!p || typeof p.provider !== 'string') return null
+  const conf = typeof p.confidence === 'number'
+    ? p.confidence
+    : (p.predictionTrade && typeof p.predictionTrade.confidence === 'number' ? p.predictionTrade.confidence : null)
+  const action = typeof p.action === 'string'
+    ? p.action
+    : (p.predictionTrade && typeof p.predictionTrade.action === 'string' ? p.predictionTrade.action : null)
+  return {
+    provider: p.provider,
+    model: typeof p.model === 'string' ? p.model : null,
+    action,
+    confidence: conf,
+    reasoning: typeof p.reasoning === 'string' ? p.reasoning : null,
+    latencyMs: typeof p.latencyMs === 'number' ? p.latencyMs : null,
+  }
+}
+
+/**
+ * Returns recent AgentLog rows that contain swarm telemetry, optionally
+ * filtered to a specific pair and/or to rows where a given provider
+ * participated. Powers the admin drill-down: each row exposes what every
+ * provider voted so operators can see why a pair diverged instead of just
+ * knowing that it did.
+ */
+export async function getDivergenceSamples(opts: SampleOptions): Promise<SamplesResult> {
+  const days = Math.max(1, opts.days)
+  const limit = Math.min(200, Math.max(1, opts.limit ?? 25))
+  const pair = opts.pair ? opts.pair.toUpperCase().replace(/[\/\s]/g, '') : null
+  const provider = opts.provider ? opts.provider.trim() : null
+  const onlyFallback = !!opts.onlyFallback
+  const since = new Date(Date.now() - days * 86_400_000)
+
+  const where: string[] = [`al."providers" IS NOT NULL`, `al."createdAt" >= $1`]
+  const params: any[] = [since]
+  if (pair) {
+    where.push(`UPPER(REPLACE(REPLACE(COALESCE(al."pair",''), '/', ''), ' ', '')) = $${params.length + 1}`)
+    params.push(pair)
+  }
+  // We do the provider filter in JS (the JSON shape varies) — but only after
+  // pulling a wider window so the LIMIT still bites.
+  const fetchLimit = provider ? Math.max(limit * 5, 100) : limit
+
+  const sql = `
+    SELECT al."id", al."createdAt", al."pair", al."agentId", a."name" AS "agentName",
+           al."action", al."parsedAction", al."rawResponse", al."reason", al."providers"
+    FROM "AgentLog" al
+    LEFT JOIN "Agent" a ON a."id" = al."agentId"
+    WHERE ${where.join(' AND ')}
+    ORDER BY al."createdAt" DESC
+    LIMIT ${fetchLimit}
+  `
+
+  let rows: RawSampleRow[]
+  try {
+    rows = await db.$queryRawUnsafe<RawSampleRow[]>(sql, ...params)
+  } catch (err: any) {
+    if (err?.meta?.code === '42703' || /column "providers" does not exist/i.test(String(err?.message ?? ''))) {
+      throw new MissingProvidersColumnError()
+    }
+    throw err
+  }
+
+  const samples: DivergenceSample[] = []
+  for (const r of rows) {
+    if (samples.length >= limit) break
+    const fallback = isFallback(r.rawResponse, r.reason)
+    if (onlyFallback && !fallback) continue
+    const providersList = Array.isArray(r.providers)
+      ? r.providers.map(normalizeSampleProvider).filter((p): p is SampleProvider => !!p)
+      : []
+    if (provider && !providersList.some((p) => p.provider === provider)) continue
+    samples.push({
+      id: r.id,
+      createdAt: (r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt)).toISOString(),
+      pair: r.pair,
+      agent: r.agentName ?? r.agentId ?? '(unknown)',
+      finalAction: r.parsedAction ?? r.action ?? null,
+      fallback,
+      reason: r.reason,
+      providers: providersList,
+    })
+  }
+
+  return {
+    sinceIso: since.toISOString(),
+    days,
+    pair,
+    provider,
+    onlyFallback,
+    limit,
+    samples,
+  }
+}
