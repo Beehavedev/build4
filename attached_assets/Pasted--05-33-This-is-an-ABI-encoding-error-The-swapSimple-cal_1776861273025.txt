@@ -1,0 +1,75 @@
+
+05:33
+This is an ABI encoding error. The swapSimple call is trying to slice into the encoded parameters but the buffer is empty — meaning the struct is being encoded wrong before it even hits the chain.
+
+Tell your Replit agent:
+
+Fix buyOutcome in fortyTwoTrader.ts. The error cannot slice beyond data bounds, BUFFER_OVERRUN means the SwapParams struct is not being ABI-encoded correctly before being passed to swapSimple.
+
+The problem is almost certainly one of these three things — check in this order:
+
+1. Struct encoding — use ethers.AbiCoder explicitly
+
+Don't pass the struct as a plain JS object. Encode it manually:
+
+typescript
+const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+
+const encodedParams = abiCoder.encode(
+  ['tuple(bool isMint, uint256 amount, bool isExactIn, uint256 minOutOrMaxIn)'],
+  [{
+    isMint: true,
+    amount: amountIn,
+    isExactIn: true,
+    minOutOrMaxIn: 0n
+  }]
+);
+Then pass encodedParams as the params argument to swapSimple, not the raw object.
+
+2. Check the exact function signature from FTRouter.sol
+
+Pull the actual function signature from their repo and make sure the ABI in our code matches exactly — field names, field order, and types. Even one wrong field name causes BUFFER_OVERRUN. Log the full ABI being used before the call:
+
+typescript
+console.log('[42] swapSimple ABI:', JSON.stringify(ROUTER_ABI, null, 2));
+console.log('[42] params being encoded:', { isMint, amount, isExactIn, minOutOrMaxIn });
+3. dataSwap and dataGuess must be '0x' not ''
+
+Empty string is not the same as empty bytes in ethers v6. Verify both are '0x':
+
+typescript
+const tx = await this.router.swapSimple(
+  marketAddress,
+  this.wallet.address,
+  BigInt(tokenId),
+  encodedParams,  // pre-encoded bytes, not raw object
+  '0x',           // dataSwap — must be '0x' not ''
+  '0x'            // dataGuess — must be '0x' not ''
+);
+4. tokenId must be BigInt
+
+typescript
+BigInt(tokenId)  // not just tokenId
+5. Add a dry-run before sending:
+
+typescript
+// Simulate first — catches revert reason before spending gas
+try {
+  await this.router.swapSimple.staticCall(
+    marketAddress,
+    this.wallet.address,
+    BigInt(tokenId),
+    encodedParams,
+    '0x',
+    '0x'
+  );
+  console.log('[42] staticCall passed — sending real tx');
+} catch (simError: any) {
+  console.error('[42] staticCall failed — would have reverted:', simError.message);
+  throw simError; // don't send if simulation fails
+}
+The staticCall will give you the actual revert reason from the contract if the encoding is right but the logic rejects it. That's the next layer of debugging if encoding fixes don't resolve it.
+
+Fix the encoding first, run staticCall, log the result, then report back what you see.
+
+The staticCall addition is the most important part — once encoding is fixed, if the contract still rejects it, staticCall will tell you exactly why (wrong tokenId, insufficient allowance, market closed, etc.) instead of a cryptic buffer error.
