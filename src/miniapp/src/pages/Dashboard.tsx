@@ -109,6 +109,52 @@ export default function Dashboard({ userId }: DashboardProps) {
     fetchDrill(drillOpen, days, limit, onlyFallback)
   }
 
+  const escapeCsv = (val: any): string => {
+    if (val === null || val === undefined) return ''
+    let s = String(val)
+    if (s.length > 0 && /^[=+\-@\t\r]/.test(s)) s = "'" + s
+    if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"'
+    return s
+  }
+
+  const downloadDrillCsv = () => {
+    if (!drillOpen || !drillData || !Array.isArray(drillData.samples)) return
+    const header = [
+      'sample_id', 'created_at', 'pair', 'agent', 'final_action', 'fallback',
+      'provider', 'model', 'action', 'confidence',
+    ]
+    const lines: string[] = [header.join(',')]
+    for (const s of drillData.samples) {
+      if (!Array.isArray(s.providers) || s.providers.length === 0) {
+        lines.push([
+          s.id, s.createdAt, s.pair ?? '', s.agent ?? '', s.finalAction ?? '',
+          s.fallback ? 'true' : 'false', '', '', '', '',
+        ].map(escapeCsv).join(','))
+        continue
+      }
+      for (const p of s.providers) {
+        lines.push([
+          s.id, s.createdAt, s.pair ?? '', s.agent ?? '', s.finalAction ?? '',
+          s.fallback ? 'true' : 'false',
+          p.provider ?? '', p.model ?? '', p.action ?? '',
+          typeof p.confidence === 'number' ? p.confidence : '',
+        ].map(escapeCsv).join(','))
+      }
+    }
+    const csv = lines.join('\n') + '\n'
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const safeValue = String(drillOpen.value).replace(/[^A-Za-z0-9._-]+/g, '_')
+    const filename = `swarm-drill-${drillOpen.kind}-${safeValue}-${drillDays}d${drillOnlyFallback ? '-noquorum' : ''}.csv`
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+  }
+
   const closeDrill = () => {
     setDrillOpen(null)
     setDrillData(null)
@@ -432,6 +478,22 @@ export default function Dashboard({ userId }: DashboardProps) {
                 />
                 Only no-quorum
               </label>
+              <button
+                onClick={downloadDrillCsv}
+                data-testid="button-drill-download-csv"
+                disabled={drillLoading || !drillData || !drillData.samples || drillData.samples.length === 0}
+                title="Download the current filter's samples as CSV"
+                style={{
+                  marginLeft: 'auto',
+                  background: '#1e1e2e',
+                  border: '1px solid #2a2a3a',
+                  color: (drillLoading || !drillData || !drillData.samples || drillData.samples.length === 0) ? '#475569' : '#94a3b8',
+                  borderRadius: 6, fontSize: 11, padding: '3px 9px',
+                  cursor: (drillLoading || !drillData || !drillData.samples || drillData.samples.length === 0) ? 'default' : 'pointer',
+                }}
+              >
+                ⬇ CSV
+              </button>
             </div>
 
             {drillLoading && (
