@@ -1160,7 +1160,10 @@ app.put('/api/admin/cost-rates/:provider', requireAdmin, async (req, res) => {
     const provider = String(req.params.provider ?? '').toLowerCase()
     const rate = Number(req.body?.usdPer1MTokens)
     const user = (req as any).user
-    await upsertCostRate(provider, rate, String(user.telegramId))
+    // requireAdmin allows two auth paths: a Telegram admin (user attached)
+    // or the ADMIN_TOKEN shared secret (no user). Record an actor either way.
+    const changedBy = user ? String(user.telegramId) : 'admin-token'
+    await upsertCostRate(provider, rate, changedBy)
     res.json({ ok: true })
   } catch (err: any) {
     const msg = err?.message ?? 'Internal error'
@@ -1418,15 +1421,10 @@ app.get('/api/predictions/market/:address', async (req, res) => {
 
 // Read-only swarm divergence stats. Same aggregation as
 // scripts/swarmDivergence.ts. Mirrors the CLI's `--days` and `--pair` flags
-// as query params. If ADMIN_TOKEN is set in the environment, the request must
-// supply it via `?token=` or the `x-admin-token` header.
-app.get('/api/admin/swarm-divergence', async (req, res) => {
-  const adminToken = process.env.ADMIN_TOKEN
-  if (adminToken) {
-    const supplied = (req.headers['x-admin-token'] as string | undefined)
-      ?? (typeof req.query.token === 'string' ? req.query.token : undefined)
-    if (supplied !== adminToken) return res.status(401).json({ error: 'Unauthorized' })
-  }
+// as query params. Gated by the shared `requireAdmin` middleware: callers
+// must either supply the `ADMIN_TOKEN` via `?token=` / `x-admin-token` header
+// or be a Telegram user whose ID is in `ADMIN_TELEGRAM_IDS`.
+app.get('/api/admin/swarm-divergence', requireAdmin, async (req, res) => {
   try {
     const days = req.query.days
       ? Math.min(365, Math.max(1, parseInt(String(req.query.days), 10) || 7))

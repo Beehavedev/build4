@@ -76,11 +76,33 @@ export function isAdminTelegramId(telegramId: bigint | string | number): boolean
 }
 
 /**
- * Express middleware: requires a valid Telegram initData *and* that the
- * resolved user's telegramId is listed in ADMIN_TELEGRAM_IDS. Used to gate
- * the cost-rates admin screen (Task #23).
+ * Express middleware: gates a route to admins only.
+ *
+ * Two ways to pass:
+ *  1. Shared-secret header/query: if `ADMIN_TOKEN` is set in the env, a
+ *     request supplying it via the `x-admin-token` header or `?token=` query
+ *     param is allowed through (no Telegram user is attached). This path is
+ *     intended for CLI/cron/dashboards that can't carry Telegram initData.
+ *  2. Telegram admin allowlist: a valid `x-telegram-init-data` header whose
+ *     resolved telegramId is listed in `ADMIN_TELEGRAM_IDS`.
+ *
+ * If neither `ADMIN_TOKEN` nor `ADMIN_TELEGRAM_IDS` is configured the route
+ * is effectively closed (returns 401), so admin endpoints are never silently
+ * public.
  */
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const adminToken = process.env.ADMIN_TOKEN
+  if (adminToken) {
+    const supplied = (req.headers['x-admin-token'] as string | undefined)
+      ?? (typeof req.query.token === 'string' ? req.query.token : undefined)
+    if (supplied && supplied === adminToken) return next()
+  }
+
+  const initData = (req.header('x-telegram-init-data') ?? '').trim()
+  if (!initData) {
+    return res.status(401).json({ error: 'Admin access required' })
+  }
+
   requireTgUser(req, res, (err?: any) => {
     if (err) return next(err)
     const user = (req as any).user

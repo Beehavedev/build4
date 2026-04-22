@@ -212,3 +212,20 @@ swarm follow-up tasks.
 ## Security
 - Private keys AES-256 encrypted before DB storage
 - Agent risk guard: daily loss circuit breaker
+
+## Admin Auth
+Admin-only HTTP endpoints (e.g. `/api/admin/cost-rates`,
+`/api/admin/swarm-divergence`) are gated by the shared `requireAdmin`
+middleware in `src/services/telegramAuth.ts`. A request passes if **either**:
+
+1. **Shared secret** — `ADMIN_TOKEN` is set in the env and the request
+   supplies the same value via the `x-admin-token` header or `?token=` query
+   param. Intended for CLI/cron/dashboards that can't carry Telegram initData.
+2. **Telegram allowlist** — the request carries a valid
+   `x-telegram-init-data` header and the resolved `telegramId` appears in the
+   comma-separated `ADMIN_TELEGRAM_IDS` env var.
+
+If neither `ADMIN_TOKEN` nor `ADMIN_TELEGRAM_IDS` is configured, all admin
+endpoints are closed (return 401) — there is no silent public fallback. New
+admin endpoints should always wire `requireAdmin` instead of repeating ad-hoc
+token checks inline.
