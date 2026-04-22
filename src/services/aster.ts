@@ -1084,46 +1084,87 @@ export function buildCreds(
 // agent address is on file at all.
 export async function resolveAgentCreds(user: {
   id: string
+  telegramId?: bigint | number | string | null
   asterAgentAddress?: string | null
   asterAgentEncryptedPK?: string | null
 }, userAddress: string): Promise<AsterCredentials | null> {
   if (!userAddress) return null
 
   let agentPk: string | null = null
-  let agentAddress: string | null = user.asterAgentAddress ?? null
+  let decryptionFailed = false
 
   // Preferred path: per-user encrypted agent (set during /activate flow).
+  // Aster has the agent's address registered as the authorised signer for
+  // this user — if we can't decrypt it, signing with anything else
+  // (notably the env-var platform agent) WILL trip "Signature check
+  // failed" because the recovered signer won't match what Aster has on
+  // file for this user.
+  //
+  // Try every plausible decryption password. Different code paths in the
+  // codebase have historically encrypted with `user.id` (Prisma cuid) or
+  // with the bare telegramId string (legacy migrated users) — so we
+  // mirror the deposit flow and try both before giving up.
   if (user.asterAgentEncryptedPK) {
-    try {
-      const { decryptPrivateKey } = await import('./wallet')
-      const decrypted = decryptPrivateKey(user.asterAgentEncryptedPK, user.id)
-      if (decrypted?.startsWith('0x')) agentPk = decrypted
-    } catch {
-      // fall through to env var
+    const idCandidates = [user.id, user.telegramId?.toString()]
+      .filter((v): v is string => Boolean(v))
+    const { decryptPrivateKey } = await import('./wallet')
+    let lastErr: any = null
+    for (const candidate of idCandidates) {
+      try {
+        const decrypted = decryptPrivateKey(user.asterAgentEncryptedPK, candidate)
+        if (decrypted?.startsWith('0x')) { agentPk = decrypted; break }
+      } catch (e) { lastErr = e }
+    }
+    if (!agentPk) {
+      decryptionFailed = true
+      console.error(
+        `[Aster] resolveAgentCreds: per-user agent PK decryption failed user=${user.id} tg=${user.telegramId} ` +
+        `triedCandidates=${idCandidates.length} err=${lastErr?.message ?? 'unknown'} — refusing env fallback ` +
+        `because Aster has the per-user agent address registered as the authorised signer`
+      )
+      // Refuse to fall back. Returning null surfaces a clear "agent not
+      // configured" error to the caller; falling back to the env PK
+      // would silently produce signature mismatches against Aster.
+      return null
     }
   }
 
-  // Legacy fallback: 17K migrated users have asterAgentEncryptedPK=NULL and
-  // often asterAgentAddress=NULL too. They share the env-var agent. Derive
-  // its address from the PK so they don't fail at the address check.
+  // Legacy fallback: migrated users who have asterAgentEncryptedPK=NULL
+  // share the env-var platform agent. Both the PK and the address come
+  // from the env so they're always consistent.
   if (!agentPk) {
     agentPk = process.env.ASTER_AGENT_PRIVATE_KEY
       ?? process.env.ASTER_BROKER_PK
       ?? null
-    if (agentPk && !agentAddress) {
-      try {
-        agentAddress = new ethers.Wallet(agentPk).address
-      } catch {
-        return null
-      }
-    }
+    if (!agentPk) return null
   }
 
-  if (!agentPk || !agentAddress) return null
+  // Single source of truth for signerAddress: the address derived from
+  // the PK we will actually sign with. If the user has a different
+  // asterAgentAddress on file, that's a data inconsistency — log it so
+  // we can investigate, but use the derived address (the only one whose
+  // signatures will verify).
+  let derivedAddress: string
+  try {
+    derivedAddress = new ethers.Wallet(agentPk).address
+  } catch {
+    return null
+  }
+  if (
+    user.asterAgentAddress &&
+    user.asterAgentAddress.toLowerCase() !== derivedAddress.toLowerCase() &&
+    !decryptionFailed // already logged above
+  ) {
+    console.warn(
+      `[Aster] resolveAgentCreds: stored asterAgentAddress (${user.asterAgentAddress}) ` +
+      `differs from address derived from PK (${derivedAddress}) for user=${user.id} tg=${user.telegramId} — ` +
+      `using derived address (signing source of truth)`
+    )
+  }
 
   return {
     userAddress,
-    signerAddress: agentAddress,
+    signerAddress: derivedAddress,
     signerPrivKey: agentPk
   }
 }
