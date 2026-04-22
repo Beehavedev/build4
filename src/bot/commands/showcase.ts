@@ -37,7 +37,7 @@ export async function handleShowcase(ctx: Context) {
   }
 
   const providers = (Array.isArray(pos.providers) ? pos.providers : []) as ProviderTelemetry[]
-  const ok = providers.filter((p) => p.ok && p.reasoning)
+  const withReasoning = providers.filter((p) => p.reasoning)
 
   let text = `🎬 *BUILD4 × 42.space — Multi-Provider Swarm*\n\n`
   text += `*Market:* ${escapeMd(pos.marketTitle)}\n`
@@ -46,10 +46,11 @@ export async function handleShowcase(ctx: Context) {
 
   text += `*🤝 Consensus quote:*\n_${escapeMd(trimReasoning(pos.reasoning ?? '(no consensus reasoning recorded)', 350))}_\n\n`
 
-  if (ok.length > 0) {
-    text += `*🤖 Per-provider quotes (${ok.length}/${providers.length} ok):*\n`
-    for (const p of ok) {
-      text += `• *${escapeMd(p.provider)}* (${p.latencyMs}ms, ${p.tokensUsed}tok):\n`
+  if (withReasoning.length > 0) {
+    text += `*🤖 Per-provider quotes (${withReasoning.length}/${providers.length}):*\n`
+    for (const p of withReasoning) {
+      const modelLabel = p.model ? `, ${p.model}` : ''
+      text += `• *${escapeMd(p.provider)}* (${p.latencyMs}ms, ${p.tokensUsed}tok${modelLabel}):\n`
       text += `  _${escapeMd(trimReasoning(p.reasoning ?? '', 220))}_\n`
     }
     text += `\n`

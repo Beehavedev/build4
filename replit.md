@@ -165,9 +165,11 @@ markets with at least one open position).
 Per-user opt-in via `User.swarmEnabled` (default `false`). When enabled, the
 trading agent runs every tick across all configured providers via
 `runSwarmDecision()` (`src/swarm/swarm.ts`) and uses the quorum verdict instead
-of a single Anthropic call. The legacy single-provider path is preserved as a
-fallback (used when only one provider is configured, or when no quorum is
-reached).
+of a single Anthropic call. When no quorum is reached, the highest-confidence
+successful provider's decision wins (no extra Anthropic call — every
+provider's reasoning is already captured in telemetry). The legacy
+single-provider Anthropic path is preserved as the default for users with
+`swarmEnabled=false` and as a fallback when only one provider is configured.
 
 Per-tick + per-position telemetry (provider, model, action, predictionTrade,
 reasoning, latency, tokens) is persisted on `AgentLog.providers` and

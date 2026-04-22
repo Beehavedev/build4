@@ -64,8 +64,8 @@ export async function handlePredictions(ctx: Context) {
       // Per-provider swarm reasoning quotes (one truncated line per provider).
       // Only positions opened on the swarm path have this populated.
       if (Array.isArray(p.providers)) {
-        for (const pr of p.providers as Array<{ provider: string; ok: boolean; reasoning: string | null }>) {
-          if (!pr.ok || !pr.reasoning) continue
+        for (const pr of p.providers as Array<{ provider: string; reasoning: string | null }>) {
+          if (!pr.reasoning) continue
           const oneLine = pr.reasoning.replace(/\s+/g, ' ').trim()
           const trimmed = oneLine.length > 110 ? oneLine.slice(0, 107) + '…' : oneLine
           text += `   • _${escapeMd(pr.provider)}:_ ${escapeMd(trimmed)}\n`

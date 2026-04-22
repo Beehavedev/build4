@@ -1054,20 +1054,22 @@ If you would not put real money in this trade right now, action = HOLD.`
               decision = swarm.quorumDecision
               rawResponse = JSON.stringify({ swarm: providersTelemetry, consensus: decision }).slice(0, 4000)
             } else {
-              // No quorum — fall back to the legacy single-provider Anthropic
-              // path so swarm users get exactly the same baseline behaviour
-              // as the 17k existing users when models disagree. Telemetry is
-              // still recorded so we can measure divergence rate.
-              const response = await anthropic.messages.create({
-                model: 'claude-sonnet-4-5',
-                max_tokens: 1000,
-                system: sysPrompt,
-                messages: [{ role: 'user', content: userMessage }]
-              })
-              const fallbackText = response.content[0].type === 'text' ? response.content[0].text : '{}'
-              decision = JSON.parse(fallbackText.replace(/```json|```/g, '').trim())
-              rawResponse = `[swarm-no-quorum, fell back to anthropic] ` +
-                JSON.stringify({ swarm: providersTelemetry, consensus: decision }).slice(0, 3500)
+              // No quorum — use the highest-confidence successful provider's
+              // decision as the consensus reasoning. We avoid issuing a fresh
+              // Anthropic call here because (a) the swarm already includes
+              // Anthropic when configured, (b) every provider's reasoning is
+              // already captured in providersTelemetry, and (c) it keeps
+              // per-tick LLM spend bounded.
+              const fallback = swarm.decisions
+                .filter((c) => c.ok && c.decision)
+                .sort((a, b) => (b.decision!.confidence ?? 0) - (a.decision!.confidence ?? 0))[0]
+              if (fallback?.decision) {
+                decision = fallback.decision
+                rawResponse = `[swarm-no-quorum, used ${fallback.provider} (highest-confidence)] ` +
+                  JSON.stringify({ swarm: providersTelemetry, chosen: decision }).slice(0, 3500)
+              } else {
+                throw new Error(swarm.error ?? 'swarm produced no usable decision')
+              }
             }
           } else {
             // swarmEnabled but only one provider configured — fall through
