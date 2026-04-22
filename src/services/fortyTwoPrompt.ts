@@ -1,29 +1,59 @@
-import { scanMarketLevelSignals } from './fortyTwo';
+import { getAllMarkets, type Market42 } from './fortyTwo';
+import { readMarketOnchain, type OnchainMarketState } from './fortyTwoOnchain';
 
-export async function build42MarketContext(): Promise<string> {
-  let signals;
+interface EnrichedMarket {
+  market: Market42;
+  state: OnchainMarketState | null;
+}
+
+async function enrichTopMarkets(limit: number): Promise<EnrichedMarket[]> {
+  const markets = await getAllMarkets({ status: 'live', limit, order: 'volume', ascending: false });
+  return Promise.all(
+    markets.map(async (m) => {
+      try {
+        const state = await readMarketOnchain(m);
+        return { market: m, state };
+      } catch (err) {
+        console.warn(`[fortyTwo] on-chain read failed for ${m.address}:`, (err as Error).message);
+        return { market: m, state: null };
+      }
+    }),
+  );
+}
+
+function formatOutcomeLine(o: { label: string; impliedProbability: number; priceFloat: number }): string {
+  const prob = (o.impliedProbability * 100).toFixed(1);
+  return `${o.label}: ${prob}% (px ${o.priceFloat.toFixed(4)})`;
+}
+
+export async function build42MarketContext(maxMarkets = 6): Promise<string> {
+  let enriched: EnrichedMarket[];
   try {
-    signals = await scanMarketLevelSignals(8);
+    enriched = await enrichTopMarkets(maxMarkets);
   } catch (err) {
-    console.warn('[fortyTwo] scanMarketLevelSignals failed:', (err as Error).message);
+    console.warn('[fortyTwo] build42MarketContext failed:', (err as Error).message);
     return '';
   }
-  if (!signals || signals.length === 0) return '';
+  if (enriched.length === 0) return '';
 
-  const lines = signals.map(
-    (s) => `• [${s.category}] ${s.title} — ${s.reasoning} (market: ${s.marketAddress})`,
-  );
+  const blocks = enriched.map(({ market, state }) => {
+    const header = `• [${(market.categories ?? [])[0] ?? 'general'}] ${market.question.trim()} — ends ${market.endDate}`;
+    if (!state || state.outcomes.length === 0) {
+      return `${header}\n   prices unavailable (market: ${market.address})`;
+    }
+    const top = [...state.outcomes]
+      .sort((a, b) => b.impliedProbability - a.impliedProbability)
+      .slice(0, 4)
+      .map(formatOutcomeLine)
+      .join(' | ');
+    return `${header}\n   ${top}\n   market: ${market.address}`;
+  });
 
   return `
-## Live 42.space Prediction Markets
-The following live outcome markets exist on BSC right now (collateral: USDT).
-Prices reflect real-money implied probabilities. Consider these as soft signals
-when forming a thesis on AI / crypto / geopolitics:
+## Live 42.space Prediction Markets (BSC, USDT collateral)
+Implied probabilities are computed from live bonding-curve marginal prices on chain.
+These are real-money signals — incorporate them when forming a thesis.
 
-${lines.join('\n')}
-
-Per-outcome prices and OHLC candles are not yet exposed by 42's public API; if
-that data would change your decision, surface it in your reasoning so we know
-to wire up the on-chain price reader.
+${blocks.join('\n\n')}
 `;
 }
