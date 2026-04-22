@@ -1883,8 +1883,20 @@ app.get('/api/admin/predictions/stats', requireAdmin, async (_req, res) => {
 // writing.
 app.post('/api/admin/predictions/backfill-recent', requireAdmin, async (req, res) => {
   try {
-    const windowHours = Math.min(24, Math.max(1, Number(req.body?.windowHours ?? 2)))
+    const windowHours = Math.min(72, Math.max(1, Number(req.body?.windowHours ?? 2)))
     const dryRun = req.body?.dryRun === true
+    // Which 42.space market lifecycle states to scan. By default we cover
+    // both 'live' (open for trading) AND 'ended' (trading closed but
+    // resolution pending) — users often hold positions on markets that
+    // tipped from live → ended between buy and recovery, and we don't want
+    // to silently skip those.
+    const allowedStatuses = ['live', 'ended', 'finalised', 'resolved'] as const
+    type Status = (typeof allowedStatuses)[number]
+    const requestedStatuses: Status[] = Array.isArray(req.body?.statuses)
+      ? req.body.statuses.filter((s: unknown): s is Status =>
+          typeof s === 'string' && (allowedStatuses as readonly string[]).includes(s),
+        )
+      : ['live', 'ended']
     const { db } = await import('./db')
     const { ethers } = await import('ethers')
     const { buildBscProvider } = await import('./services/bscProvider')
@@ -1909,8 +1921,19 @@ app.post('/api/admin/predictions/backfill-recent', requireAdmin, async (req, res
     )
     const seenTx = new Set(existingTx.map((r) => r.txHashOpen.toLowerCase()))
 
-    // Live markets to scan. Keep this small — one eth_getLogs per market.
-    const markets = await getAllMarkets({ status: 'live', limit: 100 })
+    // Markets to scan. We hit each requested status separately because the
+    // 42 API only accepts a single status filter per call. De-dupe by
+    // address in case a market shifted state between calls.
+    const marketMap = new Map<string, Awaited<ReturnType<typeof getAllMarkets>>[number]>()
+    for (const status of requestedStatuses) {
+      try {
+        const ms = await getAllMarkets({ status, limit: 100 })
+        for (const m of ms) marketMap.set(m.address.toLowerCase(), m)
+      } catch (e) {
+        errors.push({ market: `__list:${status}`, reason: (e as Error).message })
+      }
+    }
+    const markets = [...marketMap.values()]
 
     // ERC-1155 TransferSingle(operator, from, to, id, value)
     //   topic0 = keccak("TransferSingle(address,address,address,uint256,uint256)")
@@ -1933,8 +1956,15 @@ app.post('/api/admin/predictions/backfill-recent', requireAdmin, async (req, res
     // Chunk eth_getLogs into 500-block windows — most public BSC RPCs
     // (Ankr free, dataseeds) reject larger ranges with code -32062
     // "Block range is too large".
+    //
+    // Parallelize across markets with a concurrency cap so wide windows
+    // (24h+) finish before Render's ~60s gateway timeout. Per-chunk calls
+    // within a single market stay sequential — the bottleneck is total
+    // RPC calls (markets × chunks), not within any one market.
     const CHUNK = 500
-    for (const m of markets) {
+    const CONCURRENCY = 8
+
+    async function scanMarket(m: typeof markets[number]) {
       let chunkStart = fromBlock
       while (chunkStart <= latest) {
         const chunkEnd = Math.min(chunkStart + CHUNK - 1, latest)
@@ -1970,6 +2000,18 @@ app.post('/api/admin/predictions/backfill-recent', requireAdmin, async (req, res
         chunkStart = chunkEnd + 1
       }
     }
+
+    // Simple worker pool: pull from a shared queue.
+    let cursor = 0
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, markets.length) }, async () => {
+        while (true) {
+          const i = cursor++
+          if (i >= markets.length) return
+          await scanMarket(markets[i])
+        }
+      }),
+    )
 
     if (dryRun) {
       return res.json({
