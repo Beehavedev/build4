@@ -6,7 +6,7 @@ import { createBot } from './bot'
 import { initRunner } from './agents/runner'
 import { migrateOldUsers } from './migrate'
 import { ensureNewTables } from './ensureTables'
-import { requireTgUser } from './services/telegramAuth'
+import { requireTgUser, requireAdmin, isAdminTelegramId } from './services/telegramAuth'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -1133,6 +1133,50 @@ app.get('/api/leaderboard', async (_req, res) => {
 
     res.json(ranked)
   } catch {
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// ─── Admin: editable AI cost rates (Task #23) ───
+app.get('/api/me/admin', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  res.json({ isAdmin: isAdminTelegramId(user.telegramId) })
+})
+
+app.get('/api/admin/cost-rates', requireAdmin, async (_req, res) => {
+  try {
+    const { listCostRates } = await import('./services/costRates')
+    const rates = await listCostRates()
+    res.json({ rates })
+  } catch (err) {
+    console.error('[API] /admin/cost-rates GET failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+app.put('/api/admin/cost-rates/:provider', requireAdmin, async (req, res) => {
+  try {
+    const { upsertCostRate } = await import('./services/costRates')
+    const provider = String(req.params.provider ?? '').toLowerCase()
+    const rate = Number(req.body?.usdPer1MTokens)
+    const user = (req as any).user
+    await upsertCostRate(provider, rate, String(user.telegramId))
+    res.json({ ok: true })
+  } catch (err: any) {
+    const msg = err?.message ?? 'Internal error'
+    const status = /Invalid|must be/.test(msg) ? 400 : 500
+    if (status === 500) console.error('[API] /admin/cost-rates PUT failed:', err)
+    res.status(status).json({ error: msg })
+  }
+})
+
+app.delete('/api/admin/cost-rates/:provider', requireAdmin, async (req, res) => {
+  try {
+    const { deleteCostRate } = await import('./services/costRates')
+    await deleteCostRate(String(req.params.provider ?? '').toLowerCase())
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('[API] /admin/cost-rates DELETE failed:', err)
     res.status(500).json({ error: 'Internal error' })
   }
 })

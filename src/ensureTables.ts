@@ -283,5 +283,15 @@ export async function ensureNewTables() {
   await run(`CREATE INDEX IF NOT EXISTS "OutcomePosition_status_idx" ON "OutcomePosition"("status")`)
   await run(`CREATE INDEX IF NOT EXISTS "OutcomePosition_marketAddress_idx" ON "OutcomePosition"("marketAddress")`)
 
+  // ─── Editable AI cost rates (Task #23) — admin-managed override of the
+  // hardcoded DEFAULT_COST_USD_PER_MTOKENS map in src/services/swarmStats.ts.
+  await run(`CREATE TABLE IF NOT EXISTS "ProviderCostRate" (
+    "provider" TEXT NOT NULL,
+    "usdPer1MTokens" DOUBLE PRECISION NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedBy" TEXT,
+    CONSTRAINT "ProviderCostRate_pkey" PRIMARY KEY ("provider")
+  )`)
+
   console.log('[DB] All new tables ready')
 }

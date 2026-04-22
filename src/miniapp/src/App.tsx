@@ -5,6 +5,8 @@ import CopyTrade from './pages/CopyTrade'
 import Portfolio from './pages/Portfolio'
 import Wallet from './pages/Wallet'
 import Predictions, { CrosshairIcon } from './pages/Predictions'
+import Admin from './pages/Admin'
+import { apiFetch } from './api'
 
 declare global {
   interface Window {
@@ -12,11 +14,12 @@ declare global {
   }
 }
 
-type Page = 'dashboard' | 'agents' | 'wallet' | 'copy' | 'portfolio' | 'predictions'
+type Page = 'dashboard' | 'agents' | 'wallet' | 'copy' | 'portfolio' | 'predictions' | 'admin'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [userId, setUserId] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     // Init Telegram WebApp
@@ -27,6 +30,10 @@ export default function App() {
       const telegramId = tg.initDataUnsafe?.user?.id
       if (telegramId) setUserId(telegramId.toString())
     }
+    // Probe admin status — only show the Admin tab to allow-listed telegram IDs.
+    apiFetch<{ isAdmin: boolean }>('/api/me/admin')
+      .then((r) => setIsAdmin(!!r.isAdmin))
+      .catch(() => setIsAdmin(false))
   }, [])
 
   const navItems: { id: Page; label: string; icon: string | 'crosshair' }[] = [
@@ -36,7 +43,8 @@ export default function App() {
     // Copy trading hidden for now — coming back to it later.
     // { id: 'copy', label: 'Copy', icon: '📋' },
     { id: 'portfolio', label: 'Portfolio', icon: '📊' },
-    { id: 'predictions', label: 'Predictions', icon: 'crosshair' }
+    { id: 'predictions', label: 'Predictions', icon: 'crosshair' },
+    ...(isAdmin ? [{ id: 'admin' as Page, label: 'Admin', icon: '🛠' }] : [])
   ]
 
   return (
@@ -49,6 +57,7 @@ export default function App() {
         {page === 'copy' && <CopyTrade />}
         {page === 'portfolio' && <Portfolio userId={userId} />}
         {page === 'predictions' && <Predictions />}
+        {page === 'admin' && <Admin />}
       </div>
 
       {/* Bottom nav */}

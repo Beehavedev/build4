@@ -272,6 +272,18 @@ model OutcomePosition {
   @@index([marketAddress])
 }
 
+// Editable per-provider cost rates used by getSwarmStats to estimate USD spend
+// from raw token counts. Defaults live in code (DEFAULT_COST_USD_PER_MTOKENS)
+// and can be overridden via the SWARM_COST_USD_PER_MTOKENS env var; rows in
+// this table take precedence over both so ops can adjust pricing from the
+// admin UI without a redeploy.
+model ProviderCostRate {
+  provider         String   @id
+  usdPer1MTokens   Float
+  updatedAt        DateTime @default(now()) @updatedAt
+  updatedBy        String?  // telegramId of admin who last edited
+}
+
 model AgentLog {
   id              String   @id @default(cuid())
   agentId         String

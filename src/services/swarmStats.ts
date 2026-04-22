@@ -9,9 +9,11 @@ import { db } from '../db'
  *
  * Cost is *estimated* — we only store total tokens (not split into input vs
  * output), so the per-1M-token rates below are blended (~30% output / 70%
- * input). They live in code (not the DB) so adjusting them as pricing
- * changes is a one-line edit. Override via SWARM_COST_USD_PER_MTOKENS env
- * (JSON map keyed by provider) for ops without redeploying.
+ * input). Resolution order (lowest → highest precedence):
+ *   1. DEFAULT_COST_USD_PER_MTOKENS (in code)
+ *   2. SWARM_COST_USD_PER_MTOKENS env (JSON map keyed by provider)
+ *   3. Rows in the ProviderCostRate table (editable from the admin UI —
+ *      Task #23). Lets ops keep numbers honest without a redeploy.
  */
 
 export type Window = '24h' | '7d'
@@ -33,22 +35,48 @@ export interface SwarmStatsReport {
   rows: ProviderRollup[]
 }
 
-const DEFAULT_COST_USD_PER_MTOKENS: Record<string, number> = {
+export const DEFAULT_COST_USD_PER_MTOKENS: Record<string, number> = {
   anthropic: 6.0,
   xai: 0.4,
   hyperbolic: 0.4,
   akash: 0.3,
 }
 
-function loadCostMap(): Record<string, number> {
+function loadEnvCostMap(): Record<string, number> {
   const raw = process.env.SWARM_COST_USD_PER_MTOKENS
-  if (!raw) return DEFAULT_COST_USD_PER_MTOKENS
+  if (!raw) return {}
   try {
-    const parsed = JSON.parse(raw) as Record<string, number>
-    return { ...DEFAULT_COST_USD_PER_MTOKENS, ...parsed }
+    return JSON.parse(raw) as Record<string, number>
   } catch {
-    return DEFAULT_COST_USD_PER_MTOKENS
+    return {}
   }
+}
+
+interface CostRateRow {
+  provider: string
+  usdPer1MTokens: number | string
+}
+
+async function loadCostMap(
+  loadDbRows: () => Promise<CostRateRow[]> = defaultLoadDbRows,
+): Promise<Record<string, number>> {
+  const merged: Record<string, number> = { ...DEFAULT_COST_USD_PER_MTOKENS, ...loadEnvCostMap() }
+  try {
+    const rows = await loadDbRows()
+    for (const row of rows) {
+      const n = Number(row.usdPer1MTokens)
+      if (Number.isFinite(n) && n >= 0) merged[row.provider] = n
+    }
+  } catch (err) {
+    console.warn('[swarmStats] DB cost-rate lookup failed, falling back to env/defaults:', err)
+  }
+  return merged
+}
+
+async function defaultLoadDbRows(): Promise<CostRateRow[]> {
+  return db.$queryRawUnsafe<CostRateRow[]>(
+    'SELECT "provider", "usdPer1MTokens" FROM "ProviderCostRate"',
+  )
 }
 
 function windowToInterval(w: Window): { sql: string; ms: number } {
@@ -76,7 +104,10 @@ interface RawRollupRow {
  */
 export async function getSwarmStats(
   window: Window,
-  deps: { query?: (sql: string) => Promise<RawRollupRow[]> } = {},
+  deps: {
+    query?: (sql: string) => Promise<RawRollupRow[]>
+    loadCostRates?: () => Promise<CostRateRow[]>
+  } = {},
 ): Promise<SwarmStatsReport> {
   const { sql: intervalSql, ms } = windowToInterval(window)
   const since = new Date(Date.now() - ms)
@@ -105,7 +136,7 @@ export async function getSwarmStats(
 
   const runQuery = deps.query ?? ((q: string) => db.$queryRawUnsafe<RawRollupRow[]>(q))
   const raw = await runQuery(sql)
-  const costs = loadCostMap()
+  const costs = await loadCostMap(deps.loadCostRates)
 
   const rows: ProviderRollup[] = raw.map((r) => {
     const provider = r.provider ?? 'unknown'
