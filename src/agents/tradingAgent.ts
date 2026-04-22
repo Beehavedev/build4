@@ -870,6 +870,22 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         kellySize = Math.max(1, Math.min(kellySize, agent.maxPositionSize * 0.25))
       }
 
+      // 5b. 42.space prediction-market context. Cached for ~60s inside
+      //     build42MarketContext, so concurrent agent ticks share one fetch.
+      //     Wrapped in try/catch + 1.5s timeout race — if the 42 stack hangs
+      //     or rejects, we still trade. Trading must never block on this.
+      let predictionContext = ''
+      try {
+        const { build42MarketContext } = await import('../services/fortyTwoPrompt')
+        const block = await Promise.race<string>([
+          build42MarketContext({ maxMarkets: 5, tradingRelevantOnly: true }),
+          new Promise<string>((resolve) => setTimeout(() => resolve(''), 1500)),
+        ])
+        if (block.trim()) predictionContext = '\n' + block
+      } catch (err) {
+        console.warn(`[Agent ${agent.name}] 42.space context unavailable:`, (err as Error).message)
+      }
+
       // 6. Build user message
       const userMessage = `
 === MARKET DATA ===
@@ -896,7 +912,7 @@ Current funding rate: ${fundingPct >= 0 ? '+' : ''}${fundingPct.toFixed(4)}% (${
 
 === POSITION SIZE BUDGET ===
 Use exactly $${kellySize} USDT for this trade's "size" field (sample n=${sampleSize}, win rate ${(winRate20 * 100).toFixed(0)}%).
-${newsContext}
+${newsContext}${predictionContext}
 
 === OPEN POSITIONS ===
 ${

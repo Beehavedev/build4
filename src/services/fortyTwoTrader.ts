@@ -26,16 +26,49 @@ const ERC20_ABI = [
   'function balanceOf(address owner) external view returns (uint256)',
 ];
 
+/**
+ * Synthetic receipt returned in dry-run (paper-trade) mode. Mimics enough of
+ * `ethers.TransactionReceipt` for downstream loggers + makes intent inspectable.
+ */
+export interface DryRunReceipt {
+  dryRun: true;
+  hash: string;
+  from: string;
+  to: string;
+  method: 'buyOutcome' | 'sellOutcome' | 'claimResolved' | 'claimAllResolved' | 'approve';
+  args: Record<string, unknown>;
+  status: 1;
+}
+
+function dryHash(seed: string): string {
+  // Deterministic-ish 0x-prefixed 32-byte hex so logs look like real tx hashes.
+  return '0xDR' + Buffer.from(`${seed}|${Date.now()}|${Math.random()}`).toString('hex').padEnd(62, '0').slice(0, 62);
+}
+
+export interface FortyTwoTraderOptions {
+  /** When true, no on-chain calls are sent — every method returns a DryRunReceipt and logs intent. */
+  dryRun?: boolean;
+}
+
 export class FortyTwoTrader {
   private router: ethers.Contract;
   private usdt: ethers.Contract;
   private wallet: ethers.Wallet;
+  private dryRun: boolean;
 
-  constructor(privateKey: string, rpcUrl: string) {
+  constructor(privateKey: string, rpcUrl: string, opts: FortyTwoTraderOptions = {}) {
     const provider = new ethers.JsonRpcProvider(rpcUrl);
     this.wallet = new ethers.Wallet(privateKey, provider);
     this.router = new ethers.Contract(FTROUTER_ADDRESS, ROUTER_ABI, this.wallet);
     this.usdt = new ethers.Contract(USDT_BSC, ERC20_ABI, this.wallet);
+    this.dryRun = opts.dryRun ?? process.env.FORTYTWO_PAPER_TRADE === '1';
+    if (this.dryRun) {
+      console.log(`[FortyTwoTrader] PAPER-TRADE mode active for ${this.wallet.address} — no transactions will be broadcast.`);
+    }
+  }
+
+  get isPaperTrading(): boolean {
+    return this.dryRun;
   }
 
   get address(): string {
@@ -43,6 +76,10 @@ export class FortyTwoTrader {
   }
 
   async ensureApproval(amount: bigint): Promise<void> {
+    if (this.dryRun) {
+      console.log(`[FortyTwoTrader:DRY] approve(USDT → router, MaxUint256) for ${ethers.formatUnits(amount, 18)} USDT`);
+      return;
+    }
     const allowance: bigint = await this.usdt.allowance(this.wallet.address, FTROUTER_ADDRESS);
     if (allowance < amount) {
       const tx = await this.usdt.approve(FTROUTER_ADDRESS, ethers.MaxUint256);
@@ -70,6 +107,12 @@ export class FortyTwoTrader {
       isExactIn: true,
       minOutOrMaxIn: minOtOut,
     };
+
+    if (this.dryRun) {
+      const args = { marketAddress, tokenId, usdtAmountIn, minOtOut: minOtOut.toString() };
+      console.log(`[FortyTwoTrader:DRY] buyOutcome ${JSON.stringify(args)}`);
+      return { dryRun: true, hash: dryHash('buy'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'buyOutcome', args, status: 1 } as unknown as ethers.TransactionReceipt;
+    }
 
     const tx = await this.router.swapSimple(
       marketAddress,
@@ -100,6 +143,12 @@ export class FortyTwoTrader {
       minOutOrMaxIn: minUsdtOut,
     };
 
+    if (this.dryRun) {
+      const args = { marketAddress, tokenId, tokenAmountIn: tokenAmountIn.toString(), minUsdtOut: minUsdtOut.toString() };
+      console.log(`[FortyTwoTrader:DRY] sellOutcome ${JSON.stringify(args)}`);
+      return { dryRun: true, hash: dryHash('sell'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'sellOutcome', args, status: 1 } as unknown as ethers.TransactionReceipt;
+    }
+
     const tx = await this.router.swapSimple(
       marketAddress,
       this.wallet.address,
@@ -117,6 +166,11 @@ export class FortyTwoTrader {
     tokenIds: number[],
     otToBurn: bigint[],
   ): Promise<ethers.TransactionReceipt | null> {
+    if (this.dryRun) {
+      const args = { marketAddress, tokenIds, otToBurn: otToBurn.map((b) => b.toString()) };
+      console.log(`[FortyTwoTrader:DRY] claimResolved ${JSON.stringify(args)}`);
+      return { dryRun: true, hash: dryHash('claim'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'claimResolved', args, status: 1 } as unknown as ethers.TransactionReceipt;
+    }
     const tx = await this.router.claimSimple(
       marketAddress,
       this.wallet.address,
@@ -128,6 +182,11 @@ export class FortyTwoTrader {
 
   /** Claim every winning outcome the wallet holds for a resolved market in one call. */
   async claimAllResolved(marketAddress: string): Promise<ethers.TransactionReceipt | null> {
+    if (this.dryRun) {
+      const args = { marketAddress };
+      console.log(`[FortyTwoTrader:DRY] claimAllResolved ${JSON.stringify(args)}`);
+      return { dryRun: true, hash: dryHash('claimAll'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'claimAllResolved', args, status: 1 } as unknown as ethers.TransactionReceipt;
+    }
     const tx = await this.router.claimAllSimple(marketAddress, this.wallet.address);
     return tx.wait();
   }
