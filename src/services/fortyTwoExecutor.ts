@@ -27,7 +27,7 @@ import { getMarketByAddress } from './fortyTwo';
  * Keep the original message available for server logs (we still console.log
  * the full err in callers); the return value is just for the API response.
  */
-function friendlyTraderError(err: unknown, op: 'buyOutcome' | 'sellOutcome'): string {
+function friendlyTraderError(err: unknown, op: 'buyOutcome' | 'sellOutcome' | 'claimAllResolved'): string {
   const raw = (err as Error)?.message || String(err);
   if (raw.includes('BUFFER_OVERRUN') || raw.includes('cannot slice beyond data bounds')) {
     return `${op} failed: BSC RPC returned no data (likely public-RPC throttling or a silent contract revert). Try again in a moment; if it persists, set BSC_RPC_URL to a paid endpoint.`;
@@ -55,6 +55,10 @@ export interface ExecutorTrader {
     minUsdtOut?: bigint,
   ): Promise<ethers.TransactionReceipt | DryRunReceipt | null>;
   balanceOfOutcome(marketAddress: string, tokenId: number): Promise<bigint>;
+  // Used by user-initiated claim flow (claimUserResolvedForMarket).
+  // Optional only because some unit-test stubs predate the claim methods —
+  // production callers always go through FortyTwoTrader which implements it.
+  claimAllResolved?(marketAddress: string): Promise<ethers.TransactionReceipt | null>;
 }
 
 export type ExecutorTraderCtor = new (
@@ -947,4 +951,215 @@ export async function listOpenAgentPositions(agentId: string): Promise<OutcomePo
      ORDER BY "openedAt" DESC`,
     agentId,
   );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// User-initiated position management (mini-app sell + claim flows)
+//
+// These mirror the agent-only `closePredictionPosition` and
+// `settleResolvedPositions` but gate by `userId` instead of `agentId`, so a
+// user can manage *any* of their positions (manual + agent-opened) from the
+// Predictions tab. The on-chain mechanics are unchanged — we reuse the same
+// `trader.sellOutcome` / `trader.claimAllResolved` paths that production
+// already runs through.
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * User-scoped sell. Functionally identical to closePredictionPosition but
+ * the WHERE clause is keyed on userId so it covers manual positions
+ * (agentId IS NULL) too. Closing a live position bypasses the kill switch
+ * so users can always exit.
+ */
+export async function closeUserPredictionPosition(
+  userId: string,
+  positionId: string,
+): Promise<{ ok: true; pnl: number; txHash: string | null } | { ok: false; reason: string }> {
+  const rows = await db.$queryRawUnsafe<OutcomePositionRow[]>(
+    `SELECT * FROM "OutcomePosition" WHERE id = $1 AND "userId" = $2 AND status = 'open' LIMIT 1`,
+    positionId,
+    userId,
+  );
+  const pos = rows[0];
+  if (!pos) return { ok: false, reason: 'position not found or not open' };
+
+  let market: Market42;
+  try {
+    market = await __testDeps.getMarketByAddress(pos.marketAddress);
+  } catch (err) {
+    return { ok: false, reason: `market lookup failed: ${(err as Error).message}` };
+  }
+
+  const state = await __testDeps.readMarketOnchain(market);
+  const outcome = state.outcomes.find((o) => o.tokenId === pos.tokenId);
+  if (!outcome) return { ok: false, reason: 'outcome missing on chain' };
+
+  // Honor the position's recorded mode (paper vs live) — see
+  // closePredictionPosition for the rationale.
+  const built = await buildTrader(userId, pos.paperTrade);
+  if (!built) return { ok: false, reason: 'no wallet' };
+  const { trader, paperTrade } = built;
+
+  let tokenAmt: bigint;
+  if (paperTrade) {
+    const estimateFloat = pos.outcomeTokenAmount ?? pos.usdtIn / pos.entryPrice;
+    tokenAmt = ethers.parseUnits(estimateFloat.toFixed(6), 18);
+  } else {
+    if (!pos.outcomeTokenAmount || pos.outcomeTokenAmount <= 0) {
+      return {
+        ok: false,
+        reason: 'live position has no recorded outcomeTokenAmount; cannot safely close',
+      };
+    }
+    const recorded = ethers.parseUnits(pos.outcomeTokenAmount.toFixed(6), 18);
+    let walletBal: bigint;
+    try {
+      walletBal = await trader.balanceOfOutcome(pos.marketAddress, pos.tokenId);
+    } catch (err) {
+      return { ok: false, reason: `balanceOfOutcome failed: ${(err as Error).message}` };
+    }
+    tokenAmt = recorded < walletBal ? recorded : walletBal;
+    if (tokenAmt === 0n) {
+      return { ok: false, reason: 'wallet holds zero of this outcome token' };
+    }
+  }
+
+  const SLIPPAGE_BPS_SELL = 500;
+  const tokensSoldFloat = Number(ethers.formatUnits(tokenAmt, 18));
+  const expectedUsdtOut = tokensSoldFloat * outcome.impliedProbability;
+  const minUsdtOut = paperTrade
+    ? 0n
+    : ethers.parseUnits(
+        (expectedUsdtOut * (1 - SLIPPAGE_BPS_SELL / 10_000)).toFixed(6),
+        18,
+      );
+
+  let receipt: TxReceiptLike = null;
+  try {
+    receipt = await trader.sellOutcome(pos.marketAddress, pos.tokenId, tokenAmt, minUsdtOut);
+  } catch (err) {
+    return { ok: false, reason: friendlyTraderError(err, 'sellOutcome') };
+  }
+  const txHash = receiptHash(receipt);
+
+  const payout = tokensSoldFloat * outcome.impliedProbability;
+  const pnl = payout - pos.usdtIn;
+  await db.$executeRawUnsafe(
+    `UPDATE "OutcomePosition"
+     SET status='closed', "exitPrice"=$1, "payoutUsdt"=$2, pnl=$3,
+         "txHashClose"=$4, "closedAt"=NOW(), "paperTrade"=$5
+     WHERE id=$6`,
+    outcome.impliedProbability,
+    payout,
+    pnl,
+    txHash,
+    paperTrade,
+    pos.id,
+  );
+  return { ok: true, pnl, txHash };
+}
+
+/**
+ * Claim every winning outcome the user holds for a single resolved market
+ * in one tx via `claimAllSimple`. Marks all matching `resolved_win` rows as
+ * `'claimed'` and stamps the claim tx hash into `txHashClose` (the row
+ * already has `payoutUsdt`/`pnl` set by settleResolvedPositions).
+ *
+ * Single-position claims collapse to this — the contract claims the
+ * wallet's full holding for the market either way, so we always batch.
+ */
+export async function claimUserResolvedForMarket(
+  userId: string,
+  marketAddress: string,
+): Promise<
+  | { ok: true; claimedPositions: number; payoutUsdt: number; txHash: string | null }
+  | { ok: false; reason: string }
+> {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(marketAddress)) {
+    return { ok: false, reason: 'invalid market address' };
+  }
+
+  const wins = await db.$queryRawUnsafe<OutcomePositionRow[]>(
+    `SELECT * FROM "OutcomePosition"
+     WHERE "userId" = $1 AND "marketAddress" = $2 AND status = 'resolved_win'`,
+    userId,
+    marketAddress,
+  );
+  if (wins.length === 0) {
+    return { ok: false, reason: 'no claimable wins on this market' };
+  }
+
+  // All rows for the same market share paperTrade mode in practice (a user's
+  // wallet either is or isn't on-chain). If they happen to mix, prefer the
+  // live path so the on-chain claim actually fires; paper rows still get
+  // their DB status flipped below.
+  const anyLive = wins.some((p) => !p.paperTrade);
+  const built = await buildTrader(userId, !anyLive);
+  if (!built) return { ok: false, reason: 'no wallet' };
+  const { trader } = built;
+
+  if (typeof trader.claimAllResolved !== 'function') {
+    return { ok: false, reason: 'trader does not implement claimAllResolved' };
+  }
+  let receipt: TxReceiptLike = null;
+  try {
+    receipt = await trader.claimAllResolved(marketAddress);
+  } catch (err) {
+    return { ok: false, reason: friendlyTraderError(err, 'claimAllResolved') };
+  }
+  const txHash = receiptHash(receipt);
+
+  const payoutUsdt = wins.reduce((s, p) => s + (p.payoutUsdt ?? 0), 0);
+  await db.$executeRawUnsafe(
+    `UPDATE "OutcomePosition"
+     SET status='claimed', "txHashClose"=COALESCE("txHashClose", $1), "closedAt"=NOW()
+     WHERE "userId" = $2 AND "marketAddress" = $3 AND status = 'resolved_win'`,
+    txHash,
+    userId,
+    marketAddress,
+  );
+  return { ok: true, claimedPositions: wins.length, payoutUsdt, txHash };
+}
+
+/**
+ * Claim every winning outcome the user holds across every resolved market.
+ * One on-chain tx per market with at least one win.
+ */
+export async function claimAllUserResolved(
+  userId: string,
+): Promise<{
+  ok: true;
+  marketsClaimed: number;
+  claimedPositions: number;
+  payoutUsdt: number;
+  errors: Array<{ marketAddress: string; reason: string }>;
+}> {
+  // First refresh resolution state so any newly-finalised markets get
+  // flipped to resolved_win/_loss before we try to claim.
+  try {
+    await settleResolvedPositions({ userId });
+  } catch {
+    // best-effort refresh; claim-loop below filters by status anyway
+  }
+
+  const winRows = await db.$queryRawUnsafe<Array<{ marketAddress: string }>>(
+    `SELECT DISTINCT "marketAddress" FROM "OutcomePosition"
+     WHERE "userId" = $1 AND status = 'resolved_win'`,
+    userId,
+  );
+
+  let marketsClaimed = 0;
+  let claimedPositions = 0;
+  let payoutUsdt = 0;
+  const errors: Array<{ marketAddress: string; reason: string }> = [];
+  for (const { marketAddress } of winRows) {
+    const r = await claimUserResolvedForMarket(userId, marketAddress);
+    if (r.ok) {
+      marketsClaimed++;
+      claimedPositions += r.claimedPositions;
+      payoutUsdt += r.payoutUsdt;
+    } else {
+      errors.push({ marketAddress, reason: r.reason });
+    }
+  }
+  return { ok: true, marketsClaimed, claimedPositions, payoutUsdt, errors };
 }

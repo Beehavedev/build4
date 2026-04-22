@@ -1663,6 +1663,121 @@ app.post('/api/me/predictions-mode', requireTgUser, async (req, res) => {
   }
 })
 
+// ──────────────────────────────────────────────────────────────────────────
+// GET /api/me/positions — authenticated, user-owned positions for the
+// mini-app "Your Positions" section. Returns rows with their cuid `id` so
+// the sell/claim endpoints below can reference them. Also opportunistically
+// runs settleResolvedPositions(userId) so any newly-finalised markets get
+// their status flipped to resolved_win/_loss before we render claim buttons.
+// ──────────────────────────────────────────────────────────────────────────
+app.get('/api/me/positions', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+
+  try {
+    const exec = await import('./services/fortyTwoExecutor')
+    // Best-effort settle — if 42.space / RPC is wedged we still want to show
+    // the user their positions, just without the freshest resolution state.
+    try { await exec.settleResolvedPositions({ userId: user.id }) } catch {}
+
+    const rows = await exec.listUserPositions(user.id, 50)
+    const positions = rows.map((p) => ({
+      id: p.id,
+      marketTitle: p.marketTitle,
+      marketAddress: p.marketAddress,
+      tokenId: p.tokenId,
+      outcomeLabel: p.outcomeLabel,
+      usdtIn: p.usdtIn,
+      entryPrice: p.entryPrice,
+      exitPrice: p.exitPrice,
+      payoutUsdt: p.payoutUsdt,
+      pnl: p.pnl,
+      status: p.status, // 'open' | 'closed' | 'resolved_win' | 'resolved_loss' | 'claimed'
+      paperTrade: p.paperTrade,
+      txHashOpen: p.txHashOpen,
+      txHashClose: p.txHashClose,
+      openedAt: p.openedAt,
+      closedAt: p.closedAt,
+    }))
+    res.setHeader('Cache-Control', 'no-store')
+    res.json({ ok: true, positions })
+  } catch (err) {
+    console.error('[API] /me/positions failed:', err)
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+// POST /api/predictions/sell — close (sell back to USDT) one of the
+// caller's open positions. Bypasses the per-user kill switch so users can
+// always exit live exposure even with new-trade opt-in disabled.
+app.post('/api/predictions/sell', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+
+  const positionId = typeof req.body?.positionId === 'string' ? req.body.positionId : ''
+  if (!positionId) return res.status(400).json({ ok: false, error: 'invalid_position_id' })
+
+  try {
+    const { closeUserPredictionPosition } = await import('./services/fortyTwoExecutor')
+    const result = await closeUserPredictionPosition(user.id, positionId)
+    if (!result.ok) return res.status(400).json(result)
+    return res.json(result)
+  } catch (err) {
+    console.error('[API] /predictions/sell failed:', err)
+    return res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+// POST /api/predictions/claim — claim payout for one resolved-winning
+// position. Implementation calls claimAllResolved on the position's market
+// because the on-chain `claimSimple` redeems every winning OT the wallet
+// holds for that market regardless; batching by market is the natural unit.
+app.post('/api/predictions/claim', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+
+  const positionId = typeof req.body?.positionId === 'string' ? req.body.positionId : ''
+  if (!positionId) return res.status(400).json({ ok: false, error: 'invalid_position_id' })
+
+  try {
+    const { db } = await import('./db')
+    const rows = await db.$queryRawUnsafe<Array<{ marketAddress: string; status: string }>>(
+      `SELECT "marketAddress", status FROM "OutcomePosition"
+       WHERE id = $1 AND "userId" = $2 LIMIT 1`,
+      positionId,
+      user.id,
+    )
+    if (rows.length === 0) return res.status(404).json({ ok: false, error: 'position_not_found' })
+    if (rows[0].status !== 'resolved_win') {
+      return res.status(400).json({ ok: false, error: `position not claimable (status=${rows[0].status})` })
+    }
+    const { claimUserResolvedForMarket } = await import('./services/fortyTwoExecutor')
+    const result = await claimUserResolvedForMarket(user.id, rows[0].marketAddress)
+    if (!result.ok) return res.status(400).json(result)
+    return res.json(result)
+  } catch (err) {
+    console.error('[API] /predictions/claim failed:', err)
+    return res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
+// POST /api/predictions/claim-all — sweep every resolved-winning position
+// the caller owns, one tx per market. Returns aggregate counts plus any
+// per-market errors (so the UI can surface partial-success cases).
+app.post('/api/predictions/claim-all', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
+
+  try {
+    const { claimAllUserResolved } = await import('./services/fortyTwoExecutor')
+    const result = await claimAllUserResolved(user.id)
+    return res.json(result)
+  } catch (err) {
+    console.error('[API] /predictions/claim-all failed:', err)
+    return res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
 app.post('/api/predictions/buy', requireTgUser, async (req, res) => {
   const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })

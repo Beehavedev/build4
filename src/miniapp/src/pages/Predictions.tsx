@@ -61,6 +61,28 @@ interface PositionRow {
   status: 'open' | 'resolved' | 'claimable' | 'claimed'
 }
 
+// User-owned position rows from /api/me/positions. Includes the cuid `id`
+// (omitted from the public /predictions/latest stream) so sell/claim
+// requests can reference a specific row.
+interface MyPositionRow {
+  id: string
+  marketTitle: string
+  marketAddress: string
+  tokenId: number
+  outcomeLabel: string
+  usdtIn: number
+  entryPrice: number
+  exitPrice: number | null
+  payoutUsdt: number | null
+  pnl: number | null
+  status: 'open' | 'closed' | 'resolved_win' | 'resolved_loss' | 'claimed'
+  paperTrade: boolean
+  txHashOpen: string | null
+  txHashClose: string | null
+  openedAt: string
+  closedAt: string | null
+}
+
 interface ScannerRow {
   marketTitle: string
   marketAddress: string
@@ -201,6 +223,102 @@ export default function Predictions() {
   const [expandedMarket, setExpandedMarket] = useState<string | null>(null)
   const [detailCache, setDetailCache] = useState<Record<string, MarketDetailState>>({})
 
+  // ── Authenticated user-owned positions (separate from the public,
+  // anonymous positions table fed by /api/predictions/latest). Lets the
+  // signed-in user sell open positions and claim resolved wins straight
+  // from the mini-app.
+  const [myPositions, setMyPositions] = useState<MyPositionRow[] | null>(null)
+  const [myPosErr, setMyPosErr] = useState<string | null>(null)
+  const [actionBusy, setActionBusy] = useState<string | null>(null) // positionId or 'claim-all'
+  const [actionMsg, setActionMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+
+  async function loadMyPositions() {
+    try {
+      const r = await fetch('/api/me/positions', { headers: tgHeaders() })
+      if (r.status === 401) { setMyPositions(null); setMyPosErr(null); return }
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const j = await r.json()
+      setMyPositions(Array.isArray(j.positions) ? j.positions : [])
+      setMyPosErr(null)
+    } catch (e) {
+      setMyPosErr((e as Error).message)
+    }
+  }
+
+  async function sellPosition(positionId: string) {
+    if (actionBusy) return
+    setActionBusy(positionId)
+    setActionMsg(null)
+    try {
+      const r = await fetch('/api/predictions/sell', {
+        method: 'POST',
+        headers: tgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ positionId }),
+      })
+      const j = await r.json()
+      if (!r.ok || !j.ok) {
+        setActionMsg({ kind: 'err', text: j?.reason || j?.error || `HTTP ${r.status}` })
+      } else {
+        const pnl = typeof j.pnl === 'number' ? j.pnl : 0
+        setActionMsg({ kind: 'ok', text: `Closed — PnL ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}` })
+        await loadMyPositions()
+      }
+    } catch (e) {
+      setActionMsg({ kind: 'err', text: (e as Error).message })
+    } finally { setActionBusy(null) }
+  }
+
+  async function claimPosition(positionId: string) {
+    if (actionBusy) return
+    setActionBusy(positionId)
+    setActionMsg(null)
+    try {
+      const r = await fetch('/api/predictions/claim', {
+        method: 'POST',
+        headers: tgHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ positionId }),
+      })
+      const j = await r.json()
+      if (!r.ok || !j.ok) {
+        setActionMsg({ kind: 'err', text: j?.reason || j?.error || `HTTP ${r.status}` })
+      } else {
+        setActionMsg({
+          kind: 'ok',
+          text: `Claimed ${j.claimedPositions ?? 1} position${(j.claimedPositions ?? 1) > 1 ? 's' : ''} — payout $${(j.payoutUsdt ?? 0).toFixed(2)}`,
+        })
+        await loadMyPositions()
+      }
+    } catch (e) {
+      setActionMsg({ kind: 'err', text: (e as Error).message })
+    } finally { setActionBusy(null) }
+  }
+
+  async function claimAllWins() {
+    if (actionBusy) return
+    setActionBusy('claim-all')
+    setActionMsg(null)
+    try {
+      const r = await fetch('/api/predictions/claim-all', {
+        method: 'POST',
+        headers: tgHeaders({ 'Content-Type': 'application/json' }),
+      })
+      const j = await r.json()
+      if (!r.ok) {
+        setActionMsg({ kind: 'err', text: j?.error || `HTTP ${r.status}` })
+      } else {
+        const errCount = Array.isArray(j.errors) ? j.errors.length : 0
+        const base = `Claimed ${j.claimedPositions ?? 0} position${(j.claimedPositions ?? 0) === 1 ? '' : 's'} across ${j.marketsClaimed ?? 0} market${(j.marketsClaimed ?? 0) === 1 ? '' : 's'} — $${(j.payoutUsdt ?? 0).toFixed(2)}`
+        setActionMsg({
+          kind: errCount > 0 ? 'err' : 'ok',
+          text: errCount > 0 ? `${base} (${errCount} failed)` : base,
+        })
+        await loadMyPositions()
+      }
+    } catch (e) {
+      setActionMsg({ kind: 'err', text: (e as Error).message })
+    } finally { setActionBusy(null) }
+  }
+
   // Per-user enable/disable kill switch for 42.space trading.
   // null = unknown (initial fetch pending OR user opened mini-app outside
   // Telegram and the /api/me endpoint 401'd — in that case we hide the
@@ -273,7 +391,8 @@ export default function Predictions() {
   useEffect(() => {
     load()
     loadMode()
-    const poll = setInterval(() => load(true), 30_000)
+    loadMyPositions()
+    const poll = setInterval(() => { load(true); loadMyPositions() }, 30_000)
     const tick = setInterval(() => setNowTick((n) => n + 1), 1000)
     return () => { clearInterval(poll); clearInterval(tick) }
   }, [])
@@ -396,6 +515,70 @@ export default function Predictions() {
           {data.swarm.agents.map((a) => (
             <AgentCard key={a.name} agent={a} />
           ))}
+        </div>
+      )}
+
+      {/* ── Section 2.5: Your Positions (authenticated) ──
+          Only renders when /api/me/positions returned a list (i.e. the user
+          opened the mini-app inside Telegram and we successfully authed
+          them). The public anonymous "Open Positions" table below is kept
+          in place so unauthenticated viewers still see live activity. */}
+      {myPositions !== null && (
+        <div style={{ marginBottom: 16 }} data-testid="section-my-positions">
+          <SectionTitle
+            title="Your Positions"
+            right={
+              myPositions.some((p) => p.status === 'resolved_win') ? (
+                <button
+                  type="button"
+                  onClick={claimAllWins}
+                  disabled={!!actionBusy}
+                  data-testid="button-claim-all"
+                  style={{
+                    padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                    background: actionBusy ? '#1e1e2e' : '#10b981',
+                    border: '1px solid #10b981', color: 'white',
+                    cursor: actionBusy ? 'wait' : 'pointer',
+                  }}>
+                  {actionBusy === 'claim-all' ? 'Claiming…' : 'Claim All Wins'}
+                </button>
+              ) : (
+                <span style={{ color: '#64748b' }}>{myPositions.length} total</span>
+              )
+            }
+          />
+          {actionMsg && (
+            <div
+              data-testid="text-action-msg"
+              style={{
+                marginBottom: 8, padding: '8px 12px', borderRadius: 6, fontSize: 12,
+                background: actionMsg.kind === 'ok' ? '#10b98115' : '#ef444415',
+                border: `1px solid ${actionMsg.kind === 'ok' ? '#10b98144' : '#ef444444'}`,
+                color: actionMsg.kind === 'ok' ? '#10b981' : '#ef4444',
+              }}>
+              {actionMsg.text}
+            </div>
+          )}
+          {myPosErr ? (
+            <EmptyState
+              title="Couldn't load your positions"
+              body={myPosErr}
+              testId="empty-my-positions-error"
+            />
+          ) : myPositions.length === 0 ? (
+            <EmptyState
+              title="No positions yet"
+              body="When you open a position on a 42.space market — manually from the scanner below or via an agent — it'll appear here so you can sell or claim winnings."
+              testId="empty-my-positions"
+            />
+          ) : (
+            <MyPositionsList
+              rows={myPositions}
+              busyId={actionBusy}
+              onSell={sellPosition}
+              onClaim={claimPosition}
+            />
+          )}
         </div>
       )}
 
@@ -1122,6 +1305,122 @@ function PositionsTable({ rows }: { rows: PositionRow[] }) {
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+// User-owned positions list with per-row Sell (open) / Claim (resolved_win)
+// buttons. Card-based layout (vs the public PositionsTable's dense grid)
+// gives the action buttons enough touch area on mobile.
+function MyPositionsList({
+  rows,
+  busyId,
+  onSell,
+  onClaim,
+}: {
+  rows: MyPositionRow[]
+  busyId: string | null
+  onSell: (id: string) => void
+  onClaim: (id: string) => void
+}) {
+  function statusBadge(p: MyPositionRow): { label: string; color: string } {
+    switch (p.status) {
+      case 'open':           return { label: 'OPEN',        color: '#3b82f6' }
+      case 'resolved_win':   return { label: 'CLAIMABLE',   color: '#10b981' }
+      case 'resolved_loss':  return { label: 'LOST',        color: '#ef4444' }
+      case 'closed':         return { label: 'CLOSED',      color: '#94a3b8' }
+      case 'claimed':        return { label: 'CLAIMED',     color: '#64748b' }
+      default:               return { label: p.status.toUpperCase(), color: '#94a3b8' }
+    }
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {rows.map((p) => {
+        const badge = statusBadge(p)
+        const pnl = p.pnl ?? 0
+        const pnlColor = pnl >= 0 ? '#10b981' : '#ef4444'
+        const titleShort = p.marketTitle.length > 56 ? p.marketTitle.slice(0, 54) + '…' : p.marketTitle
+        const busy = busyId === p.id
+        return (
+          <div
+            key={p.id}
+            data-testid={`card-my-position-${p.id}`}
+            className="card"
+            style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0', lineHeight: 1.35 }}>
+                  {titleShort}
+                </div>
+                <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 3 }}>
+                  {p.outcomeLabel} · ${p.usdtIn.toFixed(2)} in @ {(p.entryPrice * 100).toFixed(0)}¢
+                  {p.paperTrade && (
+                    <span style={{ marginLeft: 6, color: '#a855f7' }}>· paper</span>
+                  )}
+                </div>
+              </div>
+              <span style={{
+                padding: '2px 6px', borderRadius: 3, fontSize: 9, fontWeight: 700,
+                background: `${badge.color}22`, color: badge.color,
+                textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap',
+              }}>{badge.label}</span>
+            </div>
+
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              fontSize: 11, color: '#94a3b8',
+            }}>
+              <span style={{ fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
+                {p.payoutUsdt !== null
+                  ? `payout $${p.payoutUsdt.toFixed(2)}`
+                  : `current ~$${((p.exitPrice ?? p.entryPrice) * p.usdtIn / Math.max(p.entryPrice, 1e-6)).toFixed(2)}`}
+              </span>
+              <span style={{ color: pnlColor, fontWeight: 700,
+                             fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}
+                    data-testid={`text-pnl-${p.id}`}>
+                {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}
+              </span>
+            </div>
+
+            {(p.status === 'open' || p.status === 'resolved_win') && (
+              <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+                {p.status === 'open' && (
+                  <button
+                    type="button"
+                    onClick={() => onSell(p.id)}
+                    disabled={busy || !!busyId}
+                    data-testid={`button-sell-${p.id}`}
+                    style={{
+                      flex: 1, padding: '8px 10px', borderRadius: 6,
+                      fontSize: 12, fontWeight: 600,
+                      background: busy ? '#1e1e2e' : '#7c3aed',
+                      border: '1px solid #7c3aed', color: 'white',
+                      cursor: busyId ? 'wait' : 'pointer',
+                    }}>
+                    {busy ? 'Selling…' : 'Sell'}
+                  </button>
+                )}
+                {p.status === 'resolved_win' && (
+                  <button
+                    type="button"
+                    onClick={() => onClaim(p.id)}
+                    disabled={busy || !!busyId}
+                    data-testid={`button-claim-${p.id}`}
+                    style={{
+                      flex: 1, padding: '8px 10px', borderRadius: 6,
+                      fontSize: 12, fontWeight: 600,
+                      background: busy ? '#1e1e2e' : '#10b981',
+                      border: '1px solid #10b981', color: 'white',
+                      cursor: busyId ? 'wait' : 'pointer',
+                    }}>
+                    {busy ? 'Claiming…' : `Claim $${(p.payoutUsdt ?? 0).toFixed(2)}`}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
