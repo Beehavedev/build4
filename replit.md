@@ -135,6 +135,13 @@ Node test runner. Currently it covers the A/B PnL simulator
 registered as a validation step so it runs as a CI-style check before merging
 changes — keep it green when touching simulator math or harness internals.
 
+GitHub Actions also runs `npm run test` on every push to `main` and on every
+pull request via `.github/workflows/test.yml`. The workflow checks out the
+repo, installs dependencies with `npm ci`, and executes the same test command,
+so simulator regressions are caught before merge. To require the check before
+merging, mark the "Run simulator tests" job as a required status check in the
+GitHub branch protection settings for `main`.
+
 ## Database
 Prisma ORM with models: User, Wallet, Agent, AgentMemory, Trade, CopyFollow, Portfolio, Quest, UserQuest, AgentLog, OutcomePosition.
 
