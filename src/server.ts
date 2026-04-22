@@ -1441,7 +1441,7 @@ app.get('/api/predictions/market/:address', async (req, res) => {
 // that gates agent-driven trades, so a user in paper mode keeps simulating
 // regardless of which path opened the position.
 app.post('/api/predictions/buy', requireTgUser, async (req, res) => {
-  const user = (req as any).dbUser
+  const user = (req as any).user
   if (!user?.id) return res.status(401).json({ ok: false, error: 'unauthorized' })
 
   const body = req.body ?? {}

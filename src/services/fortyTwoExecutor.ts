@@ -466,125 +466,192 @@ export async function openManualPredictionPosition(
     return { ok: false, reason: 'invalid market address' };
   }
 
-  // Per-user simultaneous-open cap.
-  const openCount = await db.$queryRawUnsafe<Array<{ c: bigint }>>(
-    `SELECT count(*)::bigint AS c FROM "OutcomePosition"
-     WHERE "userId" = $1 AND "agentId" IS NULL AND status = 'open'`,
-    userId,
+  // Best-effort per-user serialization via Postgres advisory lock keyed on
+  // userId. Without this, two concurrent /api/predictions/buy requests from
+  // the same user could both pass the count() guards below and exceed the
+  // cap (TOCTOU). pg_try_advisory_lock returns false immediately if another
+  // session already holds the lock, so we surface a clean "in flight" error
+  // rather than silently letting the second request slip through.
+  // Lock is session-scoped; we explicitly release in the finally block.
+  const lockKey = hashStringToInt32(`manual-trade:${userId}`);
+  const lockRows = await db.$queryRawUnsafe<Array<{ acquired: boolean }>>(
+    `SELECT pg_try_advisory_lock($1)::boolean AS acquired`,
+    lockKey,
   );
-  if (Number(openCount[0]?.c ?? 0) >= MANUAL_MAX_OPEN_PER_USER) {
+  if (!lockRows[0]?.acquired) {
+    return { ok: false, reason: 'another manual trade is already in flight — retry in a moment' };
+  }
+
+  try {
+    // Per-user simultaneous-open cap.
+    const openCount = await db.$queryRawUnsafe<Array<{ c: bigint }>>(
+      `SELECT count(*)::bigint AS c FROM "OutcomePosition"
+       WHERE "userId" = $1 AND "agentId" IS NULL AND status = 'open'`,
+      userId,
+    );
+    if (Number(openCount[0]?.c ?? 0) >= MANUAL_MAX_OPEN_PER_USER) {
+      return {
+        ok: false,
+        reason: `max ${MANUAL_MAX_OPEN_PER_USER} open manual positions reached`,
+      };
+    }
+
+    // Per-user daily open-rate cap.
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const opensToday = await db.$queryRawUnsafe<Array<{ c: bigint }>>(
+      `SELECT count(*)::bigint AS c FROM "OutcomePosition"
+       WHERE "userId" = $1 AND "agentId" IS NULL AND "openedAt" > $2`,
+      userId,
+      dayAgo,
+    );
+    if (Number(opensToday[0]?.c ?? 0) >= MANUAL_MAX_NEW_PER_USER_PER_DAY) {
+      return { ok: false, reason: 'daily manual-trade quota reached' };
+    }
+    return await runManualTradeUnderLock();
+  } finally {
+    await db.$queryRawUnsafe(`SELECT pg_advisory_unlock($1)`, lockKey).catch((e) => {
+      console.warn('[manualPrediction] advisory unlock failed:', (e as Error).message);
+    });
+  }
+
+  // Inner function isolates the post-lock work so we can `return` cleanly
+  // without losing the finally-block unlock. Hoisted, so the call above
+  // reaches it even though it's declared further down.
+  async function runManualTradeUnderLock(): Promise<ManualTradeResult> {
+    // Resolve market + on-chain outcome state.
+    let market: Market42;
+    try {
+      market = await __testDeps.getMarketByAddress(marketAddress);
+    } catch (err) {
+      return { ok: false, reason: `market lookup failed: ${(err as Error).message}` };
+    }
+    if (market.status !== 'live') {
+      return { ok: false, reason: `market not live (${market.status})` };
+    }
+
+    let state;
+    try {
+      state = await __testDeps.readMarketOnchain(market);
+    } catch (err) {
+      return { ok: false, reason: `on-chain read failed: ${(err as Error).message}` };
+    }
+    const outcome = state.outcomes.find((o) => o.tokenId === tokenId);
+    if (!outcome) return { ok: false, reason: `tokenId ${tokenId} not in market` };
+
+    // Build the trader (paper vs live driven by user's existing opt-in toggle).
+    const built = await buildTrader(userId);
+    if (!built) return { ok: false, reason: 'no usable BSC wallet for user' };
+    const { trader, paperTrade } = built;
+
+    // Snapshot pre-trade balance so we can compute actual tokens received from
+    // on-chain delta (same approach as openPredictionPosition).
+    let balanceBefore = 0n;
+    if (!paperTrade) {
+      try {
+        balanceBefore = await trader.balanceOfOutcome(marketAddress, tokenId);
+      } catch (err) {
+        console.warn('[manualPrediction] balanceOfOutcome(before) failed:', (err as Error).message);
+      }
+    }
+
+    // Same 5% slippage bound as agent path.
+    const SLIPPAGE_BPS = 500;
+    const expectedTokensFloat = usdtAmount / outcome.impliedProbability;
+    const minOtOut = paperTrade
+      ? 0n
+      : ethers.parseUnits(
+          (expectedTokensFloat * (1 - SLIPPAGE_BPS / 10_000)).toFixed(6),
+          18,
+        );
+
+    let receipt: TxReceiptLike = null;
+    try {
+      receipt = await trader.buyOutcome(marketAddress, tokenId, usdtAmount.toString(), minOtOut);
+    } catch (err) {
+      return { ok: false, reason: `buyOutcome failed: ${(err as Error).message}` };
+    }
+    const txHash = receiptHash(receipt);
+
+    let outcomeTokenAmountFloat: number | null = null;
+    if (!paperTrade) {
+      try {
+        const balanceAfter = await trader.balanceOfOutcome(marketAddress, tokenId);
+        const delta = balanceAfter - balanceBefore;
+        if (delta > 0n) outcomeTokenAmountFloat = Number(ethers.formatUnits(delta, 18));
+      } catch (err) {
+        console.warn('[manualPrediction] balanceOfOutcome(after) failed:', (err as Error).message);
+      }
+    }
+
+    // Orphan-position safety net: if the on-chain buy succeeded but the DB
+    // insert fails (e.g. transient Postgres outage), the user holds outcome
+    // tokens with no row tracking them — they wouldn't appear in the
+    // portfolio and settle/close paths would never fire on them. We can't
+    // atomically couple a chain tx to a DB insert, but we CAN turn the
+    // failure into a loud, structured log line that operators can grep for
+    // and reconcile manually using the txHash.
+    let idRows: Array<{ id: string }>;
+    try {
+      idRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
+        `INSERT INTO "OutcomePosition"
+           ("userId","agentId","marketAddress","marketTitle","tokenId","outcomeLabel",
+            "usdtIn","entryPrice","status","paperTrade","txHashOpen","reasoning",
+            "outcomeTokenAmount","providers")
+         VALUES ($1,NULL,$2,$3,$4,$5,$6,$7,'open',$8,$9,$10,$11,NULL)
+         RETURNING id`,
+        userId,
+        marketAddress,
+        market.question,
+        tokenId,
+        outcome.label,
+        usdtAmount,
+        outcome.impliedProbability,
+        paperTrade,
+        txHash,
+        'Manual trade from mini-app',
+        outcomeTokenAmountFloat,
+      );
+    } catch (err) {
+      console.error(
+        '[manualPrediction][ORPHAN_POSITION] DB insert failed AFTER on-chain buy succeeded.',
+        'Manual reconciliation required.',
+        JSON.stringify({
+          userId, marketAddress, tokenId, outcomeLabel: outcome.label,
+          usdtIn: usdtAmount, paperTrade, txHash,
+          outcomeTokenAmount: outcomeTokenAmountFloat,
+          insertError: (err as Error).message,
+        }),
+      );
+      return {
+        ok: false,
+        reason: paperTrade
+          ? `failed to record paper trade: ${(err as Error).message}`
+          : `trade sent on-chain (tx ${txHash ?? 'unknown'}) but DB insert failed — contact support`,
+      };
+    }
+
     return {
-      ok: false,
-      reason: `max ${MANUAL_MAX_OPEN_PER_USER} open manual positions reached`,
+      ok: true,
+      positionId: idRows[0].id,
+      paperTrade,
+      txHash,
+      usdtIn: usdtAmount,
+      outcomeLabel: outcome.label,
+      entryPrice: outcome.impliedProbability,
     };
   }
+}
 
-  // Per-user daily open-rate cap.
-  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const opensToday = await db.$queryRawUnsafe<Array<{ c: bigint }>>(
-    `SELECT count(*)::bigint AS c FROM "OutcomePosition"
-     WHERE "userId" = $1 AND "agentId" IS NULL AND "openedAt" > $2`,
-    userId,
-    dayAgo,
-  );
-  if (Number(opensToday[0]?.c ?? 0) >= MANUAL_MAX_NEW_PER_USER_PER_DAY) {
-    return { ok: false, reason: 'daily manual-trade quota reached' };
+// Stable 32-bit signed-integer hash of a string for pg_advisory_lock keys.
+// Uses the same FNV-1a variant we already rely on elsewhere; output fits
+// in int4 which is what pg_advisory_lock expects when called with one arg.
+function hashStringToInt32(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
   }
-
-  // Resolve market + on-chain outcome state.
-  let market: Market42;
-  try {
-    market = await __testDeps.getMarketByAddress(marketAddress);
-  } catch (err) {
-    return { ok: false, reason: `market lookup failed: ${(err as Error).message}` };
-  }
-  if (market.status !== 'live') return { ok: false, reason: `market not live (${market.status})` };
-
-  let state;
-  try {
-    state = await __testDeps.readMarketOnchain(market);
-  } catch (err) {
-    return { ok: false, reason: `on-chain read failed: ${(err as Error).message}` };
-  }
-  const outcome = state.outcomes.find((o) => o.tokenId === tokenId);
-  if (!outcome) return { ok: false, reason: `tokenId ${tokenId} not in market` };
-
-  // Build the trader (paper vs live driven by user's existing opt-in toggle —
-  // same mechanism agent-driven trades use, so a user in paper mode keeps
-  // simulating regardless of which path opened the trade).
-  const built = await buildTrader(userId);
-  if (!built) return { ok: false, reason: 'no usable BSC wallet for user' };
-  const { trader, paperTrade } = built;
-
-  // Snapshot pre-trade balance so we can compute actual tokens received from
-  // on-chain delta (same approach as openPredictionPosition).
-  let balanceBefore = 0n;
-  if (!paperTrade) {
-    try {
-      balanceBefore = await trader.balanceOfOutcome(marketAddress, tokenId);
-    } catch (err) {
-      console.warn('[manualPrediction] balanceOfOutcome(before) failed:', (err as Error).message);
-    }
-  }
-
-  // Same 5% slippage bound as agent path.
-  const SLIPPAGE_BPS = 500;
-  const expectedTokensFloat = usdtAmount / outcome.impliedProbability;
-  const minOtOut = paperTrade
-    ? 0n
-    : ethers.parseUnits(
-        (expectedTokensFloat * (1 - SLIPPAGE_BPS / 10_000)).toFixed(6),
-        18,
-      );
-
-  let receipt: TxReceiptLike = null;
-  try {
-    receipt = await trader.buyOutcome(marketAddress, tokenId, usdtAmount.toString(), minOtOut);
-  } catch (err) {
-    return { ok: false, reason: `buyOutcome failed: ${(err as Error).message}` };
-  }
-  const txHash = receiptHash(receipt);
-
-  let outcomeTokenAmountFloat: number | null = null;
-  if (!paperTrade) {
-    try {
-      const balanceAfter = await trader.balanceOfOutcome(marketAddress, tokenId);
-      const delta = balanceAfter - balanceBefore;
-      if (delta > 0n) outcomeTokenAmountFloat = Number(ethers.formatUnits(delta, 18));
-    } catch (err) {
-      console.warn('[manualPrediction] balanceOfOutcome(after) failed:', (err as Error).message);
-    }
-  }
-
-  const idRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
-    `INSERT INTO "OutcomePosition"
-       ("userId","agentId","marketAddress","marketTitle","tokenId","outcomeLabel",
-        "usdtIn","entryPrice","status","paperTrade","txHashOpen","reasoning",
-        "outcomeTokenAmount","providers")
-     VALUES ($1,NULL,$2,$3,$4,$5,$6,$7,'open',$8,$9,$10,$11,NULL)
-     RETURNING id`,
-    userId,
-    marketAddress,
-    market.question,
-    tokenId,
-    outcome.label,
-    usdtAmount,
-    outcome.impliedProbability,
-    paperTrade,
-    txHash,
-    'Manual trade from mini-app',
-    outcomeTokenAmountFloat,
-  );
-
-  return {
-    ok: true,
-    positionId: idRows[0].id,
-    paperTrade,
-    txHash,
-    usdtIn: usdtAmount,
-    outcomeLabel: outcome.label,
-    entryPrice: outcome.impliedProbability,
-  };
+  return h | 0;
 }
 
 /**
