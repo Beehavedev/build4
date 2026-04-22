@@ -1,0 +1,213 @@
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '5m', limit: 100 }
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="25d3c081-747d-446d" responseTimeMS=1729 responseBytes=270 userAgent=""
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/agents/376952155 clientIP="218.212.138.31" requestID="b386e513-1cf4-4e2d" responseTimeMS=570 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="218.212.138.31" requestID="20d2c066-5afc-4013" responseTimeMS=376 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/app clientIP="218.212.138.31" requestID="1857130a-7390-4523" responseTimeMS=8 responseBytes=414 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/app/ clientIP="218.212.138.31" requestID="996e6e93-a879-407e" responseTimeMS=6 responseBytes=657 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="218.212.138.31" requestID="3a8f9948-d677-47bd" responseTimeMS=1055 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/user/376952155 clientIP="218.212.138.31" requestID="8c283c6b-fcbc-4231" responseTimeMS=1124 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x7c9f300342971F5029Ca232F1684ad979C05b003 → marginBalance= 0.0000 crossWallet= 0.0000 crossUnPnl= 0.0000 available= 0.0000
+[GET]
+build4-1.onrender.com/api/me/predictions-mode clientIP="218.212.138.31" requestID="ea1bd936-0cce-496e" responseTimeMS=7 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="218.212.138.31" requestID="90918528-7a6d-4e4f" responseTimeMS=1114 responseBytes=2325 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/predictions/market/0x2517b4f52fc6F34D55239E751D98F94b8A24E7FE clientIP="218.212.138.31" requestID="cda511f8-fe34-449a" responseTimeMS=549 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="0f7ea346-4bda-4da0" responseTimeMS=4 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="218.212.138.31" requestID="71710112-ce73-476c" responseTimeMS=569 responseBytes=2326 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="5a18037e-135f-4bcb" responseTimeMS=3 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="15fb0ce9-b757-41c1" responseTimeMS=3 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '5m', limit: 100 }
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="eb216d42-19b3-4d40" responseTimeMS=889 responseBytes=270 userAgent=""
+[GET]
+build4-1.onrender.com/app clientIP="218.212.138.31" requestID="ab1bf6e2-a8d6-45da" responseTimeMS=3 responseBytes=414 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/app/ clientIP="218.212.138.31" requestID="c5f7b641-8cb3-41a4" responseTimeMS=10 responseBytes=657 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="218.212.138.31" requestID="04033380-e00b-4e25" responseTimeMS=194 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/user/376952155 clientIP="218.212.138.31" requestID="b8ebbe68-8ac5-4c3c" responseTimeMS=751 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="218.212.138.31" requestID="f9b82878-f070-40a1" responseTimeMS=1201 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x7c9f300342971F5029Ca232F1684ad979C05b003 → marginBalance= 0.0000 crossWallet= 0.0000 crossUnPnl= 0.0000 available= 0.0000
+[GET]
+build4-1.onrender.com/api/agents/376952155 clientIP="218.212.138.31" requestID="1ba8b839-ab6f-4662" responseTimeMS=1741 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x7c9f300342971F5029Ca232F1684ad979C05b003 → marginBalance= 0.0000 crossWallet= 0.0000 crossUnPnl= 0.0000 available= 0.0000
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="218.212.138.31" requestID="03636650-5674-45a0" responseTimeMS=983 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/app/ clientIP="2.51.180.232" requestID="235a3730-232a-4b27" responseTimeMS=4 responseBytes=657 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/app/assets/index-C9HFKqyE.js clientIP="2.51.180.232" requestID="117d0793-2df9-4838" responseTimeMS=352 responseBytes=172655 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/app/assets/index-7zy8LnGU.css clientIP="2.51.180.232" requestID="6a6c0d43-90f1-42eb" responseTimeMS=5 responseBytes=2491 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Aster] signed /fapi/v3/balance failed for 0x7f2D91Cc0258C4963425D79013656E45cc64Fc76 → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="2.51.180.232" requestID="e9784a9d-6ab5-4bd3" responseTimeMS=388 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="79a6ccc3-3393-433f" responseTimeMS=564 responseBytes=1416 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="5d83c17c-5e10-45e6" responseTimeMS=918 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="e9d17217-9c8e-4111" responseTimeMS=921 responseBytes=1754 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="892e5a17-705e-466b" responseTimeMS=574 responseBytes=1416 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="218.212.138.31" requestID="4238231f-04a0-4d34" responseTimeMS=378 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="2.51.180.232" requestID="30d7eded-c2c7-4604" responseTimeMS=2376 responseBytes=1130 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/user/376952155 clientIP="218.212.138.31" requestID="f9c4e7ae-6aed-44d8" responseTimeMS=942 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] /fapi/v3/balance USDT for 0x7c9f300342971F5029Ca232F1684ad979C05b003 → marginBalance= 0.0000 crossWallet= 0.0000 crossUnPnl= 0.0000 available= 0.0000
+[Aster] getUserTrades failed: Request failed with status code 400
+[GET]
+build4-1.onrender.com/api/agents/376952155 clientIP="218.212.138.31" requestID="ce83dac4-53f8-403f" responseTimeMS=561 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="218.212.138.31" requestID="f4b4ee1d-00dd-4480" responseTimeMS=992 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="218.212.138.31" requestID="377528b6-99a1-4930" responseTimeMS=1590 responseBytes=178 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/predictions-mode clientIP="218.212.138.31" requestID="6263152e-67ad-4744" responseTimeMS=4 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="218.212.138.31" requestID="0e3d7b84-f591-4af0" responseTimeMS=904 responseBytes=2320 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="b7853203-1d22-4a64" responseTimeMS=918 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Aster] signed /fapi/v3/balance failed for 0x7f2D91Cc0258C4963425D79013656E45cc64Fc76 → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[Aster] signed /fapi/v3/balance failed for 0x7f2D91Cc0258C4963425D79013656E45cc64Fc76 → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="4366d470-bf21-4863" responseTimeMS=683 responseBytes=180 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/portfolio/1551641467 clientIP="2.51.180.232" requestID="06ae724d-d09b-48e2" responseTimeMS=929 responseBytes=179 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/market/0x4E44AC673bcc315cD97424CaEfCF9CcCC8eAcA6b clientIP="218.212.138.31" requestID="70c1da32-a3b2-4b16" responseTimeMS=584 responseBytes=842 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/me/predictions-mode clientIP="2.51.180.232" requestID="38dbe2d7-e37e-4df5" responseTimeMS=3 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="6bc6ddcc-d3b6-43f1" responseTimeMS=378 responseBytes=2320 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '4h', limit: 200 }
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="5f1489e2-8cb6-447c" responseTimeMS=3 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="2ca54413-757f-4ba1" responseTimeMS=3 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="2677293d-7c28-45ef" responseTimeMS=3 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="ab3dd3e3-1690-4e25" responseTimeMS=3 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '5m', limit: 100 }
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="5401faff-b2a6-4a36" responseTimeMS=2 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="45649803-bf6b-4cbd" responseTimeMS=1 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="5104079b-25e4-415a" responseTimeMS=1 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="885b8a77-fe22-498b" responseTimeMS=2 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="f2e945bb-e893-416a" responseTimeMS=2 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="f9bce38a-b736-4e45" responseTimeMS=2 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+==> Detected service running on port 500
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="218.212.138.31" requestID="2ae70ac6-ee4a-4380" responseTimeMS=71 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/predictions/market/0x3f4FE9337E985c5C1aE0276D622f747B35fCF267 clientIP="2.51.180.232" requestID="6fb3d8ee-3e6b-4521" responseTimeMS=504 responseBytes=733 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="2.51.180.232" requestID="952d18c7-1c8a-46cb" responseTimeMS=4 responseBytes=308 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="218.212.138.31" requestID="f8a77d17-a433-45d0" responseTimeMS=923 responseBytes=2320 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="00b06738-ecde-4cd9" responseTimeMS=390 responseBytes=2321 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"

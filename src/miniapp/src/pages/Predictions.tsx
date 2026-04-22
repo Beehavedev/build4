@@ -1,5 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
 
+// Telegram WebApp init data must be sent on every protected /api/me/* and
+// /api/predictions/* call — without it, the server's requireTgUser
+// middleware returns 401 "Missing Telegram auth" and the user can't
+// trade or even read their kill-switch state. Centralised so we don't
+// forget the header on a new endpoint (which is what caused the
+// "Missing Telegram auth" toast on the prediction buy flow).
+function tgHeaders(extra?: Record<string, string>): Record<string, string> {
+  const initData: string = (window as any)?.Telegram?.WebApp?.initData ?? ''
+  return {
+    ...(extra ?? {}),
+    ...(initData ? { 'X-Telegram-Init-Data': initData } : {}),
+  }
+}
+
 interface AgentVerdict {
   name: string
   model: string | null
@@ -195,7 +209,7 @@ export default function Predictions() {
   const [modeBusy, setModeBusy] = useState(false)
   async function loadMode() {
     try {
-      const r = await fetch('/api/me/predictions-mode')
+      const r = await fetch('/api/me/predictions-mode', { headers: tgHeaders() })
       if (!r.ok) { setEnabled(null); return }
       const j = await r.json()
       setEnabled(typeof j.liveOptIn === 'boolean' ? j.liveOptIn : null)
@@ -206,7 +220,7 @@ export default function Predictions() {
     try {
       const r = await fetch('/api/me/predictions-mode', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: tgHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ enabled: next }),
       })
       const j = await r.json()
@@ -225,7 +239,7 @@ export default function Predictions() {
     if (existing && existing.state === 'ready') return
     setDetailCache((c) => ({ ...c, [address]: { state: 'loading' } }))
     try {
-      const res = await fetch(`/api/predictions/market/${address}`)
+      const res = await fetch(`/api/predictions/market/${address}`, { headers: tgHeaders() })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json: MarketDetailResponse = await res.json()
       setDetailCache((c) => ({ ...c, [address]: { state: 'ready', data: json } }))
@@ -242,7 +256,7 @@ export default function Predictions() {
     inFlight.current = true
     if (!silent) setRefreshing(true)
     try {
-      const res = await fetch('/api/predictions/latest')
+      const res = await fetch('/api/predictions/latest', { headers: tgHeaders() })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json: PredictionsResponse = await res.json()
       setData(json)
@@ -668,7 +682,7 @@ function TradeForm({
     try {
       const res = await fetch('/api/predictions/buy', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: tgHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           marketAddress,
           tokenId: selected.tokenId,
