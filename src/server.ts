@@ -2034,6 +2034,25 @@ app.post('/api/admin/predictions/backfill-recent', requireAdmin, async (req, res
   }
 })
 
+// POST /api/admin/ensure-tables
+//
+// Re-runs the boot-time ensureNewTables() routine on demand. Idempotent —
+// every statement uses CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS,
+// so it's safe to call any time. Use when production has lost a table (e.g.
+// "relation does not exist" errors after a DB reset / schema-search-path
+// change) and we don't want to wait for a full Render redeploy to pick up
+// the boot path.
+app.post('/api/admin/ensure-tables', requireAdmin, async (_req, res) => {
+  try {
+    const { ensureNewTables } = await import('./ensureTables')
+    await ensureNewTables()
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('[API] /admin/ensure-tables failed:', err)
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
 // POST /api/admin/predictions/recover-by-tx
 //
 // Single-tx recovery: takes one BSC tx hash, looks up the receipt, finds the
