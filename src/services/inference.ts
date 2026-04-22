@@ -24,6 +24,11 @@ export interface CallLLMResult {
   model: string
   provider: Provider
   latencyMs: number
+  /** Prompt/input tokens billed by the provider. 0 if the provider did not return a breakdown. */
+  inputTokens: number
+  /** Completion/output tokens billed by the provider. 0 if the provider did not return a breakdown. */
+  outputTokens: number
+  /** Sum of input + output. Kept for back-compat with telemetry rows written before the split. */
   tokensUsed: number
 }
 
@@ -103,7 +108,7 @@ export interface OpenAICompatChoice {
 export interface OpenAICompatResponse {
   model?: string
   choices?: OpenAICompatChoice[]
-  usage?: { total_tokens?: number }
+  usage?: { total_tokens?: number; prompt_tokens?: number; completion_tokens?: number }
 }
 
 export interface InferenceDeps {
@@ -189,13 +194,16 @@ async function callAnthropic(args: CallLLMArgs, r: ResolvedCall): Promise<CallLL
       .map((b) => b.text)
       .join('\n')
       .trim()
-    const tokensUsed = (resp.usage?.input_tokens ?? 0) + (resp.usage?.output_tokens ?? 0)
+    const inputTokens = resp.usage?.input_tokens ?? 0
+    const outputTokens = resp.usage?.output_tokens ?? 0
     return {
       text,
       model: resp.model ?? r.model,
       provider: 'anthropic',
       latencyMs: Date.now() - start,
-      tokensUsed,
+      inputTokens,
+      outputTokens,
+      tokensUsed: inputTokens + outputTokens,
     }
   } catch (err: unknown) {
     if (err instanceof InferenceError) throw err
@@ -260,13 +268,25 @@ async function callOpenAICompat(
       throw new InferenceError(args.provider, resp.status, rawBody, `[inference:${args.provider}] malformed JSON response`)
     }
     const text = (data.choices?.[0]?.message?.content ?? '').trim()
-    const tokensUsed = data.usage?.total_tokens ?? 0
+    // OpenAI-compatible providers expose prompt_tokens / completion_tokens.
+    // When only total_tokens is returned (older or stripped-down providers),
+    // we cannot recover the split, so we attribute the whole total to
+    // outputTokens — that's the conservative choice for cost estimation
+    // because output is the more expensive rate.
+    const promptTokens = data.usage?.prompt_tokens
+    const completionTokens = data.usage?.completion_tokens
+    const totalTokens = data.usage?.total_tokens ?? 0
+    const hasSplit = typeof promptTokens === 'number' && typeof completionTokens === 'number'
+    const inputTokens = hasSplit ? promptTokens : 0
+    const outputTokens = hasSplit ? completionTokens : totalTokens
     return {
       text,
       model: data.model ?? r.model,
       provider: args.provider,
       latencyMs: Date.now() - start,
-      tokensUsed,
+      inputTokens,
+      outputTokens,
+      tokensUsed: hasSplit ? inputTokens + outputTokens : totalTokens,
     }
   } catch (err: unknown) {
     if (err instanceof InferenceError) throw err

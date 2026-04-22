@@ -22,7 +22,7 @@ test('xai builds correct OpenAI-compatible request', async () => {
     fetch: mockFetch(captured, {
       model: 'grok-3-mini',
       choices: [{ message: { content: ' hello world ' } }],
-      usage: { total_tokens: 42 },
+      usage: { total_tokens: 42, prompt_tokens: 30, completion_tokens: 12 },
     }) as any,
   })
   try {
@@ -42,6 +42,8 @@ test('xai builds correct OpenAI-compatible request', async () => {
     assert.equal(sent.response_format, undefined)
     assert.equal(res.text, 'hello world')
     assert.equal(res.tokensUsed, 42)
+    assert.equal(res.inputTokens, 30)
+    assert.equal(res.outputTokens, 12)
     assert.equal(res.provider, 'xai')
     assert.equal(res.model, 'grok-3-mini')
   } finally {
@@ -162,6 +164,8 @@ test('anthropic routes through SDK with correct shape', async () => {
     assert.equal(res.text, 'hi from claude')
     assert.equal(res.provider, 'anthropic')
     assert.equal(res.tokensUsed, 17)
+    assert.equal(res.inputTokens, 10)
+    assert.equal(res.outputTokens, 7)
   } finally {
     __resetTestDeps()
     delete process.env.ANTHROPIC_API_KEY

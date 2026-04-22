@@ -579,6 +579,8 @@ export async function runDecisionLLM(
           predictionTrade: c.decision?.predictionTrade ?? null,
           reasoning: c.reasoning,
           latencyMs: c.latencyMs,
+          inputTokens: c.inputTokens,
+          outputTokens: c.outputTokens,
           tokensUsed: c.tokensUsed,
         }))
       if (swarm.quorumDecision) {

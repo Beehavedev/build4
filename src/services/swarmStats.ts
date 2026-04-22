@@ -4,29 +4,44 @@ import { db } from '../db'
  * Per-provider roll-ups computed from swarm telemetry persisted on
  * `AgentLog.providers` (and `OutcomePosition.providers`). Each row in the
  * JSONB array has shape `{ provider, model, action, reasoning, latencyMs,
- * tokensUsed }` (Task #18). We unnest the array with `jsonb_array_elements`
- * and aggregate.
+ * inputTokens, outputTokens, tokensUsed }` (Task #18 + Task #24).
  *
- * Cost is *estimated* — we only store total tokens (not split into input vs
- * output), so the per-1M-token rates below are blended (~30% output / 70%
- * input). Resolution order (lowest → highest precedence):
- *   1. DEFAULT_COST_USD_PER_MTOKENS (in code)
- *   2. SWARM_COST_USD_PER_MTOKENS env (JSON map keyed by provider)
- *   3. Rows in the ProviderCostRate table (editable from the admin UI —
- *      Task #23). Lets ops keep numbers honest without a redeploy.
+ * Cost is computed using SEPARATE per-1M-token rates for input vs output,
+ * because real provider pricing charges output tokens at 3-5x the input
+ * rate. Telemetry rows written before Task #24 only carry `tokensUsed`
+ * (no split); for those we attribute everything to outputTokens, which is
+ * the conservative (more expensive) assumption.
+ *
+ * Resolution order (lowest → highest precedence):
+ *   1. DEFAULT_COST_USD_PER_MTOKENS (in code, split { input, output })
+ *   2. SWARM_COST_USD_PER_MTOKENS env (JSON map keyed by provider; value
+ *      may be a bare number — back-compat, applied as flat rate to both
+ *      sides — or `{ input, output }`)
+ *   3. Rows in the ProviderCostRate table (admin UI — Task #23). The
+ *      table only stores a single `usdPer1MTokens` number per provider,
+ *      so a DB override is applied as a FLAT rate to both input and
+ *      output. Use the env var if you need an asymmetric override.
  */
 
 export type Window = '24h' | '7d'
 
+export interface CostRate {
+  input: number
+  output: number
+}
+
 export interface ProviderRollup {
   provider: string
   callCount: number
+  inputTokens: number
+  outputTokens: number
+  /** Sum of input + output. Kept so older dashboards still render. */
   totalTokens: number
   medianLatencyMs: number
   estimatedUsd: number
-  /** USD per 1M tokens used for the cost estimate (so the dashboard can show
-   *  the assumed rate alongside the raw number). */
-  costRate: number
+  /** Per-1M-token USD rates used for the cost estimate (so the dashboard can
+   *  show the assumed rates alongside the raw number). */
+  costRate: CostRate
 }
 
 export interface SwarmStatsReport {
@@ -35,18 +50,38 @@ export interface SwarmStatsReport {
   rows: ProviderRollup[]
 }
 
-export const DEFAULT_COST_USD_PER_MTOKENS: Record<string, number> = {
-  anthropic: 6.0,
-  xai: 0.4,
-  hyperbolic: 0.4,
-  akash: 0.3,
+export const DEFAULT_COST_USD_PER_MTOKENS: Record<string, CostRate> = {
+  // Anthropic Sonnet pricing (~$3 input / $15 output per Mtok).
+  anthropic: { input: 3, output: 15 },
+  // xAI Grok-3-mini pricing (~$0.30 input / $0.50 output per Mtok).
+  xai: { input: 0.3, output: 0.5 },
+  // Hyperbolic flat-rate; same number for both sides.
+  hyperbolic: { input: 0.4, output: 0.4 },
+  // Akash flat-rate; same number for both sides.
+  akash: { input: 0.3, output: 0.3 },
 }
 
-function loadEnvCostMap(): Record<string, number> {
+function loadEnvCostMap(): Record<string, CostRate> {
   const raw = process.env.SWARM_COST_USD_PER_MTOKENS
   if (!raw) return {}
   try {
-    return JSON.parse(raw) as Record<string, number>
+    const parsed = JSON.parse(raw) as Record<string, CostRate | number>
+    const out: Record<string, CostRate> = {}
+    for (const [provider, value] of Object.entries(parsed)) {
+      // Back-compat: a bare number means "same rate for both sides" (the
+      // old blended-rate format). Lets ops keep their existing env var
+      // working while the split rolls out.
+      if (typeof value === 'number') {
+        out[provider] = { input: value, output: value }
+      } else if (value && typeof value === 'object') {
+        const fallback = DEFAULT_COST_USD_PER_MTOKENS[provider]
+        out[provider] = {
+          input: typeof value.input === 'number' ? value.input : fallback?.input ?? 0,
+          output: typeof value.output === 'number' ? value.output : fallback?.output ?? 0,
+        }
+      }
+    }
+    return out
   } catch {
     return {}
   }
@@ -59,13 +94,18 @@ interface CostRateRow {
 
 async function loadCostMap(
   loadDbRows: () => Promise<CostRateRow[]> = defaultLoadDbRows,
-): Promise<Record<string, number>> {
-  const merged: Record<string, number> = { ...DEFAULT_COST_USD_PER_MTOKENS, ...loadEnvCostMap() }
+): Promise<Record<string, CostRate>> {
+  const merged: Record<string, CostRate> = {
+    ...DEFAULT_COST_USD_PER_MTOKENS,
+    ...loadEnvCostMap(),
+  }
   try {
     const rows = await loadDbRows()
     for (const row of rows) {
       const n = Number(row.usdPer1MTokens)
-      if (Number.isFinite(n) && n >= 0) merged[row.provider] = n
+      // DB stores a single number per provider; apply it as a flat rate
+      // to both sides (env var supports the asymmetric form if needed).
+      if (Number.isFinite(n) && n >= 0) merged[row.provider] = { input: n, output: n }
     }
   } catch (err) {
     console.warn('[swarmStats] DB cost-rate lookup failed, falling back to env/defaults:', err)
@@ -87,7 +127,8 @@ function windowToInterval(w: Window): { sql: string; ms: number } {
 interface RawRollupRow {
   provider: string | null
   call_count: bigint | number
-  total_tokens: bigint | number | null
+  input_tokens: bigint | number | null
+  output_tokens: bigint | number | null
   median_latency_ms: number | null
 }
 
@@ -101,6 +142,11 @@ interface RawRollupRow {
  * double-count every prediction-driving LLM call, inflating cost/speed
  * stats. AgentLog is the source of truth — every callLLM produces exactly
  * one entry there.
+ *
+ * Backfill behaviour: telemetry rows written before Task #24 only carry
+ * `tokensUsed` (no input/output split). The SQL falls back to attributing
+ * `tokensUsed` entirely to `output_tokens` — matches the conservative
+ * assumption documented above.
  */
 export async function getSwarmStats(
   window: Window,
@@ -117,6 +163,8 @@ export async function getSwarmStats(
       SELECT
         (elem->>'provider') AS provider,
         NULLIF(elem->>'latencyMs', '')::float AS latency_ms,
+        NULLIF(elem->>'inputTokens', '')::float AS input_tokens,
+        NULLIF(elem->>'outputTokens', '')::float AS output_tokens,
         NULLIF(elem->>'tokensUsed', '')::float AS tokens_used
       FROM "AgentLog",
            LATERAL jsonb_array_elements("providers") AS elem
@@ -126,7 +174,13 @@ export async function getSwarmStats(
     SELECT
       provider,
       COUNT(*)::bigint                                       AS call_count,
-      COALESCE(SUM(tokens_used), 0)::bigint                  AS total_tokens,
+      COALESCE(SUM(COALESCE(input_tokens, 0)), 0)::bigint    AS input_tokens,
+      COALESCE(SUM(
+        CASE
+          WHEN input_tokens IS NULL AND output_tokens IS NULL THEN COALESCE(tokens_used, 0)
+          ELSE COALESCE(output_tokens, 0)
+        END
+      ), 0)::bigint                                          AS output_tokens,
       percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms)::float AS median_latency_ms
     FROM telemetry
     WHERE provider IS NOT NULL
@@ -140,14 +194,19 @@ export async function getSwarmStats(
 
   const rows: ProviderRollup[] = raw.map((r) => {
     const provider = r.provider ?? 'unknown'
-    const totalTokens = Number(r.total_tokens ?? 0)
-    const rate = costs[provider] ?? 0
+    const inputTokens = Number(r.input_tokens ?? 0)
+    const outputTokens = Number(r.output_tokens ?? 0)
+    const rate = costs[provider] ?? { input: 0, output: 0 }
+    const estimatedUsd =
+      (inputTokens / 1_000_000) * rate.input + (outputTokens / 1_000_000) * rate.output
     return {
       provider,
       callCount: Number(r.call_count ?? 0),
-      totalTokens,
+      inputTokens,
+      outputTokens,
+      totalTokens: inputTokens + outputTokens,
       medianLatencyMs: Math.round(Number(r.median_latency_ms ?? 0)),
-      estimatedUsd: (totalTokens / 1_000_000) * rate,
+      estimatedUsd,
       costRate: rate,
     }
   })
@@ -170,7 +229,7 @@ export function formatSwarmStats(report: SwarmStatsReport): string {
     const usd = r.estimatedUsd >= 1 ? r.estimatedUsd.toFixed(2) : r.estimatedUsd.toFixed(4)
     lines.push(`*${r.provider}* — ${r.callCount} calls`)
     lines.push(
-      `  median ${r.medianLatencyMs}ms · ${r.totalTokens.toLocaleString()} tokens · ~$${usd} (@$${r.costRate}/Mtok)`,
+      `  median ${r.medianLatencyMs}ms · ${r.inputTokens.toLocaleString()} in / ${r.outputTokens.toLocaleString()} out tok · ~$${usd} (@$${r.costRate.input}in/$${r.costRate.output}out per Mtok)`,
     )
   }
   lines.push('')

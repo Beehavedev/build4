@@ -50,7 +50,11 @@ export async function handleShowcase(ctx: Context) {
     text += `*🤖 Per-provider quotes (${withReasoning.length}/${providers.length}):*\n`
     for (const p of withReasoning) {
       const modelLabel = p.model ? `, ${p.model}` : ''
-      text += `• *${escapeMd(p.provider)}* (${p.latencyMs}ms, ${p.tokensUsed}tok${modelLabel}):\n`
+      const tokenLabel =
+        (p.inputTokens ?? 0) + (p.outputTokens ?? 0) > 0
+          ? `${p.inputTokens ?? 0}in/${p.outputTokens ?? 0}out tok`
+          : `${p.tokensUsed}tok`
+      text += `• *${escapeMd(p.provider)}* (${p.latencyMs}ms, ${tokenLabel}${modelLabel}):\n`
       text += `  _${escapeMd(trimReasoning(p.reasoning ?? '', 220))}_\n`
     }
     text += `\n`

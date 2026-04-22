@@ -173,8 +173,9 @@ async function checkAndSize(
 /**
  * Per-provider swarm telemetry persisted alongside a swarm-driven trade.
  *
- * The shape matches the Task #18 spec exactly: `provider`, `model`, `action`,
- * optional `predictionTrade`, `reasoning`, `latencyMs`, `tokensUsed`.
+ * The shape matches the Task #18 spec plus the Task #24 input/output split:
+ * `provider`, `model`, `action`, optional `predictionTrade`, `reasoning`,
+ * `latencyMs`, `inputTokens`, `outputTokens`, `tokensUsed`.
  */
 export interface ProviderTelemetry {
   provider: string;
@@ -184,6 +185,11 @@ export interface ProviderTelemetry {
   predictionTrade?: unknown;
   reasoning: string | null;
   latencyMs: number;
+  /** Prompt/input tokens billed by the provider for this call. */
+  inputTokens: number;
+  /** Completion/output tokens billed by the provider for this call. */
+  outputTokens: number;
+  /** Sum of input + output. Retained so older tooling that reads `tokensUsed` still works. */
   tokensUsed: number;
 }
 

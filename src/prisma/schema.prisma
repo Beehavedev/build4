@@ -242,7 +242,8 @@ model AgentLog {
   score           Int?
   regime          String?
   // Per-tick swarm telemetry (Task #18). Shape per element:
-  // { provider, model, action, predictionTrade?, reasoning, latencyMs, tokensUsed }
+  // { provider, model, action, predictionTrade?, reasoning, latencyMs, inputTokens, outputTokens, tokensUsed }
+  // (inputTokens/outputTokens added in Task #24; older rows only carry tokensUsed.)
   // Null when the user is on the single-provider path.
   providers       Json?
   createdAt       DateTime @default(now())

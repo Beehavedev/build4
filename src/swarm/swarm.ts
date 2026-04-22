@@ -9,6 +9,8 @@ export interface SwarmCall<T> {
   rawText: string
   reasoning: string | null
   latencyMs: number
+  inputTokens: number
+  outputTokens: number
   tokensUsed: number
   error: string | null
 }
@@ -168,6 +170,8 @@ export async function runSwarmDecision<T extends Record<string, unknown>>(
         rawText,
         reasoning,
         latencyMs: v.latencyMs,
+        inputTokens: v.res.inputTokens,
+        outputTokens: v.res.outputTokens,
         tokensUsed: v.res.tokensUsed,
         error: null,
       }
@@ -181,6 +185,8 @@ export async function runSwarmDecision<T extends Record<string, unknown>>(
         rawText,
         reasoning: null,
         latencyMs: v.latencyMs,
+        inputTokens: v.res.inputTokens,
+        outputTokens: v.res.outputTokens,
         tokensUsed: v.res.tokensUsed,
         error: `parse failed: ${msg}`,
       }
@@ -280,6 +286,8 @@ function blankCall<T>(provider: Provider, latencyMs: number, error: string): Swa
     rawText: '',
     reasoning: null,
     latencyMs,
+    inputTokens: 0,
+    outputTokens: 0,
     tokensUsed: 0,
     error,
   }

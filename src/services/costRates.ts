@@ -37,7 +37,12 @@ export async function listCostRates(): Promise<CostRateRow[]> {
     .sort()
     .map<CostRateRow>((provider) => {
       const row = overridden.get(provider)
-      const def = DEFAULT_COST_USD_PER_MTOKENS[provider] ?? null
+      // Defaults are now split into input/output rates (Task #24). The
+      // ProviderCostRate table only stores a single number, so we surface
+      // the output-side default — that's the dominant cost factor and the
+      // most useful comparison for the admin UI.
+      const defRate = DEFAULT_COST_USD_PER_MTOKENS[provider]
+      const def = defRate ? defRate.output : null
       if (row) {
         const updatedAt =
           row.updatedAt instanceof Date

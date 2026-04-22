@@ -28,9 +28,9 @@ function scriptedFn(
     if ('throw' in r) throw new Error(r.throw)
     if ('delayMs' in r) {
       await new Promise((resolve) => setTimeout(resolve, r.delayMs))
-      return { text: JSON.stringify(r.decision), model: 'm', provider: args.provider, latencyMs: r.delayMs, tokensUsed: 10 }
+      return { text: JSON.stringify(r.decision), model: 'm', provider: args.provider, latencyMs: r.delayMs, inputTokens: 7, outputTokens: 3, tokensUsed: 10 }
     }
-    return { text: JSON.stringify(r), model: 'm', provider: args.provider, latencyMs: 5, tokensUsed: 10 }
+    return { text: JSON.stringify(r), model: 'm', provider: args.provider, latencyMs: 5, inputTokens: 7, outputTokens: 3, tokensUsed: 10 }
   }
 }
 
@@ -149,13 +149,15 @@ test('parse failure on one provider counts as a failed decision', async () => {
     providers: ['anthropic', 'xai', 'hyperbolic'],
     callLLMFn: async (args) => {
       if (args.provider === 'hyperbolic') {
-        return { text: 'not-json', model: 'm', provider: 'hyperbolic', latencyMs: 5, tokensUsed: 5 }
+        return { text: 'not-json', model: 'm', provider: 'hyperbolic', latencyMs: 5, inputTokens: 3, outputTokens: 2, tokensUsed: 5 }
       }
       return {
         text: JSON.stringify(decision('OPEN_LONG')),
         model: 'm',
         provider: args.provider,
         latencyMs: 5,
+        inputTokens: 7,
+        outputTokens: 3,
         tokensUsed: 10,
       }
     },
