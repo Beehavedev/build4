@@ -1,0 +1,318 @@
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="62ba3ca2-2e7c-45cb" responseTimeMS=578 responseBytes=1433 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="2.51.180.232" requestID="f0addf92-c19f-4854" responseTimeMS=1460 responseBytes=1757 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] getUserTrades failed: Request failed with status code 400
+[POST]
+build4-1.onrender.com/api/agents/cmo1t9mmh0001mxdkr9kdi8e2/toggle clientIP="2.51.180.232" requestID="06829751-d1b3-4511" responseTimeMS=919 responseBytes=974 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="d8b27796-6615-453c" responseTimeMS=610 responseBytes=1436 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[POST]
+build4-1.onrender.com/api/agents/cmo1t9mmh0001mxdkr9kdi8e2/toggle clientIP="2.51.180.232" requestID="c11af3c9-0a76-431a" responseTimeMS=806 responseBytes=977 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[POST]
+build4-1.onrender.com/api/agents/cmo1t9mmh0001mxdkr9kdi8e2/toggle clientIP="2.51.180.232" requestID="44a19365-3945-46cd" responseTimeMS=1214 responseBytes=974 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="8ac580da-a9dd-4d4b" responseTimeMS=370 responseBytes=1436 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[POST]
+build4-1.onrender.com/api/agents/cmo1t9mmh0001mxdkr9kdi8e2/toggle clientIP="2.51.180.232" requestID="97bdee62-b911-4fc2" responseTimeMS=941 responseBytes=977 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[POST]
+build4-1.onrender.com/api/agents/cmo9tc1sr001l14o88d9eq74p/toggle clientIP="2.51.180.232" requestID="db361039-2deb-477e" responseTimeMS=572 responseBytes=1142 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="23cd9555-2402-4479" responseTimeMS=378 responseBytes=1436 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="8a0452a0-5953-44fe" responseTimeMS=378 responseBytes=1431 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="3d91027a-d279-4cee" responseTimeMS=553 responseBytes=1431 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Agent BNT] HOLD on BTCUSDT — Refusing to chase parabolic move into resistance with no volume support. Will wa
+[Agent Smith] HOLD on BTCUSDT — Will reconsider on: (1) pullback to support $76430 (1h EMA50) with volume >1.5x 
+[POST]
+build4-1.onrender.com/api/agents/cmo9tc1sr001l14o88d9eq74p/toggle clientIP="2.51.180.232" requestID="2f6471f4-b001-41c9" responseTimeMS=554 responseBytes=1138 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Agent BTPredict] HOLD on BTCUSDT — Extreme overbought conditions (1h RSI 94.5) combined with critical volume failur
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="d6fb6f0d-2546-430f" responseTimeMS=370 responseBytes=1428 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Agent SeanBuild4] HOLD on BTCUSDT — Volume at 0.22x fails 1.0x minimum threshold (catastrophic institutional absence
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Auth] New user: uonly1
+[Agent Smith] HOLD on BTCUSDT — Setup score 2/10 fails minimum 5+ threshold. Volume at 0.23x confirms nothing. R
+[Agent BTPredict] HOLD on BTCUSDT — Setup score 2/10 fails minimum threshold. Only 2 of 4 timeframe signals align (4
+[Agent BNT] HOLD on BTCUSDT — Extreme RSI divergence (94.5 on 1h vs 56.4 on 15m), catastrophically low volume 
+[Agent SeanBuild4] HOLD on BTCUSDT — Volume at 0.23x average violates minimum 1.0x threshold for institutional confir
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Agent SeanBuild4] HOLD on BTCUSDT — Volume at 0.23x fails the 1.0x institutional threshold. RSI 94.5 extreme overbou
+[Agent BNT] HOLD on BTCUSDT — All four critical invalidation factors present simultaneously: (1) RSI(1h)=94.5 
+[Agent BTPredict] HOLD on BTCUSDT — Extreme overbought conditions (1h RSI 94.5) combined with critically low volume 
+[Agent Smith] HOLD on BTCUSDT — Would enter LONG only if: (1) price pulls back to $76,400 (1h EMA50 support rete
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Agent SeanBuild4] HOLD on BTCUSDT — Volume at 0.23x violates 1.0x minimum threshold. RSI 94.5 overbought + MACD -23.
+[Agent BNT] HOLD on BTCUSDT — Extreme overbought (RSI 94.5) + critically low volume (0.23x) + negative MACD mo
+[Agent Smith] HOLD on BTCUSDT — Edge requires volume >1.5x + RSI <70 both frames + MACD bull cross <3 bars + sup
+[Agent BTPredict] HOLD on BTCUSDT — Extreme overbought conditions (1h RSI 94.6) combined with catastrophically low v
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[GET]
+build4-1.onrender.com/api/me/predictions-mode clientIP="2.51.180.232" requestID="f817d6f2-f655-4443" responseTimeMS=4 responseBytes=308 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="9377700d-73ba-403d" responseTimeMS=1059 responseBytes=2330 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="2.51.180.232" requestID="0f2c1dff-0bef-4dc6" responseTimeMS=1642 responseBytes=2526 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] getUserTrades failed: Request failed with status code 400
+[Agent SeanBuild4] HOLD on BTCUSDT — Volume firewall violated (0.24x vs 1.0x minimum). RSI extreme overbought (94.6).
+[Agent BTPredict] HOLD on BTCUSDT — Setup score 2/10 fails minimum threshold. Only 2 of 4 timeframe signals agree (4
+[Agent BNT] HOLD on BTCUSDT — Extreme overbought (RSI 94.6), negative momentum divergence (MACD -20.7), anemic
+[Agent Smith] HOLD on BTCUSDT — Setup score 2/10 fails minimum threshold of 5. Volume at 0.24x (need >1.5x), RSI
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Agent SeanBuild4] HOLD on BTCUSDT — Volume 0.28x violates 1.0x institutional threshold. RSI 94.4 overbought + MACD -
+[Agent BTPredict] HOLD on BTCUSDT — Extreme overbought conditions (1h RSI 94.4) + critically low volume (0.28x) + ne
+[Agent BNT] HOLD on BTCUSDT — Setup score 2/10 fails minimum threshold. RSI 94.4 1h + volume 0.28x + negative 
+[Agent Smith] HOLD on BTCUSDT — Setup score 2/10 (threshold 5 minimum). Volume 0.28x (need 1.5x+), RSI 1h 94.4 (
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Agent SeanBuild4] HOLD on BTCUSDT — Volume firewall violation (0.28x < 1.0x) + RSI exhaustion (94.4) + MACD bearish 
+[Agent BTPredict] HOLD on BTCUSDT — Setup score 2/10 fails minimum threshold. Only 2 of 4 timeframes align (4h/1h bu
+[Agent Smith] HOLD on BTCUSDT — Setup scores 2/10 (minimum 7 required). Volume failure (0.28x vs 1.5x+ needed), 
+[Agent BNT] HOLD on BTCUSDT — Extreme overbought condition (RSI 94.4) with completely absent volume (0.28x ave
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Agent BNT] HOLD on BTCUSDT — Parabolic exhaustion pattern (RSI 94.4, volume 0.28x, negative MACD) has 137/137
+[Agent Smith] HOLD on BTCUSDT — Four simultaneous hard disqualifiers: (1) volume 0.29x vs required 1.5x+, (2) RS
+[Agent SeanBuild4] HOLD on BTCUSDT — Volume firewall violation (0.28x vs 1.0x minimum) combines with RSI exhaustion (
+[Agent BTPredict] HOLD on BTCUSDT — Setup score 2/10 (need 7+ for full size). Only 1 of 4 timeframe signals valid (v
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Agent BTPredict] HOLD on BTCUSDT — Entry quality score 2/10 fails minimum threshold. Requires: (1) RSI pullback bel
+[Agent SeanBuild4] HOLD on BTCUSDT — Triple-lock violation: volume 0.29x (need ≥1.0x), RSI 94.4 (extreme overbought),
+[Agent BNT] HOLD on BTCUSDT — Parabolic exhaustion (RSI 94.4) with volume absence (0.29x) and bearish momentum
+[Agent Smith] HOLD on BTCUSDT — Waiting for volume >1.5x 20-SMA + RSI 1h <70 + MACD 15m bullish cross within 3 b
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Agent SeanBuild4] HOLD on BTCUSDT — Volume below 1.0x threshold (0.29x) violates institutional participation require
+[Agent BNT] HOLD on BTCUSDT — RSI extreme overbought (94.3), volume absent (0.29x), MACD bearish divergence, r
+[Agent BTPredict] HOLD on BTCUSDT — Extreme overbought conditions (1h RSI 94.3) + volume failure (0.29x) + negative 
+[Agent Smith] HOLD on BTCUSDT — Score 2/10 fails minimum threshold. RSI 1h at 94.3 is parabolic and unsustainabl
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Agent SeanBuild4] HOLD on BTCUSDT — Triple-lock violation: volume 0.29x (need ≥1.0x), RSI 94.4 overbought (need <70)
+[Agent BNT] HOLD on BTCUSDT — Parabolic exhaustion overrides all bullish signals. Require: RSI drop below 70, 
+[Agent BTPredict] HOLD on BTCUSDT — Setup score 2/10 fails minimum threshold (4). Volume at 0.29x invalidates all pr
+[Agent Smith] HOLD on BTCUSDT — Volume absence (0.29x) + extreme RSI divergence (52.7 vs 94.4) + negative MACD m
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[fortyTwo] on-chain read failed for 0x4E44AC673bcc315cD97424CaEfCF9CcCC8eAcA6b: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1576, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0x21efec229614eb136e62113e67e1467a3a3d96bed9b84cbf43908c963046973b044996ce", "to": "0xf21b2d4f8989b27f732e369907f25f0e8d95fe62" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x365351096e7a5fa6A9777b97e58D07f1818A567F: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1578, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0x21efec222e5aa990a67a7c25b04ffc1e8fe1fce324c6c29c9cc147593a082f97290b4d51", "to": "0xf21b2d4f8989b27f732e369907f25f0e8d95fe62" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x2B9c916b305EB5D4581675eE98bEa0eF57a8e7E1: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1580, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0x21efec224587621206ca33dfd7312b9281fd1c6eba197b3a60eb162250da670b2c5f7a81", "to": "0xf21b2d4f8989b27f732e369907f25f0e8d95fe62" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xF3c455Da03f0761d647DD02b0249024BBFbe7250: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1582, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0x21efec220cebc110d5c45595383fc022c40f10a5decc22e742b2dc068ca4ae0736dc8c84", "to": "0xf21b2d4f8989b27f732e369907f25f0e8d95fe62" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xa74b54C5C468Ec3584dD4064277625A1a7DD170c: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1584, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0x21efec224f443468c8e524adcc4fc63c7beaae7a4f4286b149e798069dc729b17b32c235", "to": "0xf21b2d4f8989b27f732e369907f25f0e8d95fe62" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x4E44AC673bcc315cD97424CaEfCF9CcCC8eAcA6b: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1586, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0x21efec229614eb136e62113e67e1467a3a3d96bed9b84cbf43908c963046973b044996ce", "to": "0xf21b2d4f8989b27f732e369907f25f0e8d95fe62" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x365351096e7a5fa6A9777b97e58D07f1818A567F: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1589, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0x21efec222e5aa990a67a7c25b04ffc1e8fe1fce324c6c29c9cc147593a082f97290b4d51", "to": "0xf21b2d4f8989b27f732e369907f25f0e8d95fe62" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+Menu
+[fortyTwo] on-chain read failed for 0x2B9c916b305EB5D4581675eE98bEa0eF57a8e7E1: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1591, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0x21efec224587621206ca33dfd7312b9281fd1c6eba197b3a60eb162250da670b2c5f7a81", "to": "0xf21b2d4f8989b27f732e369907f25f0e8d95fe62" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xF3c455Da03f0761d647DD02b0249024BBFbe7250: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1593, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0x21efec220cebc110d5c45595383fc022c40f10a5decc22e742b2dc068ca4ae0736dc8c84", "to": "0xf21b2d4f8989b27f732e369907f25f0e8d95fe62" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xa74b54C5C468Ec3584dD4064277625A1a7DD170c: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1595, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0x21efec224f443468c8e524adcc4fc63c7beaae7a4f4286b149e798069dc729b17b32c235", "to": "0xf21b2d4f8989b27f732e369907f25f0e8d95fe62" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[Agent SeanBuild4] HOLD on BTCUSDT — Volume 0.29x violates non-negotiable 1.0x institutional flow threshold. RSI 94.4
+[Agent BTPredict] HOLD on BTCUSDT — 1h RSI 94.4 extreme overbought + volume 0.30x invalidates any entry + MACD beari
+[Agent BNT] HOLD on BTCUSDT — Parabolic exhaustion (RSI 94.4) combined with volume vacuum (0.30x) and negative
+[Agent Smith] HOLD on BTCUSDT — Volume 0.30x average invalidates all setups per memory's Twenty-Way Divergence L

@@ -408,6 +408,13 @@ const ALL_PAIRS_UNIVERSE = [
 // a synthetic high score so they're always considered as momentum candidates.
 const WATCHLIST_MIN_SCORE = 5  // out of 8 — below this, agent HOLDs everything
 const NEW_LISTING_SYNTHETIC_SCORE = 6  // newly-listed pairs always make the cut
+// AUTO mode now evaluates the top-N scoring pairs per tick instead of just
+// the single winner. BTC and similar majors often range while alts/new
+// listings have the real moves — limiting to 1/tick was systematically
+// blinding agents to those opportunities. Cost is bounded because most
+// alt pairs trip the cost guards (extreme RSI / volume collapse) and skip
+// Claude entirely; only genuinely interesting setups burn an LLM call.
+const WATCHLIST_TOP_N = 3
 
 // Deterministic setup score in [0..8]. Higher = better trading opportunity.
 //   ADX trending  : 0–3  (gates everything else; ranging markets score 0)
@@ -445,6 +452,19 @@ function scoreSetup(ohlcv15m: OHLCV, ohlcv1h: OHLCV): number {
 // and shared via the process-wide cache, so total Aster API cost is
 // 30 calls/minute regardless of how many agents are scanning.
 export async function pickBestWatchlistPair(): Promise<{ symbol: string; score: number } | null> {
+  const top = await pickTopWatchlistPairs(1)
+  return top[0] ?? null
+}
+
+// Score the entire watchlist in parallel and return the top-N pairs that
+// clear WATCHLIST_MIN_SCORE, ranked best-first. Returns [] if nothing
+// qualifies. Used by AUTO mode so agents evaluate multiple hot pairs per
+// tick instead of being locked into the single highest-scoring one.
+// Klines are cached process-wide for 60s so this stays cheap regardless
+// of how many agents call it concurrently.
+export async function pickTopWatchlistPairs(
+  n: number
+): Promise<Array<{ symbol: string; score: number }>> {
   const { getKlines } = await import('../services/aster')
   const { getActiveWatchlist, isNewlyListed } = await import('../services/listingDetector')
   const watchlist = await getActiveWatchlist()
@@ -468,12 +488,11 @@ export async function pickBestWatchlistPair(): Promise<{ symbol: string; score: 
       }
     })
   )
-  const ranked = results
+  return results
     .filter((r): r is { symbol: string; score: number } => !!r)
+    .filter((r) => r.score >= WATCHLIST_MIN_SCORE)
     .sort((a, b) => b.score - a.score)
-  const best = ranked[0]
-  if (!best || best.score < WATCHLIST_MIN_SCORE) return null
-  return best
+    .slice(0, Math.max(1, n))
 }
 
 export function expandPairs(pairs: string[]): string[] {
@@ -703,15 +722,16 @@ export async function runAgentTick(agent: Agent): Promise<void> {
       const sym = t.pair.replace(/[\/\s]/g, '').toUpperCase()
       if (!pairList.includes(sym)) pairList.push(sym)
     }
-    let scanResult: { symbol: string; score: number } | null = null
+    let scanResults: Array<{ symbol: string; score: number }> = []
     try {
-      scanResult = await pickBestWatchlistPair()
+      scanResults = await pickTopWatchlistPairs(WATCHLIST_TOP_N)
     } catch (e: any) {
       console.warn(`[Agent ${agent.name}] AUTO scan failed:`, e?.message)
     }
-    if (scanResult && !pairList.includes(scanResult.symbol)) {
-      pairList.push(scanResult.symbol)
+    for (const r of scanResults) {
+      if (!pairList.includes(r.symbol)) pairList.push(r.symbol)
     }
+    const scanResult = scanResults[0] ?? null
 
     // Fresh listings are time-critical — always evaluate every pair listed
     // in the last 48h on every AUTO tick, regardless of TA score. The
