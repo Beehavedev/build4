@@ -9,8 +9,11 @@ import { db } from '../db'
  * Cost is computed using SEPARATE per-1M-token rates for input vs output,
  * because real provider pricing charges output tokens at 3-5x the input
  * rate. Telemetry rows written before Task #24 only carry `tokensUsed`
- * (no split); for those we attribute everything to outputTokens, which is
- * the conservative (more expensive) assumption.
+ * (no split); for those we apply a 70/30 input-vs-output split — the
+ * typical mix for our trading-agent prompts (long context in, short
+ * structured decision out) — so historical USD on `/swarmstats` matches
+ * the old blended rate instead of being inflated by attributing the
+ * entire legacy total to the more-expensive output bucket. See Task #36.
  *
  * Resolution order (lowest → highest precedence):
  *   1. DEFAULT_COST_USD_PER_MTOKENS (in code, split { input, output })
@@ -144,9 +147,9 @@ interface RawRollupRow {
  * one entry there.
  *
  * Backfill behaviour: telemetry rows written before Task #24 only carry
- * `tokensUsed` (no input/output split). The SQL falls back to attributing
- * `tokensUsed` entirely to `output_tokens` — matches the conservative
- * assumption documented above.
+ * `tokensUsed` (no input/output split). The SQL splits those legacy
+ * totals 70/30 between input and output, so they're billed at a sensible
+ * blended rate instead of the full output rate (Task #36).
  */
 export async function getSwarmStats(
   window: Window,
@@ -174,10 +177,18 @@ export async function getSwarmStats(
     SELECT
       provider,
       COUNT(*)::bigint                                       AS call_count,
-      COALESCE(SUM(COALESCE(input_tokens, 0)), 0)::bigint    AS input_tokens,
       COALESCE(SUM(
         CASE
-          WHEN input_tokens IS NULL AND output_tokens IS NULL THEN COALESCE(tokens_used, 0)
+          -- Legacy telemetry (Task #36): no input/output split, so
+          -- attribute 70% of the combined tokens_used to input.
+          WHEN input_tokens IS NULL AND output_tokens IS NULL THEN COALESCE(tokens_used, 0) * 0.7
+          ELSE COALESCE(input_tokens, 0)
+        END
+      ), 0)::bigint                                          AS input_tokens,
+      COALESCE(SUM(
+        CASE
+          -- Legacy telemetry (Task #36): remaining 30% goes to output.
+          WHEN input_tokens IS NULL AND output_tokens IS NULL THEN COALESCE(tokens_used, 0) * 0.3
           ELSE COALESCE(output_tokens, 0)
         END
       ), 0)::bigint                                          AS output_tokens,

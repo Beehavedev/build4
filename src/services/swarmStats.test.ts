@@ -68,10 +68,14 @@ test('getSwarmStats reads only AgentLog (not OutcomePosition) and computes USD w
   assert.match(capturedSql, /interval '24 hours'/)
   // Must extract input/output split AND fall back to tokens_used when both
   // input_tokens and output_tokens are absent from the JSONB row (legacy
-  // telemetry written before Task #24).
+  // telemetry written before Task #24). Legacy rows are split 70/30
+  // input/output so historical USD doesn't get inflated by attributing
+  // everything to the more-expensive output bucket (Task #36).
   assert.match(capturedSql, /inputTokens/)
   assert.match(capturedSql, /outputTokens/)
   assert.match(capturedSql, /tokens_used/)
+  assert.match(capturedSql, /tokens_used, 0\) \* 0\.7/)
+  assert.match(capturedSql, /tokens_used, 0\) \* 0\.3/)
 
   const anthropic = report.rows.find((r) => r.provider === 'anthropic')
   assert.ok(anthropic)
