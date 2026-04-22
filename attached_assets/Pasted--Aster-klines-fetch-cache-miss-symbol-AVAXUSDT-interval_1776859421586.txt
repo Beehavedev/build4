@@ -1,0 +1,53 @@
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '5m', limit: 100 }
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="18a27052-8dd4-4dc0" responseTimeMS=734 responseBytes=270 userAgent=""
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+Menu
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '4h', limit: 200 }
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="3383d319-b1c3-422f" responseTimeMS=1869 responseBytes=270 userAgent=""
