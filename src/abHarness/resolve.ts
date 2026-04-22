@@ -30,6 +30,17 @@ import { getFundingRateHistory, getKlines } from '../services/aster';
 import { readAll, rewriteAll } from './store';
 import { AbDecisionRecord } from './types';
 
+// Dependency-injection seam used by the unit tests. The two real Aster
+// client calls are replaceable so the simulator can be exercised offline
+// against deterministic candle / funding streams. Defaults to the live
+// client when no overrides are provided.
+export interface ResolveDeps {
+  getKlines: typeof getKlines;
+  getFundingRateHistory: typeof getFundingRateHistory;
+}
+
+const DEFAULT_DEPS: ResolveDeps = { getKlines, getFundingRateHistory };
+
 // Aster perp taker fee — ~0.04% per side. Kept as a module-level constant
 // so a future audit (or a fee-tier change) only has to touch one line.
 export const TAKER_FEE_RATE = 0.0004;
@@ -112,20 +123,24 @@ async function fundingPctOverWindow(
   leverage: number,
   fillTs: number,
   exitTs: number,
+  deps: ResolveDeps = DEFAULT_DEPS,
 ): Promise<number> {
   if (exitTs <= fillTs) return 0;
   const dirMult = side === 'LONG' ? 1 : -1;
   // Pad both ends by 1ms — Aster's filter is inclusive but funding events
   // are usually anchored to the exact 8h boundary; tiny padding avoids
   // missing one that lands on the boundary.
-  const events = await getFundingRateHistory(pair, fillTs - 1, exitTs + 1);
+  const events = await deps.getFundingRateHistory(pair, fillTs - 1, exitTs + 1);
   const inWindow = events.filter((e) => e.fundingTime >= fillTs && e.fundingTime <= exitTs);
   const sumRate = inWindow.reduce((acc, e) => acc + e.fundingRate, 0);
   // Negative sign: positive funding rate is a COST to longs (subtract from PnL).
   return -dirMult * sumRate * (leverage || 1) * 100;
 }
 
-async function resolveOne(rec: AbDecisionRecord): Promise<AbDecisionRecord> {
+export async function resolveOne(
+  rec: AbDecisionRecord,
+  deps: ResolveDeps = DEFAULT_DEPS,
+): Promise<AbDecisionRecord> {
   const d = rec.decision;
   if (!d) return rec;
   if (d.action !== 'OPEN_LONG' && d.action !== 'OPEN_SHORT') return rec;
@@ -140,7 +155,7 @@ async function resolveOne(rec: AbDecisionRecord): Promise<AbDecisionRecord> {
   // We grab a buffer (window+30m) so we can find the first bar after the
   // decision even if the exchange clock skews slightly.
   const limit = Math.min(1500, Math.ceil((HOLDING_WINDOW_MS + 30 * 60 * 1000) / 60_000));
-  const k = await getKlines(rec.pair, KLINE_INTERVAL, limit);
+  const k = await deps.getKlines(rec.pair, KLINE_INTERVAL, limit);
   const allCandles = toCandles(k).filter((c) => c.ts >= rec.decidedAt && c.ts <= rec.decidedAt + HOLDING_WINDOW_MS);
 
   if (allCandles.length === 0) {
@@ -204,7 +219,7 @@ async function resolveOne(rec: AbDecisionRecord): Promise<AbDecisionRecord> {
 
   // Costs. Both fee and funding are signed contributions to pnlPct.
   const feePct = -2 * TAKER_FEE_RATE * lev * 100;
-  const fundingPct = await fundingPctOverWindow(rec.pair, side, lev, fillTs, sim.lastTs);
+  const fundingPct = await fundingPctOverWindow(rec.pair, side, lev, fillTs, sim.lastTs, deps);
   const pnlPct = sim.grossPnlPct + feePct + fundingPct;
 
   return {
