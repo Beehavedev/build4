@@ -230,7 +230,11 @@ function AsterSecondaryCard({ w, onReactivated }: { w: WalletInfo; onReactivated
     if (reactivating) return
     setReactivating(true); setReactivateMsg(null)
     try {
-      const r = await apiFetch<{ success: boolean; error?: string }>(
+      const r = await apiFetch<{
+        success: boolean
+        error?: string
+        debug?: { fmt?: string; totalLen?: number; partLens?: string; head?: string; tried?: number; reason?: string }
+      }>(
         '/api/aster/approve',
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
       )
@@ -238,7 +242,11 @@ function AsterSecondaryCard({ w, onReactivated }: { w: WalletInfo; onReactivated
         setReactivateMsg('Re-activated. Refreshing balance…')
         setTimeout(() => onReactivated?.(), 600)
       } else {
-        setReactivateMsg(r.error ?? 'Re-activation failed')
+        const base = r.error ?? 'Re-activation failed'
+        const dbg = r.debug
+          ? ` [fmt=${r.debug.fmt} len=${r.debug.totalLen} parts=${r.debug.partLens} head=${r.debug.head} tried=${r.debug.tried}]`
+          : ''
+        setReactivateMsg(base + dbg)
       }
     } catch (e: any) {
       setReactivateMsg(e?.message ?? 'Re-activation failed')

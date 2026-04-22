@@ -474,13 +474,17 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
 
     // Mirror the deposit flow: wallet PKs in production were encrypted
     // by different historical code paths (some with user.id, some with
-    // telegramId). Try every plausible candidate before giving up so we
-    // don't lock activation for users whose wallet decrypts fine in the
-    // deposit endpoint but not here.
+    // telegramId, some legacy migrations under wallet.userId). Try every
+    // plausible candidate before giving up so we don't lock activation
+    // for users whose wallet decrypts fine in the deposit endpoint but
+    // not here.
     let userPk: string | null = null
     {
-      const idCandidates = [user.id, user.telegramId?.toString()]
-        .filter((v): v is string => Boolean(v))
+      const idCandidates = Array.from(new Set([
+        user.id,
+        user.telegramId?.toString(),
+        wallet.userId,                    // legacy: wallet row may be owned by a pre-migration userId
+      ].filter((v): v is string => Boolean(v))))
       let lastErr: any = null
       for (const candidate of idCandidates) {
         try {
@@ -489,11 +493,27 @@ app.post('/api/aster/approve', requireTgUser, async (req, res) => {
         } catch (e) { lastErr = e }
       }
       if (!userPk) {
+        // Surface enough format info that we can diagnose remotely from
+        // the error response alone (Render logs aren't always reachable).
+        const blob = wallet.encryptedPK ?? ''
+        const parts = blob.split(':')
+        const partLens = parts.map(p => p.length).join(',')
+        const isCryptoJs = blob.startsWith('U2FsdGVk')
+        const fmt = parts.length === 1 ? (isCryptoJs ? 'cryptojs(salted)' : 'cryptojs(raw)')
+                  : parts.length === 2 ? 'node-crypto(iv:data)'
+                  : parts.length === 3 ? 'node-crypto(salt:iv:data PBKDF2)'
+                  : `unknown(${parts.length}-part)`
         console.error(
           `[/aster/approve] decrypt wallet PK failed user=${user.id} tg=${user.telegramId} ` +
-          `tried=${idCandidates.length} err=${lastErr?.message ?? 'unknown'}`
+          `wallet=${wallet.address} walletUserId=${wallet.userId} fmt=${fmt} totalLen=${blob.length} ` +
+          `partLens=${partLens} head=${blob.slice(0,16)} tried=${idCandidates.length} ` +
+          `err=${lastErr?.message ?? 'unknown'}`
         )
-        return res.status(500).json({ success: false, error: 'Could not decrypt wallet' })
+        return res.status(500).json({
+          success: false,
+          error: 'Could not decrypt wallet',
+          debug: { fmt, totalLen: blob.length, partLens, head: blob.slice(0, 16), tried: idCandidates.length, reason: lastErr?.message ?? 'unknown' }
+        })
       }
     }
 
