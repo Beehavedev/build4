@@ -174,7 +174,22 @@ export async function runSwarmDecision<T extends Record<string, unknown>>(
   }
 
   const actionConsensus = pickWinner(actionHistogram, quorum)
-  const predictionConsensus = pickWinner(predictionHistogram, quorum)
+
+  // Sidecar quorum must align with the action cohort: the same ≥quorum
+  // providers must agree on BOTH the action and the predictionTrade for the
+  // sidecar to be included. Computing it globally is wrong — it would let a
+  // sidecar slip in even when only one of the action-cohort voters actually
+  // backed it.
+  let predictionConsensus: string | null = null
+  if (actionConsensus) {
+    const cohortPredictionHistogram: Record<string, number> = {}
+    for (const entry of agreement) {
+      if (entry.action === actionConsensus && entry.prediction) {
+        cohortPredictionHistogram[entry.prediction] = (cohortPredictionHistogram[entry.prediction] ?? 0) + 1
+      }
+    }
+    predictionConsensus = pickWinner(cohortPredictionHistogram, quorum)
+  }
 
   const divergence: SwarmDivergence = {
     actionHistogram,
@@ -199,10 +214,17 @@ export async function runSwarmDecision<T extends Record<string, unknown>>(
     return { decisions: calls, quorumDecision: null, divergence, error: null }
   }
 
-  const winningCall = successes.find((c) => safeGet(() => getAction(c.decision), null) === actionConsensus)
-  if (!winningCall) {
+  const cohort = successes.filter((c) => safeGet(() => getAction(c.decision), null) === actionConsensus)
+  if (cohort.length === 0) {
     return { decisions: calls, quorumDecision: null, divergence, error: null }
   }
+
+  // Prefer a cohort member that actually holds the consensus prediction so
+  // the returned decision's predictionTrade is the agreed-upon one verbatim.
+  const winningCall =
+    (predictionConsensus
+      ? cohort.find((c) => (getPredictionKey ? safeGet(() => getPredictionKey(c.decision), null) : null) === predictionConsensus)
+      : undefined) ?? cohort[0]
 
   let quorumDecision: T = winningCall.decision
   if (predictionField in quorumDecision) {

@@ -198,10 +198,12 @@ test('2-2 action tie with quorum=2 yields no consensus (tie-break is determinist
   assert.deepEqual(result.divergence.actionHistogram, { OPEN_LONG: 2, OPEN_SHORT: 2 })
 })
 
-test('prediction consensus is dropped when winning-action cohort does not hold it', async () => {
-  // Action consensus = OPEN_LONG (anthropic + xai). Prediction consensus = market 0xZZZ
-  // (xai + hyperbolic). The chosen action representative (anthropic, first OPEN_LONG) does
-  // NOT hold the winning prediction key, so predictionTrade must be cleared.
+test('prediction quorum is restricted to the winning action cohort', async () => {
+  // Action quorum: OPEN_LONG (anthropic + xai). Globally, market 0xZZZ has 2 votes
+  // (xai + hyperbolic) — but hyperbolic is NOT in the OPEN_LONG cohort, so within
+  // the cohort 0xZZZ has only 1 vote → no sidecar quorum → predictionTrade must be
+  // cleared. (Regression test: pre-fix code computed prediction consensus globally
+  // and would have erroneously kept the sidecar here.)
   const result = await runSwarmDecision<FakeDecision>({
     ...baseArgs,
     providers: ['anthropic', 'xai', 'hyperbolic'],
@@ -212,14 +214,39 @@ test('prediction consensus is dropped when winning-action cohort does not hold i
     }),
   })
   assert.equal(result.divergence.actionConsensus, 'OPEN_LONG')
-  assert.equal(result.divergence.predictionConsensus, '0xZZZ:9:OPEN_PREDICTION')
+  assert.equal(result.divergence.predictionConsensus, null)
+  assert.deepEqual(
+    result.divergence.predictionHistogram,
+    { '0xAAA:1:OPEN_PREDICTION': 1, '0xZZZ:9:OPEN_PREDICTION': 2 },
+    'global predictionHistogram is still surfaced for telemetry',
+  )
   assert.ok(result.quorumDecision)
   assert.equal(result.quorumDecision!.action, 'OPEN_LONG')
-  assert.equal(
-    result.quorumDecision!.predictionTrade,
-    null,
-    'sidecar must be cleared when chosen action representative does not hold the consensus prediction',
-  )
+  assert.equal(result.quorumDecision!.predictionTrade, null)
+})
+
+test('prediction quorum holds when same providers agree on action AND sidecar', async () => {
+  // Both anthropic and xai vote OPEN_LONG with the same predictionTrade. The
+  // cohort-restricted prediction quorum reaches 2-of-2 within the cohort, so
+  // predictionTrade is kept on the consensus decision.
+  const trade = { market: '0xAAA', tokenId: 1 }
+  const result = await runSwarmDecision<FakeDecision>({
+    ...baseArgs,
+    providers: ['anthropic', 'xai', 'hyperbolic'],
+    callLLMFn: scriptedFn({
+      anthropic: decision('OPEN_LONG', trade),
+      xai: decision('OPEN_LONG', trade),
+      hyperbolic: decision('HOLD'),
+    }),
+  })
+  assert.equal(result.divergence.actionConsensus, 'OPEN_LONG')
+  assert.equal(result.divergence.predictionConsensus, '0xAAA:1:OPEN_PREDICTION')
+  assert.ok(result.quorumDecision)
+  assert.deepEqual(result.quorumDecision!.predictionTrade, {
+    marketAddress: '0xAAA',
+    tokenId: 1,
+    action: 'OPEN_PREDICTION',
+  })
 })
 
 test('empty providers list returns error', async () => {
