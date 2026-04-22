@@ -60,9 +60,16 @@ const ERC20_ABI = [
   'function balanceOf(address owner) external view returns (uint256)',
 ];
 
-// 42.space outcome tokens are ERC-1155 issued by the market contract.
+// 42.space outcome tokens are ERC-6909 issued by the market contract.
+// We use the ERC-1155-compatible balanceOf for reads, and the ERC-6909
+// operator pattern for spend authorization (needed before sellOutcome /
+// claimResolved, which both transfer/burn outcome tokens via the router).
 const ERC1155_ABI = [
   'function balanceOf(address account, uint256 id) external view returns (uint256)',
+];
+const ERC6909_OPERATOR_ABI = [
+  'function isOperator(address owner, address spender) external view returns (bool)',
+  'function setOperator(address spender, bool approved) external returns (bool)',
 ];
 
 /**
@@ -223,6 +230,24 @@ export class FortyTwoTrader {
   }
 
   /**
+   * Ensure the FTRouter has ERC-6909 operator permission to move our outcome
+   * tokens on the given market. Required before sellOutcome / claimResolved —
+   * without this, the router's Safe6909Transfer reverts with
+   * "Safe6909Transfer failed". One-time per (wallet, market) pair.
+   */
+  async ensureOutcomeOperator(marketAddress: string): Promise<void> {
+    if (this.dryRun) {
+      console.log(`[FortyTwoTrader:DRY] setOperator(${FTROUTER_ADDRESS}, true) on market ${marketAddress}`);
+      return;
+    }
+    const market = new ethers.Contract(marketAddress, ERC6909_OPERATOR_ABI, this.wallet);
+    const isOp: boolean = await market.isOperator(this.wallet.address, FTROUTER_ADDRESS);
+    if (isOp) return;
+    const tx = await market.setOperator(FTROUTER_ADDRESS, true);
+    await tx.wait();
+  }
+
+  /**
    * Sell outcome tokens back to USDT (redeem).
    * @param tokenAmountIn raw outcome-token units (ERC-1155, typically 18 decimals)
    * @param minUsdtOut minimum USDT to receive (slippage protection)
@@ -245,6 +270,11 @@ export class FortyTwoTrader {
       console.log(`[FortyTwoTrader:DRY] sellOutcome ${JSON.stringify(args)}`);
       return { dryRun: true, hash: dryHash('sell'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'sellOutcome', args, status: 1 } as unknown as ethers.TransactionReceipt;
     }
+
+    // ERC-6909 spend authorization — router needs operator permission to pull
+    // our outcome tokens, otherwise Safe6909Transfer reverts. One-time per
+    // (wallet, market). No-op if already granted.
+    await this.ensureOutcomeOperator(marketAddress);
 
     // Multicall-wrapped swapSimple — see buyOutcome / ROUTER_ABI comment for
     // the full rationale on why direct swapSimple calls revert with
@@ -291,6 +321,7 @@ export class FortyTwoTrader {
       console.log(`[FortyTwoTrader:DRY] claimResolved ${JSON.stringify(args)}`);
       return { dryRun: true, hash: dryHash('claim'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'claimResolved', args, status: 1 } as unknown as ethers.TransactionReceipt;
     }
+    await this.ensureOutcomeOperator(marketAddress);
     const tx = await this.router.claimSimple(
       marketAddress,
       this.wallet.address,
@@ -307,6 +338,7 @@ export class FortyTwoTrader {
       console.log(`[FortyTwoTrader:DRY] claimAllResolved ${JSON.stringify(args)}`);
       return { dryRun: true, hash: dryHash('claimAll'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'claimAllResolved', args, status: 1 } as unknown as ethers.TransactionReceipt;
     }
+    await this.ensureOutcomeOperator(marketAddress);
     const tx = await this.router.claimAllSimple(marketAddress, this.wallet.address);
     return tx.wait();
   }
