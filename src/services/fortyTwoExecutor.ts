@@ -6,6 +6,60 @@ import { readMarketOnchain, isWinningTokenId } from './fortyTwoOnchain';
 import type { Market42 } from './fortyTwo';
 import { getMarketByAddress } from './fortyTwo';
 
+/**
+ * The narrow trader surface the executor actually invokes. Defined as a
+ * structural interface (not a class) so the test seam below can accept any
+ * implementation that satisfies these three methods — no class inheritance
+ * or type-escape casts required.
+ */
+export interface ExecutorTrader {
+  buyOutcome(
+    marketAddress: string,
+    tokenId: number,
+    usdtAmountIn: string,
+    minOtOut?: bigint,
+  ): Promise<ethers.TransactionReceipt | DryRunReceipt | null>;
+  sellOutcome(
+    marketAddress: string,
+    tokenId: number,
+    tokenAmountIn: bigint,
+    minUsdtOut?: bigint,
+  ): Promise<ethers.TransactionReceipt | DryRunReceipt | null>;
+  balanceOfOutcome(marketAddress: string, tokenId: number): Promise<bigint>;
+}
+
+export type ExecutorTraderCtor = new (
+  pk: string,
+  rpc: string,
+  opts: { dryRun: boolean },
+) => ExecutorTrader;
+
+export interface ExecutorDeps {
+  getMarketByAddress: typeof getMarketByAddress;
+  readMarketOnchain: typeof readMarketOnchain;
+  isWinningTokenId: typeof isWinningTokenId;
+  decryptPrivateKey: typeof decryptPrivateKey;
+  FortyTwoTraderCtor: ExecutorTraderCtor;
+}
+
+/**
+ * Dependency seam for unit tests. Production code goes through this object
+ * so the SQL-shape tests in __tests__/fortyTwoExecutorSql.test.ts can swap
+ * out market/wallet/trader access without round-tripping to the BSC RPC or
+ * needing a real encrypted PK on disk. Do NOT use from production callers —
+ * import the underlying functions directly instead.
+ *
+ * `FortyTwoTrader` structurally satisfies `ExecutorTraderCtor` — the three
+ * methods on `ExecutorTrader` are a subset of the class's public API.
+ */
+export const __testDeps: ExecutorDeps = {
+  getMarketByAddress,
+  readMarketOnchain,
+  isWinningTokenId,
+  decryptPrivateKey,
+  FortyTwoTraderCtor: FortyTwoTrader,
+};
+
 const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org';
 
 // ── Sizing rules — outcome-token positions are explicitly smaller than the
@@ -45,7 +99,7 @@ async function loadUserWalletPK(userId: string): Promise<UserWalletPK | null> {
   });
   if (!wallet?.encryptedPK) return null;
   try {
-    const pk = decryptPrivateKey(wallet.encryptedPK, userId);
+    const pk = __testDeps.decryptPrivateKey(wallet.encryptedPK, userId);
     if (!pk?.startsWith('0x')) return null;
     return { address: wallet.address, privateKey: pk };
   } catch {
@@ -67,7 +121,7 @@ async function loadUserWalletPK(userId: string): Promise<UserWalletPK | null> {
 async function buildTrader(
   userId: string,
   forcePaperTrade?: boolean,
-): Promise<{ trader: FortyTwoTrader; paperTrade: boolean } | null> {
+): Promise<{ trader: ExecutorTrader; paperTrade: boolean } | null> {
   const wallet = await loadUserWalletPK(userId);
   if (!wallet) return null;
   let paperTrade: boolean;
@@ -82,7 +136,7 @@ async function buildTrader(
     const liveOptIn = rows[0]?.fortyTwoLiveTrade === true;
     paperTrade = !liveOptIn;
   }
-  const trader = new FortyTwoTrader(wallet.privateKey, BSC_RPC, { dryRun: paperTrade });
+  const trader = new __testDeps.FortyTwoTraderCtor(wallet.privateKey, BSC_RPC, { dryRun: paperTrade });
   return { trader, paperTrade };
 }
 
@@ -238,7 +292,7 @@ export async function openPredictionPosition(
 
   let market: Market42;
   try {
-    market = await getMarketByAddress(intent.marketAddress);
+    market = await __testDeps.getMarketByAddress(intent.marketAddress);
   } catch (err) {
     return { ok: false, reason: `market lookup failed: ${(err as Error).message}` };
   }
@@ -246,7 +300,7 @@ export async function openPredictionPosition(
 
   let state;
   try {
-    state = await readMarketOnchain(market);
+    state = await __testDeps.readMarketOnchain(market);
   } catch (err) {
     return { ok: false, reason: `on-chain read failed: ${(err as Error).message}` };
   }
@@ -375,12 +429,12 @@ export async function closePredictionPosition(
 
   let market: Market42;
   try {
-    market = await getMarketByAddress(pos.marketAddress);
+    market = await __testDeps.getMarketByAddress(pos.marketAddress);
   } catch (err) {
     return { ok: false, reason: `market lookup failed: ${(err as Error).message}` };
   }
 
-  const state = await readMarketOnchain(market);
+  const state = await __testDeps.readMarketOnchain(market);
   const outcome = state.outcomes.find((o) => o.tokenId === pos.tokenId);
   if (!outcome) return { ok: false, reason: 'outcome missing on chain' };
 
@@ -499,20 +553,20 @@ export async function settleResolvedPositions(opts: { agentId?: string; userId?:
   for (const [addr, positions] of byMarket) {
     let market: Market42;
     try {
-      market = await getMarketByAddress(addr);
+      market = await __testDeps.getMarketByAddress(addr);
     } catch {
       continue;
     }
     let state;
     try {
-      state = await readMarketOnchain(market);
+      state = await __testDeps.readMarketOnchain(market);
     } catch {
       continue;
     }
     if (!state.isFinalised) continue;
 
     for (const pos of positions) {
-      const win = isWinningTokenId(state.resolvedAnswer, pos.tokenId);
+      const win = __testDeps.isWinningTokenId(state.resolvedAnswer, pos.tokenId);
       // Token amount: use stored on-chain value if we captured it at open,
       // otherwise the entry-price estimate. Winners redeem 1:1 for USDT.
       const tokens = pos.outcomeTokenAmount ?? pos.usdtIn / pos.entryPrice;
