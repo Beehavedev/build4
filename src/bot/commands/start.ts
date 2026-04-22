@@ -67,18 +67,27 @@ After saving, delete this message from your chat for extra safety.`,
     await ctx.reply(
       `⚡ *Welcome to BUILD4*
 
-Your AI agent for trading perps on Aster DEX — directly from Telegram.${walletLine}
+The AI trading hub on Telegram — perps, predictions, swaps and launches across BSC, xLayer and OKX, all from one chat.${walletLine}
+
+*What you can do here:*
+• 🤖 *AI agents* — describe a strategy in plain English, let it trade 24/7
+• 📈 *Aster perps* — leveraged longs/shorts, signed on-chain with EIP-712
+• 🔮 *42.space predictions* — agents trade live prediction markets on BSC
+• 🔄 *Multi-chain swaps* — BSC, xLayer and OKX OS in one tap
+• 🚀 *Token launches* — launch and trade new tokens from inside the bot
+• 📊 *Signals & copy trading* — whale flow, smart money, top traders
+• 🎁 *$B4 rewards* — earn points on every trade, signal and quest
 
 *Get started in 3 steps:*
 
 *1️⃣ Deposit USDT*
-Tap *💰 Deposit* below to see your wallet address. Send USDT (BSC) to fund your account.
+Tap *💰 Deposit* to see your wallet address. Send USDT (BSC) to fund your account.
 
 *2️⃣ Create your AI agent*
-Tap *🤖 Create Agent* and tell it your strategy in plain English ("trade BTC scalps with 3x leverage", etc).
+Tap *🤖 Create Agent* and tell it your strategy ("scalp BTC at 3x", "fade overhyped predictions", etc).
 
-*3️⃣ Let it trade*
-Your agent runs 24/7 on Aster DEX, signs every order with EIP-712, and reports PnL straight to this chat. You stay in full control — pause anytime.
+*3️⃣ Let it work*
+Your agent runs 24/7 across perps and prediction markets, signs every order itself, and reports PnL straight to this chat. You stay in full control — pause anytime.
 
 Tap *ℹ️ How it works* for the full breakdown.`,
       {
@@ -106,13 +115,16 @@ When you ran /start, BUILD4 generated a fresh BNB Smart Chain wallet for you. Th
 Deposit USDT (BEP-20) to your wallet address. Funds stay in *your* wallet at all times — BUILD4 never custodies them.
 
 *🤖 The AI agent*
-You describe your strategy in plain English. The agent monitors markets 24/7 using whale flow, smart money tracking, and price action — then decides when to enter and exit.
+You describe your strategy in plain English. The agent monitors markets 24/7 using whale flow, smart money tracking, price action and live prediction-market odds — then decides when to enter and exit.
 
-*✍️ Trade execution on Aster DEX*
-BUILD4 is a registered builder on Aster DEX. Your agent signs perp orders using EIP-712 signatures and submits them via the Aster Builder API. Every fill credits *your* wallet.
+*✍️ Where your agent trades*
+• *Aster DEX perps* — BUILD4 is a registered builder. Your agent signs perp orders with EIP-712 and submits them via the Aster Builder API.
+• *42.space predictions* — your agent reads live bonding-curve odds on BSC and buys/sells outcome shares directly on chain.
+• *Multi-chain swaps* — manual buy/sell across BSC, xLayer and OKX OS routed through OKX DEX aggregator for best price.
+• *Token launches* — launch your own token or trade fresh listings the moment they drop.
 
 *💰 Fees*
-You only pay the standard Aster trading fee plus a small builder fee that funds BUILD4. No subscriptions, no upfront cost.
+You only pay the standard venue fees (Aster, 42.space, OKX) plus a small builder fee that funds BUILD4. No subscriptions, no upfront cost.
 
 *🛑 You're in control*
 Pause your agent anytime with /trade. Withdraw your USDT to any external wallet whenever you want. BUILD4 has *zero* ability to move your funds — only sign trades on your behalf.
