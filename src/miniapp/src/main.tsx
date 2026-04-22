@@ -1,32 +1,6 @@
 import { createRoot } from "react-dom/client";
-import { App } from "./App";
+import App from "./App";
 import "./styles.css";
-
-declare global {
-  interface Window {
-    Telegram?: {
-      WebApp: {
-        initData: string;
-        initDataUnsafe: {
-          user?: { id: number; first_name: string; username?: string };
-        };
-        ready: () => void;
-        expand: () => void;
-        close: () => void;
-        MainButton: {
-          text: string;
-          show: () => void;
-          hide: () => void;
-          onClick: (cb: () => void) => void;
-        };
-        themeParams: Record<string, string>;
-        colorScheme: "dark" | "light";
-        setHeaderColor: (color: string) => void;
-        setBackgroundColor: (color: string) => void;
-      };
-    };
-  }
-}
 
 const tg = window.Telegram?.WebApp;
 if (tg) {

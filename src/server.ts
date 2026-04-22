@@ -1143,6 +1143,179 @@ app.get('/api/signals', async (_req, res) => {
   res.json(signals)
 })
 
+// ──────────────────────────────────────────────────────────────────────────
+// /api/predictions/latest — feeds the mini-app Predictions tab
+//
+// Composes three real data sources:
+//   1. Most recent live swarm-driven prediction position (same row as
+//      /showcase) → swarm hero card with per-provider verdicts.
+//   2. Recent open OutcomePosition rows across all users (anonymous, demo
+//      surface) → positions table.
+//   3. Live 42.space markets via the REST API → market scanner.
+//
+// Public (no auth) — every field rendered is already public information
+// (on-chain tx hashes, public market data). No telegramId required so the
+// 42.space team can preview the page without a Telegram session.
+// ──────────────────────────────────────────────────────────────────────────
+// 60s in-memory cache for the 42.space markets list. The Predictions tab
+// auto-refreshes every 30s; without this we'd hit 42.space twice a minute
+// per active viewer and risk rate-limiting.
+const predictionScannerCache: {
+  value: Array<{ marketTitle: string; marketAddress: string; category: string; endDate: string; elapsedPct: number }>
+  fetchedAt: number
+} = { value: [], fetchedAt: 0 }
+
+app.get('/api/predictions/latest', async (_req, res) => {
+  const startedAt = Date.now()
+  try {
+    const { getMostRecentLiveSwarmPrediction } = await import('./services/fortyTwoExecutor')
+
+    // ── Swarm hero ──
+    const swarmPos = await getMostRecentLiveSwarmPrediction()
+    let swarm: any = null
+    if (swarmPos) {
+      const providers = (Array.isArray(swarmPos.providers) ? swarmPos.providers : []) as Array<{
+        provider: string
+        model?: string | null
+        action?: string
+        predictionTrade?: { conviction?: number } | null
+        reasoning?: string | null
+        latencyMs: number
+        tokensUsed: number
+      }>
+      const consensusYes = swarmPos.entryPrice >= 0.5
+      const agents = providers.map((p) => {
+        const conv = p.predictionTrade?.conviction
+        const probability = typeof conv === 'number' ? conv : swarmPos.entryPrice
+        const verdict: 'YES' | 'NO' = probability >= 0.5 ? 'YES' : 'NO'
+        return {
+          name: p.provider,
+          model: p.model ?? null,
+          verdict,
+          probability,
+          reasoning: (p.reasoning ?? '').replace(/\s+/g, ' ').trim(),
+          latencyMs: p.latencyMs ?? 0,
+          tokens: p.tokensUsed ?? 0,
+          matchesConsensus: verdict === (consensusYes ? 'YES' : 'NO'),
+          error: null as string | null,
+        }
+      })
+      const totalTokens = agents.reduce((s, a) => s + a.tokens, 0)
+      const avgLatencyMs =
+        agents.length > 0 ? Math.round(agents.reduce((s, a) => s + a.latencyMs, 0) / agents.length) : 0
+      const matching = agents.filter((a) => a.matchesConsensus).length
+      const confidenceScore = agents.length > 0 ? matching / agents.length : 0
+
+      swarm = {
+        marketTitle: swarmPos.marketTitle,
+        marketAddress: swarmPos.marketAddress,
+        outcomeLabel: swarmPos.outcomeLabel,
+        consensus: consensusYes ? 'YES' : 'NO',
+        impliedProbability: swarmPos.entryPrice,
+        confidenceScore,
+        agentCount: agents.length,
+        avgLatencyMs,
+        totalTokens,
+        usdtIn: swarmPos.usdtIn,
+        reasoning: (swarmPos.reasoning ?? '').replace(/\s+/g, ' ').trim(),
+        txHash: swarmPos.txHashOpen,
+        openedAt: swarmPos.openedAt,
+        agents,
+      }
+    }
+
+    // ── Positions table — anonymous, recent across all users ──
+    // NOTE: this endpoint is unauthenticated and aggregates positions across
+    // all users for the demo. We deliberately DO NOT include the per-position
+    // txHashOpen here — exposing it would let any caller resolve the wallet
+    // address on BscScan and trace a Telegram user's full on-chain history.
+    // The single swarm-hero card above keeps its txHash because that row is
+    // already public via /showcase and identifies the swarm trade, not a user.
+    const posRows = await db.$queryRawUnsafe<Array<{
+      id: string
+      marketAddress: string
+      marketTitle: string
+      tokenId: number
+      outcomeLabel: string
+      usdtIn: number
+      entryPrice: number
+      exitPrice: number | null
+      pnl: number | null
+      status: string
+      paperTrade: boolean
+      openedAt: Date
+      closedAt: Date | null
+    }>>(
+      `SELECT id,"marketAddress","marketTitle","tokenId","outcomeLabel","usdtIn","entryPrice",
+              "exitPrice",pnl,status,"paperTrade","openedAt","closedAt"
+       FROM "OutcomePosition"
+       WHERE "paperTrade" = false
+       ORDER BY "openedAt" DESC
+       LIMIT 20`,
+    )
+    const positions = posRows.map((p) => {
+      let mappedStatus: 'open' | 'resolved' | 'claimable' | 'claimed'
+      if (p.status === 'open') mappedStatus = 'open'
+      else if (p.status === 'resolved_win') mappedStatus = 'claimable'
+      else if (p.status === 'closed') mappedStatus = 'claimed'
+      else mappedStatus = 'resolved'
+      return {
+        marketTitle: p.marketTitle,
+        marketAddress: p.marketAddress,
+        tokenId: p.tokenId,
+        outcome: p.outcomeLabel,
+        entryPrice: p.entryPrice,
+        currentPrice: p.exitPrice ?? p.entryPrice,
+        pnlUsdt: p.pnl ?? 0,
+        usdtIn: p.usdtIn,
+        openedAt: p.openedAt,
+        // txHash intentionally omitted — see note above.
+        txHash: null as string | null,
+        status: mappedStatus,
+      }
+    })
+
+    // ── Market scanner — live 42.space markets, cached 60s in-memory ──
+    let apiStatus: 'live' | 'stale' | 'down' = 'live'
+    let scanner = predictionScannerCache.value
+    const cacheAge = Date.now() - predictionScannerCache.fetchedAt
+    if (cacheAge > 60_000) {
+      try {
+        const { getAllMarkets } = await import('./services/fortyTwo')
+        const markets = await getAllMarkets({ status: 'live', limit: 25, order: 'volume', ascending: false })
+        scanner = markets.map((m) => ({
+          marketTitle: m.question,
+          marketAddress: m.address,
+          category: (m.categories ?? [])[0] ?? 'uncategorized',
+          endDate: m.endDate,
+          elapsedPct: m.elapsedPct,
+        }))
+        predictionScannerCache.value = scanner
+        predictionScannerCache.fetchedAt = Date.now()
+      } catch (err) {
+        console.warn('[predictions/latest] 42.space markets fetch failed:', (err as Error).message)
+        // Serve stale cache if we have one, mark API as stale; otherwise down.
+        apiStatus = scanner.length > 0 ? 'stale' : 'down'
+      }
+    }
+
+    res.json({
+      swarm,
+      positions,
+      scanner,
+      meta: {
+        apiStatus,
+        lastFetchedAt: new Date().toISOString(),
+        marketsTracked: scanner.length,
+        responseTimeMs: Date.now() - startedAt,
+      },
+    })
+  } catch (err) {
+    console.error('[predictions/latest] failed:', (err as Error).message)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
 async function main() {
   // Connect DB
   await db.$connect()

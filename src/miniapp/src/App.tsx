@@ -4,6 +4,7 @@ import AgentStudio from './pages/AgentStudio'
 import CopyTrade from './pages/CopyTrade'
 import Portfolio from './pages/Portfolio'
 import Wallet from './pages/Wallet'
+import Predictions, { CrosshairIcon } from './pages/Predictions'
 
 declare global {
   interface Window {
@@ -11,7 +12,7 @@ declare global {
   }
 }
 
-type Page = 'dashboard' | 'agents' | 'wallet' | 'copy' | 'portfolio'
+type Page = 'dashboard' | 'agents' | 'wallet' | 'copy' | 'portfolio' | 'predictions'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -28,13 +29,14 @@ export default function App() {
     }
   }, [])
 
-  const navItems: { id: Page; label: string; icon: string }[] = [
+  const navItems: { id: Page; label: string; icon: string | 'crosshair' }[] = [
     { id: 'dashboard', label: 'Home', icon: '⚡' },
     { id: 'agents', label: 'Agents', icon: '🤖' },
     { id: 'wallet', label: 'Wallet', icon: '💳' },
     // Copy trading hidden for now — coming back to it later.
     // { id: 'copy', label: 'Copy', icon: '📋' },
-    { id: 'portfolio', label: 'Portfolio', icon: '📊' }
+    { id: 'portfolio', label: 'Portfolio', icon: '📊' },
+    { id: 'predictions', label: 'Predictions', icon: 'crosshair' }
   ]
 
   return (
@@ -46,6 +48,7 @@ export default function App() {
         {page === 'wallet' && <Wallet />}
         {page === 'copy' && <CopyTrade />}
         {page === 'portfolio' && <Portfolio userId={userId} />}
+        {page === 'predictions' && <Predictions />}
       </div>
 
       {/* Bottom nav */}
@@ -77,7 +80,13 @@ export default function App() {
               transition: 'color 0.15s'
             }}
           >
-            <span style={{ fontSize: '20px' }}>{item.icon}</span>
+            {item.icon === 'crosshair' ? (
+              <span style={{ height: 20, display: 'flex', alignItems: 'center' }}>
+                <CrosshairIcon active={page === item.id} />
+              </span>
+            ) : (
+              <span style={{ fontSize: '20px' }}>{item.icon}</span>
+            )}
             <span style={{ fontSize: '11px', fontWeight: page === item.id ? 600 : 400 }}>
               {item.label}
             </span>

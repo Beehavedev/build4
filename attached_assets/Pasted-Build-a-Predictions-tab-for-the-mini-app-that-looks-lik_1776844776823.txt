@@ -1,0 +1,149 @@
+Build a Predictions tab for the mini-app that looks like a professional trading terminal, not a hackathon project. This is our first visual demo to the 42.space team — it needs to communicate that Build4AI is a serious, production-grade AI trading operation, not a side project.
+The standard: every pixel should feel like it belongs on a Bloomberg terminal crossed with a modern DeFi dashboard. Clean, dense with real information, zero filler.
+
+Navigation
+Add "Predictions" to the mini-app nav. Icon: a simple target/crosshair SVG — not an emoji. Position it between Portfolio and the last tab.
+
+Page structure
+Header bar — always visible
+42.space  ●  LIVE          Last updated: 14 seconds ago    [Refresh]
+
+"● LIVE" pulses green when data is fresh (<60s), amber when stale, red if API is down
+Refresh button triggers a new swarm run, shows a spinner, updates in place
+Clean monospace timestamp
+
+
+Section 1 — Swarm Consensus (hero)
+Full-width card. This is the first thing they see — make it count.
+Left side:
+
+Market title in 16px medium weight, full text, no truncation
+Category badge ("AI" / "Crypto" / "Geopolitics") — small pill, colored by category
+Resolution date: "Resolves Jul 14 2025 · 83 days remaining"
+
+Center:
+
+Giant consensus verdict: YES or NO in 48px, color-coded (green/red)
+Implied probability: 73.4% directly below in 28px muted
+Thin horizontal confidence bar: fills proportionally, color transitions blue→green above 60%, blue→red below 40%
+
+Right side:
+
+"N agents consulted"
+Average latency: "avg 1.2s"
+Total tokens: "4,847 tokens"
+BscScan badge: small chip with external link icon → opens tx in new tab
+
+Bottom strip inside card:
+
+Swarm agreement breakdown: small avatars or initials for each agent, green checkmark if they match consensus, amber X if dissenting. E.g.: [C✓] [G✓] [P✗] [M✓]
+
+
+Section 2 — Agent Reasoning feed
+Title: "Agent Verdicts" with a subtle "4/4 responded" counter on the right.
+One card per agent, horizontal layout on desktop, stacked on mobile:
+
+Left: agent initial in a colored circle (C=purple, G=blue, P=green, M=amber)
+Agent name + model version in small text below
+Center: verdict badge (YES 81% / NO 34%) + one-line reasoning in regular weight — actual excerpt from the agent's response, not placeholder text
+Right: latency chip + token count in muted small text
+Card left border: 3px solid green if matches consensus, 3px solid amber if dissenting
+Dissenting cards get a subtle amber background tint — make disagreement visible
+
+If an agent failed or timed out: show a "⚠ No response" state with the error reason.
+
+Section 3 — Open Positions
+Title: "Open Positions" + total unrealized PnL in header (green if positive, red if negative).
+Table columns:
+Market          Outcome   Entry    Current   PnL        Expiry      Status
+GPT-5 Launch…   YES       $0.41    $0.73    +$32.00    83d 4h      Open
+BTC >80k Q2…    NO        $0.61    $0.58    -$3.00     12d 2h      Open
+
+PnL column: bold, green/red, always show + or - sign
+Expiry: countdown format, turns amber under 7 days, red under 24h
+Status badges: "Open" (blue), "Resolved ✓" (green), "Claim →" (pulsing green — clickable)
+"Claim →" badge triggers claimSimple call, shows loading state, updates to "Claimed ✓"
+Empty state: "No open positions. The swarm is watching 42.space markets for opportunities."
+Last row: totals — total invested, total current value, total PnL
+
+
+Section 4 — Market Scanner (bottom, collapsible)
+Collapsed by default. Title: "42.space Market Scanner — N markets tracked"
+When expanded: shows all markets the agent is currently monitoring, sorted by signal strength score. Each row:
+[Category] Market title                    Signal ████░░  67    ↗ +12% 24h
+
+Signal bar fills proportionally to score (0-100)
+Arrow + % shows 24h price change on the highest-probability outcome
+Tap a row → expands inline to show all outcomes with their current prices
+
+
+API endpoint: GET /api/predictions/latest
+Returns:
+typescript{
+  swarm: {
+    marketTitle: string
+    marketAddress: string
+    categorySlug: string
+    resolvesAt: string
+    consensus: 'YES' | 'NO'
+    impliedProbability: number
+    confidenceScore: number
+    agentCount: number
+    avgLatencyMs: number
+    totalTokens: number
+    txHash: string
+    updatedAt: string
+    agents: {
+      name: string
+      model: string
+      verdict: 'YES' | 'NO'
+      probability: number
+      reasoning: string
+      latencyMs: number
+      tokens: number
+      matchesConsensus: boolean
+      error?: string
+    }[]
+  }
+  positions: {
+    marketTitle: string
+    marketAddress: string
+    tokenId: number
+    outcome: string
+    entryPrice: number
+    currentPrice: number
+    pnlUsdt: number
+    expiresAt: string
+    status: 'open' | 'resolved' | 'claimable' | 'claimed'
+  }[]
+  scanner: {
+    marketTitle: string
+    category: string
+    signalStrength: number
+    topOutcomePrice: number
+    priceChange24h: number
+    outcomes: { label: string; price: number }[]
+  }[]
+  meta: {
+    apiStatus: 'live' | 'stale' | 'down'
+    lastFetchedAt: string
+    marketsTracked: number
+  }
+}
+
+Technical requirements
+
+client/src/pages/Predictions.tsx — React, TypeScript, strict mode
+server/routes/predictions.ts — feeds from /showcase data + 42.space REST API + local position store
+Nav update in whatever file controls the tab bar
+Auto-refresh every 30 seconds — silent background poll, no full page reload, no flash
+Skeleton loaders on first load for each section — not spinners, proper content-shaped skeletons
+All three sections handle empty/error state gracefully with specific messages
+Mobile-first — this renders inside Telegram WebApp at ~390px wide. Table scrolls horizontally on mobile, cards stack vertically
+Dark mode: use existing CSS variables, don't hardcode colors
+Zero console errors, zero TypeScript errors before marking done
+No lorem ipsum, no placeholder data — if real data isn't available yet, show the empty state
+
+
+The bar: when a 42.space team member opens this on their phone, their reaction should be "these people are serious." Ship to that standard.
+Deliver: Predictions.tsx, predictions.ts, nav update. Type-check clean.
