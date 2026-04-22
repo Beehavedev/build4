@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import SwarmStatsPanel from '../components/SwarmStatsPanel'
 
 interface DashboardProps {
   userId: string | null
@@ -162,6 +163,9 @@ export default function Dashboard({ userId }: DashboardProps) {
           </div>
         )}
       </div>
+
+      {/* Swarm cost & speed roll-up (mirrors /swarmstats Telegram command) */}
+      <SwarmStatsPanel />
 
       {/* Swarm agreement panel */}
       {(swarm || swarmError) && (

@@ -1187,7 +1187,6 @@ app.get('/api/signals', async (_req, res) => {
   res.json(signals)
 })
 
-<<<<<<< HEAD
 // ──────────────────────────────────────────────────────────────────────────
 // /api/predictions/latest — feeds the mini-app Predictions tab
 //
@@ -1390,6 +1389,26 @@ app.get('/api/admin/swarm-divergence', async (req, res) => {
     }
   } catch (err) {
     console.error('[API] /admin/swarm-divergence failed:', err)
+    res.status(500).json({ error: 'Internal error' })
+  }
+})
+
+// Per-provider swarm telemetry roll-up (mirrors the /swarmstats Telegram
+// command). Public read — same data the bot already exposes in chat, just
+// rendered visually in the mini-app dashboard.
+app.get('/api/swarm/stats', async (req, res) => {
+  try {
+    const { getSwarmStats } = await import('./services/swarmStats')
+    const raw = String(req.query.window ?? '24h').toLowerCase()
+    const window = raw === '7d' || raw === 'week' ? '7d' : '24h'
+    const report = await getSwarmStats(window)
+    res.json({
+      window: report.window,
+      since: report.since.toISOString(),
+      rows: report.rows
+    })
+  } catch (err) {
+    console.error('[API] /swarm/stats failed:', err)
     res.status(500).json({ error: 'Internal error' })
   }
 })
