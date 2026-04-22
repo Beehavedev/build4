@@ -600,22 +600,30 @@ export default function Predictions() {
         </div>
       )}
 
-      {/* ── Section 3: Open Positions ── */}
+      {/* ── Section 3: Recent Live Trades (global) ──
+          This is the public, anonymous, cross-user feed of the most recent
+          on-chain positions on 42.space markets. It is NOT user-scoped —
+          users were confusing it with their own positions because it used
+          to be titled "Open Positions". The user-scoped table is the
+          "Your Positions" section above (only visible when authed). */}
       <div style={{ marginBottom: 16 }}>
         <SectionTitle
-          title="Open Positions"
+          title="Recent Live Trades"
           right={
             <span style={{ color: totalPnl >= 0 ? '#10b981' : '#ef4444', fontWeight: 600 }}>
               {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}
             </span>
           }
         />
+        <div style={{ fontSize: 11, color: '#64748b', marginTop: -4, marginBottom: 8 }}>
+          Live on-chain activity across all users — not just yours. See "Your Positions" above for your own.
+        </div>
         {loading && !data ? (
           <div className="card"><Skeleton /><Skeleton /><Skeleton /></div>
         ) : openPositions.length === 0 ? (
           <EmptyState
-            title="No open positions"
-            body="The swarm is watching 42.space markets for opportunities. Positions appear here once an agent opens one on-chain."
+            title="No live trades yet"
+            body="The swarm is watching 42.space markets for opportunities. Trades appear here once any user or agent opens a position on-chain."
             testId="empty-positions"
           />
         ) : (
