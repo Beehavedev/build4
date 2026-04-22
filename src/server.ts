@@ -1870,6 +1870,158 @@ app.get('/api/admin/predictions/stats', requireAdmin, async (_req, res) => {
   }
 })
 
+// POST /api/admin/predictions/backfill-recent
+//
+// Recovery for missing OutcomePosition rows when the chain shows real
+// trades but the DB is empty (e.g. after a Postgres reset). Scans
+// ERC-1155 TransferSingle MINT events (from = 0x0) on every live 42.space
+// market for the last `windowHours` (default 2, max 24), filters to
+// recipients in our Wallet table, parses USDT in from the same tx's
+// USDT Transfer log, and inserts an OutcomePosition row mirroring what
+// the live INSERT path writes. Idempotent: skips any txHash already
+// present in OutcomePosition. Set { dryRun: true } to preview without
+// writing.
+app.post('/api/admin/predictions/backfill-recent', requireAdmin, async (req, res) => {
+  try {
+    const windowHours = Math.min(24, Math.max(1, Number(req.body?.windowHours ?? 2)))
+    const dryRun = req.body?.dryRun === true
+    const { db } = await import('./db')
+    const { ethers } = await import('ethers')
+    const { buildBscProvider } = await import('./services/bscProvider')
+    const { getAllMarkets, getMarketByAddress } = await import('./services/fortyTwo')
+    const { readMarketOnchain } = await import('./services/fortyTwoOnchain')
+    const { USDT_BSC } = await import('./services/fortyTwoTrader')
+
+    const provider = buildBscProvider(process.env.BSC_RPC_URL)
+    const latest = await provider.getBlockNumber()
+    // BSC ~3s/block → 1200 blocks/hr.
+    const fromBlock = Math.max(0, latest - windowHours * 1200)
+
+    // Map of lowercased wallet address → userId.
+    const wallets = await db.$queryRawUnsafe<Array<{ userId: string; address: string }>>(
+      `SELECT "userId", LOWER(address) AS address FROM "Wallet" WHERE chain = 'BSC'`,
+    )
+    const walletByAddr = new Map(wallets.map((w) => [w.address, w.userId]))
+
+    // Already-recorded tx hashes so we don't double-insert.
+    const existingTx = await db.$queryRawUnsafe<Array<{ txHashOpen: string }>>(
+      `SELECT "txHashOpen" FROM "OutcomePosition" WHERE "txHashOpen" IS NOT NULL`,
+    )
+    const seenTx = new Set(existingTx.map((r) => r.txHashOpen.toLowerCase()))
+
+    // Live markets to scan. Keep this small — one eth_getLogs per market.
+    const markets = await getAllMarkets({ status: 'live', limit: 100 })
+
+    // ERC-1155 TransferSingle(operator, from, to, id, value)
+    //   topic0 = keccak("TransferSingle(address,address,address,uint256,uint256)")
+    //   topic2 = from (we want 0x0 → mint)
+    const TRANSFER_SINGLE_TOPIC = ethers.id(
+      'TransferSingle(address,address,address,uint256,uint256)',
+    )
+    const ZERO_TOPIC = '0x' + '0'.repeat(64)
+    const ercIface = new ethers.Interface([
+      'event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)',
+      'event Transfer(address indexed from, address indexed to, uint256 value)',
+    ])
+
+    const matches: Array<{
+      userId: string; marketAddress: string; tokenId: number;
+      outcomeTokenAmount: number; txHash: string; recipient: string;
+    }> = []
+    const errors: Array<{ market: string; reason: string }> = []
+
+    for (const m of markets) {
+      try {
+        const logs = await provider.getLogs({
+          address: m.address,
+          topics: [TRANSFER_SINGLE_TOPIC, null, ZERO_TOPIC],
+          fromBlock,
+          toBlock: latest,
+        })
+        for (const log of logs) {
+          const parsed = ercIface.parseLog({ topics: [...log.topics], data: log.data })
+          if (!parsed) continue
+          const to = String(parsed.args.to).toLowerCase()
+          const userId = walletByAddr.get(to)
+          if (!userId) continue
+          if (seenTx.has(log.transactionHash.toLowerCase())) continue
+          matches.push({
+            userId,
+            marketAddress: m.address,
+            tokenId: Number(parsed.args.id),
+            outcomeTokenAmount: Number(ethers.formatUnits(parsed.args.value, 18)),
+            txHash: log.transactionHash,
+            recipient: to,
+          })
+        }
+      } catch (e) {
+        errors.push({ market: m.address, reason: (e as Error).message })
+      }
+    }
+
+    if (dryRun) {
+      return res.json({
+        ok: true, dryRun: true, windowHours, fromBlock, toBlock: latest,
+        marketsScanned: markets.length, matched: matches.length,
+        sample: matches.slice(0, 5), errors,
+      })
+    }
+
+    let inserted = 0
+    for (const match of matches) {
+      try {
+        // Resolve usdtIn from the tx's USDT Transfer log
+        // (sender → router/market). Falls back to estimate via marginal price.
+        const receipt = await provider.getTransactionReceipt(match.txHash)
+        let usdtIn = 0
+        if (receipt) {
+          for (const lg of receipt.logs) {
+            if (lg.address.toLowerCase() !== USDT_BSC.toLowerCase()) continue
+            try {
+              const p = ercIface.parseLog({ topics: [...lg.topics], data: lg.data })
+              if (p && String(p.args.from).toLowerCase() === match.recipient) {
+                usdtIn = Number(ethers.formatUnits(p.args.value, 18))
+                break
+              }
+            } catch {}
+          }
+        }
+
+        const market = await getMarketByAddress(match.marketAddress)
+        const state = await readMarketOnchain(market)
+        const outcome = state.outcomes.find((o) => o.tokenId === match.tokenId)
+        const entryPrice = outcome?.impliedProbability ?? 0
+        const outcomeLabel = outcome?.label ?? `tokenId ${match.tokenId}`
+        if (!usdtIn && entryPrice > 0) {
+          usdtIn = match.outcomeTokenAmount * entryPrice
+        }
+
+        await db.$executeRawUnsafe(
+          `INSERT INTO "OutcomePosition"
+             ("userId","agentId","marketAddress","marketTitle","tokenId","outcomeLabel",
+              "usdtIn","entryPrice","status","paperTrade","txHashOpen","reasoning",
+              "outcomeTokenAmount","providers")
+           VALUES ($1,NULL,$2,$3,$4,$5,$6,$7,'open',false,$8,$9,$10,NULL)`,
+          match.userId, match.marketAddress, market.question, match.tokenId,
+          outcomeLabel, usdtIn, entryPrice, match.txHash,
+          'Backfilled from on-chain TransferSingle', match.outcomeTokenAmount,
+        )
+        inserted++
+      } catch (e) {
+        errors.push({ market: match.marketAddress, reason: `insert ${match.txHash}: ${(e as Error).message}` })
+      }
+    }
+
+    res.json({
+      ok: true, dryRun: false, windowHours, fromBlock, toBlock: latest,
+      marketsScanned: markets.length, matched: matches.length, inserted, errors,
+    })
+  } catch (err) {
+    console.error('[API] /admin/predictions/backfill-recent failed:', err)
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
 // POST /api/admin/predictions/recover-mis-settled
 //
 // Recovery endpoint for the bug where settleResolvedPositions could flip
