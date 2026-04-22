@@ -19,6 +19,9 @@ export default function Dashboard({ userId }: DashboardProps) {
   const [drillLoading, setDrillLoading] = useState(false)
   const [drillError, setDrillError] = useState<string | null>(null)
   const [drillData, setDrillData] = useState<any>(null)
+  const [drillDays, setDrillDays] = useState(7)
+  const [drillLimit, setDrillLimit] = useState(25)
+  const [drillOnlyFallback, setDrillOnlyFallback] = useState(false)
 
   useEffect(() => {
     if (!userId) { setLoading(false); return }
@@ -61,14 +64,19 @@ export default function Dashboard({ userId }: DashboardProps) {
     }
   }
 
-  const openDrill = (kind: 'pair' | 'provider', value: string) => {
-    setDrillOpen({ kind, value })
+  const fetchDrill = (
+    target: { kind: 'pair' | 'provider', value: string },
+    days: number,
+    limit: number,
+    onlyFallback: boolean,
+  ) => {
     setDrillData(null)
     setDrillError(null)
     setDrillLoading(true)
-    const params = new URLSearchParams({ days: '7', limit: '25' })
-    if (kind === 'pair') params.set('pair', value)
-    if (kind === 'provider') params.set('provider', value)
+    const params = new URLSearchParams({ days: String(days), limit: String(limit) })
+    if (target.kind === 'pair') params.set('pair', target.value)
+    if (target.kind === 'provider') params.set('provider', target.value)
+    if (onlyFallback) params.set('onlyFallback', '1')
     fetch(`/api/admin/swarm-divergence/samples?${params.toString()}`)
       .then(async (r) => {
         if (r.status === 401) { setDrillError('locked'); return null }
@@ -79,6 +87,26 @@ export default function Dashboard({ userId }: DashboardProps) {
       .then((data) => { if (data) setDrillData(data) })
       .catch(() => setDrillError('error'))
       .finally(() => setDrillLoading(false))
+  }
+
+  const openDrill = (kind: 'pair' | 'provider', value: string) => {
+    const target = { kind, value }
+    setDrillOpen(target)
+    setDrillDays(7)
+    setDrillLimit(25)
+    setDrillOnlyFallback(false)
+    fetchDrill(target, 7, 25, false)
+  }
+
+  const applyDrillFilters = (next: { days?: number, limit?: number, onlyFallback?: boolean }) => {
+    if (!drillOpen) return
+    const days = next.days ?? drillDays
+    const limit = next.limit ?? drillLimit
+    const onlyFallback = next.onlyFallback ?? drillOnlyFallback
+    if (next.days !== undefined) setDrillDays(days)
+    if (next.limit !== undefined) setDrillLimit(limit)
+    if (next.onlyFallback !== undefined) setDrillOnlyFallback(onlyFallback)
+    fetchDrill(drillOpen, days, limit, onlyFallback)
   }
 
   const closeDrill = () => {
@@ -365,6 +393,47 @@ export default function Dashboard({ userId }: DashboardProps) {
                 ×
               </button>
             </div>
+
+            {/* Filter controls */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 11, color: '#64748b' }}>Range:</span>
+                {[1, 7, 30, 90].map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => applyDrillFilters({ days: d })}
+                    data-testid={`button-drill-days-${d}`}
+                    disabled={drillLoading}
+                    style={{
+                      background: drillDays === d ? '#2a2a3a' : '#1e1e2e',
+                      border: '1px solid ' + (drillDays === d ? '#475569' : '#2a2a3a'),
+                      color: drillDays === d ? '#e2e8f0' : '#94a3b8',
+                      borderRadius: 6, fontSize: 10, padding: '3px 7px',
+                      cursor: drillLoading ? 'default' : 'pointer',
+                    }}
+                  >
+                    {d}d
+                  </button>
+                ))}
+              </div>
+              <label
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  fontSize: 11, color: '#94a3b8', cursor: 'pointer',
+                }}
+                data-testid="label-drill-only-fallback"
+              >
+                <input
+                  type="checkbox"
+                  checked={drillOnlyFallback}
+                  onChange={(e) => applyDrillFilters({ onlyFallback: e.target.checked })}
+                  data-testid="checkbox-drill-only-fallback"
+                  disabled={drillLoading}
+                />
+                Only no-quorum
+              </label>
+            </div>
+
             {drillLoading && (
               <div style={{ color: '#64748b', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>
                 Loading recent ticks...
@@ -380,12 +449,14 @@ export default function Dashboard({ userId }: DashboardProps) {
               <div style={{ fontSize: 12, color: '#64748b' }}>Couldn't load samples.</div>
             )}
             {!drillLoading && !drillError && drillData && drillData.samples.length === 0 && (
-              <div style={{ fontSize: 12, color: '#64748b' }}>No matching ticks in the last {drillData.days} days.</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>
+                No matching ticks in the last {drillData.days} days{drillOnlyFallback ? ' (no-quorum only)' : ''}.
+              </div>
             )}
             {!drillLoading && !drillError && drillData && drillData.samples.length > 0 && (
               <>
-                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
-                  Showing {drillData.samples.length} most-recent tick{drillData.samples.length === 1 ? '' : 's'} (last {drillData.days}d)
+                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }} data-testid="text-drill-summary">
+                  Showing {drillData.samples.length} most-recent tick{drillData.samples.length === 1 ? '' : 's'} (last {drillData.days}d{drillOnlyFallback ? ', no-quorum only' : ''})
                 </div>
                 {drillData.samples.map((s: any) => (
                   <div
@@ -450,6 +521,27 @@ export default function Dashboard({ userId }: DashboardProps) {
                     ))}
                   </div>
                 ))}
+                {drillData.samples.length >= drillLimit && drillLimit < 200 && (
+                  <div style={{ textAlign: 'center', marginTop: 12 }}>
+                    <button
+                      onClick={() => applyDrillFilters({ limit: Math.min(200, drillLimit + 50) })}
+                      data-testid="button-drill-load-more"
+                      disabled={drillLoading}
+                      style={{
+                        background: '#1e1e2e', border: '1px solid #2a2a3a',
+                        color: '#94a3b8', borderRadius: 6, fontSize: 11,
+                        padding: '6px 12px', cursor: drillLoading ? 'default' : 'pointer',
+                      }}
+                    >
+                      Load more (showing {drillLimit}, max 200)
+                    </button>
+                  </div>
+                )}
+                {drillLimit >= 200 && drillData.samples.length >= 200 && (
+                  <div style={{ textAlign: 'center', marginTop: 12, fontSize: 11, color: '#64748b' }}>
+                    Showing maximum of 200 ticks. Narrow the date range to see older activity.
+                  </div>
+                )}
               </>
             )}
           </div>
