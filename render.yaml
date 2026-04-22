@@ -75,3 +75,21 @@ services:
         sync: false
       - key: TELEGRAM_WEBHOOK_URL
         sync: false
+      # ── Swarm divergence watch (Task #25) ────────────────────────────────
+      # Daily cron in src/agents/runner.ts runs the same analysis as
+      # `tsx scripts/swarmDivergence.ts` and pings ADMIN_TELEGRAM_IDS via
+      # the bot when any pair's no-quorum % crosses the threshold (with
+      # enough sample). Set ADMIN_TELEGRAM_IDS to a comma-separated list
+      # of admin Telegram user IDs to actually receive alerts.
+      - key: ADMIN_TELEGRAM_IDS
+        sync: false
+      - key: SWARM_DIVERGENCE_DAYS
+        value: "1"
+      - key: SWARM_DIVERGENCE_THRESHOLD
+        value: "50"
+      - key: SWARM_DIVERGENCE_MIN_SAMPLE
+        value: "20"
+      # Standard cron — daily at 09:15 UTC. Override (e.g. '0 * * * *' for
+      # hourly) by setting SWARM_DIVERGENCE_CRON.
+      - key: SWARM_DIVERGENCE_CRON
+        value: "15 9 * * *"

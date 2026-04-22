@@ -12,6 +12,10 @@
  * by which providers participated, so we can tell whether the swarm is adding
  * value or just adding cost.
  *
+ * The core query/aggregation logic lives in src/swarm/divergenceAnalysis.ts
+ * so the scheduled job in src/agents/runner.ts can reuse it without spawning
+ * a subprocess.
+ *
  * Usage:
  *   tsx scripts/swarmDivergence.ts                 # last 7d, all pairs
  *   tsx scripts/swarmDivergence.ts --days 30
@@ -26,6 +30,7 @@
  *   2 — at least one pair exceeded --threshold (alerting mode)
  */
 import { db } from '../src/db'
+import { analyzeDivergence, MissingProvidersColumnError } from '../src/swarm/divergenceAnalysis'
 
 type Args = {
   days: number
@@ -55,44 +60,6 @@ function parseArgs(argv: string[]): Args {
   return out
 }
 
-interface Row {
-  pair: string | null
-  agentId: string | null
-  agentName: string | null
-  rawResponse: string | null
-  reason: string | null
-  providers: any
-}
-
-interface Bucket {
-  total: number
-  fallback: number
-  providerCounts: Record<string, number>
-}
-
-function newBucket(): Bucket {
-  return { total: 0, fallback: 0, providerCounts: {} }
-}
-
-function isFallback(rawResponse: string | null, reason: string | null): boolean {
-  if (rawResponse && rawResponse.includes('swarm-no-quorum')) return true
-  if (reason && reason.includes('swarm-no-quorum')) return true
-  return false
-}
-
-function providerKey(providers: any): string {
-  if (!Array.isArray(providers)) return '(unknown)'
-  const names = providers
-    .map((p) => (p && typeof p.provider === 'string' ? p.provider : null))
-    .filter((s): s is string => !!s)
-    .sort()
-  return names.length ? names.join('+') : '(unknown)'
-}
-
-function pct(n: number, d: number): number {
-  return d === 0 ? 0 : Math.round((n / d) * 1000) / 10
-}
-
 function pad(s: string, n: number): string {
   return s.length >= n ? s : s + ' '.repeat(n - s.length)
 }
@@ -103,91 +70,22 @@ function rpad(s: string, n: number): string {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
-  const since = new Date(Date.now() - args.days * 86_400_000)
 
-  const where: string[] = [`"providers" IS NOT NULL`, `"createdAt" >= $1`]
-  const params: any[] = [since]
-  if (args.pair) {
-    where.push(`UPPER(REPLACE(REPLACE(COALESCE("pair",''), '/', ''), ' ', '')) = $2`)
-    params.push(args.pair)
-  }
-  const sql = `
-    SELECT al."pair", al."agentId", a."name" AS "agentName",
-           al."rawResponse", al."reason", al."providers"
-    FROM "AgentLog" al
-    LEFT JOIN "Agent" a ON a."id" = al."agentId"
-    WHERE ${where.map((w) => w.replace(/"providers"/g, 'al."providers"')
-                              .replace(/"createdAt"/g, 'al."createdAt"')
-                              .replace(/"pair"/g, 'al."pair"')).join(' AND ')}
-  `
-  let rows: Row[]
+  let result
   try {
-    rows = await db.$queryRawUnsafe<Row[]>(sql, ...params)
-  } catch (err: any) {
-    if (err?.meta?.code === '42703' || /column "providers" does not exist/i.test(String(err?.message ?? ''))) {
+    result = await analyzeDivergence({
+      days: args.days,
+      pair: args.pair,
+      threshold: args.threshold,
+      minSample: args.minSample,
+    })
+  } catch (err) {
+    if (err instanceof MissingProvidersColumnError) {
       console.error('[swarmDivergence] AgentLog.providers column missing on this database.')
       console.error('  This script needs the swarm-telemetry schema. Run prisma migrate / generate against a DB that has it.')
       process.exit(1)
     }
     throw err
-  }
-
-  const overall = newBucket()
-  const byPair = new Map<string, Bucket>()
-  const byParticipation = new Map<string, Bucket>()
-  const byAgent = new Map<string, Bucket>()
-  // Per-provider stats: how often this provider was in the swarm AND how often
-  // the swarm hit no-quorum on those ticks (a proxy for "this provider tends
-  // to disagree with the rest").
-  const byProvider = new Map<string, Bucket>()
-
-  for (const r of rows) {
-    const fallback = isFallback(r.rawResponse, r.reason)
-    const part = providerKey(r.providers)
-    const pair = (r.pair ?? '(none)').toUpperCase()
-    const agent = r.agentName ?? r.agentId ?? '(unknown)'
-
-    overall.total++
-    if (fallback) overall.fallback++
-
-    let pb = byPair.get(pair); if (!pb) byPair.set(pair, (pb = newBucket()))
-    pb.total++; if (fallback) pb.fallback++
-
-    let pp = byParticipation.get(part); if (!pp) byParticipation.set(part, (pp = newBucket()))
-    pp.total++; if (fallback) pp.fallback++
-
-    let ag = byAgent.get(agent); if (!ag) byAgent.set(agent, (ag = newBucket()))
-    ag.total++; if (fallback) ag.fallback++
-
-    if (Array.isArray(r.providers)) {
-      const seen = new Set<string>()
-      for (const p of r.providers) {
-        const name = p && typeof p.provider === 'string' ? p.provider : null
-        if (!name || seen.has(name)) continue
-        seen.add(name)
-        let pb2 = byProvider.get(name); if (!pb2) byProvider.set(name, (pb2 = newBucket()))
-        pb2.total++; if (fallback) pb2.fallback++
-      }
-    }
-  }
-
-  const result = {
-    sinceIso: since.toISOString(),
-    days: args.days,
-    pair: args.pair,
-    overall: { total: overall.total, fallback: overall.fallback, fallbackPct: pct(overall.fallback, overall.total) },
-    byPair: [...byPair.entries()]
-      .map(([pair, b]) => ({ pair, total: b.total, fallback: b.fallback, fallbackPct: pct(b.fallback, b.total) }))
-      .sort((a, b) => b.total - a.total),
-    byParticipation: [...byParticipation.entries()]
-      .map(([providers, b]) => ({ providers, total: b.total, fallback: b.fallback, fallbackPct: pct(b.fallback, b.total) }))
-      .sort((a, b) => b.total - a.total),
-    byProvider: [...byProvider.entries()]
-      .map(([provider, b]) => ({ provider, total: b.total, fallback: b.fallback, fallbackPct: pct(b.fallback, b.total) }))
-      .sort((a, b) => b.total - a.total),
-    byAgent: [...byAgent.entries()]
-      .map(([agent, b]) => ({ agent, total: b.total, fallback: b.fallback, fallbackPct: pct(b.fallback, b.total) }))
-      .sort((a, b) => b.total - a.total),
   }
 
   if (args.json) {
@@ -196,7 +94,7 @@ async function main() {
     const PAIR_W = 18, NUM_W = 10
     console.log(`\nSwarm divergence — last ${args.days}d (since ${result.sinceIso})${args.pair ? ` — pair ${args.pair}` : ''}`)
     console.log('─'.repeat(60))
-    console.log(`Overall: ${overall.total} swarm ticks, ${overall.fallback} fell back to single-provider (${result.overall.fallbackPct}%)`)
+    console.log(`Overall: ${result.overall.total} swarm ticks, ${result.overall.fallback} fell back to single-provider (${result.overall.fallbackPct}%)`)
 
     const printTable = (title: string, label: string, rows: { key: string; total: number; fallback: number; fallbackPct: number }[]) => {
       console.log(`\n${title}`)
@@ -213,20 +111,16 @@ async function main() {
     printTable('By agent:', 'agent', result.byAgent.map((r) => ({ key: r.agent, ...r })))
 
     if (args.threshold !== null) {
-      const offenders = result.byPair.filter((r) => r.total >= args.minSample && r.fallbackPct >= args.threshold!)
-      if (offenders.length) {
-        console.log(`\n⚠  ${offenders.length} pair(s) exceed --threshold ${args.threshold}% (min sample ${args.minSample}):`)
-        for (const o of offenders) console.log(`   ${o.pair}: ${o.fallbackPct}% no-quorum across ${o.total} ticks`)
+      if (result.offenders.length) {
+        console.log(`\n⚠  ${result.offenders.length} pair(s) exceed --threshold ${args.threshold}% (min sample ${args.minSample}):`)
+        for (const o of result.offenders) console.log(`   ${o.pair}: ${o.fallbackPct}% no-quorum across ${o.total} ticks`)
       } else {
         console.log(`\n✓ No pair exceeds --threshold ${args.threshold}% (min sample ${args.minSample}).`)
       }
     }
   }
 
-  if (args.threshold !== null) {
-    const offenders = result.byPair.filter((r) => r.total >= args.minSample && r.fallbackPct >= args.threshold!)
-    if (offenders.length) process.exit(2)
-  }
+  if (args.threshold !== null && result.offenders.length) process.exit(2)
 }
 
 main()

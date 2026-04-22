@@ -75,7 +75,78 @@ export function initRunner(bot: Bot) {
   // tweet — gives BUILD4 agents a real edge over manual traders.
   startListingMonitor()
 
+  // Swarm divergence watch — daily at 09:15 UTC. Computes the no-quorum
+  // fallback rate per pair over the last N days and pings admins via
+  // Telegram if any pair (with enough sample) crosses the threshold. This
+  // is the scheduled equivalent of `tsx scripts/swarmDivergence.ts
+  // --threshold N`. Configure with SWARM_DIVERGENCE_* env vars and
+  // ADMIN_TELEGRAM_IDS (see src/services/adminAlerts.ts).
+  cron.schedule(process.env.SWARM_DIVERGENCE_CRON ?? '15 9 * * *', async () => {
+    await runSwarmDivergenceWatch()
+  })
+
   console.log('[Runner] Agent runner initialized')
+}
+
+// ── Swarm divergence watch ─────────────────────────────────────────
+async function runSwarmDivergenceWatch() {
+  const days      = Math.max(1, parseInt(process.env.SWARM_DIVERGENCE_DAYS      ?? '1',  10) || 1)
+  const threshold = parseFloat(process.env.SWARM_DIVERGENCE_THRESHOLD ?? '50')
+  const minSample = Math.max(1, parseInt(process.env.SWARM_DIVERGENCE_MIN_SAMPLE ?? '20', 10) || 20)
+
+  if (!Number.isFinite(threshold) || threshold <= 0) {
+    console.log('[SwarmDivergence] SWARM_DIVERGENCE_THRESHOLD invalid/disabled, skipping watch.')
+    return
+  }
+
+  try {
+    const { analyzeDivergence, MissingProvidersColumnError } = await import('../swarm/divergenceAnalysis')
+    const { sendAdminAlert, hasAdminTargets } = await import('../services/adminAlerts')
+
+    let result
+    try {
+      result = await analyzeDivergence({ days, threshold, minSample })
+    } catch (err) {
+      if (err instanceof MissingProvidersColumnError) {
+        // Brand-new DB without the swarm-telemetry columns — nothing to report.
+        console.log('[SwarmDivergence] Skipping watch: AgentLog.providers column missing.')
+        return
+      }
+      throw err
+    }
+
+    console.log(
+      `[SwarmDivergence] ${result.overall.total} swarm ticks in last ${days}d, ` +
+      `${result.overall.fallback} no-quorum (${result.overall.fallbackPct}%), ` +
+      `${result.offenders.length} pair(s) over ${threshold}% threshold (min sample ${minSample}).`
+    )
+
+    if (result.offenders.length === 0) return
+
+    if (!hasAdminTargets()) {
+      console.warn('[SwarmDivergence] Threshold breached but ADMIN_TELEGRAM_IDS not set — alert dropped.')
+      return
+    }
+
+    const lines = result.offenders
+      .slice(0, 10)
+      .map((o) => `• \`${escapeMd(o.pair)}\`: *${o.fallbackPct}%* no-quorum across ${o.total} ticks`)
+    const more = result.offenders.length > 10 ? `\n…and ${result.offenders.length - 10} more` : ''
+    const text =
+      `🐝 *Swarm divergence alert*\n` +
+      `Window: last ${days}d (since ${result.sinceIso})\n` +
+      `Threshold: ${threshold}% no-quorum, min sample ${minSample}\n\n` +
+      `Overall: ${result.overall.fallback}/${result.overall.total} ticks fell back ` +
+      `(${result.overall.fallbackPct}%)\n\n` +
+      `*Offending pair(s):*\n${lines.join('\n')}${more}\n\n` +
+      `Run \`tsx scripts/swarmDivergence.ts --days ${days} --threshold ${threshold} --min-sample ${minSample}\` ` +
+      `for the full breakdown.`
+
+    const res = await sendAdminAlert(botRef, text)
+    console.log(`[SwarmDivergence] Alert sent to ${res.sent}/${res.attempted} admins (${res.failed} failed).`)
+  } catch (err: any) {
+    console.error('[SwarmDivergence] Watch error:', err?.message ?? err)
+  }
 }
 
 // Telegram throttle — Bot API allows ~30 msg/sec globally. We pace at
