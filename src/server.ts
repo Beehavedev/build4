@@ -1692,9 +1692,11 @@ app.get('/api/me/positions', requireTgUser, async (req, res) => {
 
   try {
     const exec = await import('./services/fortyTwoExecutor')
-    // Best-effort settle — if 42.space / RPC is wedged we still want to show
-    // the user their positions, just without the freshest resolution state.
-    try { await exec.settleResolvedPositions({ userId: user.id }) } catch {}
+    // NOTE: an auto-settle call previously lived here. It was removed
+    // because a misfiring on-chain finalisation check could flip live
+    // status=open rows to resolved_loss on every page load, vanishing
+    // user positions from the UI. Settlement now stays the agent runner's
+    // job — listUserPositions just shows whatever is in the DB.
 
     const rows = await exec.listUserPositions(user.id, 50)
     const positions = rows.map((p) => ({
