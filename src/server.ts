@@ -1924,6 +1924,7 @@ app.post('/api/admin/predictions/backfill-recent', requireAdmin, async (req, res
     // Markets to scan. We hit each requested status separately because the
     // 42 API only accepts a single status filter per call. De-dupe by
     // address in case a market shifted state between calls.
+    const errors: Array<{ market: string; reason: string }> = []
     const marketMap = new Map<string, Awaited<ReturnType<typeof getAllMarkets>>[number]>()
     for (const status of requestedStatuses) {
       try {
