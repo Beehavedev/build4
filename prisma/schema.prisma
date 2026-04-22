@@ -26,6 +26,9 @@ model User {
   asterOnboarded    Boolean   @default(false)
   pinHash           String?   // PBKDF2 hash of user's wallet PIN (optional security layer)
   pinSalt           String?
+  // 42.space prediction-market live trading opt-in. Default false → paper-trade.
+  // Toggled via /predictions in the bot.
+  fortyTwoLiveTrade Boolean   @default(false)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @default(now()) @updatedAt
 
@@ -218,6 +221,47 @@ model UserQuest {
   quest     Quest     @relation(fields: [questId], references: [id])
 
   @@unique([userId, questId])
+}
+
+// 42.space prediction-market positions opened by trading agents.
+// Mirrors Trade in spirit: one row per outcome-token position; status moves
+// open → closed (manually flipped by agent) or open → resolved (settled by
+// the on-chain resolution sweep).
+/// On-chain outcome-token holdings on 42.space prediction markets.
+model OutcomePosition {
+  id              String    @id @default(cuid())
+  userId          String
+  agentId         String?
+
+  marketAddress   String    // 42.space market contract on BSC
+  marketTitle     String    // human-readable question
+  tokenId         Int       // ERC-1155 outcome token id (= 2^index)
+  outcomeLabel    String
+
+  // Sizing
+  usdtIn          Float     // collateral committed (USDT)
+  entryPrice      Float     // implied probability at entry (0..1)
+  exitPrice       Float?    // implied prob at close OR 1 if winning resolution
+  payoutUsdt      Float?    // USDT received on close/resolution
+  pnl             Float?    // payoutUsdt - usdtIn
+
+  // Real outcome-token amount received at open (read from chain in live mode).
+  // Null in paper-trade mode → callers fall back to usdtIn / entryPrice.
+  outcomeTokenAmount Float?
+
+  status          String    @default("open") // open | closed | resolved_win | resolved_loss
+  paperTrade      Boolean   @default(true)   // false = real on-chain tx fired
+  txHashOpen      String?
+  txHashClose     String?
+  reasoning       String?
+
+  openedAt        DateTime  @default(now())
+  closedAt        DateTime?
+
+  @@index([userId])
+  @@index([agentId])
+  @@index([status])
+  @@index([marketAddress])
 }
 
 model AgentLog {

@@ -83,6 +83,22 @@ export interface AgentDecision {
   memoryUpdate: string | null
   drawdownMode: boolean
   holdReason: string | null
+  // ─── 42.space prediction-market sidecar action ───────────────────────
+  // Optional. Populated when the agent's conviction on a 42.space outcome
+  // beats the implied probability by ≥10%. Executed independently from the
+  // main perp action — an agent can OPEN_PREDICTION while still holding
+  // (or trading) perps. Sized smaller than perp positions and capped per
+  // market in fortyTwoExecutor.
+  predictionTrade?: {
+    action: 'OPEN_PREDICTION' | 'CLOSE_PREDICTION'
+    marketAddress: string
+    tokenId: number
+    outcomeLabel?: string
+    /** 0..1 — agent's own probability estimate. Must beat implied by ≥0.10. */
+    conviction?: number
+    positionId?: string
+    reasoning?: string
+  } | null
 }
 
 // ─── NEW LISTING MOMENTUM MODE ─────────────────────────────────────────────
@@ -206,8 +222,19 @@ RESPOND WITH ONLY VALID JSON — no preamble, no markdown, no text outside the J
   "keyRisks": ["risk 1", "risk 2"],
   "memoryUpdate": "One sentence insight for future, or null",
   "drawdownMode": false,
-  "holdReason": null
+  "holdReason": null,
+  "predictionTrade": null
 }
+
+PREDICTION-MARKET SIDECAR (optional, set predictionTrade only when justified):
+- A separate "Live 42.space Prediction Markets" block may appear below. Each market lists outcomes with implied probability, marginal price, and tokenId.
+- ONLY emit predictionTrade when your independent conviction on an outcome beats the implied probability by ≥10 percentage points. Otherwise leave predictionTrade=null.
+- conviction is YOUR own 0..1 probability estimate, NOT the listed implied probability. Be honest — being wrong here loses real USDT.
+- Use the exact marketAddress and tokenId shown in the prompt. Set outcomeLabel for human readability.
+- Sizing is handled in code (small, capped per market). Don't include amount.
+- Example: { "action":"OPEN_PREDICTION","marketAddress":"0xabc...","tokenId":1,"outcomeLabel":"YES","conviction":0.75,"reasoning":"strong on-chain volume divergence" }
+- This sidecar is independent of the main action. You can OPEN_LONG perps AND OPEN_PREDICTION on the same tick.
+- To CLOSE an existing position: a "Your Open 42.space Positions" block lists each open position with its positionId. Emit { "action":"CLOSE_PREDICTION","marketAddress":"<addr>","tokenId":<id>,"positionId":"<the id from the list>" } when conviction has flipped or the price has moved enough that the edge is gone. NEVER invent a positionId — only use ones shown in that block.
 
 For HOLD: set entryZone/stopLoss/takeProfit/size/leverage/riskRewardRatio to null. Use holdReason to explain what would change your mind.`
 
@@ -886,6 +913,28 @@ export async function runAgentTick(agent: Agent): Promise<void> {
         console.warn(`[Agent ${agent.name}] 42.space context unavailable:`, (err as Error).message)
       }
 
+      // 5c. Surface this agent's currently-open prediction positions to Claude.
+      // Without this block the LLM has no grounded position IDs to reference,
+      // making CLOSE_PREDICTION decisions impossible. Listed inline so the
+      // model can pick a `positionId` from the visible inventory.
+      try {
+        const { listOpenAgentPositions } = await import('../services/fortyTwoExecutor')
+        const open = await listOpenAgentPositions(agent.id)
+        if (open.length > 0) {
+          const lines = open
+            .map((p) => {
+              const ageH = Math.max(0, Math.floor((Date.now() - new Date(p.openedAt).getTime()) / 3_600_000))
+              const title = p.marketTitle.length > 60 ? p.marketTitle.slice(0, 57) + '…' : p.marketTitle
+              return `• positionId=${p.id} | ${p.outcomeLabel} @ ${(p.entryPrice * 100).toFixed(0)}% | $${p.usdtIn.toFixed(2)} in | ${ageH}h old | ${title}`
+            })
+            .join('\n')
+          predictionContext +=
+            `\n## Your Open 42.space Positions (use positionId for CLOSE_PREDICTION)\n${lines}\n`
+        }
+      } catch (err) {
+        console.warn(`[Agent ${agent.name}] open prediction positions unavailable:`, (err as Error).message)
+      }
+
       // 6. Build user message
       const userMessage = `
 === MARKET DATA ===
@@ -1014,6 +1063,76 @@ If you would not put real money in this trade right now, action = HOLD.`
         holdReason: decision.holdReason ?? null,
         reasoning: decision.reasoning ?? null
       })
+
+      // ─── 42.space prediction-market sidecar ─────────────────────────────
+      // Independent of the perp action above. Must run BEFORE the perp branches
+      // because HOLD/OPEN/CLOSE all `return`/exit. Position sizing, edge
+      // thresholds, daily quotas, and live/paper gating live in fortyTwoExecutor.
+      // Failures are logged but never propagate (prediction is bonus revenue).
+      if (decision.predictionTrade) {
+        try {
+          const pt = decision.predictionTrade
+          const exec = await import('../services/fortyTwoExecutor')
+          const ctxExec = {
+            agentId: agent.id,
+            userId: agent.userId,
+            agentMaxPositionSize: agent.maxPositionSize
+          }
+          if (pt.action === 'OPEN_PREDICTION') {
+            const res = await exec.openPredictionPosition(ctxExec, pt)
+            if (res.ok) {
+              const mode = res.paperTrade ? 'PAPER' : 'LIVE'
+              console.log(
+                `[Agent ${agent.name}] OPEN_PREDICTION (${mode}) ${pt.outcomeLabel ?? `tid=${pt.tokenId}`} @ ${pt.marketAddress.slice(0, 10)}… size=$${res.usdtIn} positionId=${res.positionId}`
+              )
+              await safeAgentLogCreate({
+                data: {
+                  agentId: agent.id,
+                  userId: agent.userId,
+                  action: 'OPEN_PREDICTION',
+                  parsedAction: 'OPEN_PREDICTION',
+                  executionResult: `${mode} | $${res.usdtIn} | ${pt.outcomeLabel ?? pt.tokenId}`,
+                  reason: (pt.reasoning ?? '').slice(0, 240)
+                }
+              })
+              const _botPred = getBot()
+              if (_botPred && telegramId) {
+                _botPred.api
+                  .sendMessage(
+                    telegramId,
+                    `🎯 *${escapeMd(agent.name)}* opened prediction position\n\n` +
+                      `*Market:* ${escapeMd(pt.marketAddress.slice(0, 10))}…\n` +
+                      `*Outcome:* ${escapeMd(pt.outcomeLabel ?? `tokenId ${pt.tokenId}`)}\n` +
+                      `*Size:* $${res.usdtIn} USDT (${res.paperTrade ? '📝 paper' : '🔴 live'})\n` +
+                      `*Conviction:* ${((pt.conviction ?? 0) * 100).toFixed(0)}%`,
+                    { parse_mode: 'Markdown' }
+                  )
+                  .catch(() => {})
+              }
+            } else {
+              console.log(`[Agent ${agent.name}] prediction skipped: ${res.reason}`)
+              await safeAgentLogCreate({
+                data: {
+                  agentId: agent.id,
+                  userId: agent.userId,
+                  action: 'PREDICTION_SKIP',
+                  parsedAction: 'HOLD',
+                  executionResult: res.reason
+                }
+              })
+            }
+          } else if (pt.action === 'CLOSE_PREDICTION' && pt.positionId) {
+            const res = await exec.closePredictionPosition(ctxExec, pt.positionId)
+            if (res.ok) {
+              console.log(
+                `[Agent ${agent.name}] CLOSE_PREDICTION pnl=$${res.pnl.toFixed(2)} positionId=${pt.positionId}`
+              )
+            }
+          }
+        } catch (predErr: any) {
+          console.error(`[Agent ${agent.name}] prediction sidecar error:`, predErr?.message)
+        }
+      }
 
       // Send a "thinking" message to the user — throttled (verbose for the
       // first 3 ticks after activation, then only on actions or near-miss
@@ -1417,6 +1536,17 @@ If you would not put real money in this trade right now, action = HOLD.`
           error: String(err).slice(0, 500)
         }
       })
+    } finally {
+      // Sweep finalised markets — settles winners/losers on resolved positions.
+      // In `finally` so it runs unconditionally even when HOLD/validation
+      // branches return early or the tick throws. Cheap: only fetches markets
+      // with at least one open position for this agent.
+      try {
+        const exec = await import('../services/fortyTwoExecutor')
+        await exec.settleResolvedPositions({ agentId: agent.id })
+      } catch (settleErr: any) {
+        console.error(`[Agent ${agent.name}] settle error:`, settleErr?.message)
+      }
     }
   }
 }

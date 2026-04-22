@@ -26,6 +26,11 @@ const ERC20_ABI = [
   'function balanceOf(address owner) external view returns (uint256)',
 ];
 
+// 42.space outcome tokens are ERC-1155 issued by the market contract.
+const ERC1155_ABI = [
+  'function balanceOf(address account, uint256 id) external view returns (uint256)',
+];
+
 /**
  * Synthetic receipt returned in dry-run (paper-trade) mode. Mimics enough of
  * `ethers.TransactionReceipt` for downstream loggers + makes intent inspectable.
@@ -158,6 +163,18 @@ export class FortyTwoTrader {
       '0x',
     );
     return tx.wait();
+  }
+
+  /**
+   * Read the wallet's current ERC-1155 balance for a specific outcome token.
+   * Returns 0n in dry-run (paper-trade) mode — callers should fall back to
+   * their stored estimate when paper-trading.
+   */
+  async balanceOfOutcome(marketAddress: string, tokenId: number): Promise<bigint> {
+    if (this.dryRun) return 0n;
+    const market = new ethers.Contract(marketAddress, ERC1155_ABI, this.wallet);
+    const bal: bigint = await market.balanceOf(this.wallet.address, tokenId);
+    return bal;
   }
 
   /** Claim payout on resolved markets for the given winning outcome tokens. */

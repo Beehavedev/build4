@@ -246,5 +246,37 @@ export async function ensureNewTables() {
   await run(`CREATE INDEX IF NOT EXISTS "SecurityLog_action_idx" ON "SecurityLog"("action")`)
   await run(`CREATE INDEX IF NOT EXISTS "SecurityLog_createdAt_idx" ON "SecurityLog"("createdAt")`)
 
+  // ─── 42.space prediction-market positions (Task #4) ───
+  await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "fortyTwoLiveTrade" BOOLEAN NOT NULL DEFAULT false`)
+  await run(`CREATE TABLE IF NOT EXISTS "OutcomePosition" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "userId" TEXT NOT NULL,
+    "agentId" TEXT,
+    "marketAddress" TEXT NOT NULL,
+    "marketTitle" TEXT NOT NULL,
+    "tokenId" INTEGER NOT NULL,
+    "outcomeLabel" TEXT NOT NULL,
+    "usdtIn" DOUBLE PRECISION NOT NULL,
+    "entryPrice" DOUBLE PRECISION NOT NULL,
+    "exitPrice" DOUBLE PRECISION,
+    "payoutUsdt" DOUBLE PRECISION,
+    "pnl" DOUBLE PRECISION,
+    "status" TEXT NOT NULL DEFAULT 'open',
+    "paperTrade" BOOLEAN NOT NULL DEFAULT true,
+    "txHashOpen" TEXT,
+    "txHashClose" TEXT,
+    "reasoning" TEXT,
+    "openedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "closedAt" TIMESTAMP(3),
+    "outcomeTokenAmount" DOUBLE PRECISION,
+    CONSTRAINT "OutcomePosition_pkey" PRIMARY KEY ("id")
+  )`)
+  // Add column on existing deployments (no-op if already present).
+  await run(`ALTER TABLE "OutcomePosition" ADD COLUMN IF NOT EXISTS "outcomeTokenAmount" DOUBLE PRECISION`)
+  await run(`CREATE INDEX IF NOT EXISTS "OutcomePosition_userId_idx" ON "OutcomePosition"("userId")`)
+  await run(`CREATE INDEX IF NOT EXISTS "OutcomePosition_agentId_idx" ON "OutcomePosition"("agentId")`)
+  await run(`CREATE INDEX IF NOT EXISTS "OutcomePosition_status_idx" ON "OutcomePosition"("status")`)
+  await run(`CREATE INDEX IF NOT EXISTS "OutcomePosition_marketAddress_idx" ON "OutcomePosition"("marketAddress")`)
+
   console.log('[DB] All new tables ready')
 }

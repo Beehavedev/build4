@@ -46,9 +46,9 @@ async function enrichTopMarkets(limit: number, opts: { tradingRelevantOnly: bool
   );
 }
 
-function formatOutcomeLine(o: { label: string; impliedProbability: number; priceFloat: number }): string {
+function formatOutcomeLine(o: { label: string; impliedProbability: number; priceFloat: number; tokenId: number }): string {
   const prob = (o.impliedProbability * 100).toFixed(1);
-  return `${o.label}: ${prob}% (px ${o.priceFloat.toFixed(4)})`;
+  return `${o.label} [tokenId=${o.tokenId}]: ${prob}% (px ${o.priceFloat.toFixed(4)})`;
 }
 
 export interface Build42ContextOptions {

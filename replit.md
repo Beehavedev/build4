@@ -123,7 +123,22 @@ the trading agent — BUILD4 trades go through Aster DEX EIP-712 signing.
 - Prisma schema push: `npx prisma db push`
 
 ## Database
-Prisma ORM with models: User, Wallet, Agent, AgentMemory, Trade, CopyFollow, Portfolio, Quest, UserQuest, AgentLog.
+Prisma ORM with models: User, Wallet, Agent, AgentMemory, Trade, CopyFollow, Portfolio, Quest, UserQuest, AgentLog, OutcomePosition.
+
+## 42.space Prediction-Market Trading
+Agents can take outcome-token positions on 42.space (BSC) when their conviction
+beats the on-chain implied probability by ≥10pp. Implementation lives in:
+- `src/services/fortyTwoTrader.ts` — low-level router calls (paper-trade default)
+- `src/services/fortyTwoExecutor.ts` — sizing rules, opt-in gating, position recording, resolution settlement
+- `src/agents/tradingAgent.ts` — `predictionTrade` field on `AgentDecision`, executed as a sidecar each tick
+
+Position-sizing rules (per market): `min($2 USDT, 10% of agent.maxPositionSize)`,
+max 5 simultaneous open per agent, max 3 new per agent per day.
+
+Live trading is gated behind `User.fortyTwoLiveTrade` (default false → paper).
+Users toggle via `/predictions` in the bot. Resolved positions are settled by
+`settleResolvedPositions()` which runs on every agent tick (cheap — only fetches
+markets with at least one open position).
 
 ## Security
 - Private keys AES-256 encrypted before DB storage
