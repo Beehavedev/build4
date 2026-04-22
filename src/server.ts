@@ -1836,6 +1836,40 @@ app.post('/api/predictions/buy', requireTgUser, async (req, res) => {
   }
 })
 
+// GET /api/admin/predictions/stats — read-only diagnostic. Returns row
+// counts in OutcomePosition broken down by status × paperTrade so we can
+// see exactly what the table holds without needing direct DB access.
+app.get('/api/admin/predictions/stats', requireAdmin, async (_req, res) => {
+  try {
+    const { db } = await import('./db')
+    const rows = await db.$queryRawUnsafe<Array<{
+      status: string; paperTrade: boolean; n: bigint
+    }>>(
+      `SELECT status, "paperTrade", COUNT(*)::bigint AS n
+       FROM "OutcomePosition"
+       GROUP BY status, "paperTrade"
+       ORDER BY status, "paperTrade"`,
+    )
+    const breakdown = rows.map((r) => ({
+      status: r.status, paperTrade: r.paperTrade, count: Number(r.n),
+    }))
+    const total = breakdown.reduce((s, r) => s + r.count, 0)
+    const recent = await db.$queryRawUnsafe<Array<{
+      id: string; marketTitle: string; status: string; paperTrade: boolean;
+      openedAt: Date; closedAt: Date | null
+    }>>(
+      `SELECT id, "marketTitle", status, "paperTrade", "openedAt", "closedAt"
+       FROM "OutcomePosition"
+       ORDER BY "openedAt" DESC
+       LIMIT 10`,
+    )
+    res.json({ ok: true, total, breakdown, recent })
+  } catch (err) {
+    console.error('[API] /admin/predictions/stats failed:', err)
+    res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
 // POST /api/admin/predictions/recover-mis-settled
 //
 // Recovery endpoint for the bug where settleResolvedPositions could flip
