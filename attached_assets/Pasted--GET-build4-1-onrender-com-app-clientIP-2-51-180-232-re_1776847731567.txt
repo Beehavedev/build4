@@ -1,0 +1,74 @@
+[GET]
+build4-1.onrender.com/app clientIP="2.51.180.232" requestID="1fc7ef78-3571-4d25" responseTimeMS=5 responseBytes=414 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/admin/swarm-divergence?days=7 clientIP="2.51.180.232" requestID="d921fae0-664b-479d" responseTimeMS=4 responseBytes=306 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="2.51.180.232" requestID="ad644ec6-3384-4a1b" responseTimeMS=542 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="a9bda36a-bb22-497c" responseTimeMS=2061 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="e858219a-68f4-482c" responseTimeMS=1680 responseBytes=975 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/app/ clientIP="2.51.180.232" requestID="5f57e1eb-f4bc-4af6" responseTimeMS=10 responseBytes=655 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/app/assets/index-B2B4QR7S.js clientIP="2.51.180.232" requestID="7c32337f-6743-476d" responseTimeMS=316 responseBytes=174692 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="ec5eaac1-da8d-4354" responseTimeMS=544 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/admin/swarm-divergence?days=7 clientIP="2.51.180.232" requestID="c2bd86c2-492a-4d96" responseTimeMS=4 responseBytes=306 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="833b15e1-15f1-43e1" responseTimeMS=546 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/swarm/stats?window=24h clientIP="2.51.180.232" requestID="4591fdcf-c45c-475f" responseTimeMS=1137 responseBytes=333 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="2.51.180.232" requestID="a2e7e0b7-9b93-4a82" responseTimeMS=1373 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="bcde0b83-ef88-4528" responseTimeMS=894 responseBytes=2329 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/predictions/market/0x2B9c916b305EB5D4581675eE98bEa0eF57a8e7E1 clientIP="2.51.180.232" requestID="a8f9b0d7-985c-42b4" responseTimeMS=581 responseBytes=677 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="dd718f4c-9855-41ef" responseTimeMS=999 responseBytes=1831 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0x06d6227e499f10fe0a9f8c8b80b3c98f964474a4 → marginBalance= 0.0000 crossWallet= 0.0000 crossUnPnl= 0.0000 available= 149.7035
+[GET]
+build4-1.onrender.com/api/portfolio/1551641467 clientIP="2.51.180.232" requestID="8222b617-c4cf-4ea9" responseTimeMS=1887 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[fortyTwo] on-chain read failed for 0x4E44AC673bcc315cD97424CaEfCF9CcCC8eAcA6b: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 55, "jsonrpc": "2.0", "method": "eth_chainId", "params": [  ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x365351096e7a5fa6A9777b97e58D07f1818A567F: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 55, "jsonrpc": "2.0", "method": "eth_chainId", "params": [  ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xF3c455Da03f0761d647DD02b0249024BBFbe7250: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 55, "jsonrpc": "2.0", "method": "eth_chainId", "params": [  ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xa74b54C5C468Ec3584dD4064277625A1a7DD170c: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 55, "jsonrpc": "2.0", "method": "eth_chainId", "params": [  ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x4E44AC673bcc315cD97424CaEfCF9CcCC8eAcA6b: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1455, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x4e44ac673bcc315cd97424caefcf9cccc8eaca6b" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x365351096e7a5fa6A9777b97e58D07f1818A567F: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1457, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x365351096e7a5fa6a9777b97e58d07f1818a567f" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x2B9c916b305EB5D4581675eE98bEa0eF57a8e7E1: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1459, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x2b9c916b305eb5d4581675ee98bea0ef57a8e7e1" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xF3c455Da03f0761d647DD02b0249024BBFbe7250: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1461, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0xf3c455da03f0761d647dd02b0249024bbfbe7250" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xa74b54C5C468Ec3584dD4064277625A1a7DD170c: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 1463, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0xa74b54c5c468ec3584dd4064277625a1a7dd170c" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[GET]
+build4-1.onrender.com/api/me/agents clientIP="2.51.180.232" requestID="9bb5e41f-5853-4c0d" responseTimeMS=368 responseBytes=975 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/feed?limit=20 clientIP="2.51.180.232" requestID="7041f227-82a0-4853" responseTimeMS=1526 responseBytes=2025 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/admin/swarm-divergence?days=7 clientIP="2.51.180.232" requestID="840ad17b-c440-4a02" responseTimeMS=3 responseBytes=306 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="2a82c8eb-4026-45ec" responseTimeMS=615 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="6ed340fc-225b-410b" responseTimeMS=906 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/swarm/stats?window=24h clientIP="2.51.180.232" requestID="7bdbf237-e5d6-44cd" responseTimeMS=687 responseBytes=333 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+Menu
+[Agent BNT] HOLD on ETHUSDT — Volume at 0.56x fails absolute 1.0x threshold (766-iteration proven filter). MAC
+[Agent Smith] HOLD on ETHUSDT — Volume 0.56x disqualifies all setups per core framework—no exceptions for ADX 68
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="720caafc-7969-4965" responseTimeMS=733 responseBytes=2329 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Agent SeanBuild4] prediction skipped: no usable BSC wallet for user
+[Agent SeanBuild4] HOLD on ETHUSDT — Score 3/10 fails minimum threshold. Volume rejection (0.56x) + negative MACD (-2
