@@ -153,6 +153,25 @@ Users toggle via `/predictions` in the bot. Resolved positions are settled by
 `settleResolvedPositions()` which runs on every agent tick (cheap — only fetches
 markets with at least one open position).
 
+## Multi-Provider LLM Router
+`src/services/inference.ts` exposes a single `callLLM({ provider, model?, system?,
+user, jsonMode?, maxTokens?, temperature?, timeoutMs? })` interface that returns
+`{ text, model, provider, latencyMs, tokensUsed }`. Errors are normalised to
+`InferenceError { provider, status, body }` and timeouts are enforced with
+`AbortController`.
+
+Supported providers and env vars:
+- `anthropic` — `ANTHROPIC_API_KEY` (routed via `@anthropic-ai/sdk`, default `claude-sonnet-4-5-20250514`)
+- `xai` — `XAI_API_KEY` (OpenAI-compatible at `https://api.x.ai/v1`, default `grok-3-mini`)
+- `hyperbolic` — `HYPERBOLIC_API_KEY` (OpenAI-compatible at `https://api.hyperbolic.xyz/v1`, default `meta-llama/Llama-3.3-70B-Instruct`)
+- `akash` — `AKASH_API_KEY` (OpenAI-compatible at `https://api.akashml.com/v1`, default `deepseek-ai/DeepSeek-V3.2`)
+
+`getProviderStatus()` reports `{ live, envVar, defaultModel }` per provider so
+the bot/UI can show which providers are configured. The router is offline-tested
+in `src/services/inference.test.ts` (stubbed `fetch` and Anthropic client). Call
+sites still use the SDK directly today; migration to `callLLM` happens in the
+swarm follow-up tasks.
+
 ## Security
 - Private keys AES-256 encrypted before DB storage
 - Agent risk guard: daily loss circuit breaker

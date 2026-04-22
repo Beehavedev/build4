@@ -38,6 +38,12 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: XAI_API_KEY
+        sync: false
+      - key: HYPERBOLIC_API_KEY
+        sync: false
+      - key: AKASH_API_KEY
+        sync: false
       - key: WALLET_ENCRYPTION_KEY
         sync: false
       - key: ASTER_BUILDER_ADDRESS
