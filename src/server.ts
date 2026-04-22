@@ -1229,12 +1229,20 @@ app.get('/api/predictions/latest', async (_req, res) => {
         reasoning?: string | null
         latencyMs: number
         tokensUsed: number
+        inputTokens?: number
+        outputTokens?: number
       }>
       const consensusYes = swarmPos.entryPrice >= 0.5
       const agents = providers.map((p) => {
         const conv = p.predictionTrade?.conviction
         const probability = typeof conv === 'number' ? conv : swarmPos.entryPrice
         const verdict: 'YES' | 'NO' = probability >= 0.5 ? 'YES' : 'NO'
+        // Pre-Task #24 telemetry rows only carry tokensUsed (no split). Match
+        // the conservative attribution used by getSwarmStats: count it all as
+        // output tokens. Newer rows carry both inputTokens/outputTokens.
+        const hasSplit = typeof p.inputTokens === 'number' || typeof p.outputTokens === 'number'
+        const inputTokens = hasSplit ? (p.inputTokens ?? 0) : 0
+        const outputTokens = hasSplit ? (p.outputTokens ?? 0) : (p.tokensUsed ?? 0)
         return {
           name: p.provider,
           model: p.model ?? null,
@@ -1242,11 +1250,15 @@ app.get('/api/predictions/latest', async (_req, res) => {
           probability,
           reasoning: (p.reasoning ?? '').replace(/\s+/g, ' ').trim(),
           latencyMs: p.latencyMs ?? 0,
-          tokens: p.tokensUsed ?? 0,
+          tokens: p.tokensUsed ?? (inputTokens + outputTokens),
+          inputTokens,
+          outputTokens,
           matchesConsensus: verdict === (consensusYes ? 'YES' : 'NO'),
           error: null as string | null,
         }
       })
+      const totalInputTokens = agents.reduce((s, a) => s + a.inputTokens, 0)
+      const totalOutputTokens = agents.reduce((s, a) => s + a.outputTokens, 0)
       const totalTokens = agents.reduce((s, a) => s + a.tokens, 0)
       const avgLatencyMs =
         agents.length > 0 ? Math.round(agents.reduce((s, a) => s + a.latencyMs, 0) / agents.length) : 0
@@ -1263,6 +1275,8 @@ app.get('/api/predictions/latest', async (_req, res) => {
         agentCount: agents.length,
         avgLatencyMs,
         totalTokens,
+        totalInputTokens,
+        totalOutputTokens,
         usdtIn: swarmPos.usdtIn,
         reasoning: (swarmPos.reasoning ?? '').replace(/\s+/g, ' ').trim(),
         txHash: swarmPos.txHashOpen,

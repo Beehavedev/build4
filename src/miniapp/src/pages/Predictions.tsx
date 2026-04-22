@@ -8,6 +8,8 @@ interface AgentVerdict {
   reasoning: string
   latencyMs: number
   tokens: number
+  inputTokens: number
+  outputTokens: number
   matchesConsensus: boolean
   error: string | null
 }
@@ -22,6 +24,8 @@ interface SwarmCard {
   agentCount: number
   avgLatencyMs: number
   totalTokens: number
+  totalInputTokens: number
+  totalOutputTokens: number
   usdtIn: number
   reasoning: string
   txHash: string | null
@@ -557,7 +561,10 @@ function SwarmHero({ swarm }: { swarm: SwarmCard }) {
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 4 }}>
           <StatLine label="Agents" value={`${swarm.agentCount}`} />
           <StatLine label="Avg latency" value={`${(swarm.avgLatencyMs / 1000).toFixed(2)}s`} />
-          <StatLine label="Tokens" value={swarm.totalTokens.toLocaleString()} />
+          <StatLine
+            label="Tokens (in/out)"
+            value={`${(swarm.totalInputTokens ?? 0).toLocaleString()} / ${(swarm.totalOutputTokens ?? swarm.totalTokens).toLocaleString()}`}
+          />
         </div>
       </div>
 
@@ -681,7 +688,14 @@ function AgentCard({ agent }: { agent: AgentVerdict }) {
                       fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}>
           <span>{agent.latencyMs}ms</span>
           <span>·</span>
-          <span>{agent.tokens.toLocaleString()} tok</span>
+          <span data-testid={`text-agent-tokens-${agent.name}`}>
+            <span style={{ color: '#7dd3fc' }}>{(agent.inputTokens ?? 0).toLocaleString()} in</span>
+            {' / '}
+            <span style={{ color: '#fda4af' }}>
+              {(agent.outputTokens ?? agent.tokens ?? 0).toLocaleString()} out
+            </span>
+            {' tok'}
+          </span>
         </div>
       </div>
     </div>
