@@ -143,7 +143,7 @@ export default function Wallet() {
       ) : (
         <>
           <BscPrimaryCard w={w} />
-          {w.aster.onboarded && <AsterSecondaryCard w={w} />}
+          {w.aster.onboarded && <AsterSecondaryCard w={w} onReactivated={load} />}
         </>
       )}
 
@@ -218,21 +218,76 @@ function AsterPrimaryCard({ w }: { w: WalletInfo }) {
   )
 }
 
-function AsterSecondaryCard({ w }: { w: WalletInfo }) {
+function AsterSecondaryCard({ w, onReactivated }: { w: WalletInfo; onReactivated?: () => void }) {
+  // For users whose per-user agent PK can't be decrypted (legacy
+  // encryption mismatch, env-key rotation, etc.) the only recovery
+  // path is re-running /api/aster/approve. The Home tab's Activate
+  // button is hidden once asterOnboarded=true, so we surface a
+  // Re-activate button here whenever we detect 'no_agent_credentials'.
+  const [reactivating, setReactivating] = useState(false)
+  const [reactivateMsg, setReactivateMsg] = useState<string | null>(null)
+  const reactivate = async () => {
+    if (reactivating) return
+    setReactivating(true); setReactivateMsg(null)
+    try {
+      const r = await apiFetch<{ success: boolean; error?: string }>(
+        '/api/aster/approve',
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+      )
+      if (r.success) {
+        setReactivateMsg('Re-activated. Refreshing balance…')
+        setTimeout(() => onReactivated?.(), 600)
+      } else {
+        setReactivateMsg(r.error ?? 'Re-activation failed')
+      }
+    } catch (e: any) {
+      setReactivateMsg(e?.message ?? 'Re-activation failed')
+    } finally {
+      setReactivating(false)
+    }
+  }
+
   return (
     <div className="card" style={{ marginBottom: 14 }}>
       <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>ASTER TRADING</div>
       {w.aster.error ? (
-        <div style={{ fontSize: 12, color: 'var(--b4-red)', lineHeight: 1.45 }} data-testid="text-aster-error">
-          ⚠️ {
-            w.aster.error === 'no_agent_credentials'
-              ? 'Aster trading not yet activated. Open the Home tab and tap "Activate Aster" to enable.'
-              : w.aster.error === 'not_onboarded'
-                ? 'No Aster account found. Deposit USDT to get started.'
-                : w.aster.error === 'aster_unavailable' || w.aster.error.includes('rpc')
-                  ? 'Aster temporarily unavailable. Refreshing in a moment.'
-                  : `Aster error: ${w.aster.error}`
-          }
+        <div data-testid="text-aster-error">
+          <div style={{ fontSize: 12, color: 'var(--b4-red)', lineHeight: 1.45 }}>
+            ⚠️ {
+              w.aster.error === 'no_agent_credentials'
+                ? 'Aster trading agent needs to be re-authorised. Tap below to re-activate — your USDT in Aster is safe and stays put.'
+                : w.aster.error === 'not_onboarded'
+                  ? 'No Aster account found. Deposit USDT to get started.'
+                  : w.aster.error === 'aster_unavailable' || w.aster.error.includes('rpc')
+                    ? 'Aster temporarily unavailable. Refreshing in a moment.'
+                    : `Aster error: ${w.aster.error}`
+            }
+          </div>
+          {w.aster.error === 'no_agent_credentials' && (
+            <>
+              <button
+                onClick={reactivate}
+                disabled={reactivating}
+                data-testid="button-aster-reactivate"
+                style={{
+                  marginTop: 10, width: '100%', padding: '10px 14px',
+                  background: '#7c3aed', color: 'white', border: 0, borderRadius: 8,
+                  fontSize: 13, fontWeight: 600,
+                  cursor: reactivating ? 'wait' : 'pointer', opacity: reactivating ? 0.7 : 1
+                }}
+              >
+                {reactivating ? 'Re-activating…' : '🔄 Re-activate Aster'}
+              </button>
+              {reactivateMsg && (
+                <div
+                  data-testid="text-aster-reactivate-msg"
+                  style={{ marginTop: 8, fontSize: 11, color: 'var(--b4-muted)' }}
+                >
+                  {reactivateMsg}
+                </div>
+              )}
+            </>
+          )}
         </div>
       ) : (
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
