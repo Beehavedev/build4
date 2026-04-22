@@ -1930,32 +1930,44 @@ app.post('/api/admin/predictions/backfill-recent', requireAdmin, async (req, res
     }> = []
     const errors: Array<{ market: string; reason: string }> = []
 
+    // Chunk eth_getLogs into 500-block windows — most public BSC RPCs
+    // (Ankr free, dataseeds) reject larger ranges with code -32062
+    // "Block range is too large".
+    const CHUNK = 500
     for (const m of markets) {
-      try {
-        const logs = await provider.getLogs({
-          address: m.address,
-          topics: [TRANSFER_SINGLE_TOPIC, null, ZERO_TOPIC],
-          fromBlock,
-          toBlock: latest,
-        })
-        for (const log of logs) {
-          const parsed = ercIface.parseLog({ topics: [...log.topics], data: log.data })
-          if (!parsed) continue
-          const to = String(parsed.args.to).toLowerCase()
-          const userId = walletByAddr.get(to)
-          if (!userId) continue
-          if (seenTx.has(log.transactionHash.toLowerCase())) continue
-          matches.push({
-            userId,
-            marketAddress: m.address,
-            tokenId: Number(parsed.args.id),
-            outcomeTokenAmount: Number(ethers.formatUnits(parsed.args.value, 18)),
-            txHash: log.transactionHash,
-            recipient: to,
+      let chunkStart = fromBlock
+      while (chunkStart <= latest) {
+        const chunkEnd = Math.min(chunkStart + CHUNK - 1, latest)
+        try {
+          const logs = await provider.getLogs({
+            address: m.address,
+            topics: [TRANSFER_SINGLE_TOPIC, null, ZERO_TOPIC],
+            fromBlock: chunkStart,
+            toBlock: chunkEnd,
+          })
+          for (const log of logs) {
+            const parsed = ercIface.parseLog({ topics: [...log.topics], data: log.data })
+            if (!parsed) continue
+            const to = String(parsed.args.to).toLowerCase()
+            const userId = walletByAddr.get(to)
+            if (!userId) continue
+            if (seenTx.has(log.transactionHash.toLowerCase())) continue
+            matches.push({
+              userId,
+              marketAddress: m.address,
+              tokenId: Number(parsed.args.id),
+              outcomeTokenAmount: Number(ethers.formatUnits(parsed.args.value, 18)),
+              txHash: log.transactionHash,
+              recipient: to,
+            })
+          }
+        } catch (e) {
+          errors.push({
+            market: `${m.address}@[${chunkStart},${chunkEnd}]`,
+            reason: (e as Error).message,
           })
         }
-      } catch (e) {
-        errors.push({ market: m.address, reason: (e as Error).message })
+        chunkStart = chunkEnd + 1
       }
     }
 
