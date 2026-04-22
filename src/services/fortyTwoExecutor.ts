@@ -425,10 +425,10 @@ export async function openPredictionPosition(
 
   const id = await db.$queryRawUnsafe<Array<{ id: string }>>(
     `INSERT INTO "OutcomePosition"
-       ("userId","agentId","marketAddress","marketTitle","tokenId","outcomeLabel",
+       ("id","userId","agentId","marketAddress","marketTitle","tokenId","outcomeLabel",
         "usdtIn","entryPrice","status","paperTrade","txHashOpen","reasoning",
         "outcomeTokenAmount","providers")
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'open',$9,$10,$11,$12,$13::jsonb)
+     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,'open',$9,$10,$11,$12,$13::jsonb)
      RETURNING id`,
     ctx.userId,
     ctx.agentId,
@@ -663,10 +663,10 @@ export async function openManualPredictionPosition(
     try {
       idRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
         `INSERT INTO "OutcomePosition"
-           ("userId","agentId","marketAddress","marketTitle","tokenId","outcomeLabel",
+           ("id","userId","agentId","marketAddress","marketTitle","tokenId","outcomeLabel",
             "usdtIn","entryPrice","status","paperTrade","txHashOpen","reasoning",
             "outcomeTokenAmount","providers")
-         VALUES ($1,NULL,$2,$3,$4,$5,$6,$7,'open',$8,$9,$10,$11,NULL)
+         VALUES (gen_random_uuid()::text,$1,NULL,$2,$3,$4,$5,$6,$7,'open',$8,$9,$10,$11,NULL)
          RETURNING id`,
         userId,
         marketAddress,

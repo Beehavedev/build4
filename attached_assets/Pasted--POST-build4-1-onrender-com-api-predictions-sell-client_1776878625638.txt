@@ -1,0 +1,241 @@
+[POST]
+build4-1.onrender.com/api/predictions/sell clientIP="2.51.180.232" requestID="8e118dcf-10b8-494e" responseTimeMS=3807 responseBytes=380 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[Runner] Ticking 4 agents in batches of 50
+[Runner] Dispatched 4 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '4h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '5m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="38ad785f-c5a1-4de2" responseTimeMS=737 responseBytes=749 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="39c92067-9ed4-4841" responseTimeMS=937 responseBytes=3031 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="553a1a99-6fdb-4adb" responseTimeMS=703 responseBytes=3042 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="4d8e7c7d-8ef5-468c" responseTimeMS=552 responseBytes=749 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Agent SeanBuild4] settle error: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Agent Smith] settle error: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '5m', limit: 100 }
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="69e87532-33ef-4bd9" responseTimeMS=382 responseBytes=408 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="28213a5d-1f84-4aa0" responseTimeMS=187 responseBytes=301 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Agent BTPredict] settle error: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Agent BNT] settle error: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Agent SeanBuild4] settle error: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Agent Smith] settle error: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '5m', limit: 100 }
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Agent BTPredict] settle error: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Agent BNT] settle error: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Agent SeanBuild4] settle error: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Agent Smith] settle error: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Agent BNT] settle error: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Agent BTPredict] settle error: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[Agent SeanBuild4] settle error: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[GET]
+build4-1.onrender.com/app/ clientIP="2.51.180.232" requestID="f671c08e-6b11-433b" responseTimeMS=4 responseBytes=654 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] signed /fapi/v3/balance failed for 0x7f2D91Cc0258C4963425D79013656E45cc64Fc76 → 400 { code: -1000, msg: 'No agent found' } — falling back to JSON-RPC
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[predictions/latest] failed: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[GET]
+build4-1.onrender.com/api/user/1551641467 clientIP="2.51.180.232" requestID="164495e7-ac75-471e" responseTimeMS=1182 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="2.51.180.232" requestID="7001c148-e6b8-43b8" responseTimeMS=1117 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="cb7180aa-54aa-48f5" responseTimeMS=191 responseBytes=301 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[API] /me/positions failed: PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+    at $n.handleRequestError (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:121:7315)
+    at $n.handleAndLogRequestError (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:121:6623)
+    at $n.request (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:121:6307)
+    at async l (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:130:9633)
+    at async <anonymous> (/opt/render/project/src/src/server.ts:1701:18) {
+  code: 'P2010',
+  clientVersion: '5.22.0',
+  meta: {
+    code: '42P01',
+    message: 'relation "OutcomePosition" does not exist'
+  }
+}
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42703`. Message: `column "fortyTwoLiveTrade" does not exist`
+[API] /me/predictions-mode GET failed: PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42703`. Message: `column "fortyTwoLiveTrade" does not exist`
+    at $n.handleRequestError (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:121:7315)
+    at $n.handleAndLogRequestError (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:121:6623)
+    at $n.request (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:121:6307)
+    at async l (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:130:9633)
+    at async isUserLiveOptedIn (/opt/render/project/src/src/services/fortyTwoExecutor.ts:924:16)
+    at async <anonymous> (/opt/render/project/src/src/server.ts:1654:23) {
+  code: 'P2010',
+  clientVersion: '5.22.0',
+  meta: {
+    code: '42703',
+    message: 'column "fortyTwoLiveTrade" does not exist'
+  }
+}
+[GET]
+build4-1.onrender.com/api/me/predictions-mode clientIP="2.51.180.232" requestID="79989204-f374-44ae" responseTimeMS=397 responseBytes=311 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="790c74ac-89d2-44c3" responseTimeMS=383 responseBytes=408 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/1551641467 clientIP="2.51.180.232" requestID="f1048072-4fe1-4e21" responseTimeMS=654 responseBytes=1417 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="2.51.180.232" requestID="7ed6973e-502c-4670" responseTimeMS=455 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[predictions/latest] failed: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="7d5d77df-0062-44d0" responseTimeMS=389 responseBytes=301 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+[predictions/latest] failed: 
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+prisma:error 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+[API] /me/positions failed: PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "OutcomePosition" does not exist`
+    at $n.handleRequestError (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:121:7315)
+Menu
+    at $n.handleAndLogRequestError (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:121:6623)
+    at $n.request (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:121:6307)
+    at async l (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:130:9633)
+    at async <anonymous> (/opt/render/project/src/src/server.ts:1701:18) {
+  code: 'P2010',
+  clientVersion: '5.22.0',
+  meta: {
+    code: '42P01',
+    message: 'relation "OutcomePosition" does not exist'
+  }
+}
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="68e00463-8e64-42bc" responseTimeMS=195 responseBytes=301 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[GET]
+build4-1.onrender.com/api/me/positions clientIP="2.51.180.232" requestID="6a331059-0c18-4d0d" responseTimeMS=375 responseBytes=408 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+==> Deploying...
+==> Setting WEB_CONCURRENCY=1 by default, based on available CPUs in the instance

@@ -2095,10 +2095,10 @@ app.post('/api/admin/predictions/backfill-recent', requireAdmin, async (req, res
 
         await db.$executeRawUnsafe(
           `INSERT INTO "OutcomePosition"
-             ("userId","agentId","marketAddress","marketTitle","tokenId","outcomeLabel",
+             ("id","userId","agentId","marketAddress","marketTitle","tokenId","outcomeLabel",
               "usdtIn","entryPrice","status","paperTrade","txHashOpen","reasoning",
               "outcomeTokenAmount","providers")
-           VALUES ($1,NULL,$2,$3,$4,$5,$6,$7,'open',false,$8,$9,$10,NULL)`,
+           VALUES (gen_random_uuid()::text,$1,NULL,$2,$3,$4,$5,$6,$7,'open',false,$8,$9,$10,NULL)`,
           match.userId, match.marketAddress, market.question, match.tokenId,
           outcomeLabel, usdtIn, entryPrice, match.txHash,
           'Backfilled from on-chain TransferSingle', match.outcomeTokenAmount,
@@ -2276,10 +2276,10 @@ app.post('/api/admin/predictions/recover-by-tx', requireAdmin, async (req, res) 
 
     const inserted = await db.$queryRawUnsafe<Array<{ id: string }>>(
       `INSERT INTO "OutcomePosition"
-         ("userId","agentId","marketAddress","marketTitle","tokenId","outcomeLabel",
+         ("id","userId","agentId","marketAddress","marketTitle","tokenId","outcomeLabel",
           "usdtIn","entryPrice","status","paperTrade","txHashOpen","reasoning",
           "outcomeTokenAmount","providers")
-       VALUES ($1,NULL,$2,$3,$4,$5,$6,$7,'open',false,$8,$9,$10,NULL)
+       VALUES (gen_random_uuid()::text,$1,NULL,$2,$3,$4,$5,$6,$7,'open',false,$8,$9,$10,NULL)
        RETURNING id`,
       userId, marketAddress, marketTitle, tokenId, outcomeLabel,
       usdtIn, entryPrice, txHash, 'Recovered from on-chain tx', outcomeTokenAmount,
