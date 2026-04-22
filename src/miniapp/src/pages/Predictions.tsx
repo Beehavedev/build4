@@ -185,6 +185,33 @@ export default function Predictions() {
   const [expandedMarket, setExpandedMarket] = useState<string | null>(null)
   const [detailCache, setDetailCache] = useState<Record<string, MarketDetailState>>({})
 
+  // Per-user enable/disable kill switch for 42.space trading.
+  // null = unknown (initial fetch pending OR user opened mini-app outside
+  // Telegram and the /api/me endpoint 401'd — in that case we hide the
+  // toggle entirely rather than show a misleading default).
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [modeBusy, setModeBusy] = useState(false)
+  async function loadMode() {
+    try {
+      const r = await fetch('/api/me/predictions-mode')
+      if (!r.ok) { setEnabled(null); return }
+      const j = await r.json()
+      setEnabled(typeof j.liveOptIn === 'boolean' ? j.liveOptIn : null)
+    } catch { setEnabled(null) }
+  }
+  async function toggleMode(next: boolean) {
+    setModeBusy(true)
+    try {
+      const r = await fetch('/api/me/predictions-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: next }),
+      })
+      const j = await r.json()
+      if (j?.ok) setEnabled(j.liveOptIn === true)
+    } finally { setModeBusy(false) }
+  }
+
   async function onToggleMarket(address: string) {
     if (expandedMarket === address) {
       setExpandedMarket(null)
@@ -229,6 +256,7 @@ export default function Predictions() {
 
   useEffect(() => {
     load()
+    loadMode()
     const poll = setInterval(() => load(true), 30_000)
     const tick = setInterval(() => setNowTick((n) => n + 1), 1000)
     return () => { clearInterval(poll); clearInterval(tick) }
@@ -278,20 +306,49 @@ export default function Predictions() {
         </div>
       </div>
 
-      {/* ── Live-mode banner ──
-          Replaces the old paper/live toggle card. All 42.space trades now
-          execute on-chain on BSC for every user — no opt-in step. */}
-      <div data-testid="banner-live-mode" style={{
-        marginBottom: 14, padding: '8px 12px', borderRadius: 8,
-        background: '#10b98110', border: '1px solid #10b98144',
-      }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: '#10b981' }}>
-          🔴 LIVE mode — real USDT on BSC
+      {/* ── 42.space trading enable/disable ──
+          Per-user kill switch. When OFF, no new positions open (agents and
+          manual taps both refuse). Existing open positions can still be
+          closed/settled. Hidden when enabled === null (the /api/me endpoint
+          401'd — almost certainly the user opened the mini-app outside of
+          Telegram, in which case we can't authenticate them anyway). */}
+      {enabled !== null && (
+        <div data-testid="card-trading-toggle" style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: 14, padding: '10px 12px', borderRadius: 8,
+          background: enabled ? '#10b98110' : '#0f0f17',
+          border: `1px solid ${enabled ? '#10b98144' : '#1e1e2e'}`,
+          gap: 10,
+        }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600,
+                          color: enabled ? '#10b981' : '#94a3b8' }}
+                 data-testid="text-trading-status">
+              {enabled ? '✅ Trading ENABLED — live on BSC' : '⏸ Trading DISABLED'}
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+              {enabled
+                ? 'Agents + manual taps execute on-chain. Caps: ≤$2/agent, ≤$25/manual.'
+                : 'No new trades will open. Existing open positions can still be closed.'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => toggleMode(!enabled)}
+            disabled={modeBusy}
+            data-testid="button-toggle-trading"
+            style={{
+              padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+              background: modeBusy ? '#1e1e2e' : (enabled ? '#1e1e2e' : '#10b981'),
+              border: `1px solid ${enabled ? '#1e1e2e' : '#10b981'}`,
+              color: enabled ? '#94a3b8' : 'white',
+              cursor: modeBusy ? 'wait' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}>
+            {modeBusy ? '…' : (enabled ? 'Disable' : 'Enable')}
+          </button>
         </div>
-        <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
-          Every trade executes on-chain. Caps: ≤$2/agent trade, ≤$25/manual trade.
-        </div>
-      </div>
+      )}
 
       {/* ── Section 1: Swarm Consensus ── */}
       <div style={{ marginBottom: 16 }}>

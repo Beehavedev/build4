@@ -1,0 +1,198 @@
+Here's the prompt — paste this to your Replit agent:
+
+Build an autonomous market creation agent for 42.space. This agent researches the world, finds what people actually care about right now, validates real interest with multiple data sources, and creates prediction markets that people will want to trade.
+The core loop — runs every 6 hours:
+Research → Score → Validate → Propose → Create → Monitor
+
+Step 1 — Research: pull signals from 4 sources in parallel
+Source 1 — Breaking news (via NewsAPI or GNews free tier):
+typescriptasync function fetchTrendingNews(): Promise<NewsSignal[]>
+
+Query: AI, crypto, geopolitics, tech, finance — last 6 hours
+Score each article by: source authority + share velocity + keyword density
+Extract: headline, summary, key entities (people/companies/tokens), publication time
+Filter out: sports, celebrity gossip, weather, local news
+Keep top 10 by score
+
+Source 2 — High volume BNB Chain tokens (via BSCScan API + DexScreener):
+typescriptasync function fetchTrendingBNBTokens(): Promise<TokenSignal[]>
+
+Hit DexScreener API: https://api.dexscreener.com/latest/dex/chains/bsc
+Filter: volume24h > $500k, age > 24h (not brand new rugs), liquidity > $100k
+For each token: name, symbol, price change 24h, volume, holder count, contract age
+Keep top 15 by volume
+
+Source 3 — X/Twitter social validation (via public search or RapidAPI Twitter endpoint):
+typescriptasync function validateWithXPosts(topic: string): Promise<SocialSignal>
+
+Search X for the topic/token hashtag
+Count posts in last 6 hours
+Measure sentiment (positive/negative/neutral keyword ratio)
+Count unique authors (not retweets from same account)
+Return: postCount, uniqueAuthors, sentimentScore, topPost excerpt
+This is the validation layer — a token with $2M volume but zero X activity is suspicious
+
+Source 4 — 42.space existing markets (via their REST API):
+typescriptasync function getExistingMarkets(): Promise<string[]>
+
+Fetch all open markets
+Extract titles/topics
+Used to avoid creating duplicate markets
+
+
+Step 2 — Score and rank candidates
+Each candidate (news story or token) gets a MarketabilityScore from 0-100:
+typescriptinterface MarketCandidate {
+  type: 'news' | 'token' | 'ai_event' | 'crypto_milestone'
+  title: string
+  rawData: any
+  scores: {
+    newsAuthority: number      // 0-25: Reuters/Bloomberg=25, blog=5
+    socialVolume: number       // 0-25: X post count + velocity
+    financialStake: number     // 0-25: real money moving (token volume, market cap)
+    resolvability: number      // 0-25: can this question be answered objectively?
+  }
+  totalScore: number
+  isDuplicate: boolean
+  proposedQuestion: string
+  proposedOutcomes: string[]
+  proposedResolutionDate: string
+  proposedResolutionSource: string
+}
+Resolvability is the most important score. A market only works if it can be settled objectively. The agent must verify:
+
+Is there a clear YES/NO or multiple-choice answer?
+Is there an objective data source that settles it? (price feed, official announcement, on-chain data)
+Will it resolve within a reasonable timeframe (3 days to 6 months)?
+
+Bad question: "Will AI get better this year?" — unresolvable
+Good question: "Will BNB price exceed $800 before June 1 2025?" — resolvable via price feed
+Good question: "Will OpenAI announce GPT-5 before May 31 2025?" — resolvable via official announcement
+
+Step 3 — Claude evaluates the top candidates
+After scoring, pass the top 5 candidates to Claude Sonnet for final evaluation:
+typescriptconst systemPrompt = `
+You are a prediction market curator for 42.space, an on-chain event asset protocol on BNB Chain.
+Your job is to evaluate candidate markets and decide which ones to create.
+
+A great 42.space market has:
+- A clear, specific, time-bounded question
+- Objective resolution criteria with a named source
+- High current public interest (people are talking about it NOW)
+- Real financial stakes or global significance
+- Outcomes that are genuinely uncertain (not 95%+ obvious)
+- Resolution within 7-90 days ideally
+
+For each candidate, output:
+{
+  "approved": boolean,
+  "refinedQuestion": string,        // rewrite if needed for clarity
+  "outcomes": string[],             // YES/NO or named outcomes
+  "resolutionDate": "YYYY-MM-DD",
+  "resolutionCriteria": string,     // exact objective criteria
+  "resolutionSource": string,       // e.g. "CoinGecko price feed", "OpenAI official blog"
+  "category": "ai|crypto|geopolitics|tech|finance",
+  "reasoning": string,              // one line why approved or rejected
+  "estimatedInterest": "low|medium|high|viral"
+}
+
+Reject if: question is ambiguous, resolution is subjective, topic is too niche, 
+duplicate of existing market, or resolution date is unrealistic.
+`
+
+Step 4 — Create approved markets on 42.space
+For each Claude-approved candidate, submit to 42.space:
+typescriptasync function proposeMarketTo42Space(market: ApprovedMarket): Promise<void> {
+  // First: check if 42.space has a creation API endpoint
+  // If YES: POST /markets/create with market spec
+  // If NO (current state — creation is manual): 
+  //   Send structured proposal to a webhook or email
+  //   Log to DB as pending_creation
+  //   Notify admin via Telegram: "New market ready to create on 42.space"
+}
+Since 42.space market creation is currently manual (they confirmed no creation endpoint yet), implement the proposal queue pattern:
+
+Save approved markets to DB table prediction_market_proposals
+Status flow: researched → approved → submitted → live → monitoring
+Admin endpoint GET /api/admin/market-proposals lists pending ones
+Admin endpoint POST /api/admin/market-proposals/:id/submit sends to 42.space team
+Once 42.space confirms it's live, update status to live with the market address
+
+When they add a creation API (their v2), swap proposeMarketTo42Space to call it directly — the rest of the pipeline stays the same.
+
+Step 5 — Auto-seed with initial position
+When a market the agent created goes live on 42.space:
+
+The creating agent automatically takes a small position ($5-10) on its predicted outcome
+This seeds the bonding curve with initial liquidity
+Shows 42.space the agent has conviction, not just noise
+Log: [MarketCreator] Seeded own market: "Will BNB exceed $800?" — bought YES $5
+
+
+Step 6 — Monitor and report
+Track every created market through its lifecycle:
+typescriptinterface MarketPerformance {
+  proposalId: string
+  marketAddress: string
+  question: string
+  createdAt: string
+  resolutionDate: string
+  totalVolumeUSDT: number      // from 42.space API
+  uniqueTraders: number
+  ourPosition: Position
+  resolved: boolean
+  outcome?: string
+  agentWasCorrect?: boolean    // did our seed position win?
+}
+Weekly summary log:
+[MarketCreator] Weekly report:
+  Markets proposed: 12
+  Markets approved by Claude: 7  
+  Markets submitted to 42.space: 7
+  Markets now live: 5
+  Total volume generated: $24,800
+  Our seed positions: 5 × $5 = $25 invested
+  Won: 3 | Lost: 1 | Pending: 1
+  Net PnL on seeds: +$18.40
+
+Data sources to add to .env:
+GNEWS_API_KEY=          # free tier: 100 req/day — enough
+DEXSCREENER_API=        # free, no key needed
+BSCSCAN_API_KEY=        # free tier
+TWITTER_BEARER_TOKEN=   # for X search — optional, graceful fallback if missing
+FORTYTWO_WEBHOOK=       # their endpoint when creation API ships
+
+File structure:
+src/
+  agents/
+    marketCreator.ts        # main research + score + propose loop
+    marketCreatorPrompt.ts  # Claude evaluation prompt builder
+  services/
+    newsService.ts          # GNews/NewsAPI fetcher
+    dexScreener.ts          # BNB trending tokens
+    xValidator.ts           # X social validation
+    marketProposalStore.ts  # DB read/write for proposals
+  routes/
+    marketProposals.ts      # admin endpoints
+scripts/
+  runMarketCreator.ts       # manual trigger: npx tsx scripts/runMarketCreator.ts
+
+Trigger schedule:
+typescript// In your existing cron/scheduler:
+schedule.every(6).hours.do(runMarketCreationLoop)
+
+// Also expose a manual trigger for demos:
+// POST /api/admin/market-creator/run → runs immediately, streams progress
+
+The admin Telegram notification when a market is ready:
+🔮 New Prediction Market Ready
+
+📰 Source: Trending BNB token "PEPE2" + 847 X posts in 6h
+❓ Question: Will PEPE2 exceed $0.001 before May 15?
+📊 Outcomes: YES / NO  
+📅 Resolves: May 15 2025
+✅ Resolution: CoinGecko price feed
+🔥 Interest score: 84/100
+💬 Claude: "High social volume with real DEX volume backing. Clear price-feed resolution. Approve."
+
+[Submit to 42.space] [Reject] [Edit]

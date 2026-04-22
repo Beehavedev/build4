@@ -108,15 +108,20 @@ async function loadUserWalletPK(userId: string): Promise<UserWalletPK | null> {
 }
 
 /**
- * Returns a configured trader.
+ * Returns a configured trader, OR null if the user can't trade right now.
  *
- * - For a NEW open, pass `forcePaperTrade=undefined` so we read the current
- *   user opt-in toggle (toggle controls new opens only).
- * - For closing/settling an EXISTING position, pass the position's stored
- *   `paperTrade` flag so a position opened live always closes live, even if
- *   the user later flipped their toggle to paper. Without this, a paper-mode
- *   close on a live position would leave real on-chain exposure while marking
- *   the DB row "closed".
+ * Three paths:
+ * 1. NEW open (forcePaperTrade=undefined) — also enforces the per-user
+ *    enable-trading kill switch (User.fortyTwoLiveTrade). When the user
+ *    has trading disabled we return null and the caller surfaces a
+ *    "trading disabled" error to the UI. NO paper fallback — disabled
+ *    means disabled.
+ * 2. Closing/settling an EXISTING live position (forcePaperTrade=false) —
+ *    bypasses the kill switch so users can always exit a live position
+ *    they already opened. They just can't open new ones while disabled.
+ * 3. Closing/settling an EXISTING paper position (forcePaperTrade=true) —
+ *    legacy path. Returns a dry-run trader so the row settles without
+ *    touching chain state.
  */
 async function buildTrader(
   userId: string,
@@ -128,13 +133,14 @@ async function buildTrader(
   if (typeof forcePaperTrade === 'boolean') {
     paperTrade = forcePaperTrade;
   } else {
-    // Resolve opt-in via raw query so we don't depend on a regenerated Prisma client.
+    // NEW open path — enforce per-user enable kill switch.
     const rows = await db.$queryRawUnsafe<Array<{ fortyTwoLiveTrade: boolean }>>(
       `SELECT "fortyTwoLiveTrade" FROM "User" WHERE id = $1 LIMIT 1`,
       userId,
     );
-    const liveOptIn = rows[0]?.fortyTwoLiveTrade === true;
-    paperTrade = !liveOptIn;
+    const enabled = rows[0]?.fortyTwoLiveTrade === true;
+    if (!enabled) return null; // user has 42.space trading disabled
+    paperTrade = false;
   }
   const trader = new __testDeps.FortyTwoTraderCtor(wallet.privateKey, BSC_RPC, { dryRun: paperTrade });
   return { trader, paperTrade };
@@ -289,6 +295,14 @@ export async function openPredictionPosition(
   providers: ProviderTelemetry[] | null = null,
 ): Promise<{ ok: true; positionId: string; paperTrade: boolean; usdtIn: number } | { ok: false; reason: string }> {
   if (intent.action !== 'OPEN_PREDICTION') return { ok: false, reason: 'wrong action' };
+
+  // Per-user kill switch — agent-driven opens respect the same toggle as
+  // manual trades. Closes/settles bypass this check via forcePaperTrade so
+  // existing positions can always be exited.
+  const enabled = await isUserLiveOptedIn(ctx.userId);
+  if (!enabled) {
+    return { ok: false, reason: '42.space trading disabled by user' };
+  }
 
   let market: Market42;
   try {
@@ -464,6 +478,13 @@ export async function openManualPredictionPosition(
   }
   if (!/^0x[0-9a-fA-F]{40}$/.test(marketAddress)) {
     return { ok: false, reason: 'invalid market address' };
+  }
+
+  // Per-user kill switch — short-circuit before we burn DB cycles on quota
+  // checks if the user has 42.space trading turned off entirely.
+  const enabled = await isUserLiveOptedIn(userId);
+  if (!enabled) {
+    return { ok: false, reason: '42.space trading is disabled — enable it in the Predictions tab to start trading' };
   }
 
   // Best-effort per-user serialization via Postgres advisory lock keyed on

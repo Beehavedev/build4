@@ -2,6 +2,8 @@ import { Bot, Context, InlineKeyboard } from 'grammy'
 import {
   listUserPositions,
   settleResolvedPositions,
+  isUserLiveOptedIn,
+  setUserLiveOptIn,
 } from '../../services/fortyTwoExecutor'
 
 function fmtPnl(pnl: number | null): string {
@@ -33,14 +35,17 @@ export async function handlePredictions(ctx: Context) {
   // Settle anything that resolved before showing the table.
   try { await settleResolvedPositions({ userId: user.id }) } catch {}
 
-  const positions = await listUserPositions(user.id, 25)
+  const [positions, enabled] = await Promise.all([
+    listUserPositions(user.id, 25),
+    isUserLiveOptedIn(user.id),
+  ])
 
   const open = positions.filter((p) => p.status === 'open')
   const closed = positions.filter((p) => p.status !== 'open')
   const realized = closed.reduce((s, p) => s + (p.pnl ?? 0), 0)
 
   let text = `🎯 *Prediction Market Positions*\n\n`
-  text += `*Mode:* 🔴 LIVE (real on-chain trades on BSC)\n`
+  text += `*Status:* ${enabled ? '✅ ENABLED — trading LIVE on BSC' : '⏸ DISABLED — no new trades'}\n`
   text += `*Open positions:* ${open.length}\n`
   text += `*Realised PnL:* ${fmtPnl(realized)} USDT (${closed.length} settled)\n\n`
 
@@ -81,9 +86,15 @@ export async function handlePredictions(ctx: Context) {
     text = text.slice(0, TG_MAX) + '\n\n_…output truncated to fit Telegram limit._\n'
   }
 
-  // Live trading is on by default for everyone — no paper/live toggle.
-  // Refresh-only keyboard so users can re-poll after agents place trades.
-  const kb = new InlineKeyboard().text('🔄 Refresh', 'predictions_refresh')
+  // Per-user enable/disable kill switch — when off, no new trades open
+  // (existing positions can still be closed/settled).
+  const kb = new InlineKeyboard()
+  if (enabled) {
+    kb.text('⏸ Disable trading', 'predictions_disable')
+  } else {
+    kb.text('✅ Enable trading', 'predictions_enable')
+  }
+  kb.row().text('🔄 Refresh', 'predictions_refresh')
 
   await ctx.reply(text, { parse_mode: 'Markdown', reply_markup: kb })
 }
@@ -96,14 +107,37 @@ export function registerPredictions(bot: Bot) {
     await handlePredictions(ctx)
   })
 
-  // Legacy callback handlers — kept as no-ops so any old inline keyboards
-  // already sitting in users' chat history don't surface a "no handler"
-  // error when tapped. Tells the user the toggle is gone and trading is
-  // already live.
+  bot.callbackQuery('predictions_enable', async (ctx) => {
+    const user = (ctx as any).dbUser
+    if (!user) return ctx.answerCallbackQuery('Not signed in')
+    await setUserLiveOptIn(user.id, true)
+    await ctx.answerCallbackQuery('42.space trading ENABLED')
+    await ctx.reply(
+      `✅ *42.space trading enabled.*\n\n` +
+      `Live on-chain trades will execute when agents find edge ≥10% and when you tap markets in the mini-app.\n` +
+      `Caps: ≤$2/agent trade, ≤$25/manual trade, max 5 open per agent, max 10 manual open.`,
+      { parse_mode: 'Markdown' }
+    )
+  })
+
+  bot.callbackQuery('predictions_disable', async (ctx) => {
+    const user = (ctx as any).dbUser
+    if (!user) return ctx.answerCallbackQuery('Not signed in')
+    await setUserLiveOptIn(user.id, false)
+    await ctx.answerCallbackQuery('42.space trading DISABLED')
+    await ctx.reply(
+      `⏸ *42.space trading disabled.*\n\n` +
+      `No new positions will be opened by agents or manual taps. Existing open positions remain — you can still close or settle them.`,
+      { parse_mode: 'Markdown' }
+    )
+  })
+
+  // Legacy callbacks from the old paper-vs-live UI. No-op acks so old
+  // inline keyboards in chat history don't 404 when tapped.
   bot.callbackQuery('predictions_live', async (ctx) => {
-    await ctx.answerCallbackQuery('Live trading is on by default')
+    await ctx.answerCallbackQuery('Use the new Enable/Disable button')
   })
   bot.callbackQuery('predictions_paper', async (ctx) => {
-    await ctx.answerCallbackQuery('Paper mode has been removed — trades are live')
+    await ctx.answerCallbackQuery('Paper mode is gone — use Enable/Disable instead')
   })
 }
