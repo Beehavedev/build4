@@ -1,0 +1,46 @@
+The error is consistent and clear: BEP20: transfer from the zero address. The staticCall is passing but the contract still sees address zero as the sender. This means the wallet address is resolving to zero at the point swapSimple is called.
+Tell your agent:
+
+The BEP20: transfer from the zero address error means fortyTwoExecutor.ts is instantiating FortyTwoTrader without a valid private key. The wallet is being created with an empty or undefined key, so this.wallet.address returns the zero address.
+Find where FortyTwoTrader is instantiated in fortyTwoExecutor.ts — around line 629 based on the stack trace — and add this guard:
+typescript// Before instantiating FortyTwoTrader:
+const privateKey = wallet.privateKey; // whatever field holds it
+
+if (!privateKey || privateKey === '0x' || privateKey.length < 64) {
+  throw new Error(`[42] Cannot trade: wallet ${wallet.address} has no private key loaded. 
+    Private keys are only available for wallets owned by this user.`);
+}
+
+console.log('[42] Executing trade from wallet:', wallet.address);
+const trader = new FortyTwoTrader(privateKey, process.env.BSC_RPC_URL!);
+The most likely cause: the wallet is being fetched from the DB but the privateKey field is encrypted, null, or not selected in the Prisma query. Check the DB query that fetches the wallet before the trade — it probably looks like:
+typescriptconst wallet = await db.wallet.findFirst({ 
+  where: { userId, chain: 'BSC' }
+});
+The privateKey column is likely either: (a) not included in the select, (b) stored encrypted and needs decryption before use, or (c) null because the wallet was imported by address only without a key.
+Fix the query to explicitly select privateKey and decrypt if needed:
+typescriptconst wallet = await db.wallet.findFirst({
+  where: { userId, chain: 'BSC', isActive: true },
+  select: {
+    address: true,
+    privateKey: true,  // explicitly select it
+    // add other fields as needed
+  }
+});
+
+if (!wallet?.privateKey) {
+  throw new Error('[42] No private key available for this wallet. 
+    Manual prediction trading requires a wallet created in-app, 
+    not an imported watch-only address.');
+}
+
+// Decrypt if your app encrypts keys at rest:
+const decryptedKey = decryptPrivateKey(wallet.privateKey); 
+// use whatever decrypt function exists in your codebase
+Also fix the two persistent issues in parallel:
+RPC rate limiting — still flooding logs every tick. Add to .env immediately:
+BSC_RPC_URL=https://rpc.ankr.com/bsc
+No signup needed for Ankr's public endpoint — it's less rate-limited than the default binance one and handles batched eth_call properly.
+On-chain reads — fortyTwo.ts is firing 5 parallel eth_call batches every cycle hitting the rate limit. Change the on-chain price reader to use the REST API prices instead of chain reads for the scanner. Only hit the chain for actual trade execution, not for display prices.
+
+The private key issue is the blocker. Find the decrypt function — search the codebase for decrypt or privateKey — it almost certainly exists already since the Aster trading path works fine and uses the same wallet system.

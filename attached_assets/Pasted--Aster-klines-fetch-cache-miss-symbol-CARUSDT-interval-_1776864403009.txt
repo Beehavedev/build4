@@ -1,0 +1,54 @@
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'EDUUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 200 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '4h', limit: 200 }
+[GET]
+build4-1.onrender.com/api/predictions/market/0x2517b4f52fc6F34D55239E751D98F94b8A24E7FE clientIP="2.51.180.232" requestID="b5681013-753a-43ec" responseTimeMS=446 responseBytes=974 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[fortyTwo] on-chain read failed for 0x4E44AC673bcc315cD97424CaEfCF9CcCC8eAcA6b: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 25, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x4e44ac673bcc315cd97424caefcf9cccc8eaca6b" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x365351096e7a5fa6A9777b97e58D07f1818A567F: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 27, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x365351096e7a5fa6a9777b97e58d07f1818a567f" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x2B9c916b305EB5D4581675eE98bEa0eF57a8e7E1: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 29, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x2b9c916b305eb5d4581675ee98bea0ef57a8e7e1" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xF3c455Da03f0761d647DD02b0249024BBFbe7250: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 31, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0xf3c455da03f0761d647dd02b0249024bbfbe7250" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xa74b54C5C468Ec3584dD4064277625A1a7DD170c: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 33, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0xa74b54c5c468ec3584dd4064277625a1a7dd170c" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x4E44AC673bcc315cD97424CaEfCF9CcCC8eAcA6b: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 45, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x4e44ac673bcc315cd97424caefcf9cccc8eaca6b" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x365351096e7a5fa6A9777b97e58D07f1818A567F: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 47, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x365351096e7a5fa6a9777b97e58d07f1818a567f" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x2B9c916b305EB5D4581675eE98bEa0eF57a8e7E1: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 49, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x2b9c916b305eb5d4581675ee98bea0ef57a8e7e1" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xF3c455Da03f0761d647DD02b0249024BBFbe7250: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 51, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0xf3c455da03f0761d647dd02b0249024bbfbe7250" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xa74b54C5C468Ec3584dD4064277625A1a7DD170c: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 53, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0xa74b54c5c468ec3584dd4064277625a1a7dd170c" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x4E44AC673bcc315cD97424CaEfCF9CcCC8eAcA6b: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 65, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x4e44ac673bcc315cd97424caefcf9cccc8eaca6b" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x365351096e7a5fa6A9777b97e58D07f1818A567F: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 67, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x365351096e7a5fa6a9777b97e58d07f1818a567f" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0x2B9c916b305EB5D4581675eE98bEa0eF57a8e7E1: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 69, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0x2b9c916b305eb5d4581675ee98bea0ef57a8e7e1" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xF3c455Da03f0761d647DD02b0249024BBFbe7250: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 71, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0xf3c455da03f0761d647dd02b0249024bbfbe7250" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[fortyTwo] on-chain read failed for 0xa74b54C5C468Ec3584dD4064277625A1a7DD170c: missing response for request (value=[ { "error": { "code": -32005, "message": "method eth_call in batch triggered rate limit" }, "id": null, "jsonrpc": "2.0" } ], info={ "payload": { "id": 73, "jsonrpc": "2.0", "method": "eth_call", "params": [ { "data": "0xb06a5c52", "to": "0xa74b54c5c468ec3584dd4064277625a1a7dd170c" }, "latest" ] } }, code=BAD_DATA, version=6.16.0)
+[POST]
+build4-1.onrender.com/api/predictions/buy clientIP="2.51.180.232" requestID="8b0aeecb-afc7-4584" responseTimeMS=3000 responseBytes=363 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+[fortyTwoExecutor] buyOutcome (manual path) failed: Error: [42] buyOutcome would revert: BEP20: transfer from the zero address
+    at FortyTwoTrader.buyOutcome (/opt/render/project/src/src/services/fortyTwoTrader.ts:198:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async runManualTradeUnderLock (/opt/render/project/src/src/services/fortyTwoExecutor.ts:629:17)
+    at async db.$transaction.timeout (/opt/render/project/src/src/services/fortyTwoExecutor.ts:572:14)
+    at async Proxy._transactionWithCallback (/opt/render/project/src/node_modules/.prisma/client/runtime/library.js:130:8000)
+    at async openManualPredictionPosition (/opt/render/project/src/src/services/fortyTwoExecutor.ts:538:10)
+    at async <anonymous> (/opt/render/project/src/src/server.ts:1687:20)
+[Agent BTPredict] HOLD on ARBUSDT — Timeframe divergence violation (15m MACD negative + EMA bearish vs 1h/4h bullish
+[Agent BNT] HOLD on ARBUSDT — Only 2/4 timeframe signals align (4h + 1h bullish, 15m bearish, volume confirmin
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="218.212.138.31" requestID="33da5378-3a46-458a" responseTimeMS=515 responseBytes=2324 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+[Agent Smith] HOLD on ARBUSDT — 15m timeframe bearish (MACD negative, EMA9<EMA21) creates only 1.5/4 alignment—f
+[Agent SeanBuild4] HOLD on ARBUSDT — Setup score 4/10 fails minimum threshold. Timeframe conflict (15m bearish moment
+[GET]
+build4-1.onrender.com/api/predictions/latest clientIP="2.51.180.232" requestID="92a29f40-5742-44b6" responseTimeMS=378 responseBytes=2324 userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
