@@ -485,9 +485,10 @@ function liveMarketDeps(): () => void {
 
 test('checkAndSize same-market guard SELECTs count() with [agentId, marketAddress, tokenId] and status=open', async () => {
   const restore = liveMarketDeps()
-  // First query returns count=1 → "already holding" → bail out before the
-  // other guards, so this is the only SQL call we capture.
-  const spy = installSqlSpies([[{ c: 1n }]])
+  // SQL queue: [0] enable-check (kill switch) → enabled, [1] same-market
+  // guard returns count=1 → "already holding" → bail out before the other
+  // guards.
+  const spy = installSqlSpies([[{ fortyTwoLiveTrade: true }], [{ c: 1n }]])
   try {
     const result = await openPredictionPosition(
       { agentId: 'agent_x', agentMaxPositionSize: 1000, userId: 'user_y' },
@@ -497,8 +498,8 @@ test('checkAndSize same-market guard SELECTs count() with [agentId, marketAddres
       ok: false,
       reason: 'already holding an open position on this market+outcome',
     })
-    assert.equal(spy.calls.length, 1, 'short-circuit: only the same-market guard ran')
-    const { sql, params } = spy.calls[0]
+    assert.equal(spy.calls.length, 2, 'enable-check + same-market guard, then short-circuit')
+    const { sql, params } = spy.calls[1]
     const n = norm(sql)
     assert.match(n, /SELECT\s+count\(\*\)::bigint\s+AS\s+c\s+FROM\s+"OutcomePosition"/i)
     assert.match(n, /"agentId"\s*=\s*\$1/i)
@@ -516,9 +517,10 @@ test('checkAndSize same-market guard SELECTs count() with [agentId, marketAddres
 
 test('checkAndSize daily-quota guard SELECTs count() with [agentId, dayAgoCutoff] and openedAt > cutoff', async () => {
   const restore = liveMarketDeps()
-  // First call (same-market guard) returns 0 → fall through. Second call
-  // (daily-quota guard) returns >= PRED_MAX_NEW_PER_AGENT_PER_DAY (3) → bail.
-  const spy = installSqlSpies([[{ c: 0n }], [{ c: 3n }]])
+  // SQL queue: [0] enable-check enabled, [1] same-market guard 0 → fall
+  // through. [2] daily-quota guard returns >= PRED_MAX_NEW_PER_AGENT_PER_DAY
+  // (3) → bail.
+  const spy = installSqlSpies([[{ fortyTwoLiveTrade: true }], [{ c: 0n }], [{ c: 3n }]])
   try {
     const before = Date.now()
     const result = await openPredictionPosition(
@@ -526,8 +528,8 @@ test('checkAndSize daily-quota guard SELECTs count() with [agentId, dayAgoCutoff
       { action: 'OPEN_PREDICTION', marketAddress: '0xmkt', tokenId: 7, conviction: 0.9 },
     )
     assert.deepEqual(result, { ok: false, reason: 'daily prediction-trade quota reached' })
-    assert.equal(spy.calls.length, 2)
-    const { sql, params } = spy.calls[1]
+    assert.equal(spy.calls.length, 3)
+    const { sql, params } = spy.calls[2]
     const n = norm(sql)
     assert.match(n, /SELECT\s+count\(\*\)::bigint\s+AS\s+c\s+FROM\s+"OutcomePosition"/i)
     assert.match(n, /"agentId"\s*=\s*\$1/i)
@@ -546,16 +548,20 @@ test('checkAndSize daily-quota guard SELECTs count() with [agentId, dayAgoCutoff
 
 test('checkAndSize max-open guard SELECTs count() with [agentId] and status=open', async () => {
   const restore = liveMarketDeps()
-  // [same-market=0, daily=0, max-open=5] → bail at the max-open guard.
-  const spy = installSqlSpies([[{ c: 0n }], [{ c: 0n }], [{ c: 5n }]])
+  // [enable-check=enabled, same-market=0, daily=0, max-open=5] → bail at
+  // the max-open guard.
+  const spy = installSqlSpies([
+    [{ fortyTwoLiveTrade: true }],
+    [{ c: 0n }], [{ c: 0n }], [{ c: 5n }],
+  ])
   try {
     const result = await openPredictionPosition(
       { agentId: 'agent_x', agentMaxPositionSize: 1000, userId: 'user_y' },
       { action: 'OPEN_PREDICTION', marketAddress: '0xmkt', tokenId: 7, conviction: 0.9 },
     )
     assert.deepEqual(result, { ok: false, reason: 'max simultaneous prediction positions reached' })
-    assert.equal(spy.calls.length, 3)
-    const { sql, params } = spy.calls[2]
+    assert.equal(spy.calls.length, 4)
+    const { sql, params } = spy.calls[3]
     const n = norm(sql)
     assert.match(n, /SELECT\s+count\(\*\)::bigint\s+AS\s+c\s+FROM\s+"OutcomePosition"/i)
     assert.match(n, /"agentId"\s*=\s*\$1/i)
@@ -590,14 +596,19 @@ test('openPredictionPosition INSERT writes all columns with providers cast to js
   }))
 
   // SQL queue:
-  //   [0] live-opt-in lookup (buildTrader) → opt out → paperTrade=true
+  //   [0] enable-check (top of openPredictionPosition) → enabled
   //   [1] same-market guard count → 0
   //   [2] daily-quota count → 0
   //   [3] max-open count → 0
-  //   [4] INSERT...RETURNING → id row
+  //   [4] live-opt-in lookup inside buildTrader → enabled → live mode
+  //   [5] INSERT...RETURNING → id row
+  // (The enable-check at the top duplicates the one inside buildTrader —
+  // intentional, the upstream check exists to surface a precise error
+  // message before we burn DB cycles on quotas.)
   const spy = installSqlSpies([
-    [{ fortyTwoLiveTrade: false }],
+    [{ fortyTwoLiveTrade: true }],
     [{ c: 0n }], [{ c: 0n }], [{ c: 0n }],
+    [{ fortyTwoLiveTrade: true }],
     [{ id: 'pos_new_id' }],
   ])
   try {
@@ -610,10 +621,10 @@ test('openPredictionPosition INSERT writes all columns with providers cast to js
       },
       providers,
     )
-    assert.deepEqual(result, { ok: true, positionId: 'pos_new_id', paperTrade: true, usdtIn: 2 })
-    assert.equal(spy.calls.length, 5, 'exactly 5 SQL calls: opt-in + 3 guards + INSERT')
+    assert.deepEqual(result, { ok: true, positionId: 'pos_new_id', paperTrade: false, usdtIn: 2 })
+    assert.equal(spy.calls.length, 6, 'exactly 6 SQL calls: enable-check + 3 guards + buildTrader opt-in + INSERT')
 
-    const insert = spy.calls[4]
+    const insert = spy.calls[5]
     const n = norm(insert.sql)
     assert.match(n, /INSERT\s+INTO\s+"OutcomePosition"/i)
     // Column list must match our positional binding contract exactly.
@@ -638,7 +649,7 @@ test('openPredictionPosition INSERT writes all columns with providers cast to js
     assert.equal(insert.params[5], 'YES',            'outcomeLabel (from on-chain outcome) → $6')
     assert.equal(insert.params[6], 2,                'usdtIn → $7 (sized to PRED_PER_POSITION_USDT_CAP)')
     assert.equal(insert.params[7], 0.4,              'entryPrice (impliedProbability) → $8')
-    assert.equal(insert.params[8], true,             'paperTrade → $9')
+    assert.equal(insert.params[8], false,            'paperTrade → $9 (live, not paper)')
     assert.equal(insert.params[9], '0xtxHashOpenStub', 'txHashOpen → $10')
     assert.equal(insert.params[10], 'because',       'reasoning → $11')
     assert.equal(insert.params[11], null,            'outcomeTokenAmount → $12 (null in paper mode)')
