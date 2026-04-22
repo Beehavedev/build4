@@ -517,53 +517,62 @@ export async function openManualPredictionPosition(
     return { ok: false, reason: '42.space trading is disabled — enable it in the Predictions tab to start trading' };
   }
 
-  // Best-effort per-user serialization via Postgres advisory lock keyed on
-  // userId. Without this, two concurrent /api/predictions/buy requests from
-  // the same user could both pass the count() guards below and exceed the
-  // cap (TOCTOU). pg_try_advisory_lock returns false immediately if another
-  // session already holds the lock, so we surface a clean "in flight" error
-  // rather than silently letting the second request slip through.
-  // Lock is session-scoped; we explicitly release in the finally block.
+  // Per-user serialization via Postgres TRANSACTION-SCOPED advisory lock.
+  //
+  // Earlier we used session-scoped pg_try_advisory_lock + manual unlock in a
+  // finally block. That has a brutal interaction with Prisma's connection
+  // pool: the acquire and release can land on different pooled connections,
+  // so the unlock becomes a no-op while the original connection keeps the
+  // lock held — forever, until that connection gets recycled. Symptom in
+  // production was "another manual trade is already in flight" persisting
+  // indefinitely for a user after one failed trade.
+  //
+  // pg_try_advisory_xact_lock is automatically released when the surrounding
+  // transaction ends (commit, rollback, or connection drop). Wrapping the
+  // entire flow in db.$transaction pins to a single connection AND
+  // guarantees lock cleanup regardless of what goes wrong inside. The 60s
+  // timeout matches our typical worst-case BSC tx confirmation window;
+  // anything longer indicates the chain call itself is wedged and we'd
+  // rather fail loudly than hold the lock forever.
   const lockKey = hashStringToInt32(`manual-trade:${userId}`);
-  const lockRows = await db.$queryRawUnsafe<Array<{ acquired: boolean }>>(
-    `SELECT pg_try_advisory_lock($1)::boolean AS acquired`,
-    lockKey,
+  return await db.$transaction(
+    async (tx) => {
+      const lockRows = await tx.$queryRawUnsafe<Array<{ acquired: boolean }>>(
+        `SELECT pg_try_advisory_xact_lock($1)::boolean AS acquired`,
+        lockKey,
+      );
+      if (!lockRows[0]?.acquired) {
+        return { ok: false, reason: 'another manual trade is already in flight — retry in a moment' };
+      }
+
+      // Per-user simultaneous-open cap.
+      const openCount = await tx.$queryRawUnsafe<Array<{ c: bigint }>>(
+        `SELECT count(*)::bigint AS c FROM "OutcomePosition"
+         WHERE "userId" = $1 AND "agentId" IS NULL AND status = 'open'`,
+        userId,
+      );
+      if (Number(openCount[0]?.c ?? 0) >= MANUAL_MAX_OPEN_PER_USER) {
+        return {
+          ok: false,
+          reason: `max ${MANUAL_MAX_OPEN_PER_USER} open manual positions reached`,
+        };
+      }
+
+      // Per-user daily open-rate cap.
+      const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const opensToday = await tx.$queryRawUnsafe<Array<{ c: bigint }>>(
+        `SELECT count(*)::bigint AS c FROM "OutcomePosition"
+         WHERE "userId" = $1 AND "agentId" IS NULL AND "openedAt" > $2`,
+        userId,
+        dayAgo,
+      );
+      if (Number(opensToday[0]?.c ?? 0) >= MANUAL_MAX_NEW_PER_USER_PER_DAY) {
+        return { ok: false, reason: 'daily manual-trade quota reached' };
+      }
+      return await runManualTradeUnderLock();
+    },
+    { timeout: 60_000, maxWait: 5_000 },
   );
-  if (!lockRows[0]?.acquired) {
-    return { ok: false, reason: 'another manual trade is already in flight — retry in a moment' };
-  }
-
-  try {
-    // Per-user simultaneous-open cap.
-    const openCount = await db.$queryRawUnsafe<Array<{ c: bigint }>>(
-      `SELECT count(*)::bigint AS c FROM "OutcomePosition"
-       WHERE "userId" = $1 AND "agentId" IS NULL AND status = 'open'`,
-      userId,
-    );
-    if (Number(openCount[0]?.c ?? 0) >= MANUAL_MAX_OPEN_PER_USER) {
-      return {
-        ok: false,
-        reason: `max ${MANUAL_MAX_OPEN_PER_USER} open manual positions reached`,
-      };
-    }
-
-    // Per-user daily open-rate cap.
-    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const opensToday = await db.$queryRawUnsafe<Array<{ c: bigint }>>(
-      `SELECT count(*)::bigint AS c FROM "OutcomePosition"
-       WHERE "userId" = $1 AND "agentId" IS NULL AND "openedAt" > $2`,
-      userId,
-      dayAgo,
-    );
-    if (Number(opensToday[0]?.c ?? 0) >= MANUAL_MAX_NEW_PER_USER_PER_DAY) {
-      return { ok: false, reason: 'daily manual-trade quota reached' };
-    }
-    return await runManualTradeUnderLock();
-  } finally {
-    await db.$queryRawUnsafe(`SELECT pg_advisory_unlock($1)`, lockKey).catch((e) => {
-      console.warn('[manualPrediction] advisory unlock failed:', (e as Error).message);
-    });
-  }
 
   // Inner function isolates the post-lock work so we can `return` cleanly
   // without losing the finally-block unlock. Hoisted, so the call above
