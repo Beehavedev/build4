@@ -36,7 +36,7 @@ function scriptedFn(
 
 const baseArgs = {
   user: 'analyze BTC',
-  parse: (t: string) => JSON.parse(t) as FakeDecision,
+  schema: (t: string) => JSON.parse(t) as FakeDecision,
   getAction: (d: FakeDecision) => d.action,
   getPredictionKey: (d: FakeDecision) =>
     d.predictionTrade ? `${d.predictionTrade.marketAddress}:${d.predictionTrade.tokenId}:${d.predictionTrade.action}` : null,
@@ -247,6 +247,39 @@ test('prediction quorum holds when same providers agree on action AND sidecar', 
     tokenId: 1,
     action: 'OPEN_PREDICTION',
   })
+})
+
+test('hard timeout fires when callLLMFn ignores its own timeoutMs', async () => {
+  const result = await runSwarmDecision<FakeDecision>({
+    ...baseArgs,
+    providers: ['anthropic', 'xai', 'hyperbolic'],
+    timeoutMs: 30,
+    callLLMFn: scriptedFn({
+      anthropic: decision('OPEN_LONG'),
+      xai: decision('OPEN_LONG'),
+      hyperbolic: { delayMs: 500, decision: decision('HOLD') },
+    }),
+  })
+  const stalled = result.decisions.find((d) => d.provider === 'hyperbolic')!
+  assert.equal(stalled.ok, false)
+  assert.match(stalled.error ?? '', /hard timeout/)
+  assert.equal(result.divergence.actionConsensus, 'OPEN_LONG')
+  assert.ok(result.quorumDecision)
+})
+
+test('reasoning telemetry is extracted by default and truncated', async () => {
+  const longReasoning = 'x'.repeat(2000)
+  const dec: FakeDecision = { action: 'OPEN_LONG', reasoning: longReasoning, predictionTrade: null }
+  const result = await runSwarmDecision<FakeDecision>({
+    ...baseArgs,
+    providers: ['anthropic', 'xai'],
+    reasoningMaxChars: 100,
+    callLLMFn: scriptedFn({ anthropic: dec, xai: dec }),
+  })
+  for (const d of result.decisions) {
+    assert.ok(d.ok)
+    assert.ok(d.reasoning && d.reasoning.length <= 101, 'reasoning must be truncated to ~100 chars')
+  }
 })
 
 test('empty providers list returns error', async () => {
