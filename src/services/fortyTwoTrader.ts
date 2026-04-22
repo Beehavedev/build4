@@ -32,7 +32,23 @@ export const USDT_BSC = '0x55d398326f99059fF775485246999027B3197955';
 //       bool isExactIn;       // true = amount is the input, false = amount is the desired output
 //       uint256 minOutOrMaxIn;// slippage bound
 //   }
+//
+// CRITICAL — every state-changing entrypoint MUST be wrapped in multicall(...).
+// FTRouter inherits from Multicallbackable. The router's `initiator` storage
+// slot is only set inside multicall (it captures msg.sender there, then clears
+// it at end). When swapSimple later triggers the market's onMint callback,
+// the callback executes erc20TransferFromInitiator which pulls collateral
+// from `initiator`. Without the multicall wrapper, initiator == address(0),
+// and BEP20.transferFrom reverts with "transfer from the zero address" — the
+// exact error we chased through five wrong-cause fixes (router typo, USDT
+// checksum, eth_chainId BUFFER_OVERRUN, FallbackProvider, missing `from`
+// override). The contract source confirms it explicitly:
+//   ActionSimple.sol L41: "@dev Please wrap all calls in a multicall (to load initiator)"
+// Wrapping is also harmless for claim paths (which use msg.sender, not
+// initiator) since delegatecall preserves msg.sender, so we wrap everything
+// for consistency.
 const ROUTER_ABI = [
+  'function multicall((bool allowFailure, bytes callData)[] calls) external returns ((bool success, bytes returnData)[] returnDatas)',
   'function swapSimple(address market, address receiver, uint256 tokenId, (bool isMint, uint256 amount, bool isExactIn, uint256 minOutOrMaxIn) params, bytes dataSwap, bytes dataGuess) external',
   'function claimSimple(address market, address receiver, uint256[] tokenIds, uint256[] otToBurn) external returns (uint256 payout)',
   'function claimAllSimple(address market, address receiver) external returns (uint256 payout)',
@@ -96,9 +112,20 @@ export interface FortyTwoTraderOptions {
 
 export class FortyTwoTrader {
   private router: ethers.Contract;
+  private routerIface: ethers.Interface;
   private usdt: ethers.Contract;
   private wallet: ethers.Wallet;
   private dryRun: boolean;
+
+  /**
+   * Wrap an inner FTRouter call (e.g. swapSimple) into the multicall wrapper
+   * that the router requires. See the big comment above ROUTER_ABI for why.
+   * Returns a single-element Call[] array suitable for `multicall(...)`.
+   */
+  private buildMulticall(fn: string, args: unknown[]): Array<{ allowFailure: boolean; callData: string }> {
+    const callData = this.routerIface.encodeFunctionData(fn, args);
+    return [{ allowFailure: false, callData }];
+  }
 
   constructor(privateKey: string, rpcUrl: string, opts: FortyTwoTraderOptions = {}) {
     // Use the shared multi-endpoint provider with staticNetwork so the signer
@@ -111,6 +138,7 @@ export class FortyTwoTrader {
     const provider = buildBscProvider(rpcUrl);
     this.wallet = new ethers.Wallet(privateKey, provider);
     this.router = new ethers.Contract(FTROUTER_ADDRESS, ROUTER_ABI, this.wallet);
+    this.routerIface = new ethers.Interface(ROUTER_ABI);
     this.usdt = new ethers.Contract(USDT_BSC, ERC20_ABI, this.wallet);
     this.dryRun = opts.dryRun ?? process.env.FORTYTWO_PAPER_TRADE === '1';
     if (this.dryRun) {
@@ -165,47 +193,32 @@ export class FortyTwoTrader {
       return { dryRun: true, hash: dryHash('buy'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'buyOutcome', args, status: 1 } as unknown as ethers.TransactionReceipt;
     }
 
-    // Preflight via staticCall — turns silent reverts into actionable error
-    // messages BEFORE we spend gas. The cryptic
-    //   "cannot slice beyond data bounds (buffer=0x ...BUFFER_OVERRUN)"
-    // we were seeing in the mini-app was ethers trying to decode revert data
-    // from an empty 0x response on an estimateGas precheck. By doing our own
-    // staticCall first we get either (a) the contract's actual revert reason
-    // — slippage, market closed, allowance, etc. — or (b) confirmation that
-    // the failure is purely RPC-side (still empty 0x), which is a different
-    // class of bug and worth distinguishing from a contract-logic failure.
-    //
-    // The explicit `{ from: this.wallet.address }` override is REQUIRED.
-    // Without it, eth_call defaults `from` to 0x0, which inside the router
-    // becomes `msg.sender = 0x0`. The router then calls
-    //   usdt.transferFrom(msg.sender, market, amount)
-    // which BEP20 rejects with "transfer from the zero address" — a false
-    // revert that would never happen for the real signed tx. ethers v6 is
-    // SUPPOSED to auto-populate `from` from a signer-bound contract on
-    // staticCall, but with FallbackProvider in the mix that auto-population
-    // doesn't reliably flow through, so we set it explicitly.
+    // Wrap swapSimple in the router's multicall(...) — this is what sets
+    // `initiator = msg.sender` so that the market's onMint callback can pull
+    // USDT from the user's wallet via erc20TransferFromInitiator. See the
+    // big comment on ROUTER_ABI for the full story.
+    const calls = this.buildMulticall('swapSimple', [
+      marketAddress,
+      this.wallet.address,
+      BigInt(tokenId),
+      params,
+      '0x', // dataSwap — not the callback selector; this is curve calc data
+      '0x', // dataGuess — required for exact-collateral; PowerCurve accepts empty
+    ]);
+
+    // Preflight via staticCall on the multicall wrapper — surfaces real
+    // revert reasons (slippage, allowance, market closed, etc.) before we
+    // spend gas. We pass `from` explicitly so the eth_call uses the wallet's
+    // address as msg.sender; otherwise it defaults to 0x0 and we get a
+    // misleading initiator-related revert from the preflight even though
+    // the real signed tx would succeed.
     try {
-      await this.router.swapSimple.staticCall(
-        marketAddress,
-        this.wallet.address,
-        BigInt(tokenId),
-        params,
-        '0x',
-        '0x',
-        { from: this.wallet.address },
-      );
+      await this.router.multicall.staticCall(calls, { from: this.wallet.address });
     } catch (simErr) {
       throw new Error(`[42] buyOutcome would revert: ${extractRevertReason(simErr)}`);
     }
 
-    const tx = await this.router.swapSimple(
-      marketAddress,
-      this.wallet.address,
-      tokenId,
-      params,
-      '0x',
-      '0x',
-    );
+    const tx = await this.router.multicall(calls);
     return tx.wait();
   }
 
@@ -233,32 +246,25 @@ export class FortyTwoTrader {
       return { dryRun: true, hash: dryHash('sell'), from: this.wallet.address, to: FTROUTER_ADDRESS, method: 'sellOutcome', args, status: 1 } as unknown as ethers.TransactionReceipt;
     }
 
-    // Same staticCall preflight as buyOutcome — see buyOutcome for rationale,
-    // including why the explicit `from` override is required (without it,
-    // eth_call defaults sender to 0x0 and the router's internal token
-    // transfer reverts with "transfer from the zero address").
+    // Multicall-wrapped swapSimple — see buyOutcome / ROUTER_ABI comment for
+    // the full rationale on why direct swapSimple calls revert with
+    // "transfer from the zero address".
+    const calls = this.buildMulticall('swapSimple', [
+      marketAddress,
+      this.wallet.address,
+      BigInt(tokenId),
+      params,
+      '0x',
+      '0x',
+    ]);
+
     try {
-      await this.router.swapSimple.staticCall(
-        marketAddress,
-        this.wallet.address,
-        BigInt(tokenId),
-        params,
-        '0x',
-        '0x',
-        { from: this.wallet.address },
-      );
+      await this.router.multicall.staticCall(calls, { from: this.wallet.address });
     } catch (simErr) {
       throw new Error(`[42] sellOutcome would revert: ${extractRevertReason(simErr)}`);
     }
 
-    const tx = await this.router.swapSimple(
-      marketAddress,
-      this.wallet.address,
-      tokenId,
-      params,
-      '0x',
-      '0x',
-    );
+    const tx = await this.router.multicall(calls);
     return tx.wait();
   }
 
