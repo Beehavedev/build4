@@ -845,6 +845,187 @@ app.post('/api/aster/transfer', requireTgUser, async (req, res) => {
   }
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Aster manual trading — used by the miniapp Trade page.
+// These are thin wrappers around services/aster.ts. The agent uses the same
+// underlying functions on its own ticks; these endpoints expose them to the UI
+// for human-initiated orders.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/aster/markprice/:pair  — public mark price + funding for one symbol
+app.get('/api/aster/markprice/:pair', async (req, res) => {
+  try {
+    const { getMarkPrice } = await import('./services/aster')
+    const data = await getMarkPrice(req.params.pair)
+    res.json(data)
+  } catch (err: any) {
+    console.error('[API] /aster/markprice failed:', err?.message)
+    res.status(500).json({ error: err?.message ?? 'Internal error' })
+  }
+})
+
+// GET /api/aster/positions  — caller's live perp positions
+app.get('/api/aster/positions', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user.asterOnboarded) {
+      return res.status(400).json({ error: 'Activate trading account first', needsApprove: true })
+    }
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet) return res.status(404).json({ error: 'No active wallet' })
+
+    const { resolveAgentCreds, getPositions } = await import('./services/aster')
+    const creds = await resolveAgentCreds(user, wallet.address)
+    if (!creds) return res.status(400).json({ error: 'No agent credentials — re-activate Aster' })
+
+    const positions = await getPositions(creds)
+    res.json({ positions })
+  } catch (err: any) {
+    console.error('[API] /aster/positions failed:', err?.message)
+    res.status(500).json({ error: err?.message ?? 'Internal error' })
+  }
+})
+
+// POST /api/aster/order
+// Body: { pair, side: 'LONG'|'SHORT', type: 'MARKET'|'LIMIT',
+//         notionalUsdt, leverage, limitPrice? }
+// Manual perp order. Converts USDT notional → base quantity using mark price
+// (or the supplied limit price for LIMIT orders), sets leverage, and routes
+// through the builder code path when ASTER_BUILDER_ADDRESS is configured so
+// the platform earns its broker fee.
+app.post('/api/aster/order', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user.asterOnboarded) {
+      return res.status(400).json({ error: 'Activate trading account first', needsApprove: true })
+    }
+
+    const { pair, side, type, notionalUsdt, leverage, limitPrice } = req.body ?? {}
+    if (typeof pair !== 'string' || !pair) {
+      return res.status(400).json({ error: 'pair required' })
+    }
+    if (side !== 'LONG' && side !== 'SHORT') {
+      return res.status(400).json({ error: 'side must be LONG or SHORT' })
+    }
+    if (type !== 'MARKET' && type !== 'LIMIT') {
+      return res.status(400).json({ error: 'type must be MARKET or LIMIT' })
+    }
+    const notional = Number(notionalUsdt)
+    if (!Number.isFinite(notional) || notional <= 0) {
+      return res.status(400).json({ error: 'notionalUsdt must be > 0' })
+    }
+    const lev = Math.max(1, Math.min(50, Math.floor(Number(leverage) || 1)))
+    const limit = type === 'LIMIT' ? Number(limitPrice) : 0
+    if (type === 'LIMIT' && (!Number.isFinite(limit) || limit <= 0)) {
+      return res.status(400).json({ error: 'limitPrice must be > 0 for LIMIT orders' })
+    }
+
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet) return res.status(404).json({ error: 'No active wallet' })
+
+    const aster = await import('./services/aster')
+    const creds = await aster.resolveAgentCreds(user, wallet.address)
+    if (!creds) return res.status(400).json({ error: 'No agent credentials — re-activate Aster' })
+
+    const sym = pair.replace(/[\/\s]/g, '').toUpperCase()
+    const refPrice = type === 'LIMIT' ? limit : (await aster.getMarkPrice(sym)).markPrice
+    if (!Number.isFinite(refPrice) || refPrice <= 0) {
+      return res.status(503).json({ error: 'Could not resolve mark price' })
+    }
+    const qty = parseFloat((notional / refPrice).toFixed(6))
+    if (qty <= 0) {
+      return res.status(400).json({ error: 'Order size too small for current price' })
+    }
+
+    // Margin pre-check — prevent obvious "insufficient margin" rejects.
+    try {
+      const bal = await aster.getAccountBalanceStrict(creds)
+      if (bal.usdt <= 0) {
+        return res.status(400).json({ error: `Aster balance is ${bal.usdt.toFixed(4)} USDT — deposit first` })
+      }
+      const requiredMargin = notional / lev
+      if (requiredMargin > bal.availableMargin + 0.01) {
+        return res.status(400).json({
+          error: `Need ~${requiredMargin.toFixed(2)} USDT margin, have ${bal.availableMargin.toFixed(2)} available`
+        })
+      }
+    } catch (balErr: any) {
+      console.warn('[API] /aster/order balance pre-check failed:', balErr?.message)
+    }
+
+    const builderAddress = process.env.ASTER_BUILDER_ADDRESS
+    const feeRate        = process.env.ASTER_BUILDER_FEE_RATE ?? '0.0001'
+    const buySell        = side === 'LONG' ? 'BUY' : 'SELL'
+
+    let result
+    if (builderAddress && type === 'MARKET') {
+      // Builder route only supports the params we wire; LIMIT routes still go
+      // through the standard endpoint so timeInForce is honored.
+      if (lev > 1) await aster.setLeverage(sym, lev, creds)
+      result = await aster.placeOrderWithBuilderCode({
+        symbol: sym, side: buySell, type: 'MARKET', quantity: qty,
+        builderAddress, feeRate, creds
+      })
+    } else {
+      result = await aster.placeOrder({
+        symbol: sym, side: buySell, type, quantity: qty,
+        price: type === 'LIMIT' ? limit : undefined,
+        leverage: lev, creds
+      })
+    }
+
+    res.json({
+      success: true,
+      order: result,
+      qty,
+      refPrice,
+      notionalUsdt: notional,
+      leverage: lev
+    })
+  } catch (err: any) {
+    const msg = err?.response?.data?.msg ?? err?.message ?? 'Internal error'
+    console.error('[API] /aster/order failed:', msg)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// POST /api/aster/close
+// Body: { pair, side: 'LONG'|'SHORT', size }   (size in base units; pass the
+//   `size` field returned by /api/aster/positions to fully close)
+app.post('/api/aster/close', requireTgUser, async (req, res) => {
+  try {
+    const user = (req as any).user
+    if (!user.asterOnboarded) {
+      return res.status(400).json({ error: 'Activate trading account first', needsApprove: true })
+    }
+    const { pair, side, size } = req.body ?? {}
+    if (typeof pair !== 'string' || !pair) {
+      return res.status(400).json({ error: 'pair required' })
+    }
+    if (side !== 'LONG' && side !== 'SHORT') {
+      return res.status(400).json({ error: 'side must be LONG or SHORT' })
+    }
+    const qty = Number(size)
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return res.status(400).json({ error: 'size must be > 0' })
+    }
+
+    const wallet = await db.wallet.findFirst({ where: { userId: user.id, isActive: true } })
+    if (!wallet) return res.status(404).json({ error: 'No active wallet' })
+
+    const { resolveAgentCreds, closePosition } = await import('./services/aster')
+    const creds = await resolveAgentCreds(user, wallet.address)
+    if (!creds) return res.status(400).json({ error: 'No agent credentials — re-activate Aster' })
+
+    const result = await closePosition(pair.replace(/[\/\s]/g, '').toUpperCase(), side, qty, creds)
+    res.json({ success: true, order: result })
+  } catch (err: any) {
+    const msg = err?.response?.data?.msg ?? err?.message ?? 'Internal error'
+    console.error('[API] /aster/close failed:', msg)
+    res.status(500).json({ error: msg })
+  }
+})
+
 // Per-user mutex for withdrawals — prevents double-spend if a client
 // fires concurrent requests before the first tx is broadcast.
 const withdrawLocks = new Map<string, Promise<unknown>>()

@@ -5,6 +5,7 @@ import CopyTrade from './pages/CopyTrade'
 import Portfolio from './pages/Portfolio'
 import Wallet from './pages/Wallet'
 import Predictions, { CrosshairIcon } from './pages/Predictions'
+import { Trade } from './pages/Trade'
 import Admin from './pages/Admin'
 import { apiFetch } from './api'
 
@@ -14,7 +15,7 @@ declare global {
   }
 }
 
-type Page = 'dashboard' | 'agents' | 'wallet' | 'copy' | 'portfolio' | 'predictions' | 'admin'
+type Page = 'dashboard' | 'agents' | 'wallet' | 'trade' | 'copy' | 'portfolio' | 'predictions' | 'admin'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -39,6 +40,7 @@ export default function App() {
   const navItems: { id: Page; label: string; icon: string | 'crosshair' }[] = [
     { id: 'dashboard', label: 'Home', icon: '⚡' },
     { id: 'agents', label: 'Agents', icon: '🤖' },
+    { id: 'trade', label: 'Trade', icon: '📈' },
     { id: 'wallet', label: 'Wallet', icon: '💳' },
     // Copy trading hidden for now — coming back to it later.
     // { id: 'copy', label: 'Copy', icon: '📋' },
@@ -53,6 +55,7 @@ export default function App() {
       <div style={{ padding: '0 16px' }}>
         {page === 'dashboard' && <Dashboard userId={userId} onNavigate={setPage} />}
         {page === 'agents' && <AgentStudio userId={userId} />}
+        {page === 'trade' && <Trade />}
         {page === 'wallet' && <Wallet />}
         {page === 'copy' && <CopyTrade />}
         {page === 'portfolio' && <Portfolio userId={userId} />}
