@@ -72,7 +72,20 @@ export function decryptPrivateKey(encrypted: string, userId: string, pin?: strin
   // env-var convention can't be decrypted with MASTER_KEY alone — try
   // both candidates so users whose wallets predate the env rename
   // aren't permanently locked out of activation.
-  const keyCandidates = Array.from(new Set([MASTER_KEY, LEGACY_MASTER].filter(Boolean)))
+  // Always include the historical hardcoded defaults: production was
+  // running for some period without either env var set, so wallets
+  // created during that window were encrypted under the default
+  // 'default_dev_key_change_in_prod_32c' (or 'default-dev-key-change
+  // -me-32chars!'). Once env vars were added, MASTER_KEY/LEGACY_MASTER
+  // started resolving to the env values and could no longer reach the
+  // original default. Append the defaults as last-resort candidates so
+  // those orphaned wallets remain decryptable forever.
+  const HISTORICAL_DEFAULT_MODERN = 'default_dev_key_change_in_prod_32c'
+  const HISTORICAL_DEFAULT_LEGACY = 'default-dev-key-change-me-32chars!'
+  const keyCandidates = Array.from(new Set([
+    MASTER_KEY, LEGACY_MASTER,
+    HISTORICAL_DEFAULT_MODERN, HISTORICAL_DEFAULT_LEGACY,
+  ].filter(Boolean)))
   let lastErr: Error | null = null
   for (const masterCandidate of keyCandidates) {
     try {
