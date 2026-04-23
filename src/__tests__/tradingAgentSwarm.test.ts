@@ -111,13 +111,14 @@ test('runDecisionLLM: swarm + quorum reached uses the quorum decision and emits 
 })
 
 // ─── Branch (b): >=2 live providers + NO quorum → Anthropic fallback ──────
-test('runDecisionLLM: swarm + no quorum issues an Anthropic fallback call but preserves swarm telemetry', async () => {
-  const longHigh = decision({ action: 'OPEN_LONG', confidence: 0.9 })
-  const short = decision({ action: 'OPEN_SHORT', confidence: 0.6 })
-  const hold = decision({ action: 'HOLD', confidence: 0.3 })
-  const anthropicVerdict = decision({ action: 'HOLD', confidence: 0.55, reasoning: 'tie-break by anthropic' })
+test('runDecisionLLM: swarm + no quorum picks the highest-confidence NON-anthropic successful decision (no extra Anthropic call)', async () => {
+  // Anthropic returns the highest raw confidence (0.9) but we deliberately
+  // de-prioritize it because in production it is the provider that runs out
+  // of credits. xai (0.6) should win over hyperbolic (0.3).
+  const longHigh = decision({ action: 'OPEN_LONG', confidence: 0.9, reasoning: 'anthropic says long' })
+  const short = decision({ action: 'OPEN_SHORT', confidence: 0.6, reasoning: 'xai says short' })
+  const hold = decision({ action: 'HOLD', confidence: 0.3, reasoning: 'hyperbolic says hold' })
   let anthropicCalls = 0
-  let anthropicArgs: { system?: string; userMessage?: string } = {}
   const result = await runDecisionLLM(true, 'sys-prompt', 'user-msg', {
     getProviderStatus: fakeStatus(['anthropic', 'xai', 'hyperbolic']),
     runSwarmDecision: (async () =>
@@ -129,34 +130,44 @@ test('runDecisionLLM: swarm + no quorum issues an Anthropic fallback call but pr
           { provider: 'hyperbolic', ok: true, decision: hold },
         ],
       })) as any,
-    anthropicCreate: async (args) => {
+    anthropicCreate: async () => {
       anthropicCalls += 1
-      anthropicArgs.system = args.system as string
-      anthropicArgs.userMessage = (args.messages[0] as any).content
-      return {
-        id: 'msg_x',
-        type: 'message',
-        role: 'assistant',
-        model: 'claude-sonnet-4-5',
-        stop_reason: 'end_turn',
-        stop_sequence: null,
-        usage: { input_tokens: 10, output_tokens: 10 },
-        content: [{ type: 'text', text: JSON.stringify(anthropicVerdict), citations: null }],
-      } as any
+      throw new Error('anthropicCreate must NOT be called by the no-quorum branch any more')
     },
   })
-  assert.equal(anthropicCalls, 1, 'no-quorum branch MUST issue exactly one Anthropic fallback call')
-  assert.equal(anthropicArgs.system, 'sys-prompt', 'fallback must reuse the same system prompt')
-  assert.equal(anthropicArgs.userMessage, 'user-msg', 'fallback must reuse the same user message')
-  assert.equal(result.decision.action, 'HOLD', 'final decision must come from Anthropic, not the disagreeing swarm')
-  assert.equal(result.decision.reasoning, 'tie-break by anthropic')
+  assert.equal(anthropicCalls, 0, 'no-quorum branch must NOT issue any Anthropic call')
+  assert.equal(result.decision.action, 'OPEN_SHORT', 'best-of-swarm: xai wins over hyperbolic; anthropic is de-prioritized')
+  assert.equal(result.decision.reasoning, 'xai says short')
   assert.ok(result.providersTelemetry && result.providersTelemetry.length === 3, 'swarm telemetry must still be present')
-  assert.match(result.rawResponse, /^\[swarm-no-quorum, anthropic-fallback\]/)
+  assert.match(result.rawResponse, /^\[swarm-no-quorum, best-of-swarm\]/)
 })
 
-test('runDecisionLLM: swarm + no quorum still calls Anthropic fallback even when all providers failed', async () => {
+test('runDecisionLLM: swarm + no quorum falls back to anthropic decision only when it is the only successful provider', async () => {
+  // xai and hyperbolic both errored; anthropic is the only provider that
+  // returned a parseable decision. Even though we de-prioritize anthropic,
+  // it wins because there is no non-anthropic alternative.
+  const anthropicOnly = decision({ action: 'HOLD', confidence: 0.55, reasoning: 'only anthropic answered' })
   let anthropicCalls = 0
-  const fallbackVerdict = decision({ action: 'HOLD' })
+  const result = await runDecisionLLM(true, 'sys', 'usr', {
+    getProviderStatus: fakeStatus(['anthropic', 'xai', 'hyperbolic']),
+    runSwarmDecision: (async () =>
+      swarmResult({
+        quorum: null,
+        decisions: [
+          { provider: 'anthropic', ok: true, decision: anthropicOnly },
+          { provider: 'xai', ok: false, error: 'down' },
+          { provider: 'hyperbolic', ok: false, error: 'down' },
+        ],
+      })) as any,
+    anthropicCreate: async () => { anthropicCalls += 1; throw new Error('must not call') },
+  })
+  assert.equal(anthropicCalls, 0, 'must not issue an extra Anthropic call — we use the swarm result')
+  assert.equal(result.decision.action, 'HOLD')
+  assert.equal(result.decision.reasoning, 'only anthropic answered')
+})
+
+test('runDecisionLLM: swarm + no quorum returns safe HOLD telemetry when ALL providers failed (no Anthropic call)', async () => {
+  let anthropicCalls = 0
   const result = await runDecisionLLM(true, 'sys', 'usr', {
     getProviderStatus: fakeStatus(['anthropic', 'xai']),
     runSwarmDecision: (async () =>
@@ -168,17 +179,11 @@ test('runDecisionLLM: swarm + no quorum still calls Anthropic fallback even when
         ],
         error: 'all providers failed',
       })) as any,
-    anthropicCreate: async () => {
-      anthropicCalls += 1
-      return {
-        id: 'm', type: 'message', role: 'assistant', model: 'c', stop_reason: 'end_turn',
-        stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 },
-        content: [{ type: 'text', text: JSON.stringify(fallbackVerdict), citations: null }],
-      } as any
-    },
+    anthropicCreate: async () => { anthropicCalls += 1; throw new Error('must not call') },
   })
-  assert.equal(anthropicCalls, 1, 'Anthropic fallback must still run (it is independent of the swarm)')
+  assert.equal(anthropicCalls, 0, 'all-failed branch must NOT call Anthropic — we already know it failed')
   assert.equal(result.decision.action, 'HOLD')
+  assert.match(result.rawResponse, /^\[swarm-no-quorum, all-failed\]/)
   assert.ok(result.providersTelemetry && result.providersTelemetry.length === 2)
 })
 

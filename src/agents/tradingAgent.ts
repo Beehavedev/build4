@@ -518,10 +518,15 @@ export function expandPairs(pairs: string[]): string[] {
 // Extracted from runAgentTick so the three swarm branches can be
 // independently unit-tested without spinning up an entire agent tick:
 //   (a) swarmOn && >=2 live providers && quorum reached → use quorum decision
-//   (b) swarmOn && >=2 live providers && no quorum     → Anthropic fallback
-//                                                         (per-provider swarm
-//                                                         reasoning is preserved
-//                                                         in providersTelemetry)
+//   (b) swarmOn && >=2 live providers && no quorum     → highest-confidence
+//                                                         successful provider
+//                                                         (prefers non-anthropic
+//                                                         since anthropic is the
+//                                                         provider that runs out
+//                                                         of credits in prod).
+//                                                         Per-provider reasoning
+//                                                         preserved in
+//                                                         providersTelemetry.
 //   (c) swarmOn && only 1 live provider                → Anthropic fallback
 //   (d) !swarmOn                                       → Anthropic-only path
 // Dependencies are injectable so tests can stub them; defaults wire to the
@@ -660,29 +665,58 @@ export async function runDecisionLLM(
         const rawResponse = JSON.stringify({ swarm: providersTelemetry, consensus: decision }).slice(0, 4000)
         return { decision, rawResponse, providersTelemetry }
       }
-      // No quorum — fall back to a fresh Anthropic call for the final
-      // decision. We keep providersTelemetry so every provider's reasoning
-      // (including the disagreement that triggered the fallback) is still
-      // recorded on the AgentLog row.
+      // No quorum — instead of burning another LLM call, pick the
+      // highest-confidence successful provider from the swarm we already
+      // ran. Prefer non-anthropic decisions because anthropic is the
+      // provider that runs out of credits in production (visible in logs as
+      // repeated 400 "credit balance is too low" errors), which made the
+      // old anthropic-fallback path silently HOLD on every disagreement.
       _swarmNoQuorum += 1
       const totalSwarm = _swarmQuorumReached + _swarmNoQuorum
       const noQuorumRate = totalSwarm > 0 ? (_swarmNoQuorum / totalSwarm) : 0
-      // Structured warn log so operators (and log-grep alerting) see every
-      // disagreement, not just an opaque rawResponse tag in the DB.
       console.warn(
         `[swarm] no-quorum fallback — providers=${liveProviders.join(',')} ` +
         `actions=${providersTelemetry.map((p) => `${p.provider}:${p.action ?? 'err'}`).join(',')} ` +
         `noQuorumRate=${(_swarmNoQuorum)}/${totalSwarm} (${(noQuorumRate * 100).toFixed(1)}%)`
       )
-      const { decision, rawResponse } = await callAnthropicForDecision(
-        sysPrompt,
-        userMessage,
-        anthropicCreate,
-      )
+
+      // Pick the best successful decision: ok=true && decision present.
+      // Sort by (non-anthropic first, then highest confidence). Confidence
+      // can be missing on some agents → treat as 0 so any non-erroring
+      // provider still beats nothing.
+      const successful = swarm.decisions.filter((c) => c.ok && c.decision)
+      successful.sort((a, b) => {
+        const aAnthro = a.provider === 'anthropic' ? 1 : 0
+        const bAnthro = b.provider === 'anthropic' ? 1 : 0
+        if (aAnthro !== bAnthro) return aAnthro - bAnthro
+        const aConf = (a.decision as AgentDecision)?.confidence ?? 0
+        const bConf = (b.decision as AgentDecision)?.confidence ?? 0
+        return bConf - aConf
+      })
+
+      if (successful.length > 0) {
+        const winner = successful[0]
+        const decision = winner.decision as AgentDecision
+        const tagged =
+          '[swarm-no-quorum, best-of-swarm] ' +
+          JSON.stringify({
+            swarm: providersTelemetry,
+            chosen: { provider: winner.provider, model: winner.model, decision },
+          }).slice(0, 3500)
+        return { decision, rawResponse: tagged, providersTelemetry }
+      }
+
+      // Every provider errored — return a safe HOLD with telemetry so the
+      // AgentLog row still records what happened.
+      const safeHold: AgentDecision = {
+        action: 'HOLD',
+        confidence: 0,
+        reasoning: 'swarm: all providers failed this tick',
+      } as AgentDecision
       const tagged =
-        '[swarm-no-quorum, anthropic-fallback] ' +
-        JSON.stringify({ swarm: providersTelemetry, chosen: decision, anthropicRaw: rawResponse }).slice(0, 3500)
-      return { decision, rawResponse: tagged, providersTelemetry }
+        '[swarm-no-quorum, all-failed] ' +
+        JSON.stringify({ swarm: providersTelemetry }).slice(0, 3500)
+      return { decision: safeHold, rawResponse: tagged, providersTelemetry }
     }
     // swarmOn but only 1 live provider — fall through to the single-provider
     // Anthropic path. providersTelemetry stays null so the agent log doesn't
