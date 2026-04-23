@@ -2243,6 +2243,97 @@ app.post('/api/admin/users/enable-swarm', requireAdmin, async (req, res) => {
   }
 })
 
+// GET /api/admin/predictions/diagnose
+//
+// Returns aggregate counts of OutcomePosition rows broken down by the four
+// dimensions the swarm hero card filters on (status, paperTrade,
+// providers IS NOT NULL, txHashOpen IS NOT NULL) so we can see exactly
+// where swarm-driven trades are landing or dying. Also reports recent
+// AgentLog OPEN_PREDICTION counts to confirm the agents are even producing
+// the intent in the first place.
+app.get('/api/admin/predictions/diagnose', requireAdmin, async (_req, res) => {
+  try {
+    const overall = await db.$queryRawUnsafe<Array<{
+      status: string
+      paperTrade: boolean
+      hasProviders: boolean
+      hasTxHash: boolean
+      n: bigint
+    }>>(
+      `SELECT status,
+              "paperTrade",
+              ("providers" IS NOT NULL) AS "hasProviders",
+              ("txHashOpen" IS NOT NULL) AS "hasTxHash",
+              COUNT(*)::bigint AS n
+       FROM "OutcomePosition"
+       GROUP BY status, "paperTrade", ("providers" IS NOT NULL), ("txHashOpen" IS NOT NULL)
+       ORDER BY n DESC`,
+    )
+
+    const recent = await db.$queryRawUnsafe<Array<{
+      id: string
+      status: string
+      paperTrade: boolean
+      hasProviders: boolean
+      hasTxHash: boolean
+      openedAt: Date
+      marketTitle: string
+    }>>(
+      `SELECT id, status, "paperTrade",
+              ("providers" IS NOT NULL) AS "hasProviders",
+              ("txHashOpen" IS NOT NULL) AS "hasTxHash",
+              "openedAt", "marketTitle"
+       FROM "OutcomePosition"
+       ORDER BY "openedAt" DESC
+       LIMIT 20`,
+    )
+
+    const userFlags = await db.$queryRawUnsafe<Array<{
+      total: bigint
+      swarmOn: bigint
+      liveOn: bigint
+      both: bigint
+    }>>(
+      `SELECT COUNT(*)::bigint AS total,
+              SUM(CASE WHEN "swarmEnabled" THEN 1 ELSE 0 END)::bigint AS "swarmOn",
+              SUM(CASE WHEN "fortyTwoLiveTrade" THEN 1 ELSE 0 END)::bigint AS "liveOn",
+              SUM(CASE WHEN "swarmEnabled" AND "fortyTwoLiveTrade" THEN 1 ELSE 0 END)::bigint AS both
+       FROM "User"`,
+    )
+
+    const recentAgentOpens = await db.$queryRawUnsafe<Array<{
+      action: string
+      n: bigint
+    }>>(
+      `SELECT action, COUNT(*)::bigint AS n
+       FROM "AgentLog"
+       WHERE "createdAt" > NOW() - INTERVAL '24 hours'
+         AND action IN ('OPEN_PREDICTION', 'TICK_ERROR', 'BUY', 'SELL', 'HOLD')
+       GROUP BY action
+       ORDER BY n DESC`,
+    ).catch(() => [])
+
+    return res.json({
+      ok: true,
+      heroCardWouldShow: overall.some(r =>
+        r.status === 'open' && !r.paperTrade && r.hasProviders && r.hasTxHash
+      ),
+      breakdown: overall.map(r => ({ ...r, n: Number(r.n) })),
+      recent20: recent,
+      userFlags: {
+        total: Number(userFlags[0]?.total ?? 0),
+        swarmOn: Number(userFlags[0]?.swarmOn ?? 0),
+        liveOn: Number(userFlags[0]?.liveOn ?? 0),
+        bothOn: Number(userFlags[0]?.both ?? 0),
+      },
+      agentLogLast24h: recentAgentOpens.map(r => ({ action: r.action, n: Number(r.n) })),
+    })
+  } catch (err) {
+    console.error('[API] /admin/predictions/diagnose failed:', err)
+    return res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
 // POST /api/admin/users/enable-live-trade
 //
 // Bulk-flips User.fortyTwoLiveTrade. With { all: true } it enables LIVE
