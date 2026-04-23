@@ -19,6 +19,15 @@ model User {
   subscriptionExpiry DateTime?
   totalFeesSpent    Float     @default(0)
   b4Balance         Float     @default(0)
+  // ── Linked external wallet for $B4 holder verification ──────────────────
+  // Set when a user proves ownership of an EOA via signMessage on
+  // /api/me/link-wallet. The on-chain $B4 balance at link time (and on
+  // refresh) is cached in linkedB4Balance. Airdrop allocations are
+  // computed against linkedB4WalletAddress, NOT the bot-managed wallet —
+  // we want to reward the holder wallet, not force users to move tokens.
+  linkedB4WalletAddress  String?
+  linkedB4Balance        Float?
+  linkedB4At             DateTime?
   // Aster exchange credentials (per-user, encrypted)
   asterApiKey       String?
   asterApiSecret    String?
@@ -39,6 +48,11 @@ model User {
   // flag), but no new paper trades are created. Field retained as an
   // admin-only emergency kill-switch; user-facing toggles removed.
   fortyTwoLiveTrade Boolean   @default(true)
+  // Telegram delivery health flag — set true when the Bot API returns
+  // 403 Forbidden for this user (user blocked the bot or deleted the
+  // chat). Used to skip them in broadcasts and avoid wasted retries.
+  // Live in DB on 17k+ rows; do NOT drop without a migration plan.
+  botBlocked        Boolean   @default(false)
   // Multi-provider swarm decision-making opt-in. Default false → single-provider
   // (Anthropic). When true, the trading agent runs the prompt across every
   // configured provider and uses the quorum verdict. See src/swarm/swarm.ts.
@@ -54,6 +68,17 @@ model User {
   copyCopied        CopyFollow[] @relation("copied")
   portfolio         Portfolio?
   agentLogs         AgentLog[]
+}
+
+// Internal migration tracker — manually appended one-shot data fixups
+// (e.g. backfills) record their name + appliedAt here. Schema-managed
+// by hand, not by `prisma migrate`. Listed here so `prisma db push`
+// doesn't try to drop the table on every sync.
+model DataMigration {
+  name      String   @id
+  appliedAt DateTime @default(now())
+
+  @@map("_DataMigration")
 }
 
 model Wallet {

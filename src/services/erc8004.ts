@@ -19,10 +19,47 @@ import { ethers } from 'ethers'
  */
 
 const BSC_RPC = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
+const XLAYER_RPC = process.env.XLAYER_RPC_URL ?? 'https://rpc.xlayer.tech'
 
 export const ERC8004_REGISTRY = (
   process.env.ERC8004_REGISTRY ?? '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432'
 ).trim()
+
+// XLayer registry address — populated by deploying the same bytecode via
+// scripts/deployRegistryXLayer.ts and setting XLAYER_ERC8004_REGISTRY.
+// Empty string means "XLayer registry not deployed yet"; the chain
+// selector in /newagent will refuse to offer XLayer until this is set.
+export const XLAYER_ERC8004_REGISTRY = (
+  process.env.XLAYER_ERC8004_REGISTRY ?? ''
+).trim()
+
+export type RegistryChain = 'bsc' | 'xlayer'
+
+export function getRegistryAddress(chain: RegistryChain): string {
+  if (chain === 'xlayer') {
+    if (!XLAYER_ERC8004_REGISTRY) {
+      throw new Error('XLAYER_ERC8004_REGISTRY is not set — deploy first via scripts/deployRegistryXLayer.ts.')
+    }
+    return XLAYER_ERC8004_REGISTRY
+  }
+  return ERC8004_REGISTRY
+}
+
+export function getRpcUrl(chain: RegistryChain): string {
+  return chain === 'xlayer' ? XLAYER_RPC : BSC_RPC
+}
+
+export function getScanTxUrl(chain: RegistryChain, txHash: string): string {
+  return chain === 'xlayer'
+    ? `https://www.oklink.com/xlayer/tx/${txHash}`
+    : `https://bscscan.com/tx/${txHash}`
+}
+
+export function getScanRegistryUrl(chain: RegistryChain, agentId: string): string {
+  return chain === 'xlayer'
+    ? `https://www.oklink.com/xlayer/token/${getRegistryAddress(chain)}?a=${agentId}`
+    : `https://bscscan.com/token/${getRegistryAddress(chain)}?a=${agentId}`
+}
 
 // Measured gas budget for one register(string) call. Worst observed on
 // BSC is ~225k gas; we round up and add a 2x safety multiplier so that a
@@ -96,11 +133,19 @@ export async function registerAgentOnchain(opts: {
   agentWalletPK: string        // agent's freshly generated wallet
   agentAddress: string         // matches agentWalletPK
   metadataURI: string
+  // Which chain to register on. Defaults to 'bsc' to preserve historic
+  // behavior — all existing call sites that don't pass this param will
+  // continue to register on BSC exactly as before. The /newagent flow
+  // passes 'xlayer' during the campaign window.
+  chain?: RegistryChain
   onAgentFunded?: (txHash: string) => Promise<void> | void
   onRegisterTxSent?: (txHash: string) => Promise<void> | void
 }): Promise<RegisterResult> {
   try {
-    const provider = new ethers.JsonRpcProvider(BSC_RPC)
+    const chain: RegistryChain = opts.chain ?? 'bsc'
+    const rpcUrl = getRpcUrl(chain)
+    const registryAddr = getRegistryAddress(chain)
+    const provider = new ethers.JsonRpcProvider(rpcUrl)
     const registryPK = getRegistryWalletPK()
     const registryWallet = new ethers.Wallet(registryPK, provider)
     const agentWallet = new ethers.Wallet(opts.agentWalletPK, provider)
@@ -137,7 +182,7 @@ export async function registerAgentOnchain(opts: {
     const fundTx = { hash: fundResult.fundTxHash }
 
     // 2. Agent self-registers.
-    const registry = new ethers.Contract(ERC8004_REGISTRY, ERC8004_ABI, agentWallet)
+    const registry = new ethers.Contract(registryAddr, ERC8004_ABI, agentWallet)
     const tx = await registry['register(string)'](opts.metadataURI)
     if (opts.onRegisterTxSent) {
       try { await opts.onRegisterTxSent(tx.hash) } catch (e) { console.error('[ERC8004] onRegisterTxSent hook:', e) }

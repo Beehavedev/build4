@@ -428,6 +428,140 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
+// $B4 holder wallet linking
+//
+// Lets a user prove ownership of an external EOA they hold $B4 on by
+// signing a deterministic message with that wallet. The recovered signer
+// must match the claimed address; the message must contain the user's
+// Telegram ID (anti-replay across users) and a recent timestamp
+// (anti-replay across sessions). On success we read the on-chain $B4
+// balance at the BSC contract and cache it on User.linkedB4Balance.
+//
+// Airdrop allocations are computed against linkedB4WalletAddress —
+// holders never need to move tokens to be eligible.
+// ─────────────────────────────────────────────────────────────────────────────
+const B4_TOKEN_BSC = (process.env.B4_TOKEN_ADDRESS ?? '0x1d547f9d0890ee5abfb49d7d53ca19df85da4444').toLowerCase()
+const LINK_MESSAGE_MAX_AGE_MS = 10 * 60 * 1000  // 10 min — generous for slow signers, tight enough to limit replay window
+
+function buildLinkChallenge(telegramId: string | bigint, address: string, isoTs: string): string {
+  return [
+    'Sign to link your wallet to BUILD4.',
+    '',
+    `Telegram ID: ${telegramId.toString()}`,
+    `Wallet: ${address.toLowerCase()}`,
+    `Issued: ${isoTs}`,
+    '',
+    'Only sign this if you initiated this action in @Build4ai_bot.',
+  ].join('\n')
+}
+
+async function readB4Balance(address: string): Promise<{ balance: number; raw: string }> {
+  const { ethers } = await import('ethers')
+  const provider = new ethers.JsonRpcProvider(process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org')
+  const erc20 = new ethers.Contract(
+    B4_TOKEN_BSC,
+    ['function balanceOf(address) view returns (uint256)', 'function decimals() view returns (uint8)'],
+    provider,
+  )
+  const [raw, decimals] = await Promise.all([erc20.balanceOf(address) as Promise<bigint>, erc20.decimals() as Promise<number>])
+  return { balance: parseFloat(ethers.formatUnits(raw, decimals)), raw: raw.toString() }
+}
+
+// GET — current link state for the authenticated user.
+app.get('/api/me/link-wallet', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  res.json({
+    linked: !!user.linkedB4WalletAddress,
+    address: user.linkedB4WalletAddress ?? null,
+    balance: user.linkedB4Balance ?? 0,
+    linkedAt: user.linkedB4At ?? null,
+    challenge: {
+      // Pre-format an issued timestamp the client can use right now to
+      // build the exact message string. Keeping the construction client-
+      // side avoids a second round-trip but the server still accepts
+      // any ISO timestamp within the freshness window.
+      issuedAt: new Date().toISOString(),
+      tokenAddress: B4_TOKEN_BSC,
+    },
+  })
+})
+
+// POST — verify signature, read on-chain balance, persist.
+app.post('/api/me/link-wallet', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  try {
+    const { ethers } = await import('ethers')
+    const { address, signature, issuedAt } = req.body as { address?: string; signature?: string; issuedAt?: string }
+
+    if (!address || !signature || !issuedAt) {
+      return res.status(400).json({ success: false, error: 'address, signature, issuedAt required' })
+    }
+    if (!ethers.isAddress(address)) {
+      return res.status(400).json({ success: false, error: 'Invalid address' })
+    }
+
+    const ts = Date.parse(issuedAt)
+    if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > LINK_MESSAGE_MAX_AGE_MS) {
+      return res.status(400).json({ success: false, error: 'Signature expired — refresh and sign again.' })
+    }
+
+    const message = buildLinkChallenge(user.telegramId, address, issuedAt)
+    let recovered: string
+    try {
+      recovered = ethers.verifyMessage(message, signature)
+    } catch {
+      return res.status(400).json({ success: false, error: 'Invalid signature format.' })
+    }
+    if (recovered.toLowerCase() !== address.toLowerCase()) {
+      return res.status(400).json({ success: false, error: 'Signature does not match the claimed wallet.' })
+    }
+
+    // Read on-chain $B4 balance. Failure here is non-fatal — we still
+    // record the link so the holder can refresh later if BSC RPC is flaky.
+    let balance = 0
+    let balanceError: string | null = null
+    try {
+      const r = await readB4Balance(address)
+      balance = r.balance
+    } catch (e: any) {
+      balanceError = e?.shortMessage ?? e?.message ?? 'rpc_failed'
+    }
+
+    await db.user.update({
+      where: { id: user.id },
+      data: {
+        linkedB4WalletAddress: address.toLowerCase(),
+        linkedB4Balance: balance,
+        linkedB4At: new Date(),
+      },
+    })
+
+    res.json({ success: true, address: address.toLowerCase(), balance, balanceError })
+  } catch (err: any) {
+    console.error('[link-wallet] failed:', err)
+    res.status(500).json({ success: false, error: err?.message ?? 'Internal error' })
+  }
+})
+
+// POST — refresh on-chain balance for an already-linked wallet.
+app.post('/api/me/link-wallet/refresh', requireTgUser, async (req, res) => {
+  const user = (req as any).user
+  if (!user.linkedB4WalletAddress) {
+    return res.status(400).json({ success: false, error: 'No linked wallet to refresh.' })
+  }
+  try {
+    const { balance } = await readB4Balance(user.linkedB4WalletAddress)
+    await db.user.update({
+      where: { id: user.id },
+      data: { linkedB4Balance: balance, linkedB4At: new Date() },
+    })
+    res.json({ success: true, address: user.linkedB4WalletAddress, balance })
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message ?? 'rpc_failed' })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Aster onboarding — POST /api/aster/approve
 //
 // Performs the one-time approveAgent EIP-712 signature ENTIRELY server-side.
