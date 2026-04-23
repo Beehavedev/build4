@@ -2489,9 +2489,28 @@ app.get('/api/admin/predictions/diagnose', requireAdmin, async (_req, res) => {
       `SELECT action, COUNT(*)::bigint AS n
        FROM "AgentLog"
        WHERE "createdAt" > NOW() - INTERVAL '24 hours'
-         AND action IN ('OPEN_PREDICTION', 'TICK_ERROR', 'BUY', 'SELL', 'HOLD')
+         AND action IN ('OPEN_PREDICTION', 'TICK_ERROR', 'BUY', 'SELL', 'HOLD', 'SKIP_OPEN')
        GROUP BY action
        ORDER BY n DESC`,
+    ).catch(() => [])
+
+    // SKIP_OPEN breakdown: which gate is killing OPEN_LONG/SHORT decisions?
+    // executionResult holds the gate name (rr_floor, confidence_floor,
+    // setup_score_floor, risk_guard, twak_risk, exec_failed, etc.).
+    const skipReasons = await db.$queryRawUnsafe<Array<{
+      gate: string
+      parsedAction: string
+      n: bigint
+    }>>(
+      `SELECT "executionResult" AS gate,
+              COALESCE("parsedAction", '?') AS "parsedAction",
+              COUNT(*)::bigint AS n
+       FROM "AgentLog"
+       WHERE "createdAt" > NOW() - INTERVAL '24 hours'
+         AND action = 'SKIP_OPEN'
+       GROUP BY "executionResult", "parsedAction"
+       ORDER BY n DESC
+       LIMIT 30`,
     ).catch(() => [])
 
     return res.json({
@@ -2508,6 +2527,9 @@ app.get('/api/admin/predictions/diagnose', requireAdmin, async (_req, res) => {
         bothOn: Number(userFlags[0]?.both ?? 0),
       },
       agentLogLast24h: recentAgentOpens.map(r => ({ action: r.action, n: Number(r.n) })),
+      skipReasonsLast24h: skipReasons.map(r => ({
+        gate: r.gate, decision: r.parsedAction, n: Number(r.n)
+      })),
     })
   } catch (err) {
     console.error('[API] /admin/predictions/diagnose failed:', err)

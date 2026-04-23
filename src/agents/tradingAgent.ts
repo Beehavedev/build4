@@ -1484,6 +1484,31 @@ If you would not put real money in this trade right now, action = HOLD.`
       }
 
       if (decision.action === 'OPEN_LONG' || decision.action === 'OPEN_SHORT') {
+        // Helper: log every reason an OPEN_LONG/OPEN_SHORT is killed before
+        // it reaches the exchange. Without this, silent returns made it
+        // impossible to tell from AgentLog whether agents were never
+        // deciding to trade or were deciding to trade and then being
+        // gated. Use action='SKIP_OPEN' so the diagnose endpoint can
+        // surface the breakdown by reason.
+        const logSkip = async (gate: string, reason: string) => {
+          await safeAgentLogCreate({
+            data: {
+              agentId: agent.id,
+              userId: agent.userId,
+              action: 'SKIP_OPEN',
+              parsedAction: decision.action,
+              executionResult: gate,
+              pair,
+              price: snapshot.price || null,
+              reason,
+              adx: Number.isFinite(snapshot.adx) ? snapshot.adx : null,
+              rsi: Number.isFinite(snapshot.rsi) ? snapshot.rsi : null,
+              score: decision.setupScore ?? 0,
+              regime: decision.regime ?? null
+            }
+          })
+        }
+
         // Validate. New-listing momentum trades use a relaxed R/R floor of
         // 1.5 (matching the new-listing prompt); standard mode now uses 1.5
         // too (matches loosened standard prompt — was 2.0 historically).
@@ -1495,14 +1520,19 @@ If you would not put real money in this trade right now, action = HOLD.`
             `Skipped ${pair} ${decision.action} — R/R was only ${decision.riskRewardRatio?.toFixed(1)}, below ${rrFloor} minimum`,
             null
           )
+          await logSkip('rr_floor', `R/R ${decision.riskRewardRatio?.toFixed(2) ?? 'missing'} < ${rrFloor}`)
           return
         }
 
         if (decision.confidence < 0.55) {
+          await logSkip('confidence_floor', `confidence ${decision.confidence.toFixed(2)} < 0.55`)
           return
         }
 
-        if ((decision.setupScore ?? 0) < 4) return
+        if ((decision.setupScore ?? 0) < 4) {
+          await logSkip('setup_score_floor', `setupScore ${decision.setupScore ?? 'missing'} < 4`)
+          return
+        }
 
         const side = decision.action === 'OPEN_LONG' ? 'LONG' : ('SHORT' as const)
 
