@@ -411,6 +411,44 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
       arbitrum.error = e?.message ?? 'arb_unavailable'
     }
 
+    // ── Hyperliquid clearinghouse equity ───────────────────────────────────
+    // Same wallet address as BSC (HL is EVM, derived from the same secp256k1
+    // key). Gives us parity with the Aster card so users see HL equity at
+    // a glance without leaving the Wallet tab.
+    let hyperliquid: {
+      usdc: number; accountValue: number;
+      onboarded: boolean; error: string | null
+    } = { usdc: 0, accountValue: 0, onboarded: !!user.hyperliquidOnboarded, error: null }
+    try {
+      const hlMod = await import('./services/hyperliquid')
+      const acc = await hlMod.getAccountState(wallet.address)
+      hyperliquid.usdc = acc.withdrawableUsdc
+      hyperliquid.accountValue = acc.accountValue
+      hyperliquid.onboarded = acc.onboarded
+    } catch (e: any) {
+      const msg = String(e?.message ?? 'hl_unavailable').toLowerCase()
+      if (msg.includes('does not exist') || msg.includes('no user')) {
+        hyperliquid.error = 'not_onboarded'
+      } else {
+        console.error('[API] /me/wallet hyperliquid failed:', wallet.address, '→', e?.message)
+        hyperliquid.error = String(e?.message ?? 'hl_unavailable')
+      }
+    }
+
+    // ── XLayer (chain id 196) — native OKB balance ────────────────────────
+    // Same EVM address; surfaced so users can see whether they've topped up
+    // OKB for XLayer registry txs / future XLayer trading.
+    let xlayer: { okb: number; error: string | null } = { okb: 0, error: null }
+    try {
+      const { buildXLayerProvider } = await import('./services/xlayerProvider')
+      const xp = buildXLayerProvider()
+      const wei = await xp.getBalance(wallet.address)
+      const { ethers } = await import('ethers')
+      xlayer.okb = parseFloat(ethers.formatEther(wei))
+    } catch (e: any) {
+      xlayer.error = e?.shortMessage ?? e?.message ?? 'xlayer_rpc_failed'
+    }
+
     res.json({
       address: wallet.address,
       chain: wallet.chain,
@@ -419,6 +457,8 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
       balances: { usdt, bnb, error: balanceError },
       arbitrum,
       aster,
+      hyperliquid,
+      xlayer,
       qrDataUrl
     })
   } catch (err: any) {

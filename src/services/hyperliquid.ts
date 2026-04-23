@@ -26,6 +26,25 @@ import * as hl from '@nktkas/hyperliquid'
 const HL_API_URL  = process.env.HYPERLIQUID_API_URL ?? 'https://api.hyperliquid.xyz'
 const AGENT_NAME  = process.env.HYPERLIQUID_AGENT_NAME ?? 'build4-agent'
 
+// ── HL price/size formatting ────────────────────────────────────────────────
+// Exported because the order endpoint preview also needs the same rounding.
+export function formatHlPrice(px: number, szDecimals: number, isSpot = false): string {
+  if (!Number.isFinite(px) || px <= 0) return '0'
+  // Integer prices bypass the 5-sig-fig rule entirely.
+  if (Number.isInteger(px)) return px.toString()
+  const maxDecimals = Math.max(0, (isSpot ? 8 : 6) - szDecimals)
+  // Step 1: clamp to 5 sig figs.
+  const sig = Number(px.toPrecision(5))
+  // Step 2: clamp decimals.
+  const dec = Number(sig.toFixed(maxDecimals))
+  // Step 3: render without trailing zeros (HL accepts either, but cleaner logs).
+  return dec.toString()
+}
+export function formatHlSize(sz: number, szDecimals: number): string {
+  if (!Number.isFinite(sz) || sz <= 0) return '0'
+  return sz.toFixed(szDecimals)
+}
+
 // Builder-fee config — how BUILD4 actually monetises HL trades.
 //
 // Hyperliquid lets a "builder" capture a kickback on every order they route,
@@ -286,6 +305,22 @@ export async function placeOrder(
       limitPx = isBuy ? markPrice * 1.05 : markPrice * 0.95
     }
 
+    // Hyperliquid rejects orders whose px doesn't match its tick rules.
+    // Per the official spec (https://hyperliquid.gitbook.io/hyperliquid-docs/...
+    // /api/exchange-endpoint#tick-size):
+    //   1. Prices may have at most 5 significant figures.
+    //   2. Prices may have at most (MAX_DECIMALS - szDecimals) decimal places,
+    //      where MAX_DECIMALS = 6 for perps (8 for spot).
+    //   3. Integer prices are always allowed regardless of sig-fig count.
+    // Sizes must be rounded to exactly szDecimals decimals.
+    // Without this rounding, "Order has invalid price" is the typical reject.
+    const szDecimals = (meta.universe[assetIdx] as any)?.szDecimals ?? 4
+    const pxStr = formatHlPrice(limitPx, szDecimals)
+    const szStr = formatHlSize(args.sz, szDecimals)
+    if (Number(szStr) <= 0) {
+      return { success: false, error: `Order size rounds to 0 at szDecimals=${szDecimals}; increase notional.` }
+    }
+
     if (args.leverage && args.leverage > 1) {
       try {
         await client.updateLeverage({ asset: assetIdx, isCross: true, leverage: Math.floor(args.leverage) })
@@ -303,8 +338,8 @@ export async function placeOrder(
       orders: [{
         a: assetIdx,
         b: isBuy,
-        p: String(limitPx),
-        s: String(args.sz),
+        p: pxStr,
+        s: szStr,
         r: false,
         t: args.type === 'MARKET'
           ? { limit: { tif: 'Ioc' } }

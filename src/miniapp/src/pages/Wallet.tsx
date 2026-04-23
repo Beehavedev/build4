@@ -9,6 +9,8 @@ interface WalletInfo {
   balances: { usdt: number; bnb: number; error: string | null }
   arbitrum?: { eth: number; usdc: number; error: string | null }
   aster: { usdt: number; availableMargin: number; onboarded: boolean; error: string | null }
+  hyperliquid?: { usdc: number; accountValue: number; onboarded: boolean; error: string | null }
+  xlayer?: { okb: number; error: string | null }
   qrDataUrl: string
 }
 
@@ -139,12 +141,14 @@ export default function Wallet() {
       {state === 'D' ? (
         <>
           <AsterPrimaryCard w={w} />
+          <HyperliquidCard w={w} />
           <BscSecondaryCard w={w} />
         </>
       ) : (
         <>
           <BscPrimaryCard w={w} />
           {w.aster.onboarded && <AsterSecondaryCard w={w} onReactivated={load} />}
+          <HyperliquidCard w={w} />
         </>
       )}
 
@@ -244,6 +248,55 @@ function ArbitrumCard({ w, compact }: { w: WalletInfo; compact?: boolean }) {
       {arb.usdc >= 5 && (
         <div style={{ marginTop: 10, fontSize: 11, color: 'var(--b4-muted)', lineHeight: 1.45 }}>
           💡 USDC on Arbitrum doesn't trade directly. Open the <b>Hyperliquid</b> tab to bridge it into HL perps.
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Hyperliquid live equity card — mirrors AsterPrimaryCard but in HL's
+// purple. Hidden silently if the server didn't return HL data (older
+// server, or HL temporarily unreachable). When the user hasn't activated
+// HL yet (no clearinghouse account) we show the empty state but make
+// clear it's not an error — they just haven't onboarded.
+function HyperliquidCard({ w }: { w: WalletInfo }) {
+  const hl = w.hyperliquid
+  if (!hl) return null
+  const isError = hl.error && hl.error !== 'not_onboarded'
+  const notOnboarded = hl.error === 'not_onboarded' || !hl.onboarded
+  return (
+    <div className="card" style={{
+      marginBottom: 10,
+      background: notOnboarded
+        ? undefined
+        : 'linear-gradient(135deg, #7c3aed22, #7c3aed08)',
+      border: notOnboarded ? undefined : '1px solid #7c3aed44',
+    }}>
+      <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>
+        HYPERLIQUID TRADING {!notOnboarded && !isError && '(LIVE)'}
+      </div>
+      {isError ? (
+        <div data-testid="text-hl-wallet-error" style={{ fontSize: 12, color: 'var(--b4-red)', lineHeight: 1.45 }}>
+          ⚠️ {hl.error}
+        </div>
+      ) : notOnboarded ? (
+        <div data-testid="text-hl-wallet-not-onboarded" style={{ fontSize: 12, color: 'var(--b4-muted)', lineHeight: 1.45 }}>
+          Not activated yet. Open the <b>Hyperliquid</b> tab to activate trading (needs USDC on Arbitrum to bridge).
+        </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Account value</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: '#a78bfa' }} data-testid="text-hl-account-value">
+              ${hl.accountValue.toFixed(2)}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>Withdrawable</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-hl-withdrawable">
+              ${hl.usdc.toFixed(2)}
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -123,7 +123,24 @@ export default function Hyperliquid() {
     setLoading(false)
   }
 
-  useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t) }, [])
+  // Two-tier polling so users see a "live" mark price without us hammering
+  // the public allMids endpoint with full account-state fetches every second.
+  //   - load() (account + all mids + arbitrum): every 8s
+  //   - selected-coin mid only: every 1s, so the headline price next to the
+  //     order ticket actually feels alive while you're sizing your trade.
+  useEffect(() => { load(); const t = setInterval(load, 8000); return () => clearInterval(t) }, [])
+  useEffect(() => {
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const r = await apiFetch<{ markPrice: number }>(`/api/hyperliquid/markprice/${orderCoin}`)
+        if (!cancelled) setMids(prev => ({ ...prev, [orderCoin]: r.markPrice }))
+      } catch { /* keep last value */ }
+    }
+    poll()
+    const t = setInterval(poll, 1000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [orderCoin])
 
   return (
     <div style={{ paddingTop: 20 }} data-testid="page-hyperliquid">
@@ -245,7 +262,20 @@ export default function Hyperliquid() {
       {/* Order ticket — only when onboarded */}
       {account?.onboarded && (
         <div style={cardStyle} data-testid="card-hl-order">
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Place order</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Place order</div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: '#9ca3af', letterSpacing: 0.4 }}>{orderCoin} MARK · LIVE</div>
+              <div
+                data-testid="text-hl-selected-mark"
+                style={{ fontSize: 18, fontWeight: 700, color: mids[orderCoin] > 0 ? '#a7f3d0' : '#6b7280', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}
+              >
+                {mids[orderCoin] > 0
+                  ? `$${mids[orderCoin].toLocaleString(undefined, { maximumFractionDigits: mids[orderCoin] < 1 ? 5 : 2 })}`
+                  : '—'}
+              </div>
+            </div>
+          </div>
 
           {/* Coin selector */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>

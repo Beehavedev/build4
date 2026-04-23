@@ -40,9 +40,23 @@ export async function handleWalletCommand(ctx: Context) {
   const activeWallet = wallets.find((w) => w.isActive) ?? wallets[0]
   // Same address works on every EVM chain — pull both BSC and Arbitrum
   // balances in parallel so users can see funds on either network.
-  const [balances, arb] = await Promise.all([
+  // XLayer OKB read in parallel with BSC + Arbitrum. Failure is swallowed
+  // (we still want /wallet to render even if OKX RPCs are down) — surfaced
+  // as 'rpc' so user knows it's a transient network issue, not zero balance.
+  const [balances, arb, xlayer] = await Promise.all([
     getWalletBalances(activeWallet.address, activeWallet.chain),
-    getArbitrumBalances(activeWallet.address)
+    getArbitrumBalances(activeWallet.address),
+    (async () => {
+      try {
+        const { buildXLayerProvider } = await import('../../services/xlayerProvider')
+        const { ethers } = await import('ethers')
+        const xp = buildXLayerProvider()
+        const wei = await xp.getBalance(activeWallet.address)
+        return { okb: parseFloat(ethers.formatEther(wei)), error: null as string | null }
+      } catch (e: any) {
+        return { okb: 0, error: e?.shortMessage ?? e?.message ?? 'rpc' }
+      }
+    })(),
   ])
   const pinSet = !!user.pinHash
 
@@ -54,7 +68,11 @@ export async function handleWalletCommand(ctx: Context) {
   text += `• ${balances.nativeSymbol}: ${balances.native.toFixed(4)}\n\n`
   text += `*Arbitrum*\n`
   text += `• USDC: $${arb.usdc.toFixed(2)}\n`
-  text += `• ETH: ${arb.eth.toFixed(5)}\n`
+  text += `• ETH: ${arb.eth.toFixed(5)}\n\n`
+  text += `*XLayer* (chain 196)\n`
+  text += xlayer.error
+    ? `• OKB: _unavailable (${xlayer.error})_\n`
+    : `• OKB: ${xlayer.okb.toFixed(5)}\n`
   if (arb.usdc >= 5) {
     text += `\n💡 You have USDC on Arbitrum — you can bridge it to *Hyperliquid* from the mini app to trade perps.\n\n`
   } else {
