@@ -2243,6 +2243,54 @@ app.post('/api/admin/users/enable-swarm', requireAdmin, async (req, res) => {
   }
 })
 
+// POST /api/admin/users/enable-live-trade
+//
+// Bulk-flips User.fortyTwoLiveTrade. With { all: true } it enables LIVE
+// (real-money) prediction trading for every user; with { userIds: [...] }
+// it targets specific users; with { value: false } it disables.
+//
+// IMPORTANT: this is the kill-switch that gates whether a user's agent is
+// allowed to actually move USDT on-chain (vs writing a paper-trade row).
+// Flipping all users to true means every agent that produces an
+// OPEN_PREDICTION decision will sign a real BSC transaction with the
+// user's wallet. Use deliberately.
+//
+// Body: { all?: boolean, userIds?: string[], value?: boolean }
+app.post('/api/admin/users/enable-live-trade', requireAdmin, async (req, res) => {
+  try {
+    const all = req.body?.all === true
+    const userIds = Array.isArray(req.body?.userIds) ? (req.body.userIds as string[]) : null
+    const value = req.body?.value === false ? false : true
+
+    if (!all && (!userIds || userIds.length === 0)) {
+      return res.status(400).json({ ok: false, error: 'pass either { all: true } or { userIds: [...] }' })
+    }
+
+    let updated: number
+    if (all) {
+      const rows = await db.$queryRawUnsafe<Array<{ count: bigint }>>(
+        `WITH upd AS (UPDATE "User" SET "fortyTwoLiveTrade" = $1 WHERE "fortyTwoLiveTrade" IS DISTINCT FROM $1 RETURNING 1)
+         SELECT COUNT(*)::bigint AS count FROM upd`,
+        value,
+      )
+      updated = Number(rows[0]?.count ?? 0)
+    } else {
+      const rows = await db.$queryRawUnsafe<Array<{ count: bigint }>>(
+        `WITH upd AS (UPDATE "User" SET "fortyTwoLiveTrade" = $1 WHERE id = ANY($2::text[]) AND "fortyTwoLiveTrade" IS DISTINCT FROM $1 RETURNING 1)
+         SELECT COUNT(*)::bigint AS count FROM upd`,
+        value,
+        userIds,
+      )
+      updated = Number(rows[0]?.count ?? 0)
+    }
+
+    return res.json({ ok: true, value, updated })
+  } catch (err) {
+    console.error('[API] /admin/users/enable-live-trade failed:', err)
+    return res.status(500).json({ ok: false, error: (err as Error).message })
+  }
+})
+
 // POST /api/admin/predictions/recover-by-tx
 //
 // Single-tx recovery: takes one BSC tx hash, looks up the receipt, finds the
