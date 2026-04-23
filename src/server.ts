@@ -2925,16 +2925,34 @@ app.post('/api/admin/wallet/diagnose-decrypt', express.json(), async (req, res) 
       walletAddress?: string; userId?: string; extraKey?: string; extraUserId?: string
     }
     let wallet: any = null
+    let candidateWallets: any[] = []
     if (walletAddress) {
+      // Try exact match first; fall back to startsWith so the operator can
+      // paste the truncated form (e.g. "0x9751") that we see in screenshots.
       wallet = await db.wallet.findFirst({
         where: { address: { equals: walletAddress, mode: 'insensitive' } },
       })
+      if (!wallet) {
+        candidateWallets = await db.wallet.findMany({
+          where: { address: { startsWith: walletAddress, mode: 'insensitive' } },
+          take: 10,
+        })
+        if (candidateWallets.length === 1) wallet = candidateWallets[0]
+      }
     } else if (userId) {
       wallet = await db.wallet.findFirst({ where: { userId, isActive: true } })
     } else {
       return res.status(400).json({ error: 'Provide walletAddress or userId' })
     }
-    if (!wallet?.encryptedPK) return res.status(404).json({ error: 'Wallet not found or no encryptedPK' })
+    if (!wallet?.encryptedPK) {
+      return res.status(404).json({
+        error: 'Wallet not found or no encryptedPK',
+        hint: candidateWallets.length > 1
+          ? `${candidateWallets.length} wallets matched the prefix — provide a longer address`
+          : 'Try a partial address prefix or provide userId',
+        matches: candidateWallets.map(w => ({ address: w.address, userId: w.userId, hasPK: Boolean(w.encryptedPK) })),
+      })
+    }
 
     // Find every User row that historically might have owned this wallet.
     // Includes the current owner plus any user with the same telegramId
