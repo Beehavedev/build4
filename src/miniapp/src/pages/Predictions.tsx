@@ -249,6 +249,12 @@ export default function Predictions() {
   const [myPosErr, setMyPosErr] = useState<string | null>(null)
   const [actionBusy, setActionBusy] = useState<string | null>(null) // positionId or 'claim-all'
   const [actionMsg, setActionMsg] = useState<{ kind: 'ok' | 'err'; text: string; hint?: string; code?: string } | null>(null)
+  // Per-position sell-failure memory (session-scoped). When the chain rejects
+  // a sell with a terminal reason like market_ended / market_resolved we
+  // remember it so the row can swap its Sell button for a more useful CTA
+  // (Claim or a 'Trading closed' badge) without the user having to re-tap
+  // Sell and discover the same revert again.
+  const [sellLocks, setSellLocks] = useState<Record<string, string>>({})
 
   async function loadMyPositions() {
     try {
@@ -281,6 +287,14 @@ export default function Predictions() {
           hint: j?.hint,
           code: j?.code,
         })
+        // Lock terminal failure modes so the row swaps its CTA next render.
+        // 'no_balance' counts here too — the position appears open in our DB
+        // but the wallet no longer holds the tokens (already-closed-out edge
+        // case), so re-tapping Sell will keep failing.
+        const terminal = ['market_ended', 'market_resolved', 'market_finalised', 'no_balance']
+        if (typeof j?.code === 'string' && terminal.includes(j.code)) {
+          setSellLocks(prev => ({ ...prev, [positionId]: j.code }))
+        }
       } else {
         const pnl = typeof j.pnl === 'number' ? j.pnl : 0
         setActionMsg({ kind: 'ok', text: `Closed — PnL ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}` })
@@ -612,6 +626,7 @@ export default function Predictions() {
               busyId={actionBusy}
               onSell={sellPosition}
               onClaim={claimPosition}
+              sellLocks={sellLocks}
             />
           )}
         </div>
@@ -1412,11 +1427,13 @@ function MyPositionsList({
   busyId,
   onSell,
   onClaim,
+  sellLocks,
 }: {
   rows: MyPositionRow[]
   busyId: string | null
   onSell: (id: string) => void
   onClaim: (id: string) => void
+  sellLocks: Record<string, string>
 }) {
   function statusBadge(p: MyPositionRow): { label: string; color: string } {
     switch (p.status) {
@@ -1479,22 +1496,77 @@ function MyPositionsList({
 
             {(p.status === 'open' || p.status === 'resolved_win') && (
               <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
-                {p.status === 'open' && (
-                  <button
-                    type="button"
-                    onClick={() => onSell(p.id)}
-                    disabled={busy || !!busyId}
-                    data-testid={`button-sell-${p.id}`}
-                    style={{
-                      flex: 1, padding: '8px 10px', borderRadius: 6,
-                      fontSize: 12, fontWeight: 600,
-                      background: busy ? '#1e1e2e' : '#7c3aed',
-                      border: '1px solid #7c3aed', color: 'white',
-                      cursor: busyId ? 'wait' : 'pointer',
-                    }}>
-                    {busy ? 'Selling…' : 'Sell'}
-                  </button>
-                )}
+                {p.status === 'open' && (() => {
+                  const lock = sellLocks[p.id]
+                  // Market closed and not yet resolved on-chain — Sell will
+                  // always revert until resolution. Show a non-actionable
+                  // status pill so the user stops trying.
+                  if (lock === 'market_ended' || lock === 'market_finalised') {
+                    return (
+                      <div
+                        data-testid={`badge-trading-closed-${p.id}`}
+                        style={{
+                          flex: 1, padding: '8px 10px', borderRadius: 6,
+                          fontSize: 12, fontWeight: 600, textAlign: 'center',
+                          background: '#1e293b', border: '1px solid #334155',
+                          color: '#94a3b8',
+                        }}>
+                        ⏳ Trading closed — awaiting resolution
+                      </div>
+                    )
+                  }
+                  // Market already resolved on-chain but our DB still shows
+                  // 'open' (resolution-poll lag). Offer Claim directly so the
+                  // user can attempt the redeem path that will actually work.
+                  if (lock === 'market_resolved') {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => onClaim(p.id)}
+                        disabled={busy || !!busyId}
+                        data-testid={`button-try-claim-${p.id}`}
+                        style={{
+                          flex: 1, padding: '8px 10px', borderRadius: 6,
+                          fontSize: 12, fontWeight: 600,
+                          background: busy ? '#1e1e2e' : '#10b981',
+                          border: '1px solid #10b981', color: 'white',
+                          cursor: busyId ? 'wait' : 'pointer',
+                        }}>
+                        {busy ? 'Claiming…' : 'Try Claim'}
+                      </button>
+                    )
+                  }
+                  if (lock === 'no_balance') {
+                    return (
+                      <div
+                        data-testid={`badge-no-balance-${p.id}`}
+                        style={{
+                          flex: 1, padding: '8px 10px', borderRadius: 6,
+                          fontSize: 12, fontWeight: 600, textAlign: 'center',
+                          background: '#1e293b', border: '1px solid #334155',
+                          color: '#94a3b8',
+                        }}>
+                        No tokens to sell — refresh
+                      </div>
+                    )
+                  }
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => onSell(p.id)}
+                      disabled={busy || !!busyId}
+                      data-testid={`button-sell-${p.id}`}
+                      style={{
+                        flex: 1, padding: '8px 10px', borderRadius: 6,
+                        fontSize: 12, fontWeight: 600,
+                        background: busy ? '#1e1e2e' : '#7c3aed',
+                        border: '1px solid #7c3aed', color: 'white',
+                        cursor: busyId ? 'wait' : 'pointer',
+                      }}>
+                      {busy ? 'Selling…' : 'Sell'}
+                    </button>
+                  )
+                })()}
                 {p.status === 'resolved_win' && (
                   <button
                     type="button"
