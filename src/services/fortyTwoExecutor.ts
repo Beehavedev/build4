@@ -45,6 +45,96 @@ function friendlyTraderError(err: unknown, op: 'buyOutcome' | 'sellOutcome' | 'c
   return `${op} failed: ${raw}`;
 }
 
+/**
+ * Map a raw sellOutcome failure (already passed through extractRevertReason)
+ * into a one-line user-facing message + an actionable hint. Matches against
+ * the friendly suffixes embedded by KNOWN_CUSTOM_ERRORS in fortyTwoTrader.ts
+ * so we never depend on selector hex.
+ *
+ * Returned `code` is a stable identifier the UI can switch on (e.g. to
+ * disable the Sell button and offer Claim instead once the market ends).
+ */
+export function friendlySellError(raw: string): { code: string; message: string; hint?: string } {
+  const r = (raw || '').toLowerCase();
+
+  // Trading window closed — most common case for stuck positions. The user
+  // can no longer sell; they wait for resolution then Claim.
+  if (r.includes('marketended') || r.includes('marketclosed') || r.includes('marketfinalised')) {
+    return {
+      code: 'market_ended',
+      message: "Trading window closed for this market — selling is no longer possible.",
+      hint: "Wait for the market to resolve, then tap Claim. If your side wins you get paid out automatically; if it loses the position closes at $0.",
+    };
+  }
+  if (r.includes('marketresolved')) {
+    return {
+      code: 'market_resolved',
+      message: "Market already resolved — use Claim to redeem any winnings.",
+      hint: "Tap Claim on this position. Winning outcome tokens redeem 1:1 to USDT; losing outcomes pay nothing.",
+    };
+  }
+  if (r.includes('slippageexceeded')) {
+    return {
+      code: 'slippage',
+      message: "Price moved too much between quote and execution.",
+      hint: "Try again in a few seconds — thin prediction markets re-price quickly. The 30% sell tolerance is already wide; persistent failures usually mean the pool is nearly drained.",
+    };
+  }
+  if (r.includes('insufficientliquidity')) {
+    return {
+      code: 'no_liquidity',
+      message: "Pool can't fill this size — liquidity drained on this outcome.",
+      hint: "Try selling a smaller portion, or wait for the market to resolve and Claim instead.",
+    };
+  }
+  if (r.includes('insufficientbalance')) {
+    return {
+      code: 'no_balance',
+      message: "Your wallet doesn't hold enough of this outcome token to sell.",
+      hint: "The position may already be closed or transferred. Refresh the page; if it persists, contact support.",
+    };
+  }
+  if (r.includes('safe6909transfer') || r.includes('notoperator')) {
+    return {
+      code: 'router_approval',
+      message: "Router is missing approval to move your outcome tokens.",
+      hint: "This is automatic — re-tap Sell once. If it still fails, the on-chain approval tx is being mined; wait 15s and retry.",
+    };
+  }
+  if (r.includes('paused')) {
+    return {
+      code: 'paused',
+      message: "Trading is paused on this market by the operator.",
+      hint: "Try again later. If the market resolves while paused you'll still be able to Claim.",
+    };
+  }
+  if (r.includes('insufficient funds') || r.includes('insufficient_funds')) {
+    return {
+      code: 'no_gas',
+      message: "Not enough BNB in your trading wallet to pay gas.",
+      hint: "Send a small amount of BNB (~0.001) to your wallet address shown on the Wallet tab and try again.",
+    };
+  }
+  if (r.includes('buffer_overrun') || r.includes('cannot slice beyond data bounds')) {
+    return {
+      code: 'rpc_flake',
+      message: "BSC RPC returned an empty response.",
+      hint: "Public BSC nodes are throttling — try again in 10 seconds.",
+    };
+  }
+
+  // Fallback: keep the raw message but trim the noisy ethers prefix.
+  const cleaned = raw
+    .replace(/^.*?sellOutcome would revert: /i, '')
+    .replace(/execution reverted \(unknown custom error\)\s*→\s*/i, '')
+    .trim();
+  return {
+    code: 'unknown',
+    message: `Sell failed: ${cleaned.length > 200 ? cleaned.slice(0, 200) + '…' : cleaned}`,
+    hint: "Try again in a moment. If this keeps happening, screenshot this message so we can investigate.",
+  };
+}
+
 export interface ExecutorTrader {
   buyOutcome(
     marketAddress: string,
@@ -828,7 +918,13 @@ export async function closePredictionPosition(
   try {
     receipt = await trader.sellOutcome(pos.marketAddress, pos.tokenId, tokenAmt, minUsdtOut);
   } catch (err) {
-    return { ok: false, reason: `sellOutcome failed: ${(err as Error).message}` };
+    const friendly = friendlySellError((err as Error).message);
+    return {
+      ok: false,
+      reason: friendly.message,
+      hint: friendly.hint,
+      code: friendly.code,
+    } as { ok: false; reason: string; hint?: string; code?: string };
   }
   const txHash = receiptHash(receipt);
 

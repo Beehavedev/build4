@@ -248,7 +248,7 @@ export default function Predictions() {
   const [myPositions, setMyPositions] = useState<MyPositionRow[] | null>(null)
   const [myPosErr, setMyPosErr] = useState<string | null>(null)
   const [actionBusy, setActionBusy] = useState<string | null>(null) // positionId or 'claim-all'
-  const [actionMsg, setActionMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [actionMsg, setActionMsg] = useState<{ kind: 'ok' | 'err'; text: string; hint?: string; code?: string } | null>(null)
 
   async function loadMyPositions() {
     try {
@@ -275,7 +275,12 @@ export default function Predictions() {
       })
       const j = await r.json()
       if (!r.ok || !j.ok) {
-        setActionMsg({ kind: 'err', text: j?.reason || j?.error || `HTTP ${r.status}` })
+        setActionMsg({
+          kind: 'err',
+          text: j?.reason || j?.error || `HTTP ${r.status}`,
+          hint: j?.hint,
+          code: j?.code,
+        })
       } else {
         const pnl = typeof j.pnl === 'number' ? j.pnl : 0
         setActionMsg({ kind: 'ok', text: `Closed — PnL ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}` })
@@ -568,13 +573,25 @@ export default function Predictions() {
           {actionMsg && (
             <div
               data-testid="text-action-msg"
+              data-error-code={actionMsg.code}
               style={{
                 marginBottom: 8, padding: '8px 12px', borderRadius: 6, fontSize: 12,
                 background: actionMsg.kind === 'ok' ? '#10b98115' : '#ef444415',
                 border: `1px solid ${actionMsg.kind === 'ok' ? '#10b98144' : '#ef444444'}`,
                 color: actionMsg.kind === 'ok' ? '#10b981' : '#ef4444',
+                lineHeight: 1.45,
               }}>
-              {actionMsg.text}
+              <div style={{ fontWeight: 600 }}>{actionMsg.text}</div>
+              {actionMsg.hint && (
+                <div
+                  data-testid="text-action-hint"
+                  style={{
+                    marginTop: 4, fontSize: 11, fontWeight: 400,
+                    color: actionMsg.kind === 'ok' ? '#10b981cc' : '#ef4444cc',
+                  }}>
+                  {actionMsg.hint}
+                </div>
+              )}
             </div>
           )}
           {myPosErr ? (
