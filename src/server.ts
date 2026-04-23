@@ -1220,14 +1220,59 @@ app.post('/api/hyperliquid/order', requireTgUser, async (req, res) => {
       return res.status(400).json({ success: false, error: 'computed size is 0; increase notionalUsdc' })
     }
 
-    const result = await placeOrder(creds, {
+    const orderArgs = {
       coin: sym,
       side,
       type,
       sz,
       limitPx: type === 'LIMIT' ? Number(limitPx) : undefined,
       leverage: leverage ? Number(leverage) : undefined,
-    })
+    } as const
+    let result = await placeOrder(creds, orderArgs)
+
+    // ── Self-heal: users onboarded before the builder-fee rollout never
+    //   signed approveBuilderFee, so HL rejects their first order with a
+    //   "must approve builder fee" / "builder not approved" style error.
+    //   Catch that on the fly, decrypt master PK, sign the missing approval,
+    //   then retry the order — invisible to the user. One-shot only.
+    const errStr = (result.error ?? '').toLowerCase()
+    const looksLikeBuilderReject =
+      !result.success &&
+      (errStr.includes('builder') || errStr.includes('must approve'))
+
+    if (looksLikeBuilderReject) {
+      console.log(
+        `[/hyperliquid/order] builder-rejection detected user=${user.id} — auto-approving and retrying`,
+      )
+      try {
+        const { decryptPrivateKey } = await import('./services/wallet')
+        const idCandidates = [user.id, user.telegramId?.toString()].filter(Boolean) as string[]
+        let userPk: string | null = null
+        for (const candidate of idCandidates) {
+          try {
+            const out = decryptPrivateKey(wallet.encryptedPK, candidate)
+            if (out?.startsWith('0x')) { userPk = out; break }
+          } catch {}
+        }
+        if (userPk) {
+          const { approveBuilderFee } = await import('./services/hyperliquid')
+          const br = await approveBuilderFee(userPk)
+          if (br.success) {
+            result = await placeOrder(creds, orderArgs)
+          } else {
+            console.warn(
+              `[/hyperliquid/order] auto-approveBuilderFee failed user=${user.id} err=${br.error}`,
+            )
+          }
+        } else {
+          console.warn(
+            `[/hyperliquid/order] could not decrypt master PK for auto-approve user=${user.id}`,
+          )
+        }
+      } catch (e: any) {
+        console.warn('[/hyperliquid/order] auto-approve retry threw:', e?.message ?? e)
+      }
+    }
 
     if (!result.success) {
       return res.status(400).json(result)
