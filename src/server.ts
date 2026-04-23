@@ -826,17 +826,31 @@ app.post('/api/aster/transfer', requireTgUser, async (req, res) => {
         })
       }
 
-      // ── Aster → BSC: use Aster's signed FUTURE_SPOT transfer (internal),
-      //    which Aster surfaces back to the user's BSC wallet automatically.
-      const { resolveAgentCreds, transferAsset } = await import('./services/aster')
-      const creds = await resolveAgentCreds(user, wallet.address)
-      if (!creds) return res.status(500).json({ success: false, error: 'Agent not configured for this user' })
-
-      const result = await transferAsset(creds, amt.toString(), 'FUTURE_SPOT')
-      if (!result.success) {
-        return res.status(400).json({ success: false, error: result.error ?? 'transfer_failed' })
-      }
-      return res.json({ success: true, tranId: result.tranId })
+      // ── Aster → BSC: TEMPORARILY DISABLED.
+      //
+      // The previous implementation called Aster's signed FUTURE_SPOT
+      // wallet/transfer endpoint and assumed Aster would surface the
+      // funds back to the user's BSC wallet on-chain. That assumption
+      // is wrong — FUTURE_SPOT only moves USDT between Aster's
+      // INTERNAL futures and INTERNAL spot wallets. The funds end up
+      // stranded in the user's Aster spot account with no in-app way
+      // to recover them. Confirmed with user 7383875080 / wallet
+      // 0x9751…3026: 26 USDT moved off futures, never arrived on BSC,
+      // BSC USDT balance was 0.045 after the transfer.
+      //
+      // Until we wire up Aster's actual signed on-chain withdrawal
+      // (likely /fapi/v3/capital/withdraw/apply or an EIP-712 vault
+      // withdraw), refuse the request with a clear message routing
+      // the user to asterdex.com so they can withdraw via Aster's
+      // own UI. The miniapp already disables the button; this is a
+      // defence-in-depth gate for older cached clients.
+      return res.status(400).json({
+        success: false,
+        error: 'Aster→BSC withdrawal temporarily unavailable in-app. ' +
+               'Please withdraw via asterdex.com → Wallet → Withdraw. ' +
+               'In-app withdrawal coming soon.',
+        useAsterDex: true,
+      })
     })
   } catch (err: any) {
     if (res.headersSent) return

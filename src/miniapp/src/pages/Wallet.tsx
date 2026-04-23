@@ -526,28 +526,51 @@ function TransferFlow(
           🔁 Move USDT
         </div>
 
-        {/* Direction toggle */}
+        {/* Direction toggle. The "Aster → BSC" path is temporarily disabled:
+            the previous implementation called Aster's internal FUTURE_SPOT
+            book transfer (which only moves between Aster's futures and
+            Aster's spot wallet, never on-chain to BSC). A real on-chain
+            withdrawal requires Aster's signed withdraw endpoint which
+            is not yet wired up. Until then we route the user to
+            asterdex.com so funds aren't stranded in their Aster spot
+            wallet. */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-          {([
-            { v: 'to_aster' as const, label: 'BSC → Aster' },
-            { v: 'to_bsc'   as const, label: 'Aster → BSC' }
-          ]).map(d => (
-            <button
-              key={d.v}
-              onClick={() => { setDirection(d.v); setAmount(''); setResult(null) }}
-              data-testid={`button-direction-${d.v}`}
-              style={{
-                flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600,
-                borderRadius: 6, cursor: 'pointer',
-                border: direction === d.v ? '1px solid #7c3aed' : '1px solid var(--b4-border)',
-                background: direction === d.v ? '#7c3aed22' : 'transparent',
-                color: 'var(--b4-text)'
-              }}
-            >
-              {d.label}
-            </button>
-          ))}
+          <button
+            onClick={() => { setDirection('to_aster'); setAmount(''); setResult(null) }}
+            data-testid="button-direction-to_aster"
+            style={{
+              flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600,
+              borderRadius: 6, cursor: 'pointer',
+              border: direction === 'to_aster' ? '1px solid #7c3aed' : '1px solid var(--b4-border)',
+              background: direction === 'to_aster' ? '#7c3aed22' : 'transparent',
+              color: 'var(--b4-text)'
+            }}
+          >BSC → Aster</button>
+          <button
+            data-testid="button-direction-to_bsc-disabled"
+            disabled
+            title="Withdraw to BSC via asterdex.com — coming soon in-app"
+            style={{
+              flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600,
+              borderRadius: 6, cursor: 'not-allowed',
+              border: '1px solid var(--b4-border)',
+              background: 'transparent', color: 'var(--b4-muted)', opacity: 0.55,
+            }}
+          >Aster → BSC ⓘ</button>
         </div>
+        {direction === 'to_aster' && (
+          <div style={{
+            fontSize: 11, color: 'var(--b4-muted)', marginBottom: 10,
+            padding: '8px 10px', background: '#1e293b', borderRadius: 6,
+            border: '1px solid #334155',
+          }}>
+            To withdraw <b>from</b> Aster <b>to BSC</b>, use{' '}
+            <a href="https://asterdex.com" target="_blank" rel="noreferrer"
+               style={{ color: '#a78bfa', textDecoration: 'underline' }}>
+              asterdex.com
+            </a>{' '}→ Wallet → Withdraw. In-app withdraw landing soon.
+          </div>
+        )}
 
         <label style={{ fontSize: 11, color: 'var(--b4-muted)', display: 'block', marginBottom: 6 }}>
           Amount (USDT) · Available: {sourceBal.toFixed(2)}
