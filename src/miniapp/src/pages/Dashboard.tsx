@@ -88,24 +88,25 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
   const fmtUsd = (n: number) => `${n < 0 ? '-' : ''}$${Math.abs(n).toFixed(2)}`
   const fmtPnl = (n: number) => `${n >= 0 ? '+' : '-'}$${Math.abs(n).toFixed(2)}`
 
-  const quickActions: Array<{ label: string; sub: string; testId: string; onClick: () => void }> = [
+  const quickActions: Array<{ label: string; sub: string; testId: string; onClick: () => void; disabled?: boolean }> = [
     {
-      label: 'Fund',
-      sub: 'Aster',
-      testId: 'button-fund-aster',
-      onClick: () => onNavigate?.('wallet'),
+      label: 'Aster',
+      sub: 'Perps',
+      testId: 'button-venue-aster',
+      onClick: () => onNavigate?.('agents'),
     },
     {
-      label: 'Trade',
-      sub: '42.space',
-      testId: 'button-trade-predictions',
+      label: '42.space',
+      sub: 'Predict',
+      testId: 'button-venue-42',
       onClick: () => onNavigate?.('predictions'),
     },
     {
-      label: 'Agents',
-      sub: `${activeAgents} live`,
-      testId: 'button-agents',
-      onClick: () => onNavigate?.('agents'),
+      label: 'Hyperliquid',
+      sub: 'soon',
+      testId: 'button-venue-hyperliquid',
+      onClick: () => {},
+      disabled: true,
     },
   ]
 
@@ -199,14 +200,16 @@ export default function Dashboard({ userId, onNavigate }: DashboardProps) {
           <button
             key={a.label + a.sub}
             onClick={a.onClick}
+            disabled={a.disabled}
             data-testid={a.testId}
             style={{
               background: 'var(--bg-card)',
               border: '1px solid var(--border)',
               borderRadius: 14,
               padding: '14px 8px',
-              color: 'var(--text-primary)',
-              cursor: 'pointer',
+              color: a.disabled ? 'var(--text-muted)' : 'var(--text-primary)',
+              cursor: a.disabled ? 'not-allowed' : 'pointer',
+              opacity: a.disabled ? 0.55 : 1,
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
