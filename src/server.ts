@@ -2853,6 +2853,51 @@ app.get('/api/swarm/stats', async (req, res) => {
   }
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin: re-activate Aster for a specific user.
+//
+// Used when a user shows up in the logs as `400 { code: -1000, msg: 'No agent
+// found' }` from Aster — meaning the asterAgentAddress on file isn't
+// recognised by Aster (broker rotation, partial earlier flow, etc). Mints a
+// fresh agent keypair, runs approveAgent + approveBuilder, and persists.
+//
+// Auth: ADMIN_TOKEN via x-admin-token header (or ?token=). Same pattern as
+// the other /api/admin/* endpoints.
+//
+// Body: { userId: string }  OR  { walletAddress: string }
+// Returns: { success, agentAddress?, builderEnrolled?, error? }
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/admin/aster/reactivate-user', express.json(), async (req, res) => {
+  const adminToken = process.env.ADMIN_TOKEN
+  if (adminToken) {
+    const supplied = (req.headers['x-admin-token'] as string | undefined)
+      ?? (typeof req.query.token === 'string' ? req.query.token : undefined)
+    if (supplied !== adminToken) return res.status(401).json({ error: 'Unauthorized' })
+  }
+  try {
+    const { userId, walletAddress } = (req.body ?? {}) as { userId?: string; walletAddress?: string }
+    let user: any = null
+    if (userId) {
+      user = await db.user.findUnique({ where: { id: userId } })
+    } else if (walletAddress) {
+      const w = await db.wallet.findFirst({
+        where: { address: { equals: walletAddress, mode: 'insensitive' }, isActive: true },
+      })
+      if (w) user = await db.user.findUnique({ where: { id: w.userId } })
+    } else {
+      return res.status(400).json({ error: 'Provide userId or walletAddress' })
+    }
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    const { reapproveAsterForUser } = await import('./services/asterReapprove')
+    const result = await reapproveAsterForUser(user)
+    return res.json({ ...result, userId: user.id })
+  } catch (e: any) {
+    console.error('[admin/aster/reactivate-user] failed:', e)
+    return res.status(500).json({ success: false, error: e?.message ?? 'internal' })
+  }
+})
+
 // Drill-down companion to /api/admin/swarm-divergence: returns recent
 // AgentLog rows (with each provider's vote) so operators can see *which*
 // ticks disagreed for a given pair/provider, not just the aggregate %.

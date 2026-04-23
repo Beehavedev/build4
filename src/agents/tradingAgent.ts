@@ -1706,6 +1706,34 @@ If you would not put real money in this trade right now, action = HOLD.`
               })
             }
           } catch (execErr: any) {
+            const execMsg = String(execErr?.message ?? '')
+            // Self-heal: when Aster returns -1000 "No agent found", the
+            // user's on-file agent address isn't recognised by Aster
+            // anymore (broker rotation, partial earlier flow, etc).
+            // Without intervention this user is silently stuck — every
+            // future tick re-fails identically. Fire reapproveAsterForUser
+            // once now so the NEXT tick (≤60s) uses fresh creds and the
+            // order succeeds. We don't retry the order in-tick because
+            // we'd need to re-derive position sizing, balance check, and
+            // bracket math — far simpler to let the next tick re-evaluate
+            // from scratch with the same fresh signal.
+            if (/no agent found|-1000/i.test(execMsg) && dbUser) {
+              console.warn(
+                `[Agent ${agent.name}] Aster reports "No agent found" — auto-reapproving for user=${dbUser.id} ` +
+                `so next tick recovers without user intervention`
+              )
+              try {
+                const { reapproveAsterForUser } = await import('../services/asterReapprove')
+                const r = await reapproveAsterForUser(dbUser as any)
+                console.log(
+                  `[Agent ${agent.name}] auto-reapprove → success=${r.success} ` +
+                  `agent=${r.agentAddress ?? 'n/a'} builder=${r.builderEnrolled ?? false} ` +
+                  `error=${r.error ?? 'none'}`
+                )
+              } catch (healErr: any) {
+                console.error(`[Agent ${agent.name}] auto-reapprove threw:`, healErr?.message)
+              }
+            }
             console.error(`[Agent ${agent.name}] Order execution failed:`, execErr.message)
             await saveMemory(agent.id, 'correction',
               `Order execution failed for ${pair} ${side}: ${execErr.message}`, null)
