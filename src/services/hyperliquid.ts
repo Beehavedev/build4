@@ -166,6 +166,28 @@ export async function getAccountState(userAddress: string): Promise<{
   }
 }
 
+/**
+ * Poll HL clearinghouse until `address` has at least `minUsdc` of equity,
+ * or `timeoutMs` elapses. Used by the auto-bridge flow on /approve to wait
+ * for the Arbitrum→HL credit (typically ~30-60s) before calling approveAgent.
+ *
+ * Returns the observed accountValue on success, or null if it timed out.
+ */
+export async function waitForHlDeposit(
+  address:   string,
+  minUsdc:   number,
+  timeoutMs: number = 120_000,
+  pollMs:    number = 4_000,
+): Promise<number | null> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const { accountValue } = await getAccountState(address)
+    if (accountValue >= minUsdc) return accountValue
+    await new Promise(r => setTimeout(r, pollMs))
+  }
+  return null
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Signed writes (require agent credentials)
 // ─────────────────────────────────────────────────────────────────────────────

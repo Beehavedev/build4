@@ -1074,6 +1074,15 @@ app.get('/api/hyperliquid/markprice/:coin', async (req, res) => {
   }
 })
 
+// In-process per-user mutex for /api/hyperliquid/approve. The endpoint
+// performs a real on-chain transfer (Arbitrum USDC → HL bridge), and
+// double-clicks would otherwise race on nonce/balance and could send
+// the bridge twice. Lifecycle is tied to the request handler — entries
+// are added before any signing and removed in `finally` whether we
+// succeed, error, or time out. Single-instance deploy on Render makes
+// this safe without a Redis-backed lock.
+const HL_ACTIVATE_LOCKS = new Set<string>()
+
 // POST /api/hyperliquid/approve
 //
 // One-click HL onboarding. Decrypts the user's master wallet PK, generates
@@ -1130,7 +1139,77 @@ app.post('/api/hyperliquid/approve', requireTgUser, async (req, res) => {
     const agentEncryptedPK = encryptPrivateKey(agentWallet.privateKey, user.id)
 
     // ── 3) Ask HL to authorise the agent. Master signs EIP-712 ApproveAgent.
-    const { approveAgent, approveBuilderFee } = await import('./services/hyperliquid')
+    //    HL rejects approveAgent on accounts with $0 equity — the user has
+    //    to deposit USDC first. We make this seamless: if the master account
+    //    is empty AND the user has spendable USDC + a sliver of ETH on
+    //    Arbitrum, we auto-bridge it through HL's official bridge contract
+    //    and wait for the credit before signing approveAgent.
+    const { approveAgent, approveBuilderFee, getAccountState, waitForHlDeposit } =
+      await import('./services/hyperliquid')
+    const { getArbitrumBalances, bridgeArbitrumUsdcToHyperliquid } =
+      await import('./services/wallet')
+
+    const accountBefore = await getAccountState(wallet.address)
+    if (accountBefore.accountValue < 1) {
+      // ── Per-user mutex. The Activate button is async and easy to double-tap
+      //    in Telegram's webview; without this guard a quick second tap can
+      //    fire a second bridge tx before the first nonce settles. The lock
+      //    is in-process (single Render instance) — sufficient since we don't
+      //    horizontally scale this service.
+      if (HL_ACTIVATE_LOCKS.has(user.id)) {
+        return res.status(409).json({
+          success: false,
+          error:   'Activation already in progress. Hold on ~1 minute and reopen the page.',
+        })
+      }
+      HL_ACTIVATE_LOCKS.add(user.id)
+      try {
+        const arb = await getArbitrumBalances(wallet.address)
+        // HL minimum deposit is $5. Cap each auto-bridge at $500 to prevent
+        // an accidental sweep of a wallet someone happens to have parked
+        // funds on for unrelated purposes — they can repeat Activate later
+        // (or use a manual transfer) to move more. Below $5 we can't
+        // bootstrap HL, so we return a clean error.
+        const HL_AUTO_BRIDGE_CAP = 500
+        const available    = Math.floor(arb.usdc * 100) / 100
+        const bridgeAmount = Math.min(available, HL_AUTO_BRIDGE_CAP)
+        if (bridgeAmount < 5) {
+          return res.status(400).json({
+            success: false,
+            error:   `Hyperliquid needs at least $5 USDC to activate. You currently have $${arb.usdc.toFixed(2)} USDC on Arbitrum (wallet ${wallet.address}). Send native USDC (not USDC.e) on Arbitrum One to that address, then tap Activate again.`,
+          })
+        }
+        console.log(
+          `[/hyperliquid/approve] auto-bridge user=${user.id} bridging $${bridgeAmount} of $${available} USDC from Arbitrum`,
+        )
+        const bridge = await bridgeArbitrumUsdcToHyperliquid(userPk, bridgeAmount)
+        if (!bridge.success) {
+          return res.status(400).json({
+            success: false,
+            error:   `Auto-bridge from Arbitrum failed: ${bridge.error ?? 'unknown error'}`,
+          })
+        }
+        // Bridge confirmed on Arbitrum; now wait for HL to credit. Typically
+        // 30-90s. Cap at 85s so we return cleanly before Render's 100s
+        // request gateway timeout — if it isn't credited by then we surface
+        // a 202 and the FE re-tries on the next tap.
+        const credited = await waitForHlDeposit(wallet.address, 1, 85_000)
+        if (credited === null) {
+          return res.status(202).json({
+            success: false,
+            bridging: true,
+            txHash:   bridge.txHash,
+            error:    'Bridge sent. Hyperliquid is still crediting your account — wait ~1 minute and tap Activate again.',
+          })
+        }
+        console.log(
+          `[/hyperliquid/approve] auto-bridge user=${user.id} credited $${credited.toFixed(2)} on HL`,
+        )
+      } finally {
+        HL_ACTIVATE_LOCKS.delete(user.id)
+      }
+    }
+
     const result = await approveAgent(userPk, agentAddress)
     if (!result.success) {
       return res.status(400).json({ success: false, error: result.error ?? 'approveAgent failed' })

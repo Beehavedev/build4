@@ -262,3 +262,66 @@ export async function getArbitrumBalances(
     return { eth: 0, usdc: 0, error: err?.message ?? 'rpc_failed' }
   }
 }
+
+// Hyperliquid's deposit bridge contract on Arbitrum One. Native USDC sent
+// here is auto-credited to the same EVM address on HL L1 within ~1 minute.
+// Min deposit enforced by HL: $5. Bridged USDC.e is NOT accepted.
+export const HL_BRIDGE_ARBITRUM = '0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7'
+const ERC20_TRANSFER_ABI = [
+  'function transfer(address to, uint256 amount) returns (bool)',
+  'function balanceOf(address) view returns (uint256)',
+]
+
+/**
+ * Bridge USDC from the user's Arbitrum wallet to their Hyperliquid L1
+ * account. Same EOA on both networks (HL credits the sender's address),
+ * so the user doesn't need to specify a destination.
+ *
+ * Validates ETH gas balance and USDC balance up front so we surface a
+ * clear error to the caller instead of bouncing off the RPC. Returns the
+ * tx hash on success — the caller is responsible for polling HL's
+ * clearinghouse to detect when the deposit has credited.
+ */
+export async function bridgeArbitrumUsdcToHyperliquid(
+  privateKey: string,
+  amountUsdc: number,
+): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  if (!Number.isFinite(amountUsdc) || amountUsdc < 5) {
+    return { success: false, error: 'Hyperliquid bridge minimum is $5 USDC' }
+  }
+  try {
+    const provider = new ethers.JsonRpcProvider(ARB_RPC)
+    const signer   = new ethers.Wallet(privateKey, provider)
+    const usdc     = new ethers.Contract(USDC_ARBITRUM, ERC20_TRANSFER_ABI, signer)
+    const amountRaw = ethers.parseUnits(amountUsdc.toFixed(6), 6)
+
+    const [usdcBal, ethBal] = await Promise.all([
+      usdc.balanceOf(signer.address) as Promise<bigint>,
+      provider.getBalance(signer.address),
+    ])
+    if (usdcBal < amountRaw) {
+      return {
+        success: false,
+        error:   `Insufficient Arbitrum USDC: have ${ethers.formatUnits(usdcBal, 6)}, need ${amountUsdc}`,
+      }
+    }
+    // Empirically a USDC transfer on Arbitrum costs ~50k gas at ~0.01 gwei
+    // → on the order of 0.0000005 ETH. Demand 0.00002 ETH (~$0.07 at $3.5k)
+    // as a generous floor so we don't bounce on a single bad gas estimate.
+    const minEthForGas = ethers.parseEther('0.00002')
+    if (ethBal < minEthForGas) {
+      return {
+        success: false,
+        error:   'Not enough ETH on Arbitrum to pay gas. Send a tiny amount of ETH (any amount above $0.10) to your wallet on Arbitrum and retry.',
+      }
+    }
+
+    const tx = await usdc.transfer(HL_BRIDGE_ARBITRUM, amountRaw)
+    console.log(`[Wallet] HL bridge: ${signer.address} sending ${amountUsdc} USDC, tx=${tx.hash}`)
+    await tx.wait(1)
+    return { success: true, txHash: tx.hash }
+  } catch (err: any) {
+    console.error('[Wallet] bridgeArbitrumUsdcToHyperliquid failed:', err?.message)
+    return { success: false, error: err?.shortMessage ?? err?.message ?? 'bridge_failed' }
+  }
+}

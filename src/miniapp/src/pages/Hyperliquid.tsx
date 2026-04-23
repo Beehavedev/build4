@@ -20,10 +20,6 @@ interface AccountState {
   positions:        Array<{ coin: string; szi: number; entryPx: number; unrealizedPnl: number }>
 }
 
-// HL bridge contract on Arbitrum One. USDC sent here from your Arbitrum
-// wallet credits Hyperliquid for the same EVM address. Min deposit: $5.
-const HL_BRIDGE_ARBITRUM = '0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7'
-
 const cardStyle: React.CSSProperties = {
   background: 'var(--bg-card, #12121a)', border: '1px solid var(--border, #2a2a3e)',
   borderRadius: 12, padding: 14, marginBottom: 12,
@@ -33,22 +29,10 @@ export default function Hyperliquid() {
   const [account, setAccount] = useState<AccountState | null>(null)
   const [mids, setMids] = useState<Record<string, number>>({})
   const [arb, setArb] = useState<{ usdc: number; eth: number } | null>(null)
-  const [copiedBridge, setCopiedBridge] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activating, setActivating] = useState(false)
   const [activateMsg, setActivateMsg] = useState<string | null>(null)
-
-  const copyBridge = async () => {
-    try {
-      await navigator.clipboard.writeText(HL_BRIDGE_ARBITRUM)
-      setCopiedBridge(true)
-      setTimeout(() => setCopiedBridge(false), 1500)
-    } catch {
-      const tg = (window as any).Telegram?.WebApp
-      if (tg?.showAlert) tg.showAlert(HL_BRIDGE_ARBITRUM)
-    }
-  }
 
   // Order ticket state
   const [orderCoin, setOrderCoin]         = useState('BTC')
@@ -191,13 +175,30 @@ export default function Hyperliquid() {
                   {activating ? 'Activating…' : 'Activate Hyperliquid Trading'}
                 </button>
                 <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 8, lineHeight: 1.4 }}>
-                  One tap authorises a BUILD4 agent wallet to place orders for you on
-                  Hyperliquid. Your master key never leaves the server, never signs an
-                  order. Deposit USDC anytime via{' '}
-                  <a href="https://app.hyperliquid.xyz/trade" target="_blank" rel="noreferrer"
-                     style={{ color: '#a78bfa', textDecoration: 'underline' }}>
-                    hyperliquid.xyz
-                  </a>{' '}using wallet <code>{account.walletAddress.slice(0, 6)}…{account.walletAddress.slice(-4)}</code>.
+                  One tap. We bridge your Arbitrum USDC into Hyperliquid automatically
+                  (~1 minute) and authorise a BUILD4 agent wallet to place orders for
+                  you. You stay in custody — your master key never leaves the server.
+                  {(arb?.usdc ?? 0) >= 5 && (
+                    <>
+                      {' '}<b style={{ color: '#a7f3d0' }}>
+                        ${arb!.usdc.toFixed(2)} USDC on Arbitrum will be bridged.
+                      </b>
+                    </>
+                  )}
+                  {(arb?.usdc ?? 0) > 0 && (arb?.usdc ?? 0) < 5 && (
+                    <>
+                      {' '}<b style={{ color: '#fecaca' }}>
+                        You have ${arb!.usdc.toFixed(2)} USDC — Hyperliquid needs at least $5 to start.
+                      </b>
+                    </>
+                  )}
+                  {(arb?.usdc ?? 0) === 0 && (
+                    <>
+                      {' '}<b style={{ color: '#fecaca' }}>
+                        Send native USDC on Arbitrum to your wallet first, then tap Activate.
+                      </b>
+                    </>
+                  )}
                 </div>
                 {activateMsg && (
                   <div
@@ -218,81 +219,6 @@ export default function Hyperliquid() {
           <div style={{ fontSize: 12, color: '#9ca3af' }}>No account yet.</div>
         )}
       </div>
-
-      {/* Deposit / bridge instructions
-          Hyperliquid is its own L1 — funds in your BSC/Arbitrum wallet are
-          NOT automatically tradeable. They have to be sent through the HL
-          bridge contract on Arbitrum. We highlight this loudly when the
-          user has Arbitrum USDC but a $0 HL account, since that's the
-          single most common "where's my money?" moment. */}
-      {account && (() => {
-        const hasArbUsdc = (arb?.usdc ?? 0) >= 1
-        const hlEmpty    = (account.accountValue ?? 0) < 1
-        const showHero   = hasArbUsdc && hlEmpty
-        return (
-          <div
-            style={{
-              ...cardStyle,
-              ...(showHero ? { borderColor: '#2962ef', background: 'linear-gradient(135deg,#2962ef22,#2962ef08)' } : {}),
-            }}
-            data-testid="card-hl-bridge"
-          >
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
-              {showHero ? `🌉 Bridge $${arb!.usdc.toFixed(2)} USDC into Hyperliquid` : 'Fund Hyperliquid'}
-            </div>
-            <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.5, marginBottom: 10 }}>
-              Hyperliquid runs on its own L1. To trade, USDC must be sent to the
-              official HL bridge on <b>Arbitrum One</b>. Funds credit your HL account
-              for the same wallet address (<code>{account.walletAddress.slice(0,6)}…{account.walletAddress.slice(-4)}</code>) within ~1 minute.
-            </div>
-            {hasArbUsdc && (
-              <div style={{
-                fontSize: 11, color: '#a7f3d0', background: '#064e3b66',
-                border: '1px solid #10b98144', borderRadius: 8, padding: '8px 10px',
-                marginBottom: 10, lineHeight: 1.5,
-              }} data-testid="text-hl-arb-detected">
-                ✅ You have <b>{arb!.usdc.toFixed(2)} USDC</b> on Arbitrum already — send it to the bridge below to fund HL.
-              </div>
-            )}
-            <div style={{
-              fontSize: 11, color: '#9ca3af', marginBottom: 6,
-            }}>HL BRIDGE (ARBITRUM ONE) · USDC ONLY · MIN $5</div>
-            <div style={{
-              padding: 10, background: '#0a0a0f', borderRadius: 8,
-              fontSize: 11, fontFamily: 'ui-monospace, monospace',
-              wordBreak: 'break-all', color: '#e5e7eb', marginBottom: 8,
-            }} data-testid="text-hl-bridge-address">
-              {HL_BRIDGE_ARBITRUM}
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                onClick={copyBridge}
-                data-testid="button-hl-bridge-copy"
-                style={{
-                  flex: 1, padding: '10px', borderRadius: 8, border: 'none',
-                  background: copiedBridge ? '#064e3b' : '#1f2937',
-                  color: copiedBridge ? '#a7f3d0' : '#fff',
-                  fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                }}
-              >{copiedBridge ? '✓ Copied' : '📋 Copy bridge'}</button>
-              <a
-                href="https://app.hyperliquid.xyz/trade"
-                target="_blank" rel="noreferrer"
-                data-testid="link-hl-deposit"
-                style={{
-                  flex: 1, padding: '10px', borderRadius: 8,
-                  background: '#2962ef', color: '#fff',
-                  fontSize: 12, fontWeight: 600, textAlign: 'center',
-                  textDecoration: 'none', boxSizing: 'border-box',
-                }}
-              >Open hyperliquid.xyz →</a>
-            </div>
-            <div style={{ fontSize: 10, color: '#64748b', marginTop: 8, lineHeight: 1.4 }}>
-              ⚠️ <b>Arbitrum network only.</b> Sending USDC on BSC, Ethereum, or any other chain to this address will be lost. Use native USDC (<code>0xaf88…5831</code>), not bridged USDC.e.
-            </div>
-          </div>
-        )
-      })()}
 
       {/* Positions */}
       {account && account.positions.length > 0 && (

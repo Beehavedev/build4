@@ -48,7 +48,7 @@ After saving, delete this message from your chat for extra safety.`,
 
     const keyboard = new InlineKeyboard()
       .text('💰 Deposit', 'deposit')
-      .text('ℹ️ How it works', 'how_it_works')
+      .text('💳 Wallet', 'wallet')
       .row()
       .webApp('📱 Open BUILD4', miniAppUrl)
       .row()
@@ -56,8 +56,9 @@ After saving, delete this message from your chat for extra safety.`,
       .text('🗂 My Agents', 'my_agents')
       .row()
       .text('📊 Signals', 'signals')
-      .row()
       .text('📈 Portfolio', 'portfolio')
+      .row()
+      .text('ℹ️ How it works', 'how_it_works')
       .text('❓ Help', 'help')
 
     const walletLine = wallet
