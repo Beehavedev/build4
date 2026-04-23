@@ -65,12 +65,29 @@ export function decryptPrivateKey(encrypted: string, userId: string, pin?: strin
     const legacy = tryLegacyDecrypt(encrypted, userId)
     if (legacy && legacy.startsWith('0x')) return legacy
   }
-  const keyMaterial = pin ? MASTER_KEY + userId + ':' + pin : MASTER_KEY + userId
-  const key = CryptoJS.SHA256(keyMaterial).toString()
-  const bytes = CryptoJS.AES.decrypt(encrypted, key)
-  const out = bytes.toString(CryptoJS.enc.Utf8)
-  if (!out) throw new Error('decrypt produced empty result')
-  return out
+
+  // CryptoJS path. Production has historically had two env vars
+  // (MASTER_ENCRYPTION_KEY and WALLET_ENCRYPTION_KEY) used at different
+  // points in the codebase's lifetime. Wallets created under the older
+  // env-var convention can't be decrypted with MASTER_KEY alone — try
+  // both candidates so users whose wallets predate the env rename
+  // aren't permanently locked out of activation.
+  const keyCandidates = Array.from(new Set([MASTER_KEY, LEGACY_MASTER].filter(Boolean)))
+  let lastErr: Error | null = null
+  for (const masterCandidate of keyCandidates) {
+    try {
+      const keyMaterial = pin ? masterCandidate + userId + ':' + pin : masterCandidate + userId
+      const key = CryptoJS.SHA256(keyMaterial).toString()
+      const bytes = CryptoJS.AES.decrypt(encrypted, key)
+      const out = bytes.toString(CryptoJS.enc.Utf8)
+      if (out && out.startsWith('0x')) return out
+      if (out) return out
+      lastErr = new Error('decrypt produced empty result')
+    } catch (e: any) {
+      lastErr = e
+    }
+  }
+  throw lastErr ?? new Error('decrypt failed (all key candidates)')
 }
 
 /**
