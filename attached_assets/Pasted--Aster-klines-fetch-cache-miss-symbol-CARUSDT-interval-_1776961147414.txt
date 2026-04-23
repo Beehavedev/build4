@@ -1,0 +1,348 @@
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=19/19 (100.0%)
+[Agent BTPredict] HOLD on OPGUSDT — Unclear direction after initial listing, waiting for stronger momentum indicator
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=20/20 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=21/21 (100.0%)
+[Agent SeanBuild4] HOLD on OPGUSDT — Recent candles show a mix of upward and downward movements with no clear directi
+[Agent BNT] HOLD on OPGUSDT — Insufficient data to confirm a strong trend, and recent candles do not show a cl
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=22/22 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=23/23 (100.0%)
+[Agent BTPredict] HOLD on OPGUSDT — Regime appears to be in a consolidation phase after an initial drop, waiting for
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=24/24 (100.0%)
+[Agent BNT] HOLD on OPGUSDT — Insufficient price discovery and unclear trend direction. Waiting for more candl
+[Agent SeanBuild4] HOLD on OPGUSDT — Insufficient bullish momentum and unclear trend direction. Recent candles show a
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=44/44 (100.0%)
+[Agent BNT] HOLD on OPGUSDT — The current market data does not provide a clear direction for a trade. The rece
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=45/45 (100.0%)
+[Agent BTPredict] HOLD on OPGUSDT — Insufficient bullish momentum indicators and lack of clear trend direction. Rece
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="08d02ac0-eb52-4bfc" responseTimeMS=1480 responseBytes=270 userAgent=""
+[GET]
+build4-1.onrender.com/app/ clientIP="78.177.162.15" requestID="d2c908d0-b86f-4727" responseTimeMS=6 responseBytes=655 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/app/assets/index-wO2cv0E6.js clientIP="78.177.162.15" requestID="7242fe4d-7bf3-45e8" responseTimeMS=32 responseBytes=182079 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/agents/7383875080 clientIP="78.177.162.15" requestID="f6d5eee6-03aa-42ab" responseTimeMS=947 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/app clientIP="78.177.162.15" requestID="5dc0e9f8-0407-4b06" responseTimeMS=6 responseBytes=414 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/admin clientIP="78.177.162.15" requestID="71891988-0902-4335" responseTimeMS=206 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/user/7383875080 clientIP="78.177.162.15" requestID="4eb330ec-644e-4cd1" responseTimeMS=1398 responseBytes=1063 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="c22e0145-bd67-4392" responseTimeMS=1819 responseBytes=1856 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/aster/markprice/BTCUSDT clientIP="78.177.162.15" requestID="71b36d51-d86d-4933" responseTimeMS=81 responseBytes=341 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/aster/positions clientIP="78.177.162.15" requestID="2dfea1d7-f1b5-4153" responseTimeMS=706 responseBytes=291 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="9015807c-ffc0-4244" responseTimeMS=1199 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 0.8000 crossWallet= 0.8000 crossUnPnl= 0.0000 available= 0.7998
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 0.8000 crossWallet= 0.8000 crossUnPnl= 0.0000 available= 0.7998
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 0.8000 crossWallet= 0.8000 crossUnPnl= 0.0000 available= 0.7998
+[GET]
+build4-1.onrender.com/api/hyperliquid/account clientIP="78.177.162.15" requestID="37e6131d-b38b-49ae" responseTimeMS=1143 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[HL] getMarkPrice failed: HYPE 429 Too Many Requests - null
+[HL] getMarkPrice failed: ETH 429 Too Many Requests - null
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="db2771a3-c44c-45a4" responseTimeMS=932 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="4f82fe3f-ada8-4957" responseTimeMS=84 responseBytes=289 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="911c9a46-2b7a-4216" responseTimeMS=85 responseBytes=289 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/SOL clientIP="78.177.162.15" requestID="bc92e4cb-4d5d-4c4f" responseTimeMS=136 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="c9ba3fe7-3678-4e59" responseTimeMS=109 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="8b056914-1789-4b5d" responseTimeMS=95 responseBytes=297 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="863f55b3-d704-451d" responseTimeMS=77 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+==> Deploying...
+==> Setting WEB_CONCURRENCY=1 by default, based on available CPUs in the instance
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[POST]
+build4-1.onrender.com/api/hyperliquid/approve clientIP="78.177.162.15" requestID="ac4a1fd0-d636-4c1b" responseTimeMS=684 responseBytes=373 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[HL] approveAgent failed: 0x60Ba9f9cDc5C3cC3170F680A459f719fD4304327 → Must deposit before performing actions. User: 0x9751eb70c3042b4b2a228f8e67dfe356cb2d3026
+[GET]
+build4-1.onrender.com/api/hyperliquid/account clientIP="78.177.162.15" requestID="3fae8fcd-da6c-4d93" responseTimeMS=467 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 0.8000 crossWallet= 0.8000 crossUnPnl= 0.0000 available= 0.7998
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="cdbda6f5-3a6c-46eb" responseTimeMS=944 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="ebbd0071-aa76-4c22" responseTimeMS=81 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/SOL clientIP="78.177.162.15" requestID="55ce8644-1104-4e3d" responseTimeMS=84 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="6e4a3574-bf80-48bc" responseTimeMS=85 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="2687d975-652f-4320" responseTimeMS=80 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="c170f6a4-c3a9-4be4" responseTimeMS=86 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="c6a33c40-fc3d-4a8e" responseTimeMS=81 responseBytes=297 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=46/46 (100.0%)
+[Agent BTPredict] HOLD on OPGUSDT — Insufficient confirmation of upward momentum and unclear direction after initial
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=47/47 (100.0%)
+[Agent BNT] HOLD on OPGUSDT — The current market data does not provide a clear direction for a trade. The pric
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=48/48 (100.0%)
+[Agent SeanBuild4] HOLD on OPGUSDT — Unclear direction after analyzing recent candles and volume. Waiting for a stron
+[GET]
+build4-1.onrender.com/api/hyperliquid/account clientIP="78.177.162.15" requestID="31338cd7-5bc8-46f8" responseTimeMS=846 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 0.8000 crossWallet= 0.8000 crossUnPnl= 0.0000 available= 0.7998
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="f989773e-9600-41c4" responseTimeMS=957 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/SOL clientIP="78.177.162.15" requestID="f1197d22-14d8-4627" responseTimeMS=88 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="908e2fe4-8aa9-4d0e" responseTimeMS=196 responseBytes=297 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="e2f2c5df-27a3-4290" responseTimeMS=82 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="606a2ee5-b983-4b32" responseTimeMS=188 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="ca43a5c1-b0b5-4d5c" responseTimeMS=89 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="3e884169-77a7-40c2" responseTimeMS=197 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/account clientIP="78.177.162.15" requestID="8eed8e21-315d-44e9" responseTimeMS=655 responseBytes=179 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/HYPE clientIP="78.177.162.15" requestID="a50ab063-f9d9-47b6" responseTimeMS=88 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/ETH clientIP="78.177.162.15" requestID="afbc2f63-8b84-44e7" responseTimeMS=90 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/SOL clientIP="78.177.162.15" requestID="3f37cf3e-017c-4637" responseTimeMS=83 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/DOGE clientIP="78.177.162.15" requestID="c59a4c31-b532-45bf" responseTimeMS=85 responseBytes=297 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BTC clientIP="78.177.162.15" requestID="9693852d-3557-45be" responseTimeMS=77 responseBytes=296 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/me/wallet clientIP="78.177.162.15" requestID="4d1c139a-ddde-4ae0" responseTimeMS=1223 responseBytes=180 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[GET]
+build4-1.onrender.com/api/hyperliquid/markprice/BNB clientIP="78.177.162.15" requestID="c6706960-6702-4053" responseTimeMS=81 responseBytes=295 userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+[Aster] /fapi/v3/balance USDT for 0x9751EB70C3042b4b2a228f8E67dfE356CB2d3026 → marginBalance= 0.8000 crossWallet= 0.8000 crossUnPnl= 0.0000 available= 0.7998
+==> Running 'npx tsx src/server.ts'
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="66bbdaae-2cf6-44c2" responseTimeMS=686 responseBytes=270 userAgent=""
+[DB] Connected
+[DB] Ensuring new tables exist (safe — no drops)...
+[POST]
+build4-1.onrender.com/api/webhook clientIP="91.108.5.66" requestID="f6a989cf-90f9-4c99" responseTimeMS=1206 responseBytes=270 userAgent=""
+==> No open ports detected, continuing to scan...
+==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=49/49 (100.0%)
+[Agent BNT] HOLD on OPGUSDT — Unclear direction, waiting for breakout or stronger trend confirmation
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=50/50 (100.0%)
+[Agent SeanBuild4] HOLD on OPGUSDT — Unclear trend direction, waiting for stronger volume confirmation and more defin
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 400: {"type":"error","error":{"type":"invalid_request_erro) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=51/51 (100.0%)
+[Agent BTPredict] HOLD on OPGUSDT — Recent candles show a mix of upward and downward movements with no clear directi
+[DB] Backfilled 0 users to live 42.space trading
+[DB] All new tables ready
+[Migration] Checking for old user data to migrate...
+[Migration] Already have 1536 users in new tables, skipping migration
+[Migration] All agents already on AUTO mode
+[Runner] Agent runner initialized
+[Runner] Agent runner started
+[Server] Running on port 500
+[Bot] Initialized as @BUILD4_BOT
+[Bot] Webhook set to https://build4-1.onrender.com/api/webhook
+[Listing] Baseline pair set captured
+==> Your service is live 🎉
+==> 
+==> ///////////////////////////////////////////////////////////
+==> 
+==> Available at your primary URL https://build4-1.onrender.com
+==> 
+==> ///////////////////////////////////////////////////////////
+[GET]
+build4-1.onrender.com/ clientIP="34.145.120.165" requestID="f275d021-14ab-4032" responseTimeMS=2 responseBytes=397 userAgent="Go-http-client/2.0"
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '1h', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 404: {"type":"error","error":{"type":"not_found_error","me) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=52/52 (100.0%)
+[Agent BNT] HOLD on OPGUSDT — Unclear trend direction after initial listing volatility, waiting for breakout d
+[inference:akash] circuit tripped — status=402 parked for 10m. body={"error":{"message":"Insufficient credits. Please add credits to your account to continue.","type":"insufficient_quota",
+[inference:xai] circuit tripped — status=403 parked for 10m. body={"code":"The caller does not have permission to execute the specified operation","error":"Your newly created team doesn'
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 404: {"type":"error","error":{"type":"not_found_error","me) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=53/53 (100.0%)
+[Agent SeanBuild4] HOLD on OPGUSDT — Unclear direction and insufficient trend alignment. Recent candles show a mix of
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 404: {"type":"error","error":{"type":"not_found_error","me) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=54/54 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 404: {"type":"error","error":{"type":"not_found_error","me) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=1/1 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 404: {"type":"error","error":{"type":"not_found_error","me) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=2/2 (100.0%)
+[Agent BTPredict] HOLD on OPGUSDT — Lack of clear direction and insufficient data for confident entry. Recent candle
+[Agent BTPredict] HOLD on OPGUSDT — Unclear direction after initial listing volatility, waiting for more decisive pr
+[Agent BNT] HOLD on OPGUSDT — Insufficient bullish momentum and unclear direction, waiting for more confirmati
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 404: {"type":"error","error":{"type":"not_found_error","me) | xai:ERR([inference:xai] 403: {"code":"The caller does not have permission to execute the) | hyperbolic:HOLD | akash:ERR([inference:akash] 402: {"error":{"message":"Insufficient credits. Please add cre) noQuorumRate=3/3 (100.0%)
+[Agent SeanBuild4] HOLD on OPGUSDT — Insufficient bullish momentum and lack of clear trend direction. Recent candles 
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 404: {"type":"error","error":{"type":"not_found_error","me) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=4/4 (100.0%)
+[Agent BTPredict] HOLD on OPGUSDT — Unclear direction after analyzing recent candles and volume. Waiting for a stron
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 404: {"type":"error","error":{"type":"not_found_error","me) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=5/5 (100.0%)
+[Agent BNT] HOLD on OPGUSDT — Recent candles show a mix of red and green candles with low volume, indicating a
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 404: {"type":"error","error":{"type":"not_found_error","me) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=6/6 (100.0%)
+[Agent SeanBuild4] HOLD on OPGUSDT — Recent price action is unclear, with a mix of small red and green candles. Volum
+[Runner] Ticking 3 agents in batches of 50
+[Runner] Dispatched 3 ticks in 0.0s (0 skipped — still in flight from previous tick)
+[Aster] klines fetch (cache miss): { symbol: 'BTCUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ETHUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'SOLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BNBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'XRPUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'DOGEUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ASTERUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'AVAXUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'LINKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'ARBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'MERLUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '15m', limit: 100 }
+Menu
+[Aster] klines fetch (cache miss): { symbol: 'CARUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: '1000WOJAKUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'TACUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'VELVETUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'BBUSDT', interval: '15m', limit: 100 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '1m', limit: 120 }
+[Aster] klines fetch (cache miss): { symbol: 'OPGUSDT', interval: '5m', limit: 100 }
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 404: {"type":"error","error":{"type":"not_found_error","me) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=7/7 (100.0%)
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 404: {"type":"error","error":{"type":"not_found_error","me) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=8/8 (100.0%)
+[Agent SeanBuild4] HOLD on OPGUSDT — Recent candles show a mix of red and green with no clear direction, and volume i
+[Agent BNT] HOLD on OPGUSDT — Insufficient bullish momentum and unclear direction. Recent candles show a mix o
+[swarm] no-quorum fallback — providers=anthropic,xai,hyperbolic,akash status=anthropic:ERR([inference:anthropic] 404: {"type":"error","error":{"type":"not_found_error","me) | xai:ERR([inference:xai] circuit open — provider had a fatal error recently, parked until) | hyperbolic:HOLD | akash:ERR([inference:akash] circuit open — provider had a fatal error recently, parked unt) noQuorumRate=9/9 (100.0%)
+[Agent BTPredict] HOLD on OPGUSDT — Insufficient momentum and unclear trend direction. Recent candles show a mix of 
