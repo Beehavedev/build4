@@ -3,6 +3,38 @@ import { apiFetch } from '../api'
 
 const PAIRS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT', 'ASTERUSDT']
 
+// Inline styles bypass any cached CSS rules and any iOS native chrome
+// that might be applied to <button>/<select>/<input> in the Telegram
+// WebApp. The previous CSS-class approach was being defeated by aggressive
+// CSS-chunk caching on iOS Telegram, so we use inline styles directly
+// for the form controls that were rendering as iOS native pills/inputs.
+const inputLabelStyle: React.CSSProperties = {
+  fontSize: 12, color: '#9ca3af', fontWeight: 500,
+}
+const inputFieldStyle: React.CSSProperties = {
+  background: '#12121a', border: '1px solid #2a2a3e', borderRadius: 10,
+  padding: 12, color: '#ffffff', fontSize: 16, outline: 'none',
+  fontFamily: 'inherit', width: '100%', boxSizing: 'border-box',
+  WebkitAppearance: 'none', appearance: 'none',
+}
+const selectFieldStyle: React.CSSProperties = {
+  ...inputFieldStyle, paddingRight: 36,
+  backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%239ca3af' d='M6 8L0 0h12z'/></svg>\")",
+  backgroundRepeat: 'no-repeat', backgroundPosition: 'right 14px center',
+}
+const toggleRowStyle: React.CSSProperties = {
+  display: 'flex', borderRadius: 10, overflow: 'hidden',
+  border: '1px solid #2a2a3e', gap: 1, background: '#2a2a3e',
+}
+const toggleBtnStyle = (active: boolean, accent: string): React.CSSProperties => ({
+  flex: 1, padding: 12, textAlign: 'center', fontSize: 14, fontWeight: 600,
+  cursor: 'pointer', border: 'none', fontFamily: 'inherit',
+  WebkitAppearance: 'none', appearance: 'none',
+  background: active ? accent : '#12121a',
+  color: active ? '#ffffff' : '#9ca3af',
+  transition: 'all 0.2s',
+})
+
 interface MarkPrice { markPrice: number; indexPrice: number; lastFundingRate: number }
 interface AsterPosition {
   symbol: string; side: 'LONG' | 'SHORT'; size: number;
@@ -176,26 +208,26 @@ export function Trade() {
       )}
 
       <div className="card">
-        <div className="toggle-row" data-testid="side-toggle">
+        <div style={toggleRowStyle} data-testid="side-toggle">
           <button
-            className={`toggle-btn ${side === 'LONG' ? 'active-long' : ''}`}
             onClick={() => setSide('LONG')}
+            style={toggleBtnStyle(side === 'LONG', '#22c55e')}
             data-testid="btn-long"
           >Long</button>
           <button
-            className={`toggle-btn ${side === 'SHORT' ? 'active-short' : ''}`}
             onClick={() => setSide('SHORT')}
+            style={toggleBtnStyle(side === 'SHORT', '#ef4444')}
             data-testid="btn-short"
           >Short</button>
         </div>
       </div>
 
       <div className="card">
-        <div className="trade-form">
-          <div className="input-group">
-            <label className="input-label">Pair</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={inputLabelStyle}>Pair</label>
             <select
-              className="input-field"
+              style={selectFieldStyle}
               value={pair}
               onChange={(e) => setPair(e.target.value)}
               data-testid="select-pair"
@@ -203,51 +235,51 @@ export function Trade() {
               {PAIRS.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
             {mark && (
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }} data-testid="text-mark-price">
+              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }} data-testid="text-mark-price">
                 Mark ${mark.markPrice.toFixed(mark.markPrice < 1 ? 5 : 2)}
                 {mark.lastFundingRate ? ` · funding ${(mark.lastFundingRate * 100).toFixed(4)}%` : ''}
               </div>
             )}
           </div>
 
-          <div className="toggle-row">
+          <div style={toggleRowStyle}>
             <button
-              className={`toggle-btn ${orderType === 'MARKET' ? 'active-long' : ''}`}
               onClick={() => setOrderType('MARKET')}
-              style={orderType === 'MARKET' ? { background: 'var(--accent)' } : {}}
+              style={toggleBtnStyle(orderType === 'MARKET', '#8b5cf6')}
               data-testid="btn-market"
             >Market</button>
             <button
-              className={`toggle-btn ${orderType === 'LIMIT' ? 'active-long' : ''}`}
               onClick={() => setOrderType('LIMIT')}
-              style={orderType === 'LIMIT' ? { background: 'var(--accent)' } : {}}
+              style={toggleBtnStyle(orderType === 'LIMIT', '#8b5cf6')}
               data-testid="btn-limit"
             >Limit</button>
           </div>
 
-          <div className="input-group">
-            <label className="input-label">Size (USDT notional)</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={inputLabelStyle}>Size (USDT notional)</label>
             <input
-              className="input-field"
+              style={inputFieldStyle}
               type="number"
+              inputMode="decimal"
               placeholder="100"
               value={size}
               onChange={(e) => setSize(e.target.value)}
               data-testid="input-size"
             />
             {sizeNum > 0 && refPrice > 0 && (
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }} data-testid="text-est-qty">
+              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }} data-testid="text-est-qty">
                 ≈ {estQty.toFixed(6)} {pair.replace('USDT', '')} · margin {requiredMargin.toFixed(2)} USDT
               </div>
             )}
           </div>
 
           {orderType === 'LIMIT' && (
-            <div className="input-group">
-              <label className="input-label">Limit Price</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={inputLabelStyle}>Limit Price</label>
               <input
-                className="input-field"
+                style={inputFieldStyle}
                 type="number"
+                inputMode="decimal"
                 placeholder="0.00"
                 value={limitPrice}
                 onChange={(e) => setLimitPrice(e.target.value)}

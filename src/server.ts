@@ -2898,6 +2898,117 @@ app.post('/api/admin/aster/reactivate-user', express.json(), async (req, res) =>
   }
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/wallet/diagnose-decrypt
+//
+// Forensic tool for "Could not decrypt wallet" cases. Tries every plausible
+// (userId × masterKey) combination against a wallet's encryptedPK and reports
+// which combo (if any) worked.
+//
+// Body: { walletAddress: string }  OR  { userId: string }
+// Optional: { extraKey?: string, extraUserId?: string } — paste a candidate
+//           master key or user-id we want to test that's not in env.
+//
+// Returns:
+//   { wallet: {...}, candidates: [{userId, key, label, ok, reason?, prefix?}],
+//     anyOk: bool, currentEnv: { hasMaster, hasLegacy, sameValue } }
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/admin/wallet/diagnose-decrypt', express.json(), async (req, res) => {
+  const adminToken = process.env.ADMIN_TOKEN
+  if (adminToken) {
+    const supplied = (req.headers['x-admin-token'] as string | undefined)
+      ?? (typeof req.query.token === 'string' ? req.query.token : undefined)
+    if (supplied !== adminToken) return res.status(401).json({ error: 'Unauthorized' })
+  }
+  try {
+    const { walletAddress, userId, extraKey, extraUserId } = (req.body ?? {}) as {
+      walletAddress?: string; userId?: string; extraKey?: string; extraUserId?: string
+    }
+    let wallet: any = null
+    if (walletAddress) {
+      wallet = await db.wallet.findFirst({
+        where: { address: { equals: walletAddress, mode: 'insensitive' } },
+      })
+    } else if (userId) {
+      wallet = await db.wallet.findFirst({ where: { userId, isActive: true } })
+    } else {
+      return res.status(400).json({ error: 'Provide walletAddress or userId' })
+    }
+    if (!wallet?.encryptedPK) return res.status(404).json({ error: 'Wallet not found or no encryptedPK' })
+
+    // Find every User row that historically might have owned this wallet.
+    // Includes the current owner plus any user with the same telegramId
+    // (account re-creates).
+    const owner = await db.user.findUnique({ where: { id: wallet.userId } })
+    let siblingUsers: any[] = []
+    if (owner?.telegramId) {
+      siblingUsers = await db.user.findMany({ where: { telegramId: owner.telegramId } })
+    }
+    const userIdSet = new Set<string>(
+      [wallet.userId, owner?.id, owner?.telegramId?.toString(), extraUserId,
+        ...siblingUsers.map(u => u.id),
+        ...siblingUsers.map(u => u.telegramId?.toString()),
+      ].filter((v): v is string => Boolean(v))
+    )
+
+    const masterPrimary = process.env.MASTER_ENCRYPTION_KEY ?? process.env.WALLET_ENCRYPTION_KEY ?? 'default_dev_key_change_in_prod_32c'
+    const masterLegacy  = process.env.WALLET_ENCRYPTION_KEY ?? process.env.MASTER_ENCRYPTION_KEY ?? 'default-dev-key-change-me-32chars!'
+    const keySet = new Map<string, string>([
+      ['MASTER_ENCRYPTION_KEY', masterPrimary],
+      ['WALLET_ENCRYPTION_KEY', masterLegacy],
+      ['default-modern',        'default_dev_key_change_in_prod_32c'],
+      ['default-legacy',        'default-dev-key-change-me-32chars!'],
+    ])
+    if (extraKey) keySet.set('extraKey', extraKey)
+
+    const CryptoJS = (await import('crypto-js')).default
+    const blob = wallet.encryptedPK as string
+    const candidates: any[] = []
+    let anyOk = false
+    for (const uid of userIdSet) {
+      for (const [keyLabel, masterValue] of keySet) {
+        const keyMaterial = masterValue + uid
+        const key = CryptoJS.SHA256(keyMaterial).toString()
+        let ok = false; let reason: string | null = null; let prefix: string | null = null
+        try {
+          const bytes = CryptoJS.AES.decrypt(blob, key)
+          const out = bytes.toString(CryptoJS.enc.Utf8)
+          if (out) {
+            ok = out.startsWith('0x')
+            prefix = out.slice(0, 6)
+            if (!ok) reason = 'decrypted but no 0x prefix'
+          } else {
+            reason = 'empty result (wrong key)'
+          }
+        } catch (e: any) {
+          reason = e?.message ?? 'threw'
+        }
+        if (ok) anyOk = true
+        candidates.push({ userId: uid.slice(0, 12) + '…', keyLabel, ok, reason, prefix })
+      }
+    }
+
+    return res.json({
+      wallet: { id: wallet.id, address: wallet.address, userId: wallet.userId, isActive: wallet.isActive,
+                blobLen: blob.length, blobHead: blob.slice(0, 16) },
+      owner: owner ? { id: owner.id, telegramId: owner.telegramId?.toString(), asterOnboarded: owner.asterOnboarded } : null,
+      siblingUserCount: siblingUsers.length,
+      candidates,
+      anyOk,
+      currentEnv: {
+        hasMaster:  Boolean(process.env.MASTER_ENCRYPTION_KEY),
+        hasLegacy:  Boolean(process.env.WALLET_ENCRYPTION_KEY),
+        sameValue:  process.env.MASTER_ENCRYPTION_KEY === process.env.WALLET_ENCRYPTION_KEY,
+        masterLen:  process.env.MASTER_ENCRYPTION_KEY?.length ?? null,
+        legacyLen:  process.env.WALLET_ENCRYPTION_KEY?.length ?? null,
+      },
+    })
+  } catch (e: any) {
+    console.error('[admin/wallet/diagnose-decrypt] failed:', e)
+    return res.status(500).json({ error: e?.message ?? 'internal' })
+  }
+})
+
 // Drill-down companion to /api/admin/swarm-divergence: returns recent
 // AgentLog rows (with each provider's vote) so operators can see *which*
 // ticks disagreed for a given pair/provider, not just the aggregate %.
