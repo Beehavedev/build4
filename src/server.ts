@@ -399,12 +399,25 @@ app.get('/api/me/wallet', requireTgUser, async (req, res) => {
       }
     }
 
+    // ── Arbitrum balances (ETH for gas + USDC). Same wallet address as BSC.
+    // Surfaced so the user can see funds they parked on Arbitrum (e.g. for
+    // bridging to Hyperliquid) without leaving the app.
+    let arbitrum: { eth: number; usdc: number; error: string | null } =
+      { eth: 0, usdc: 0, error: null }
+    try {
+      const { getArbitrumBalances } = await import('./services/wallet')
+      arbitrum = await getArbitrumBalances(wallet.address)
+    } catch (e: any) {
+      arbitrum.error = e?.message ?? 'arb_unavailable'
+    }
+
     res.json({
       address: wallet.address,
       chain: wallet.chain,
       label: wallet.label,
       pinProtected: !!user.pinHash,
       balances: { usdt, bnb, error: balanceError },
+      arbitrum,
       aster,
       qrDataUrl
     })

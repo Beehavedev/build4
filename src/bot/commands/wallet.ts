@@ -4,6 +4,7 @@ import {
   generateAndSaveWallet,
   importWallet,
   getWalletBalances,
+  getArbitrumBalances,
   truncateAddress,
   decryptPrivateKey,
   reencryptUserWallets
@@ -37,14 +38,28 @@ export async function handleWalletCommand(ctx: Context) {
   }
 
   const activeWallet = wallets.find((w) => w.isActive) ?? wallets[0]
-  const balances = await getWalletBalances(activeWallet.address, activeWallet.chain)
+  // Same address works on every EVM chain — pull both BSC and Arbitrum
+  // balances in parallel so users can see funds on either network.
+  const [balances, arb] = await Promise.all([
+    getWalletBalances(activeWallet.address, activeWallet.chain),
+    getArbitrumBalances(activeWallet.address)
+  ])
   const pinSet = !!user.pinHash
 
   let text = `💳 *Your Wallets*\n\n`
-  text += `*Active: ${activeWallet.label}* (${activeWallet.chain})\n`
-  text += `Address: \`${truncateAddress(activeWallet.address)}\`\n`
-  text += `USDT: $${balances.usdt.toFixed(2)}\n`
-  text += `${balances.nativeSymbol}: ${balances.native.toFixed(4)}\n\n`
+  text += `*Active: ${activeWallet.label}*\n`
+  text += `Address: \`${truncateAddress(activeWallet.address)}\`\n\n`
+  text += `*BSC*\n`
+  text += `• USDT: $${balances.usdt.toFixed(2)}\n`
+  text += `• ${balances.nativeSymbol}: ${balances.native.toFixed(4)}\n\n`
+  text += `*Arbitrum*\n`
+  text += `• USDC: $${arb.usdc.toFixed(2)}\n`
+  text += `• ETH: ${arb.eth.toFixed(5)}\n`
+  if (arb.usdc >= 5) {
+    text += `\n💡 You have USDC on Arbitrum — you can bridge it to *Hyperliquid* from the mini app to trade perps.\n\n`
+  } else {
+    text += `\n`
+  }
   text += `🔒 PIN protection: *${pinSet ? 'ON' : 'OFF'}*${pinSet ? '' : ' — use /setpin to enable'}\n\n`
 
   if (wallets.length > 1) {

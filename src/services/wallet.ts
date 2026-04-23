@@ -6,6 +6,11 @@ import { db } from '../db'
 const MASTER_KEY = process.env.MASTER_ENCRYPTION_KEY ?? process.env.WALLET_ENCRYPTION_KEY ?? 'default_dev_key_change_in_prod_32c'
 const LEGACY_MASTER = process.env.WALLET_ENCRYPTION_KEY ?? process.env.MASTER_ENCRYPTION_KEY ?? 'default-dev-key-change-me-32chars!'
 const BSC_RPC    = process.env.BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org'
+const ARB_RPC    = process.env.ARBITRUM_RPC_URL ?? process.env.ARB_RPC_URL ?? 'https://arb1.arbitrum.io/rpc'
+
+// USDC on Arbitrum (native CCTP). Hyperliquid's bridge contract on Arbitrum
+// only accepts this token — bridged USDC.e (0xFF970...) is NOT supported.
+const USDC_ARBITRUM = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'
 
 const LEGACY_ALGORITHM = 'aes-256-cbc'
 
@@ -228,4 +233,32 @@ export async function getWalletBalances(
 
 export function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`
+}
+
+/**
+ * Read native ETH + USDC balances on Arbitrum One for the given address.
+ * The user's BSC wallet is also a valid Arbitrum wallet (same secp256k1 key).
+ *
+ * Returns 0/0 on RPC failure rather than throwing — callers display this
+ * inline next to BSC balances and a single flaky RPC shouldn't break the
+ * whole wallet view.
+ */
+export async function getArbitrumBalances(
+  address: string
+): Promise<{ eth: number; usdc: number; error: string | null }> {
+  try {
+    const provider = new ethers.JsonRpcProvider(ARB_RPC)
+    const [ethWei, usdcRaw] = await Promise.all([
+      provider.getBalance(address),
+      new ethers.Contract(USDC_ARBITRUM, ERC20_ABI, provider).balanceOf(address)
+    ])
+    return {
+      eth:   parseFloat(ethers.formatEther(ethWei)),
+      usdc:  parseFloat(ethers.formatUnits(usdcRaw, 6)),
+      error: null
+    }
+  } catch (err: any) {
+    console.error('[Wallet] getArbitrumBalances failed:', err?.message)
+    return { eth: 0, usdc: 0, error: err?.message ?? 'rpc_failed' }
+  }
 }

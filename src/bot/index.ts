@@ -90,5 +90,23 @@ export function createBot(): Bot {
     console.error('[Bot] Error:', err.message)
   })
 
+  // Telegram chat menu — registers the slash-command shortcuts that show
+  // when the user taps the menu button next to the message field. Fire
+  // and forget; setMyCommands is idempotent and Telegram caches the list
+  // server-side so it persists across restarts.
+  bot.api.setMyCommands([
+    { command: 'start',       description: 'Open BUILD4 main menu' },
+    { command: 'wallet',      description: 'View wallet & balances (BSC + Arbitrum)' },
+    { command: 'trade',       description: 'Trade Aster perps · BSC' },
+    { command: 'tradestatus', description: 'Open positions & PnL' },
+    { command: 'newagent',    description: 'Create an AI trading agent' },
+    { command: 'myagents',    description: 'List your agents' },
+    { command: 'signals',     description: 'Whale flow & smart-money signals' },
+    { command: 'portfolio',   description: 'Portfolio overview' },
+    { command: 'predictions', description: 'Trade 42.space prediction markets' },
+    { command: 'price',       description: 'Quick token price' },
+    { command: 'help',        description: 'Show all commands' },
+  ]).catch((err: any) => console.error('[Bot] setMyCommands failed:', err?.message))
+
   return bot
 }

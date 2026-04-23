@@ -36,6 +36,16 @@ export default function App() {
     apiFetch<{ isAdmin: boolean }>('/api/me/admin')
       .then((r) => setIsAdmin(!!r.isAdmin))
       .catch(() => setIsAdmin(false))
+
+    // Cross-page navigation hook — pages can dispatch a CustomEvent('b4-nav',
+    // { detail: 'hyperliquid' }) to switch tabs (e.g. the Trade page's venue
+    // switcher uses this to jump into the HL view).
+    const onNav = (e: Event) => {
+      const dest = (e as CustomEvent).detail as Page
+      if (dest) setPage(dest)
+    }
+    window.addEventListener('b4-nav', onNav as EventListener)
+    return () => window.removeEventListener('b4-nav', onNav as EventListener)
   }, [])
 
   const navItems: { id: Page; label: string; icon: string | 'crosshair' }[] = [

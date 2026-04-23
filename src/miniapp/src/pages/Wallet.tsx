@@ -7,6 +7,7 @@ interface WalletInfo {
   label: string
   pinProtected: boolean
   balances: { usdt: number; bnb: number; error: string | null }
+  arbitrum?: { eth: number; usdc: number; error: string | null }
   aster: { usdt: number; availableMargin: number; onboarded: boolean; error: string | null }
   qrDataUrl: string
 }
@@ -160,34 +161,91 @@ export default function Wallet() {
 
 function BscPrimaryCard({ w }: { w: WalletInfo }) {
   return (
-    <div className="card" style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>ON-CHAIN (BSC)</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>USDT</div>
-          <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-usdt">
-            {w.balances.usdt.toFixed(2)}
+    <>
+      <div className="card" style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>ON-CHAIN (BSC)</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>USDT</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-usdt">
+              {w.balances.usdt.toFixed(2)}
+            </div>
           </div>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>BNB (gas)</div>
-          <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-bnb">
-            {w.balances.bnb.toFixed(5)}
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>BNB (gas)</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-bnb">
+              {w.balances.bnb.toFixed(5)}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+      <ArbitrumCard w={w} />
+    </>
   )
 }
 
 function BscSecondaryCard({ w }: { w: WalletInfo }) {
   return (
-    <div className="card" style={{ marginBottom: 14, opacity: 0.85 }}>
-      <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 6 }}>ON-CHAIN (BSC)</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-        <span data-testid="text-balance-usdt">USDT {w.balances.usdt.toFixed(2)}</span>
-        <span data-testid="text-balance-bnb">BNB {w.balances.bnb.toFixed(5)}</span>
+    <>
+      <div className="card" style={{ marginBottom: 10, opacity: 0.85 }}>
+        <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 6 }}>ON-CHAIN (BSC)</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+          <span data-testid="text-balance-usdt">USDT {w.balances.usdt.toFixed(2)}</span>
+          <span data-testid="text-balance-bnb">BNB {w.balances.bnb.toFixed(5)}</span>
+        </div>
       </div>
+      <ArbitrumCard w={w} compact />
+    </>
+  )
+}
+
+// Arbitrum card — same wallet address, different network. Funds parked here
+// usually mean the user is mid-bridge to Hyperliquid (HL deposits go through
+// the HL bridge contract on Arbitrum, not directly to the HL L1).
+function ArbitrumCard({ w, compact }: { w: WalletInfo; compact?: boolean }) {
+  const arb = w.arbitrum
+  if (!arb) return null
+  const hasFunds = arb.usdc > 0 || arb.eth > 0
+  if (compact) {
+    return (
+      <div className="card" style={{ marginBottom: 14, opacity: 0.85 }} data-testid="card-arbitrum-balance">
+        <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 6 }}>ON-CHAIN (ARBITRUM)</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+          <span data-testid="text-balance-arb-usdc">USDC {arb.usdc.toFixed(2)}</span>
+          <span data-testid="text-balance-arb-eth">ETH {arb.eth.toFixed(5)}</span>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div
+      className="card"
+      style={{
+        marginBottom: 14,
+        ...(hasFunds ? { borderLeft: '3px solid #2962ef' } : {}),
+      }}
+      data-testid="card-arbitrum-balance"
+    >
+      <div style={{ fontSize: 11, color: 'var(--b4-muted)', marginBottom: 8 }}>ON-CHAIN (ARBITRUM)</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>USDC</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-arb-usdc">
+            {arb.usdc.toFixed(2)}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 11, color: 'var(--b4-muted)' }}>ETH (gas)</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }} data-testid="text-balance-arb-eth">
+            {arb.eth.toFixed(5)}
+          </div>
+        </div>
+      </div>
+      {arb.usdc >= 5 && (
+        <div style={{ marginTop: 10, fontSize: 11, color: 'var(--b4-muted)', lineHeight: 1.45 }}>
+          💡 USDC on Arbitrum doesn't trade directly. Open the <b>Hyperliquid</b> tab to bridge it into HL perps.
+        </div>
+      )}
     </div>
   )
 }

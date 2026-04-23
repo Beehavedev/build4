@@ -167,7 +167,39 @@ export function Trade() {
 
   return (
     <div className="page">
-      <div className="section-title">⚡ Trade on Aster DEX</div>
+      <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>⚡ Trade on Aster DEX</span>
+        <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500 }}>BSC · USDT</span>
+      </div>
+
+      {/* Venue switcher — Aster (BSC/USDT) is the default, but Hyperliquid
+          (Arbitrum-bridged USDC) is now live with builder fees. Surface it
+          here so users coming to /trade discover the alternative venue. */}
+      <div className="card" style={{ padding: 10, marginBottom: 10 }} data-testid="card-venue-switcher">
+        <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 6 }}>VENUE</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <div
+            data-testid="venue-aster-active"
+            style={{
+              flex: 1, padding: '8px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+              background: '#7c3aed', color: '#fff', textAlign: 'center',
+            }}
+          >Aster · BSC</div>
+          <a
+            href="#hyperliquid"
+            data-testid="link-venue-hyperliquid"
+            onClick={(e) => {
+              e.preventDefault()
+              window.dispatchEvent(new CustomEvent('b4-nav', { detail: 'hyperliquid' }))
+            }}
+            style={{
+              flex: 1, padding: '8px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+              background: '#1f2937', color: '#cbd5e1', textAlign: 'center',
+              textDecoration: 'none', boxSizing: 'border-box',
+            }}
+          >Hyperliquid · USDC →</a>
+        </div>
+      </div>
 
       {walletErr && (
         <div className="card" style={{ borderLeft: '3px solid #ef4444' }} data-testid="text-wallet-error">
